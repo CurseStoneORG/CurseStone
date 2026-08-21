@@ -1,0 +1,35 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// ListTag — ordered list of tags all sharing the same element type.
+// The element type is stored in `element_type`; all children MUST have
+// that type (the NBT spec enforces homogeneity). Names of children
+// inside a ListTag are NOT serialized.
+#pragma once
+
+#include "Tag.h"
+#include <stddef.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct mcp_list_tag {
+    mcp_tag_t   header;
+    mcp_tag_type_t element_type;
+    mcp_tag_t** children;
+    size_t      count;
+    size_t      capacity;
+} mcp_list_tag_t;
+
+mcp_tag_t* mcp_list_tag_new(mcp_tag_type_t element_type);
+mcp_tag_t* mcp_list_tag_new_named(const char* name, mcp_tag_type_t element_type);
+
+// Append a child. The tag takes ownership of `child`. Type must match
+// `element_type` (or both be EndTag for an empty list). Returns 0 on success.
+int mcp_list_tag_append(mcp_tag_t* self, mcp_tag_t* child);
+
+size_t mcp_list_tag_size(const mcp_tag_t* self);
+const mcp_tag_t* mcp_list_tag_get(const mcp_tag_t* self, size_t index);
+
+#ifdef __cplusplus
+} // extern "C"
+#endif

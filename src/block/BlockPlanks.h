@@ -1,0 +1,9 @@
+#pragma once
+#include "BlockSolid.h"
+namespace mcppeserver::block {
+class BlockPlanks : public BlockSolid {
+public:
+    uint8_t id() const override { return PLANKS; }
+    std::string name() const override { return "Wood Planks"; }
+};
+} // namespace

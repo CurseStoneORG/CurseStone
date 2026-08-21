@@ -1,0 +1,35 @@
+# MCPPEServer main configuration
+# Mirrors PocketMine-MP's pocketmine.yml schema, adapted for C++.
+
+settings:
+  language: "eng"
+  shutdown-message: "Server closed"
+  async-workers: 4
+
+server:
+  ip: "0.0.0.0"
+  port: 19132
+  motd: "MCPPEServer"
+  max-players: 20
+  gamemode: 0          # 0=survival, 1=creative, 2=adventure
+  difficulty: 1        # 0=peaceful, 1=easy, 2=normal, 3=hard
+  whitelist: false
+  online-mode: false
+  view-distance: 8
+
+level:
+  name: "world"
+  format: "mcacpp"     # mcacpp | leveldb | mca | mcapm
+  generator: "normal"  # normal | flat | nether | void
+  seed: 0              # 0 = random
+
+memory:
+  max-mb: 512
+
+network:
+  compression-level: 7   # zlib level 1-9
+  batch-threshold: 256    # bytes before batching
+
+logging:
+  level: "info"           # debug | info | warn | error
+  colored: true

@@ -1,0 +1,50 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// MoveEntityPacket.cpp — encode/decode.
+//
+// PMMP: putLong (BE) + 3× putFloat (BE) + 3× putByte (scaled rotation).
+// Rotation encoding: byte = angle_deg / (360.0 / 256) = angle_deg * 256.0 / 360.0.
+#include "MoveEntityPacket.h"
+#include <cmath>
+
+namespace mcppeserver::network::protocol {
+
+static inline uint8_t angleToByte(float deg) {
+    // Normalize to [0, 360) then scale to [0, 256).
+    if (!std::isfinite(deg)) deg = 0.0f;
+    deg = std::fmod(deg, 360.0f);
+    if (deg < 0.0f) deg += 360.0f;
+    float b = deg * (256.0f / 360.0f);
+    return static_cast<uint8_t>(b);
+}
+static inline float byteToAngle(uint8_t b) {
+    return static_cast<float>(b) * (360.0f / 256.0f);
+}
+
+void MoveEntityPacket::encode(std::vector<uint8_t>& out) const {
+    PacketWriter w(out);
+    w.writeI64BE(eid);
+    w.writeF32BE(x);
+    w.writeF32BE(y);
+    w.writeF32BE(z);
+    w.writeU8 (angleToByte(pitch));
+    w.writeU8 (angleToByte(yaw));
+    w.writeU8 (angleToByte(headYaw));
+}
+
+bool MoveEntityPacket::decode(const uint8_t* data, size_t len) {
+    PacketReader r(data, len);
+    uint8_t bPitch, bYaw, bHeadYaw;
+    if (!r.readI64BE(eid))     return false;
+    if (!r.readF32BE(x))       return false;
+    if (!r.readF32BE(y))       return false;
+    if (!r.readF32BE(z))       return false;
+    if (!r.readU8 (bPitch))    return false;
+    if (!r.readU8 (bYaw))      return false;
+    if (!r.readU8 (bHeadYaw))  return false;
+    pitch   = byteToAngle(bPitch);
+    yaw     = byteToAngle(bYaw);
+    headYaw = byteToAngle(bHeadYaw);
+    return true;
+}
+
+} // namespace mcppeserver::network::protocol

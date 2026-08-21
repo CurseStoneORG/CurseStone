@@ -1,0 +1,9 @@
+#pragma once
+#include "Item.h"
+namespace mcppeserver::item {
+class ItemArrow : public Item {
+public:
+    ItemArrow() : Item(262) {}
+    std::string name() const override { return "Arrow"; }
+};
+} // namespace

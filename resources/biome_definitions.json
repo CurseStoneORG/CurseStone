@@ -1,0 +1,89 @@
+{
+  "biomes": [
+    {
+      "id": 0,
+      "name": "ocean",
+      "type": "water",
+      "temperature": 0.5,
+      "rainfall": 0.5,
+      "topBlock": "minecraft:gravel",
+      "fillerBlock": "minecraft:gravel"
+    },
+    {
+      "id": 1,
+      "name": "plains",
+      "type": "land",
+      "temperature": 0.8,
+      "rainfall": 0.4,
+      "topBlock": "minecraft:grass",
+      "fillerBlock": "minecraft:dirt"
+    },
+    {
+      "id": 2,
+      "name": "desert",
+      "type": "land",
+      "temperature": 2.0,
+      "rainfall": 0.0,
+      "topBlock": "minecraft:sand",
+      "fillerBlock": "minecraft:sandstone"
+    },
+    {
+      "id": 3,
+      "name": "forest",
+      "type": "land",
+      "temperature": 0.7,
+      "rainfall": 0.8,
+      "topBlock": "minecraft:grass",
+      "fillerBlock": "minecraft:dirt"
+    },
+    {
+      "id": 4,
+      "name": "mountains",
+      "type": "land",
+      "temperature": 0.2,
+      "rainfall": 0.3,
+      "topBlock": "minecraft:stone",
+      "fillerBlock": "minecraft:stone"
+    },
+    {
+      "id": 5,
+      "name": "beach",
+      "type": "land",
+      "temperature": 0.5,
+      "rainfall": 0.3,
+      "topBlock": "minecraft:sand",
+      "fillerBlock": "minecraft:sand"
+    },
+    {
+      "id": 6,
+      "name": "taiga",
+      "type": "land",
+      "temperature": -0.5,
+      "rainfall": 0.4,
+      "topBlock": "minecraft:grass",
+      "fillerBlock": "minecraft:dirt"
+    },
+    {
+      "id": 7,
+      "name": "swampland",
+      "type": "land",
+      "temperature": 0.8,
+      "rainfall": 0.9,
+      "topBlock": "minecraft:grass",
+      "fillerBlock": "minecraft:dirt"
+    },
+    {
+      "id": 8,
+      "name": "hell",
+      "type": "nether",
+      "temperature": 2.0,
+      "rainfall": 0.0,
+      "topBlock": "minecraft:netherrack",
+      "fillerBlock": "minecraft:netherrack"
+    }
+  ],
+  "defaults": {
+    "seaLevel": 64,
+    "bedrockLevel": 0
+  }
+}

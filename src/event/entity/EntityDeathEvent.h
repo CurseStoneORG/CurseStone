@@ -1,0 +1,16 @@
+// EntityDeathEvent — entity event.
+#pragma once
+#include "Event.h"
+#include "Cancellable.h"
+namespace mcppeserver::entity { class Entity; }
+namespace mcppeserver::event::entity {
+class EntityDeathEvent : public Event, public Cancellable {
+public:
+    mcppeserver::entity::Entity* entity;
+    float amount = 0.0f;
+    EntityDeathEvent(mcppeserver::entity::Entity* e = nullptr) : entity(e) {}
+    const std::string& eventName() const override {
+        static std::string n = "EntityDeathEvent"; return n;
+    }
+};
+} // namespace

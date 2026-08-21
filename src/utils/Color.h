@@ -1,0 +1,36 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// Color — RGBA8 color struct + helpers. Pure C.
+#pragma once
+
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct mcp_color {
+    uint8_t r, g, b, a;
+} mcp_color_t;
+
+#define MCP_COLOR_BLACK       ((mcp_color_t){  0,   0,   0, 255})
+#define MCP_COLOR_WHITE       ((mcp_color_t){255, 255, 255, 255})
+#define MCP_COLOR_RED         ((mcp_color_t){255,   0,   0, 255})
+#define MCP_COLOR_GREEN       ((mcp_color_t){  0, 255,   0, 255})
+#define MCP_COLOR_BLUE        ((mcp_color_t){  0,   0, 255, 255})
+#define MCP_COLOR_YELLOW      ((mcp_color_t){255, 255,   0, 255})
+#define MCP_COLOR_CYAN        ((mcp_color_t){  0, 255, 255, 255})
+#define MCP_COLOR_MAGENTA     ((mcp_color_t){255,   0, 255, 255})
+#define MCP_COLOR_DIRT_BROWN  ((mcp_color_t){134,  96,  67, 255})
+#define MCP_COLOR_GRASS_GREEN ((mcp_color_t){120, 180,  80, 255})
+#define MCP_COLOR_STONE_GRAY  ((mcp_color_t){128, 128, 128, 255})
+
+// Pack to/from 0xAARRGGBB uint32.
+uint32_t mcp_color_to_argb(const mcp_color_t* c);
+mcp_color_t mcp_color_from_argb(uint32_t argb);
+
+// Linear interpolation; t=0 → a, t=1 → b.
+mcp_color_t mcp_color_lerp(mcp_color_t a, mcp_color_t b, float t);
+
+#ifdef __cplusplus
+} // extern "C"
+#endif
