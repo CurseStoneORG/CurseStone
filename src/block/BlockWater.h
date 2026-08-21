@@ -1,5 +1,6 @@
 #pragma once
 #include "BlockLiquid.h"
+#include "BlockIds.h"
 namespace mcppeserver::block {
 class BlockWater : public BlockLiquid {
 public:

@@ -19,6 +19,7 @@
 //   - player chat /slash via Player::handleChat → SimpleCommandMap::dispatch.
 #pragma once
 #include "main.h"
+#include "nbt/tag/Tag.h"               // mcp_tag_t / ::mcp_tag
 #include <string>
 #include <vector>
 #include <memory>
@@ -28,11 +29,10 @@
 
 namespace mcppeserver {
 class Player;
-class Level;
-class Network;
 class CommandMap;
 class CommandReader;
-class Level;
+namespace level { class Level; }   // resolved via `using Level = level::Level;` in main.h
+namespace network { class Network; }
 namespace inventory { class CraftingManager; }
 namespace scheduler { class AsyncPool; }
 namespace permission { class BanList; }
@@ -42,7 +42,9 @@ namespace item     { class Item; }
 
 // Owning shared pointer for an NBT root tag (mcp_tag_t*). Frees via
 // mcp_tag_destroy when the refcount drops to zero. Defined in Server.cpp.
-using NbtPtr = std::shared_ptr<struct mcp_tag>;
+// We use the global ::mcp_tag (typedef of struct mcp_tag) — NOT a nested
+// `mcppeserver::mcp_tag`, because the C API expects `mcp_tag_t*`.
+using NbtPtr = std::shared_ptr<::mcp_tag>;
 
 class Server {
 public:
@@ -83,7 +85,7 @@ public:
     Level* getDefaultLevel() const { return level_.get(); }
     scheduler::AsyncPool* getAsyncPool() const { return async_pool_.get(); }
     CommandMap* getCommandMap() const { return command_map_.get(); }
-    Network* getNetwork() const { return network_.get(); }
+    network::Network* getNetwork() const { return network_.get(); }
 
     // Settings convenience accessors.
     int maxPlayers() const { return max_players_; }
@@ -104,7 +106,7 @@ public:
     void saveOfflinePlayerData(const std::string& name, NbtPtr nbt);
 
 private:
-    Server() = default;
+    Server();
     ~Server();
     Server(const Server&) = delete;
     Server& operator=(const Server&) = delete;
@@ -134,7 +136,7 @@ private:
     int async_workers_ = 4;
 
     // Subsystems (lazily populated in start()).
-    std::shared_ptr<Network> network_;
+    std::shared_ptr<network::Network> network_;
     std::shared_ptr<Level> level_;
     std::shared_ptr<CommandMap> command_map_;
     std::shared_ptr<inventory::CraftingManager> crafting_;

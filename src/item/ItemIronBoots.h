@@ -3,7 +3,7 @@
 namespace mcppeserver::item {
 class ItemIronBoots : public ItemArmor {
 public:
-    ItemIronBOOTS() : ItemArmor(309, ArmorMaterial::ARMOR_IRON, ArmorSlot::BOOTS, 2) {}
+    ItemIronBoots() : ItemArmor(309, ArmorMaterial::ARMOR_IRON, ArmorSlot::BOOTS, 2) {}
     std::string name() const override { return "Iron boots"; }
 };
 } // namespace

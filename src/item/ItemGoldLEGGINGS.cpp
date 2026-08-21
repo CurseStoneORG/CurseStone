@@ -1,2 +1,2 @@
-#include "ItemGoldLEGGINGS.h"
+#include "ItemGoldLeggings.h"
 namespace mcppeserver::item {}

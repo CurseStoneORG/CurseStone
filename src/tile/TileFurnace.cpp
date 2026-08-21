@@ -1,4 +1,5 @@
 #include "TileFurnace.h"
+#include "item/ItemStack.h"
 namespace mcppeserver::tile {
 void TileFurnace::setItem(int /*slot*/, const mcppeserver::item::ItemStack& /*it*/) { dirty_ = true; }
 mcppeserver::item::ItemStack TileFurnace::getItem(int /*slot*/) const {

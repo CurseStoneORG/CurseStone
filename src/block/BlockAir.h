@@ -1,5 +1,6 @@
 #pragma once
 #include "Block.h"
+#include "BlockIds.h"
 namespace mcppeserver::block {
 class BlockAir : public Block {
 public:

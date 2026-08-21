@@ -2,7 +2,7 @@
 // Server singleton implementation (Phase 21 completion).
 #include "Server.h"
 #include "Player.h"
-#include "utils/MainLogger.h"
+#include "utils/MainLogger.hpp"
 #include "utils/Config.h"
 #include "utils/Utils.h"
 #include "command/CommandMap.h"
@@ -44,6 +44,7 @@
 
 namespace mcppeserver {
 
+Server::Server() = default;
 Server::~Server() = default;
 
 void Server::loadConfig() {
@@ -79,7 +80,7 @@ void Server::registerBlocksAndItems() {
 }
 
 void Server::openNetwork() {
-    network_ = std::make_shared<Network>(this);
+    network_ = std::make_shared<network::Network>(this);
     auto rli = std::make_unique<network::RakLibInterface>(this);
     network_->registerInterface(std::move(rli));
     utils::MainLogger::get().info("Network bound to " + ip_ + ":" + std::to_string(port_));

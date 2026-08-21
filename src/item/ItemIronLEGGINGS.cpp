@@ -1,2 +1,2 @@
-#include "ItemIronLEGGINGS.h"
+#include "ItemIronLeggings.h"
 namespace mcppeserver::item {}

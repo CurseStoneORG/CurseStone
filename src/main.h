@@ -48,7 +48,6 @@ class Server;
 class Player;
 class IPlayer;
 class OfflinePlayer;
-class Level;
 class Block;
 class Item;
 class Entity;
@@ -58,6 +57,9 @@ class ServerScheduler;
 class MainLogger;
 
 namespace level       { class Level; class Position; class Location; }
+// Alias so legacy code referencing `mcppeserver::Level` (without the level::
+// qualifier) still works. Both refer to mcppeserver::level::Level.
+using Level = level::Level;
 namespace block       { class Block; }
 namespace item        { class Item; }
 namespace entity      { class Entity; }

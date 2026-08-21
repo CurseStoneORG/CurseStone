@@ -1,9 +1,9 @@
 #pragma once
 #include "ItemArmor.h"
 namespace mcppeserver::item {
-class ItemLeatherLEGGINGS : public ItemArmor {
+class ItemLeatherLeggings : public ItemArmor {
 public:
-    ItemLeatherLEGGINGS() : ItemArmor(300, ArmorMaterial::ARMOR_LEATHER, ArmorSlot::LEGGINGS, 2) {}
+    ItemLeatherLeggings() : ItemArmor(300, ArmorMaterial::ARMOR_LEATHER, ArmorSlot::LEGGINGS, 2) {}
     std::string name() const override { return "Leather leggings"; }
 };
 } // namespace

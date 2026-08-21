@@ -4,7 +4,9 @@
 #pragma once
 #include <cstdint>
 namespace mcppeserver::block {
-enum BlockId : uint8_t {
+// Some block ids (e.g. WOODEN_DOOR_ITEM = 324) exceed 255 — the enum
+// underlying type must be int (default), not uint8_t.
+enum BlockId : int {
     AIR              = 0,
     STONE            = 1,
     GRASS            = 2,

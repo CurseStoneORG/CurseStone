@@ -1,5 +1,6 @@
 #pragma once
 #include "BlockSolid.h"
+#include "BlockIds.h"
 namespace mcppeserver::block {
 class BlockNetherrack : public BlockSolid {
 public:

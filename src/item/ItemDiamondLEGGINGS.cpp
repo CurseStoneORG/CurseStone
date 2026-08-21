@@ -1,2 +1,2 @@
-#include "ItemDiamondLEGGINGS.h"
+#include "ItemDiamondLeggings.h"
 namespace mcppeserver::item {}

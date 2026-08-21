@@ -1,2 +1,2 @@
-#include "ItemDiamondBOOTS.h"
+#include "ItemLeatherBoots.h"
 namespace mcppeserver::item {}

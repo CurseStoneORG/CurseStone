@@ -5,6 +5,7 @@
 namespace mcppeserver::entity {
 class Attribute {
 public:
+    Attribute() = default;
     Attribute(std::string name, float min, float max, float value)
         : name_(std::move(name)), min_(min), max_(max), value_(value) {}
     const std::string& name() const { return name_; }

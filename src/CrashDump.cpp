@@ -1,5 +1,5 @@
 #include "CrashDump.h"
-#include "utils/MainLogger.h"
+#include "utils/MainLogger.hpp"
 #include <fstream>
 #include <chrono>
 #include <iomanip>

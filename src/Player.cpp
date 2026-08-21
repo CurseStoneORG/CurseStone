@@ -27,7 +27,8 @@
 #include "network/protocol/PacketPool.h"
 #include "inventory/PlayerInventory.h"
 #include "permission/BanEntry.h"
-#include "utils/MainLogger.h"
+#include "permission/BanList.h"
+#include "utils/MainLogger.hpp"
 #include "utils/Utils.h"
 #include "level/format/Chunk.h"
 #include "nbt/tag/CompoundTag.h"
@@ -291,25 +292,25 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
 
     // 3. Username validation: [a-zA-Z0-9_]{3,16}, disallow "rcon"/"console".
     if (cfg_.username.size() < 3 || cfg_.username.size() > 16) {
-        close("", "disconnectionScreen.invalidName");
+        close("disconnectionScreen.invalidName");
         return;
     }
     for (char c : cfg_.username) {
         bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
                   (c >= '0' && c <= '9') || c == '_';
-        if (!ok) { close("", "disconnectionScreen.invalidName"); return; }
+        if (!ok) { close("disconnectionScreen.invalidName"); return; }
     }
     std::string lower = cfg_.username;
     std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
     if (lower == "rcon" || lower == "console") {
-        close("", "disconnectionScreen.invalidName");
+        close("disconnectionScreen.invalidName");
         return;
     }
 
     // 4. Skin sanity check (PMMP requires 64*32*4 or 64*64*4 bytes).
     size_t sl = pk.skinData.size();
     if (sl != 64*32*4 && sl != 64*64*4) {
-        close("", "disconnectionScreen.invalidSkin");
+        close("disconnectionScreen.invalidSkin");
         return;
     }
 
@@ -326,12 +327,12 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
 
     // Whitelist + bans
     if (!isWhitelisted()) {
-        close("", "Server is white-listed");
+        close("Server is white-listed");
         return;
     }
     if (srv_ && (srv_->getNameBans().isBanned(cfg_.username) ||
                  srv_->getIPBans().isBanned(cfg_.ip))) {
-        close("", "You are banned");
+        close("You are banned");
         return;
     }
 
@@ -508,6 +509,34 @@ void Player::sendChunksAroundSpawn() {
     doFirstSpawn();
 }
 
+// Helper: parse a "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" UUID string into
+// 16 raw bytes. Empty input yields zeros. Used by AddPlayerPacket / PlayerListPacket.
+static void parseUuidBytes(const std::string& s, std::array<uint8_t,16>& out) {
+    out.fill(0);
+    if (s.empty()) return;
+    size_t bi = 0;
+    auto hexVal = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    };
+    for (size_t i = 0; i + 1 < s.size() && bi < 16; ++i) {
+        char c = s[i];
+        if (c == '-') continue;
+        int hi = hexVal(c);
+        if (hi < 0) continue;
+        // Look for the next hex char (skip dashes).
+        size_t j = i + 1;
+        while (j < s.size() && s[j] == '-') ++j;
+        if (j >= s.size()) break;
+        int lo = hexVal(s[j]);
+        if (lo < 0) continue;
+        out[bi++] = (uint8_t)((hi << 4) | lo);
+        i = j;
+    }
+}
+
 // ============================================================
 // Phase 6 — doFirstSpawn
 // ============================================================
@@ -582,36 +611,6 @@ void Player::doFirstSpawn() {
 
     utils::MainLogger::get().info("First spawn for " + cfg_.username);
 }
-
-// Helper: parse a "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" UUID string into
-// 16 raw bytes. Empty input yields zeros. Used by AddPlayerPacket / PlayerListPacket.
-namespace {
-void parseUuidBytes(const std::string& s, std::array<uint8_t,16>& out) {
-    out.fill(0);
-    if (s.empty()) return;
-    size_t bi = 0;
-    auto hexVal = [](char c) -> int {
-        if (c >= '0' && c <= '9') return c - '0';
-        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-        return -1;
-    };
-    for (size_t i = 0; i + 1 < s.size() && bi < 16; ++i) {
-        char c = s[i];
-        if (c == '-') continue;
-        int hi = hexVal(c);
-        if (hi < 0) continue;
-        // Look for the next hex char (skip dashes).
-        size_t j = i + 1;
-        while (j < s.size() && s[j] == '-') ++j;
-        if (j >= s.size()) break;
-        int lo = hexVal(s[j]);
-        if (lo < 0) continue;
-        out[bi++] = (uint8_t)((hi << 4) | lo);
-        i = j;
-    }
-}
-} // anonymous namespace
 
 // ============================================================
 // Phase 7 — handleMovePlayer (basic validation + broadcast)

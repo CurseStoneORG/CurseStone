@@ -2,8 +2,11 @@
 // is a singleton flyweight (one instance per block id). Mirrors
 // pocketmine/block/Block.php in spirit.
 #pragma once
+#include "main.h"   // math::Vector3 alias
 #include <cstdint>
 #include <string>
+#include <vector>
+#include <memory>
 #include "math/AxisAlignedBB.h"
 #include "level/Position.h"
 namespace mcppeserver::block {

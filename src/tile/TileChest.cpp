@@ -1,4 +1,5 @@
 #include "TileChest.h"
+#include "item/ItemStack.h"
 namespace mcppeserver::tile {
 void TileChest::setItem(int /*slot*/, const mcppeserver::item::ItemStack& /*it*/) {
     dirty_ = true;

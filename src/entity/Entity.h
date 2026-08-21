@@ -2,13 +2,13 @@
 // projectile). Holds the unique runtime id, position, motion, AABB
 // and the level reference. Mirrors pocketmine/entity/Entity.php.
 #pragma once
+#include "main.h"   // brings in the `using Level = level::Level;` alias
 #include <cstdint>
 #include <memory>
 #include "math/Vector3.h"
 #include "math/AxisAlignedBB.h"
 #include "level/Position.h"
 namespace mcppeserver {
-class Level;
 namespace entity {
 class Entity {
 public:

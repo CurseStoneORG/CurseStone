@@ -3,7 +3,7 @@
 namespace mcppeserver::item {
 class ItemGoldHelmet : public ItemArmor {
 public:
-    ItemGoldHELMET() : ItemArmor(314, ArmorMaterial::ARMOR_GOLD, ArmorSlot::HELMET, 2) {}
+    ItemGoldHelmet() : ItemArmor(314, ArmorMaterial::ARMOR_GOLD, ArmorSlot::HELMET, 2) {}
     std::string name() const override { return "Gold helmet"; }
 };
 } // namespace

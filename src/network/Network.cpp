@@ -11,6 +11,7 @@
 #include "protocol/BatchPacket.h"
 #include "protocol/LoginPacket.h"
 #include "protocol/DataPacket.h"
+#include "protocol/PacketPool.h"
 
 #include <sstream>
 #include <iostream>

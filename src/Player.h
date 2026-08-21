@@ -11,21 +11,24 @@
 //   4. Each tick: Player::onUpdate() sends chunk updates, processes input
 //   5. Disconnect: Player::close() saves inventory, sends DisconnectPacket
 #pragma once
+#include "main.h"                          // defines math::Vector3 alias
 #include "IPlayer.h"
 #include "entity/Human.h"
 #include "level/Location.h"
 #include "permission/PermissibleBase.h"
 #include "network/AdvancedSourceInterface.h"
+#include "Server.h"                        // NbtPtr = shared_ptr<mcp_tag>
 #include <memory>
 #include <string>
 #include <atomic>
 #include <mutex>
 #include <unordered_set>
+#include <vector>
 namespace mcppeserver {
 class Server;
-class Level;
 class Network;
 class SourceInterface;
+namespace level { class Level; }
 namespace network::protocol { class DataPacket; class LoginPacket; }
 namespace inventory { class PlayerInventory; }
 

@@ -37,9 +37,12 @@ bool mcp_server_handler_send_encapsulated(mcp_server_handler_t* h,
         }
     }
     if (!s) return false;
-    (void)reliability;
     uint8_t buf[1500];
-    size_t n = mcp_rak_session_build_datagram(s, buf, sizeof(buf), payload, len);
+    // mcp_rak_session_build_datagram requires reliability + order_channel.
+    // RELIABLE_ORDERED = 0b01100000, channel 0 — matches PMMP defaults.
+    size_t n = mcp_rak_session_build_datagram(s, buf, sizeof(buf),
+                                                 payload, len,
+                                                 reliability, /*order_channel=*/0);
     if (n == 0) return false;
     return mcp_server_handler_send_raw(h, ip, port, buf, n);
 }
