@@ -25,8 +25,10 @@ uint64_t mcp_utils_time_ms(void) {
     // Convert to Unix epoch (1970-01-01) milliseconds.
     return (uint64_t)((ul.QuadPart - 116444736000000000ULL) / 10000ULL);
 #else
+    // Use clock_gettime(CLOCK_REALTIME) — POSIX, available on Android API 1+
+    // (NOT timespec_get, which only landed in bionic API 29 / Android 10).
     struct timespec ts;
-    timespec_get(&ts, TIME_UTC);
+    clock_gettime(CLOCK_REALTIME, &ts);
     return (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)(ts.tv_nsec / 1000000);
 #endif
 }
