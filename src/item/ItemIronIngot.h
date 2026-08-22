@@ -1,6 +1,5 @@
 #pragma once
 #include "Item.h"
-#include <string>
 namespace mcppeserver::item {
 class ItemIronIngot : public Item {
 public:

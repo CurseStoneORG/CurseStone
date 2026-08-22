@@ -1,6 +1,5 @@
 #pragma once
 #include "ItemArmor.h"
-#include <string>
 namespace mcppeserver::item {
 class ItemDiamondChestplate : public ItemArmor {
 public:

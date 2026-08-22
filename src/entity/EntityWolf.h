@@ -1,6 +1,5 @@
 #pragma once
 #include "Animal.h"
-#include <string>
 namespace mcppeserver::entity {
 class EntityWolf : public Animal {
 public:

@@ -5,11 +5,13 @@
 #include "Network.h"
 #include "../Server.h"
 #include "../utils/Utils.h"
+#include "../utils/MainLogger.hpp"
 
 #include <sstream>
 #include <cstring>
 #include <iostream>
 #include <cstdio>
+#include <string>
 
 namespace mcppeserver {
 namespace network {
@@ -33,32 +35,48 @@ RakLibInterface::~RakLibInterface() {
 void RakLibInterface::start() {
     if (running_) return;
 
-    // Read config from server (host / port / mtu / motd)
-    const char* host = "0.0.0.0";
-    uint16_t    port = 19132;
-    uint16_t    mtu  = 1492;
+    // Read host/port/motd/max-players from the Server config so the user's
+    // mcppeserver.yml choices actually take effect. Falls back to sensible
+    // defaults if Server is null (shouldn't happen, but defensive).
+    std::string host_str = "0.0.0.0";
+    uint16_t    port     = 19132;
+    std::string motd_str = "MCPPEServer";
+    int         max_players = 20;
+    int         online     = 0;
+    if (server_) {
+        host_str    = server_->ip();
+        port        = server_->port();
+        motd_str    = server_->getMotd();
+        max_players = server_->maxPlayers();
+        online      = (int)server_->players().size();
+    }
+    uint16_t mtu  = 1492;
 
     mcp_raklib_server_init(&raklib_, serverId_, mtu, &instance_);
 
-    // Set server MOTD / name for UNCONNECTED_PONG
-    // Format MCPE uses: "MCCPP;Demo;84;0.15.10;<online>;<max>"
-    // We build it here; Server can update via setServerName().
-    char motd[256];
+    // Set server MOTD / name for UNCONNECTED_PONG.
+    // MCPE 0.15.x (protocol 84) UNCONNECTED_PONG payload format (semicolon-separated):
+    //   MCPE;<motd>;<protocol>;<mcversion>;<online>;<max>;<serverId>;<servername>;<gamemode>
+    char motd[512];
     snprintf(motd, sizeof(motd),
-             "MCCPP;Demo;84;0.15.10;%d;%d;%lld;%s;Survival",
-             0,   // online count (TODO: wire to Server::getOnlinePlayerCount)
-             20,  // max players  (TODO: wire to Server config)
+             "MCPE;%s;84;0.15.10;%d;%d;%lld;%s;Survival",
+             motd_str.c_str(),
+             online,
+             max_players,
              (long long)serverId_,
-             "MCPPEServer");
+             motd_str.c_str());
     mcp_rak_session_manager_set_name(&raklib_.manager, motd);
 
-    if (mcp_raklib_server_start(&raklib_, host, port) != 0) {
-        std::cerr << "[RakLib] Failed to bind " << host << ":" << port << "\n";
+    if (mcp_raklib_server_start(&raklib_, host_str.c_str(), port) != 0) {
+        utils::MainLogger::get().error(
+            std::string("[RakLib] Failed to bind ") + host_str + ":" + std::to_string(port));
         return;
     }
     running_ = true;
-    std::cout << "[RakLib] Listening on " << host << ":" << port
-              << " (Protocol 84 / MCPE 0.15.10)\n";
+    utils::MainLogger::get().info(
+        std::string("[RakLib] Listening on ") + host_str + ":" + std::to_string(port) +
+        " (Protocol 84 / MCPE 0.15.10)");
+    utils::MainLogger::get().info(std::string("[RakLib] MOTD: ") + motd);
 }
 
 void RakLibInterface::shutdown() {

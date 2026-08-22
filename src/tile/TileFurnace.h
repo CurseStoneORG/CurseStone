@@ -7,8 +7,8 @@
 #include "Container.h"
 #include "Nameable.h"
 #include "Spawnable.h"
-#include "item/ItemStack.h"   // required for std::vector<ItemStack> member below
 #include <vector>
+namespace mcppeserver::item { struct ItemStack; }
 namespace mcppeserver::tile {
 class TileFurnace : public Tile, public Container, public Nameable, public Spawnable {
 public:

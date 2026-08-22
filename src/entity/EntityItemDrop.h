@@ -1,6 +1,5 @@
 #pragma once
 #include "Projectile.h"
-#include <string>
 namespace mcppeserver::entity {
 class EntityItemDrop : public Projectile {
 public:

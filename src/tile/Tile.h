@@ -5,7 +5,6 @@
 #pragma once
 #include <cstdint>
 #include <memory>
-#include <string>           // required for std::string id_ and Tile(std::string, ...)
 #include "level/Position.h"
 namespace mcppeserver::tile {
 class Tile {

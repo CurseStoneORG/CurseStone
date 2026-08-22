@@ -82,7 +82,13 @@ void Server::registerBlocksAndItems() {
 void Server::openNetwork() {
     network_ = std::make_shared<network::Network>(this);
     auto rli = std::make_unique<network::RakLibInterface>(this);
+    // Keep a raw pointer so we can call start() after the unique_ptr is moved
+    // into the Network (which takes ownership). start() opens the UDP socket
+    // and registers the MOTD; without it, the server binds nothing and clients
+    // cannot connect.
+    auto* rli_ptr = rli.get();
     network_->registerInterface(std::move(rli));
+    rli_ptr->start();
     utils::MainLogger::get().info("Network bound to " + ip_ + ":" + std::to_string(port_));
 }
 

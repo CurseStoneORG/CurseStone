@@ -1,7 +1,6 @@
 // EntityDeathEvent — entity event.
 #pragma once
 #include "Event.h"
-#include <string>
 #include "Cancellable.h"
 namespace mcppeserver::entity { class Entity; }
 namespace mcppeserver::event::entity {

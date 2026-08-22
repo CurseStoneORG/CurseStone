@@ -1,6 +1,5 @@
 #pragma once
 #include "BlockSolid.h"
-#include <string>
 #include "BlockIds.h"
 namespace mcppeserver::block {
 class BlockStoneBricks : public BlockSolid {
