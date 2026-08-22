@@ -153,13 +153,11 @@ bool LoginPacket::decode(const uint8_t* data, size_t len) {
     if (!inner.skipBytes(chainLen)) return false;
 
     // DEBUG: log chainJson for troubleshooting real client login
-    fprintf(stderr, "[LOGIN-DBG] chainJson(%u): %.500s\n", chainLen, chainJson.c_str());
 
     uint32_t cdLen = 0;
     if (!inner.readU32LE(cdLen)) return false;
     if (cdLen > inner.remaining()) return false;
     clientDataJwt.assign(reinterpret_cast<const char*>(inner.ptr()), cdLen);
-    fprintf(stderr, "[LOGIN-DBG] clientDataJwt(%u): %.200s\n", cdLen, clientDataJwt.c_str());
 
     // Parse chain JWT to extract displayName and identity from extraData.
     // PMMP gets these from the chain, not from clientData.
@@ -181,7 +179,6 @@ bool LoginPacket::decode(const uint8_t* data, size_t len) {
             std::vector<uint8_t> dec;
             if (!base64UrlDecode(pB64, dec)) continue;
             std::string p(dec.begin(), dec.end());
-            fprintf(stderr, "[LOGIN-DBG] JWT payload(%zu): %.300s\n", p.size(), p.c_str());
             if (username.empty()) {
                 auto pos = p.find("\"displayName\"");
                 if (pos != std::string::npos) {
@@ -191,10 +188,8 @@ bool LoginPacket::decode(const uint8_t* data, size_t len) {
                     auto end = p.find('"', pos);
                     if (end != std::string::npos) {
                         username = p.substr(pos, end - pos);
-                        fprintf(stderr, "[LOGIN-DBG] username from chain: '%s'\n", username.c_str());
                     }
                 } else {
-                    fprintf(stderr, "[LOGIN-DBG] displayName NOT found in payload\n");
                 }
             }
             if (clientUUID.empty()) {
