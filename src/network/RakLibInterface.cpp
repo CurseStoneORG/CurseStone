@@ -123,8 +123,8 @@ void RakLibInterface::closeSession(const std::string& ip, uint16_t port,
 
 void RakLibInterface::onOpenSession(const std::string& ip, uint16_t port,
                                      int64_t clientId) {
-    std::cout << "[RakLib] Session opened: " << ip << ":" << port
-              << " (clientId=" << clientId << ")\n";
+    utils::MainLogger::get().info("[RakLib] Session opened: " + ip + ":" +
+        std::to_string(port) + " (clientId=" + std::to_string(clientId) + ")");
     if (server_ && server_->getNetwork()) {
         server_->getNetwork()->onSessionOpen(ip, port, clientId);
     }
@@ -132,8 +132,8 @@ void RakLibInterface::onOpenSession(const std::string& ip, uint16_t port,
 
 void RakLibInterface::onCloseSession(const std::string& ip, uint16_t port,
                                       const std::string& reason) {
-    std::cout << "[RakLib] Session closed: " << ip << ":" << port
-              << " (" << reason << ")\n";
+    utils::MainLogger::get().info("[RakLib] Session closed: " + ip + ":" +
+        std::to_string(port) + " (" + reason + ")");
     if (server_ && server_->getNetwork()) {
         server_->getNetwork()->onSessionClose(ip, port, reason);
     }
@@ -142,8 +142,14 @@ void RakLibInterface::onCloseSession(const std::string& ip, uint16_t port,
 void RakLibInterface::onPacketReceive(const std::string& ip, uint16_t port,
                                        const uint8_t* data, size_t len) {
     // Game packet received from a fully connected client.
-    // The first byte is the MCPE packet ID. Forward to Network, which
-    // will decode BatchPacket, dispatch sub-packets to the right Player.
+    // MCPE clients prepend 0xFE to all game packets. Network::processIncoming
+    // will strip it and decode the BATCH/LoginPacket inside.
+    if (len > 0) {
+        char hex[8];
+        snprintf(hex, sizeof(hex), "%02x", data[0]);
+        utils::MainLogger::get().info("[RakLib] Packet from " + ip + ":" +
+            std::to_string(port) + " id=0x" + hex + " len=" + std::to_string(len));
+    }
     if (server_ && server_->getNetwork()) {
         server_->getNetwork()->processIncoming(ip, port, data, len);
     }

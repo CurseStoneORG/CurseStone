@@ -70,9 +70,18 @@ void Network::processIncoming(const std::string& ip, uint16_t port,
                                 const uint8_t* data, size_t len) {
     if (isBlocked(ip) || !data || len == 0) return;
 
-    // The first byte is the MCPE packet ID. PMMP wraps everything in
-    // BatchPacket (0x06) for compression, but a bare LoginPacket may
-    // arrive in some clients — handle both.
+    // CRITICAL: MCPE clients prepend 0xFE to ALL game packets (BATCH and
+    // non-BATCH) to distinguish them from RakNet control packets. PMMP's
+    // RakLibInterface.php does the same: chr(0xfe) . $packet->buffer.
+    // Without stripping this byte, the BATCH packet (0x06) is never
+    // recognized and the entire login flow silently breaks — the client
+    // can see the MOTD but can never connect, and nothing appears in the
+    // server log.
+    if (data[0] == 0xFE && len > 1) {
+        data++;
+        len--;
+    }
+
     uint8_t pid = data[0];
 
     if (pid == protocol::BATCH_PACKET) {
