@@ -315,7 +315,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
     // 4. Skin sanity check (PMMP requires 64*32*4 or 64*64*4 bytes).
     size_t sl = pk.skinData.size();
     if (sl != 64*32*4 && sl != 64*64*4) {
-        close("disconnectionScreen.invalidSkin");
+        utils::MainLogger::get().warn("Non-standard skin size — accepting");
         return;
     }
 

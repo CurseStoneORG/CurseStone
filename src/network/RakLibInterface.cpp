@@ -55,17 +55,13 @@ void RakLibInterface::start() {
     mcp_raklib_server_init(&raklib_, serverId_, mtu, &instance_);
 
     // Set server MOTD / name for UNCONNECTED_PONG.
-    // MCPE 0.15.10 (protocol 84) UNCONNECTED_PONG expects exactly 6 fields:
-    //   MCPE;<motd>;<protocol>;<mcversion>;<online>;<max>
-    // Extra fields (serverID, gamemode) cause the client to ignore the pong
-    // and never show the server in the LAN list.
-    // Reference: PMMP RakLibInterface.php -> "MCPE;" . $name . ";" . PROTOCOL . ";" . "" . ";" . $poc . ";" . $pc
+    // MCPE 0.15.10 (protocol 84) expects exactly 6 semicolon-separated fields,
+    // matching PMMP RakLibInterface.php:
+    //   MCPE;<motd>;<protocol>;<version>;<online>;<max>
     char motd[512];
     snprintf(motd, sizeof(motd),
              "MCPE;%s;84;0.15.10;%d;%d",
-             motd_str.c_str(),
-             online,
-             max_players);
+             motd_str.c_str(), online, max_players);
     mcp_rak_session_manager_set_name(&raklib_.manager, motd);
 
     if (mcp_raklib_server_start(&raklib_, host_str.c_str(), port) != 0) {

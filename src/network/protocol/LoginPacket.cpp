@@ -93,7 +93,7 @@ bool LoginPacket::decode(const uint8_t* data, size_t len) {
     // appropriate PlayStatusPacket (LOGIN_FAILED_CLIENT / _SERVER).
     if (protocol != CURRENT_PROTOCOL) return true;
 
-    if (!r.readU8(edition)) return false;
+    
 
     // outerPayload length (BE int32) and zlib-compressed payload.
     uint32_t outerLen = 0;
@@ -153,6 +153,52 @@ bool LoginPacket::decode(const uint8_t* data, size_t len) {
     if (cdLen > inner.remaining()) return false;
     clientDataJwt.assign(reinterpret_cast<const char*>(inner.ptr()), cdLen);
 
+    // Parse chain JWT to extract displayName and identity from extraData.
+    // PMMP gets these from the chain, not from clientData.
+    {
+        size_t search = 0;
+        while (search < chainJson.size()) {
+            size_t s = chainJson.find('\"', search);
+            if (s == std::string::npos) break;
+            s++;
+            size_t e = chainJson.find('\"', s);
+            if (e == std::string::npos) break;
+            std::string jwt = chainJson.substr(s, e - s);
+            search = e + 1;
+            auto d1 = jwt.find('.');
+            if (d1 == std::string::npos) continue;
+            auto d2 = jwt.find('.', d1 + 1);
+            if (d2 == std::string::npos) continue;
+            std::string pB64 = jwt.substr(d1 + 1, d2 - d1 - 1);
+            std::vector<uint8_t> dec;
+            if (!base64UrlDecode(pB64, dec)) continue;
+            std::string p(dec.begin(), dec.end());
+            if (username.empty()) {
+                auto pos = p.find('\"displayName\"');
+                if (pos != std::string::npos) {
+                    pos += 14;
+                    while (pos < p.size() && (p[pos] == ' ' || p[pos] == ':')) pos++;
+                    if (pos < p.size() && p[pos] == '"') pos++;
+                    auto end = p.find('"', pos);
+                    if (end != std::string::npos)
+                        username = p.substr(pos, end - pos);
+                }
+            }
+            if (clientUUID.empty()) {
+                auto pos = p.find('\"identity\"');
+                if (pos != std::string::npos) {
+                    pos += 11;
+                    while (pos < p.size() && (p[pos] == ' ' || p[pos] == ':')) pos++;
+                    if (pos < p.size() && p[pos] == '"') pos++;
+                    auto end = p.find('"', pos);
+                    if (end != std::string::npos)
+                        clientUUID = p.substr(pos, end - pos);
+                }
+            }
+            if (!username.empty() && !clientUUID.empty()) break;
+        }
+    }
+
     parseClientDataPayload();
     return true;
 }
@@ -169,10 +215,12 @@ void LoginPacket::parseClientDataPayload() {
     if (!base64UrlDecode(payloadB64, decoded)) return;
     std::string payload(decoded.begin(), decoded.end());
 
-    username      = extractJsonString(payload, "DisplayName");
-    if (username.empty()) username = extractJsonString(payload, "displayName");
-    clientUUID    = extractJsonString(payload, "Identity");
-    if (clientUUID.empty()) clientUUID = extractJsonString(payload, "identity");
+    std::string cd_user = extractJsonString(payload, "DisplayName");
+    if (cd_user.empty()) cd_user = extractJsonString(payload, "displayName");
+    if (!cd_user.empty()) username = cd_user;
+    std::string cd_uuid = extractJsonString(payload, "Identity");
+    if (cd_uuid.empty()) cd_uuid = extractJsonString(payload, "identity");
+    if (!cd_uuid.empty()) clientUUID = cd_uuid;
     skinId        = extractJsonString(payload, "SkinId");
     languageCode  = extractJsonString(payload, "LanguageCode");
     deviceModel   = extractJsonString(payload, "DeviceModel");
