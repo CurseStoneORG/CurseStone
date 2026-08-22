@@ -39,7 +39,7 @@ bool mcp_server_handler_send_encapsulated(mcp_server_handler_t* h,
     if (!s) return false;
     uint8_t buf[1500];
     // mcp_rak_session_build_datagram requires reliability + order_channel.
-    // RELIABLE_ORDERED = 0b01100000, channel 0 — matches PMMP defaults.
+    // RELIABLE_ORDERED = 3 (matches PMMP defaults). Channel 0.
     size_t n = mcp_rak_session_build_datagram(s, buf, sizeof(buf),
                                                  payload, len,
                                                  reliability, /*order_channel=*/0);

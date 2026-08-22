@@ -42,8 +42,6 @@ namespace item     { class Item; }
 
 // Owning shared pointer for an NBT root tag (mcp_tag_t*). Frees via
 // mcp_tag_destroy when the refcount drops to zero. Defined in Server.cpp.
-// We use the global ::mcp_tag (typedef of struct mcp_tag) — NOT a nested
-// `mcppeserver::mcp_tag`, because the C API expects `mcp_tag_t*`.
 using NbtPtr = std::shared_ptr<::mcp_tag>;
 
 class Server {

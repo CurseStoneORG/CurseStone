@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <memory>
 #include <span>
+#include <string>           // required because writeBEString/writeString take const std::string&
 
 namespace mcppeserver::network::protocol {
 

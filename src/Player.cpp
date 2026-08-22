@@ -509,6 +509,10 @@ void Player::sendChunksAroundSpawn() {
     doFirstSpawn();
 }
 
+// ============================================================
+// Phase 6 — doFirstSpawn
+// ============================================================
+
 // Helper: parse a "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" UUID string into
 // 16 raw bytes. Empty input yields zeros. Used by AddPlayerPacket / PlayerListPacket.
 static void parseUuidBytes(const std::string& s, std::array<uint8_t,16>& out) {
@@ -536,10 +540,6 @@ static void parseUuidBytes(const std::string& s, std::array<uint8_t,16>& out) {
         i = j;
     }
 }
-
-// ============================================================
-// Phase 6 — doFirstSpawn
-// ============================================================
 void Player::doFirstSpawn() {
     if (spawned_.exchange(true)) return;   // idempotent
 
@@ -611,6 +611,10 @@ void Player::doFirstSpawn() {
 
     utils::MainLogger::get().info("First spawn for " + cfg_.username);
 }
+
+// Helper: parse a "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" UUID string into
+// 16 raw bytes. Empty input yields zeros. Used by AddPlayerPacket / PlayerListPacket.
+// (Moved above doFirstSpawn; see earlier definition.)
 
 // ============================================================
 // Phase 7 — handleMovePlayer (basic validation + broadcast)
