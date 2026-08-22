@@ -62,6 +62,7 @@ void Server::loadConfig() {
     difficulty_    = cfg.getInt("server.difficulty", 1);
     whitelist_     = cfg.getBool("server.whitelist", false);
     online_mode_   = cfg.getBool("server.online-mode", false);
+    advanced_log_  = cfg.getBool("server.advanced-log", true);
     view_distance_ = cfg.getInt("server.view-distance", 8);
     async_workers_  = cfg.getInt("settings.async-workers", 4);
 }
