@@ -1,15 +1,17 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // RakLibServer.c. Pure C.
 #include "RakLibServer.h"
-
 #include <string.h>
 
 int mcp_raklib_server_init(mcp_raklib_server_t* s, int64_t server_id,
                               uint16_t mtu, void* instance_impl) {
     if (!s) return -1;
+    mcp_server_instance_t* src_instance = (mcp_server_instance_t*)instance_impl;
     memset(s, 0, sizeof(*s));
     s->server_id = server_id;
-    s->instance.impl = instance_impl;
+    if (src_instance) {
+        s->instance = *src_instance;
+    }
     mcp_rak_session_manager_init(&s->manager, server_id, mtu, &s->instance);
     mcp_server_handler_init(&s->handler, &s->manager);
     s->running = false;

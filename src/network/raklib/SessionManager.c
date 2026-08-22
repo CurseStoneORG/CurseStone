@@ -171,7 +171,8 @@ static void write_u64_be(uint8_t* b, size_t* oi, uint64_t v) {
     for (int s = 56; s >= 0; s -= 8) b[(*oi)++] = (uint8_t)(v >> s);
 }
 static void write_u64_le(uint8_t* b, size_t* oi, uint64_t v) {
-    for (int k = 0; k < 8; ++k) b[(*oi)++] = (uint8_t)(v >> (k * 8));
+    for (int k = 0; k < 8; ++k)
+        b[(*oi)++] = (uint8_t)(v >> (k * 8));
 }
 static void write_i64_be(uint8_t* b, size_t* oi, int64_t v) {
     write_u64_be(b, oi, (uint64_t)v);
@@ -223,7 +224,8 @@ static uint64_t rb_u64_be(const uint8_t* b, size_t len, size_t* i) {
 static uint64_t rb_u64_le(const uint8_t* b, size_t len, size_t* i) {
     if (*i + 8 > len) return 0;
     uint64_t v = 0;
-    for (int k = 0; k < 8; ++k) v |= (uint64_t)b[(*i)++] << (k * 8);
+    for (int k = 0; k < 8; ++k)
+        v |= (uint64_t)b[(*i)++] << (k * 8);
     return v;
 }
 static int64_t rb_i64_be(const uint8_t* b, size_t len, size_t* i) {
@@ -257,14 +259,16 @@ static size_t build_ack_pkt(uint8_t* out, size_t cap,
 
 // =========================================================================
 // Build UNCONNECTED_PONG (0x1c)
-// Format: [0x1c][time u64][serverID u64][magic 16][name rakstring]
+// Format: [0x1c][time u64 LE][serverID u64 BE][magic 16][name rakstring]
+// PMMP writes ping_time as LE (getLong = LE), server_id as BE (getLong = BE
+// only for server fields). Mirror that exactly.
 // =========================================================================
 static size_t build_unconnected_pong(uint8_t* out, size_t cap,
                                       uint64_t ping_time, int64_t server_id,
                                       const char* name) {
     size_t oi = 0;
     out[oi++] = 0x1c;
-    write_u64_le(out, &oi, ping_time); // LE — matches PMMP getLong()/putLong() (little-endian)
+    write_u64_le(out, &oi, ping_time);
     write_u64_be(out, &oi, (uint64_t)server_id);
     write_magic(out, &oi);
     write_rakstring(out, &oi, name);
@@ -682,7 +686,7 @@ static void handle_unconnected(mcp_rak_session_manager_t* sm,
     if (pid == 0x01 || pid == 0x02) {
         if (len < 17) return;
         size_t pi = 1;
-        uint64_t ping_time = rb_u64_le(data, len, &pi); // LE — matches PMMP getLong()
+        uint64_t ping_time = rb_u64_le(data, len, &pi);
         out_len = build_unconnected_pong(out, sizeof(out),
                                           ping_time, sm->server_id,
                                           sm->server_name);
