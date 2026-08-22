@@ -20,12 +20,15 @@ namespace mcppeserver::network::protocol {
 
 // ---- Minimal base64url decoder (no padding) ----
 static bool base64UrlDecode(const std::string& in, std::vector<uint8_t>& out) {
+    // Accept BOTH base64url (- _) and standard base64 (+ /).
+    // MCPE 0.15.10 real client uses standard base64 in JWTs, while
+    // the bot uses base64url. We must handle both.
     auto lookup = [](char c) -> int {
         if (c >= 'A' && c <= 'Z') return c - 'A';
         if (c >= 'a' && c <= 'z') return c - 'a' + 26;
         if (c >= '0' && c <= '9') return c - '0' + 52;
-        if (c == '-') return 62;
-        if (c == '_') return 63;
+        if (c == '-' || c == '+') return 62;   // base64url OR standard
+        if (c == '_' || c == '/') return 63;   // base64url OR standard
         return -1;
     };
     uint32_t buf = 0;
