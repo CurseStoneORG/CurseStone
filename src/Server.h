@@ -1,0 +1,150 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// Server — singleton. Mirrors pocketmine/Server.php.
+//
+// Responsibilities:
+//   1. Boot: load mcppeserver.yml, init logger, register blocks/items,
+//      create CommandMap + register default commands, create the
+//      default Level (overworld), open the RakLibInterface.
+//   2. Tick (every 50ms): advance scheduler, tick level(s), tick
+//      players, drain RakLib→main FIFO, advance time.
+//   3. Shutdown: disconnect all players, save level(s), close network.
+//
+// Player roster + broadcasting:
+//   - players() returns the list of online Players (read-only).
+//   - broadcastMessage() sends a TextPacket to every player.
+//   - removePlayer() unregisters a closed Player.
+//
+// Command processing:
+//   - console input via CommandReader thread → SimpleCommandMap::dispatch.
+//   - player chat /slash via Player::handleChat → SimpleCommandMap::dispatch.
+#pragma once
+#include "main.h"
+#include "nbt/tag/Tag.h"               // mcp_tag_t / ::mcp_tag
+#include <string>
+#include <vector>
+#include <memory>
+#include <atomic>
+#include <unordered_map>
+#include <cstdint>
+
+namespace mcppeserver {
+class Player;
+class CommandMap;
+class CommandReader;
+namespace level { class Level; }   // resolved via `using Level = level::Level;` in main.h
+namespace network { class Network; }
+namespace inventory { class CraftingManager; }
+namespace scheduler { class AsyncPool; }
+namespace permission { class BanList; }
+namespace nbt        { namespace tag { struct CompoundTag; } }   // C struct
+namespace block    { void register_all_blocks(); }
+namespace item     { class Item; }
+
+// Owning shared pointer for an NBT root tag (mcp_tag_t*). Frees via
+// mcp_tag_destroy when the refcount drops to zero. Defined in Server.cpp.
+using NbtPtr = std::shared_ptr<::mcp_tag>;
+
+class Server {
+public:
+    static Server& getInstance() {
+        static Server instance;
+        return instance;
+    }
+
+    // Boot the server. Called from main.cpp.
+    void start(const std::string& dataPath);
+
+    // Run the main tick loop (blocks until shutdown()).
+    void runTickLoop();
+
+    // Advance one tick. Dispatches to scheduler, network, level, players.
+    void tick();
+
+    // Cleanly shut down: disconnect players, save level, close sockets.
+    void shutdown();
+
+    bool isRunning() const { return running_.load(std::memory_order_relaxed); }
+    const std::string& getDataPath() const { return dataPath_; }
+    uint64_t getCurrentTick() const { return currentTick_; }
+    int getTPS() const { return tps_; }
+
+    // Player roster.
+    std::vector<std::shared_ptr<Player>>& players() { return players_; }
+    const std::vector<std::shared_ptr<Player>>& players() const { return players_; }
+    Player* getPlayer(const std::string& name) const;
+    void addPlayer(std::shared_ptr<Player> p);
+    void removePlayer(Player* p);
+
+    // Broadcast helpers.
+    void broadcastMessage(const std::string& msg);
+    void broadcastPacket(/* DataPacket */ void* p);
+
+    // Level + scheduler + network accessors.
+    Level* getDefaultLevel() const { return level_.get(); }
+    scheduler::AsyncPool* getAsyncPool() const { return async_pool_.get(); }
+    CommandMap* getCommandMap() const { return command_map_.get(); }
+    network::Network* getNetwork() const { return network_.get(); }
+
+    // Settings convenience accessors.
+    int maxPlayers() const { return max_players_; }
+    int viewDistance() const { return view_distance_; }
+    int gamemode() const { return gamemode_; }
+    int difficulty() const { return difficulty_; }
+    bool whitelistEnabled() const { return whitelist_; }
+    bool onlineMode() const { return online_mode_; }
+    std::string getMotd() const { return motd_; }
+
+    // Ban lists (lazily-initialized singletons).
+    permission::BanList& getNameBans();
+    permission::BanList& getIPBans();
+
+    // Offline player data: load/save NBT blobs from "<dataPath>/players/<name>.dat".
+    // Returns nullptr if the player has never played before.
+    NbtPtr getOfflinePlayerData(const std::string& name);
+    void saveOfflinePlayerData(const std::string& name, NbtPtr nbt);
+
+private:
+    Server();
+    ~Server();
+    Server(const Server&) = delete;
+    Server& operator=(const Server&) = delete;
+
+    void loadConfig();
+    void initLogger();
+    void registerBlocksAndItems();
+    void openNetwork();
+    void loadDefaultLevel();
+    void startCommandReader();
+
+    std::string dataPath_;
+    std::atomic<bool> running_{false};
+    uint64_t currentTick_{0};
+    int tps_ = 20;
+
+    // Config (mirrors resources/mcppeserver.yml).
+    std::string ip_ = "0.0.0.0";
+    uint16_t port_ = 19132;
+    std::string motd_ = "MCPPEServer";
+    int max_players_ = 20;
+    int view_distance_ = 8;
+    int gamemode_ = 0;
+    int difficulty_ = 1;
+    bool whitelist_ = false;
+    bool online_mode_ = false;
+    int async_workers_ = 4;
+
+    // Subsystems (lazily populated in start()).
+    std::shared_ptr<network::Network> network_;
+    std::shared_ptr<Level> level_;
+    std::shared_ptr<CommandMap> command_map_;
+    std::shared_ptr<inventory::CraftingManager> crafting_;
+    std::shared_ptr<scheduler::AsyncPool> async_pool_;
+    std::unique_ptr<CommandReader> console_reader_;
+    std::vector<std::shared_ptr<Player>> players_;
+
+    // Lazy-init ban lists.
+    std::unique_ptr<permission::BanList> name_bans_;
+    std::unique_ptr<permission::BanList> ip_bans_;
+};
+
+} // namespace mcppeserver

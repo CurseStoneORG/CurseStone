@@ -1,0 +1,118 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// UDPServerSocket.c — POSIX + Winsock2 implementation. Pure C.
+#include "UDPServerSocket.h"
+
+#include <string.h>
+#include <errno.h>
+
+#ifdef _WIN32
+#  include <winsock2.h>
+#  include <ws2tcpip.h>
+#  pragma comment(lib, "ws2_32.lib")
+typedef int socklen_t;
+typedef int ssize_t_sock; // not standard; use below
+#  define CLOSE_SOCKET closesocket
+#  define SOCK_ERRNO  WSAGetLastError()
+#  define SOCK_AGAIN  WSAEWOULDBLOCK
+static int winsock_initialized = 0;
+static void ensure_winsock(void) {
+    if (winsock_initialized) return;
+    WSADATA wsa;
+    WSAStartup(MAKEWORD(2, 2), &wsa);
+    winsock_initialized = 1;
+}
+#else
+#  include <sys/socket.h>
+#  include <netinet/in.h>
+#  include <arpa/inet.h>
+#  include <unistd.h>
+#  include <fcntl.h>
+#  define CLOSE_SOCKET close
+#  define SOCK_ERRNO  errno
+#  define SOCK_AGAIN  EAGAIN
+static void ensure_winsock(void) {}
+#endif
+
+int mcp_udp_socket_open(mcp_udp_socket_t* s, const char* host, uint16_t port) {
+    if (!s) return -1;
+    ensure_winsock();
+    s->fd = (int)socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (s->fd < 0) return -1;
+
+    // Allow address reuse.
+    int yes = 1;
+    setsockopt(s->fd, SOL_SOCKET, SO_REUSEADDR, (const char*)&yes, sizeof(yes));
+
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    if (!host || host[0] == '\0' || strcmp(host, "0.0.0.0") == 0) {
+        addr.sin_addr.s_addr = INADDR_ANY;
+    } else {
+        inet_pton(AF_INET, host, &addr.sin_addr);
+    }
+    if (bind(s->fd, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
+        CLOSE_SOCKET(s->fd);
+        s->fd = -1;
+        return -1;
+    }
+    s->blocking = true;
+    return 0;
+}
+
+void mcp_udp_socket_close(mcp_udp_socket_t* s) {
+    if (!s || s->fd < 0) return;
+    CLOSE_SOCKET(s->fd);
+    s->fd = -1;
+}
+
+void mcp_udp_socket_set_blocking(mcp_udp_socket_t* s, bool blocking) {
+    if (!s || s->fd < 0) return;
+#ifdef _WIN32
+    u_long mode = blocking ? 0 : 1;
+    ioctlsocket(s->fd, FIONBIO, &mode);
+#else
+    int flags = fcntl(s->fd, F_GETFL, 0);
+    if (blocking) {
+        fcntl(s->fd, F_SETFL, flags & ~O_NONBLOCK);
+    } else {
+        fcntl(s->fd, F_SETFL, flags | O_NONBLOCK);
+    }
+#endif
+    s->blocking = blocking;
+}
+
+ssize_t mcp_udp_socket_recv(mcp_udp_socket_t* s,
+                              void* buf, size_t cap,
+                              uint8_t* src_ip, uint16_t* src_port) {
+    if (!s || s->fd < 0 || !buf || cap == 0) return -1;
+    struct sockaddr_in from;
+    socklen_t fromLen = sizeof(from);
+    ssize_t n = recvfrom(s->fd, (char*)buf, (int)cap, 0,
+                         (struct sockaddr*)&from, &fromLen);
+    if (n < 0) {
+        if (SOCK_ERRNO == SOCK_AGAIN) return -EAGAIN;
+        return -1;
+    }
+    if (src_ip) {
+        memcpy(src_ip, &from.sin_addr.s_addr, 4);
+    }
+    if (src_port) {
+        *src_port = ntohs(from.sin_port);
+    }
+    return n;
+}
+
+ssize_t mcp_udp_socket_send(mcp_udp_socket_t* s,
+                              const void* buf, size_t len,
+                              const uint8_t* dst_ip, uint16_t dst_port) {
+    if (!s || s->fd < 0 || !buf || len == 0 || !dst_ip) return -1;
+    struct sockaddr_in to;
+    memset(&to, 0, sizeof(to));
+    to.sin_family = AF_INET;
+    to.sin_port = htons(dst_port);
+    memcpy(&to.sin_addr.s_addr, dst_ip, 4);
+    return sendto(s->fd, (const char*)buf, (int)len, 0,
+                   (struct sockaddr*)&to, sizeof(to));
+}

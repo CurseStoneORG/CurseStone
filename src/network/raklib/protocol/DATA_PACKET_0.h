@@ -1,0 +1,29 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// AUTO-GENERATED. RakNet packet DATA_PACKET_0. Pure C.
+#pragma once
+#include "Packet.h"
+#include "../../../utils/BinaryStream.h"
+#include <stdint.h>
+#include <stddef.h>
+#include <stdbool.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct mcp_pkt_data_packet_0 {
+    mcp_packet_t header;
+    
+    uint32_t sequence;          // 24-bit LEB128 sequence number
+    bool     is_ordered;        // packet reliability has ordering flag
+    bool     needs_ack;        // set when this datagram requires ACK
+    uint8_t* payload;
+    size_t   payload_len;
+
+} mcp_pkt_data_packet_0_t;
+
+mcp_packet_t* mcp_pkt_data_packet_0_new(void);
+
+#ifdef __cplusplus
+}
+#endif

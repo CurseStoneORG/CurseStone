@@ -1,0 +1,178 @@
+name: Build MCPPEServer
+
+on:
+  push:
+    branches: [ main, master, dev ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  # ─────────────────────────────────────────────
+  # Job 1: Linux x86_64 (Ubuntu) — más rápido, sirve para verificar que compila
+  # ─────────────────────────────────────────────
+  build-linux:
+    name: Linux x86_64
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Instalar dependencias
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            cmake ninja-build \
+            gcc-12 g++-12 \
+            zlib1g-dev \
+            libleveldb-dev \
+            libsnappy-dev
+
+      - name: Seleccionar GCC 12
+        run: |
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100
+          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100
+
+      - name: Configure (Release)
+        run: |
+          cmake -B build/linux-release \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_STANDARD=23 \
+            -DCMAKE_CXX_STANDARD=20
+
+      - name: Build
+        run: cmake --build build/linux-release --parallel
+
+      - name: Subir binario Linux
+        uses: actions/upload-artifact@v4
+        with:
+          name: MCPPEServer-linux-x86_64
+          path: build/linux-release/MCPPEServer
+          retention-days: 7
+
+  # ─────────────────────────────────────────────
+  # Job 2: Android ARM64 (NDK r26c) — el que te sirve en Termux/Android
+  # ─────────────────────────────────────────────
+  build-android-arm64:
+    name: Android ARM64
+    runs-on: ubuntu-22.04
+
+    env:
+      NDK_VERSION: r26c
+      ANDROID_API: 24
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Instalar dependencias del host
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y cmake ninja-build unzip wget
+
+      - name: Descargar Android NDK ${{ env.NDK_VERSION }}
+        run: |
+          wget -q "https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip" \
+            -O /tmp/ndk.zip
+          unzip -q /tmp/ndk.zip -d /opt
+          echo "NDK_HOME=/opt/android-ndk-${NDK_VERSION}" >> $GITHUB_ENV
+
+      - name: Compilar zlib para ARM64
+        run: |
+          cd /tmp
+          # zlib.net a veces bloquea o cambia URLs; usamos GitHub releases que es estable.
+          wget -q https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz
+          tar xf zlib-1.3.1.tar.gz
+          cd zlib-1.3.1
+
+          # Cross-compile con el toolchain del NDK
+          TOOLCHAIN=$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64
+          AR=$TOOLCHAIN/bin/llvm-ar \
+          CC=$TOOLCHAIN/bin/aarch64-linux-android${ANDROID_API}-clang \
+          ./configure \
+            --prefix=/opt/zlib-arm64 \
+            --static \
+            --archs="-arch arm64"
+          make -j$(nproc) install
+
+      - name: Compilar LevelDB para ARM64
+        run: |
+          cd /tmp
+          git clone --depth=1 https://github.com/google/leveldb.git
+          cd leveldb
+          git submodule update --init --recursive
+
+          TOOLCHAIN=$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64
+
+          cmake -B build-arm64 \
+            -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE=$NDK_HOME/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-${ANDROID_API} \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLEVELDB_BUILD_TESTS=OFF \
+            -DLEVELDB_BUILD_BENCHMARKS=OFF \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DCMAKE_INSTALL_PREFIX=/opt/leveldb-arm64
+
+          cmake --build build-arm64 --parallel
+          cmake --install build-arm64
+
+      - name: Configure MCPPEServer para ARM64
+        run: |
+          cmake -B build/android-arm64 \
+            -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE=$NDK_HOME/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-${{ env.ANDROID_API }} \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_STANDARD=23 \
+            -DCMAKE_CXX_STANDARD=20 \
+            -DZLIB_ROOT=/opt/zlib-arm64 \
+            -DZLIB_INCLUDE_DIR=/opt/zlib-arm64/include \
+            -DZLIB_LIBRARY=/opt/zlib-arm64/lib/libz.a \
+            -DLEVELDB_INCLUDE_DIRS=/opt/leveldb-arm64/include \
+            -DLEVELDB_LIBRARIES=/opt/leveldb-arm64/lib/libleveldb.a
+
+      - name: Build
+        run: cmake --build build/android-arm64 --parallel
+
+      - name: Subir binario ARM64
+        uses: actions/upload-artifact@v4
+        with:
+          name: MCPPEServer-android-arm64
+          path: build/android-arm64/MCPPEServer
+          retention-days: 14
+
+  # ─────────────────────────────────────────────
+  # Job 3: Release automático cuando pushas un tag vX.X.X
+  # ─────────────────────────────────────────────
+  release:
+    name: Crear Release
+    runs-on: ubuntu-22.04
+    needs: [ build-linux, build-android-arm64 ]
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Descargar artefactos
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+
+      - name: Renombrar binarios
+        run: |
+          mv dist/MCPPEServer-linux-x86_64/MCPPEServer   dist/MCPPEServer-linux-x86_64
+          mv dist/MCPPEServer-android-arm64/MCPPEServer  dist/MCPPEServer-android-arm64
+
+      - name: Publicar Release en GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/MCPPEServer-linux-x86_64
+            dist/MCPPEServer-android-arm64
+          generate_release_notes: true

@@ -1,0 +1,11 @@
+#pragma once
+#include "Animal.h"
+#include <string>
+namespace mcppeserver::entity {
+class EntityCow : public Animal {
+public:
+    using Animal::Animal;
+    EntityCow(int64_t rid, std::shared_ptr<Level> l) : Animal(rid, std::move(l)) { setNetworkId(11); }
+    std::string name() const { return "Cow"; }
+};
+} // namespace
