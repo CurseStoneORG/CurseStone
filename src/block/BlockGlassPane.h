@@ -1,6 +1,5 @@
 #pragma once
 #include "BlockTransparent.h"
-#include <string>
 #include "BlockIds.h"
 namespace mcppeserver::block {
 class BlockGlassPane : public BlockTransparent {

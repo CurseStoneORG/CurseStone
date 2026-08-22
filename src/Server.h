@@ -92,6 +92,8 @@ public:
     int difficulty() const { return difficulty_; }
     bool whitelistEnabled() const { return whitelist_; }
     bool onlineMode() const { return online_mode_; }
+    const std::string& ip() const { return ip_; }
+    uint16_t port() const { return port_; }
     std::string getMotd() const { return motd_; }
 
     // Ban lists (lazily-initialized singletons).

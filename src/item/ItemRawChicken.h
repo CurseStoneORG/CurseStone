@@ -1,6 +1,5 @@
 #pragma once
 #include "ItemFood.h"
-#include <string>
 namespace mcppeserver::item {
 class ItemRawChicken : public ItemFood {
 public:

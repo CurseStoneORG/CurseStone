@@ -1,7 +1,6 @@
 // BlockBurnEvent — block event.
 #pragma once
 #include "Event.h"
-#include <string>
 #include "Cancellable.h"
 #include "math/Vector3.h"
 namespace mcppeserver { class Player; }
