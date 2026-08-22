@@ -166,9 +166,14 @@ void Player::sendPacket(std::shared_ptr<network::protocol::DataPacket> p) {
     batch.encode(batchBody);
     if (batchBody.empty()) return;
 
-    // Prepend the BatchPacket ID byte.
+    // CRITICAL: MCPE clients expect ALL game packets to start with 0xFE.
+    // PMMP RakLibInterface.php: chr(0xfe) . $packet->buffer.
+    // Without this byte the client silently drops every packet from the
+    // server (PlayStatus, StartGame, chunks, etc.) — the player sees
+    // "Connecting..." forever and eventually times out.
     std::vector<uint8_t> wire;
-    wire.push_back(network::protocol::BATCH_PACKET);
+    wire.push_back(0xFE);                          // game-packet indicator
+    wire.push_back(network::protocol::BATCH_PACKET); // 0x06
     wire.insert(wire.end(), batchBody.begin(), batchBody.end());
 
     adv_iface_->sendRawPacket(cfg_.ip, cfg_.port, wire);
