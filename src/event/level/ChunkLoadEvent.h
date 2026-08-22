@@ -1,6 +1,7 @@
 // ChunkLoadEvent — level event.
 #pragma once
 #include "Event.h"
+#include <string>
 namespace mcppeserver::level { class Level; }
 namespace mcppeserver::event::level {
 class ChunkLoadEvent : public Event {

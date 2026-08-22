@@ -1,5 +1,6 @@
 #pragma once
 #include "CommandSender.h"
+#include <string>
 namespace mcppeserver {
 class ConsoleCommandSender : public CommandSender {
 public:
