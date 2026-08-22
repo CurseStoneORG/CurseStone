@@ -170,6 +170,9 @@ static void write_u24_le(uint8_t* b, size_t* oi, uint32_t v) {
 static void write_u64_be(uint8_t* b, size_t* oi, uint64_t v) {
     for (int s = 56; s >= 0; s -= 8) b[(*oi)++] = (uint8_t)(v >> s);
 }
+static void write_u64_le(uint8_t* b, size_t* oi, uint64_t v) {
+    for (int k = 0; k < 8; ++k) b[(*oi)++] = (uint8_t)(v >> (k * 8));
+}
 static void write_i64_be(uint8_t* b, size_t* oi, int64_t v) {
     write_u64_be(b, oi, (uint64_t)v);
 }
@@ -217,6 +220,12 @@ static uint64_t rb_u64_be(const uint8_t* b, size_t len, size_t* i) {
     for (int s = 56; s >= 0; s -= 8) v |= ((uint64_t)b[(*i)++] << s);
     return v;
 }
+static uint64_t rb_u64_le(const uint8_t* b, size_t len, size_t* i) {
+    if (*i + 8 > len) return 0;
+    uint64_t v = 0;
+    for (int k = 0; k < 8; ++k) v |= (uint64_t)b[(*i)++] << (k * 8);
+    return v;
+}
 static int64_t rb_i64_be(const uint8_t* b, size_t len, size_t* i) {
     return (int64_t)rb_u64_be(b, len, i);
 }
@@ -255,7 +264,7 @@ static size_t build_unconnected_pong(uint8_t* out, size_t cap,
                                       const char* name) {
     size_t oi = 0;
     out[oi++] = 0x1c;
-    write_u64_be(out, &oi, ping_time);
+    write_u64_le(out, &oi, ping_time); // LE — matches PMMP getLong()/putLong() (little-endian)
     write_u64_be(out, &oi, (uint64_t)server_id);
     write_magic(out, &oi);
     write_rakstring(out, &oi, name);
@@ -672,7 +681,8 @@ static void handle_unconnected(mcp_rak_session_manager_t* sm,
     // ---- UNCONNECTED_PING (0x01) / PING_OPEN_CONNECTIONS (0x02) ----
     if (pid == 0x01 || pid == 0x02) {
         if (len < 17) return;
-        uint64_t ping_time = rb_u64_be(data, len, (size_t[1]){1});
+        size_t pi = 1;
+        uint64_t ping_time = rb_u64_le(data, len, &pi); // LE — matches PMMP getLong()
         out_len = build_unconnected_pong(out, sizeof(out),
                                           ping_time, sm->server_id,
                                           sm->server_name);
