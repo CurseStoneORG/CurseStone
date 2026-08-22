@@ -92,6 +92,7 @@ public:
     int difficulty() const { return difficulty_; }
     bool whitelistEnabled() const { return whitelist_; }
     bool onlineMode() const { return online_mode_; }
+    bool advancedLog() const { return advanced_log_; }
     const std::string& ip() const { return ip_; }
     uint16_t port() const { return port_; }
     std::string getMotd() const { return motd_; }
@@ -133,6 +134,7 @@ private:
     int difficulty_ = 1;
     bool whitelist_ = false;
     bool online_mode_ = false;
+    bool advanced_log_ = false;
     int async_workers_ = 4;
 
     // Subsystems (lazily populated in start()).

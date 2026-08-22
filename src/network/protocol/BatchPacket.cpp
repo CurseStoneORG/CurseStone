@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// BatchPacket.cpp — zlib format envelope (PMMP uses zlib_encode/zlib_decode).
+// BatchPacket.cpp — dual-format zlib/raw-deflate envelope.
+// PMMP uses zlib_encode/zlib_decode (zlib format with 0x78 header).
+// Some MCPE 0.15.10 clients use raw deflate (no header).
+// We try both formats to handle all clients.
 #include "BatchPacket.h"
 #include <zlib.h>
 #include <cstring>
@@ -38,37 +41,70 @@ bool BatchPacket::decode(const uint8_t* data, size_t len) {
     uint32_t compressedLen;
     if (!r.readU32BE(compressedLen)) return false;
     if (compressedLen > r.remaining()) return false;
+
     std::vector<uint8_t> compressed(compressedLen);
     if (!r.readBytes(compressed.data(), compressedLen)) return false;
-    uLongf dstLen = 1 << 20;
-    std::vector<uint8_t> dst(dstLen);
-    int rc = uncompress(dst.data(), &dstLen, compressed.data(), (uLong)compressedLen);
-    if (rc == Z_OK) {
-        payload_.assign(dst.data(), dst.data() + dstLen);
+
+    // Try 1: zlib format (uncompress) — used by PMMP and Python bot
+    {
+        uLongf dstLen = 1 << 20;  // 1 MiB cap
+        std::vector<uint8_t> dst(dstLen);
+        int rc = uncompress(dst.data(), &dstLen,
+                            compressed.data(), (uLong)compressedLen);
+        if (rc == Z_OK) {
+            payload_.assign(dst.data(), dst.data() + dstLen);
+            return true;
+        }
+    }
+
+    // Try 2: raw deflate (inflateInit2 with windowBits=-15) — used by some MCPE clients
+    {
+        z_stream zs;
+        std::memset(&zs, 0, sizeof(zs));
+        if (inflateInit2(&zs, -15) != Z_OK) goto try_streaming_zlib;
+        zs.next_in   = const_cast<Bytef*>(compressed.data());
+        zs.avail_in  = static_cast<uInt>(compressedLen);
+
+        uLongf dstLen = 1 << 20;
+        std::vector<uint8_t> dst(dstLen);
+        zs.next_out  = dst.data();
+        zs.avail_out = static_cast<uInt>(dstLen);
+        int rc = inflate(&zs, Z_FINISH);
+        uLongf produced = static_cast<uLongf>(dstLen - zs.avail_out);
+        inflateEnd(&zs);
+        if (rc == Z_STREAM_END || rc == Z_OK) {
+            payload_.assign(dst.data(), dst.data() + produced);
+            return true;
+        }
+    }
+
+    // Try 3: streaming zlib inflate (handles larger batches and partial failures)
+try_streaming_zlib:
+    {
+        z_stream zs;
+        std::memset(&zs, 0, sizeof(zs));
+        if (inflateInit(&zs) != Z_OK) return false;
+        zs.next_in  = const_cast<Bytef*>(compressed.data());
+        zs.avail_in = static_cast<uInt>(compressedLen);
+        std::vector<uint8_t> inflated;
+        inflated.reserve(compressedLen * 4);
+        uint8_t buf[16 * 1024];
+        int ret;
+        do {
+            zs.next_out  = buf;
+            zs.avail_out = sizeof(buf);
+            ret = inflate(&zs, Z_NO_FLUSH);
+            if (ret == Z_STREAM_ERROR || ret == Z_NEED_DICT ||
+                ret == Z_DATA_ERROR || ret == Z_MEM_ERROR) {
+                inflateEnd(&zs);
+                return false;
+            }
+            inflated.insert(inflated.end(), buf, buf + (sizeof(buf) - zs.avail_out));
+        } while (ret != Z_STREAM_END);
+        inflateEnd(&zs);
+        payload_ = std::move(inflated);
         return true;
     }
-    z_stream zs;
-    std::memset(&zs, 0, sizeof(zs));
-    if (inflateInit(&zs) != Z_OK) return false;
-    zs.next_in  = const_cast<Bytef*>(compressed.data());
-    zs.avail_in = (uInt)compressedLen;
-    std::vector<uint8_t> inflated;
-    inflated.reserve(compressedLen * 4);
-    uint8_t buf[16 * 1024];
-    int ret;
-    do {
-        zs.next_out  = buf;
-        zs.avail_out = sizeof(buf);
-        ret = inflate(&zs, Z_NO_FLUSH);
-        if (ret == Z_STREAM_ERROR || ret == Z_NEED_DICT || ret == Z_DATA_ERROR || ret == Z_MEM_ERROR) {
-            inflateEnd(&zs);
-            return false;
-        }
-        inflated.insert(inflated.end(), buf, buf + (sizeof(buf) - zs.avail_out));
-    } while (ret != Z_STREAM_END);
-    inflateEnd(&zs);
-    payload_ = std::move(inflated);
-    return true;
 }
 
 } // namespace mcppeserver::network::protocol

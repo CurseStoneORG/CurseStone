@@ -15,6 +15,7 @@ server:
   difficulty: 1        # 0=peaceful, 1=easy, 2=normal, 3=hard
   whitelist: false
   online-mode: false
+  advanced-log: true   # Log detailed session/packet info for debugging
   view-distance: 8
 
 level:

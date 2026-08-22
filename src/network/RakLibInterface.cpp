@@ -141,7 +141,7 @@ void RakLibInterface::onPacketReceive(const std::string& ip, uint16_t port,
     // Game packet received from a fully connected client.
     // MCPE clients prepend 0xFE to all game packets. Network::processIncoming
     // will strip it and decode the BATCH/LoginPacket inside.
-    if (len > 0) {
+    if (server_ && server_->advancedLog() && len > 0) {
         char hex[8];
         snprintf(hex, sizeof(hex), "%02x", data[0]);
         utils::MainLogger::get().info("[RakLib] Packet from " + ip + ":" +

@@ -70,13 +70,9 @@ void Network::processIncoming(const std::string& ip, uint16_t port,
                                 const uint8_t* data, size_t len) {
     if (isBlocked(ip) || !data || len == 0) return;
 
-    // CRITICAL: MCPE clients prepend 0xFE to ALL game packets (BATCH and
-    // non-BATCH) to distinguish them from RakNet control packets. PMMP's
-    // RakLibInterface.php does the same: chr(0xfe) . $packet->buffer.
-    // Without stripping this byte, the BATCH packet (0x06) is never
-    // recognized and the entire login flow silently breaks — the client
-    // can see the MOTD but can never connect, and nothing appears in the
-    // server log.
+    bool adv = server_ && server_->advancedLog();
+
+    // CRITICAL: MCPE clients prepend 0xFE to ALL game packets.
     if (data[0] == 0xFE && len > 1) {
         data++;
         len--;
@@ -84,14 +80,43 @@ void Network::processIncoming(const std::string& ip, uint16_t port,
 
     uint8_t pid = data[0];
 
+    if (adv) {
+        char hex[64] = {0};
+        for (size_t i = 0; i < len && i < 16; ++i)
+            snprintf(hex + i*3, 4, "%02x ", data[i]);
+        utils::MainLogger::get().info("[NET] " + ip + ":" + std::to_string(port) +
+            " pid=0x" + ([](uint8_t v){char b[4];snprintf(b,4,"%02x",v);return std::string(b);})(pid) +
+            " len=" + std::to_string(len) + " hex: " + hex);
+    }
+
     if (pid == protocol::BATCH_PACKET) {
         protocol::BatchPacket bp;
         if (!bp.decode(data + 1, len - 1)) {
-            utils::MainLogger::get().warn("Malformed BatchPacket from " + ip);
+            // Log first bytes of compressed data for debugging
+            char hex[128] = {0};
+            const uint8_t* cd = data + 1;
+            size_t cdlen = len - 1;
+            if (cdlen > 4) {
+                // Skip the 4-byte BE length prefix
+                uint32_t clen = ((uint32_t)cd[0]<<24)|((uint32_t)cd[1]<<16)|((uint32_t)cd[2]<<8)|cd[3];
+                const uint8_t* cdata = cd + 4;
+                size_t reallen = clen < (cdlen-4) ? clen : (cdlen-4);
+                for (size_t i = 0; i < reallen && i < 32; ++i)
+                    snprintf(hex + i*3, 4, "%02x ", cdata[i]);
+                utils::MainLogger::get().warn("Malformed BatchPacket from " + ip +
+                    " (compressedLen=" + std::to_string(clen) + " firstBytes: " + hex + ")");
+            } else {
+                utils::MainLogger::get().warn("Malformed BatchPacket from " + ip + " (too short)");
+            }
             if (auto* r = getRakLib()) r->closeSession(ip, port, "bad batch");
             return;
         }
         const auto& payload = bp.payload();
+        if (adv) {
+            utils::MainLogger::get().info("[NET] BATCH decoded: " +
+                std::to_string(payload.size()) + " bytes uncompressed, " +
+                std::to_string(len) + " bytes compressed");
+        }
         size_t off = 0;
         while (off + 4 <= payload.size()) {
             uint32_t sl = ((uint32_t)payload[off]   << 24) |
@@ -102,6 +127,12 @@ void Network::processIncoming(const std::string& ip, uint16_t port,
             if (off + sl > payload.size()) {
                 utils::MainLogger::get().warn("Truncated sub-packet in batch from " + ip);
                 break;
+            }
+            if (adv && sl > 0) {
+                char shex[16];
+                snprintf(shex, sizeof(shex), "%02x", payload[off]);
+                utils::MainLogger::get().info("[NET] Sub-packet id=0x" + std::string(shex) +
+                    " len=" + std::to_string(sl));
             }
             dispatchSingle(ip, port, payload.data() + off, sl);
             off += sl;
