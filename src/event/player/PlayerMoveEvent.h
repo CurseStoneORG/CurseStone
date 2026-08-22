@@ -1,6 +1,7 @@
 // PlayerMoveEvent — player event. Fires when the corresponding action occurs.
 #pragma once
 #include "Event.h"
+#include <string>
 #include "Cancellable.h"
 namespace mcppeserver { class Player; }
 namespace mcppeserver::event::player {

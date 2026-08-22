@@ -1,5 +1,6 @@
 #pragma once
 #include "BlockSolid.h"
+#include <string>
 namespace mcppeserver::block {
 class BlockEmeraldOre : public BlockSolid {
 public:

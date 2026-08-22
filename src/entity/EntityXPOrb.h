@@ -1,5 +1,6 @@
 #pragma once
 #include "Projectile.h"
+#include <string>
 namespace mcppeserver::entity {
 class EntityXPOrb : public Projectile {
 public:
