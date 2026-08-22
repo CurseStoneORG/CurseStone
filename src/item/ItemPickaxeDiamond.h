@@ -1,5 +1,6 @@
 #pragma once
 #include "ItemTool.h"
+#include <string>
 namespace mcppeserver::item {
 class ItemPickaxeDiamond : public ItemTool {
 public:

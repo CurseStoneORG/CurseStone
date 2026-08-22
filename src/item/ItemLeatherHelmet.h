@@ -1,5 +1,6 @@
 #pragma once
 #include "ItemArmor.h"
+#include <string>
 namespace mcppeserver::item {
 class ItemLeatherHelmet : public ItemArmor {
 public:

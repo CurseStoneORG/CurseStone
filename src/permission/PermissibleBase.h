@@ -3,6 +3,7 @@
 // expanded lazily on lookup.
 #pragma once
 #include "Permissible.h"
+#include <string>
 #include "PermissionAttachment.h"
 #include <unordered_map>
 #include <memory>

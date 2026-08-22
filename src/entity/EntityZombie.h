@@ -1,5 +1,6 @@
 #pragma once
 #include "Monster.h"
+#include <string>
 namespace mcppeserver::entity {
 class EntityZombie : public Monster {
 public:

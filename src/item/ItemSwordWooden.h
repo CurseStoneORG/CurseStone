@@ -1,5 +1,6 @@
 #pragma once
 #include "ItemTool.h"
+#include <string>
 namespace mcppeserver::item {
 class ItemSwordWooden : public ItemTool {
 public:

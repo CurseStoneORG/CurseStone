@@ -1,5 +1,6 @@
 #pragma once
 #include "BlockTransparent.h"
+#include <string>
 namespace mcppeserver::block {
 class BlockSlab : public BlockTransparent {
 public:

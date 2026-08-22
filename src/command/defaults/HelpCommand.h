@@ -1,5 +1,6 @@
 #pragma once
 #include "command/Command.h"
+#include <string>
 namespace mcppeserver {
 class HelpCommand : public Command {
 public:
