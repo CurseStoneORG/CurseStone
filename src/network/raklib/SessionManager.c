@@ -391,13 +391,20 @@ static bool decode_data_header(const uint8_t* data, size_t len,
 // Parse one encapsulated record from a DataPacket payload.
 // Returns bytes consumed, fills payload ptr + len.
 // Sets *out_done = true when no more records remain.
+// If the packet is a split fragment, fills split info for reassembly.
 // =========================================================================
 static size_t parse_encap_record(const uint8_t* buf, size_t buf_len,
                                    const uint8_t** out_payload, size_t* out_plen,
-                                   bool* out_done) {
+                                   bool* out_done,
+                                   bool* out_has_split, uint32_t* out_split_count,
+                                   uint16_t* out_split_id, uint32_t* out_split_index) {
     *out_done = true;
     *out_payload = NULL;
     *out_plen = 0;
+    *out_has_split = false;
+    *out_split_count = 0;
+    *out_split_id = 0;
+    *out_split_index = 0;
     if (buf_len < 3) return 0;
 
     size_t i = 0;
@@ -436,9 +443,12 @@ static size_t parse_encap_record(const uint8_t* buf, size_t buf_len,
     // split info
     if (has_split) {
         if (i + 10 > buf_len) return 0;
-        i += 4; // splitCount u32 BE
-        i += 2; // splitID    u16 BE
-        i += 4; // splitIndex u32 BE
+        *out_has_split = true;
+        *out_split_count = ((uint32_t)buf[i] << 24) | ((uint32_t)buf[i+1] << 16) |
+                           ((uint32_t)buf[i+2] << 8) | buf[i+3]; i += 4;
+        *out_split_id = ((uint16_t)buf[i] << 8) | buf[i+1]; i += 2;
+        *out_split_index = ((uint32_t)buf[i] << 24) | ((uint32_t)buf[i+1] << 16) |
+                           ((uint32_t)buf[i+2] << 8) | buf[i+3]; i += 4;
     }
 
     if (i + plen > buf_len) return 0;
@@ -604,9 +614,74 @@ static void handle_data_packet(mcp_rak_session_manager_t* sm,
         const uint8_t* epayload;
         size_t eplen;
         bool   done;
-        size_t consumed = parse_encap_record(ptr, rem, &epayload, &eplen, &done);
+        bool   has_split = false;
+        uint32_t split_count = 0, split_index = 0;
+        uint16_t split_id = 0;
+
+        size_t consumed = parse_encap_record(ptr, rem, &epayload, &eplen, &done,
+                                              &has_split, &split_count, &split_id, &split_index);
         if (consumed == 0 || done) break;
-        handle_encapsulated(sm, s, epayload, eplen);
+
+        if (has_split && split_count > 0 && split_count <= MCP_MAX_SPLIT_SEGMENTS) {
+            // This is a fragmented packet — store the fragment for reassembly
+            if (!s->split.in_use || s->split.split_id != split_id) {
+                // New split packet — initialize the store
+                if (s->split.in_use) {
+                    // Previous split was incomplete — clean up
+                    for (uint32_t k = 0; k < s->split.count; ++k) {
+                        if (s->split.segments[k]) { free(s->split.segments[k]); s->split.segments[k] = NULL; }
+                    }
+                }
+                memset(&s->split, 0, sizeof(s->split));
+                s->split.split_id = split_id;
+                s->split.count    = split_count;
+                s->split.in_use   = true;
+            }
+
+            // Store this fragment
+            if (split_index < split_count && !s->split.segments[split_index]) {
+                s->split.segments[split_index] = (uint8_t*)malloc(eplen);
+                if (s->split.segments[split_index]) {
+                    memcpy(s->split.segments[split_index], epayload, eplen);
+                    s->split.seg_sizes[split_index] = eplen;
+                    s->split.received++;
+                }
+            }
+
+            // Check if all fragments received
+            if (s->split.received >= s->split.count) {
+                // Calculate total size
+                size_t total = 0;
+                for (uint32_t k = 0; k < s->split.count; ++k) {
+                    total += s->split.seg_sizes[k];
+                }
+
+                // Concatenate all fragments
+                uint8_t* reassembled = (uint8_t*)malloc(total);
+                if (reassembled) {
+                    size_t off = 0;
+                    for (uint32_t k = 0; k < s->split.count; ++k) {
+                        if (s->split.segments[k]) {
+                            memcpy(reassembled + off, s->split.segments[k], s->split.seg_sizes[k]);
+                            off += s->split.seg_sizes[k];
+                        }
+                    }
+                    // Process the complete reassembled packet
+                    handle_encapsulated(sm, s, reassembled, total);
+                    free(reassembled);
+                }
+
+                // Clean up split store
+                for (uint32_t k = 0; k < s->split.count; ++k) {
+                    if (s->split.segments[k]) { free(s->split.segments[k]); s->split.segments[k] = NULL; }
+                }
+                memset(&s->split, 0, sizeof(s->split));
+            }
+        } else {
+            // Non-fragmented packet — process directly
+            handle_encapsulated(sm, s, epayload, eplen);
+        }
+
         ptr += consumed;
         rem -= consumed;
     }
