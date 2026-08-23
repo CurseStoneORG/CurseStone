@@ -1,5 +1,23 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// UseItemPacket — MCPE protocol 84 packet stub.
+// UseItemPacket.h — client→server block placement / item use.
+//
+// Wire format (protocol 84) — PMMP UseItemPacket::decode:
+//   [1 byte ID 0x1f]
+//   [Int32 BE] x         block being clicked
+//   [Int32 BE] y
+//   [Int32 BE] z
+//   [Uint8]    face       (0=bottom, 1=top, 2=north, 3=south, 4=west, 5=east)
+//   [Float BE] fx         cursor hit vector
+//   [Float BE] fy
+//   [Float BE] fz
+//   [Float BE] posX       player position
+//   [Float BE] posY
+//   [Float BE] posZ
+//   [Int32 BE] slot       inventory slot index of the used item
+//   [Slot]     item       (variable-length) — read/skipped for the MVP
+//
+// For the MVP we only need (x, y, z, face); the rest are parsed for
+// forward-compat and then ignored.
 #pragma once
 
 #include "DataPacket.h"
@@ -11,6 +29,12 @@ namespace mcppeserver::network::protocol {
 class UseItemPacket : public DataPacket {
 public:
     uint8_t pid() const override { return USE_ITEM_PACKET; }
+
+    int32_t  x = 0, y = 0, z = 0;
+    uint8_t  face = 0;
+    float    fx = 0, fy = 0, fz = 0;
+    float    posX = 0, posY = 0, posZ = 0;
+    int32_t  slot = 0;
 
     void encode(std::vector<uint8_t>& out) const override;
     bool decode(const uint8_t* data, size_t len) override;

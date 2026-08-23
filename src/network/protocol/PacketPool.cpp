@@ -27,6 +27,10 @@
 #include "PlayerListPacket.h"
 #include "RequestChunkRadiusPacket.h"
 #include "ChunkRadiusUpdatedPacket.h"
+#include "PlayerActionPacket.h"
+#include "UseItemPacket.h"
+#include "RemoveBlockPacket.h"
+#include "UpdateBlockPacket.h"
 
 namespace mcppeserver::network::protocol {
 
@@ -51,6 +55,10 @@ std::shared_ptr<DataPacket> PacketPool::create(uint8_t pid) const {
         case PLAYER_LIST_PACKET:            return std::make_shared<PlayerListPacket>();
         case REQUEST_CHUNK_RADIUS_PACKET:   return std::make_shared<RequestChunkRadiusPacket>();
         case CHUNK_RADIUS_UPDATED_PACKET:   return std::make_shared<ChunkRadiusUpdatedPacket>();
+        case PLAYER_ACTION_PACKET:          return std::make_shared<PlayerActionPacket>();
+        case USE_ITEM_PACKET:               return std::make_shared<UseItemPacket>();
+        case REMOVE_BLOCK_PACKET:           return std::make_shared<RemoveBlockPacket>();
+        case UPDATE_BLOCK_PACKET:           return std::make_shared<UpdateBlockPacket>();
         default:
             // Unknown packet — return nullptr so callers can log + skip.
             return nullptr;
