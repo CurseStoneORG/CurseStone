@@ -332,62 +332,108 @@ void mcp_chunk_recompute_section_flags(mcp_chunk_t* c) {
 // Total: 132353 bytes typical.
 uint8_t* mcp_chunk_network_serialize(const mcp_chunk_t* c, size_t* out_len) {
     if (!c || !out_len) return NULL;
-    const size_t kSectionSize = 4096 + 2048 + 2048 + 2048;  // 8192
-    const size_t kBiomes     = 256;
-    const size_t kHeightMap  = 256 * 4;
-    const size_t kExtra      = 1;
-    size_t total = 16 * kSectionSize + kBiomes + kHeightMap + kExtra;
+
+    // MCPE 0.15.10 ORDER_COLUMNS format (128-height world):
+    //   32768 bytes: block IDs   (index = x<<11 | z<<7 | y, y=0..127)
+    //   16384 bytes: block data  (nibbles)
+    //   16384 bytes: sky light  (nibbles)
+    //   16384 bytes: block light (nibbles)
+    //   256 bytes:  heightmap   (one byte per column)
+    //   1024 bytes: biome colors (int32 BE per column: R<<24|G<<16|B<<8|0)
+    //   4 bytes:    extra data count (LInt32 = 0)
+    // Total: 66036 bytes
+
+    const size_t kBlocks    = 32768;  // 16*16*128
+    const size_t kData      = 16384;  // 16*16*64
+    const size_t kSkyLight  = 16384;
+    const size_t kBlockLight= 16384;
+    const size_t kHeightMap= 256;
+    const size_t kBiomeCol  = 1024;   // 256 * 4
+    const size_t kExtra     = 4;      // LInt32 count = 0
+    size_t total = kBlocks + kData + kSkyLight + kBlockLight + kHeightMap + kBiomeCol + kExtra;
     uint8_t* buf = (uint8_t*)calloc(total, 1);
     if (!buf) return NULL;
 
     size_t off = 0;
-    for (int i = 0; i < 16; ++i) {
-        const mcp_chunk_section_t* s = c->sections[i];
-        if (s && s->blocks) {
-            memcpy(buf + off, s->blocks, 4096); off += 4096;
-        } else {
-            // Air section — zero blocks (already zero from calloc).
-            off += 4096;
-        }
-        if (s && s->data) {
-            memcpy(buf + off, s->data, 2048); off += 2048;
-        } else {
-            off += 2048;
-        }
-        if (s && s->sky_light) {
-            memcpy(buf + off, s->sky_light, 2048); off += 2048;
-        } else {
-            // Default sky-light = full bright (0xFF).
-            memset(buf + off, 0xFF, 2048); off += 2048;
-        }
-        if (s && s->block_light) {
-            memcpy(buf + off, s->block_light, 2048); off += 2048;
-        } else {
-            off += 2048;
+
+    // --- Block IDs: convert from sections (XZY, 256-height) to columns (128-height) ---
+    // PMMP column index: (x << 11) | (z << 7) | y, where y = 0..127
+    // Our section index: section[y>>4].blocks[(x&15) | ((z&15)<<4) | ((y&15)<<8)]
+    for (int x = 0; x < 16; ++x) {
+        for (int z = 0; z < 16; ++z) {
+            for (int y = 0; y < 128; ++y) {
+                uint8_t id = 0;
+                const mcp_chunk_section_t* s = c->sections[y >> 4];
+                if (s && s->blocks) {
+                    uint32_t sec_idx = (uint32_t)((x & 15) | ((z & 15) << 4) | ((y & 15) << 8));
+                    id = s->blocks[sec_idx];
+                }
+                buf[(x << 11) | (z << 7) | y] = id;
+            }
         }
     }
+    off += kBlocks;
 
-    if (c->biomes) {
-        memcpy(buf + off, c->biomes, 256);
+    // --- Block data (nibbles): same column order ---
+    for (int x = 0; x < 16; ++x) {
+        for (int z = 0; z < 16; ++z) {
+            for (int y = 0; y < 128; y += 2) {
+                uint8_t lo = 0, hi = 0;
+                const mcp_chunk_section_t* s = c->sections[y >> 4];
+                if (s && s->data) {
+                    uint32_t ni = (uint32_t)((x & 15) | ((z & 15) << 4) | ((y & 15) << 7));
+                    lo = (s->data[ni >> 1] >> ((ni & 1) << 2)) & 0x0F;
+                }
+                {
+                    int y2 = y + 1;
+                    const mcp_chunk_section_t* s2 = c->sections[y2 >> 4];
+                    if (s2 && s2->data) {
+                        uint32_t ni = (uint32_t)((x & 15) | ((z & 15) << 4) | ((y2 & 15) << 7));
+                        hi = (s2->data[ni >> 1] >> ((ni & 1) << 2)) & 0x0F;
+                    }
+                }
+                uint32_t ci = (uint32_t)((x << 11) | (z << 7) | y);
+                buf[kBlocks + (ci >> 1)] = (hi << 4) | lo;
+            }
+        }
     }
-    off += 256;
+    off += kData;
 
-    // Height map: 256 big-endian int32s.
+    // --- Sky light: fill with 0xFF (full bright) ---
+    memset(buf + off, 0xFF, kSkyLight);
+    off += kSkyLight;
+
+    // --- Block light: all zeros ---
+    off += kBlockLight;  // already zero from calloc
+
+    // --- Heightmap: one byte per column (max y with non-air block, capped at 127) ---
     if (c->height_map) {
-        for (int i = 0; i < 256; ++i) {
-            int32_t h = c->height_map[i];
-            // big-endian write
-            buf[off + 0] = (uint8_t)((uint32_t)h >> 24);
-            buf[off + 1] = (uint8_t)((uint32_t)h >> 16);
-            buf[off + 2] = (uint8_t)((uint32_t)h >> 8);
-            buf[off + 3] = (uint8_t)((uint32_t)h);
-            off += 4;
+        for (int x = 0; x < 16; ++x) {
+            for (int z = 0; z < 16; ++z) {
+                int32_t h = c->height_map[(x & 15) + (z & 15) * 16];
+                if (h > 127) h = 127;
+                buf[off + (x & 15) + (z & 15) * 16] = (uint8_t)h;
+            }
         }
-    } else {
-        off += 1024;
+    }
+    off += kHeightMap;
+
+    // --- Biome colors: int32 BE per column (R=0x00, G=0x80, B=0x40, A=0x00 = plains green) ---
+    for (int i = 0; i < 256; ++i) {
+        buf[off + 0] = 0x00;  // R
+        buf[off + 1] = 0x80;  // G  
+        buf[off + 2] = 0x40;  // B
+        buf[off + 3] = 0x00;  // unused
+        off += 4;
     }
 
-    buf[off++] = 0x00;   // "premium"/border flag, always 0 in v1.0
+    // --- Extra data: LInt32 count = 0 ---
+    buf[off + 0] = 0;
+    buf[off + 1] = 0;
+    buf[off + 2] = 0;
+    buf[off + 3] = 0;
+    off += 4;
+
     *out_len = off;
     return buf;
 }
