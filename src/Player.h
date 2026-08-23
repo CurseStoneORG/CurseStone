@@ -71,7 +71,8 @@ public:
     void handleMovePlayer(double x, double y, double z, float yaw, float pitch);
     void handleChat(const std::string& message);
     void handleBlockBreak(int x, int y, int z);
-    void handleBlockPlace(int x, int y, int z, uint8_t face, uint8_t block_id);
+    void handleBlockPlace(int x, int y, int z, uint8_t face,
+                          uint8_t heldItemId, uint8_t heldCount, uint16_t heldDamage);
     void handlePlayerAction(int action, int x, int y, int z, int face);
 
     // --- Server → Player packets ---
