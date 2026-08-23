@@ -153,6 +153,12 @@ void Player::close(const std::string& reason) {
 // ============================================================
 // Phase 1 — sendPacket: encode a DataPacket and feed it through RakLib
 // ============================================================
+bool Player::isTrackingChunk(int32_t cx, int32_t cz) const {
+    int64_t hash = ((int64_t)cx << 32) | ((uint32_t)cz);
+    std::lock_guard<std::mutex> lk(chunks_mtx_);
+    return used_chunks_.count(hash) > 0;
+}
+
 void Player::sendPacket(std::shared_ptr<network::protocol::DataPacket> p) {
     if (!p) return;
     if (!connected_.load(std::memory_order_relaxed)) return;
@@ -800,30 +806,34 @@ void Player::handleBlockBreak(int x, int y, int z) {
     ubp->blockData = 0;
     ubp->flags = 0xFF;
 
-    // PMMP sends two LevelEventPacket per block-break:
-    //   1. Particle: PARTICLE_TERRAIN (id=14), data = blockId<<8 | blockData
-    //   2. Sound:    SOUND_BREAK (id=2001),     data = blockId<<8 | blockData
-    // Position is the block's center.
+    // PMMP (protocol 84) sends a SINGLE LevelEventPacket with
+    // evid = EVENT_PARTICLE_DESTROY (2001) which acts as BOTH the break
+    // particle AND the break sound at the client (per the doc-comment in
+    // pocketmine/level/particle/DestroyBlockParticle.php: "NOTE: This is
+    // also the destroy block SOUND.").
+    //
+    // Position: block CENTER (x+0.5, y+0.5, z+0.5).
+    // Data:     blockId | (blockMeta << 12)  — note the << 12 shift,
+    //           NOT << 8 as newer protocols use.
     auto partEv = std::make_shared<network::protocol::LevelEventPacket>();
-    partEv->evid = network::protocol::LevelEventPacket::EVENT_PARTICLE_TERRAIN;
+    partEv->evid = network::protocol::LevelEventPacket::EVENT_PARTICLE_DESTROY;
     partEv->x = (float)x + 0.5f;
     partEv->y = (float)y + 0.5f;
     partEv->z = (float)z + 0.5f;
-    partEv->data = ((int32_t)blockId << 8) | (int32_t)blockData;
+    partEv->data = ((int32_t)blockId & 0xFF) | ((int32_t)blockData << 12);
 
-    auto sndEv = std::make_shared<network::protocol::LevelEventPacket>();
-    sndEv->evid = network::protocol::LevelEventPacket::EVENT_SOUND_BREAK;
-    sndEv->x = (float)x + 0.5f;
-    sndEv->y = (float)y + 0.5f;
-    sndEv->z = (float)z + 0.5f;
-    sndEv->data = ((int32_t)blockId << 8) | (int32_t)blockData;
-
+    // PMMP `Level::addParticle` -> `addChunkPacket($particle->x >> 4, ...)`
+    // sends the packet only to players tracking the chunk containing it.
+    // We mirror that behaviour here: skip players who haven't received
+    // FullChunkDataPacket for this chunk yet.
+    int32_t pk_cx = x >> 4;
+    int32_t pk_cz = z >> 4;
     if (srv_) {
         for (auto& other : srv_->players()) {
             if (!other) continue;
+            if (!other->isTrackingChunk(pk_cx, pk_cz)) continue;
             other->sendPacket(ubp);
             other->sendPacket(partEv);
-            other->sendPacket(sndEv);
         }
     }
 
@@ -910,17 +920,26 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     ubp->blockData = placedData;
     ubp->flags = 0xFF;
 
-    // PMMP sends a place sound (evid 2002) after block placement.
+    // PMMP (protocol 84) sends a block-place sound via LevelEventPacket with
+    // evid = EVENT_SOUND_BLOCK_PLACE (1052).
+    //   - Position: BLOCK CORNER (integer x,y,z — NOT +0.5, unlike the
+    //     break particle). Verbatim from pocketmine/level/sound/BlockPlaceSound.php
+    //     + GenericSound which copies Block::x/y/z which are integers.
+    //   - Data:     just the placed block id (no meta bits).
     auto sndEv = std::make_shared<network::protocol::LevelEventPacket>();
-    sndEv->evid = network::protocol::LevelEventPacket::EVENT_SOUND_PLACE;
-    sndEv->x = (float)placeX + 0.5f;
-    sndEv->y = (float)placeY + 0.5f;
-    sndEv->z = (float)placeZ + 0.5f;
-    sndEv->data = ((int32_t)heldItemId << 8) | (int32_t)placedData;
+    sndEv->evid = network::protocol::LevelEventPacket::EVENT_SOUND_BLOCK_PLACE;
+    sndEv->x = (float)placeX;
+    sndEv->y = (float)placeY;
+    sndEv->z = (float)placeZ;
+    sndEv->data = (int32_t)heldItemId;
 
+    // Same chunk-filter as for block break (PMMP `Level::addSound`).
+    int32_t pk_cx = placeX >> 4;
+    int32_t pk_cz = placeZ >> 4;
     if (srv_) {
         for (auto& other : srv_->players()) {
             if (!other) continue;
+            if (!other->isTrackingChunk(pk_cx, pk_cz)) continue;
             other->sendPacket(ubp);
             other->sendPacket(sndEv);
         }
