@@ -1,2 +1,2 @@
 #include "ItemDiamondBoots.h"
-namespace mcppeserver::item {}
+namespace cenisyspe::item {}

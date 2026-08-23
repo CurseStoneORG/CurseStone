@@ -3,7 +3,7 @@
 // DefaultPermissions.
 #pragma once
 #include "Permissible.h"
-namespace mcppeserver::permission {
+namespace cenisyspe::permission {
 class DefaultPermissions {
 public:
     static void registerCorePermissions(Permissible& p);

@@ -1,2 +1,2 @@
 #include "BlockDiamond.h"
-namespace mcppeserver::block {}
+namespace cenisyspe::block {}

@@ -10,11 +10,11 @@
 #include <functional>
 #include "math/Vector3.h"
 #include "level/ChunkManager.h"
-namespace mcppeserver {
+namespace cenisyspe {
 class Player; class Entity; class Tile;
 namespace level::generator { class Generator; }
 }
-namespace mcppeserver::level {
+namespace cenisyspe::level {
 struct LevelConfig {
     std::string name;
     std::string format   = "mcacpp";  // mcacpp | leveldb | mca | mcapm

@@ -3,7 +3,7 @@
 #include "McapmFormat.h"
 #include "../LevelProviderManager.h"
 
-namespace mcppeserver::level::format::mcapm {
+namespace cenisyspe::level::format::mcapm {
 
 McapmRegistrar g_mcapm_registrar_;
 McapmRegistrar::McapmRegistrar() {
@@ -42,4 +42,4 @@ McapmFormat::listChunks() const {
     return {};
 }
 
-} // namespace mcppeserver::level::format::mcapm
+} // namespace cenisyspe::level::format::mcapm

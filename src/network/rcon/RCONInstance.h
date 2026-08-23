@@ -8,7 +8,7 @@
 #include <memory>
 #include <atomic>
 
-namespace mcppeserver {
+namespace cenisyspe {
 class Server;
 
 namespace network {
@@ -28,4 +28,4 @@ private:
 };
 
 } // namespace network
-} // namespace mcppeserver
+} // namespace cenisyspe

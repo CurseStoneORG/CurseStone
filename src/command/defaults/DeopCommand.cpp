@@ -1,7 +1,7 @@
 #include "DeopCommand.h"
 #include "Server.h"
 #include "Player.h"
-namespace mcppeserver {
+namespace cenisyspe {
 bool DeopCommand::execute(CommandSender* sender, const std::string&,
                     const std::vector<std::string>& args) {
     if (args.empty()) { sender->sendMessage("Usage: /deop <player>"); return true; }

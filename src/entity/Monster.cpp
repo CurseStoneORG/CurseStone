@@ -1,2 +1,2 @@
 #include "Monster.h"
-namespace mcppeserver::entity {}
+namespace cenisyspe::entity {}

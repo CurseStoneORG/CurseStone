@@ -1,7 +1,7 @@
 #include "DefaultPermissions.h"
-namespace mcppeserver::permission {
+namespace cenisyspe::permission {
 void DefaultPermissions::registerCorePermissions(Permissible& p) {
-    // Sub-tree "mcppeserver.*" — given to ops only by default.
+    // Sub-tree "cenisyspe.*" — given to ops only by default.
     (void)p;
     // Real impl uses setPermission on the Permissible.
 }

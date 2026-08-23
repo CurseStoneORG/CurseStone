@@ -3,7 +3,7 @@
 // PMMP: putInt x 3 (BE).
 #include "AdventureSettingsPacket.h"
 
-namespace mcppeserver::network::protocol {
+namespace cenisyspe::network::protocol {
 
 void AdventureSettingsPacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
@@ -19,4 +19,4 @@ bool AdventureSettingsPacket::decode(const uint8_t* data, size_t len) {
     return r.readI32BE(globalPermission);
 }
 
-} // namespace mcppeserver::network::protocol
+} // namespace cenisyspe::network::protocol

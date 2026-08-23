@@ -7,7 +7,7 @@
 #include <zlib.h>
 #include <cstring>
 
-namespace mcppeserver::network::protocol {
+namespace cenisyspe::network::protocol {
 
 void BatchPacket::encode(std::vector<uint8_t>& out) const {
     if (!compressed_.empty()) {
@@ -107,4 +107,4 @@ try_streaming_zlib:
     }
 }
 
-} // namespace mcppeserver::network::protocol
+} // namespace cenisyspe::network::protocol

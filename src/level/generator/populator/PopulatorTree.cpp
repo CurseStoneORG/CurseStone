@@ -1,6 +1,6 @@
 #include "PopulatorTree.h"
 #include "level/generator/noise/SimplexNoise.h"
-namespace mcppeserver::level::generator::populator {
+namespace cenisyspe::level::generator::populator {
 void PopulatorTree::populate(GenerationContext& ctx) {
     uint64_t state = (uint64_t)mcp_simplex_hash(ctx.seed ^ 0x5EEDCAFE, ctx.chunk_x, ctx.chunk_z);
     auto next = [&]() -> uint64_t {

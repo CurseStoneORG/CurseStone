@@ -1,6 +1,6 @@
 #include "EmptyGenerator.h"
 #include "level/format/Chunk.h"
-namespace mcppeserver::level::generator {
+namespace cenisyspe::level::generator {
 void EmptyGenerator::generate(GenerationContext& ctx) {
     mcp_chunk_t* c = ctx.chunk;
     mcp_chunk_section_t* s = mcp_chunk_get_or_alloc_section(c, 0);

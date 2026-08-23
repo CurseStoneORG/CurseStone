@@ -1,2 +1,2 @@
 #include "Enchantment.h"
-namespace mcppeserver::item::enchantment {}
+namespace cenisyspe::item::enchantment {}

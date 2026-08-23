@@ -1,2 +1,2 @@
 #include "ItemEgg.h"
-namespace mcppeserver::item {}
+namespace cenisyspe::item {}

@@ -1,2 +1,2 @@
 #include "ItemFood.h"
-namespace mcppeserver::item {}
+namespace cenisyspe::item {}

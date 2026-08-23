@@ -1,5 +1,5 @@
 #include "ServerScheduler.h"
-namespace mcppeserver::scheduler {
+namespace cenisyspe::scheduler {
 ServerScheduler& ServerScheduler::get() { static ServerScheduler s; return s; }
 uint64_t ServerScheduler::scheduleSync(std::shared_ptr<Task> task, int delay, int period) {
     std::lock_guard<std::mutex> lk(mtx_);

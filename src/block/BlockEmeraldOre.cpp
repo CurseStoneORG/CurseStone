@@ -1,2 +1,2 @@
 #include "BlockEmeraldOre.h"
-namespace mcppeserver::block {}
+namespace cenisyspe::block {}

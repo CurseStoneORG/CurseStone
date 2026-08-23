@@ -3,7 +3,7 @@
 #pragma once
 #include "Task.h"
 #include <functional>
-namespace mcppeserver::scheduler {
+namespace cenisyspe::scheduler {
 class CallbackTask : public Task {
 public:
     explicit CallbackTask(std::function<void()> fn) : fn_(std::move(fn)) {}

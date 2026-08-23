@@ -1,7 +1,7 @@
 #pragma once
 #include "ItemTool.h"
 #include <string>
-namespace mcppeserver::item {
+namespace cenisyspe::item {
 class ItemPickaxeWooden : public ItemTool {
 public:
     ItemPickaxeWooden() : ItemTool(270, ToolType::PICKAXE, ToolMaterial::TOOL_WOOD) {}

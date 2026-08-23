@@ -1,2 +1,2 @@
 #include "AttributeMap.h"
-namespace mcppeserver::entity {}
+namespace cenisyspe::entity {}

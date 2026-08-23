@@ -1,6 +1,6 @@
 # mcacpp World Format Specification
 
-The default world format for MCPPEServer. Stored under
+The default world format for CenisysPE. Stored under
 `<world_name>/chunks/<rx>_<rz>.mcacpp` (32×32 chunks per region file).
 
 ## File layout

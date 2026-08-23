@@ -4,7 +4,7 @@
 #include <unordered_map>
 #include <vector>
 #include <memory>
-namespace mcppeserver {
+namespace cenisyspe {
 class SimpleCommandMap : public CommandMap {
 public:
     bool registerCommand(std::unique_ptr<Command> cmd) override;

@@ -1,7 +1,7 @@
 #pragma once
 #include "Particle.h"
 #include <cstdint>
-namespace mcppeserver::level::particle {
+namespace cenisyspe::level::particle {
 class DestroyBlockParticle : public Particle {
 public:
     DestroyBlockParticle(Position pos, uint8_t block_id)

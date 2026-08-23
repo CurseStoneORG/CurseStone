@@ -1,7 +1,7 @@
 #pragma once
 #include "Item.h"
 #include <cstdint>
-namespace mcppeserver::item {
+namespace cenisyspe::item {
 enum ToolMaterial : int {
     TOOL_WOOD = 0, TOOL_GOLD = 1, TOOL_STONE = 2, TOOL_IRON = 3, TOOL_DIAMOND = 4,
 };

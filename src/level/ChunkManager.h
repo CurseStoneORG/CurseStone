@@ -7,7 +7,7 @@
 #include <unordered_map>
 #include <memory>
 #include <mutex>
-namespace mcppeserver::level {
+namespace cenisyspe::level {
 class LevelProvider;
 class ChunkManager {
 public:

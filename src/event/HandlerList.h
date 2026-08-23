@@ -5,7 +5,7 @@
 #include <functional>
 #include <vector>
 #include "Event.h"
-namespace mcppeserver::event {
+namespace cenisyspe::event {
 class HandlerList {
 public:
     using Handler = std::function<void(const Event&)>;

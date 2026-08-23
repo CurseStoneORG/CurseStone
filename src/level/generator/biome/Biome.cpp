@@ -4,7 +4,7 @@
 #include "BiomeForest.h"
 #include "BiomeMountains.h"
 #include "BiomeOcean.h"
-namespace mcppeserver::level::generator::biome {
+namespace cenisyspe::level::generator::biome {
 uint8_t BiomePlains::id() const    { return BIOME_PLAINS; }
 uint8_t BiomeDesert::id() const    { return BIOME_DESERT; }
 uint8_t BiomeForest::id() const    { return BIOME_FOREST; }

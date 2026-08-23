@@ -9,7 +9,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace mcppeserver {
+namespace cenisyspe {
 
 class Player;
 
@@ -27,4 +27,4 @@ public:
 };
 
 } // namespace network
-} // namespace mcppeserver
+} // namespace cenisyspe

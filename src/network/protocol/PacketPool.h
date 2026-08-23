@@ -13,7 +13,7 @@
 #include <memory>
 #include <functional>
 
-namespace mcppeserver::network::protocol {
+namespace cenisyspe::network::protocol {
 
 class PacketPool {
 public:
@@ -33,4 +33,4 @@ private:
     PacketPool() = default;
 };
 
-} // namespace mcppeserver::network::protocol
+} // namespace cenisyspe::network::protocol

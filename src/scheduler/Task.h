@@ -5,7 +5,7 @@
 #pragma once
 #include <cstdint>
 #include <atomic>
-namespace mcppeserver::scheduler {
+namespace cenisyspe::scheduler {
 class TaskHandler;
 class Task {
 public:

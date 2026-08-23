@@ -2,7 +2,7 @@
 #include "BlockLiquid.h"
 #include <string>
 #include "BlockIds.h"
-namespace mcppeserver::block {
+namespace cenisyspe::block {
 class BlockWater : public BlockLiquid {
 public:
     uint8_t id() const override { return WATER; }

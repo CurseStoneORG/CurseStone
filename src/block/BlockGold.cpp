@@ -1,2 +1,2 @@
 #include "BlockGold.h"
-namespace mcppeserver::block {}
+namespace cenisyspe::block {}

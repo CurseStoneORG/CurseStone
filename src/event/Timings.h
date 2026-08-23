@@ -7,7 +7,7 @@
 #include <string>
 #include <chrono>
 #include <cstdint>
-namespace mcppeserver::event {
+namespace cenisyspe::event {
 class Timings {
 public:
     static Timings& get();

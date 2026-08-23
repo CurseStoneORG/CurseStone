@@ -4,8 +4,8 @@
 #pragma once
 #include "Living.h"
 #include <memory>
-namespace mcppeserver::inventory { class PlayerInventory; }
-namespace mcppeserver::entity {
+namespace cenisyspe::inventory { class PlayerInventory; }
+namespace cenisyspe::entity {
 class Human : public Living {
 public:
     using Living::Living;

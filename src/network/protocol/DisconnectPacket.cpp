@@ -5,7 +5,7 @@
 // (putString = putShort BE length + bytes)
 #include "DisconnectPacket.h"
 
-namespace mcppeserver::network::protocol {
+namespace cenisyspe::network::protocol {
 
 void DisconnectPacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
@@ -17,4 +17,4 @@ bool DisconnectPacket::decode(const uint8_t* data, size_t len) {
     return r.readBEString(message);
 }
 
-} // namespace mcppeserver::network::protocol
+} // namespace cenisyspe::network::protocol

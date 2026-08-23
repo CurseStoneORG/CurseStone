@@ -1,7 +1,7 @@
 #pragma once
 #include "command/Command.h"
 #include <string>
-namespace mcppeserver {
+namespace cenisyspe {
 class SaveCommand : public Command {
 public:
     SaveCommand() : Command("save", "Save worlds") {}

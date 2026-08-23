@@ -1,2 +1,2 @@
 #include "ItemSugar.h"
-namespace mcppeserver::item {}
+namespace cenisyspe::item {}

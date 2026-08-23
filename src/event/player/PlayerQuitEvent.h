@@ -3,12 +3,12 @@
 #include "Event.h"
 #include <string>
 #include "Cancellable.h"
-namespace mcppeserver { class Player; }
-namespace mcppeserver::event::player {
+namespace cenisyspe { class Player; }
+namespace cenisyspe::event::player {
 class PlayerQuitEvent : public Event, public Cancellable {
 public:
-    mcppeserver::Player* player;
-    PlayerQuitEvent(mcppeserver::Player* p = nullptr) : player(p) {}
+    cenisyspe::Player* player;
+    PlayerQuitEvent(cenisyspe::Player* p = nullptr) : player(p) {}
     const std::string& eventName() const override {
         static std::string n = "PlayerQuitEvent"; return n;
     }

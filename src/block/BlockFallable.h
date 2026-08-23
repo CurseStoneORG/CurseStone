@@ -4,6 +4,6 @@
 // by Level::tick.
 #pragma once
 #include "BlockSolid.h"
-namespace mcppeserver::block {
+namespace cenisyspe::block {
 class BlockFallable : public BlockSolid {};
 } // namespace

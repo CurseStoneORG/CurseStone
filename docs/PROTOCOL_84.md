@@ -1,6 +1,6 @@
 # Protocol 84 — Packet Reference
 
-MCPPEServer targets MCPE/Bedrock protocol **84** (Minecraft 0.15.x).
+CenisysPE targets MCPE/Bedrock protocol **84** (Minecraft 0.15.x).
 All packet IDs are defined in `src/network/protocol/Info.h`.
 
 ## Packet list
@@ -102,7 +102,7 @@ Each sub-packet starts with its own packet ID byte (no extra header).
 
 ## Compression
 
-- zlib level 1-9 selectable via `network.compression-level` in `mcppeserver.yml`
+- zlib level 1-9 selectable via `network.compression-level` in `cenisyspe.yml`
 - `batch-threshold`: payloads smaller than this many bytes are sent
   uncompressed (one-packet BatchPacket with raw zlib level 0).
 
@@ -112,7 +112,7 @@ Each sub-packet starts with its own packet ID byte (no extra header).
 2. S → C: `PlayStatusPacket` with `LOGIN_SUCCESS` if `protocol == 84`,
    otherwise `LOGIN_FAILED_CLIENT` (older) or `LOGIN_FAILED_SERVER` (newer).
 3. S → C: `ServerToClientHandshake` with the encryption handshake payload
-   (X.509 + cookie). Currently MCPPEServer does not implement encryption
+   (X.509 + cookie). Currently CenisysPE does not implement encryption
    for non-premium sessions, so this is skipped in offline mode.
 4. C → S: `ClientToServerHandshake` (acknowledgement).
 5. S → C: `StartGamePacket` (entity ID, level seed, gamemode, spawn position).

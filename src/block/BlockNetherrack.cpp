@@ -1,2 +1,2 @@
 #include "BlockNetherrack.h"
-namespace mcppeserver::block {}
+namespace cenisyspe::block {}

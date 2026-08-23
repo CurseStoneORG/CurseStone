@@ -5,7 +5,7 @@
 // All multi-byte fields are big-endian.
 #include "PlayerActionPacket.h"
 
-namespace mcppeserver::network::protocol {
+namespace cenisyspe::network::protocol {
 
 void PlayerActionPacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
@@ -27,4 +27,4 @@ bool PlayerActionPacket::decode(const uint8_t* data, size_t len) {
     return r.readI32BE(face);
 }
 
-} // namespace mcppeserver::network::protocol
+} // namespace cenisyspe::network::protocol

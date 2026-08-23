@@ -20,7 +20,7 @@
 #include "FullChunk.h"
 #include "Chunk.h"
 
-namespace mcppeserver::level::format {
+namespace cenisyspe::level::format {
 
 class ChunkAdapter : public FullChunk {
 public:
@@ -81,4 +81,4 @@ private:
     mcp_chunk_t* chunk_ = nullptr;
 };
 
-} // namespace mcppeserver::level::format
+} // namespace cenisyspe::level::format

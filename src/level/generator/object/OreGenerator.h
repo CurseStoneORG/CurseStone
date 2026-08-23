@@ -5,7 +5,7 @@
 #include "level/format/Chunk.h"
 #include <cstdint>
 
-namespace mcppeserver::level::generator::object {
+namespace cenisyspe::level::generator::object {
 struct OreVein {
     uint8_t block_id;     // e.g. 14=GoldOre, 15=IronOre, 56=DiamondOre
     uint8_t min_y;         // lowest Y this ore can spawn

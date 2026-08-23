@@ -1,6 +1,6 @@
 #pragma once
 #include "Living.h"
-namespace mcppeserver::entity {
+namespace cenisyspe::entity {
 class Creature : public Living {
 public:
     using Living::Living;

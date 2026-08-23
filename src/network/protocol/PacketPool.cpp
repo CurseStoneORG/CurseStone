@@ -32,7 +32,7 @@
 #include "RemoveBlockPacket.h"
 #include "UpdateBlockPacket.h"
 
-namespace mcppeserver::network::protocol {
+namespace cenisyspe::network::protocol {
 
 std::shared_ptr<DataPacket> PacketPool::create(uint8_t pid) const {
     switch (pid) {
@@ -65,4 +65,4 @@ std::shared_ptr<DataPacket> PacketPool::create(uint8_t pid) const {
     }
 }
 
-} // namespace mcppeserver::network::protocol
+} // namespace cenisyspe::network::protocol

@@ -1,2 +1,2 @@
 #include "ItemPickaxeGolden.h"
-namespace mcppeserver::item {}
+namespace cenisyspe::item {}

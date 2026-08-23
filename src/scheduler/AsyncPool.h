@@ -8,7 +8,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <functional>
-namespace mcppeserver::scheduler {
+namespace cenisyspe::scheduler {
 class AsyncPool {
 public:
     explicit AsyncPool(int n_workers = 4) : n_(n_workers) {

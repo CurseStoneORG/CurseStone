@@ -1,2 +1,2 @@
 #include "ItemDiamondHelmet.h"
-namespace mcppeserver::item {}
+namespace cenisyspe::item {}

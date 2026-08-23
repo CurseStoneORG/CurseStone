@@ -1,2 +1,2 @@
 #include "BlockFire.h"
-namespace mcppeserver::block {}
+namespace cenisyspe::block {}

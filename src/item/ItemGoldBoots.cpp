@@ -1,2 +1,2 @@
 #include "ItemGoldBoots.h"
-namespace mcppeserver::item {}
+namespace cenisyspe::item {}

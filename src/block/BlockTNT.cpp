@@ -1,2 +1,2 @@
 #include "BlockTNT.h"
-namespace mcppeserver::block {}
+namespace cenisyspe::block {}

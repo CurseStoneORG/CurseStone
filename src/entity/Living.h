@@ -7,7 +7,7 @@
 #include "Effect.h"
 #include <vector>
 #include <memory>
-namespace mcppeserver::entity {
+namespace cenisyspe::entity {
 class Living : public Entity {
 public:
     using Entity::Entity;

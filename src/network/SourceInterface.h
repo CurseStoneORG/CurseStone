@@ -7,7 +7,7 @@
 #include <string>
 #include <cstdint>
 
-namespace mcppeserver::network {
+namespace cenisyspe::network {
 
 class SourceInterface {
 public:
@@ -18,4 +18,4 @@ public:
     virtual void tick() = 0;
 };
 
-} // namespace mcppeserver::network
+} // namespace cenisyspe::network

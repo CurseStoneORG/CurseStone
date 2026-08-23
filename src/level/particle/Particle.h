@@ -4,7 +4,7 @@
 #pragma once
 #include "level/Position.h"
 #include <cstdint>
-namespace mcppeserver::level::particle {
+namespace cenisyspe::level::particle {
 enum ParticleId : int32_t {
     PARTICLE_UNKNOWN      = 0,
     PARTICLE_BUBBLE        = 1,

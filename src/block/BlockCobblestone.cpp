@@ -1,2 +1,2 @@
 #include "BlockCobblestone.h"
-namespace mcppeserver::block {}
+namespace cenisyspe::block {}

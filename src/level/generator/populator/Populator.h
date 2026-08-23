@@ -3,7 +3,7 @@
 // may decide whether to run on a chunk based on a seeded PRNG.
 #pragma once
 #include "level/generator/Generator.h"
-namespace mcppeserver::level::generator::populator {
+namespace cenisyspe::level::generator::populator {
 class Populator {
 public:
     virtual ~Populator() = default;

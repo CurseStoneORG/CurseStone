@@ -1,7 +1,7 @@
 // BiomeDesert — concrete biome.
 #pragma once
 #include "Biome.h"
-namespace mcppeserver::level::generator::biome {
+namespace cenisyspe::level::generator::biome {
 class BiomeDesert : public Biome {
 public:
     uint8_t id() const override;

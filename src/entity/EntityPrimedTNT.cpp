@@ -1,2 +1,2 @@
 #include "EntityPrimedTNT.h"
-namespace mcppeserver::entity {}
+namespace cenisyspe::entity {}

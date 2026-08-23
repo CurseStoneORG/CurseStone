@@ -3,13 +3,13 @@
 #include "Event.h"
 #include <string>
 #include "Cancellable.h"
-namespace mcppeserver::entity { class Entity; }
-namespace mcppeserver::event::entity {
+namespace cenisyspe::entity { class Entity; }
+namespace cenisyspe::event::entity {
 class EntityDamageEvent : public Event, public Cancellable {
 public:
-    mcppeserver::entity::Entity* entity;
+    cenisyspe::entity::Entity* entity;
     float amount = 0.0f;
-    EntityDamageEvent(mcppeserver::entity::Entity* e = nullptr) : entity(e) {}
+    EntityDamageEvent(cenisyspe::entity::Entity* e = nullptr) : entity(e) {}
     const std::string& eventName() const override {
         static std::string n = "EntityDamageEvent"; return n;
     }

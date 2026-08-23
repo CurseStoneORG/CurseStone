@@ -3,7 +3,7 @@
 #pragma once
 #include <cstdint>
 #include <string>
-namespace mcppeserver::item::enchantment {
+namespace cenisyspe::item::enchantment {
 enum EnchantmentId : uint16_t {
     ENCH_PROTECTION         = 0,
     ENCH_FIRE_PROTECTION     = 1,

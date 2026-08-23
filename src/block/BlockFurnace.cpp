@@ -1,2 +1,2 @@
 #include "BlockFurnace.h"
-namespace mcppeserver::block {}
+namespace cenisyspe::block {}

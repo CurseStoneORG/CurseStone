@@ -4,7 +4,7 @@
 #pragma once
 #include <string>
 #include <unordered_map>
-namespace mcppeserver::wizard {
+namespace cenisyspe::wizard {
 class InstallerLang {
 public:
     static InstallerLang& get();

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// MCPPEServer entry point.
+// CenisysPE entry point.
 // Initializes the server singleton and runs the main tick loop.
 #include "main.h"
 #include "Server.h"
@@ -19,16 +19,16 @@ namespace {
         (void)sig;
         g_shouldRun.store(false, std::memory_order_relaxed);
         // Also tell the server to stop its tick loop.
-        mcppeserver::Server::getInstance().shutdown();
+        cenisyspe::Server::getInstance().shutdown();
     }
 }
 
 int main(int argc, char* argv[]) {
-    using namespace mcppeserver;
+    using namespace cenisyspe;
 
     // Banner
-    std::cout << MCPPESERVER_NAME << " v" << MCPPESERVER_VERSION
-              << " \"" << MCPPESERVER_CODENAME << "\"\n"
+    std::cout << CENISYSPE_NAME << " v" << CENISYSPE_VERSION
+              << " \"" << CENISYSPE_CODENAME << "\"\n"
               << "Targeting Minecraft " << MINECRAFT_VERSION
               << " (protocol " << PROTOCOL_VERSION << ")\n\n";
 

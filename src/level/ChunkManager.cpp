@@ -3,7 +3,7 @@
 #include "level/format/Chunk.h"
 #include "level/format/ChunkSection.h"
 #include <string.h>
-namespace mcppeserver::level {
+namespace cenisyspe::level {
 ChunkManager::ChunkManager() {}
 ChunkManager::~ChunkManager() {
     for (auto& kv : chunks_) if (kv.second) mcp_chunk_destroy(kv.second);

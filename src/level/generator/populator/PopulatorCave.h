@@ -1,6 +1,6 @@
 #pragma once
 #include "Populator.h"
-namespace mcppeserver::level::generator::populator {
+namespace cenisyspe::level::generator::populator {
 class PopulatorCave : public Populator {
 public:
     explicit PopulatorCave(int attempts) : attempts_(attempts) {}

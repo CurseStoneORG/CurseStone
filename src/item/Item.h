@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 #include <memory>
-namespace mcppeserver::item {
+namespace cenisyspe::item {
 class Item {
 public:
     Item(uint16_t id, uint8_t meta = 0, int count = 1)

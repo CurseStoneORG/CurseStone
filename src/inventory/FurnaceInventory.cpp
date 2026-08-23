@@ -1,2 +1,2 @@
 #include "FurnaceInventory.h"
-namespace mcppeserver::inventory {}
+namespace cenisyspe::inventory {}

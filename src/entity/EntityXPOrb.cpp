@@ -1,2 +1,2 @@
 #include "EntityXPOrb.h"
-namespace mcppeserver::entity {}
+namespace cenisyspe::entity {}

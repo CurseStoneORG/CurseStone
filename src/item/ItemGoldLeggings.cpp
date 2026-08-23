@@ -1,2 +1,2 @@
 #include "ItemGoldLeggings.h"
-namespace mcppeserver::item {}
+namespace cenisyspe::item {}

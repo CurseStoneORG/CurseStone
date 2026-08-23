@@ -1,2 +1,2 @@
 #include "BlockGlowstone.h"
-namespace mcppeserver::block {}
+namespace cenisyspe::block {}

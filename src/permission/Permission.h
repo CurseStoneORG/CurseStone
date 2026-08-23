@@ -1,9 +1,9 @@
-// Permission — a single permission node (e.g. "mcppeserver.command.stop").
-// Permissions form a tree with wildcards ("mcppeserver.command.*").
+// Permission — a single permission node (e.g. "cenisyspe.command.stop").
+// Permissions form a tree with wildcards ("cenisyspe.command.*").
 // Mirrors pocketmine/permission/Permission.php.
 #pragma once
 #include <string>
-namespace mcppeserver::permission {
+namespace cenisyspe::permission {
 class Permission {
 public:
     explicit Permission(std::string name, std::string description = "")

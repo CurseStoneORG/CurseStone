@@ -1,2 +1,2 @@
 #include "ItemEmerald.h"
-namespace mcppeserver::item {}
+namespace cenisyspe::item {}

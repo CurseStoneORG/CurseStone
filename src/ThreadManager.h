@@ -4,7 +4,7 @@
 #include <thread>
 #include <vector>
 #include <memory>
-namespace mcppeserver {
+namespace cenisyspe {
 class ThreadManager {
 public:
     static ThreadManager& get();

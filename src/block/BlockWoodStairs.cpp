@@ -1,2 +1,2 @@
 #include "BlockWoodStairs.h"
-namespace mcppeserver::block {}
+namespace cenisyspe::block {}

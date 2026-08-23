@@ -4,7 +4,7 @@
 
 #include <zlib.h>
 
-namespace mcppeserver {
+namespace cenisyspe {
 namespace network {
 
 void CompressBatchedTask::onRun() {
@@ -27,4 +27,4 @@ void CompressBatchedTask::onCompletion() {
 }
 
 } // namespace network
-} // namespace mcppeserver
+} // namespace cenisyspe

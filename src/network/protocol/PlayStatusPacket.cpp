@@ -4,7 +4,7 @@
 // PMMP: $this->putInt($this->status)  (Int32 BE)
 #include "PlayStatusPacket.h"
 
-namespace mcppeserver::network::protocol {
+namespace cenisyspe::network::protocol {
 
 void PlayStatusPacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
@@ -16,4 +16,4 @@ bool PlayStatusPacket::decode(const uint8_t* data, size_t len) {
     return r.readI32BE(status);
 }
 
-} // namespace mcppeserver::network::protocol
+} // namespace cenisyspe::network::protocol

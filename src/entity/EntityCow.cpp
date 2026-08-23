@@ -1,2 +1,2 @@
 #include "EntityCow.h"
-namespace mcppeserver::entity {}
+namespace cenisyspe::entity {}

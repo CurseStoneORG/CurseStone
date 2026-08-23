@@ -1,7 +1,7 @@
 #pragma once
 #include "command/Command.h"
 #include <string>
-namespace mcppeserver {
+namespace cenisyspe {
 class DeopCommand : public Command {
 public:
     DeopCommand() : Command("deop", "Revoke operator rights") {}

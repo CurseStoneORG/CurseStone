@@ -1,6 +1,6 @@
 // Player — full player session. Owns the network session, inventory,
 // view distance, current chunk, gamemode, position, and a per-player
-// tick. The Player class is the most complex class in MCPPEServer;
+// tick. The Player class is the most complex class in CenisysPE;
 // it's the bridge between the protocol layer (LoginPacket → MovePlayerPacket)
 // and the world layer (Level, Chunk, Entity).
 //
@@ -24,7 +24,7 @@
 #include <mutex>
 #include <unordered_set>
 #include <vector>
-namespace mcppeserver {
+namespace cenisyspe {
 class Server;
 class Network;
 class SourceInterface;

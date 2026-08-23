@@ -1,2 +1,2 @@
 #include "BlockChest.h"
-namespace mcppeserver::block {}
+namespace cenisyspe::block {}

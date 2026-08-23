@@ -1,2 +1,2 @@
 #include "Attribute.h"
-namespace mcppeserver::entity {}
+namespace cenisyspe::entity {}

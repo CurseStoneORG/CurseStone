@@ -1,6 +1,6 @@
 #pragma once
 #include "Event.h"
-namespace mcppeserver::event {
+namespace cenisyspe::event {
 class Cancellable {
 public:
     virtual ~Cancellable() = default;

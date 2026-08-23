@@ -2,7 +2,7 @@
 #include "Command.h"
 #include <string>
 #include <vector>
-namespace mcppeserver {
+namespace cenisyspe {
 class CommandMap {
 public:
     virtual ~CommandMap() = default;

@@ -8,7 +8,7 @@
 #include <unordered_map>
 #include <memory>
 #include <vector>
-namespace mcppeserver::permission {
+namespace cenisyspe::permission {
 class PermissibleBase : public Permissible {
 public:
     bool hasPermission(const std::string& name) const override;

@@ -1,2 +1,2 @@
 #include "ItemShears.h"
-namespace mcppeserver::item {}
+namespace cenisyspe::item {}

@@ -1,2 +1,2 @@
 #include "EntityChicken.h"
-namespace mcppeserver::entity {}
+namespace cenisyspe::entity {}

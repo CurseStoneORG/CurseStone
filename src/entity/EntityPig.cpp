@@ -1,2 +1,2 @@
 #include "EntityPig.h"
-namespace mcppeserver::entity {}
+namespace cenisyspe::entity {}

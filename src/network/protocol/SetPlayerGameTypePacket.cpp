@@ -2,7 +2,7 @@
 // SetPlayerGameTypePacket implementation.
 #include "SetPlayerGameTypePacket.h"
 
-namespace mcppeserver::network::protocol {
+namespace cenisyspe::network::protocol {
 
 void SetPlayerGameTypePacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
@@ -14,4 +14,4 @@ bool SetPlayerGameTypePacket::decode(const uint8_t* data, size_t len) {
     return r.readI32BE(gamemode);
 }
 
-} // namespace mcppeserver::network::protocol
+} // namespace cenisyspe::network::protocol

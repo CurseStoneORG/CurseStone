@@ -5,7 +5,7 @@
 #include <string>
 #include <cstdint>
 
-namespace mcppeserver::utils {
+namespace cenisyspe::utils {
 
 class VersionString {
 public:
@@ -31,4 +31,4 @@ private:
     std::string suffix_;
 };
 
-} // namespace mcppeserver::utils
+} // namespace cenisyspe::utils

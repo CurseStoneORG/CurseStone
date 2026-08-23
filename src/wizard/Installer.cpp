@@ -5,11 +5,11 @@
 #include <iostream>
 #include <fstream>
 #include <filesystem>
-namespace mcppeserver::wizard {
+namespace cenisyspe::wizard {
 namespace fs = std::filesystem;
 
 bool Installer::shouldRun() const {
-    return !fs::exists(data_path_ + "/mcppeserver.yml");
+    return !fs::exists(data_path_ + "/cenisyspe.yml");
 }
 
 std::string Installer::ask(const std::string& q, const std::string& def) {
@@ -32,10 +32,10 @@ int Installer::askInt(const std::string& q, int def) {
 
 bool Installer::runWizard() {
     if (!shouldRun()) return true;  // already configured
-    utils::MainLogger::get().info("Welcome to MCPPEServer! First-run setup:");
+    utils::MainLogger::get().info("Welcome to CenisysPE! First-run setup:");
     auto& lang = InstallerLang::get();
     lang.load("eng");
-    std::string name     = ask(lang.get("installer.name_question"), "MCPPEServer");
+    std::string name     = ask(lang.get("installer.name_question"), "CenisysPE");
     int max_players      = askInt(lang.get("installer.max_players_question"), 20);
     int port              = askInt(lang.get("installer.port_question"), 19132);
     std::string level_name = ask(lang.get("installer.level_name_question"), "world");
@@ -63,16 +63,16 @@ bool Installer::runWizard() {
     cfg.setInt("level.seed", 0);
 
     fs::create_directories(data_path_);
-    bool ok = cfg.saveYaml(data_path_ + "/mcppeserver.yml");
-    if (ok) utils::MainLogger::get().info("Saved mcppeserver.yml");
+    bool ok = cfg.saveYaml(data_path_ + "/cenisyspe.yml");
+    if (ok) utils::MainLogger::get().info("Saved cenisyspe.yml");
     else    utils::MainLogger::get().error("Failed to save config");
     return ok;
 }
 
 bool Installer::generateDefaultConfig() {
-    if (fs::exists(data_path_ + "/mcppeserver.yml")) return true;
+    if (fs::exists(data_path_ + "/cenisyspe.yml")) return true;
     fs::create_directories(data_path_);
-    std::ofstream f(data_path_ + "/mcppeserver.yml");
+    std::ofstream f(data_path_ + "/cenisyspe.yml");
     f << R"YAML(settings:
   language: "eng"
   shutdown-message: "Server closed"
@@ -81,7 +81,7 @@ bool Installer::generateDefaultConfig() {
 server:
   ip: "0.0.0.0"
   port: 19132
-  motd: "MCPPEServer"
+  motd: "CenisysPE"
   max-players: 20
   gamemode: 0
   difficulty: 1

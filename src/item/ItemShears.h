@@ -1,7 +1,7 @@
 #pragma once
 #include "Item.h"
 #include <string>
-namespace mcppeserver::item {
+namespace cenisyspe::item {
 class ItemShears : public Item {
 public:
     ItemShears() : Item(359) {}

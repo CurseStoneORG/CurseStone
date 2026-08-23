@@ -1,5 +1,5 @@
 #include "PermissibleBase.h"
-namespace mcppeserver::permission {
+namespace cenisyspe::permission {
 bool PermissibleBase::hasPermission(const std::string& name) const {
     // Exact match
     if (auto it = perms_.find(name); it != perms_.end()) return it->second;

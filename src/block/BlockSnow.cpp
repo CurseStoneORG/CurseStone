@@ -1,2 +1,2 @@
 #include "BlockSnow.h"
-namespace mcppeserver::block {}
+namespace cenisyspe::block {}

@@ -5,7 +5,7 @@
 #include "MainLogger.h"
 #include <string>
 
-namespace mcppeserver::utils {
+namespace cenisyspe::utils {
 
 class MainLogger {
 public:
@@ -35,4 +35,4 @@ private:
     MainLogger() = default;
 };
 
-} // namespace mcppeserver::utils
+} // namespace cenisyspe::utils

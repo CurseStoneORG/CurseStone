@@ -1,7 +1,7 @@
 #include "CraftingManager.h"
 #include <fstream>
 #include <sstream>
-namespace mcppeserver::inventory {
+namespace cenisyspe::inventory {
 CraftingManager::CraftingManager() {}
 int CraftingManager::loadFromJson(const std::string& json_path) {
     // Minimal JSON-ish loader: read file, count "result" occurrences.

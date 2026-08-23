@@ -1,2 +1,2 @@
 #include "EntitySkeleton.h"
-namespace mcppeserver::entity {}
+namespace cenisyspe::entity {}

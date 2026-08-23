@@ -7,7 +7,7 @@
 #include <memory>
 #include <atomic>
 #include <mutex>
-namespace mcppeserver::scheduler {
+namespace cenisyspe::scheduler {
 class ServerScheduler {
 public:
     static ServerScheduler& get();

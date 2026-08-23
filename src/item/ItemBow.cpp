@@ -1,2 +1,2 @@
 #include "ItemBow.h"
-namespace mcppeserver::item {}
+namespace cenisyspe::item {}

@@ -2,7 +2,7 @@
 // attack_damage, knockback_resistance. Sent in UpdateAttributesPacket.
 #pragma once
 #include <string>
-namespace mcppeserver::entity {
+namespace cenisyspe::entity {
 class Attribute {
 public:
     Attribute() = default;

@@ -43,7 +43,7 @@
 #include <sys/types.h>
 #include <cctype>
 
-namespace mcppeserver {
+namespace cenisyspe {
 
 Server::Server() = default;
 Server::~Server() = default;
@@ -51,13 +51,13 @@ Server::~Server() = default;
 void Server::loadConfig() {
     using utils::Config;
     Config cfg;
-    std::string cfg_path = dataPath_ + "/mcppeserver.yml";
+    std::string cfg_path = dataPath_ + "/cenisyspe.yml";
     if (!cfg.loadYaml(cfg_path)) {
         utils::MainLogger::get().info("Config not found, using defaults: " + cfg_path);
     }
     ip_            = cfg.getString("server.ip", "0.0.0.0");
     port_          = (uint16_t)cfg.getInt("server.port", 19132);
-    motd_          = cfg.getString("server.motd", "MCPPEServer");
+    motd_          = cfg.getString("server.motd", "CenisysPE");
     max_players_   = cfg.getInt("server.max-players", 20);
     gamemode_      = cfg.getInt("server.gamemode", 0);
     difficulty_    = cfg.getInt("server.difficulty", 1);
@@ -69,8 +69,8 @@ void Server::loadConfig() {
 }
 
 void Server::initLogger() {
-    utils::MainLogger::get().info(std::string(MCPPESERVER_NAME) +
-        " v" + MCPPESERVER_VERSION + " (codename: " + MCPPESERVER_CODENAME + ")");
+    utils::MainLogger::get().info(std::string(CENISYSPE_NAME) +
+        " v" + CENISYSPE_VERSION + " (codename: " + CENISYSPE_CODENAME + ")");
     utils::MainLogger::get().info("Target: Minecraft PE " + std::string(MINECRAFT_VERSION) +
         ", protocol " + std::to_string(PROTOCOL_VERSION));
 }
@@ -97,21 +97,34 @@ void Server::openNetwork() {
 void Server::loadDefaultLevel() {
     level::LevelConfig lc;
     lc.name = "world";
-    lc.format = "mcacpp";
+    lc.format = "mcape";
     lc.generator = "normal";
     lc.seed = 0;
     lc.spawn_x = 0; lc.spawn_y = 5; lc.spawn_z = 0;
     lc.view_distance = view_distance_;
     level_ = std::make_shared<level::Level>(std::move(lc));
-    // Create worlds directory so the server has a visible data folder
+    // Create worlds directory structure
     std::string worldsDir = dataPath_ + "/worlds";
+    std::string worldDir = worldsDir + "/world";
+    std::string regionDir = worldDir + "/region";
     ::mkdir(worldsDir.c_str(), 0755);
-    // Create a marker file so the user can see the world exists
-    std::string marker = worldsDir + "/world.txt";
-    FILE* f = fopen(marker.c_str(), "w");
-    if (f) { fprintf(f, "World: world\nFormat: mcacpp\nSpawn: 0, 66, 0\n"); fclose(f); }
-    utils::MainLogger::get().info("Default level 'world' ready");
-    utils::MainLogger::get().info("Worlds directory: " + worldsDir);
+    ::mkdir(worldDir.c_str(), 0755);
+    ::mkdir(regionDir.c_str(), 0755);
+    // Save level.dat
+    std::string levelDat = worldDir + "/level.dat";
+    FILE* f = fopen(levelDat.c_str(), "wb");
+    if (f) {
+        fprintf(f, "CenisysPE Level\n");
+        fprintf(f, "name=world\n");
+        fprintf(f, "seed=0\n");
+        fprintf(f, "time=0\n");
+        fprintf(f, "spawn=0,5,0\n");
+        fprintf(f, "generator=normal\n");
+        fclose(f);
+    }
+    utils::MainLogger::get().info("Default level 'world' ready (format: mcape)");
+    utils::MainLogger::get().info("World directory: " + worldDir);
+    utils::MainLogger::get().info("Region directory: " + regionDir);
 }
 
 void Server::startCommandReader() {
@@ -349,4 +362,4 @@ void Server::saveOfflinePlayerData(const std::string& name, NbtPtr nbt) {
     free(bytes);
 }
 
-} // namespace mcppeserver
+} // namespace cenisyspe

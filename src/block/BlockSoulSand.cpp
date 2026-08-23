@@ -1,2 +1,2 @@
 #include "BlockSoulSand.h"
-namespace mcppeserver::block {}
+namespace cenisyspe::block {}

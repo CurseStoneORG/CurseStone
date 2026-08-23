@@ -1,2 +1,2 @@
 #include "ItemLeatherChestplate.h"
-namespace mcppeserver::item {}
+namespace cenisyspe::item {}

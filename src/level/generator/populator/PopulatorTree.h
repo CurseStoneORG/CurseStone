@@ -1,7 +1,7 @@
 #pragma once
 #include "Populator.h"
 #include "level/generator/object/TreeGenerator.h"
-namespace mcppeserver::level::generator::populator {
+namespace cenisyspe::level::generator::populator {
 class PopulatorTree : public Populator {
 public:
     PopulatorTree(int attempts_per_chunk, object::TreeType type)
