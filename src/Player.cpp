@@ -29,6 +29,10 @@
 #include "network/protocol/UpdateBlockPacket.h"
 #include "network/protocol/MobEquipmentPacket.h"
 #include "network/protocol/LevelEventPacket.h"
+#include "network/protocol/AddItemEntityPacket.h"
+#include "network/protocol/ContainerSetContentPacket.h"
+#include "network/protocol/ContainerSetSlotPacket.h"
+#include "inventory/CreativeItems.h"
 #include "network/protocol/Info.h"
 #include "network/protocol/PacketPool.h"
 #include "inventory/PlayerInventory.h"
@@ -48,6 +52,7 @@
 #include <cstring>
 #include <cstdio>
 #include <array>
+#include <utility>     // std::pair
 #include <unordered_set>
 
 namespace cenisyspe {
@@ -56,7 +61,7 @@ namespace cenisyspe {
 // Phase 0 — Player construction / destruction
 // ============================================================
 Player::Player(Server* srv, PlayerConfig cfg)
-    : entity::Human(0, nullptr), srv_(srv), cfg_(std::move(cfg)) {
+    : entity::Human(cfg.runtime_eid, nullptr), srv_(srv), cfg_(std::move(cfg)) {
     inv_ = std::make_shared<inventory::PlayerInventory>();
     connected_.store(true, std::memory_order_relaxed);
     setMaxHealth(20);
@@ -225,7 +230,19 @@ void Player::teleport(double x, double y, double z) {
         sendPacket(pk);
     }
 }
-void Player::setGamemode(int gm) { cfg_.gamemode = gm & 0x03; }
+void Player::setGamemode(int gm) {
+    int new_gm = gm & 0x03;
+    bool was_creative = (cfg_.gamemode & 1) != 0;
+    bool is_creative  = (new_gm        & 1) != 0;
+    cfg_.gamemode = new_gm;
+
+    // Re-send the creative inventory when creative state changes
+    // (PMMP `Player.php:1461` sends it on every gamemode change so the
+    // client's creative grid updates immediately).
+    if (was_creative != is_creative || new_gm == 3) {
+        sendCreativeInventory();
+    }
+}
 
 // ============================================================
 // Phase 2 — handleDataPacket: dispatch by packet ID
@@ -297,6 +314,39 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                             " switched to hotbar slot " + std::to_string(me->hotbarSlot));
                     }
                 }
+            }
+            break;
+        case network::protocol::CONTAINER_SET_SLOT_PACKET:
+            // Client moved an item between slots in their inventory, OR
+            // picked an item from the creative grid. We trust the client
+            // and just write the resulting slot state into our local
+            // PlayerInventory (mirrors PMMP's transaction-queue approach,
+            // simplified — we skip the validation step).
+            if (auto* cs = dynamic_cast<network::protocol::ContainerSetSlotPacket*>(&p)) {
+                if (inv_ && cs->windowid == network::protocol::ContainerSetSlotPacket::SPECIAL_INVENTORY) {
+                    // Main inventory slot change.
+                    if (cs->slot >= 0 && cs->slot < inventory::PlayerInventory::SIZE) {
+                        cenisyspe::item::ItemStack it;
+                        it.id    = static_cast<uint16_t>(cs->itemId);
+                        it.count = cs->itemCount;
+                        it.meta  = static_cast<uint8_t>(cs->itemDamage & 0xFF);
+                        inv_->setItem(cs->slot, it);
+                    }
+                } else if (inv_ && cs->windowid == network::protocol::ContainerSetSlotPacket::SPECIAL_ARMOR) {
+                    // Armor slot change.
+                    if (cs->slot >= 0 && cs->slot < 4) {
+                        int dest = inventory::PlayerInventory::ARMOR_OFFSET + cs->slot;
+                        cenisyspe::item::ItemStack it;
+                        it.id    = static_cast<uint16_t>(cs->itemId);
+                        it.count = cs->itemCount;
+                        it.meta  = static_cast<uint8_t>(cs->itemDamage & 0xFF);
+                        inv_->setItem(dest, it);
+                    }
+                }
+                // SPECIAL_CREATIVE (0x79) clicks: PMMP doesn't process them
+                // server-side either — the client just locally puts the
+                // item into its main inventory, then sends a windowid=0
+                // ContainerSetSlotPacket. We don't need to handle 0x79.
             }
             break;
         // Packets we acknowledge but don't act on for the MVP.
@@ -648,6 +698,12 @@ void Player::doFirstSpawn() {
         sendPacket(ps);
     }
 
+    // Send the creative inventory contents to the player. Mirrors PMMP
+    // `Player.php:2301` which calls ContainerSetContentPacket with
+    // windowid=0x79 (SPECIAL_CREATIVE) right after first spawn so the
+    // player has items to grab in creative mode.
+    sendCreativeInventory();
+
     // Broadcast a PlayerListPacket (ADD) with all currently-online players.
     if (srv_) {
         auto plp = std::make_shared<network::protocol::PlayerListPacket>();
@@ -767,6 +823,9 @@ void Player::handleChat(const std::string& message) {
     if (srv_) srv_->broadcastMessage("<" + cfg_.username + "> " + message);
 }
 
+// Forward decl — defined below handlePlayerAction.
+static std::pair<uint16_t, uint16_t> lookupBlockDrop(uint8_t blockId, uint8_t blockData);
+
 void Player::handleBlockBreak(int x, int y, int z) {
     if (!spawned_.load(std::memory_order_relaxed)) return;
     if (!srv_ || !srv_->getDefaultLevel()) return;
@@ -834,6 +893,18 @@ void Player::handleBlockBreak(int x, int y, int z) {
             if (!other->isTrackingChunk(pk_cx, pk_cz)) continue;
             other->sendPacket(ubp);
             other->sendPacket(partEv);
+        }
+    }
+
+    // ---- Drops (PMMP `Level::useBreakOn` -> `Level::dropItem`) ----
+    // PMMP: only survival players get drops. Creative players skip this
+    // loop entirely (vanilla-correct behaviour).
+    bool creative = (cfg_.gamemode & 1) != 0;
+    if (!creative) {
+        // Lookup the drop table for this block.
+        auto drop = lookupBlockDrop(blockId, blockData);
+        if (drop.first != 0) {  // 0 = no drop (glass, ice, etc.)
+            dropItem(x, y, z, drop.first, 1, drop.second);
         }
     }
 
@@ -959,6 +1030,125 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int /*face*/) {
         utils::MainLogger::get().info("[ACTION] " + cfg_.username + " started breaking at " +
             std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(z));
     }
+}
+
+// ============================================================
+// Block drop lookup table
+// ============================================================
+// Mirrors PMMP `Block::getDrops(Item $item)` per-block overrides.
+// Returns {itemId, damage} of the drop. {0, 0} = no drop.
+// Default (unlisted block): drop itself (id, damage, count=1).
+//
+//   Block            | Drops         | Notes
+//   -----------------+---------------+---------------------------
+//   Stone (1)        | Cobblestone 4 | Requires pickaxe (we assume yes)
+//   Grass (2)        | Dirt 3        | Silk-touch → Grass (not modeled)
+//   Coal Ore (16)   | Coal 263      |
+//   Iron Ore (15)   | Nothing       | Needs smelting
+//   Gold Ore (14)   | Nothing       | Needs smelting
+//   Diamond Ore (56) | Diamond 264   |
+//   Lapis Ore (21)  | Dye 351:4     | Lapis Lazuli dye
+//   Redstone Ore (73)| Redstone 331  |
+//   Glass (20)      | Nothing       | Silk-touch required (PMMP Glass.php)
+//   Ice (79)        | Nothing       | Silk-touch required (PMMP Ice.php)
+//   Glowstone (89)  | Glowstone Dust 348 | Drops 2-4, we drop 1 for MVP
+//   Leaves (18)     | Nothing       | Sapling chance (PMMP complex, skip)
+//   Bedrock (7)      | Nothing       | Unbreakable anyway
+//   TNT (46)         | Nothing       | Doesn't drop itself when broken
+static std::pair<uint16_t, uint16_t> lookupBlockDrop(uint8_t blockId, uint8_t blockData) {
+    switch (blockId) {
+        case 1:  return {4,   blockData & 0x07};   // Stone -> Cobblestone (preserve variant for non-stone types)
+        case 2:  return {3,   0};                   // Grass -> Dirt
+        case 15: return {0,   0};                   // Iron Ore -> no drop (smelt)
+        case 16: return {263, 0};                   // Coal Ore -> Coal
+        case 14: return {0,   0};                   // Gold Ore -> no drop (smelt)
+        case 21: return {351, 4};                   // Lapis Ore -> Lapis Lazuli dye
+        case 56: return {264, 0};                   // Diamond Ore -> Diamond
+        case 73: return {331, 0};                   // Redstone Ore -> Redstone
+        case 20: return {0,   0};                   // Glass -> no drop
+        case 79: return {0,   0};                   // Ice -> no drop
+        case 89: return {348, 0};                   // Glowstone -> Glowstone Dust
+        case 18: return {0,   0};                   // Leaves -> no drop (chance-based)
+        case 7:  return {0,   0};                   // Bedrock -> unbreakable
+        case 46: return {0,   0};                   // TNT -> no drop
+        default: return {blockId, blockData};       // Default: drop self
+    }
+}
+
+// ============================================================
+// Drop an item entity at a position
+// ============================================================
+// Mirrors PMMP `Level::dropItem(Vector3, Item, motion=null, delay=10)`:
+//   - Motion: random (x in [-0.1, +0.1], y = 0.2, z in [-0.1, +0.1])
+//   - Position: block CENTER (x+0.5, y+0.5, z+0.5)
+//   - Broadcast: AddItemEntityPacket to all players tracking the chunk
+// PMMP also keeps the entity server-side (with gravity + pickup delay)
+// so players can pick it up via TakeItemEntityPacket. We skip the
+// server-side entity tracking for the MVP and just broadcast the spawn
+// — the visual feedback is what matters.
+int64_t Player::dropItem(int x, int y, int z, uint16_t itemId, uint8_t count, uint16_t damage) {
+    if (itemId == 0 || count == 0) return 0;
+    if (!srv_) return 0;
+
+    // Allocate a runtime entity ID (PMMP `Level::$entityIdCounter`).
+    int64_t eid = srv_->allocateEid();
+
+    // Random motion in PMMP range. Using a cheap LCG (no <random> needed).
+    static uint32_t lcg_state = 0x1234abcdu;
+    lcg_state = lcg_state * 1103515245u + 12345u;
+    auto rnd = []() -> float {
+        lcg_state = lcg_state * 1103515245u + 12345u;
+        return (float)((double)(lcg_state >> 8) / (double)0x1000000);
+    };
+    float mx = rnd() * 0.2f - 0.1f;     // [-0.1, +0.1]
+    float my = 0.2f;                    // pop up
+    float mz = rnd() * 0.2f - 0.1f;
+
+    auto pk = std::make_shared<network::protocol::AddItemEntityPacket>();
+    pk->eid        = eid;
+    pk->itemId     = static_cast<int16_t>(itemId);
+    pk->itemCount  = count;
+    pk->itemDamage = static_cast<int16_t>(damage);
+    pk->x = (float)x + 0.5f;
+    pk->y = (float)y + 0.5f;
+    pk->z = (float)z + 0.5f;
+    pk->speedX = mx;
+    pk->speedY = my;
+    pk->speedZ = mz;
+
+    // Broadcast only to players tracking this chunk (PMMP `addChunkPacket`).
+    int32_t pk_cx = x >> 4;
+    int32_t pk_cz = z >> 4;
+    for (auto& other : srv_->players()) {
+        if (!other) continue;
+        if (!other->isTrackingChunk(pk_cx, pk_cz)) continue;
+        other->sendPacket(pk);
+    }
+
+    if (srv_->advancedLog()) {
+        utils::MainLogger::get().info("[DROP] eid=" + std::to_string(eid) +
+            " item=" + std::to_string(itemId) + " x" + std::to_string(count) +
+            " dmg=" + std::to_string(damage) + " at " +
+            std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(z));
+    }
+    return eid;
+}
+
+// ============================================================
+// Send the creative inventory to the player
+// ============================================================
+// Mirrors PMMP `Player.php:2301` (and `:1461` on gamemode change):
+//   ContainerSetContentPacket with windowid=SPECIAL_CREATIVE (0x79) and
+//   slots = full creative item list (PMMP `Item::getCreativeItems()`).
+//   Spectator players get an empty list (no items to give).
+void Player::sendCreativeInventory() {
+    bool spectator = (cfg_.gamemode == 3);
+    auto pk = std::make_shared<network::protocol::ContainerSetContentPacket>();
+    pk->windowid = network::protocol::ContainerSetContentPacket::SPECIAL_CREATIVE;
+    if (!spectator) {
+        pk->slots = inventory::getCreativeItems();
+    }
+    sendPacket(pk);
 }
 
 // ============================================================

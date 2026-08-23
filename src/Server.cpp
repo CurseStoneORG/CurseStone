@@ -219,6 +219,9 @@ void Server::broadcastMessage(const std::string& msg) {
 void Server::broadcastPacket(void* /*p*/) {
     // send to each player's source interface
 }
+int64_t Server::allocateEid() {
+    return next_eid_.fetch_add(1, std::memory_order_relaxed);
+}
 
 permission::BanList& Server::getNameBans() {
     if (!name_bans_) {

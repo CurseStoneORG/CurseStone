@@ -80,6 +80,12 @@ public:
     void broadcastMessage(const std::string& msg);
     void broadcastPacket(/* DataPacket */ void* p);
 
+    // Allocate a fresh unique runtime entity ID. Used for spawning item
+    // drops and other world entities (mirrors PMMP
+    // `Level::$entityIdCounter` / `Entity::$entityCount`). IDs start at 2
+    // (id 0 is reserved for "no entity" and id 1 is the host player).
+    int64_t allocateEid();
+
     // Level + scheduler + network accessors.
     Level* getDefaultLevel() const { return level_.get(); }
     scheduler::AsyncPool* getAsyncPool() const { return async_pool_.get(); }
@@ -127,6 +133,9 @@ private:
     void saveOps();
 
     std::unordered_set<std::string> ops_;
+
+    // Runtime entity-ID allocator (atomic, monotonic from 2).
+    std::atomic<int64_t> next_eid_{2};
 
     std::string dataPath_;
     std::atomic<bool> running_{false};
