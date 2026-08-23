@@ -48,7 +48,7 @@ void RakLibInterface::start() {
         port        = server_->port();
         motd_str    = server_->getMotd();
         max_players = server_->maxPlayers();
-        online      = (int)server_->players().size();
+        online      = (int)server_->playersSnapshot().size();
     }
     uint16_t mtu  = 1492;
 

@@ -5,16 +5,25 @@
 // (protocol 84). Each entry is {itemId, damage}; count is always 1
 // for creative items.
 //
-// We use a condensed but representative list (≈100 entries) covering
-// the most-used building blocks, decoration, tools, food, and redstone
-// so the player has a useful creative inventory without pulling in
-// hundreds of niche items. The list is static const — no per-player
-// mutation. PMMP also supports per-player extra creative items
-// (`personalCreativeItems`) which we don't need for the MVP.
+// Loading order (mirrors PMMP `Item::initCreativeItems($readFromJson)`):
+//   1. Try to load <dataPath>/resources/creativeitems.json at runtime.
+//      This is the canonical source — same file PMMP ships.
+//   2. On any error (file missing, parse error), fall back to a small
+//      hardcoded subset so the inventory is never empty.
+//
+// The PMMP creativeitems.json is a flat object:
+//   {
+//     "Cobblestone":{"ID":4,"Damage":0},
+//     "Stone Bricks":{"ID":98,"Damage":0},
+//     ...
+//   }
+// Each value has exactly two integer fields: "ID" and "Damage".
+// We parse this with a tiny dedicated parser (no external JSON dep).
 #pragma once
 #include "item/ItemStack.h"
 #include <vector>
 #include <cstdint>
+#include <string>
 
 namespace cenisyspe::inventory {
 
@@ -23,202 +32,143 @@ struct CreativeItemDef {
     uint8_t  damage;
 };
 
-} // namespace cenisyspe::inventory
+// — Implementation ———————————————————————————————————————————————
+namespace detail {
 
-// Implementation ———————————————————————————————————————————————
-namespace cenisyspe::inventory {
+// Tiny JSON value parser specialized for the creativeitems.json shape.
+// Each top-level entry value is an object with integer "ID" and "Damage".
+// We don't need to build a full JSON tree — we scan for `"ID":<int>` and
+// `"Damage":<int>` pairs inside object literals and emit {id, damage} pairs.
+struct CreativeItemsLoader {
+    std::vector<CreativeItemDef> items;
 
-// One global table — populated on first access (lazy).
-inline const std::vector<CreativeItemDef>& creativeItemTable() {
-    static const std::vector<CreativeItemDef> table = {
-        // ---- Building blocks ----
-        {1, 0},    // Stone
-        {1, 1},    // Granite
-        {1, 2},    // Polished Granite
-        {1, 3},    // Diorite
-        {1, 4},    // Polished Diorite
-        {1, 5},    // Andesite
-        {1, 6},    // Polished Andesite
-        {2, 0},    // Grass
-        {3, 0},    // Dirt
-        {4, 0},    // Cobblestone
-        {5, 0},    // Oak Planks
-        {5, 1},    // Spruce Planks
-        {5, 2},    // Birch Planks
-        {5, 3},    // Jungle Planks
-        {5, 4},    // Acacia Planks
-        {5, 5},    // Dark Oak Planks
-        {12, 0},   // Sand
-        {13, 0},   // Gravel
-        {17, 0},   // Oak Log
-        {17, 1},   // Spruce Log
-        {17, 2},   // Birch Log
-        {17, 3},   // Jungle Log
-        {20, 0},   // Glass
-        {24, 0},   // Sandstone
-        {24, 1},   // Chiseled Sandstone
-        {24, 2},   // Smooth Sandstone
-        {35, 0},   // White Wool
-        {35, 1},   // Orange Wool
-        {35, 2},   // Magenta Wool
-        {35, 3},   // Light Blue Wool
-        {35, 4},   // Yellow Wool
-        {35, 5},   // Lime Wool
-        {35, 6},   // Pink Wool
-        {35, 7},   // Gray Wool
-        {35, 8},   // Light Gray Wool
-        {35, 9},   // Cyan Wool
-        {35, 10},  // Purple Wool
-        {35, 11},  // Blue Wool
-        {35, 12},  // Brown Wool
-        {35, 13},  // Green Wool
-        {35, 14},  // Red Wool
-        {35, 15},  // Black Wool
-        {41, 0},   // Gold Block
-        {42, 0},   // Iron Block
-        {45, 0},   // Bricks
-        {46, 0},   // TNT
-        {47, 0},   // Bookshelf
-        {48, 0},   // Moss Stone
-        {49, 0},   // Obsidian
-        {57, 0},   // Diamond Block
-        {58, 0},   // Crafting Table
-        {61, 0},   // Furnace
-        {79, 0},   // Ice
-        {80, 0},   // Snow Block
-        {89, 0},   // Glowstone
-        {95, 0},   // White Stained Glass
-        {95, 1},   // Orange Stained Glass
-        {95, 2},   // Magenta Stained Glass
-        {95, 3},   // Light Blue Stained Glass
-        {95, 4},   // Yellow Stained Glass
-        {95, 5},   // Lime Stained Glass
-        {95, 6},   // Pink Stained Glass
-        {95, 7},   // Gray Stained Glass
-        {95, 8},   // Light Gray Stained Glass
-        {95, 9},   // Cyan Stained Glass
-        {95, 10},  // Purple Stained Glass
-        {95, 11},  // Blue Stained Glass
-        {95, 12},  // Brown Stained Glass
-        {95, 13},  // Green Stained Glass
-        {95, 14},  // Red Stained Glass
-        {95, 15},  // Black Stained Glass
-        {98, 0},   // Stone Bricks
-        {98, 1},   // Mossy Stone Bricks
-        {98, 2},   // Cracked Stone Bricks
-        {98, 3},   // Chiseled Stone Bricks
-        // ---- Decoration ----
-        {6, 0},    // Oak Sapling
-        {6, 1},    // Spruce Sapling
-        {6, 2},    // Birch Sapling
-        {6, 3},    // Jungle Sapling
-        {37, 0},   // Dandelion
-        {38, 0},   // Poppy
-        {38, 1},   // Blue Orchid
-        {38, 2},   // Allium
-        {38, 3},   // Azure Bluet
-        {50, 0},   // Torch
-        {53, 0},   // Oak Wood Stairs
-        {65, 0},   // Ladder
-        {89, 0},   // Glowstone (dup OK)
-        // ---- Tools / weapons ----
-        {256, 0},  // Iron Shovel
-        {257, 0},  // Iron Pickaxe
-        {258, 0},  // Iron Axe
-        {267, 0},  // Iron Sword
-        {268, 0},  // Wooden Sword
-        {269, 0},  // Wooden Shovel
-        {270, 0},  // Wooden Pickaxe
-        {271, 0},  // Wooden Axe
-        {272, 0},  // Stone Sword
-        {273, 0},  // Stone Shovel
-        {274, 0},  // Stone Pickaxe
-        {275, 0},  // Stone Axe
-        {276, 0},  // Diamond Sword
-        {277, 0},  // Diamond Shovel
-        {278, 0},  // Diamond Pickaxe
-        {279, 0},  // Diamond Axe
-        {283, 0},  // Gold Sword
-        {284, 0},  // Gold Shovel
-        {285, 0},  // Gold Pickaxe
-        {286, 0},  // Gold Axe
-        {290, 0},  // Wooden Hoe
-        {291, 0},  // Stone Hoe
-        {292, 0},  // Iron Hoe
-        {293, 0},  // Diamond Hoe
-        {294, 0},  // Gold Hoe
-        {259, 0},  // Flint and Steel
-        {346, 0},  // Fishing Rod
-        {359, 0},  // Shears
-        // ---- Armor ----
-        {298, 0},  // Leather Cap
-        {299, 0},  // Leather Tunic
-        {300, 0},  // Leather Pants
-        {301, 0},  // Leather Boots
-        {302, 0},  // Chain Helmet
-        {303, 0},  // Chain Chestplate
-        {304, 0},  // Chain Leggings
-        {305, 0},  // Chain Boots
-        {306, 0},  // Iron Helmet
-        {307, 0},  // Iron Chestplate
-        {308, 0},  // Iron Leggings
-        {309, 0},  // Iron Boots
-        {310, 0},  // Diamond Helmet
-        {311, 0},  // Diamond Chestplate
-        {312, 0},  // Diamond Leggings
-        {313, 0},  // Diamond Boots
-        {314, 0},  // Gold Helmet
-        {315, 0},  // Gold Chestplate
-        {316, 0},  // Gold Leggings
-        {317, 0},  // Gold Boots
-        // ---- Misc ----
-        {263, 0},  // Coal
-        {264, 0},  // Diamond
-        {265, 0},  // Iron Ingot
-        {266, 0},  // Gold Ingot
-        {265, 0},  // Iron Ingot
-        {280, 0},  // Stick
-        {287, 0},  // String
-        {288, 0},  // Feather
-        {289, 0},  // Gunpowder
-        {295, 0},  // Wheat Seeds
-        {296, 0},  // Wheat
-        {297, 0},  // Bread
-        {322, 0},  // Apple
-        {336, 0},  // Brick
-        {337, 0},  // Clay
-        {338, 0},  // Sugar Cane
-        {339, 0},  // Paper
-        {340, 0},  // Book
-        {345, 0},  // Clock
-        {347, 0},  // Bed
-        {348, 0},  // Cookie
-        {351, 0},  // Ink Sack (dye)
-        {351, 1},  // Rose Red
-        {351, 2},  // Cactus Green
-        {351, 3},  // Cocoa Beans
-        {351, 4},  // Lapis Lazuli
-        {351, 5},  // Purple Dye
-        {351, 6},  // Cyan Dye
-        {351, 7},  // Light Gray Dye
-        {351, 8},  // Gray Dye
-        {351, 9},  // Pink Dye
-        {351, 10}, // Lime Dye
-        {351, 11}, // Dandelion Yellow
-        {351, 12}, // Light Blue Dye
-        {351, 13}, // Magenta Dye
-        {351, 14}, // Orange Dye
-        {351, 15}, // Bone Meal
-        // ---- Redstone ----
-        {331, 0},  // Redstone
-        {356, 0},  // Piston
-        {354, 0},  // Cake
+    bool loadFromFile(const std::string& path) {
+        FILE* f = fopen(path.c_str(), "rb");
+        if (!f) return false;
+        fseek(f, 0, SEEK_END);
+        long sz = ftell(f);
+        if (sz <= 0) { fclose(f); return false; }
+        fseek(f, 0, SEEK_SET);
+        std::string buf;
+        buf.resize((size_t)sz);
+        size_t rd = fread(&buf[0], 1, (size_t)sz, f);
+        fclose(f);
+        if (rd == 0) return false;
+        buf.resize(rd);
+        return parse(buf);
+    }
+
+    // Parse the JSON content. Each object is scanned independently for an
+    // "ID" key followed by an integer, and a "Damage" key followed by an
+    // integer. If only "ID" is found, Damage defaults to 0.
+    bool parse(const std::string& src) {
+        items.clear();
+        size_t i = 0;
+        const size_t n = src.size();
+
+        // Find the outer "{" to start
+        while (i < n && src[i] != '{') ++i;
+        if (i == n) return false;
+        ++i; // consume outer {
+
+        // Walk through `"key":{ ... },` pairs
+        while (i < n) {
+            // Find next `{`
+            while (i < n && src[i] != '{' && src[i] != '}') ++i;
+            if (i == n || src[i] == '}') break;  // end of outer object
+            ++i;  // consume inner {
+
+            // Scan this inner object for "ID" and "Damage".
+            CreativeItemDef def{0, 0};
+            bool found_id = false, found_damage = false;
+            int brace_depth = 1;
+            while (i < n && brace_depth > 0) {
+                if (src[i] == '{') { ++brace_depth; ++i; continue; }
+                if (src[i] == '}') { --brace_depth; ++i; continue; }
+                if (src[i] == '"') {
+                    // Read string key
+                    ++i;
+                    size_t keyStart = i;
+                    while (i < n && src[i] != '"') ++i;
+                    std::string key = src.substr(keyStart, i - keyStart);
+                    if (i < n) ++i; // consume closing "
+                    // Skip whitespace and ':'
+                    while (i < n && (src[i] == ' ' || src[i] == '\t' ||
+                                      src[i] == '\n' || src[i] == '\r' || src[i] == ':')) ++i;
+                    // Read integer value (optional minus sign)
+                    bool neg = false;
+                    if (i < n && src[i] == '-') { neg = true; ++i; }
+                    long val = 0;
+                    bool has_digits = false;
+                    while (i < n && src[i] >= '0' && src[i] <= '9') {
+                        val = val * 10 + (src[i] - '0');
+                        ++i;
+                        has_digits = true;
+                    }
+                    if (has_digits) {
+                        if (neg) val = -val;
+                        if (key == "ID") {
+                            def.id = (uint16_t)(val & 0xFFFF);
+                            found_id = true;
+                        } else if (key == "Damage") {
+                            def.damage = (uint8_t)(val & 0xFF);
+                            found_damage = true;
+                        }
+                    }
+                } else {
+                    ++i;
+                }
+            }
+            if (found_id) {
+                if (!found_damage) def.damage = 0;
+                items.push_back(def);
+            }
+        }
+        return !items.empty();
+    }
+};
+
+} // namespace detail
+
+// Returns the full creative-item list, loaded from
+// `<dataPath>/resources/creativeitems.json` on first call (cached).
+// Falls back to a tiny hardcoded list if the file is missing or invalid.
+inline const std::vector<CreativeItemDef>& creativeItemTable(const std::string& dataPath = "") {
+    static std::vector<CreativeItemDef> table;
+    static bool initialized = false;
+    if (initialized) return table;
+    initialized = true;
+
+    if (!dataPath.empty()) {
+        detail::CreativeItemsLoader loader;
+        std::string path = dataPath;
+        // Normalize: ensure trailing slash.
+        if (path.back() != '/' && path.back() != '\\') path += '/';
+        path += "resources/creativeitems.json";
+        if (loader.loadFromFile(path)) {
+            table = std::move(loader.items);
+            return table;
+        }
+    }
+    // Fallback — minimal hardcoded list.
+    table = {
+        {1, 0}, {2, 0}, {3, 0}, {4, 0}, {5, 0}, {17, 0}, {20, 0}, {24, 0},
+        {35, 0}, {41, 0}, {42, 0}, {45, 0}, {46, 0}, {49, 0}, {57, 0},
+        {58, 0}, {61, 0}, {79, 0}, {80, 0}, {89, 0}, {98, 0},
+        // Tools
+        {256, 0}, {257, 0}, {258, 0}, {267, 0}, {276, 0}, {277, 0}, {278, 0}, {279, 0},
+        // Armor
+        {306, 0}, {307, 0}, {308, 0}, {309, 0},
+        {310, 0}, {311, 0}, {312, 0}, {313, 0},
+        // Misc
+        {263, 0}, {264, 0}, {265, 0}, {266, 0}, {280, 0}, {297, 0}, {322, 0},
     };
     return table;
 }
 
-inline std::vector<cenisyspe::item::ItemStack> getCreativeItems() {
-    const auto& table = creativeItemTable();
+// Convenience: returns the items as ItemStack values (count=1, meta=damage).
+inline std::vector<cenisyspe::item::ItemStack> getCreativeItems(const std::string& dataPath = "") {
+    const auto& table = creativeItemTable(dataPath);
     std::vector<cenisyspe::item::ItemStack> out;
     out.reserve(table.size());
     for (const auto& e : table) {

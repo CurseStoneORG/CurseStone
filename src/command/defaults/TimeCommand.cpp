@@ -22,7 +22,7 @@ bool TimeCommand::execute(CommandSender* sender, const std::string&,
             lvl->setTime(t);
             auto pk = std::make_shared<network::protocol::SetTimePacket>();
             pk->time = t; pk->started = true;
-            for (auto& p : Server::getInstance().players()) { if (p) p->sendPacket(pk); }
+            for (auto& p : Server::getInstance().playersSnapshot()) { if (p) p->sendPacket(pk); }
             sender->sendMessage(TC::GREEN + "Set time to " + std::to_string(t) + TC::RESET);
         }
         return true;

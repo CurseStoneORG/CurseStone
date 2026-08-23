@@ -202,19 +202,27 @@ void Server::shutdown() {
 }
 
 Player* Server::getPlayer(const std::string& name) const {
-    for (const auto& p : players_)
+    auto snap = playersSnapshot();
+    for (const auto& p : snap)
         if (p && p->getName() == name) return p.get();
     return nullptr;
 }
 void Server::addPlayer(std::shared_ptr<Player> p) {
+    std::lock_guard<std::mutex> lk(players_mtx_);
     players_.push_back(std::move(p));
 }
 void Server::removePlayer(Player* p) {
+    std::lock_guard<std::mutex> lk(players_mtx_);
     players_.erase(std::remove_if(players_.begin(), players_.end(),
         [p](const std::shared_ptr<Player>& q) { return q.get() == p; }), players_.end());
 }
+std::vector<std::shared_ptr<Player>> Server::playersSnapshot() const {
+    std::lock_guard<std::mutex> lk(players_mtx_);
+    return players_;   // returns a copy
+}
 void Server::broadcastMessage(const std::string& msg) {
-    for (auto& p : players_) p->sendMessage(msg);
+    auto snap = playersSnapshot();
+    for (auto& p : snap) if (p) p->sendMessage(msg);
 }
 void Server::broadcastPacket(void* /*p*/) {
     // send to each player's source interface

@@ -36,6 +36,7 @@
 #include "AddItemEntityPacket.h"
 #include "ContainerSetContentPacket.h"
 #include "ContainerSetSlotPacket.h"
+#include "MobArmorEquipmentPacket.h"
 
 namespace cenisyspe::network::protocol {
 
@@ -69,6 +70,7 @@ std::shared_ptr<DataPacket> PacketPool::create(uint8_t pid) const {
         case ADD_ITEM_ENTITY_PACKET:        return std::make_shared<AddItemEntityPacket>();
         case CONTAINER_SET_CONTENT_PACKET:  return std::make_shared<ContainerSetContentPacket>();
         case CONTAINER_SET_SLOT_PACKET:     return std::make_shared<ContainerSetSlotPacket>();
+        case MOB_ARMOR_EQUIPMENT_PACKET:    return std::make_shared<MobArmorEquipmentPacket>();
         default:
             // Unknown packet — return nullptr so callers can log + skip.
             return nullptr;
