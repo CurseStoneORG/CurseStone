@@ -5,15 +5,13 @@
 namespace mcppeserver::network::protocol {
 
 void SetPlayerGameTypePacket::encode(std::vector<uint8_t>& out) const {
-    (void)out;
-    // TODO: Phase 6 stub — implement when packets are wired into Player handlers.
+    PacketWriter w(out);
+    w.writeI32BE(gamemode);
 }
 
 bool SetPlayerGameTypePacket::decode(const uint8_t* data, size_t len) {
-    (void)data;
-    (void)len;
-    // TODO: Phase 6 stub.
-    return true;
+    PacketReader r(data, len);
+    return r.readI32BE(gamemode);
 }
 
 } // namespace mcppeserver::network::protocol

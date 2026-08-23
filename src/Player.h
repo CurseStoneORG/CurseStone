@@ -122,6 +122,7 @@ private:
     std::atomic<bool> connected_{false};
     std::atomic<bool> logged_in_{false};
     std::atomic<bool> spawned_{false};
+    std::atomic<bool> op_{false};
     uint64_t last_move_tick_ = 0;
     uint64_t last_save_tick_ = 0;
 
