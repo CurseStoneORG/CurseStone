@@ -3,7 +3,7 @@
 #pragma once
 #include "Enchantment.h"
 #include <vector>
-namespace mcppeserver::item::enchantment {
+namespace cenisyspe::item::enchantment {
 struct EnchantmentEntry { EnchantmentId id; uint8_t level; };
 class EnchantmentList {
 public:

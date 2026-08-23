@@ -1,2 +1,2 @@
 #include "ItemAxeStone.h"
-namespace mcppeserver::item {}
+namespace cenisyspe::item {}

@@ -1,2 +1,2 @@
 #include "ItemLeatherLeggings.h"
-namespace mcppeserver::item {}
+namespace cenisyspe::item {}

@@ -1,2 +1,2 @@
 #include "ItemDiamondLeggings.h"
-namespace mcppeserver::item {}
+namespace cenisyspe::item {}

@@ -1,7 +1,7 @@
 #pragma once
 #include "command/Command.h"
 #include <string>
-namespace mcppeserver {
+namespace cenisyspe {
 class GiveCommand : public Command {
 public:
     GiveCommand() : Command("give", "Give items to a player") {}

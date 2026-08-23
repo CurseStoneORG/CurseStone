@@ -3,7 +3,7 @@
 // inventory/InventoryType.php enum.
 #pragma once
 #include <cstdint>
-namespace mcppeserver::inventory {
+namespace cenisyspe::inventory {
 enum InventoryType : uint8_t {
     INVTYPE_DEFAULT     = 0,
     INVTYPE_CHEST        = 0,

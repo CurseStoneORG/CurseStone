@@ -2,7 +2,7 @@
 // (Players, CommandSenders).
 #pragma once
 #include <string>
-namespace mcppeserver::permission {
+namespace cenisyspe::permission {
 class Permissible {
 public:
     virtual ~Permissible() = default;

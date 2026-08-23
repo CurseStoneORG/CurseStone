@@ -3,7 +3,7 @@
 #pragma once
 #include <string>
 #include <memory>
-namespace mcppeserver {
+namespace cenisyspe {
 class CommandSender {
 public:
     virtual ~CommandSender() = default;

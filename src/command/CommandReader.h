@@ -7,7 +7,7 @@
 #include <functional>
 #include <iostream>
 #include <string>
-namespace mcppeserver {
+namespace cenisyspe {
 class CommandReader {
 public:
     using LineCallback = std::function<void(const std::string&)>;

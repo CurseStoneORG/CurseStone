@@ -4,7 +4,7 @@
 // PMMP encode() uses putInt (BE), putByte, putLong (BE), putFloat (BE), putString (BE).
 #include "StartGamePacket.h"
 
-namespace mcppeserver::network::protocol {
+namespace cenisyspe::network::protocol {
 
 void StartGamePacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
@@ -45,4 +45,4 @@ bool StartGamePacket::decode(const uint8_t* data, size_t len) {
     return r.readBEString(unknown);
 }
 
-} // namespace mcppeserver::network::protocol
+} // namespace cenisyspe::network::protocol

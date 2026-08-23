@@ -16,7 +16,7 @@
 #include <sstream>
 #include <iostream>
 
-namespace mcppeserver {
+namespace cenisyspe {
 namespace network {
 
 void Network::registerInterface(std::unique_ptr<SourceInterface> iface) {
@@ -240,4 +240,4 @@ bool Network::isBlocked(const std::string& ip) const {
 }
 
 } // namespace network
-} // namespace mcppeserver
+} // namespace cenisyspe

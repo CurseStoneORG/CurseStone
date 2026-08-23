@@ -17,7 +17,7 @@
 #include <cstddef>
 #include "../../main.h"
 
-namespace mcppeserver::level::format {
+namespace cenisyspe::level::format {
 
 class FullChunk {
 public:
@@ -67,4 +67,4 @@ public:
     virtual std::vector<uint8_t> networkSerialize() const = 0;
 };
 
-} // namespace mcppeserver::level::format
+} // namespace cenisyspe::level::format

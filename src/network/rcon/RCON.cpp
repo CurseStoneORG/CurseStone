@@ -5,7 +5,7 @@
 #include "../../Server.h"
 #include "../../main.h"
 
-namespace mcppeserver {
+namespace cenisyspe {
 namespace network {
 
 RCON::RCON(Server* server) : server_(server) {}
@@ -30,4 +30,4 @@ void RCON::tick() {
 }
 
 } // namespace network
-} // namespace mcppeserver
+} // namespace cenisyspe

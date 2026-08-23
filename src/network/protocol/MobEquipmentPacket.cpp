@@ -2,7 +2,7 @@
 // MobEquipmentPacket implementation (stub).
 #include "MobEquipmentPacket.h"
 
-namespace mcppeserver::network::protocol {
+namespace cenisyspe::network::protocol {
 
 void MobEquipmentPacket::encode(std::vector<uint8_t>& out) const {
     (void)out;
@@ -16,4 +16,4 @@ bool MobEquipmentPacket::decode(const uint8_t* data, size_t len) {
     return true;
 }
 
-} // namespace mcppeserver::network::protocol
+} // namespace cenisyspe::network::protocol

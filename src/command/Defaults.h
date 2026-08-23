@@ -1,5 +1,5 @@
 #pragma once
 #include "command/CommandMap.h"
-namespace mcppeserver {
+namespace cenisyspe {
 void registerDefaultCommands(CommandMap& map);
 } // namespace

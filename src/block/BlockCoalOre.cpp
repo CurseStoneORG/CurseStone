@@ -1,2 +1,2 @@
 #include "BlockCoalOre.h"
-namespace mcppeserver::block {}
+namespace cenisyspe::block {}

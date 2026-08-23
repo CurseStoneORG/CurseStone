@@ -1,6 +1,6 @@
 #pragma once
 #include "Inventory.h"
-namespace mcppeserver::inventory {
+namespace cenisyspe::inventory {
 class ChestInventory : public Inventory {
 public:
     ChestInventory() : Inventory(27) {}

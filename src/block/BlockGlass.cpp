@@ -1,2 +1,2 @@
 #include "BlockGlass.h"
-namespace mcppeserver::block {}
+namespace cenisyspe::block {}

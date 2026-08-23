@@ -1,2 +1,2 @@
 #include "ItemFlintSteel.h"
-namespace mcppeserver::item {}
+namespace cenisyspe::item {}

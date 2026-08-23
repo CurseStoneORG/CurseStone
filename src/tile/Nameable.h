@@ -1,7 +1,7 @@
 // Nameable — tile that has a custom name (chest with custom name).
 #pragma once
 #include <string>
-namespace mcppeserver::tile {
+namespace cenisyspe::tile {
 class Nameable {
 public:
     virtual ~Nameable() = default;

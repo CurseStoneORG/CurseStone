@@ -1,6 +1,6 @@
 #pragma once
 #include "Item.h"
-namespace mcppeserver::item {
+namespace cenisyspe::item {
 // ItemBlock — an item that places a block when right-clicked.
 class ItemBlock : public Item {
 public:

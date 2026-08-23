@@ -1,2 +1,2 @@
 #include "Permission.h"
-namespace mcppeserver::permission {}
+namespace cenisyspe::permission {}

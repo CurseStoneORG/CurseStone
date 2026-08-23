@@ -1,2 +1,2 @@
 #include "ItemIronBoots.h"
-namespace mcppeserver::item {}
+namespace cenisyspe::item {}

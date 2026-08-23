@@ -2,7 +2,7 @@
 #include "BlockTransparent.h"
 #include <string>
 #include "BlockIds.h"
-namespace mcppeserver::block {
+namespace cenisyspe::block {
 class BlockChest : public BlockTransparent {
 public:
     uint8_t id() const override { return CHEST; }

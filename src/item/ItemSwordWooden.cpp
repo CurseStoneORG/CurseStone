@@ -1,2 +1,2 @@
 #include "ItemSwordWooden.h"
-namespace mcppeserver::item {}
+namespace cenisyspe::item {}

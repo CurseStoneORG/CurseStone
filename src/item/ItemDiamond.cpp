@@ -1,2 +1,2 @@
 #include "ItemDiamond.h"
-namespace mcppeserver::item {}
+namespace cenisyspe::item {}

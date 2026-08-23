@@ -1,7 +1,7 @@
 #include "OreGenerator.h"
 #include "level/format/Chunk.h"
 #include "level/generator/noise/SimplexNoise.h"
-namespace mcppeserver::level::generator::object {
+namespace cenisyspe::level::generator::object {
 int OreGenerator::place(mcp_chunk_t* c, int64_t seed, const OreVein& v) {
     uint32_t h = mcp_simplex_hash(seed ^ ((int64_t)v.block_id << 32), c->x, c->z);
     if (h % (uint32_t)v.rarity != 0) return 0;

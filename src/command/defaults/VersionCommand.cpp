@@ -3,14 +3,14 @@
 #include "main.h"
 #include <string>
 
-namespace mcppeserver {
+namespace cenisyspe {
 
 bool VersionCommand::execute(CommandSender* sender, const std::string&,
                     const std::vector<std::string>&) {
     // PMMP-style version output
     // Line 1: Software name + version + codename
-    sender->sendMessage(std::string(MCPPESERVER_NAME) + " v" + MCPPESERVER_VERSION +
-        " (codename: " + MCPPESERVER_CODENAME + ")");
+    sender->sendMessage(std::string(CENISYSPE_NAME) + " v" + CENISYSPE_VERSION +
+        " (codename: " + CENISYSPE_CODENAME + ")");
     // Line 2: Target MCPE version + protocol
     sender->sendMessage("Target: Minecraft PE " + std::string(MINECRAFT_VERSION) +
         ", protocol " + std::to_string(PROTOCOL_VERSION));

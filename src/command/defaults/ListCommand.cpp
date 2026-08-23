@@ -1,7 +1,7 @@
 #include "ListCommand.h"
 #include "Server.h"
 #include "Player.h"
-namespace mcppeserver {
+namespace cenisyspe {
 bool ListCommand::execute(CommandSender* sender, const std::string&,
                           const std::vector<std::string>&) {
     auto& players = Server::getInstance().players();

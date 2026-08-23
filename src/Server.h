@@ -2,7 +2,7 @@
 // Server — singleton. Mirrors pocketmine/Server.php.
 //
 // Responsibilities:
-//   1. Boot: load mcppeserver.yml, init logger, register blocks/items,
+//   1. Boot: load cenisyspe.yml, init logger, register blocks/items,
 //      create CommandMap + register default commands, create the
 //      default Level (overworld), open the RakLibInterface.
 //   2. Tick (every 50ms): advance scheduler, tick level(s), tick
@@ -28,7 +28,7 @@
 #include <cstdint>
 #include <unordered_set>
 
-namespace mcppeserver {
+namespace cenisyspe {
 class Player;
 class CommandMap;
 class CommandReader;
@@ -133,10 +133,10 @@ private:
     uint64_t currentTick_{0};
     int tps_ = 20;
 
-    // Config (mirrors resources/mcppeserver.yml).
+    // Config (mirrors resources/cenisyspe.yml).
     std::string ip_ = "0.0.0.0";
     uint16_t port_ = 19132;
-    std::string motd_ = "MCPPEServer";
+    std::string motd_ = "CenisysPE";
     int max_players_ = 20;
     int view_distance_ = 8;
     int gamemode_ = 0;
@@ -160,4 +160,4 @@ private:
     std::unique_ptr<permission::BanList> ip_bans_;
 };
 
-} // namespace mcppeserver
+} // namespace cenisyspe

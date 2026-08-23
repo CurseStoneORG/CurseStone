@@ -1,9 +1,9 @@
 #include "Entity.h"
 #include "level/Level.h"
-namespace mcppeserver::entity {
+namespace cenisyspe::entity {
 Entity::Entity(int64_t runtime_id, std::shared_ptr<Level> lvl)
     : runtime_id_(runtime_id), level_(std::move(lvl)) {}
-mcppeserver::math::AxisAlignedBB Entity::getBoundingBox() const {
+cenisyspe::math::AxisAlignedBB Entity::getBoundingBox() const {
     return {pos_.x - 0.3, pos_.y, pos_.z - 0.3,
             pos_.x + 0.3, pos_.y + 1.8, pos_.z + 0.3};
 }

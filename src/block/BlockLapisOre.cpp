@@ -1,2 +1,2 @@
 #include "BlockLapisOre.h"
-namespace mcppeserver::block {}
+namespace cenisyspe::block {}

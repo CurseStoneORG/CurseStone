@@ -1,2 +1,2 @@
 #include "ItemIronLeggings.h"
-namespace mcppeserver::item {}
+namespace cenisyspe::item {}

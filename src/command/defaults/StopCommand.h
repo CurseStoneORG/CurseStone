@@ -1,7 +1,7 @@
 #pragma once
 #include "command/Command.h"
 #include <string>
-namespace mcppeserver {
+namespace cenisyspe {
 class StopCommand : public Command {
 public:
     StopCommand() : Command("stop", "Stop the server") {}

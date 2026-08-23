@@ -1,7 +1,7 @@
 #pragma once
 #include "ItemArmor.h"
 #include <string>
-namespace mcppeserver::item {
+namespace cenisyspe::item {
 class ItemLeatherBoots : public ItemArmor {
 public:
     ItemLeatherBoots() : ItemArmor(301, ArmorMaterial::ARMOR_LEATHER, ArmorSlot::BOOTS, 1) {}

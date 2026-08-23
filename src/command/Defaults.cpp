@@ -14,7 +14,7 @@
 #include "defaults/WeatherCommand.h"
 #include "defaults/SaveCommand.h"
 #include <memory>
-namespace mcppeserver {
+namespace cenisyspe {
 void registerDefaultCommands(CommandMap& map) {
     map.registerCommand(std::make_unique<StopCommand>());
     map.registerCommand(std::make_unique<HelpCommand>("help"));

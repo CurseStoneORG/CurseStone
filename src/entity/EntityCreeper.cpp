@@ -1,2 +1,2 @@
 #include "EntityCreeper.h"
-namespace mcppeserver::entity {}
+namespace cenisyspe::entity {}

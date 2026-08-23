@@ -1,7 +1,7 @@
 // EmptyGenerator — void world. Generates bedrock at y=0 only.
 #pragma once
 #include "Generator.h"
-namespace mcppeserver::level::generator {
+namespace cenisyspe::level::generator {
 class EmptyGenerator : public Generator {
 public:
     const char* name() const override { return "void"; }

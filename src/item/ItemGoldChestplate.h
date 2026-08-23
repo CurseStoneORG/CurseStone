@@ -1,7 +1,7 @@
 #pragma once
 #include "ItemArmor.h"
 #include <string>
-namespace mcppeserver::item {
+namespace cenisyspe::item {
 class ItemGoldChestplate : public ItemArmor {
 public:
     ItemGoldChestplate() : ItemArmor(315, ArmorMaterial::ARMOR_GOLD, ArmorSlot::CHESTPLATE, 4) {}

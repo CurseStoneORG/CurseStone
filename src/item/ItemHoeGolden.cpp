@@ -1,2 +1,2 @@
 #include "ItemHoeGolden.h"
-namespace mcppeserver::item {}
+namespace cenisyspe::item {}

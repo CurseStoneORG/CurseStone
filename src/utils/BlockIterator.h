@@ -7,7 +7,7 @@
 #include "main.h"
 #include <cstdint>
 
-namespace mcppeserver::utils {
+namespace cenisyspe::utils {
 
 class BlockIterator {
 public:
@@ -35,4 +35,4 @@ private:
     double traveled_;
 };
 
-} // namespace mcppeserver::utils
+} // namespace cenisyspe::utils

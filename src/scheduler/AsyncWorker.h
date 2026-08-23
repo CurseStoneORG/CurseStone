@@ -2,7 +2,7 @@
 #include <thread>
 #include <atomic>
 #include <functional>
-namespace mcppeserver::scheduler {
+namespace cenisyspe::scheduler {
 class AsyncWorker {
 public:
     using Work = std::function<void()>;

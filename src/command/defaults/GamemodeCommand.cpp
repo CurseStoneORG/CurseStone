@@ -4,7 +4,7 @@
 #include "network/protocol/SetPlayerGameTypePacket.h"
 #include "network/protocol/AdventureSettingsPacket.h"
 #include <string>
-namespace mcppeserver {
+namespace cenisyspe {
 bool GamemodeCommand::execute(CommandSender* sender, const std::string&,
                     const std::vector<std::string>& args) {
     if (args.empty()) {

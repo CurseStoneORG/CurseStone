@@ -5,7 +5,7 @@
 
 #include <cstdio>
 
-namespace mcppeserver::level::format::mca {
+namespace cenisyspe::level::format::mca {
 
 McAnvilRegistrar g_mca_registrar_;
 McAnvilRegistrar::McAnvilRegistrar() {
@@ -53,4 +53,4 @@ McAnvil::listChunks() const {
     return {};
 }
 
-} // namespace mcppeserver::level::format::mca
+} // namespace cenisyspe::level::format::mca

@@ -1,2 +1,2 @@
 #include "BlockSign.h"
-namespace mcppeserver::block {}
+namespace cenisyspe::block {}

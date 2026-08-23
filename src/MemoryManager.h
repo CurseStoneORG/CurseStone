@@ -2,10 +2,10 @@
 // it samples the process RSS and triggers a GC sweep if it grows
 // past max-mb. PocketMine uses a PHP memory_limit; in C we rely on
 // the glibc allocator + explicit frees, so this is mostly a stub
-// for the limit config in mcppeserver.yml.
+// for the limit config in cenisyspe.yml.
 #pragma once
 #include <cstdint>
-namespace mcppeserver {
+namespace cenisyspe {
 class MemoryManager {
 public:
     static MemoryManager& get();

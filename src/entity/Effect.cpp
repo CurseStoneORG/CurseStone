@@ -1,2 +1,2 @@
 #include "Effect.h"
-namespace mcppeserver::entity {}
+namespace cenisyspe::entity {}

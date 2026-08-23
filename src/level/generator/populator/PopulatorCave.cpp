@@ -2,7 +2,7 @@
 #include "level/generator/noise/SimplexNoise.h"
 #include "level/format/Chunk.h"
 #include <cmath>
-namespace mcppeserver::level::generator::populator {
+namespace cenisyspe::level::generator::populator {
 void PopulatorCave::populate(GenerationContext& ctx) {
     mcp_simplex_t* sn = mcp_simplex_new(ctx.seed ^ 0xCAFE1234);
     for (int i = 0; i < attempts_; ++i) {

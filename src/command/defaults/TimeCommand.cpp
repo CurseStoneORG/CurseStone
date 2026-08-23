@@ -3,7 +3,7 @@
 #include "level/Level.h"
 #include "network/protocol/SetTimePacket.h"
 #include "Player.h"
-namespace mcppeserver {
+namespace cenisyspe {
 bool TimeCommand::execute(CommandSender* sender, const std::string&,
                     const std::vector<std::string>& args) {
     if (args.empty()) {

@@ -4,7 +4,7 @@
 
 #include <cstring>
 
-namespace mcppeserver::network::protocol {
+namespace cenisyspe::network::protocol {
 
 bool PacketReader::readU8(uint8_t& v) {
     if (off_ + 1 > len_) return false;
@@ -134,4 +134,4 @@ bool PacketReader::readVarI64(int64_t& v) {
     v = mcp_varint_unzigzag_i64(u); return true;
 }
 
-} // namespace mcppeserver::network::protocol
+} // namespace cenisyspe::network::protocol

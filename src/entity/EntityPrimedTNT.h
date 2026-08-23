@@ -1,7 +1,7 @@
 #pragma once
 #include "Projectile.h"
 #include <string>
-namespace mcppeserver::entity {
+namespace cenisyspe::entity {
 class EntityPrimedTNT : public Projectile {
 public:
     using Projectile::Projectile;

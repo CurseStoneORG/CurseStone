@@ -8,11 +8,11 @@
 //   - difficulty
 //   - whether to enable whitelist
 //
-// Saves the result as mcppeserver.yml. Mirrors pocketmine/wizard
+// Saves the result as cenisyspe.yml. Mirrors pocketmine/wizard
 // /Installer.php.
 #pragma once
 #include <string>
-namespace mcppeserver::wizard {
+namespace cenisyspe::wizard {
 class Installer {
 public:
     explicit Installer(std::string data_path) : data_path_(std::move(data_path)) {}

@@ -1,2 +1,2 @@
 #include "Command.h"
-namespace mcppeserver {}
+namespace cenisyspe {}

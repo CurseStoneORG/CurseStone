@@ -47,7 +47,7 @@
 #include <array>
 #include <unordered_set>
 
-namespace mcppeserver {
+namespace cenisyspe {
 
 // ============================================================
 // Phase 0 — Player construction / destruction
@@ -950,4 +950,4 @@ void Player::onUpdate(uint64_t current_tick) {
     }
 }
 
-} // namespace mcppeserver
+} // namespace cenisyspe

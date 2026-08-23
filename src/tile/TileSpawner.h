@@ -2,10 +2,10 @@
 #include "Tile.h"
 #include "Spawnable.h"
 #include <string>
-namespace mcppeserver::tile {
+namespace cenisyspe::tile {
 class TileSpawner : public Tile, public Spawnable {
 public:
-    TileSpawner(mcppeserver::level::Position pos) : Tile("MobSpawner", pos) {}
+    TileSpawner(cenisyspe::level::Position pos) : Tile("MobSpawner", pos) {}
     void spawnTo(void* /*p*/) override {}
     int spawnDelay() const { return delay_; }
     void setDelay(int d) { delay_ = d; dirty_ = true; }

@@ -1,2 +1,2 @@
 #include "BlockLog.h"
-namespace mcppeserver::block {}
+namespace cenisyspe::block {}

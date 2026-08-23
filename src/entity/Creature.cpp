@@ -1,2 +1,2 @@
 #include "Creature.h"
-namespace mcppeserver::entity {}
+namespace cenisyspe::entity {}

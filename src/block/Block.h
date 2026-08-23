@@ -9,7 +9,7 @@
 #include <memory>
 #include "math/AxisAlignedBB.h"
 #include "level/Position.h"
-namespace mcppeserver::block {
+namespace cenisyspe::block {
 class Block {
 public:
     virtual ~Block() = default;
@@ -30,7 +30,7 @@ public:
     // Friction factor (ice = 0.98, normal = 0.6).
     virtual float getFriction() const { return 0.6f; }
     // Bounding box for collision (default: full block).
-    virtual mcppeserver::math::AxisAlignedBB getBoundingBox() const;
+    virtual cenisyspe::math::AxisAlignedBB getBoundingBox() const;
     // Whether entities can walk through this block (air, water, grass).
     virtual bool canWalkThrough() const { return isTransparent(); }
     // Display name (used by the /give command and inventory).

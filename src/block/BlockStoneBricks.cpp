@@ -1,2 +1,2 @@
 #include "BlockStoneBricks.h"
-namespace mcppeserver::block {}
+namespace cenisyspe::block {}

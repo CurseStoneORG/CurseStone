@@ -1,2 +1,2 @@
 #include "CommandReader.h"
-namespace mcppeserver {}
+namespace cenisyspe {}

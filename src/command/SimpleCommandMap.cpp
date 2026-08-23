@@ -1,6 +1,6 @@
 #include "SimpleCommandMap.h"
 #include "utils/Utils.hpp"
-namespace mcppeserver {
+namespace cenisyspe {
 bool SimpleCommandMap::registerCommand(std::unique_ptr<Command> cmd) {
     if (!cmd) return false;
     std::string n = cmd->name();

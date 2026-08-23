@@ -1,2 +1,2 @@
 #include "PlayerInventory.h"
-namespace mcppeserver::inventory {}
+namespace cenisyspe::inventory {}

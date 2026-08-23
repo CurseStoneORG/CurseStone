@@ -2,7 +2,7 @@
 #include "utils/Config.h"
 #include <fstream>
 #include <sstream>
-namespace mcppeserver::wizard {
+namespace cenisyspe::wizard {
 InstallerLang& InstallerLang::get() { static InstallerLang i; return i; }
 bool InstallerLang::load(const std::string& lang_code) {
     utils::Config cfg;

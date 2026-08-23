@@ -1,2 +1,2 @@
 #include "BlockRedstoneOre.h"
-namespace mcppeserver::block {}
+namespace cenisyspe::block {}

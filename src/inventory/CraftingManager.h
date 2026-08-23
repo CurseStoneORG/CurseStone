@@ -7,7 +7,7 @@
 #include <vector>
 #include <memory>
 #include <string>
-namespace mcppeserver::inventory {
+namespace cenisyspe::inventory {
 class CraftingManager {
 public:
     CraftingManager();

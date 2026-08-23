@@ -4,7 +4,7 @@
 #include "level/generator/populator/Populator.h"
 #include <vector>
 #include <memory>
-namespace mcppeserver::level::generator {
+namespace cenisyspe::level::generator {
 class Normal : public Generator {
 public:
     explicit Normal(int64_t seed);

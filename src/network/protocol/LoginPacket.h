@@ -17,7 +17,7 @@
 #include <vector>
 #include <cstdint>
 
-namespace mcppeserver::network::protocol {
+namespace cenisyspe::network::protocol {
 
 class LoginPacket : public DataPacket {
 public:
@@ -47,4 +47,4 @@ private:
     void parseClientDataPayload();
 };
 
-} // namespace mcppeserver::network::protocol
+} // namespace cenisyspe::network::protocol

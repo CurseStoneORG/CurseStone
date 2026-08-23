@@ -24,7 +24,7 @@
 #include <vector>
 #include <cstdint>
 
-namespace mcppeserver::network::protocol {
+namespace cenisyspe::network::protocol {
 
 class UseItemPacket : public DataPacket {
 public:
@@ -40,4 +40,4 @@ public:
     bool decode(const uint8_t* data, size_t len) override;
 };
 
-} // namespace mcppeserver::network::protocol
+} // namespace cenisyspe::network::protocol

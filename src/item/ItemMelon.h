@@ -1,7 +1,7 @@
 #pragma once
 #include "ItemFood.h"
 #include <string>
-namespace mcppeserver::item {
+namespace cenisyspe::item {
 class ItemMelon : public ItemFood {
 public:
     ItemMelon() : ItemFood(360, 2) {}

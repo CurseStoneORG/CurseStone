@@ -1,2 +1,2 @@
 #include "Projectile.h"
-namespace mcppeserver::entity {}
+namespace cenisyspe::entity {}

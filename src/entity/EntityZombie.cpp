@@ -1,2 +1,2 @@
 #include "EntityZombie.h"
-namespace mcppeserver::entity {}
+namespace cenisyspe::entity {}

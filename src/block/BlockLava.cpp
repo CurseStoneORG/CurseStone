@@ -1,2 +1,2 @@
 #include "BlockLava.h"
-namespace mcppeserver::block {}
+namespace cenisyspe::block {}

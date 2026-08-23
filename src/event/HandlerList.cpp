@@ -1,2 +1,2 @@
 #include "HandlerList.h"
-namespace mcppeserver::event {}
+namespace cenisyspe::event {}

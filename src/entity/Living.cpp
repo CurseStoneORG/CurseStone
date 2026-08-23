@@ -1,5 +1,5 @@
 #include "Living.h"
-namespace mcppeserver::entity {
+namespace cenisyspe::entity {
 bool Living::damage(float amount) {
     health_ -= amount;
     if (health_ < 0) health_ = 0;

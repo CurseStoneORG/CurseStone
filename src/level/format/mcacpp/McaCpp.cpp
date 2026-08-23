@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// McaCpp — implementation of the default MCPPEServer world format.
+// McaCpp — implementation of the default CenisysPE world format.
 //
 // Disk layout (see docs/MCACPP_FORMAT.md):
 //   <world>/chunks/<rx>_<rz>.mcacpp
@@ -35,7 +35,7 @@
 #include <sys/types.h>
 #include <zlib.h>
 
-namespace mcppeserver::level::format::mcacpp {
+namespace cenisyspe::level::format::mcacpp {
 
 // ----- Auto-registration with the LevelProviderManager.
 McaCppRegistrar g_mcacpp_registrar_;
@@ -471,4 +471,4 @@ void McaCpp::saveMetadata() {
     std::fclose(fp);
 }
 
-} // namespace mcppeserver::level::format::mcacpp
+} // namespace cenisyspe::level::format::mcacpp

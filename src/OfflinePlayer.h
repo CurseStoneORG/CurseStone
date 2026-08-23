@@ -1,7 +1,7 @@
 #pragma once
 #include "IPlayer.h"
 #include <string>
-namespace mcppeserver {
+namespace cenisyspe {
 class Server;
 class OfflinePlayer : public IPlayer {
 public:

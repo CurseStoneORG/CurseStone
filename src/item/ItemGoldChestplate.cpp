@@ -1,2 +1,2 @@
 #include "ItemGoldChestplate.h"
-namespace mcppeserver::item {}
+namespace cenisyspe::item {}

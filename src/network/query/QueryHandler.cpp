@@ -11,7 +11,7 @@
 #include <sstream>
 #include <chrono>
 
-namespace mcppeserver {
+namespace cenisyspe {
 namespace network {
 
 void QueryHandler::start() {
@@ -45,4 +45,4 @@ bool QueryHandler::handlePacket(const std::string& ip, uint16_t port,
 }
 
 } // namespace network
-} // namespace mcppeserver
+} // namespace cenisyspe

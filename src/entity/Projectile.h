@@ -1,6 +1,6 @@
 #pragma once
 #include "Entity.h"
-namespace mcppeserver::entity {
+namespace cenisyspe::entity {
 class Projectile : public Entity {
 public:
     using Entity::Entity;

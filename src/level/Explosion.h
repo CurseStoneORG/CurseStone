@@ -7,7 +7,7 @@
 #include "level/Position.h"
 #include <vector>
 #include <cstdint>
-namespace mcppeserver::level {
+namespace cenisyspe::level {
 class Explosion {
 public:
     Explosion(Position pos, float power)

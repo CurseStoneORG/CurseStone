@@ -10,7 +10,7 @@
 #include <cstdint>
 #include <cstring>
 
-namespace mcppeserver::level::format::leveldb {
+namespace cenisyspe::level::format::leveldb {
 
 LevelDBRegistrar g_leveldb_registrar_;
 LevelDBRegistrar::LevelDBRegistrar() {
@@ -51,7 +51,7 @@ std::vector<uint8_t> LevelDB::chunkKey(int32_t cx, int32_t cz, uint8_t type) {
 }
 
 bool LevelDB::hasLevelDB() {
-#if MCPPESERVER_LEVELDB
+#if CENISYSPE_LEVELDB
     return true;
 #else
     return false;
@@ -78,4 +78,4 @@ LevelDB::listChunks() const {
     return {};
 }
 
-} // namespace mcppeserver::level::format::leveldb
+} // namespace cenisyspe::level::format::leveldb

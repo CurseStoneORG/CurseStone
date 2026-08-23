@@ -1,2 +1,2 @@
 #include "ItemGunpowder.h"
-namespace mcppeserver::item {}
+namespace cenisyspe::item {}

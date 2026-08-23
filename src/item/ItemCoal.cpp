@@ -1,2 +1,2 @@
 #include "ItemCoal.h"
-namespace mcppeserver::item {}
+namespace cenisyspe::item {}

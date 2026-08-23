@@ -8,7 +8,7 @@
 // we mirror that here.
 //
 // Concrete implementers (Phase 8):
-//   - mcacpp/McaCpp       default MCPPEServer format
+//   - mcacpp/McaCpp       default CenisysPE format
 //   - leveldb/LevelDB     MCPE default format (stub until leveldb linked)
 //   - mca/McAnvil         Java Anvil .mca (stub)
 //   - mcapm/McapmFormat   MCAPM variant (stub)
@@ -22,9 +22,9 @@
 #include "../../main.h"
 #include "FullChunk.h"
 
-namespace mcppeserver::level::generator { class Generator; }
+namespace cenisyspe::level::generator { class Generator; }
 
-namespace mcppeserver::level::format {
+namespace cenisyspe::level::format {
 
 class LevelProvider {
 public:
@@ -59,11 +59,11 @@ public:
     virtual void    setSpawn(const math::Vector3& v) = 0;
 
     // Generator plumbing — set by Level::load() based on
-    // mcppeserver.yml `level.generator`. The provider doesn't
+    // cenisyspe.yml `level.generator`. The provider doesn't
     // generate by itself; it delegates to the generator when a chunk
     // is requested that isn't on disk.
     virtual void    setGenerator(generator::Generator* g) = 0;
     virtual generator::Generator* getGenerator() const = 0;
 };
 
-} // namespace mcppeserver::level::format
+} // namespace cenisyspe::level::format
