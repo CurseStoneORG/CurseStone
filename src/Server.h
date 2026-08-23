@@ -26,6 +26,7 @@
 #include <atomic>
 #include <unordered_map>
 #include <cstdint>
+#include <unordered_set>
 
 namespace mcppeserver {
 class Player;
@@ -101,6 +102,10 @@ public:
     permission::BanList& getNameBans();
     permission::BanList& getIPBans();
 
+    // Operator list (backed by <dataPath>/ops.txt).
+    bool isOp(const std::string& name) const;
+    void setOp(const std::string& name, bool op);
+
     // Offline player data: load/save NBT blobs from "<dataPath>/players/<name>.dat".
     // Returns nullptr if the player has never played before.
     NbtPtr getOfflinePlayerData(const std::string& name);
@@ -118,6 +123,10 @@ private:
     void openNetwork();
     void loadDefaultLevel();
     void startCommandReader();
+    void loadOps();
+    void saveOps();
+
+    std::unordered_set<std::string> ops_;
 
     std::string dataPath_;
     std::atomic<bool> running_{false};

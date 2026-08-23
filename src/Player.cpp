@@ -28,6 +28,7 @@
 #include "inventory/PlayerInventory.h"
 #include "permission/BanEntry.h"
 #include "permission/BanList.h"
+#include "command/CommandMap.h"
 #include "utils/MainLogger.hpp"
 #include "utils/Utils.h"
 #include "level/format/Chunk.h"
@@ -66,13 +67,13 @@ Player::~Player() {
 }
 
 bool Player::isOp() const {
-    // PMMP reads ops.txt; we keep the simple form for the MVP and
-    // treat "first operator" as anyone whose name is "Server" or listed
-    // in <dataPath>/ops.txt. To keep this self-contained, we check an
-    // env var override plus a small in-memory set populated by /op.
-    return false;
+    // PMMP reads ops.txt; we delegate to Server's in-memory op set which is
+    // loaded from <dataPath>/ops.txt on startup and updated by /op and /deop.
+    return srv_ && srv_->isOp(cfg_.username);
 }
-void Player::setOp(bool /*v*/) {}
+void Player::setOp(bool v) {
+    if (srv_) srv_->setOp(cfg_.username, v);
+}
 bool Player::isBanned() const {
     if (!srv_) return false;
     return srv_->getNameBans().isBanned(cfg_.username);
@@ -671,6 +672,15 @@ void Player::handleChat(const std::string& message) {
     for (char c : message) if ((uint8_t)c != 0xa7 && (uint8_t)c >= 0x20) clean.push_back(c);
     if (clean.empty()) return;
     if (clean.size() > 256) clean.resize(256);
+
+    // Dispatch /commands through the CommandMap; chat otherwise.
+    if (clean[0] == '/') {
+        std::string cmd_line = clean.substr(1);
+        if (srv_ && srv_->getCommandMap()) {
+            srv_->getCommandMap()->dispatch(this, cmd_line);
+        }
+        return;
+    }
 
     // Broadcast: <username> message
     if (srv_) srv_->broadcastMessage("<" + cfg_.username + "> " + clean);

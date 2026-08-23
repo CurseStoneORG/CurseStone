@@ -41,6 +41,7 @@
 #include <algorithm>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <cctype>
 
 namespace mcppeserver {
 
@@ -99,7 +100,7 @@ void Server::loadDefaultLevel() {
     lc.format = "mcacpp";
     lc.generator = "normal";
     lc.seed = 0;
-    lc.spawn_x = 0; lc.spawn_y = 65; lc.spawn_z = 0;
+    lc.spawn_x = 0; lc.spawn_y = 66; lc.spawn_z = 0;
     lc.view_distance = view_distance_;
     level_ = std::make_shared<level::Level>(std::move(lc));
     // Create worlds directory so the server has a visible data folder
@@ -108,7 +109,7 @@ void Server::loadDefaultLevel() {
     // Create a marker file so the user can see the world exists
     std::string marker = worldsDir + "/world.txt";
     FILE* f = fopen(marker.c_str(), "w");
-    if (f) { fprintf(f, "World: world\nFormat: flat\nSpawn: 0, 65, 0\n"); fclose(f); }
+    if (f) { fprintf(f, "World: world\nFormat: mcacpp\nSpawn: 0, 66, 0\n"); fclose(f); }
     utils::MainLogger::get().info("Default level 'world' ready");
     utils::MainLogger::get().info("Worlds directory: " + worldsDir);
 }
@@ -127,6 +128,7 @@ void Server::start(const std::string& dataPath) {
     running_.store(true, std::memory_order_relaxed);
 
     loadConfig();
+    loadOps();
     initLogger();
     registerBlocksAndItems();
     command_map_ = std::make_shared<SimpleCommandMap>();
@@ -221,6 +223,58 @@ permission::BanList& Server::getIPBans() {
         ip_bans_->load();
     }
     return *ip_bans_;
+}
+
+// ============================================================
+// Operator list — backed by <dataPath>/ops.txt (one name per line)
+// ============================================================
+void Server::loadOps() {
+    ops_.clear();
+    std::ifstream in(dataPath_ + "/ops.txt");
+    if (!in.is_open()) return;
+    std::string line;
+    while (std::getline(in, line)) {
+        // Trim trailing whitespace/CR.
+        while (!line.empty() && (line.back() == '\r' || line.back() == '\n' ||
+               line.back() == ' ' || line.back() == '\t')) line.pop_back();
+        if (line.empty()) continue;
+        std::string lower = line;
+        std::transform(lower.begin(), lower.end(), lower.begin(),
+                       [](unsigned char c){ return std::tolower(c); });
+        ops_.insert(lower);
+    }
+    utils::MainLogger::get().info("Loaded " + std::to_string(ops_.size()) +
+        " operator(s) from ops.txt");
+}
+
+void Server::saveOps() {
+    std::ofstream out(dataPath_ + "/ops.txt", std::ios::trunc);
+    if (!out.is_open()) {
+        utils::MainLogger::get().warn("Failed to write ops.txt");
+        return;
+    }
+    for (const auto& name : ops_) out << name << "\n";
+    out.close();
+}
+
+bool Server::isOp(const std::string& name) const {
+    if (name.empty()) return false;
+    std::string lower = name;
+    std::transform(lower.begin(), lower.end(), lower.begin(),
+                   [](unsigned char c){ return std::tolower(c); });
+    return ops_.find(lower) != ops_.end();
+}
+
+void Server::setOp(const std::string& name, bool op) {
+    if (name.empty()) return;
+    std::string lower = name;
+    std::transform(lower.begin(), lower.end(), lower.begin(),
+                   [](unsigned char c){ return std::tolower(c); });
+    if (op) {
+        if (ops_.insert(lower).second) saveOps();
+    } else {
+        if (ops_.erase(lower) > 0) saveOps();
+    }
 }
 
 // Helper: ensure "<dataPath>/players/" exists.

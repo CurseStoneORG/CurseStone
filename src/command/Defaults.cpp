@@ -16,10 +16,13 @@
 namespace mcppeserver {
 void registerDefaultCommands(CommandMap& map) {
     map.registerCommand(std::make_unique<StopCommand>());
-    map.registerCommand(std::make_unique<HelpCommand>());
+    map.registerCommand(std::make_unique<HelpCommand>("help"));
+    map.registerCommand(std::make_unique<HelpCommand>("?"));
     map.registerCommand(std::make_unique<KickCommand>());
-    map.registerCommand(std::make_unique<TeleportCommand>());
-    map.registerCommand(std::make_unique<GamemodeCommand>());
+    map.registerCommand(std::make_unique<TeleportCommand>("teleport"));
+    map.registerCommand(std::make_unique<TeleportCommand>("tp"));
+    map.registerCommand(std::make_unique<GamemodeCommand>("gamemode"));
+    map.registerCommand(std::make_unique<GamemodeCommand>("gm"));
     map.registerCommand(std::make_unique<GiveCommand>());
     map.registerCommand(std::make_unique<SayCommand>());
     map.registerCommand(std::make_unique<ListCommand>());
