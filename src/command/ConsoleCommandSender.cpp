@@ -2,6 +2,10 @@
 #include "utils/MainLogger.hpp"
 #include "utils/TextColor.h"
 #include <iostream>
+#include <unistd.h>   // for isatty() on POSIX (Android/Linux/Mac)
+#ifdef _WIN32
+#include <io.h>       // for isatty() on Windows
+#endif
 
 namespace cenisyspe {
 
