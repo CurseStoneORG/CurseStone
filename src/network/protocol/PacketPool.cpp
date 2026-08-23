@@ -31,6 +31,8 @@
 #include "UseItemPacket.h"
 #include "RemoveBlockPacket.h"
 #include "UpdateBlockPacket.h"
+#include "LevelEventPacket.h"
+#include "MobEquipmentPacket.h"
 
 namespace cenisyspe::network::protocol {
 
@@ -59,6 +61,8 @@ std::shared_ptr<DataPacket> PacketPool::create(uint8_t pid) const {
         case USE_ITEM_PACKET:               return std::make_shared<UseItemPacket>();
         case REMOVE_BLOCK_PACKET:           return std::make_shared<RemoveBlockPacket>();
         case UPDATE_BLOCK_PACKET:           return std::make_shared<UpdateBlockPacket>();
+        case LEVEL_EVENT_PACKET:            return std::make_shared<LevelEventPacket>();
+        case MOB_EQUIPMENT_PACKET:           return std::make_shared<MobEquipmentPacket>();
         default:
             // Unknown packet — return nullptr so callers can log + skip.
             return nullptr;

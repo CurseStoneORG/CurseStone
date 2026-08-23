@@ -27,6 +27,8 @@
 #include "network/protocol/UseItemPacket.h"
 #include "network/protocol/RemoveBlockPacket.h"
 #include "network/protocol/UpdateBlockPacket.h"
+#include "network/protocol/MobEquipmentPacket.h"
+#include "network/protocol/LevelEventPacket.h"
 #include "network/protocol/Info.h"
 #include "network/protocol/PacketPool.h"
 #include "inventory/PlayerInventory.h"
@@ -262,8 +264,13 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
             break;
         case network::protocol::USE_ITEM_PACKET:
             if (auto* ui = dynamic_cast<network::protocol::UseItemPacket*>(&p)) {
-                // MVP: always place stone (id=1) regardless of held item.
-                handleBlockPlace(ui->x, ui->y, ui->z, ui->face, 1);
+                // Pass the parsed item id so handleBlockPlace can decide:
+                //   - empty hand (id 0)  → no placement (don't summon stone!)
+                //   - block id (< 256)   → place that block, decrement stack
+                //   - other item         → PMMP would call onItemUse; we just no-op
+                handleBlockPlace(ui->x, ui->y, ui->z, ui->face,
+                                static_cast<uint8_t>(ui->itemId & 0xFF),
+                                ui->itemCount, ui->itemDamage);
             }
             break;
         case network::protocol::REMOVE_BLOCK_PACKET:
@@ -271,12 +278,26 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                 handleBlockBreak(rb->x, rb->y, rb->z);
             }
             break;
+        case network::protocol::MOB_EQUIPMENT_PACKET:
+            // Client tells us which hotbar slot the player is now holding.
+            // PMMP updates PlayerInventory::setHeldSlotIndex here, then
+            // sends the (authoritative) MobEquipmentPacket back to other
+            // players so they see the held item in the player's hand.
+            if (auto* me = dynamic_cast<network::protocol::MobEquipmentPacket*>(&p)) {
+                if (inv_ && me->hotbarSlot < 9) {
+                    inv_->setHeldSlot(me->hotbarSlot);
+                    if (srv_ && srv_->advancedLog()) {
+                        utils::MainLogger::get().info("[INV] " + cfg_.username +
+                            " switched to hotbar slot " + std::to_string(me->hotbarSlot));
+                    }
+                }
+            }
+            break;
         // Packets we acknowledge but don't act on for the MVP.
         case network::protocol::BATCH_PACKET:
         case network::protocol::PLAYER_INPUT_PACKET:
         case network::protocol::INTERACT_PACKET:
         case network::protocol::ANIMATE_PACKET:
-        case network::protocol::MOB_EQUIPMENT_PACKET:
         case network::protocol::CONTAINER_CLOSE_PACKET:
             break;
         default: {
@@ -757,7 +778,8 @@ void Player::handleBlockBreak(int x, int y, int z) {
 
     int localX = x & 15;
     int localZ = z & 15;
-    uint8_t blockId = mcp_chunk_get_block_id(ch, localX, y, localZ);
+    uint8_t blockId   = mcp_chunk_get_block_id  (ch, localX, y, localZ);
+    uint8_t blockData = mcp_chunk_get_block_data(ch, localX, y, localZ);
 
     // Don't break bedrock (id=7).
     if (blockId == 7) return;
@@ -765,7 +787,7 @@ void Player::handleBlockBreak(int x, int y, int z) {
     if (blockId == 0) return;
 
     // Set block to air (id=0, data=0).
-    mcp_chunk_set_block_id(ch, localX, y, localZ, 0);
+    mcp_chunk_set_block_full(ch, localX, y, localZ, 0, 0);
     mcp_chunk_recalculate_height_map(ch);
     ch->dirty = true;
 
@@ -777,22 +799,57 @@ void Player::handleBlockBreak(int x, int y, int z) {
     ubp->blockId = 0;
     ubp->blockData = 0;
     ubp->flags = 0xFF;
+
+    // PMMP sends two LevelEventPacket per block-break:
+    //   1. Particle: PARTICLE_TERRAIN (id=14), data = blockId<<8 | blockData
+    //   2. Sound:    SOUND_BREAK (id=2001),     data = blockId<<8 | blockData
+    // Position is the block's center.
+    auto partEv = std::make_shared<network::protocol::LevelEventPacket>();
+    partEv->evid = network::protocol::LevelEventPacket::EVENT_PARTICLE_TERRAIN;
+    partEv->x = (float)x + 0.5f;
+    partEv->y = (float)y + 0.5f;
+    partEv->z = (float)z + 0.5f;
+    partEv->data = ((int32_t)blockId << 8) | (int32_t)blockData;
+
+    auto sndEv = std::make_shared<network::protocol::LevelEventPacket>();
+    sndEv->evid = network::protocol::LevelEventPacket::EVENT_SOUND_BREAK;
+    sndEv->x = (float)x + 0.5f;
+    sndEv->y = (float)y + 0.5f;
+    sndEv->z = (float)z + 0.5f;
+    sndEv->data = ((int32_t)blockId << 8) | (int32_t)blockData;
+
     if (srv_) {
         for (auto& other : srv_->players()) {
-            if (other) other->sendPacket(ubp);
+            if (!other) continue;
+            other->sendPacket(ubp);
+            other->sendPacket(partEv);
+            other->sendPacket(sndEv);
         }
     }
 
     if (srv_ && srv_->advancedLog()) {
         utils::MainLogger::get().info("[BLOCK] " + cfg_.username + " broke block at " +
             std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(z) +
-            " (was id=" + std::to_string(blockId) + ")");
+            " (was id=" + std::to_string(blockId) + " data=" + std::to_string(blockData) + ")");
     }
 }
 
-void Player::handleBlockPlace(int x, int y, int z, uint8_t face, uint8_t block_id) {
+void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
+                              uint8_t heldItemId, uint8_t heldCount, uint16_t heldDamage) {
     if (!spawned_.load(std::memory_order_relaxed)) return;
     if (!srv_ || !srv_->getDefaultLevel()) return;
+
+    // ---- PMMP-style validation: must be holding a BLOCK item ----
+    // In MCPE 0.15, item ids < 256 are block items; ids >= 256 are tools /
+    // food / etc. and should NOT place a block. Empty hand (id 0) is the
+    // case the user reported — we explicitly reject it.
+    if (heldItemId == 0 || heldItemId >= 256) {
+        if (srv_ && srv_->advancedLog()) {
+            utils::MainLogger::get().info("[BLOCK] " + cfg_.username +
+                " attempted place with non-block item id=" + std::to_string(heldItemId));
+        }
+        return;
+    }
 
     // Calculate placed block position based on face.
     // Face: 0=bottom, 1=top, 2=north, 3=south, 4=west, 5=east
@@ -823,27 +880,56 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, uint8_t block_i
     uint8_t existing = mcp_chunk_get_block_id(ch, localX, placeY, localZ);
     if (existing != 0) return;
 
-    mcp_chunk_set_block_id(ch, localX, placeY, localZ, block_id);
+    // Place the block: blockId = heldItemId, data = low 4 bits of heldDamage
+    // (matches PMMP Item::getDamage for block items).
+    uint8_t placedData = (uint8_t)(heldDamage & 0x0F);
+    mcp_chunk_set_block_full(ch, localX, placeY, localZ, heldItemId, placedData);
     ch->dirty = true;
+
+    // Decrement inventory (only in survival — PMMP skips in creative).
+    bool creative = (cfg_.gamemode & 1) != 0;
+    if (!creative && inv_) {
+        int held = inv_->heldSlot();
+        auto cur = inv_->getItem(held);
+        if (!cur.isEmpty()) {
+            if (cur.count > 1) {
+                cur.count -= 1;
+                inv_->setItem(held, cur);
+            } else {
+                inv_->clear(held);
+            }
+        }
+    }
 
     // Broadcast UpdateBlockPacket to all players.
     auto ubp = std::make_shared<network::protocol::UpdateBlockPacket>();
     ubp->x = placeX;
     ubp->z = placeZ;
     ubp->y = (uint8_t)placeY;
-    ubp->blockId = block_id;
-    ubp->blockData = 0;
+    ubp->blockId = heldItemId;
+    ubp->blockData = placedData;
     ubp->flags = 0xFF;
+
+    // PMMP sends a place sound (evid 2002) after block placement.
+    auto sndEv = std::make_shared<network::protocol::LevelEventPacket>();
+    sndEv->evid = network::protocol::LevelEventPacket::EVENT_SOUND_PLACE;
+    sndEv->x = (float)placeX + 0.5f;
+    sndEv->y = (float)placeY + 0.5f;
+    sndEv->z = (float)placeZ + 0.5f;
+    sndEv->data = ((int32_t)heldItemId << 8) | (int32_t)placedData;
+
     if (srv_) {
         for (auto& other : srv_->players()) {
-            if (other) other->sendPacket(ubp);
+            if (!other) continue;
+            other->sendPacket(ubp);
+            other->sendPacket(sndEv);
         }
     }
 
     if (srv_ && srv_->advancedLog()) {
         utils::MainLogger::get().info("[BLOCK] " + cfg_.username + " placed block at " +
             std::to_string(placeX) + "," + std::to_string(placeY) + "," + std::to_string(placeZ) +
-            " (id=" + std::to_string(block_id) + ")");
+            " (id=" + std::to_string(heldItemId) + " data=" + std::to_string(placedData) + ")");
     }
 }
 

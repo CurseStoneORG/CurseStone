@@ -1,18 +1,27 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// LevelEventPacket implementation (stub).
+// LevelEventPacket.cpp — encode (server→client) / decode (client→server, unused).
+//
+// PMMP encode: putInt(evid) + putFloat(x) + putFloat(y) + putFloat(z) + putInt(data)
 #include "LevelEventPacket.h"
 
 namespace cenisyspe::network::protocol {
 
 void LevelEventPacket::encode(std::vector<uint8_t>& out) const {
-    (void)out;
-    // TODO: Phase 6 stub — implement when packets are wired into Player handlers.
+    PacketWriter w(out);
+    w.writeI32BE(evid);
+    w.writeF32BE(x);
+    w.writeF32BE(y);
+    w.writeF32BE(z);
+    w.writeI32BE(data);
 }
 
-bool LevelEventPacket::decode(const uint8_t* data, size_t len) {
-    (void)data;
-    (void)len;
-    // TODO: Phase 6 stub.
+bool LevelEventPacket::decode(const uint8_t* buf, size_t len) {
+    PacketReader r(buf, len);
+    if (!r.readI32BE(evid)) return false;
+    if (!r.readF32BE(x))    return false;
+    if (!r.readF32BE(y))    return false;
+    if (!r.readF32BE(z))    return false;
+    if (!r.readI32BE(data)) return false;
     return true;
 }
 

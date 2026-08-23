@@ -14,10 +14,12 @@
 //   [Float BE] posY
 //   [Float BE] posZ
 //   [Int32 BE] slot       inventory slot index of the used item
-//   [Slot]     item       (variable-length) — read/skipped for the MVP
+//   [Slot]     item       (variable-length) — read so we know the block id
 //
-// For the MVP we only need (x, y, z, face); the rest are parsed for
-// forward-compat and then ignored.
+// PMMP Slot (Binary::readSlot):
+//   [Int16 BE] id       — if 0, slot is empty and the field ends here.
+//   [Uint8]    count    — only present if id != 0.
+//   [Int16 BE] damage   — only present if id != 0.
 #pragma once
 
 #include "DataPacket.h"
@@ -35,6 +37,10 @@ public:
     float    fx = 0, fy = 0, fz = 0;
     float    posX = 0, posY = 0, posZ = 0;
     int32_t  slot = 0;
+    // Decoded item slot (id 0 = empty hand).
+    int16_t  itemId = 0;
+    uint8_t  itemCount = 0;
+    int16_t  itemDamage = 0;
 
     void encode(std::vector<uint8_t>& out) const override;
     bool decode(const uint8_t* data, size_t len) override;
