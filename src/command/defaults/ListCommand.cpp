@@ -1,16 +1,14 @@
 #include "ListCommand.h"
 #include "Server.h"
 #include "Player.h"
-#include "utils/TextColor.h"
 namespace cenisyspe {
 bool ListCommand::execute(CommandSender* sender, const std::string&,
                           const std::vector<std::string>&) {
     auto players = Server::getInstance().playersSnapshot();
-    sender->sendMessage(TC::YELLOW + "There are " + TC::WHITE + std::to_string(players.size()) +
-        TC::GRAY + "/" + TC::WHITE + std::to_string(Server::getInstance().maxPlayers()) +
-        TC::YELLOW + " players online:" + TC::RESET);
+    sender->sendMessage("There are " + std::to_string(players.size()) +
+                        "/" + std::to_string(Server::getInstance().maxPlayers()) + " players online:");
     for (auto& p : players) {
-        if (p) sender->sendMessage(TC::GREEN + "  - " + p->getName() + TC::RESET);
+        if (p) sender->sendMessage("  - " + p->getName());
     }
     return true;
 }

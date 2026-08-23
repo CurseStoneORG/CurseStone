@@ -3,11 +3,10 @@
 //
 // PMMP wire format (protocol 84) — ContainerSetSlotPacket::decode:
 //   [1 byte ID 0x2c]
-//   [Uint8]    windowid     0=main, 0x78=armor, 0x79=creative,
-//                            0x7a=hotbar, 1..127=opened container
+//   [Uint8]    windowid     0=main, 0x78=armor, 0x79=creative, 0x7a=hotbar
 //   [Int16 BE] slot         slot index in the inventory
 //   [Int16 BE] hotbarSlot   destination hotbar slot (creative only)
-//   [Slot]     item         PMMP Slot: Int16 BE id + count + damage
+//   [Slot]     item         PMMP Slot: id BE + count + damage BE + nbtLen LE + nbt
 #pragma once
 
 #include "DataPacket.h"
@@ -20,7 +19,6 @@ class ContainerSetSlotPacket : public DataPacket {
 public:
     uint8_t pid() const override { return CONTAINER_SET_SLOT_PACKET; }
 
-    // Window IDs (same as ContainerSetContentPacket).
     static constexpr uint8_t SPECIAL_INVENTORY = 0x00;
     static constexpr uint8_t SPECIAL_ARMOR     = 0x78;
     static constexpr uint8_t SPECIAL_CREATIVE  = 0x79;

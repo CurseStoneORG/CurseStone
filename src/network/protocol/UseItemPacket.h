@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // UseItemPacket.h — client→server block placement / item use.
 //
-// Wire format (protocol 84) — PMMP UseItemPacket::decode:
+// PMMP wire format (protocol 84) — UseItemPacket::decode:
 //   [1 byte ID 0x1f]
 //   [Int32 BE] x         block being clicked
 //   [Int32 BE] y
@@ -14,12 +14,14 @@
 //   [Float BE] posY
 //   [Float BE] posZ
 //   [Int32 BE] slot       inventory slot index of the used item
-//   [Slot]     item       (variable-length) — read so we know the block id
+//   [Slot]     item       PMMP Slot (see below)
 //
-// PMMP Slot (Binary::readSlot):
-//   [Int16 BE] id       — if 0, slot is empty and the field ends here.
+// PMMP Slot (BinaryStream::getSlot):
+//   [Int16 BE] id       — if id <= 0, slot is EMPTY and the field ends here.
 //   [Uint8]    count    — only present if id != 0.
 //   [Int16 BE] damage   — only present if id != 0.
+//   [Uint16 LE] nbtLen  — only present if id != 0. (LE, not BE!)
+//   [nbtLen B] nbt      — only present if nbtLen > 0.
 #pragma once
 
 #include "DataPacket.h"
@@ -37,7 +39,7 @@ public:
     float    fx = 0, fy = 0, fz = 0;
     float    posX = 0, posY = 0, posZ = 0;
     int32_t  slot = 0;
-    // Decoded item slot (id 0 = empty hand).
+    // Decoded item slot. id 0 = empty hand.
     int16_t  itemId = 0;
     uint8_t  itemCount = 0;
     int16_t  itemDamage = 0;

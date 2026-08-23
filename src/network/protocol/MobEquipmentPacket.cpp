@@ -1,14 +1,28 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// MobEquipmentPacket.cpp — encode/decode.
+// MobEquipmentPacket.cpp — decode (client→server).
 //
-// PMMP decode:
-//   getInt (eid), getInt (unknown1), getSlot, getByte (slot), getByte (selectedSlot)
+// PMMP decode: getInt(eid), getInt (unknown1), getSlot, getByte (slot), getByte (selectedSlot)
 #include "MobEquipmentPacket.h"
 
 namespace cenisyspe::network::protocol {
 
+namespace {
+bool readSlot(PacketReader& r, int16_t& id, uint8_t& count, int16_t& damage) {
+    if (!r.readI16BE(id)) return false;
+    count = 0; damage = 0;
+    if (id <= 0) { id = 0; return true; }
+    if (!r.readU8(count))    return false;
+    if (!r.readI16BE(damage)) return false;
+    uint16_t nbtLen;
+    if (!r.readU16LE(nbtLen)) return false;
+    if (nbtLen > 0) {
+        if (!r.skipBytes(nbtLen)) return false;
+    }
+    return true;
+}
+} // namespace
+
 void MobEquipmentPacket::encode(std::vector<uint8_t>& out) const {
-    // Serverbound only — nothing to encode.
     (void)out;
 }
 
@@ -16,20 +30,11 @@ bool MobEquipmentPacket::decode(const uint8_t* data, size_t len) {
     PacketReader r(data, len);
     if (!r.readI64BE(eid))       return false;
     if (!r.readI32BE(unknown1))  return false;
-
-    // PMMP Slot.
-    if (!r.readI16BE(itemId)) return false;
-    if (itemId != 0) {
-        if (!r.readU8(itemCount))   return false;
-        if (!r.readI16BE(itemDamage)) return false;
-    }
-
+    if (!readSlot(r, itemId, itemCount, itemDamage)) return false;
     if (!r.readU8(hotbarSlot)) return false;
-    // PMMP reads a second byte (selectedSlot) — same value as hotbarSlot
-    // in practice. We accept it if present but don't require it.
-    uint8_t selectedSlot;
+    // PMMP reads a second byte (selectedSlot) if present.
     if (r.remaining() >= 1) {
-        r.readU8(selectedSlot);
+        uint8_t sel; r.readU8(sel);
     }
     return true;
 }

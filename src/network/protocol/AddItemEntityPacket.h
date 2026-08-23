@@ -1,19 +1,16 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// AddItemEntityPacket — server→client spawn of a dropped item entity.
+// AddItemEntityPacket.h — server→client spawn of a dropped item entity.
 //
 // PMMP wire format (protocol 84) — AddItemEntityPacket::encode:
 //   [1 byte ID 0x0d]
 //   [Int64 BE] eid        runtime entity ID
-//   [Slot]     item       PMMP Slot: Int16 BE id, then if id != 0:
-//                          Uint8 count, Int16 BE damage
+//   [Slot]     item       PMMP Slot: id BE + count + damage BE + nbtLen LE + nbt
 //   [Float BE] x
 //   [Float BE] y
 //   [Float BE] z
 //   [Float BE] speedX
 //   [Float BE] speedY
 //   [Float BE] speedZ
-//
-// PMMP source: pocketmine/network/protocol/AddItemEntityPacket.php
 #pragma once
 
 #include "DataPacket.h"

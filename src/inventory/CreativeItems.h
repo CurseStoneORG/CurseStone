@@ -18,7 +18,6 @@
 //     ...
 //   }
 // Each value has exactly two integer fields: "ID" and "Damage".
-// We parse this with a tiny dedicated parser (no external JSON dep).
 #pragma once
 #include "item/ItemStack.h"
 #include <vector>
@@ -32,13 +31,12 @@ struct CreativeItemDef {
     uint8_t  damage;
 };
 
-// — Implementation ———————————————————————————————————————————————
 namespace detail {
 
-// Tiny JSON value parser specialized for the creativeitems.json shape.
+// Tiny JSON parser specialized for creativeitems.json shape.
 // Each top-level entry value is an object with integer "ID" and "Damage".
-// We don't need to build a full JSON tree — we scan for `"ID":<int>` and
-// `"Damage":<int>` pairs inside object literals and emit {id, damage} pairs.
+// We scan for `"ID":<int>` and `"Damage":<int>` pairs inside object
+// literals and emit {id, damage} pairs.
 struct CreativeItemsLoader {
     std::vector<CreativeItemDef> items;
 
@@ -58,27 +56,21 @@ struct CreativeItemsLoader {
         return parse(buf);
     }
 
-    // Parse the JSON content. Each object is scanned independently for an
-    // "ID" key followed by an integer, and a "Damage" key followed by an
-    // integer. If only "ID" is found, Damage defaults to 0.
     bool parse(const std::string& src) {
         items.clear();
         size_t i = 0;
         const size_t n = src.size();
-
         // Find the outer "{" to start
         while (i < n && src[i] != '{') ++i;
         if (i == n) return false;
         ++i; // consume outer {
 
-        // Walk through `"key":{ ... },` pairs
         while (i < n) {
-            // Find next `{`
+            // Find next `{` or `}` (end of outer)
             while (i < n && src[i] != '{' && src[i] != '}') ++i;
-            if (i == n || src[i] == '}') break;  // end of outer object
+            if (i == n || src[i] == '}') break;
             ++i;  // consume inner {
 
-            // Scan this inner object for "ID" and "Damage".
             CreativeItemDef def{0, 0};
             bool found_id = false, found_damage = false;
             int brace_depth = 1;
@@ -86,16 +78,13 @@ struct CreativeItemsLoader {
                 if (src[i] == '{') { ++brace_depth; ++i; continue; }
                 if (src[i] == '}') { --brace_depth; ++i; continue; }
                 if (src[i] == '"') {
-                    // Read string key
                     ++i;
                     size_t keyStart = i;
                     while (i < n && src[i] != '"') ++i;
                     std::string key = src.substr(keyStart, i - keyStart);
                     if (i < n) ++i; // consume closing "
-                    // Skip whitespace and ':'
                     while (i < n && (src[i] == ' ' || src[i] == '\t' ||
                                       src[i] == '\n' || src[i] == '\r' || src[i] == ':')) ++i;
-                    // Read integer value (optional minus sign)
                     bool neg = false;
                     if (i < n && src[i] == '-') { neg = true; ++i; }
                     long val = 0;
@@ -130,9 +119,6 @@ struct CreativeItemsLoader {
 
 } // namespace detail
 
-// Returns the full creative-item list, loaded from
-// `<dataPath>/resources/creativeitems.json` on first call (cached).
-// Falls back to a tiny hardcoded list if the file is missing or invalid.
 inline const std::vector<CreativeItemDef>& creativeItemTable(const std::string& dataPath = "") {
     static std::vector<CreativeItemDef> table;
     static bool initialized = false;
@@ -142,8 +128,7 @@ inline const std::vector<CreativeItemDef>& creativeItemTable(const std::string& 
     if (!dataPath.empty()) {
         detail::CreativeItemsLoader loader;
         std::string path = dataPath;
-        // Normalize: ensure trailing slash.
-        if (path.back() != '/' && path.back() != '\\') path += '/';
+        if (!path.empty() && path.back() != '/' && path.back() != '\\') path += '/';
         path += "resources/creativeitems.json";
         if (loader.loadFromFile(path)) {
             table = std::move(loader.items);
@@ -155,18 +140,14 @@ inline const std::vector<CreativeItemDef>& creativeItemTable(const std::string& 
         {1, 0}, {2, 0}, {3, 0}, {4, 0}, {5, 0}, {17, 0}, {20, 0}, {24, 0},
         {35, 0}, {41, 0}, {42, 0}, {45, 0}, {46, 0}, {49, 0}, {57, 0},
         {58, 0}, {61, 0}, {79, 0}, {80, 0}, {89, 0}, {98, 0},
-        // Tools
         {256, 0}, {257, 0}, {258, 0}, {267, 0}, {276, 0}, {277, 0}, {278, 0}, {279, 0},
-        // Armor
         {306, 0}, {307, 0}, {308, 0}, {309, 0},
         {310, 0}, {311, 0}, {312, 0}, {313, 0},
-        // Misc
         {263, 0}, {264, 0}, {265, 0}, {266, 0}, {280, 0}, {297, 0}, {322, 0},
     };
     return table;
 }
 
-// Convenience: returns the items as ItemStack values (count=1, meta=damage).
 inline std::vector<cenisyspe::item::ItemStack> getCreativeItems(const std::string& dataPath = "") {
     const auto& table = creativeItemTable(dataPath);
     std::vector<cenisyspe::item::ItemStack> out;

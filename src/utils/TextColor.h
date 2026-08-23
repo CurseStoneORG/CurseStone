@@ -5,10 +5,7 @@
 // IMPORTANT: § in MCPE 0.15.x TextPacket is encoded as UTF-8 = 0xC2 0xA7
 // (two bytes). PMMP uses this encoding throughout. Using the Latin-1
 // single-byte 0xA7 causes the client's UTF-8 decoder to fail and the
-// whole message becomes INVISIBLE in-game. This was the previous bug.
-//
-// Usage: sendMessage(TC::RED + "Error: " + TC::WHITE + "something happened");
-//        sendMessage(TC::GOLD + "--- Help ---" + TC::RESET);
+// whole message becomes INVISIBLE in-game.
 #pragma once
 #include <string>
 #include <cstdint>
@@ -18,9 +15,7 @@ namespace cenisyspe {
 // MCPE color/format escape character (UTF-8 sequence for §, 2 bytes)
 namespace TC {
 
-    // ----------------------------------------------------------------
     // Color / format codes — sent to client as-is (UTF-8 § + code char)
-    // ----------------------------------------------------------------
     inline const std::string BLACK         = "\xc2\xa7""0";
     inline const std::string DARK_BLUE     = "\xc2\xa7""1";
     inline const std::string DARK_GREEN    = "\xc2\xa7""2";
@@ -38,58 +33,46 @@ namespace TC {
     inline const std::string YELLOW        = "\xc2\xa7""e";
     inline const std::string WHITE         = "\xc2\xa7""f";
 
-    // Formatting
     inline const std::string OBFUSCATED    = "\xc2\xa7""k";
-    inline const std::string BOLD           = "\xc2\xa7""l";
-    inline const std::string STRIKETHROUGH  = "\xc2\xa7""m";
-    inline const std::string UNDERLINE      = "\xc2\xa7""n";
-    inline const std::string ITALIC         = "\xc2\xa7""o";
+    inline const std::string BOLD          = "\xc2\xa7""l";
+    inline const std::string STRIKETHROUGH = "\xc2\xa7""m";
+    inline const std::string UNDERLINE     = "\xc2\xa7""n";
+    inline const std::string ITALIC        = "\xc2\xa7""o";
     inline const std::string RESET         = "\xc2\xa7""r";
 
-    // ----------------------------------------------------------------
     // ANSI terminal codes (for console output only)
-    // ----------------------------------------------------------------
     namespace ANSI {
-        inline const std::string RESET       = "\x1b[m";
-        inline const std::string BOLD        = "\x1b[1m";
-        inline const std::string ITALIC      = "\x1b[3m";
-        inline const std::string UNDERLINE   = "\x1b[4m";
+        inline const std::string RESET         = "\x1b[m";
+        inline const std::string BOLD          = "\x1b[1m";
+        inline const std::string ITALIC        = "\x1b[3m";
+        inline const std::string UNDERLINE     = "\x1b[4m";
         inline const std::string STRIKETHROUGH = "\x1b[9m";
 
-        inline const std::string BLACK       = "\x1b[38;5;16m";
-        inline const std::string DARK_BLUE  = "\x1b[38;5;19m";
-        inline const std::string DARK_GREEN = "\x1b[38;5;34m";
-        inline const std::string DARK_AQUA  = "\x1b[38;5;37m";
-        inline const std::string DARK_RED   = "\x1b[38;5;124m";
-        inline const std::string DARK_PURPLE = "\x1b[38;5;127m";
-        inline const std::string GOLD        = "\x1b[38;5;214m";
-        inline const std::string GRAY        = "\x1b[38;5;145m";
-        inline const std::string DARK_GRAY  = "\x1b[38;5;59m";
-        inline const std::string BLUE       = "\x1b[38;5;63m";
-        inline const std::string GREEN      = "\x1b[38;5;83m";
-        inline const std::string AQUA       = "\x1b[38;5;87m";
-        inline const std::string RED        = "\x1b[38;5;203m";
-        inline const std::string LIGHT_PURPLE = "\x1b[38;5;207m";
-        inline const std::string YELLOW     = "\x1b[38;5;227m";
-        inline const std::string WHITE      = "\x1b[38;5;231m";
+        inline const std::string BLACK         = "\x1b[38;5;16m";
+        inline const std::string DARK_BLUE     = "\x1b[38;5;19m";
+        inline const std::string DARK_GREEN    = "\x1b[38;5;34m";
+        inline const std::string DARK_AQUA      = "\x1b[38;5;37m";
+        inline const std::string DARK_RED       = "\x1b[38;5;124m";
+        inline const std::string DARK_PURPLE   = "\x1b[38;5;127m";
+        inline const std::string GOLD          = "\x1b[38;5;214m";
+        inline const std::string GRAY          = "\x1b[38;5;145m";
+        inline const std::string DARK_GRAY     = "\x1b[38;5;59m";
+        inline const std::string BLUE          = "\x1b[38;5;63m";
+        inline const std::string GREEN         = "\x1b[38;5;83m";
+        inline const std::string AQUA          = "\x1b[38;5;87m";
+        inline const std::string RED           = "\x1b[38;5;203m";
+        inline const std::string LIGHT_PURPLE  = "\x1b[38;5;207m";
+        inline const std::string YELLOW        = "\x1b[38;5;227m";
+        inline const std::string WHITE         = "\x1b[38;5;231m";
     }
 
-    // ----------------------------------------------------------------
-    // Helpers — all recognize the UTF-8 § sequence (0xC2 0xA7).
-    // ----------------------------------------------------------------
-
-    // Returns true if msg[i] starts a UTF-8 § escape (0xC2 0xA7) AND a
-    // code character follows. Safe to call with i == msg.size()-1 (returns
-    // false because the second byte wouldn't fit).
     inline bool isSectionAt(const std::string& msg, size_t i) {
         return (i + 2 <= msg.size()) &&
                ((uint8_t)msg[i] == 0xc2) &&
                ((uint8_t)msg[i + 1] == 0xa7);
     }
 
-    // Convert MCPE § codes (UTF-8) to ANSI terminal codes.
-    // Used by ConsoleCommandSender when printing to terminal.
-    // If ansiEnabled is false, strips all color codes (plain text).
+    // Convert MCPE § codes (UTF-8) to ANSI terminal codes for console.
     inline std::string toANSI(const std::string& msg, bool ansiEnabled) {
         std::string result;
         result.reserve(msg.size() * 2);
@@ -119,29 +102,26 @@ namespace TC {
                         case 'n': case 'N': result += ANSI::UNDERLINE; break;
                         case 'm': case 'M': result += ANSI::STRIKETHROUGH; break;
                         case 'r': case 'R': result += ANSI::RESET; break;
-                        case 'k': case 'K': break; // obfuscated — no ANSI equivalent
+                        case 'k': case 'K': break;
                         default: break;
                     }
                 }
-                // Skip the 3-byte § code (0xC2 0xA7 + code char) either way.
                 i += 3;
             } else {
                 result += msg[i];
                 ++i;
             }
         }
-        if (ansiEnabled) result += ANSI::RESET; // ensure terminal is reset at end
+        if (ansiEnabled) result += ANSI::RESET;
         return result;
     }
 
-    // Strip MCPE §-codes from a string (plain text). Mirrors PMMP
-    // TextFormat::clean — used before parsing user input as a command.
     inline std::string clean(const std::string& msg) {
         std::string result;
         result.reserve(msg.size());
         for (size_t i = 0; i < msg.size(); ) {
             if (isSectionAt(msg, i)) {
-                i += 3; // skip § + code char
+                i += 3;
             } else {
                 result += msg[i];
                 ++i;
@@ -150,8 +130,6 @@ namespace TC {
         return result;
     }
 
-    // Replace &X color codes with UTF-8 §X (like PMMP colorize).
-    // Used to convert human-friendly config strings ("&aHello") to MCPE.
     inline std::string colorize(const std::string& msg) {
         std::string result;
         result.reserve(msg.size());
