@@ -8,7 +8,7 @@ namespace mcppeserver {
 bool GamemodeCommand::execute(CommandSender* sender, const std::string&,
                     const std::vector<std::string>& args) {
     if (args.empty()) {
-        sender->sendMessage("\xc2\xa7cUsage: /gamemode <0|1|2> [player]");
+        sender->sendMessage("Usage: /gamemode <0|1|2> [player]");
         return true;
     }
     int gm = -1;
@@ -17,16 +17,16 @@ bool GamemodeCommand::execute(CommandSender* sender, const std::string&,
     else if (args[0] == "2" || args[0] == "a" || args[0] == "adventure") gm = 2;
     else { try { gm = std::stoi(args[0]); } catch (...) {} }
     if (gm < 0 || gm > 2) {
-        sender->sendMessage("\xc2\xa7cInvalid gamemode: " + args[0]);
+        sender->sendMessage("Invalid gamemode: " + args[0]);
         return true;
     }
     Player* target = nullptr;
     if (args.size() >= 2) {
         target = Server::getInstance().getPlayer(args[1]);
-        if (!target) { sender->sendMessage("\xc2\xa7cPlayer not found: " + args[1]); return true; }
+        if (!target) { sender->sendMessage("Player not found: " + args[1]); return true; }
     } else {
         target = dynamic_cast<Player*>(sender);
-        if (!target) { sender->sendMessage("\xc2\xa7cConsole must specify a player: /gamemode " + args[0] + " <player>"); return true; }
+        if (!target) { sender->sendMessage("Console must specify a player: /gamemode " + args[0] + " <player>"); return true; }
     }
     target->setGamemode(gm);
     auto sg = std::make_shared<network::protocol::SetPlayerGameTypePacket>();
@@ -38,7 +38,7 @@ bool GamemodeCommand::execute(CommandSender* sender, const std::string&,
     as->flags = flags;
     target->sendPacket(as);
     std::string gmName = gm == 0 ? "Survival" : (gm == 1 ? "Creative" : "Adventure");
-    sender->sendMessage("\xc2\xa7aSet " + target->getName() + "'s game mode to " + gmName);
+    sender->sendMessage("Set " + target->getName() + "'s game mode to " + gmName);
     return true;
 }
 } // namespace

@@ -5,7 +5,7 @@ namespace mcppeserver {
 bool ListCommand::execute(CommandSender* sender, const std::string&,
                           const std::vector<std::string>&) {
     auto& players = Server::getInstance().players();
-    sender->sendMessage("\xc2\xa7eThere are " + std::to_string(players.size()) +
+    sender->sendMessage("There are " + std::to_string(players.size()) +
                         "/" + std::to_string(Server::getInstance().maxPlayers()) + " players online:");
     for (auto& p : players) {
         if (p) sender->sendMessage("  - " + p->getName());
