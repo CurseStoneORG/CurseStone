@@ -1,19 +1,16 @@
 #include "SayCommand.h"
 #include "Server.h"
-
+#include <sstream>
 namespace mcppeserver {
-bool SayCommand::execute(CommandSender* sender, const std::string& /*label*/,
-                    const std::vector<std::string>& args) {
-    if (args.empty()) {
-        sender->sendMessage("§cUsage: /say <message>");
-        return true;
-    }
-    std::string msg;
+bool SayCommand::execute(CommandSender* sender, const std::string&,
+                          const std::vector<std::string>& args) {
+    std::ostringstream ss;
+    ss << "[" << sender->getName() << "] ";
     for (size_t i = 0; i < args.size(); ++i) {
-        if (i > 0) msg += " ";
-        msg += args[i];
+        if (i) ss << " ";
+        ss << args[i];
     }
-    Server::getInstance().broadcastMessage("§d[" + sender->getName() + "] " + msg);
+    Server::getInstance().broadcastMessage(ss.str());
     return true;
 }
 } // namespace

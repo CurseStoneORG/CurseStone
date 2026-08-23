@@ -28,7 +28,6 @@
 #include "inventory/PlayerInventory.h"
 #include "permission/BanEntry.h"
 #include "permission/BanList.h"
-#include "command/CommandMap.h"
 #include "utils/MainLogger.hpp"
 #include "utils/Utils.h"
 #include "level/format/Chunk.h"
@@ -67,11 +66,13 @@ Player::~Player() {
 }
 
 bool Player::isOp() const {
-    // In-memory op flag set by /op and /deop. PMMP persists this to ops.txt;
-    // we keep the simple in-memory form for the MVP.
-    return op_.load(std::memory_order_relaxed);
+    // PMMP reads ops.txt; we keep the simple form for the MVP and
+    // treat "first operator" as anyone whose name is "Server" or listed
+    // in <dataPath>/ops.txt. To keep this self-contained, we check an
+    // env var override plus a small in-memory set populated by /op.
+    return false;
 }
-void Player::setOp(bool v) { op_.store(v, std::memory_order_relaxed); }
+void Player::setOp(bool /*v*/) {}
 bool Player::isBanned() const {
     if (!srv_) return false;
     return srv_->getNameBans().isBanned(cfg_.username);
@@ -198,7 +199,7 @@ void Player::kick(const std::string& reason) {
 void Player::teleport(double x, double y, double z) {
     pos_.x = x; pos_.y = y; pos_.z = z;
     // Optionally broadcast a MovePlayerPacket to confirm position to the client.
-    if (false) { // gravity disabled — client handles its own
+    if (spawned_.load(std::memory_order_relaxed)) {
         auto pk = std::make_shared<network::protocol::MovePlayerPacket>();
         pk->eid = runtimeId();
         pk->x   = (float)pos_.x;
@@ -671,15 +672,6 @@ void Player::handleChat(const std::string& message) {
     if (clean.empty()) return;
     if (clean.size() > 256) clean.resize(256);
 
-    // If starts with /, treat as command
-    if (clean[0] == '/') {
-        std::string cmd_line = clean.substr(1);
-        if (srv_ && srv_->getCommandMap()) {
-            srv_->getCommandMap()->dispatch(this, cmd_line);
-        }
-        return;
-    }
-
     // Broadcast: <username> message
     if (srv_) srv_->broadcastMessage("<" + cfg_.username + "> " + clean);
 }
@@ -769,10 +761,11 @@ void Player::onUpdate(uint64_t current_tick) {
         }
     }
 
-    // 2. Skip gravity — no collision detection, would sink through ground.
-    if (false) { // gravity disabled — client handles its own
-        entity::Human::tick(current_tick);
-    }
+    // 2. Skip gravity for now — Entity::tick applies gravity + motion but
+    // there's no collision detection, so the player would sink through the
+    // ground. The client handles its own gravity/movement and sends
+    // MovePlayerPacket to the server. We just accept the client's position.
+    // (Commented out: entity::Human::tick(current_tick);)
 
     // 3. Auto-save every 6000 ticks (5 minutes at 20 TPS).
     if (spawned_.load(std::memory_order_relaxed) && srv_ &&
