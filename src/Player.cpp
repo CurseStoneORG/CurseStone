@@ -34,6 +34,7 @@
 #include "permission/BanList.h"
 #include "command/CommandMap.h"
 #include "utils/MainLogger.hpp"
+#include "utils/TextColor.h"
 #include "utils/Utils.h"
 #include "level/format/Chunk.h"
 #include "nbt/tag/CompoundTag.h"
@@ -713,24 +714,30 @@ void Player::handleMovePlayer(double x, double y, double z, float yaw, float pit
 
 void Player::handleChat(const std::string& message) {
     if (message.empty()) return;
-    // Strip color codes (PMMP TextFormat::clean).
-    std::string clean;
-    clean.reserve(message.size());
-    for (char c : message) if ((uint8_t)c != 0xa7 && (uint8_t)c >= 0x20) clean.push_back(c);
-    if (clean.empty()) return;
-    if (clean.size() > 256) clean.resize(256);
+
+    // PMMP behavior:
+    //   - Strip §-codes only for command dispatch (so "/§aversion" still
+    //     matches "/version"). Use TC::clean — the previous inline loop
+    //     looked for the bare byte 0xa7, which corrupted the leading 0xc2
+    //     of UTF-8 § sequences the client actually sends.
+    //   - For plain chat, KEEP the original message (with §-codes intact)
+    //     so colors are rendered on every receiver's screen. PMMP also
+    //     forwards the raw message to PlayerChatEvent recipients.
+    std::string stripped = TC::clean(message);
+    if (stripped.empty()) return;
+    if (stripped.size() > 256) stripped.resize(256);
 
     // Dispatch /commands through the CommandMap; chat otherwise.
-    if (clean[0] == '/') {
-        std::string cmd_line = clean.substr(1);
+    if (stripped[0] == '/') {
+        std::string cmd_line = stripped.substr(1);
         if (srv_ && srv_->getCommandMap()) {
             srv_->getCommandMap()->dispatch(this, cmd_line);
         }
         return;
     }
 
-    // Broadcast: <username> message
-    if (srv_) srv_->broadcastMessage("<" + cfg_.username + "> " + clean);
+    // Broadcast: <username> message — keep color codes intact.
+    if (srv_) srv_->broadcastMessage("<" + cfg_.username + "> " + message);
 }
 
 void Player::handleBlockBreak(int x, int y, int z) {
