@@ -100,7 +100,7 @@ void Server::loadDefaultLevel() {
     lc.format = "mcacpp";
     lc.generator = "normal";
     lc.seed = 0;
-    lc.spawn_x = 0; lc.spawn_y = 66; lc.spawn_z = 0;
+    lc.spawn_x = 0; lc.spawn_y = 5; lc.spawn_z = 0;
     lc.view_distance = view_distance_;
     level_ = std::make_shared<level::Level>(std::move(lc));
     // Create worlds directory so the server has a visible data folder
