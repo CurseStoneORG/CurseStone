@@ -99,6 +99,12 @@ public:
     int chunkZ() const { return (int)(pos_.z) >> 4; }
     int viewDistance() const { return cfg_.view_distance; }
 
+    // Returns true if this player is currently tracking the given chunk
+    // (i.e. they have already received FullChunkDataPacket for it).
+    // Mirrors PMMP `Player::hasSpawnedToChunk` / chunk-tracking semantics —
+    // used to broadcast particles + sounds only to nearby players.
+    bool isTrackingChunk(int32_t cx, int32_t cz) const;
+
     // --- NetworkSession accessors ---
     // Player stores a non-owning pointer to AdvancedSourceInterface (the RakLib
     // instance is owned by Network). Lifetime is bounded by Network's lifetime.
