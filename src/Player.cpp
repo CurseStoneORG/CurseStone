@@ -23,6 +23,10 @@
 #include "network/protocol/BatchPacket.h"
 #include "network/protocol/RequestChunkRadiusPacket.h"
 #include "network/protocol/ChunkRadiusUpdatedPacket.h"
+#include "network/protocol/PlayerActionPacket.h"
+#include "network/protocol/UseItemPacket.h"
+#include "network/protocol/RemoveBlockPacket.h"
+#include "network/protocol/UpdateBlockPacket.h"
 #include "network/protocol/Info.h"
 #include "network/protocol/PacketPool.h"
 #include "inventory/PlayerInventory.h"
@@ -250,12 +254,26 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                 sendPacket(resp);
             }
             break;
+        case network::protocol::PLAYER_ACTION_PACKET:
+            if (auto* pa = dynamic_cast<network::protocol::PlayerActionPacket*>(&p)) {
+                handlePlayerAction(pa->action, pa->x, pa->y, pa->z, pa->face);
+            }
+            break;
+        case network::protocol::USE_ITEM_PACKET:
+            if (auto* ui = dynamic_cast<network::protocol::UseItemPacket*>(&p)) {
+                // MVP: always place stone (id=1) regardless of held item.
+                handleBlockPlace(ui->x, ui->y, ui->z, ui->face, 1);
+            }
+            break;
+        case network::protocol::REMOVE_BLOCK_PACKET:
+            if (auto* rb = dynamic_cast<network::protocol::RemoveBlockPacket*>(&p)) {
+                handleBlockBreak(rb->x, rb->y, rb->z);
+            }
+            break;
         // Packets we acknowledge but don't act on for the MVP.
         case network::protocol::BATCH_PACKET:
-        case network::protocol::PLAYER_ACTION_PACKET:
         case network::protocol::PLAYER_INPUT_PACKET:
         case network::protocol::INTERACT_PACKET:
-        case network::protocol::USE_ITEM_PACKET:
         case network::protocol::ANIMATE_PACKET:
         case network::protocol::MOB_EQUIPMENT_PACKET:
         case network::protocol::CONTAINER_CLOSE_PACKET:
@@ -686,14 +704,121 @@ void Player::handleChat(const std::string& message) {
     if (srv_) srv_->broadcastMessage("<" + cfg_.username + "> " + clean);
 }
 
-void Player::handleBlockBreak(int /*x*/, int /*y*/, int /*z*/) {
-    // MVP: no block break. Real impl: validate reach, fire BlockBreakEvent,
-    // update the chunk, broadcast UpdateBlockPacket.
+void Player::handleBlockBreak(int x, int y, int z) {
+    if (!spawned_.load(std::memory_order_relaxed)) return;
+    if (!srv_ || !srv_->getDefaultLevel()) return;
+
+    auto* lvl = srv_->getDefaultLevel();
+
+    // Reject out-of-world Y values.
+    if (y < 0 || y >= 256) return;
+
+    // Get the chunk containing this block.
+    int32_t cx = x >> 4;
+    int32_t cz = z >> 4;
+    mcp_chunk_t* ch = lvl->chunks().getChunk(cx, cz);
+    if (!ch) return;
+
+    int localX = x & 15;
+    int localZ = z & 15;
+    uint8_t blockId = mcp_chunk_get_block_id(ch, localX, y, localZ);
+
+    // Don't break bedrock (id=7).
+    if (blockId == 7) return;
+    // Already air — nothing to do.
+    if (blockId == 0) return;
+
+    // Set block to air (id=0, data=0).
+    mcp_chunk_set_block_id(ch, localX, y, localZ, 0);
+    mcp_chunk_recalculate_height_map(ch);
+    ch->dirty = true;
+
+    // Broadcast UpdateBlockPacket to all players.
+    auto ubp = std::make_shared<network::protocol::UpdateBlockPacket>();
+    ubp->x = x;
+    ubp->z = z;
+    ubp->y = (uint8_t)y;
+    ubp->blockId = 0;
+    ubp->blockData = 0;
+    ubp->flags = 0xFF;
+    if (srv_) {
+        for (auto& other : srv_->players()) {
+            if (other) other->sendPacket(ubp);
+        }
+    }
+
+    if (srv_ && srv_->advancedLog()) {
+        utils::MainLogger::get().info("[BLOCK] " + cfg_.username + " broke block at " +
+            std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(z) +
+            " (was id=" + std::to_string(blockId) + ")");
+    }
 }
-void Player::handleBlockPlace(int /*x*/, int /*y*/, int /*z*/, uint8_t /*face*/, uint8_t /*id*/) {
-    // MVP: no block place.
+
+void Player::handleBlockPlace(int x, int y, int z, uint8_t face, uint8_t block_id) {
+    if (!spawned_.load(std::memory_order_relaxed)) return;
+    if (!srv_ || !srv_->getDefaultLevel()) return;
+
+    // Calculate placed block position based on face.
+    // Face: 0=bottom, 1=top, 2=north, 3=south, 4=west, 5=east
+    int placeX = x, placeY = y, placeZ = z;
+    switch (face) {
+        case 0: placeY--; break;  // bottom
+        case 1: placeY++; break;  // top
+        case 2: placeZ--; break;  // north
+        case 3: placeZ++; break;  // south
+        case 4: placeX--; break;  // west
+        case 5: placeX++; break;  // east
+        default: return;
+    }
+
+    if (placeY < 0 || placeY >= 256) return;
+
+    auto* lvl = srv_->getDefaultLevel();
+
+    int32_t cx = placeX >> 4;
+    int32_t cz = placeZ >> 4;
+    mcp_chunk_t* ch = lvl->chunks().getChunk(cx, cz);
+    if (!ch) return;
+
+    int localX = placeX & 15;
+    int localZ = placeZ & 15;
+
+    // Don't place if target is not air.
+    uint8_t existing = mcp_chunk_get_block_id(ch, localX, placeY, localZ);
+    if (existing != 0) return;
+
+    mcp_chunk_set_block_id(ch, localX, placeY, localZ, block_id);
+    ch->dirty = true;
+
+    // Broadcast UpdateBlockPacket to all players.
+    auto ubp = std::make_shared<network::protocol::UpdateBlockPacket>();
+    ubp->x = placeX;
+    ubp->z = placeZ;
+    ubp->y = (uint8_t)placeY;
+    ubp->blockId = block_id;
+    ubp->blockData = 0;
+    ubp->flags = 0xFF;
+    if (srv_) {
+        for (auto& other : srv_->players()) {
+            if (other) other->sendPacket(ubp);
+        }
+    }
+
+    if (srv_ && srv_->advancedLog()) {
+        utils::MainLogger::get().info("[BLOCK] " + cfg_.username + " placed block at " +
+            std::to_string(placeX) + "," + std::to_string(placeY) + "," + std::to_string(placeZ) +
+            " (id=" + std::to_string(block_id) + ")");
+    }
 }
-void Player::handlePlayerAction(int /*action*/) {}
+
+void Player::handlePlayerAction(int action, int x, int y, int z, int /*face*/) {
+    // PMMP: ACTION_START_BREAK=0, ACTION_ABORT_BREAK=1, ACTION_STOP_BREAK=2.
+    // We don't model break progress yet — just log START for diagnostics.
+    if (srv_ && srv_->advancedLog() && action == 0) {
+        utils::MainLogger::get().info("[ACTION] " + cfg_.username + " started breaking at " +
+            std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(z));
+    }
+}
 
 // ============================================================
 // Phase 8 — onUpdate (chunk streaming, keepalive, auto-save)

@@ -72,7 +72,7 @@ public:
     void handleChat(const std::string& message);
     void handleBlockBreak(int x, int y, int z);
     void handleBlockPlace(int x, int y, int z, uint8_t face, uint8_t block_id);
-    void handlePlayerAction(int action);
+    void handlePlayerAction(int action, int x, int y, int z, int face);
 
     // --- Server → Player packets ---
     void sendPacket(std::shared_ptr<network::protocol::DataPacket> p);
