@@ -761,10 +761,11 @@ void Player::onUpdate(uint64_t current_tick) {
         }
     }
 
-    // 2. Apply gravity / motion (basic; no collision for MVP).
-    if (spawned_.load(std::memory_order_relaxed)) {
-        entity::Human::tick(current_tick);
-    }
+    // 2. Skip gravity for now — Entity::tick applies gravity + motion but
+    // there's no collision detection, so the player would sink through the
+    // ground. The client handles its own gravity/movement and sends
+    // MovePlayerPacket to the server. We just accept the client's position.
+    // (Commented out: entity::Human::tick(current_tick);)
 
     // 3. Auto-save every 6000 ticks (5 minutes at 20 TPS).
     if (spawned_.load(std::memory_order_relaxed) && srv_ &&
