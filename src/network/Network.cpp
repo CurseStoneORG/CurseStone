@@ -187,6 +187,11 @@ bool Network::createPlayerForSession(const std::string& ip, uint16_t port) {
     cfg.port = port;
     cfg.gamemode        = server_->gamemode();
     cfg.view_distance   = server_->viewDistance();
+    // Allocate a fresh runtime entity ID so each player has a unique EID
+    // (mirrors PMMP `Player::__construct` which uses Entity::$entityCount).
+    // Without this, every player shares EID 0 and AddPlayerPacket broadcasts
+    // to other players confuse the client ("which entity is the player?").
+    cfg.runtime_eid     = server_->allocateEid();
     auto p = std::make_shared<Player>(server_, std::move(cfg));
     if (auto* r = getRakLib()) p->setSourceInterface(r);
     server_->addPlayer(p);

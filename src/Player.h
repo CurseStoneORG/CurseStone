@@ -41,6 +41,7 @@ struct PlayerConfig {
     uint16_t port = 0;
     int gamemode = 0;
     int view_distance = 8;
+    int64_t runtime_eid = 1;       // unique runtime entity ID (allocated by Server)
 };
 
 class Player : public IPlayer, public entity::Human, public permission::PermissibleBase {
@@ -74,6 +75,17 @@ public:
     void handleBlockPlace(int x, int y, int z, uint8_t face,
                           uint8_t heldItemId, uint8_t heldCount, uint16_t heldDamage);
     void handlePlayerAction(int action, int x, int y, int z, int face);
+
+    // Spawn a dropped item entity at the given position with a small random
+    // outward motion. Mirrors PMMP `Level::dropItem`. Used for block-break
+    // drops in survival. Returns the allocated runtime entity ID (or 0 if
+    // the item id was 0, which PMMP skips).
+    int64_t dropItem(int x, int y, int z, uint16_t itemId, uint8_t count, uint16_t damage);
+
+    // Send the creative-inventory contents to the player. Mirrors PMMP
+    // `Player::setGamemode()` + `Player::doFirstSpawn()` which both call
+    // `ContainerSetContentPacket` with windowid=0x79.
+    void sendCreativeInventory();
 
     // --- Server → Player packets ---
     void sendPacket(std::shared_ptr<network::protocol::DataPacket> p);
