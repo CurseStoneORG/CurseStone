@@ -27,15 +27,16 @@
 #include "network/protocol/UseItemPacket.h"
 #include "network/protocol/RemoveBlockPacket.h"
 #include "network/protocol/UpdateBlockPacket.h"
-#include "network/protocol/MobEquipmentPacket.h"
 #include "network/protocol/LevelEventPacket.h"
+#include "network/protocol/MobEquipmentPacket.h"
+#include "network/protocol/MobArmorEquipmentPacket.h"
 #include "network/protocol/AddItemEntityPacket.h"
 #include "network/protocol/ContainerSetContentPacket.h"
 #include "network/protocol/ContainerSetSlotPacket.h"
-#include "inventory/CreativeItems.h"
 #include "network/protocol/Info.h"
 #include "network/protocol/PacketPool.h"
 #include "inventory/PlayerInventory.h"
+#include "inventory/CreativeItems.h"
 #include "permission/BanEntry.h"
 #include "permission/BanList.h"
 #include "command/CommandMap.h"
@@ -236,10 +237,8 @@ void Player::setGamemode(int gm) {
     bool was_creative = (cfg_.gamemode & 1) != 0;
     bool is_creative  = (new_gm        & 1) != 0;
     cfg_.gamemode = new_gm;
-
-    // Re-send the creative inventory when creative state changes
-    // (PMMP `Player.php:1461` sends it on every gamemode change so the
-    // client's creative grid updates immediately).
+    // Re-send creative inventory when creative state changes (PMMP
+    // Player.php:1461 sends it on every gamemode change).
     if (was_creative != is_creative || new_gm == 3) {
         sendCreativeInventory();
     }
@@ -288,13 +287,12 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
             break;
         case network::protocol::USE_ITEM_PACKET:
             if (auto* ui = dynamic_cast<network::protocol::UseItemPacket*>(&p)) {
-                // Pass the parsed item id so handleBlockPlace can decide:
-                //   - empty hand (id 0)  → no placement (don't summon stone!)
-                //   - block id (< 256)   → place that block, decrement stack
-                //   - other item         → PMMP would call onItemUse; we just no-op
+                // Pass the parsed held item id (with held count + damage) so
+                // handleBlockPlace can decide: empty hand → no place; block id
+                // → place that block, decrement stack (survival only).
                 handleBlockPlace(ui->x, ui->y, ui->z, ui->face,
-                                static_cast<uint8_t>(ui->itemId & 0xFF),
-                                ui->itemCount, ui->itemDamage);
+                                 static_cast<uint8_t>(ui->itemId & 0xFF),
+                                 ui->itemCount, ui->itemDamage);
             }
             break;
         case network::protocol::REMOVE_BLOCK_PACKET:
@@ -304,9 +302,6 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
             break;
         case network::protocol::MOB_EQUIPMENT_PACKET:
             // Client tells us which hotbar slot the player is now holding.
-            // PMMP updates PlayerInventory::setHeldSlotIndex here, then
-            // sends the (authoritative) MobEquipmentPacket back to other
-            // players so they see the held item in the player's hand.
             if (auto* me = dynamic_cast<network::protocol::MobEquipmentPacket*>(&p)) {
                 if (inv_ && me->hotbarSlot < 9) {
                     inv_->setHeldSlot(me->hotbarSlot);
@@ -318,43 +313,34 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
             }
             break;
         case network::protocol::MOB_ARMOR_EQUIPMENT_PACKET:
-            // Client sends this when equipping armor. PMMP ignores it
-            // server-side because the actual armor-slot change comes
-            // separately via ContainerSetSlotPacket (windowid=0x78),
-            // which is what we use to update PlayerInventory armor slots.
-            // Just acknowledge to avoid the "unknown packet" log.
+            // PMMP ignores this server-side; armor changes come via
+            // ContainerSetSlotPacket with windowid=0x78 instead.
             break;
         case network::protocol::CONTAINER_SET_SLOT_PACKET:
-            // Client moved an item between slots in their inventory, OR
-            // picked an item from the creative grid. We trust the client
-            // and just write the resulting slot state into our local
-            // PlayerInventory (mirrors PMMP's transaction-queue approach,
-            // simplified — we skip the validation step).
+            // Client moved an item between slots OR picked an item from
+            // the creative grid. We trust the client and write the slot
+            // state into our local PlayerInventory.
             if (auto* cs = dynamic_cast<network::protocol::ContainerSetSlotPacket*>(&p)) {
-                if (inv_ && cs->windowid == network::protocol::ContainerSetSlotPacket::SPECIAL_INVENTORY) {
-                    // Main inventory slot change.
-                    if (cs->slot >= 0 && cs->slot < inventory::PlayerInventory::SIZE) {
-                        cenisyspe::item::ItemStack it;
-                        it.id    = static_cast<uint16_t>(cs->itemId);
-                        it.count = cs->itemCount;
-                        it.meta  = static_cast<uint8_t>(cs->itemDamage & 0xFF);
-                        inv_->setItem(cs->slot, it);
+                if (inv_) {
+                    cenisyspe::item::ItemStack it;
+                    it.id    = static_cast<uint16_t>(cs->itemId);
+                    it.count = cs->itemCount;
+                    it.meta  = static_cast<uint8_t>(cs->itemDamage & 0xFF);
+                    if (cs->windowid == network::protocol::ContainerSetSlotPacket::SPECIAL_INVENTORY) {
+                        if (cs->slot >= 0 && cs->slot < inventory::PlayerInventory::SIZE) {
+                            inv_->setItem(cs->slot, it);
+                        }
+                    } else if (cs->windowid == network::protocol::ContainerSetSlotPacket::SPECIAL_ARMOR) {
+                        if (cs->slot >= 0 && cs->slot < 4) {
+                            int dest = inventory::PlayerInventory::ARMOR_OFFSET + cs->slot;
+                            inv_->setItem(dest, it);
+                        }
                     }
-                } else if (inv_ && cs->windowid == network::protocol::ContainerSetSlotPacket::SPECIAL_ARMOR) {
-                    // Armor slot change.
-                    if (cs->slot >= 0 && cs->slot < 4) {
-                        int dest = inventory::PlayerInventory::ARMOR_OFFSET + cs->slot;
-                        cenisyspe::item::ItemStack it;
-                        it.id    = static_cast<uint16_t>(cs->itemId);
-                        it.count = cs->itemCount;
-                        it.meta  = static_cast<uint8_t>(cs->itemDamage & 0xFF);
-                        inv_->setItem(dest, it);
-                    }
+                    // SPECIAL_CREATIVE (0x79) clicks: PMMP doesn't process them
+                    // server-side either — the client just locally puts the
+                    // item into its main inventory, then sends a windowid=0
+                    // ContainerSetSlotPacket.
                 }
-                // SPECIAL_CREATIVE (0x79) clicks: PMMP doesn't process them
-                // server-side either — the client just locally puts the
-                // item into its main inventory, then sends a windowid=0
-                // ContainerSetSlotPacket. We don't need to handle 0x79.
             }
             break;
         // Packets we acknowledge but don't act on for the MVP.
@@ -706,10 +692,8 @@ void Player::doFirstSpawn() {
         sendPacket(ps);
     }
 
-    // Send the creative inventory contents to the player. Mirrors PMMP
-    // `Player.php:2301` which calls ContainerSetContentPacket with
-    // windowid=0x79 (SPECIAL_CREATIVE) right after first spawn so the
-    // player has items to grab in creative mode.
+    // Send the creative-inventory contents so the player has items to grab
+    // in creative mode (PMMP Player.php:2301 sends this right after spawn).
     sendCreativeInventory();
 
     // Broadcast a PlayerListPacket (ADD) with all currently-online players.
@@ -808,12 +792,11 @@ void Player::handleChat(const std::string& message) {
 
     // PMMP behavior:
     //   - Strip §-codes only for command dispatch (so "/§aversion" still
-    //     matches "/version"). Use TC::clean — the previous inline loop
-    //     looked for the bare byte 0xa7, which corrupted the leading 0xc2
-    //     of UTF-8 § sequences the client actually sends.
+    //     matches "/version"). Use TC::clean which recognizes the UTF-8 §
+    //     sequence (0xC2 0xA7) — the previous inline loop looked for the
+    //     bare byte 0xa7, which corrupted the leading 0xC2.
     //   - For plain chat, KEEP the original message (with §-codes intact)
-    //     so colors are rendered on every receiver's screen. PMMP also
-    //     forwards the raw message to PlayerChatEvent recipients.
+    //     so colors are rendered on every receiver's screen.
     std::string stripped = TC::clean(message);
     if (stripped.empty()) return;
     if (stripped.size() > 256) stripped.resize(256);
@@ -864,7 +847,7 @@ void Player::handleBlockBreak(int x, int y, int z) {
     mcp_chunk_recalculate_height_map(ch);
     ch->dirty = true;
 
-    // Broadcast UpdateBlockPacket to all players.
+    // Broadcast UpdateBlockPacket.
     auto ubp = std::make_shared<network::protocol::UpdateBlockPacket>();
     ubp->x = x;
     ubp->z = z;
@@ -880,8 +863,7 @@ void Player::handleBlockBreak(int x, int y, int z) {
     // also the destroy block SOUND.").
     //
     // Position: block CENTER (x+0.5, y+0.5, z+0.5).
-    // Data:     blockId | (blockMeta << 12)  — note the << 12 shift,
-    //           NOT << 8 as newer protocols use.
+    // Data:     blockId | (blockMeta << 12)  — note the << 12 shift.
     auto partEv = std::make_shared<network::protocol::LevelEventPacket>();
     partEv->evid = network::protocol::LevelEventPacket::EVENT_PARTICLE_DESTROY;
     partEv->x = (float)x + 0.5f;
@@ -889,10 +871,7 @@ void Player::handleBlockBreak(int x, int y, int z) {
     partEv->z = (float)z + 0.5f;
     partEv->data = ((int32_t)blockId & 0xFF) | ((int32_t)blockData << 12);
 
-    // PMMP `Level::addParticle` -> `addChunkPacket($particle->x >> 4, ...)`
-    // sends the packet only to players tracking the chunk containing it.
-    // We mirror that behaviour here: skip players who haven't received
-    // FullChunkDataPacket for this chunk yet.
+    // Broadcast only to players tracking this chunk (PMMP `addChunkPacket`).
     int32_t pk_cx = x >> 4;
     int32_t pk_cz = z >> 4;
     if (srv_) {
@@ -905,13 +884,11 @@ void Player::handleBlockBreak(int x, int y, int z) {
     }
 
     // ---- Drops (PMMP `Level::useBreakOn` -> `Level::dropItem`) ----
-    // PMMP: only survival players get drops. Creative players skip this
-    // loop entirely (vanilla-correct behaviour).
+    // PMMP: only survival players get drops. Creative players skip.
     bool creative = (cfg_.gamemode & 1) != 0;
     if (!creative) {
-        // Lookup the drop table for this block.
         auto drop = lookupBlockDrop(blockId, blockData);
-        if (drop.first != 0) {  // 0 = no drop (glass, ice, etc.)
+        if (drop.first != 0) {
             dropItem(x, y, z, drop.first, 1, drop.second);
         }
     }
@@ -941,7 +918,6 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     }
 
     // Calculate placed block position based on face.
-    // Face: 0=bottom, 1=top, 2=north, 3=south, 4=west, 5=east
     int placeX = x, placeY = y, placeZ = z;
     switch (face) {
         case 0: placeY--; break;  // bottom
@@ -952,11 +928,9 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         case 5: placeX++; break;  // east
         default: return;
     }
-
     if (placeY < 0 || placeY >= 256) return;
 
     auto* lvl = srv_->getDefaultLevel();
-
     int32_t cx = placeX >> 4;
     int32_t cz = placeZ >> 4;
     mcp_chunk_t* ch = lvl->chunks().getChunk(cx, cz);
@@ -990,7 +964,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         }
     }
 
-    // Broadcast UpdateBlockPacket to all players.
+    // Broadcast UpdateBlockPacket.
     auto ubp = std::make_shared<network::protocol::UpdateBlockPacket>();
     ubp->x = placeX;
     ubp->z = placeZ;
@@ -999,11 +973,9 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     ubp->blockData = placedData;
     ubp->flags = 0xFF;
 
-    // PMMP (protocol 84) sends a block-place sound via LevelEventPacket with
+    // PMMP sends a place sound via LevelEventPacket with
     // evid = EVENT_SOUND_BLOCK_PLACE (1052).
-    //   - Position: BLOCK CORNER (integer x,y,z — NOT +0.5, unlike the
-    //     break particle). Verbatim from pocketmine/level/sound/BlockPlaceSound.php
-    //     + GenericSound which copies Block::x/y/z which are integers.
+    //   - Position: BLOCK CORNER (no +0.5).
     //   - Data:     just the placed block id (no meta bits).
     auto sndEv = std::make_shared<network::protocol::LevelEventPacket>();
     sndEv->evid = network::protocol::LevelEventPacket::EVENT_SOUND_BLOCK_PLACE;
@@ -1041,31 +1013,13 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int /*face*/) {
 }
 
 // ============================================================
-// Block drop lookup table
-// ============================================================
-// Mirrors PMMP `Block::getDrops(Item $item)` per-block overrides.
-// Returns {itemId, damage} of the drop. {0, 0} = no drop.
+// Block drop lookup table — mirrors PMMP `Block::getDrops(Item $item)`
+// per-block overrides. Returns {itemId, damage}. {0, 0} = no drop.
 // Default (unlisted block): drop itself (id, damage, count=1).
-//
-//   Block            | Drops         | Notes
-//   -----------------+---------------+---------------------------
-//   Stone (1)        | Cobblestone 4 | Requires pickaxe (we assume yes)
-//   Grass (2)        | Dirt 3        | Silk-touch → Grass (not modeled)
-//   Coal Ore (16)   | Coal 263      |
-//   Iron Ore (15)   | Nothing       | Needs smelting
-//   Gold Ore (14)   | Nothing       | Needs smelting
-//   Diamond Ore (56) | Diamond 264   |
-//   Lapis Ore (21)  | Dye 351:4     | Lapis Lazuli dye
-//   Redstone Ore (73)| Redstone 331  |
-//   Glass (20)      | Nothing       | Silk-touch required (PMMP Glass.php)
-//   Ice (79)        | Nothing       | Silk-touch required (PMMP Ice.php)
-//   Glowstone (89)  | Glowstone Dust 348 | Drops 2-4, we drop 1 for MVP
-//   Leaves (18)     | Nothing       | Sapling chance (PMMP complex, skip)
-//   Bedrock (7)      | Nothing       | Unbreakable anyway
-//   TNT (46)         | Nothing       | Doesn't drop itself when broken
+// ============================================================
 static std::pair<uint16_t, uint16_t> lookupBlockDrop(uint8_t blockId, uint8_t blockData) {
     switch (blockId) {
-        case 1:  return {4,   blockData & 0x07};   // Stone -> Cobblestone (preserve variant for non-stone types)
+        case 1:  return {4,   blockData & 0x07};   // Stone -> Cobblestone
         case 2:  return {3,   0};                   // Grass -> Dirt
         case 15: return {0,   0};                   // Iron Ore -> no drop (smelt)
         case 16: return {263, 0};                   // Coal Ore -> Coal
@@ -1084,16 +1038,8 @@ static std::pair<uint16_t, uint16_t> lookupBlockDrop(uint8_t blockId, uint8_t bl
 }
 
 // ============================================================
-// Drop an item entity at a position
+// Drop an item entity at a position (PMMP `Level::dropItem`)
 // ============================================================
-// Mirrors PMMP `Level::dropItem(Vector3, Item, motion=null, delay=10)`:
-//   - Motion: random (x in [-0.1, +0.1], y = 0.2, z in [-0.1, +0.1])
-//   - Position: block CENTER (x+0.5, y+0.5, z+0.5)
-//   - Broadcast: AddItemEntityPacket to all players tracking the chunk
-// PMMP also keeps the entity server-side (with gravity + pickup delay)
-// so players can pick it up via TakeItemEntityPacket. We skip the
-// server-side entity tracking for the MVP and just broadcast the spawn
-// — the visual feedback is what matters.
 int64_t Player::dropItem(int x, int y, int z, uint16_t itemId, uint8_t count, uint16_t damage) {
     if (itemId == 0 || count == 0) return 0;
     if (!srv_) return 0;
@@ -1102,8 +1048,6 @@ int64_t Player::dropItem(int x, int y, int z, uint16_t itemId, uint8_t count, ui
     int64_t eid = srv_->allocateEid();
 
     // Random motion in PMMP range: x,z in [-0.1, +0.1], y = 0.2.
-    // Uses thread_local mt19937 (thread-safe; the previous static LCG
-    // was not and was a likely cause of segfaults under concurrent drop).
     thread_local std::mt19937 rng{std::random_device{}()};
     std::uniform_real_distribution<float> d(-0.1f, +0.1f);
     float mx = d(rng);
@@ -1141,23 +1085,48 @@ int64_t Player::dropItem(int x, int y, int z, uint16_t itemId, uint8_t count, ui
 }
 
 // ============================================================
-// Send the creative inventory to the player
+// Send the creative-inventory contents (PMMP Player.php:2301 + 1461)
 // ============================================================
-// Mirrors PMMP `Player.php:2301` (and `:1461` on gamemode change):
-//   ContainerSetContentPacket with windowid=SPECIAL_CREATIVE (0x79) and
-//   slots = full creative item list (PMMP `Item::getCreativeItems()`).
-//   Spectator players get an empty list (no items to give).
 void Player::sendCreativeInventory() {
     bool spectator = (cfg_.gamemode == 3);
     auto pk = std::make_shared<network::protocol::ContainerSetContentPacket>();
     pk->windowid = network::protocol::ContainerSetContentPacket::SPECIAL_CREATIVE;
     if (!spectator) {
         // Load the creative items from <dataPath>/resources/creativeitems.json
-        // (same file PMMP ships). dataPath comes from Server::getDataPath().
+        // (the same file PMMP ships — 566 entries).
         std::string dataPath = (srv_ ? srv_->getDataPath() : std::string());
         pk->slots = inventory::getCreativeItems(dataPath);
     }
     sendPacket(pk);
+}
+
+// ============================================================
+// Save this player's NBT + inventory to disk (PMMP Player::saveNBT)
+// ============================================================
+void Player::saveData() {
+    if (!srv_ || cfg_.username.empty()) return;
+    if (!named_tag_) {
+        // Construct a fresh NBT root if none exists.
+        named_tag_ = std::shared_ptr<::mcp_tag>(
+            mcp_compound_tag_new(),
+            [](::mcp_tag* t) { if (t) mcp_tag_destroy(t); });
+    }
+    // Persist position, rotation, gamemode, health.
+    ::mcp_tag* root = named_tag_.get();
+    if (root) {
+        mcp_compound_tag_set_double(root, "Pos_x",  pos_.x);
+        mcp_compound_tag_set_double(root, "Pos_y",  pos_.y);
+        mcp_compound_tag_set_double(root, "Pos_z",  pos_.z);
+        mcp_compound_tag_set_float (root, "Yaw",    yaw_);
+        mcp_compound_tag_set_float (root, "Pitch",  pitch_);
+        mcp_compound_tag_set_int   (root, "playerGameType", cfg_.gamemode);
+        mcp_compound_tag_set_short (root, "Health",  (int16_t)health());
+        mcp_compound_tag_set_long  (root, "RuntimeId", runtimeId());
+    }
+    srv_->saveOfflinePlayerData(cfg_.username, named_tag_);
+    if (srv_->advancedLog()) {
+        utils::MainLogger::get().info("[SAVE] Player " + cfg_.username + " data saved.");
+    }
 }
 
 // ============================================================

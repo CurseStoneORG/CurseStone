@@ -66,6 +66,7 @@ void Server::loadConfig() {
     advanced_log_  = cfg.getBool("server.advanced-log", true);
     view_distance_ = cfg.getInt("server.view-distance", 8);
     async_workers_  = cfg.getInt("settings.async-workers", 4);
+    autosave_ticks_ = cfg.getInt("server.autosave-ticks", 6000);
 }
 
 void Server::initLogger() {
@@ -184,19 +185,28 @@ void Server::tick() {
     if (scheduler::ServerScheduler::get().size() > 0)
         scheduler::ServerScheduler::get().tick(currentTick_);
     if (level_) level_->tick(currentTick_);
-    // Update each player (movement, chunk streaming, etc.)
-    for (auto& p : players_) {
+    // Update each player (movement, chunk streaming, etc.) via snapshot
+    // so we don't race with add/remove on the network thread.
+    auto snap = playersSnapshot();
+    for (auto& p : snap) {
         if (p) p->onUpdate(currentTick_);
     }
     // Network tick (updates avg packet rate, etc.)
     if (network_) network_->tick();
+
+    // Auto-save every `autosave_ticks_` ticks (default 6000 = 5 min at 20 TPS).
+    // Mirrors PMMP `Server::autoSave()` which runs every 6000 ticks.
+    if (autosave_ticks_ > 0 && currentTick_ % autosave_ticks_ == 0) {
+        saveAll();
+    }
 }
 
 void Server::shutdown() {
     running_.store(false, std::memory_order_relaxed);
     utils::MainLogger::get().info("Server shutting down...");
     if (network_) network_->tick();   // graceful close
-    if (level_) level_->save();
+    // Final save: flush level chunks + every player's NBT.
+    saveAll();
     if (console_reader_) console_reader_->stop();
     utils::MainLogger::get().info("Shutdown complete.");
 }
@@ -218,7 +228,7 @@ void Server::removePlayer(Player* p) {
 }
 std::vector<std::shared_ptr<Player>> Server::playersSnapshot() const {
     std::lock_guard<std::mutex> lk(players_mtx_);
-    return players_;   // returns a copy
+    return players_;
 }
 void Server::broadcastMessage(const std::string& msg) {
     auto snap = playersSnapshot();
@@ -229,6 +239,20 @@ void Server::broadcastPacket(void* /*p*/) {
 }
 int64_t Server::allocateEid() {
     return next_eid_.fetch_add(1, std::memory_order_relaxed);
+}
+void Server::saveAll() {
+    // Save the default level (flushes dirty chunks to disk).
+    if (level_) {
+        level_->save();
+        utils::MainLogger::get().info("[SAVE] Level saved.");
+    }
+    // Save every online player's NBT + inventory.
+    auto snap = playersSnapshot();
+    for (auto& p : snap) {
+        if (p) p->saveData();
+    }
+    utils::MainLogger::get().info("[SAVE] " + std::to_string(snap.size()) +
+        " player(s) saved.");
 }
 
 permission::BanList& Server::getNameBans() {

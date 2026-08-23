@@ -1,16 +1,13 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // MobEquipmentPacket.h — client→server hotbar selection / item equip.
 //
-// Wire format (protocol 84) — PMMP MobEquipmentPacket::decode:
+// PMMP wire format (protocol 84) — MobEquipmentPacket::decode:
 //   [1 byte ID 0x1b]
 //   [Int64 BE] eid
-//   [Int32 BE] unknown1  (PMMP reads but ignores — "slot" range)
+//   [Int32 BE] unknown1  (PMMP reads but ignores)
 //   [Slot]     item       (variable-length)
 //   [Uint8]    slot       (selected hotbar slot 0..8)
-//   [Uint8]    selectedSlot (often same as slot)
-//
-// We only need `slot` (the hotbar slot the player is now holding) and the
-// decoded item id so the server can keep its inventory state in sync.
+//   [Uint8]    selectedSlot
 #pragma once
 
 #include "DataPacket.h"

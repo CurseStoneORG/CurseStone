@@ -1,10 +1,9 @@
 #include "WeatherCommand.h"
 #include "Server.h"
-#include "utils/TextColor.h"
 namespace cenisyspe {
 bool WeatherCommand::execute(CommandSender* sender, const std::string&,
                     const std::vector<std::string>&) {
-    sender->sendMessage(TC::RED + "/weather is not implemented yet" + TC::RESET);
+    sender->sendMessage("/weather is not implemented yet");
     return true;
 }
 } // namespace

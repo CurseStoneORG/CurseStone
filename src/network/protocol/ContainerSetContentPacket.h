@@ -5,11 +5,22 @@
 //   [1 byte ID 0x2e]
 //   [Uint8]    windowid   (0=main, 0x78=armor, 0x79=creative, 0x7a=hotbar)
 //   [Int16 BE] count      number of slots
-//   [Slot[count]] slots   each slot = Int16 BE id, if id!=0: count + damage
+//   [Slot[count]] slots   each slot = id BE + count + damage BE + nbtLen LE + nbt
 //   [Int16 BE] hotbarCount (always 0 unless windowid==0)
 //   [Int32 BE hotbar[count]] hotbar link indices (only when windowid==0)
 //
-// PMMP source: pocketmine/network/protocol/ContainerSetContentPacket.php
+// PMMP Slot (BinaryStream::putSlot):
+//   if (id == 0)  write ONLY putShort(0) — 2 bytes total.
+//   else:
+//     putShort(id)         // 2 bytes BE
+//     putByte(count)       // 1 byte
+//     putShort(damage)     // 2 bytes BE
+//     putLShort(nbtLen)    // 2 bytes LE  ← mixed endianness!
+//     put(nbt)             // nbtLen bytes
+//
+// Empty slot has NO further bytes after the 0 id. This is critical:
+// writing 5+ bytes for an empty slot shifts every subsequent slot's id
+// by 3+ bytes, producing "duplicate Stone Shovels" / wrong items.
 #pragma once
 
 #include "DataPacket.h"

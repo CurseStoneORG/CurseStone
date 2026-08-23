@@ -3,22 +3,23 @@
 //
 // PMMP encode:
 //   putLong(eid)  + putSlot(item) + 6 * putFloat
-// All multi-byte values are big-endian (PMMP putLong/putFloat/putSlot).
+// All multi-byte values are big-endian EXCEPT nbtLen which is LE.
 #include "AddItemEntityPacket.h"
 
 namespace cenisyspe::network::protocol {
 
 void AddItemEntityPacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
-    // Int64 BE — runtime entity ID
     w.writeI64BE(eid);
-    // PMMP putSlot (protocol 84): Int16 BE id; if id != 0: count + damage
-    w.writeI16BE(itemId);
-    if (itemId != 0) {
+    // PMMP putSlot
+    if (itemId <= 0) {
+        w.writeI16BE(0);   // empty slot
+    } else {
+        w.writeI16BE(itemId);
         w.writeU8(itemCount);
         w.writeI16BE(itemDamage);
+        w.writeU16LE(0);    // nbtLen = 0 (no NBT)
     }
-    // Position + motion (6 floats, big-endian)
     w.writeF32BE(x);
     w.writeF32BE(y);
     w.writeF32BE(z);
@@ -31,9 +32,16 @@ bool AddItemEntityPacket::decode(const uint8_t* buf, size_t len) {
     PacketReader r(buf, len);
     if (!r.readI64BE(eid)) return false;
     if (!r.readI16BE(itemId)) return false;
-    if (itemId != 0) {
+    if (itemId <= 0) {
+        itemId = 0;
+    } else {
         if (!r.readU8(itemCount))   return false;
         if (!r.readI16BE(itemDamage)) return false;
+        uint16_t nbtLen;
+        if (!r.readU16LE(nbtLen)) return false;
+        if (nbtLen > 0) {
+            if (!r.skipBytes(nbtLen)) return false;
+        }
     }
     if (!r.readF32BE(x))      return false;
     if (!r.readF32BE(y))      return false;

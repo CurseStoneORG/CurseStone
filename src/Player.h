@@ -77,15 +77,20 @@ public:
     void handlePlayerAction(int action, int x, int y, int z, int face);
 
     // Spawn a dropped item entity at the given position with a small random
-    // outward motion. Mirrors PMMP `Level::dropItem`. Used for block-break
-    // drops in survival. Returns the allocated runtime entity ID (or 0 if
-    // the item id was 0, which PMMP skips).
+    // outward motion. Mirrors PMMP `Level::dropItem`. Returns the allocated
+    // runtime entity ID (or 0 if the item id was 0).
     int64_t dropItem(int x, int y, int z, uint16_t itemId, uint8_t count, uint16_t damage);
 
-    // Send the creative-inventory contents to the player. Mirrors PMMP
-    // `Player::setGamemode()` + `Player::doFirstSpawn()` which both call
-    // `ContainerSetContentPacket` with windowid=0x79.
+    // Send the creative-inventory contents (ContainerSetContentPacket with
+    // windowid=0x79). Mirrors PMMP Player.php:2301 + 1461.
     void sendCreativeInventory();
+
+    // Save this player's data (NBT + inventory) to disk via Server.
+    void saveData();
+
+    // Returns true if this player is currently tracking the given chunk.
+    // Used to broadcast particles + sounds only to nearby players.
+    bool isTrackingChunk(int32_t cx, int32_t cz) const;
 
     // --- Server → Player packets ---
     void sendPacket(std::shared_ptr<network::protocol::DataPacket> p);
@@ -110,12 +115,6 @@ public:
     int chunkX() const { return (int)(pos_.x) >> 4; }
     int chunkZ() const { return (int)(pos_.z) >> 4; }
     int viewDistance() const { return cfg_.view_distance; }
-
-    // Returns true if this player is currently tracking the given chunk
-    // (i.e. they have already received FullChunkDataPacket for it).
-    // Mirrors PMMP `Player::hasSpawnedToChunk` / chunk-tracking semantics —
-    // used to broadcast particles + sounds only to nearby players.
-    bool isTrackingChunk(int32_t cx, int32_t cz) const;
 
     // --- NetworkSession accessors ---
     // Player stores a non-owning pointer to AdvancedSourceInterface (the RakLib

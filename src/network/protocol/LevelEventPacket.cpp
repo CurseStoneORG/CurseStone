@@ -15,13 +15,10 @@ namespace cenisyspe::network::protocol {
 
 void LevelEventPacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
-    // PMMP putShort -> 2-byte big-endian signed short.
-    w.writeI16BE(evid);
-    // PMMP putFloat -> 4-byte big-endian float.
+    w.writeI16BE(evid);   // PMMP putShort -> 2-byte BE signed short
     w.writeF32BE(x);
     w.writeF32BE(y);
     w.writeF32BE(z);
-    // PMMP putInt -> 4-byte big-endian signed int.
     w.writeI32BE(data);
 }
 

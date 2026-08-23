@@ -24,7 +24,7 @@
 #include <vector>
 #include <memory>
 #include <atomic>
-#include <mutex>                       // std::mutex, std::lock_guard
+#include <mutex>
 #include <unordered_map>
 #include <cstdint>
 #include <unordered_set>
@@ -71,29 +71,27 @@ public:
     int getTPS() const { return tps_; }
 
     // Player roster.
-    // Access MUST be via the snapshot-returned std::vector — direct access
-    // to players_ would race with add/remove on the network thread. Use
-    // playersSnapshot() for read-only iteration.
     std::vector<std::shared_ptr<Player>>& players() { return players_; }
     const std::vector<std::shared_ptr<Player>>& players() const { return players_; }
-    // Returns a thread-safe COPY of the current player list. Callers iterate
-    // the copy without holding the lock, so add/remove from other threads
-    // doesn't invalidate iterators. The shared_ptr copy is cheap (atomic inc).
+    // Thread-safe snapshot of the player list. Callers iterate this copy
+    // WITHOUT holding the mutex, so add/remove from other threads does not
+    // invalidate iterators (fixes the segfault on concurrent broadcasts).
     std::vector<std::shared_ptr<Player>> playersSnapshot() const;
     Player* getPlayer(const std::string& name) const;
     void addPlayer(std::shared_ptr<Player> p);
     void removePlayer(Player* p);
-    mutable std::mutex players_mtx_;   // guards players_
+
+    // Allocate a fresh unique runtime entity ID. Used for spawning item
+    // drops and other world entities (mirrors PMMP Entity::$entityCount).
+    int64_t allocateEid();
+
+    // Save ALL players + the default level. Called periodically from the
+    // tick loop (auto-save) and on shutdown.
+    void saveAll();
 
     // Broadcast helpers.
     void broadcastMessage(const std::string& msg);
     void broadcastPacket(/* DataPacket */ void* p);
-
-    // Allocate a fresh unique runtime entity ID. Used for spawning item
-    // drops and other world entities (mirrors PMMP
-    // `Level::$entityIdCounter` / `Entity::$entityCount`). IDs start at 2
-    // (id 0 is reserved for "no entity" and id 1 is the host player).
-    int64_t allocateEid();
 
     // Level + scheduler + network accessors.
     Level* getDefaultLevel() const { return level_.get(); }
@@ -143,9 +141,6 @@ private:
 
     std::unordered_set<std::string> ops_;
 
-    // Runtime entity-ID allocator (atomic, monotonic from 2).
-    std::atomic<int64_t> next_eid_{2};
-
     std::string dataPath_;
     std::atomic<bool> running_{false};
     uint64_t currentTick_{0};
@@ -163,6 +158,7 @@ private:
     bool online_mode_ = false;
     bool advanced_log_ = false;
     int async_workers_ = 4;
+    int autosave_ticks_ = 6000;   // 5 minutes at 20 TPS (PMMP default)
 
     // Subsystems (lazily populated in start()).
     std::shared_ptr<network::Network> network_;
@@ -172,6 +168,11 @@ private:
     std::shared_ptr<scheduler::AsyncPool> async_pool_;
     std::unique_ptr<CommandReader> console_reader_;
     std::vector<std::shared_ptr<Player>> players_;
+    mutable std::mutex players_mtx_;             // guards players_
+
+    // Runtime entity-ID allocator (atomic, monotonic from 2 — 0 and 1 are
+    // reserved for "no entity" and "host player" respectively).
+    std::atomic<int64_t> next_eid_{2};
 
     // Lazy-init ban lists.
     std::unique_ptr<permission::BanList> name_bans_;
