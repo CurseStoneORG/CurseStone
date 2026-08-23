@@ -1,6 +1,7 @@
 #include "Defaults.h"
 #include "defaults/StopCommand.h"
 #include "defaults/HelpCommand.h"
+#include "defaults/VersionCommand.h"
 #include "defaults/KickCommand.h"
 #include "defaults/TeleportCommand.h"
 #include "defaults/GamemodeCommand.h"
@@ -18,6 +19,7 @@ void registerDefaultCommands(CommandMap& map) {
     map.registerCommand(std::make_unique<StopCommand>());
     map.registerCommand(std::make_unique<HelpCommand>("help"));
     map.registerCommand(std::make_unique<HelpCommand>("?"));
+    map.registerCommand(std::make_unique<VersionCommand>());
     map.registerCommand(std::make_unique<KickCommand>());
     map.registerCommand(std::make_unique<TeleportCommand>("teleport"));
     map.registerCommand(std::make_unique<TeleportCommand>("tp"));
