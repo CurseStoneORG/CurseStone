@@ -1092,10 +1092,9 @@ void Player::sendCreativeInventory() {
     auto pk = std::make_shared<network::protocol::ContainerSetContentPacket>();
     pk->windowid = network::protocol::ContainerSetContentPacket::SPECIAL_CREATIVE;
     if (!spectator) {
-        // Load the creative items from <dataPath>/resources/creativeitems.json
-        // (the same file PMMP ships — 566 entries).
-        std::string dataPath = (srv_ ? srv_->getDataPath() : std::string());
-        pk->slots = inventory::getCreativeItems(dataPath);
+        // Use the hardcoded creative-items list (no JSON dependency —
+        // mirrors Nukkit's approach of compiling the list at build time).
+        pk->slots = inventory::getCreativeItems();
     }
     sendPacket(pk);
 }
