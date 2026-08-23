@@ -12,6 +12,8 @@ class SetPlayerGameTypePacket : public DataPacket {
 public:
     uint8_t pid() const override { return SET_PLAYER_GAMETYPE_PACKET; }
 
+    int32_t gamemode = 0;
+
     void encode(std::vector<uint8_t>& out) const override;
     bool decode(const uint8_t* data, size_t len) override;
 };

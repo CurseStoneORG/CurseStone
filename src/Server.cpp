@@ -99,18 +99,10 @@ void Server::loadDefaultLevel() {
     lc.format = "mcacpp";
     lc.generator = "normal";
     lc.seed = 0;
-    lc.spawn_x = 0; lc.spawn_y = 65; lc.spawn_z = 0;
+    lc.spawn_x = 0; lc.spawn_y = 66; lc.spawn_z = 0;
     lc.view_distance = view_distance_;
     level_ = std::make_shared<level::Level>(std::move(lc));
-    // Create worlds directory so the server has a visible data folder
-    std::string worldsDir = dataPath_ + "/worlds";
-    ::mkdir(worldsDir.c_str(), 0755);
-    // Create a marker file so the user can see the world exists
-    std::string marker = worldsDir + "/world.txt";
-    FILE* f = fopen(marker.c_str(), "w");
-    if (f) { fprintf(f, "World: world\nFormat: flat\nSpawn: 0, 65, 0\n"); fclose(f); }
     utils::MainLogger::get().info("Default level 'world' ready");
-    utils::MainLogger::get().info("Worlds directory: " + worldsDir);
 }
 
 void Server::startCommandReader() {

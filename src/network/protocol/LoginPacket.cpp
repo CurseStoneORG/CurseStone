@@ -14,7 +14,6 @@
 #include "LoginPacket.h"
 
 #include <cstring>
-#include <cstdio>
 #include <zlib.h>
 
 namespace mcppeserver::network::protocol {
@@ -152,8 +151,6 @@ bool LoginPacket::decode(const uint8_t* data, size_t len) {
     chainJson.assign(reinterpret_cast<const char*>(inner.ptr()), chainLen);
     if (!inner.skipBytes(chainLen)) return false;
 
-    // DEBUG: log chainJson for troubleshooting real client login
-
     uint32_t cdLen = 0;
     if (!inner.readU32LE(cdLen)) return false;
     if (cdLen > inner.remaining()) return false;
@@ -180,16 +177,14 @@ bool LoginPacket::decode(const uint8_t* data, size_t len) {
             if (!base64UrlDecode(pB64, dec)) continue;
             std::string p(dec.begin(), dec.end());
             if (username.empty()) {
-                auto pos = p.find("\"displayName\"");
+                auto pos = p.find('\"displayName\"');
                 if (pos != std::string::npos) {
                     pos += 14;
                     while (pos < p.size() && (p[pos] == ' ' || p[pos] == ':')) pos++;
                     if (pos < p.size() && p[pos] == '"') pos++;
                     auto end = p.find('"', pos);
-                    if (end != std::string::npos) {
+                    if (end != std::string::npos)
                         username = p.substr(pos, end - pos);
-                    }
-                } else {
                 }
             }
             if (clientUUID.empty()) {
