@@ -53,6 +53,7 @@
 #include <cstdio>
 #include <array>
 #include <utility>     // std::pair
+#include <random>      // std::mt19937, std::uniform_real_distribution
 #include <unordered_set>
 
 namespace cenisyspe {
@@ -124,7 +125,7 @@ void Player::close(const std::string& reason) {
     if (srv_) {
         auto pk = std::make_shared<network::protocol::RemoveEntityPacket>();
         pk->eid = runtimeId();
-        for (auto& other : srv_->players()) {
+        for (auto& other : srv_->playersSnapshot()) {
             if (other.get() == this) continue;
             other->sendPacket(pk);
         }
@@ -316,6 +317,13 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                 }
             }
             break;
+        case network::protocol::MOB_ARMOR_EQUIPMENT_PACKET:
+            // Client sends this when equipping armor. PMMP ignores it
+            // server-side because the actual armor-slot change comes
+            // separately via ContainerSetSlotPacket (windowid=0x78),
+            // which is what we use to update PlayerInventory armor slots.
+            // Just acknowledge to avoid the "unknown packet" log.
+            break;
         case network::protocol::CONTAINER_SET_SLOT_PACKET:
             // Client moved an item between slots in their inventory, OR
             // picked an item from the creative grid. We trust the client
@@ -417,7 +425,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
     }
 
     // 5. Server full?
-    if (srv_ && srv_->players().size() >= (size_t)srv_->maxPlayers()) {
+    if (srv_ && srv_->playersSnapshot().size() >= (size_t)srv_->maxPlayers()) {
         kick("disconnectionScreen.serverFull");
         return;
     }
@@ -440,7 +448,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
 
     // Duplicate-session kick (same username or UUID)
     if (srv_) {
-        for (auto& other : srv_->players()) {
+        for (auto& other : srv_->playersSnapshot()) {
             if (other.get() == this) continue;
             if (!other) continue;
             std::string on = other->getName();
@@ -708,7 +716,7 @@ void Player::doFirstSpawn() {
     if (srv_) {
         auto plp = std::make_shared<network::protocol::PlayerListPacket>();
         plp->type = network::protocol::PlayerListPacket::TYPE_ADD;
-        for (auto& other : srv_->players()) {
+        for (auto& other : srv_->playersSnapshot()) {
             if (!other) continue;
             network::protocol::PlayerListPacket::Entry e;
             // Parse the UUID string ("xxxxxxxx-xxxx-...") into 16 raw bytes.
@@ -724,7 +732,7 @@ void Player::doFirstSpawn() {
 
     // Spawn other online players to this client (AddPlayerPacket).
     if (srv_) {
-        for (auto& other : srv_->players()) {
+        for (auto& other : srv_->playersSnapshot()) {
             if (other.get() == this) continue;
             if (!other || !other->spawned()) continue;
             auto ap = std::make_shared<network::protocol::AddPlayerPacket>();
@@ -788,7 +796,7 @@ void Player::handleMovePlayer(double x, double y, double z, float yaw, float pit
         me->eid = runtimeId();
         me->x = (float)pos_.x; me->y = (float)pos_.y; me->z = (float)pos_.z;
         me->yaw = yaw_; me->headYaw = yaw_; me->pitch = pitch_;
-        for (auto& other : srv_->players()) {
+        for (auto& other : srv_->playersSnapshot()) {
             if (other.get() == this) continue;
             other->sendPacket(me);
         }
@@ -888,7 +896,7 @@ void Player::handleBlockBreak(int x, int y, int z) {
     int32_t pk_cx = x >> 4;
     int32_t pk_cz = z >> 4;
     if (srv_) {
-        for (auto& other : srv_->players()) {
+        for (auto& other : srv_->playersSnapshot()) {
             if (!other) continue;
             if (!other->isTrackingChunk(pk_cx, pk_cz)) continue;
             other->sendPacket(ubp);
@@ -1008,7 +1016,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     int32_t pk_cx = placeX >> 4;
     int32_t pk_cz = placeZ >> 4;
     if (srv_) {
-        for (auto& other : srv_->players()) {
+        for (auto& other : srv_->playersSnapshot()) {
             if (!other) continue;
             if (!other->isTrackingChunk(pk_cx, pk_cz)) continue;
             other->sendPacket(ubp);
@@ -1093,16 +1101,14 @@ int64_t Player::dropItem(int x, int y, int z, uint16_t itemId, uint8_t count, ui
     // Allocate a runtime entity ID (PMMP `Level::$entityIdCounter`).
     int64_t eid = srv_->allocateEid();
 
-    // Random motion in PMMP range. Using a cheap LCG (no <random> needed).
-    static uint32_t lcg_state = 0x1234abcdu;
-    lcg_state = lcg_state * 1103515245u + 12345u;
-    auto rnd = []() -> float {
-        lcg_state = lcg_state * 1103515245u + 12345u;
-        return (float)((double)(lcg_state >> 8) / (double)0x1000000);
-    };
-    float mx = rnd() * 0.2f - 0.1f;     // [-0.1, +0.1]
-    float my = 0.2f;                    // pop up
-    float mz = rnd() * 0.2f - 0.1f;
+    // Random motion in PMMP range: x,z in [-0.1, +0.1], y = 0.2.
+    // Uses thread_local mt19937 (thread-safe; the previous static LCG
+    // was not and was a likely cause of segfaults under concurrent drop).
+    thread_local std::mt19937 rng{std::random_device{}()};
+    std::uniform_real_distribution<float> d(-0.1f, +0.1f);
+    float mx = d(rng);
+    float my = 0.2f;
+    float mz = d(rng);
 
     auto pk = std::make_shared<network::protocol::AddItemEntityPacket>();
     pk->eid        = eid;
@@ -1119,7 +1125,7 @@ int64_t Player::dropItem(int x, int y, int z, uint16_t itemId, uint8_t count, ui
     // Broadcast only to players tracking this chunk (PMMP `addChunkPacket`).
     int32_t pk_cx = x >> 4;
     int32_t pk_cz = z >> 4;
-    for (auto& other : srv_->players()) {
+    for (auto& other : srv_->playersSnapshot()) {
         if (!other) continue;
         if (!other->isTrackingChunk(pk_cx, pk_cz)) continue;
         other->sendPacket(pk);
@@ -1146,7 +1152,10 @@ void Player::sendCreativeInventory() {
     auto pk = std::make_shared<network::protocol::ContainerSetContentPacket>();
     pk->windowid = network::protocol::ContainerSetContentPacket::SPECIAL_CREATIVE;
     if (!spectator) {
-        pk->slots = inventory::getCreativeItems();
+        // Load the creative items from <dataPath>/resources/creativeitems.json
+        // (same file PMMP ships). dataPath comes from Server::getDataPath().
+        std::string dataPath = (srv_ ? srv_->getDataPath() : std::string());
+        pk->slots = inventory::getCreativeItems(dataPath);
     }
     sendPacket(pk);
 }

@@ -5,7 +5,7 @@
 namespace cenisyspe {
 bool ListCommand::execute(CommandSender* sender, const std::string&,
                           const std::vector<std::string>&) {
-    auto& players = Server::getInstance().players();
+    auto players = Server::getInstance().playersSnapshot();
     sender->sendMessage(TC::YELLOW + "There are " + TC::WHITE + std::to_string(players.size()) +
         TC::GRAY + "/" + TC::WHITE + std::to_string(Server::getInstance().maxPlayers()) +
         TC::YELLOW + " players online:" + TC::RESET);

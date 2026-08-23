@@ -14,7 +14,7 @@ bool VersionCommand::execute(CommandSender* sender, const std::string&,
         TC::GRAY + ", protocol " + std::to_string(PROTOCOL_VERSION) + TC::RESET);
     sender->sendMessage(TC::BLUE + "Built with: " + TC::WHITE + "C++20 / C23" + TC::RESET);
     sender->sendMessage(TC::LIGHT_PURPLE + "Website: " + TC::WHITE + "https://github.com/Dr1xyDev/MyCenisys" + TC::RESET);
-    auto& players = Server::getInstance().players();
+    auto players = Server::getInstance().playersSnapshot();
     sender->sendMessage(TC::GREEN + "Online: " + TC::WHITE + std::to_string(players.size()) + "/" +
         std::to_string(Server::getInstance().maxPlayers()) + " players" + TC::RESET);
     return true;

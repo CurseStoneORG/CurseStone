@@ -24,6 +24,7 @@
 #include <vector>
 #include <memory>
 #include <atomic>
+#include <mutex>                       // std::mutex, std::lock_guard
 #include <unordered_map>
 #include <cstdint>
 #include <unordered_set>
@@ -70,11 +71,19 @@ public:
     int getTPS() const { return tps_; }
 
     // Player roster.
+    // Access MUST be via the snapshot-returned std::vector — direct access
+    // to players_ would race with add/remove on the network thread. Use
+    // playersSnapshot() for read-only iteration.
     std::vector<std::shared_ptr<Player>>& players() { return players_; }
     const std::vector<std::shared_ptr<Player>>& players() const { return players_; }
+    // Returns a thread-safe COPY of the current player list. Callers iterate
+    // the copy without holding the lock, so add/remove from other threads
+    // doesn't invalidate iterators. The shared_ptr copy is cheap (atomic inc).
+    std::vector<std::shared_ptr<Player>> playersSnapshot() const;
     Player* getPlayer(const std::string& name) const;
     void addPlayer(std::shared_ptr<Player> p);
     void removePlayer(Player* p);
+    mutable std::mutex players_mtx_;   // guards players_
 
     // Broadcast helpers.
     void broadcastMessage(const std::string& msg);
