@@ -32,10 +32,19 @@ bool GamemodeCommand::execute(CommandSender* sender, const std::string&,
     auto sg = std::make_shared<network::protocol::SetPlayerGameTypePacket>();
     sg->gamemode = gm & 0x01;
     target->sendPacket(sg);
+    // Send AdventureSettings with correct flags (mirror PMMP sendSettings)
     auto as = std::make_shared<network::protocol::AdventureSettingsPacket>();
     uint32_t flags = 0;
-    if (gm == 1 || gm == 3) flags |= network::protocol::AdventureSettingsPacket::FLAG_ALLOW_FLIGHT;
+    if (gm == 2 || gm == 3) flags |= 0x01;  // world_immutable (adventure)
+    flags |= 0x02;  // no_pvp
+    flags |= 0x04;  // no_pvm
+    flags |= 0x08;  // no_mvp
+    flags |= 0x40;  // auto_jump
+    if (gm == 1 || gm == 3) flags |= 0x80;  // allow_fly
+    if (gm == 3) flags |= 0x100;  // noclip
     as->flags = flags;
+    as->userPermission = 2;   // host
+    as->globalPermission = 2; // host
     target->sendPacket(as);
     std::string gmName = gm == 0 ? "Survival" : (gm == 1 ? "Creative" : "Adventure");
     sender->sendMessage("Set " + target->getName() + "'s game mode to " + gmName);

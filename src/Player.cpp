@@ -567,20 +567,49 @@ static void parseUuidBytes(const std::string& s, std::array<uint8_t,16>& out) {
 void Player::doFirstSpawn() {
     if (spawned_.exchange(true)) return;   // idempotent
 
-    // AdventureSettings (flight/pvp flags).
+    // AdventureSettings (flight/pvp flags) — mirrors PMMP sendSettings().
+    // Flag bits (from PMMP):
+    //   0x01 = world_immutable (adventure mode — no break/place)
+    //   0x02 = no_pvp
+    //   0x04 = no_pvm (no hit markers client-side)
+    //   0x08 = no_mvp (no hit markers client-side)
+    //   0x40 = auto_jump
+    //   0x80 = allow_fly
+    //   0x100 = noclip (spectator)
+    // PMMP always sends 0x02|0x04|0x08 (no hit markers).
+    // PMMP sends userPermission=2 (host) and globalPermission=2 (host).
+    // Without host permission, the client treats the player as a visitor
+    // and blocks block break/placement.
     {
         auto as = std::make_shared<network::protocol::AdventureSettingsPacket>();
         uint32_t flags = 0;
-        // Creative/Spectator may fly.
-        if (cfg_.gamemode == 1 || cfg_.gamemode == 3) flags |= network::protocol::AdventureSettingsPacket::FLAG_ALLOW_FLIGHT;
-        // Spectator is world-immutable and no-pvp.
-        if (cfg_.gamemode == 3) {
-            flags |= network::protocol::AdventureSettingsPacket::FLAG_WORLD_IMMUTABLE;
-            flags |= network::protocol::AdventureSettingsPacket::FLAG_NO_PVP;
+
+        // Adventure mode (gm 2 or 3) = world immutable
+        if (cfg_.gamemode == 2 || cfg_.gamemode == 3) {
+            flags |= 0x01;  // world_immutable — no break/place
         }
+
+        // No hit markers (PMMP always sets these)
+        flags |= 0x02;  // no_pvp
+        flags |= 0x04;  // no_pvm
+        flags |= 0x08;  // no_mvp
+
+        // Auto jump (PMMP default = true)
+        flags |= 0x40;
+
+        // Creative (gm 1 or 3) can fly
+        if (cfg_.gamemode == 1 || cfg_.gamemode == 3) {
+            flags |= 0x80;  // allow_fly
+        }
+
+        // Spectator (gm 3) has noclip
+        if (cfg_.gamemode == 3) {
+            flags |= 0x100;  // noclip
+        }
+
         as->flags            = flags;
-        as->userPermission   = network::protocol::AdventureSettingsPacket::PERMISSION_NORMAL;
-        as->globalPermission = network::protocol::AdventureSettingsPacket::PERMISSION_NORMAL;
+        as->userPermission   = 2;  // host — required for break/place
+        as->globalPermission = 2;  // host
         sendPacket(as);
     }
 
