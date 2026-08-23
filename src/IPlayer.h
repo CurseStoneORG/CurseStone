@@ -2,13 +2,11 @@
 // Mirrors pocketmine/IPlayer.php.
 #pragma once
 #include <string>
+#include "command/CommandSender.h"
 namespace mcppeserver {
-class IPlayer {
+class IPlayer : public CommandSender {
 public:
-    virtual ~IPlayer() = default;
-    virtual std::string getName() const = 0;
     virtual bool isOnline() const = 0;
-    virtual bool isOp() const = 0;
     virtual void setOp(bool v) = 0;
     virtual bool isBanned() const = 0;
     virtual void setBanned(bool v) = 0;
