@@ -1,16 +1,12 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// McAnvil — alias for McAcpp (AtomikPE's "Minecraft Anvil" format).
+// McAnvil.cpp — alias provider that delegates to AtmkMca.
 //
-// In MCPE 0.15.x, the world format used by AtomikPE is the PMMP "McAcpp"
-// format (little-endian NBT, 128-block-tall chunks, zlib-compressed
-// payloads). The user-facing name is "mcanvil" — this provider delegates
-// all calls to McAcpp so users can configure `format: mcanvil` in
-// server.properties and it Just Works.
+// "mcanvil" and "mca" config names are kept for backward compat with
+// old configs that referenced them. They all instantiate AtmkMca,
+// which is now the canonical AtomikPE world format (replacing McaCpp).
 #include "McAnvil.h"
 #include "../LevelProviderManager.h"
-#include "../mcacpp/McaCpp.h"
-#include "../ChunkAdapter.h"
-#include "../ChunkNBTCodec.h"
+#include "../atmkma/AtmkMca.h"
 
 #include <cstdio>
 #include <memory>
@@ -19,16 +15,17 @@ namespace atomikpe::level::format::mca {
 
 McAnvilRegistrar g_mca_registrar_;
 McAnvilRegistrar::McAnvilRegistrar() {
+    // NOTE: AtmkMcaRegistrar (in atmkma/AtmkMca.cpp) already registers
+    // "atmkma", "mcacpp", "mcanvil", and "mca" — so the explicit
+    // registrations here are redundant. We keep them as documentation.
     LevelProviderManager::getInstance().registerProvider(
         "mcanvil", [](){ return std::unique_ptr<LevelProvider>(new McAnvil()); });
-    // Also register "mca" as an alias for backward compat with old configs.
     LevelProviderManager::getInstance().registerProvider(
         "mca", [](){ return std::unique_ptr<LevelProvider>(new McAnvil()); });
 }
 
 McAnvil::McAnvil() {
-    // Delegate to an internal McaCpp instance.
-    inner_ = std::make_unique<mcacpp::McaCpp>();
+    inner_ = std::make_unique<atmkma::AtmkMca>();
 }
 
 McAnvil::~McAnvil() { shutdown(); }
@@ -42,19 +39,11 @@ void McAnvil::shutdown() {
 }
 
 std::string McAnvil::regionPath(int32_t cx, int32_t cz) const {
-    // Use the inner McaCpp's path layout (chunks/<rx>_<rz>.mcacpp).
-    // We don't use Java Anvil's r.<rx>.<rz>.mca layout because the
-    // payload encoding is little-endian MCPE NBT (not Java BE NBT).
-    if (inner_) {
-        // McaCpp computes the region path internally; expose via init.
-        // For now, return the standard mcacpp path layout.
-        int32_t rx = (cx >= 0) ? (cx / 32) : ((cx - 31) / 32);
-        int32_t rz = (cz >= 0) ? (cz / 32) : ((cz - 31) / 32);
-        char buf[64];
-        std::snprintf(buf, sizeof(buf), "chunks/%d_%d.mcacpp", (int)rx, (int)rz);
-        return std::string(buf);
-    }
-    return "";
+    int32_t rx = (cx >= 0) ? (cx / 32) : ((cx - 31) / 32);
+    int32_t rz = (cz >= 0) ? (cz / 32) : ((cz - 31) / 32);
+    char buf[64];
+    std::snprintf(buf, sizeof(buf), "regions/r.%d.%d.atmka", (int)rx, (int)rz);
+    return std::string(buf);
 }
 
 std::optional<std::shared_ptr<FullChunk>>

@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// McAnvil — alias for McAcpp (AtomikPE's "Minecraft Anvil" format).
+// McAnvil.h — alias provider that delegates to AtmkMca.
 //
-// In MCPE 0.15.x, the world format used by AtomikPE is the PMMP "McAcpp"
-// format (little-endian NBT, 128-block-tall chunks, zlib-compressed
-// payloads). The user-facing name is "mcanvil" — this provider delegates
-// all calls to McAcpp so users can configure `format: mcanvil` in
-// server.properties and it Just Works.
+// "mcanvil" and "mca" are kept as backward-compat aliases for the
+// old configs that referenced them. They all instantiate AtmkMca
+// under the hood, which is the canonical AtomikPE world format.
 #pragma once
 
 #include <cstdint>
@@ -16,7 +14,7 @@
 #include "../../../main.h"
 #include "../LevelProvider.h"
 
-namespace atomikpe::level::format::mcacpp { class McaCpp; }
+namespace atomikpe::level::format::atmkma { class AtmkMca; }
 
 namespace atomikpe::level::format::mca {
 
@@ -46,11 +44,10 @@ public:
     void             setGenerator(generator::Generator* g) override;
     generator::Generator* getGenerator() const override;
 
-    // Region file path for chunk (cx, cz). Returns the McAcpp layout.
     std::string      regionPath(int32_t cx, int32_t cz) const;
 
 private:
-    std::unique_ptr<mcacpp::McaCpp> inner_;
+    std::unique_ptr<atmkma::AtmkMca> inner_;
 };
 
 struct McAnvilRegistrar {
