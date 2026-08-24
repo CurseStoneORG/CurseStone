@@ -1,2 +1,2 @@
 #include "Permission.h"
-namespace cenisyspe::permission {}
+namespace atomikpe::permission {}

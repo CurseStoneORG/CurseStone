@@ -1,2 +1,2 @@
 #include "ItemShears.h"
-namespace cenisyspe::item {}
+namespace atomikpe::item {}

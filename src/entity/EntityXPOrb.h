@@ -1,7 +1,7 @@
 #pragma once
 #include "Projectile.h"
 #include <string>
-namespace cenisyspe::entity {
+namespace atomikpe::entity {
 class EntityXPOrb : public Projectile {
 public:
     using Projectile::Projectile;

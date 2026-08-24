@@ -6,7 +6,7 @@
 // All ints are big-endian.
 #include "UpdateBlockPacket.h"
 
-namespace cenisyspe::network::protocol {
+namespace atomikpe::network::protocol {
 
 void UpdateBlockPacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
@@ -28,4 +28,4 @@ bool UpdateBlockPacket::decode(const uint8_t* data, size_t len) {
     return r.readU8(flags);
 }
 
-} // namespace cenisyspe::network::protocol
+} // namespace atomikpe::network::protocol

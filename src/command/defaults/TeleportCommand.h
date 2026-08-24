@@ -1,7 +1,7 @@
 #pragma once
 #include "command/Command.h"
 #include <string>
-namespace cenisyspe {
+namespace atomikpe {
 class TeleportCommand : public Command {
 public:
     TeleportCommand(const std::string& name = "teleport") : Command(name, "Teleport player") {}

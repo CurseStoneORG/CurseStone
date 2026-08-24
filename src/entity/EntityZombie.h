@@ -1,7 +1,7 @@
 #pragma once
 #include "Monster.h"
 #include <string>
-namespace cenisyspe::entity {
+namespace atomikpe::entity {
 class EntityZombie : public Monster {
 public:
     using Monster::Monster;

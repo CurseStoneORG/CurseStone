@@ -5,7 +5,7 @@
 // (putString = putShort BE length + bytes)
 #include "DisconnectPacket.h"
 
-namespace cenisyspe::network::protocol {
+namespace atomikpe::network::protocol {
 
 void DisconnectPacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
@@ -17,4 +17,4 @@ bool DisconnectPacket::decode(const uint8_t* data, size_t len) {
     return r.readBEString(message);
 }
 
-} // namespace cenisyspe::network::protocol
+} // namespace atomikpe::network::protocol

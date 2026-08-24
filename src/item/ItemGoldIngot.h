@@ -1,7 +1,7 @@
 #pragma once
 #include "Item.h"
 #include <string>
-namespace cenisyspe::item {
+namespace atomikpe::item {
 class ItemGoldIngot : public Item {
 public:
     ItemGoldIngot() : Item(266) {}

@@ -2,7 +2,7 @@
 // (Players, CommandSenders).
 #pragma once
 #include <string>
-namespace cenisyspe::permission {
+namespace atomikpe::permission {
 class Permissible {
 public:
     virtual ~Permissible() = default;

@@ -5,7 +5,7 @@
 #include "level/format/ChunkSection.h"
 #include "ChunkManager.h"
 #include <string.h>
-namespace cenisyspe::level {
+namespace atomikpe::level {
 ChunkManager::ChunkManager() {}
 ChunkManager::~ChunkManager() {
     for (auto& kv : chunks_) if (kv.second) mcp_chunk_destroy(kv.second);

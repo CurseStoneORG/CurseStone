@@ -3,15 +3,15 @@
 #pragma once
 #include <vector>
 #include <cstdint>
-namespace cenisyspe::item { struct ItemStack; }
-namespace cenisyspe::tile {
+namespace atomikpe::item { struct ItemStack; }
+namespace atomikpe::tile {
 class Container {
 public:
     virtual ~Container() = default;
     virtual int size() const = 0;
     virtual int maxSize() const { return 64; }
-    virtual void setItem(int slot, const cenisyspe::item::ItemStack& it) = 0;
-    virtual cenisyspe::item::ItemStack getItem(int slot) const = 0;
+    virtual void setItem(int slot, const atomikpe::item::ItemStack& it) = 0;
+    virtual atomikpe::item::ItemStack getItem(int slot) const = 0;
     virtual void clear() { for (int i = 0; i < size(); ++i) removeItem(i); }
     virtual void removeItem(int slot) = 0;
 };

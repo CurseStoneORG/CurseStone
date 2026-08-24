@@ -3,7 +3,7 @@
 // DefaultPermissions.
 #pragma once
 #include "Permissible.h"
-namespace cenisyspe::permission {
+namespace atomikpe::permission {
 class DefaultPermissions {
 public:
     static void registerCorePermissions(Permissible& p);

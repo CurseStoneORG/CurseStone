@@ -15,7 +15,7 @@
 // spectator creative case). Forgetting it desyncs the next packet.
 #include "ContainerSetContentPacket.h"
 
-namespace cenisyspe::network::protocol {
+namespace atomikpe::network::protocol {
 
 void ContainerSetContentPacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
@@ -53,9 +53,9 @@ bool ContainerSetContentPacket::decode(const uint8_t* buf, size_t len) {
     for (uint16_t i = 0; i < n; ++i) {
         int16_t id;
         if (!r.readI16BE(id)) return false;
-        cenisyspe::item::ItemStack s;
+        atomikpe::item::ItemStack s;
         if (id <= 0) {
-            s = cenisyspe::item::ItemStack::EMPTY();
+            s = atomikpe::item::ItemStack::EMPTY();
         } else {
             uint8_t cnt;
             int16_t dmg;
@@ -84,4 +84,4 @@ bool ContainerSetContentPacket::decode(const uint8_t* buf, size_t len) {
     return true;
 }
 
-} // namespace cenisyspe::network::protocol
+} // namespace atomikpe::network::protocol

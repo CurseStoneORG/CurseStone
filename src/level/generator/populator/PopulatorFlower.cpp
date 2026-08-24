@@ -1,7 +1,7 @@
 #include "PopulatorFlower.h"
 #include "level/generator/noise/SimplexNoise.h"
 #include "level/format/Chunk.h"
-namespace cenisyspe::level::generator::populator {
+namespace atomikpe::level::generator::populator {
 void PopulatorFlower::populate(GenerationContext& ctx) {
     uint64_t state = (uint64_t)mcp_simplex_hash(ctx.seed ^ 0xF10C0FFEE, ctx.chunk_x, ctx.chunk_z);
     auto next = [&]() -> uint64_t {

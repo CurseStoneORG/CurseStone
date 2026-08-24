@@ -8,7 +8,7 @@
 #include "level/format/Chunk.h"
 #include <stdint.h>
 
-namespace cenisyspe::level::generator {
+namespace atomikpe::level::generator {
 
 struct GenerationContext {
     int64_t seed;          // world seed

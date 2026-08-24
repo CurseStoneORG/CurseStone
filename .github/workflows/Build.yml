@@ -1,4 +1,4 @@
-name: Build CenisysPE
+name: Build AtomikPE
 
 on:
   push:
@@ -48,8 +48,8 @@ jobs:
       - name: Subir binario Linux
         uses: actions/upload-artifact@v4
         with:
-          name: CenisysPE-linux-x86_64
-          path: build/linux-release/CenisysPE
+          name: AtomikPE-linux-x86_64
+          path: build/linux-release/AtomikPE
           retention-days: 7
 
   # ─────────────────────────────────────────────
@@ -120,7 +120,7 @@ jobs:
           cmake --build build-arm64 --parallel
           cmake --install build-arm64
 
-      - name: Configure CenisysPE para ARM64
+      - name: Configure AtomikPE para ARM64
         run: |
           cmake -B build/android-arm64 \
             -G Ninja \
@@ -142,8 +142,8 @@ jobs:
       - name: Subir binario ARM64
         uses: actions/upload-artifact@v4
         with:
-          name: CenisysPE-android-arm64
-          path: build/android-arm64/CenisysPE
+          name: AtomikPE-android-arm64
+          path: build/android-arm64/AtomikPE
           retention-days: 14
 
   # ─────────────────────────────────────────────
@@ -166,13 +166,14 @@ jobs:
 
       - name: Renombrar binarios
         run: |
-          mv dist/CenisysPE-linux-x86_64/CenisysPE   dist/CenisysPE-linux-x86_64
-          mv dist/CenisysPE-android-arm64/CenisysPE  dist/CenisysPE-android-arm64
+          mv dist/AtomikPE-linux-x86_64/AtomikPE   dist/AtomikPE-linux-x86_64
+          mv dist/AtomikPE-android-arm64/AtomikPE  dist/AtomikPE-android-arm64
 
       - name: Publicar Release en GitHub
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/CenisysPE-linux-x86_64
-            dist/CenisysPE-android-arm64
+            dist/AtomikPE-linux-x86_64
+            dist/AtomikPE-android-arm64
           generate_release_notes: true
+

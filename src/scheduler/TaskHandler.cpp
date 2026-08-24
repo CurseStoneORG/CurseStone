@@ -1,5 +1,5 @@
 #include "TaskHandler.h"
-namespace cenisyspe::scheduler {
+namespace atomikpe::scheduler {
 bool TaskHandler::tick(uint64_t current_tick) {
     if (!task_ || task_->isCancelled()) return true;
     if (task_->nextRun() > current_tick) return false;

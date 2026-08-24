@@ -2,7 +2,7 @@
 #include <thread>
 #include <atomic>
 #include <functional>
-namespace cenisyspe::scheduler {
+namespace atomikpe::scheduler {
 class AsyncWorker {
 public:
     using Work = std::function<void()>;

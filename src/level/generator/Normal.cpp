@@ -7,7 +7,7 @@
 #include "level/generator/populator/PopulatorCave.h"
 #include "level/generator/object/OreGenerator.h"
 #include <cmath>
-namespace cenisyspe::level::generator {
+namespace atomikpe::level::generator {
 Normal::Normal(int64_t seed) : seed_(seed) {
     height_noise_ = mcp_simplex_new(seed);
     cave_noise_   = mcp_simplex_new(seed ^ 0xC0FFEE);

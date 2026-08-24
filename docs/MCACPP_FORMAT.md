@@ -1,6 +1,6 @@
 # mcacpp World Format Specification
 
-The default world format for CenisysPE. Stored under
+The default world format for AtomikPE. Stored under
 `<world_name>/chunks/<rx>_<rz>.mcacpp` (32×32 chunks per region file).
 
 ## File layout

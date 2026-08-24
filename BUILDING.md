@@ -1,4 +1,4 @@
-# Cómo compilar CenisysPE
+# Cómo compilar AtomikPE
 
 ## Opción 1 — GitHub Actions (recomendado)
 
@@ -22,7 +22,7 @@ git push origin v1.0.0
 sudo apt-get install cmake ninja-build gcc-12 g++-12 zlib1g-dev libleveldb-dev
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
-./build/CenisysPE
+./build/AtomikPE
 ```
 
 ---
@@ -44,7 +44,7 @@ cmake -B build -G Ninja \
 cmake --build build --parallel
 
 # Correr
-./build/CenisysPE
+./build/AtomikPE
 ```
 
 > Termux detecta automáticamente ARM64, no necesitas pasar el toolchain manualmente.

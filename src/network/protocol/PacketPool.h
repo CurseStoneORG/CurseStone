@@ -13,7 +13,7 @@
 #include <memory>
 #include <functional>
 
-namespace cenisyspe::network::protocol {
+namespace atomikpe::network::protocol {
 
 class PacketPool {
 public:
@@ -33,4 +33,4 @@ private:
     PacketPool() = default;
 };
 
-} // namespace cenisyspe::network::protocol
+} // namespace atomikpe::network::protocol

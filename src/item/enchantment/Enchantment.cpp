@@ -1,2 +1,2 @@
 #include "Enchantment.h"
-namespace cenisyspe::item::enchantment {}
+namespace atomikpe::item::enchantment {}

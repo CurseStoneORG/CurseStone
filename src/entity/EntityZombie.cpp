@@ -1,2 +1,2 @@
 #include "EntityZombie.h"
-namespace cenisyspe::entity {}
+namespace atomikpe::entity {}

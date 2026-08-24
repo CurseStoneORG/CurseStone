@@ -1,7 +1,7 @@
 // BiomePlains — concrete biome.
 #pragma once
 #include "Biome.h"
-namespace cenisyspe::level::generator::biome {
+namespace atomikpe::level::generator::biome {
 class BiomePlains : public Biome {
 public:
     uint8_t id() const override;

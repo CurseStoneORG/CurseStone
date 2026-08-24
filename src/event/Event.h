@@ -3,7 +3,7 @@
 // /event/Event.php. (No plugin API yet — handler dispatch is internal.)
 #pragma once
 #include <string>
-namespace cenisyspe::event {
+namespace atomikpe::event {
 class Event {
 public:
     virtual ~Event() = default;

@@ -1,6 +1,6 @@
 #include "EmptyGenerator.h"
 #include "level/format/Chunk.h"
-namespace cenisyspe::level::generator {
+namespace atomikpe::level::generator {
 void EmptyGenerator::generate(GenerationContext& ctx) {
     mcp_chunk_t* c = ctx.chunk;
     mcp_chunk_section_t* s = mcp_chunk_get_or_alloc_section(c, 0);

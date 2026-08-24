@@ -6,7 +6,7 @@
 #include "Generator.h"
 #include <vector>
 #include <cstdint>
-namespace cenisyspe::level::generator {
+namespace atomikpe::level::generator {
 struct FlatLayer { uint8_t block_id; uint8_t count; };
 class Flat : public Generator {
 public:

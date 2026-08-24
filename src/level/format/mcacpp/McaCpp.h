@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// McaCpp — the default CenisysPE world format. C++.
+// McaCpp — the default AtomikPE world format. C++.
 //
 // `mcacpp` is a region-file format (32×32 chunks per .mcacpp file)
 // designed for fast random chunk access and easy portability across
 // C/C++ implementations. The on-disk spec lives in
-// /home/z/my-project/work/CenisysPE/docs/MCACPP_FORMAT.md.
+// /home/z/my-project/work/AtomikPE/docs/MCACPP_FORMAT.md.
 //
 // Chunk data on disk is zlib-compressed NBT (Java big-endian) so
 // existing NBT code can read/write chunks without a separate
@@ -32,7 +32,7 @@
 #include "../LevelProvider.h"
 #include "../Chunk.h"
 
-namespace cenisyspe::level::format::mcacpp {
+namespace atomikpe::level::format::mcacpp {
 
 // One open region file. The header + chunk table are read once on
 // open and cached; chunk payloads are read on demand.
@@ -148,4 +148,4 @@ struct McaCppRegistrar {
 };
 extern McaCppRegistrar g_mcacpp_registrar_;
 
-} // namespace cenisyspe::level::format::mcacpp
+} // namespace atomikpe::level::format::mcacpp

@@ -1,2 +1,2 @@
 #include "EntityPrimedTNT.h"
-namespace cenisyspe::entity {}
+namespace atomikpe::entity {}

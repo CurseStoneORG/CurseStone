@@ -1,7 +1,7 @@
 #pragma once
 #include "command/Command.h"
 #include <string>
-namespace cenisyspe {
+namespace atomikpe {
 class TimeCommand : public Command {
 public:
     TimeCommand() : Command("time", "Set/quer time") {}

@@ -2,7 +2,7 @@
 #include "BlockLiquid.h"
 #include <string>
 #include "BlockIds.h"
-namespace cenisyspe::block {
+namespace atomikpe::block {
 class BlockLava : public BlockLiquid {
 public:
     uint8_t id() const override { return LAVA; }

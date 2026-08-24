@@ -3,7 +3,7 @@
 // may decide whether to run on a chunk based on a seeded PRNG.
 #pragma once
 #include "level/generator/Generator.h"
-namespace cenisyspe::level::generator::populator {
+namespace atomikpe::level::generator::populator {
 class Populator {
 public:
     virtual ~Populator() = default;

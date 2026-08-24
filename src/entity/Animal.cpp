@@ -1,2 +1,2 @@
 #include "Animal.h"
-namespace cenisyspe::entity {}
+namespace atomikpe::entity {}

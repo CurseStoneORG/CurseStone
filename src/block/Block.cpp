@@ -1,8 +1,8 @@
 #include "Block.h"
 #include <vector>
 #include <memory>
-namespace cenisyspe::block {
-cenisyspe::math::AxisAlignedBB Block::getBoundingBox() const {
+namespace atomikpe::block {
+atomikpe::math::AxisAlignedBB Block::getBoundingBox() const {
     return {0,0,0, 1,1,1};
 }
 std::vector<std::unique_ptr<Block>>& Block::registry() {

@@ -11,7 +11,7 @@
 #include <sstream>
 #include <chrono>
 
-namespace cenisyspe {
+namespace atomikpe {
 namespace network {
 
 void QueryHandler::start() {
@@ -45,4 +45,4 @@ bool QueryHandler::handlePacket(const std::string& ip, uint16_t port,
 }
 
 } // namespace network
-} // namespace cenisyspe
+} // namespace atomikpe

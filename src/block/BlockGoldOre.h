@@ -2,7 +2,7 @@
 #include "BlockSolid.h"
 #include <string>
 #include "BlockIds.h"
-namespace cenisyspe::block {
+namespace atomikpe::block {
 class BlockGoldOre : public BlockSolid {
 public:
     uint8_t id() const override { return GOLD_ORE; }

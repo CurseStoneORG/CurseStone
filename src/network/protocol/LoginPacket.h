@@ -17,7 +17,7 @@
 #include <vector>
 #include <cstdint>
 
-namespace cenisyspe::network::protocol {
+namespace atomikpe::network::protocol {
 
 class LoginPacket : public DataPacket {
 public:
@@ -47,4 +47,4 @@ private:
     void parseClientDataPayload();
 };
 
-} // namespace cenisyspe::network::protocol
+} // namespace atomikpe::network::protocol

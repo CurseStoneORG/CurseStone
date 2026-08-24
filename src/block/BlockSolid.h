@@ -1,6 +1,6 @@
 #pragma once
 #include "Block.h"
-namespace cenisyspe::block {
+namespace atomikpe::block {
 class BlockSolid : public Block {
 public:
     bool isSolid() const override { return true; }

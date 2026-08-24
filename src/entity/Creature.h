@@ -1,6 +1,6 @@
 #pragma once
 #include "Living.h"
-namespace cenisyspe::entity {
+namespace atomikpe::entity {
 class Creature : public Living {
 public:
     using Living::Living;

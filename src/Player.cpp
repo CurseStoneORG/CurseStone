@@ -59,7 +59,7 @@
 #include <mutex>
 #include <unordered_set>
 
-namespace cenisyspe {
+namespace atomikpe {
 
 // ============================================================
 // Phase 0 — Player construction / destruction
@@ -336,7 +336,7 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
             // state into our local PlayerInventory.
             if (auto* cs = dynamic_cast<network::protocol::ContainerSetSlotPacket*>(&p)) {
                 if (inv_) {
-                    cenisyspe::item::ItemStack it;
+                    atomikpe::item::ItemStack it;
                     it.id    = static_cast<uint16_t>(cs->itemId);
                     it.count = cs->itemCount;
                     it.meta  = static_cast<uint8_t>(cs->itemDamage & 0xFF);
@@ -1309,4 +1309,4 @@ void Player::onUpdate(uint64_t current_tick) {
     }
 }
 
-} // namespace cenisyspe
+} // namespace atomikpe

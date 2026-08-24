@@ -1,6 +1,6 @@
 #include "SayCommand.h"
 #include "Server.h"
-namespace cenisyspe {
+namespace atomikpe {
 bool SayCommand::execute(CommandSender* sender, const std::string&,
                     const std::vector<std::string>& args) {
     if (args.empty()) { sender->sendMessage("Usage: /say <message>"); return true; }

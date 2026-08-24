@@ -1,7 +1,7 @@
 #pragma once
 #include "ItemFood.h"
 #include <string>
-namespace cenisyspe::item {
+namespace atomikpe::item {
 class ItemSteak : public ItemFood {
 public:
     ItemSteak() : ItemFood(364, 8) {}

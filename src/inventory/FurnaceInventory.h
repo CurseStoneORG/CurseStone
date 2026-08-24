@@ -1,6 +1,6 @@
 #pragma once
 #include "Inventory.h"
-namespace cenisyspe::inventory {
+namespace atomikpe::inventory {
 class FurnaceInventory : public Inventory {
 public:
     FurnaceInventory() : Inventory(3) {}

@@ -5,7 +5,7 @@
 #include <string>
 #include <cstdint>
 
-namespace cenisyspe::utils {
+namespace atomikpe::utils {
 
 class VersionString {
 public:
@@ -31,4 +31,4 @@ private:
     std::string suffix_;
 };
 
-} // namespace cenisyspe::utils
+} // namespace atomikpe::utils

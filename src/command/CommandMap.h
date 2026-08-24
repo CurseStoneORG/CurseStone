@@ -2,7 +2,7 @@
 #include "Command.h"
 #include <string>
 #include <vector>
-namespace cenisyspe {
+namespace atomikpe {
 class CommandMap {
 public:
     virtual ~CommandMap() = default;

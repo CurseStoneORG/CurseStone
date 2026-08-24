@@ -1,2 +1,2 @@
 #include "ItemSwordDiamond.h"
-namespace cenisyspe::item {}
+namespace atomikpe::item {}

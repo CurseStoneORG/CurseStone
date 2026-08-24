@@ -1,7 +1,7 @@
 #pragma once
 #include "ItemTool.h"
 #include <string>
-namespace cenisyspe::item {
+namespace atomikpe::item {
 class ItemSwordStone : public ItemTool {
 public:
     ItemSwordStone() : ItemTool(272, ToolType::SWORD, ToolMaterial::TOOL_STONE) {}

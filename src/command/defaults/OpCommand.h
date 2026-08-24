@@ -1,7 +1,7 @@
 #pragma once
 #include "command/Command.h"
 #include <string>
-namespace cenisyspe {
+namespace atomikpe {
 class OpCommand : public Command {
 public:
     OpCommand() : Command("op", "Grant operator rights") {}

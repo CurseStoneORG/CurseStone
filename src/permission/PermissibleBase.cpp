@@ -1,5 +1,5 @@
 #include "PermissibleBase.h"
-namespace cenisyspe::permission {
+namespace atomikpe::permission {
 bool PermissibleBase::hasPermission(const std::string& name) const {
     // Exact match
     if (auto it = perms_.find(name); it != perms_.end()) return it->second;

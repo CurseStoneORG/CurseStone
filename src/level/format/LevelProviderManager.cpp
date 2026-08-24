@@ -11,7 +11,7 @@
 
 #include <algorithm>
 
-namespace cenisyspe::level::format {
+namespace atomikpe::level::format {
 
 LevelProviderManager& LevelProviderManager::getInstance() {
     // Meyers singleton — thread-safe in C++11+.
@@ -53,4 +53,4 @@ const char* LevelProviderManager::defaultFormatName() {
     return "mcacpp";
 }
 
-} // namespace cenisyspe::level::format
+} // namespace atomikpe::level::format

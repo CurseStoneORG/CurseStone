@@ -2,7 +2,7 @@
 #include "Attribute.h"
 #include <string>
 #include <unordered_map>
-namespace cenisyspe::entity {
+namespace atomikpe::entity {
 class AttributeMap {
 public:
     void set(const Attribute& a) { map_[a.name()] = a; }

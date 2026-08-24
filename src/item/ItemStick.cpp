@@ -1,2 +1,2 @@
 #include "ItemStick.h"
-namespace cenisyspe::item {}
+namespace atomikpe::item {}

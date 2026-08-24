@@ -2,7 +2,7 @@
 #include "level/format/Chunk.h"
 #include "level/Level.h"
 #include <cmath>
-namespace cenisyspe::level {
+namespace atomikpe::level {
 int Explosion::explode() {
     int destroyed = 0;
     int r = (int)(power_ + 0.5f);

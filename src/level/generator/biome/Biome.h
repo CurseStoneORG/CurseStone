@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <string>
 
-namespace cenisyspe::level::generator::biome {
+namespace atomikpe::level::generator::biome {
 
 enum BiomeId : uint8_t {
     BIOME_OCEAN        = 0,

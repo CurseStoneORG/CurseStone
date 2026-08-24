@@ -1,2 +1,2 @@
 #include "PermissionAttachment.h"
-namespace cenisyspe::permission {}
+namespace atomikpe::permission {}

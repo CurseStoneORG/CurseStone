@@ -6,7 +6,7 @@
 #include <vector>
 #include <algorithm>
 #include <string>
-namespace cenisyspe::permission {
+namespace atomikpe::permission {
 class BanList {
 public:
     explicit BanList(std::string file_path) : file_path_(std::move(file_path)) {}

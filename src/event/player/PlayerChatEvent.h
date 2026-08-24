@@ -3,12 +3,12 @@
 #include "Event.h"
 #include <string>
 #include "Cancellable.h"
-namespace cenisyspe { class Player; }
-namespace cenisyspe::event::player {
+namespace atomikpe { class Player; }
+namespace atomikpe::event::player {
 class PlayerChatEvent : public Event, public Cancellable {
 public:
-    cenisyspe::Player* player;
-    PlayerChatEvent(cenisyspe::Player* p = nullptr) : player(p) {}
+    atomikpe::Player* player;
+    PlayerChatEvent(atomikpe::Player* p = nullptr) : player(p) {}
     const std::string& eventName() const override {
         static std::string n = "PlayerChatEvent"; return n;
     }

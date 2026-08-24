@@ -3,7 +3,7 @@
 // info, server version, loaded plugins, etc.
 #pragma once
 #include <string>
-namespace cenisyspe {
+namespace atomikpe {
 class CrashDump {
 public:
     explicit CrashDump(std::string data_path) : data_path_(std::move(data_path)) {}

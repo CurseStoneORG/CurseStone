@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 #include <memory>
-namespace cenisyspe::item {
+namespace atomikpe::item {
 class Item {
 public:
     Item(uint16_t id, uint8_t meta = 0, int count = 1)

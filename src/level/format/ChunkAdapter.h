@@ -20,7 +20,7 @@
 #include "FullChunk.h"
 #include "Chunk.h"
 
-namespace cenisyspe::level::format {
+namespace atomikpe::level::format {
 
 class ChunkAdapter : public FullChunk {
 public:
@@ -87,4 +87,4 @@ private:
     bool          owns_chunk_ = true;  // false when created via borrow()
 };
 
-} // namespace cenisyspe::level::format
+} // namespace atomikpe::level::format

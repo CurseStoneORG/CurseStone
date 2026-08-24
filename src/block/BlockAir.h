@@ -2,7 +2,7 @@
 #include "Block.h"
 #include <string>
 #include "BlockIds.h"
-namespace cenisyspe::block {
+namespace atomikpe::block {
 class BlockAir : public Block {
 public:
     uint8_t id() const override { return AIR; }
@@ -12,6 +12,6 @@ public:
     bool canWalkThrough() const override { return true; }
     float getHardness() const override { return 0; }
     std::string name() const override { return "Air"; }
-    cenisyspe::math::AxisAlignedBB getBoundingBox() const override { return {0,0,0, 0,0,0}; }
+    atomikpe::math::AxisAlignedBB getBoundingBox() const override { return {0,0,0, 0,0,0}; }
 };
 } // namespace

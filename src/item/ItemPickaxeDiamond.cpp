@@ -1,2 +1,2 @@
 #include "ItemPickaxeDiamond.h"
-namespace cenisyspe::item {}
+namespace atomikpe::item {}

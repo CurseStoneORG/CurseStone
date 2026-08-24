@@ -1,2 +1,2 @@
 #include "ItemAxeStone.h"
-namespace cenisyspe::item {}
+namespace atomikpe::item {}

@@ -17,7 +17,7 @@
 #include <span>
 #include <string>           // required because writeBEString/writeString take const std::string&
 
-namespace cenisyspe::network::protocol {
+namespace atomikpe::network::protocol {
 
 class DataPacket {
 public:
@@ -162,4 +162,4 @@ private:
     std::vector<uint8_t>& out_;
 };
 
-} // namespace cenisyspe::network::protocol
+} // namespace atomikpe::network::protocol

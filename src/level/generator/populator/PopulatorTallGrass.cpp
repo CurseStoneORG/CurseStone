@@ -1,7 +1,7 @@
 #include "PopulatorTallGrass.h"
 #include "level/generator/noise/SimplexNoise.h"
 #include "level/format/Chunk.h"
-namespace cenisyspe::level::generator::populator {
+namespace atomikpe::level::generator::populator {
 void PopulatorTallGrass::populate(GenerationContext& ctx) {
     uint64_t state = (uint64_t)mcp_simplex_hash(ctx.seed ^ 0x67726173, ctx.chunk_x, ctx.chunk_z);
     auto next = [&]() -> uint64_t {

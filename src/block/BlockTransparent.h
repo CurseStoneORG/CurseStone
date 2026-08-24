@@ -1,6 +1,6 @@
 #pragma once
 #include "Block.h"
-namespace cenisyspe::block {
+namespace atomikpe::block {
 class BlockTransparent : public Block {
 public:
     bool isTransparent() const override { return true; }

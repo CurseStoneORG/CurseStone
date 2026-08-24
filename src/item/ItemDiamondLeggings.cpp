@@ -1,2 +1,2 @@
 #include "ItemDiamondLeggings.h"
-namespace cenisyspe::item {}
+namespace atomikpe::item {}

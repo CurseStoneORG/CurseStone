@@ -4,7 +4,7 @@
 #include <chrono>
 #include <iomanip>
 #include <sstream>
-namespace cenisyspe {
+namespace atomikpe {
 void CrashDump::crash(const std::string& reason, const std::string& trace) {
     auto t = std::chrono::system_clock::now();
     auto t_c = std::chrono::system_clock::to_time_t(t);

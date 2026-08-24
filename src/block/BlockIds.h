@@ -3,7 +3,7 @@
 // IDs are 8-bit values (0..255). Air = 0, bedrock = 7, etc.
 #pragma once
 #include <cstdint>
-namespace cenisyspe::block {
+namespace atomikpe::block {
 // Some block ids (e.g. WOODEN_DOOR_ITEM = 324) exceed 255 — the enum
 // underlying type must be int (default), not uint8_t.
 enum BlockId : int {

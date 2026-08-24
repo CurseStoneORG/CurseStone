@@ -3,7 +3,7 @@
 #pragma once
 #include "Enchantment.h"
 #include <vector>
-namespace cenisyspe::item::enchantment {
+namespace atomikpe::item::enchantment {
 struct EnchantmentEntry { EnchantmentId id; uint8_t level; };
 class EnchantmentList {
 public:

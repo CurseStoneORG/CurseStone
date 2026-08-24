@@ -2,7 +2,7 @@
 // ExplodePacket implementation (stub).
 #include "ExplodePacket.h"
 
-namespace cenisyspe::network::protocol {
+namespace atomikpe::network::protocol {
 
 void ExplodePacket::encode(std::vector<uint8_t>& out) const {
     (void)out;
@@ -16,4 +16,4 @@ bool ExplodePacket::decode(const uint8_t* data, size_t len) {
     return true;
 }
 
-} // namespace cenisyspe::network::protocol
+} // namespace atomikpe::network::protocol
