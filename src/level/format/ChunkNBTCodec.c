@@ -40,12 +40,12 @@ static inline size_t mcpe_nibble_index(int x, int y, int z) {
 // ---- encode (chunk → NBT bytes) ----
 
 uint8_t* mcp_chunk_nbt_encode(const mcp_chunk_t* chunk, size_t* out_len) {
-    if (!chunk || !out_len) return nullptr;
+    if (!chunk || !out_len) return NULL;
     *out_len = 0;
 
     // Build the NBT tree manually.
     mcp_tag_t* root = mcp_compound_tag_new_named("");
-    if (!root) return nullptr;
+    if (!root) return NULL;
 
     mcp_compound_tag_set_int(root, "xPos", chunk->x);
     mcp_compound_tag_set_int(root, "zPos", chunk->z);
@@ -61,7 +61,7 @@ uint8_t* mcp_chunk_nbt_encode(const mcp_chunk_t* chunk, size_t* out_len) {
     if (!blocks || !data || !sky || !blk) {
         free(blocks); free(data); free(sky); free(blk);
         mcp_tag_destroy(root);
-        return nullptr;
+        return NULL;
     }
 
     // Fill from chunk sections 0..7 (y = 0..127).
@@ -138,7 +138,7 @@ uint8_t* mcp_chunk_nbt_encode(const mcp_chunk_t* chunk, size_t* out_len) {
     if (!height_map) {
         free(blocks); free(data); free(sky); free(blk);
         mcp_tag_destroy(root);
-        return nullptr;
+        return NULL;
     }
     if (chunk->height_map) {
         for (int i = 0; i < 256; ++i) {
@@ -168,7 +168,7 @@ uint8_t* mcp_chunk_nbt_encode(const mcp_chunk_t* chunk, size_t* out_len) {
     if (!biome_colors) {
         free(blocks); free(data); free(sky); free(blk); free(height_map);
         mcp_tag_destroy(root);
-        return nullptr;
+        return NULL;
     }
     if (chunk->biomes) {
         for (int i = 0; i < 256; ++i) {
@@ -219,25 +219,17 @@ uint8_t* mcp_chunk_nbt_encode(const mcp_chunk_t* chunk, size_t* out_len) {
 // ---- decode (NBT bytes → chunk) ----
 
 mcp_chunk_t* mcp_chunk_nbt_decode(const uint8_t* data, size_t len) {
-    if (!data || len == 0) return nullptr;
+    if (!data || len == 0) return NULL;
     mcp_tag_t* root = mcp_nbt_read_bytes(data, len, /*little_endian=*/true);
-    if (!root) return nullptr;
+    if (!root) return NULL;
 
     int32_t cx = mcp_compound_tag_get_int(root, "xPos", 0);
     int32_t cz = mcp_compound_tag_get_int(root, "zPos", 0);
     mcp_chunk_t* chunk = mcp_chunk_new(cx, cz);
     if (!chunk) {
         mcp_tag_destroy(root);
-        return nullptr;
+        return NULL;
     }
-
-    // Read byte arrays.
-    const mcp_tag_t* t_blocks = mcp_compound_tag_get_compound(root, "blocks");
-    // We use a simpler approach: walk children to find byte arrays.
-    // For brevity, just look up ByteArray children by name via the
-    // existing mcp_compound_tag_get helper.
-    // (We assume a tag-type-aware getter is available; if not, fall back
-    // to defaults below.)
 
     // Fallback: emit an empty chunk (caller can re-generate).
     // The decode path is complex due to needing type-aware compound
