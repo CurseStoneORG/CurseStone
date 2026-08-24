@@ -4,9 +4,9 @@
 // PocketMine's LevelProviderManager is essentially a static map; we
 // mirror that with a singleton + a std::unordered_map. The actual
 // registration happens in each provider's .cpp file via a static
-// initializer (e.g. mcacpp/McaCpp.cpp has a `static bool
-// registered_mcacpp = LevelProviderManager::getInstance()
-//     .registerProvider("mcacpp", [](){...});`).
+// initializer (e.g. atmkma/AtmkMca.cpp has a `static bool
+// registered_atmkma = LevelProviderManager::getInstance()
+//     .registerProvider("atmkma", [](){...});`).
 #include "LevelProviderManager.h"
 
 #include <algorithm>
@@ -50,7 +50,7 @@ std::vector<std::string> LevelProviderManager::listFormats() const {
 }
 
 const char* LevelProviderManager::defaultFormatName() {
-    return "mcacpp";
+    return "atmkma";
 }
 
 } // namespace atomikpe::level::format

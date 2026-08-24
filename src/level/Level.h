@@ -17,7 +17,7 @@ namespace level::generator { class Generator; }
 namespace atomikpe::level {
 struct LevelConfig {
     std::string name;
-    std::string format   = "mcacpp";  // mcacpp | leveldb | mca | mcapm
+    std::string format   = "atmkma";  // atmkma | leveldb | mca | mcapm
     std::string generator = "normal"; // normal | flat | nether | void
     int64_t seed = 0;
     int32_t time = 0;
