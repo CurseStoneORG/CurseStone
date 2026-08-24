@@ -1,11 +1,8 @@
 # AtomikPE
 
-**AtomikPE** is a cross-platform Minecraft Bedrock Edition server
-software written in C/C++. It mirrors the module structure of
-[PocketMine-MP 4.0.0](https://github.com/pmmp/PocketMine-MP) (PHP),
-the same way Nukkit mirrors it for the Java ecosystem.
+**AtomikPE** is a server software writed in c and c++ for minecraft pocket edition 0.15.10 legacy.
 
-- **Target protocol:** MCPE/Bedrock protocol **84** (Minecraft **0.15.10**)
+- **Version:** MCPE/Bedrock protocol **84** (Minecraft **0.15.10**)
 - **Languages:** C20 (`-std=c2x`) for RakLib / NBT / Binary / math / chunk
   data structs, C++20 (`-std=c++20`) for game logic (Server, Player, Level,
   Block, Item, Entity, Event, Command, Scheduler, Inventory)
@@ -27,7 +24,8 @@ The resulting executable is `AtomikPE`. It reads its configuration from
 ## Running
 
 ```bash
-./AtomikPE --data ./data
+chmod +x AtomikPE
+./AtomikPE
 ```
 
 On first launch the installer wizard (Phase 22) will offer to generate
