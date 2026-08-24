@@ -55,6 +55,8 @@
 #include <array>
 #include <utility>     // std::pair
 #include <random>      // std::mt19937, std::uniform_real_distribution
+#include <climits>     // INT32_MIN
+#include <mutex>
 #include <unordered_set>
 
 namespace cenisyspe {
@@ -119,6 +121,18 @@ void Player::close(const std::string& reason) {
 
     // 1. Save NBT to disk (if we ever loaded it).
     if (named_tag_ && srv_ && !cfg_.username.empty()) {
+        // Update position fields before saving (mirrors PMMP Player::saveNBT).
+        // Without this, the saved data would be STALE (the position from when
+        // we last loaded NBT, not the current position when the player left).
+        mcp_compound_tag_set_double(named_tag_.get(), "PosX", pos_.x);
+        mcp_compound_tag_set_double(named_tag_.get(), "PosY", pos_.y);
+        mcp_compound_tag_set_double(named_tag_.get(), "PosZ", pos_.z);
+        mcp_compound_tag_set_float (named_tag_.get(), "Yaw",   yaw_);
+        mcp_compound_tag_set_float (named_tag_.get(), "Pitch", pitch_);
+        mcp_compound_tag_set_int   (named_tag_.get(), "playerGameType", cfg_.gamemode);
+        mcp_compound_tag_set_short (named_tag_.get(), "Health", (int16_t)health());
+        mcp_compound_tag_set_long  (named_tag_.get(), "lastPlayed",
+            (int64_t)mcp_utils_time_ms());
         srv_->saveOfflinePlayerData(cfg_.username, named_tag_);
     }
 
@@ -460,12 +474,28 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
             setHealth(hp <= 0 ? 20 : hp);
             int16_t hunger = mcp_compound_tag_get_short(named_tag_.get(), "Hunger", 20);
             setFoodLevel(hunger);
-            // Spawn position (defaults to world spawn already set in ctor).
-            int32_t sx = mcp_compound_tag_get_int(named_tag_.get(), "SpawnX", -1);
-            int32_t sy = mcp_compound_tag_get_int(named_tag_.get(), "SpawnY", -1);
-            int32_t sz = mcp_compound_tag_get_int(named_tag_.get(), "SpawnZ", -1);
-            if (sx != -1 || sy != -1 || sz != -1) {
-                pos_.x = (double)sx + 0.5; pos_.y = (double)sy; pos_.z = (double)sz + 0.5;
+
+            // Last known position — prefer PosX/PosY/PosZ (saved on every
+            // auto-save and on disconnect). Falls back to SpawnX/Y/Z (bed
+            // spawn) if PosX is missing (first-time players have no Pos).
+            // We use a sentinel value to detect "missing" because double
+            // getters don't have a natural "missing" value.
+            const double sentinel = -99999.999;
+            double px = mcp_compound_tag_get_double(named_tag_.get(), "PosX", sentinel);
+            if (px != sentinel) {
+                pos_.x = px;
+                pos_.y = mcp_compound_tag_get_double(named_tag_.get(), "PosY", 64.0);
+                pos_.z = mcp_compound_tag_get_double(named_tag_.get(), "PosZ", 0.0);
+                yaw_   = mcp_compound_tag_get_float (named_tag_.get(), "Yaw",   0.0f);
+                pitch_ = mcp_compound_tag_get_float (named_tag_.get(), "Pitch", 0.0f);
+            } else {
+                int32_t sx = mcp_compound_tag_get_int(named_tag_.get(), "SpawnX", INT32_MIN);
+                int32_t sy = mcp_compound_tag_get_int(named_tag_.get(), "SpawnY", INT32_MIN);
+                int32_t sz = mcp_compound_tag_get_int(named_tag_.get(), "SpawnZ", INT32_MIN);
+                if (sx != INT32_MIN || sy != INT32_MIN || sz != INT32_MIN) {
+                    pos_.x = (double)sx + 0.5; pos_.y = (double)sy; pos_.z = (double)sz + 0.5;
+                }
+                // else: leave the world-spawn position set in the ctor.
             }
         }
     }
@@ -905,14 +935,61 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     if (!spawned_.load(std::memory_order_relaxed)) return;
     if (!srv_ || !srv_->getDefaultLevel()) return;
 
-    // ---- PMMP-style validation: must be holding a BLOCK item ----
-    // In MCPE 0.15, item ids < 256 are block items; ids >= 256 are tools /
-    // food / etc. and should NOT place a block. Empty hand (id 0) is the
-    // case the user reported — we explicitly reject it.
-    if (heldItemId == 0 || heldItemId >= 256) {
+    // ---- Decide what block (if any) to place based on held item ----
+    // PMMP-style item→block mapping. Item ids 256+ are tools / buckets /
+    // etc. and need special handling. Item ids 1..255 are direct block
+    // placements.
+    uint8_t placedBlockId   = 0;     // 0 = no placement
+    uint8_t placedBlockData = 0;
+    bool    consumeItem     = false; // decrement inventory stack?
+    bool    skipPlaceSound  = false; // for fire/water/lava (PMMP doesn't play it)
+
+    if (heldItemId == 0) {
+        // Empty hand — no placement.
         if (srv_ && srv_->advancedLog()) {
             utils::MainLogger::get().info("[BLOCK] " + cfg_.username +
-                " attempted place with non-block item id=" + std::to_string(heldItemId));
+                " attempted place with empty hand — ignored");
+        }
+        return;
+    } else if (heldItemId >= 1 && heldItemId <= 255) {
+        // Block item — place it directly. data = low 4 bits of heldDamage.
+        placedBlockId   = heldItemId;
+        placedBlockData = (uint8_t)(heldDamage & 0x0F);
+        consumeItem     = !(cfg_.gamemode & 1);  // survival only
+    } else if (heldItemId == 325) {
+        // Bucket (empty) — no placement.
+        return;
+    } else if (heldItemId == 326) {
+        // Water bucket → place FLOWING_WATER (id=8) so the client renders
+        // it as water that spreads. Using WATER (id=9) causes the client
+        // to immediately replace it with a "floating lever" placeholder
+        // because id=9 is a source-only block that needs adjacent flow.
+        placedBlockId  = 8;
+        placedBlockData = 0;
+        consumeItem     = !(cfg_.gamemode & 1);
+        skipPlaceSound  = true;
+    } else if (heldItemId == 327) {
+        // Lava bucket → place FLOWING_LAVA (id=10).
+        placedBlockId  = 10;
+        placedBlockData = 0;
+        consumeItem     = !(cfg_.gamemode & 1);
+        skipPlaceSound  = true;
+    } else if (heldItemId == 259) {
+        // Flint and steel → place FIRE (id=51). PMMP BlockFire::place().
+        // Bug previously: the generic block-id path rejected 259 because
+        // it's >= 256, so it was a no-op. The user reported "places dirt"
+        // because the placeholder empty cell sometimes defaulted to dirt
+        // visually on the client.
+        placedBlockId   = 51;
+        placedBlockData = 0;
+        // Flint and steel takes 1 damage per use (no stack consumption).
+        consumeItem    = false;
+        skipPlaceSound = true;
+    } else {
+        // Other item (food, tool, etc.) — PMMP would call onItemUse; we no-op.
+        if (srv_ && srv_->advancedLog()) {
+            utils::MainLogger::get().info("[BLOCK] " + cfg_.username +
+                " used non-block item id=" + std::to_string(heldItemId) + " — no placement");
         }
         return;
     }
@@ -939,19 +1016,17 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     int localX = placeX & 15;
     int localZ = placeZ & 15;
 
-    // Don't place if target is not air.
+    // Don't place if target is not air (unless it's fire, which can replace
+    // any non-solid block — but for simplicity we always require air here).
     uint8_t existing = mcp_chunk_get_block_id(ch, localX, placeY, localZ);
     if (existing != 0) return;
 
-    // Place the block: blockId = heldItemId, data = low 4 bits of heldDamage
-    // (matches PMMP Item::getDamage for block items).
-    uint8_t placedData = (uint8_t)(heldDamage & 0x0F);
-    mcp_chunk_set_block_full(ch, localX, placeY, localZ, heldItemId, placedData);
+    // Set the block in the chunk.
+    mcp_chunk_set_block_full(ch, localX, placeY, localZ, placedBlockId, placedBlockData);
     ch->dirty = true;
 
     // Decrement inventory (only in survival — PMMP skips in creative).
-    bool creative = (cfg_.gamemode & 1) != 0;
-    if (!creative && inv_) {
+    if (consumeItem && inv_) {
         int held = inv_->heldSlot();
         auto cur = inv_->getItem(held);
         if (!cur.isEmpty()) {
@@ -969,8 +1044,8 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     ubp->x = placeX;
     ubp->z = placeZ;
     ubp->y = (uint8_t)placeY;
-    ubp->blockId = heldItemId;
-    ubp->blockData = placedData;
+    ubp->blockId = placedBlockId;
+    ubp->blockData = placedBlockData;
     ubp->flags = 0xFF;
 
     // PMMP sends a place sound via LevelEventPacket with
@@ -982,7 +1057,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     sndEv->x = (float)placeX;
     sndEv->y = (float)placeY;
     sndEv->z = (float)placeZ;
-    sndEv->data = (int32_t)heldItemId;
+    sndEv->data = (int32_t)placedBlockId;
 
     // Same chunk-filter as for block break (PMMP `Level::addSound`).
     int32_t pk_cx = placeX >> 4;
@@ -992,14 +1067,16 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
             if (!other) continue;
             if (!other->isTrackingChunk(pk_cx, pk_cz)) continue;
             other->sendPacket(ubp);
-            other->sendPacket(sndEv);
+            // Skip the place sound for fire/water/lava (PMMP behaviour).
+            if (!skipPlaceSound) other->sendPacket(sndEv);
         }
     }
 
     if (srv_ && srv_->advancedLog()) {
         utils::MainLogger::get().info("[BLOCK] " + cfg_.username + " placed block at " +
             std::to_string(placeX) + "," + std::to_string(placeY) + "," + std::to_string(placeZ) +
-            " (id=" + std::to_string(heldItemId) + " data=" + std::to_string(placedData) + ")");
+            " (id=" + std::to_string(placedBlockId) + " data=" + std::to_string(placedBlockData) +
+            " fromItem=" + std::to_string(heldItemId) + ")");
     }
 }
 
@@ -1215,14 +1292,17 @@ void Player::onUpdate(uint64_t current_tick) {
         current_tick - last_save_tick_ >= 6000) {
         last_save_tick_ = current_tick;
         if (named_tag_) {
-            // Update position in NBT before saving.
+            // Update position+rotation in NBT before saving (mirrors
+            // PMMP Player::saveNBT — must include Yaw/Pitch).
             mcp_compound_tag_set_double(named_tag_.get(), "PosX", pos_.x);
             mcp_compound_tag_set_double(named_tag_.get(), "PosY", pos_.y);
             mcp_compound_tag_set_double(named_tag_.get(), "PosZ", pos_.z);
+            mcp_compound_tag_set_float (named_tag_.get(), "Yaw",   yaw_);
+            mcp_compound_tag_set_float (named_tag_.get(), "Pitch", pitch_);
             mcp_compound_tag_set_short(named_tag_.get(), "Health", (int16_t)health());
             mcp_compound_tag_set_short(named_tag_.get(), "Hunger", (int16_t)foodLevel());
-            mcp_compound_tag_set_int(named_tag_.get(), "playerGameType", cfg_.gamemode);
-            mcp_compound_tag_set_long(named_tag_.get(), "lastPlayed",
+            mcp_compound_tag_set_int  (named_tag_.get(), "playerGameType", cfg_.gamemode);
+            mcp_compound_tag_set_long  (named_tag_.get(), "lastPlayed",
                 (int64_t)mcp_utils_time_ms());
             srv_->saveOfflinePlayerData(cfg_.username, named_tag_);
         }

@@ -9,26 +9,38 @@
 
 namespace cenisyspe::level::format {
 
-ChunkAdapter::ChunkAdapter(int32_t x, int32_t z) {
+ChunkAdapter::ChunkAdapter(int32_t x, int32_t z) : owns_chunk_(true) {
     chunk_ = mcp_chunk_new(x, z);
 }
 
-ChunkAdapter::ChunkAdapter(mcp_chunk_t* c) : chunk_(c) {}
+ChunkAdapter::ChunkAdapter(mcp_chunk_t* c) : chunk_(c), owns_chunk_(true) {}
+
+std::shared_ptr<ChunkAdapter> ChunkAdapter::borrow(mcp_chunk_t* c) {
+    // Private-ctor helper: create an adapter that doesn't own the chunk.
+    // We use a small trick — construct via the public ctor (which sets
+    // owns_chunk_=true), then flip the flag.
+    auto* p = new ChunkAdapter(c);
+    p->owns_chunk_ = false;
+    return std::shared_ptr<ChunkAdapter>(p);
+}
 
 ChunkAdapter::~ChunkAdapter() {
-    if (chunk_) mcp_chunk_destroy(chunk_);
+    if (chunk_ && owns_chunk_) mcp_chunk_destroy(chunk_);
 }
 
 ChunkAdapter::ChunkAdapter(ChunkAdapter&& other) noexcept
-    : chunk_(other.chunk_) {
+    : chunk_(other.chunk_), owns_chunk_(other.owns_chunk_) {
     other.chunk_ = nullptr;
+    other.owns_chunk_ = true;
 }
 
 ChunkAdapter& ChunkAdapter::operator=(ChunkAdapter&& other) noexcept {
     if (this != &other) {
-        if (chunk_) mcp_chunk_destroy(chunk_);
+        if (chunk_ && owns_chunk_) mcp_chunk_destroy(chunk_);
         chunk_       = other.chunk_;
+        owns_chunk_  = other.owns_chunk_;
         other.chunk_ = nullptr;
+        other.owns_chunk_ = true;
     }
     return *this;
 }
@@ -36,6 +48,7 @@ ChunkAdapter& ChunkAdapter::operator=(ChunkAdapter&& other) noexcept {
 mcp_chunk_t* ChunkAdapter::releaseChunk() {
     mcp_chunk_t* c = chunk_;
     chunk_ = nullptr;
+    owns_chunk_ = true;   // safe default after release
     return c;
 }
 

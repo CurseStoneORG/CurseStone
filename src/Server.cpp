@@ -2,9 +2,13 @@
 // Server singleton implementation (Phase 21 completion).
 #include "Server.h"
 #include "Player.h"
+#include "utils/MainLogger.h"
 #include "utils/MainLogger.hpp"
 #include "utils/Config.h"
 #include "utils/Utils.h"
+
+#include <climits>
+#include <cstring>
 #include "command/CommandMap.h"
 #include "command/SimpleCommandMap.h"
 #include "command/ConsoleCommandSender.h"
@@ -51,29 +55,85 @@ Server::~Server() = default;
 void Server::loadConfig() {
     using utils::Config;
     Config cfg;
-    std::string cfg_path = dataPath_ + "/cenisyspe.yml";
-    if (!cfg.loadYaml(cfg_path)) {
-        utils::MainLogger::get().info("Config not found, using defaults: " + cfg_path);
+
+    // First try PMMP-style server.properties (key=value INI file).
+    // If it doesn't exist, fall back to cenisyspe.yml.
+    std::string props_path = dataPath_ + "/server.properties";
+    std::string yaml_path  = dataPath_ + "/cenisyspe.yml";
+    bool loaded_props = false;
+    if (cfg.loadIni(props_path)) {
+        loaded_props = true;
+        utils::MainLogger::get().info("Loaded config: " + props_path);
+    } else if (cfg.loadYaml(yaml_path)) {
+        utils::MainLogger::get().info("Loaded config: " + yaml_path);
+    } else {
+        utils::MainLogger::get().info("No config found; using defaults. " +
+            std::string("Either create ") + props_path + " or " + yaml_path);
     }
-    ip_            = cfg.getString("server.ip", "0.0.0.0");
-    port_          = (uint16_t)cfg.getInt("server.port", 19132);
-    motd_          = cfg.getString("server.motd", "CenisysPE");
-    max_players_   = cfg.getInt("server.max-players", 20);
-    gamemode_      = cfg.getInt("server.gamemode", 0);
-    difficulty_    = cfg.getInt("server.difficulty", 1);
-    whitelist_     = cfg.getBool("server.whitelist", false);
-    online_mode_   = cfg.getBool("server.online-mode", false);
-    advanced_log_  = cfg.getBool("server.advanced-log", true);
-    view_distance_ = cfg.getInt("server.view-distance", 8);
-    async_workers_  = cfg.getInt("settings.async-workers", 4);
-    autosave_ticks_ = cfg.getInt("server.autosave-ticks", 6000);
+
+    // Getters accept dotted or flat keys; for the INI form, the key is
+    // just the property name (e.g. "server-port"). For YAML, the key is
+    // the dotted path (e.g. "server.port"). Config::getString accepts both.
+    auto get_str = [&](const char* yaml_key, const char* ini_key,
+                       const char* def) -> std::string {
+        // Try INI form first, then YAML, then default.
+        std::string v = cfg.getString(ini_key, std::string());
+        if (!v.empty()) return v;
+        return cfg.getString(yaml_key, def);
+    };
+    auto get_int = [&](const char* yaml_key, const char* ini_key,
+                       int64_t def) -> int64_t {
+        int64_t v = cfg.getInt(ini_key, INT64_MIN);
+        if (v != INT64_MIN) return v;
+        return cfg.getInt(yaml_key, def);
+    };
+    auto get_bool = [&](const char* yaml_key, const char* ini_key,
+                        bool def) -> bool {
+        bool v = cfg.getBool(ini_key, def);
+        if (v != def) return v;   // exact match needed because INI may be true/false
+        return cfg.getBool(yaml_key, def);
+    };
+
+    ip_            = get_str("server.ip", "server-ip", "0.0.0.0");
+    port_          = (uint16_t)get_int("server.port", "server-port", 19132);
+    motd_          = get_str("server.motd", "motd", "CenisysPE");
+    max_players_   = (int)get_int("server.max-players", "max-players", 20);
+    gamemode_      = (int)get_int("server.gamemode", "gamemode", 0);
+    difficulty_    = (int)get_int("server.difficulty", "difficulty", 1);
+    whitelist_     = get_bool("server.whitelist", "white-list", false);
+    online_mode_   = get_bool("server.online-mode", "online-mode", false);
+    advanced_log_  = get_bool("server.advanced-log", "advanced-log", true);
+    view_distance_ = (int)get_int("server.view-distance", "view-distance", 8);
+    async_workers_ = (int)get_int("settings.async-workers", "async-workers", 4);
+    autosave_ticks_ = (int)get_int("server.autosave-ticks", "autosave-ticks", 6000);
+
+    // If we just loaded the .properties file (no YAML), create the
+    // server.properties in the data dir from the default resource so the
+    // user can edit it on next startup.
+    if (loaded_props) {
+        utils::MainLogger::get().info("Server port: " + std::to_string(port_));
+        utils::MainLogger::get().info("Server IP: " + ip_);
+        utils::MainLogger::get().info("MOTD: " + motd_);
+        utils::MainLogger::get().info("Max players: " + std::to_string(max_players_));
+        utils::MainLogger::get().info("Gamemode: " + std::to_string(gamemode_) +
+            " (0=survival, 1=creative, 2=adventure, 3=spectator)");
+        utils::MainLogger::get().info("World generator: " +
+            cfg.getString("generator", "normal"));
+        utils::MainLogger::get().info("World format: " +
+            cfg.getString("level-format", "mcanvil"));
+    }
 }
 
 void Server::initLogger() {
+    // Open server.log in the data directory so all log lines are written
+    // to disk in real time (PMMP-equivalent: pocketmine.log).
+    std::string log_path = dataPath_ + "/server.log";
+    mcp_main_logger_init(log_path.c_str(), /*colored=*/true);
     utils::MainLogger::get().info(std::string(CENISYSPE_NAME) +
         " v" + CENISYSPE_VERSION + " (codename: " + CENISYSPE_CODENAME + ")");
     utils::MainLogger::get().info("Target: Minecraft PE " + std::string(MINECRAFT_VERSION) +
         ", protocol " + std::to_string(PROTOCOL_VERSION));
+    utils::MainLogger::get().info("Log file: " + log_path);
 }
 
 void Server::registerBlocksAndItems() {
@@ -96,36 +156,63 @@ void Server::openNetwork() {
 }
 
 void Server::loadDefaultLevel() {
+    // Load level name/format/generator from server.properties or cenisyspe.yml.
+    using utils::Config;
+    Config cfg;
+    cfg.loadIni(dataPath_ + "/server.properties");
+    cfg.loadYaml(dataPath_ + "/cenisyspe.yml");
+
+    auto get_str = [&](const char* yaml_key, const char* ini_key,
+                       const char* def) -> std::string {
+        std::string v = cfg.getString(ini_key, std::string());
+        if (!v.empty()) return v;
+        return cfg.getString(yaml_key, def);
+    };
+    auto get_int = [&](const char* yaml_key, const char* ini_key,
+                       int64_t def) -> int64_t {
+        int64_t v = cfg.getInt(ini_key, INT64_MIN);
+        if (v != INT64_MIN) return v;
+        return cfg.getInt(yaml_key, def);
+    };
+
     level::LevelConfig lc;
-    lc.name = "world";
-    lc.format = "mcape";
-    lc.generator = "normal";
-    lc.seed = 0;
+    lc.name      = get_str("level.name", "level-name", "world");
+    lc.format    = get_str("level.format", "level-format", "mcanvil");
+    lc.generator = get_str("level.generator", "generator", "normal");
+    int64_t seed = get_int("level.seed", "level-seed", 0);
+    lc.seed = (seed != 0) ? (int64_t)seed : (int64_t)mcp_utils_time_ms();
     lc.spawn_x = 0; lc.spawn_y = 5; lc.spawn_z = 0;
     lc.view_distance = view_distance_;
     level_ = std::make_shared<level::Level>(std::move(lc));
+
     // Create worlds directory structure
     std::string worldsDir = dataPath_ + "/worlds";
-    std::string worldDir = worldsDir + "/world";
+    std::string worldDir  = worldsDir + "/" + lc.name;
     std::string regionDir = worldDir + "/region";
+    std::string chunksDir = worldDir + "/chunks";
     ::mkdir(worldsDir.c_str(), 0755);
     ::mkdir(worldDir.c_str(), 0755);
     ::mkdir(regionDir.c_str(), 0755);
-    // Save level.dat
+    ::mkdir(chunksDir.c_str(), 0755);
+
+    // Save level.dat (minimal placeholder; full NBT lands later)
     std::string levelDat = worldDir + "/level.dat";
     FILE* f = fopen(levelDat.c_str(), "wb");
     if (f) {
         fprintf(f, "CenisysPE Level\n");
-        fprintf(f, "name=world\n");
-        fprintf(f, "seed=0\n");
+        fprintf(f, "name=%s\n", lc.name.c_str());
+        fprintf(f, "seed=%lld\n", (long long)lc.seed);
         fprintf(f, "time=0\n");
         fprintf(f, "spawn=0,5,0\n");
-        fprintf(f, "generator=normal\n");
+        fprintf(f, "generator=%s\n", lc.generator.c_str());
+        fprintf(f, "format=%s\n", lc.format.c_str());
         fclose(f);
     }
-    utils::MainLogger::get().info("Default level 'world' ready (format: mcape)");
+    utils::MainLogger::get().info("Default level '" + lc.name +
+        "' ready (format: " + lc.format + ", generator: " + lc.generator + ")");
     utils::MainLogger::get().info("World directory: " + worldDir);
     utils::MainLogger::get().info("Region directory: " + regionDir);
+    utils::MainLogger::get().info("Chunks directory: " + chunksDir);
 }
 
 void Server::startCommandReader() {
@@ -141,9 +228,41 @@ void Server::start(const std::string& dataPath) {
     dataPath_ = dataPath;
     running_.store(true, std::memory_order_relaxed);
 
+    // Ensure data dir exists.
+    ::mkdir(dataPath_.c_str(), 0755);
+    ::mkdir((dataPath_ + "/resources").c_str(), 0755);
+
+    // Initialize logger first so we can see config-loading messages.
+    initLogger();
+
+    // If server.properties doesn't exist in data dir, copy the default
+    // from <dataPath>/resources/server.properties so the user has a
+    // template they can edit.
+    std::string user_props = dataPath_ + "/server.properties";
+    FILE* fcheck = fopen(user_props.c_str(), "rb");
+    if (!fcheck) {
+        // Copy from resources/server.properties (bundled with the binary).
+        std::string src = dataPath_ + "/resources/server.properties";
+        FILE* src_fp = fopen(src.c_str(), "rb");
+        if (src_fp) {
+            FILE* dst_fp = fopen(user_props.c_str(), "wb");
+            if (dst_fp) {
+                char buf[4096];
+                size_t n;
+                while ((n = fread(buf, 1, sizeof(buf), src_fp)) > 0) {
+                    fwrite(buf, 1, n, dst_fp);
+                }
+                fclose(dst_fp);
+                utils::MainLogger::get().info("Created default server.properties at " + user_props);
+            }
+            fclose(src_fp);
+        }
+    } else {
+        fclose(fcheck);
+    }
+
     loadConfig();
     loadOps();
-    initLogger();
     registerBlocksAndItems();
     command_map_ = std::make_shared<SimpleCommandMap>();
     registerDefaultCommands(*command_map_);

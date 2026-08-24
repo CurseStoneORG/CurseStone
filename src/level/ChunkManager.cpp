@@ -1,7 +1,9 @@
-#include "ChunkManager.h"
 #include "level/format/LevelProvider.h"
+#include "level/format/FullChunk.h"
 #include "level/format/Chunk.h"
+#include "level/format/ChunkAdapter.h"
 #include "level/format/ChunkSection.h"
+#include "ChunkManager.h"
 #include <string.h>
 namespace cenisyspe::level {
 ChunkManager::ChunkManager() {}
@@ -79,8 +81,25 @@ void ChunkManager::markDirty(int32_t x, int32_t z) {
 int ChunkManager::flushDirty() {
     std::lock_guard<std::mutex> lk(mtx_);
     int n = 0;
+    if (!provider_) {
+        // No provider — just clear dirty flags so we don't loop forever.
+        for (auto& kv : chunks_) {
+            if (kv.second && kv.second->dirty) {
+                kv.second->dirty = false;
+                ++n;
+            }
+        }
+        return n;
+    }
+    // Save each dirty chunk through the provider.
     for (auto& kv : chunks_) {
-        if (kv.second && kv.second->dirty) {
+        if (!kv.second || !kv.second->dirty) continue;
+        // Wrap raw mcp_chunk_t* in a BORROW-ONLY ChunkAdapter so the
+        // provider's saveChunk() can read its data without freeing it.
+        // The chunks_ map retains ownership.
+        auto adapter = format::ChunkAdapter::borrow(kv.second);
+        if (adapter) {
+            provider_->saveChunk(adapter);
             kv.second->dirty = false;
             ++n;
         }
