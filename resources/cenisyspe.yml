@@ -21,7 +21,7 @@ server:
 
 level:
   name: "world"
-  format: "mcacpp"     # mcacpp | leveldb | mca | mcapm
+  format: "mcanvil"    # mcanvil | mcacpp | leveldb | mca | mcapm  (mcanvil = alias of mcacpp)
   generator: "normal"  # normal | flat | nether | void
   seed: 0              # 0 = random
 

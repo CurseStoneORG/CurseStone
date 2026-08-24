@@ -32,6 +32,11 @@ public:
     // adapter takes ownership and frees it on destruction.
     explicit ChunkAdapter(mcp_chunk_t* c);
 
+    // Construct a BORROW-ONLY adapter: the adapter does NOT free the
+    // chunk on destruction. Use this to wrap an mcp_chunk_t* that is
+    // owned elsewhere (e.g. ChunkManager::chunks_) for a single call.
+    static std::shared_ptr<ChunkAdapter> borrow(mcp_chunk_t* c);
+
     ~ChunkAdapter() override;
 
     // Non-copyable (owns raw pointer).
@@ -79,6 +84,7 @@ public:
 
 private:
     mcp_chunk_t* chunk_ = nullptr;
+    bool          owns_chunk_ = true;  // false when created via borrow()
 };
 
 } // namespace cenisyspe::level::format

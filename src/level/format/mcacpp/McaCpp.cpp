@@ -24,6 +24,7 @@
 #include "McaCpp.h"
 #include "../LevelProviderManager.h"
 #include "../ChunkAdapter.h"
+#include "../ChunkNBTCodec.h"
 #include "../../../nbt/NBT.h"
 
 #include <algorithm>
@@ -420,9 +421,31 @@ McaCpp::loadChunk(int32_t x, int32_t z) {
 
 void McaCpp::saveChunk(const std::shared_ptr<FullChunk>& chunk) {
     if (!chunk) return;
-    // TODO Phase 9: ChunkNBTCodec::encode(chunk) → bytes, then
-    // writeChunkPayload(chunk->getX(), chunk->getZ(), 1 /*zlib*/, bytes).
-    (void)chunk;
+
+    // Get the raw mcp_chunk_t* via the ChunkAdapter.
+    auto* adapter = dynamic_cast<ChunkAdapter*>(chunk.get());
+    if (!adapter) return;
+    mcp_chunk_t* raw = adapter->chunk();
+    if (!raw) return;
+
+    // Encode to NBT bytes (little-endian PMMP mcacpp format).
+    size_t nbt_len = 0;
+    uint8_t* nbt_buf = mcp_chunk_nbt_encode(raw, &nbt_len);
+    if (!nbt_buf || nbt_len == 0) return;
+
+    // Write the payload (zlib compression = 1, as PMMP mcacpp does).
+    std::vector<uint8_t> payload(nbt_buf, nbt_buf + nbt_len);
+    free(nbt_buf);
+
+    bool ok = writeChunkPayload(raw->x, raw->z, /*compression=*/1, payload);
+    if (!ok) {
+        // writeChunkPayload already logs failure; nothing more to do.
+        return;
+    }
+    // Clear dirty flag — chunk has been persisted.
+    raw->dirty = false;
+    raw->last_update = (int64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
 void McaCpp::unloadChunk(int32_t /*x*/, int32_t /*z*/) {
