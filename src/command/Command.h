@@ -5,7 +5,7 @@
 #include "CommandSender.h"
 #include <string>
 #include <vector>
-namespace cenisyspe {
+namespace atomikpe {
 class Command {
 public:
     Command(std::string name, std::string description = "", std::string usage = "")

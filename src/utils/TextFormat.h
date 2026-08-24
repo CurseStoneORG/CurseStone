@@ -10,7 +10,7 @@ extern "C" {
 #endif
 
 // Minecraft § color/format codes (Minecraft BE). PocketMine uses these
-// for chat formatting; CenisysPE will use them in player-facing messages.
+// for chat formatting; AtomikPE will use them in player-facing messages.
 #define MCP_TF_BLACK       '0'
 #define MCP_TF_DARK_BLUE   '1'
 #define MCP_TF_DARK_GREEN  '2'

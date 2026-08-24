@@ -4,7 +4,7 @@
 #pragma once
 #include "Generator.h"
 #include "level/generator/noise/SimplexNoise.h"
-namespace cenisyspe::level::generator {
+namespace atomikpe::level::generator {
 class Nether : public Generator {
 public:
     explicit Nether(int64_t seed);

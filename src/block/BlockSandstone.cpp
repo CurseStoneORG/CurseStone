@@ -1,2 +1,2 @@
 #include "BlockSandstone.h"
-namespace cenisyspe::block {}
+namespace atomikpe::block {}

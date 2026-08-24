@@ -7,7 +7,7 @@
 #include <vector>
 #include <memory>
 #include <string>
-namespace cenisyspe::inventory {
+namespace atomikpe::inventory {
 class CraftingManager {
 public:
     CraftingManager();

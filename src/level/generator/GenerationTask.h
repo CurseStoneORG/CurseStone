@@ -7,7 +7,7 @@
 #include "level/format/Chunk.h"
 #include <functional>
 #include <memory>
-namespace cenisyspe::level::generator {
+namespace atomikpe::level::generator {
 class GenerationTask {
 public:
     using DoneCallback = std::function<void(mcp_chunk_t*)>;

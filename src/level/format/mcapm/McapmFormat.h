@@ -3,7 +3,7 @@
 //
 // MCAPM is a community patch format that pre-dates mcacpp. Its
 // chunk structure mirrors Java Anvil but with MCPE's little-endian
-// NBT payload. Few third-party worlds still use it; CenisysPE
+// NBT payload. Few third-party worlds still use it; AtomikPE
 // supports it via the same LevelProvider interface so users with
 // archived worlds can convert them.
 //
@@ -20,7 +20,7 @@
 #include "../../../main.h"
 #include "../LevelProvider.h"
 
-namespace cenisyspe::level::format::mcapm {
+namespace atomikpe::level::format::mcapm {
 
 class McapmFormat : public LevelProvider {
 public:
@@ -61,4 +61,4 @@ struct McapmRegistrar {
 };
 extern McapmRegistrar g_mcapm_registrar_;
 
-} // namespace cenisyspe::level::format::mcapm
+} // namespace atomikpe::level::format::mcapm

@@ -8,7 +8,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <functional>
-namespace cenisyspe::scheduler {
+namespace atomikpe::scheduler {
 class AsyncPool {
 public:
     explicit AsyncPool(int n_workers = 4) : n_(n_workers) {

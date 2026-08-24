@@ -1,7 +1,7 @@
 #pragma once
 #include "command/Command.h"
 #include <string>
-namespace cenisyspe {
+namespace atomikpe {
 class WeatherCommand : public Command {
 public:
     WeatherCommand() : Command("weather", "Set weather") {}

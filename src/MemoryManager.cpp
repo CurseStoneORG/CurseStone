@@ -1,7 +1,7 @@
 #include "MemoryManager.h"
 #include <fstream>
 #include <string>
-namespace cenisyspe {
+namespace atomikpe {
 MemoryManager& MemoryManager::get() { static MemoryManager m; return m; }
 int64_t MemoryManager::currentUsageKB() const {
     // Linux: read /proc/self/status VmRSS

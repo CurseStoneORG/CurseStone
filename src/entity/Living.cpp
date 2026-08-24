@@ -1,5 +1,5 @@
 #include "Living.h"
-namespace cenisyspe::entity {
+namespace atomikpe::entity {
 bool Living::damage(float amount) {
     health_ -= amount;
     if (health_ < 0) health_ = 0;

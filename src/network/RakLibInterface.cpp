@@ -13,7 +13,7 @@
 #include <cstdio>
 #include <string>
 
-namespace cenisyspe {
+namespace atomikpe {
 namespace network {
 
 RakLibInterface::RakLibInterface(Server* server)
@@ -36,11 +36,11 @@ void RakLibInterface::start() {
     if (running_) return;
 
     // Read host/port/motd/max-players from the Server config so the user's
-    // cenisyspe.yml choices actually take effect. Falls back to sensible
+    // atomikpe.yml choices actually take effect. Falls back to sensible
     // defaults if Server is null (shouldn't happen, but defensive).
     std::string host_str = "0.0.0.0";
     uint16_t    port     = 19132;
-    std::string motd_str = "CenisysPE";
+    std::string motd_str = "AtomikPE";
     int         max_players = 20;
     int         online     = 0;
     if (server_) {
@@ -186,4 +186,4 @@ void RakLibInterface::c_onTick(void* impl) {
 }
 
 } // namespace network
-} // namespace cenisyspe
+} // namespace atomikpe

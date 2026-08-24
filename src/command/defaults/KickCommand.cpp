@@ -1,7 +1,7 @@
 #include "KickCommand.h"
 #include "Server.h"
 #include "Player.h"
-namespace cenisyspe {
+namespace atomikpe {
 bool KickCommand::execute(CommandSender* sender, const std::string&,
                     const std::vector<std::string>& args) {
     if (args.empty()) { sender->sendMessage("Usage: /kick <player> [reason]"); return true; }

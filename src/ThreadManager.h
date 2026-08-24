@@ -4,7 +4,7 @@
 #include <thread>
 #include <vector>
 #include <memory>
-namespace cenisyspe {
+namespace atomikpe {
 class ThreadManager {
 public:
     static ThreadManager& get();

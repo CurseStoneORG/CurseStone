@@ -1,2 +1,2 @@
 #include "ItemGoldBoots.h"
-namespace cenisyspe::item {}
+namespace atomikpe::item {}

@@ -1,7 +1,7 @@
 #pragma once
 #include "Animal.h"
 #include <string>
-namespace cenisyspe::entity {
+namespace atomikpe::entity {
 class EntitySheep : public Animal {
 public:
     using Animal::Animal;

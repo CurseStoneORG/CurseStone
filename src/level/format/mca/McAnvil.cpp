@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// McAnvil — alias for McAcpp (CenisysPE's "Minecraft Anvil" format).
+// McAnvil — alias for McAcpp (AtomikPE's "Minecraft Anvil" format).
 //
-// In MCPE 0.15.x, the world format used by CenisysPE is the PMMP "McAcpp"
+// In MCPE 0.15.x, the world format used by AtomikPE is the PMMP "McAcpp"
 // format (little-endian NBT, 128-block-tall chunks, zlib-compressed
 // payloads). The user-facing name is "mcanvil" — this provider delegates
 // all calls to McAcpp so users can configure `format: mcanvil` in
@@ -15,7 +15,7 @@
 #include <cstdio>
 #include <memory>
 
-namespace cenisyspe::level::format::mca {
+namespace atomikpe::level::format::mca {
 
 McAnvilRegistrar g_mca_registrar_;
 McAnvilRegistrar::McAnvilRegistrar() {
@@ -99,4 +99,4 @@ generator::Generator* McAnvil::getGenerator() const {
     return inner_ ? inner_->getGenerator() : nullptr;
 }
 
-} // namespace cenisyspe::level::format::mca
+} // namespace atomikpe::level::format::mca

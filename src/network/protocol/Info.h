@@ -5,7 +5,7 @@
 
 #include <cstdint>
 
-namespace cenisyspe::network::protocol {
+namespace atomikpe::network::protocol {
 
 constexpr int CURRENT_PROTOCOL = 84;
 
@@ -75,4 +75,4 @@ constexpr uint8_t ITEM_FRAME_DROP_ITEM_PACKET = 0x3f;
 constexpr uint8_t REPLACE_SELECTED_ITEM_PACKET = 0x40;
 constexpr uint8_t ADD_ITEM_PACKET            = 0x41;
 
-} // namespace cenisyspe::network::protocol
+} // namespace atomikpe::network::protocol

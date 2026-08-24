@@ -17,7 +17,7 @@
 #include <cstdio>
 #include <zlib.h>
 
-namespace cenisyspe::network::protocol {
+namespace atomikpe::network::protocol {
 
 // ---- Minimal base64url decoder (no padding) ----
 static bool base64UrlDecode(const std::string& in, std::vector<uint8_t>& out) {
@@ -241,4 +241,4 @@ void LoginPacket::parseClientDataPayload() {
     base64UrlDecode(skinB64, skinData);
 }
 
-} // namespace cenisyspe::network::protocol
+} // namespace atomikpe::network::protocol

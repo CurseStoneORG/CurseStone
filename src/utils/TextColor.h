@@ -10,7 +10,7 @@
 #include <string>
 #include <cstdint>
 
-namespace cenisyspe {
+namespace atomikpe {
 
 // MCPE color/format escape character (UTF-8 sequence for §, 2 bytes)
 namespace TC {
@@ -156,4 +156,4 @@ namespace TC {
     }
 } // namespace TC
 
-} // namespace cenisyspe
+} // namespace atomikpe

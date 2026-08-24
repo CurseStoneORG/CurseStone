@@ -4,7 +4,7 @@
 #pragma once
 #include <string>
 #include <unordered_map>
-namespace cenisyspe::wizard {
+namespace atomikpe::wizard {
 class InstallerLang {
 public:
     static InstallerLang& get();

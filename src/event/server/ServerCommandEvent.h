@@ -3,13 +3,13 @@
 #include "Event.h"
 #include "Cancellable.h"
 #include <string>
-namespace cenisyspe { class CommandSender; }
-namespace cenisyspe::event::server {
+namespace atomikpe { class CommandSender; }
+namespace atomikpe::event::server {
 class ServerCommandEvent : public Event, public Cancellable {
 public:
-    cenisyspe::CommandSender* sender;
+    atomikpe::CommandSender* sender;
     std::string command;
-    ServerCommandEvent(cenisyspe::CommandSender* s, std::string cmd)
+    ServerCommandEvent(atomikpe::CommandSender* s, std::string cmd)
         : sender(s), command(std::move(cmd)) {}
     const std::string& eventName() const override {
         static std::string n = "ServerCommandEvent"; return n;

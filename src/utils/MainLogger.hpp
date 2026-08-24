@@ -5,7 +5,7 @@
 #include "MainLogger.h"
 #include <string>
 
-namespace cenisyspe::utils {
+namespace atomikpe::utils {
 
 class MainLogger {
 public:
@@ -35,4 +35,4 @@ private:
     MainLogger() = default;
 };
 
-} // namespace cenisyspe::utils
+} // namespace atomikpe::utils

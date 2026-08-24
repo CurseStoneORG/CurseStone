@@ -13,7 +13,7 @@
 #include <vector>
 #include <cstdint>
 
-namespace cenisyspe::network::protocol {
+namespace atomikpe::network::protocol {
 
 class ContainerSetSlotPacket : public DataPacket {
 public:
@@ -35,4 +35,4 @@ public:
     bool decode(const uint8_t* data, size_t len) override;
 };
 
-} // namespace cenisyspe::network::protocol
+} // namespace atomikpe::network::protocol

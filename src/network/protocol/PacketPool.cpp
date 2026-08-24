@@ -38,7 +38,7 @@
 #include "ContainerSetContentPacket.h"
 #include "ContainerSetSlotPacket.h"
 
-namespace cenisyspe::network::protocol {
+namespace atomikpe::network::protocol {
 
 std::shared_ptr<DataPacket> PacketPool::create(uint8_t pid) const {
     switch (pid) {
@@ -77,4 +77,4 @@ std::shared_ptr<DataPacket> PacketPool::create(uint8_t pid) const {
     }
 }
 
-} // namespace cenisyspe::network::protocol
+} // namespace atomikpe::network::protocol

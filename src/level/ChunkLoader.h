@@ -4,7 +4,7 @@
 // to it. Mirrors pocketmine/level/ChunkLoader interface.
 #pragma once
 #include "level/format/Chunk.h"
-namespace cenisyspe::level {
+namespace atomikpe::level {
 class ChunkLoader {
 public:
     virtual ~ChunkLoader() = default;

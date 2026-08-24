@@ -9,7 +9,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace cenisyspe {
+namespace atomikpe {
 
 class Player;
 
@@ -27,4 +27,4 @@ public:
 };
 
 } // namespace network
-} // namespace cenisyspe
+} // namespace atomikpe

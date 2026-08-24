@@ -1,7 +1,7 @@
 #pragma once
 #include <string>
 #include <unordered_map>
-namespace cenisyspe::permission {
+namespace atomikpe::permission {
 class PermissionAttachment {
 public:
     void setPermission(const std::string& name, bool value) { perms_[name] = value; }

@@ -2,7 +2,7 @@
 #pragma once
 #include "Position.h"
 
-namespace cenisyspe::level {
+namespace atomikpe::level {
 
 class Location : public Position {
 public:
@@ -20,4 +20,4 @@ protected:
     double yaw_{0}, pitch_{0};
 };
 
-} // namespace cenisyspe::level
+} // namespace atomikpe::level

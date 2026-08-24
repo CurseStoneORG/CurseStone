@@ -3,7 +3,7 @@
 #pragma once
 #include <string>
 #include <memory>
-namespace cenisyspe {
+namespace atomikpe {
 class CommandSender {
 public:
     virtual ~CommandSender() = default;

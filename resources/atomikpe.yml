@@ -1,4 +1,4 @@
-# CenisysPE main configuration
+# AtomikPE main configuration
 # Mirrors PocketMine-MP's pocketmine.yml schema, adapted for C++.
 
 settings:
@@ -9,7 +9,7 @@ settings:
 server:
   ip: "0.0.0.0"
   port: 19132
-  motd: "CenisysPE"
+  motd: "AtomikPE"
   max-players: 20
   gamemode: 0          # 0=survival, 1=creative, 2=adventure
   difficulty: 1        # 0=peaceful, 1=easy, 2=normal, 3=hard

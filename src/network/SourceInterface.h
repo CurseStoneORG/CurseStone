@@ -7,7 +7,7 @@
 #include <string>
 #include <cstdint>
 
-namespace cenisyspe::network {
+namespace atomikpe::network {
 
 class SourceInterface {
 public:
@@ -18,4 +18,4 @@ public:
     virtual void tick() = 0;
 };
 
-} // namespace cenisyspe::network
+} // namespace atomikpe::network

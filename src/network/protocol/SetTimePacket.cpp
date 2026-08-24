@@ -3,7 +3,7 @@
 // PMMP: putInt(time) + putByte(started ? 1 : 0).
 #include "SetTimePacket.h"
 
-namespace cenisyspe::network::protocol {
+namespace atomikpe::network::protocol {
 
 void SetTimePacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
@@ -20,4 +20,4 @@ bool SetTimePacket::decode(const uint8_t* data, size_t len) {
     return true;
 }
 
-} // namespace cenisyspe::network::protocol
+} // namespace atomikpe::network::protocol

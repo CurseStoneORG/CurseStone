@@ -1,6 +1,6 @@
-# CenisysPE
+# AtomikPE
 
-**CenisysPE** is a cross-platform Minecraft Bedrock Edition server
+**AtomikPE** is a cross-platform Minecraft Bedrock Edition server
 software written in C/C++. It mirrors the module structure of
 [PocketMine-MP 4.0.0](https://github.com/pmmp/PocketMine-MP) (PHP),
 the same way Nukkit mirrors it for the Java ecosystem.
@@ -21,23 +21,23 @@ cmake ..
 cmake --build . -j$(nproc)
 ```
 
-The resulting executable is `CenisysPE`. It reads its configuration from
-`resources/cenisyspe.yml` (relative to the working directory).
+The resulting executable is `AtomikPE`. It reads its configuration from
+`resources/atomikpe.yml` (relative to the working directory).
 
 ## Running
 
 ```bash
-./CenisysPE --data ./data
+./AtomikPE --data ./data
 ```
 
 On first launch the installer wizard (Phase 22) will offer to generate
-a default `cenisyspe.yml` and a fresh world. After setup the server
+a default `atomikpe.yml` and a fresh world. After setup the server
 binds UDP 19132 by default and accepts RakNet/MCPE connections.
 
 ## Project layout
 
 ```
-CenisysPE/
+AtomikPE/
 ├── CMakeLists.txt
 ├── README.md
 ├── .gitignore
@@ -46,7 +46,7 @@ CenisysPE/
 ├── resources/                     # Server-side assets
 │   ├── creativeitems.json         # Copied from PocketMine-MP 4.0.0
 │   ├── recipes.json               # Copied from PocketMine-MP 4.0.0
-│   ├── cenisyspe.yml            # Main config
+│   ├── atomikpe.yml            # Main config
 │   ├── eng.ini                    # English locale
 │   └── biome_definitions.json     # Biome data
 └── src/
@@ -69,7 +69,7 @@ CenisysPE/
     │   └── defaults/
     ├── level/                     # World + chunk formats
     │   ├── format/
-    │   │   ├── mcacpp/            # Default CenisysPE format
+    │   │   ├── mcacpp/            # Default AtomikPE format
     │   │   ├── leveldb/            # MCPE native format
     │   │   ├── mca/                # Java Anvil .mca
     │   │   └── mcapm/             # MCAPM variant
@@ -100,7 +100,7 @@ CenisysPE/
 The default world format is **mcacpp** — a region-file format inspired by
 Minecraft Java's `.mca` but tailored for MCPE chunks. The format is
 specified in `docs/MCACPP_FORMAT.md`. Other selectable formats (via
-`level.format` in `cenisyspe.yml`): `leveldb`, `mca`, `mcapm`.
+`level.format` in `atomikpe.yml`): `leveldb`, `mca`, `mcapm`.
 
 ## Implementation status
 

@@ -47,7 +47,7 @@
 #include <sys/types.h>
 #include <cctype>
 
-namespace cenisyspe {
+namespace atomikpe {
 
 Server::Server() = default;
 Server::~Server() = default;
@@ -57,9 +57,9 @@ void Server::loadConfig() {
     Config cfg;
 
     // First try PMMP-style server.properties (key=value INI file).
-    // If it doesn't exist, fall back to cenisyspe.yml.
+    // If it doesn't exist, fall back to atomikpe.yml.
     std::string props_path = dataPath_ + "/server.properties";
-    std::string yaml_path  = dataPath_ + "/cenisyspe.yml";
+    std::string yaml_path  = dataPath_ + "/atomikpe.yml";
     bool loaded_props = false;
     if (cfg.loadIni(props_path)) {
         loaded_props = true;
@@ -96,7 +96,7 @@ void Server::loadConfig() {
 
     ip_            = get_str("server.ip", "server-ip", "0.0.0.0");
     port_          = (uint16_t)get_int("server.port", "server-port", 19132);
-    motd_          = get_str("server.motd", "motd", "CenisysPE");
+    motd_          = get_str("server.motd", "motd", "AtomikPE");
     max_players_   = (int)get_int("server.max-players", "max-players", 20);
     gamemode_      = (int)get_int("server.gamemode", "gamemode", 0);
     difficulty_    = (int)get_int("server.difficulty", "difficulty", 1);
@@ -129,8 +129,8 @@ void Server::initLogger() {
     // to disk in real time (PMMP-equivalent: pocketmine.log).
     std::string log_path = dataPath_ + "/server.log";
     mcp_main_logger_init(log_path.c_str(), /*colored=*/true);
-    utils::MainLogger::get().info(std::string(CENISYSPE_NAME) +
-        " v" + CENISYSPE_VERSION + " (codename: " + CENISYSPE_CODENAME + ")");
+    utils::MainLogger::get().info(std::string(ATOMIKPE_NAME) +
+        " v" + ATOMIKPE_VERSION + " (codename: " + ATOMIKPE_CODENAME + ")");
     utils::MainLogger::get().info("Target: Minecraft PE " + std::string(MINECRAFT_VERSION) +
         ", protocol " + std::to_string(PROTOCOL_VERSION));
     utils::MainLogger::get().info("Log file: " + log_path);
@@ -156,11 +156,11 @@ void Server::openNetwork() {
 }
 
 void Server::loadDefaultLevel() {
-    // Load level name/format/generator from server.properties or cenisyspe.yml.
+    // Load level name/format/generator from server.properties or atomikpe.yml.
     using utils::Config;
     Config cfg;
     cfg.loadIni(dataPath_ + "/server.properties");
-    cfg.loadYaml(dataPath_ + "/cenisyspe.yml");
+    cfg.loadYaml(dataPath_ + "/atomikpe.yml");
 
     auto get_str = [&](const char* yaml_key, const char* ini_key,
                        const char* def) -> std::string {
@@ -199,7 +199,7 @@ void Server::loadDefaultLevel() {
     std::string levelDat = worldDir + "/level.dat";
     FILE* f = fopen(levelDat.c_str(), "wb");
     if (f) {
-        fprintf(f, "CenisysPE Level\n");
+        fprintf(f, "AtomikPE Level\n");
         fprintf(f, "name=%s\n", lc.name.c_str());
         fprintf(f, "seed=%lld\n", (long long)lc.seed);
         fprintf(f, "time=0\n");
@@ -516,4 +516,4 @@ void Server::saveOfflinePlayerData(const std::string& name, NbtPtr nbt) {
     free(bytes);
 }
 
-} // namespace cenisyspe
+} // namespace atomikpe

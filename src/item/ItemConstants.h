@@ -7,11 +7,11 @@
 //
 // Usage:
 //   #include "item/ItemConstants.h"
-//   uint16_t id = cenisyspe::item::STAGE;
+//   uint16_t id = atomikpe::item::STAGE;
 #pragma once
 #include <cstdint>
 
-namespace cenisyspe::item {
+namespace atomikpe::item {
 
 // ============================================================
 // Block IDs (0-255) — these double as item IDs for block items
@@ -428,4 +428,4 @@ constexpr int SPLASH_POTION                = 438;
 constexpr int CAMERA                       = 456;
 constexpr int ELYTRA                       = 444;
 
-} // namespace cenisyspe::item
+} // namespace atomikpe::item

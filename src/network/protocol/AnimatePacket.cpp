@@ -2,7 +2,7 @@
 // AnimatePacket implementation (stub).
 #include "AnimatePacket.h"
 
-namespace cenisyspe::network::protocol {
+namespace atomikpe::network::protocol {
 
 void AnimatePacket::encode(std::vector<uint8_t>& out) const {
     (void)out;
@@ -16,4 +16,4 @@ bool AnimatePacket::decode(const uint8_t* data, size_t len) {
     return true;
 }
 
-} // namespace cenisyspe::network::protocol
+} // namespace atomikpe::network::protocol

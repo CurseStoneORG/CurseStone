@@ -5,7 +5,7 @@
 #pragma once
 #include "Inventory.h"
 #include <array>
-namespace cenisyspe::inventory {
+namespace atomikpe::inventory {
 class PlayerInventory : public Inventory {
 public:
     PlayerInventory() : Inventory(SIZE) {}
@@ -14,11 +14,11 @@ public:
     static constexpr int HELMET = 36, CHESTPLATE = 37, LEGGINGS = 38, BOOTS = 39;
     void setHeldSlot(int slot) { held_ = slot; }
     int heldSlot() const { return held_; }
-    cenisyspe::item::ItemStack getHeldItem() const { return getItem(held_); }
-    cenisyspe::item::ItemStack getHelmet()      const { return getItem(HELMET); }
-    cenisyspe::item::ItemStack getChestplate() const { return getItem(CHESTPLATE); }
-    cenisyspe::item::ItemStack getLeggings()    const { return getItem(LEGGINGS); }
-    cenisyspe::item::ItemStack getBoots()       const { return getItem(BOOTS); }
+    atomikpe::item::ItemStack getHeldItem() const { return getItem(held_); }
+    atomikpe::item::ItemStack getHelmet()      const { return getItem(HELMET); }
+    atomikpe::item::ItemStack getChestplate() const { return getItem(CHESTPLATE); }
+    atomikpe::item::ItemStack getLeggings()    const { return getItem(LEGGINGS); }
+    atomikpe::item::ItemStack getBoots()       const { return getItem(BOOTS); }
 private:
     int held_ = 0;
 };

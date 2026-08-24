@@ -9,7 +9,7 @@
 #include <functional>
 #include <memory>
 
-namespace cenisyspe::network {
+namespace atomikpe::network {
 
 class CompressBatchedTask : public scheduler::AsyncTask {
 public:
@@ -29,4 +29,4 @@ private:
     std::vector<uint8_t>  result_;   // populated by onRun()
 };
 
-} // namespace cenisyspe::network
+} // namespace atomikpe::network

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // Config — YAML / INI / JSON loader for the server config file.
 // Implements a minimal subset of YAML (nested maps, lists, scalars, comments)
-// sufficient to parse `resources/cenisyspe.yml`. For full YAML support,
+// sufficient to parse `resources/atomikpe.yml`. For full YAML support,
 // future phases may vendor yaml-cpp.
 #pragma once
 
@@ -13,7 +13,7 @@
 #include <optional>
 #include <cstdint>
 
-namespace cenisyspe::utils {
+namespace atomikpe::utils {
 
 class Config {
 public:
@@ -71,4 +71,4 @@ private:
                                  size_t indent);
 };
 
-} // namespace cenisyspe::utils
+} // namespace atomikpe::utils

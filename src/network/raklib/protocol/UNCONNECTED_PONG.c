@@ -9,7 +9,7 @@ static uint8_t pkt_id(void) { return 0x1c; }
 static void pkt_encode(void* self, mcp_bstream_t* out) {
     mcp_pkt_unconnected_pong_t* p = (mcp_pkt_unconnected_pong_t*)self;
     mcp_bstream_write_u8(out, 0x1c);
-    mcp_bstream_write_u64_be(out, (uint64_t)p->server_id); mcp_bstream_write_bytes(out, p->magic, 16); mcp_bstream_write_u64_be(out, p->time); mcp_bstream_write_bytes(out, p->server_id_str, 8); mcp_bstream_write_string(out, p->motd ? p->motd : "CenisysPE");
+    mcp_bstream_write_u64_be(out, (uint64_t)p->server_id); mcp_bstream_write_bytes(out, p->magic, 16); mcp_bstream_write_u64_be(out, p->time); mcp_bstream_write_bytes(out, p->server_id_str, 8); mcp_bstream_write_string(out, p->motd ? p->motd : "AtomikPE");
 }
 static void pkt_decode(void* self, mcp_bstream_t* in) {
     mcp_pkt_unconnected_pong_t* p = (mcp_pkt_unconnected_pong_t*)self;

@@ -7,7 +7,7 @@
 #include "Effect.h"
 #include <vector>
 #include <memory>
-namespace cenisyspe::entity {
+namespace atomikpe::entity {
 class Living : public Entity {
 public:
     using Entity::Entity;

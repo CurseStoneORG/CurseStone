@@ -28,7 +28,7 @@
 #include <vector>
 #include <cstdint>
 
-namespace cenisyspe::network::protocol {
+namespace atomikpe::network::protocol {
 
 class ContainerSetContentPacket : public DataPacket {
 public:
@@ -41,11 +41,11 @@ public:
     static constexpr uint8_t SPECIAL_HOTBAR    = 0x7a;
 
     uint8_t     windowid = 0;
-    std::vector<cenisyspe::item::ItemStack> slots;
+    std::vector<atomikpe::item::ItemStack> slots;
     std::vector<int32_t> hotbar;   // only used when windowid == SPECIAL_INVENTORY
 
     void encode(std::vector<uint8_t>& out) const override;
     bool decode(const uint8_t* data, size_t len) override;
 };
 
-} // namespace cenisyspe::network::protocol
+} // namespace atomikpe::network::protocol

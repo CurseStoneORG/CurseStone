@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <vector>
 
-namespace cenisyspe {
+namespace atomikpe {
 
 // Helper: get all registered commands sorted by name
 struct CmdEntry {

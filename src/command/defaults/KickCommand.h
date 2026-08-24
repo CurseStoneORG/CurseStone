@@ -1,7 +1,7 @@
 #pragma once
 #include "command/Command.h"
 #include <string>
-namespace cenisyspe {
+namespace atomikpe {
 class KickCommand : public Command {
 public:
     KickCommand() : Command("kick", "Kick a player") {}

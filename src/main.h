@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// CenisysPE — Minecraft Bedrock server software in C/C++.
+// AtomikPE — Minecraft Bedrock server software in C/C++.
 // Inspired by PocketMine-MP 4.0.0; mirrors its module layout.
 #pragma once
 
@@ -23,12 +23,12 @@
 #include "math/AxisAlignedBB.h"
 
 // ---- Project version constants ----
-#define CENISYSPE_VERSION    "1.0.0"
-#define CENISYSPE_NAME      "CenisysPE"
-#define CENISYSPE_CODENAME  "Obsidian"
+#define ATOMIKPE_VERSION    "1.0.0"
+#define ATOMIKPE_NAME      "AtomikPE"
+#define ATOMIKPE_CODENAME  "Obsidian"
 
 // ---- Target Minecraft version ----
-// CenisysPE targets MCPE/Bedrock protocol version 84 (MCPE 0.15.x era).
+// AtomikPE targets MCPE/Bedrock protocol version 84 (MCPE 0.15.x era).
 #define MINECRAFT_VERSION      "0.15.x"
 #define PROTOCOL_VERSION       84
 
@@ -37,11 +37,11 @@
 #define TICK_MS                50    // milliseconds per tick
 
 // ---- Build info ----
-#ifndef CENISYSPE_LEVELDB
-#  define CENISYSPE_LEVELDB 0
+#ifndef ATOMIKPE_LEVELDB
+#  define ATOMIKPE_LEVELDB 0
 #endif
 
-namespace cenisyspe {
+namespace atomikpe {
 
 // Common forward declarations to break circular dependencies.
 class Server;
@@ -57,8 +57,8 @@ class ServerScheduler;
 class MainLogger;
 
 namespace level       { class Level; class Position; class Location; }
-// Alias so legacy code referencing `cenisyspe::Level` (without the level::
-// qualifier) still works. Both refer to cenisyspe::level::Level.
+// Alias so legacy code referencing `atomikpe::Level` (without the level::
+// qualifier) still works. Both refer to atomikpe::level::Level.
 using Level = level::Level;
 namespace block       { class Block; }
 namespace item        { class Item; }
@@ -81,4 +81,4 @@ namespace permission  { class Permission; class Permissible; }
 namespace command     { class Command; class CommandSender; class CommandMap; }
 namespace event       { class Event; class HandlerList; }
 
-} // namespace cenisyspe
+} // namespace atomikpe

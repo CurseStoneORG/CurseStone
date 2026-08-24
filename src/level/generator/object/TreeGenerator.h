@@ -6,7 +6,7 @@
 #include "level/format/Chunk.h"
 #include <cstdint>
 
-namespace cenisyspe::level::generator::object {
+namespace atomikpe::level::generator::object {
 enum TreeType { TREE_OAK = 0, TREE_BIRCH = 1, TREE_SPRUCE = 2 };
 class TreeGenerator {
 public:

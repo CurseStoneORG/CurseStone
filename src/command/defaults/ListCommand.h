@@ -1,7 +1,7 @@
 #pragma once
 #include "command/Command.h"
 #include <string>
-namespace cenisyspe {
+namespace atomikpe {
 class ListCommand : public Command {
 public:
     ListCommand() : Command("list", "List online players") {}

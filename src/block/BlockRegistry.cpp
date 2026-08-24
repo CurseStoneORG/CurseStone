@@ -50,7 +50,7 @@
 #include "BlockGlowstone.h"
 #include "BlockIds.h"
 #include <memory>
-namespace cenisyspe::block {
+namespace atomikpe::block {
 namespace {
 template <typename T> std::unique_ptr<T> make_id() { return std::make_unique<T>(); }
 }

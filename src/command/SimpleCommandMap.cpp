@@ -1,6 +1,6 @@
 #include "SimpleCommandMap.h"
 #include "utils/Utils.hpp"
-namespace cenisyspe {
+namespace atomikpe {
 bool SimpleCommandMap::registerCommand(std::unique_ptr<Command> cmd) {
     if (!cmd) return false;
     std::string n = cmd->name();

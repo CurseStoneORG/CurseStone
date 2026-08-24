@@ -16,7 +16,7 @@
 #include <vector>
 #include <cstdint>
 
-namespace cenisyspe::network::protocol {
+namespace atomikpe::network::protocol {
 
 class BatchPacket : public DataPacket {
 public:
@@ -53,4 +53,4 @@ private:
     std::vector<uint8_t> compressed_;  // zlib payload (no leading ID byte)
 };
 
-} // namespace cenisyspe::network::protocol
+} // namespace atomikpe::network::protocol

@@ -7,14 +7,14 @@
 #include <memory>
 #include <string>           // required for std::string id_ and Tile(std::string, ...)
 #include "level/Position.h"
-namespace cenisyspe::tile {
+namespace atomikpe::tile {
 class Tile {
 public:
-    Tile(std::string id, cenisyspe::level::Position pos)
+    Tile(std::string id, atomikpe::level::Position pos)
         : id_(std::move(id)), pos_(pos) {}
     virtual ~Tile() = default;
     const std::string& getId() const { return id_; }
-    const cenisyspe::level::Position& position() const { return pos_; }
+    const atomikpe::level::Position& position() const { return pos_; }
     void markDirty() { dirty_ = true; }
     bool isDirty() const { return dirty_; }
     virtual void tick(uint64_t /*current_tick*/) {}
@@ -24,7 +24,7 @@ public:
     virtual void readNBT(const class CompoundTag* tag);
 protected:
     std::string id_;                  // "Chest", "Furnace", "Sign", ...
-    cenisyspe::level::Position pos_;
+    atomikpe::level::Position pos_;
     bool dirty_ = true;
 };
 } // namespace

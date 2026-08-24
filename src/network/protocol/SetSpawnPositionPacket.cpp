@@ -3,7 +3,7 @@
 // PMMP: putInt x 3 (BE).
 #include "SetSpawnPositionPacket.h"
 
-namespace cenisyspe::network::protocol {
+namespace atomikpe::network::protocol {
 
 void SetSpawnPositionPacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
@@ -19,4 +19,4 @@ bool SetSpawnPositionPacket::decode(const uint8_t* data, size_t len) {
     return r.readI32BE(z);
 }
 
-} // namespace cenisyspe::network::protocol
+} // namespace atomikpe::network::protocol

@@ -1,7 +1,7 @@
 #pragma once
 #include "ItemArmor.h"
 #include <string>
-namespace cenisyspe::item {
+namespace atomikpe::item {
 class ItemDiamondChestplate : public ItemArmor {
 public:
     ItemDiamondChestplate() : ItemArmor(311, ArmorMaterial::ARMOR_DIAMOND, ArmorSlot::CHESTPLATE, 8) {}

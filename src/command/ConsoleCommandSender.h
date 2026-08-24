@@ -1,7 +1,7 @@
 #pragma once
 #include "CommandSender.h"
 #include <string>
-namespace cenisyspe {
+namespace atomikpe {
 class ConsoleCommandSender : public CommandSender {
 public:
     void sendMessage(const std::string& msg) override;

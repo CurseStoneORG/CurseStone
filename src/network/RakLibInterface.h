@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-namespace cenisyspe {
+namespace atomikpe {
 class Server;
 
 namespace network {
@@ -65,4 +65,4 @@ private:
 };
 
 } // namespace network
-} // namespace cenisyspe
+} // namespace atomikpe

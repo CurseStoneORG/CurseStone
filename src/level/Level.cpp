@@ -8,7 +8,7 @@
 #include <fstream>
 #include <sstream>
 
-namespace cenisyspe::level {
+namespace atomikpe::level {
 
 Level::Level(LevelConfig cfg) : cfg_(std::move(cfg)) {
     spawn_ = math::Vector3(cfg_.spawn_x, cfg_.spawn_y, cfg_.spawn_z);
@@ -65,7 +65,7 @@ int Level::save() {
     FILE* lf = fopen(levelDat.c_str(), "wb");
     if (lf) {
         // Write a simple binary header
-        fprintf(lf, "CenisysPE Level\n");
+        fprintf(lf, "AtomikPE Level\n");
         fprintf(lf, "name=%s\n", cfg_.name.c_str());
         fprintf(lf, "seed=%lld\n", (long long)cfg_.seed);
         fprintf(lf, "time=%d\n", cfg_.time);

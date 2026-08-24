@@ -21,7 +21,7 @@
 #include "../../main.h"
 #include "LevelProvider.h"
 
-namespace cenisyspe::level::format {
+namespace atomikpe::level::format {
 
 // Factory callback. Creates a fresh provider instance.
 using ProviderFactory = std::function<std::unique_ptr<LevelProvider>()>;
@@ -53,4 +53,4 @@ private:
     std::unordered_map<std::string, ProviderFactory> registry_;
 };
 
-} // namespace cenisyspe::level::format
+} // namespace atomikpe::level::format

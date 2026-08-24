@@ -1,6 +1,6 @@
 #pragma once
 #include "Item.h"
-namespace cenisyspe::item {
+namespace atomikpe::item {
 // ItemBlock — an item that places a block when right-clicked.
 class ItemBlock : public Item {
 public:

@@ -7,7 +7,7 @@
 #include "main.h"
 #include <cstdint>
 
-namespace cenisyspe::utils {
+namespace atomikpe::utils {
 
 class BlockIterator {
 public:
@@ -35,4 +35,4 @@ private:
     double traveled_;
 };
 
-} // namespace cenisyspe::utils
+} // namespace atomikpe::utils

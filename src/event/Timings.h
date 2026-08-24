@@ -7,7 +7,7 @@
 #include <string>
 #include <chrono>
 #include <cstdint>
-namespace cenisyspe::event {
+namespace atomikpe::event {
 class Timings {
 public:
     static Timings& get();

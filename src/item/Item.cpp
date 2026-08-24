@@ -1,6 +1,6 @@
 #include "Item.h"
 #include <vector>
-namespace cenisyspe::item {
+namespace atomikpe::item {
 std::vector<std::unique_ptr<Item>>& Item::registry() {
     static std::vector<std::unique_ptr<Item>> r;
     if (r.empty()) r.resize(65536);

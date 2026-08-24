@@ -5,7 +5,7 @@
 #include "item/ItemStack.h"
 #include <vector>
 #include <functional>
-namespace cenisyspe::inventory {
+namespace atomikpe::inventory {
 class Inventory {
 public:
     Inventory(int size) : items_(size) {}
@@ -13,14 +13,14 @@ public:
     virtual int size() const { return (int)items_.size(); }
     virtual int maxSize() const { return 64; }
     // Slot access. Out-of-range access returns empty ItemStack.
-    virtual cenisyspe::item::ItemStack getItem(int slot) const;
-    virtual void setItem(int slot, const cenisyspe::item::ItemStack& it);
+    virtual atomikpe::item::ItemStack getItem(int slot) const;
+    virtual void setItem(int slot, const atomikpe::item::ItemStack& it);
     virtual void clear(int slot = -1);
     // On-change callback (used by player + tile entities).
-    using SlotChangeFn = std::function<void(int slot, const cenisyspe::item::ItemStack&)>;
+    using SlotChangeFn = std::function<void(int slot, const atomikpe::item::ItemStack&)>;
     void setSlotChangeCallback(SlotChangeFn cb) { on_slot_change_ = std::move(cb); }
 protected:
-    std::vector<cenisyspe::item::ItemStack> items_;
+    std::vector<atomikpe::item::ItemStack> items_;
     SlotChangeFn on_slot_change_;
 };
 } // namespace
