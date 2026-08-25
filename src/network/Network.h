@@ -44,7 +44,8 @@ public:
 
     // Look up or create a Player for an incoming session.
     Player* getPlayer(const std::string& ip, uint16_t port);
-    void registerSession(const std::string& ip, uint16_t port, Player* p);
+    void registerSession(const std::string& ip, uint16_t port,
+                          std::shared_ptr<Player> p);
     void unregisterSession(Player* p);
     void addPlayer(std::unique_ptr<Player> p);
     void removePlayer(Player* p);
@@ -69,8 +70,11 @@ private:
     Server* server_;
     std::vector<std::unique_ptr<SourceInterface>> interfaces_;
     std::unordered_map<std::string, size_t> nameToIndex_;
-    // Session key = "ip:port"
-    std::unordered_map<std::string, Player*> sessions_;
+    // Session key = "ip:port". weak_ptr so we don't keep Players alive
+    // after Server::tick() reaps them from players_. Using a raw Player*
+    // here caused a use-after-free: the network thread called p->close()
+    // on a Player that the main thread had already destroyed.
+    std::unordered_map<std::string, std::weak_ptr<Player>> sessions_;
     std::unordered_map<std::string, uint64_t> blockedUntil_;
 };
 

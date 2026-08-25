@@ -47,6 +47,10 @@
 #include "level/format/Chunk.h"
 #include "nbt/tag/CompoundTag.h"
 #include "nbt/tag/Tag.h"
+#include "nbt/tag/ListTag.h"
+#include "nbt/tag/ByteTag.h"
+#include "nbt/tag/ShortTag.h"
+#include "nbt/tag/ByteArrayTag.h"
 
 #include <cmath>
 #include <algorithm>
@@ -80,7 +84,29 @@ Player::Player(Server* srv, PlayerConfig cfg)
     }
 }
 Player::~Player() {
-    if (connected_.load(std::memory_order_relaxed)) close("Player destroyed");
+    // CRITICAL: Do NOT call close() here. close() uses shared_from_this()
+    // which throws std::bad_weak_ptr in a destructor (the control block's
+    // weak ref is already expired). That exception calls std::terminate()
+    // → segfault. This was the root cause of the crash on player disconnect.
+    //
+    // By the time the destructor runs, close() has already been called
+    // (via call_once from the network or main thread) and connected_ is
+    // false. If for some reason it wasn't (e.g., Server crash during
+    // shutdown), we do a minimal inline save here WITHOUT shared_from_this.
+    if (connected_.load(std::memory_order_relaxed)) {
+        try {
+            if (named_tag_ && srv_ && !cfg_.username.empty()) {
+                mcp_compound_tag_set_double(named_tag_.get(), "PosX", pos_.x);
+                mcp_compound_tag_set_double(named_tag_.get(), "PosY", pos_.y);
+                mcp_compound_tag_set_double(named_tag_.get(), "PosZ", pos_.z);
+                mcp_compound_tag_set_float (named_tag_.get(), "Yaw",   yaw_);
+                mcp_compound_tag_set_float (named_tag_.get(), "Pitch", pitch_);
+                mcp_compound_tag_set_int   (named_tag_.get(), "playerGameType", cfg_.gamemode);
+                srv_->saveOfflinePlayerData(cfg_.username, named_tag_);
+            }
+        } catch (...) {}
+        connected_.store(false, std::memory_order_relaxed);
+    }
 }
 
 bool Player::isOp() const {
@@ -117,22 +143,31 @@ void Player::setWhitelisted(bool /*v*/) {}
 //   - The main server thread (player quit via /quit, server shutdown)
 //   - The RakLib network thread (session timeout, client disconnect)
 //
-// To avoid use-after-free / segfault we:
-//   1. Use std::call_once so the cleanup body runs exactly once even
-//      if two threads race into close().
-//   2. Take a shared_from_this() reference at the top so the Player
-//      object stays alive for the duration of close(), even if the
-//      Server's shared_ptr is dropped mid-cleanup.
-//   3. Don't call Server::removePlayer() from here. Instead set
-//      pending_removal_=true and let Server::tick() (main thread)
-//      erase the player from players_ on the next tick — guaranteeing
-//      no other thread is iterating players_ when the destructor fires.
+// CRITICAL: close() must NOT call adv_iface_->closeSession(). When
+// close() is called from Network::onSessionClose() (the RakLib
+// timeout path), the RakNet session is ALREADY being torn down.
+// Calling closeSession() again from within that callback causes a
+// re-entrant call into RakLib's C code while its internal state is
+// mid-teardown → segfault. This was the root cause of the 100%
+// reproducible crash when a player disconnected.
+//
+// For proactive kicks, Player::kick() calls closeSession() itself
+// BEFORE close(), so the RakLib layer handles the disconnect.
 // ============================================================
 void Player::close(const std::string& reason) {
     // Keep this Player alive for the entire duration of close(), even
     // if Server::tick() concurrently erases its shared_ptr from players_.
     // Without this, the cleanup body below could touch freed memory.
-    auto self = shared_from_this();
+    // We wrap in try-catch because shared_from_this() can throw
+    // std::bad_weak_ptr if the control block is already expired (rare
+    // edge case during server shutdown). If it throws, we proceed
+    // without the safety net — close() is still protected by call_once.
+    std::shared_ptr<Player> self;
+    try {
+        self = shared_from_this();
+    } catch (...) {
+        // shared_from_this() failed — proceed without the safety net.
+    }
 
     std::call_once(close_once_, [this, &reason]() {
         bool expected = true;
@@ -151,18 +186,26 @@ void Player::close(const std::string& reason) {
                 saveData();
             }
         } catch (...) {
-            // Defensive: a saveData() failure must never crash close().
+            utils::MainLogger::get().warn("[CLOSE] " + cfg_.username + " saveData threw exception");
         }
 
         // 2. Tell other players to despawn this entity.
+        // CRITICAL: iterate a COPY of the snapshot. The snapshot returns
+        // shared_ptrs by value, which keeps each Player alive for the
+        // duration of sendPacket. Without this, a concurrent reap in
+        // Server::tick() could destroy a Player mid-sendPacket.
         try {
             if (srv_) {
+                auto snapshot = srv_->playersSnapshot();
                 auto pk = std::make_shared<network::protocol::RemoveEntityPacket>();
                 pk->eid = runtimeId();
-                for (auto& other : srv_->playersSnapshot()) {
-                    if (!other || other.get() == this) continue;
-                    if (other->isPendingRemoval()) continue;  // skip tearing-down peers
-                    other->sendPacket(pk);
+                for (auto& other : snapshot) {
+                    if (!other) continue;
+                    if (other.get() == this) continue;
+                    if (other->isPendingRemoval()) continue;
+                    try {
+                        other->sendPacket(pk);
+                    } catch (...) {}
                 }
             }
         } catch (...) {}
@@ -184,21 +227,12 @@ void Player::close(const std::string& reason) {
             chunk_queue_.clear();
         }
 
-        // 5. Tear down the RakNet session. closeSession() is thread-safe
-        //    (it enqueues a disconnect onto the RakLib thread).
-        try {
-            if (adv_iface_ && !cfg_.ip.empty()) {
-                adv_iface_->closeSession(cfg_.ip, cfg_.port, reason);
-            }
-        } catch (...) {}
+        // 5. DO NOT call closeSession() here — see the comment at the
+        //    top of this function. The session is either already closed
+        //    (timeout path) or will be closed by the caller (kick path).
 
         // 6. Flag for removal — Server::tick() will erase this Player
-        //    from players_ on the next tick (main thread). We MUST NOT
-        //    call srv_->removePlayer(this) here because:
-        //    (a) we may be on the network thread, and erasing from
-        //        players_ while the main thread iterates it is UB;
-        //    (b) erasing the last shared_ptr would destroy `this`
-        //        while we're still inside close() (use-after-free).
+        //    from players_ on the next tick (main thread).
         pending_removal_.store(true, std::memory_order_release);
     });
 }
@@ -259,6 +293,14 @@ void Player::kick(const std::string& reason) {
         auto dp = std::make_shared<network::protocol::DisconnectPacket>();
         dp->message = reason;
         sendPacket(dp);
+    }
+    // Force-close the RakLib session so the client disconnects promptly.
+    // This must happen BEFORE close() because close() no longer calls
+    // closeSession() (to avoid re-entrant crashes when called from the
+    // RakLib timeout path). closeSession() will trigger RakLib to fire
+    // onCloseSession() → close(), but call_once() makes that a no-op.
+    if (adv_iface_ && !cfg_.ip.empty()) {
+        adv_iface_->closeSession(cfg_.ip, cfg_.port, reason);
     }
     close(reason);
 }
@@ -1317,6 +1359,13 @@ void Player::sendInventory() {
 // ============================================================
 // Save this player's NBT + inventory to disk (PMMP Player::saveNBT)
 // ============================================================
+// Mirrors cn.nukkit.Player.saveNBT(): the NBT root contains a flat
+// "Inventory" ListTag<CompoundTag> with one entry per non-empty slot.
+// Each entry is { Slot:Byte, id:Short, Count:Byte, Damage:Short }.
+// Armor uses the same list with Slot in [100..103] (helmet..boots).
+// On load we iterate the list and route by Slot range — mirroring
+// Nukkit's Player.loadNBT() exactly so worlds are interchangeable.
+// ============================================================
 void Player::saveData() {
     if (!srv_ || cfg_.username.empty()) return;
     if (!named_tag_) {
@@ -1325,18 +1374,47 @@ void Player::saveData() {
             mcp_compound_tag_new(),
             [](::mcp_tag* t) { if (t) mcp_tag_destroy(t); });
     }
-    // Persist position, rotation, gamemode, health.
     ::mcp_tag* root = named_tag_.get();
-    if (root) {
-        mcp_compound_tag_set_double(root, "Pos_x",  pos_.x);
-        mcp_compound_tag_set_double(root, "Pos_y",  pos_.y);
-        mcp_compound_tag_set_double(root, "Pos_z",  pos_.z);
-        mcp_compound_tag_set_float (root, "Yaw",    yaw_);
-        mcp_compound_tag_set_float (root, "Pitch",  pitch_);
-        mcp_compound_tag_set_int   (root, "playerGameType", cfg_.gamemode);
-        mcp_compound_tag_set_short (root, "Health",  (int16_t)health());
-        mcp_compound_tag_set_long  (root, "RuntimeId", runtimeId());
+    if (!root) return;
+
+    // --- Position / rotation / stats ---
+    mcp_compound_tag_set_double(root, "PosX",  pos_.x);
+    mcp_compound_tag_set_double(root, "PosY",  pos_.y);
+    mcp_compound_tag_set_double(root, "PosZ",  pos_.z);
+    mcp_compound_tag_set_float (root, "Yaw",    yaw_);
+    mcp_compound_tag_set_float (root, "Pitch",  pitch_);
+    mcp_compound_tag_set_int   (root, "playerGameType", cfg_.gamemode);
+    mcp_compound_tag_set_short (root, "Health",  (int16_t)health());
+    mcp_compound_tag_set_short (root, "MaxHealth", (int16_t)maxHealth());
+    mcp_compound_tag_set_short (root, "Hunger",  (int16_t)foodLevel());
+    mcp_compound_tag_set_short (root, "Air",     300);
+    mcp_compound_tag_set_long  (root, "RuntimeId", runtimeId());
+    mcp_compound_tag_set_long  (root, "lastPlayed",
+        (int64_t)mcp_utils_time_ms());
+
+    // --- Inventory + Armor as a single ListTag<CompoundTag> ---
+    mcp_tag_t* inv_list = mcp_list_tag_new_named("Inventory", MCP_TAG_COMPOUND);
+    if (inv_list && inv_) {
+        for (int slot = 0; slot < inventory::PlayerInventory::SIZE; ++slot) {
+            auto it = inv_->getItem(slot);
+            if (it.isEmpty()) continue;
+            int nbt_slot = slot;
+            if (slot >= inventory::PlayerInventory::ARMOR_OFFSET &&
+                slot <  inventory::PlayerInventory::ARMOR_OFFSET + 4) {
+                nbt_slot = 100 + (slot - inventory::PlayerInventory::ARMOR_OFFSET);
+            }
+            mcp_tag_t* entry = mcp_compound_tag_new_named("");
+            mcp_compound_tag_set_byte (entry, "Slot",   (int8_t)nbt_slot);
+            mcp_compound_tag_set_short(entry, "id",     (int16_t)it.id);
+            mcp_compound_tag_set_byte (entry, "Count",  (int8_t)it.count);
+            mcp_compound_tag_set_short(entry, "Damage", (int16_t)it.meta);
+            mcp_list_tag_append(inv_list, entry);
+        }
+        mcp_compound_tag_set_int(root, "SelectedItemSlot",
+            inv_->heldSlot());
     }
+    mcp_compound_tag_set(root, "Inventory", inv_list);
+
     srv_->saveOfflinePlayerData(cfg_.username, named_tag_);
     if (srv_->advancedLog()) {
         utils::MainLogger::get().info("[SAVE] Player " + cfg_.username + " data saved.");

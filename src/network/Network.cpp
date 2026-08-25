@@ -60,9 +60,14 @@ void Network::onSessionClose(const std::string& ip, uint16_t port,
     std::string key = sessionKey(ip, port);
     auto it = sessions_.find(key);
     if (it != sessions_.end()) {
-        Player* p = it->second;
+        // Lock the weak_ptr to get a safe shared_ptr. If the Player was
+        // already destroyed by the main thread, lock() returns nullptr
+        // and we skip the close() call (it would be a use-after-free).
+        auto sp = it->second.lock();
         sessions_.erase(it);
-        if (p) p->close(reason);
+        if (sp) {
+            sp->close(reason);
+        }
     }
 }
 
@@ -149,23 +154,37 @@ void Network::dispatchSingle(const std::string& ip, uint16_t port,
     if (len == 0) return;
     uint8_t pid = data[0];
 
-    Player* p = getPlayer(ip, port);
-    if (!p) {
-        // Only LoginPacket may create a new session.
+    // Lock the session's weak_ptr to get a safe shared_ptr. This keeps
+    // the Player alive for the duration of this function call, even if
+    // the main thread reaps it from players_ concurrently.
+    std::shared_ptr<Player> player_sp;
+    auto it = sessions_.find(sessionKey(ip, port));
+    if (it != sessions_.end()) {
+        player_sp = it->second.lock();
+    }
+
+    if (!player_sp) {
+        // No session yet. Only LoginPacket may create a new session.
         if (pid != protocol::LOGIN_PACKET) {
-            // Not a login and no session — drop silently.
             return;
         }
         if (!createPlayerForSession(ip, port)) return;
-        p = getPlayer(ip, port);
-        if (!p) return;
+        // Re-lock the newly-registered session.
+        auto it2 = sessions_.find(sessionKey(ip, port));
+        if (it2 == sessions_.end()) return;
+        player_sp = it2->second.lock();
+        if (!player_sp) return;
     }
 
     // Decode the body (everything after the leading ID byte) via the
     // PacketPool registry and forward to the Player's dispatcher.
     auto pkt = decodePacketById(pid, data + 1, len - 1);
     if (!pkt) return;
-    p->handleDataPacket(*pkt);
+    // CRITICAL: skip if the player was closed between the lock() above
+    // and here. connected_ is atomic; if false, the player is being
+    // torn down and we must NOT call onUpdate or handle packets.
+    if (!player_sp->isConnected()) return;
+    player_sp->handleDataPacket(*pkt);
 }
 
 std::shared_ptr<protocol::DataPacket> Network::decodePacketById(uint8_t pid,
@@ -194,22 +213,30 @@ bool Network::createPlayerForSession(const std::string& ip, uint16_t port) {
     auto p = std::make_shared<Player>(server_, std::move(cfg));
     if (auto* r = getRakLib()) p->setSourceInterface(r);
     server_->addPlayer(p);
-    registerSession(ip, port, p.get());
+    // Store as weak_ptr so the Network doesn't keep the Player alive
+    // after Server::tick() reaps it from players_.
+    registerSession(ip, port, p);
     return true;
 }
 
 Player* Network::getPlayer(const std::string& ip, uint16_t port) {
     auto it = sessions_.find(sessionKey(ip, port));
-    return it != sessions_.end() ? it->second : nullptr;
+    if (it == sessions_.end()) return nullptr;
+    // Lock the weak_ptr; if the Player was destroyed, return nullptr.
+    auto sp = it->second.lock();
+    return sp.get();
 }
 
-void Network::registerSession(const std::string& ip, uint16_t port, Player* p) {
-    sessions_[sessionKey(ip, port)] = p;
+void Network::registerSession(const std::string& ip, uint16_t port,
+                                std::shared_ptr<Player> p) {
+    sessions_[sessionKey(ip, port)] = p;  // weak_ptr from shared_ptr
 }
+
 void Network::unregisterSession(Player* p) {
     if (!p) return;
     for (auto it = sessions_.begin(); it != sessions_.end(); ++it) {
-        if (it->second == p) { sessions_.erase(it); return; }
+        auto sp = it->second.lock();
+        if (sp.get() == p) { sessions_.erase(it); return; }
     }
 }
 
@@ -220,7 +247,8 @@ void Network::addPlayer(std::unique_ptr<Player> /*p*/) {
 void Network::removePlayer(Player* p) {
     if (!p) return;
     for (auto it = sessions_.begin(); it != sessions_.end(); ++it) {
-        if (it->second == p) { sessions_.erase(it); return; }
+        auto sp = it->second.lock();
+        if (sp.get() == p) { sessions_.erase(it); return; }
     }
 }
 
