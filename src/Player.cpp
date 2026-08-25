@@ -46,6 +46,10 @@
 #include "level/format/Chunk.h"
 #include "nbt/tag/CompoundTag.h"
 #include "nbt/tag/Tag.h"
+#include "nbt/tag/ListTag.h"
+#include "nbt/tag/ByteTag.h"
+#include "nbt/tag/ShortTag.h"
+#include "nbt/tag/ByteArrayTag.h"
 
 #include <cmath>
 #include <algorithm>
@@ -110,65 +114,98 @@ bool Player::isWhitelisted() const {
 void Player::setWhitelisted(bool /*v*/) {}
 
 // ============================================================
-// Phase 9 — close (clean shutdown; idempotent)
+// Phase 9 — close (clean shutdown; idempotent + thread-safe)
+// ============================================================
+// close() may be called from:
+//   - The main server thread (player quit via /quit, server shutdown)
+//   - The RakLib network thread (session timeout, client disconnect)
+//
+// When called from the network thread, the main thread may be in the
+// middle of Server::tick() iterating players_ and calling onUpdate().
+// To avoid a use-after-free / segfault we:
+//   1. Use std::call_once so the cleanup body runs exactly once even
+//      if two threads race into close().
+//   2. Take a shared_from_this() reference at the top so the Player
+//      object stays alive for the duration of close(), even if the
+//      Server's shared_ptr is dropped mid-cleanup.
+//   3. Don't call Server::removePlayer() from here. Instead set
+//      pending_removal_=true and let Server::tick() (main thread)
+//      erase the player from players_ on the next tick — guaranteeing
+//      no other thread is iterating players_ when the destructor fires.
 // ============================================================
 void Player::close(const std::string& reason) {
-    bool expected = true;
-    if (!connected_.compare_exchange_strong(expected, false)) return;
+    // Keep this Player alive for the entire duration of close(), even
+    // if Server::tick() concurrently erases its shared_ptr from players_.
+    // Without this, the cleanup body below could touch freed memory.
+    auto self = shared_from_this();
 
-    utils::MainLogger::get().info("Closing player " + cfg_.username +
-        " (" + cfg_.ip + ":" + std::to_string(cfg_.port) + "): " + reason);
-
-    // 1. Save NBT to disk (if we ever loaded it).
-    if (named_tag_ && srv_ && !cfg_.username.empty()) {
-        // Update position fields before saving (mirrors PMMP Player::saveNBT).
-        // Without this, the saved data would be STALE (the position from when
-        // we last loaded NBT, not the current position when the player left).
-        mcp_compound_tag_set_double(named_tag_.get(), "PosX", pos_.x);
-        mcp_compound_tag_set_double(named_tag_.get(), "PosY", pos_.y);
-        mcp_compound_tag_set_double(named_tag_.get(), "PosZ", pos_.z);
-        mcp_compound_tag_set_float (named_tag_.get(), "Yaw",   yaw_);
-        mcp_compound_tag_set_float (named_tag_.get(), "Pitch", pitch_);
-        mcp_compound_tag_set_int   (named_tag_.get(), "playerGameType", cfg_.gamemode);
-        mcp_compound_tag_set_short (named_tag_.get(), "Health", (int16_t)health());
-        mcp_compound_tag_set_long  (named_tag_.get(), "lastPlayed",
-            (int64_t)mcp_utils_time_ms());
-        srv_->saveOfflinePlayerData(cfg_.username, named_tag_);
-    }
-
-    // 2. Tell other players to despawn this entity.
-    if (srv_) {
-        auto pk = std::make_shared<network::protocol::RemoveEntityPacket>();
-        pk->eid = runtimeId();
-        for (auto& other : srv_->playersSnapshot()) {
-            if (other.get() == this) continue;
-            other->sendPacket(pk);
+    std::call_once(close_once_, [this, &reason]() {
+        bool expected = true;
+        if (!connected_.compare_exchange_strong(expected, false)) {
+            // Already closed — just flag for removal (defensive).
+            pending_removal_.store(true, std::memory_order_release);
+            return;
         }
-    }
 
-    // 3. Broadcast quit message.
-    if (srv_ && !cfg_.username.empty()) {
-        srv_->broadcastMessage(cfg_.username + " left the game");
-    }
+        utils::MainLogger::get().info("Closing player " + cfg_.username +
+            " (" + cfg_.ip + ":" + std::to_string(cfg_.port) + "): " + reason);
 
-    // 4. Release chunks loaded for this player.
-    {
-        std::lock_guard<std::mutex> lk(chunks_mtx_);
-        used_chunks_.clear();
-    }
-    {
-        std::lock_guard<std::mutex> lk(queue_mtx_);
-        chunk_queue_.clear();
-    }
+        // 1. Save NBT + inventory to disk (if we ever loaded NBT).
+        //    saveData() also serializes the inventory as a ListTag
+        //    ("Inventory") so items survive across sessions.
+        if (named_tag_ && srv_ && !cfg_.username.empty()) {
+            saveData();
+        }
 
-    // 5. Tear down the RakNet session.
-    if (adv_iface_ && !cfg_.ip.empty()) {
-        adv_iface_->closeSession(cfg_.ip, cfg_.port, reason);
-    }
+        // 2. Tell other players to despawn this entity.
+        try {
+            if (srv_) {
+                auto pk = std::make_shared<network::protocol::RemoveEntityPacket>();
+                pk->eid = runtimeId();
+                for (auto& other : srv_->playersSnapshot()) {
+                    if (!other || other.get() == this) continue;
+                    if (other->isPendingRemoval()) continue;  // skip tearing-down peers
+                    other->sendPacket(pk);
+                }
+            }
+        } catch (...) {
+            // Defensive: a peer's sendPacket() must never crash our close().
+        }
 
-    // 6. Unregister from Server roster (this drops the last shared_ptr
-    // if the Server held it — so we MUST not touch `this` after this).
-    if (srv_) srv_->removePlayer(this);
+        // 3. Broadcast quit message.
+        try {
+            if (srv_ && !cfg_.username.empty()) {
+                srv_->broadcastMessage(cfg_.username + " left the game");
+            }
+        } catch (...) {}
+
+        // 4. Release chunks loaded for this player.
+        {
+            std::lock_guard<std::mutex> lk(chunks_mtx_);
+            used_chunks_.clear();
+        }
+        {
+            std::lock_guard<std::mutex> lk(queue_mtx_);
+            chunk_queue_.clear();
+        }
+
+        // 5. Tear down the RakNet session. closeSession() is thread-safe
+        //    (it enqueues a disconnect onto the RakLib thread).
+        try {
+            if (adv_iface_ && !cfg_.ip.empty()) {
+                adv_iface_->closeSession(cfg_.ip, cfg_.port, reason);
+            }
+        } catch (...) {}
+
+        // 6. Flag for removal — Server::tick() will erase this Player
+        //    from players_ on the next tick (main thread). We MUST NOT
+        //    call srv_->removePlayer(this) here because:
+        //    (a) we may be on the network thread, and erasing from
+        //        players_ while the main thread iterates it is UB;
+        //    (b) erasing the last shared_ptr would destroy `this`
+        //        while we're still inside close() (use-after-free).
+        pending_removal_.store(true, std::memory_order_release);
+    });
 }
 
 // ============================================================
@@ -250,11 +287,23 @@ void Player::setGamemode(int gm) {
     int new_gm = gm & 0x03;
     bool was_creative = (cfg_.gamemode & 1) != 0;
     bool is_creative  = (new_gm        & 1) != 0;
+    // Nukkit DOES NOT clear the inventory on gamemode change — items
+    // persist across survival↔creative transitions so the player never
+    // loses their stuff. (Only the creative inventory UI is sent.)
     cfg_.gamemode = new_gm;
     // Re-send creative inventory when creative state changes (PMMP
     // Player.php:1461 sends it on every gamemode change).
     if (was_creative != is_creative || new_gm == 3) {
         sendCreativeInventory();
+    }
+    // Re-sync the player's own inventory to the client so any items
+    // carried over from the previous gamemode are visible immediately.
+    sendInventory();
+    // Persist immediately so the gamemode survives a crash/reboot.
+    // Without this, a server crash right after /gamemode would lose
+    // the change and the player would rejoin in the old gamemode.
+    if (named_tag_ && srv_ && !cfg_.username.empty()) {
+        saveData();
     }
 }
 
@@ -497,6 +546,62 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
                 }
                 // else: leave the world-spawn position set in the ctor.
             }
+
+            // --- Load inventory + armor from NBT ---
+            // Mirrors cn.nukkit.Player.loadNBT(): iterate the "Inventory"
+            // ListTag and route each entry by Slot number. Main inventory
+            // uses slots 0..35 (hotbar is 0..8), armor uses 100..103.
+            const mcp_tag_t* inv_tag =
+                mcp_compound_tag_get(named_tag_.get(), "Inventory");
+            if (inv_tag && mcp_tag_get_type(inv_tag) == MCP_TAG_LIST) {
+                const mcp_list_tag_t* inv_list =
+                    (const mcp_list_tag_t*)inv_tag;
+                for (size_t i = 0; i < inv_list->count; ++i) {
+                    const mcp_tag_t* entry = mcp_list_tag_get(inv_tag, i);
+                    if (!entry ||
+                        mcp_tag_get_type(entry) != MCP_TAG_COMPOUND) continue;
+                    int8_t  nbt_slot = mcp_compound_tag_get_byte(
+                        entry, "Slot", -1);
+                    int16_t id       = mcp_compound_tag_get_short(
+                        entry, "id", 0);
+                    int8_t  count    = mcp_compound_tag_get_byte(
+                        entry, "Count", 1);
+                    int16_t damage   = mcp_compound_tag_get_short(
+                        entry, "Damage", 0);
+                    if (id == 0 || count <= 0) continue;
+
+                    int dest_slot = -1;
+                    if (nbt_slot >= 0 && nbt_slot < 36) {
+                        // Main inventory + hotbar (slots 0..35).
+                        dest_slot = nbt_slot;
+                    } else if (nbt_slot >= 100 && nbt_slot <= 103) {
+                        // Armor: 100=helmet, 101=chest, 102=legs, 103=boots.
+                        dest_slot = inventory::PlayerInventory::ARMOR_OFFSET
+                                  + (nbt_slot - 100);
+                    } else if (nbt_slot >= 36 && nbt_slot < 45) {
+                        // Legacy AtomikPE layout (armor at 36..39).
+                        dest_slot = nbt_slot;
+                    }
+                    if (dest_slot >= 0 &&
+                        dest_slot < inventory::PlayerInventory::SIZE) {
+                        item::ItemStack it;
+                        it.id    = (uint16_t)id;
+                        it.meta  = (uint8_t)damage;
+                        it.count = count;
+                        inv_->setItem(dest_slot, it);
+                    }
+                }
+                utils::MainLogger::get().info("Loaded inventory for " +
+                    cfg_.username + " (" + std::to_string(inv_list->count) +
+                    " slots)");
+            }
+
+            // Restore held hotbar slot.
+            int32_t held = mcp_compound_tag_get_int(
+                named_tag_.get(), "SelectedItemSlot", -1);
+            if (held >= 0 && held <= 8) {
+                inv_->setHeldSlot(held);
+            }
         }
     }
 
@@ -725,6 +830,12 @@ void Player::doFirstSpawn() {
     // Send the creative-inventory contents so the player has items to grab
     // in creative mode (PMMP Player.php:2301 sends this right after spawn).
     sendCreativeInventory();
+
+    // Send the player's own inventory + armor loaded from player.dat.
+    // Without this, items loaded from disk won't appear in the client UI
+    // even though they're in our PlayerInventory — the player would see
+    // an empty inventory and think nothing was saved.
+    sendInventory();
 
     // Broadcast a PlayerListPacket (ADD) with all currently-online players.
     if (srv_) {
@@ -1177,28 +1288,120 @@ void Player::sendCreativeInventory() {
 }
 
 // ============================================================
+// sendInventory — push the player's main inventory + armor to the client.
+// Called on doFirstSpawn() so the client renders the items loaded from
+// player.dat. Mirrors Nukkit's Player.sendInventory() + Player.sendArmor().
+// ============================================================
+void Player::sendInventory() {
+    if (!inv_) return;
+
+    // Main inventory (windowid 0x00): 45 slots (36 main + 9 hotbar).
+    // The client expects exactly 45 slots; empty slots are ItemStack{0}.
+    {
+        auto pk = std::make_shared<network::protocol::ContainerSetContentPacket>();
+        pk->windowid = network::protocol::ContainerSetContentPacket::SPECIAL_INVENTORY;
+        pk->slots.reserve(inventory::PlayerInventory::SIZE);
+        for (int i = 0; i < inventory::PlayerInventory::SIZE; ++i) {
+            pk->slots.push_back(inv_->getItem(i));
+        }
+        // Hotbar link indices — for protocol 84 the client wants the
+        // 9 hotbar slot indices in order. Without this the hotbar may
+        // appear empty on join even though the items are in slots 0..8.
+        for (int h = 0; h < 9; ++h) {
+            pk->hotbar.push_back(h);
+        }
+        sendPacket(pk);
+    }
+
+    // Armor (windowid 0x78): 4 slots (helmet, chest, legs, boots).
+    {
+        auto pk = std::make_shared<network::protocol::ContainerSetContentPacket>();
+        pk->windowid = network::protocol::ContainerSetContentPacket::SPECIAL_ARMOR;
+        pk->slots.push_back(inv_->getHelmet());
+        pk->slots.push_back(inv_->getChestplate());
+        pk->slots.push_back(inv_->getLeggings());
+        pk->slots.push_back(inv_->getBoots());
+        sendPacket(pk);
+    }
+
+    // Hotbar (windowid 0x7a): 9 slots mirroring the hotbar portion of
+    // the main inventory (slots 0..8). Nukkit sends this too so the
+    // client immediately highlights the correct hotbar slot.
+    {
+        auto pk = std::make_shared<network::protocol::ContainerSetContentPacket>();
+        pk->windowid = network::protocol::ContainerSetContentPacket::SPECIAL_HOTBAR;
+        for (int h = 0; h < 9; ++h) {
+            pk->slots.push_back(inv_->getItem(h));
+        }
+        sendPacket(pk);
+    }
+}
+
+// ============================================================
 // Save this player's NBT + inventory to disk (PMMP Player::saveNBT)
+// ============================================================
+// Mirrors cn.nukkit.Player.saveNBT(): the NBT root contains a flat
+// "Inventory" ListTag<CompoundTag> with one entry per non-empty slot.
+// Each entry is { Slot:Byte, id:Short, Count:Byte, Damage:Short }.
+// Armor uses the same list with Slot in [100..103] (helmet..boots).
+// On load we iterate the list and route by Slot range — mirroring
+// Nukkit's Player.loadNBT() exactly so worlds are interchangeable.
 // ============================================================
 void Player::saveData() {
     if (!srv_ || cfg_.username.empty()) return;
     if (!named_tag_) {
-        // Construct a fresh NBT root if none exists.
         named_tag_ = std::shared_ptr<::mcp_tag>(
             mcp_compound_tag_new(),
             [](::mcp_tag* t) { if (t) mcp_tag_destroy(t); });
     }
-    // Persist position, rotation, gamemode, health.
     ::mcp_tag* root = named_tag_.get();
-    if (root) {
-        mcp_compound_tag_set_double(root, "Pos_x",  pos_.x);
-        mcp_compound_tag_set_double(root, "Pos_y",  pos_.y);
-        mcp_compound_tag_set_double(root, "Pos_z",  pos_.z);
-        mcp_compound_tag_set_float (root, "Yaw",    yaw_);
-        mcp_compound_tag_set_float (root, "Pitch",  pitch_);
-        mcp_compound_tag_set_int   (root, "playerGameType", cfg_.gamemode);
-        mcp_compound_tag_set_short (root, "Health",  (int16_t)health());
-        mcp_compound_tag_set_long  (root, "RuntimeId", runtimeId());
+    if (!root) return;
+
+    // --- Position / rotation / stats ---
+    mcp_compound_tag_set_double(root, "PosX",  pos_.x);
+    mcp_compound_tag_set_double(root, "PosY",  pos_.y);
+    mcp_compound_tag_set_double(root, "PosZ",  pos_.z);
+    mcp_compound_tag_set_float (root, "Yaw",    yaw_);
+    mcp_compound_tag_set_float (root, "Pitch",  pitch_);
+    mcp_compound_tag_set_int   (root, "playerGameType", cfg_.gamemode);
+    mcp_compound_tag_set_short (root, "Health",  (int16_t)health());
+    mcp_compound_tag_set_short (root, "MaxHealth", (int16_t)maxHealth());
+    mcp_compound_tag_set_short (root, "Hunger",  (int16_t)foodLevel());
+    mcp_compound_tag_set_short (root, "Air",     300);
+    mcp_compound_tag_set_long  (root, "RuntimeId", runtimeId());
+    mcp_compound_tag_set_long  (root, "lastPlayed",
+        (int64_t)mcp_utils_time_ms());
+
+    // --- Inventory + Armor as a single ListTag<CompoundTag> ---
+    // Nukkit stores ALL slots (main + armor) in one "Inventory" list,
+    // distinguishing them by Slot number. We mirror that exactly.
+    mcp_tag_t* inv_list = mcp_list_tag_new_named("Inventory", MCP_TAG_COMPOUND);
+    if (inv_list && inv_) {
+        // Main inventory + hotbar: slots 0..44 (45 total).
+        for (int slot = 0; slot < inventory::PlayerInventory::SIZE; ++slot) {
+            auto it = inv_->getItem(slot);
+            if (it.isEmpty()) continue;   // skip air / empty
+            // Armor is at slots 36..39 in PlayerInventory; map to 100..103
+            // so the on-disk layout matches Nukkit's convention.
+            int nbt_slot = slot;
+            if (slot >= inventory::PlayerInventory::ARMOR_OFFSET &&
+                slot <  inventory::PlayerInventory::ARMOR_OFFSET + 4) {
+                nbt_slot = 100 + (slot - inventory::PlayerInventory::ARMOR_OFFSET);
+            }
+            mcp_tag_t* entry = mcp_compound_tag_new_named("");
+            mcp_compound_tag_set_byte (entry, "Slot",   (int8_t)nbt_slot);
+            mcp_compound_tag_set_short(entry, "id",     (int16_t)it.id);
+            mcp_compound_tag_set_byte (entry, "Count",  (int8_t)it.count);
+            mcp_compound_tag_set_short(entry, "Damage", (int16_t)it.meta);
+            mcp_list_tag_append(inv_list, entry);
+        }
+        // Held slot index — Nukkit persists this as "SelectedItemSlot"
+        // so the hotbar cursor survives across sessions.
+        mcp_compound_tag_set_int(root, "SelectedItemSlot",
+            inv_->heldSlot());
     }
+    mcp_compound_tag_set(root, "Inventory", inv_list);
+
     srv_->saveOfflinePlayerData(cfg_.username, named_tag_);
     if (srv_->advancedLog()) {
         utils::MainLogger::get().info("[SAVE] Player " + cfg_.username + " data saved.");

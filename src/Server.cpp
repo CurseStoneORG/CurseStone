@@ -326,14 +326,34 @@ void Server::runTickLoop() {
 
 void Server::tick() {
     ++currentTick_;
+
+    // --- Reap players flagged for removal by Player::close() ---
+    // Player::close() runs on the network thread (timeout, client disconnect)
+    // and sets pending_removal_=true instead of calling removePlayer() to
+    // avoid destroying the shared_ptr while this thread iterates players_.
+    // Here (main thread) we safely erase them now that no iteration is in
+    // flight. This is the ONLY place players_ shrinks during normal operation.
+    {
+        std::lock_guard<std::mutex> lk(players_mtx_);
+        players_.erase(
+            std::remove_if(players_.begin(), players_.end(),
+                [](const std::shared_ptr<Player>& p) {
+                    return !p || p->isPendingRemoval();
+                }),
+            players_.end());
+    }
+
     if (scheduler::ServerScheduler::get().size() > 0)
         scheduler::ServerScheduler::get().tick(currentTick_);
     if (level_) level_->tick(currentTick_);
     // Update each player (movement, chunk streaming, etc.) via snapshot
-    // so we don't race with add/remove on the network thread.
+    // so we don't race with add/remove on the network thread. Skip any
+    // player flagged for removal — their close() has already run.
     auto snap = playersSnapshot();
     for (auto& p : snap) {
-        if (p) p->onUpdate(currentTick_);
+        if (!p) continue;
+        if (p->isPendingRemoval()) continue;   // being torn down
+        p->onUpdate(currentTick_);
     }
     // Network tick (updates avg packet rate, etc.)
     if (network_) network_->tick();
@@ -389,11 +409,17 @@ void Server::saveAll() {
     // 1. Save every online player's NBT + inventory FIRST, so any
     //    chunk-modifications they triggered (block place/break) get
     //    marked dirty on the chunks before the level save runs.
+    //    We skip players flagged for removal (their close() already
+    //    ran saveData()).
     auto snap = playersSnapshot();
+    int saved_players = 0;
     for (auto& p : snap) {
-        if (p) p->saveData();
+        if (!p) continue;
+        if (p->isPendingRemoval()) continue;  // already saved in close()
+        p->saveData();
+        ++saved_players;
     }
-    utils::MainLogger::get().info("[SAVE] " + std::to_string(snap.size()) +
+    utils::MainLogger::get().info("[SAVE] " + std::to_string(saved_players) +
         " player(s) saved.");
 
     // 2. Save the default level — flushes dirty chunks to .mca files
