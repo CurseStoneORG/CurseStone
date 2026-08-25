@@ -111,65 +111,96 @@ bool Player::isWhitelisted() const {
 void Player::setWhitelisted(bool /*v*/) {}
 
 // ============================================================
-// Phase 9 — close (clean shutdown; idempotent)
+// Phase 9 — close (clean shutdown; idempotent + thread-safe)
+// ============================================================
+// close() may be called from:
+//   - The main server thread (player quit via /quit, server shutdown)
+//   - The RakLib network thread (session timeout, client disconnect)
+//
+// To avoid use-after-free / segfault we:
+//   1. Use std::call_once so the cleanup body runs exactly once even
+//      if two threads race into close().
+//   2. Take a shared_from_this() reference at the top so the Player
+//      object stays alive for the duration of close(), even if the
+//      Server's shared_ptr is dropped mid-cleanup.
+//   3. Don't call Server::removePlayer() from here. Instead set
+//      pending_removal_=true and let Server::tick() (main thread)
+//      erase the player from players_ on the next tick — guaranteeing
+//      no other thread is iterating players_ when the destructor fires.
 // ============================================================
 void Player::close(const std::string& reason) {
-    bool expected = true;
-    if (!connected_.compare_exchange_strong(expected, false)) return;
+    // Keep this Player alive for the entire duration of close(), even
+    // if Server::tick() concurrently erases its shared_ptr from players_.
+    // Without this, the cleanup body below could touch freed memory.
+    auto self = shared_from_this();
 
-    utils::MainLogger::get().info("Closing player " + cfg_.username +
-        " (" + cfg_.ip + ":" + std::to_string(cfg_.port) + "): " + reason);
-
-    // 1. Save NBT to disk (if we ever loaded it).
-    if (named_tag_ && srv_ && !cfg_.username.empty()) {
-        // Update position fields before saving (mirrors PMMP Player::saveNBT).
-        // Without this, the saved data would be STALE (the position from when
-        // we last loaded NBT, not the current position when the player left).
-        mcp_compound_tag_set_double(named_tag_.get(), "PosX", pos_.x);
-        mcp_compound_tag_set_double(named_tag_.get(), "PosY", pos_.y);
-        mcp_compound_tag_set_double(named_tag_.get(), "PosZ", pos_.z);
-        mcp_compound_tag_set_float (named_tag_.get(), "Yaw",   yaw_);
-        mcp_compound_tag_set_float (named_tag_.get(), "Pitch", pitch_);
-        mcp_compound_tag_set_int   (named_tag_.get(), "playerGameType", cfg_.gamemode);
-        mcp_compound_tag_set_short (named_tag_.get(), "Health", (int16_t)health());
-        mcp_compound_tag_set_long  (named_tag_.get(), "lastPlayed",
-            (int64_t)mcp_utils_time_ms());
-        srv_->saveOfflinePlayerData(cfg_.username, named_tag_);
-    }
-
-    // 2. Tell other players to despawn this entity.
-    if (srv_) {
-        auto pk = std::make_shared<network::protocol::RemoveEntityPacket>();
-        pk->eid = runtimeId();
-        for (auto& other : srv_->playersSnapshot()) {
-            if (other.get() == this) continue;
-            other->sendPacket(pk);
+    std::call_once(close_once_, [this, &reason]() {
+        bool expected = true;
+        if (!connected_.compare_exchange_strong(expected, false)) {
+            // Already closed — just flag for removal (defensive).
+            pending_removal_.store(true, std::memory_order_release);
+            return;
         }
-    }
 
-    // 3. Broadcast quit message.
-    if (srv_ && !cfg_.username.empty()) {
-        srv_->broadcastMessage(cfg_.username + " left the game");
-    }
+        utils::MainLogger::get().info("Closing player " + cfg_.username +
+            " (" + cfg_.ip + ":" + std::to_string(cfg_.port) + "): " + reason);
 
-    // 4. Release chunks loaded for this player.
-    {
-        std::lock_guard<std::mutex> lk(chunks_mtx_);
-        used_chunks_.clear();
-    }
-    {
-        std::lock_guard<std::mutex> lk(queue_mtx_);
-        chunk_queue_.clear();
-    }
+        // 1. Save NBT + inventory to disk (if we ever loaded NBT).
+        try {
+            if (named_tag_ && srv_ && !cfg_.username.empty()) {
+                saveData();
+            }
+        } catch (...) {
+            // Defensive: a saveData() failure must never crash close().
+        }
 
-    // 5. Tear down the RakNet session.
-    if (adv_iface_ && !cfg_.ip.empty()) {
-        adv_iface_->closeSession(cfg_.ip, cfg_.port, reason);
-    }
+        // 2. Tell other players to despawn this entity.
+        try {
+            if (srv_) {
+                auto pk = std::make_shared<network::protocol::RemoveEntityPacket>();
+                pk->eid = runtimeId();
+                for (auto& other : srv_->playersSnapshot()) {
+                    if (!other || other.get() == this) continue;
+                    if (other->isPendingRemoval()) continue;  // skip tearing-down peers
+                    other->sendPacket(pk);
+                }
+            }
+        } catch (...) {}
 
-    // 6. Unregister from Server roster (this drops the last shared_ptr
-    // if the Server held it — so we MUST not touch `this` after this).
-    if (srv_) srv_->removePlayer(this);
+        // 3. Broadcast quit message.
+        try {
+            if (srv_ && !cfg_.username.empty()) {
+                srv_->broadcastMessage(cfg_.username + " left the game");
+            }
+        } catch (...) {}
+
+        // 4. Release chunks loaded for this player.
+        {
+            std::lock_guard<std::mutex> lk(chunks_mtx_);
+            used_chunks_.clear();
+        }
+        {
+            std::lock_guard<std::mutex> lk(queue_mtx_);
+            chunk_queue_.clear();
+        }
+
+        // 5. Tear down the RakNet session. closeSession() is thread-safe
+        //    (it enqueues a disconnect onto the RakLib thread).
+        try {
+            if (adv_iface_ && !cfg_.ip.empty()) {
+                adv_iface_->closeSession(cfg_.ip, cfg_.port, reason);
+            }
+        } catch (...) {}
+
+        // 6. Flag for removal — Server::tick() will erase this Player
+        //    from players_ on the next tick (main thread). We MUST NOT
+        //    call srv_->removePlayer(this) here because:
+        //    (a) we may be on the network thread, and erasing from
+        //        players_ while the main thread iterates it is UB;
+        //    (b) erasing the last shared_ptr would destroy `this`
+        //        while we're still inside close() (use-after-free).
+        pending_removal_.store(true, std::memory_order_release);
+    });
 }
 
 // ============================================================
@@ -1432,47 +1463,56 @@ void Player::onUpdate(uint64_t current_tick) {
             }
             if (!can_pickup) continue;  // inventory full — item stays on ground
 
-            // Send TakeItemEntityPacket — Nukkit broadcasts it to viewers
-            // AND to the picking player (with entityId=0 so the client
-            // locally hides the entity without respawning it).
-            auto pk = std::make_shared<network::protocol::TakeItemEntityPacket>();
-            pk->target   = di->eid;
-            pk->entityId = runtimeId();
-            // Broadcast to players tracking this chunk.
+            // Add the item to the inventory FIRST. addItem returns leftover
+            // (anything that didn't fit). If leftover.count <= 0 the whole
+            // stack was absorbed.
+            atomikpe::item::ItemStack leftover = inv_->addItem(pickup);
+            int absorbed = pickup.count - (leftover.count > 0 ? leftover.count : 0);
+            if (absorbed <= 0) {
+                // Nothing absorbed — don't send pickup animation, don't
+                // remove the entity. Item stays on ground.
+                continue;
+            }
+
+            // --- Send TakeItemEntityPacket (mirrors Nukkit exactly) ---
+            // Nukkit: Server.broadcastPacket(entity.getViewers().values(), pk)
+            // — viewers = players OTHER THAN the picker who can see the item.
+            // The picker is NOT in viewers, so they don't get this packet.
+            // Then a SEPARATE packet with entityId=0 is sent ONLY to the
+            // picker, which tells their client to remove the entity locally.
+            auto pk_viewer = std::make_shared<network::protocol::TakeItemEntityPacket>();
+            pk_viewer->target   = di->eid;
+            pk_viewer->entityId = runtimeId();
             int32_t pk_cx = (int32_t)di->x >> 4;
             int32_t pk_cz = (int32_t)di->z >> 4;
             for (auto& other : srv_->playersSnapshot()) {
                 if (!other) continue;
+                if (other.get() == this) continue;  // SKIP picker — Nukkit excludes them
+                if (other->isPendingRemoval()) continue;
                 if (!other->isTrackingChunk(pk_cx, pk_cz)) continue;
-                other->sendPacket(pk);
+                other->sendPacket(pk_viewer);
             }
-            // Also send to the picker with entityId=0 (Nukkit does this so
-            // the picker's client removes the entity locally).
-            auto pk2 = std::make_shared<network::protocol::TakeItemEntityPacket>();
-            pk2->target   = di->eid;
-            pk2->entityId = 0;
-            sendPacket(pk2);
+            // Picker-only packet: entityId=0 tells the client to hide the
+            // entity without playing the "fly toward player" animation.
+            auto pk_picker = std::make_shared<network::protocol::TakeItemEntityPacket>();
+            pk_picker->target   = di->eid;
+            pk_picker->entityId = 0;
+            sendPacket(pk_picker);
 
-            // Add the item to the inventory. addItem returns leftover
-            // (anything that didn't fit). If leftover.count <= 0 the
-            // whole stack was absorbed.
-            atomikpe::item::ItemStack leftover = inv_->addItem(pickup);
-            int absorbed = pickup.count - (leftover.count > 0 ? leftover.count : 0);
-            if (absorbed <= 0) {
-                // Nothing absorbed — don't remove the entity.
-                continue;
-            }
-            // If there's leftover, we partially picked up — update the
-            // dropped item to reflect the remaining count. Mirrors
-            // Nukkit's behavior of shrinking the EntityItem's stack.
+            // --- Mark the entity for removal ---
+            // Nukkit: entity.kill() marks it for deletion and the level
+            // sweep removes it next tick. We do the same: mark taken=true
+            // and Level::tick() will erase it from dropped_items_.
+            // CRITICAL: this must happen AFTER the packets are sent, so
+            // the eid is still valid when clients receive the packet.
             if (leftover.count > 0) {
+                // Partial pickup — update the dropped item's count to the
+                // leftover. The entity STAYS on the ground with the reduced
+                // count. Next tick the player (or another player) can pick
+                // up the rest.
                 di->count = (uint8_t)leftover.count;
-                // Don't mark as taken — it stays on the ground with the
-                // remaining count. Client doesn't get an update packet
-                // here; the visual stack will look "old" but that's a
-                // cosmetic issue. The item is still pickable next tick.
             } else {
-                // Fully picked up — mark for removal.
+                // Full pickup — mark for removal.
                 lvl->removeDroppedItem(di->eid);
             }
 
