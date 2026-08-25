@@ -17,7 +17,7 @@
 // request. When the build finds leveldb (via cmake/FindLevelDB.cmake
 // and ATOMIKPE_LEVELDB=1), a real backend lands in Phase 12+.
 //
-// Design rationale: keeping the API identical to mcacpp/McaCpp means
+// Design rationale: keeping the API identical to anvil/Anvil means
 // Level::load() can pick a provider by name without format-specific
 // special cases; the stub is the no-op implementation of that API.
 #pragma once
@@ -50,6 +50,7 @@ public:
                      listChunks() const override;
 
     int64_t          getSeed()      const override { return seed_; }
+    void             setSeed(int64_t s) override { seed_ = s; }
     int64_t          getCurrentTime() const override { return time_; }
     void             setCurrentTime(int64_t t) override { time_ = t; }
     math::Vector3    getSpawn() const override { return spawn_; }
@@ -66,7 +67,7 @@ public:
     static std::vector<uint8_t> chunkKey(int32_t cx, int32_t cz, uint8_t type);
 
     // Whether the on-disk LevelDB library was linked in. False in
-    // Phase 8 (stub) — callers should fall back to mcacpp.
+    // Stub — callers should fall back to anvil.
     static bool     hasLevelDB();
 
 private:

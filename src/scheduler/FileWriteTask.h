@@ -1,5 +1,5 @@
 // FileWriteTask — AsyncTask that writes a buffer to disk. Used by
-// ChunkManager to flush chunks to mcacpp region files.
+// ChunkManager to flush chunks to anvil region files.
 #pragma once
 #include "Task.h"
 #include <string>

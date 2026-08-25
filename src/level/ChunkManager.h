@@ -27,7 +27,7 @@ public:
     void markDirty(int32_t x, int32_t z);
     // Flushes dirty chunks to the provider. Called by Level::save().
     int flushDirty();
-    // Sets the persistent provider (mcacpp/leveldb/mca).
+    // Sets the persistent provider (anvil/leveldb).
     void setProvider(std::shared_ptr<format::LevelProvider> p) { provider_ = std::move(p); }
     std::shared_ptr<format::LevelProvider> provider() const { return provider_; }
     // Number of currently-cached chunks.

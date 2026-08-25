@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // ChunkAdapter — C++ FullChunk wrapper around the pure-C mcp_chunk_t.
 //
-// All four storage formats (mcacpp / leveldb / mca / mcapm) use the
-// same in-memory chunk struct (`mcp_chunk_t` from Chunk.h). This
-// adapter exposes that struct through the C++ `FullChunk` interface
-// so the Level / chunk-send pipeline / network serializer can treat
-// chunks polymorphically without knowing which on-disk format
-// produced them.
+// All storage formats (anvil / leveldb) use the same in-memory chunk
+// struct (`mcp_chunk_t` from Chunk.h). This adapter exposes that struct
+// through the C++ `FullChunk` interface so the Level / chunk-send
+// pipeline / network serializer can treat chunks polymorphically
+// without knowing which on-disk format produced them.
 //
 // Ownership: the adapter owns its `mcp_chunk_t*` and frees it on
 // destruction. If you want to hand the buffer to C code without

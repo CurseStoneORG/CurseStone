@@ -24,7 +24,7 @@ namespace level::generator { class Generator; }
 namespace atomikpe::level {
 struct LevelConfig {
     std::string name;
-    std::string format   = "atmkma";  // atmkma (default) | leveldb | mca | mcapm
+    std::string format   = "anvil";   // anvil (Nukkit Anvil, default) | leveldb
     std::string generator = "normal"; // normal | flat | nether | void
     int64_t seed = 0;
     int32_t time = 0;
@@ -56,7 +56,7 @@ public:
     void tick(uint64_t current_tick);
     // Generator accessor for AsyncPool workers.
     std::shared_ptr<generator::Generator> generator() const { return generator_; }
-    // The active LevelProvider (AtmkMca by default).
+    // The active LevelProvider (Anvil by default).
     std::shared_ptr<format::LevelProvider> provider() const { return provider_; }
     // ChunkLoaders (players) registered to receive chunk updates.
     void registerLoader(uint64_t loader_id, class ChunkLoader* loader);
