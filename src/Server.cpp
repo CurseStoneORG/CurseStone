@@ -309,6 +309,19 @@ void Server::runTickLoop() {
         }
     }
     utils::MainLogger::get().info("Tick loop exited.");
+
+    // ====================================================================
+    // Cleanup — runs on the MAIN thread, AFTER the tick loop exits.
+    // This is critical: /stop is dispatched from the CommandReader
+    // thread, so doing saveAll() inside Server::shutdown() would race
+    // with the main thread destroying Server members (mutexes, level_,
+    // players_). By deferring all cleanup to here, we guarantee that
+    // saveAll() runs single-threaded before any destructor fires.
+    // ====================================================================
+    if (network_) network_->tick();   // graceful RakLib close
+    saveAll();
+    if (console_reader_) console_reader_->stop();
+    utils::MainLogger::get().info("Shutdown complete.");
 }
 
 void Server::tick() {
@@ -333,13 +346,14 @@ void Server::tick() {
 }
 
 void Server::shutdown() {
+    // Signal the tick loop to exit. The actual cleanup (saveAll,
+    // console_reader stop) is deferred to AFTER the tick loop exits
+    // in runTickLoop(), because /stop may be dispatched from the
+    // CommandReader thread. Doing saveAll() here would race with the
+    // main thread's destructors (mutexes, level_, players_) — causing
+    // "pthread_mutex_lock called on a destroyed mutex" and lost chunks.
     running_.store(false, std::memory_order_relaxed);
     utils::MainLogger::get().info("Server shutting down...");
-    if (network_) network_->tick();   // graceful close
-    // Final save: flush level chunks + every player's NBT.
-    saveAll();
-    if (console_reader_) console_reader_->stop();
-    utils::MainLogger::get().info("Shutdown complete.");
 }
 
 Player* Server::getPlayer(const std::string& name) const {
@@ -372,18 +386,23 @@ int64_t Server::allocateEid() {
     return next_eid_.fetch_add(1, std::memory_order_relaxed);
 }
 void Server::saveAll() {
-    // Save the default level (flushes dirty chunks to disk).
-    if (level_) {
-        level_->save();
-        utils::MainLogger::get().info("[SAVE] Level saved.");
-    }
-    // Save every online player's NBT + inventory.
+    // 1. Save every online player's NBT + inventory FIRST, so any
+    //    chunk-modifications they triggered (block place/break) get
+    //    marked dirty on the chunks before the level save runs.
     auto snap = playersSnapshot();
     for (auto& p : snap) {
         if (p) p->saveData();
     }
     utils::MainLogger::get().info("[SAVE] " + std::to_string(snap.size()) +
         " player(s) saved.");
+
+    // 2. Save the default level — flushes dirty chunks to .mca files
+    //    AND writes level.dat (seed/spawn/time) via the provider.
+    if (level_) {
+        int saved = level_->save();
+        utils::MainLogger::get().info("[SAVE] Level saved (" +
+            std::to_string(saved) + " chunks flushed).");
+    }
 }
 
 permission::BanList& Server::getNameBans() {

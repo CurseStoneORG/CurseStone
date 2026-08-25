@@ -103,15 +103,14 @@ int Level::save() {
     // Delegate to ChunkManager which calls provider_->saveChunk() for each
     // dirty chunk. The provider writes the actual .mca region files.
     int saved = chunks_.flushDirty();
-    // Also persist world metadata (level.dat).
+    // Persist world metadata (level.dat) so seed/spawn/time survive
+    // the next restart — mirroring Nukkit's Level.save() which calls
+    // provider.saveLevelData() after flushing chunks.
     if (provider_) {
         provider_->setSpawn(math::Vector3{
-            (double)cfg_.spawn_x, (double)cfg_.spawn_y, (double)cfg_.spawn_z});
+            (double)spawn_.x, (double)spawn_.y, (double)spawn_.z});
         provider_->setCurrentTime(cfg_.time);
-        // The provider's shutdown() / saveMetadata() handles level.dat
-        // persistence. For periodic saves, we trigger an explicit
-        // saveMetadata() via shutdown()+init() round-trip if needed;
-        // the Anvil provider writes level.dat on shutdown.
+        provider_->saveLevelData();
     }
     return saved;
 }
