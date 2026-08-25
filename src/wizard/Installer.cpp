@@ -58,7 +58,7 @@ bool Installer::runWizard() {
     cfg.setBool("server.online-mode", false);
     cfg.setInt("server.view-distance", 8);
     cfg.setString("level.name", level_name);
-    cfg.setString("level.format", "mcacpp");
+    cfg.setString("level.format", "anvil");
     cfg.setString("level.generator", level_type);
     cfg.setInt("level.seed", 0);
 
@@ -91,7 +91,7 @@ server:
 
 level:
   name: "world"
-  format: "mcacpp"
+  format: "anvil"
   generator: "normal"
   seed: 0
 

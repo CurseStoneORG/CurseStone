@@ -21,7 +21,7 @@ server:
 
 level:
   name: "world"
-  format: "atmkma"    # atmkma (default AtomikPE format) | mcanvil | mca | mcapm
+  format: "anvil"     # anvil (Nukkit Anvil, default) | leveldb
   generator: "normal"  # normal | flat | nether | void
   seed: 0              # 0 = random
 

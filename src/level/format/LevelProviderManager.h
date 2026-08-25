@@ -2,15 +2,15 @@
 // LevelProviderManager — registry of on-disk world formats. C++.
 //
 // PocketMine's LevelProviderManager is a static registry that maps a
-// format identifier string (e.g. "mcacpp", "leveldb", "mca", "mcapm")
-// to a concrete LevelProvider class. We mirror that pattern, but the
-// C++ version is a non-static class so test code can inject a fresh
-// registry per test.
+// format identifier string (e.g. "anvil", "leveldb") to a concrete
+// LevelProvider class. We mirror that pattern, but the C++ version is
+// a non-static class so test code can inject a fresh registry per
+// test.
 //
 // Concrete providers register themselves with the manager at process
-// startup (see mcacpp/McaCpp.cpp's static initializer). The Level
-// loader then asks the manager for a provider by format name; if
-// absent it falls back to the default ("mcacpp").
+// startup (see anvil/Anvil.cpp's static initializer). The Level loader
+// then asks the manager for a provider by format name; if absent it
+// falls back to the default ("anvil").
 #pragma once
 
 #include <functional>

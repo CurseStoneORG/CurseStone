@@ -56,6 +56,10 @@ Level::Level(LevelConfig cfg) : cfg_(std::move(cfg)) {
         // Read metadata that the provider may have loaded (seed, spawn).
         if (provider->getSeed() != 0) {
             cfg_.seed = provider->getSeed();
+        } else {
+            // World is brand-new: push the runtime-generated seed down
+            // to the provider so it gets persisted in level.dat.
+            provider->setSeed(cfg_.seed);
         }
         if (provider->getSpawn().y > 0) {
             spawn_ = mcp_v3(provider->getSpawn().x + 0.5,
@@ -97,7 +101,7 @@ void Level::setBlock(int32_t x, int32_t y, int32_t z, uint8_t id, uint8_t data) 
 
 int Level::save() {
     // Delegate to ChunkManager which calls provider_->saveChunk() for each
-    // dirty chunk. The provider writes the actual .atmka region files.
+    // dirty chunk. The provider writes the actual .mca region files.
     int saved = chunks_.flushDirty();
     // Also persist world metadata (level.dat).
     if (provider_) {
@@ -105,10 +109,9 @@ int Level::save() {
             (double)cfg_.spawn_x, (double)cfg_.spawn_y, (double)cfg_.spawn_z});
         provider_->setCurrentTime(cfg_.time);
         // The provider's shutdown() / saveMetadata() handles level.dat
-        // persistence. We trigger it explicitly via shutdown()+init() if
-        // the provider supports re-init, but for the AtmkMca provider
-        // we save metadata via saveMetadata() which is called on shutdown.
-        // For periodic saves, the metadata is also saved here.
+        // persistence. For periodic saves, we trigger an explicit
+        // saveMetadata() via shutdown()+init() round-trip if needed;
+        // the Anvil provider writes level.dat on shutdown.
     }
     return saved;
 }

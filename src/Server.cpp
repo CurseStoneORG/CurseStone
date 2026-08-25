@@ -9,6 +9,7 @@
 
 #include <climits>
 #include <cstring>
+#include <zlib.h>
 #include "command/CommandMap.h"
 #include "command/SimpleCommandMap.h"
 #include "command/ConsoleCommandSender.h"
@@ -120,7 +121,7 @@ void Server::loadConfig() {
         utils::MainLogger::get().info("World generator: " +
             cfg.getString("generator", "normal"));
         utils::MainLogger::get().info("World format: " +
-            cfg.getString("level-format", "mcanvil"));
+            cfg.getString("level-format", "anvil"));
     }
 }
 
@@ -177,7 +178,7 @@ void Server::loadDefaultLevel() {
 
     level::LevelConfig lc;
     lc.name      = get_str("level.name", "level-name", "world");
-    lc.format    = get_str("level.format", "level-format", "atmkma");
+    lc.format    = get_str("level.format", "level-format", "anvil");
     lc.generator = get_str("level.generator", "generator", "normal");
     int64_t seed = get_int("level.seed", "level-seed", 0);
     lc.seed = (seed != 0) ? (int64_t)seed : (int64_t)mcp_utils_time_ms();
@@ -187,20 +188,21 @@ void Server::loadDefaultLevel() {
 
     // Create the world directory structure BEFORE constructing the Level,
     // so the LevelProvider can open the region/ subdirectory on init().
+    // Mirrors Nukkit's Anvil.generate(): worlds/<name>/ + worlds/<name>/region/
     std::string worldsDir = dataPath_ + "/worlds";
     std::string worldDir  = worldsDir + "/" + lc.name;
-    std::string regionsDir = worldDir + "/regions";
+    std::string regionDir = worldDir + "/region";
     ::mkdir(worldsDir.c_str(), 0755);
     ::mkdir(worldDir.c_str(), 0755);
-    ::mkdir(regionsDir.c_str(), 0755);
+    ::mkdir(regionDir.c_str(), 0755);
 
-    // Construct the Level — this instantiates the LevelProvider (AtmkMca)
-    // and calls provider->init(worldDir). The provider creates the
-    // regions/ subdir and reads level.dat if it exists.
+    // Construct the Level — this instantiates the LevelProvider (Anvil by
+    // default) and calls provider->init(worldDir). The provider creates the
+    // region/ subdir if missing and reads level.dat if it exists.
     level_ = std::make_shared<level::Level>(std::move(lc));
 
     utils::MainLogger::get().info("World directory: " + worldDir);
-    utils::MainLogger::get().info("Regions directory: " + regionsDir);
+    utils::MainLogger::get().info("Region directory: " + regionDir);
 }
 
 void Server::startCommandReader() {
@@ -494,9 +496,42 @@ NbtPtr Server::getOfflinePlayerData(const std::string& name) {
                               std::istreambuf_iterator<char>());
     if (buf.empty()) return buildDefaultPlayerNbt(this, name);
 
-    mcp_bstream_t bs;
-    mcp_bstream_init_read(&bs, buf.data(), buf.size());
-    mcp_tag_t* root = mcp_nbt_read_root(&bs, /*little_endian=*/true);
+    // Nukkit-style player.dat: GZIP-compressed big-endian NBT.
+    // Fall back to plain little-endian for legacy AtomikPE files.
+    mcp_tag_t* root = nullptr;
+    {
+        // Try GZIP + big-endian first.
+        z_stream zs{};
+        if (inflateInit2(&zs, 15 | 16) == Z_OK) {
+            zs.next_in  = (Bytef*)buf.data();
+            zs.avail_in = (uInt)buf.size();
+            std::vector<uint8_t> inflated;
+            inflated.reserve(buf.size() * 4);
+            uint8_t chunk[65536];
+            int rc = Z_OK;
+            do {
+                zs.next_out  = chunk;
+                zs.avail_out = sizeof(chunk);
+                rc = inflate(&zs, Z_NO_FLUSH);
+                if (rc != Z_OK && rc != Z_STREAM_END) break;
+                size_t produced = sizeof(chunk) - zs.avail_out;
+                if (produced > 0) inflated.insert(inflated.end(), chunk, chunk + produced);
+            } while (rc != Z_STREAM_END && zs.avail_in > 0);
+            inflateEnd(&zs);
+            if (rc == Z_STREAM_END && !inflated.empty()) {
+                root = mcp_nbt_read_bytes(inflated.data(), inflated.size(),
+                                            /*little_endian=*/false);
+            }
+        }
+    }
+    if (!root) {
+        // Legacy: try plain big-endian (uncompressed).
+        root = mcp_nbt_read_bytes(buf.data(), buf.size(), /*little_endian=*/false);
+    }
+    if (!root) {
+        // Legacy: try plain little-endian (uncompressed, old AtomikPE).
+        root = mcp_nbt_read_bytes(buf.data(), buf.size(), /*little_endian=*/true);
+    }
     if (!root) {
         utils::MainLogger::get().warn("Corrupt player data: " + path);
         return buildDefaultPlayerNbt(this, name);
@@ -509,21 +544,42 @@ void Server::saveOfflinePlayerData(const std::string& name, NbtPtr nbt) {
     ensurePlayersDir(dataPath_);
     std::string path = dataPath_ + "/players/" + name + ".dat";
     size_t outLen = 0;
-    uint8_t* bytes = mcp_nbt_write_bytes(nbt.get(), /*little_endian=*/true, &outLen);
+    uint8_t* bytes = mcp_nbt_write_bytes(nbt.get(), /*little_endian=*/false, &outLen);
     if (!bytes || outLen == 0) {
         utils::MainLogger::get().warn("Failed to serialize NBT for " + name);
         if (bytes) free(bytes);
         return;
     }
+    // GZIP-compress to match Nukkit player.dat layout.
+    z_stream zs{};
+    if (deflateInit2(&zs, Z_DEFAULT_COMPRESSION, Z_DEFLATED,
+                       15 | 16, 8, Z_DEFAULT_STRATEGY) != Z_OK) {
+        free(bytes);
+        utils::MainLogger::get().warn("Failed to gzip player data for " + name);
+        return;
+    }
+    size_t bound = deflateBound(&zs, (uLong)outLen);
+    std::vector<uint8_t> gz(bound);
+    zs.next_in   = (Bytef*)bytes;
+    zs.avail_in  = (uInt)outLen;
+    zs.next_out  = (Bytef*)gz.data();
+    zs.avail_out = (uInt)gz.size();
+    int rc = deflate(&zs, Z_FINISH);
+    deflateEnd(&zs);
+    free(bytes);
+    if (rc != Z_STREAM_END) {
+        utils::MainLogger::get().warn("Failed to compress player data for " + name);
+        return;
+    }
+    gz.resize(bound - zs.avail_out);
+
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     if (!out.is_open()) {
         utils::MainLogger::get().warn("Failed to write player file: " + path);
-        free(bytes);
         return;
     }
-    out.write(reinterpret_cast<const char*>(bytes), (std::streamsize)outLen);
+    out.write(reinterpret_cast<const char*>(gz.data()), (std::streamsize)gz.size());
     out.close();
-    free(bytes);
 }
 
 } // namespace atomikpe

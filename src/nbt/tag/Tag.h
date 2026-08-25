@@ -2,13 +2,14 @@
 // Tag — base NBT tag interface. Pure C (typedef struct + vtable).
 //
 // NBT (Named Binary Tag) is Minecraft's serialization format. Used for:
-//   - LevelDB chunk data (mcacpp chunks)
+//   - LevelDB chunk data (MCPE-format chunks)
 //   - Player inventory / player .dat files
 //   - Block entity (tile) data: signs, chests, furnaces
 //   - Item NBT data (enchantments, custom names, durability)
 //
 // Endianness:
-//   - Java/NBT big-endian (used by mca, mcacpp java-format chunks)
+//   - Java/NBT big-endian (used by the Nukkit Anvil provider for
+//     chunks, level.dat, and player .dat files)
 //   - MCPE little-endian (used by leveldb chunks, network packets)
 //
 // All tag types share a common header (struct mcp_tag) with a type id,

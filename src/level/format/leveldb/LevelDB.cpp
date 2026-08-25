@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// LevelDB — Phase 8 stub implementation.
+// LevelDB — stub implementation.
 //
 // Compiles cleanly without leveldb linked. Every chunk operation
 // returns "not on disk" so Level::load() can fall back to the
-// mcacpp provider when no leveldb is found.
+// anvil provider when no leveldb is found.
 #include "LevelDB.h"
 #include "../LevelProviderManager.h"
 
@@ -23,11 +23,11 @@ LevelDB::~LevelDB() { shutdown(); }
 
 void LevelDB::init(const std::string& path) {
     path_ = path;
-    // TODO Phase 12: open LevelDB at path_ + "/db".
+    // TODO: open LevelDB at path_ + "/db".
 }
 
 void LevelDB::shutdown() {
-    // TODO Phase 12: close LevelDB.
+    // TODO: close LevelDB.
 }
 
 std::vector<uint8_t> LevelDB::chunkKey(int32_t cx, int32_t cz, uint8_t type) {
@@ -60,17 +60,17 @@ bool LevelDB::hasLevelDB() {
 
 std::optional<std::shared_ptr<FullChunk>>
 LevelDB::loadChunk(int32_t /*x*/, int32_t /*z*/) {
-    // Phase 8 stub: pretend the chunk isn't on disk so Level falls
+    // Stub: pretend the chunk isn't on disk so Level falls
     // back to chunk generation.
     return std::nullopt;
 }
 
 void LevelDB::saveChunk(const std::shared_ptr<FullChunk>& /*chunk*/) {
-    // Phase 8 stub: no-op.
+    // Stub: no-op.
 }
 
 void LevelDB::unloadChunk(int32_t /*x*/, int32_t /*z*/) {
-    // Phase 8 stub: no-op.
+    // Stub: no-op.
 }
 
 std::vector<std::pair<int32_t, int32_t>>

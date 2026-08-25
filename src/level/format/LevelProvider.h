@@ -7,11 +7,9 @@
 // this into `LevelProvider` + `LevelProviderManager` (the registry);
 // we mirror that here.
 //
-// Concrete implementers (Phase 8):
-//   - mcacpp/McaCpp       default AtomikPE format
-//   - leveldb/LevelDB     MCPE default format (stub until leveldb linked)
-//   - mca/McAnvil         Java Anvil .mca (stub)
-//   - mcapm/McapmFormat   MCAPM variant (stub)
+// Concrete implementers:
+//   - anvil/Anvil        Nukkit Anvil format (.mca, big-endian NBT). DEFAULT.
+//   - leveldb/LevelDB    MCPE LevelDB format (stub until leveldb linked)
 #pragma once
 
 #include <memory>
@@ -53,6 +51,7 @@ public:
 
     // World metadata.
     virtual int64_t getSeed()      const = 0;
+    virtual void    setSeed(int64_t s) = 0;
     virtual int64_t getCurrentTime() const = 0;
     virtual void    setCurrentTime(int64_t t) = 0;
     virtual math::Vector3 getSpawn() const = 0;
