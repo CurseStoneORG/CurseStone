@@ -87,7 +87,8 @@ public:
     void sendCreativeInventory();
 
     // Send the player's main inventory + armor to the client. Called on
-    // spawn and after inventory changes. Mirrors Nukkit sendInventory().
+    // spawn and after inventory changes that the client must sync to.
+    // Mirrors Nukkit's Player.sendInventory() / sendArmor().
     void sendInventory();
 
     // Save this player's data (NBT + inventory) to disk via Server.
@@ -158,14 +159,22 @@ private:
     mutable std::mutex queue_mtx_;
 
     // --- Thread-safe close ---
+    // close() may be called from the RakLib network thread (timeout,
+    // client disconnect) while the main server thread holds a shared_ptr
+    // to this Player. std::call_once guarantees the cleanup body runs
+    // exactly once even if two threads call close() simultaneously.
+    std::once_flag close_once_;
     // When true, the main thread will remove this player from players_
     // on the next tick. Set by close() on the network thread; read+acted
-    // on by Server::tick() on the main thread.
+    // on by Server::tick() on the main thread. This avoids destroying
+    // the shared_ptr (and thus the Player) from the network thread
+    // while the main thread is iterating players_.
     std::atomic<bool> pending_removal_{false};
 
 public:
     // Returns true if close() has been called (cleanup may still be
-    // in progress). Used by Server::tick() to skip players being torn down.
+    // in progress on another thread). Used by Server::tick() to skip
+    // players that are being torn down.
     bool isPendingRemoval() const { return pending_removal_.load(std::memory_order_acquire); }
 };
 } // namespace
