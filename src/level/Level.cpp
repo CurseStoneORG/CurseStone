@@ -115,21 +115,8 @@ int Level::save() {
     return saved;
 }
 
-void Level::tick(uint64_t current_tick) {
+void Level::tick(uint64_t) {
     advanceTime(1);
-    // Sweep dropped-items registry: erase any items marked as taken.
-    // This avoids the map growing unbounded as players pick up items.
-    {
-        std::lock_guard<std::mutex> lk(dropped_items_mtx_);
-        for (auto it = dropped_items_.begin(); it != dropped_items_.end(); ) {
-            if (it->second && it->second->taken) {
-                it = dropped_items_.erase(it);
-            } else {
-                ++it;
-            }
-        }
-    }
-    (void)current_tick;
 }
 
 void Level::registerLoader(uint64_t id, class ChunkLoader* loader) {
@@ -138,40 +125,6 @@ void Level::registerLoader(uint64_t id, class ChunkLoader* loader) {
 
 void Level::unregisterLoader(uint64_t id) {
     loaders_.erase(id);
-}
-
-// ============================================================
-// Dropped-item registry
-// ============================================================
-DroppedItem* Level::droppedItem(int64_t eid) {
-    std::lock_guard<std::mutex> lk(dropped_items_mtx_);
-    auto it = dropped_items_.find(eid);
-    if (it == dropped_items_.end()) return nullptr;
-    return it->second.get();
-}
-
-std::vector<DroppedItem*> Level::droppedItems() {
-    std::lock_guard<std::mutex> lk(dropped_items_mtx_);
-    std::vector<DroppedItem*> out;
-    out.reserve(dropped_items_.size());
-    for (auto& [_, di] : dropped_items_) {
-        if (di && !di->taken) out.push_back(di.get());
-    }
-    return out;
-}
-
-void Level::addDroppedItem(const DroppedItem& di) {
-    std::lock_guard<std::mutex> lk(dropped_items_mtx_);
-    auto copy = std::make_unique<DroppedItem>(di);
-    dropped_items_[di.eid] = std::move(copy);
-}
-
-void Level::removeDroppedItem(int64_t eid) {
-    std::lock_guard<std::mutex> lk(dropped_items_mtx_);
-    auto it = dropped_items_.find(eid);
-    if (it != dropped_items_.end()) {
-        it->second->taken = true;
-    }
 }
 
 } // namespace atomikpe::level

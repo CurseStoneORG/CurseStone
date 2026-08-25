@@ -31,7 +31,6 @@
 #include "network/protocol/MobEquipmentPacket.h"
 #include "network/protocol/MobArmorEquipmentPacket.h"
 #include "network/protocol/AddItemEntityPacket.h"
-#include "network/protocol/TakeItemEntityPacket.h"
 #include "network/protocol/ContainerSetContentPacket.h"
 #include "network/protocol/ContainerSetSlotPacket.h"
 #include "network/protocol/Info.h"
@@ -90,12 +89,14 @@ Player::~Player() {
     // → segfault. This was the root cause of the crash on player disconnect.
     //
     // By the time the destructor runs, close() has already been called
-    // (via call_once from the network or main thread) and connected_ is
-    // false. If for some reason it wasn't (e.g., Server crash during
-    // shutdown), we do a minimal inline save here WITHOUT shared_from_this.
+    // (via the network or main thread) and connected_ is false. If for
+    // some reason it wasn't (e.g., Server crash during shutdown), we do
+    // a minimal inline save here WITHOUT shared_from_this.
     if (connected_.load(std::memory_order_relaxed)) {
         try {
             if (named_tag_ && srv_ && !cfg_.username.empty()) {
+                // Minimal save — position + gamemode only. Full inventory
+                // save happens in saveData() called from close().
                 mcp_compound_tag_set_double(named_tag_.get(), "PosX", pos_.x);
                 mcp_compound_tag_set_double(named_tag_.get(), "PosY", pos_.y);
                 mcp_compound_tag_set_double(named_tag_.get(), "PosZ", pos_.z);
@@ -140,28 +141,21 @@ void Player::setWhitelisted(bool /*v*/) {}
 // Phase 9 — close (clean shutdown; idempotent + thread-safe)
 // ============================================================
 // close() may be called from:
-//   - The main server thread (player quit via /quit, server shutdown)
+//   - The main server thread (player quit, server shutdown)
 //   - The RakLib network thread (session timeout, client disconnect)
 //
 // CRITICAL: close() must NOT call adv_iface_->closeSession(). When
-// close() is called from Network::onSessionClose() (the RakLib
-// timeout path), the RakNet session is ALREADY being torn down.
-// Calling closeSession() again from within that callback causes a
-// re-entrant call into RakLib's C code while its internal state is
-// mid-teardown → segfault. This was the root cause of the 100%
-// reproducible crash when a player disconnected.
+// close() is called from Network::onSessionClose() (the RakLib timeout
+// path), the RakNet session is ALREADY being torn down. Calling
+// closeSession() again causes a re-entrant call into RakLib's C code
+// while its internal state is mid-teardown → segfault.
 //
-// For proactive kicks, Player::kick() calls closeSession() itself
-// BEFORE close(), so the RakLib layer handles the disconnect.
+// For proactive kicks, Player::kick() calls closeSession() BEFORE
+// close(), so the RakLib layer handles the disconnect.
 // ============================================================
 void Player::close(const std::string& reason) {
     // Keep this Player alive for the entire duration of close(), even
     // if Server::tick() concurrently erases its shared_ptr from players_.
-    // Without this, the cleanup body below could touch freed memory.
-    // We wrap in try-catch because shared_from_this() can throw
-    // std::bad_weak_ptr if the control block is already expired (rare
-    // edge case during server shutdown). If it throws, we proceed
-    // without the safety net — close() is still protected by call_once.
     std::shared_ptr<Player> self;
     try {
         self = shared_from_this();
@@ -169,72 +163,67 @@ void Player::close(const std::string& reason) {
         // shared_from_this() failed — proceed without the safety net.
     }
 
-    std::call_once(close_once_, [this, &reason]() {
-        bool expected = true;
-        if (!connected_.compare_exchange_strong(expected, false)) {
-            // Already closed — just flag for removal (defensive).
-            pending_removal_.store(true, std::memory_order_release);
-            return;
-        }
-
-        utils::MainLogger::get().info("Closing player " + cfg_.username +
-            " (" + cfg_.ip + ":" + std::to_string(cfg_.port) + "): " + reason);
-
-        // 1. Save NBT + inventory to disk (if we ever loaded NBT).
-        try {
-            if (named_tag_ && srv_ && !cfg_.username.empty()) {
-                saveData();
-            }
-        } catch (...) {
-            utils::MainLogger::get().warn("[CLOSE] " + cfg_.username + " saveData threw exception");
-        }
-
-        // 2. Tell other players to despawn this entity.
-        // CRITICAL: iterate a COPY of the snapshot. The snapshot returns
-        // shared_ptrs by value, which keeps each Player alive for the
-        // duration of sendPacket. Without this, a concurrent reap in
-        // Server::tick() could destroy a Player mid-sendPacket.
-        try {
-            if (srv_) {
-                auto snapshot = srv_->playersSnapshot();
-                auto pk = std::make_shared<network::protocol::RemoveEntityPacket>();
-                pk->eid = runtimeId();
-                for (auto& other : snapshot) {
-                    if (!other) continue;
-                    if (other.get() == this) continue;
-                    if (other->isPendingRemoval()) continue;
-                    try {
-                        other->sendPacket(pk);
-                    } catch (...) {}
-                }
-            }
-        } catch (...) {}
-
-        // 3. Broadcast quit message.
-        try {
-            if (srv_ && !cfg_.username.empty()) {
-                srv_->broadcastMessage(cfg_.username + " left the game");
-            }
-        } catch (...) {}
-
-        // 4. Release chunks loaded for this player.
-        {
-            std::lock_guard<std::mutex> lk(chunks_mtx_);
-            used_chunks_.clear();
-        }
-        {
-            std::lock_guard<std::mutex> lk(queue_mtx_);
-            chunk_queue_.clear();
-        }
-
-        // 5. DO NOT call closeSession() here — see the comment at the
-        //    top of this function. The session is either already closed
-        //    (timeout path) or will be closed by the caller (kick path).
-
-        // 6. Flag for removal — Server::tick() will erase this Player
-        //    from players_ on the next tick (main thread).
+    bool expected = true;
+    if (!connected_.compare_exchange_strong(expected, false)) {
+        // Already closed — just flag for removal (defensive).
         pending_removal_.store(true, std::memory_order_release);
-    });
+        return;
+    }
+
+    utils::MainLogger::get().info("Closing player " + cfg_.username +
+        " (" + cfg_.ip + ":" + std::to_string(cfg_.port) + "): " + reason);
+
+    // 1. Save NBT + inventory to disk (if we ever loaded NBT).
+    try {
+        if (named_tag_ && srv_ && !cfg_.username.empty()) {
+            saveData();
+        }
+    } catch (...) {
+        utils::MainLogger::get().warn("[CLOSE] saveData failed for " + cfg_.username);
+    }
+
+    // 2. Tell other players to despawn this entity.
+    try {
+        if (srv_) {
+            auto pk = std::make_shared<network::protocol::RemoveEntityPacket>();
+            pk->eid = runtimeId();
+            for (auto& other : srv_->playersSnapshot()) {
+                if (!other || other.get() == this) continue;
+                if (other->isPendingRemoval()) continue;
+                try { other->sendPacket(pk); } catch (...) {}
+            }
+        }
+    } catch (...) {}
+
+    // 3. Broadcast quit message.
+    try {
+        if (srv_ && !cfg_.username.empty()) {
+            srv_->broadcastMessage(cfg_.username + " left the game");
+        }
+    } catch (...) {}
+
+    // 4. Release chunks loaded for this player.
+    {
+        std::lock_guard<std::mutex> lk(chunks_mtx_);
+        used_chunks_.clear();
+    }
+    {
+        std::lock_guard<std::mutex> lk(queue_mtx_);
+        chunk_queue_.clear();
+    }
+
+    // 5. DO NOT call closeSession() here — see comment at top.
+    //    The session is either already closed (timeout path) or will
+    //    be closed by the caller (kick path).
+
+    // 6. Flag for removal — Server::tick() will erase this Player from
+    //    players_ on the next tick (main thread). We MUST NOT call
+    //    srv_->removePlayer(this) here because:
+    //    (a) we may be on the network thread, and erasing from players_
+    //        while the main thread iterates it is UB;
+    //    (b) erasing the last shared_ptr would destroy `this` while
+    //        we're still inside close() (use-after-free).
+    pending_removal_.store(true, std::memory_order_release);
 }
 
 // ============================================================
@@ -298,7 +287,8 @@ void Player::kick(const std::string& reason) {
     // This must happen BEFORE close() because close() no longer calls
     // closeSession() (to avoid re-entrant crashes when called from the
     // RakLib timeout path). closeSession() will trigger RakLib to fire
-    // onCloseSession() → close(), but call_once() makes that a no-op.
+    // onCloseSession() → close(), but the compare_exchange on connected_
+    // makes that a no-op.
     if (adv_iface_ && !cfg_.ip.empty()) {
         adv_iface_->closeSession(cfg_.ip, cfg_.port, reason);
     }
@@ -406,11 +396,7 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
             break;
         case network::protocol::CONTAINER_SET_SLOT_PACKET:
             // Client moved an item between slots OR picked an item from
-            // the creative grid. Mirrors Nukkit PlayerInventory.onSlotChange
-            // + Player.handleCreativeInventoryClick: when windowid=0x79 the
-            // client grabbed an item from the creative grid; the actual
-            // landing slot is reported in a SEPARATE ContainerSetSlotPacket
-            // with windowid=0x00. We trust the client and write the slot
+            // the creative grid. We trust the client and write the slot
             // state into our local PlayerInventory.
             if (auto* cs = dynamic_cast<network::protocol::ContainerSetSlotPacket*>(&p)) {
                 if (inv_) {
@@ -418,51 +404,20 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                     it.id    = static_cast<uint16_t>(cs->itemId);
                     it.count = cs->itemCount;
                     it.meta  = static_cast<uint8_t>(cs->itemDamage & 0xFF);
-
                     if (cs->windowid == network::protocol::ContainerSetSlotPacket::SPECIAL_INVENTORY) {
-                        // windowid 0x00 — main inventory slots 0..44.
                         if (cs->slot >= 0 && cs->slot < inventory::PlayerInventory::SIZE) {
                             inv_->setItem(cs->slot, it);
                         }
                     } else if (cs->windowid == network::protocol::ContainerSetSlotPacket::SPECIAL_ARMOR) {
-                        // windowid 0x78 — armor slot 0..3 → store at 36..39.
                         if (cs->slot >= 0 && cs->slot < 4) {
                             int dest = inventory::PlayerInventory::ARMOR_OFFSET + cs->slot;
                             inv_->setItem(dest, it);
                         }
-                    } else if (cs->windowid == network::protocol::ContainerSetSlotPacket::SPECIAL_HOTBAR) {
-                        // windowid 0x7a — hotbar slot 0..8. This is sent
-                        // when the client moves an item to a hotbar slot
-                        // directly. Write into main inventory slot 0..8.
-                        if (cs->slot >= 0 && cs->slot < 9) {
-                            inv_->setItem(cs->slot, it);
-                        }
-                    } else if (cs->windowid == network::protocol::ContainerSetSlotPacket::SPECIAL_CREATIVE) {
-                        // windowid 0x79 — creative-grid click.
-                        // Nukkit's behavior: when a player in creative mode
-                        // clicks an item in the creative grid, the client
-                        // IMMEDIATELY follows up with a windowid=0x00
-                        // ContainerSetSlotPacket that puts the item into
-                        // the player's main inventory. So we should NOT
-                        // process the 0x79 click itself here — wait for
-                        // the 0x00 packet.
-                        //
-                        // HOWEVER, some MCPE 0.15.x clients (notably Android
-                        // builds) only send the 0x79 packet and never send
-                        // the follow-up 0x00. To support those clients we
-                        // ALSO accept the 0x79 click and place the item
-                        // directly into the held hotbar slot (mirrors
-                        // Nukkit's "drop into hotbar" fallback).
-                        if ((cfg_.gamemode & 1) != 0 && cs->slot >= 0 && cs->slot < 9) {
-                            // Place the creative item into the hotbar slot
-                            // indicated by `slot`. The client picks up the
-                            // item visually into the held cursor.
-                            inv_->setItem(cs->slot, it);
-                            inv_->setHeldSlot(cs->slot);
-                            // Echo the slot back so the client renders it.
-                            sendInventory();
-                        }
                     }
+                    // SPECIAL_CREATIVE (0x79) clicks: PMMP doesn't process them
+                    // server-side either — the client just locally puts the
+                    // item into its main inventory, then sends a windowid=0
+                    // ContainerSetSlotPacket.
                 }
             }
             break;
@@ -605,6 +560,64 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
                     pos_.x = (double)sx + 0.5; pos_.y = (double)sy; pos_.z = (double)sz + 0.5;
                 }
                 // else: leave the world-spawn position set in the ctor.
+            }
+
+            // --- Load inventory + armor from NBT ---
+            // Mirrors cn.nukkit.Player.loadNBT(): iterate the "Inventory"
+            // ListTag and route each entry by Slot number. Main inventory
+            // uses slots 0..35 (hotbar is 0..8), armor uses 100..103.
+            const mcp_tag_t* inv_tag =
+                mcp_compound_tag_get(named_tag_.get(), "Inventory");
+            if (inv_tag && mcp_tag_get_type(inv_tag) == MCP_TAG_LIST) {
+                const mcp_list_tag_t* inv_list =
+                    (const mcp_list_tag_t*)inv_tag;
+                int loaded = 0;
+                for (size_t i = 0; i < inv_list->count; ++i) {
+                    const mcp_tag_t* entry = mcp_list_tag_get(inv_tag, i);
+                    if (!entry ||
+                        mcp_tag_get_type(entry) != MCP_TAG_COMPOUND) continue;
+                    int8_t  nbt_slot = mcp_compound_tag_get_byte(
+                        entry, "Slot", -1);
+                    int16_t id       = mcp_compound_tag_get_short(
+                        entry, "id", 0);
+                    int8_t  count    = mcp_compound_tag_get_byte(
+                        entry, "Count", 1);
+                    int16_t damage   = mcp_compound_tag_get_short(
+                        entry, "Damage", 0);
+                    if (id == 0 || count <= 0) continue;
+
+                    int dest_slot = -1;
+                    if (nbt_slot >= 0 && nbt_slot < 36) {
+                        // Main inventory + hotbar (slots 0..35).
+                        dest_slot = nbt_slot;
+                    } else if (nbt_slot >= 100 && nbt_slot <= 103) {
+                        // Armor: 100=helmet, 101=chest, 102=legs, 103=boots.
+                        dest_slot = inventory::PlayerInventory::ARMOR_OFFSET
+                                  + (nbt_slot - 100);
+                    } else if (nbt_slot >= 36 && nbt_slot < 45) {
+                        // Legacy AtomikPE layout (armor at 36..39).
+                        dest_slot = nbt_slot;
+                    }
+                    if (dest_slot >= 0 &&
+                        dest_slot < inventory::PlayerInventory::SIZE) {
+                        item::ItemStack it;
+                        it.id    = (uint16_t)id;
+                        it.meta  = (uint8_t)damage;
+                        it.count = count;
+                        inv_->setItem(dest_slot, it);
+                        ++loaded;
+                    }
+                }
+                utils::MainLogger::get().info("Loaded inventory for " +
+                    cfg_.username + " (" + std::to_string(loaded) +
+                    " items)");
+            }
+
+            // Restore held hotbar slot.
+            int32_t held = mcp_compound_tag_get_int(
+                named_tag_.get(), "SelectedItemSlot", -1);
+            if (held >= 0 && held <= 8) {
+                inv_->setHeldSlot(held);
             }
         }
     }
@@ -834,6 +847,12 @@ void Player::doFirstSpawn() {
     // Send the creative-inventory contents so the player has items to grab
     // in creative mode (PMMP Player.php:2301 sends this right after spawn).
     sendCreativeInventory();
+
+    // Send the player's own inventory + armor loaded from player.dat.
+    // Without this, items loaded from disk won't appear in the client UI
+    // even though they're in our PlayerInventory — the player would see
+    // an empty inventory and think nothing was saved.
+    sendInventory();
 
     // Broadcast a PlayerListPacket (ADD) with all currently-online players.
     if (srv_) {
@@ -1257,31 +1276,8 @@ int64_t Player::dropItem(int x, int y, int z, uint16_t itemId, uint8_t count, ui
     int32_t pk_cz = z >> 4;
     for (auto& other : srv_->playersSnapshot()) {
         if (!other) continue;
-        if (other.get() == this) {
-            // Always send to the dropper too so they see their own drop.
-        } else if (!other->isTrackingChunk(pk_cx, pk_cz)) {
-            continue;
-        }
+        if (!other->isTrackingChunk(pk_cx, pk_cz)) continue;
         other->sendPacket(pk);
-    }
-
-    // Register the dropped item in the Level's registry so other players
-    // (and the dropper themselves, after the pickup delay) can pick it up.
-    if (srv_->getDefaultLevel()) {
-        level::DroppedItem di;
-        di.eid        = eid;
-        di.itemId     = itemId;
-        di.count      = count;
-        di.damage     = damage;
-        di.x          = (double)x + 0.5;
-        di.y          = (double)y + 0.5;
-        di.z          = (double)z + 0.5;
-        di.spawn_tick = srv_->getCurrentTick();
-        // 10-tick pickup delay (~0.5s) so the dropper doesn't immediately
-        // re-absorb it. Mirrors Nukkit EntityItem default pickupDelay.
-        di.pickup_delay_ticks = 10;
-        di.taken     = false;
-        srv_->getDefaultLevel()->addDroppedItem(di);
     }
 
     if (srv_->advancedLog()) {
@@ -1310,9 +1306,8 @@ void Player::sendCreativeInventory() {
 
 // ============================================================
 // sendInventory — push the player's main inventory + armor to the client.
-// Called on doFirstSpawn() and after any inventory change so the client
-// UI stays in sync with the server's authoritative state. Mirrors
-// Nukkit Player.sendInventory() + Player.sendArmor().
+// Called on doFirstSpawn() so items loaded from player.dat appear in the
+// client UI. Mirrors Nukkit Player.sendInventory() + sendArmor().
 // ============================================================
 void Player::sendInventory() {
     if (!inv_) return;
@@ -1325,7 +1320,7 @@ void Player::sendInventory() {
         for (int i = 0; i < inventory::PlayerInventory::SIZE; ++i) {
             pk->slots.push_back(inv_->getItem(i));
         }
-        // Hotbar link indices — protocol 84 wants 9 indices for the hotbar.
+        // Hotbar link indices — protocol 84 wants 9 indices.
         for (int h = 0; h < 9; ++h) {
             pk->hotbar.push_back(h);
         }
@@ -1342,29 +1337,10 @@ void Player::sendInventory() {
         pk->slots.push_back(inv_->getBoots());
         sendPacket(pk);
     }
-
-    // Hotbar (windowid 0x7a): 9 slots mirroring the hotbar portion of
-    // the main inventory (slots 0..8). Nukkit sends this too so the
-    // client immediately highlights the correct hotbar slot.
-    {
-        auto pk = std::make_shared<network::protocol::ContainerSetContentPacket>();
-        pk->windowid = network::protocol::ContainerSetContentPacket::SPECIAL_HOTBAR;
-        for (int h = 0; h < 9; ++h) {
-            pk->slots.push_back(inv_->getItem(h));
-        }
-        sendPacket(pk);
-    }
 }
 
 // ============================================================
 // Save this player's NBT + inventory to disk (PMMP Player::saveNBT)
-// ============================================================
-// Mirrors cn.nukkit.Player.saveNBT(): the NBT root contains a flat
-// "Inventory" ListTag<CompoundTag> with one entry per non-empty slot.
-// Each entry is { Slot:Byte, id:Short, Count:Byte, Damage:Short }.
-// Armor uses the same list with Slot in [100..103] (helmet..boots).
-// On load we iterate the list and route by Slot range — mirroring
-// Nukkit's Player.loadNBT() exactly so worlds are interchangeable.
 // ============================================================
 void Player::saveData() {
     if (!srv_ || cfg_.username.empty()) return;
@@ -1374,47 +1350,18 @@ void Player::saveData() {
             mcp_compound_tag_new(),
             [](::mcp_tag* t) { if (t) mcp_tag_destroy(t); });
     }
+    // Persist position, rotation, gamemode, health.
     ::mcp_tag* root = named_tag_.get();
-    if (!root) return;
-
-    // --- Position / rotation / stats ---
-    mcp_compound_tag_set_double(root, "PosX",  pos_.x);
-    mcp_compound_tag_set_double(root, "PosY",  pos_.y);
-    mcp_compound_tag_set_double(root, "PosZ",  pos_.z);
-    mcp_compound_tag_set_float (root, "Yaw",    yaw_);
-    mcp_compound_tag_set_float (root, "Pitch",  pitch_);
-    mcp_compound_tag_set_int   (root, "playerGameType", cfg_.gamemode);
-    mcp_compound_tag_set_short (root, "Health",  (int16_t)health());
-    mcp_compound_tag_set_short (root, "MaxHealth", (int16_t)maxHealth());
-    mcp_compound_tag_set_short (root, "Hunger",  (int16_t)foodLevel());
-    mcp_compound_tag_set_short (root, "Air",     300);
-    mcp_compound_tag_set_long  (root, "RuntimeId", runtimeId());
-    mcp_compound_tag_set_long  (root, "lastPlayed",
-        (int64_t)mcp_utils_time_ms());
-
-    // --- Inventory + Armor as a single ListTag<CompoundTag> ---
-    mcp_tag_t* inv_list = mcp_list_tag_new_named("Inventory", MCP_TAG_COMPOUND);
-    if (inv_list && inv_) {
-        for (int slot = 0; slot < inventory::PlayerInventory::SIZE; ++slot) {
-            auto it = inv_->getItem(slot);
-            if (it.isEmpty()) continue;
-            int nbt_slot = slot;
-            if (slot >= inventory::PlayerInventory::ARMOR_OFFSET &&
-                slot <  inventory::PlayerInventory::ARMOR_OFFSET + 4) {
-                nbt_slot = 100 + (slot - inventory::PlayerInventory::ARMOR_OFFSET);
-            }
-            mcp_tag_t* entry = mcp_compound_tag_new_named("");
-            mcp_compound_tag_set_byte (entry, "Slot",   (int8_t)nbt_slot);
-            mcp_compound_tag_set_short(entry, "id",     (int16_t)it.id);
-            mcp_compound_tag_set_byte (entry, "Count",  (int8_t)it.count);
-            mcp_compound_tag_set_short(entry, "Damage", (int16_t)it.meta);
-            mcp_list_tag_append(inv_list, entry);
-        }
-        mcp_compound_tag_set_int(root, "SelectedItemSlot",
-            inv_->heldSlot());
+    if (root) {
+        mcp_compound_tag_set_double(root, "Pos_x",  pos_.x);
+        mcp_compound_tag_set_double(root, "Pos_y",  pos_.y);
+        mcp_compound_tag_set_double(root, "Pos_z",  pos_.z);
+        mcp_compound_tag_set_float (root, "Yaw",    yaw_);
+        mcp_compound_tag_set_float (root, "Pitch",  pitch_);
+        mcp_compound_tag_set_int   (root, "playerGameType", cfg_.gamemode);
+        mcp_compound_tag_set_short (root, "Health",  (int16_t)health());
+        mcp_compound_tag_set_long  (root, "RuntimeId", runtimeId());
     }
-    mcp_compound_tag_set(root, "Inventory", inv_list);
-
     srv_->saveOfflinePlayerData(cfg_.username, named_tag_);
     if (srv_->advancedLog()) {
         utils::MainLogger::get().info("[SAVE] Player " + cfg_.username + " data saved.");
@@ -1502,109 +1449,6 @@ void Player::onUpdate(uint64_t current_tick) {
     // ground. The client handles its own gravity/movement and sends
     // MovePlayerPacket to the server. We just accept the client's position.
     // (Commented out: entity::Human::tick(current_tick);)
-
-    // 2.5. Pickup nearby dropped items. Mirrors Nukkit Player.checkNearEntities():
-    // for each EntityItem within the player's bounding box grown by (1, 0.5, 1),
-    // if pickupDelay has elapsed AND the inventory can hold the item, send
-    // TakeItemEntityPacket to all viewers + the picking player, addItem to
-    // the inventory, and mark the entity for removal.
-    if (spawned_.load(std::memory_order_relaxed) && srv_ && srv_->getDefaultLevel() && inv_) {
-        auto* lvl = srv_->getDefaultLevel();
-        auto dropped = lvl->droppedItems();
-        for (level::DroppedItem* di : dropped) {
-            if (!di || di->taken) continue;
-            // Respect pickup delay (Nukkit: getPickupDelay() <= 0).
-            if (current_tick - di->spawn_tick < di->pickup_delay_ticks) continue;
-            // Distance check — player AABB grown by ~1 block (Nukkit uses
-            // boundingBox.grow(1, 0.5, 1)). We use a simple sphere check.
-            double dx = di->x - pos_.x;
-            double dy = di->y - pos_.y;
-            double dz = di->z - pos_.z;
-            double dist_sq = dx*dx + dy*dy + dz*dz;
-            if (dist_sq > 2.25) continue;  // > 1.5 blocks away — skip
-
-            // Build the ItemStack to add.
-            atomikpe::item::ItemStack pickup;
-            pickup.id    = di->itemId;
-            pickup.count = di->count;
-            pickup.meta  = (uint8_t)(di->damage & 0xFF);
-
-            // In creative mode Nukkit always allows pickup (the item is
-            // added even though creative players don't really need it).
-            // In survival, only allow if inventory can hold it.
-            bool can_pickup;
-            if ((cfg_.gamemode & 1) != 0) {
-                // Creative — always allow (Nukkit allows it too).
-                can_pickup = true;
-            } else {
-                can_pickup = inv_->canAddItem(pickup);
-            }
-            if (!can_pickup) continue;  // inventory full — item stays on ground
-
-            // Add the item to the inventory FIRST. addItem returns leftover
-            // (anything that didn't fit). If leftover.count <= 0 the whole
-            // stack was absorbed.
-            atomikpe::item::ItemStack leftover = inv_->addItem(pickup);
-            int absorbed = pickup.count - (leftover.count > 0 ? leftover.count : 0);
-            if (absorbed <= 0) {
-                // Nothing absorbed — don't send pickup animation, don't
-                // remove the entity. Item stays on ground.
-                continue;
-            }
-
-            // --- Send TakeItemEntityPacket (mirrors Nukkit exactly) ---
-            // Nukkit: Server.broadcastPacket(entity.getViewers().values(), pk)
-            // — viewers = players OTHER THAN the picker who can see the item.
-            // The picker is NOT in viewers, so they don't get this packet.
-            // Then a SEPARATE packet with entityId=0 is sent ONLY to the
-            // picker, which tells their client to remove the entity locally.
-            auto pk_viewer = std::make_shared<network::protocol::TakeItemEntityPacket>();
-            pk_viewer->target   = di->eid;
-            pk_viewer->entityId = runtimeId();
-            int32_t pk_cx = (int32_t)di->x >> 4;
-            int32_t pk_cz = (int32_t)di->z >> 4;
-            for (auto& other : srv_->playersSnapshot()) {
-                if (!other) continue;
-                if (other.get() == this) continue;  // SKIP picker — Nukkit excludes them
-                if (other->isPendingRemoval()) continue;
-                if (!other->isTrackingChunk(pk_cx, pk_cz)) continue;
-                other->sendPacket(pk_viewer);
-            }
-            // Picker-only packet: entityId=0 tells the client to hide the
-            // entity without playing the "fly toward player" animation.
-            auto pk_picker = std::make_shared<network::protocol::TakeItemEntityPacket>();
-            pk_picker->target   = di->eid;
-            pk_picker->entityId = 0;
-            sendPacket(pk_picker);
-
-            // --- Mark the entity for removal ---
-            // Nukkit: entity.kill() marks it for deletion and the level
-            // sweep removes it next tick. We do the same: mark taken=true
-            // and Level::tick() will erase it from dropped_items_.
-            // CRITICAL: this must happen AFTER the packets are sent, so
-            // the eid is still valid when clients receive the packet.
-            if (leftover.count > 0) {
-                // Partial pickup — update the dropped item's count to the
-                // leftover. The entity STAYS on the ground with the reduced
-                // count. Next tick the player (or another player) can pick
-                // up the rest.
-                di->count = (uint8_t)leftover.count;
-            } else {
-                // Full pickup — mark for removal.
-                lvl->removeDroppedItem(di->eid);
-            }
-
-            // Re-sync inventory to client so the new item appears.
-            sendInventory();
-
-            if (srv_->advancedLog()) {
-                utils::MainLogger::get().info("[PICKUP] " + cfg_.username +
-                    " picked up item=" + std::to_string(di->itemId) +
-                    " x" + std::to_string(absorbed) +
-                    " (leftover=" + std::to_string(leftover.count) + ")");
-            }
-        }
-    }
 
     // 3. Auto-save every 6000 ticks (5 minutes at 20 TPS).
     if (spawned_.load(std::memory_order_relaxed) && srv_ &&

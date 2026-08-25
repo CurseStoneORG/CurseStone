@@ -169,20 +169,14 @@ void Network::dispatchSingle(const std::string& ip, uint16_t port,
             return;
         }
         if (!createPlayerForSession(ip, port)) return;
-        // Re-lock the newly-registered session.
         auto it2 = sessions_.find(sessionKey(ip, port));
         if (it2 == sessions_.end()) return;
         player_sp = it2->second.lock();
         if (!player_sp) return;
     }
 
-    // Decode the body (everything after the leading ID byte) via the
-    // PacketPool registry and forward to the Player's dispatcher.
     auto pkt = decodePacketById(pid, data + 1, len - 1);
     if (!pkt) return;
-    // CRITICAL: skip if the player was closed between the lock() above
-    // and here. connected_ is atomic; if false, the player is being
-    // torn down and we must NOT call onUpdate or handle packets.
     if (!player_sp->isConnected()) return;
     player_sp->handleDataPacket(*pkt);
 }
@@ -206,15 +200,10 @@ bool Network::createPlayerForSession(const std::string& ip, uint16_t port) {
     cfg.port = port;
     cfg.gamemode        = server_->gamemode();
     cfg.view_distance   = server_->viewDistance();
-    // Allocate a fresh unique runtime entity ID for this player (PMMP uses
-    // Entity::$entityCount for the same purpose). Without this, every player
-    // shares EID 0 and AddPlayerPacket broadcasts confuse the client.
     cfg.runtime_eid     = server_->allocateEid();
     auto p = std::make_shared<Player>(server_, std::move(cfg));
     if (auto* r = getRakLib()) p->setSourceInterface(r);
     server_->addPlayer(p);
-    // Store as weak_ptr so the Network doesn't keep the Player alive
-    // after Server::tick() reaps it from players_.
     registerSession(ip, port, p);
     return true;
 }
@@ -222,14 +211,13 @@ bool Network::createPlayerForSession(const std::string& ip, uint16_t port) {
 Player* Network::getPlayer(const std::string& ip, uint16_t port) {
     auto it = sessions_.find(sessionKey(ip, port));
     if (it == sessions_.end()) return nullptr;
-    // Lock the weak_ptr; if the Player was destroyed, return nullptr.
     auto sp = it->second.lock();
     return sp.get();
 }
 
 void Network::registerSession(const std::string& ip, uint16_t port,
                                 std::shared_ptr<Player> p) {
-    sessions_[sessionKey(ip, port)] = p;  // weak_ptr from shared_ptr
+    sessions_[sessionKey(ip, port)] = p;
 }
 
 void Network::unregisterSession(Player* p) {
@@ -241,7 +229,6 @@ void Network::unregisterSession(Player* p) {
 }
 
 void Network::addPlayer(std::unique_ptr<Player> /*p*/) {
-    // Network doesn't own the player — Server::addPlayer does.
 }
 
 void Network::removePlayer(Player* p) {

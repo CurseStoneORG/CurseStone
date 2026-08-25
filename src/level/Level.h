@@ -14,7 +14,6 @@
 #include <unordered_map>
 #include <cstdint>
 #include <functional>
-#include <mutex>
 #include "math/Vector3.h"
 #include "level/ChunkManager.h"
 #include "level/format/LevelProvider.h"
@@ -23,22 +22,6 @@ class Player; class Entity; class Tile;
 namespace level::generator { class Generator; }
 }
 namespace atomikpe::level {
-
-// DroppedItem — a lightweight record of an item entity lying on the ground.
-// Mirrors Nukkit's EntityItem (sans the full entity-tick machinery): we
-// track position + the item + a pickup-delay so the player who just threw
-// it doesn't instantly re-pick it up.
-struct DroppedItem {
-    int64_t  eid = 0;            // runtime entity id (matches AddItemEntityPacket)
-    uint16_t itemId = 0;
-    uint8_t  count  = 1;
-    uint16_t damage = 0;
-    double   x = 0.0, y = 0.0, z = 0.0;
-    uint64_t spawn_tick = 0;     // when it was dropped (server tick)
-    uint32_t pickup_delay_ticks = 10;  // ~0.5s at 20 TPS — Nukkit default
-    bool     taken = false;      // marked for removal after pickup
-};
-
 struct LevelConfig {
     std::string name;
     std::string format   = "anvil";   // anvil (Nukkit Anvil, default) | leveldb
@@ -78,20 +61,6 @@ public:
     // ChunkLoaders (players) registered to receive chunk updates.
     void registerLoader(uint64_t loader_id, class ChunkLoader* loader);
     void unregisterLoader(uint64_t loader_id);
-
-    // ----- Dropped-item entity registry -----
-    // Tracks items lying on the ground so players can pick them up.
-    // Mirrors Nukkit's Level.getNearbyEntities() filtered by EntityItem.
-    // Returns a borrowed pointer (non-owning) or nullptr if not found.
-    DroppedItem* droppedItem(int64_t eid);
-    // Snapshot of all dropped items (for pickup scans).
-    std::vector<DroppedItem*> droppedItems();
-    // Register a freshly-dropped item. The Level takes ownership of the
-    // record's lifetime (it removes itself when `taken` is true).
-    void addDroppedItem(const DroppedItem& di);
-    // Mark an item as taken (will be erased on next tick).
-    void removeDroppedItem(int64_t eid);
-
 private:
     LevelConfig cfg_;
     ChunkManager chunks_;
@@ -99,10 +68,5 @@ private:
     std::shared_ptr<generator::Generator> generator_;
     mcp_vector3_t spawn_;
     std::unordered_map<uint64_t, class ChunkLoader*> loaders_;
-
-    // All dropped items in this level, keyed by runtime entity id.
-    // Tick sweep removes items with taken==true.
-    std::unordered_map<int64_t, std::unique_ptr<DroppedItem>> dropped_items_;
-    mutable std::mutex dropped_items_mtx_;
 };
 } // namespace
