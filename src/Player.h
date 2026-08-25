@@ -44,8 +44,7 @@ struct PlayerConfig {
     int64_t runtime_eid = 1;       // unique runtime entity ID (allocated by Server)
 };
 
-class Player : public IPlayer, public entity::Human, public permission::PermissibleBase,
-               public std::enable_shared_from_this<Player> {
+class Player : public IPlayer, public entity::Human, public permission::PermissibleBase {
 public:
     Player(Server* srv, PlayerConfig cfg);
     ~Player() override;
@@ -157,24 +156,5 @@ private:
     // Pending chunk request queue (spiral order, set by sendChunksAroundSpawn).
     std::vector<std::pair<int32_t,int32_t>> chunk_queue_;
     mutable std::mutex queue_mtx_;
-
-    // --- Thread-safe close ---
-    // close() may be called from the RakLib network thread (timeout,
-    // client disconnect) while the main server thread holds a shared_ptr
-    // to this Player. std::call_once guarantees the cleanup body runs
-    // exactly once even if two threads call close() simultaneously.
-    std::once_flag close_once_;
-    // When true, the main thread will remove this player from players_
-    // on the next tick. Set by close() on the network thread; read+acted
-    // on by Server::tick() on the main thread. This avoids destroying
-    // the shared_ptr (and thus the Player) from the network thread
-    // while the main thread is iterating players_.
-    std::atomic<bool> pending_removal_{false};
-
-public:
-    // Returns true if close() has been called (cleanup may still be
-    // in progress on another thread). Used by Server::tick() to skip
-    // players that are being torn down.
-    bool isPendingRemoval() const { return pending_removal_.load(std::memory_order_acquire); }
 };
 } // namespace
