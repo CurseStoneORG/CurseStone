@@ -59,6 +59,9 @@ public:
     void             setGenerator(generator::Generator* g) override { generator_ = g; }
     generator::Generator* getGenerator() const override { return generator_; }
 
+    // Flushes level.dat to disk (GZIP + big-endian NBT).
+    void             saveLevelData() override { saveMetadata(); }
+
     // ----- Anvil-specific surface
 
     // Path to the .mca region file for chunk (cx, cz):

@@ -59,6 +59,9 @@ public:
     void             setGenerator(generator::Generator* g) override { generator_ = g; }
     generator::Generator* getGenerator() const override { return generator_; }
 
+    // Stub — LevelDB doesn't use level.dat in the same way.
+    void             saveLevelData() override {}
+
     // ----- LevelDB-specific surface
 
     // Build the LevelDB key for the chunk at (cx, cz) of the given

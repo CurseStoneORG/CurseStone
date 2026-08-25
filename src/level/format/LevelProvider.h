@@ -63,6 +63,12 @@ public:
     // is requested that isn't on disk.
     virtual void    setGenerator(generator::Generator* g) = 0;
     virtual generator::Generator* getGenerator() const = 0;
+
+    // Persist world metadata (level.dat) — called by Level::save() so
+    // that periodic auto-saves flush metadata to disk, not just chunks.
+    // The provider may choose to no-op if it has no metadata (e.g.
+    // a stub LevelDB provider).
+    virtual void    saveLevelData() = 0;
 };
 
 } // namespace atomikpe::level::format

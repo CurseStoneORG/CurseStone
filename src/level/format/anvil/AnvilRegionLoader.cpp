@@ -113,6 +113,8 @@ bool AnvilRegionLoader::loadLocationTable() {
     if (std::fread(ts_buf, 1, kTimestampTableSize, fp_) != kTimestampTableSize)
         return false;
 
+    // Nukkit semantics: lastSector = the highest sector index in use.
+    // Initial value is 1 (sector 0 + 1 are the header / location table).
     last_sector_ = 1;
     for (size_t i = 0; i < kChunkSlotCount; ++i) {
         uint32_t raw = read_be32(loc_buf + i * 4);
@@ -121,8 +123,9 @@ bool AnvilRegionLoader::loadLocationTable() {
         uint32_t ts  = read_be32(ts_buf + i * 4);
         table_[i] = LocationEntry{off, cnt, ts};
         if (off != 0 && cnt != 0) {
-            uint32_t end = off + cnt;
-            if (end > last_sector_) last_sector_ = end;
+            // Last sector used by this chunk = off + cnt - 1.
+            uint32_t last = off + cnt - 1;
+            if (last > last_sector_) last_sector_ = last;
         }
     }
     return true;
@@ -221,6 +224,7 @@ bool AnvilRegionLoader::writeChunk(int32_t lx, int32_t lz,
     bool index_changed = false;
     if (e.count < sectors) {
         // Doesn't fit in current allocation → append at end of file.
+        // Mirror Nukkit: table[0] = lastSector + 1, then lastSector += sectors.
         e.offset = last_sector_ + 1;
         last_sector_ += sectors;
         index_changed = true;
@@ -231,6 +235,18 @@ bool AnvilRegionLoader::writeChunk(int32_t lx, int32_t lz,
     e.timestamp = (uint32_t)now_unix_seconds();
 
     long byte_off = (long)e.offset * (long)kSectorSize;
+    // Ensure the file is large enough for the seek target. When writing to
+    // a freshly-created region (only 8 KiB of header) this extends the file
+    // past its current EOF so fseek+write don't fail or fragment.
+    std::fseek(fp_, 0, SEEK_END);
+    long cur_end = std::ftell(fp_);
+    long needed_end = byte_off + (long)sectors * (long)kSectorSize;
+    if (cur_end < needed_end) {
+        long pad = needed_end - cur_end;
+        std::vector<uint8_t> zero(pad, 0);
+        std::fseek(fp_, cur_end, SEEK_SET);
+        if (std::fwrite(zero.data(), 1, zero.size(), fp_) != zero.size()) return false;
+    }
     if (std::fseek(fp_, byte_off, SEEK_SET) != 0) return false;
 
     // Write [length BE][compression][payload], then zero-pad to sector multiple.
