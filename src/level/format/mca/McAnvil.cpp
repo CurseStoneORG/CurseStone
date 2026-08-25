@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // McAnvil.cpp — alias provider that delegates to AtmkMca.
-//
-// "mcanvil" and "mca" config names are kept for backward compat with
-// old configs that referenced them. They all instantiate AtmkMca,
-// which is now the canonical AtomikPE world format (replacing McaCpp).
 #include "McAnvil.h"
 #include "../LevelProviderManager.h"
 #include "../atmkma/AtmkMca.h"
@@ -15,9 +11,8 @@ namespace atomikpe::level::format::mca {
 
 McAnvilRegistrar g_mca_registrar_;
 McAnvilRegistrar::McAnvilRegistrar() {
-    // NOTE: AtmkMcaRegistrar (in atmkma/AtmkMca.cpp) already registers
-    // "atmkma", "mcacpp", "mcanvil", and "mca" — so the explicit
-    // registrations here are redundant. We keep them as documentation.
+    // AtmkMcaRegistrar already registers "atmkma", "mcacpp", "mcanvil",
+    // and "mca" — these are kept for backward-compat documentation only.
     LevelProviderManager::getInstance().registerProvider(
         "mcanvil", [](){ return std::unique_ptr<LevelProvider>(new McAnvil()); });
     LevelProviderManager::getInstance().registerProvider(

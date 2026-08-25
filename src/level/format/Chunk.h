@@ -3,7 +3,7 @@
 //
 // A Chunk holds 16 ChunkSections stacked on Y (0..15), giving 16*16*256
 // = 65536 blocks total. Each section is 16*16*16 = 4096 blocks. This
-// matches the MCPE 0.15.x chunk model that atmkma / leveldb / mca
+// matches the MCPE 0.15.x chunk model that mcacpp / leveldb / mca
 // formats all serialize.
 //
 // Pure C (not C++): the storage layer is C so it can be used from

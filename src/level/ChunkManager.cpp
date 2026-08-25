@@ -62,8 +62,30 @@ static mcp_chunk_t* generateFlatChunk(int32_t cx, int32_t cz) {
 
 mcp_chunk_t* ChunkManager::getChunk(int32_t x, int32_t z) {
     if (mcp_chunk_t* c = getChunkIfLoaded(x,z)) return c;
+
+    // First, try loading from the provider (disk). If the chunk
+    // exists on disk, we get back a fully populated mcp_chunk_t*.
+    if (provider_) {
+        auto loaded = provider_->loadChunk(x, z);
+        if (loaded.has_value()) {
+            std::shared_ptr<format::FullChunk>& fc = loaded.value();
+            auto* adapter = dynamic_cast<format::ChunkAdapter*>(fc.get());
+            if (adapter && adapter->chunk()) {
+                mcp_chunk_t* raw = adapter->releaseChunk();
+                if (raw) {
+                    setChunk(x, z, raw);
+                    return raw;
+                }
+            }
+        }
+    }
+
+    // Not on disk — generate a fresh flat chunk.
     mcp_chunk_t* c = generateFlatChunk(x, z);
-    if (c) setChunk(x, z, c);
+    if (c) {
+        c->dirty = true;  // mark dirty so it gets saved on next flush
+        setChunk(x, z, c);
+    }
     return c;
 }
 void ChunkManager::setChunk(int32_t x, int32_t z, mcp_chunk_t* chunk) {

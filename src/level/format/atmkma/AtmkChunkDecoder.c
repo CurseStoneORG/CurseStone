@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// AtmkChunkDecoder.c — AtmkMca chunk NBT decoder (C-compatible).
-//
-// Inverse of AtmkChunkEncoder.c. Reads the little-endian NBT tree
-// produced by AtmkChunkEncoder and rebuilds a complete mcp_chunk_t*
-// including terrain, tiles, entities, and generation flags.
+// AtmkChunkDecoder.c — decodes NBT little-endian back into mcp_chunk_t*.
 #include "AtmkChunkDecoder.h"
 #include "level/format/Chunk.h"
 #include "level/format/ChunkSection.h"
@@ -13,21 +9,18 @@
 #include "nbt/tag/IntArrayTag.h"
 #include "nbt/tag/ListTag.h"
 #include "nbt/tag/Tag.h"
-
 #include <stdlib.h>
 #include <string.h>
 
-#define SECTIONS_HIGH 8   // y = 0..127
+#define SECTIONS_HIGH 8
 
 static inline size_t mcpe_block_index(int x, int y, int z) {
     return (size_t)(y & 127) * 256 + (size_t)(z & 15) * 16 + (size_t)(x & 15);
 }
-
 static inline size_t mcpe_nibble_index(int x, int y, int z) {
     return mcpe_block_index(x, y, z) / 2;
 }
 
-// Helper: get a ByteArray's raw bytes. Returns NULL if missing/wrong type.
 static const uint8_t* get_byte_array(const mcp_tag_t* root, const char* name,
                                         size_t* out_len) {
     const mcp_tag_t* t = mcp_compound_tag_get(root, name);
@@ -38,7 +31,6 @@ static const uint8_t* get_byte_array(const mcp_tag_t* root, const char* name,
     return ba->data;
 }
 
-// Helper: write a nibble array (16384 bytes) into chunk sections 0..7.
 static void apply_nibble_array(mcp_chunk_t* chunk, const uint8_t* src,
                                   size_t src_len, int kind) {
     if (!chunk || !src || src_len < 16384) return;
@@ -52,7 +44,6 @@ static void apply_nibble_array(mcp_chunk_t* chunk, const uint8_t* src,
             case 2: arr = s->block_light; break;
         }
         if (!arr) {
-            // Allocate the array if missing.
             arr = (uint8_t*)calloc(2048, 1);
             if (!arr) continue;
             switch (kind) {
@@ -99,7 +90,6 @@ mcp_chunk_t* atmk_chunk_decode(const uint8_t* data, size_t len) {
     chunk->terrain_populated = mcp_compound_tag_get_byte(root, "TerrainPopulated", 0) != 0;
     chunk->light_populated   = mcp_compound_tag_get_byte(root, "LightPopulated", 0) != 0;
 
-    // --- Blocks (ByteArray of 32768 bytes) ---
     size_t blocks_len = 0;
     const uint8_t* blocks = get_byte_array(root, "Blocks", &blocks_len);
     if (blocks && blocks_len >= 32768) {
@@ -121,7 +111,6 @@ mcp_chunk_t* atmk_chunk_decode(const uint8_t* data, size_t len) {
         }
     }
 
-    // --- Nibble arrays (Data, SkyLight, BlockLight) ---
     size_t na_len = 0;
     const uint8_t* na = get_byte_array(root, "Data", &na_len);
     if (na) apply_nibble_array(chunk, na, na_len, 0);
@@ -130,7 +119,6 @@ mcp_chunk_t* atmk_chunk_decode(const uint8_t* data, size_t len) {
     na = get_byte_array(root, "BlockLight", &na_len);
     if (na) apply_nibble_array(chunk, na, na_len, 2);
 
-    // --- HeightMap (ByteArray of 256 bytes → chunk->height_map[256]) ---
     size_t hm_len = 0;
     const uint8_t* hm = get_byte_array(root, "HeightMap", &hm_len);
     if (hm && hm_len >= 256) {
@@ -144,7 +132,6 @@ mcp_chunk_t* atmk_chunk_decode(const uint8_t* data, size_t len) {
         }
     }
 
-    // --- BiomeColors (ByteArray of 1024 bytes → chunk->biomes[256]) ---
     size_t bc_len = 0;
     const uint8_t* bc = get_byte_array(root, "BiomeColors", &bc_len);
     if (bc && bc_len >= 1024) {
@@ -158,14 +145,12 @@ mcp_chunk_t* atmk_chunk_decode(const uint8_t* data, size_t len) {
         }
     }
 
-    // --- Tiles (List<CompoundTag>) ---
     const mcp_tag_t* tiles_list = mcp_compound_tag_get(root, "Tiles");
     if (tiles_list && mcp_tag_get_type(tiles_list) == MCP_TAG_LIST) {
         const mcp_list_tag_t* lt = (const mcp_list_tag_t*)tiles_list;
         for (size_t i = 0; i < lt->count; ++i) {
             const mcp_tag_t* t = mcp_list_tag_get(tiles_list, i);
             if (!t) continue;
-            // Re-serialize this tile as a standalone NBT blob and attach.
             size_t blen = 0;
             uint8_t* bbuf = mcp_nbt_write_bytes(t, /*little_endian=*/true, &blen);
             if (bbuf && blen > 0) {
@@ -175,7 +160,6 @@ mcp_chunk_t* atmk_chunk_decode(const uint8_t* data, size_t len) {
         }
     }
 
-    // --- Entities (List<CompoundTag>) ---
     const mcp_tag_t* entities_list = mcp_compound_tag_get(root, "Entities");
     if (entities_list && mcp_tag_get_type(entities_list) == MCP_TAG_LIST) {
         const mcp_list_tag_t* lt = (const mcp_list_tag_t*)entities_list;
@@ -192,7 +176,6 @@ mcp_chunk_t* atmk_chunk_decode(const uint8_t* data, size_t len) {
     }
 
     mcp_tag_destroy(root);
-
     chunk->dirty = false;
     return chunk;
 }

@@ -177,42 +177,30 @@ void Server::loadDefaultLevel() {
 
     level::LevelConfig lc;
     lc.name      = get_str("level.name", "level-name", "world");
-    lc.format    = get_str("level.format", "level-format", "mcanvil");
+    lc.format    = get_str("level.format", "level-format", "atmkma");
     lc.generator = get_str("level.generator", "generator", "normal");
     int64_t seed = get_int("level.seed", "level-seed", 0);
     lc.seed = (seed != 0) ? (int64_t)seed : (int64_t)mcp_utils_time_ms();
-    lc.spawn_x = 0; lc.spawn_y = 5; lc.spawn_z = 0;
+    lc.spawn_x = 0; lc.spawn_y = 64; lc.spawn_z = 0;
     lc.view_distance = view_distance_;
-    level_ = std::make_shared<level::Level>(std::move(lc));
+    lc.dataPath = dataPath_;   // so Level can compute absolute world paths
 
-    // Create worlds directory structure
+    // Create the world directory structure BEFORE constructing the Level,
+    // so the LevelProvider can open the region/ subdirectory on init().
     std::string worldsDir = dataPath_ + "/worlds";
     std::string worldDir  = worldsDir + "/" + lc.name;
-    std::string regionDir = worldDir + "/region";
-    std::string chunksDir = worldDir + "/chunks";
+    std::string regionsDir = worldDir + "/regions";
     ::mkdir(worldsDir.c_str(), 0755);
     ::mkdir(worldDir.c_str(), 0755);
-    ::mkdir(regionDir.c_str(), 0755);
-    ::mkdir(chunksDir.c_str(), 0755);
+    ::mkdir(regionsDir.c_str(), 0755);
 
-    // Save level.dat (minimal placeholder; full NBT lands later)
-    std::string levelDat = worldDir + "/level.dat";
-    FILE* f = fopen(levelDat.c_str(), "wb");
-    if (f) {
-        fprintf(f, "AtomikPE Level\n");
-        fprintf(f, "name=%s\n", lc.name.c_str());
-        fprintf(f, "seed=%lld\n", (long long)lc.seed);
-        fprintf(f, "time=0\n");
-        fprintf(f, "spawn=0,5,0\n");
-        fprintf(f, "generator=%s\n", lc.generator.c_str());
-        fprintf(f, "format=%s\n", lc.format.c_str());
-        fclose(f);
-    }
-    utils::MainLogger::get().info("Default level '" + lc.name +
-        "' ready (format: " + lc.format + ", generator: " + lc.generator + ")");
+    // Construct the Level — this instantiates the LevelProvider (AtmkMca)
+    // and calls provider->init(worldDir). The provider creates the
+    // regions/ subdir and reads level.dat if it exists.
+    level_ = std::make_shared<level::Level>(std::move(lc));
+
     utils::MainLogger::get().info("World directory: " + worldDir);
-    utils::MainLogger::get().info("Region directory: " + regionDir);
-    utils::MainLogger::get().info("Chunks directory: " + chunksDir);
+    utils::MainLogger::get().info("Regions directory: " + regionsDir);
 }
 
 void Server::startCommandReader() {
@@ -225,6 +213,10 @@ void Server::startCommandReader() {
 }
 
 void Server::start(const std::string& dataPath) {
+    // Record the boot start time so we can log "Server started in N.Ns"
+    // at the end. Mirrors PMMP's startup timing log.
+    auto boot_start = std::chrono::steady_clock::now();
+
     dataPath_ = dataPath;
     running_.store(true, std::memory_order_relaxed);
 
@@ -261,19 +253,37 @@ void Server::start(const std::string& dataPath) {
         fclose(fcheck);
     }
 
+    utils::MainLogger::get().info("Loading configuration...");
     loadConfig();
     loadOps();
+    utils::MainLogger::get().info("Registering blocks and items...");
     registerBlocksAndItems();
     command_map_ = std::make_shared<SimpleCommandMap>();
     registerDefaultCommands(*command_map_);
     crafting_ = std::make_shared<inventory::CraftingManager>();
     crafting_->loadFromJson(dataPath_ + "/resources/recipes.json");
     async_pool_ = std::make_shared<scheduler::AsyncPool>(async_workers_);
+    utils::MainLogger::get().info("Opening network interface...");
     openNetwork();
+    utils::MainLogger::get().info("Loading default level...");
     loadDefaultLevel();
+    utils::MainLogger::get().info("Starting console command reader...");
     startCommandReader();
 
+    // Compute total boot time.
+    auto boot_end = std::chrono::steady_clock::now();
+    auto boot_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        boot_end - boot_start).count();
+    double boot_sec = (double)boot_ms / 1000.0;
     utils::MainLogger::get().info("Server ready. Tick loop starting...");
+    utils::MainLogger::get().info("Server started in " +
+        std::to_string(boot_sec) + "s");
+
+    // Give the OS a brief moment to flush filesystem buffers after the
+    // world directory + level.dat + provider init writes. Without this,
+    // the tick loop can race with filesystem sync on slow devices
+    // (Android especially). 200ms is plenty for any reasonable storage.
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
 }
 
 void Server::runTickLoop() {

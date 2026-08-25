@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // AtmkRegionFile.cpp — single .atmka region file implementation.
 #include "AtmkRegionFile.h"
-
 #include <algorithm>
 #include <cerrno>
 #include <cstring>
@@ -13,10 +12,8 @@
 namespace atomikpe::level::format::atmkma {
 
 static void write_be32(uint8_t* p, uint32_t v) {
-    p[0] = (uint8_t)(v >> 24);
-    p[1] = (uint8_t)(v >> 16);
-    p[2] = (uint8_t)(v >> 8);
-    p[3] = (uint8_t)(v);
+    p[0] = (uint8_t)(v >> 24); p[1] = (uint8_t)(v >> 16);
+    p[2] = (uint8_t)(v >> 8);  p[3] = (uint8_t)(v);
 }
 static uint32_t read_be32(const uint8_t* p) {
     return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
@@ -24,47 +21,38 @@ static uint32_t read_be32(const uint8_t* p) {
 }
 
 AtmkRegionFile::AtmkRegionFile() = default;
-
 AtmkRegionFile::~AtmkRegionFile() { close(); }
 
-bool AtmkRegionFile::open(const std::string& path, int32_t rx, int32_t rz,
-                            bool create) {
+bool AtmkRegionFile::open(const std::string& path, int32_t rx, int32_t rz, bool create) {
     path_ = path;
     region_x_ = rx;
     region_z_ = rz;
     writable_ = create;
 
-    // Try to open r+b first; if missing and create=true, create it.
     fp_ = std::fopen(path.c_str(), "r+b");
     if (!fp_ && create) {
         fp_ = std::fopen(path.c_str(), "w+b");
     }
     if (!fp_) return false;
 
-    // If file is empty (newly created), write header + empty table.
     std::fseek(fp_, 0, SEEK_END);
     long sz = std::ftell(fp_);
     if (sz == 0) {
-        // Write 256-byte header.
+        // New file: write header + empty table.
         std::fseek(fp_, 0, SEEK_SET);
         uint8_t header[kHeaderSize] = {0};
-        // Magic "ATMK"
         header[0] = 'A'; header[1] = 'T'; header[2] = 'M'; header[3] = 'K';
         header[4] = kAtmkaVersion;
-        // Timestamp (8 bytes BE at offset 5)
         int64_t ts = (int64_t)std::time(nullptr);
         for (int i = 0; i < 8; ++i) {
             header[5 + i] = (uint8_t)((ts >> ((7 - i) * 8)) & 0xFF);
         }
-        // RegionX (4 bytes BE at offset 13)
         write_be32(header + 13, (uint32_t)rx);
-        // RegionZ (4 bytes BE at offset 17)
         write_be32(header + 17, (uint32_t)rz);
         if (std::fwrite(header, 1, kHeaderSize, fp_) != kHeaderSize) {
             std::fclose(fp_); fp_ = nullptr;
             return false;
         }
-        // Write empty chunk table (4096 zero bytes).
         std::vector<uint8_t> zero_table(kTableSize, 0);
         if (std::fwrite(zero_table.data(), 1, kTableSize, fp_) != kTableSize) {
             std::fclose(fp_); fp_ = nullptr;
@@ -72,9 +60,8 @@ bool AtmkRegionFile::open(const std::string& path, int32_t rx, int32_t rz,
         }
         std::fflush(fp_);
         table_.fill(0);
-        next_free_sector_ = 1;  // sectors 0 reserved (header+table)
+        next_free_sector_ = 1;
     } else {
-        // Read existing header + table.
         if (!readHeaderAndTable()) {
             std::fclose(fp_); fp_ = nullptr;
             return false;
@@ -96,7 +83,6 @@ bool AtmkRegionFile::readHeaderAndTable() {
     std::fseek(fp_, 0, SEEK_SET);
     uint8_t header[kHeaderSize];
     if (std::fread(header, 1, kHeaderSize, fp_) != kHeaderSize) return false;
-    // Verify magic.
     if (!(header[0] == 'A' && header[1] == 'T' &&
           header[2] == 'M' && header[3] == 'K')) {
         return false;
@@ -104,14 +90,12 @@ bool AtmkRegionFile::readHeaderAndTable() {
     region_x_ = (int32_t)read_be32(header + 13);
     region_z_ = (int32_t)read_be32(header + 17);
 
-    // Read chunk table.
     uint8_t table_buf[kTableSize];
     if (std::fread(table_buf, 1, kTableSize, fp_) != kTableSize) return false;
     for (size_t i = 0; i < kTableEntries; ++i) {
         table_[i] = read_be32(table_buf + i * 4);
     }
 
-    // Find highest allocated sector.
     next_free_sector_ = 1;
     for (size_t i = 0; i < kTableEntries; ++i) {
         uint32_t entry = table_[i];
@@ -137,10 +121,8 @@ bool AtmkRegionFile::writeTable() {
 }
 
 uint32_t AtmkRegionFile::allocSectors(uint8_t sectorCount) {
-    // Phase 1: simple append-only. No defragmentation.
     uint32_t off = next_free_sector_;
     next_free_sector_ += sectorCount;
-    // Grow the file with zero-bytes if needed.
     std::fseek(fp_, 0, SEEK_END);
     long cur = std::ftell(fp_);
     long need_end = (long)next_free_sector_ * (long)kSectorSize;
@@ -164,32 +146,25 @@ AtmkRegionFile::readChunk(int32_t localCx, int32_t localCz) {
     long byte_off = (long)off * (long)kSectorSize;
     if (std::fseek(fp_, byte_off, SEEK_SET) != 0) return std::nullopt;
 
-    // Read 5-byte payload header.
     uint8_t hdr[5];
     if (std::fread(hdr, 1, 5, fp_) != 5) return std::nullopt;
     uint32_t comp_len = read_be32(hdr);
     uint8_t  comp_type = hdr[4];
     if (comp_len == 0 || comp_len > kMaxPayloadSize) return std::nullopt;
 
-    // Read compressed bytes.
     std::vector<uint8_t> comp_buf(comp_len);
     if (std::fread(comp_buf.data(), 1, comp_len, fp_) != comp_len)
         return std::nullopt;
 
-    // Decompress.
     std::vector<uint8_t> out;
     if (comp_type == 0) {
-        // No compression.
         out = comp_buf;
     } else if (comp_type == 1) {
-        // zlib. We don't know the uncompressed size ahead — use a
-        // growing buffer.
         uLongf out_len = compressBound(comp_len) * 4 + 65536;
         out.resize(out_len);
         int rc = uncompress(out.data(), &out_len, comp_buf.data(),
                               (uLong)comp_buf.size());
         if (rc != Z_OK) {
-            // Try larger buffer.
             out_len = comp_len * 8 + 65536;
             out.resize(out_len);
             rc = uncompress(out.data(), &out_len, comp_buf.data(),
@@ -198,7 +173,6 @@ AtmkRegionFile::readChunk(int32_t localCx, int32_t localCz) {
         }
         out.resize(out_len);
     } else {
-        // LZ4 not supported yet.
         return std::nullopt;
     }
     return out;
@@ -219,7 +193,6 @@ bool AtmkRegionFile::writeChunk(int32_t localCx, int32_t localCz,
     long byte_off = (long)off * (long)kSectorSize;
     if (std::fseek(fp_, byte_off, SEEK_SET) != 0) return false;
 
-    // Write 5-byte payload header.
     uint8_t hdr[5];
     write_be32(hdr + 0, (uint32_t)compressedPayload.size());
     hdr[4] = compressionType;
@@ -229,7 +202,6 @@ bool AtmkRegionFile::writeChunk(int32_t localCx, int32_t localCz,
                           compressedPayload.size(), fp_)
               != compressedPayload.size()) return false;
     }
-    // Zero-pad to sector boundary.
     size_t written = 5 + compressedPayload.size();
     size_t total   = (size_t)sector_count * kSectorSize;
     if (written < total) {
@@ -239,7 +211,6 @@ bool AtmkRegionFile::writeChunk(int32_t localCx, int32_t localCz,
     }
     std::fflush(fp_);
 
-    // Update chunk table entry.
     size_t idx = tableIndex(localCx, localCz);
     table_[idx] = (off & 0x00FFFFFF) | ((uint32_t)sector_count << 24);
     return writeTable();

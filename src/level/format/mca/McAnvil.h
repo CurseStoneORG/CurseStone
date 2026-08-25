@@ -1,11 +1,6 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // McAnvil.h — alias provider that delegates to AtmkMca.
-//
-// "mcanvil" and "mca" are kept as backward-compat aliases for the
-// old configs that referenced them. They all instantiate AtmkMca
-// under the hood, which is the canonical AtomikPE world format.
 #pragma once
-
 #include <cstdint>
 #include <memory>
 #include <optional>
