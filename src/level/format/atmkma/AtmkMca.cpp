@@ -24,30 +24,25 @@
 
 namespace atomikpe::level::format::atmkma {
 
-// ----- Auto-registration with LevelProviderManager.
 AtmkMcaRegistrar g_atmkma_registrar_;
 AtmkMcaRegistrar::AtmkMcaRegistrar() {
     LevelProviderManager::getInstance().registerProvider(
         "atmkma", [](){ return std::unique_ptr<LevelProvider>(new AtmkMca()); });
-    // Backward-compat aliases for old configs that may still reference
-    // "mcacpp" or "mcanvil".
     LevelProviderManager::getInstance().registerProvider(
         "mcacpp", [](){ return std::unique_ptr<LevelProvider>(new AtmkMca()); });
     LevelProviderManager::getInstance().registerProvider(
         "mcanvil", [](){ return std::unique_ptr<LevelProvider>(new AtmkMca()); });
+    LevelProviderManager::getInstance().registerProvider(
+        "mca", [](){ return std::unique_ptr<LevelProvider>(new AtmkMca()); });
 }
 
-// ----- Helpers -----
 static bool ensure_dir(const std::string& path) {
     struct stat st{};
-    if (::stat(path.c_str(), &st) == 0) {
-        return S_ISDIR(st.st_mode);
-    }
+    if (::stat(path.c_str(), &st) == 0) return S_ISDIR(st.st_mode);
     if (errno != ENOENT) return false;
     return ::mkdir(path.c_str(), 0775) == 0;
 }
 
-// zlib compress helper (level 7).
 static bool zlib_compress(const uint8_t* src, size_t src_len,
                             std::vector<uint8_t>* out) {
     uLongf bound = compressBound((uLong)src_len);
@@ -67,31 +62,26 @@ static int64_t current_millis() {
         std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
-// ----- Lifecycle -----
 AtmkMca::AtmkMca() = default;
-
 AtmkMca::~AtmkMca() { shutdown(); }
 
 void AtmkMca::init(const std::string& path) {
     path_ = path;
-    // Create directories: <world>/ and <world>/regions/
     ensure_dir(path_);
     ensure_dir(path_ + "/regions");
     loadMetadata();
+    utils::MainLogger::get().info("[AtmkMca] Initialized at " + path_);
 }
 
 void AtmkMca::shutdown() {
-    // Flush + close every open region file.
     for (auto& [_, rf_ptr] : regions_) {
         if (rf_ptr) rf_ptr->close();
     }
     regions_.clear();
     region_lru_.clear();
-    // Persist level.dat metadata on shutdown.
     saveMetadata();
 }
 
-// ----- Region file management -----
 std::string AtmkMca::regionPath(int32_t cx, int32_t cz) const {
     int32_t rx = (cx >= 0) ? (cx / 32) : ((cx - 31) / 32);
     int32_t rz = (cz >= 0) ? (cz / 32) : ((cz - 31) / 32);
@@ -105,7 +95,6 @@ AtmkRegionFile* AtmkMca::regionFor(int32_t cx, int32_t cz, bool create) {
     std::string p = regionPath(cx, cz);
     auto it = regions_.find(p);
     if (it != regions_.end()) {
-        // Move to back of LRU.
         auto lru_it = std::find(region_lru_.begin(), region_lru_.end(), p);
         if (lru_it != region_lru_.end()) {
             region_lru_.erase(lru_it);
@@ -113,16 +102,11 @@ AtmkRegionFile* AtmkMca::regionFor(int32_t cx, int32_t cz, bool create) {
         }
         return it->second.get();
     }
-    // Evict if at capacity.
-    if (regions_.size() >= kMaxOpenRegions) {
-        evictOldestRegion();
-    }
+    if (regions_.size() >= kMaxOpenRegions) evictOldestRegion();
     int32_t rx = (cx >= 0) ? (cx / 32) : ((cx - 31) / 32);
     int32_t rz = (cz >= 0) ? (cz / 32) : ((cz - 31) / 32);
     auto rf = std::make_unique<AtmkRegionFile>();
-    if (!rf->open(p, rx, rz, create)) {
-        return nullptr;
-    }
+    if (!rf->open(p, rx, rz, create)) return nullptr;
     AtmkRegionFile* raw = rf.get();
     regions_[p] = std::move(rf);
     region_lru_.push_back(p);
@@ -140,7 +124,6 @@ void AtmkMca::evictOldestRegion() {
     }
 }
 
-// ----- Chunk I/O -----
 std::optional<std::shared_ptr<FullChunk>>
 AtmkMca::loadChunk(int32_t x, int32_t z) {
     AtmkRegionFile* rf = regionFor(x, z, /*create=*/false);
@@ -151,69 +134,57 @@ AtmkMca::loadChunk(int32_t x, int32_t z) {
     auto payload = rf->readChunk(local_x, local_z);
     if (!payload) return std::nullopt;
 
-    // Decode NBT little-endian into mcp_chunk_t*.
     mcp_chunk_t* raw = atmk_chunk_decode(payload->data(), payload->size());
     if (!raw) return std::nullopt;
 
-    // Wrap in ChunkAdapter (takes ownership).
     auto adapter = std::make_shared<ChunkAdapter>(raw);
     return adapter;
 }
 
 void AtmkMca::saveChunk(const std::shared_ptr<FullChunk>& chunk) {
     if (!chunk) return;
-
     auto* adapter = dynamic_cast<ChunkAdapter*>(chunk.get());
     if (!adapter) return;
     mcp_chunk_t* raw = adapter->chunk();
     if (!raw) return;
 
-    // 1. Encode chunk to NBT (little-endian).
     size_t nbt_len = 0;
     uint8_t* nbt_buf = atmk_chunk_encode(raw, &nbt_len);
     if (!nbt_buf || nbt_len == 0) {
-        utils::MainLogger::get().warn("AtmkMca: failed to encode chunk "
+        utils::MainLogger::get().warn("[AtmkMca] Failed to encode chunk "
             + std::to_string(raw->x) + "," + std::to_string(raw->z));
         return;
     }
 
-    // 2. Zlib-compress.
     std::vector<uint8_t> compressed;
     if (!zlib_compress(nbt_buf, nbt_len, &compressed)) {
         free(nbt_buf);
-        utils::MainLogger::get().warn("AtmkMca: zlib compress failed");
+        utils::MainLogger::get().warn("[AtmkMca] zlib compress failed");
         return;
     }
     free(nbt_buf);
 
-    // 3. Write to region file.
     AtmkRegionFile* rf = regionFor(raw->x, raw->z, /*create=*/true);
     if (!rf) {
-        utils::MainLogger::get().warn("AtmkMca: failed to open region for chunk "
+        utils::MainLogger::get().warn("[AtmkMca] Failed to open region for chunk "
             + std::to_string(raw->x) + "," + std::to_string(raw->z));
         return;
     }
     int32_t local_x = raw->x & 31;
     int32_t local_z = raw->z & 31;
     if (!rf->writeChunk(local_x, local_z, /*compression=*/1, compressed)) {
-        utils::MainLogger::get().warn("AtmkMca: failed to write chunk "
+        utils::MainLogger::get().warn("[AtmkMca] Failed to write chunk "
             + std::to_string(raw->x) + "," + std::to_string(raw->z));
         return;
     }
-
-    // 4. Mark chunk as clean.
     raw->dirty = false;
     raw->last_update = current_millis();
 }
 
-void AtmkMca::unloadChunk(int32_t /*x*/, int32_t /*z*/) {
-    // In-memory chunk cache is owned by Level, not by the provider.
-    // No-op here.
-}
+void AtmkMca::unloadChunk(int32_t /*x*/, int32_t /*z*/) {}
 
 std::vector<std::pair<int32_t, int32_t>>
 AtmkMca::listChunks() const {
-    // Walk every .atmka file in <world>/regions/ and collect chunk coords.
     std::vector<std::pair<int32_t, int32_t>> out;
     std::string regions_dir = path_ + "/regions";
     DIR* dir = ::opendir(regions_dir.c_str());
@@ -224,8 +195,6 @@ AtmkMca::listChunks() const {
         if (name.size() < 12) continue;
         if (name.substr(0, 2) != "r.") continue;
         if (name.substr(name.size() - 6) != ".atmka") continue;
-        // Parse: r.RX.RZ.atmka
-        // Find first and second dot after "r.".
         size_t first_dot = name.find('.', 2);
         if (first_dot == std::string::npos) continue;
         size_t second_dot = name.find('.', first_dot + 1);
@@ -237,9 +206,6 @@ AtmkMca::listChunks() const {
             rx = std::stoi(rx_str);
             rz = std::stoi(rz_str);
         } catch (...) { continue; }
-        // Open the region read-only to list its chunks.
-        std::string full_path = regions_dir + "/" + name;
-        // We need to mutate the cache, so const_cast.
         auto* self = const_cast<AtmkMca*>(this);
         AtmkRegionFile* rf = self->regionFor(rx * 32, rz * 32, /*create=*/false);
         if (!rf) continue;
@@ -250,7 +216,6 @@ AtmkMca::listChunks() const {
     return out;
 }
 
-// ----- Metadata (level.dat) -----
 void AtmkMca::loadMetadata() {
     std::string p = path_ + "/level.dat";
     FILE* fp = std::fopen(p.c_str(), "rb");
@@ -295,7 +260,6 @@ void AtmkMca::saveMetadata() {
     mcp_compound_tag_set_long(root, "Time", time_);
     mcp_compound_tag_set_long(root, "LastPlayed", current_millis());
 
-    // Spawn compound.
     mcp_tag_t* spawn = mcp_compound_tag_new_named("Spawn");
     mcp_compound_tag_set_int(spawn, "x", (int32_t)spawn_.x);
     mcp_compound_tag_set_int(spawn, "y", (int32_t)spawn_.y);

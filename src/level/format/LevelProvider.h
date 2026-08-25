@@ -8,9 +8,9 @@
 // we mirror that here.
 //
 // Concrete implementers (Phase 8):
-//   - atmkma/AtmkMca        default AtomikPE format
+//   - mcacpp/McaCpp       default AtomikPE format
 //   - leveldb/LevelDB     MCPE default format (stub until leveldb linked)
-//   - mca/McAnvil         alias of AtmkMca (backward compat)
+//   - mca/McAnvil         Java Anvil .mca (stub)
 //   - mcapm/McapmFormat   MCAPM variant (stub)
 #pragma once
 

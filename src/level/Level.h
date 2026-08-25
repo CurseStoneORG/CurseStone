@@ -1,6 +1,12 @@
 // Level — a single world (overworld, nether, end). Holds the
 // ChunkManager, generator, players, entities, tile-entities and
 // per-world settings (time, weather, spawn position).
+//
+// IMPORTANT: on construction, the Level instantiates a LevelProvider
+// (via LevelProviderManager) for the configured format and connects
+// it to the ChunkManager so that flushDirty() actually writes to disk.
+// Without this, the world is "in-memory only" and changes are lost
+// when the server shuts down.
 #pragma once
 #include <string>
 #include <memory>
@@ -10,6 +16,7 @@
 #include <functional>
 #include "math/Vector3.h"
 #include "level/ChunkManager.h"
+#include "level/format/LevelProvider.h"
 namespace atomikpe {
 class Player; class Entity; class Tile;
 namespace level::generator { class Generator; }
@@ -17,12 +24,13 @@ namespace level::generator { class Generator; }
 namespace atomikpe::level {
 struct LevelConfig {
     std::string name;
-    std::string format   = "atmkma";  // atmkma | leveldb | mca | mcapm
+    std::string format   = "atmkma";  // atmkma (default) | leveldb | mca | mcapm
     std::string generator = "normal"; // normal | flat | nether | void
     int64_t seed = 0;
     int32_t time = 0;
     int32_t spawn_x = 0, spawn_y = 64, spawn_z = 0;
     int32_t view_distance = 8;
+    std::string dataPath;   // absolute path to the server's data dir
 };
 class Level {
 public:
@@ -42,18 +50,21 @@ public:
     // Spawn point.
     mcp_vector3_t spawn() const { return spawn_; }
     void setSpawn(mcp_vector3_t v) { spawn_ = v; }
-    // Save all dirty chunks.
+    // Save all dirty chunks (routes to the LevelProvider).
     int save();
     // Tick this level — entities, tile entities, scheduled blocks.
     void tick(uint64_t current_tick);
     // Generator accessor for AsyncPool workers.
     std::shared_ptr<generator::Generator> generator() const { return generator_; }
+    // The active LevelProvider (AtmkMca by default).
+    std::shared_ptr<format::LevelProvider> provider() const { return provider_; }
     // ChunkLoaders (players) registered to receive chunk updates.
     void registerLoader(uint64_t loader_id, class ChunkLoader* loader);
     void unregisterLoader(uint64_t loader_id);
 private:
     LevelConfig cfg_;
     ChunkManager chunks_;
+    std::shared_ptr<format::LevelProvider> provider_;
     std::shared_ptr<generator::Generator> generator_;
     mcp_vector3_t spawn_;
     std::unordered_map<uint64_t, class ChunkLoader*> loaders_;

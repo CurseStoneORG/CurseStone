@@ -21,7 +21,7 @@ server:
 
 level:
   name: "world"
-  format: "mcanvil"    # mcanvil | mcacpp | leveldb | mca | mcapm  (mcanvil = alias of mcacpp)
+  format: "atmkma"    # atmkma (default AtomikPE format) | mcanvil | mca | mcapm
   generator: "normal"  # normal | flat | nether | void
   seed: 0              # 0 = random
 
