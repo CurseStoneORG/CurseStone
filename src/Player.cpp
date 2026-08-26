@@ -424,6 +424,14 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                     it.count = cs->itemCount;
                     it.meta  = static_cast<uint8_t>(cs->itemDamage & 0xFF);
 
+                    // MCPE 0.15.x sometimes sends count=0 for creative items
+                    // on the first tap. Nukkit's getSlot() defaults count to
+                    // 1 when the id is valid. We do the same so creative
+                    // items always have at least 1 in the stack.
+                    if (it.id != 0 && it.count == 0) {
+                        it.count = 1;
+                    }
+
                     // Debug log for creative inventory clicks.
                     if (srv_ && srv_->advancedLog()) {
                         utils::MainLogger::get().info("[INV] " + cfg_.username +
@@ -1308,12 +1316,17 @@ int64_t Player::dropItem(int x, int y, int z, uint16_t itemId, uint8_t count, ui
     // Allocate a runtime entity ID (PMMP `Level::$entityIdCounter`).
     int64_t eid = srv_->allocateEid();
 
-    // Random motion in PMMP range: x,z in [-0.1, +0.1], y = 0.2.
-    thread_local std::mt19937 rng{std::random_device{}()};
-    std::uniform_real_distribution<float> d(-0.1f, +0.1f);
-    float mx = d(rng);
-    float my = 0.2f;
-    float mz = d(rng);
+    // CRITICAL: Set speed to 0 so the item stays exactly where it drops.
+    // If we give it random motion (like PMMP does), the CLIENT applies
+    // the motion visually, but the SERVER's DroppedItem position never
+    // updates. This causes a desync: the player walks to where the item
+    // VISUALLY is, but the server checks against the ORIGINAL position
+    // and says "too far away" → the item can't be picked up.
+    // Setting speed=0 ensures the visual position matches the server
+    // position, so pickup always works.
+    float mx = 0.0f;
+    float my = 0.0f;
+    float mz = 0.0f;
 
     auto pk = std::make_shared<network::protocol::AddItemEntityPacket>();
     pk->eid        = eid;
@@ -1352,9 +1365,10 @@ int64_t Player::dropItem(int x, int y, int z, uint16_t itemId, uint8_t count, ui
         di.y          = (double)y + 0.5;
         di.z          = (double)z + 0.5;
         di.spawn_tick = srv_->getCurrentTick();
-        // 10-tick pickup delay (~0.5s) so the dropper doesn't immediately
-        // re-absorb it. Mirrors Nukkit EntityItem default pickupDelay.
-        di.pickup_delay_ticks = 10;
+        // 5-tick pickup delay (~0.25s) — just enough to prevent the
+        // dropper from instantly re-absorbing it, but short enough that
+        // the player can pick it up quickly after breaking a block.
+        di.pickup_delay_ticks = 5;
         di.taken     = false;
         srv_->getDefaultLevel()->addDroppedItem(di);
     }
@@ -1591,13 +1605,15 @@ void Player::onUpdate(uint64_t current_tick) {
             if (!di || di->taken) continue;
             // Respect pickup delay (Nukkit: getPickupDelay() <= 0).
             if (current_tick - di->spawn_tick < di->pickup_delay_ticks) continue;
-            // Distance check — player AABB grown by ~1 block (Nukkit uses
-            // boundingBox.grow(1, 0.5, 1)). We use a simple sphere check.
+            // Distance check — Nukkit uses boundingBox.grow(1, 0.5, 1)
+            // which gives roughly a 2-block radius. We use 2.5 blocks to
+            // be generous so items are always picked up when the player
+            // is standing on or next to them.
             double dx = di->x - pos_.x;
             double dy = di->y - pos_.y;
             double dz = di->z - pos_.z;
             double dist_sq = dx*dx + dy*dy + dz*dz;
-            if (dist_sq > 2.25) continue;  // > 1.5 blocks away — skip
+            if (dist_sq > 6.25) continue;  // > 2.5 blocks away — skip
 
             // Build the ItemStack to add.
             atomikpe::item::ItemStack pickup;
