@@ -406,12 +406,17 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
             break;
         case network::protocol::CONTAINER_SET_SLOT_PACKET:
             // Client moved an item between slots OR picked an item from
-            // the creative grid. Mirrors Nukkit PlayerInventory.onSlotChange
-            // + Player.handleCreativeInventoryClick: when windowid=0x79 the
-            // client grabbed an item from the creative grid; the actual
-            // landing slot is reported in a SEPARATE ContainerSetSlotPacket
-            // with windowid=0x00. We trust the client and write the slot
-            // state into our local PlayerInventory.
+            // the creative grid. Mirrors Nukkit Player.onUpdate() handling
+            // of ContainerSetSlotPacket:
+            //   - windowid 0x00 (SPECIAL_INVENTORY): main inventory slot.
+            //     If the player is creative and the item is a valid creative
+            //     item, Nukkit calls setItem(slot, item) AND
+            //     setHotbarSlotIndex(slot, slot) to link the hotbar.
+            //   - windowid 0x78 (SPECIAL_ARMOR): armor slot 0..3.
+            //   - windowid 0x7a (SPECIAL_HOTBAR): hotbar slot link.
+            //   - windowid 0x79 (SPECIAL_CREATIVE): rarely sent by MCPE
+            //     0.15.x clients; handled as a fallback that places the
+            //     item into the held hotbar slot.
             if (auto* cs = dynamic_cast<network::protocol::ContainerSetSlotPacket*>(&p)) {
                 if (inv_) {
                     atomikpe::item::ItemStack it;
@@ -419,10 +424,36 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                     it.count = cs->itemCount;
                     it.meta  = static_cast<uint8_t>(cs->itemDamage & 0xFF);
 
+                    // Debug log for creative inventory clicks.
+                    if (srv_ && srv_->advancedLog()) {
+                        utils::MainLogger::get().info("[INV] " + cfg_.username +
+                            " ContainerSetSlot: wid=0x" +
+                            ([](uint8_t v){char b[4];snprintf(b,4,"%02x",v);return std::string(b);})(cs->windowid) +
+                            " slot=" + std::to_string(cs->slot) +
+                            " hotbar=" + std::to_string(cs->hotbarSlot) +
+                            " id=" + std::to_string(it.id) +
+                            " count=" + std::to_string((int)it.count));
+                    }
+
                     if (cs->windowid == network::protocol::ContainerSetSlotPacket::SPECIAL_INVENTORY) {
                         // windowid 0x00 — main inventory slots 0..44.
+                        // Nukkit: if creative and item is valid, setItem +
+                        // setHotbarSlotIndex(slot, slot).
                         if (cs->slot >= 0 && cs->slot < inventory::PlayerInventory::SIZE) {
                             inv_->setItem(cs->slot, it);
+                            // If the player is creative and the slot is in
+                            // the hotbar range (0..8), link it as the held
+                            // slot so the client shows the item in hand.
+                            if ((cfg_.gamemode & 1) != 0 && it.id != 0 &&
+                                cs->slot >= 0 && cs->slot < 9) {
+                                inv_->setHeldSlot(cs->slot);
+                            }
+                            // Echo the inventory back so the client renders
+                            // the new item. Without this, some MCPE 0.15.x
+                            // clients don't show the item until re-login.
+                            if ((cfg_.gamemode & 1) != 0 && it.id != 0) {
+                                sendInventory();
+                            }
                         }
                     } else if (cs->windowid == network::protocol::ContainerSetSlotPacket::SPECIAL_ARMOR) {
                         // windowid 0x78 — armor slot 0..3 → store at 36..39.
@@ -438,22 +469,13 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                             inv_->setItem(cs->slot, it);
                         }
                     } else if (cs->windowid == network::protocol::ContainerSetSlotPacket::SPECIAL_CREATIVE) {
-                        // windowid 0x79 — creative-grid click.
-                        // Nukkit behavior: when a player in creative mode
-                        // clicks an item in the creative grid, the item is
-                        // placed into the player's HELD hotbar slot (the
-                        // currently selected slot). The `cs->slot` field
-                        // here is the creative-grid slot index (0..N), NOT
-                        // the destination inventory slot.
-                        //
-                        // We must place the item into inv_->heldSlot() so
-                        // it appears in the player's hand immediately.
+                        // windowid 0x79 — creative-grid click (rare in
+                        // MCPE 0.15.x; most clients use windowid=0x00).
+                        // Fallback: place the item into the held hotbar slot.
                         if ((cfg_.gamemode & 1) != 0 && it.id != 0) {
                             int held = inv_->heldSlot();
                             if (held >= 0 && held < 9) {
                                 inv_->setItem(held, it);
-                                // Echo the inventory back so the client
-                                // renders the new item in the hotbar.
                                 sendInventory();
                             }
                         }
@@ -1564,6 +1586,7 @@ void Player::onUpdate(uint64_t current_tick) {
     if (spawned_.load(std::memory_order_relaxed) && srv_ && srv_->getDefaultLevel() && inv_) {
         auto* lvl = srv_->getDefaultLevel();
         auto dropped = lvl->droppedItems();
+        bool any_picked_up = false;  // track if we need to re-sync inventory
         for (level::DroppedItem* di : dropped) {
             if (!di || di->taken) continue;
             // Respect pickup delay (Nukkit: getPickupDelay() <= 0).
@@ -1606,11 +1629,6 @@ void Player::onUpdate(uint64_t current_tick) {
             }
 
             // --- Send TakeItemEntityPacket (mirrors Nukkit exactly) ---
-            // Nukkit: Server.broadcastPacket(entity.getViewers().values(), pk)
-            // — viewers = players OTHER THAN the picker who can see the item.
-            // The picker is NOT in viewers, so they don't get this packet.
-            // Then a SEPARATE packet with entityId=0 is sent ONLY to the
-            // picker, which tells their client to remove the entity locally.
             auto pk_viewer = std::make_shared<network::protocol::TakeItemEntityPacket>();
             pk_viewer->target   = di->eid;
             pk_viewer->entityId = runtimeId();
@@ -1631,11 +1649,6 @@ void Player::onUpdate(uint64_t current_tick) {
             sendPacket(pk_picker);
 
             // --- Mark the entity for removal IMMEDIATELY ---
-            // CRITICAL: we must set taken=true IMMEDIATELY so the next
-            // Player::onUpdate() tick doesn't try to pick it up again
-            // (which would duplicate the item). The Level::tick() sweep
-            // will erase it from the map later, but taken=true prevents
-            // any re-pickup in the meantime.
             di->taken = true;
 
             if (leftover.count > 0) {
@@ -1646,18 +1659,14 @@ void Player::onUpdate(uint64_t current_tick) {
                 di->taken = false;
             } else {
                 // Full pickup — mark for removal AND send RemoveEntityPacket
-                // to all viewers so the client removes the visual entity
-                // immediately (not just the TakeItemEntityPacket animation).
+                // to the picker so the client removes the visual entity.
                 lvl->removeDroppedItem(di->eid);
-                // Send RemoveEntityPacket to the picker so the client
-                // definitely removes the entity from its world.
                 auto rm_pk = std::make_shared<network::protocol::RemoveEntityPacket>();
                 rm_pk->eid = di->eid;
                 sendPacket(rm_pk);
             }
 
-            // Re-sync inventory to client so the new item appears.
-            sendInventory();
+            any_picked_up = true;
 
             if (srv_->advancedLog()) {
                 utils::MainLogger::get().info("[PICKUP] " + cfg_.username +
@@ -1665,6 +1674,11 @@ void Player::onUpdate(uint64_t current_tick) {
                     " x" + std::to_string(absorbed) +
                     " (leftover=" + std::to_string(leftover.count) + ")");
             }
+        }
+        // Re-sync inventory to client ONCE after all pickups are done,
+        // not inside the loop (avoids sending N packets for N items).
+        if (any_picked_up) {
+            sendInventory();
         }
     }
 
