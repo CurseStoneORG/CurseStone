@@ -72,6 +72,7 @@ namespace atomikpe {
 Player::Player(Server* srv, PlayerConfig cfg)
     : entity::Human(cfg.runtime_eid, nullptr), srv_(srv), cfg_(std::move(cfg)) {
     inv_ = std::make_shared<inventory::PlayerInventory>();
+    inv_->setOwner(this);  // so onSlotChange can send packets back to us
     connected_.store(true, std::memory_order_relaxed);
     setMaxHealth(20);
     setHealth(20);
@@ -456,18 +457,18 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                                 cs->slot >= 0 && cs->slot < 9) {
                                 inv_->setHeldSlot(cs->slot);
                             }
-                            // Echo the inventory back so the client renders
-                            // the new item. Without this, some MCPE 0.15.x
-                            // clients don't show the item until re-login.
-                            if ((cfg_.gamemode & 1) != 0 && it.id != 0) {
-                                sendInventory();
-                            }
+                            // CRITICAL: send a ContainerSetSlotPacket back
+                            // to confirm the change. Without this, MCPE
+                            // 0.15.x reverts the slot visually. Mirrors
+                            // Nukkit's onSlotChange → sendSlot().
+                            sendSlot(cs->slot);
                         }
                     } else if (cs->windowid == network::protocol::ContainerSetSlotPacket::SPECIAL_ARMOR) {
                         // windowid 0x78 — armor slot 0..3 → store at 36..39.
                         if (cs->slot >= 0 && cs->slot < 4) {
                             int dest = inventory::PlayerInventory::ARMOR_OFFSET + cs->slot;
                             inv_->setItem(dest, it);
+                            sendSlot(dest);
                         }
                     } else if (cs->windowid == network::protocol::ContainerSetSlotPacket::SPECIAL_HOTBAR) {
                         // windowid 0x7a — hotbar slot 0..8. This is sent
@@ -475,6 +476,7 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                         // directly. Write into main inventory slot 0..8.
                         if (cs->slot >= 0 && cs->slot < 9) {
                             inv_->setItem(cs->slot, it);
+                            sendSlot(cs->slot);
                         }
                     } else if (cs->windowid == network::protocol::ContainerSetSlotPacket::SPECIAL_CREATIVE) {
                         // windowid 0x79 — creative-grid click (rare in
@@ -484,7 +486,7 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                             int held = inv_->heldSlot();
                             if (held >= 0 && held < 9) {
                                 inv_->setItem(held, it);
-                                sendInventory();
+                                sendSlot(held);
                             }
                         }
                     }
@@ -1446,6 +1448,45 @@ void Player::sendInventory() {
 }
 
 // ============================================================
+// sendSlot — send a ContainerSetSlotPacket for a single slot back to
+// the client. Mirrors Nukkit's PlayerInventory.sendSlot(index, player):
+// after the server processes a ContainerSetSlotPacket from the client
+// (e.g. creative inventory click), it MUST send a confirmation packet
+// back. Without this, MCPE 0.15.x reverts the slot change visually —
+// the item disappears from the client UI even though it's in the
+// server's inventory.
+// ============================================================
+void Player::sendSlot(int slot) {
+    if (!inv_) return;
+
+    // Determine the windowid and the actual slot index.
+    uint8_t windowid;
+    int actual_slot = slot;
+
+    if (slot >= inventory::PlayerInventory::ARMOR_OFFSET &&
+        slot <  inventory::PlayerInventory::ARMOR_OFFSET + 4) {
+        // Armor slot — windowid 0x78, slot 0..3.
+        windowid = network::protocol::ContainerSetSlotPacket::SPECIAL_ARMOR;
+        actual_slot = slot - inventory::PlayerInventory::ARMOR_OFFSET;
+    } else if (slot >= 0 && slot < inventory::PlayerInventory::SIZE) {
+        // Main inventory — windowid 0x00.
+        windowid = network::protocol::ContainerSetSlotPacket::SPECIAL_INVENTORY;
+    } else {
+        return;  // Invalid slot.
+    }
+
+    auto pk = std::make_shared<network::protocol::ContainerSetSlotPacket>();
+    pk->windowid   = windowid;
+    pk->slot       = static_cast<int16_t>(actual_slot);
+    pk->hotbarSlot = static_cast<int16_t>(actual_slot);
+    auto item = inv_->getItem(slot);
+    pk->itemId     = static_cast<int16_t>(item.id);
+    pk->itemCount  = item.count;
+    pk->itemDamage = static_cast<int16_t>(item.meta);
+    sendPacket(pk);
+}
+
+// ============================================================
 // Save this player's NBT + inventory to disk (PMMP Player::saveNBT)
 // ============================================================
 // Mirrors cn.nukkit.Player.saveNBT(): the NBT root contains a flat
@@ -1634,10 +1675,12 @@ void Player::onUpdate(uint64_t current_tick) {
             if (!can_pickup) continue;  // inventory full — item stays on ground
 
             // Add the item to the inventory FIRST. addItem returns leftover
-            // (anything that didn't fit). If leftover.count <= 0 the whole
+            // (anything that didn't fit). If leftover is empty, the whole
             // stack was absorbed.
-            atomikpe::item::ItemStack leftover = inv_->addItem(pickup);
-            int absorbed = pickup.count - (leftover.count > 0 ? leftover.count : 0);
+            std::vector<atomikpe::item::ItemStack> leftovers =
+                inv_->addItem({pickup});
+            int leftover_count = leftovers.empty() ? 0 : leftovers[0].count;
+            int absorbed = pickup.count - leftover_count;
             if (absorbed <= 0) {
                 // Nothing absorbed — don't send pickup animation, don't
                 // remove the entity. Item stays on ground.
@@ -1667,11 +1710,11 @@ void Player::onUpdate(uint64_t current_tick) {
             // --- Mark the entity for removal IMMEDIATELY ---
             di->taken = true;
 
-            if (leftover.count > 0) {
+            if (leftover_count > 0) {
                 // Partial pickup — the entity STAYS on the ground with
                 // the reduced count. Reset taken=false so it can be
                 // picked up again next tick.
-                di->count = (uint8_t)leftover.count;
+                di->count = (uint8_t)leftover_count;
                 di->taken = false;
             } else {
                 // Full pickup — mark for removal AND send RemoveEntityPacket
@@ -1688,7 +1731,7 @@ void Player::onUpdate(uint64_t current_tick) {
                 utils::MainLogger::get().info("[PICKUP] " + cfg_.username +
                     " picked up item=" + std::to_string(di->itemId) +
                     " x" + std::to_string(absorbed) +
-                    " (leftover=" + std::to_string(leftover.count) + ")");
+                    " (leftover=" + std::to_string(leftover_count) + ")");
             }
         }
         // Re-sync inventory to client ONCE after all pickups are done,

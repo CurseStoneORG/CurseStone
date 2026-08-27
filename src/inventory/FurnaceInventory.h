@@ -1,9 +1,13 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// FurnaceInventory — 3-slot container inventory (mirrors Nukkit FurnaceInventory).
 #pragma once
-#include "Inventory.h"
+#include "BaseInventory.h"
+#include "InventoryType.h"
 namespace atomikpe::inventory {
-class FurnaceInventory : public Inventory {
+class FurnaceInventory : public BaseInventory {
 public:
-    FurnaceInventory() : Inventory(3) {}
+    FurnaceInventory()
+        : BaseInventory(nullptr, InventoryType::get(InventoryType::FURNACE)) {}
     int INPUT  = 0;
     int FUEL   = 1;
     int RESULT = 2;

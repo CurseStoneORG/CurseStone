@@ -14,6 +14,13 @@ public:
     const char* name() const override { return "flat"; }
     void generate(GenerationContext& ctx) override;
     void populate(GenerationContext&) override {}  // flat = no features
+    // Mirrors Nukkit Flat.getSpawn(): (128, floorLevel, 128)
+    // floorLevel = sum of all layer counts (y where grass is)
+    mcp_vector3_t getSpawn() const override {
+        int floor = 0;
+        for (const auto& l : layers_) floor += l.count;
+        return mcp_v3(128.0, (double)floor, 128.0);
+    }
 private:
     std::vector<FlatLayer> layers_;
 };

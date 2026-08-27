@@ -12,6 +12,10 @@ public:
     const char* name() const override { return "normal"; }
     void generate(GenerationContext& ctx) override;
     void populate(GenerationContext& ctx) override;
+    // Mirrors Nukkit Normal.getSpawn(): (127.5, 128, 127.5)
+    mcp_vector3_t getSpawn() const override {
+        return mcp_v3(127.5, 128.0, 127.5);
+    }
 private:
     mcp_simplex_t* height_noise_;
     mcp_simplex_t* cave_noise_;

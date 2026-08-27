@@ -12,6 +12,10 @@ public:
     const char* name() const override { return "nether"; }
     void generate(GenerationContext& ctx) override;
     void populate(GenerationContext& ctx) override;
+    // Mirrors Nukkit Nether.getSpawn(): (128, 64, 128)
+    mcp_vector3_t getSpawn() const override {
+        return mcp_v3(128.0, 64.0, 128.0);
+    }
 private:
     mcp_simplex_t* terrain_;
     mcp_simplex_t* cave_;

@@ -1,0 +1,11 @@
+#pragma once
+#include "BlockStairs.h"
+#include <string>
+#include "BlockIds.h"
+namespace atomikpe::block {
+class BlockStairsSandstone : public BlockStairs {
+public:
+    uint8_t id() const override { return SANDSTONE; }
+    std::string name() const override { return "Sandstone Stairs"; }
+};
+} // namespace

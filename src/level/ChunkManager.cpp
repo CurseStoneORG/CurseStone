@@ -1,63 +1,32 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// ChunkManager.cpp — caches chunks in memory and routes load/save
+// requests to the active LevelProvider. Mirrors pocketmine's
+// ChunkManager role.
+//
+// CRITICAL: When a chunk is not on disk, ChunkManager asks the
+// Level's generator (Normal/Flat/Nether) to generate it. This
+// replaces the old hardcoded generateFlatChunk() that always
+// produced flat terrain regardless of the configured generator.
 #include "level/format/LevelProvider.h"
 #include "level/format/FullChunk.h"
 #include "level/format/Chunk.h"
 #include "level/format/ChunkAdapter.h"
 #include "level/format/ChunkSection.h"
+#include "level/generator/Generator.h"
 #include "ChunkManager.h"
 #include <string.h>
+
 namespace atomikpe::level {
+
 ChunkManager::ChunkManager() {}
 ChunkManager::~ChunkManager() {
     for (auto& kv : chunks_) if (kv.second) mcp_chunk_destroy(kv.second);
 }
+
 mcp_chunk_t* ChunkManager::getChunkIfLoaded(int32_t x, int32_t z) const {
     std::lock_guard<std::mutex> lk(mtx_);
     auto it = chunks_.find({x,z});
     return it == chunks_.end() ? nullptr : it->second;
-}
-
-// Generate a flat world chunk matching PMMP's flat generator:
-//   y=0:  bedrock (7)
-//   y=1..2: dirt (3)
-//   y=3: grass (2)
-//   y=4+: air
-// This gives a spawn at y=4 (on top of grass at y=3).
-// Light: sky_light = 0xFF (full bright), block_light = 0 (no block light)
-static mcp_chunk_t* generateFlatChunk(int32_t cx, int32_t cz) {
-    mcp_chunk_t* c = mcp_chunk_new(cx, cz);
-    if (!c) return nullptr;
-    c->terrain_populated = true;
-    c->light_populated = true;
-    c->dirty = false;
-
-    for (int x = 0; x < 16; ++x) {
-        for (int z = 0; z < 16; ++z) {
-            mcp_chunk_set_block_id(c, x, 0, z, 7);  // BEDROCK
-            mcp_chunk_set_block_id(c, x, 1, z, 3);  // DIRT
-            mcp_chunk_set_block_id(c, x, 2, z, 3);  // DIRT
-            mcp_chunk_set_block_id(c, x, 3, z, 2);  // GRASS
-        }
-    }
-
-    // Fill sky_light with 0xFF (full bright) for all allocated sections.
-    // Without this the world is pitch black (calloc zeroes sky_light).
-    for (int s = 0; s < 16; ++s) {
-        mcp_chunk_section_t* sec = mcp_chunk_get_or_alloc_section(c, (uint8_t)s);
-        if (sec) {
-            if (sec->sky_light) memset(sec->sky_light, 0xFF, 2048);
-            if (sec->block_light) memset(sec->block_light, 0x00, 2048);
-        }
-    }
-
-    // Fill biomes with plains (1)
-    for (int x = 0; x < 16; ++x) {
-        for (int z = 0; z < 16; ++z) {
-            mcp_chunk_set_biome(c, x, z, 1);
-        }
-    }
-
-    mcp_chunk_recalculate_height_map(c);
-    return c;
 }
 
 mcp_chunk_t* ChunkManager::getChunk(int32_t x, int32_t z) {
@@ -80,14 +49,85 @@ mcp_chunk_t* ChunkManager::getChunk(int32_t x, int32_t z) {
         }
     }
 
-    // Not on disk — generate a fresh flat chunk.
-    mcp_chunk_t* c = generateFlatChunk(x, z);
+    // Not on disk — use the Level's generator to create it.
+    // This replaces the old hardcoded generateFlatChunk(). The
+    // generator (Normal/Flat/Nether) is set via setGenerator().
+    if (generator_) {
+        mcp_chunk_t* c = mcp_chunk_new(x, z);
+        if (c) {
+            // Fill sky_light with 0xFF for all allocated sections.
+            for (int s = 0; s < 16; ++s) {
+                mcp_chunk_section_t* sec = mcp_chunk_get_or_alloc_section(c, (uint8_t)s);
+                if (sec) {
+                    if (sec->sky_light) memset(sec->sky_light, 0xFF, 2048);
+                    if (sec->block_light) memset(sec->block_light, 0x00, 2048);
+                }
+            }
+            // Fill biomes with plains (1) by default.
+            for (int bx = 0; bx < 16; ++bx) {
+                for (int bz = 0; bz < 16; ++bz) {
+                    mcp_chunk_set_biome(c, bx, bz, 1);
+                }
+            }
+
+            // Call the generator to fill terrain + features.
+            generator::GenerationContext ctx;
+            // Get seed from provider or use 0.
+            ctx.seed = provider_ ? provider_->getSeed() : 0;
+            ctx.chunk_x = x;
+            ctx.chunk_z = z;
+            ctx.biomes_in = nullptr;
+            ctx.chunk = c;
+            generator_->generate(ctx);
+            generator_->populate(ctx);
+
+            // Mark as populated + dirty (so it gets saved to disk).
+            c->terrain_populated = true;
+            c->light_populated = true;
+            c->dirty = true;
+
+            // Recalculate height map after generation.
+            mcp_chunk_recalculate_height_map(c);
+
+            setChunk(x, z, c);
+            return c;
+        }
+    }
+
+    // Fallback: generate a basic flat chunk if no generator is set.
+    // This should never happen in normal operation — the Level always
+    // sets a generator. But it prevents a crash if something goes wrong.
+    mcp_chunk_t* c = mcp_chunk_new(x, z);
     if (c) {
-        c->dirty = true;  // mark dirty so it gets saved on next flush
+        c->terrain_populated = true;
+        c->light_populated = true;
+        c->dirty = true;
+        for (int bx = 0; bx < 16; ++bx) {
+            for (int bz = 0; bz < 16; ++bz) {
+                mcp_chunk_set_block_id(c, bx, 0, bz, 7);  // BEDROCK
+                mcp_chunk_set_block_id(c, bx, 1, bz, 3);  // DIRT
+                mcp_chunk_set_block_id(c, bx, 2, bz, 3);  // DIRT
+                mcp_chunk_set_block_id(c, bx, 3, bz, 2);  // GRASS
+            }
+        }
+        for (int s = 0; s < 16; ++s) {
+            mcp_chunk_section_t* sec = mcp_chunk_get_or_alloc_section(c, (uint8_t)s);
+            if (sec) {
+                if (sec->sky_light) memset(sec->sky_light, 0xFF, 2048);
+                if (sec->block_light) memset(sec->block_light, 0x00, 2048);
+            }
+        }
+        for (int bx = 0; bx < 16; ++bx) {
+            for (int bz = 0; bz < 16; ++bz) {
+                mcp_chunk_set_biome(c, bx, bz, 1);
+            }
+        }
+        mcp_chunk_recalculate_height_map(c);
         setChunk(x, z, c);
     }
     return c;
 }
+
 void ChunkManager::setChunk(int32_t x, int32_t z, mcp_chunk_t* chunk) {
     std::lock_guard<std::mutex> lk(mtx_);
     auto key = ChunkKey{x, z};
@@ -96,15 +136,16 @@ void ChunkManager::setChunk(int32_t x, int32_t z, mcp_chunk_t* chunk) {
         mcp_chunk_destroy(it->second);
     chunks_[key] = chunk;
 }
+
 void ChunkManager::markDirty(int32_t x, int32_t z) {
     mcp_chunk_t* c = getChunkIfLoaded(x, z);
     if (c) c->dirty = true;
 }
+
 int ChunkManager::flushDirty() {
     std::lock_guard<std::mutex> lk(mtx_);
     int n = 0;
     if (!provider_) {
-        // No provider — just clear dirty flags so we don't loop forever.
         for (auto& kv : chunks_) {
             if (kv.second && kv.second->dirty) {
                 kv.second->dirty = false;
@@ -113,12 +154,8 @@ int ChunkManager::flushDirty() {
         }
         return n;
     }
-    // Save each dirty chunk through the provider.
     for (auto& kv : chunks_) {
         if (!kv.second || !kv.second->dirty) continue;
-        // Wrap raw mcp_chunk_t* in a BORROW-ONLY ChunkAdapter so the
-        // provider's saveChunk() can read its data without freeing it.
-        // The chunks_ map retains ownership.
         auto adapter = format::ChunkAdapter::borrow(kv.second);
         if (adapter) {
             provider_->saveChunk(adapter);
@@ -128,8 +165,10 @@ int ChunkManager::flushDirty() {
     }
     return n;
 }
+
 size_t ChunkManager::count() const {
     std::lock_guard<std::mutex> lk(mtx_);
     return chunks_.size();
 }
+
 } // namespace
