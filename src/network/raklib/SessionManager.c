@@ -917,8 +917,10 @@ void mcp_rak_session_manager_tick(mcp_rak_session_manager_t* sm) {
         retransmit_stale(sm, s);
         s->is_active = false;
 
-        // Timeout: 10 seconds
-        if (mcp_rak_session_is_timed_out(s, now, 10000)) {
+        // Timeout: 30 seconds (was 10s, too aggressive — chunk
+        // generation can block the main thread for several seconds,
+        // causing false timeouts when players explore new terrain).
+        if (mcp_rak_session_is_timed_out(s, now, 30000)) {
             if (sm->instance && sm->instance->on_close_session) {
                 char ipStr[20];
                 snprintf(ipStr, sizeof(ipStr), "%u.%u.%u.%u",

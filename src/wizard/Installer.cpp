@@ -5,6 +5,7 @@
 #include <iostream>
 #include <fstream>
 #include <filesystem>
+#include <cstdio>
 namespace atomikpe::wizard {
 namespace fs = std::filesystem;
 
@@ -13,11 +14,22 @@ bool Installer::shouldRun() const {
 }
 
 std::string Installer::ask(const std::string& q, const std::string& def) {
-    std::cout << q;
-    if (!def.empty()) std::cout << " [" << def << "]";
-    std::cout << ": ";
-    std::string line;
-    if (!std::getline(std::cin, line)) return def;
+    // Use fputs/fgets instead of std::cout/std::cin to avoid mixing
+    // C and C++ I/O streams (async logger uses fputs on stdout).
+    fputs(q.c_str(), stdout);
+    if (!def.empty()) {
+        fputs(" [", stdout);
+        fputs(def.c_str(), stdout);
+        fputs("]", stdout);
+    }
+    fputs(": ", stdout);
+    fflush(stdout);
+    char buf[1024];
+    if (fgets(buf, sizeof(buf), stdin) == nullptr) return def;
+    std::string line(buf);
+    while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
+        line.pop_back();
+    }
     if (line.empty()) return def;
     return line;
 }

@@ -27,11 +27,16 @@ namespace {
 int main(int argc, char* argv[]) {
     using namespace atomikpe;
 
-    // Banner
-    std::cout << ATOMIKPE_NAME << " v" << ATOMIKPE_VERSION
-              << " \"" << ATOMIKPE_CODENAME << "\"\n"
-              << "Targeting Minecraft " << MINECRAFT_VERSION
-              << " (protocol " << PROTOCOL_VERSION << ")\n\n";
+    // Banner — use fputs instead of std::cout to avoid mixing C and
+    // C++ I/O streams (the async logger uses fputs on stdout).
+    {
+        std::string banner = std::string(ATOMIKPE_NAME) + " v" +
+            ATOMIKPE_VERSION + " \"" + ATOMIKPE_CODENAME + "\"\n" +
+            "Targeting Minecraft " + MINECRAFT_VERSION +
+            " (protocol " + std::to_string(PROTOCOL_VERSION) + ")\n\n";
+        fputs(banner.c_str(), stdout);
+        fflush(stdout);
+    }
 
     // Install signal handlers for clean shutdown
     std::signal(SIGINT,  handleSignal);
@@ -50,7 +55,7 @@ int main(int argc, char* argv[]) {
     wizard::Installer installer(dataPath);
     if (installer.shouldRun()) {
         if (!installer.runWizard()) {
-            std::cerr << "Setup failed; generating default config instead.\n";
+            fputs("Setup failed; generating default config instead.\n", stderr);
             installer.generateDefaultConfig();
         }
     }
