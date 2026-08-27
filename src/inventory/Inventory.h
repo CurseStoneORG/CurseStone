@@ -1,39 +1,76 @@
-// Inventory — abstract inventory of N slots. Each slot holds an
-// ItemStack. Subclasses: PlayerInventory (45 slots), ChestInventory
-// (27 slots), FurnaceInventory (3 slots), etc.
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// Inventory.h — ported from cn.nukkit.inventory.Inventory (interface)
+//
+// Abstract inventory interface. Concrete implementations:
+//   - BaseInventory   (the default in-memory storage)
+//   - PlayerInventory (extends BaseInventory with hotbar + armor + held slot)
+//
+// In Nukkit this is a Java interface with ~30 methods. We mirror the
+// public surface but adapt signatures to C++ (std::vector instead of
+// Item[], shared_ptr<Player> instead of Player, etc.).
 #pragma once
 #include "item/ItemStack.h"
+#include "InventoryType.h"
 #include <vector>
+#include <unordered_map>
 #include <functional>
-namespace atomikpe::inventory {
+#include <memory>
+#include <cstdint>
+
+namespace atomikpe {
+
+class Player;  // forward
+
+namespace inventory {
+
 class Inventory {
 public:
-    Inventory(int size) : items_(size) {}
+    static constexpr int MAX_STACK = 64;
+
     virtual ~Inventory() = default;
-    virtual int size() const { return (int)items_.size(); }
-    virtual int maxSize() const { return 64; }
-    // Slot access. Out-of-range access returns empty ItemStack.
-    virtual atomikpe::item::ItemStack getItem(int slot) const;
-    virtual void setItem(int slot, const atomikpe::item::ItemStack& it);
-    virtual void clear(int slot = -1);
 
-    // Returns true if at least `item.count` units can fit somewhere
-    // in this inventory (stacking into existing same-id/same-meta slots
-    // or filling empty slots). Mirrors Nukkit BaseInventory.canAddItem().
-    // Always returns true when `item.isEmpty()` (nothing to add).
-    virtual bool canAddItem(const atomikpe::item::ItemStack& item) const;
+    virtual int  getSize() const = 0;
+    virtual int  getMaxStackSize() const = 0;
+    virtual void setMaxStackSize(int size) = 0;
 
-    // Tries to add `item` into this inventory. Stacks with same id+meta
-    // first, then fills empty slots. Returns the LEFTOVER (the part that
-    // didn't fit) — if leftover.count <= 0 the whole stack was added.
-    // Mirrors Nukkit BaseInventory.addItem(Item... slots).
-    virtual atomikpe::item::ItemStack addItem(atomikpe::item::ItemStack item);
+    virtual const std::string& getName() const = 0;
+    virtual const std::string& getTitle() const = 0;
 
-    // On-change callback (used by player + tile entities).
-    using SlotChangeFn = std::function<void(int slot, const atomikpe::item::ItemStack&)>;
-    void setSlotChangeCallback(SlotChangeFn cb) { on_slot_change_ = std::move(cb); }
-protected:
-    std::vector<atomikpe::item::ItemStack> items_;
-    SlotChangeFn on_slot_change_;
+    virtual item::ItemStack getItem(int index) = 0;
+    virtual bool setItem(int index, const item::ItemStack& item) = 0;
+
+    // addItem returns the leftovers (items that didn't fit). If the
+    // returned vector is empty, everything was added.
+    virtual std::vector<item::ItemStack> addItem(std::vector<item::ItemStack> slots) = 0;
+    virtual bool canAddItem(const item::ItemStack& item) = 0;
+    virtual std::vector<item::ItemStack> removeItem(std::vector<item::ItemStack> slots) = 0;
+
+    // Contents as a map (slot index → item). Only non-empty slots are
+    // included, matching Nukkit's HashMap<Integer,Item> slots semantics.
+    virtual std::unordered_map<int, item::ItemStack> getContents() = 0;
+    virtual void setContents(const std::unordered_map<int, item::ItemStack>& items) = 0;
+
+    // Send the full contents or a single slot to a player. These
+    // generate ContainerSetContentPacket / ContainerSetSlotPacket.
+    // Mirrors Nukkit's sendContents(player) / sendSlot(index, player).
+    virtual void sendContents(Player* player) = 0;
+    virtual void sendSlot(int index, Player* player) = 0;
+
+    virtual bool contains(const item::ItemStack& item) = 0;
+    virtual std::unordered_map<int, item::ItemStack> all(const item::ItemStack& item) = 0;
+    virtual int  first(const item::ItemStack& item) = 0;
+    virtual int  firstEmpty(const item::ItemStack& item) = 0;
+    virtual void remove(const item::ItemStack& item) = 0;
+
+    virtual bool clear(int index) = 0;
+    virtual void clearAll() = 0;
+
+    // onSlotChange is called after a slot is modified. The default
+    // implementation sends a ContainerSetSlotPacket to all viewers.
+    virtual void onSlotChange(int index, const item::ItemStack& before) = 0;
+
+    virtual std::shared_ptr<InventoryType> getType() = 0;
 };
-} // namespace
+
+} // namespace inventory
+} // namespace atomikpe

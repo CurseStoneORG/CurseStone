@@ -91,6 +91,12 @@ public:
     // Mirrors Nukkit's Player.sendInventory() / sendArmor().
     void sendInventory();
 
+    // Send a single slot confirmation to the client. Mirrors Nukkit's
+    // PlayerInventory.sendSlot() — after setItem(), Nukkit sends a
+    // ContainerSetSlotPacket back to the client so it confirms the
+    // change. Without this, MCPE 0.15.x reverts the slot visually.
+    void sendSlot(int slot);
+
     // Save this player's data (NBT + inventory) to disk via Server.
     void saveData();
 

@@ -1,8 +1,12 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// ChestInventory — 27-slot container inventory (mirrors Nukkit ChestInventory).
 #pragma once
-#include "Inventory.h"
+#include "BaseInventory.h"
+#include "InventoryType.h"
 namespace atomikpe::inventory {
-class ChestInventory : public Inventory {
+class ChestInventory : public BaseInventory {
 public:
-    ChestInventory() : Inventory(27) {}
+    ChestInventory()
+        : BaseInventory(nullptr, InventoryType::get(InventoryType::CHEST)) {}
 };
 } // namespace

@@ -8,6 +8,10 @@
 #include "level/format/LevelProviderManager.h"
 #include "level/format/ChunkAdapter.h"
 #include "level/generator/Generator.h"
+#include "level/generator/Normal.h"
+#include "level/generator/Flat.h"
+#include "level/generator/Nether.h"
+#include "level/generator/EmptyGenerator.h"
 #include "utils/MainLogger.hpp"
 
 #include <sys/stat.h>
@@ -25,7 +29,10 @@ static void ensureDir(const std::string& path) {
 }
 
 Level::Level(LevelConfig cfg) : cfg_(std::move(cfg)) {
-    spawn_ = mcp_v3(cfg_.spawn_x + 0.5, (double)cfg_.spawn_y, cfg_.spawn_z + 0.5);
+    // Spawn is NOT hardcoded here — it comes from the generator's
+    // getSpawn() method, mirroring Nukkit where each generator type
+    // defines its own spawn (Normal, Flat, Nether all differ).
+    // We initialize it to a safe default; the generator overrides it.
 
     // Determine the world directory path. We use either:
     //   <dataPath>/worlds/<name>   (if dataPath is set), or
@@ -36,9 +43,30 @@ Level::Level(LevelConfig cfg) : cfg_(std::move(cfg)) {
     ensureDir(worldsRoot);
     ensureDir(worldDir);
 
-    // Create a LevelProvider via the registry. This is the PMMP pattern:
-    //   LevelProvider provider = LevelProviderManager::create(format);
-    //   provider.init(worldDir);
+    // Create the world generator based on cfg_.generator name.
+    // Mirrors Nukkit's Generator.getGenerator(name) + newInstance().
+    if (cfg_.generator == "flat") {
+        // Default flat preset: bedrock / 2x dirt / grass.
+        std::vector<generator::FlatLayer> layers = {
+            {7, 1},   // bedrock
+            {3, 2},   // dirt
+            {2, 1},   // grass
+        };
+        generator_ = std::make_shared<generator::Flat>(std::move(layers));
+    } else if (cfg_.generator == "nether") {
+        generator_ = std::make_shared<generator::Nether>(cfg_.seed);
+    } else if (cfg_.generator == "void" || cfg_.generator == "empty") {
+        generator_ = std::make_shared<generator::EmptyGenerator>();
+    } else {
+        // "normal" is the default generator.
+        generator_ = std::make_shared<generator::Normal>(cfg_.seed);
+    }
+
+    // Get the spawn position from the generator.
+    mcp_vector3_t gen_spawn = generator_->getSpawn();
+    spawn_ = mcp_v3(gen_spawn.x, gen_spawn.y, gen_spawn.z);
+
+    // Create a LevelProvider via the registry.
     auto& mgr = format::LevelProviderManager::getInstance();
     auto provider_unique = mgr.create(cfg_.format);
     if (!provider_unique) {
@@ -49,9 +77,9 @@ Level::Level(LevelConfig cfg) : cfg_(std::move(cfg)) {
     std::shared_ptr<format::LevelProvider> provider = std::move(provider_unique);
     if (provider) {
         provider->init(worldDir);
-        // Apply LevelConfig settings to the provider.
+        // Apply the generator's spawn to the provider.
         provider->setSpawn(math::Vector3{
-            (double)cfg_.spawn_x, (double)cfg_.spawn_y, (double)cfg_.spawn_z});
+            gen_spawn.x, gen_spawn.y, gen_spawn.z});
         provider->setCurrentTime(cfg_.time);
         // Read metadata that the provider may have loaded (seed, spawn).
         if (provider->getSeed() != 0) {
@@ -61,6 +89,9 @@ Level::Level(LevelConfig cfg) : cfg_(std::move(cfg)) {
             // to the provider so it gets persisted in level.dat.
             provider->setSeed(cfg_.seed);
         }
+        // If the provider loaded a spawn from level.dat (existing world),
+        // use that instead of the generator default. This way the spawn
+        // is preserved across restarts.
         if (provider->getSpawn().y > 0) {
             spawn_ = mcp_v3(provider->getSpawn().x + 0.5,
                               provider->getSpawn().y,
@@ -68,15 +99,19 @@ Level::Level(LevelConfig cfg) : cfg_(std::move(cfg)) {
         }
         utils::MainLogger::get().info("Level '" + cfg_.name + "' loaded from " +
             worldDir + " (format=" + provider->getName() +
-            ", seed=" + std::to_string(cfg_.seed) + ")");
+            ", seed=" + std::to_string(cfg_.seed) +
+            ", generator=" + cfg_.generator + ")");
     } else {
         utils::MainLogger::get().error("Failed to create level provider for format '" +
             cfg_.format + "' — chunks will be in-memory only!");
     }
 
     // Connect the provider to the ChunkManager so flushDirty() actually
-    // writes to disk.
+    // writes to disk. Also pass the generator so ChunkManager can
+    // generate new chunks using the correct terrain type (Normal/Flat/
+    // Nether) instead of the old hardcoded flat chunk.
     chunks_.setProvider(provider);
+    chunks_.setGenerator(generator_);
     provider_ = provider;
 }
 

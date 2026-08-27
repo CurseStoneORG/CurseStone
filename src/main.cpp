@@ -4,6 +4,7 @@
 #include "main.h"
 #include "Server.h"
 #include "wizard/Installer.h"
+#include "logger/AsyncMainLogger.h"
 
 #include <iostream>
 #include <csignal>
@@ -58,5 +59,11 @@ int main(int argc, char* argv[]) {
     auto& server = Server::getInstance();
     server.start(dataPath);
     server.runTickLoop();
+
+    // Flush + shutdown the async logger before exiting. This drains
+    // any remaining log entries in the ring buffer and joins the worker
+    // thread. Without this, log lines written during shutdown would
+    // be lost.
+    mcp_main_logger_async_destroy();
     return 0;
 }
