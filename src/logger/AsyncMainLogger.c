@@ -226,8 +226,16 @@ static void* async_worker_fn(void* arg) {
 
     while (1) {
         // Wait for signal or timeout.
+        // Use a SHORT timeout (500ms) instead of 25s so logs appear
+        // quickly on startup. The 25s flush interval was causing
+        // logs to not appear for up to 25 seconds.
         clock_gettime(CLOCK_REALTIME, &ts);
-        ts.tv_sec += ASYNC_LOG_FLUSH_MS / 1000;
+        ts.tv_sec += 0;
+        ts.tv_nsec += 500 * 1000000;  // 500ms
+        if (ts.tv_nsec >= 1000000000) {
+            ts.tv_sec += 1;
+            ts.tv_nsec -= 1000000000;
+        }
 
         pthread_mutex_lock(&self->mtx);
 
@@ -240,6 +248,26 @@ static void* async_worker_fn(void* arg) {
             // Ring is empty and shutdown requested — exit.
             pthread_mutex_unlock(&self->mtx);
             break;
+        }
+
+        // If there are entries OR shutdown was requested, drain them.
+        // If we timed out with no entries, just loop again (periodic
+        // flush to catch any partial batch).
+        if (self->count == 0) {
+            // Timeout with no new logs — flush partial batch if any.
+            pthread_mutex_unlock(&self->mtx);
+            if (batch_len > 0) {
+                fputs(batch, stdout);
+                if (self->log_file) {
+                    fputs(batch, self->log_file);
+                    fflush(self->log_file);
+                }
+                fflush(stdout);
+                batch_len = 0;
+                batch[0] = '\0';
+            }
+            if (self->shutdown_requested) break;
+            continue;
         }
 
         // Check for dropped logs.

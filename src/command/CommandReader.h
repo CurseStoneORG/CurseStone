@@ -1,11 +1,17 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 // CommandReader — runs a background thread that reads stdin line by
 // line. When a line is received, it forwards it to the Server's
 // CommandMap. Mirrors pocketmine/command/CommandReader.
+//
+// CRITICAL: this uses a raw pthread + fgets() instead of std::cin
+// because the async logger writes to stdout from a different thread.
+// Mixing C stdio (fputs) with C++ streams (std::cin/std::cout) on
+// the same FILE causes data corruption. Using fgets() on stdin keeps
+// all I/O on the C stdio layer, which is thread-safe per-FILE.
 #pragma once
 #include <thread>
 #include <atomic>
 #include <functional>
-#include <iostream>
 #include <string>
 namespace atomikpe {
 class CommandReader {
@@ -18,14 +24,30 @@ public:
         thread_ = std::thread([this](){ this->loop(); });
     }
     void stop() {
-        running_ = false;
+        if (!running_.exchange(false)) return;
+        // The thread may be blocked on fgets(stdin). We can't
+        // interrupt fgets, so we detach and let it die when stdin
+        // closes (process exit).
         if (thread_.joinable()) thread_.detach();
     }
 private:
     void loop() {
-        std::string line;
-        while (running_ && std::getline(std::cin, line)) {
-            if (cb_) cb_(line);
+        char buf[1024];
+        while (running_.load()) {
+            // Use fgets instead of std::getline to avoid mixing C and
+            // C++ I/O on the same stream (async logger uses fputs).
+            if (fgets(buf, sizeof(buf), stdin) == nullptr) {
+                // EOF or error — stdin closed (likely during shutdown).
+                break;
+            }
+            std::string line(buf);
+            // Strip trailing newline.
+            while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
+                line.pop_back();
+            }
+            if (!line.empty() && cb_) {
+                cb_(line);
+            }
         }
     }
     LineCallback cb_;
