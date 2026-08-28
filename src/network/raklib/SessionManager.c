@@ -529,6 +529,13 @@ static void handle_encapsulated(mcp_rak_session_manager_t* sm,
     }
 
     if (s->state == MCP_SESSION_STATE_CONNECTED) {
+        // CRITICAL: update last_activity_ms on EVERY packet received
+        // from a connected client. Without this, the timeout sweep
+        // fires even though the client is actively sending data.
+        // This was the root cause of false disconnects.
+        s->last_activity_ms = mcp_utils_time_ms();
+        s->is_active = true;
+
         // ---- PING (0x00) — internal keep-alive ----
         if (pid == 0x00 && plen >= 9) {
             size_t i = 1;
@@ -860,7 +867,7 @@ static void retransmit_stale(mcp_rak_session_manager_t* sm,
     uint64_t now = mcp_utils_time_ms();
     for (size_t k = 0; k < MCP_RECOVERY_CAP; ++k) {
         if (!s->recovery[k].data) continue;
-        if ((now - s->recovery[k].send_time_ms) > 8000) {
+        if ((now - s->recovery[k].send_time_ms) > 5000) {
             mcp_rak_session_manager_send(sm,
                 s->recovery[k].data, s->recovery[k].len,
                 s->ip, s->port);
@@ -917,10 +924,10 @@ void mcp_rak_session_manager_tick(mcp_rak_session_manager_t* sm) {
         retransmit_stale(sm, s);
         s->is_active = false;
 
-        // Timeout: 30 seconds (was 10s, too aggressive — chunk
-        // generation can block the main thread for several seconds,
-        // causing false timeouts when players explore new terrain).
-        if (mcp_rak_session_is_timed_out(s, now, 30000)) {
+        // Timeout: 60 seconds. Was 30s which was too aggressive when
+        // the server generates chunks synchronously. 60s gives enough
+        // headroom for chunk generation + network latency.
+        if (mcp_rak_session_is_timed_out(s, now, 60000)) {
             if (sm->instance && sm->instance->on_close_session) {
                 char ipStr[20];
                 snprintf(ipStr, sizeof(ipStr), "%u.%u.%u.%u",

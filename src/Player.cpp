@@ -1592,6 +1592,14 @@ void Player::onUpdate(uint64_t current_tick) {
             }
             auto& chunks = srv_->getDefaultLevel()->chunks();
             std::unordered_set<int64_t> still_in_view;
+            // CRITICAL: limit chunk generation to 2 per tick. Generating
+            // a new chunk with the Normal generator can take 100-500ms,
+            // so generating all vd² chunks at once would block the main
+            // thread for seconds → RakLib timeout → player disconnect.
+            // With a limit of 2, we spend at most ~1s per tick, leaving
+            // enough time for network_->tick() to process keepalives.
+            constexpr int MAX_CHUNKS_PER_TICK = 4;
+            int chunks_sent_this_tick = 0;
             for (auto& pr : order) {
                 int32_t chX = cx + pr.first, chZ = cz + pr.second;
                 int64_t hash = ((int64_t)chX << 32) | ((uint32_t)chZ);
@@ -1599,6 +1607,7 @@ void Player::onUpdate(uint64_t current_tick) {
                 bool already_sent;
                 { std::lock_guard<std::mutex> lk(chunks_mtx_); already_sent = used_chunks_.count(hash) > 0; }
                 if (already_sent) continue;
+                if (chunks_sent_this_tick >= MAX_CHUNKS_PER_TICK) continue;
                 mcp_chunk_t* ch = chunks.getChunk(chX, chZ);
                 if (!ch) continue;
                 size_t outLen = 0;
@@ -1610,6 +1619,7 @@ void Player::onUpdate(uint64_t current_tick) {
                 free(buf);
                 sendPacket(pk);
                 { std::lock_guard<std::mutex> lk(chunks_mtx_); used_chunks_.insert(hash); }
+                chunks_sent_this_tick++;
             }
             // Drop chunks that fell out of view.
             {
