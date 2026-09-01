@@ -13,6 +13,9 @@
 extern "C" {
 #endif
 
+// Forward declaration — full definition in SessionManager.h
+typedef struct mcp_rak_session_manager mcp_rak_session_manager_t;
+
 // ---- Session states (mirrors PMMP Session.php) ----
 #define MCP_SESSION_STATE_UNCONNECTED  0
 #define MCP_SESSION_STATE_CONNECTING_1 1   // after OCR1 → waiting OCR2
@@ -132,12 +135,34 @@ size_t mcp_rak_session_drain_nack_queue(mcp_rak_session_t* s,
                                          uint32_t* out_mins, uint32_t* out_maxs,
                                          size_t out_cap);
 
+// Overhead constants (bytes) for computing fragment sizes.
+// Datagram header:  1 (type 0x84) + 3 (seq LE24) = 4
+// Encap no-split:   1 (flags) + 2 (bit-len BE16) + 3 (msgIdx LE24)
+//                 + 3 (ordIdx LE24) + 1 (ordChan) = 10
+// Split fields:     2 (splitID BE16) + 4 (splitIdx BE32) + 4 (splitCount BE32) = 10
+#define MCP_DATAGRAM_HEADER_BYTES  4
+#define MCP_ENCAP_BASE_BYTES      10   // flags+bitlen+msgIdx+ordIdx+ordChan
+#define MCP_ENCAP_SPLIT_BYTES     10   // splitID+splitIndex+splitCount
+
 // Encapsulation: wrap a MCPE payload inside a RakNet encapsulated record
-// inside a DataPacket_4 (0x84) datagram. Returns number of bytes written.
+// inside a DataPacket_4 (0x84) datagram. Returns bytes written, or 0 on error.
+// INTERNAL — builds exactly one datagram for the given payload slice.
+// For payloads that may exceed MTU, call mcp_rak_session_send_payload instead.
 size_t mcp_rak_session_build_datagram(mcp_rak_session_t* s,
                                        uint8_t* out, size_t out_cap,
                                        const uint8_t* payload, size_t plen,
-                                       uint8_t reliability, uint8_t order_channel);
+                                       uint8_t reliability, uint8_t order_channel,
+                                       bool has_split, uint16_t split_id,
+                                       uint32_t split_index, uint32_t split_count);
+
+// High-level send: splits payload into MTU-sized fragments if needed,
+// builds a datagram per fragment, and sends each via the socket.
+// This is the correct function to call for all game-level packet sends.
+// Returns true if all fragments were sent successfully.
+bool mcp_rak_session_send_payload(mcp_rak_session_t* s,
+                                   mcp_rak_session_manager_t* sm,
+                                   const uint8_t* payload, size_t plen,
+                                   uint8_t reliability, uint8_t order_channel);
 
 // Enqueue a datagram for sending; flushed by tick.
 bool mcp_rak_session_enqueue(mcp_rak_session_t* s,
