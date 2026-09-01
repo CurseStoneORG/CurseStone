@@ -145,11 +145,13 @@ bool mcp_rak_session_manager_send_encapsulated(mcp_rak_session_manager_t* sm,
     if (!sm || !ip || !payload || plen == 0) return false;
     mcp_rak_session_t* s = mcp_rak_session_manager_find(sm, ip, port);
     if (!s || s->state < MCP_SESSION_STATE_CONNECTING_2) return false;
-    uint8_t buf[RAKLIB_MAX_MTU + 64];
-    size_t n = mcp_rak_session_build_datagram(s, buf, sizeof(buf),
-                                               payload, plen, reliability, 0);
-    if (n == 0) return false;
-    return mcp_rak_session_manager_send(sm, buf, n, ip, port) > 0;
+    // mcp_rak_session_send_payload handles MTU splitting automatically:
+    // payloads <= (mtu-14) go in one datagram; larger ones are split into
+    // (mtu-24)-byte fragments with splitID/splitIndex/splitCount headers
+    // so the MCPE client can reassemble before processing. This fixes the
+    // "Disconnected from server" bug caused by chunk packets (~15KB) being
+    // sent in a single UDP datagram that exceeded the mobile MTU (576 bytes).
+    return mcp_rak_session_send_payload(s, sm, payload, plen, reliability, 0);
 }
 
 // =========================================================================
@@ -482,10 +484,11 @@ static void handle_encapsulated(mcp_rak_session_manager_t* sm,
             // Reply: SERVER_HANDSHAKE (0x10) — UNRELIABLE encapsulated
             dgram_len = build_server_handshake(dgram, sizeof(dgram),
                                                 s->ip, s->port, send_ping);
-            // Wrap in DataPacket_4 (0x84) with UNRELIABLE
+            // Wrap in DataPacket_4 (0x84) with UNRELIABLE — always fits, no split needed
             uint8_t dp[RAKLIB_MAX_MTU + 64];
             size_t  dp_len = mcp_rak_session_build_datagram(s, dp, sizeof(dp),
-                                dgram, dgram_len, MCP_RELIABILITY_UNRELIABLE, 0);
+                                dgram, dgram_len, MCP_RELIABILITY_UNRELIABLE, 0,
+                                false, 0, 0, 0);
             if (dp_len > 0)
                 mcp_rak_session_manager_send(sm, dp, dp_len, s->ip, s->port);
             return;
@@ -560,7 +563,8 @@ static void handle_encapsulated(mcp_rak_session_manager_t* sm,
             dgram_len = oi;
             uint8_t dp[64];
             size_t dp_len = mcp_rak_session_build_datagram(s, dp, sizeof(dp),
-                                dgram, dgram_len, MCP_RELIABILITY_UNRELIABLE, 0);
+                                dgram, dgram_len, MCP_RELIABILITY_UNRELIABLE, 0,
+                                false, 0, 0, 0);
             if (dp_len > 0)
                 mcp_rak_session_manager_send(sm, dp, dp_len, s->ip, s->port);
             return;
@@ -625,7 +629,12 @@ static void handle_data_packet(mcp_rak_session_manager_t* sm,
         s->window_start  = (uint32_t)((int32_t)seq - MCP_SESSION_WINDOW_SIZE / 2);
         s->window_end    = (uint32_t)(seq + MCP_SESSION_WINDOW_SIZE / 2);
     }
-    s->last_activity_ms = mcp_utils_time_ms();
+    // NOTE: do NOT update last_activity_ms here. This function handles
+    // the RakNet DATA_PACKET level (sequence numbers, ACK/NACK). The
+    // actual game activity is tracked in handle_encapsulated() which
+    // only resets the timer for non-PING game packets. This prevents
+    // background PINGs and ACK traffic from keeping zombie sessions
+    // alive for 60+ seconds after the client has stopped playing.
     s->is_active = true;
 
     // Parse encapsulated records
@@ -734,10 +743,9 @@ static void handle_ack(mcp_rak_session_t* s,
             }
         }
     }
-    s->last_activity_ms = mcp_utils_time_ms();
-    s->is_active = true;
+    // NOTE: do NOT update last_activity_ms for ACKs. ACKs are RakNet
+    // transport-level confirmations, not game activity.
 }
-
 // =========================================================================
 // Handle NACK (0xa0): retransmit from recovery
 // =========================================================================
@@ -764,7 +772,8 @@ static void handle_nack(mcp_rak_session_manager_t* sm, mcp_rak_session_t* s,
             }
         }
     }
-    s->last_activity_ms = mcp_utils_time_ms();
+    // NOTE: do NOT update last_activity_ms for NACKs. Same as ACKs —
+    // this is RakNet transport, not game activity.
 }
 
 // =========================================================================

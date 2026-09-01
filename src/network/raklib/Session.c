@@ -2,6 +2,7 @@
 // Session.c — per-client RakNet state machine, Protocol 84 / MCPE 0.15.10
 // Ported from raklib/server/Session.php (PocketMine-MP 4.0.0 legacy branch)
 #include "Session.h"
+#include "SessionManager.h"
 #include "RakLib.h"
 #include "../../utils/Utils.h"
 
@@ -105,13 +106,17 @@ size_t mcp_rak_session_drain_nack_queue(mcp_rak_session_t* s,
 }
 
 // --------------------------------------------------------------------------
-// Build an encapsulated DataPacket_4 (0x84) datagram
+// Build one encapsulated DataPacket_4 (0x84) datagram — one fragment.
 // Format (per RakLib PHP):
-//   [0x84] [3-byte LE seqNo] { encapsulated records... }
-// Each encapsulated record:
-//   [flags byte] [16-bit BE bit-length] [messageIndex 3-byte LE if RELIABLE]
-//   [orderIndex 3-byte LE + orderChannel 1-byte if ORDERED]
-//   [payload bytes]
+//   [0x84] [3-byte LE seqNo] { encapsulated record }
+// Encapsulated record:
+//   [flags byte] [16-bit BE bit-length]
+//   [messageIndex 3-byte LE]                               — if RELIABLE
+//   [orderIndex 3-byte LE + orderChannel 1-byte]           — if ORDERED
+//   [splitID 2-byte BE] [splitIdx 4-byte BE] [splitCount 4-byte BE]  — if has_split
+//   [payload slice bytes]
+//
+// INTERNAL — for payloads that may exceed MTU use mcp_rak_session_send_payload.
 // --------------------------------------------------------------------------
 #define ENCAP_FLAG_RELIABILITY(r) (((r) & 0x07) << 5)
 #define ENCAP_FLAG_HAS_SPLIT      0x10
@@ -119,33 +124,39 @@ size_t mcp_rak_session_drain_nack_queue(mcp_rak_session_t* s,
 size_t mcp_rak_session_build_datagram(mcp_rak_session_t* s,
                                        uint8_t* out, size_t out_cap,
                                        const uint8_t* payload, size_t plen,
-                                       uint8_t reliability, uint8_t order_channel) {
+                                       uint8_t reliability, uint8_t order_channel,
+                                       bool has_split, uint16_t split_id,
+                                       uint32_t split_index, uint32_t split_count) {
     if (!s || !out || !payload || plen == 0) return 0;
     uint32_t seq = s->send_seq++;
 
     size_t i = 0;
-    // DataPacket_4 header: type byte + 3-byte LE sequence number
+
+    // DataPacket_4 header: type byte (0x84) + 3-byte LE sequence number
     if (i + 4 > out_cap) return 0;
     out[i++] = 0x84;
     out[i++] = (uint8_t)(seq & 0xFF);
     out[i++] = (uint8_t)((seq >> 8) & 0xFF);
     out[i++] = (uint8_t)((seq >> 16) & 0xFF);
 
-    // Encapsulated record header
-    bool is_reliable  = (reliability == MCP_RELIABILITY_RELIABLE ||
-                         reliability == MCP_RELIABILITY_RELIABLE_ORDERED ||
-                         reliability == MCP_RELIABILITY_RELIABLE_SEQUENCED);
-    bool is_ordered   = (reliability == MCP_RELIABILITY_RELIABLE_ORDERED ||
-                         reliability == MCP_RELIABILITY_UNRELIABLE_SEQUENCED);
+    bool is_reliable = (reliability == MCP_RELIABILITY_RELIABLE ||
+                        reliability == MCP_RELIABILITY_RELIABLE_ORDERED ||
+                        reliability == MCP_RELIABILITY_RELIABLE_SEQUENCED);
+    bool is_ordered  = (reliability == MCP_RELIABILITY_RELIABLE_ORDERED ||
+                        reliability == MCP_RELIABILITY_UNRELIABLE_SEQUENCED);
+
+    // Flags: reliability bits (5-7) | split flag (bit 4)
     uint8_t flags = ENCAP_FLAG_RELIABILITY(reliability);
+    if (has_split) flags |= ENCAP_FLAG_HAS_SPLIT;
+
+    // 16-bit bit-length of this payload slice (big-endian)
+    uint16_t bit_len = (uint16_t)(plen * 8);
     if (i + 3 > out_cap) return 0;
     out[i++] = flags;
-    // 16-bit bit-length of payload (big-endian)
-    uint16_t bit_len = (uint16_t)(plen * 8);
     out[i++] = (uint8_t)(bit_len >> 8);
     out[i++] = (uint8_t)(bit_len & 0xFF);
 
-    // messageIndex (3-byte LE) for RELIABLE
+    // messageIndex (3-byte LE) — one counter per RELIABLE datagram
     if (is_reliable) {
         if (i + 3 > out_cap) return 0;
         uint32_t mi = s->message_index++;
@@ -153,7 +164,8 @@ size_t mcp_rak_session_build_datagram(mcp_rak_session_t* s,
         out[i++] = (uint8_t)((mi >> 8) & 0xFF);
         out[i++] = (uint8_t)((mi >> 16) & 0xFF);
     }
-    // orderIndex (3-byte LE) + orderChannel (1 byte) for ORDERED
+
+    // orderIndex (3-byte LE) + orderChannel (1 byte)
     if (is_ordered) {
         if (i + 4 > out_cap) return 0;
         uint32_t oi_idx = s->channel_index[(uint8_t)(order_channel & 0x1F)]++;
@@ -163,24 +175,105 @@ size_t mcp_rak_session_build_datagram(mcp_rak_session_t* s,
         out[i++] = order_channel & 0x1F;
     }
 
-    // Payload
+    // Split packet header — only when has_split=true
+    if (has_split) {
+        if (i + 10 > out_cap) return 0;
+        // splitID (2-byte BE)
+        out[i++] = (uint8_t)(split_id >> 8);
+        out[i++] = (uint8_t)(split_id & 0xFF);
+        // splitIndex (4-byte BE)
+        out[i++] = (uint8_t)(split_index >> 24);
+        out[i++] = (uint8_t)(split_index >> 16);
+        out[i++] = (uint8_t)(split_index >>  8);
+        out[i++] = (uint8_t)(split_index & 0xFF);
+        // splitCount (4-byte BE)
+        out[i++] = (uint8_t)(split_count >> 24);
+        out[i++] = (uint8_t)(split_count >> 16);
+        out[i++] = (uint8_t)(split_count >>  8);
+        out[i++] = (uint8_t)(split_count & 0xFF);
+    }
+
+    // Payload slice
     if (i + plen > out_cap) return 0;
     memcpy(out + i, payload, plen);
     i += plen;
 
-    // Store in recovery queue
+    // Store in recovery queue for ACK-based retransmit
     uint32_t slot = seq % MCP_RECOVERY_CAP;
     if (s->recovery[slot].data) free(s->recovery[slot].data);
     s->recovery[slot].data = (uint8_t*)malloc(i);
     if (s->recovery[slot].data) {
         memcpy(s->recovery[slot].data, out, i);
-        s->recovery[slot].len = i;
-        s->recovery[slot].seq = seq;
+        s->recovery[slot].len          = i;
+        s->recovery[slot].seq          = seq;
         s->recovery[slot].send_time_ms = mcp_utils_time_ms();
     }
     return i;
 }
 
+// --------------------------------------------------------------------------
+// mcp_rak_session_send_payload — automatic MTU splitting, then UDP send.
+//
+// Single datagram path (plen <= mtu-14): sends one DataPacket_4, has_split=false.
+// Split path (plen > mtu-14): divides into (mtu-24)-byte fragments, sends each
+//   as a separate DataPacket_4 with has_split=true, same splitID. The MCPE
+//   client reassembles using splitIndex/splitCount before processing.
+//
+// Mirrors PMMP raklib/server/Session.php::addEncapsulatedToQueue().
+// --------------------------------------------------------------------------
+bool mcp_rak_session_send_payload(mcp_rak_session_t* s,
+                                   mcp_rak_session_manager_t* sm,
+                                   const uint8_t* payload, size_t plen,
+                                   uint8_t reliability, uint8_t order_channel) {
+    if (!s || !sm || !payload || plen == 0) return false;
+
+    // Max payload in a single datagram (no split header):
+    // mtu - datagram_header(4) - encap_base(10) = mtu - 14
+    size_t max_single = (size_t)(s->mtu)
+                        - MCP_DATAGRAM_HEADER_BYTES
+                        - MCP_ENCAP_BASE_BYTES;
+
+    if (plen <= max_single) {
+        // Fast path — no splitting.
+        uint8_t buf[RAKLIB_MAX_MTU + 64];
+        size_t n = mcp_rak_session_build_datagram(
+                       s, buf, sizeof(buf), payload, plen,
+                       reliability, order_channel,
+                       false, 0, 0, 0);
+        if (n == 0) return false;
+        return mcp_rak_session_manager_send(sm, buf, n, s->ip, s->port) > 0;
+    }
+
+    // Split path.
+    // Per-fragment payload (with split header): mtu - 14 - 10 = mtu - 24
+    size_t frag_size = (size_t)(s->mtu)
+                       - MCP_DATAGRAM_HEADER_BYTES
+                       - MCP_ENCAP_BASE_BYTES
+                       - MCP_ENCAP_SPLIT_BYTES;
+    if (frag_size == 0) return false;
+
+    uint32_t split_count = (uint32_t)((plen + frag_size - 1) / frag_size);
+    if (split_count > MCP_MAX_SPLIT_SEGMENTS) return false;
+
+    uint16_t split_id = s->split_id_counter++;
+    uint8_t  buf[RAKLIB_MAX_MTU + 64];
+    bool     ok = true;
+
+    for (uint32_t idx = 0; idx < split_count; ++idx) {
+        size_t offset   = (size_t)idx * frag_size;
+        size_t this_len = (plen - offset < frag_size) ? (plen - offset) : frag_size;
+
+        size_t n = mcp_rak_session_build_datagram(
+                       s, buf, sizeof(buf),
+                       payload + offset, this_len,
+                       reliability, order_channel,
+                       true, split_id, idx, split_count);
+        if (n == 0) { ok = false; continue; }
+        if (mcp_rak_session_manager_send(sm, buf, n, s->ip, s->port) <= 0)
+            ok = false;
+    }
+    return ok;
+}
 // --------------------------------------------------------------------------
 // Enqueue for deferred send
 // --------------------------------------------------------------------------
