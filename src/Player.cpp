@@ -1544,12 +1544,12 @@ void Player::onUpdate(uint64_t current_tick) {
     if (!connected_.load(std::memory_order_relaxed)) return;
     if (!logged_in_.load(std::memory_order_relaxed)) return;
 
-    // 1. Stream chunks when the player crosses a chunk boundary.
+    // 1. Stream chunks — send up to MAX_CHUNKS_PER_TICK unsent chunks
+    // every tick, regardless of whether the player moved. The `moved`
+    // check only controls cleanup of out-of-view chunks.
     if (spawned_.load(std::memory_order_relaxed) && srv_ && srv_->getDefaultLevel()) {
         int cx = (int)pos_.x >> 4;
         int cz = (int)pos_.z >> 4;
-        // Only re-order when the player actually moved chunks since last tick.
-        // (Cheap heuristic: keep last sent center in chunk_queue's front.)
         bool moved = false;
         {
             std::lock_guard<std::mutex> lk(queue_mtx_);
@@ -1560,40 +1560,42 @@ void Player::onUpdate(uint64_t current_tick) {
                 moved = true;
             }
         }
+
+        // Compute spiral order for current position (cheap — just coords).
+        int vd = cfg_.view_distance;
+        auto order = buildChunkSpiral(vd);
+        auto& chunks = srv_->getDefaultLevel()->chunks();
+        std::unordered_set<int64_t> still_in_view;
+
+        // Send up to MAX_CHUNKS_PER_TICK unsent chunks. This runs EVERY
+        // tick, not just when moved — so chunks from sendChunksAroundSpawn()
+        // get streamed even though the player hasn't moved yet.
+        constexpr int MAX_CHUNKS_PER_TICK = 4;
+        int chunks_sent_this_tick = 0;
+        for (auto& pr : order) {
+            int32_t chX = cx + pr.first, chZ = cz + pr.second;
+            int64_t hash = ((int64_t)chX << 32) | ((uint32_t)chZ);
+            still_in_view.insert(hash);
+            bool already_sent;
+            { std::lock_guard<std::mutex> lk(chunks_mtx_); already_sent = used_chunks_.count(hash) > 0; }
+            if (already_sent) continue;
+            if (chunks_sent_this_tick >= MAX_CHUNKS_PER_TICK) continue;
+            mcp_chunk_t* ch = chunks.getChunk(chX, chZ);
+            if (!ch) continue;
+            size_t outLen = 0;
+            uint8_t* buf = mcp_chunk_network_serialize(ch, &outLen);
+            if (!buf || outLen == 0) continue;
+            auto pk = std::make_shared<network::protocol::FullChunkDataPacket>();
+            pk->chunkX = chX; pk->chunkZ = chZ;
+            pk->data.assign(buf, buf + outLen);
+            free(buf);
+            sendPacket(pk);
+            { std::lock_guard<std::mutex> lk(chunks_mtx_); used_chunks_.insert(hash); }
+            chunks_sent_this_tick++;
+        }
+
+        // Only clean up out-of-view chunks when the player actually moved.
         if (moved) {
-            int vd = cfg_.view_distance;
-            // Fix #3: use shared buildChunkSpiral() — single source of truth.
-            auto order = buildChunkSpiral(vd);
-            auto& chunks = srv_->getDefaultLevel()->chunks();
-            std::unordered_set<int64_t> still_in_view;
-            // C++ generates chunks in ~0.22ms each (benchmark proven).
-            // At 4 chunks/tick that's ~0.88ms — well under the 50ms
-            // tick budget. This allows fast world loading without
-            // blocking the network tick.
-            constexpr int MAX_CHUNKS_PER_TICK = 4;
-            int chunks_sent_this_tick = 0;
-            for (auto& pr : order) {
-                int32_t chX = cx + pr.first, chZ = cz + pr.second;
-                int64_t hash = ((int64_t)chX << 32) | ((uint32_t)chZ);
-                still_in_view.insert(hash);
-                bool already_sent;
-                { std::lock_guard<std::mutex> lk(chunks_mtx_); already_sent = used_chunks_.count(hash) > 0; }
-                if (already_sent) continue;
-                if (chunks_sent_this_tick >= MAX_CHUNKS_PER_TICK) continue;
-                mcp_chunk_t* ch = chunks.getChunk(chX, chZ);
-                if (!ch) continue;
-                size_t outLen = 0;
-                uint8_t* buf = mcp_chunk_network_serialize(ch, &outLen);
-                if (!buf || outLen == 0) continue;
-                auto pk = std::make_shared<network::protocol::FullChunkDataPacket>();
-                pk->chunkX = chX; pk->chunkZ = chZ;
-                pk->data.assign(buf, buf + outLen);
-                free(buf);
-                sendPacket(pk);
-                { std::lock_guard<std::mutex> lk(chunks_mtx_); used_chunks_.insert(hash); }
-                chunks_sent_this_tick++;
-            }
-            // Drop chunks that fell out of view.
             {
                 std::lock_guard<std::mutex> lk(chunks_mtx_);
                 for (auto it = used_chunks_.begin(); it != used_chunks_.end(); ) {
