@@ -209,4 +209,16 @@ void Level::removeDroppedItem(int64_t eid) {
     }
 }
 
+bool Level::tryClaimDroppedItem(int64_t eid) {
+    std::lock_guard<std::mutex> lk(dropped_items_mtx_);
+    auto it = dropped_items_.find(eid);
+    if (it == dropped_items_.end()) return false;
+    DroppedItem* di = it->second.get();
+    if (!di || di->taken) return false;
+    // Atomically claim: set taken=true while holding the lock.
+    // This prevents a second player from also claiming the same item.
+    di->taken = true;
+    return true;
+}
+
 } // namespace atomikpe::level

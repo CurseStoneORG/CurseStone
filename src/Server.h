@@ -124,6 +124,58 @@ public:
     NbtPtr getOfflinePlayerData(const std::string& name);
     void saveOfflinePlayerData(const std::string& name, NbtPtr nbt);
 
+    // --- Nukkit-compat: Level management ---
+    Level* getLevel(int levelId) const { return (levelId == 1 && level_) ? level_.get() : nullptr; }
+    Level* getLevelByName(const std::string& name) const;
+    void setDefaultLevel(std::shared_ptr<Level> l) { level_ = std::move(l); }
+
+    // --- Nukkit-compat: Player management ---
+    Player* getPlayerExact(const std::string& name) const;
+    std::vector<Player*> matchPlayer(const std::string& partialName) const;
+    void onPlayerLogin(Player* player);
+
+    // --- Nukkit-compat: Config accessors ---
+    // getConfig / getProperty / getAdvancedConfig — we delegate to
+    // server.properties which is already loaded. These are stubs.
+    std::string getConfigString(const std::string& key, const std::string& def) const;
+    int getConfigInt(const std::string& key, int def) const;
+    bool getConfigBool(const std::string& key, bool def) const;
+    void setPropertyString(const std::string& key, const std::string& val);
+    void setPropertyInt(const std::string& key, int val);
+    void setPropertyBoolean(const std::string& key, bool val);
+
+    // --- Nukkit-compat: Broadcasting ---
+    int broadcast(const std::string& message, const std::string& permissions);
+    void broadcastPacketsCallback(const std::vector<uint8_t>& data,
+                                   const std::vector<std::string>& identifiers);
+
+    // --- Nukkit-compat: Ops / Whitelist ---
+    void addOp(const std::string& name) { setOp(name, true); }
+    void removeOp(const std::string& name) { setOp(name, false); }
+    void addWhitelist(const std::string& name);
+    void removeWhitelist(const std::string& name);
+    void reloadWhitelist();
+
+    // --- Nukkit-compat: Auto-save ---
+    bool isAutoSaveEnabled() const { return autosave_ticks_ > 0; }
+    void setAutoSave(bool enabled) { autosave_ticks_ = enabled ? 6000 : 0; }
+    void doAutoSave() { saveAll(); }
+
+    // --- Nukkit-compat: Offline player ---
+    void saveOfflinePlayerData(const std::string& name, NbtPtr nbt, bool async);
+
+    // --- Nukkit-compat: Title tick (updates MOTD/TPS display) ---
+    void titleTick();
+
+    // --- Nukkit-compat: Recipe list ---
+    void sendRecipeList(Player* player);
+
+    // --- Nukkit-compat: Player list data (PlayerListPacket broadcast) ---
+    void updatePlayerListData(const std::string& uuid, const std::string& name,
+                               int64_t eid, const std::string& skin = "");
+    void removePlayerListData(const std::string& uuid);
+    void sendFullPlayerListData(Player* target);
+
 private:
     Server();
     ~Server();

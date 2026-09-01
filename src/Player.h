@@ -18,6 +18,7 @@
 #include "permission/PermissibleBase.h"
 #include "network/AdvancedSourceInterface.h"
 #include "Server.h"                        // NbtPtr = shared_ptr<mcp_tag>
+#include "item/ItemStack.h"                // ItemStack for getDrops()
 #include <memory>
 #include <string>
 #include <atomic>
@@ -141,6 +142,90 @@ public:
     // --- Player NBT data ---
     NbtPtr namedTag() const { return named_tag_; }
     void setNamedTag(NbtPtr n) { named_tag_ = std::move(n); }
+
+    // --- Gamemode helpers (Nukkit: isSurvival/isCreative/isAdventure/isSpectator) ---
+    bool isSurvival() const  { return cfg_.gamemode == 0; }
+    bool isCreative() const  { return (cfg_.gamemode & 1) != 0; }
+    bool isAdventure() const { return cfg_.gamemode == 2; }
+    bool isSpectator() const { return cfg_.gamemode == 3; }
+
+    // --- Player info (Nukkit: getDisplayName/getAddress/getClientId) ---
+    std::string getDisplayName() const { return cfg_.username; }
+    std::string getAddress() const { return cfg_.ip; }
+    int64_t getClientId() const { return std::stoll(cfg_.client_id.empty() ? "0" : cfg_.client_id); }
+    bool hasPlayedBefore() const { return named_tag_ != nullptr; }
+
+    // --- Position/teleport (Nukkit: getNextPosition/getSpawn/sendPosition) ---
+    math::Vector3 getNextPosition() const { return pos_; }
+    math::Vector3 getSpawn() const;
+    void sendPosition(double x, double y, double z, double yaw = 0, double pitch = 0, uint8_t mode = 0);
+
+    // --- Chat/messaging (Nukkit: sendMessage/sendPopup/sendTip/sendTranslation) ---
+    void sendPopup(const std::string& msg);
+    void sendTip(const std::string& msg);
+    void sendTranslation(const std::string& key);
+
+    // --- Experience (Nukkit: setExperience/sendExperience) ---
+    void setExperience(int exp, int level);
+    void sendExperience(int exp);
+    void sendExperienceLevel(int level);
+
+    // --- Health/food (Nukkit: setHealth/getFoodData/isFoodEnabled) ---
+    void setHealth(int h);
+    bool isFoodEnabled() const { return cfg_.gamemode == 0; }
+
+    // --- Chunk management (Nukkit: isChunkLoaded/isChunkLoading/unloadChunk/sendChunk) ---
+    bool isChunkLoaded(int cx, int cz) const;
+    bool isChunkLoading(int cx, int cz) const;
+    void unloadChunk(int cx, int cz);
+    void sendChunk(int cx, int cz);
+
+    // --- Visibility (Nukkit: canSee/hidePlayer/showPlayer/spawnTo) ---
+    bool canSee(Player* other) const { return other != nullptr; }
+    void hidePlayer(Player* /*other*/) {}
+    void showPlayer(Player* /*other*/) {}
+    void spawnTo(Player* player);
+
+    // --- Sleep (Nukkit: isSleeping/stopSleep) ---
+    bool isSleeping() const { return false; }
+    void stopSleep() {}
+
+    // --- Interaction (Nukkit: canInteract/canCollideWith/resetFallDistance) ---
+    bool canInteract(math::Vector3 pos, double maxDistance) const;
+    bool canCollideWith(Entity* /*e*/) const { return false; }
+    void resetFallDistance() {}
+
+    // --- Flight (Nukkit: getAllowFlight/setAllowFlight/hasAutoJump/setAutoJump) ---
+    bool getAllowFlight() const { return (cfg_.gamemode & 1) != 0; }
+    void setAllowFlight(bool /*v*/) {}
+    bool hasAutoJump() const { return true; }
+    void setAutoJump(bool /*v*/) {}
+
+    // --- Drops (Nukkit: getDrops) ---
+    std::vector<atomikpe::item::ItemStack> getDrops() const;
+
+    // --- Windows (Nukkit: getWindowId/addWindow/removeWindow) ---
+    int getWindowId(void* /*inventory*/) const { return -1; }
+    int addWindow(void* /*inventory*/, int /*forceId*/ = -1) { return -1; }
+    void removeWindow(void* /*inventory*/) {}
+
+    // --- Dimension (Nukkit: setDimension/teleportToNether/teleportToOverworld) ---
+    void setDimension() {}
+    void teleportToNether() {}
+    void teleportToOverworld() {}
+
+    // --- Settings (Nukkit: setMovementSpeed/setAttribute/sendSettings) ---
+    void setMovementSpeed(float speed);
+    void setAttribute(int attrId, float value);
+    void sendSettings();
+
+    // --- Killer (Nukkit: getKiller) ---
+    Entity* getKiller() const { return nullptr; }
+
+    // --- Batch packets (Nukkit: batchDataPacket/dataPacket/directDataPacket) ---
+    bool batchDataPacket(const std::vector<uint8_t>& data);
+    bool dataPacket(std::shared_ptr<network::protocol::DataPacket> pk) { sendPacket(pk); return true; }
+    bool directDataPacket(std::shared_ptr<network::protocol::DataPacket> pk) { sendPacket(pk); return true; }
 
 private:
     Server* srv_;
