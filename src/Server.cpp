@@ -90,8 +90,22 @@ void Server::loadConfig() {
     };
     auto get_bool = [&](const char* yaml_key, const char* ini_key,
                         bool def) -> bool {
-        bool v = cfg.getBool(ini_key, def);
-        if (v != def) return v;   // exact match needed because INI may be true/false
+        // Fix: check if the INI key EXISTS before checking its value.
+        // The old code did `if (v != def)` which meant that if the user
+        // set whitelist=false and the default was also false, the INI
+        // value was ignored and the YAML was read instead.
+        // New approach: try to get the INI key as a string. If it's
+        // non-empty, the key exists → parse it as bool.
+        std::string ini_val = cfg.getString(ini_key, std::string());
+        if (!ini_val.empty()) {
+            // Key exists in INI — use it.
+            std::string lower = ini_val;
+            std::transform(lower.begin(), lower.end(), lower.begin(),
+                          [](unsigned char c){ return std::tolower(c); });
+            return (lower == "true" || lower == "on" || lower == "1" ||
+                    lower == "yes" || lower == "y");
+        }
+        // Key not in INI — fall back to YAML.
         return cfg.getBool(yaml_key, def);
     };
 
@@ -346,16 +360,22 @@ void Server::tick() {
     if (scheduler::ServerScheduler::get().size() > 0)
         scheduler::ServerScheduler::get().tick(currentTick_);
     if (level_) level_->tick(currentTick_);
-    // Update each player (movement, chunk streaming, etc.) via snapshot
-    // so we don't race with add/remove on the network thread. Skip any
-    // player flagged for removal — their close() has already run.
+
+    // CRITICAL: process network BEFORE player updates. This ensures
+    // incoming packets (MovePlayer, keepalives) are processed and
+    // replies are sent BEFORE we potentially block on chunk generation.
+    // Mirrors Nukkit where the network layer ticks first, then players.
+    if (network_) network_->tick();
+
     auto snap = playersSnapshot();
     for (auto& p : snap) {
         if (!p) continue;
-        if (p->isPendingRemoval()) continue;   // being torn down
+        if (p->isPendingRemoval()) continue;
         p->onUpdate(currentTick_);
     }
-    // Network tick (updates avg packet rate, etc.)
+
+    // Second network tick to flush packets generated during onUpdate
+    // (chunk data, entity updates, etc.).
     if (network_) network_->tick();
 
     // Auto-save every `autosave_ticks_` ticks (default 6000 = 5 min at 20 TPS).
@@ -619,6 +639,141 @@ void Server::saveOfflinePlayerData(const std::string& name, NbtPtr nbt) {
     }
     out.write(reinterpret_cast<const char*>(gz.data()), (std::streamsize)gz.size());
     out.close();
+}
+
+// ============================================================
+// Nukkit-compat method implementations
+// ============================================================
+Player* Server::getPlayerExact(const std::string& name) const {
+    auto snap = playersSnapshot();
+    for (const auto& p : snap) {
+        if (p) {
+            std::string pn = p->getName();
+            std::transform(pn.begin(), pn.end(), pn.begin(), ::tolower);
+            std::string nl = name;
+            std::transform(nl.begin(), nl.end(), nl.begin(), ::tolower);
+            if (pn == nl) return p.get();
+        }
+    }
+    return nullptr;
+}
+
+std::vector<Player*> Server::matchPlayer(const std::string& partialName) const {
+    std::vector<Player*> result;
+    std::string lower = partialName;
+    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+    for (const auto& p : playersSnapshot()) {
+        if (!p) continue;
+        std::string pn = p->getName();
+        std::transform(pn.begin(), pn.end(), pn.begin(), ::tolower);
+        if (pn.find(lower) != std::string::npos) {
+            result.push_back(p.get());
+        }
+    }
+    return result;
+}
+
+// --- Nukkit-compat: Level management ---
+Level* Server::getLevelByName(const std::string& name) const {
+    if (level_ && level_->name() == name) return level_.get();
+    return nullptr;
+}
+
+void Server::onPlayerLogin(Player* /*player*/) {
+    // Nukkit: called when a player successfully logs in.
+    // Used to broadcast join message + update player list.
+    // We handle this in Player::handleLogin already.
+}
+
+std::string Server::getConfigString(const std::string& key, const std::string& def) const {
+    // Stub — full config accessor would read from server.properties
+    (void)key;
+    return def;
+}
+
+int Server::getConfigInt(const std::string& key, int def) const {
+    (void)key;
+    return def;
+}
+
+bool Server::getConfigBool(const std::string& key, bool def) const {
+    (void)key;
+    return def;
+}
+
+void Server::setPropertyString(const std::string& key, const std::string& val) {
+    (void)key; (void)val;
+}
+
+void Server::setPropertyInt(const std::string& key, int val) {
+    (void)key; (void)val;
+}
+
+void Server::setPropertyBoolean(const std::string& key, bool val) {
+    (void)key; (void)val;
+}
+
+int Server::broadcast(const std::string& message, const std::string& /*permissions*/) {
+    broadcastMessage(message);
+    return 0;
+}
+
+void Server::broadcastPacketsCallback(const std::vector<uint8_t>& /*data*/,
+                                       const std::vector<std::string>& /*identifiers*/) {
+    // Stub — would batch-send a pre-encoded packet to specific players.
+}
+
+void Server::addWhitelist(const std::string& /*name*/) {
+    // Stub — whitelist not implemented yet.
+}
+
+void Server::removeWhitelist(const std::string& /*name*/) {
+    // Stub
+}
+
+void Server::reloadWhitelist() {
+    // Stub
+}
+
+void Server::saveOfflinePlayerData(const std::string& name, NbtPtr nbt, bool /*async*/) {
+    saveOfflinePlayerData(name, nbt);
+}
+
+void Server::titleTick() {
+    // Update MOTD with player count + TPS (like Nukkit does)
+    if (network_) {
+        std::string motd = "MCPE;" + motd_ + ";" +
+            std::to_string(PROTOCOL_VERSION) + ";" +
+            std::string(MINECRAFT_VERSION) + ";" +
+            std::to_string(playersSnapshot().size()) + ";" +
+            std::to_string(max_players_);
+        // Cast to RakLibInterface to access setServerName
+        auto* raklib = dynamic_cast<network::RakLibInterface*>(network_->getRakLib());
+        if (raklib) raklib->setServerName(motd);
+    }
+}
+
+void Server::sendRecipeList(Player* /*player*/) {
+    // Nukkit: sends the full crafting recipe list to a player.
+    // We handle this in Player::doFirstSpawn via CraftingManager.
+}
+
+void Server::updatePlayerListData(const std::string& /*uuid*/,
+                                    const std::string& /*name*/,
+                                    int64_t /*eid*/,
+                                    const std::string& /*skin*/) {
+    // Nukkit: broadcasts PlayerListPacket ADD to all online players.
+    // We handle this in Player::doFirstSpawn already.
+}
+
+void Server::removePlayerListData(const std::string& /*uuid*/) {
+    // Nukkit: broadcasts PlayerListPacket REMOVE to all online players.
+    // We handle this in Player::close already.
+}
+
+void Server::sendFullPlayerListData(Player* /*target*/) {
+    // Nukkit: sends the full player list to a specific player.
+    // We handle this in Player::doFirstSpawn already.
 }
 
 } // namespace atomikpe

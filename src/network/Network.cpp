@@ -75,7 +75,7 @@ void Network::processIncoming(const std::string& ip, uint16_t port,
                                 const uint8_t* data, size_t len) {
     if (isBlocked(ip) || !data || len == 0) return;
 
-    bool adv = server_ && server_->advancedLog();
+    (void)server_; // adv logging removed
 
     // CRITICAL: MCPE clients prepend 0xFE to ALL game packets.
     if (data[0] == 0xFE && len > 1) {
@@ -85,14 +85,8 @@ void Network::processIncoming(const std::string& ip, uint16_t port,
 
     uint8_t pid = data[0];
 
-    if (adv) {
-        char hex[64] = {0};
-        for (size_t i = 0; i < len && i < 16; ++i)
-            snprintf(hex + i*3, 4, "%02x ", data[i]);
-        utils::MainLogger::get().info("[NET] " + ip + ":" + std::to_string(port) +
-            " pid=0x" + ([](uint8_t v){char b[4];snprintf(b,4,"%02x",v);return std::string(b);})(pid) +
-            " len=" + std::to_string(len) + " hex: " + hex);
-    }
+    // Packet debug logging disabled to keep console clean.
+    // Only log errors (malformed packets, etc.).
 
     if (pid == protocol::BATCH_PACKET) {
         protocol::BatchPacket bp;
@@ -117,11 +111,7 @@ void Network::processIncoming(const std::string& ip, uint16_t port,
             return;
         }
         const auto& payload = bp.payload();
-        if (adv) {
-            utils::MainLogger::get().info("[NET] BATCH decoded: " +
-                std::to_string(payload.size()) + " bytes uncompressed, " +
-                std::to_string(len) + " bytes compressed");
-        }
+        // BATCH debug logging disabled.
         size_t off = 0;
         while (off + 4 <= payload.size()) {
             uint32_t sl = ((uint32_t)payload[off]   << 24) |
@@ -133,12 +123,7 @@ void Network::processIncoming(const std::string& ip, uint16_t port,
                 utils::MainLogger::get().warn("Truncated sub-packet in batch from " + ip);
                 break;
             }
-            if (adv && sl > 0) {
-                char shex[16];
-                snprintf(shex, sizeof(shex), "%02x", payload[off]);
-                utils::MainLogger::get().info("[NET] Sub-packet id=0x" + std::string(shex) +
-                    " len=" + std::to_string(sl));
-            }
+            // Sub-packet debug logging disabled.
             dispatchSingle(ip, port, payload.data() + off, sl);
             off += sl;
         }

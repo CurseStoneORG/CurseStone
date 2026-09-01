@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // RakLibInterface.cpp — C++ bridge: RakLib C ↔ Server
-// Handles the full MCPE 0.15.10 / Protocol 84 lifecycle.
+//
+// RakLib runs on its OWN THREAD. Two FIFO queues bridge it to the
+// main thread. This prevents chunk generation from blocking
+// keepalive processing.
 #include "RakLibInterface.h"
 #include "Network.h"
 #include "../Server.h"
@@ -12,10 +15,14 @@
 #include <iostream>
 #include <cstdio>
 #include <string>
+#include <chrono>
 
 namespace atomikpe {
 namespace network {
 
+// ============================================================================
+// Constructor / Destructor
+// ============================================================================
 RakLibInterface::RakLibInterface(Server* server)
     : server_(server) {
     serverId_ = static_cast<int64_t>(mcp_utils_time_ms()) ^
@@ -32,12 +39,12 @@ RakLibInterface::~RakLibInterface() {
     shutdown();
 }
 
+// ============================================================================
+// start() — init RakLib + spawn the worker thread
+// ============================================================================
 void RakLibInterface::start() {
-    if (running_) return;
+    if (running_.load()) return;
 
-    // Read host/port/motd/max-players from the Server config so the user's
-    // atomikpe.yml choices actually take effect. Falls back to sensible
-    // defaults if Server is null (shouldn't happen, but defensive).
     std::string host_str = "0.0.0.0";
     uint16_t    port     = 19132;
     std::string motd_str = "AtomikPE";
@@ -54,10 +61,6 @@ void RakLibInterface::start() {
 
     mcp_raklib_server_init(&raklib_, serverId_, mtu, &instance_);
 
-    // Set server MOTD / name for UNCONNECTED_PONG.
-    // MCPE 0.15.10 (protocol 84) expects exactly 6 semicolon-separated fields,
-    // matching PMMP RakLibInterface.php:
-    //   MCPE;<motd>;<protocol>;<version>;<online>;<max>
     char motd[512];
     snprintf(motd, sizeof(motd),
              "MCPE;%s;84;0.15.10;%d;%d",
@@ -69,101 +72,229 @@ void RakLibInterface::start() {
             std::string("[RakLib] Failed to bind ") + host_str + ":" + std::to_string(port));
         return;
     }
-    running_ = true;
+    running_.store(true);
+    stop_flag_.store(false);
+
+    // Spawn the RakLib worker thread — runs at ~100Hz (10ms sleep)
+    raklib_thread_ = std::thread([this]() { this->raklibThreadLoop(); });
+
     utils::MainLogger::get().info(
         std::string("[RakLib] Listening on ") + host_str + ":" + std::to_string(port) +
-        " (Protocol 84 / MCPE 0.15.10)");
+        " (Protocol 84 / MCPE 0.15.10) [separate thread]");
     utils::MainLogger::get().info(std::string("[RakLib] MOTD: ") + motd);
 }
 
+// ============================================================================
+// shutdown() — stop thread + cleanup
+// ============================================================================
 void RakLibInterface::shutdown() {
-    if (!running_) return;
+    if (!running_.load()) return;
+    running_.store(false);
+    stop_flag_.store(true);
+
+    // Wait for the RakLib thread to exit
+    if (raklib_thread_.joinable()) {
+        raklib_thread_.join();
+    }
+
     mcp_raklib_server_stop(&raklib_);
-    running_ = false;
 }
 
+// ============================================================================
+// raklibThreadLoop() — runs on the RakLib worker thread
+// ============================================================================
+void RakLibInterface::raklibThreadLoop() {
+    while (!stop_flag_.load(std::memory_order_relaxed)) {
+        // 1. Drain outbound queue (main → RakLib)
+        {
+            std::lock_guard<std::mutex> lk(outbound_mtx_);
+            while (!outbound_queue_.empty()) {
+                auto& action = outbound_queue_.front();
+                uint8_t ipBytes[4];
+                if (sscanf(action.ip.c_str(), "%hhu.%hhu.%hhu.%hhu",
+                            &ipBytes[0], &ipBytes[1], &ipBytes[2], &ipBytes[3]) == 4) {
+                    if (action.type == RakLibActionType::SEND_PACKET) {
+                        mcp_rak_session_manager_send_encapsulated(
+                            &raklib_.manager, ipBytes, action.port,
+                            action.data.data(), action.data.size(),
+                            MCP_RELIABILITY_RELIABLE_ORDERED);
+                    } else if (action.type == RakLibActionType::CLOSE_SESSION) {
+                        mcp_server_handler_close_session(
+                            &raklib_.handler, ipBytes, action.port);
+                    }
+                }
+                outbound_queue_.pop();
+            }
+        }
+
+        // 2. Check for MOTD update
+        if (motd_changed_.load(std::memory_order_relaxed)) {
+            std::lock_guard<std::mutex> lk(motd_mtx_);
+            mcp_rak_session_manager_set_name(&raklib_.manager, pending_motd_.c_str());
+            pending_motd_.clear();
+            motd_changed_.store(false, std::memory_order_relaxed);
+        }
+
+        // 3. Tick RakLib — this processes UDP recv/send, keepalives,
+        //    ACK/NACK, retransmit, timeout sweep. All on THIS thread.
+        mcp_raklib_server_tick(&raklib_);
+
+        // 4. Sleep 10ms (~100Hz) — independent of main tick loop
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+}
+
+// ============================================================================
+// tick() — called by Network::tick() on the MAIN thread
+// Drains the inbound queue (RakLib → main)
+// ============================================================================
 void RakLibInterface::tick() {
-    if (!running_) return;
-    mcp_raklib_server_tick(&raklib_);
+    drainEvents();
 }
 
-// Called by Server when the player count or MOTD changes.
+size_t RakLibInterface::drainEvents() {
+    size_t count = 0;
+    // Process all pending events from RakLib
+    while (true) {
+        RakLibEvent event;
+        {
+            std::lock_guard<std::mutex> lk(inbound_mtx_);
+            if (inbound_queue_.empty()) break;
+            event = std::move(inbound_queue_.front());
+            inbound_queue_.pop();
+        }
+        count++;
+
+        switch (event.type) {
+            case RakLibEventType::SESSION_OPEN: {
+                utils::MainLogger::get().info("[RakLib] Session opened: " + event.ip + ":" +
+                    std::to_string(event.port) + " (clientId=" +
+                    std::to_string(event.clientId) + ")");
+                if (server_ && server_->getNetwork()) {
+                    server_->getNetwork()->onSessionOpen(event.ip, event.port, event.clientId);
+                }
+                break;
+            }
+            case RakLibEventType::SESSION_CLOSE: {
+                utils::MainLogger::get().info("[RakLib] Session closed: " + event.ip + ":" +
+                    std::to_string(event.port) + " (" + event.reason + ")");
+                if (server_ && server_->getNetwork()) {
+                    server_->getNetwork()->onSessionClose(event.ip, event.port, event.reason);
+                }
+                break;
+            }
+            case RakLibEventType::PACKET_RECEIVED: {
+                if (server_ && server_->getNetwork()) {
+                    server_->getNetwork()->processIncoming(
+                        event.ip, event.port, event.data.data(), event.data.size());
+                }
+                break;
+            }
+        }
+    }
+    return count;
+}
+
+// ============================================================================
+// setServerName() — enqueue MOTD update for RakLib thread
+// ============================================================================
 void RakLibInterface::setServerName(const std::string& motd) {
-    if (!running_) return;
-    mcp_rak_session_manager_set_name(&raklib_.manager, motd.c_str());
+    if (!running_.load()) return;
+    {
+        std::lock_guard<std::mutex> lk(motd_mtx_);
+        pending_motd_ = motd;
+    }
+    motd_changed_.store(true, std::memory_order_relaxed);
 }
 
-// Send an encapsulated MCPE game packet to an established client.
+// ============================================================================
+// sendRawPacket() — enqueue to outbound queue (main → RakLib)
+// ============================================================================
 void RakLibInterface::sendRawPacket(const std::string& ip, uint16_t port,
                                      const std::vector<uint8_t>& data) {
-    if (!running_) return;
-    uint8_t ipBytes[4];
-    if (sscanf(ip.c_str(), "%hhu.%hhu.%hhu.%hhu",
-                &ipBytes[0], &ipBytes[1], &ipBytes[2], &ipBytes[3]) != 4) return;
-    mcp_rak_session_manager_send_encapsulated(&raklib_.manager,
-        ipBytes, port, data.data(), data.size(),
-        MCP_RELIABILITY_RELIABLE_ORDERED);
+    if (!running_.load()) return;
+    RakLibAction action;
+    action.type = RakLibActionType::SEND_PACKET;
+    action.ip   = ip;
+    action.port = port;
+    action.data = data;
+    {
+        std::lock_guard<std::mutex> lk(outbound_mtx_);
+        outbound_queue_.push(std::move(action));
+    }
 }
 
-// Force-close a session (kick).
+// ============================================================================
+// closeSession() — enqueue close to outbound queue (main → RakLib)
+// ============================================================================
 void RakLibInterface::closeSession(const std::string& ip, uint16_t port,
                                     const std::string& reason) {
     (void)reason;
-    if (!running_) return;
-    uint8_t ipBytes[4];
-    if (sscanf(ip.c_str(), "%hhu.%hhu.%hhu.%hhu",
-                &ipBytes[0], &ipBytes[1], &ipBytes[2], &ipBytes[3]) != 4) return;
-    mcp_server_handler_close_session(&raklib_.handler, ipBytes, port);
+    if (!running_.load()) return;
+    RakLibAction action;
+    action.type = RakLibActionType::CLOSE_SESSION;
+    action.ip   = ip;
+    action.port = port;
+    {
+        std::lock_guard<std::mutex> lk(outbound_mtx_);
+        outbound_queue_.push(std::move(action));
+    }
 }
 
-// ---- C++ event handlers ------------------------------------------------
-
+// ============================================================================
+// C++ event handlers — called from RAKLIB THREAD, enqueue to inbound
+// ============================================================================
 void RakLibInterface::onOpenSession(const std::string& ip, uint16_t port,
                                      int64_t clientId) {
-    utils::MainLogger::get().info("[RakLib] Session opened: " + ip + ":" +
-        std::to_string(port) + " (clientId=" + std::to_string(clientId) + ")");
-    if (server_ && server_->getNetwork()) {
-        server_->getNetwork()->onSessionOpen(ip, port, clientId);
+    RakLibEvent event;
+    event.type     = RakLibEventType::SESSION_OPEN;
+    event.ip       = ip;
+    event.port     = port;
+    event.clientId = clientId;
+    {
+        std::lock_guard<std::mutex> lk(inbound_mtx_);
+        inbound_queue_.push(std::move(event));
     }
 }
 
 void RakLibInterface::onCloseSession(const std::string& ip, uint16_t port,
                                       const std::string& reason) {
-    utils::MainLogger::get().info("[RakLib] Session closed: " + ip + ":" +
-        std::to_string(port) + " (" + reason + ")");
-    if (server_ && server_->getNetwork()) {
-        server_->getNetwork()->onSessionClose(ip, port, reason);
+    RakLibEvent event;
+    event.type   = RakLibEventType::SESSION_CLOSE;
+    event.ip     = ip;
+    event.port   = port;
+    event.reason = reason;
+    {
+        std::lock_guard<std::mutex> lk(inbound_mtx_);
+        inbound_queue_.push(std::move(event));
     }
 }
 
 void RakLibInterface::onPacketReceive(const std::string& ip, uint16_t port,
                                        const uint8_t* data, size_t len) {
-    // Game packet received from a fully connected client.
-    // MCPE clients prepend 0xFE to all game packets. Network::processIncoming
-    // will strip it and decode the BATCH/LoginPacket inside.
-    if (server_ && server_->advancedLog() && len > 0) {
-        char hex[8];
-        snprintf(hex, sizeof(hex), "%02x", data[0]);
-        utils::MainLogger::get().info("[RakLib] Packet from " + ip + ":" +
-            std::to_string(port) + " id=0x" + hex + " len=" + std::to_string(len));
-    }
-    if (server_ && server_->getNetwork()) {
-        server_->getNetwork()->processIncoming(ip, port, data, len);
+    RakLibEvent event;
+    event.type = RakLibEventType::PACKET_RECEIVED;
+    event.ip   = ip;
+    event.port = port;
+    event.data.assign(data, data + len);
+    {
+        std::lock_guard<std::mutex> lk(inbound_mtx_);
+        inbound_queue_.push(std::move(event));
     }
 }
 
 void RakLibInterface::onRawPacket(const std::string& ip, uint16_t port,
                                    const uint8_t* data, size_t len) {
-    // Unhandled offline packets (e.g. query); ignore for now.
     (void)ip; (void)port; (void)data; (void)len;
 }
 
 void RakLibInterface::onTick() {
-    // No-op — tick is driven from RakLibInterface::tick().
+    // No-op — the RakLib thread handles its own ticking.
 }
 
-// ---- Static C shims ----------------------------------------------------
-
+// ============================================================================
+// Static C shims
+// ============================================================================
 void RakLibInterface::c_onOpen(void* impl, const char* ip, uint16_t port,
                                 int64_t cid) {
     static_cast<RakLibInterface*>(impl)->onOpenSession(ip, port, cid);

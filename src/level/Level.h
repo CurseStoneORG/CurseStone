@@ -91,6 +91,12 @@ public:
     void addDroppedItem(const DroppedItem& di);
     // Mark an item as taken (will be erased on next tick).
     void removeDroppedItem(int64_t eid);
+    // Atomically try to claim a dropped item for pickup.
+    // Returns true if this caller successfully claimed it (was not
+    // already taken). Returns false if another player already took it.
+    // This prevents the race condition where two players pass the
+    // `di->taken` check in the same tick and both pick up the item.
+    bool tryClaimDroppedItem(int64_t eid);
 
 private:
     LevelConfig cfg_;
