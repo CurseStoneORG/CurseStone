@@ -111,6 +111,10 @@ typedef struct mcp_rak_session {
 
     // splitID counter for outbound fragmented packets
     uint16_t  split_id_counter;
+
+    // Bug 2 fix: set when CLIENT_DISCONNECT (0x15) is received.
+    // The session is cleaned up on the next tick sweep — no double-close.
+    bool      is_disconnecting;
 } mcp_rak_session_t;
 
 // Init / destroy

@@ -72,12 +72,18 @@ void ServerScheduler::tick(uint64_t current_tick) {
         }
     }
     // Drain async completion queue — run onCompletion() on main thread.
+    // Bonus fix: limit to MAX_COMPLETIONS_PER_TICK=32 to prevent
+    // the tick from running long under heavy async load.
     {
+        constexpr int MAX_COMPLETIONS_PER_TICK = 32;
+        int processed = 0;
         std::lock_guard<std::mutex> lk(completion_mtx_);
-        while (!completion_queue_.empty()) {
+        while (!completion_queue_.empty() &&
+               processed < MAX_COMPLETIONS_PER_TICK) {
             auto task = completion_queue_.front();
             completion_queue_.pop();
             task->onCompletion();
+            ++processed;
         }
     }
 }

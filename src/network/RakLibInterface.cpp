@@ -89,8 +89,11 @@ void RakLibInterface::start() {
 // ============================================================================
 void RakLibInterface::shutdown() {
     if (!running_.load()) return;
-    running_.store(false);
+    // Fix #2: set stop_flag FIRST, then running_=false. This prevents
+    // the RakLib thread from entering another tick cycle between the
+    // two stores.
     stop_flag_.store(true);
+    running_.store(false);
 
     // Wait for the RakLib thread to exit
     if (raklib_thread_.joinable()) {
