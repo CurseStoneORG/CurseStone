@@ -25,7 +25,7 @@ public:
     void stop() {
         { std::unique_lock<std::mutex> lk(mtx_); running_ = false; }
         cv_.notify_all();
-        for (auto& t : workers_) if (t.joinable()) t.detach();
+        for (auto& t : workers_) if (t.joinable()) t.join();
     }
 private:
     void workerLoop() {

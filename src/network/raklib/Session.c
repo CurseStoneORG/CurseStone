@@ -28,6 +28,7 @@ void mcp_rak_session_init(mcp_rak_session_t* s, const uint8_t ip[4],
     s->last_activity_ms = mcp_utils_time_ms();
     s->start_time_ms    = s->last_activity_ms;
     s->is_active    = false;
+    s->is_disconnecting = false;  // Bug 2 fix
     for (int i = 0; i < 32; ++i) s->channel_index[i] = 0;
     s->split.in_use = false;
 }

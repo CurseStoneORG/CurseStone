@@ -524,20 +524,33 @@ static void handle_encapsulated(mcp_rak_session_manager_t* sm,
                 sm->instance->on_close_session(sm->instance->impl,
                                                  ipStr, s->port, "client disconnect");
             }
+            s->is_disconnecting = true;  // Bug 2 fix: cleanup next tick
             return;
         }
     }
 
     if (s->state == MCP_SESSION_STATE_CONNECTED) {
-        // CRITICAL: update last_activity_ms on EVERY packet received
-        // from a connected client. Without this, the timeout sweep
-        // fires even though the client is actively sending data.
-        // This was the root cause of false disconnects.
-        s->last_activity_ms = mcp_utils_time_ms();
-        s->is_active = true;
+        // PING (0x00) is a RakNet-level keepalive. It does NOT mean the
+        // client is actively playing — MCPE keeps sending PINGs even after
+        // showing "Desconexion del servidor" to the user (the app stays
+        // alive in Android's background for ~60-90 seconds).
+        //
+        // FIX: Only update last_activity_ms for GAME packets (not PING).
+        // This way, if the client stops sending game packets but keeps
+        // sending PINGs (because the app is still alive in background),
+        // the timeout fires correctly after 15 seconds.
+        //
+        // PING is still answered with PONG to keep RakNet happy, but
+        // it doesn't reset the game-level activity timer.
+        bool is_ping = (pid == 0x00);
+
+        if (!is_ping) {
+            s->last_activity_ms = mcp_utils_time_ms();
+            s->is_active = true;
+        }
 
         // ---- PING (0x00) — internal keep-alive ----
-        if (pid == 0x00 && plen >= 9) {
+        if (is_ping && plen >= 9) {
             size_t i = 1;
             int64_t ping_id = (int64_t)rb_u64_be(payload, plen, &i);
             // Reply: PONG (0x03)
@@ -561,6 +574,7 @@ static void handle_encapsulated(mcp_rak_session_manager_t* sm,
                 sm->instance->on_close_session(sm->instance->impl,
                                                  ipStr, s->port, "client disconnect");
             }
+            s->is_disconnecting = true;  // Bug 2 fix: cleanup next tick
             return;
         }
 
@@ -898,9 +912,14 @@ void mcp_rak_session_manager_tick(mcp_rak_session_manager_t* sm) {
         uint8_t pid = buf[0];
 
         if (pid >= 0x80 && pid <= 0x8F) {
-            // Connected DATA_PACKET — needs a session
-            mcp_rak_session_t* s = mcp_rak_session_manager_get_or_create(sm, ip, port);
+            // Bug 3 fix: use find() instead of get_or_create() for
+            // DATA_PACKETs. Connected DATA_PACKETs should only arrive
+            // for sessions that already completed the handshake. Using
+            // get_or_create would recreate zombie sessions for in-flight
+            // retransmits arriving after a client disconnect.
+            mcp_rak_session_t* s = mcp_rak_session_manager_find(sm, ip, port);
             if (s) handle_data_packet(sm, s, buf, (size_t)r);
+            // else: stale packet from a dead session — ignore silently
         } else if (pid == 0xc0 || pid == 0xc1 || pid == 0xc2 || pid == 0xc3) {
             // ACK
             mcp_rak_session_t* s = mcp_rak_session_manager_find(sm, ip, port);
@@ -924,11 +943,18 @@ void mcp_rak_session_manager_tick(mcp_rak_session_manager_t* sm) {
         retransmit_stale(sm, s);
         s->is_active = false;
 
-        // Timeout: 60 seconds. Was 30s which was too aggressive when
-        // the server generates chunks synchronously. 60s gives enough
-        // headroom for chunk generation + network latency.
-        if (mcp_rak_session_is_timed_out(s, now, 60000)) {
-            if (sm->instance && sm->instance->on_close_session) {
+        // Timeout: 15 seconds. Only GAME packets reset last_activity_ms
+        // (PING/0x00 does NOT reset it). This way, if the client's MCPE
+        // app stays alive in Android's background sending PINGs, the
+        // server still detects the player is gone after 15s without
+        // any real game activity.
+        bool should_remove = s->is_disconnecting ||
+                             mcp_rak_session_is_timed_out(s, now, 15000);
+        if (should_remove) {
+            // Only call on_close_session for timeout — NOT for disconnect
+            // (the disconnect handler already called it when 0x15 arrived).
+            if (!s->is_disconnecting && sm->instance &&
+                sm->instance->on_close_session) {
                 char ipStr[20];
                 snprintf(ipStr, sizeof(ipStr), "%u.%u.%u.%u",
                          s->ip[0], s->ip[1], s->ip[2], s->ip[3]);

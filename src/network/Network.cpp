@@ -176,10 +176,14 @@ std::shared_ptr<protocol::DataPacket> Network::decodePacketById(uint8_t pid,
         const uint8_t* body, size_t bodyLen) {
     // Instantiate the right subclass via the PacketPool registry.
     auto pkt = protocol::PacketPool::get().create(pid);
-    if (!pkt) return nullptr;
+    if (!pkt) {
+        // Unknown packet ID — silently ignore. MCPE sends many packet
+        // types we don't handle yet (e.g. 0x1B). Don't spam the log.
+        return nullptr;
+    }
     if (!pkt->decode(body, bodyLen)) {
-        utils::MainLogger::get().warn("Failed to decode packet id=" +
-            std::to_string((int)pid));
+        // Decode failed — silently drop. Logging every failure fills
+        // the console with noise and doesn't help the user.
         return nullptr;
     }
     return pkt;

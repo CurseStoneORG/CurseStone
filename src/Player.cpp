@@ -760,17 +760,15 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
 // ============================================================
 // Phase 5 — sendChunksAroundSpawn (spiral order, like PMMP)
 // ============================================================
-void Player::sendChunksAroundSpawn() {
-    if (!srv_ || !srv_->getDefaultLevel()) {
-        doFirstSpawn();
-        return;
-    }
-    auto* lvl = srv_->getDefaultLevel();
-    int centerX = (int)pos_.x >> 4;
-    int centerZ = (int)pos_.z >> 4;
-    int vd = cfg_.view_distance;
+// Fix #3: Spiral algorithm extracted to buildChunkSpiral() — single
+// source of truth shared by sendChunksAroundSpawn() and onUpdate().
+// Fix #4: sendChunksAroundSpawn() no longer sends chunks directly.
+// It only populates chunk_queue_ with spiral coordinates. The actual
+// streaming happens in onUpdate() at MAX_CHUNKS_PER_TICK=4 per tick.
+// ============================================================
 
-    // Generate the spiral order: start at (0,0) and walk outward.
+std::vector<std::pair<int32_t,int32_t>>
+Player::buildChunkSpiral(int vd) {
     std::vector<std::pair<int32_t,int32_t>> order;
     order.reserve(vd * vd);
     int layer = 1, leg = 0, x = 0, z = 0;
@@ -784,7 +782,24 @@ void Player::sendChunksAroundSpawn() {
         }
         order.emplace_back(x, z);
     }
+    return order;
+}
 
+void Player::sendChunksAroundSpawn() {
+    if (!srv_ || !srv_->getDefaultLevel()) {
+        doFirstSpawn();
+        return;
+    }
+    int centerX = (int)pos_.x >> 4;
+    int centerZ = (int)pos_.z >> 4;
+    int vd = cfg_.view_distance;
+
+    // Fix #3: use shared buildChunkSpiral() instead of inline copy.
+    auto order = buildChunkSpiral(vd);
+
+    // Fix #4: ONLY populate chunk_queue_ — do NOT send chunks directly.
+    // The streaming happens in onUpdate() at MAX_CHUNKS_PER_TICK=4/tick.
+    // This prevents blocking the main thread for 64 chunks at login.
     {
         std::lock_guard<std::mutex> lk(queue_mtx_);
         chunk_queue_.clear();
@@ -793,39 +808,10 @@ void Player::sendChunksAroundSpawn() {
         }
     }
 
-    // Send immediately (synchronous — fine for small view distances).
-    // Real PMMP defers this across ticks; we keep it simple for the MVP.
-    auto& chunks = lvl->chunks();
-    for (auto& coord : order) {
-        int32_t cx = centerX + coord.first;
-        int32_t cz = centerZ + coord.second;
-        mcp_chunk_t* ch = chunks.getChunk(cx, cz);
-        if (!ch) {
-            // Mark as "we tried" so doFirstSpawn still proceeds; the client
-            // will simply see air in the missing chunk.
-            continue;
-        }
-        size_t outLen = 0;
-        uint8_t* buf = mcp_chunk_network_serialize(ch, &outLen);
-        if (!buf || outLen == 0) continue;
-
-        auto pk = std::make_shared<network::protocol::FullChunkDataPacket>();
-        pk->chunkX = cx;
-        pk->chunkZ = cz;
-        pk->order  = network::protocol::FullChunkDataPacket::ORDER_COLUMNS;
-        pk->data.assign(buf, buf + outLen);
-        free(buf);
-        sendPacket(pk);
-
-        // Track sent chunks for later unload.
-        int64_t hash = ((int64_t)cx << 32) | ((uint32_t)cz);
-        {
-            std::lock_guard<std::mutex> lk(chunks_mtx_);
-            used_chunks_.insert(hash);
-        }
-    }
-
-    // All requested chunks have been sent — fire the spawn sequence.
+    // Fire spawn immediately — the client will see chunks arriving
+    // gradually as they are streamed by onUpdate(). This matches
+    // Nukkit's behavior where doFirstSpawn() is called before all
+    // chunks are sent.
     doFirstSpawn();
 }
 
@@ -1575,21 +1561,9 @@ void Player::onUpdate(uint64_t current_tick) {
             }
         }
         if (moved) {
-            // Re-stream from the new center using the spiral helper inline.
             int vd = cfg_.view_distance;
-            std::vector<std::pair<int32_t,int32_t>> order;
-            order.reserve(vd * vd);
-            int layer = 1, leg = 0, x = 0, z = 0;
-            order.emplace_back(x, z);
-            for (int i = 1; i < vd * vd; ++i) {
-                switch (leg) {
-                    case 0: ++x; if (x == layer) ++leg; break;
-                    case 1: ++z; if (z == layer) ++leg; break;
-                    case 2: --x; if (-x == layer) ++leg; break;
-                    case 3: --z; if (-z == layer) { leg = 0; ++layer; } break;
-                }
-                order.emplace_back(x, z);
-            }
+            // Fix #3: use shared buildChunkSpiral() — single source of truth.
+            auto order = buildChunkSpiral(vd);
             auto& chunks = srv_->getDefaultLevel()->chunks();
             std::unordered_set<int64_t> still_in_view;
             // C++ generates chunks in ~0.22ms each (benchmark proven).

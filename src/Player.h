@@ -240,6 +240,10 @@ private:
     uint64_t last_move_tick_ = 0;
     uint64_t last_save_tick_ = 0;
 
+    // Fix #3: shared spiral algorithm — single source of truth.
+    static std::vector<std::pair<int32_t,int32_t>>
+        buildChunkSpiral(int vd);
+
     // Chunks already sent to this player (chunkHash = (cx<<32)|cz&0xFFFFFFFF).
     // Guarded by chunks_mtx_.
     std::unordered_set<int64_t> used_chunks_;
