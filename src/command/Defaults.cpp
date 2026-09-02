@@ -13,6 +13,7 @@
 #include "defaults/TimeCommand.h"
 #include "defaults/WeatherCommand.h"
 #include "defaults/SaveCommand.h"
+#include "defaults/WorkbenchCommand.h"
 #include <memory>
 namespace atomikpe {
 void registerDefaultCommands(CommandMap& map) {
@@ -33,5 +34,6 @@ void registerDefaultCommands(CommandMap& map) {
     map.registerCommand(std::make_unique<TimeCommand>());
     map.registerCommand(std::make_unique<WeatherCommand>());
     map.registerCommand(std::make_unique<SaveCommand>());
+    map.registerCommand(std::make_unique<WorkbenchCommand>());
 }
 } // namespace

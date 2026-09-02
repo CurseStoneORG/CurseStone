@@ -239,6 +239,8 @@ private:
     std::atomic<bool> spawned_{false};
     uint64_t last_move_tick_ = 0;
     uint64_t last_save_tick_ = 0;
+    uint64_t start_time_ms_ = 0;       // Wall-clock when player joined (for workbench)
+    uint64_t last_activity_ms_ = 0;    // Wall-clock of last received packet
 
     // Fix #3: shared spiral algorithm — single source of truth.
     static std::vector<std::pair<int32_t,int32_t>>

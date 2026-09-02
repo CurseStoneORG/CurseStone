@@ -1,0 +1,42 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// WorkbenchCommand.cpp — /workbench command implementation.
+#include "WorkbenchCommand.h"
+#include "workbench/WorkbenchManager.h"
+#include "Server.h"
+#include "utils/TextColor.h"
+
+namespace atomikpe {
+
+bool WorkbenchCommand::execute(CommandSender* sender, const std::string&,
+                                const std::vector<std::string>& args) {
+    // Only ops can use this command.
+    if (!sender->isOp()) {
+        sender->sendMessage(TC::RED + "You don't have permission to use this command." + TC::RESET);
+        return true;
+    }
+
+    std::string subcommand = args.empty() ? "status" : args[0];
+
+    if (subcommand == "start") {
+        WorkbenchManager::get().start();
+        sender->sendMessage(TC::GREEN + "[Workbench] Diagnostics started." + TC::RESET);
+        sender->sendMessage(TC::YELLOW + "Use /workbench stop to export reports." + TC::RESET);
+    } else if (subcommand == "stop") {
+        sender->sendMessage(TC::YELLOW + "[Workbench] Stopping and exporting..." + TC::RESET);
+        WorkbenchManager::get().stop();
+    } else if (subcommand == "report") {
+        sender->sendMessage(TC::YELLOW + "[Workbench] Exporting snapshot..." + TC::RESET);
+        WorkbenchManager::get().report();
+    } else if (subcommand == "status") {
+        WorkbenchManager::get().status();
+    } else {
+        sender->sendMessage(TC::GOLD + "=== Workbench ===" + TC::RESET);
+        sender->sendMessage(TC::WHITE + "/workbench start  " + TC::GRAY + "- Start all diagnostic modules" + TC::RESET);
+        sender->sendMessage(TC::WHITE + "/workbench stop   " + TC::GRAY + "- Stop and export reports" + TC::RESET);
+        sender->sendMessage(TC::WHITE + "/workbench status " + TC::GRAY + "- Show current status" + TC::RESET);
+        sender->sendMessage(TC::WHITE + "/workbench report " + TC::GRAY + "- Export snapshot without stopping" + TC::RESET);
+    }
+    return true;
+}
+
+} // namespace atomikpe
