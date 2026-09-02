@@ -1578,16 +1578,26 @@ void Player::onUpdate(uint64_t current_tick) {
     if (spawned_.load(std::memory_order_relaxed) && srv_ && srv_->getDefaultLevel()) {
         int cx = (int)pos_.x >> 4;
         int cz = (int)pos_.z >> 4;
-        bool moved = false;
+
+        // BUG FIX: Only detect "moved" when the player crosses a CHUNK
+        // BOUNDARY (cx/cz changes), not every tick. The old code compared
+        // pos with chunk_queue_.front() which triggered "moved=true" on
+        // every single tick because the player's exact position floats.
+        // This caused used_chunks_ to be cleared and all 64+ chunks to be
+        // re-sent from scratch every tick → 1334 FullChunkDataPackets in
+        // 2 minutes → client overwhelmed → "Disconnected from server".
+        int last_cx, last_cz;
         {
             std::lock_guard<std::mutex> lk(queue_mtx_);
             if (!chunk_queue_.empty()) {
-                auto& front = chunk_queue_.front();
-                if (front.first != cx || front.second != cz) moved = true;
+                last_cx = chunk_queue_.front().first;
+                last_cz = chunk_queue_.front().second;
             } else {
-                moved = true;
+                last_cx = -999999;
+                last_cz = -999999;
             }
         }
+        bool moved = (cx != last_cx || cz != last_cz);
 
         // Compute spiral order for current position (cheap — just coords).
         int vd = cfg_.view_distance;
@@ -1632,7 +1642,8 @@ void Player::onUpdate(uint64_t current_tick) {
             chunks_sent_this_tick++;
         }
 
-        // Only clean up out-of-view chunks when the player actually moved.
+        // Only clean up out-of-view chunks when the player actually
+        // crossed a chunk boundary.
         if (moved) {
             {
                 std::lock_guard<std::mutex> lk(chunks_mtx_);
