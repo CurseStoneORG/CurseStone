@@ -259,9 +259,33 @@ bool mcp_rak_session_send_payload(mcp_rak_session_t* s,
     uint8_t  buf[RAKLIB_MAX_MTU + 64];
     bool     ok = true;
 
+    // BUG FIX: All fragments of the same split packet MUST share the SAME
+    // messageIndex and orderIndex. PMMP's Session.php increments these ONCE
+    // before the loop, then passes the same value to each fragment.
+    //
+    // Before this fix, build_datagram() was incrementing s->message_index
+    // and s->channel_index for EACH fragment, causing the MCPE client's
+    // RakNet layer to see fragments as independent reliable packets instead
+    // of parts of one split packet. This corrupted the client's ordering
+    // buffer and caused it to silently stop responding after ~2 minutes
+    // of chunk data transfers.
+    //
+    // We pre-allocate the messageIndex and orderIndex here, then pass
+    // them via a temporary hack: we save the current values, and in the
+    // loop we restore them before each build_datagram call so that
+    // build_datagram reads the same value every time.
+    uint32_t saved_message_index = s->message_index;
+    uint32_t saved_channel_index = s->channel_index[(uint8_t)(order_channel & 0x1F)];
+
     for (uint32_t idx = 0; idx < split_count; ++idx) {
         size_t offset   = (size_t)idx * frag_size;
         size_t this_len = (plen - offset < frag_size) ? (plen - offset) : frag_size;
+
+        // Restore the same messageIndex and orderIndex for every fragment
+        // so build_datagram writes the same value and only increments once
+        // (which we overwrite on the next iteration).
+        s->message_index = saved_message_index;
+        s->channel_index[(uint8_t)(order_channel & 0x1F)] = saved_channel_index;
 
         size_t n = mcp_rak_session_build_datagram(
                        s, buf, sizeof(buf),
@@ -272,6 +296,13 @@ bool mcp_rak_session_send_payload(mcp_rak_session_t* s,
         if (mcp_rak_session_manager_send(sm, buf, n, s->ip, s->port) <= 0)
             ok = false;
     }
+
+    // After the loop, advance the counters ONCE (as PMMP does).
+    // build_datagram already incremented them on the last call, but
+    // we restored the saved value before each call, so the last call
+    // incremented from saved_message_index to saved_message_index+1.
+    // That's correct — the counters are now at saved+1, ready for the
+    // next packet.
     return ok;
 }
 // --------------------------------------------------------------------------
