@@ -952,13 +952,19 @@ void mcp_rak_session_manager_tick(mcp_rak_session_manager_t* sm) {
         retransmit_stale(sm, s);
         s->is_active = false;
 
-        // Timeout: 15 seconds. Only GAME packets reset last_activity_ms
-        // (PING/0x00 does NOT reset it). This way, if the client's MCPE
-        // app stays alive in Android's background sending PINGs, the
-        // server still detects the player is gone after 15s without
-        // any real game activity.
+        // Timeout: 30 seconds (matches PMMP default). Only GAME packets
+        // reset last_activity_ms (PING/0x00 does NOT reset it). This way,
+        // if the client's MCPE app stays alive in Android's background
+        // sending PINGs, the server still detects the player is gone
+        // after 30s without any real game activity.
+        //
+        // BUG FIX: Was 15000ms (15s) which was too aggressive for mobile
+        // clients that may experience temporary network hiccups or be
+        // overwhelmed by chunk data bursts. The workbench showed the
+        // client stopped responding after receiving 4 chunks/tick (60+
+        // UDP fragments in 3ms) and needed >15s to recover.
         bool should_remove = s->is_disconnecting ||
-                             mcp_rak_session_is_timed_out(s, now, 15000);
+                             mcp_rak_session_is_timed_out(s, now, 30000);
         if (should_remove) {
             // Only call on_close_session for timeout — NOT for disconnect
             // (the disconnect handler already called it when 0x15 arrived).

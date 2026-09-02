@@ -1598,7 +1598,17 @@ void Player::onUpdate(uint64_t current_tick) {
         // Send up to MAX_CHUNKS_PER_TICK unsent chunks. This runs EVERY
         // tick, not just when moved — so chunks from sendChunksAroundSpawn()
         // get streamed even though the player hasn't moved yet.
-        constexpr int MAX_CHUNKS_PER_TICK = 4;
+        //
+        // BUG FIX: Was 4 chunks/tick. The workbench showed this floods the
+        // client with 60+ UDP fragments in 3ms, overwhelming the MCPE 0.15
+        // client's receive buffer and causing it to stop responding →
+        // "Disconnected from server" timeout.
+        //
+        // PMMP sends 1 chunk per tick by default. We use 2 as a balance
+        // between load time and stability. Each chunk is ~83KB uncompressed
+        // → ~15KB compressed → ~10-15 RakNet fragments. At 2 chunks/tick
+        // that's 20-30 fragments per 50ms tick, which the client can handle.
+        constexpr int MAX_CHUNKS_PER_TICK = 2;
         int chunks_sent_this_tick = 0;
         for (auto& pr : order) {
             int32_t chX = cx + pr.first, chZ = cz + pr.second;
