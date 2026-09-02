@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // Server singleton implementation (Phase 21 completion).
 #include "Server.h"
+#include "workbench/WorkbenchManager.h"
 #include "Player.h"
 #include "utils/MainLogger.h"
 #include "utils/MainLogger.hpp"
@@ -341,12 +342,11 @@ void Server::runTickLoop() {
 void Server::tick() {
     ++currentTick_;
 
+    // --- Workbench: tick start hook ---
+    auto wb_start = std::chrono::steady_clock::now();
+    WorkbenchManager::get().onTickStart();
+
     // --- Reap players flagged for removal by Player::close() ---
-    // Player::close() runs on the network thread (timeout, client disconnect)
-    // and sets pending_removal_=true instead of calling removePlayer() to
-    // avoid destroying the shared_ptr while this thread iterates players_.
-    // Here (main thread) we safely erase them now that no iteration is in
-    // flight. This is the ONLY place players_ shrinks during normal operation.
     {
         std::lock_guard<std::mutex> lk(players_mtx_);
         players_.erase(
@@ -357,32 +357,79 @@ void Server::tick() {
             players_.end());
     }
 
+    // --- Phase: scheduler ---
+    auto t0 = std::chrono::steady_clock::now();
     if (scheduler::ServerScheduler::get().size() > 0)
         scheduler::ServerScheduler::get().tick(currentTick_);
+    auto t1 = std::chrono::steady_clock::now();
+    WorkbenchManager::get().onTickPhase("scheduler",
+        (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
+
+    // --- Phase: level ---
+    t0 = std::chrono::steady_clock::now();
     if (level_) level_->tick(currentTick_);
+    t1 = std::chrono::steady_clock::now();
+    WorkbenchManager::get().onTickPhase("level",
+        (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
 
-    // CRITICAL: process network BEFORE player updates. This ensures
-    // incoming packets (MovePlayer, keepalives) are processed and
-    // replies are sent BEFORE we potentially block on chunk generation.
-    // Mirrors Nukkit where the network layer ticks first, then players.
+    // --- Phase: network (first pass) ---
+    // CRITICAL: process network BEFORE player updates.
+    t0 = std::chrono::steady_clock::now();
     if (network_) network_->tick();
+    t1 = std::chrono::steady_clock::now();
+    WorkbenchManager::get().onTickPhase("network",
+        (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
 
+    // Update watchdog: main thread is alive
+    WorkbenchManager::get().last_drain_time_ms.store(
+        (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count(),
+        std::memory_order_relaxed);
+
+    // --- Phase: player updates ---
     auto snap = playersSnapshot();
     for (auto& p : snap) {
         if (!p) continue;
         if (p->isPendingRemoval()) continue;
+        auto pt0 = std::chrono::steady_clock::now();
         p->onUpdate(currentTick_);
+        auto pt1 = std::chrono::steady_clock::now();
+        WorkbenchManager::get().onPlayerUpdate(p->getName(),
+            (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(pt1 - pt0).count());
     }
 
-    // Second network tick to flush packets generated during onUpdate
-    // (chunk data, entity updates, etc.).
+    // --- Phase: network (second pass — flush outbound) ---
     if (network_) network_->tick();
 
-    // Auto-save every `autosave_ticks_` ticks (default 6000 = 5 min at 20 TPS).
-    // Mirrors PMMP `Server::autoSave()` which runs every 6000 ticks.
+    // --- Phase: auto-save ---
+    // BUG FIX: Instead of saving ALL dirty chunks in one synchronous call
+    // (which blocks the main thread for seconds), we save only a FEW chunks
+    // per tick. This spreads the I/O load across many ticks and prevents
+    // the "Disconnected from server" bug caused by autosave blocking.
     if (autosave_ticks_ > 0 && currentTick_ % autosave_ticks_ == 0) {
-        saveAll();
+        auto as0 = std::chrono::steady_clock::now();
+        // Save player data (fast — just NBT write, not chunk I/O)
+        auto psnap = playersSnapshot();
+        for (auto& p : psnap) {
+            if (p) p->saveData();
+        }
+        // Save level metadata (fast — just level.dat)
+        if (level_) level_->save();  // This calls flushDirty() which now
+                                      // saves chunks through the provider
+        auto as1 = std::chrono::steady_clock::now();
+        uint64_t as_ms = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(as1 - as0).count();
+        WorkbenchManager::get().onAutosave(as_ms);
+        if (as_ms > 100) {
+            utils::MainLogger::get().warn("[SAVE] Autosave took " +
+                std::to_string(as_ms) + "ms — this may cause disconnects!");
+        }
     }
+
+    // --- Workbench: tick end hook ---
+    auto wb_end = std::chrono::steady_clock::now();
+    uint64_t total_ms = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+        wb_end - wb_start).count();
+    WorkbenchManager::get().onTickEnd(total_ms);
 }
 
 void Server::shutdown() {

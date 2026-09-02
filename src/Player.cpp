@@ -1,4 +1,5 @@
 #include "Player.h"
+#include "workbench/WorkbenchManager.h"
 #include "Server.h"
 #include "level/Level.h"
 #include "network/Network.h"
@@ -181,6 +182,18 @@ void Player::close(const std::string& reason) {
         utils::MainLogger::get().info("Closing player " + cfg_.username +
             " (" + cfg_.ip + ":" + std::to_string(cfg_.port) + "): " + reason);
 
+        // Workbench: capture disconnect state for diagnostics.
+        {
+            uint64_t now_ms = (uint64_t)(std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+            uint64_t session_ms = now_ms - (start_time_ms_ > 0 ? start_time_ms_ : now_ms);
+            uint64_t last_act = now_ms - (last_activity_ms_ > 0 ? last_activity_ms_ : now_ms);
+            size_t chunk_q = 0;
+            { std::lock_guard<std::mutex> lk(queue_mtx_); chunk_q = chunk_queue_.size(); }
+            WorkbenchManager::get().onDisconnect(cfg_.username, reason,
+                session_ms, last_act, chunk_q);
+        }
+
         // 1. Save NBT + inventory to disk (if we ever loaded NBT).
         try {
             if (named_tag_ && srv_ && !cfg_.username.empty()) {
@@ -254,6 +267,9 @@ void Player::sendPacket(std::shared_ptr<network::protocol::DataPacket> p) {
         utils::MainLogger::get().warn("sendPacket: no interface for " + cfg_.username);
         return;
     }
+
+    // Workbench: log outgoing packet.
+    WorkbenchManager::get().onPacketOut(cfg_.username, p->pid(), 0);
 
     // Serialize the packet: [1-byte ID][body].
     std::vector<uint8_t> body;
@@ -339,6 +355,13 @@ void Player::setGamemode(int gm) {
 void Player::handleDataPacket(network::protocol::DataPacket& p) {
     if (!connected_.load(std::memory_order_relaxed)) return;
     uint8_t pid = p.pid();
+
+    // Workbench: track last activity time + log incoming packet.
+    last_activity_ms_ = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    WorkbenchManager::get().onPacketIn(
+        cfg_.ip + ":" + std::to_string(cfg_.port), pid, 0);
+
     switch (pid) {
         case network::protocol::LOGIN_PACKET:
             if (auto* lp = dynamic_cast<network::protocol::LoginPacket*>(&p)) {
@@ -848,6 +871,11 @@ static void parseUuidBytes(const std::string& s, std::array<uint8_t,16>& out) {
 }
 void Player::doFirstSpawn() {
     if (spawned_.exchange(true)) return;   // idempotent
+
+    // Record join time for workbench disconnect diagnostics.
+    start_time_ms_ = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    last_activity_ms_ = start_time_ms_;
 
     // AdventureSettings (flight/pvp flags) — mirrors PMMP sendSettings().
     // Flag bits (from PMMP):
