@@ -145,12 +145,13 @@ bool mcp_rak_session_manager_send_encapsulated(mcp_rak_session_manager_t* sm,
     if (!sm || !ip || !payload || plen == 0) return false;
     mcp_rak_session_t* s = mcp_rak_session_manager_find(sm, ip, port);
     if (!s || s->state < MCP_SESSION_STATE_CONNECTING_2) return false;
-    // mcp_rak_session_send_payload handles MTU splitting automatically:
-    // payloads <= (mtu-14) go in one datagram; larger ones are split into
-    // (mtu-24)-byte fragments with splitID/splitIndex/splitCount headers
-    // so the MCPE client can reassemble before processing. This fixes the
-    // "Disconnected from server" bug caused by chunk packets (~15KB) being
-    // sent in a single UDP datagram that exceeded the mobile MTU (576 bytes).
+    // BUG FIX: Update last_activity_ms when we SEND data to the client.
+    // The timeout check uses last_activity_ms to decide if the player is
+    // still active. Without this, if the client stops sending game packets
+    // (because it's overwhelmed by chunk data) but the server is actively
+    // sending chunks TO the client, the server still times out the session.
+    // PMMP updates last_activity on both send AND receive.
+    s->last_activity_ms = mcp_utils_time_ms();
     return mcp_rak_session_send_payload(s, sm, payload, plen, reliability, 0);
 }
 
