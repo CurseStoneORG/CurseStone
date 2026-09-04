@@ -1618,7 +1618,7 @@ void Player::onUpdate(uint64_t current_tick) {
         // between load time and stability. Each chunk is ~83KB uncompressed
         // → ~15KB compressed → ~10-15 RakNet fragments. At 2 chunks/tick
         // that's 20-30 fragments per 50ms tick, which the client can handle.
-        constexpr int MAX_CHUNKS_PER_TICK = 2;
+        constexpr int MAX_CHUNKS_PER_TICK = 1;
         int chunks_sent_this_tick = 0;
         for (auto& pr : order) {
             int32_t chX = cx + pr.first, chZ = cz + pr.second;
