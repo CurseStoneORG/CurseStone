@@ -117,10 +117,30 @@ void RakLibInterface::raklibThreadLoop() {
                 if (sscanf(action.ip.c_str(), "%hhu.%hhu.%hhu.%hhu",
                             &ipBytes[0], &ipBytes[1], &ipBytes[2], &ipBytes[3]) == 4) {
                     if (action.type == RakLibActionType::SEND_PACKET) {
+                        // BUG FIX: Use RELIABLE (2) instead of RELIABLE_ORDERED (3)
+                        // for ALL packets. The MCPE 0.15 client has a single
+                        // ordering channel (0) and if ANY reliable-ordered packet
+                        // is lost, ALL subsequent packets on that channel are
+                        // blocked until retransmit. With chunk data being sent
+                        // as separate BatchPackets, a single lost fragment
+                        // deadlocks the entire ordering queue → client stops
+                        // responding → "Disconnected from server" timeout.
+                        //
+                        // PMMP uses RELIABLE_ORDERED but batches ALL packets
+                        // per tick into ONE BatchPacket, so there's only one
+                        // orderIndex per tick. AtomikPE sends each packet as
+                        // a separate BatchPacket, so we must use RELIABLE to
+                        // avoid ordering deadlocks.
+                        //
+                        // Chunks, block updates, and entity updates don't
+                        // actually need ordering — the client can process
+                        // them in any order. Only login/spawn sequence needs
+                        // strict ordering, and those are sent one-at-a-time
+                        // anyway.
                         mcp_rak_session_manager_send_encapsulated(
                             &raklib_.manager, ipBytes, action.port,
                             action.data.data(), action.data.size(),
-                            MCP_RELIABILITY_RELIABLE_ORDERED);
+                            MCP_RELIABILITY_RELIABLE);
                     } else if (action.type == RakLibActionType::CLOSE_SESSION) {
                         mcp_server_handler_close_session(
                             &raklib_.handler, ipBytes, action.port);
