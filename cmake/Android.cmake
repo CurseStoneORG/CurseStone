@@ -16,9 +16,20 @@ if(NOT ANDROID_PLATFORM)
     set(ANDROID_PLATFORM "android-24")
 endif()
 
-# Forzar runtime estático para que el binario no dependa de libstdc++.so
-# (útil para distribuir el ejecutable sin instalar nada extra en Android)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -static-libstdc++")
+# Static C++ runtime linking.
+#
+# IMPORTANT: The NDK ships Clang + libc++ (NOT libstdc++). The flag
+# `-static-libstdc++` is a GCC-ism and is silently ignored by Clang,
+# producing the warning:
+#   clang++: warning: argument unused during compilation: '-static-libstdc++'
+#
+# The static-vs-dynamic decision is controlled by ANDROID_STL below:
+#   c++_static  → libc++ is statically linked into the final binary
+#   c++_shared  → libc++.so is bundled as a separate .so
+#
+# So there is nothing to add to CXX_FLAGS here. Setting ANDROID_STL=c++_static
+# below already gives us a self-contained binary.
+
 set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS}")
 
 # STL: usa libc++ (la única opción en NDK r23+)

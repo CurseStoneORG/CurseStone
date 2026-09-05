@@ -135,14 +135,11 @@ bool ItemFlintSteel::tryCreateNetherPortal(level::Level* level, Player* player,
 
     if (countZ >= 4 && countZ <= 23) {
         int32_t yMaxFar  = ty, yMaxNear = ty;
-        while (level->getBlockId(tx, yMaxFar + 1,  tz,  zMax) == OBSIDIAN) yMaxFar++;
-        while (level->getBlockId(tx, yMaxNear + 1, tz,  zMin) == OBSIDIAN) yMaxNear++;
-        // Nota: la llamada anterior tiene un bug de firma — corrección:
-        // los accesos son level->getBlockId(tx, y, zMax/zMin)
-        // Se reescribe sin el parámetro duplicado:
-
-        // Recalcular correctamente
-        yMaxFar  = ty; yMaxNear = ty;
+        // Note: previous version of this code incorrectly called
+        // getBlockId(tx, y, tz, zMax) with a 4th redundant argument that
+        // doesn't exist in the Level::getBlockId(int,int,int) signature.
+        // The correct call passes only (tx, y, zMax/zMin) — zMax/zMin
+        // already encode the Z coordinate of the column we're scanning.
         while (level->getBlockId(tx, yMaxFar  + 1, zMax) == OBSIDIAN) yMaxFar++;
         while (level->getBlockId(tx, yMaxNear + 1, zMin) == OBSIDIAN) yMaxNear++;
 

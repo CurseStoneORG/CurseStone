@@ -34,6 +34,16 @@ public:
     // Returns true if this entity should be removed at next sweep.
     bool isClosed() const { return closed_; }
     void close() { closed_ = true; }
+
+    // ---- Damage / status effects (stubs) ----
+    // These exist so BlockFire::onEntityCollide can compile against a
+    // fully-formed Entity API. The damage / fire-on-entity systems are
+    // not implemented yet in AtomikPE — the bodies are intentional no-ops
+    // and marked with TODO so they're easy to find later.
+    // mirrors PMMP Entity::attack(EntityDamageEvent)
+    virtual void attack(float /*damage*/) { /* TODO: damage event pipeline */ }
+    // mirrors PMMP Entity::setOnFire(int $seconds)
+    virtual void setOnFire(int /*seconds*/) { /* TODO: fire tick tracking */ }
 protected:
     int64_t runtime_id_;
     int32_t network_id_ = 0;

@@ -33,8 +33,17 @@
 #define PROTOCOL_VERSION       84
 
 // ---- Tick loop tuning ----
-#define TICK_RATE              20    // ticks per second
-#define TICK_MS                50    // milliseconds per tick
+// NOTE: The macro is prefixed with ATOMIK_ to avoid colliding with the
+// `static constexpr int TICK_RATE = 30;` member declared in
+// block/BlockFire.h (fire spreading tick rate). Without the prefix,
+// the preprocessor would rewrite that member into `static constexpr int 20 = 30;`
+// which is a hard compile error on both GCC and Clang.
+#define ATOMIK_TICK_RATE          20    // ticks per second (server tick loop)
+#define ATOMIK_TICK_MS            50    // milliseconds per tick
+// Backwards-compat alias (deprecated) — kept so external code that still
+// references TICK_RATE keeps compiling. New code should use ATOMIK_TICK_RATE.
+// We deliberately do NOT define the bare `TICK_RATE` token here, because
+// doing so would re-introduce the macro collision with BlockFire::TICK_RATE.
 
 // ---- Build info ----
 #ifndef ATOMIKPE_LEVELDB

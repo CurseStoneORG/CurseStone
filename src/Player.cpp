@@ -404,8 +404,14 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                 // Pass the parsed held item id (with held count + damage) so
                 // handleBlockPlace can decide: empty hand → no place; block id
                 // → place that block, decrement stack (survival only).
+                //
+                // NOTE: itemId is int16_t in the packet (values 256..327 are
+                // valid item ids like 259=flint&steel, 325=bucket, 326=water
+                // bucket, 327=lava bucket). Casting to uint8_t would silently
+                // truncate them and break those items forever, so we pass the
+                // full int16_t value through.
                 handleBlockPlace(ui->x, ui->y, ui->z, ui->face,
-                                 static_cast<uint8_t>(ui->itemId & 0xFF),
+                                 ui->itemId,
                                  ui->itemCount, ui->itemDamage);
             }
             break;
@@ -1141,18 +1147,44 @@ void Player::handleBlockBreak(int x, int y, int z) {
 }
 
 void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
-                              uint8_t heldItemId, uint8_t heldCount, uint16_t heldDamage) {
+                              int16_t heldItemId, uint8_t heldCount, uint16_t heldDamage) {
     if (!spawned_.load(std::memory_order_relaxed)) return;
     if (!srv_ || !srv_->getDefaultLevel()) return;
+
+    // ---- Compute placed block position based on face ----
+    // This is computed UP FRONT because the flint-and-steel branch below
+    // needs placeX/Y/Z to call ItemFlintSteel::onActivate(). Previously this
+    // calculation lived at the bottom of the function and the flint-and-steel
+    // branch referenced placeX/Y/Z before they were declared, producing
+    // "use of undeclared identifier" compile errors on both GCC and Clang.
+    int placeX = x, placeY = y, placeZ = z;
+    switch (face) {
+        case 0: placeY--; break;  // bottom
+        case 1: placeY++; break;  // top
+        case 2: placeZ--; break;  // north
+        case 3: placeZ++; break;  // south
+        case 4: placeX--; break;  // west
+        case 5: placeX++; break;  // east
+        default: return;
+    }
+    if (placeY < 0 || placeY >= 256) return;
+
+    auto* lvl = srv_->getDefaultLevel();
 
     // ---- Decide what block (if any) to place based on held item ----
     // PMMP-style item→block mapping. Item ids 256+ are tools / buckets /
     // etc. and need special handling. Item ids 1..255 are direct block
     // placements.
+    //
+    // NOTE: heldItemId is int16_t (not uint8_t) so that item ids > 255
+    // (e.g. 259=flint&steel, 325=bucket, 326=water bucket, 327=lava bucket)
+    // survive intact. Earlier the parameter was uint8_t which silently
+    // truncated them and made the comparisons below tautologically false.
     uint8_t placedBlockId   = 0;     // 0 = no placement
     uint8_t placedBlockData = 0;
     bool    consumeItem     = false; // decrement inventory stack?
     bool    skipPlaceSound  = false; // for fire/water/lava (PMMP doesn't play it)
+    (void)heldCount;  // currently unused — kept for API parity with PMMP
 
     if (heldItemId == 0) {
         // Empty hand — no placement.
@@ -1163,7 +1195,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         return;
     } else if (heldItemId >= 1 && heldItemId <= 255) {
         // Block item — place it directly. data = low 4 bits of heldDamage.
-        placedBlockId   = heldItemId;
+        placedBlockId   = static_cast<uint8_t>(heldItemId);
         placedBlockData = (uint8_t)(heldDamage & 0x0F);
         consumeItem     = !(cfg_.gamemode & 1);  // survival only
     } else if (heldItemId == 325) {
@@ -1202,20 +1234,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         return;
     }
 
-    // Calculate placed block position based on face.
-    int placeX = x, placeY = y, placeZ = z;
-    switch (face) {
-        case 0: placeY--; break;  // bottom
-        case 1: placeY++; break;  // top
-        case 2: placeZ--; break;  // north
-        case 3: placeZ++; break;  // south
-        case 4: placeX--; break;  // west
-        case 5: placeX++; break;  // east
-        default: return;
-    }
-    if (placeY < 0 || placeY >= 256) return;
-
-    auto* lvl = srv_->getDefaultLevel();
+    // ---- Place the block at (placeX, placeY, placeZ) ----
     int32_t cx = placeX >> 4;
     int32_t cz = placeZ >> 4;
     mcp_chunk_t* ch = lvl->chunks().getChunk(cx, cz);
@@ -1828,6 +1847,7 @@ bool Player::isChunkLoaded(int cx, int cz) const {
     return used_chunks_.count(hash) > 0;
 }
 bool Player::isChunkLoading(int cx, int cz) const {
+    (void)cx; (void)cz;  // stub — not yet tracking in-flight chunk sends
     return false;
 }
 void Player::unloadChunk(int cx, int cz) {

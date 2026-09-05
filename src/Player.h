@@ -75,7 +75,7 @@ public:
     void handleChat(const std::string& message);
     void handleBlockBreak(int x, int y, int z);
     void handleBlockPlace(int x, int y, int z, uint8_t face,
-                          uint8_t heldItemId, uint8_t heldCount, uint16_t heldDamage);
+                          int16_t heldItemId, uint8_t heldCount, uint16_t heldDamage);
     void handlePlayerAction(int action, int x, int y, int z, int face);
 
     // Spawn a dropped item entity at the given position with a small random
@@ -107,7 +107,7 @@ public:
 
     // --- Server → Player packets ---
     void sendPacket(std::shared_ptr<network::protocol::DataPacket> p);
-    void sendMessage(const std::string& msg);
+    void sendMessage(const std::string& msg) override;
     void kick(const std::string& reason = "disconnect.kick");
     void teleport(double x, double y, double z);
 
@@ -237,7 +237,6 @@ private:
     std::atomic<bool> connected_{false};
     std::atomic<bool> logged_in_{false};
     std::atomic<bool> spawned_{false};
-    uint64_t last_move_tick_ = 0;
     uint64_t last_save_tick_ = 0;
     uint64_t start_time_ms_ = 0;       // Wall-clock when player joined (for workbench)
     uint64_t last_activity_ms_ = 0;    // Wall-clock of last received packet

@@ -38,7 +38,7 @@ namespace network { class Network; }
 namespace inventory { class CraftingManager; }
 namespace scheduler { class AsyncPool; }
 namespace permission { class BanList; }
-namespace nbt        { namespace tag { struct CompoundTag; } }   // C struct
+namespace nbt        { namespace tag { class CompoundTag; } }   // C++ class (matches main.h declaration)
 namespace block    { void register_all_blocks(); }
 namespace item     { class Item; }
 
@@ -110,6 +110,15 @@ public:
     const std::string& ip() const { return ip_; }
     uint16_t port() const { return port_; }
     std::string getMotd() const { return motd_; }
+
+    // ---- World behaviour flags (used by BlockFire propagation) ----
+    // Both default to TRUE so the fire-spread + Nether portal logic in
+    // BlockFire.cpp / ItemFlintSteel.cpp behaves like vanilla PMMP. They
+    // are exposed as getters so a future server.properties can override
+    // them without touching call sites.
+    // mirrors PMMP Server::isFireSpreadEnabled() / isNetherEnabled()
+    bool fireSpreadEnabled() const { return fire_spread_enabled_; }
+    bool netherEnabled()     const { return nether_enabled_; }
 
     // Ban lists (lazily-initialized singletons).
     permission::BanList& getNameBans();
@@ -209,6 +218,9 @@ private:
     bool whitelist_ = false;
     bool online_mode_ = false;
     bool advanced_log_ = false;
+    // Fire spread + Nether portal behaviour (see fireSpreadEnabled / netherEnabled).
+    bool fire_spread_enabled_ = true;
+    bool nether_enabled_ = true;
     int async_workers_ = 4;
     int autosave_ticks_ = 6000;   // 5 minutes at 20 TPS (PMMP default)
 
