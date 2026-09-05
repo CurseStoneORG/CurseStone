@@ -33,6 +33,8 @@
 #include "network/protocol/MobArmorEquipmentPacket.h"
 #include "network/protocol/AddItemEntityPacket.h"
 #include "network/protocol/TakeItemEntityPacket.h"
+#include "item/ItemFlintSteel.h"
+#include "block/BlockFire.h"
 #include "network/protocol/ContainerSetContentPacket.h"
 #include "network/protocol/ContainerSetSlotPacket.h"
 #include "network/protocol/Info.h"
@@ -1183,16 +1185,14 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         consumeItem     = !(cfg_.gamemode & 1);
         skipPlaceSound  = true;
     } else if (heldItemId == 259) {
-        // Flint and steel → place FIRE (id=51). PMMP BlockFire::place().
-        // Bug previously: the generic block-id path rejected 259 because
-        // it's >= 256, so it was a no-op. The user reported "places dirt"
-        // because the placeholder empty cell sometimes defaulted to dirt
-        // visually on the client.
-        placedBlockId   = 51;
-        placedBlockData = 0;
-        // Flint and steel takes 1 damage per use (no stack consumption).
-        consumeItem    = false;
-        skipPlaceSound = true;
+        // Flint and steel — delegar toda la lógica a ItemFlintSteel::onActivate().
+        // Maneja: verificación de bloque sólido, portal del Nether,
+        // colocación de fuego, primer tick de propagación y durabilidad.
+        item::ItemFlintSteel::onActivate(lvl, this,
+            placeX, placeY, placeZ,  // bloque AIR destino (cara clickeada)
+            x, y, z,                 // bloque target (el que recibió el click)
+            face);
+        return;  // onActivate() ya hace el setBlock + broadcast, no continuar
     } else {
         // Other item (food, tool, etc.) — PMMP would call onItemUse; we no-op.
         if (srv_ && srv_->advancedLog()) {
