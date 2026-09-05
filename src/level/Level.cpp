@@ -126,6 +126,13 @@ uint8_t Level::getBlockId(int32_t x, int32_t y, int32_t z) {
     return mcp_chunk_get_block_id(c, x & 15, y, z & 15);
 }
 
+uint8_t Level::getBlockData(int32_t x, int32_t y, int32_t z) {
+    int32_t cx = x >> 4, cz = z >> 4;
+    mcp_chunk_t* c = chunks_.getChunkIfLoaded(cx, cz);
+    if (!c) return 0;
+    return mcp_chunk_get_block_data(c, x & 15, y, z & 15);
+}
+
 void Level::setBlock(int32_t x, int32_t y, int32_t z, uint8_t id, uint8_t data) {
     int32_t cx = x >> 4, cz = z >> 4;
     if (mcp_chunk_t* c = chunks_.getChunk(cx, cz)) {

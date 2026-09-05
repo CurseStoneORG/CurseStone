@@ -59,6 +59,10 @@ public:
     ChunkManager& chunks() { return chunks_; }
     // Returns the block id at world coords. Loads chunk if needed.
     uint8_t getBlockId(int32_t x, int32_t y, int32_t z);
+    // Returns the block data (meta, 0..15) at world coords. Returns 0 if
+    // the chunk is not loaded. Mirrors PMMP `Level::getBlockDataAt()`.
+    // BlockFire propagation needs this to read the fire's "age" meta.
+    uint8_t getBlockData(int32_t x, int32_t y, int32_t z);
     void setBlock(int32_t x, int32_t y, int32_t z, uint8_t id, uint8_t data);
     // World time (0..24000). Incremented each tick (20/s).
     int32_t time() const { return cfg_.time; }

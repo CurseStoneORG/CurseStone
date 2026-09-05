@@ -311,8 +311,8 @@ void Server::runTickLoop() {
         tick();
         auto elapsed = std::chrono::steady_clock::now() - start_ts;
         auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
-        if (elapsed_ms < TICK_MS) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(TICK_MS - elapsed_ms));
+        if (elapsed_ms < ATOMIK_TICK_MS) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(ATOMIK_TICK_MS - elapsed_ms));
         }
         // Compute TPS once per second.
         if (currentTick_ - last_tick_count >= 20) {
