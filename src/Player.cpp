@@ -1187,7 +1187,44 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     (void)heldCount;  // currently unused — kept for API parity with PMMP
 
     if (heldItemId == 0) {
-        // Empty hand — no placement.
+        // Empty hand — no placement. BUT, in MCPE 0.15.x the client also
+        // sends USE_ITEM_PACKET with an empty hand when the player
+        // right-clicks on a FIRE block to extinguish it (PMMP handles this
+        // in Level::useItemOn → Fire::onUpdate(BLOCK_UPDATE_NORMAL)).
+        //
+        // We replicate that behaviour here: if the clicked target (x,y,z)
+        // is a FIRE block, we set it to AIR and broadcast the update.
+        // This makes fire removable with a single right-click without
+        // needing to break the block underneath it.
+        constexpr uint8_t FIRE_ID = 51;
+        uint8_t targetId = lvl->getBlockId(x, y, z);
+        if (targetId == FIRE_ID) {
+            // Get the chunk for (x, y, z) to set the block.
+            int32_t tcx = x >> 4, tcz = z >> 4;
+            if (mcp_chunk_t* tch = lvl->chunks().getChunkIfLoaded(tcx, tcz)) {
+                int tlx = x & 15, tlz = z & 15;
+                mcp_chunk_set_block_full(tch, tlx, y, tlz, 0, 0);
+                tch->dirty = true;
+
+                // Broadcast UpdateBlockPacket to nearby players.
+                auto ubp = std::make_shared<network::protocol::UpdateBlockPacket>();
+                ubp->x = x;
+                ubp->z = z;
+                ubp->y = (uint8_t)y;
+                ubp->blockId = 0;
+                ubp->blockData = 0;
+                ubp->flags = 0xFF;
+                if (srv_) {
+                    for (auto& other : srv_->playersSnapshot()) {
+                        if (!other) continue;
+                        if (!other->isTrackingChunk(tcx, tcz)) continue;
+                        other->sendPacket(ubp);
+                    }
+                }
+            }
+            return;
+        }
+        // Not fire — just log "no placement" and bail.
         if (srv_ && srv_->advancedLog()) {
             utils::MainLogger::get().info("[BLOCK] " + cfg_.username +
                 " attempted place with empty hand — ignored");
@@ -1258,10 +1295,17 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     int localX = placeX & 15;
     int localZ = placeZ & 15;
 
-    // Don't place if target is not air (unless it's fire, which can replace
-    // any non-solid block — but for simplicity we always require air here).
+    // Don't place if target is not air, UNLESS the existing block is FIRE.
+    // FIRE is canBeReplaced=true per PMMP, so placing a block on top of
+    // a fire should extinguish the fire and put the new block in its place.
+    // Without this, the client would locally replace the fire with the new
+    // block (because canBeReplaced=true) but the server would keep the fire
+    // in its chunk → "ghost fire" that damages entities passing through
+    // even though visually it's gone. And breaking the new block would
+    // then drop a fire item (because the server still has FIRE there).
     uint8_t existing = mcp_chunk_get_block_id(ch, localX, placeY, localZ);
-    if (existing != 0) return;
+    constexpr uint8_t FIRE_ID = 51;
+    if (existing != 0 && existing != FIRE_ID) return;
 
     // Set the block in the chunk.
     mcp_chunk_set_block_full(ch, localX, placeY, localZ, placedBlockId, placedBlockData);
@@ -1352,6 +1396,7 @@ static std::pair<uint16_t, uint16_t> lookupBlockDrop(uint8_t blockId, uint8_t bl
         case 18: return {0,   0};                   // Leaves -> no drop (chance-based)
         case 7:  return {0,   0};                   // Bedrock -> unbreakable
         case 46: return {0,   0};                   // TNT -> no drop
+        case 51: return {0,   0};                   // FIRE -> no drop (PMMP Fire::getDrops() = [])
         default: return {blockId, blockData};       // Default: drop self
     }
 }
