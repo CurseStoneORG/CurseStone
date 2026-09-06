@@ -106,7 +106,15 @@ public:
     bool isTrackingChunk(int32_t cx, int32_t cz) const;
 
     // --- Server → Player packets ---
-    void sendPacket(std::shared_ptr<network::protocol::DataPacket> p);
+    // ordered=true guarantees this packet is delivered to the client
+    // strictly after every earlier ordered=true packet sent to this
+    // player (RELIABLE_ORDERED on a dedicated channel) — use for the
+    // login/spawn handshake sequence, where the real MCPE client
+    // requires strict order. Default false keeps packets on the
+    // separate unordered RELIABLE channel (chunks, entity updates,
+    // anything where inter-packet order doesn't matter).
+    void sendPacket(std::shared_ptr<network::protocol::DataPacket> p,
+                     bool ordered = false);
     void sendMessage(const std::string& msg) override;
     void kick(const std::string& reason = "disconnect.kick");
     void teleport(double x, double y, double z);

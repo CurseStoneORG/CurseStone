@@ -27,11 +27,30 @@ void mcp_rak_session_init(mcp_rak_session_t* s, const uint8_t ip[4],
     s->window_start = 0;
     s->window_end   = MCP_SESSION_WINDOW_SIZE;
     s->last_activity_ms = mcp_utils_time_ms();
+    s->last_packet_received_ms      = s->last_activity_ms;
+    s->last_game_packet_received_ms = s->last_activity_ms;
+    s->last_ping_received_ms        = 0;
+    s->last_packet_sent_ms          = s->last_activity_ms;
     s->start_time_ms    = s->last_activity_ms;
     s->is_active    = false;
     s->is_disconnecting = false;  // Bug 2 fix
     for (int i = 0; i < 32; ++i) s->channel_index[i] = 0;
-    s->split.in_use = false;
+    for (int i = 0; i < 32; ++i) {
+        s->recv_order_index[i] = 0;
+        s->recv_order_advanced_ms[i] = s->last_activity_ms;
+        for (int k = 0; k < MCP_ORDER_HOLD_CAP; ++k) {
+            s->order_hold[i][k].used = false;
+            s->order_hold[i][k].data = NULL;
+        }
+    }
+    // FIX #1: no single split anymore — every slot starts unused.
+    for (int i = 0; i < MCP_MAX_CONCURRENT_SPLITS; ++i) {
+        s->split_slots[i].in_use = false;
+    }
+    // FIX #2: reliable message-index receive window.
+    s->reliable_window_start = 0;
+    s->last_reliable_index   = -1;
+    memset(s->reliable_recv_window, 0, sizeof(s->reliable_recv_window));
 }
 
 void mcp_rak_session_destroy(mcp_rak_session_t* s) {
@@ -44,10 +63,22 @@ void mcp_rak_session_destroy(mcp_rak_session_t* s) {
     for (size_t i = 0; i < MCP_RECOVERY_CAP; ++i) {
         if (s->recovery[i].data) free(s->recovery[i].data);
     }
-    // Free split store segments
-    if (s->split.in_use) {
-        for (uint32_t i = 0; i < s->split.count && i < MCP_MAX_SPLIT_SEGMENTS; ++i) {
-            free(s->split.segments[i]);
+    // Free split store segments — FIX #1: iterate every concurrent slot.
+    for (int si = 0; si < MCP_MAX_CONCURRENT_SPLITS; ++si) {
+        if (s->split_slots[si].in_use) {
+            for (uint32_t i = 0; i < s->split_slots[si].count && i < MCP_MAX_SPLIT_SEGMENTS; ++i) {
+                free(s->split_slots[si].segments[i]);
+            }
+        }
+    }
+    // FIX: free any packets still waiting in the ordering hold buffers —
+    // otherwise every held-back packet at the moment a session is torn
+    // down leaks.
+    for (int c = 0; c < 32; ++c) {
+        for (int k = 0; k < MCP_ORDER_HOLD_CAP; ++k) {
+            if (s->order_hold[c][k].used && s->order_hold[c][k].data) {
+                free(s->order_hold[c][k].data);
+            }
         }
     }
     memset(s, 0, sizeof(*s));
@@ -70,16 +101,44 @@ void mcp_rak_session_queue_nack(mcp_rak_session_t* s, uint32_t seq) {
     s->nack_queue[s->nack_queue_len++] = seq;
 }
 
-// Collapse a sorted array of seqs into (min,max) ranges.
-static size_t collapse_ranges(const uint32_t* seqs, size_t len,
+// Ascending-order comparator for uint32_t, used by qsort() below.
+static int cmp_u32(const void* a, const void* b) {
+    uint32_t ua = *(const uint32_t*)a, ub = *(const uint32_t*)b;
+    return (ua > ub) - (ua < ub);
+}
+
+// Collapse an array of seqs into (min,max) ranges.
+// FIX (audit priority 5): this used to assume the input array already
+// arrived in ascending order — true only as long as the underlying
+// network delivers ACKed/NACKed datagrams in order. Real UDP reordering
+// (e.g. seqs queued in the order 5,3,4,8,7) broke that assumption
+// silently: the old code would emit 4 disjoint ranges ([5,5],[3,4],[8,8],
+// [7,7]) instead of the 2 truly-contiguous ones ([3,5],[7,8]). No
+// sequence numbers were lost by that — every one still ended up in some
+// range — but every extra range costs bytes in the ACK/NACK datagram
+// sent back to the client, and that overhead scales with how reordered
+// the network is at the time, which is exactly when the connection can
+// least afford wasted bandwidth. Sorting first guarantees the minimal,
+// correct set of ranges regardless of arrival order.
+static size_t collapse_ranges(const uint32_t* seqs_in, size_t len,
                                uint32_t* mins, uint32_t* maxs, size_t cap) {
     if (!len) return 0;
+    // Work on a local sorted copy — callers pass s->ack_queue /
+    // s->nack_queue directly, which must stay untouched until the
+    // caller resets its length itself.
+    uint32_t sorted[MCP_MAX_ACK_QUEUE > MCP_MAX_NACK_QUEUE ? MCP_MAX_ACK_QUEUE : MCP_MAX_NACK_QUEUE];
+    size_t n = len < (sizeof(sorted) / sizeof(sorted[0])) ? len : (sizeof(sorted) / sizeof(sorted[0]));
+    memcpy(sorted, seqs_in, n * sizeof(uint32_t));
+    qsort(sorted, n, sizeof(uint32_t), cmp_u32);
+
     size_t oi = 0;
     size_t i = 0;
-    while (i < len && oi < cap) {
-        uint32_t lo = seqs[i++];
+    while (i < n && oi < cap) {
+        uint32_t lo = sorted[i++];
         uint32_t hi = lo;
-        while (i < len && seqs[i] == hi + 1) hi = seqs[i++];
+        // Also skip exact duplicates (queue_ack/queue_nack already dedup
+        // on insert, but this stays correct even if that ever changes).
+        while (i < n && (sorted[i] == hi + 1 || sorted[i] == hi)) hi = sorted[i++];
         mins[oi] = lo;
         maxs[oi] = hi;
         oi++;
@@ -141,9 +200,24 @@ size_t mcp_rak_session_build_datagram(mcp_rak_session_t* s,
 
     bool is_reliable = (reliability == MCP_RELIABILITY_RELIABLE ||
                         reliability == MCP_RELIABILITY_RELIABLE_ORDERED ||
-                        reliability == MCP_RELIABILITY_RELIABLE_SEQUENCED);
+                        reliability == MCP_RELIABILITY_RELIABLE_SEQUENCED ||
+                        reliability == MCP_RELIABILITY_RELIABLE_WITH_ACK_RECEIPT ||
+                        reliability == MCP_RELIABILITY_RELIABLE_ORDERED_WITH_ACK_RECEIPT);
+    // FIX (priority 9 / RakNet compatibility): UNRELIABLE_SEQUENCED does
+    // NOT carry an orderIndex/orderChannel — it carries a sequencingIndex
+    // instead (see RakNet's InternalPacket: order fields are only present
+    // for the *_ORDERED reliabilities). This used to lump
+    // UNRELIABLE_SEQUENCED in with RELIABLE_ORDERED here, which — had
+    // anything in this codebase actually sent UNRELIABLE_SEQUENCED — would
+    // have written the wrong field entirely and desynced the two sides'
+    // interpretation of the datagram. Nothing currently sends that
+    // reliability value (grep confirms), so this couldn't have caused the
+    // reported disconnects, but it's a real correctness bug the moment
+    // anything does start using it (e.g. entity position updates, a
+    // natural fit for "only the latest matters, ordering channel not
+    // needed").
     bool is_ordered  = (reliability == MCP_RELIABILITY_RELIABLE_ORDERED ||
-                        reliability == MCP_RELIABILITY_UNRELIABLE_SEQUENCED);
+                        reliability == MCP_RELIABILITY_RELIABLE_ORDERED_WITH_ACK_RECEIPT);
 
     // Flags: reliability bits (5-7) | split flag (bit 4)
     uint8_t flags = ENCAP_FLAG_RELIABILITY(reliability);
@@ -175,9 +249,35 @@ size_t mcp_rak_session_build_datagram(mcp_rak_session_t* s,
         out[i++] = order_channel & 0x1F;
     }
 
-    // Split packet header — only when has_split=true
+    // Split packet header — only when has_split=true.
+    //
+    // BUG FIX: wire order for RakNet's split info is FIXED at
+    // splitCount(4) + splitID(2) + splitIndex(4) — this matches the
+    // real RakNet/RakLib spec (see raklib\protocol\EncapsulatedPacket
+    // ::SPLIT_INFO_LENGTH = 4+2+4 in PocketMine-MP's RakLib, and
+    // RakNet's own InternalPacket.h field order: splitPacketId,
+    // splitPacketIndex, splitPacketCount are tracked separately but
+    // serialized on the wire as count-first). This function used to
+    // write splitID(2) + splitIndex(4) + splitCount(4) instead — a
+    // different order with the same total size (10 bytes), so it
+    // never crashed or got rejected, but every field the real MCPE
+    // client read out of a split fragment was wrong (it read our
+    // splitID as half of splitCount, etc). That corrupts the client's
+    // split-packet reassembly for every packet the server has to
+    // fragment (large chunk sends, big inventory syncs, ...) — and
+    // with any latency/reordering, more fragments end up in flight at
+    // once, making the corruption worse until the client's RakNet
+    // layer gives up and disconnects. This was the read side
+    // (parse_encap_record in SessionManager.c) all along — that one
+    // already used the correct count/id/index order — so only the
+    // write side needed fixing to match it.
     if (has_split) {
         if (i + 10 > out_cap) return 0;
+        // splitCount (4-byte BE)
+        out[i++] = (uint8_t)(split_count >> 24);
+        out[i++] = (uint8_t)(split_count >> 16);
+        out[i++] = (uint8_t)(split_count >>  8);
+        out[i++] = (uint8_t)(split_count & 0xFF);
         // splitID (2-byte BE)
         out[i++] = (uint8_t)(split_id >> 8);
         out[i++] = (uint8_t)(split_id & 0xFF);
@@ -186,11 +286,6 @@ size_t mcp_rak_session_build_datagram(mcp_rak_session_t* s,
         out[i++] = (uint8_t)(split_index >> 16);
         out[i++] = (uint8_t)(split_index >>  8);
         out[i++] = (uint8_t)(split_index & 0xFF);
-        // splitCount (4-byte BE)
-        out[i++] = (uint8_t)(split_count >> 24);
-        out[i++] = (uint8_t)(split_count >> 16);
-        out[i++] = (uint8_t)(split_count >>  8);
-        out[i++] = (uint8_t)(split_count & 0xFF);
     }
 
     // Payload slice
@@ -198,15 +293,46 @@ size_t mcp_rak_session_build_datagram(mcp_rak_session_t* s,
     memcpy(out + i, payload, plen);
     i += plen;
 
-    // Store in recovery queue for ACK-based retransmit
-    uint32_t slot = seq % MCP_RECOVERY_CAP;
-    if (s->recovery[slot].data) free(s->recovery[slot].data);
-    s->recovery[slot].data = (uint8_t*)malloc(i);
-    if (s->recovery[slot].data) {
-        memcpy(s->recovery[slot].data, out, i);
-        s->recovery[slot].len          = i;
-        s->recovery[slot].seq          = seq;
-        s->recovery[slot].send_time_ms = mcp_utils_time_ms();
+    // Store in recovery queue for ACK-based retransmit.
+    // FIX (audit priority 6): only RELIABLE* datagrams belong here.
+    // UNRELIABLE (and UNRELIABLE_SEQUENCED) are — by RakNet's own
+    // contract — never acknowledged by the remote side, so a slot
+    // storing one would NEVER be freed by handle_ack(): it would sit
+    // occupied until another seq's modulo happened to reuse the same
+    // slot (wasting capacity that RELIABLE traffic could have used
+    // instead — exactly the recovery-exhaustion risk this audit is
+    // tracking), AND retransmit_stale() would dutifully keep resending
+    // that same "unreliable" datagram every 5 seconds forever, since
+    // nothing would ever remove it. Gating this on is_reliable fixes
+    // both: unreliable sends are fire-and-forget, as intended, and
+    // recovery capacity is spent only on datagrams that can actually
+    // be confirmed and might actually need a resend.
+    if (is_reliable) {
+        uint32_t slot = (seq & MCP_SEQ24_MASK) % MCP_RECOVERY_CAP;
+        if (s->recovery[slot].data) {
+            // FIX: this slot still holds an un-ACKed datagram — we're about
+            // to overwrite (permanently lose) it before the client ever
+            // confirmed receipt. This used to happen silently; now it's
+            // counted so it can be correlated with disconnects instead of
+            // vanishing without a trace (see the disconnect log in
+            // SessionManager.c, point #13 of the audit).
+            s->diag_recovery_overwrites++;
+            free(s->recovery[slot].data);
+            // occupancy unchanged: freeing an old occupant and storing a
+            // new one in the same slot is a like-for-like replacement,
+            // not growth
+        } else {
+            s->diag_recovery_occupied++;
+            if (s->diag_recovery_occupied > s->diag_recovery_peak)
+                s->diag_recovery_peak = s->diag_recovery_occupied;
+        }
+        s->recovery[slot].data = (uint8_t*)malloc(i);
+        if (s->recovery[slot].data) {
+            memcpy(s->recovery[slot].data, out, i);
+            s->recovery[slot].len          = i;
+            s->recovery[slot].seq          = seq & MCP_SEQ24_MASK;
+            s->recovery[slot].send_time_ms = mcp_utils_time_ms();
+        }
     }
     return i;
 }
@@ -335,5 +461,11 @@ bool mcp_rak_session_enqueue(mcp_rak_session_t* s,
 bool mcp_rak_session_is_timed_out(const mcp_rak_session_t* s,
                                     uint64_t now_ms, uint64_t timeout_ms) {
     if (!s) return true;
+    // FIX: guard against unsigned underflow. If last_activity_ms is ever
+    // ahead of now_ms (clock adjustment, or a timestamp written from a
+    // slightly stale `now` on another call path), the unsigned subtraction
+    // would wrap around to a huge value and report an immediate false
+    // timeout for an otherwise perfectly active session.
+    if (s->last_activity_ms >= now_ms) return false;
     return (now_ms - s->last_activity_ms) > timeout_ms;
 }
