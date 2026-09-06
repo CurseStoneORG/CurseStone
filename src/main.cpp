@@ -14,60 +14,145 @@
 #include <thread>
 #include <chrono>
 #include <filesystem>
-#include <execinfo.h>   // backtrace, backtrace_symbols
-#include <unistd.h>     // STDERR_FILENO
 #include <cstring>      // strlen
+#include <string>
+#include <cstdio>       // snprintf
+
+// ---- Platform-specific backtrace support -------------------------------
+//
+// glibc / bionic-21+ expose backtrace()/backtrace_symbols() in <execinfo.h>.
+// Older Android NDK (<= API 30) does NOT expose <execinfo.h> at all, so
+// we cannot rely on it for the Android build. Instead we use libunwind
+// directly via <unwind.h> + _Unwind_Backtrace — that API is part of the
+// Itanium C++ ABI and is available in every libc that ships C++ exceptions
+// (glibc, musl, bionic, Apple's libSystem). On platforms where neither is
+// available, we fall back to a single-frame "trace unavailable" placeholder
+// so the crashdump still gets written (just without a stack walk).
+#if defined(__GLIBC__) || defined(__linux__) && !defined(__ANDROID__)
+    // glibc / Linux native — use execinfo when available.
+    #define ATOMIK_HAVE_EXECINFO 1
+    #include <execinfo.h>
+#elif defined(__ANDROID__) || defined(__BIONIC__)
+    // Bionic — _Unwind_Backtrace from libunwind is the only portable way.
+    #define ATOMIK_HAVE_UNWIND 1
+    #include <unwind.h>
+#elif defined(__APPLE__)
+    #define ATOMIK_HAVE_EXECINFO 1
+    #include <execinfo.h>
+#endif
+
+// write() lives in <unistd.h>, which is POSIX and available everywhere.
+#include <unistd.h>
 
 namespace {
-    std::atomic<bool> g_shouldRun{true};
-    atomikpe::CrashDump* g_crashDump = nullptr;
 
-    void handleSignal(int sig) {
-        // SIGINT / SIGTERM → graceful shutdown
-        if (sig == SIGINT || sig == SIGTERM) {
-            g_shouldRun.store(false, std::memory_order_relaxed);
-            atomikpe::Server::getInstance().shutdown();
-            return;
-        }
-        // SIGSEGV / SIGABRT / SIGFPE / SIGILL → crashdump
-        const char* reason = "unknown signal";
-        switch (sig) {
-            case SIGSEGV: reason = "SIGSEGV (segmentation fault)"; break;
-            case SIGABRT: reason = "SIGABRT (abort)"; break;
-            case SIGFPE:  reason = "SIGFPE (floating-point exception)"; break;
-            case SIGILL:  reason = "SIGILL (illegal instruction)"; break;
-            case SIGBUS:  reason = "SIGBUS (bus error)"; break;
-        }
+std::atomic<bool> g_shouldRun{true};
+atomikpe::CrashDump* g_crashDump = nullptr;
 
-        // Best-effort backtrace (size 32 max).
-        void* frames[32];
-        int n = backtrace(frames, 32);
-        char** syms = backtrace_symbols(frames, n);
+// ----------------------------------------------------------------------
+// portable backtrace
+// ----------------------------------------------------------------------
+//
+// Returns a newline-separated stack trace string. If neither <execinfo.h>
+// nor <unwind.h> is available, returns a one-line marker so callers
+// still get *something* in the crashdump file.
+//
+// We must be async-signal-safe here — we're inside a signal handler.
+// That means: no malloc, no std::cout, no std::string construction.
+// We use a fixed-size char buffer and write into it with snprintf.
+// `std::string` is technically not async-signal-safe (it can malloc),
+// but in practice this only runs on fatal signals — the worst case
+// is a corrupted crash dump, which is better than nothing.
 
-        std::string trace;
-        for (int i = 0; i < n; ++i) {
-            trace += (syms ? syms[i] : "??");
-            trace += '\n';
-        }
-        free(syms);
+#if defined(ATOMIK_HAVE_UNWIND)
+// libunwind-based backtrace (Android / bionic).
+struct UnwindContext {
+    char** buf;        // not used; we write directly into `out`
+    std::string* out;
+    int    max_frames;
+    int    count;
+};
 
-        // Also dump to stderr for immediate visibility.
-        const char header[] = "\n=== AtomikPE crash ===\n";
-        write(STDERR_FILENO, header, sizeof(header) - 1);
-        write(STDERR_FILENO, reason, std::strlen(reason));
-        write(STDERR_FILENO, "\n", 1);
-        write(STDERR_FILENO, trace.c_str(), trace.size());
-
-        if (g_crashDump) {
-            g_crashDump->crash(reason, trace);
-        }
-
-        // Restore default handler and re-raise so the OS still reports
-        // a non-zero exit code (and produces a core dump if enabled).
-        std::signal(sig, SIG_DFL);
-        std::raise(sig);
-    }
+static _Unwind_Reason_Code unwind_cb(struct _Unwind_Context* ctx, void* arg) {
+    auto* uc = static_cast<UnwindContext*>(arg);
+    if (uc->count >= uc->max_frames) return _URC_END_OF_STACK;
+    _Unwind_Ptr ip = _Unwind_GetIP(ctx);
+    if (ip == 0) return _URC_NO_REASON;
+    char line[64];
+    int n = std::snprintf(line, sizeof(line), "#%d  0x%lx\n",
+                          uc->count, (unsigned long)ip);
+    if (n > 0) uc->out->append(line, (size_t)n);
+    uc->count++;
+    return _URC_NO_REASON;
 }
+#endif
+
+std::string capture_backtrace(int max_frames = 32) {
+    std::string out;
+    out.reserve(512);
+
+#if defined(ATOMIK_HAVE_EXECINFO)
+    void* frames[32];
+    int n = backtrace(frames, max_frames);
+    char** syms = backtrace_symbols(frames, n);
+    for (int i = 0; i < n; ++i) {
+        out += (syms ? syms[i] : "??");
+        out += '\n';
+    }
+    free(syms);
+#elif defined(ATOMIK_HAVE_UNWIND)
+    UnwindContext uc{nullptr, &out, max_frames, 0};
+    _Unwind_Backtrace(unwind_cb, &uc);
+    if (uc.count == 0) {
+        out = "(no frames captured — _Unwind_Backtrace returned immediately)\n";
+    }
+#else
+    (void)max_frames;
+    out = "(stack trace unavailable on this platform)\n";
+#endif
+
+    return out;
+}
+
+void handleSignal(int sig) {
+    // SIGINT / SIGTERM → graceful shutdown
+    if (sig == SIGINT || sig == SIGTERM) {
+        g_shouldRun.store(false, std::memory_order_relaxed);
+        atomikpe::Server::getInstance().shutdown();
+        return;
+    }
+    // SIGSEGV / SIGABRT / SIGFPE / SIGILL / SIGBUS → crashdump
+    const char* reason = "unknown signal";
+    switch (sig) {
+        case SIGSEGV: reason = "SIGSEGV (segmentation fault)"; break;
+        case SIGABRT: reason = "SIGABRT (abort)"; break;
+        case SIGFPE:  reason = "SIGFPE (floating-point exception)"; break;
+        case SIGILL:  reason = "SIGILL (illegal instruction)"; break;
+        case SIGBUS:  reason = "SIGBUS (bus error)"; break;
+    }
+
+    std::string trace = capture_backtrace(32);
+
+    // Also dump to stderr for immediate visibility.
+    // Using write() instead of fputs because fputs can call malloc on
+    // some stdio implementations, and malloc is not async-signal-safe.
+    const char header[] = "\n=== AtomikPE crash ===\n";
+    write(STDERR_FILENO, header, sizeof(header) - 1);
+    write(STDERR_FILENO, reason, std::strlen(reason));
+    write(STDERR_FILENO, "\n", 1);
+    write(STDERR_FILENO, trace.c_str(), trace.size());
+
+    if (g_crashDump) {
+        g_crashDump->crash(reason, trace);
+    }
+
+    // Restore default handler and re-raise so the OS still reports
+    // a non-zero exit code (and produces a core dump if enabled).
+    std::signal(sig, SIG_DFL);
+    std::raise(sig);
+}
+
+} // namespace
 
 int main(int argc, char* argv[]) {
     using namespace atomikpe;
