@@ -100,18 +100,36 @@ void ItemFlintSteel::fillPortalZ(level::Level* level,
 // ============================================================
 bool ItemFlintSteel::tryCreateNetherPortal(level::Level* level, Player* player,
                                            int32_t tx, int32_t ty, int32_t tz) {
+    // PMMP allows portal frames up to 23 wide × 23 tall. We cap every
+    // expansion loop at 32 iterations so a malformed world (e.g. blocks
+    // returning inconsistent ids due to a chunk reload race) can't
+    // produce an infinite loop that freezes the main thread.
+    constexpr int kMaxExpand = 32;
+
     // ---- Eje X ----
     // Expandir horizontalmente desde tx para encontrar el ancho del marco
     int32_t xMax = tx, xMin = tx;
-    while (level->getBlockId(xMax + 1, ty, tz) == OBSIDIAN) xMax++;
-    while (level->getBlockId(xMin - 1, ty, tz) == OBSIDIAN) xMin--;
+    for (int i = 0; i < kMaxExpand; ++i) {
+        if (level->getBlockId(xMax + 1, ty, tz) != OBSIDIAN) break;
+        xMax++;
+    }
+    for (int i = 0; i < kMaxExpand; ++i) {
+        if (level->getBlockId(xMin - 1, ty, tz) != OBSIDIAN) break;
+        xMin--;
+    }
     int32_t countX = xMax - xMin + 1;
 
     if (countX >= 4 && countX <= 23) {
         // Encontrar la altura del marco en ambos extremos X
         int32_t yMaxLeft = ty, yMaxRight = ty;
-        while (level->getBlockId(xMax, yMaxLeft + 1, tz) == OBSIDIAN)  yMaxLeft++;
-        while (level->getBlockId(xMin, yMaxRight + 1, tz) == OBSIDIAN) yMaxRight++;
+        for (int i = 0; i < kMaxExpand; ++i) {
+            if (level->getBlockId(xMax, yMaxLeft + 1, tz) != OBSIDIAN) break;
+            yMaxLeft++;
+        }
+        for (int i = 0; i < kMaxExpand; ++i) {
+            if (level->getBlockId(xMin, yMaxRight + 1, tz) != OBSIDIAN) break;
+            yMaxRight++;
+        }
 
         // El techo válido es el mínimo de ambos lados − 1
         // mirrors: $y_max = min($x_max_y, $x_min_y) - 1
@@ -129,8 +147,14 @@ bool ItemFlintSteel::tryCreateNetherPortal(level::Level* level, Player* player,
 
     // ---- Eje Z ----
     int32_t zMax = tz, zMin = tz;
-    while (level->getBlockId(tx, ty, zMax + 1) == OBSIDIAN) zMax++;
-    while (level->getBlockId(tx, ty, zMin - 1) == OBSIDIAN) zMin--;
+    for (int i = 0; i < kMaxExpand; ++i) {
+        if (level->getBlockId(tx, ty, zMax + 1) != OBSIDIAN) break;
+        zMax++;
+    }
+    for (int i = 0; i < kMaxExpand; ++i) {
+        if (level->getBlockId(tx, ty, zMin - 1) != OBSIDIAN) break;
+        zMin--;
+    }
     int32_t countZ = zMax - zMin + 1;
 
     if (countZ >= 4 && countZ <= 23) {
@@ -140,8 +164,14 @@ bool ItemFlintSteel::tryCreateNetherPortal(level::Level* level, Player* player,
         // doesn't exist in the Level::getBlockId(int,int,int) signature.
         // The correct call passes only (tx, y, zMax/zMin) — zMax/zMin
         // already encode the Z coordinate of the column we're scanning.
-        while (level->getBlockId(tx, yMaxFar  + 1, zMax) == OBSIDIAN) yMaxFar++;
-        while (level->getBlockId(tx, yMaxNear + 1, zMin) == OBSIDIAN) yMaxNear++;
+        for (int i = 0; i < kMaxExpand; ++i) {
+            if (level->getBlockId(tx, yMaxFar  + 1, zMax) != OBSIDIAN) break;
+            yMaxFar++;
+        }
+        for (int i = 0; i < kMaxExpand; ++i) {
+            if (level->getBlockId(tx, yMaxNear + 1, zMin) != OBSIDIAN) break;
+            yMaxNear++;
+        }
 
         int32_t yMax  = std::min(yMaxFar, yMaxNear);
         int32_t countY = yMax - ty + 2;

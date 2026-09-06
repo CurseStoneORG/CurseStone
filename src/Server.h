@@ -205,6 +205,7 @@ private:
     std::string dataPath_;
     std::atomic<bool> running_{false};
     uint64_t currentTick_{0};
+    std::atomic<bool> tick_loop_exited_{false};  // set true when runTickLoop returns
     int tps_ = 20;
 
     // Config (mirrors resources/atomikpe.yml).

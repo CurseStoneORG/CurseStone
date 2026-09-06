@@ -19,7 +19,17 @@ uint64_t ServerScheduler::scheduleSync(std::shared_ptr<Task> task, int delay, in
     auto h = std::make_unique<TaskHandler>(next_id_++, task);
     task->setDelay(delay);
     task->setPeriod(period);
-    task->setNextRun(0 + delay);
+    // CRITICAL FIX: previously this was `setNextRun(0 + delay)`. The 0 was
+    // meant to be "current tick" but the literal 0 meant: schedule the task
+    // to run when the global tick counter == delay. Since the server is
+    // usually already past tick #30 (BlockFire::TICK_RATE) by the time
+    // flint-and-steel is used, the condition `nextRun() > current_tick`
+    // in TaskHandler::tick() was ALWAYS false, so fire-spread tasks ran
+    // IMMEDIATELY on the next tick instead of waiting 30 ticks.
+    // That, combined with the chunk-generation cascade, is what froze
+    // the server: every fire tick spawned another immediate fire tick.
+    uint64_t now = Server::getInstance().getCurrentTick();
+    task->setNextRun(now + delay);
     uint64_t id = h->taskId();
     handlers_.push_back(std::move(h));
     return id;

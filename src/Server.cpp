@@ -10,6 +10,9 @@
 
 #include <climits>
 #include <cstring>
+#include <thread>
+#include <chrono>
+#include <cstdlib>   // std::_Exit
 #include <zlib.h>
 #include "command/CommandMap.h"
 #include "command/SimpleCommandMap.h"
@@ -324,6 +327,7 @@ void Server::runTickLoop() {
         }
     }
     utils::MainLogger::get().info("Tick loop exited.");
+    tick_loop_exited_.store(true, std::memory_order_relaxed);
 
     // ====================================================================
     // Cleanup — runs on the MAIN thread, AFTER the tick loop exits.
@@ -439,8 +443,35 @@ void Server::shutdown() {
     // CommandReader thread. Doing saveAll() here would race with the
     // main thread's destructors (mutexes, level_, players_) — causing
     // "pthread_mutex_lock called on a destroyed mutex" and lost chunks.
-    running_.store(false, std::memory_order_relaxed);
-    utils::MainLogger::get().info("Server shutting down...");
+    //
+    // EMERGENCY WATCHDOG: if the main tick loop is frozen (e.g. by a
+    // runaway synchronous operation), running_ is set to false but the
+    // tick loop never gets to check it. /stop then hangs forever with
+    // "Stopping the server..." printed and no exit. We spawn a short
+    // watcher thread that gives the main loop 5 seconds to exit
+    // gracefully; if it doesn't, we _exit() the process so the user
+    // at least gets a prompt back. Data loss is acceptable in this
+    // scenario — the alternative is a permanently hung server.
+    if (running_.exchange(false, std::memory_order_relaxed)) {
+        utils::MainLogger::get().info("Server shutting down...");
+        std::thread([this]() {
+            // Give the main loop 5 seconds to exit cleanly.
+            for (int i = 0; i < 50; ++i) {
+                if (!running_.load(std::memory_order_relaxed) &&
+                    tick_loop_exited_.load(std::memory_order_relaxed)) {
+                    return;  // main loop exited cleanly
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+            // Timeout — force exit. We can't call ~Server() safely here
+            // because we're on a different thread and the destructors
+            // may race, but _exit() bypasses destructors entirely.
+            utils::MainLogger::get().error(
+                "Shutdown watchdog: tick loop did not exit within 5s — "
+                "forcing process exit (unsaved chunks may be lost).");
+            std::_Exit(1);
+        }).detach();
+    }
 }
 
 Player* Server::getPlayer(const std::string& name) const {
