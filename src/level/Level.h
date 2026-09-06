@@ -64,6 +64,13 @@ public:
     // BlockFire propagation needs this to read the fire's "age" meta.
     uint8_t getBlockData(int32_t x, int32_t y, int32_t z);
     void setBlock(int32_t x, int32_t y, int32_t z, uint8_t id, uint8_t data);
+    // Cheap probe — does NOT trigger chunk generation. BlockFire propagation
+    // uses this to bail out of fire-spread into unloaded chunks instead of
+    // silently treating them as AIR (which caused the runaway propagation
+    // that froze the tick loop when using flint and steel).
+    bool isChunkLoaded(int32_t x, int32_t z) {
+        return chunks_.getChunkIfLoaded(x >> 4, z >> 4) != nullptr;
+    }
     // World time (0..24000). Incremented each tick (20/s).
     int32_t time() const { return cfg_.time; }
     void setTime(int32_t t) { cfg_.time = t; }

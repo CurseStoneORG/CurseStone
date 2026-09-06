@@ -1237,8 +1237,23 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     // ---- Place the block at (placeX, placeY, placeZ) ----
     int32_t cx = placeX >> 4;
     int32_t cz = placeZ >> 4;
-    mcp_chunk_t* ch = lvl->chunks().getChunk(cx, cz);
-    if (!ch) return;
+    // CRITICAL: use getChunkIfLoaded, NOT getChunk. The latter triggers
+    // synchronous chunk generation on the main thread when the player
+    // right-clicks into an unloaded chunk, which can stall the tick loop
+    // for hundreds of milliseconds (chunk gen + populate). PMMP loads
+    // chunks via an async worker pool; we don't have that yet, so for
+    // now we just no-op the placement if the chunk isn't resident.
+    // The player will see "block didn't place" and can retry; that's
+    // strictly better than freezing the whole server.
+    mcp_chunk_t* ch = lvl->chunks().getChunkIfLoaded(cx, cz);
+    if (!ch) {
+        if (srv_ && srv_->advancedLog()) {
+            utils::MainLogger::get().info("[BLOCK] " + cfg_.username +
+                " tried to place block in unloaded chunk (" +
+                std::to_string(cx) + "," + std::to_string(cz) + ") — ignored");
+        }
+        return;
+    }
 
     int localX = placeX & 15;
     int localZ = placeZ & 15;

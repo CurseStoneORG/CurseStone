@@ -134,8 +134,19 @@ uint8_t Level::getBlockData(int32_t x, int32_t y, int32_t z) {
 }
 
 void Level::setBlock(int32_t x, int32_t y, int32_t z, uint8_t id, uint8_t data) {
+    // CRITICAL FIX: previously this called chunks_.getChunk(cx, cz) which
+    // triggers SYNCHRONOUS chunk generation on the main thread if the chunk
+    // is not loaded. BlockFire::onScheduledUpdate and ItemFlintSteel call
+    // setBlock() in tight loops (6 neighbours + 3x7x3 volume scan), and each
+    // miss would generate a fresh chunk — stalling the tick loop for seconds
+    // and producing the "server freezes when I use flint and steel" bug.
+    //
+    // We now use getChunkIfLoaded() and silently bail if the chunk isn't
+    // resident. Callers that absolutely need the chunk to exist (e.g.
+    // player block placement) should pre-load via ChunkManager::getChunk()
+    // on the async path, not inline on the main thread.
     int32_t cx = x >> 4, cz = z >> 4;
-    if (mcp_chunk_t* c = chunks_.getChunk(cx, cz)) {
+    if (mcp_chunk_t* c = chunks_.getChunkIfLoaded(cx, cz)) {
         mcp_chunk_set_block_full(c, x & 15, y, z & 15, id, data);
         c->dirty = true;
     }

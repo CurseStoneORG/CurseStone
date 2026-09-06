@@ -96,6 +96,9 @@ int BlockFire::getBurnChance(uint8_t id) {
 bool BlockFire::isTopFacingSurfaceSolid(level::Level* level,
                                         int32_t x, int32_t y, int32_t z) {
     if (y < 0 || y >= 256) return false;
+    // Avoid treating an unloaded chunk as "solid air" — that lets fire
+    // place itself on phantom ground and propagate forever into the void.
+    if (!level->isChunkLoaded(x, z)) return false;
     uint8_t bid = level->getBlockId(x, y, z);
     switch (bid) {
         case AIR: case FIRE:
@@ -121,7 +124,12 @@ bool BlockFire::canNeighborBurn(level::Level* level,
     for (int i = 0; i < 6; i++) {
         int ny = y + dy[i];
         if (ny < 0 || ny >= 256) continue;
-        if (getBurnAbility(level->getBlockId(x + dx[i], ny, z + dz[i])) > 0)
+        int32_t nx = x + dx[i], nz = z + dz[i];
+        // Skip neighbours in unloaded chunks — fire propagation must not
+        // reach into chunks the server hasn't generated, otherwise each
+        // fire tick triggers synchronous chunk generation (the freeze bug).
+        if (!level->isChunkLoaded(nx, nz)) continue;
+        if (getBurnAbility(level->getBlockId(nx, ny, nz)) > 0)
             return true;
     }
     return false;
@@ -134,6 +142,7 @@ bool BlockFire::canNeighborBurn(level::Level* level,
 // ============================================================
 int BlockFire::getChanceOfNeighborsEncouragingFire(level::Level* level,
                                                    int32_t x, int32_t y, int32_t z) {
+    if (!level->isChunkLoaded(x, z)) return 0;
     if (level->getBlockId(x, y, z) != AIR) return 0;
     static const int dx[6] = { 1,-1, 0, 0, 0, 0};
     static const int dy[6] = { 0, 0, 1,-1, 0, 0};
@@ -142,7 +151,9 @@ int BlockFire::getChanceOfNeighborsEncouragingFire(level::Level* level,
     for (int i = 0; i < 6; i++) {
         int ny = y + dy[i];
         if (ny < 0 || ny >= 256) continue;
-        int c = getBurnChance(level->getBlockId(x + dx[i], ny, z + dz[i]));
+        int32_t nx = x + dx[i], nz = z + dz[i];
+        if (!level->isChunkLoaded(nx, nz)) continue;
+        int c = getBurnChance(level->getBlockId(nx, ny, nz));
         if (c > chance) chance = c;
     }
     return chance;
@@ -156,6 +167,7 @@ void BlockFire::tryToCatchBlockOnFire(level::Level* level,
                                       int32_t tx, int32_t ty, int32_t tz,
                                       int bound, int damage) {
     if (ty < 0 || ty >= 256) return;
+    if (!level->isChunkLoaded(tx, tz)) return;
     int burnAbility = getBurnAbility(level->getBlockId(tx, ty, tz));
     if (burnAbility == 0) return;
 
@@ -197,6 +209,14 @@ void BlockFire::onEntityCollide(level::Level* /*level*/,
 // ============================================================
 void BlockFire::onScheduledUpdate(level::Level* level,
                                   int32_t x, int32_t y, int32_t z) {
+    // Bail out if the chunk containing this fire was unloaded between
+    // the scheduleUpdate() call and now. Without this guard, getBlockId
+    // returns 0 (AIR) for unloaded chunks, the early `!= FIRE` check
+    // passes vacuously, and we proceed to call setBlock/scheduleUpdate
+    // against phantom blocks — which previously cascaded into chunk
+    // generation and froze the tick loop.
+    if (!level->isChunkLoaded(x, z)) return;
+
     // Verificar que siga siendo fuego (puede haber sido apagado)
     if (level->getBlockId(x, y, z) != FIRE) return;
 
