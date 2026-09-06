@@ -62,10 +62,15 @@ ssize_t mcp_rak_session_manager_send(mcp_rak_session_manager_t* sm,
                                        const uint8_t ip[4], uint16_t port);
 
 // Send an encapsulated MCPE packet through an established session.
+// order_channel is only meaningful when reliability is one of the
+// *_ORDERED variants; RakNet supports up to 32 independent ordering
+// channels (0-31) so ordered traffic on one channel never blocks
+// packets sent on a different channel.
 bool mcp_rak_session_manager_send_encapsulated(mcp_rak_session_manager_t* sm,
                                                 const uint8_t ip[4], uint16_t port,
                                                 const uint8_t* payload, size_t plen,
-                                                uint8_t reliability);
+                                                uint8_t reliability,
+                                                uint8_t order_channel);
 
 #ifdef __cplusplus
 } // extern "C"

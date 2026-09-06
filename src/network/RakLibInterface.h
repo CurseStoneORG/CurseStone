@@ -64,6 +64,14 @@ struct RakLibAction {
     uint16_t         port = 0;
     std::vector<uint8_t> data;
     std::string      reason;
+    // BUG FIX: see raklibThreadLoop() for the full story. True routes
+    // this send through RELIABLE_ORDERED on a dedicated channel so
+    // strict-sequence packets (login/spawn) can never arrive out of
+    // order; false (default) keeps the old RELIABLE-unordered
+    // behavior for everything else (chunks, entity updates, ...),
+    // now on its own separate channel so it can never block ordered
+    // traffic either.
+    bool             ordered = false;
 };
 
 class RakLibInterface : public AdvancedSourceInterface {
@@ -77,8 +85,14 @@ public:
     void tick() override;  // Drains inbound_queue_ on main thread
 
     // AdvancedSourceInterface — these now enqueue to outbound_queue_
+    // ordered=true sends this packet RELIABLE_ORDERED on a dedicated
+    // channel, guaranteeing it's processed by the client in the exact
+    // order it was sent relative to other ordered=true sends. Use for
+    // strict-sequence packets (login/spawn handshake). Default false
+    // keeps the existing unordered RELIABLE behavior.
     void sendRawPacket(const std::string& ip, uint16_t port,
-                         const std::vector<uint8_t>& data) override;
+                         const std::vector<uint8_t>& data,
+                         bool ordered = false) override;
     void closeSession(const std::string& ip, uint16_t port,
                         const std::string& reason) override;
 
@@ -130,6 +144,18 @@ private:
     // Outbound queue (main → RakLib): packets to send / sessions to close
     std::queue<RakLibAction> outbound_queue_;
     std::mutex               outbound_mtx_;
+    // FIX (audit priority 12/13): peak observed outbound_queue_ size —
+    // diagnostic only, read by getOutboundQueuePeak() so it can be
+    // surfaced if this session's disconnect needs correlating with
+    // outbound backlog. Updated under outbound_mtx_ alongside the queue
+    // itself, so no separate synchronization is needed for it.
+    std::atomic<size_t>     outbound_queue_peak_{0};
+
+public:
+    size_t getOutboundQueuePeak() const {
+        return outbound_queue_peak_.load(std::memory_order_relaxed);
+    }
+private:
 
     // Motd update flag (main → RakLib)
     std::mutex             motd_mtx_;

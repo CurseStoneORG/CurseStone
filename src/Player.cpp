@@ -262,7 +262,8 @@ bool Player::isTrackingChunk(int32_t cx, int32_t cz) const {
     return used_chunks_.count(hash) > 0;
 }
 
-void Player::sendPacket(std::shared_ptr<network::protocol::DataPacket> p) {
+void Player::sendPacket(std::shared_ptr<network::protocol::DataPacket> p,
+                         bool ordered) {
     if (!p) return;
     if (!connected_.load(std::memory_order_relaxed)) return;
     if (!adv_iface_) {
@@ -296,7 +297,7 @@ void Player::sendPacket(std::shared_ptr<network::protocol::DataPacket> p) {
     wire.push_back(network::protocol::BATCH_PACKET); // 0x06
     wire.insert(wire.end(), batchBody.begin(), batchBody.end());
 
-    adv_iface_->sendRawPacket(cfg_.ip, cfg_.port, wire);
+    adv_iface_->sendRawPacket(cfg_.ip, cfg_.port, wire, ordered);
 }
 
 void Player::sendMessage(const std::string& msg) {
@@ -726,9 +727,18 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
     }
 
     // Tell the client "login OK". PMMP sends LOGIN_SUCCESS here.
+    // BUG FIX: this packet and the ones through SetHealth below are sent
+    // ordered=true (RELIABLE_ORDERED on their own channel). The real MCPE
+    // client requires this exact sequence (PlayStatus → StartGame →
+    // SetTime → SetSpawnPosition → SetDifficulty → SetHealth) to arrive
+    // in order; previously everything went out RELIABLE with no ordering
+    // at all, so normal network jitter could deliver these out of
+    // sequence and silently break the client, eventually causing a
+    // "Disconnected from server" a few minutes into the session (see the
+    // longer explanation in RakLibInterface.cpp's raklibThreadLoop).
     auto ps = std::make_shared<network::protocol::PlayStatusPacket>();
     ps->status = network::protocol::PlayStatusPacket::LOGIN_SUCCESS;
-    sendPacket(ps);
+    sendPacket(ps, true);
 
     // Send StartGamePacket so the client can render the loading screen.
     auto sg = std::make_shared<network::protocol::StartGamePacket>();
@@ -751,14 +761,14 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
         sg->x = (float)pos_.x; sg->y = (float)pos_.y; sg->z = (float)pos_.z;
         sg->unknown = lvl->name();
     }
-    sendPacket(sg);
+    sendPacket(sg, true);
 
     // SetTimePacket.
     if (srv_ && srv_->getDefaultLevel()) {
         auto st = std::make_shared<network::protocol::SetTimePacket>();
         st->time = srv_->getDefaultLevel()->time();
         st->started = true;
-        sendPacket(st);
+        sendPacket(st, true);
     }
 
     // SetSpawnPosition.
@@ -766,19 +776,19 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
         auto sp = srv_->getDefaultLevel()->spawn();
         auto ssp = std::make_shared<network::protocol::SetSpawnPositionPacket>();
         ssp->x = (int32_t)sp.x; ssp->y = (int32_t)sp.y; ssp->z = (int32_t)sp.z;
-        sendPacket(ssp);
+        sendPacket(ssp, true);
     }
 
     // SetDifficulty / SetHealth.
     if (srv_) {
         auto sd = std::make_shared<network::protocol::SetDifficultyPacket>();
         sd->difficulty = srv_->difficulty();
-        sendPacket(sd);
+        sendPacket(sd, true);
     }
     {
         auto sh = std::make_shared<network::protocol::SetHealthPacket>();
         sh->health = (int32_t)health();
-        sendPacket(sh);
+        sendPacket(sh, true);
     }
 
     utils::MainLogger::get().info("Player " + cfg_.username + " logged in (" +

@@ -107,46 +107,89 @@ void RakLibInterface::shutdown() {
 // raklibThreadLoop() — runs on the RakLib worker thread
 // ============================================================================
 void RakLibInterface::raklibThreadLoop() {
+    // FIX #4 (quantified per audit priority 7 — not an arbitrary number):
+    // MTU here is 1492 bytes (RAKLIB_MAX_MTU), giving ~1460 usable bytes
+    // per fragment after RakNet datagram + encapsulation header overhead.
+    // A serialized 0.15-format chunk (16 sections of block+data+skylight+
+    // blocklight) is roughly 80-90KB raw; after the zlib compression this
+    // codebase applies to every BatchPacket, NOTE this is an ESTIMATE, not
+    // a measurement taken from an actual running server — real compressed
+    // size varies widely with terrain repetition, anywhere from a few KB
+    // (flat/repetitive terrain) up to 20-40KB (varied terrain, less
+    // compressible). Call it roughly 2-30 fragments per chunk depending
+    // on terrain. At the server's actual chunk-streaming rate of 1
+    // chunk/tick (confirmed directly in Player.cpp — MAX_CHUNKS_PER_TICK
+    // = 1; an earlier comment elsewhere in this codebase claiming 4/tick
+    // does not match what the code currently does) and 20 TPS, that's
+    // roughly 40-600 chunk-fragment datagrams/second in the estimated
+    // range — well under what 64 sends/loop-iteration (at ~100Hz, since
+    // this loop sleeps 10ms) can drain: 64 * 100 = 6400 sends/second
+    // capacity leaves comfortable headroom even at the high end of the
+    // estimate, while still capping how long any single loop iteration
+    // can spend sending before yielding back to ACK/NACK/retransmit
+    // processing — the actual failure mode this guards against.
+    static constexpr size_t MAX_SENDS_PER_LOOP = 64;
+
     while (!stop_flag_.load(std::memory_order_relaxed)) {
-        // 1. Drain outbound queue (main → RakLib)
+        // 1. Drain up to MAX_SENDS_PER_LOOP outbound actions (main → RakLib)
         {
             std::lock_guard<std::mutex> lk(outbound_mtx_);
-            while (!outbound_queue_.empty()) {
+            size_t drained = 0;
+            while (!outbound_queue_.empty() && drained < MAX_SENDS_PER_LOOP) {
                 auto& action = outbound_queue_.front();
                 uint8_t ipBytes[4];
                 if (sscanf(action.ip.c_str(), "%hhu.%hhu.%hhu.%hhu",
                             &ipBytes[0], &ipBytes[1], &ipBytes[2], &ipBytes[3]) == 4) {
                     if (action.type == RakLibActionType::SEND_PACKET) {
-                        // BUG FIX: Use RELIABLE (2) instead of RELIABLE_ORDERED (3)
-                        // for ALL packets. The MCPE 0.15 client has a single
-                        // ordering channel (0) and if ANY reliable-ordered packet
-                        // is lost, ALL subsequent packets on that channel are
-                        // blocked until retransmit. With chunk data being sent
-                        // as separate BatchPackets, a single lost fragment
-                        // deadlocks the entire ordering queue → client stops
-                        // responding → "Disconnected from server" timeout.
+                        // BUG FIX (v2): the previous fix here forced EVERY
+                        // packet to RELIABLE (unordered) on channel 0 to
+                        // avoid one lost reliable-ordered packet blocking
+                        // all later ones on that channel. That avoided the
+                        // deadlock, but it broke something else: PMMP/real
+                        // MCPE servers rely on the login/spawn sequence
+                        // (PlayStatus → StartGame → SetTime →
+                        // SetSpawnPosition → SetDifficulty → SetHealth,
+                        // each sent as its own BatchPacket here) arriving
+                        // in that exact order. With everything on the same
+                        // unordered channel, real network jitter/reorder —
+                        // even mild lag — can deliver those out of order,
+                        // and the real MCPE 0.15.10 client does not
+                        // tolerate that: it silently breaks and eventually
+                        // disconnects with "Disconnected from server",
+                        // typically after a couple minutes of play once
+                        // enough reordering has accumulated (chunk streams
+                        // add many more unordered sends on top of the
+                        // initial handshake, increasing the odds over
+                        // time — matching the reported 3-5 minute pattern).
                         //
-                        // PMMP uses RELIABLE_ORDERED but batches ALL packets
-                        // per tick into ONE BatchPacket, so there's only one
-                        // orderIndex per tick. AtomikPE sends each packet as
-                        // a separate BatchPacket, so we must use RELIABLE to
-                        // avoid ordering deadlocks.
-                        //
-                        // Chunks, block updates, and entity updates don't
-                        // actually need ordering — the client can process
-                        // them in any order. Only login/spawn sequence needs
-                        // strict ordering, and those are sent one-at-a-time
-                        // anyway.
+                        // Fix: use two separate channels instead of one.
+                        //   - ordered=true  → RELIABLE_ORDERED on channel 0
+                        //     (login/spawn packets only — few packets, so
+                        //     a lost one and its retransmit-then-unblock
+                        //     is fast and never observed by the player).
+                        //   - ordered=false → RELIABLE on channel 1 (chunks,
+                        //     entity updates, everything else) — same as
+                        //     before, no ordering guarantee needed or given,
+                        //     and it can never be blocked by channel 0.
+                        // RakNet supports 32 independent ordering channels
+                        // precisely so unrelated traffic doesn't have to
+                        // share one queue — this restores that separation
+                        // instead of collapsing everything onto channel 0.
+                        uint8_t reliability   = action.ordered
+                                                 ? MCP_RELIABILITY_RELIABLE_ORDERED
+                                                 : MCP_RELIABILITY_RELIABLE;
+                        uint8_t order_channel = action.ordered ? 0 : 1;
                         mcp_rak_session_manager_send_encapsulated(
                             &raklib_.manager, ipBytes, action.port,
                             action.data.data(), action.data.size(),
-                            MCP_RELIABILITY_RELIABLE);
+                            reliability, order_channel);
                     } else if (action.type == RakLibActionType::CLOSE_SESSION) {
                         mcp_server_handler_close_session(
                             &raklib_.handler, ipBytes, action.port);
                     }
                 }
                 outbound_queue_.pop();
+                ++drained;
             }
         }
 
@@ -160,6 +203,9 @@ void RakLibInterface::raklibThreadLoop() {
 
         // 3. Tick RakLib — this processes UDP recv/send, keepalives,
         //    ACK/NACK, retransmit, timeout sweep. All on THIS thread.
+        //    Running this every loop iteration — even mid-burst, after
+        //    only a partial drain of outbound_queue_ — is exactly the
+        //    point of the cap above.
         mcp_raklib_server_tick(&raklib_);
 
         // 4. Sleep 10ms (~100Hz) — independent of main tick loop
@@ -234,16 +280,21 @@ void RakLibInterface::setServerName(const std::string& motd) {
 // sendRawPacket() — enqueue to outbound queue (main → RakLib)
 // ============================================================================
 void RakLibInterface::sendRawPacket(const std::string& ip, uint16_t port,
-                                     const std::vector<uint8_t>& data) {
+                                     const std::vector<uint8_t>& data,
+                                     bool ordered) {
     if (!running_.load()) return;
     RakLibAction action;
-    action.type = RakLibActionType::SEND_PACKET;
-    action.ip   = ip;
-    action.port = port;
-    action.data = data;
+    action.type    = RakLibActionType::SEND_PACKET;
+    action.ip      = ip;
+    action.port    = port;
+    action.data    = data;
+    action.ordered = ordered;
     {
         std::lock_guard<std::mutex> lk(outbound_mtx_);
         outbound_queue_.push(std::move(action));
+        size_t sz = outbound_queue_.size();
+        size_t prev = outbound_queue_peak_.load(std::memory_order_relaxed);
+        if (sz > prev) outbound_queue_peak_.store(sz, std::memory_order_relaxed);
     }
 }
 
@@ -261,6 +312,9 @@ void RakLibInterface::closeSession(const std::string& ip, uint16_t port,
     {
         std::lock_guard<std::mutex> lk(outbound_mtx_);
         outbound_queue_.push(std::move(action));
+        size_t sz = outbound_queue_.size();
+        size_t prev = outbound_queue_peak_.load(std::memory_order_relaxed);
+        if (sz > prev) outbound_queue_peak_.store(sz, std::memory_order_relaxed);
     }
 }
 
