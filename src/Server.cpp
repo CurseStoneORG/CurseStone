@@ -362,9 +362,17 @@ void Server::tick() {
     }
 
     // --- Phase: scheduler ---
+    // FIX: previously this only called tick() when there were pending
+    // SYNC handlers (size() > 0). But ServerScheduler::tick() also
+    // drains the ASYNC completion queue (onCompletion() callbacks for
+    // finished AsyncTasks) — with the old guard, if every sync task
+    // had finished but an AsyncTask (e.g. a chunk save) completed on
+    // a worker thread, its onCompletion() would never run because
+    // tick() itself was being skipped. Now we always call tick(); the
+    // cost when there's genuinely nothing to do is two cheap
+    // near-empty lock/unlock pairs, not worth special-casing away.
     auto t0 = std::chrono::steady_clock::now();
-    if (scheduler::ServerScheduler::get().size() > 0)
-        scheduler::ServerScheduler::get().tick(currentTick_);
+    scheduler::ServerScheduler::get().tick(currentTick_);
     auto t1 = std::chrono::steady_clock::now();
     WorkbenchManager::get().onTickPhase("scheduler",
         (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());

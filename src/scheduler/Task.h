@@ -2,6 +2,12 @@
 // Subclasses override onRun() (called on the main thread every
 // `period` ticks) or, for AsyncTask, onRun() runs on a worker
 // thread and onCompletion() on the main thread.
+//
+// THREAD SAFETY NOTE: `cancelled_` is read from the main thread
+// (TaskHandler::tick / ServerScheduler completion drain) and, for
+// AsyncTask, may also be checked from a worker thread right before
+// onRun() starts. It's declared std::atomic<bool> so both sides see
+// a consistent value without needing a mutex for this single flag.
 #pragma once
 #include <cstdint>
 #include <atomic>
@@ -18,14 +24,14 @@ public:
     void setDelay(int d) { delay_ = d; }
     uint64_t nextRun() const { return next_run_; }
     void setNextRun(uint64_t tick) { next_run_ = tick; }
-    bool isCancelled() const { return cancelled_; }
-    void cancel() { cancelled_ = true; }
+    bool isCancelled() const { return cancelled_.load(std::memory_order_acquire); }
+    void cancel() { cancelled_.store(true, std::memory_order_release); }
 private:
     friend class TaskHandler;
     int period_ = 0;   // ticks between runs; 0 = one-shot
     int delay_ = 0;
     uint64_t next_run_ = 0;
-    bool cancelled_ = false;
+    std::atomic<bool> cancelled_{false};
 };
 
 class AsyncTask : public Task {
