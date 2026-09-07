@@ -26,6 +26,10 @@ public:
     static constexpr int32_t ACTION_START_BREAK = 0;
     static constexpr int32_t ACTION_ABORT_BREAK = 1;
     static constexpr int32_t ACTION_STOP_BREAK  = 2;
+    // El cliente manda esto cuando el jugador toca el boton de
+    // "Respawn" en la pantalla de muerte (protocolo legacy 84 — en
+    // versiones modernas de Bedrock esto se maneja distinto).
+    static constexpr int32_t ACTION_SPAWN_SAME_DIMENSION = 7;
 
     int64_t eid = 0;
     int32_t action = 0;

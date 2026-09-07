@@ -6,11 +6,14 @@
 // coordinates to describe the new state.
 #pragma once
 #include "BlockGrowEvent.h"
-#include "../Cancellable.h"
 #include <cstdint>
 namespace atomikpe::event::block {
 
-class BlockFormEvent : public BlockGrowEvent, public Cancellable {
+// NOTA: no hereda Cancellable directamente — BlockGrowEvent ya lo hace.
+// Heredarlo de nuevo aquí crearía un diamante no-virtual (dos
+// subobjetos Cancellable), lo que vuelve ambiguos isCancelled()/
+// setCancelled() en tiempo de compilación.
+class BlockFormEvent : public BlockGrowEvent {
 public:
     BlockFormEvent(int32_t bx, int32_t by, int32_t bz,
                    int32_t nsx, int32_t nsy, int32_t nsz)

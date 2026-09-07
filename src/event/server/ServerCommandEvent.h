@@ -1,7 +1,7 @@
 // ServerCommandEvent — fired when the console issues a command.
 #pragma once
-#include "Event.h"
-#include "Cancellable.h"
+#include "event/Event.h"
+#include "event/Cancellable.h"
 #include <string>
 namespace atomikpe { class CommandSender; }
 namespace atomikpe::event::server {

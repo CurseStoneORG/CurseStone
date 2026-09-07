@@ -13,6 +13,7 @@
 #include "level/generator/Nether.h"
 #include "level/generator/EmptyGenerator.h"
 #include "utils/MainLogger.hpp"
+#include "tile/Tile.h"
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -237,6 +238,26 @@ bool Level::tryClaimDroppedItem(int64_t eid) {
     // This prevents a second player from also claiming the same item.
     di->taken = true;
     return true;
+}
+
+// ============================================================
+// Tile-entity registry
+// ============================================================
+std::shared_ptr<atomikpe::tile::Tile> Level::getTile(int32_t x, int32_t y, int32_t z) {
+    std::lock_guard<std::mutex> lk(tiles_mtx_);
+    auto it = tiles_.find(packTilePos(x, y, z));
+    if (it == tiles_.end()) return nullptr;
+    return it->second;
+}
+
+void Level::setTile(int32_t x, int32_t y, int32_t z, std::shared_ptr<atomikpe::tile::Tile> t) {
+    std::lock_guard<std::mutex> lk(tiles_mtx_);
+    tiles_[packTilePos(x, y, z)] = std::move(t);
+}
+
+void Level::removeTile(int32_t x, int32_t y, int32_t z) {
+    std::lock_guard<std::mutex> lk(tiles_mtx_);
+    tiles_.erase(packTilePos(x, y, z));
 }
 
 } // namespace atomikpe::level

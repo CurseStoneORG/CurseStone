@@ -32,6 +32,7 @@ class SourceInterface;
 namespace level { class Level; }
 namespace network::protocol { class DataPacket; class LoginPacket; }
 namespace inventory { class PlayerInventory; }
+namespace tile { class TileChest; }
 
 struct PlayerConfig {
     std::string username;
@@ -77,6 +78,39 @@ public:
     void handleBlockPlace(int x, int y, int z, uint8_t face,
                           int16_t heldItemId, uint8_t heldCount, uint16_t heldDamage);
     void handlePlayerAction(int action, int x, int y, int z, int face);
+
+    // Ataque cuerpo a cuerpo (INTERACT_PACKET, ACTION_LEFT_CLICK contra
+    // otra entidad). `targetEid` es el runtime id reportado por el
+    // cliente; se resuelve contra srv_->playersSnapshot() (unicos
+    // objetivos soportados por ahora — no hay mobs con AI todavia).
+    // Aplica un cooldown server-side minimo (ver ATTACK_COOLDOWN_MS)
+    // para que un cliente modificado no pueda spamear golpes.
+    void handleInteract(int action, int64_t targetEid);
+
+    // Reaparece al jugador tras morir. Se llama desde
+    // handlePlayerAction al recibir ACTION_SPAWN_SAME_DIMENSION (el
+    // cliente lo manda al tocar "Respawn" en la pantalla de muerte).
+    // No-op si el jugador no esta muerto.
+    void respawn();
+
+    // Abre el cofre en (x,y,z) para este jugador. Se llama desde
+    // handleBlockPlace, DESPUES del chequeo de PlayerInteractEvent (asi
+    // cancelar la interaccion tambien bloquea abrir el cofre), cuando el
+    // bloque clickeado es block::CHEST. Reutiliza el TileChest existente
+    // en esa posicion via Level::getTile (o crea uno nuevo la primera
+    // vez, via Level::setTile) para que el contenido persista mientras
+    // el proceso siga corriendo. Dispara InventoryOpenEvent; no hace
+    // nada si se cancela. Si el jugador ya tenia otro cofre abierto, lo
+    // cierra primero (closeOpenChest()) — un jugador solo puede tener
+    // un contenedor abierto a la vez.
+    void openChestAt(int x, int y, int z);
+
+    // Cierra el cofre que este jugador tiene abierto actualmente (si
+    // hay uno). Manda ContainerClosePacket, decrementa el contador de
+    // viewers del TileChest y limpia open_chest_. No-op si no hay
+    // ningun cofre abierto. Se llama al recibir CONTAINER_CLOSE_PACKET,
+    // antes de abrir otro cofre, y desde close() al desconectarse.
+    void closeOpenChest();
 
     // Spawn a dropped item entity at the given position with a small random
     // outward motion. Mirrors PMMP `Level::dropItem`. Returns the allocated
@@ -230,10 +264,38 @@ public:
     // --- Killer (Nukkit: getKiller) ---
     Entity* getKiller() const { return nullptr; }
 
+    // Damage constante de mano vacia. AtomikPE no tiene todavia una
+    // tabla de dano por item (espadas/hachas), asi que todo golpe
+    // cuerpo a cuerpo usa este valor fijo hasta que exista una.
+    static constexpr float BASE_ATTACK_DAMAGE = 1.0f;
+    // Cooldown server-side entre golpes de un mismo jugador, en ms.
+    // MCPE 0.15.x no tiene "attack cooldown" de combate como versiones
+    // modernas — esto es puramente anti-spam server-side, no gameplay.
+    static constexpr uint64_t ATTACK_COOLDOWN_MS = 250;
+
+    // Ventana de contenedor fija para "el cofre que este jugador tiene
+    // abierto ahora mismo". PMMP real hace rotar windowid dinamicamente
+    // (para poder distinguir varios contenedores abiertos en simultaneo
+    // por el mismo jugador en un momento dado, ej. abrir un cofre y
+    // encima una mesa de crafteo). Este proyecto solo abre UN
+    // contenedor a la vez por jugador (ver openChestAt/closeOpenChest),
+    // asi que un id fijo alcanza — no colisiona con SPECIAL_INVENTORY
+    // (0x00) / SPECIAL_ARMOR (0x78) / SPECIAL_CREATIVE (0x79) /
+    // SPECIAL_HOTBAR (0x7a) de ContainerSetSlotPacket, que son los
+    // unicos otros windowid que este servidor entiende.
+    static constexpr uint8_t CHEST_WINDOW_ID = 1;
+
     // --- Batch packets (Nukkit: batchDataPacket/dataPacket/directDataPacket) ---
     bool batchDataPacket(const std::vector<uint8_t>& data);
     bool dataPacket(std::shared_ptr<network::protocol::DataPacket> pk) { sendPacket(pk); return true; }
     bool directDataPacket(std::shared_ptr<network::protocol::DataPacket> pk) { sendPacket(pk); return true; }
+
+protected:
+    // entity::Living hook — dispara PlayerDeathEvent + broadcast del
+    // mensaje de muerte. Ver Living::applyDamage(). No implementa
+    // reaparicion (RespawnPacket es un stub sin encode() real en esta
+    // base de codigo todavia — ver TODO junto a la definicion).
+    void onDeath() override;
 
 private:
     Server* srv_;
@@ -241,6 +303,10 @@ private:
     network::AdvancedSourceInterface* adv_iface_ = nullptr;
     std::shared_ptr<inventory::PlayerInventory> inv_;
     std::shared_ptr<Level> level_;
+    // The chest this player currently has open, if any. Only ever one
+    // at a time (see CHEST_WINDOW_ID). nullptr when no container is
+    // open. Set by openChestAt(), cleared by closeOpenChest().
+    std::shared_ptr<tile::TileChest> open_chest_;
     NbtPtr named_tag_;                       // player.dat contents (lazy load)
     std::atomic<bool> connected_{false};
     std::atomic<bool> logged_in_{false};
@@ -248,6 +314,7 @@ private:
     uint64_t last_save_tick_ = 0;
     uint64_t start_time_ms_ = 0;       // Wall-clock when player joined (for workbench)
     uint64_t last_activity_ms_ = 0;    // Wall-clock of last received packet
+    uint64_t last_attack_ms_ = 0;      // Wall-clock of last accepted melee attack (cooldown)
 
     // Fix #3: shared spiral algorithm — single source of truth.
     static std::vector<std::pair<int32_t,int32_t>>

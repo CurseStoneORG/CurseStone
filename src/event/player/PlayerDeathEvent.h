@@ -1,14 +1,24 @@
-// PlayerDeathEvent — player event. Fires when the corresponding action occurs.
+// PlayerDeathEvent — se dispara cuando la salud de un jugador llega a
+// 0. `message` es el mensaje de broadcast ("Steve fue asesinado por
+// Alex"); un listener puede reescribirlo o vaciarlo para silenciarlo.
+//
+// Cancelar el evento solo suprime el mensaje de broadcast — la
+// muerte en si (salud a 0) ya ocurrio y no puede revertirse desde
+// aqui. Esto mirrors el mismo contrato que PlayerJoinEvent/
+// PlayerQuitEvent: no hay forma de "des-morir" a alguien post-hoc,
+// solo de callar el aviso.
 #pragma once
-#include "Event.h"
+#include "event/Event.h"
 #include <string>
-#include "Cancellable.h"
+#include "event/Cancellable.h"
 namespace atomikpe { class Player; }
 namespace atomikpe::event::player {
 class PlayerDeathEvent : public Event, public Cancellable {
 public:
     atomikpe::Player* player;
-    PlayerDeathEvent(atomikpe::Player* p = nullptr) : player(p) {}
+    std::string message;
+    PlayerDeathEvent(atomikpe::Player* p = nullptr, std::string msg = "")
+        : player(p), message(std::move(msg)) {}
     const std::string& eventName() const override {
         static std::string n = "PlayerDeathEvent"; return n;
     }

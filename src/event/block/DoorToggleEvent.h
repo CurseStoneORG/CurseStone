@@ -5,12 +5,14 @@
 // player.
 #pragma once
 #include "BlockUpdateEvent.h"
-#include "../Cancellable.h"
 #include <cstdint>
 namespace atomikpe { class Player; }
 namespace atomikpe::event::block {
 
-class DoorToggleEvent : public BlockUpdateEvent, public Cancellable {
+// NOTA: no hereda Cancellable directamente — BlockUpdateEvent ya lo
+// hace. Repetirlo aquí crearía un diamante no-virtual, ambiguo en
+// tiempo de compilación para isCancelled()/setCancelled().
+class DoorToggleEvent : public BlockUpdateEvent {
 public:
     atomikpe::Player* player;
     DoorToggleEvent(int32_t bx, int32_t by, int32_t bz, atomikpe::Player* p)
