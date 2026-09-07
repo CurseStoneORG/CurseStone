@@ -989,6 +989,58 @@ void Player::doFirstSpawn() {
         }
     }
 
+    // BUG FIX (root cause of the multiplayer crash/kick when a second
+    // player joins): the block above only spawns EXISTING players TO
+    // this new client. Nothing was ever telling the players who were
+    // ALREADY online that THIS player exists. The despawn path (see
+    // close(), which broadcasts RemoveEntityPacket to everyone else)
+    // has always had this symmetric broadcast — spawn never did.
+    //
+    // Consequence: already-connected clients start receiving entity
+    // packets (MoveEntityPacket, UpdateBlockPacket/LevelEventPacket
+    // broadcasts, etc.) that reference an eid they were never told
+    // about via AddPlayerPacket/PlayerListPacket. The MCPE 0.15.x
+    // client does not tolerate packets for an unknown entity — it
+    // corrupts the client's entity state and typically crashes the
+    // app outright, which then can't reconnect until the stale
+    // RakLib session on the server times out.
+    //
+    // Fix: mirror the despawn broadcast — announce this player (both
+    // the player-list entry and the AddPlayerPacket) to every other
+    // already-spawned player, symmetric to close()'s RemoveEntityPacket
+    // broadcast.
+    if (srv_) {
+        auto plp_add = std::make_shared<network::protocol::PlayerListPacket>();
+        plp_add->type = network::protocol::PlayerListPacket::TYPE_ADD;
+        {
+            network::protocol::PlayerListPacket::Entry e;
+            parseUuidBytes(cfg_.uuid, e.uuid);
+            e.eid    = runtimeId();
+            e.name   = getName();
+            e.isSlim = "false";
+            e.skin   = "";
+            plp_add->entries.push_back(std::move(e));
+        }
+
+        auto ap_self = std::make_shared<network::protocol::AddPlayerPacket>();
+        parseUuidBytes(cfg_.uuid, ap_self->uuid);
+        ap_self->username = getName();
+        ap_self->eid = runtimeId();
+        ap_self->x = (float)pos_.x;
+        ap_self->y = (float)pos_.y;
+        ap_self->z = (float)pos_.z;
+        ap_self->yaw = yaw_;
+        ap_self->headYaw = yaw_;
+        ap_self->pitch = pitch_;
+
+        for (auto& other : srv_->playersSnapshot()) {
+            if (!other || other.get() == this) continue;
+            if (!other->spawned()) continue;
+            other->sendPacket(plp_add);
+            other->sendPacket(ap_self);
+        }
+    }
+
     // Broadcast join message.
     if (srv_) {
         srv_->broadcastMessage(cfg_.username + " joined the game");
