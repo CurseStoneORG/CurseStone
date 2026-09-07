@@ -14,6 +14,10 @@
 #include "level/generator/EmptyGenerator.h"
 #include "utils/MainLogger.hpp"
 #include "tile/Tile.h"
+#include "tile/TileChest.h"
+#include "tile/TileSign.h"
+#include "nbt/NBT.h"
+#include "nbt/tag/CompoundTag.h"
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -25,8 +29,39 @@
 
 namespace atomikpe::level {
 
+// Creates `path` and every missing parent directory (mkdir -p
+// semantics). The previous version of this function was a single
+// non-recursive ::mkdir() call — it silently failed with ENOENT
+// whenever `path`'s parent didn't already exist (e.g. a brand-new
+// dataPath on a fresh deploy, or any multi-level path that hadn't
+// been created by something else first), and the error was discarded,
+// so a Level would silently end up "in-memory only" with no world
+// files ever touching disk and no warning printed. Found while
+// verifying tile persistence end-to-end (see Level::save() /
+// ensureTilesLoaded()): a save() reported success and correctly
+// populated the in-memory chunk's tile_entities, but no file ever
+// appeared on disk because ensureDir() had failed upstream on the
+// world directory itself.
 static void ensureDir(const std::string& path) {
-    ::mkdir(path.c_str(), 0755);
+    if (path.empty()) return;
+    std::string partial;
+    partial.reserve(path.size());
+    size_t i = 0;
+    // Skip a leading '/' so we don't try to mkdir("") first.
+    if (path[0] == '/') { partial += '/'; i = 1; }
+    while (i <= path.size()) {
+        if (i == path.size() || path[i] == '/') {
+            if (!partial.empty() && partial != "/") {
+                struct stat st{};
+                if (::stat(partial.c_str(), &st) != 0) {
+                    ::mkdir(partial.c_str(), 0755);
+                }
+            }
+        }
+        if (i < path.size() && path[i] == '/') partial += '/';
+        else if (i < path.size()) partial += path[i];
+        ++i;
+    }
 }
 
 Level::Level(LevelConfig cfg) : cfg_(std::move(cfg)) {
@@ -154,6 +189,12 @@ void Level::setBlock(int32_t x, int32_t y, int32_t z, uint8_t id, uint8_t data) 
 }
 
 int Level::save() {
+    // Write every dirty tile's NBT back into its chunk's tile_entities
+    // array BEFORE flushing — flushDirty() is what actually serializes
+    // each dirty chunk (tile_entities included) to the .mca region file,
+    // so this has to happen first or the chunk gets saved with whatever
+    // tile_entities blobs it already had (stale or empty).
+    syncTilesToChunks();
     // Delegate to ChunkManager which calls provider_->saveChunk() for each
     // dirty chunk. The provider writes the actual .mca region files.
     int saved = chunks_.flushDirty();
@@ -244,6 +285,7 @@ bool Level::tryClaimDroppedItem(int64_t eid) {
 // Tile-entity registry
 // ============================================================
 std::shared_ptr<atomikpe::tile::Tile> Level::getTile(int32_t x, int32_t y, int32_t z) {
+    ensureTilesLoaded(x >> 4, z >> 4);
     std::lock_guard<std::mutex> lk(tiles_mtx_);
     auto it = tiles_.find(packTilePos(x, y, z));
     if (it == tiles_.end()) return nullptr;
@@ -258,6 +300,114 @@ void Level::setTile(int32_t x, int32_t y, int32_t z, std::shared_ptr<atomikpe::t
 void Level::removeTile(int32_t x, int32_t y, int32_t z) {
     std::lock_guard<std::mutex> lk(tiles_mtx_);
     tiles_.erase(packTilePos(x, y, z));
+}
+
+// ============================================================
+// Tile-entity persistence (NBT <-> mcp_chunk_t::tile_entities)
+// ============================================================
+void Level::ensureTilesLoaded(int32_t cx, int32_t cz) {
+    uint64_t ckey = packChunkPos(cx, cz);
+    {
+        std::lock_guard<std::mutex> lk(tiles_mtx_);
+        if (tiles_hydrated_chunks_.count(ckey)) return;
+        // Mark hydrated up front, even if the chunk isn't loaded yet or
+        // has no tiles — this is a "have we looked" flag, not a "did we
+        // find anything" flag. A chunk with zero chests shouldn't be
+        // re-scanned on every single getTile() call either.
+        tiles_hydrated_chunks_.insert(ckey);
+    }
+    mcp_chunk_t* c = chunks_.getChunkIfLoaded(cx, cz);
+    if (!c || !c->tile_entities || c->tile_entity_count == 0) return;
+
+    for (size_t i = 0; i < c->tile_entity_count; ++i) {
+        const uint8_t* blob = c->tile_entities[i];
+        size_t blen = c->tile_entity_lens ? c->tile_entity_lens[i] : 0;
+        if (!blob || blen == 0) continue;
+        // Blobs on mcp_chunk_t are stored little-endian, same convention
+        // AnvilChunkCodec already uses for these same arrays.
+        mcp_tag_t* tag = mcp_nbt_read_bytes(blob, blen, /*little_endian=*/true);
+        if (!tag) continue;
+
+        const char* id = mcp_compound_tag_get_string(tag, "id", "");
+        int32_t tx = mcp_compound_tag_get_int(tag, "x", 0);
+        int32_t ty = mcp_compound_tag_get_int(tag, "y", 0);
+        int32_t tz = mcp_compound_tag_get_int(tag, "z", 0);
+
+        std::shared_ptr<atomikpe::tile::Tile> tile;
+        atomikpe::level::Position pos(tx, ty, tz);
+        if (std::strcmp(id, "Chest") == 0) {
+            tile = std::make_shared<atomikpe::tile::TileChest>(pos);
+        } else if (std::strcmp(id, "Sign") == 0) {
+            tile = std::make_shared<atomikpe::tile::TileSign>(pos);
+        }
+        // Other tile ids (Furnace, MobSpawner, ...) don't persist real
+        // content yet — see Tile::writeNBT's base no-op — so there's
+        // nothing meaningful to reconstruct for them here. They keep
+        // living purely in the in-memory registry via setTile(), same
+        // as before this change.
+        if (tile) {
+            tile->readNBT(tag);
+            std::lock_guard<std::mutex> lk(tiles_mtx_);
+            tiles_[packTilePos(tx, ty, tz)] = std::move(tile);
+        }
+        mcp_tag_destroy(tag);
+    }
+}
+
+void Level::syncTilesToChunks() {
+    // Snapshot ALL live tiles (not just dirty ones) grouped by owning
+    // chunk, released from the lock before touching chunks_ (which has
+    // its own internal locking) to avoid a lock-order dependency between
+    // tiles_mtx_ and ChunkManager's mutex.
+    //
+    // Why ALL tiles and not just dirty ones: a chunk's tile_entities
+    // array is rebuilt from scratch below (mcp_chunk_clear_tile_entities
+    // then re-add). If we only fed it the dirty tiles, a chunk with one
+    // dirty chest and one untouched chest would lose the untouched
+    // chest's blob entirely — clear_tile_entities doesn't know which
+    // entries "should" survive, it just empties the array.
+    std::unordered_map<uint64_t, std::vector<std::shared_ptr<atomikpe::tile::Tile>>> byChunk;
+    bool anyDirty = false;
+    {
+        std::lock_guard<std::mutex> lk(tiles_mtx_);
+        for (auto& [_, t] : tiles_) {
+            if (!t) continue;
+            if (t->isDirty()) anyDirty = true;
+            int32_t cx = static_cast<int32_t>(t->position().x) >> 4;
+            int32_t cz = static_cast<int32_t>(t->position().z) >> 4;
+            byChunk[packChunkPos(cx, cz)].push_back(t);
+        }
+    }
+    if (!anyDirty) return;  // nothing changed since the last save()
+
+    for (auto& [ckey, tilesInChunk] : byChunk) {
+        // Only rebuild a chunk's tile_entities array if something in it
+        // actually changed — skips the write+serialize cost for every
+        // chunk holding only untouched tiles.
+        bool chunkHasDirty = false;
+        for (auto& t : tilesInChunk) if (t->isDirty()) { chunkHasDirty = true; break; }
+        if (!chunkHasDirty) continue;
+
+        int32_t cx = static_cast<int32_t>(ckey >> 32);
+        int32_t cz = static_cast<int32_t>(ckey & 0xFFFFFFFFULL);
+        mcp_chunk_t* c = chunks_.getChunkIfLoaded(cx, cz);
+        if (!c) continue;  // chunk got unloaded since the tile was touched — stays dirty, retried next save()
+
+        mcp_chunk_clear_tile_entities(c);
+        for (auto& t : tilesInChunk) {
+            mcp_tag_t* tag = mcp_compound_tag_new();
+            t->writeNBT(tag);
+            size_t blen = 0;
+            uint8_t* bbuf = mcp_nbt_write_bytes(tag, /*little_endian=*/true, &blen);
+            if (bbuf && blen > 0) {
+                mcp_chunk_add_tile_entity(c, bbuf, blen);
+                t->clearDirty();  // only clear once actually written to the chunk
+            }
+            free(bbuf);
+            mcp_tag_destroy(tag);
+        }
+        c->dirty = true;  // ensure flushDirty() picks this chunk up
+    }
 }
 
 } // namespace atomikpe::level

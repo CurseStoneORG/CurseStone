@@ -12,8 +12,8 @@ public:
     const std::array<std::string, 4>& lines() const { return lines_; }
     void setLine(int idx, std::string text) { lines_[idx] = std::move(text); dirty_ = true; }
     void spawnTo(void* /*player*/) override {}
-    void writeNBT(class CompoundTag* tag) const override;
-    void readNBT(const class CompoundTag* tag) override;
+    void writeNBT(mcp_tag_t* tag) const override;
+    void readNBT(const mcp_tag_t* tag) override;
 private:
     std::array<std::string, 4> lines_;
 };

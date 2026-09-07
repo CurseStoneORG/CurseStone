@@ -12,6 +12,7 @@
 #include <memory>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <cstdint>
 #include <functional>
 #include <mutex>
@@ -118,18 +119,38 @@ public:
     // a player closing and reopening the chest. Mirrors PMMP's
     // Level::tiles map (keyed by packed Vector3 hash there too).
     //
-    // Not persisted to disk yet (writeNBT/readNBT on Tile exist but
-    // nothing calls them from chunk save/load) — see PROMPT_CONTINUACION.md,
-    // item 2 covers only the runtime open/close flow. Chest contents
-    // survive a chest being reopened during the same server session,
-    // but not a server restart. That's a separate, larger piece of work
-    // (wiring Tile::writeNBT/readNBT into the chunk NBT format) and is
-    // out of scope for "cofres reales" as originally asked.
+    // Persisted to disk: getTile() lazily hydrates a chunk's tiles from
+    // its mcp_chunk_t::tile_entities blobs the first time that chunk is
+    // touched (see ensureTilesLoaded()), and save() calls
+    // syncTilesToChunks() to write every dirty tile's current NBT back
+    // into its chunk's tile_entities array before ChunkManager::flushDirty()
+    // hands the chunk to the LevelProvider. Chest contents now survive a
+    // server restart, not just a close/reopen in the same session.
     std::shared_ptr<atomikpe::tile::Tile> getTile(int32_t x, int32_t y, int32_t z);
     void setTile(int32_t x, int32_t y, int32_t z, std::shared_ptr<atomikpe::tile::Tile> t);
     void removeTile(int32_t x, int32_t y, int32_t z);
 
 private:
+    // Hydrate tiles_ from chunk (cx,cz)'s mcp_chunk_t::tile_entities blobs,
+    // if that chunk hasn't been hydrated yet this session. Called from
+    // getTile() before the lookup, keyed by chunk (not by block position)
+    // since the blobs live on the chunk, not per-position — cheap to call
+    // on every getTile() because of the tiles_hydrated_chunks_ guard below.
+    // No-op if the chunk isn't loaded (chunks_.getChunkIfLoaded returns
+    // null) or has no tile_entities.
+    void ensureTilesLoaded(int32_t cx, int32_t cz);
+    // Write every dirty tile's current NBT into its owning chunk's
+    // mcp_chunk_t::tile_entities array, replacing whatever was there
+    // before. Called from save(), BEFORE chunks_.flushDirty() — that's
+    // the only ordering that works, since flushDirty() is what actually
+    // serializes each dirty chunk (tile_entities included) to the .mca
+    // region file. A tile that was never marked dirty (Tile::isDirty())
+    // is skipped, same as ChunkManager already skips chunks that aren't
+    // dirty — but note a tile only marks its OWNING chunk dirty here
+    // (via mcp_chunk_add_tile_entity), it doesn't touch block data, so a
+    // chunk with only a dirty chest and no other change still gets saved.
+    void syncTilesToChunks();
+
     LevelConfig cfg_;
     ChunkManager chunks_;
     std::shared_ptr<format::LevelProvider> provider_;
@@ -146,6 +167,17 @@ private:
     // position. See getTile/setTile/removeTile above.
     std::unordered_map<uint64_t, std::shared_ptr<atomikpe::tile::Tile>> tiles_;
     mutable std::mutex tiles_mtx_;
+    // Chunks whose tile_entities blobs have already been decoded into
+    // tiles_ this session, keyed the same way ChunkManager keys chunks
+    // (packed cx/cz). Prevents ensureTilesLoaded() from re-decoding the
+    // same blobs (and re-constructing duplicate Tile objects) on every
+    // single getTile() call for a chunk that's already hydrated.
+    std::unordered_set<uint64_t> tiles_hydrated_chunks_;
+    static uint64_t packChunkPos(int32_t cx, int32_t cz) {
+        uint64_t ux = static_cast<uint64_t>(static_cast<uint32_t>(cx));
+        uint64_t uz = static_cast<uint64_t>(static_cast<uint32_t>(cz));
+        return (ux << 32) | uz;
+    }
     // x/z each get 28 bits (>±134M blocks — far beyond any MCPE 0.15.x
     // world border), y gets 8 bits (0..255, the full legacy height
     // range). Negative x/z lose bits beyond that range rather than

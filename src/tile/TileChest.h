@@ -28,8 +28,8 @@ public:
     atomikpe::item::ItemStack getItem(int slot) const override;
     void removeItem(int slot) override;
     void spawnTo(void* player) override {}
-    void writeNBT(class CompoundTag* tag) const override;
-    void readNBT(const class CompoundTag* tag) override;
+    void writeNBT(mcp_tag_t* tag) const override;
+    void readNBT(const mcp_tag_t* tag) override;
 
     // The backing inventory. Player::openChestAt() hands this shared_ptr
     // straight to InventoryOpenEvent / ContainerSetContentPacket — no
