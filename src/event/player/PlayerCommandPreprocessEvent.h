@@ -1,8 +1,8 @@
 // PlayerCommandPreprocessEvent — player event. Fires when the corresponding action occurs.
 #pragma once
-#include "Event.h"
+#include "event/Event.h"
 #include <string>
-#include "Cancellable.h"
+#include "event/Cancellable.h"
 namespace atomikpe { class Player; }
 namespace atomikpe::event::player {
 class PlayerCommandPreprocessEvent : public Event, public Cancellable {

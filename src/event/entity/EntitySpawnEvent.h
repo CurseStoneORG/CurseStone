@@ -1,8 +1,8 @@
 // EntitySpawnEvent — entity event.
 #pragma once
-#include "Event.h"
+#include "event/Event.h"
 #include <string>
-#include "Cancellable.h"
+#include "event/Cancellable.h"
 namespace atomikpe::entity { class Entity; }
 namespace atomikpe::event::entity {
 class EntitySpawnEvent : public Event, public Cancellable {

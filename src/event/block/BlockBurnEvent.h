@@ -1,9 +1,10 @@
 // BlockBurnEvent — block event.
 #pragma once
-#include "Event.h"
+#include "event/Event.h"
 #include <string>
-#include "Cancellable.h"
+#include "event/Cancellable.h"
 #include "math/Vector3.h"
+#include "main.h"   // math::Vector3 alias (atomikpe::math::Vector3 = mcp_vector3_t)
 namespace atomikpe { class Player; }
 namespace atomikpe::event::block {
 class BlockBurnEvent : public Event, public Cancellable {

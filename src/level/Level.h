@@ -19,7 +19,8 @@
 #include "level/ChunkManager.h"
 #include "level/format/LevelProvider.h"
 namespace atomikpe {
-class Player; class Entity; class Tile;
+class Player; class Entity;
+namespace tile { class Tile; }
 namespace level::generator { class Generator; }
 }
 namespace atomikpe::level {
@@ -109,6 +110,25 @@ public:
     // `di->taken` check in the same tick and both pick up the item.
     bool tryClaimDroppedItem(int64_t eid);
 
+    // ----- Tile-entity registry -----
+    // Tracks block-entities (chests, furnaces, signs, ...) keyed by
+    // their block position, so the SAME instance is returned across
+    // repeated opens instead of a fresh (empty) one being constructed
+    // every time — this is what lets ChestInventory contents survive
+    // a player closing and reopening the chest. Mirrors PMMP's
+    // Level::tiles map (keyed by packed Vector3 hash there too).
+    //
+    // Not persisted to disk yet (writeNBT/readNBT on Tile exist but
+    // nothing calls them from chunk save/load) — see PROMPT_CONTINUACION.md,
+    // item 2 covers only the runtime open/close flow. Chest contents
+    // survive a chest being reopened during the same server session,
+    // but not a server restart. That's a separate, larger piece of work
+    // (wiring Tile::writeNBT/readNBT into the chunk NBT format) and is
+    // out of scope for "cofres reales" as originally asked.
+    std::shared_ptr<atomikpe::tile::Tile> getTile(int32_t x, int32_t y, int32_t z);
+    void setTile(int32_t x, int32_t y, int32_t z, std::shared_ptr<atomikpe::tile::Tile> t);
+    void removeTile(int32_t x, int32_t y, int32_t z);
+
 private:
     LevelConfig cfg_;
     ChunkManager chunks_;
@@ -121,5 +141,21 @@ private:
     // Tick sweep removes items with taken==true.
     std::unordered_map<int64_t, std::unique_ptr<DroppedItem>> dropped_items_;
     mutable std::mutex dropped_items_mtx_;
+
+    // All tile-entities in this level, keyed by a packed (x,y,z) block
+    // position. See getTile/setTile/removeTile above.
+    std::unordered_map<uint64_t, std::shared_ptr<atomikpe::tile::Tile>> tiles_;
+    mutable std::mutex tiles_mtx_;
+    // x/z each get 28 bits (>±134M blocks — far beyond any MCPE 0.15.x
+    // world border), y gets 8 bits (0..255, the full legacy height
+    // range). Negative x/z lose bits beyond that range rather than
+    // colliding with a different position, which is an acceptable
+    // trade-off for a legacy-protocol server with a small world border.
+    static uint64_t packTilePos(int32_t x, int32_t y, int32_t z) {
+        uint64_t ux = static_cast<uint64_t>(static_cast<uint32_t>(x)) & 0xFFFFFFFULL;
+        uint64_t uz = static_cast<uint64_t>(static_cast<uint32_t>(z)) & 0xFFFFFFFULL;
+        uint64_t uy = static_cast<uint64_t>(static_cast<uint8_t>(y));
+        return (ux << 36) | (uz << 8) | uy;
+    }
 };
 } // namespace

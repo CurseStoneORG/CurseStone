@@ -35,8 +35,28 @@
 #include "network/protocol/TakeItemEntityPacket.h"
 #include "item/ItemFlintSteel.h"
 #include "block/BlockFire.h"
+#include "event/EventManager.h"
+#include "event/player/PlayerJoinEvent.h"
+#include "event/player/PlayerQuitEvent.h"
+#include "event/player/PlayerChatEvent.h"
+#include "event/block/BlockBreakEvent.h"
+#include "event/block/BlockPlaceEvent.h"
+#include "event/player/PlayerMoveEvent.h"
+#include "event/player/PlayerInteractEvent.h"
+#include "event/player/PlayerTeleportEvent.h"
+#include "event/player/PlayerDeathEvent.h"
+#include "event/player/PlayerRespawnEvent.h"
+#include "event/inventory/InventoryClickEvent.h"
+#include "network/protocol/InteractPacket.h"
+#include "network/protocol/EntityEventPacket.h"
+#include "network/protocol/RespawnPacket.h"
 #include "network/protocol/ContainerSetContentPacket.h"
 #include "network/protocol/ContainerSetSlotPacket.h"
+#include "network/protocol/ContainerOpenPacket.h"
+#include "network/protocol/ContainerClosePacket.h"
+#include "event/inventory/InventoryOpenEvent.h"
+#include "tile/TileChest.h"
+#include "block/BlockIds.h"
 #include "network/protocol/Info.h"
 #include "network/protocol/PacketPool.h"
 #include "inventory/PlayerInventory.h"
@@ -184,6 +204,15 @@ void Player::close(const std::string& reason) {
         utils::MainLogger::get().info("Closing player " + cfg_.username +
             " (" + cfg_.ip + ":" + std::to_string(cfg_.port) + "): " + reason);
 
+        // Release any chest this player still had open. connected_ is
+        // already false at this point, so closeOpenChest()'s
+        // ContainerClosePacket send is a safe no-op (sendPacket() bails
+        // out when !connected_) — what actually matters here is
+        // decrementing the TileChest's viewer count and dropping our
+        // reference to it, so the chest doesn't think a disconnected
+        // player is still looking at it.
+        closeOpenChest();
+
         // Workbench: capture disconnect state for diagnostics.
         {
             uint64_t now_ms = (uint64_t)(std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -226,10 +255,17 @@ void Player::close(const std::string& reason) {
             }
         } catch (...) {}
 
-        // 3. Broadcast quit message.
+        // 3. Broadcast quit message. PlayerQuitEvent puede reescribir o
+        // silenciar el mensaje. Envuelto en try/catch como el resto de
+        // close(): un listener con un bug jamás debe impedir que la
+        // limpieza de la desconexión continúe.
         try {
             if (srv_ && !cfg_.username.empty()) {
-                srv_->broadcastMessage(cfg_.username + " left the game");
+                auto ev = event::EventManager::get().fire<event::player::PlayerQuitEvent>(
+                    this, cfg_.username + " left the game");
+                if (!ev.isCancelled() && !ev.message.empty()) {
+                    srv_->broadcastMessage(ev.message);
+                }
             }
         } catch (...) {}
 
@@ -326,7 +362,17 @@ void Player::kick(const std::string& reason) {
 }
 
 void Player::teleport(double x, double y, double z) {
-    pos_.x = x; pos_.y = y; pos_.z = z;
+    // PlayerTeleportEvent — un listener puede cancelarlo (p.ej. un
+    // comando /tp bloqueado por permisos, o una zona que prohibe
+    // teletransportarse hacia adentro) para impedir el movimiento sin
+    // que el llamador tenga que chequear un valor de retorno: como
+    // teleport() no devolvia nada antes de este cambio, ningun sitio
+    // del codigo depende de que "siempre se mueva".
+    auto ev = event::EventManager::get().fire<event::player::PlayerTeleportEvent>(
+        this, pos_.x, pos_.y, pos_.z, x, y, z);
+    if (ev.isCancelled()) return;
+
+    pos_.x = ev.toX; pos_.y = ev.toY; pos_.z = ev.toZ;
     // Optionally broadcast a MovePlayerPacket to confirm position to the client.
     if (spawned_.load(std::memory_order_relaxed)) {
         auto pk = std::make_shared<network::protocol::MovePlayerPacket>();
@@ -450,6 +496,9 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
             //   - windowid 0x79 (SPECIAL_CREATIVE): rarely sent by MCPE
             //     0.15.x clients; handled as a fallback that places the
             //     item into the held hotbar slot.
+            //   - windowid CHEST_WINDOW_ID (1): the chest this player
+            //     currently has open (see openChestAt/closeOpenChest).
+            //     Routed to open_chest_->inventory() instead of inv_.
             if (auto* cs = dynamic_cast<network::protocol::ContainerSetSlotPacket*>(&p)) {
                 if (inv_) {
                     atomikpe::item::ItemStack it;
@@ -474,6 +523,76 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                             " hotbar=" + std::to_string(cs->hotbarSlot) +
                             " id=" + std::to_string(it.id) +
                             " count=" + std::to_string((int)it.count));
+                    }
+
+                    // Chest routing — short-circuits BEFORE the
+                    // player-inventory InventoryClickEvent below, which
+                    // only knows about SPECIAL_INVENTORY/ARMOR/CREATIVE/
+                    // HOTBAR. A click in the currently-open chest fires
+                    // its own InventoryClickEvent against the chest's
+                    // ChestInventory (not inv_), applies it there, and
+                    // confirms the slot with windowid=CHEST_WINDOW_ID —
+                    // sendSlot() below can't be reused for this, it
+                    // always confirms against inv_ (the player's own
+                    // inventory).
+                    if (cs->windowid == CHEST_WINDOW_ID) {
+                        if (open_chest_ && cs->slot >= 0 &&
+                            cs->slot < open_chest_->inventory()->getSize()) {
+                            auto chestInv = open_chest_->inventory();
+                            auto cev = event::EventManager::get().fire<event::inventory::InventoryClickEvent>(
+                                std::static_pointer_cast<inventory::Inventory>(chestInv),
+                                this, (int)cs->slot, it);
+                            if (!cev.isCancelled()) {
+                                chestInv->setItem(cs->slot, it);
+                            }
+                            // Confirm the slot either way — same reason
+                            // as the player-inventory path below: MCPE
+                            // 0.15.x visually reverts a slot that never
+                            // gets a confirmation packet back, whether
+                            // the write actually landed or was cancelled.
+                            auto confirm = std::make_shared<network::protocol::ContainerSetSlotPacket>();
+                            confirm->windowid = CHEST_WINDOW_ID;
+                            confirm->slot = cs->slot;
+                            confirm->hotbarSlot = cs->slot;
+                            auto cur = chestInv->getItem(cs->slot);
+                            confirm->itemId     = (int16_t)cur.id;
+                            confirm->itemCount  = cur.count;
+                            confirm->itemDamage = (int16_t)cur.meta;
+                            sendPacket(confirm);
+                        }
+                        break;
+                    }
+
+                    // InventoryClickEvent — cubre el flujo de "click en el
+                    // inventario propio del jugador" (windowid 0x00/0x78/
+                    // 0x7a/0x79). El caso de cofre (windowid==CHEST_WINDOW_ID)
+                    // ya se resolvio y salio arriba. Un listener puede
+                    // cancelar para impedir el cambio de slot (p.ej.
+                    // inventario bloqueado durante un trade).
+                    bool clickCancelled = false;
+                    {
+                        auto ev = event::EventManager::get().fire<event::inventory::InventoryClickEvent>(
+                            std::static_pointer_cast<inventory::Inventory>(inv_),
+                            this, (int)cs->slot, it);
+                        clickCancelled = ev.isCancelled();
+                    }
+                    if (clickCancelled) {
+                        // Revertir: reenviar el slot actual (sin aplicar el
+                        // cambio) para que el cliente no quede desincronizado.
+                        // sendSlot() espera el indice ABSOLUTO del inventario;
+                        // SPECIAL_INVENTORY y SPECIAL_HOTBAR ya mandan ese
+                        // indice directo (0..44 / 0..8), SPECIAL_ARMOR
+                        // necesita +ARMOR_OFFSET, y SPECIAL_CREATIVE no
+                        // mapea a un slot real (window de solo-lectura) asi
+                        // que no hay nada que revertir ahi.
+                        using CSS = network::protocol::ContainerSetSlotPacket;
+                        if (cs->windowid == CSS::SPECIAL_ARMOR) {
+                            sendSlot(inventory::PlayerInventory::ARMOR_OFFSET + cs->slot);
+                        } else if (cs->windowid == CSS::SPECIAL_INVENTORY ||
+                                   cs->windowid == CSS::SPECIAL_HOTBAR) {
+                            sendSlot(cs->slot);
+                        }
+                        break;
                     }
 
                     if (cs->windowid == network::protocol::ContainerSetSlotPacket::SPECIAL_INVENTORY) {
@@ -528,9 +647,22 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
         // Packets we acknowledge but don't act on for the MVP.
         case network::protocol::BATCH_PACKET:
         case network::protocol::PLAYER_INPUT_PACKET:
-        case network::protocol::INTERACT_PACKET:
         case network::protocol::ANIMATE_PACKET:
+            break;
         case network::protocol::CONTAINER_CLOSE_PACKET:
+            // Client closed whatever container UI it had open (X button,
+            // Esc, walking too far away). We only ever track ONE open
+            // container per player (open_chest_), so we don't need to
+            // check the packet's windowid against it — if the client is
+            // telling us "a container closed" and we have one open, it's
+            // this one. closeOpenChest() is itself a no-op if nothing is
+            // open, so this is safe even for a stray/duplicate packet.
+            closeOpenChest();
+            break;
+        case network::protocol::INTERACT_PACKET:
+            if (auto* ip = dynamic_cast<network::protocol::InteractPacket*>(&p)) {
+                handleInteract(ip->action, ip->target);
+            }
             break;
         default: {
             // Unknown packet — log at debug level.
@@ -1041,9 +1173,17 @@ void Player::doFirstSpawn() {
         }
     }
 
-    // Broadcast join message.
+    // Broadcast join message. Se dispara PlayerJoinEvent antes: un
+    // listener puede reescribir el mensaje, vaciarlo (silencia el
+    // broadcast) o cancelar el evento (mismo efecto). La conexión en
+    // sí ya está establecida a esta altura — ver el comentario en
+    // event/player/PlayerJoinEvent.h.
     if (srv_) {
-        srv_->broadcastMessage(cfg_.username + " joined the game");
+        auto ev = event::EventManager::get().fire<event::player::PlayerJoinEvent>(
+            this, cfg_.username + " joined the game");
+        if (!ev.isCancelled() && !ev.message.empty()) {
+            srv_->broadcastMessage(ev.message);
+        }
     }
 
     utils::MainLogger::get().info("First spawn for " + cfg_.username);
@@ -1058,6 +1198,7 @@ void Player::doFirstSpawn() {
 // ============================================================
 void Player::handleMovePlayer(double x, double y, double z, float yaw, float pitch) {
     if (!spawned_.load(std::memory_order_relaxed)) return;
+    if (isDead()) return; // congelado hasta ACTION_SPAWN_SAME_DIMENSION (ver Player::respawn)
 
     // Reject NaN / inf / clearly bogus coordinates.
     if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) return;
@@ -1076,6 +1217,30 @@ void Player::handleMovePlayer(double x, double y, double z, float yaw, float pit
         mp->mode = network::protocol::MovePlayerPacket::MODE_RESET;
         sendPacket(mp);
         return;
+    }
+
+    // PlayerMoveEvent — se dispara en CADA movimiento aceptado (alta
+    // frecuencia: hasta ~20/s por jugador). No throttleamos el propio
+    // chequeo de cancelacion porque EventManager::call() ya es
+    // practicamente gratis cuando nadie escucha ese tipo de evento
+    // (solo un lookup de mapa + snapshot vacio); lo que si evitamos es
+    // pagar el costo de "revertir" salvo que alguien cancele de
+    // verdad. Un listener puede usar esto para, por ejemplo, impedir
+    // que un jugador entre a una zona protegida.
+    {
+        auto ev = event::EventManager::get().fire<event::player::PlayerMoveEvent>(
+            this, pos_.x, pos_.y, pos_.z, x, y, z);
+        if (ev.isCancelled()) {
+            // Revertir: reenviar la posicion ANTERIOR al cliente,
+            // igual que la rama de anti-cheat de mas arriba.
+            auto mp = std::make_shared<network::protocol::MovePlayerPacket>();
+            mp->eid = runtimeId();
+            mp->x = (float)pos_.x; mp->y = (float)pos_.y; mp->z = (float)pos_.z;
+            mp->yaw = yaw_; mp->bodyYaw = yaw_; mp->pitch = pitch_;
+            mp->mode = network::protocol::MovePlayerPacket::MODE_RESET;
+            sendPacket(mp);
+            return;
+        }
     }
 
     pos_.x = x; pos_.y = y; pos_.z = z;
@@ -1119,7 +1284,16 @@ void Player::handleChat(const std::string& message) {
     }
 
     // Broadcast: <username> message — keep color codes intact.
-    if (srv_) srv_->broadcastMessage("<" + cfg_.username + "> " + message);
+    // PlayerChatEvent se dispara con el mensaje ORIGINAL (con códigos
+    // de color) para que un listener pueda reescribirlo antes del
+    // broadcast; cancelar el evento evita el broadcast por completo.
+    if (srv_) {
+        auto ev = event::EventManager::get().fire<event::player::PlayerChatEvent>(
+            this, message);
+        if (!ev.isCancelled()) {
+            srv_->broadcastMessage("<" + cfg_.username + "> " + ev.message);
+        }
+    }
 }
 
 // Forward decl — defined below handlePlayerAction.
@@ -1149,6 +1323,14 @@ void Player::handleBlockBreak(int x, int y, int z) {
     if (blockId == 7) return;
     // Already air — nothing to do.
     if (blockId == 0) return;
+
+    // BlockBreakEvent — un listener puede cancelarlo (p.ej. protección
+    // de zonas) para impedir la rotura sin tocar el resto del pipeline.
+    {
+        auto ev = event::EventManager::get().fire<event::block::BlockBreakEvent>(
+            this, math::Vector3{(double)x, (double)y, (double)z}, (int)blockId);
+        if (ev.isCancelled()) return;
+    }
 
     // Set block to air (id=0, data=0).
     mcp_chunk_set_block_full(ch, localX, y, localZ, 0, 0);
@@ -1232,6 +1414,37 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     if (placeY < 0 || placeY >= 256) return;
 
     auto* lvl = srv_->getDefaultLevel();
+
+    // PlayerInteractEvent (RIGHT_CLICK_BLOCK) — se dispara ANTES de
+    // cualquier rama de logica (flint&steel, extincion de fuego,
+    // colocacion de bloque). Un listener puede cancelarlo (p.ej.
+    // proteccion de zona) para bloquear toda interaccion con este
+    // bloque sin tener que duplicar el chequeo en cada rama de abajo.
+    // `item` refleja lo que el cliente reporta tener en mano; ids
+    // fuera de rango uint16_t (no deberia pasar, heldItemId es
+    // int16_t) se truncan de forma segura via el cast explicito.
+    {
+        item::ItemStack heldStack;
+        heldStack.id    = (uint16_t)heldItemId;
+        heldStack.meta  = (uint8_t)(heldDamage & 0xFF);
+        heldStack.count = heldCount;
+        auto ev = event::EventManager::get().fire<event::player::PlayerInteractEvent>(
+            this, event::player::PlayerInteractEvent::RIGHT_CLICK_BLOCK,
+            x, y, z, (int)face, heldStack);
+        if (ev.isCancelled()) return;
+    }
+
+    // Chest — right-clicking a chest opens its inventory instead of
+    // placing a block. This has to sit AFTER the PlayerInteractEvent
+    // cancel-check above (so a listener that blocks interaction with
+    // this block also blocks opening it) and BEFORE the held-item →
+    // placement logic below (a chest should open even if the player is
+    // holding a block item — you don't accidentally place a block on
+    // top of the chest you're trying to open).
+    if (lvl->getBlockId(x, y, z) == block::CHEST) {
+        openChestAt(x, y, z);
+        return;
+    }
 
     // ---- Decide what block (if any) to place based on held item ----
     // PMMP-style item→block mapping. Item ids 256+ are tools / buckets /
@@ -1369,6 +1582,15 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     constexpr uint8_t FIRE_ID = 51;
     if (existing != 0 && existing != FIRE_ID) return;
 
+    // BlockPlaceEvent — un listener puede cancelarlo (p.ej. protección
+    // de zonas) para impedir la colocación sin tocar inventario ni chunk.
+    {
+        auto ev = event::EventManager::get().fire<event::block::BlockPlaceEvent>(
+            this, math::Vector3{(double)placeX, (double)placeY, (double)placeZ},
+            (int)placedBlockId);
+        if (ev.isCancelled()) return;
+    }
+
     // Set the block in the chunk.
     mcp_chunk_set_block_full(ch, localX, placeY, localZ, placedBlockId, placedBlockData);
     ch->dirty = true;
@@ -1434,6 +1656,236 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int /*face*/) {
     if (srv_ && srv_->advancedLog() && action == 0) {
         utils::MainLogger::get().info("[ACTION] " + cfg_.username + " started breaking at " +
             std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(z));
+    }
+    if (action == network::protocol::PlayerActionPacket::ACTION_SPAWN_SAME_DIMENSION) {
+        respawn();
+    }
+}
+
+// ============================================================
+// respawn — se llama cuando el cliente confirma que toco el boton de
+// "Respawn" en la pantalla de muerte (ACTION_SPAWN_SAME_DIMENSION).
+// No hace nada si el jugador no esta muerto (evita que un cliente que
+// mande la accion dos veces, o fuera de orden, reviva salud de mas).
+//
+// Secuencia: dispara PlayerRespawnEvent (no cancelable — solo puede
+// cambiar DONDE reaparece), restaura salud al maximo, teletransporta,
+// y sincroniza al cliente con RespawnPacket + SetHealthPacket. No
+// reenvia inventario/experiencia todavia porque este proyecto no
+// vacia el inventario al morir (no hay drop-on-death implementado),
+// asi que no hay nada que restaurar ahi.
+// ============================================================
+void Player::respawn() {
+    if (!isDead()) return;
+
+    math::Vector3 sp = getSpawn();
+    auto ev = event::EventManager::get().fire<event::player::PlayerRespawnEvent>(
+        this, sp.x, sp.y, sp.z);
+
+    setHealth((int)maxHealth());
+    pos_.x = ev.respawnX; pos_.y = ev.respawnY; pos_.z = ev.respawnZ;
+
+    if (spawned_.load(std::memory_order_relaxed)) {
+        auto rp = std::make_shared<network::protocol::RespawnPacket>();
+        rp->x = (float)pos_.x; rp->y = (float)pos_.y; rp->z = (float)pos_.z;
+        sendPacket(rp);
+
+        auto sh = std::make_shared<network::protocol::SetHealthPacket>();
+        sh->health = (int32_t)health();
+        sendPacket(sh);
+
+        auto mp = std::make_shared<network::protocol::MovePlayerPacket>();
+        mp->eid = runtimeId();
+        mp->x = (float)pos_.x; mp->y = (float)pos_.y; mp->z = (float)pos_.z;
+        mp->yaw = yaw_; mp->bodyYaw = yaw_; mp->pitch = pitch_;
+        mp->mode = network::protocol::MovePlayerPacket::MODE_RESET;
+        sendPacket(mp);
+    }
+
+    if (srv_ && srv_->advancedLog()) {
+        utils::MainLogger::get().info("[RESPAWN] " + cfg_.username + " respawned at " +
+            std::to_string((int)pos_.x) + "," + std::to_string((int)pos_.y) + "," +
+            std::to_string((int)pos_.z));
+    }
+}
+
+// ============================================================
+// openChestAt / closeOpenChest — the real chest flow.
+//
+// TileChest is the single source of truth for a chest's contents
+// (see TileChest.h). Level::getTile/setTile is what makes the SAME
+// TileChest instance come back every time this position is opened,
+// instead of a fresh empty one — so items survive a close+reopen for
+// as long as the process keeps running (no disk persistence yet, see
+// the comment on Level::getTile in Level.h).
+// ============================================================
+void Player::openChestAt(int x, int y, int z) {
+    if (!srv_ || !srv_->getDefaultLevel()) return;
+    auto* lvl = srv_->getDefaultLevel();
+
+    // Only one container open at a time per player (see CHEST_WINDOW_ID).
+    if (open_chest_) {
+        closeOpenChest();
+    }
+
+    // Reuse the existing TileChest at this position, or create one the
+    // first time this chest is opened. Level::getTile returns a
+    // shared_ptr<tile::Tile> (the base type — the registry can hold any
+    // tile kind), so it needs a dynamic_cast back down to TileChest.
+    // A null result after a non-null getTile() would mean a different
+    // kind of tile-entity is registered at this position, which
+    // shouldn't happen for a block we've just confirmed is block::CHEST,
+    // but we guard it anyway rather than dereferencing a null pointer.
+    std::shared_ptr<tile::TileChest> chest;
+    auto existing = lvl->getTile(x, y, z);
+    if (existing) {
+        chest = std::dynamic_pointer_cast<tile::TileChest>(existing);
+        if (!chest) return;
+    } else {
+        chest = std::make_shared<tile::TileChest>(
+            atomikpe::level::Position((double)x, (double)y, (double)z));
+        lvl->setTile(x, y, z, chest);
+    }
+
+    // InventoryOpenEvent — a listener can cancel (e.g. zone protection,
+    // a chest mid-trade) to block opening even though PlayerInteractEvent
+    // already passed. Nothing is sent to the client and no viewer is
+    // registered if this is cancelled.
+    auto ev = event::EventManager::get().fire<event::inventory::InventoryOpenEvent>(
+        std::static_pointer_cast<inventory::Inventory>(chest->inventory()), this);
+    if (ev.isCancelled()) return;
+
+    chest->addViewer();
+    open_chest_ = chest;
+
+    auto op = std::make_shared<network::protocol::ContainerOpenPacket>();
+    op->windowid = CHEST_WINDOW_ID;
+    op->type     = network::protocol::ContainerOpenPacket::TYPE_CONTAINER;
+    op->slots    = (int16_t)chest->inventory()->getSize();
+    op->x = x; op->y = y; op->z = z;
+    op->entityId = -1;  // block-based container, not entity-based
+    sendPacket(op);
+
+    // Full slot dump so the client actually shows the contents. Can't
+    // reuse BaseInventory::sendContents() — it hardcodes windowid=0
+    // (correct for the player's own inventory, wrong here: it would
+    // collide with SPECIAL_INVENTORY and get treated as a hotbar/main
+    // inventory update instead of the chest window).
+    auto content = std::make_shared<network::protocol::ContainerSetContentPacket>();
+    content->windowid = CHEST_WINDOW_ID;
+    content->slots.reserve(chest->inventory()->getSize());
+    for (int i = 0; i < chest->inventory()->getSize(); ++i) {
+        content->slots.push_back(chest->inventory()->getItem(i));
+    }
+    sendPacket(content);
+
+    if (srv_ && srv_->advancedLog()) {
+        utils::MainLogger::get().info("[CHEST] " + cfg_.username + " opened chest at " +
+            std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(z));
+    }
+}
+
+void Player::closeOpenChest() {
+    if (!open_chest_) return;
+
+    auto cp = std::make_shared<network::protocol::ContainerClosePacket>();
+    cp->windowid = CHEST_WINDOW_ID;
+    sendPacket(cp);
+
+    open_chest_->removeViewer();
+    open_chest_.reset();
+}
+
+// ============================================================
+// handleInteract — melee combat entry point.
+//
+// MCPE 0.15.x sends InteractPacket with ACTION_LEFT_CLICK when the
+// player attacks an entity (right-click uses ACTION_RIGHT_CLICK for
+// things like feeding/taming, which AtomikPE doesn't implement yet —
+// only the attack path is wired here).
+//
+// Scope, deliberately minimal:
+//   - Only Player targets (srv_->playersSnapshot()) — there are no
+//     AI mobs to hit yet (README: "No mob AI (entities exist as data
+//     structs only, no pathfinding)").
+//   - Flat BASE_ATTACK_DAMAGE for every hit — no per-item damage
+//     table (swords/axes) exists in AtomikPE yet.
+//   - No knockback, no invulnerability-ticks beyond the plain
+//     cooldown below, no reach/distance check. This is a foundation
+//     for EntityDamageByEntityEvent/PlayerDeathEvent to have
+//     something real to fire from, not a feature-complete combat
+//     system.
+// ============================================================
+void Player::handleInteract(int action, int64_t targetEid) {
+    if (!spawned_.load(std::memory_order_relaxed)) return;
+    if (action != network::protocol::InteractPacket::ACTION_LEFT_CLICK) return;
+    if (!srv_) return;
+    if (isDead()) return; // un jugador muerto no puede golpear
+
+    // Cooldown server-side anti-spam (no es "attack cooldown" de
+    // gameplay como en versiones modernas — ver comentario junto a
+    // ATTACK_COOLDOWN_MS en Player.h).
+    uint64_t now_ms = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    if (now_ms - last_attack_ms_ < ATTACK_COOLDOWN_MS) return;
+
+    // Resolver el eid objetivo contra los jugadores conectados. No
+    // hay mobs con runtime id todavia, asi que este es el unico
+    // universo de objetivos posible.
+    std::shared_ptr<Player> target;
+    for (auto& other : srv_->playersSnapshot()) {
+        if (!other || other.get() == this) continue;
+        if (other->runtimeId() == targetEid) { target = other; break; }
+    }
+    if (!target || !target->spawned() || target->isDead()) return;
+
+    last_attack_ms_ = now_ms;
+
+    // damageByEntity() dispara EntityDamageByEntityEvent internamente
+    // (ver Living::damageByEntity) — un listener puede cancelarlo o
+    // reescribir la cantidad antes de que se aplique a health().
+    bool died = target->damageByEntity(BASE_ATTACK_DAMAGE, this);
+
+    // Sincronizar salud + animacion de golpe al objetivo y a los
+    // demas jugadores que lo esten trackeando. No filtramos por
+    // distancia/chunk aqui por simplicidad (mismo criterio MVP que
+    // el resto de los broadcasts de Player.cpp).
+    auto hurtEv = std::make_shared<network::protocol::EntityEventPacket>();
+    hurtEv->eid = target->runtimeId();
+    hurtEv->event = died ? network::protocol::EntityEventPacket::DEATH_ANIMATION
+                         : network::protocol::EntityEventPacket::HURT_ANIMATION;
+    for (auto& other : srv_->playersSnapshot()) {
+        if (!other) continue;
+        other->sendPacket(hurtEv);
+    }
+    auto sh = std::make_shared<network::protocol::SetHealthPacket>();
+    sh->health = (int32_t)target->health();
+    target->sendPacket(sh);
+
+    if (srv_->advancedLog()) {
+        utils::MainLogger::get().info("[COMBAT] " + cfg_.username + " hit " +
+            target->getName() + " for " + std::to_string(BASE_ATTACK_DAMAGE) +
+            " (health now " + std::to_string((int)target->health()) + ")" +
+            (died ? " — killed" : ""));
+    }
+}
+
+// ============================================================
+// onDeath — Living hook, se llama UNA VEZ cuando health_ cruza a 0
+// (ver Living::applyDamage). Dispara PlayerDeathEvent y difunde el
+// mensaje de muerte.
+//
+// No reaparece al jugador aca mismo — eso pasa en Player::respawn(),
+// disparado cuando el cliente manda ACTION_SPAWN_SAME_DIMENSION
+// (boton "Respawn" en la pantalla de muerte). Hasta que eso ocurra,
+// el jugador se queda con isDead()==true y handleMovePlayer/
+// handleInteract lo bloquean de seguir jugando.
+// ============================================================
+void Player::onDeath() {
+    std::string msg = cfg_.username + " died";
+    auto ev = event::EventManager::get().fire<event::player::PlayerDeathEvent>(this, msg);
+    if (!ev.isCancelled() && !ev.message.empty() && srv_) {
+        srv_->broadcastMessage(ev.message);
     }
 }
 

@@ -9,8 +9,7 @@ public:
     atomikpe::entity::Entity* damager = nullptr;
 
     EntityDamageByEntityEvent(atomikpe::entity::Entity* e, float amount, atomikpe::entity::Entity* d)
-        : EntityDamageEvent(e), damager(d) {
-        this->amount = amount;
+        : EntityDamageEvent(e, amount, DamageCause::ENTITY_ATTACK), damager(d) {
     }
 
     const std::string& eventName() const override {
