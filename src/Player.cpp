@@ -608,18 +608,22 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                                 cs->slot >= 0 && cs->slot < 9) {
                                 inv_->setHeldSlot(cs->slot);
                             }
-                            // CRITICAL: send a ContainerSetSlotPacket back
-                            // to confirm the change. Without this, MCPE
-                            // 0.15.x reverts the slot visually. Mirrors
-                            // Nukkit's onSlotChange → sendSlot().
-                            sendSlot(cs->slot);
+                            // NOTE: no manual sendSlot() here on purpose.
+                            // inv_->setItem() already ran
+                            // PlayerInventory::onSlotChange(), which sends
+                            // the confirmation ContainerSetSlotPacket
+                            // itself (see PlayerInventory.cpp). Calling
+                            // sendSlot() again here used to send a SECOND,
+                            // redundant confirmation for every single
+                            // inventory click — harmless to the client but
+                            // pure waste. Same fix applies to the three
+                            // branches below.
                         }
                     } else if (cs->windowid == network::protocol::ContainerSetSlotPacket::SPECIAL_ARMOR) {
                         // windowid 0x78 — armor slot 0..3 → store at 36..39.
                         if (cs->slot >= 0 && cs->slot < 4) {
                             int dest = inventory::PlayerInventory::ARMOR_OFFSET + cs->slot;
                             inv_->setItem(dest, it);
-                            sendSlot(dest);
                         }
                     } else if (cs->windowid == network::protocol::ContainerSetSlotPacket::SPECIAL_HOTBAR) {
                         // windowid 0x7a — hotbar slot 0..8. This is sent
@@ -627,7 +631,6 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                         // directly. Write into main inventory slot 0..8.
                         if (cs->slot >= 0 && cs->slot < 9) {
                             inv_->setItem(cs->slot, it);
-                            sendSlot(cs->slot);
                         }
                     } else if (cs->windowid == network::protocol::ContainerSetSlotPacket::SPECIAL_CREATIVE) {
                         // windowid 0x79 — creative-grid click (rare in
@@ -637,7 +640,6 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                             int held = inv_->heldSlot();
                             if (held >= 0 && held < 9) {
                                 inv_->setItem(held, it);
-                                sendSlot(held);
                             }
                         }
                     }

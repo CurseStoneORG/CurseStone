@@ -50,7 +50,11 @@ void ItemFlintSteel::applyDurability(Player* player) {
     } else {
         inv->setItemInHand(held);
     }
-    player->sendSlot(inv->heldSlot());
+    // NOTE: no manual sendSlot() here — both clear() and
+    // setItemInHand() (→ PlayerInventory::setItem()) already ran
+    // PlayerInventory::onSlotChange(), which sends the confirmation
+    // ContainerSetSlotPacket itself. See the same fix/comment in
+    // Player.cpp's CONTAINER_SET_SLOT_PACKET handler.
 }
 
 // ============================================================

@@ -63,7 +63,14 @@ bool BaseInventory::canAddItem(const item::ItemStack& item) {
     if (item.isEmpty()) return true;
     int remaining = item.count;
     int max_stack = maxStackSize_;
-    for (int i = 0; i < size_ && remaining > 0; ++i) {
+    // getSize() (virtual) — NOT size_ directly. PlayerInventory
+    // overrides getSize() to return 36 (main only, no armor) even
+    // though its underlying size_ is 40 (36 main + 4 armor). Using
+    // size_ here would count empty armor slots as pickup capacity,
+    // and addItem() below (same fix) would then actually place a
+    // picked-up item into an armor slot. See BaseInventory::addItem.
+    int limit = getSize();
+    for (int i = 0; i < limit && remaining > 0; ++i) {
         item::ItemStack slot = getItem(i);
         if (slot.id == item.id && slot.meta == item.meta && slot.count > 0) {
             int diff = max_stack - slot.count;
@@ -84,8 +91,14 @@ std::vector<item::ItemStack> BaseInventory::addItem(std::vector<item::ItemStack>
     }
     std::vector<int> emptySlots;
     int max_stack = maxStackSize_;
+    // getSize() (virtual), not size_ — see canAddItem's comment above.
+    // Without this, a full-main-inventory pickup could land in an
+    // empty armor slot (helmet/chestplate/leggings/boots), since
+    // PlayerInventory's size_ (40) includes them but getSize() (36)
+    // deliberately doesn't.
+    int limit = getSize();
 
-    for (int i = 0; i < size_; ++i) {
+    for (int i = 0; i < limit; ++i) {
         item::ItemStack item = getItem(i);
         if (item.id == 0 || item.count <= 0) emptySlots.push_back(i);
 
@@ -131,7 +144,12 @@ std::vector<item::ItemStack> BaseInventory::removeItem(std::vector<item::ItemSta
     for (auto& s : slots) {
         if (s.id != 0 && s.count > 0) itemSlots.push_back(s);
     }
-    for (int i = 0; i < size_; ++i) {
+    // getSize() (virtual), not size_ — kept consistent with addItem/
+    // canAddItem above so a rollback (see Player.cpp's dropped-item
+    // pickup race handling) removes from the same range addItem() was
+    // scoped to, not a wider one that could reach into armor slots.
+    int limit = getSize();
+    for (int i = 0; i < limit; ++i) {
         item::ItemStack item = getItem(i);
         if (item.id == 0 || item.count <= 0) continue;
         for (auto it = itemSlots.begin(); it != itemSlots.end(); ) {
@@ -202,7 +220,11 @@ int BaseInventory::first(const item::ItemStack& item) {
 }
 
 int BaseInventory::firstEmpty(const item::ItemStack& /*item*/) {
-    for (int i = 0; i < size_; ++i) {
+    // getSize(), not size_ — see canAddItem's comment. Without this a
+    // caller using firstEmpty() to decide where to place a new item
+    // could get back an armor slot index.
+    int limit = getSize();
+    for (int i = 0; i < limit; ++i) {
         if (getItem(i).id == 0) return i;
     }
     return -1;
