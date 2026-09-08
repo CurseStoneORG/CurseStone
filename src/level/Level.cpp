@@ -23,6 +23,8 @@
 #include <sys/types.h>
 #include <cstdio>
 #include <cstring>
+#include <cstdlib>
+#include <algorithm>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -408,6 +410,73 @@ void Level::syncTilesToChunks() {
         }
         c->dirty = true;  // ensure flushDirty() picks this chunk up
     }
+}
+
+// ============================================================
+// Chunk memory eviction
+// ============================================================
+void Level::evictTilesForChunk(int32_t cx, int32_t cz) {
+    uint64_t ckey = packChunkPos(cx, cz);
+
+    // Snapshot this chunk's tiles, then release tiles_mtx_ before doing
+    // any NBT work or touching chunks_ — same lock-ordering rule
+    // syncTilesToChunks() already follows above.
+    std::vector<std::shared_ptr<atomikpe::tile::Tile>> tilesInChunk;
+    {
+        std::lock_guard<std::mutex> lk(tiles_mtx_);
+        for (auto it = tiles_.begin(); it != tiles_.end(); ) {
+            if (!it->second) { it = tiles_.erase(it); continue; }
+            int32_t tcx = static_cast<int32_t>(it->second->position().x) >> 4;
+            int32_t tcz = static_cast<int32_t>(it->second->position().z) >> 4;
+            if (tcx == cx && tcz == cz) {
+                tilesInChunk.push_back(it->second);
+                it = tiles_.erase(it);   // drop from the registry regardless of dirty state
+            } else {
+                ++it;
+            }
+        }
+        tiles_hydrated_chunks_.erase(ckey);  // force re-hydration on next load
+    }
+    if (tilesInChunk.empty()) return;
+
+    bool anyDirty = false;
+    for (auto& t : tilesInChunk) if (t->isDirty()) { anyDirty = true; break; }
+    if (!anyDirty) return;  // nothing to flush — they were dropped above either way
+
+    mcp_chunk_t* c = chunks_.getChunkIfLoaded(cx, cz);
+    if (!c) return;  // chunk is gone already; the (unsaved) dirty tile data is lost with it
+
+    mcp_chunk_clear_tile_entities(c);
+    for (auto& t : tilesInChunk) {
+        mcp_tag_t* tag = mcp_compound_tag_new();
+        t->writeNBT(tag);
+        size_t blen = 0;
+        uint8_t* bbuf = mcp_nbt_write_bytes(tag, /*little_endian=*/true, &blen);
+        if (bbuf && blen > 0) {
+            mcp_chunk_add_tile_entity(c, bbuf, blen);
+        }
+        free(bbuf);
+        mcp_tag_destroy(tag);
+    }
+    c->dirty = true;  // so ChunkManager::unloadChunk()'s save-if-dirty picks it up
+}
+
+int Level::unloadDistantChunks(const std::vector<ChunkViewer>& viewers, int32_t margin) {
+    auto coords = chunks_.loadedChunkCoords();
+    int unloaded = 0;
+    for (auto& [cx, cz] : coords) {
+        bool needed = false;
+        for (auto& v : viewers) {
+            int32_t dx = cx - v.cx, dz = cz - v.cz;
+            int32_t dist = std::max(std::abs(dx), std::abs(dz));
+            if (dist <= v.view_radius + margin) { needed = true; break; }
+        }
+        if (needed) continue;
+
+        evictTilesForChunk(cx, cz);  // flush + drop tiles BEFORE the chunk disappears
+        if (chunks_.unloadChunk(cx, cz, /*save=*/true)) ++unloaded;
+    }
+    return unloaded;
 }
 
 } // namespace atomikpe::level

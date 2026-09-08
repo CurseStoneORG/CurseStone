@@ -171,4 +171,40 @@ size_t ChunkManager::count() const {
     return chunks_.size();
 }
 
+bool ChunkManager::unloadChunk(int32_t x, int32_t z, bool save) {
+    mcp_chunk_t* c = nullptr;
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        auto it = chunks_.find({x, z});
+        if (it == chunks_.end()) return false;
+        c = it->second;
+        chunks_.erase(it);
+    }
+    if (!c) return false;
+    // Save BEFORE destroying, and outside mtx_ — saveChunk() does disk
+    // I/O, and holding the chunk-map lock across a write would block
+    // every other getChunk()/setChunk() on this level for the duration.
+    // The chunk is already removed from chunks_ at this point, so a
+    // concurrent getChunk(x,z) would just regenerate/reload a fresh one
+    // instead of touching this pointer — no use-after-free, just a
+    // possible (harmless, rare) duplicate load if that race is hit.
+    if (save && provider_ && c->dirty) {
+        auto adapter = format::ChunkAdapter::borrow(c);
+        if (adapter) {
+            provider_->saveChunk(adapter);
+            c->dirty = false;
+        }
+    }
+    mcp_chunk_destroy(c);
+    return true;
+}
+
+std::vector<std::pair<int32_t,int32_t>> ChunkManager::loadedChunkCoords() const {
+    std::lock_guard<std::mutex> lk(mtx_);
+    std::vector<std::pair<int32_t,int32_t>> out;
+    out.reserve(chunks_.size());
+    for (auto& kv : chunks_) out.emplace_back(kv.first.x, kv.first.z);
+    return out;
+}
+
 } // namespace
