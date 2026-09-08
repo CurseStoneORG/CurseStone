@@ -384,6 +384,42 @@ void Server::tick() {
     WorkbenchManager::get().onTickPhase("level",
         (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
 
+    // --- Phase: chunk unload sweep ---
+    // Runs every 100 ticks (~5s at 20 TPS), not every tick — this walks
+    // every loaded chunk and can trigger disk saves, so it's priced like
+    // an occasional maintenance pass, not per-tick work. Frees chunks
+    // (and any tile-entities inside them — see Level::evictTilesForChunk)
+    // that no connected player can currently see. Before this existed,
+    // ChunkManager only ever grew: getChunk() added chunks on demand but
+    // nothing ever called the equivalent of unloadChunk(), so a server
+    // left running would accumulate every chunk any player had ever
+    // walked near, for the lifetime of the process.
+    if (level_ && currentTick_ % 100 == 0) {
+        t0 = std::chrono::steady_clock::now();
+        std::vector<level::Level::ChunkViewer> viewers;
+        {
+            std::lock_guard<std::mutex> lk(players_mtx_);
+            viewers.reserve(players_.size());
+            for (auto& p : players_) {
+                if (!p) continue;
+                // viewDistance() is the config value used to build the
+                // send-chunks spiral, which only ever reaches half of
+                // it in either axis (see buildChunkSpiral() in
+                // Player.cpp) — so the real radius a player can see is
+                // viewDistance()/2, not viewDistance() itself.
+                viewers.push_back({p->chunkX(), p->chunkZ(), p->viewDistance() / 2});
+            }
+        }
+        int unloaded = level_->unloadDistantChunks(viewers);
+        if (unloaded > 0 && advancedLog()) {
+            utils::MainLogger::get().info("[Chunks] Unloaded " + std::to_string(unloaded) +
+                " chunk(s) out of view.");
+        }
+        t1 = std::chrono::steady_clock::now();
+        WorkbenchManager::get().onTickPhase("chunk_unload",
+            (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
+    }
+
     // --- Phase: network (first pass) ---
     // CRITICAL: process network BEFORE player updates.
     t0 = std::chrono::steady_clock::now();

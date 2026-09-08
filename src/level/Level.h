@@ -130,7 +130,55 @@ public:
     void setTile(int32_t x, int32_t y, int32_t z, std::shared_ptr<atomikpe::tile::Tile> t);
     void removeTile(int32_t x, int32_t y, int32_t z);
 
+    // ----- Chunk memory eviction -----
+    // Snapshot of one connected player's position for the unload sweep
+    // below: which chunk they're standing in, and how far out they can
+    // actually see. `view_radius` is a RADIUS (Chebyshev distance), not
+    // Player::viewDistance()'s raw config value — see the note on
+    // buildChunkSpiral() in Player.cpp: despite the name, that config
+    // value is closer to a diameter (buildChunkSpiral(vd) only ever
+    // reaches |dx|,|dz| up to vd/2). Server::tick() is responsible for
+    // passing viewDistance()/2, not the raw config number.
+    struct ChunkViewer { int32_t cx, cz, view_radius; };
+
+    // Frees the in-memory copy of any loaded chunk that sits outside
+    // EVERY given viewer's radius (+ `margin` chunks of hysteresis, so
+    // a player oscillating right at the boundary doesn't cause the same
+    // chunk to unload and reload every few ticks). A dirty chunk is
+    // saved before being freed (see ChunkManager::unloadChunk) and any
+    // tile-entities it holds are flushed into it first (see
+    // evictTilesForChunk below) — nothing here silently drops player
+    // data just because it fell out of view.
+    //
+    // Call this periodically (not every tick — see Server::tick(),
+    // which gates it to once every few seconds) with the current
+    // position of every player connected to THIS level. An empty
+    // `viewers` list (nobody connected) makes every loaded chunk
+    // eligible, which is correct: a level nobody is looking at should
+    // shed all of its chunks.
+    //
+    // Returns how many chunks were actually unloaded, for logging.
+    int unloadDistantChunks(const std::vector<ChunkViewer>& viewers, int32_t margin = 4);
+
 private:
+    // Flushes any dirty tile-entity inside chunk (cx,cz) into that
+    // chunk's mcp_chunk_t::tile_entities array (same write path as
+    // syncTilesToChunks(), just scoped to one chunk) and then drops
+    // every tile in that chunk from the in-memory tiles_ registry —
+    // NOT just the dirty ones, and regardless of whether the flush
+    // above ran (a chunk with zero dirty tiles still gets its tiles
+    // dropped here). Also clears the chunk's tiles_hydrated_chunks_
+    // flag so a future reload re-hydrates from the NBT that was just
+    // written instead of either re-scanning nothing (flag left set) or
+    // leaving getTile() pointing at a Tile object whose owning chunk
+    // no longer exists in memory.
+    //
+    // Called by unloadDistantChunks() right before
+    // chunks_.unloadChunk(cx, cz) for that same chunk — this is the
+    // ONLY thing that keeps the tile registry from leaking in lockstep
+    // with chunks the way ChunkManager used to leak chunks themselves.
+    void evictTilesForChunk(int32_t cx, int32_t cz);
+
     // Hydrate tiles_ from chunk (cx,cz)'s mcp_chunk_t::tile_entities blobs,
     // if that chunk hasn't been hydrated yet this session. Called from
     // getTile() before the lookup, keyed by chunk (not by block position)
