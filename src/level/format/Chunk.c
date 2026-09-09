@@ -509,6 +509,25 @@ void mcp_chunk_propagate_sky_light(mcp_chunk_t* c) {
 
 // ---------------------------------------------------------------- network serialization
 
+// Color de "grasscolor" clásico por bioma, para el array de biome
+// colors del FullChunkDataPacket (protocolo 84 / MCPE 0.15.x — ver
+// el comentario dentro de mcp_chunk_network_serialize). IDs según
+// resources/biome_definitions.json. Bioma desconocido -> plains.
+static void mcp_biome_grass_color(uint8_t biomeId, uint8_t* r, uint8_t* g, uint8_t* b) {
+    switch (biomeId) {
+        case 0: *r = 0x8E; *g = 0xB9; *b = 0x71; break; // ocean (piso, no se ve pasto real)
+        case 1: *r = 0x91; *g = 0xBD; *b = 0x59; break; // plains
+        case 2: *r = 0xBF; *g = 0xB7; *b = 0x55; break; // desert
+        case 3: *r = 0x79; *g = 0xC0; *b = 0x5A; break; // forest
+        case 4: *r = 0x8A; *g = 0xB6; *b = 0x89; break; // mountains
+        case 5: *r = 0x91; *g = 0xBD; *b = 0x59; break; // beach (igual a plains)
+        case 6: *r = 0x86; *g = 0xB8; *b = 0x7F; break; // taiga
+        case 7: *r = 0x4C; *g = 0x76; *b = 0x3C; break; // swampland (color fijo, como en Java)
+        case 8: *r = 0x90; *g = 0x59; *b = 0x57; break; // hell (no hay pasto real)
+        default: *r = 0x91; *g = 0xBD; *b = 0x59; break; // desconocido -> plains
+    }
+}
+
 // MCPE 0.15.x FullChunkDataPacket payload format (protocol 0x34):
 //   16 sections * (4096 blocks + 2048 data + 2048 sky + 2048 blocklight)
 //   = 16 * 8192 = 131072 bytes
@@ -625,40 +644,38 @@ uint8_t* mcp_chunk_network_serialize(const mcp_chunk_t* c, size_t* out_len) {
     }
     off += kHeightMap;
 
-    // --- Biome colors: BE uint32 per column = (biomeId<<24)|(R<<16)|(G<<8)|B.
-    // BUG REAL (confirmado contra PMMP: level/format/generic/BaseFullChunk.php
-    // setBiomeId() hace `biomeColors[i] = (biomeColors[i] & 0xFFFFFF) |
-    // (biomeId << 24)` — el ID de bioma va en el BYTE ALTO de este entero
-    // de 4 bytes, y R,G,B van en los 3 bytes bajos, no al revés).
+    // --- Biome colors: BE uint32 por columna = (biomeId<<24)|(R<<16)|(G<<8)|B.
+    // BUG REAL (pasto negro global): el fix anterior de esta sección asumía
+    // el comportamiento del cliente MODERNO (1.0+), donde el cliente ignora
+    // el RGB que manda el servidor y calcula el tinte de pasto/hojas él
+    // mismo a partir del ID de bioma (byte alto), usando su propia tabla
+    // interna. Esto NO es así en protocolo 84 (MCPE 0.15.x, lo que este
+    // servidor targetea — ver docs/PROTOCOL_84.md): ese cambio de
+    // comportamiento llegó recién con la actualización a 1.0.0. En 0.15.x
+    // el cliente sigue usando literalmente el RGB que le mandamos para
+    // teñir el pasto — el byte alto (ID de bioma) es solo para que el
+    // servidor lo reconstruya al releer del disco, el cliente no lo mira
+    // para pintar. Mandar R=G=B=0 pinta el pasto directamente negro, que
+    // es exactamente el bug reportado.
     //
-    // El código anterior escribía [R=0x00, G=0x80, B=0x40, sin_usar=0x00]
-    // en esos mismos 4 bytes para TODAS las columnas, ignorando el bioma
-    // real de cada una. Leído con el layout correcto, esos bytes son en
-    // realidad [biomeId=0x00, R=0x80, G=0x40, B=0x00] — un marrón/naranja
-    // oscuro (128,64,0), exactamente el color que se veía en el pasto. No
-    // era un problema de terreno ni de generación de altura.
-    //
-    // Fix: byte alto = bioma real de la columna (ya calculado por el
-    // generador y guardado en c->biomes[]); R=G=B=0 en los 3 bytes bajos,
-    // que es lo que PMMP usa como "sin override de color" (su valor por
-    // defecto es 0xFF000000: bioma inválido + RGB en cero) — así el
-    // cliente calcula el tinte verde de pasto/hojas él mismo a partir del
-    // ID de bioma real, con su propia tabla interna de grasscolor/
-    // foliagecolor, en vez de que el servidor le imponga un color fijo.
-    //
-    // Se escribe con índice explícito (x&15)+(z&15)*16 — la MISMA fórmula
-    // que usa mcp_chunk_set_biome()/mcp_chunk_get_biome() — en vez de
-    // depender del orden del loop, para no introducir un desalineado
-    // fila/columna entre lo que el generador guardó y lo que se manda.
+    // Fix: además del ID de bioma en el byte alto (se mantiene, no hace
+    // daño y sirve para IO/leveldb), escribir el RGB real de "grasscolor"
+    // de cada bioma en los 3 bytes bajos — igual que hacía PMMP antes de
+    // API 3.0.0-ALPHA1 (ver Level::setBiomeColor(), que sí llegaba a
+    // pintar la textura). Tabla aproximada de colores clásicos de
+    // Minecraft por bioma; se puede afinar más adelante por temperatura/
+    // humedad si hace falta más variedad.
     for (int x = 0; x < 16; ++x) {
         for (int z = 0; z < 16; ++z) {
             int idx = (x & 15) + (z & 15) * 16;
             uint8_t biomeId = c->biomes ? c->biomes[idx] : 1; // 1 = plains si no hay array
+            uint8_t r, g, b;
+            mcp_biome_grass_color(biomeId, &r, &g, &b);
             size_t o = off + (size_t)idx * 4;
             buf[o + 0] = biomeId;
-            buf[o + 1] = 0;
-            buf[o + 2] = 0;
-            buf[o + 3] = 0;
+            buf[o + 1] = r;
+            buf[o + 2] = g;
+            buf[o + 3] = b;
         }
     }
     off += kBiomeCol;
