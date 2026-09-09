@@ -1,6 +1,6 @@
 # Atomik
 
-Server software for Minecraft: Pocket Edition 0.15.10 (Protocol 84), written in C and C++.
+Server software for Minecraft: Pocket Edition 0.15.10 (Protocol 84) written in C and C++.
 
 The codebase follows a strict split: low-level structures (RakNet, NBT, binary I/O, math, chunk data) are plain C, compiled as `-std=c2x`. Game logic (Server, Player, Level, Block, Item, Entity, Event, Command, Scheduler, Inventory) is C++20. The two layers communicate through plain C structs and `extern "C"` boundaries — no inheritance across the boundary, only composition. See `CONTRIBUTING.md` for the exact rules.
 
