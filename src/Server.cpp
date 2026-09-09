@@ -409,10 +409,28 @@ void Server::tick() {
                 viewers.push_back({p->chunkX(), p->chunkZ(), p->viewDistance()});
             }
         }
-        int unloaded = level_->unloadDistantChunks(viewers);
-        if (unloaded > 0 && advancedLog()) {
-            utils::MainLogger::get().info("[Chunks] Unloaded " + std::to_string(unloaded) +
-                " chunk(s) out of view.");
+        // BUG FIX (root cause of "chunks never render again after
+        // reconnecting"): viewers can be EMPTY during the gap between a
+        // player disconnecting and (maybe) someone reconnecting — this
+        // sweep runs on a fixed tick interval regardless of player
+        // count. With an empty viewer list, unloadDistantChunks() found
+        // that NO loaded chunk was "needed" by anyone, and unloaded
+        // (synchronously saved + freed) the ENTIRE in-memory world,
+        // spawn chunks included. The next player to log in then has to
+        // reload/regenerate every chunk around their saved position,
+        // including the one they're literally standing in, one chunk
+        // per tick — which is exactly the "stuck in an empty chunk,
+        // world looks empty" symptom, and only ever on a RECONNECT
+        // because the first-ever join never hit an empty-viewers sweep.
+        // Skip the sweep entirely when nobody is online; there is
+        // nothing to unload for yet, and the world stays warm in memory
+        // for whoever logs in next.
+        if (!viewers.empty()) {
+            int unloaded = level_->unloadDistantChunks(viewers);
+            if (unloaded > 0 && advancedLog()) {
+                utils::MainLogger::get().info("[Chunks] Unloaded " + std::to_string(unloaded) +
+                    " chunk(s) out of view.");
+            }
         }
         t1 = std::chrono::steady_clock::now();
         WorkbenchManager::get().onTickPhase("chunk_unload",
