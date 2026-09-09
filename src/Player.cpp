@@ -35,6 +35,9 @@
 #include "network/protocol/TakeItemEntityPacket.h"
 #include "item/ItemFlintSteel.h"
 #include "block/BlockFire.h"
+#include "redstone/RedstoneManager.h"
+#include "item/ItemConstants.h"
+#include "block/BlockIds.h"
 #include "event/EventManager.h"
 #include "event/player/PlayerJoinEvent.h"
 #include "event/player/PlayerQuitEvent.h"
@@ -994,6 +997,27 @@ void Player::sendChunksAroundSpawn() {
 // Phase 6 — doFirstSpawn
 // ============================================================
 
+// Helper: transmite un cambio de bloque puntual a todos los jugadores
+// que estén viendo ese chunk. Se usa para componentes de redstone que
+// cambian más de un bloque (por ejemplo, puertas).
+static void broadcastBlockChange(atomikpe::Server* server, int32_t x, int32_t y, int32_t z,
+                                   uint8_t blockId, uint8_t blockData) {
+    if (!server) return;
+    auto ubp = std::make_shared<network::protocol::UpdateBlockPacket>();
+    ubp->x = x;
+    ubp->z = z;
+    ubp->y = (uint8_t)y;
+    ubp->blockId = blockId;
+    ubp->blockData = blockData;
+    ubp->flags = 0xFF;
+    int32_t cx = x >> 4, cz = z >> 4;
+    for (auto& player : server->playersSnapshot()) {
+        if (!player) continue;
+        if (!player->isTrackingChunk(cx, cz)) continue;
+        player->sendPacket(ubp);
+    }
+}
+
 // Helper: parse a "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" UUID string into
 // 16 raw bytes. Empty input yields zeros. Used by AddPlayerPacket / PlayerListPacket.
 static void parseUuidBytes(const std::string& s, std::array<uint8_t,16>& out) {
@@ -1339,6 +1363,9 @@ void Player::handleBlockBreak(int x, int y, int z) {
     mcp_chunk_recalculate_height_map(ch);
     ch->dirty = true;
 
+    // Redstone: breaking a block can disconnect a circuit or remove a support.
+    atomikpe::redstone::notifyNeighbors(lvl, srv_, x, y, z);
+
     // Broadcast UpdateBlockPacket.
     auto ubp = std::make_shared<network::protocol::UpdateBlockPacket>();
     ubp->x = x;
@@ -1417,6 +1444,12 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
 
     auto* lvl = srv_->getDefaultLevel();
 
+    // Redstone components such as levers and buttons react to a click
+    // before normal item/block placement is considered.
+    if (atomikpe::redstone::tryInteract(lvl, srv_, x, y, z)) {
+        return;
+    }
+
     // PlayerInteractEvent (RIGHT_CLICK_BLOCK) — se dispara ANTES de
     // cualquier rama de logica (flint&steel, extincion de fuego,
     // colocacion de bloque). Un listener puede cancelarlo (p.ej.
@@ -1482,6 +1515,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
                 int tlx = x & 15, tlz = z & 15;
                 mcp_chunk_set_block_full(tch, tlx, y, tlz, 0, 0);
                 tch->dirty = true;
+                atomikpe::redstone::notifyNeighbors(lvl, srv_, x, y, z);
 
                 // Broadcast UpdateBlockPacket to nearby players.
                 auto ubp = std::make_shared<network::protocol::UpdateBlockPacket>();
@@ -1507,11 +1541,168 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
                 " attempted place with empty hand — ignored");
         }
         return;
+    } else if (heldItemId == 193 || heldItemId == 194 || heldItemId == 195 ||
+               heldItemId == 196 || heldItemId == 197 ||
+               heldItemId == 324 || heldItemId == 330) {
+        // Puerta (cualquier especie de madera, o hierro). Sea cual sea
+        // el item exacto (193-197 = specie-doors de MCPE 0.15, cada una
+        // con id de bloque propio en el rango <256; 324 = puerta de
+        // madera genérica; 330 = puerta de hierro), el bloque colocado
+        // en el mundo colapsa siempre a WOODEN_DOOR (64) o IRON_DOOR
+        // (71) — ver nota extensa en RedstoneManager.cpp sobre por qué
+        // BlockIds.h (que gobierna el Level real) no distingue especies
+        // de madera para puertas, a diferencia de ItemConstants.h que sí
+        // las distingue como item. Consecuencia visual conocida y
+        // documentada: toda puerta de madera se ve como la textura de
+        // roble en el cliente, sin importar el item usado para
+        // colocarla — la redstone y el toggle funcionan igual para
+        // todas, que es lo que importa para esta fase del proyecto.
+        //
+        // Una puerta ocupa 2 bloques verticales, así que no puede
+        // seguir el flujo genérico de "un solo setBlock" de más abajo
+        // — se colocan ambas mitades aquí y se retorna, igual que ya
+        // hace flint&steel unas líneas arriba.
+        uint8_t doorId = (heldItemId == 330) ? item::IRON_DOOR_BLOCK
+                                              : item::DOOR_BLOCK;
+        // Nota: item::DOOR_BLOCK (64) e item::IRON_DOOR_BLOCK (71) son
+        // los MISMOS valores numéricos que block::WOODEN_DOOR y
+        // block::IRON_DOOR en BlockIds.h (confirmado) — coherente con
+        // que en MCPE 0.15 item id == block id para items de bloque.
+        // Se usan las constantes de item:: aquí porque ya estaba
+        // incluido ese header; no hace falta incluir block/BlockIds.h
+        // sólo por esto.
+
+        // No se puede colocar una puerta si no hay espacio para las dos
+        // mitades, o si el bloque debajo de la mitad inferior no es
+        // sólido (ninguna verificación de "suelo sólido" existe hoy en
+        // el proyecto para ítems en general — ver la comprobación de
+        // "existing != 0" más abajo, que es la única guarda de este
+        // tipo que ya existe — así que replicamos exactamente ese mismo
+        // nivel de rigor: sólo se exige aire en las dos celdas destino,
+        // sin exigir soporte sólido debajo, para no introducir una regla
+        // más estricta que el resto del sistema de colocación).
+        if (placeY + 1 >= 256) return; // la mitad superior se saldría del mundo
+
+        int32_t cxLower = placeX >> 4, czLower = placeZ >> 4;
+        mcp_chunk_t* chLower = lvl->chunks().getChunkIfLoaded(cxLower, czLower);
+        if (!chLower) return; // mismo criterio que el resto: no generar chunk síncronamente
+        int localXLower = placeX & 15, localZLower = placeZ & 15;
+        uint8_t existingLower = mcp_chunk_get_block_id(chLower, localXLower, placeY, localZLower);
+        if (existingLower != 0) return; // celda inferior ocupada
+
+        // La mitad superior puede caer en un chunk distinto sólo si
+        // placeY+1 cruza a otro chunk verticalmente — en este formato
+        // los chunks son columnas completas (0-255 de alto), así que
+        // cxLower/czLower siguen siendo válidos para y+1 también; no
+        // hace falta volver a resolver el chunk.
+        uint8_t existingUpper = mcp_chunk_get_block_id(chLower, localXLower, placeY + 1, localZLower);
+        if (existingUpper != 0) return; // celda superior ocupada
+
+        // Orientación por hacia dónde mira el jugador al colocar,
+        // igual que vanilla real. Conversión yaw→4 direcciones
+        // cardinales (fórmula estándar: divide el círculo en 4
+        // cuadrantes de 90°, centrados en cada dirección — la misma
+        // que usa pistonDirOffset indirectamente vía notifyNeighbors,
+        // así que ambos sistemas quedan alineados). Mapeo elegido para
+        // ESTE proyecto (esquema propio — ver nota en
+        // RedstoneManager.cpp sobre por qué no se replica el legado
+        // ambiguo de Java): 0=sur, 1=oeste, 2=norte, 3=este.
+        float yawDeg = yaw();
+        // Normaliza a [0, 360) antes de la fórmula — yaw() puede venir
+        // negativo o >360 tras varias vueltas del jugador.
+        yawDeg = std::fmod(yawDeg, 360.0f);
+        if (yawDeg < 0.0f) yawDeg += 360.0f;
+        uint8_t doorFacing = (uint8_t)(((int)((yawDeg + 45.0f) / 90.0f)) & 0x03);
+
+        uint8_t lowerData = doorFacing & 0x03;       // bits 0-1: orientación; bit 0x04 (abierta) empieza en 0; bit 0x08 (superior) en 0
+        uint8_t upperData = 0x08 | (doorFacing & 0x03); // bit 0x08 fijo (es superior); conserva orientación para que ambas mitades sepan hacia dónde mira la puerta sin tener que consultar la otra
+
+        mcp_chunk_set_block_full(chLower, localXLower, placeY, localZLower, doorId, lowerData);
+        mcp_chunk_set_block_full(chLower, localXLower, placeY + 1, localZLower, doorId, upperData);
+        chLower->dirty = true;
+
+        broadcastBlockChange(srv_, placeX, placeY, placeZ, doorId, lowerData);
+        broadcastBlockChange(srv_, placeX, placeY + 1, placeZ, doorId, upperData);
+
+        atomikpe::redstone::notifyNeighbors(lvl, srv_, placeX, placeY, placeZ);
+        atomikpe::redstone::notifyNeighbors(lvl, srv_, placeX, placeY + 1, placeZ);
+
+        if (!(cfg_.gamemode & 1) && inv_) { // survival only
+            int held = inv_->heldSlot();
+            auto cur = inv_->getItem(held);
+            if (!cur.isEmpty()) {
+                if (cur.count > 1) { cur.count -= 1; inv_->setItem(held, cur); }
+                else { inv_->clear(held); }
+            }
+        }
+        return;
+    } else if (heldItemId == 33 || heldItemId == item::STICKY_PISTON) {
+        // Pistón normal (33) o pegajoso (item::STICKY_PISTON = 29). El
+        // pistón normal no tiene constante con nombre en
+        // ItemConstants.h — es una laguna real de ese archivo (nunca se
+        // llegó a necesitar antes de esta sesión), así que se usa el
+        // literal numérico igual que el resto de este switch ya hace
+        // para otros casos especiales (259, 326, 327, 331). El valor 33
+        // está confirmado contra BlockIds.h::PISTON_ID.
+        //
+        // Un solo bloque, pero necesita calcular la dirección por
+        // yaw+pitch (a diferencia de la puerta, el pistón SÍ puede
+        // apuntar arriba/abajo, no sólo a las 4 direcciones
+        // horizontales — igual que vanilla real: mirar claramente hacia
+        // arriba o abajo al colocar lo orienta verticalmente).
+        uint8_t pistonId = (heldItemId == item::STICKY_PISTON) ? block::STICKY_PISTON : block::PISTON_ID;
+
+        int32_t cxP = placeX >> 4, czP = placeZ >> 4;
+        mcp_chunk_t* chP = lvl->chunks().getChunkIfLoaded(cxP, czP);
+        if (!chP) return;
+        int localXP = placeX & 15, localZP = placeZ & 15;
+        uint8_t existingP = mcp_chunk_get_block_id(chP, localXP, placeY, localZP);
+        if (existingP != 0) return;
+
+        float pitchDeg = pitch();
+        uint8_t pistonFacing;
+        if (pitchDeg <= -60.0f) {
+            pistonFacing = 1; // mirando marcadamente hacia arriba → pistón apunta arriba
+        } else if (pitchDeg >= 60.0f) {
+            pistonFacing = 0; // mirando marcadamente hacia abajo → pistón apunta abajo
+        } else {
+            // Mismo esquema de 4 cuadrantes que la puerta, pero mapeado
+            // a los bits de PISTÓN (0-5), que usan una convención
+            // distinta a la de puerta: 2=norte,3=sur,4=oeste,5=este
+            // (confirmado por búsqueda — ver RedstoneManager.cpp).
+            float yawDeg = yaw();
+            yawDeg = std::fmod(yawDeg, 360.0f);
+            if (yawDeg < 0.0f) yawDeg += 360.0f;
+            uint8_t quadrant = (uint8_t)(((int)((yawDeg + 45.0f) / 90.0f)) & 0x03);
+            // quadrant: 0=sur,1=oeste,2=norte,3=este (mismo cálculo que doorFacing)
+            static const uint8_t quadrantToPistonBits[4] = {3, 4, 2, 5}; // sur,oeste,norte,este
+            pistonFacing = quadrantToPistonBits[quadrant];
+        }
+
+        mcp_chunk_set_block_full(chP, localXP, placeY, localZP, pistonId, pistonFacing);
+        chP->dirty = true;
+        broadcastBlockChange(srv_, placeX, placeY, placeZ, pistonId, pistonFacing);
+        atomikpe::redstone::notifyNeighbors(lvl, srv_, placeX, placeY, placeZ);
+
+        if (!(cfg_.gamemode & 1) && inv_) {
+            int held = inv_->heldSlot();
+            auto cur = inv_->getItem(held);
+            if (!cur.isEmpty()) {
+                if (cur.count > 1) { cur.count -= 1; inv_->setItem(held, cur); }
+                else { inv_->clear(held); }
+            }
+        }
+        return;
     } else if (heldItemId >= 1 && heldItemId <= 255) {
         // Block item — place it directly. data = low 4 bits of heldDamage.
         placedBlockId   = static_cast<uint8_t>(heldItemId);
         placedBlockData = (uint8_t)(heldDamage & 0x0F);
         consumeItem     = !(cfg_.gamemode & 1);  // survival only
+    } else if (heldItemId == 331) {
+        // Redstone dust item -> Redstone Wire block (55).
+        placedBlockId   = 55;
+        placedBlockData = 0;
+        consumeItem     = !(cfg_.gamemode & 1);
     } else if (heldItemId == 325) {
         // Bucket (empty) — no placement.
         return;
@@ -1596,6 +1787,9 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     // Set the block in the chunk.
     mcp_chunk_set_block_full(ch, localX, placeY, localZ, placedBlockId, placedBlockData);
     ch->dirty = true;
+
+    // Redstone: placing a component may connect or power a neighboring circuit.
+    atomikpe::redstone::notifyNeighbors(lvl, srv_, placeX, placeY, placeZ);
 
     // Decrement inventory (only in survival — PMMP skips in creative).
     if (consumeItem && inv_) {
@@ -1906,6 +2100,9 @@ static std::pair<uint16_t, uint16_t> lookupBlockDrop(uint8_t blockId, uint8_t bl
         case 21: return {351, 4};                   // Lapis Ore -> Lapis Lazuli dye
         case 56: return {264, 0};                   // Diamond Ore -> Diamond
         case 73: return {331, 0};                   // Redstone Ore -> Redstone
+        case 55: return {331, 0};                   // Redstone Wire -> Redstone dust
+        case 76: return {75,  0};                   // Redstone Torch (ON) -> OFF item
+        case 124: return {123, 0};                  // Redstone Lamp (ON) -> OFF item
         case 20: return {0,   0};                   // Glass -> no drop
         case 79: return {0,   0};                   // Ice -> no drop
         case 89: return {348, 0};                   // Glowstone -> Glowstone Dust

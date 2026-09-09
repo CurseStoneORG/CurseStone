@@ -1,6 +1,6 @@
 # Atomik
 
-Server software for Minecraft: Pocket Edition 0.15.10 (Bedrock protocol 84), written in C and C++.
+Server software for Minecraft: Pocket Edition 0.15.10 (Protocol 84), written in C and C++.
 
 The codebase follows a strict split: low-level structures (RakNet, NBT, binary I/O, math, chunk data) are plain C, compiled as `-std=c2x`. Game logic (Server, Player, Level, Block, Item, Entity, Event, Command, Scheduler, Inventory) is C++20. The two layers communicate through plain C structs and `extern "C"` boundaries — no inheritance across the boundary, only composition. See `CONTRIBUTING.md` for the exact rules.
 
@@ -13,7 +13,7 @@ cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 ```
 
-The resulting binary is `AtomikPE`. Platform-specific instructions (Linux, Android/Termux, cross-compiling with the NDK) and the GitHub Actions build are documented in `BUILDING.md`.
+The resulting binary is `AtomikPE` for ready to start server
 
 ## Running
 
@@ -27,8 +27,8 @@ If no configuration exists in the working directory, the first-run wizard genera
 
 Two config files are read from the data directory:
 
-- `server.properties` — PMMP-style key/value file, checked first if present.
-- `atomikpe.yml` — the native format, following the `pocketmine.yml` schema.
+- `server.properties` — key/value file, checked first if present.
+- `atomikpe.yml` — the native format
 
 Both are seeded from `resources/` on first run. `server.properties` covers the common settings (port, max players, view distance, gamemode, difficulty, world name/seed); `atomikpe.yml` additionally exposes memory limits and async worker count.
 
