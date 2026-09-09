@@ -418,14 +418,43 @@ uint8_t* mcp_chunk_network_serialize(const mcp_chunk_t* c, size_t* out_len) {
     }
     off += kHeightMap;
 
-    // --- Biome colors: int32 BE per column (R=0x00, G=0x80, B=0x40, A=0x00 = plains green) ---
-    for (int i = 0; i < 256; ++i) {
-        buf[off + 0] = 0x00;  // R
-        buf[off + 1] = 0x80;  // G  
-        buf[off + 2] = 0x40;  // B
-        buf[off + 3] = 0x00;  // unused
-        off += 4;
+    // --- Biome colors: BE uint32 per column = (biomeId<<24)|(R<<16)|(G<<8)|B.
+    // BUG REAL (confirmado contra PMMP: level/format/generic/BaseFullChunk.php
+    // setBiomeId() hace `biomeColors[i] = (biomeColors[i] & 0xFFFFFF) |
+    // (biomeId << 24)` — el ID de bioma va en el BYTE ALTO de este entero
+    // de 4 bytes, y R,G,B van en los 3 bytes bajos, no al revés).
+    //
+    // El código anterior escribía [R=0x00, G=0x80, B=0x40, sin_usar=0x00]
+    // en esos mismos 4 bytes para TODAS las columnas, ignorando el bioma
+    // real de cada una. Leído con el layout correcto, esos bytes son en
+    // realidad [biomeId=0x00, R=0x80, G=0x40, B=0x00] — un marrón/naranja
+    // oscuro (128,64,0), exactamente el color que se veía en el pasto. No
+    // era un problema de terreno ni de generación de altura.
+    //
+    // Fix: byte alto = bioma real de la columna (ya calculado por el
+    // generador y guardado en c->biomes[]); R=G=B=0 en los 3 bytes bajos,
+    // que es lo que PMMP usa como "sin override de color" (su valor por
+    // defecto es 0xFF000000: bioma inválido + RGB en cero) — así el
+    // cliente calcula el tinte verde de pasto/hojas él mismo a partir del
+    // ID de bioma real, con su propia tabla interna de grasscolor/
+    // foliagecolor, en vez de que el servidor le imponga un color fijo.
+    //
+    // Se escribe con índice explícito (x&15)+(z&15)*16 — la MISMA fórmula
+    // que usa mcp_chunk_set_biome()/mcp_chunk_get_biome() — en vez de
+    // depender del orden del loop, para no introducir un desalineado
+    // fila/columna entre lo que el generador guardó y lo que se manda.
+    for (int x = 0; x < 16; ++x) {
+        for (int z = 0; z < 16; ++z) {
+            int idx = (x & 15) + (z & 15) * 16;
+            uint8_t biomeId = c->biomes ? c->biomes[idx] : 1; // 1 = plains si no hay array
+            size_t o = off + (size_t)idx * 4;
+            buf[o + 0] = biomeId;
+            buf[o + 1] = 0;
+            buf[o + 2] = 0;
+            buf[o + 3] = 0;
+        }
     }
+    off += kBiomeCol;
 
     // --- Extra data: LInt32 count = 0 ---
     buf[off + 0] = 0;
