@@ -16,6 +16,7 @@
 //   byte   = nibbles[index >> 1]
 //   low    = (byte & 0x0F) when index is even, high nibble when odd.
 #include "Chunk.h"
+#include "../../block/BlockLightC.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -220,12 +221,29 @@ void mcp_chunk_set_height_map(mcp_chunk_t* c, int x, int z, int32_t h) {
 
 void mcp_chunk_recalculate_height_map(mcp_chunk_t* c) {
     if (!c || !c->height_map) return;
+    // BUG REAL (pasto/mundo negro): esta función marcaba como "techo"
+    // cualquier bloque NO-AIRE (`!= 0`), incluyendo hojas, flores,
+    // hierba alta, carteles, etc. — bloques que en Minecraft NO
+    // bloquean luz de cielo. El heightmap resultante quedaba más alto
+    // de lo real bajo cualquier árbol/planta, y el pase de luz de
+    // cielo (mcp_chunk_propagate_sky_light) usa este heightmap como
+    // punto de partida para saber desde qué Y empieza a decrementar
+    // la luz. Con el heightmap inflado, columnas con cielo
+    // prácticamente abierto (solo una hoja o una flor de por medio)
+    // se calculaban como si estuvieran bajo un techo sólido —
+    // resultado: pasto renderizado negro cerca de cualquier árbol.
+    //
+    // Fix: solo cuenta como "techo" un bloque cuya opacidad de luz
+    // (mcp_block_light_opacity) sea > 0, igual que Minecraft/PMMP
+    // (Block::getLightFilter() > 0). Hojas, agua, vidrio, flores,
+    // etc. son transparentes a la luz (opacidad 0) y ya no cuentan.
     for (int col = 0; col < 256; ++col) {
         int x = col & 15;
         int z = (col >> 4) & 15;
         int32_t h = 0;
         for (int y = 255; y >= 0; --y) {
-            if (mcp_chunk_get_block_id(c, x, y, z) != 0) {
+            uint8_t id = mcp_chunk_get_block_id(c, x, y, z);
+            if (id != 0 && mcp_block_light_opacity(id) > 0) {
                 h = y + 1;
                 break;
             }
@@ -321,6 +339,124 @@ void mcp_chunk_recompute_section_flags(mcp_chunk_t* c) {
     }
 }
 
+// ---------------------------------------------------------------- sky light propagation
+//
+// BUG REAL (mundo/pasto negro): hasta ahora ningún generador calculaba
+// luz de verdad — todos hacían `memset(sky_light, 0xFF, ...)` en cada
+// sección alocada y marcaban light_populated=true. Eso pone luz PLENA
+// (15) en cada bloque de cada sección, incluso bajo piedra sólida o
+// bajo el dosel de un árbol. El cliente MCPE 0.15.x no re-calcula la
+// oclusión por sí solo a partir de sky_light — usa exactamente lo que
+// el servidor le manda. Con luz uniforme en vez de un degradado real,
+// cualquier columna donde el heightmap (ya corregido arriba) todavía
+// marcara "techo" cerca de superficie, y varias combinaciones de
+// vecinos sin luz calculada, terminaban rindiendo negro sólido — el
+// patrón exacto de la screenshot (pasto oscuro pegado a los árboles).
+//
+// Fix: pase real de dos fases, mismo enfoque que
+// SimpleChunkManager::populateSkyLight de PMMP:
+//   Fase 1 (columna): para cada (x,z), luz = 15 desde arriba del
+//     heightmap; al bajar, cada bloque resta su opacidad
+//     (mcp_block_light_opacity) al valor de luz que sigue bajando.
+//   Fase 2 (flood-fill horizontal): la luz de cada bloque también se
+//     copia a sus 4 vecinos horizontales menos (opacidad del vecino +
+//     1), en cola, hasta estabilizar — así la luz se filtra de lado
+//     bajo aleros/ramas en vez de quedar un pilar recto por columna.
+// No toca block_light (luz de antorchas) — eso es un pase aparte que
+// no hace falta para el bug de pasto negro.
+void mcp_chunk_propagate_sky_light(mcp_chunk_t* c) {
+    if (!c) return;
+
+    // --- Fase 1: columna descendente ---
+    for (int x = 0; x < 16; ++x) {
+        for (int z = 0; z < 16; ++z) {
+            int32_t h = mcp_chunk_get_height_map(c, x, z); // primer Y opaco
+            int light = 15;
+            for (int y = 255; y >= 0; --y) {
+                if (y >= h) {
+                    // por encima de la superficie: cielo abierto, luz plena
+                    mcp_chunk_set_sky_light(c, x, y, z, 15);
+                    continue;
+                }
+                uint8_t id = mcp_chunk_get_block_id(c, x, y, z);
+                uint8_t op = mcp_block_light_opacity(id);
+                // Minecraft resta (opacidad, mínimo 1 para que la luz
+                // siga bajando algo incluso a través de "transparentes")
+                // salvo que sea aire puro (opacidad 0 real → no resta).
+                if (id != 0) {
+                    int dec = op > 0 ? op : 1;
+                    light -= dec;
+                    if (light < 0) light = 0;
+                }
+                mcp_chunk_set_sky_light(c, x, y, z, (uint8_t)light);
+                if (light <= 0) {
+                    // ya no hay luz de cielo posible más abajo en esta
+                    // columna por esta fase vertical — la fase 2
+                    // (horizontal) se encarga de rellenar por los
+                    // costados si corresponde.
+                }
+            }
+        }
+    }
+
+    // --- Fase 2: flood-fill horizontal (BFS) para que la luz se
+    // filtre bajo aleros/ramas en vez de quedar en columnas rectas ---
+    // Cola simple de (x,y,z) a revisar. 16*16*256 = 65536 celdas como
+    // máximo, cabe holgado en un buffer fijo del stack/heap.
+    typedef struct { uint8_t x, z; uint16_t y; } LightNode;
+    size_t cap = 16 * 16 * 256;
+    LightNode* queue = (LightNode*)malloc(cap * sizeof(LightNode));
+    if (!queue) return; // sin memoria: nos quedamos con el resultado de la fase 1
+    size_t qhead = 0, qtail = 0;
+
+    // Semilla: toda celda con luz > 1 puede propagar a sus vecinas.
+    for (int x = 0; x < 16; ++x) {
+        for (int z = 0; z < 16; ++z) {
+            for (int y = 0; y < 256; ++y) {
+                if (mcp_chunk_get_sky_light(c, x, y, z) > 1) {
+                    queue[qtail++] = (LightNode){(uint8_t)x, (uint8_t)z, (uint16_t)y};
+                }
+            }
+        }
+    }
+
+    static const int dx[4] = { 1, -1, 0, 0 };
+    static const int dz[4] = { 0, 0, 1, -1 };
+
+    while (qhead < qtail) {
+        LightNode n = queue[qhead++];
+        int lx = n.x, lz = n.z, ly = n.y;
+        uint8_t curLight = mcp_chunk_get_sky_light(c, lx, ly, lz);
+        if (curLight <= 1) continue;
+
+        for (int dir = 0; dir < 4; ++dir) {
+            int nx = lx + dx[dir];
+            int nz = lz + dz[dir];
+            // single-chunk pass: no cruzamos a chunks vecinos (ver
+            // nota en Chunk.h) — solo nos quedamos dentro de 0..15.
+            if (nx < 0 || nx > 15 || nz < 0 || nz > 15) continue;
+
+            uint8_t nid = mcp_chunk_get_block_id(c, nx, ly, nz);
+            uint8_t nop = mcp_block_light_opacity(nid);
+            int dec = nop > 0 ? nop : 1;
+            int candidate = (int)curLight - dec;
+            if (candidate <= 0) continue;
+
+            uint8_t existing = mcp_chunk_get_sky_light(c, nx, ly, nz);
+            if (candidate > existing) {
+                mcp_chunk_set_sky_light(c, nx, ly, nz, (uint8_t)candidate);
+                if (candidate > 1 && qtail < cap) {
+                    queue[qtail++] = (LightNode){(uint8_t)nx, (uint8_t)nz, (uint16_t)ly};
+                }
+            }
+        }
+    }
+
+    free(queue);
+    c->light_populated = true;
+    c->dirty = true;
+}
+
 // ---------------------------------------------------------------- network serialization
 
 // MCPE 0.15.x FullChunkDataPacket payload format (protocol 0x34):
@@ -399,8 +535,27 @@ uint8_t* mcp_chunk_network_serialize(const mcp_chunk_t* c, size_t* out_len) {
     }
     off += kData;
 
-    // --- Sky light: fill with 0xFF (full bright) ---
-    memset(buf + off, 0xFF, kSkyLight);
+    // --- Sky light: real per-column values from mcp_chunk_propagate_sky_light. ---
+    // BUG REAL (mundo/pasto negro): antes esto era un memset(0xFF) fijo
+    // que ignoraba por completo la luz calculada — pisaba cualquier
+    // sombra real con "luz plena en todo". Si el pase de propagación
+    // nunca corrió (light_populated era true sin haber calculado nada
+    // real), el resultado visual dependía de cómo el cliente
+    // interpretaba ese 0xFF uniforme combinado con el heightmap
+    // (antes también roto — ver mcp_chunk_recalculate_height_map),
+    // produciendo negro sólido bajo cualquier dosel de hojas.
+    // Fix: leer mcp_chunk_get_sky_light() real, mismo empaquetado de
+    // nibbles que usa el bloque de "Block data" de arriba.
+    for (int x = 0; x < 16; ++x) {
+        for (int z = 0; z < 16; ++z) {
+            for (int y = 0; y < 128; y += 2) {
+                uint8_t lo = mcp_chunk_get_sky_light(c, x, y, z) & 0x0F;
+                uint8_t hi = mcp_chunk_get_sky_light(c, x, y + 1, z) & 0x0F;
+                uint32_t ci = (uint32_t)((x << 11) | (z << 7) | y);
+                buf[off + (ci >> 1)] = (hi << 4) | lo;
+            }
+        }
+    }
     off += kSkyLight;
 
     // --- Block light: all zeros ---

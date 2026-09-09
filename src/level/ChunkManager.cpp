@@ -57,14 +57,6 @@ mcp_chunk_t* ChunkManager::getChunk(int32_t x, int32_t z) {
     if (generator_) {
         mcp_chunk_t* c = mcp_chunk_new(x, z);
         if (c) {
-            // Fill sky_light with 0xFF for all allocated sections.
-            for (int s = 0; s < 16; ++s) {
-                mcp_chunk_section_t* sec = mcp_chunk_get_or_alloc_section(c, (uint8_t)s);
-                if (sec) {
-                    if (sec->sky_light) memset(sec->sky_light, 0xFF, 2048);
-                    if (sec->block_light) memset(sec->block_light, 0x00, 2048);
-                }
-            }
             // Fill biomes with plains (1) by default.
             for (int bx = 0; bx < 16; ++bx) {
                 for (int bz = 0; bz < 16; ++bz) {
@@ -85,11 +77,18 @@ mcp_chunk_t* ChunkManager::getChunk(int32_t x, int32_t z) {
 
             // Mark as populated + dirty (so it gets saved to disk).
             c->terrain_populated = true;
-            c->light_populated = true;
             c->dirty = true;
 
-            // Recalculate height map after generation.
+            // BUG REAL (mundo/pasto negro): antes de este fix, acá se
+            // hacía memset(sky_light, 0xFF) en las 16 secciones ANTES
+            // de generar terreno, y luego nunca se recalculaba luz de
+            // verdad — solo se marcaba light_populated=true. Fix:
+            // primero heightmap (ya corregido para ignorar hojas/
+            // flores), luego el pase real de propagación de luz, que
+            // reemplaza por completo al memset viejo y deja
+            // light_populated=true por su cuenta.
             mcp_chunk_recalculate_height_map(c);
+            mcp_chunk_propagate_sky_light(c);
 
             setChunk(x, z, c);
             return c;
@@ -102,7 +101,6 @@ mcp_chunk_t* ChunkManager::getChunk(int32_t x, int32_t z) {
     mcp_chunk_t* c = mcp_chunk_new(x, z);
     if (c) {
         c->terrain_populated = true;
-        c->light_populated = true;
         c->dirty = true;
         for (int bx = 0; bx < 16; ++bx) {
             for (int bz = 0; bz < 16; ++bz) {
@@ -112,19 +110,15 @@ mcp_chunk_t* ChunkManager::getChunk(int32_t x, int32_t z) {
                 mcp_chunk_set_block_id(c, bx, 3, bz, 2);  // GRASS
             }
         }
-        for (int s = 0; s < 16; ++s) {
-            mcp_chunk_section_t* sec = mcp_chunk_get_or_alloc_section(c, (uint8_t)s);
-            if (sec) {
-                if (sec->sky_light) memset(sec->sky_light, 0xFF, 2048);
-                if (sec->block_light) memset(sec->block_light, 0x00, 2048);
-            }
-        }
         for (int bx = 0; bx < 16; ++bx) {
             for (int bz = 0; bz < 16; ++bz) {
                 mcp_chunk_set_biome(c, bx, bz, 1);
             }
         }
+        // Same fix as the main generation path above: real heightmap
+        // + real light propagation instead of a flat memset(0xFF).
         mcp_chunk_recalculate_height_map(c);
+        mcp_chunk_propagate_sky_light(c);
         setChunk(x, z, c);
     }
     return c;
