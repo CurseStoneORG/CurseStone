@@ -88,6 +88,22 @@ int32_t mcp_chunk_get_height_map(const mcp_chunk_t* c, int x, int z);
 void    mcp_chunk_set_height_map(mcp_chunk_t* c, int x, int z, int32_t h);
 void    mcp_chunk_recalculate_height_map(mcp_chunk_t* c);
 
+// Real sky-light propagation pass (replaces the old "memset 0xFF and
+// call it done" approach). Must be called AFTER
+// mcp_chunk_recalculate_height_map, since it uses the heightmap to
+// know where open sky starts per column. Fills every column with 15
+// down to the heightmap surface, then decrements by each opaque
+// block's light filter going down, and finally flood-fills sideways
+// so light also wraps under overhangs / around leaves — same
+// algorithm PMMP's SimpleChunkManager::populateSkyLight +
+// updateBlockSkyLight uses (per-column bright-to-heightmap plus a
+// horizontal BFS spread for occluded neighbours). Single-chunk only:
+// does not read neighbouring chunks, so light right at a chunk edge
+// under an overhang from the next chunk over may need a follow-up
+// pass once neighbours are loaded (same limitation PMMP has before
+// its cross-chunk light-populator queue runs).
+void mcp_chunk_propagate_sky_light(mcp_chunk_t* c);
+
 // Tile-entity + entity add/remove. Copies the bytes in (caller still
 // owns the original buffer). Returns 0 on success.
 int mcp_chunk_add_tile_entity (mcp_chunk_t* c, const uint8_t* nbt, size_t len);

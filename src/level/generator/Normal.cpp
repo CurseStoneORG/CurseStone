@@ -92,8 +92,14 @@ void Normal::generate(GenerationContext& ctx) {
         }
     }
     c->terrain_populated = true;
-    c->light_populated = true;
     c->dirty = true;
+    // NO calcular luz acá todavía: populate() (PopulatorTree, etc.)
+    // todavía va a agregar árboles/hojas después de generate(). Si
+    // calculáramos luz ahora, quedaría desactualizada apenas se
+    // agreguen las hojas — exactamente el bug del pasto negro bajo
+    // árboles. El heightmap + pase real de luz corren en el llamador
+    // (GenerationTask.h / ChunkManager.cpp) DESPUÉS de generate() Y
+    // populate(), una sola vez, con el chunk ya completo.
 }
 void Normal::populate(GenerationContext& ctx) {
     for (auto& p : populators_) p->populate(ctx);
