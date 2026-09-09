@@ -13,6 +13,8 @@
 #include "level/format/ChunkAdapter.h"
 #include "level/format/ChunkSection.h"
 #include "level/generator/Generator.h"
+#include "level/generator/GenerationTask.h"
+#include "scheduler/AsyncPool.h"
 #include "ChunkManager.h"
 #include <string.h>
 
@@ -126,6 +128,64 @@ mcp_chunk_t* ChunkManager::getChunk(int32_t x, int32_t z) {
         setChunk(x, z, c);
     }
     return c;
+}
+
+mcp_chunk_t* ChunkManager::getChunkOrRequestAsync(int32_t x, int32_t z, scheduler::AsyncPool* pool) {
+    // Already in memory (loaded from disk earlier, or a previous async
+    // generation already completed) — return immediately, no blocking.
+    if (mcp_chunk_t* c = getChunkIfLoaded(x, z)) return c;
+
+    // No pool (or no generator) available — fall back to the old
+    // synchronous path rather than returning nullptr forever. This
+    // keeps single-threaded builds / early boot / tests working.
+    if (!pool || !generator_) return getChunk(x, z);
+
+    ChunkKey key{x, z};
+    {
+        std::lock_guard<std::mutex> lk(pending_mtx_);
+        if (pending_.count(key)) return nullptr;   // already in flight
+        pending_.insert(key);
+    }
+
+    // Try disk first — cheap enough to do on the calling (main) thread;
+    // only actual terrain generation goes to a worker.
+    if (provider_) {
+        auto loaded = provider_->loadChunk(x, z);
+        if (loaded.has_value()) {
+            std::shared_ptr<format::FullChunk>& fc = loaded.value();
+            auto* adapter = dynamic_cast<format::ChunkAdapter*>(fc.get());
+            if (adapter && adapter->chunk()) {
+                mcp_chunk_t* raw = adapter->releaseChunk();
+                if (raw) {
+                    setChunk(x, z, raw);
+                    std::lock_guard<std::mutex> lk(pending_mtx_);
+                    pending_.erase(key);
+                    return raw;
+                }
+            }
+        }
+    }
+
+    int64_t seed = provider_ ? provider_->getSeed() : 0;
+    auto task = std::make_shared<generator::GenerationTask>(
+        generator_, x, z, seed,
+        [this, key](mcp_chunk_t* c) {
+            // GenerationTask::run() already filled light/biome defaults
+            // and ran generate()+populate() before calling us — just
+            // hand the finished chunk to the map (thread-safe on its
+            // own) and clear the in-flight marker.
+            if (c) setChunk(c->x, c->z, c);
+            std::lock_guard<std::mutex> lk(pending_mtx_);
+            pending_.erase(key);
+        });
+
+    if (!pool->submit([task]{ task->run(); })) {
+        // Pool refused (shutting down) — undo the pending mark so we
+        // don't leak the slot; caller will just see nullptr this tick.
+        std::lock_guard<std::mutex> lk(pending_mtx_);
+        pending_.erase(key);
+    }
+    return nullptr;
 }
 
 void ChunkManager::setChunk(int32_t x, int32_t z, mcp_chunk_t* chunk) {

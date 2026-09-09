@@ -6,11 +6,13 @@
 #include "level/format/Chunk.h"
 #include "level/format/LevelProvider.h"
 #include <unordered_map>
+#include <unordered_set>
 #include <memory>
 #include <mutex>
 #include <vector>
 #include <utility>
 namespace atomikpe::level::generator { class Generator; }
+namespace atomikpe::scheduler { class AsyncPool; }
 
 namespace atomikpe::level {
 
@@ -20,6 +22,20 @@ public:
     ~ChunkManager();
     mcp_chunk_t* getChunkIfLoaded(int32_t x, int32_t z) const;
     mcp_chunk_t* getChunk(int32_t x, int32_t z);
+
+    // Non-blocking chunk fetch used by the per-player streaming path
+    // (Player::onUpdate). Never generates on the calling thread:
+    //   - if the chunk is already in memory, returns it immediately.
+    //   - otherwise, if a generation request for (x,z) isn't already
+    //     in flight, submits one to `pool` (runs generate()+populate()
+    //     on a worker thread, per Generator's "stateless w.r.t. main
+    //     thread" contract) and returns nullptr right away.
+    //   - if a request IS already in flight, just returns nullptr
+    //     again (no duplicate work submitted).
+    // The caller should treat nullptr as "not ready yet, try again
+    // next tick" rather than as a permanent miss.
+    mcp_chunk_t* getChunkOrRequestAsync(int32_t x, int32_t z, scheduler::AsyncPool* pool);
+
     void setChunk(int32_t x, int32_t z, mcp_chunk_t* chunk);
     void markDirty(int32_t x, int32_t z);
     int flushDirty();
@@ -67,5 +83,13 @@ private:
     std::unordered_map<ChunkKey, mcp_chunk_t*, ChunkKeyHash> chunks_;
     std::shared_ptr<format::LevelProvider> provider_;
     std::shared_ptr<generator::Generator> generator_;
+
+    // Coordinates currently being generated on an AsyncPool worker,
+    // so getChunkOrRequestAsync() doesn't submit the same chunk twice
+    // while it's still in flight. Guarded by pending_mtx_ (separate
+    // from mtx_ since the worker thread touches chunks_ via setChunk()
+    // — which takes mtx_ itself — right before it clears this set).
+    mutable std::mutex pending_mtx_;
+    std::unordered_set<ChunkKey, ChunkKeyHash> pending_;
 };
 } // namespace

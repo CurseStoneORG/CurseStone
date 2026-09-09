@@ -133,12 +133,12 @@ public:
     // ----- Chunk memory eviction -----
     // Snapshot of one connected player's position for the unload sweep
     // below: which chunk they're standing in, and how far out they can
-    // actually see. `view_radius` is a RADIUS (Chebyshev distance), not
-    // Player::viewDistance()'s raw config value — see the note on
-    // buildChunkSpiral() in Player.cpp: despite the name, that config
-    // value is closer to a diameter (buildChunkSpiral(vd) only ever
-    // reaches |dx|,|dz| up to vd/2). Server::tick() is responsible for
-    // passing viewDistance()/2, not the raw config number.
+    // actually see. `view_radius` is a RADIUS (Chebyshev distance) that
+    // now matches Player::viewDistance()'s raw config value directly —
+    // buildChunkSpiral() in Player.cpp was fixed to treat its argument
+    // as a true per-axis radius (previously it silently reached only
+    // vd/2, which Server::tick() had to compensate for by halving the
+    // value it passed here; that compensation is gone now).
     struct ChunkViewer { int32_t cx, cz, view_radius; };
 
     // Frees the in-memory copy of any loaded chunk that sits outside
