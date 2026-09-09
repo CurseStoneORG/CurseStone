@@ -12,7 +12,7 @@
 // `blocks` array directly into the on-disk format without conversion.
 //
 // Nibble packing for data/sky_light/block_light:
-//   index  = (x & 15) | ((z & 15) << 4) | ((y & 15) << 7)  // 2048 entries
+//   index  = (x & 15) | ((z & 15) << 4) | ((y & 15) << 8)  // 4096 entries, 2048 bytes
 //   byte   = nibbles[index >> 1]
 //   low    = (byte & 0x0F) when index is even, high nibble when odd.
 #include "Chunk.h"
@@ -33,9 +33,24 @@ static inline uint32_t block_index(int x, int y, int z) {
     return (uint32_t)((x & 15) | ((z & 15) << 4) | ((y & 15) << 8));
 }
 
-// Nibble index for the 2048-byte data/sky/blocklight arrays.
+// Nibble index for the 2048-byte data/sky/blocklight arrays (4096
+// nibbles packed 2-per-byte).
+//
+// BUG REAL (chunks/luz corrupta): esto desplazaba `y` solo 7 bits en
+// vez de 8. z ocupa los bits 4-7 (4 bits, z=0..15) y con el shift de
+// y en 7, el bit más alto de z (que marca z>=8) y el bit más bajo de
+// y&15 (que marca "y impar dentro de la sección") caían en el MISMO
+// bit del índice. Resultado: (x, z=0, y) y (x, z=8, y) con el mismo
+// y&15 impar colisionaban en el mismo byte físico — una escritura
+// legítima en una celda pisaba silenciosamente el valor de otra
+// celda completamente distinta, dependiendo del orden de escritura.
+// Esto se veía como luz de cielo "corrupta" (15 recién escrito que
+// aparecía en 0 poco después) y como franjas negras alineadas con
+// z=8 (la mitad del chunk) en el render. block_index() de arriba ya
+// hace esto bien (shift de 8, sin solapamiento) — nibble_index solo
+// necesita el mismo esquema, reservando 4 bits limpios por eje.
 static inline uint32_t nibble_index(int x, int y, int z) {
-    return (uint32_t)((x & 15) | ((z & 15) << 4) | ((y & 15) << 7));
+    return (uint32_t)((x & 15) | ((z & 15) << 4) | ((y & 15) << 8));
 }
 
 static inline uint8_t get_nibble(const uint8_t* arr, int x, int y, int z) {
@@ -170,7 +185,15 @@ void mcp_chunk_set_block_data(mcp_chunk_t* c, int x, int y, int z, uint8_t data)
 uint8_t mcp_chunk_get_sky_light(const mcp_chunk_t* c, int x, int y, int z) {
     if (!c || y < 0 || y > 255) return 0;
     const mcp_chunk_section_t* s = c->sections[y >> 4];
-    return get_nibble(s ? s->sky_light : NULL, x, y, z);
+    if (s) return get_nibble(s->sky_light, x, y, z);
+    // Sección no alocada: en la práctica esto solo pasa para aire
+    // puro por encima de la superficie más alta del chunk. Cualquier
+    // sección que tenga un bloque real ya fue alocada al colocarlo
+    // (mcp_chunk_set_block_id/_full), y mcp_chunk_propagate_sky_light
+    // aloca explícitamente toda sección dentro de [0, maxTop] del
+    // chunk — así que "sección NULL" siempre implica cielo abierto,
+    // nunca terreno sin iluminar. Cielo abierto = luz plena.
+    return 15;
 }
 
 void mcp_chunk_set_sky_light(mcp_chunk_t* c, int x, int y, int z, uint8_t v) {
@@ -367,12 +390,38 @@ void mcp_chunk_recompute_section_flags(mcp_chunk_t* c) {
 void mcp_chunk_propagate_sky_light(mcp_chunk_t* c) {
     if (!c) return;
 
-    // --- Fase 1: columna descendente ---
+    // BUG REAL (chunks que no renderizan): la versión anterior barría
+    // y de 255 a 0 para las 256 columnas, en las tres fases (columna,
+    // semilla del BFS y el propio BFS). Eso fuerza
+    // mcp_chunk_get_or_alloc_section() a alocar las 16 secciones de
+    // CADA chunk generado, incluidas las que están completamente
+    // vacías (puro cielo muy por encima de cualquier bloque) — solo
+    // para volver a escribirles el mismo 15 que ya traen por defecto
+    // (mcp_section_new ya inicializa sky_light a 0xFF). Multiplicado
+    // por todos los chunks visibles generándose a la vez, esto
+    // encarece tanto la generación async que algunos chunks llegan
+    // tarde o ni llegan al cliente — que los pinta como huecos negros.
+    //
+    // Fix: acotar las tres fases a [0, maxTop], donde maxTop es la
+    // columna más alta de TODO el chunk (no la de cada columna
+    // individual — necesitamos ese margen para que la sombra lateral
+    // bajo un árbol/estructura vecina se calcule bien). Por encima de
+    // maxTop no hay un solo bloque en ningún (x,z) de este chunk, así
+    // que ninguna sección de ahí necesita existir: mcp_chunk_get_sky_light
+    // ya devuelve 15 para una sección no alocada.
+    int32_t maxTop = 0;
+    for (int col = 0; col < 256; ++col) {
+        int32_t h = c->height_map ? c->height_map[col] : 0;
+        if (h > maxTop) maxTop = h;
+    }
+    if (maxTop > 255) maxTop = 255;
+
+    // --- Fase 1: columna descendente (solo hasta maxTop) ---
     for (int x = 0; x < 16; ++x) {
         for (int z = 0; z < 16; ++z) {
             int32_t h = mcp_chunk_get_height_map(c, x, z); // primer Y opaco
             int light = 15;
-            for (int y = 255; y >= 0; --y) {
+            for (int y = maxTop; y >= 0; --y) {
                 if (y >= h) {
                     // por encima de la superficie: cielo abierto, luz plena
                     mcp_chunk_set_sky_light(c, x, y, z, 15);
@@ -401,10 +450,11 @@ void mcp_chunk_propagate_sky_light(mcp_chunk_t* c) {
 
     // --- Fase 2: flood-fill horizontal (BFS) para que la luz se
     // filtre bajo aleros/ramas en vez de quedar en columnas rectas ---
-    // Cola simple de (x,y,z) a revisar. 16*16*256 = 65536 celdas como
-    // máximo, cabe holgado en un buffer fijo del stack/heap.
+    // Cola simple de (x,y,z) a revisar, acotada a [0, maxTop] — por
+    // encima de maxTop no hay nada que propagar (todo ya es 15).
     typedef struct { uint8_t x, z; uint16_t y; } LightNode;
-    size_t cap = 16 * 16 * 256;
+    size_t cap = (size_t)16 * 16 * (size_t)(maxTop + 1);
+    if (cap == 0) cap = 1;
     LightNode* queue = (LightNode*)malloc(cap * sizeof(LightNode));
     if (!queue) return; // sin memoria: nos quedamos con el resultado de la fase 1
     size_t qhead = 0, qtail = 0;
@@ -412,7 +462,7 @@ void mcp_chunk_propagate_sky_light(mcp_chunk_t* c) {
     // Semilla: toda celda con luz > 1 puede propagar a sus vecinas.
     for (int x = 0; x < 16; ++x) {
         for (int z = 0; z < 16; ++z) {
-            for (int y = 0; y < 256; ++y) {
+            for (int y = 0; y <= maxTop; ++y) {
                 if (mcp_chunk_get_sky_light(c, x, y, z) > 1) {
                     queue[qtail++] = (LightNode){(uint8_t)x, (uint8_t)z, (uint16_t)y};
                 }
@@ -517,14 +567,16 @@ uint8_t* mcp_chunk_network_serialize(const mcp_chunk_t* c, size_t* out_len) {
                 uint8_t lo = 0, hi = 0;
                 const mcp_chunk_section_t* s = c->sections[y >> 4];
                 if (s && s->data) {
-                    uint32_t ni = (uint32_t)((x & 15) | ((z & 15) << 4) | ((y & 15) << 7));
+                    // Mismo empaquetado que nibble_index() arriba — shift
+                    // de 8, no de 7 (ver el fix de nibble_index).
+                    uint32_t ni = (uint32_t)((x & 15) | ((z & 15) << 4) | ((y & 15) << 8));
                     lo = (s->data[ni >> 1] >> ((ni & 1) << 2)) & 0x0F;
                 }
                 {
                     int y2 = y + 1;
                     const mcp_chunk_section_t* s2 = c->sections[y2 >> 4];
                     if (s2 && s2->data) {
-                        uint32_t ni = (uint32_t)((x & 15) | ((z & 15) << 4) | ((y2 & 15) << 7));
+                        uint32_t ni = (uint32_t)((x & 15) | ((z & 15) << 4) | ((y2 & 15) << 8));
                         hi = (s2->data[ni >> 1] >> ((ni & 1) << 2)) & 0x0F;
                     }
                 }
