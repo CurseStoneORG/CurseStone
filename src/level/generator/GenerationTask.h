@@ -16,8 +16,61 @@ public:
     GenerationTask(std::shared_ptr<Generator> gen, int32_t x, int32_t z, int64_t seed, DoneCallback done)
         : gen_(std::move(gen)), x_(x), z_(z), seed_(seed), done_(std::move(done)) {}
     void run() {
+        // FIX (chunks que nunca se renderizan): TODO el cuerpo de abajo
+        // corre en un worker thread de AsyncPool. Si generate()/populate()
+        // del generador lanza una excepción en ALGÚN chunk puntual (ej.
+        // un populator de árboles/cuevas/minerales que se sale de rango
+        // en un borde de chunk), AsyncPool::runOne() atrapa esa excepción
+        // para no tumbar el proceso — pero eso corta run() ANTES de
+        // llegar a done_(c). Y done_ es el ÚNICO lugar donde
+        // ChunkManager::getChunkOrRequestAsync() borra la entrada
+        // 'pending_' de ese chunk. Sin ese erase, pending_.count(key)
+        // sigue devolviendo true para siempre → ese chunk nunca se
+        // vuelve a pedir → agujero permanente en el mundo, solo en los
+        // chunks donde el generador falló (por eso "a veces" y no
+        // siempre). Fix: atrapar la excepción ACÁ, generar un chunk
+        // plano de emergencia (mismo patrón que el fallback síncrono de
+        // ChunkManager::getChunk) y garantizar que done_() se llame
+        // siempre, éxito o no, para que pending_ se libere y el chunk
+        // deje de estar "en vuelo" para siempre.
+        mcp_chunk_t* partial = nullptr;
+        try {
+            runInner(partial);
+        } catch (const std::exception& e) {
+            // 'partial' es el chunk que runInner ya había allocado antes
+            // de que generate()/populate() explotara — liberarlo para no
+            // perder esa memoria en cada reintento del chunk.
+            if (partial) mcp_chunk_destroy(partial);
+            done_(makeEmergencyChunk(e.what()));
+        } catch (...) {
+            if (partial) mcp_chunk_destroy(partial);
+            done_(makeEmergencyChunk("unknown exception"));
+        }
+    }
+private:
+    mcp_chunk_t* makeEmergencyChunk(const char* reason) {
+        mcp_chunk_t* c = mcp_chunk_new(x_, z_);
+        if (!c) return nullptr;
+        for (int bx = 0; bx < 16; ++bx) {
+            for (int bz = 0; bz < 16; ++bz) {
+                mcp_chunk_set_block_id(c, bx, 0, bz, 7);  // BEDROCK
+                mcp_chunk_set_block_id(c, bx, 1, bz, 3);  // DIRT
+                mcp_chunk_set_block_id(c, bx, 2, bz, 3);  // DIRT
+                mcp_chunk_set_block_id(c, bx, 3, bz, 2);  // GRASS
+                mcp_chunk_set_biome(c, bx, bz, 1);
+            }
+        }
+        c->terrain_populated = true;
+        c->dirty = true;
+        mcp_chunk_recalculate_height_map(c);
+        mcp_chunk_propagate_sky_light(c);
+        (void)reason; // motivo queda solo para logging futuro si se agrega logger aquí
+        return c;
+    }
+    void runInner(mcp_chunk_t*& partial_out) {
         mcp_chunk_t* c = mcp_chunk_new(x_, z_);
         if (!c) { done_(nullptr); return; }
+        partial_out = c;   // visible al catch de run() si algo de abajo explota
 
         // Defensive default biome (plains) in case the generator
         // doesn't set its own (Normal/Flat both do, but this keeps
