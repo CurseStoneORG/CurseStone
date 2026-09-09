@@ -399,6 +399,33 @@ void Player::setGamemode(int gm) {
     if (was_creative != is_creative || new_gm == 3) {
         sendCreativeInventory();
     }
+    // BUG FIX ("items disappear when switching gamemode"): the block
+    // above only refreshes the read-only creative CATALOG (windowid
+    // SPECIAL_CREATIVE) — it never touches the player's actual
+    // inventory (main/hotbar/armor). Every real item move (dragging
+    // from the creative catalog, moving items around) is confirmed
+    // one slot at a time via ContainerSetSlotPacket on the same
+    // unordered channel that SetPlayerGameTypePacket/
+    // AdventureSettingsPacket go out on right after this call (see
+    // GamemodeCommand.cpp). If any of those land out of order or the
+    // client's UI rebuild (triggered by the mode-switch packet) races
+    // ahead of the last slot confirmation, the client is left
+    // displaying a stale picture — some slots got their confirmation,
+    // others didn't, so a handful of items appear to "vanish" while
+    // the rest survive. Forcing a full, authoritative resync of main
+    // inventory + armor + hotbar right here — same as what already
+    // happens once at doFirstSpawn() — guarantees the client always
+    // ends a mode switch showing exactly what the server has, instead
+    // of whatever partial state survived the race.
+    // Guarded on spawned_: setGamemode() also runs during handleLogin()
+    // (loading playerGameType from NBT) BEFORE StartGamePacket/
+    // PlayStatus have even been sent — sending inventory packets that
+    // early, ahead of the login handshake, would confuse the client
+    // the same way the ordered=true fixes elsewhere in this file exist
+    // to prevent.
+    if (spawned_.load(std::memory_order_relaxed)) {
+        sendInventory();
+    }
 }
 
 // ============================================================
@@ -2344,9 +2371,19 @@ void Player::saveData() {
         (int64_t)mcp_utils_time_ms());
 
     // --- Inventory + Armor as a single ListTag<CompoundTag> ---
+    // BUG FIX: this loop used to stop at PlayerInventory::SIZE (36),
+    // which by design EXCLUDES the 4 armor slots (see the comment on
+    // PlayerInventory::getSize() — "NOT including armor. The underlying
+    // storage has 40 slots"). Armor lives at indices SIZE..SIZE+3
+    // (36..39) in the same underlying slots_ map, so the `if (slot >=
+    // ARMOR_OFFSET ...)` remap right below was dead code — the loop
+    // never reached that range, so equipped armor was silently dropped
+    // on every save (disconnect, autosave, /gamemode-triggered save)
+    // and players would come back with an empty armor slot every time.
+    // Loop over the full 40-slot storage (PLAYER_INV_TOTAL) instead.
     mcp_tag_t* inv_list = mcp_list_tag_new_named("Inventory", MCP_TAG_COMPOUND);
     if (inv_list && inv_) {
-        for (int slot = 0; slot < inventory::PlayerInventory::SIZE; ++slot) {
+        for (int slot = 0; slot < inventory::PLAYER_INV_TOTAL; ++slot) {
             auto it = inv_->getItem(slot);
             if (it.isEmpty()) continue;
             int nbt_slot = slot;
