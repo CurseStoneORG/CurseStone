@@ -47,9 +47,31 @@ void Normal::generate(GenerationContext& ctx) {
 
     for (int x = 0; x < 16; ++x) {
         for (int z = 0; z < 16; ++z) {
-            double wx = (ctx.chunk_x * 16 + x) * 0.0125;
-            double wz = (ctx.chunk_z * 16 + z) * 0.0125;
-            double n = mcp_simplex_fbm2d(height_noise_, wx, wz, 4, 0.5, 2.0);
+            // FIX (reporte de usuario: "el pasto se ve rojo/marron"):
+            // no era un bug de color — los ids de bioma ya eran
+            // correctos y el cliente sí tinta el pasto de verde en la
+            // cara superior. Lo que se veía marrón era la cara LATERAL
+            // del bloque de pasto (textura de tierra), expuesta en
+            // exceso porque el ruido de altura anterior (frecuencia
+            // 0.0125, 4 octavas, persistencia 0.5) generaba muchísimo
+            // detalle de pequeña escala: la altura podía cambiar varios
+            // bloques entre columnas vecinas, produciendo laderas en
+            // escalón muy abruptas en vez de colinas onduladas. Cuanto
+            // más empinada la ladera, más superficie lateral (marrón) y
+            // menos superficie superior (verde) queda visible desde
+            // lejos — exactamente el efecto de la captura.
+            //
+            // Ajuste: frecuencia base más baja (colinas grandes y
+            // suaves) + menos octavas y menor persistencia (se reduce
+            // el detalle de alta frecuencia que causaba los escalones
+            // de un solo bloque). Sigue siendo ruido continuo muestreado
+            // por columna con coordenadas absolutas del mundo, así que
+            // no hay costura entre chunks — no se puede usar un
+            // suavizado por promedio de vecinos aquí porque cada chunk
+            // se genera sin ver los bloques del chunk vecino.
+            double wx = (ctx.chunk_x * 16 + x) * 0.008;
+            double wz = (ctx.chunk_z * 16 + z) * 0.008;
+            double n = mcp_simplex_fbm2d(height_noise_, wx, wz, 3, 0.35, 2.0);
             int h = 64 + (int)((n + 1.0) * 18.0);  // 28..100
             uint8_t top = 2, dirt = 3, biome = biome_at(x, z);
             if (biome == 2) { top = 12; dirt = 12; }    // desert: sand
