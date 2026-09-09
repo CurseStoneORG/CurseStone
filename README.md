@@ -1,6 +1,6 @@
-# AtomikPE
+# Atomik
 
-**AtomikPE** is a server software writed in c and c++ for minecraft pocket edition 0.15.10 legacy.
+**Atomik** is a server software writed in c and c++ for minecraft pocket edition 0.15.10 legacy.
 
 - **Version:** MCPE/Bedrock protocol **84** (Minecraft **0.15.10**)
 - **Languages:** C20 (`-std=c2x`) for RakLib / NBT / Binary / math / chunk
