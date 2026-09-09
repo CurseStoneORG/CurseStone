@@ -1,134 +1,84 @@
 # Atomik
 
-**Atomik** is a server software writed in c and c++ for minecraft pocket edition 0.15.10 legacy.
+Server software for Minecraft: Pocket Edition 0.15.10 (Bedrock protocol 84), written in C and C++.
 
-- **Version:** MCPE/Bedrock protocol **84** (Minecraft **0.15.10**)
-- **Languages:** C20 (`-std=c2x`) for RakLib / NBT / Binary / math / chunk
-  data structs, C++20 (`-std=c++20`) for game logic (Server, Player, Level,
-  Block, Item, Entity, Event, Command, Scheduler, Inventory)
-- **No plugin system** (yet)
-- **No mob AI** (entities exist as data structs only, no pathfinding)
-- **Cross-platform:** Linux, macOS, Windows (MSVC + MinGW), Android NDK r26+
+The codebase follows a strict split: low-level structures (RakNet, NBT, binary I/O, math, chunk data) are plain C, compiled as `-std=c2x`. Game logic (Server, Player, Level, Block, Item, Entity, Event, Command, Scheduler, Inventory) is C++20. The two layers communicate through plain C structs and `extern "C"` boundaries — no inheritance across the boundary, only composition. See `CONTRIBUTING.md` for the exact rules.
+
+Supported platforms: Linux, macOS, Windows (MSVC and MinGW), and Android via NDK r26+.
 
 ## Building
 
-```bash
-mkdir build && cd build
-cmake ..
-cmake --build . -j$(nproc)
+```
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel
 ```
 
-The resulting executable is `AtomikPE`. It reads its configuration from
-`resources/atomikpe.yml` (relative to the working directory).
+The resulting binary is `AtomikPE`. Platform-specific instructions (Linux, Android/Termux, cross-compiling with the NDK) and the GitHub Actions build are documented in `BUILDING.md`.
 
 ## Running
 
-```bash
-chmod +x AtomikPE
+```
 ./AtomikPE
 ```
 
-On first launch the installer wizard (Phase 22) will offer to generate
-a default `atomikpe.yml` and a fresh world. After setup the server
-binds UDP 19132 by default and accepts RakNet/MCPE connections.
+If no configuration exists in the working directory, the first-run wizard generates one and creates a fresh world. The server binds UDP `19132` by default.
+
+## Configuration
+
+Two config files are read from the data directory:
+
+- `server.properties` — PMMP-style key/value file, checked first if present.
+- `atomikpe.yml` — the native format, following the `pocketmine.yml` schema.
+
+Both are seeded from `resources/` on first run. `server.properties` covers the common settings (port, max players, view distance, gamemode, difficulty, world name/seed); `atomikpe.yml` additionally exposes memory limits and async worker count.
 
 ## Project layout
 
 ```
-AtomikPE/
-├── CMakeLists.txt
-├── README.md
-├── .gitignore
-├── docs/                          # Protocol 84 + mcacpp format specs
-├── cmake/                         # Platform toolchain files
-├── resources/                     # Server-side assets
-│   ├── creativeitems.json         # Copied from PocketMine-MP 4.0.0
-│   ├── recipes.json               # Copied from PocketMine-MP 4.0.0
-│   ├── atomikpe.yml            # Main config
-│   ├── eng.ini                    # English locale
-│   └── biome_definitions.json     # Biome data
-└── src/
-    ├── main.h                     # Global header / forward decls
-    ├── main.cpp                   # Entry point
-    ├── Server.{h,cpp}             # Core singleton + tick loop
-    ├── Player.{h,cpp}             # Player session
-    ├── IPlayer.h
-    ├── OfflinePlayer.{h,cpp}
-    ├── MemoryManager.{h,cpp}
-    ├── CrashDump.{h,cpp}
-    ├── ThreadManager.{h,cpp}
-    ├── block/                     # 40+ block classes
-    ├── item/                      # 80+ item classes
-    │   └── enchantment/
-    ├── entity/                    # 25+ entity classes (no AI)
-    ├── inventory/                 # Inventory + crafting
-    ├── event/                     # Event system
-    ├── command/                   # Built-in commands
-    │   └── defaults/
-    ├── level/                     # World + chunk formats
-    │   ├── format/
-    │   │   ├── mcacpp/            # Default AtomikPE format
-    │   │   ├── leveldb/            # MCPE native format
-    │   │   ├── mca/                # Java Anvil .mca
-    │   │   └── mcapm/             # MCAPM variant
-    │   ├── generator/
-    │   │   ├── biome/
-    │   │   ├── noise/
-    │   │   ├── object/
-    │   │   └── populator/
-    │   ├── particle/
-    │   └── sound/
-    ├── network/                   # Network stack
-    │   ├── raklib/                # Pure-C RakNet
-    │   ├── protocol/              # 65 MCPE protocol-84 packets
-    │   ├── query/                 # GS4 query handler
-    │   └── rcon/                  # RCON listener
-    ├── nbt/                       # NBT reader/writer
-    │   └── tag/
-    ├── math/                      # Vector + AABB
-    ├── permission/                # Permissions + ban list
-    ├── scheduler/                 # Tick scheduler + async pool
-    ├── tile/                      # Block entities (chest/furnace/sign)
-    ├── utils/                     # Logger, BinaryStream, Config, etc.
-    └── wizard/                    # First-run setup
+src/
+├── Server.{h,cpp}        server singleton and tick loop
+├── Player.{h,cpp}        player session and packet handling
+├── OfflinePlayer, IPlayer, MemoryManager, CrashDump, ThreadManager
+├── block/                block types
+├── item/                 item types, enchantments
+├── entity/               entity data (no pathfinding/AI)
+├── tile/                 block entities: chest, furnace, sign, ...
+├── inventory/            inventories and crafting
+├── event/                event bus
+├── command/defaults/     built-in commands
+├── permission/           permission attachments and ban list
+├── scheduler/            tick scheduler and async worker pool
+├── level/
+│   ├── format/           world storage: anvil, leveldb
+│   └── generator/        terrain, biomes, noise, populators
+├── network/
+│   ├── raklib/           RakNet implementation (C)
+│   ├── protocol/         MCPE protocol 84 packets
+│   ├── query/            GS4 query
+│   └── rcon/             RCON
+├── nbt/                  NBT reader/writer
+├── math/                 vector and AABB
+├── logger/               async logging
+├── workbench/            runtime diagnostics (see below)
+├── utils/                config, binary streams, misc helpers
+└── wizard/               first-run setup
 ```
 
-## World format
+## World storage
 
-The default world format is **mcacpp** — a region-file format inspired by
-Minecraft Java's `.mca` but tailored for MCPE chunks. The format is
-specified in `docs/MCACPP_FORMAT.md`. Other selectable formats (via
-`level.format` in `atomikpe.yml`): `leveldb`, `mca`, `mcapm`.
+Worlds are stored in either format, selected via `level-format` / `level.format`:
 
-## Implementation status
+- `anvil` — default. Region-file format based on Minecraft Java's `.mca`, adapted for MCPE chunks.
+- `leveldb` — Bedrock's native format ( beta )
 
-All 22 build phases complete:
+## Diagnostics
 
-| Phase | Module                          | Status       |
-|-------|---------------------------------|--------------|
-| 01    | skeleton (main, CMake, README)  | ✅ done      |
-| 02    | utils (Binary, Logger, Config)  | ✅ done      |
-| 03    | math (Vector, AABB)             | ✅ done      |
-| 04    | nbt (all tag types + reader)    | ✅ done      |
-| 05    | raklib (UDP + Session + ACK)    | ✅ done      |
-| 06    | protocol (all 65 packets)        | ✅ done      |
-| 07    | network (Network, RakLibIface)  | ✅ done      |
-| 08    | level/format (mcacpp, leveldb)  | ✅ done      |
-| 09    | level/generator (noise, biomes)| ✅ done      |
-| 10    | level (Level, ChunkManager)     | ✅ done      |
-| 11    | block (40+ blocks)              | ✅ done      |
-| 12    | item (80+ items + enchantment)  | ✅ done      |
-| 13    | entity (Player, mobs, proj)     | ✅ done      |
-| 14    | tile (chest, furnace, sign)     | ✅ done      |
-| 15    | inventory (45 slots, recipes)   | ✅ done      |
-| 16    | event (player/block/entity)     | ✅ done      |
-| 17    | command (13 defaults)           | ✅ done      |
-| 18    | permission (perm, bans)         | ✅ done      |
-| 19    | scheduler (AsyncPool, Tasks)    | ✅ done      |
-| 20    | Player (session lifecycle)      | ✅ done      |
-| 21    | Server (tick loop, full boot)   | ✅ done      |
-| 22    | wizard (first-run installer)    | ✅ done      |
+`workbench/` is a runtime profiler built into the server, controlled with `/workbench start|stop|report|status`. It tracks live TPS, per-phase tick timing, in/out packet logs, RakNet send/retransmit counters, a watchdog thread for detecting main-thread stalls, and a state dump on player disconnects. Intended for debugging performance issues and disconnects without attaching an external profiler.
+
+## Contributing
+
+Coding conventions (C/C++ boundary rules, naming, protocol notes) are in `CONTRIBUTING.md`.
 
 ## License
 
-LGPL-3.0-or-later, mirroring PocketMine-MP.
+LGPL-3.0-or-later.
