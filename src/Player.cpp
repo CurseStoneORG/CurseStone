@@ -945,13 +945,28 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
 // streaming happens in onUpdate() at MAX_CHUNKS_PER_TICK=4 per tick.
 // ============================================================
 
+// Vanilla-style square spiral: `radius` is now a real per-axis radius,
+// not the old "vd*vd total points" size. This produces every offset in
+// [-radius, radius] on both axes — (2*radius+1)^2 points total — same
+// shape vanilla/PMMP use for view-distance, ordered center-outward so
+// the closest (most important) chunks are generated/sent first.
+//
+// FIX (see chat diagnosis): the previous version took `vd` as the TOTAL
+// point count and looped `i < vd*vd`, which only ever reached about
+// vd/2 chunks out on each axis — half the configured view-distance,
+// and Server.cpp had to compensate with a hardcoded `viewDistance()/2`
+// for the unload sweep. That compensation is removed now that this
+// returns a true radius.
 std::vector<std::pair<int32_t,int32_t>>
-Player::buildChunkSpiral(int vd) {
+Player::buildChunkSpiral(int radius) {
     std::vector<std::pair<int32_t,int32_t>> order;
-    order.reserve(vd * vd);
+    if (radius <= 0) { order.emplace_back(0, 0); return order; }
+    int side = 2 * radius + 1;
+    order.reserve((size_t)side * (size_t)side);
     int layer = 1, leg = 0, x = 0, z = 0;
     order.emplace_back(x, z);
-    for (int i = 1; i < vd * vd; ++i) {
+    int total = side * side;
+    for (int i = 1; i < total; ++i) {
         switch (leg) {
             case 0: ++x; if (x == layer) ++leg; break;
             case 1: ++z; if (z == layer) ++leg; break;
@@ -2401,10 +2416,12 @@ void Player::onUpdate(uint64_t current_tick) {
         // tick, not just when moved — so chunks from sendChunksAroundSpawn()
         // get streamed even though the player hasn't moved yet.
         //
-        // BUG FIX: Was 4 chunks/tick. The workbench showed this floods the
-        // client with 60+ UDP fragments in 3ms, overwhelming the MCPE 0.15
-        // client's receive buffer and causing it to stop responding →
-        // "Disconnected from server" timeout.
+        // BUG FIX (network flood): Was 4 chunks/tick. The workbench showed
+        // this floods the client with 60+ UDP fragments in 3ms, overwhelming
+        // the MCPE 0.15 client's receive buffer and causing it to stop
+        // responding → "Disconnected from server" timeout. This limit is a
+        // NETWORK-SEND throttle only — it stays conservative regardless of
+        // how fast generation itself is.
         //
         // PMMP sends 1 chunk per tick by default. We use 2 as a balance
         // between load time and stability. Each chunk is ~83KB uncompressed
@@ -2412,6 +2429,29 @@ void Player::onUpdate(uint64_t current_tick) {
         // that's 20-30 fragments per 50ms tick, which the client can handle.
         constexpr int MAX_CHUNKS_PER_TICK = 1;
         int chunks_sent_this_tick = 0;
+
+        // FIX (chunk generation was the real bottleneck, not just the
+        // send throttle above): previously this called the BLOCKING
+        // chunks.getChunk(chX, chZ), which ran the generator synchronously
+        // on the main tick thread — so even discovering that a distant
+        // chunk needed generating stalled every player on the server for
+        // that tick, and combined with MAX_CHUNKS_PER_TICK=1 it made the
+        // world only ever seem to "fill in" wherever the player currently
+        // stood, one chunk every 50ms, always starting from the same
+        // spiral order.
+        //
+        // getChunkOrRequestAsync() decouples the two problems:
+        //   - GENERATION is requested for every not-yet-loaded chunk in
+        //     `order` on THIS tick, regardless of the network throttle
+        //     below. Requests fan out across the AsyncPool's worker
+        //     threads, so the whole visible radius gets generated in
+        //     parallel, in every direction at once — not just wherever
+        //     the player happens to be walking.
+        //   - SENDING the finished result to this client still respects
+        //     MAX_CHUNKS_PER_TICK, since that limit is about not
+        //     flooding the MCPE 0.15 client's UDP receive buffer, which
+        //     has nothing to do with how fast generation runs.
+        auto* pool = srv_ ? srv_->getAsyncPool() : nullptr;
         for (auto& pr : order) {
             int32_t chX = cx + pr.first, chZ = cz + pr.second;
             int64_t hash = ((int64_t)chX << 32) | ((uint32_t)chZ);
@@ -2419,9 +2459,12 @@ void Player::onUpdate(uint64_t current_tick) {
             bool already_sent;
             { std::lock_guard<std::mutex> lk(chunks_mtx_); already_sent = used_chunks_.count(hash) > 0; }
             if (already_sent) continue;
-            if (chunks_sent_this_tick >= MAX_CHUNKS_PER_TICK) continue;
-            mcp_chunk_t* ch = chunks.getChunk(chX, chZ);
-            if (!ch) continue;
+            // Always request/fetch — cheap and non-blocking — even past
+            // the send limit, so generation keeps racing ahead in the
+            // background instead of waiting its turn behind the throttle.
+            mcp_chunk_t* ch = chunks.getChunkOrRequestAsync(chX, chZ, pool);
+            if (!ch) continue;   // not loaded yet — generation requested (or already in flight)
+            if (chunks_sent_this_tick >= MAX_CHUNKS_PER_TICK) continue;   // ready, but send is throttled this tick
             size_t outLen = 0;
             uint8_t* buf = mcp_chunk_network_serialize(ch, &outLen);
             if (!buf || outLen == 0) continue;

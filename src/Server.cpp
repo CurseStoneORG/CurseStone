@@ -402,12 +402,11 @@ void Server::tick() {
             viewers.reserve(players_.size());
             for (auto& p : players_) {
                 if (!p) continue;
-                // viewDistance() is the config value used to build the
-                // send-chunks spiral, which only ever reaches half of
-                // it in either axis (see buildChunkSpiral() in
-                // Player.cpp) — so the real radius a player can see is
-                // viewDistance()/2, not viewDistance() itself.
-                viewers.push_back({p->chunkX(), p->chunkZ(), p->viewDistance() / 2});
+                // FIX: buildChunkSpiral() now takes a true per-axis
+                // radius (see Player.cpp), so viewDistance() itself is
+                // the real radius a player can see — no more /2
+                // compensation needed here.
+                viewers.push_back({p->chunkX(), p->chunkZ(), p->viewDistance()});
             }
         }
         int unloaded = level_->unloadDistantChunks(viewers);
