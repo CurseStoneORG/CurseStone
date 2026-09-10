@@ -429,6 +429,50 @@ void Player::setGamemode(int gm) {
 }
 
 // ============================================================
+// Helper: giveCreativeItem — "dar" un item tocado en el catálogo
+// creativo. Ver el bug real que esto arregla en el comentario dentro
+// de CONTAINER_SET_SLOT_PACKET, rama SPECIAL_CREATIVE, más abajo.
+//
+// No confiamos en `cs->slot`/`cs->hotbarSlot` como índice LITERAL de
+// destino — dos intentos previos de interpretar esos campos como "el
+// slot exacto donde va" fallaron (el catálogo tiene ~560 entradas, y
+// ni tratar `slot` como índice directo ni caer a `hotbarSlot` cuando
+// `slot` se sale de rango hizo que el item apareciera del lado del
+// cliente). En cambio: el item se DA con addItem() (busca el primer
+// slot libre del inventario principal, que es lo que el jugador
+// espera — "el item debería ir a mi inventario", no a un slot
+// puntual), y la confirmación que se manda de vuelta ECOA el mismo
+// windowid/slot/hotbarSlot que mandó el cliente en el paquete
+// original — igual que ya se hace para el cofre (ver la rama
+// CHEST_WINDOW_ID de abajo, que sí confirmó ser confiable). La idea:
+// no importa en qué índice interno terminamos guardando el item, lo
+// único que el cliente necesita para dejar de mostrar el tooltip y
+// reflejar el item es una confirmación que coincida con los mismos
+// campos que ÉL mandó — esos son los que su UI está esperando de
+// vuelta, sea cual sea el significado exacto que le da internamente.
+static void giveCreativeItem(atomikpe::Player* player,
+                              std::shared_ptr<atomikpe::inventory::PlayerInventory> inv,
+                              const network::protocol::ContainerSetSlotPacket& cs,
+                              const atomikpe::item::ItemStack& it) {
+    if (!player || !inv || it.id == 0) return;
+    auto leftover = inv->addItem({it});
+    bool given = leftover.empty() || leftover[0].count < it.count;
+
+    auto confirm = std::make_shared<network::protocol::ContainerSetSlotPacket>();
+    confirm->windowid   = cs.windowid;
+    confirm->slot       = cs.slot;
+    confirm->hotbarSlot = cs.hotbarSlot;
+    if (given) {
+        confirm->itemId     = (int16_t)it.id;
+        confirm->itemCount  = it.count;
+        confirm->itemDamage = (int16_t)it.meta;
+    } else {
+        confirm->itemId = 0;  // inventario principal lleno — no se pudo dar
+    }
+    player->sendPacket(confirm);
+}
+
+// ============================================================
 // Phase 2 — handleDataPacket: dispatch by packet ID
 // ============================================================
 void Player::handleDataPacket(network::protocol::DataPacket& p) {
@@ -627,16 +671,34 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
 
                     if (cs->windowid == network::protocol::ContainerSetSlotPacket::SPECIAL_INVENTORY) {
                         // windowid 0x00 — main inventory slots 0..44.
-                        // Nukkit: if creative and item is valid, setItem +
-                        // setHotbarSlotIndex(slot, slot).
-                        if (cs->slot >= 0 && cs->slot < inventory::PlayerInventory::SIZE) {
-                            inv_->setItem(cs->slot, it);
+                        //
+                        // Si `slot` es un índice válido, esto es un
+                        // arrastre normal dentro del propio inventario
+                        // (mover un ítem que ya tenías de un slot a otro)
+                        // — eso nunca estuvo roto, se deja intacto.
+                        //
+                        // Si `slot` NO es válido, es casi seguro un tap
+                        // en el catálogo creativo (que tiene ~560 ítems,
+                        // ver inventory/CreativeItems.h — muy por encima
+                        // de PlayerInventory::SIZE=36), no una posición
+                        // real del inventario. Dos intentos anteriores de
+                        // interpretar `slot`/`hotbarSlot` como el índice
+                        // LITERAL de destino no hicieron que el ítem
+                        // apareciera del lado del cliente — ver
+                        // giveCreativeItem() más arriba para el porqué
+                        // del enfoque actual (dar con addItem() + eco de
+                        // confirmación) y por qué es más confiable que
+                        // seguir adivinando el significado exacto de
+                        // esos dos campos.
+                        int dest = cs->slot;
+                        if (dest >= 0 && dest < inventory::PlayerInventory::SIZE) {
+                            inv_->setItem(dest, it);
                             // If the player is creative and the slot is in
                             // the hotbar range (0..8), link it as the held
                             // slot so the client shows the item in hand.
                             if ((cfg_.gamemode & 1) != 0 && it.id != 0 &&
-                                cs->slot >= 0 && cs->slot < 9) {
-                                inv_->setHeldSlot(cs->slot);
+                                dest >= 0 && dest < 9) {
+                                inv_->setHeldSlot(dest);
                             }
                             // NOTE: no manual sendSlot() here on purpose.
                             // inv_->setItem() already ran
@@ -646,8 +708,10 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                             // sendSlot() again here used to send a SECOND,
                             // redundant confirmation for every single
                             // inventory click — harmless to the client but
-                            // pure waste. Same fix applies to the three
+                            // pure waste. Same fix applies to the two
                             // branches below.
+                        } else if ((cfg_.gamemode & 1) != 0) {
+                            giveCreativeItem(this, inv_, *cs, it);
                         }
                     } else if (cs->windowid == network::protocol::ContainerSetSlotPacket::SPECIAL_ARMOR) {
                         // windowid 0x78 — armor slot 0..3 → store at 36..39.
@@ -663,15 +727,30 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                             inv_->setItem(cs->slot, it);
                         }
                     } else if (cs->windowid == network::protocol::ContainerSetSlotPacket::SPECIAL_CREATIVE) {
-                        // windowid 0x79 — creative-grid click (rare in
-                        // MCPE 0.15.x; most clients use windowid=0x00).
-                        // Fallback: place the item into the held hotbar slot.
-                        if ((cfg_.gamemode & 1) != 0 && it.id != 0) {
-                            int held = inv_->heldSlot();
-                            if (held >= 0 && held < 9) {
-                                inv_->setItem(held, it);
-                            }
-                        }
+                        // windowid 0x79 — tap directo en el catálogo
+                        // creativo (menos común que la ruta 0x00 de
+                        // arriba, pero algunos clientes 0.15.x sí la usan).
+                        //
+                        // BUG FIX ("toco un item del creativo, aparece el
+                        // nombre unos segundos, y nunca llega a mi
+                        // inventario"): dos intentos anteriores trataron
+                        // `hotbarSlot` (o `heldSlot()` como fallback) como
+                        // el índice literal donde escribir el ítem — el
+                        // ítem SE GUARDABA server-side, pero la
+                        // confirmación terminaba apuntando a un slot que
+                        // el cliente no estaba esperando actualizar para
+                        // ESTE tap puntual, así que el tooltip local (que
+                        // aparece solo, sin esperar al servidor) se
+                        // desvanecía sin que nada más pasara en pantalla.
+                        //
+                        // giveCreativeItem() ya no intenta adivinar el
+                        // slot: da el ítem con addItem() (primer lugar
+                        // libre del inventario principal — lo que el
+                        // jugador realmente espera) y confirma ECOANDO
+                        // los mismos windowid/slot/hotbarSlot que mandó
+                        // el cliente en este mismo paquete, que es lo que
+                        // su UI está esperando de vuelta.
+                        giveCreativeItem(this, inv_, *cs, it);
                     }
                 }
             }
