@@ -311,6 +311,19 @@ private:
     std::atomic<bool> connected_{false};
     std::atomic<bool> logged_in_{false};
     std::atomic<bool> spawned_{false};
+
+    // BUG FIX (creative items unusable on a player's very first session,
+    // but fine after reconnecting — see doFirstSpawn()/onUpdate() in
+    // Player.cpp for the full explanation): before this fix, doFirstSpawn()
+    // fired immediately at login, sending PLAYER_SPAWN + the creative
+    // catalog + the player's own inventory contents before a single chunk
+    // had reached the client. Real PMMP (see Player::onUpdate()'s
+    // chunkLoadCount/spawnThreshold gate) withholds PLAYER_SPAWN — and the
+    // own-inventory ContainerSetContentPacket that rides on it — until a
+    // minimum number of chunks around the player have actually been sent.
+    // awaiting_first_spawn_ replicates that gate.
+    std::atomic<bool> awaiting_first_spawn_{false};
+    static constexpr int FIRST_SPAWN_CHUNK_THRESHOLD = 9;  // 3x3 area, like PMMP's default
     uint64_t last_save_tick_ = 0;
     uint64_t start_time_ms_ = 0;       // Wall-clock when player joined (for workbench)
     uint64_t last_activity_ms_ = 0;    // Wall-clock of last received packet
