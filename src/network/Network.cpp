@@ -174,16 +174,59 @@ void Network::dispatchSingle(const std::string& ip, uint16_t port,
 
 std::shared_ptr<protocol::DataPacket> Network::decodePacketById(uint8_t pid,
         const uint8_t* body, size_t bodyLen) {
+    // Helper local: primeros N bytes en hex, para diagnóstico.
+    auto hexDump = [](const uint8_t* b, size_t n) {
+        size_t cap = n < 40 ? n : 40;
+        std::string out;
+        char tmp[4];
+        for (size_t i = 0; i < cap; ++i) {
+            snprintf(tmp, sizeof(tmp), "%02x ", b[i]);
+            out += tmp;
+        }
+        return out;
+    };
+
     // Instantiate the right subclass via the PacketPool registry.
     auto pkt = protocol::PacketPool::get().create(pid);
     if (!pkt) {
-        // Unknown packet ID — silently ignore. MCPE sends many packet
-        // types we don't handle yet (e.g. 0x1B). Don't spam the log.
+        // DIAGNÓSTICO (bug "tocar un item del creativo no llega al
+        // inventario"): antes esto se ignoraba en silencio TOTAL —
+        // ni un log — así que si el cliente real manda un tipo de
+        // paquete que este server no tiene registrado en
+        // PacketPool::create() (por ejemplo InventoryTransactionPacket
+        // o CraftingEventPacket, ninguno de los dos existe hoy acá),
+        // no había NINGUNA forma de saberlo. Gateado en advancedLog()
+        // para no ensuciar el log en uso normal.
+        if (server_ && server_->advancedLog()) {
+            char pidHex[4];
+            snprintf(pidHex, sizeof(pidHex), "%02x", pid);
+            utils::MainLogger::get().warn(std::string("[PKT] ID desconocido 0x") + pidHex +
+                " len=" + std::to_string(bodyLen) + " bytes=" + hexDump(body, bodyLen));
+        }
         return nullptr;
     }
-    if (!pkt->decode(body, bodyLen)) {
-        // Decode failed — silently drop. Logging every failure fills
-        // the console with noise and doesn't help the user.
+    bool ok = pkt->decode(body, bodyLen);
+    if (!ok && server_ && server_->advancedLog()) {
+        // Decode failed — antes se descartaba sin loguear nada.
+        char pidHex[4];
+        snprintf(pidHex, sizeof(pidHex), "%02x", pid);
+        utils::MainLogger::get().warn(std::string("[PKT] decode() fallo para ID 0x") + pidHex +
+            " len=" + std::to_string(bodyLen) + " bytes=" + hexDump(body, bodyLen));
+    }
+    // DIAGNÓSTICO extra específico para CONTAINER_SET_SLOT_PACKET
+    // (0x2c) — el sospechoso del bug de creativo. Se loguea SIEMPRE
+    // que llegue uno (éxito o fallo de decode), para poder comparar
+    // los bytes reales que manda el cliente contra el formato que
+    // este server asume (ver el comentario de formato en
+    // ContainerSetSlotPacket.h). Gateado en advancedLog().
+    if (pid == protocol::CONTAINER_SET_SLOT_PACKET && server_ && server_->advancedLog()) {
+        utils::MainLogger::get().info(std::string("[PKT] CONTAINER_SET_SLOT_PACKET decode=") +
+            (ok ? "OK" : "FALLO") + " len=" + std::to_string(bodyLen) +
+            " bytes=" + hexDump(body, bodyLen));
+    }
+    if (!ok) {
+        // Decode failed — silently drop (log above already covered it
+        // when advancedLog() is on).
         return nullptr;
     }
     return pkt;
