@@ -744,12 +744,54 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                             inv_->setItem(dest, it);
                         }
                     } else if (cs->windowid == network::protocol::ContainerSetSlotPacket::SPECIAL_HOTBAR) {
-                        // windowid 0x7a — hotbar slot 0..8. This is sent
-                        // when the client moves an item to a hotbar slot
-                        // directly. Write into main inventory slot 0..8.
-                        if (cs->slot >= 0 && cs->slot < 9) {
-                            inv_->setItem(cs->slot, it);
-                        }
+                        // windowid 0x7a — BUG REAL DEL "no puedo sacar
+                        // items del creativo en slots distintos al que ya
+                        // tenia algo".
+                        //
+                        // El Player.php REAL de Genisys/PMMP (protocolo 84,
+                        // MCPE 0.15.10) NO TIENE NINGUNA RAMA para
+                        // windowid=0x7a en absoluto: solo trata 0 (inventario)
+                        // y SPECIAL_ARMOR (0x78); cualquier otro windowid no
+                        // registrado en $this->windowIndex cae al `else`
+                        // final y SE IGNORA COMPLETAMENTE (rompe con "the
+                        // client sent a transaction for a window which the
+                        // server doesn't think they have open").
+                        //
+                        // 0x7a es solo el link hotbar-index -> slot real que
+                        // el cliente reenvia (con id=0/count=0) cada vez que
+                        // hace login o resincroniza su hotbar — el propio log
+                        // lo confirma: los "wid=0x7a" solo aparecen una vez
+                        // por slot justo al hacer login, todos con id=0. NO
+                        // es el canal que usa el cliente para pedir un item
+                        // del catalogo creativo: para eso siempre manda
+                        // windowid=0x00 (ver la rama SPECIAL_INVENTORY, que
+                        // es donde de hecho llegan TODOS los toques de
+                        // creativo en el log, incluido el slot 0 que sí
+                        // funciona).
+                        //
+                        // El bug: esta rama SÍ escribía el item directo en
+                        // inv_ vía setItem() cuando el windowid=0x7a traía un
+                        // item real, sin pasar por onSlotChange() de la
+                        // misma forma "canonica" en la que el cliente espera
+                        // la confirmacion (aunque sendSlot() siempre
+                        // devuelve windowid=0x00, el cliente ya habia
+                        // marcado ese slot internamente como "actualizado
+                        // via 0x7a" y no lo redibuja hasta el proximo toque
+                        // real por 0x00 — que es justo lo que hacia parecer
+                        // que "solo podes reemplazar el item que ya estaba
+                        // ahi": el slot 0 nunca pasaba por 0x7a con un item
+                        // real porque ya tenia contenido desde survival, asi
+                        // que siempre entraba directo por 0x00 y funcionaba;
+                        // cualquier OTRO slot del hotbar, al estar vacio,
+                        // recibia su primer toque de creativo por 0x7a y se
+                        // quedaba "atascado" hasta que por accidente ya
+                        // tuviera contenido real.
+                        //
+                        // Fix: igual que el PMMP real, 0x7a se ignora como
+                        // canal de escritura de items. No hacemos nada aqui
+                        // — el toque real del catalogo creativo siempre
+                        // llega tambien (o en su lugar) por windowid=0x00,
+                        // que sí es el que aplica el cambio correctamente.
                     } else if (cs->windowid == network::protocol::ContainerSetSlotPacket::SPECIAL_CREATIVE) {
                         // windowid 0x79 — el Player.php real de Genisys NO
                         // tiene ningún caso especial para este windowid en
