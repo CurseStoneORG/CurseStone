@@ -453,8 +453,23 @@ void Player::setGamemode(int gm) {
 static void giveCreativeItem(atomikpe::Player* player,
                               std::shared_ptr<atomikpe::inventory::PlayerInventory> inv,
                               const network::protocol::ContainerSetSlotPacket& cs,
-                              const atomikpe::item::ItemStack& it) {
-    if (!player || !inv || it.id == 0) return;
+                              atomikpe::item::ItemStack it) {
+    if (!player || !inv) return;
+    // FALLBACK: si el ítem que venía embebido en el paquete llega vacío
+    // (id==0), puede que para el gesto "tap en el catálogo" el cliente
+    // NO mande el ítem completo — solo `cs.slot` como índice DENTRO del
+    // catálogo que el propio servidor ya mandó antes por
+    // ContainerSetContentPacket (ver sendCreativeInventory() /
+    // inventory::getCreativeItems()), esperando que el servidor sepa
+    // qué item es ese índice. No hay riesgo en probar esto primero: si
+    // `it` ya traía datos válidos, esta rama ni se toca.
+    if (it.id == 0) {
+        const auto& catalog = atomikpe::inventory::getCreativeItems();
+        if (cs.slot >= 0 && (size_t)cs.slot < catalog.size()) {
+            it = catalog[(size_t)cs.slot];
+        }
+    }
+    if (it.id == 0) return;
     auto leftover = inv->addItem({it});
     bool given = leftover.empty() || leftover[0].count < it.count;
 
@@ -1230,6 +1245,30 @@ void Player::doFirstSpawn() {
     // Send the creative-inventory contents so the player has items to grab
     // in creative mode (PMMP Player.php:2301 sends this right after spawn).
     sendCreativeInventory();
+
+    // BUG FIX ("toco un item del creativo y no llega a mi inventario, pero
+    // si me desconecto y reconecto ya está ahí, y de ahí en más sí
+    // funciona"): sendCreativeInventory() de arriba solo manda el CATÁLOGO
+    // de solo-lectura (windowid SPECIAL_CREATIVE). El inventario PROPIO del
+    // jugador (windowid SPECIAL_INVENTORY/ARMOR/HOTBAR) nunca se mandaba
+    // completo al entrar — de hecho setGamemode() más arriba en este mismo
+    // archivo ya tiene un comentario que dice "same as what already happens
+    // once at doFirstSpawn()" asumiendo que esta llamada ya existía acá,
+    // pero nunca se había escrito.
+    //
+    // Sin un ContainerSetContentPacket inicial para esas ventanas, el
+    // cliente nunca las "abre"/inicializa del lado suyo — así que cuando
+    // después llega un ContainerSetSlotPacket puntual (la confirmación de
+    // un tap en el catálogo creativo, ver giveCreativeItem()), no tiene
+    // ningún contenedor conocido al cual aplicarle ese cambio incremental,
+    // y lo ignora en silencio. El item SÍ quedaba guardado en inv_ del
+    // lado del servidor (por eso aparecía recién al reconectar, cuando el
+    // inventario ya no estaba vacío) pero nunca se veía reflejado en esa
+    // primera sesión.
+    //
+    // Fix: mandar el inventario propio completo acá también, antes de que
+    // el jugador tenga oportunidad de interactuar con nada.
+    sendInventory();
 
     // Broadcast a PlayerListPacket (ADD) with all currently-online players.
     if (srv_) {
