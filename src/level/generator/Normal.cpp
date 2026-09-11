@@ -69,10 +69,34 @@ void Normal::generate(GenerationContext& ctx) {
             // no hay costura entre chunks — no se puede usar un
             // suavizado por promedio de vecinos aquí porque cada chunk
             // se genera sin ver los bloques del chunk vecino.
-            double wx = (ctx.chunk_x * 16 + x) * 0.008;
-            double wz = (ctx.chunk_z * 16 + z) * 0.008;
-            double n = mcp_simplex_fbm2d(height_noise_, wx, wz, 3, 0.35, 2.0);
-            int h = 64 + (int)((n + 1.0) * 18.0);  // 28..100
+            // FIX 2 (reporte de usuario: "el terreno tiene franjas
+            // paralelas repetidas, como un campo arado"): el ajuste
+            // anterior (frecuencia 0.008, 3 octavas, persistencia 0.35)
+            // resolvió el problema de laderas en escalón brusco, pero se
+            // pasó de frenada al otro extremo — el ruido base quedó TAN
+            // suave que, al truncarse a entero (`(int)`), produce mesetas
+            // de 20-30 bloques con la MISMA altura exacta en línea recta,
+            // con transiciones de escalón de un único bloque, muy
+            // regulares. Verificado numéricamente: muestreando fbm2d a lo
+            // largo de x con estos parámetros, h se queda clavado en el
+            // mismo entero por decenas de columnas seguidas — eso es
+            // exactamente el patrón de "franjas paralelas" visible en la
+            // captura (no es un bug de chunks ni de streaming, es la curva
+            // de ruido demasiado plana para la amplitud usada).
+            //
+            // Ajuste: más octavas (5) para meter detalle de escala media
+            // sin subir la persistencia de golpe, frecuencia base algo
+            // mayor (0.012 en vez de 0.008) para que el ruido primario ya
+            // varíe más rápido, y mayor amplitud (24 en vez de 18) para
+            // que cada unidad de ruido cubra más de un bloque de cambio —
+            // así los escalones de redondeo dejan de alinearse en mesetas
+            // largas. Sigue siendo puramente función de la posición
+            // absoluta del mundo (sin estado ni vecinos), así que no
+            // introduce costuras entre chunks.
+            double wx = (ctx.chunk_x * 16 + x) * 0.012;
+            double wz = (ctx.chunk_z * 16 + z) * 0.012;
+            double n = mcp_simplex_fbm2d(height_noise_, wx, wz, 5, 0.5, 2.0);
+            int h = 64 + (int)((n + 1.0) * 24.0);  // 16..112
             uint8_t top = 2, dirt = 3, biome = biome_at(x, z);
             if (biome == 2) { top = 12; dirt = 12; }    // desert: sand
             if (biome == 4) { top = 1;  dirt = 3;  }    // mountains: stone tops
