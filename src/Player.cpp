@@ -998,8 +998,35 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
                         // Legacy AtomikPE layout (armor at 36..39).
                         dest_slot = nbt_slot;
                     }
+                    // BUG FIX (reporte de usuario: "me equipo armadura, me
+                    // desconecto, y al volver a entrar ya no la tengo"):
+                    // saveData() SÍ guarda la armadura correctamente
+                    // (Slot 100..103, recorriendo hasta PLAYER_INV_TOTAL=40
+                    // — ver el comentario "BUG FIX" en saveData() más abajo,
+                    // eso ya estaba arreglado). El problema estaba acá, en
+                    // la carga: dest_slot para armadura se calcula como
+                    // ARMOR_OFFSET + (nbt_slot-100) = 36, 37, 38 o 39 — pero
+                    // la condición de abajo exigía
+                    // `dest_slot < inventory::PlayerInventory::SIZE`, y SIZE
+                    // vale 36 POR DISEÑO (ver el comentario en
+                    // PlayerInventory::getSize(): "NOT including armor").
+                    // Es decir, cualquier dest_slot de armadura (36..39) es
+                    // por definición >= SIZE, así que este `if` los
+                    // rechazaba SIEMPRE — setItem() nunca se llamaba para
+                    // la armadura leída del NBT, aunque el propio dato ya
+                    // estaba bien guardado en disco. Por eso el log muestra
+                    // "Loaded inventory for X (3 items)" sin la armadura
+                    // equipada: el conteo son los items de inventario
+                    // normal que sí pasaban el chequeo, la armadura se leía
+                    // del NBT pero se descartaba acá mismo.
+                    //
+                    // Fix: comparar contra el tamaño REAL del storage
+                    // subyacente (PLAYER_INV_TOTAL = 40, que sí incluye los
+                    // 4 slots de armadura), no contra SIZE (36, que los
+                    // excluye a propósito para getSize()/getInventory()
+                    // públicos).
                     if (dest_slot >= 0 &&
-                        dest_slot < inventory::PlayerInventory::SIZE) {
+                        dest_slot < inventory::PLAYER_INV_TOTAL) {
                         item::ItemStack it;
                         it.id    = (uint16_t)id;
                         it.meta  = (uint8_t)damage;
