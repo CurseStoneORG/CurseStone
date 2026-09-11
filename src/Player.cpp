@@ -687,33 +687,44 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                     if (cs->windowid == network::protocol::ContainerSetSlotPacket::SPECIAL_INVENTORY) {
                         // windowid 0x00 — main inventory slots 0..44.
                         //
-                        // Si `slot` es un índice válido, esto es un
-                        // arrastre normal dentro del propio inventario
-                        // (mover un ítem que ya tenías de un slot a otro)
-                        // — eso nunca estuvo roto, se deja intacto.
+                        // CORREGIDO contra el Player.php REAL de PocketMine
+                        // Genisys (protocolo 84, MCPE 0.15.10 — confirmado
+                        // por CURRENT_PROTOCOL=84 y MINECRAFT_VERSION_NETWORK
+                        // ="0.15.10" en su propio código, no supuesto). Su
+                        // manejo de CONTAINER_SET_SLOT_PACKET para windowid=0
+                        // es:
                         //
-                        // Si `slot` NO es válido, es casi seguro un tap
-                        // en el catálogo creativo (que tiene ~560 ítems,
-                        // ver inventory/CreativeItems.h — muy por encima
-                        // de PlayerInventory::SIZE=36), no una posición
-                        // real del inventario. Dos intentos anteriores de
-                        // interpretar `slot`/`hotbarSlot` como el índice
-                        // LITERAL de destino no hicieron que el ítem
-                        // apareciera del lado del cliente — ver
-                        // giveCreativeItem() más arriba para el porqué
-                        // del enfoque actual (dar con addItem() + eco de
-                        // confirmación) y por qué es más confiable que
-                        // seguir adivinando el significado exacto de
-                        // esos dos campos.
-                        int dest = cs->slot;
-                        if (dest >= 0 && dest < inventory::PlayerInventory::SIZE) {
-                            inv_->setItem(dest, it);
+                        //   if ($packet->slot >= $this->inventory->getSize()) break;
+                        //   $transaction = new BaseTransaction($this->inventory, $packet->slot, $packet->item);
+                        //   ...
+                        //   // BaseTransaction::execute():
+                        //   if (!$source->isCreative()) { /* validar contra floating inventory */ }
+                        //   $this->getInventory()->setItem($this->getSlot(), $this->getTargetItem(), false);
+                        //
+                        // Es decir: NO hay campo "hotbarSlot" en uso, NO hay
+                        // índice de catálogo — el cliente manda `slot` como
+                        // el índice REAL de destino (0..44) e `item` con los
+                        // datos completos del ítem tocado, tanto para un
+                        // arrastre normal como para un tap del catálogo
+                        // creativo. Para un jugador en creativo, el servidor
+                        // hace setItem(slot, item) directo, sin validar
+                        // contra nada — exactamente lo que hace este bloque
+                        // ahora. Mis dos intentos anteriores (tratar
+                        // `hotbarSlot` como destino, o caer a buscar
+                        // `cs->slot` en el catálogo cuando parecía "fuera de
+                        // rango") partían de una premisa equivocada: un
+                        // `slot` fuera de rango nunca debería llegar de un
+                        // cliente real para este windowid, así que ya no se
+                        // intenta "adivinar" nada — se ignora, igual que
+                        // hace el propio PMMP (`break`).
+                        if (cs->slot >= 0 && cs->slot < inventory::PlayerInventory::SIZE) {
+                            inv_->setItem(cs->slot, it);
                             // If the player is creative and the slot is in
                             // the hotbar range (0..8), link it as the held
                             // slot so the client shows the item in hand.
                             if ((cfg_.gamemode & 1) != 0 && it.id != 0 &&
-                                dest >= 0 && dest < 9) {
-                                inv_->setHeldSlot(dest);
+                                cs->slot >= 0 && cs->slot < 9) {
+                                inv_->setHeldSlot(cs->slot);
                             }
                             // NOTE: no manual sendSlot() here on purpose.
                             // inv_->setItem() already ran
@@ -725,8 +736,6 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                             // inventory click — harmless to the client but
                             // pure waste. Same fix applies to the two
                             // branches below.
-                        } else if ((cfg_.gamemode & 1) != 0) {
-                            giveCreativeItem(this, inv_, *cs, it);
                         }
                     } else if (cs->windowid == network::protocol::ContainerSetSlotPacket::SPECIAL_ARMOR) {
                         // windowid 0x78 — armor slot 0..3 → store at 36..39.
@@ -742,29 +751,16 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                             inv_->setItem(cs->slot, it);
                         }
                     } else if (cs->windowid == network::protocol::ContainerSetSlotPacket::SPECIAL_CREATIVE) {
-                        // windowid 0x79 — tap directo en el catálogo
-                        // creativo (menos común que la ruta 0x00 de
-                        // arriba, pero algunos clientes 0.15.x sí la usan).
-                        //
-                        // BUG FIX ("toco un item del creativo, aparece el
-                        // nombre unos segundos, y nunca llega a mi
-                        // inventario"): dos intentos anteriores trataron
-                        // `hotbarSlot` (o `heldSlot()` como fallback) como
-                        // el índice literal donde escribir el ítem — el
-                        // ítem SE GUARDABA server-side, pero la
-                        // confirmación terminaba apuntando a un slot que
-                        // el cliente no estaba esperando actualizar para
-                        // ESTE tap puntual, así que el tooltip local (que
-                        // aparece solo, sin esperar al servidor) se
-                        // desvanecía sin que nada más pasara en pantalla.
-                        //
-                        // giveCreativeItem() ya no intenta adivinar el
-                        // slot: da el ítem con addItem() (primer lugar
-                        // libre del inventario principal — lo que el
-                        // jugador realmente espera) y confirma ECOANDO
-                        // los mismos windowid/slot/hotbarSlot que mandó
-                        // el cliente en este mismo paquete, que es lo que
-                        // su UI está esperando de vuelta.
+                        // windowid 0x79 — el Player.php real de Genisys NO
+                        // tiene ningún caso especial para este windowid en
+                        // absoluto dentro de CONTAINER_SET_SLOT_PACKET: cae
+                        // en su rama "the server doesn't think they have
+                        // this window open" y se ignora. Es decir, un
+                        // cliente MCPE 0.15.x real NO manda esto para el tap
+                        // del catálogo — manda windowid=0x00 (ver arriba).
+                        // Se deja esta rama solo como red de seguridad
+                        // inofensiva por si algún cliente/variante sí lo
+                        // manda; no debería ejecutarse en el caso normal.
                         giveCreativeItem(this, inv_, *cs, it);
                     }
                 }
