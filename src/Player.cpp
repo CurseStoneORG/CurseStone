@@ -2461,9 +2461,51 @@ void Player::sendInventory() {
         for (int i = 0; i < 9; ++i) {
             pk->slots.push_back(item::ItemStack::EMPTY());
         }
-        // Hotbar link indices — protocol 84 wants 9 indices for the hotbar.
-        for (int h = 0; h < 9; ++h) {
-            pk->hotbar.push_back(h);
+        // Hotbar link indices.
+        //
+        // BUG REAL ENCONTRADO (comparando contra PlayerInventory::sendContents()
+        // real de PMMP protocolo 84 / MCPE 0.15.10):
+        //
+        //   foreach ($target as $player) {
+        //       for ($i = 0; $i < $this->getHotbarSize(); ++$i) {
+        //           $index = $this->getHotbarSlotIndex($i);
+        //           $pk->hotbar[$i] = $index <= -1 ? -1 : $index + $this->getHotbarSize();
+        //       }
+        //   }
+        //
+        // El valor real que va en `hotbar[i]` NO es el índice crudo del slot
+        // (0..8) — es ESE índice + 9 (getHotbarSize()). Esto es porque
+        // `slots` en el paquete ya trae, primero, los 36 slots reales y
+        // LUEGO 9 slots dummy de AIR pegados al final (el padding "PE is
+        // stupid and shows 9 less slots" que ya aplicamos arriba) — y el
+        // array `hotbar` no apunta al inventario lógico, apunta a la
+        // posición DENTRO de ese array `slots` ya paddeado. Por eso el +9:
+        // hotbar[i] tiene que señalar la posición real dentro de `slots`
+        // donde vive ese item, y las primeras 9 posiciones de esa
+        // numeración "con offset" siguen siendo, confusamente, para la UI
+        // del hotbar en pantalla — pero el índice que se manda es el de la
+        // sección de 36, no el de 0..8 directo.
+        //
+        // Esta función mandaba `pk->hotbar.push_back(h)` con h=0..8 SIN
+        // sumar 9 y SIN consultar el link real (inv_->getHotbarSlotIndex(h)),
+        // asumiendo siempre el link identidad. Con eso, el cliente recibe
+        // un array hotbar que apunta a las posiciones 0..8 de `slots` en
+        // vez de 9..17 — exactamente donde SÍ están los primeros 9 slots
+        // reales del inventario (recordar: slots[0..35]=reales,
+        // slots[36..44]=dummy AIR). El resultado: el cliente arma su UI de
+        // hotbar apuntando a la sección equivocada del array, y sólo por
+        // COINCIDENCIA numérica un slot puede llegar a verse bien — el
+        // resto queda desincronizado y no refleja los cambios por
+        // ContainerSetSlotPacket posteriores (por eso "solo podía sacar del
+        // slot que ya tenía algo": ese slot es el único cuyo estado real
+        // el cliente ya conocía por otra vía).
+        //
+        // Fix: usar el link real (inv_->getHotbarSlotIndex(h), normalmente
+        // identidad salvo que algo lo haya cambiado) y sumarle
+        // PLAYER_INV_HOTBAR_SIZE (9), igual que el PMMP real.
+        for (int h = 0; h < inventory::PLAYER_INV_HOTBAR_SIZE; ++h) {
+            int idx = inv_->getHotbarSlotIndex(h);
+            pk->hotbar.push_back(idx <= -1 ? -1 : idx + inventory::PLAYER_INV_HOTBAR_SIZE);
         }
         sendPacket(pk);
     }
