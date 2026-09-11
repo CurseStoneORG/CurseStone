@@ -110,13 +110,24 @@ void PlayerInventory::onSlotChange(int index, const item::ItemStack& before) {
 }
 
 // ---- sendContents ----
+// BUG FIX: same missing "9 dummy AIR slots" padding as
+// Player::sendInventory() in Player.cpp — see the comment there for the
+// full explanation (real PMMP's PlayerInventory::sendContents() pads 9
+// extra AIR slots because the MCPE 0.15.x client under-renders windowid=0
+// by exactly 9 slots otherwise). This override isn't currently called
+// anywhere (Player::sendInventory() builds windowid=0 by hand instead),
+// but it's part of the public Inventory interface, so keep it consistent
+// with the real fix in case something starts calling it.
 void PlayerInventory::sendContents(Player* player) {
     if (!player) return;
     auto pk = std::make_shared<network::protocol::ContainerSetContentPacket>();
     pk->windowid = 0;  // SPECIAL_INVENTORY
-    pk->slots.reserve(SIZE);
+    pk->slots.reserve(SIZE + 9);
     for (int i = 0; i < SIZE; ++i) {
         pk->slots.push_back(getItem(i));
+    }
+    for (int i = 0; i < 9; ++i) {
+        pk->slots.push_back(item::ItemStack::EMPTY());
     }
     // Hotbar link indices.
     for (int i = 0; i < PLAYER_INV_HOTBAR_SIZE; ++i) {

@@ -1118,11 +1118,36 @@ void Player::sendChunksAroundSpawn() {
         }
     }
 
-    // Fire spawn immediately — the client will see chunks arriving
-    // gradually as they are streamed by onUpdate(). This matches
-    // Nukkit's behavior where doFirstSpawn() is called before all
-    // chunks are sent.
-    doFirstSpawn();
+    // BUG FIX ("no puedo sacar items del creativo la primera vez que
+    // entro, pero sí funciona si salgo y vuelvo a entrar"): this used to
+    // call doFirstSpawn() immediately here — before a single chunk had
+    // been streamed — on the theory that "the client will see chunks
+    // arriving gradually" (true for Nukkit, which doesn't gate spawn on
+    // chunks). But doFirstSpawn() is also where PLAYER_SPAWN,
+    // sendCreativeInventory() and sendInventory() (the player's OWN
+    // inventory ContainerSetContentPacket) go out. Sending those with
+    // zero terrain loaded works fine for a RETURNING player, because
+    // their spawn chunks are already generated/cached and stream in
+    // almost instantly regardless — but for a brand-new player at a
+    // never-before-visited spawn point, chunk GENERATION is async and
+    // can take noticeably longer (see getChunkOrRequestAsync() in
+    // onUpdate()). The MCPE 0.15.x client doesn't fully "arm" its own
+    // inventory window until it has actually finished loading into the
+    // world, so an inventory-content packet sent this early can be
+    // silently dropped/ignored while the client is still on the loading
+    // screen. The server-side item is still added to inv_ (that's why
+    // it "appears" on the next login, once the full inventory resync at
+    // doFirstSpawn() lands on a client that's already loaded) but the
+    // client never rendered the confirmation the first time.
+    //
+    // Real PMMP never has this race: doFirstSpawn() there is only
+    // called once chunkLoadCount >= spawnThreshold (see Player.php's
+    // orderChunks()) — i.e. once a handful of chunks around the player
+    // have actually reached the client. We replicate that gate instead
+    // of spawning immediately: onUpdate() now streams chunks BEFORE
+    // spawned_ is true too, and only calls doFirstSpawn() once
+    // FIRST_SPAWN_CHUNK_THRESHOLD chunks have gone out.
+    awaiting_first_spawn_.store(true, std::memory_order_relaxed);
 }
 
 // ============================================================
@@ -2371,12 +2396,28 @@ void Player::sendInventory() {
     if (!inv_) return;
 
     // Main inventory (windowid 0x00): 45 slots (36 main + 9 hotbar).
+    //
+    // BUG FIX: this only ever pushed the 36 real slots — the comment
+    // above already said "45 slots" but the loop below it never matched
+    // that. Real PMMP's PlayerInventory::sendContents() (protocol 84 /
+    // MCPE 0.15.10) pads 9 extra dummy AIR slots on top of the 36 real
+    // ones, with the comment "Because PE is stupid and shows 9 less
+    // slots than you send it, give it 9 dummy slots so it shows all the
+    // REAL slots." Without that padding, the MCPE 0.15.x client's
+    // inventory UI under-renders this container by exactly 9 slots, so
+    // some of the real, server-side items in the tail of the 36-slot
+    // array never show up on screen even though inv_ has them — the
+    // same "item exists server-side but isn't visible client-side"
+    // symptom as the creative-drop bug.
     {
         auto pk = std::make_shared<network::protocol::ContainerSetContentPacket>();
         pk->windowid = network::protocol::ContainerSetContentPacket::SPECIAL_INVENTORY;
-        pk->slots.reserve(inventory::PlayerInventory::SIZE);
+        pk->slots.reserve(inventory::PlayerInventory::SIZE + 9);
         for (int i = 0; i < inventory::PlayerInventory::SIZE; ++i) {
             pk->slots.push_back(inv_->getItem(i));
+        }
+        for (int i = 0; i < 9; ++i) {
+            pk->slots.push_back(item::ItemStack::EMPTY());
         }
         // Hotbar link indices — protocol 84 wants 9 indices for the hotbar.
         for (int h = 0; h < 9; ++h) {
@@ -2533,7 +2574,14 @@ void Player::onUpdate(uint64_t current_tick) {
     // 1. Stream chunks — send up to MAX_CHUNKS_PER_TICK unsent chunks
     // every tick, regardless of whether the player moved. The `moved`
     // check only controls cleanup of out-of-view chunks.
-    if (spawned_.load(std::memory_order_relaxed) && srv_ && srv_->getDefaultLevel()) {
+    //
+    // BUG FIX: also run this while awaiting_first_spawn_ (i.e. BEFORE
+    // spawned_ becomes true), not just after. Chunks need to stream
+    // during that window so doFirstSpawn() can be gated on
+    // FIRST_SPAWN_CHUNK_THRESHOLD actually having been sent — see the
+    // comment in sendChunksAroundSpawn().
+    bool awaiting_spawn = awaiting_first_spawn_.load(std::memory_order_relaxed);
+    if ((spawned_.load(std::memory_order_relaxed) || awaiting_spawn) && srv_ && srv_->getDefaultLevel()) {
         int cx = (int)pos_.x >> 4;
         int cz = (int)pos_.z >> 4;
 
@@ -2626,6 +2674,21 @@ void Player::onUpdate(uint64_t current_tick) {
             sendPacket(pk);
             { std::lock_guard<std::mutex> lk(chunks_mtx_); used_chunks_.insert(hash); }
             chunks_sent_this_tick++;
+        }
+
+        // BUG FIX: once enough chunks have actually reached the client,
+        // fire the deferred doFirstSpawn() — this is the
+        // FIRST_SPAWN_CHUNK_THRESHOLD gate described in
+        // sendChunksAroundSpawn(). Checked every tick while awaiting;
+        // doFirstSpawn() itself is idempotent (spawned_.exchange(true)
+        // guard) so there's no risk of double-firing.
+        if (awaiting_spawn) {
+            size_t sent_count;
+            { std::lock_guard<std::mutex> lk(chunks_mtx_); sent_count = used_chunks_.size(); }
+            if (sent_count >= (size_t)FIRST_SPAWN_CHUNK_THRESHOLD) {
+                awaiting_first_spawn_.store(false, std::memory_order_relaxed);
+                doFirstSpawn();
+            }
         }
 
         // Only clean up out-of-view chunks when the player actually
