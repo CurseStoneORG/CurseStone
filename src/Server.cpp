@@ -310,6 +310,15 @@ void Server::runTickLoop() {
     uint64_t last_tick_count = 0;
     auto last_tps_time = std::chrono::steady_clock::now();
     while (running_.load(std::memory_order_relaxed)) {
+        // Poll the external stop flag (set by main.cpp's SIGINT/SIGTERM
+        // handler) on the MAIN thread, in normal — not signal — context.
+        // This is the only place that flag is ever acted on; see
+        // setExternalStopFlag()'s comment for why the handler itself
+        // can't call shutdown() directly.
+        if (external_stop_flag_ && *external_stop_flag_ && running_.load(std::memory_order_relaxed)) {
+            shutdown();
+            break;
+        }
         auto start_ts = std::chrono::steady_clock::now();
         tick();
         auto elapsed = std::chrono::steady_clock::now() - start_ts;

@@ -49,6 +49,45 @@ namespace {
 std::atomic<bool> g_shouldRun{true};
 atomikpe::CrashDump* g_crashDump = nullptr;
 
+// ROOT CAUSE FIX ("server never marked as running / shutdown doesn't
+// fully stop the process, only ever seen on Linux"):
+//
+// handleSignal() used to call atomikpe::Server::getInstance().shutdown()
+// directly from inside the SIGINT/SIGTERM handler. Server::shutdown()
+// does real work: it builds a std::string and logs through the async
+// logger (malloc + mutex lock inside the logger's ring buffer), and it
+// spawns a brand-new std::thread (pthread_create) for the shutdown
+// watchdog. NONE of that is async-signal-safe.
+//
+// If Ctrl+C / SIGTERM arrives while the interrupted thread already
+// held glibc's internal malloc arena lock (extremely likely — the
+// tick loop, the logger, and the AsyncPool workers are all allocating
+// constantly), re-entering malloc or pthread_create from the signal
+// handler on that same thread deadlocks against itself immediately.
+// There's no crash, no log line — the process just freezes silently
+// inside the handler. Depending on when the signal landed, this can
+// make the server look like it "never finishes starting" (if it hung
+// early enough that startup logs never fully flushed) or like
+// "shutdown never completes" (the far more common case: the tick loop
+// itself is now wedged, so running_ is never actually observed as
+// false by anyone, /stop's log lines never print, and the process
+// has to be kill -9'd).
+//
+// This is far more visible on Linux than Windows because glibc's
+// malloc/pthreads implementation strictly enforces the POSIX rule
+// that malloc and pthread_create are not async-signal-safe and
+// deadlocks deterministically on self-reentrancy; the same call
+// pattern on Windows often "happens to work" because its CRT heap
+// lock and console Ctrl+C delivery model don't reenter the same way.
+//
+// Fix: the signal handler now does the absolute minimum — flip a
+// single sig_atomic_t flag using only a relaxed atomic store (no
+// malloc, no locks, no thread creation). The main thread's tick loop
+// (normal, non-signal context) polls this flag once per iteration and
+// calls Server::shutdown() itself from there, where locking, logging,
+// and spawning the watchdog thread are all safe again.
+volatile std::sig_atomic_t g_stopRequested = 0;
+
 // ----------------------------------------------------------------------
 // portable backtrace
 // ----------------------------------------------------------------------
@@ -115,10 +154,22 @@ std::string capture_backtrace(int max_frames = 32) {
 }
 
 void handleSignal(int sig) {
-    // SIGINT / SIGTERM → graceful shutdown
+    // SIGINT / SIGTERM → request graceful shutdown.
+    //
+    // CRITICAL: this function runs as a signal handler. It must only
+    // call async-signal-safe functions (POSIX 2.4.3). Setting a
+    // sig_atomic_t / relaxed atomic flag is explicitly listed as safe;
+    // constructing std::string, logging, taking a std::mutex, or
+    // calling pthread_create (all of which Server::shutdown() used to
+    // do right here) are NOT safe and can deadlock the process against
+    // itself if the signal interrupts a thread that already holds an
+    // internal libc lock (e.g. mid-malloc). The actual shutdown() call
+    // now happens from runTickLoop() on the main thread instead, once
+    // it observes this flag in its normal (non-signal) execution
+    // context.
     if (sig == SIGINT || sig == SIGTERM) {
         g_shouldRun.store(false, std::memory_order_relaxed);
-        atomikpe::Server::getInstance().shutdown();
+        g_stopRequested = 1;
         return;
     }
     // SIGSEGV / SIGABRT / SIGFPE / SIGILL / SIGBUS → crashdump
@@ -208,6 +259,11 @@ int main(int argc, char* argv[]) {
 
     // Boot the server singleton
     auto& server = Server::getInstance();
+    // Point the server at g_stopRequested so runTickLoop() can poll it
+    // on the main thread. Must be wired up before runTickLoop() starts
+    // spinning; start() itself doesn't touch signals so ordering with
+    // it doesn't matter.
+    server.setExternalStopFlag(&g_stopRequested);
     server.start(dataPath);
     server.runTickLoop();
 
