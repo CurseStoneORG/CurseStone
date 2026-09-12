@@ -242,6 +242,13 @@ void Player::close(const std::string& reason) {
         // shared_ptrs by value, which keeps each Player alive for the
         // duration of sendPacket. Without this, a concurrent reap in
         // Server::tick() could destroy a Player mid-sendPacket.
+        //
+        // BUG FIX (mismo mecanismo que el de MoveEntityPacket en
+        // handleMovePlayer/EntityEventPacket en el combate): si `other`
+        // todavía está en su propia ventana de streaming de chunks (sin
+        // spawned() todavía), nunca llegó a recibir el AddPlayerPacket de
+        // esta entidad — mandarle igual el RemoveEntityPacket lo hace
+        // referenciar un eid que su cliente nunca conoció.
         try {
             if (srv_) {
                 auto snapshot = srv_->playersSnapshot();
@@ -251,6 +258,7 @@ void Player::close(const std::string& reason) {
                     if (!other) continue;
                     if (other.get() == this) continue;
                     if (other->isPendingRemoval()) continue;
+                    if (!other->spawned()) continue;
                     try {
                         other->sendPacket(pk);
                     } catch (...) {}
@@ -1388,11 +1396,19 @@ void Player::doFirstSpawn() {
     sendInventory();
 
     // Broadcast a PlayerListPacket (ADD) with all currently-online players.
+    //
+    // BUG FIX: mismo criterio que el AddPlayerPacket de abajo — si otro
+    // jugador está en su propia ventana de streaming pre-spawn (todavía
+    // sin spawned()), no lo incluimos en esta lista todavía. Antes esto
+    // no chequeaba spawned() mientras que el AddPlayerPacket de al lado
+    // sí lo hacía — inconsistencia que podía describirle a este cliente
+    // un eid que ese otro jugador nunca terminó de anunciar.
     if (srv_) {
         auto plp = std::make_shared<network::protocol::PlayerListPacket>();
         plp->type = network::protocol::PlayerListPacket::TYPE_ADD;
         for (auto& other : srv_->playersSnapshot()) {
             if (!other) continue;
+            if (other.get() != this && !other->spawned()) continue;
             network::protocol::PlayerListPacket::Entry e;
             // Parse the UUID string ("xxxxxxxx-xxxx-...") into 16 raw bytes.
             parseUuidBytes(other->config().uuid, e.uuid);
@@ -1551,6 +1567,24 @@ void Player::handleMovePlayer(double x, double y, double z, float yaw, float pit
 
     // Broadcast MoveEntityPacket to other nearby players (so they see this
     // player move). We don't filter by distance for the MVP.
+    //
+    // BUG FIX (root cause de "el segundo jugador se cuelga/crashea al
+    // conectarse"): el fix anterior en doFirstSpawn() (buscar "root cause
+    // of the multiplayer crash/kick") solo anuncia entidades EN el momento
+    // del spawn de cada jugador — pero deja una ventana abierta: mientras
+    // un jugador está en su fase de streaming de chunks (awaiting_first_
+    // spawn_ == true, ANTES de que su propio doFirstSpawn() corra), este
+    // bloque seguía mandándole MoveEntityPacket de CUALQUIER otro jugador
+    // que se moviera durante esa ventana, sin chequear `other->spawned()`.
+    // El cliente de ese jugador recién conectado recibe así un paquete que
+    // referencia un eid del que nunca oyó hablar (todavía no le llegó el
+    // AddPlayerPacket correspondiente, que recién se manda dentro de SU
+    // doFirstSpawn()) — el mismo mecanismo de "entidad desconocida" que ya
+    // se documentó como causa de crash del cliente MCPE 0.15.x en el fix
+    // de arriba, solo que en un punto distinto del código. Con un segundo
+    // jugador ya moviéndose activamente en el mundo (el caso normal), esto
+    // se dispara casi con certeza durante la ventana de streaming del que
+    // recién entra.
     if (srv_) {
         auto me = std::make_shared<network::protocol::MoveEntityPacket>();
         me->eid = runtimeId();
@@ -1558,6 +1592,7 @@ void Player::handleMovePlayer(double x, double y, double z, float yaw, float pit
         me->yaw = yaw_; me->headYaw = yaw_; me->pitch = pitch_;
         for (auto& other : srv_->playersSnapshot()) {
             if (other.get() == this) continue;
+            if (!other->spawned()) continue;
             other->sendPacket(me);
         }
     }
@@ -2323,12 +2358,19 @@ void Player::handleInteract(int action, int64_t targetEid) {
     // demas jugadores que lo esten trackeando. No filtramos por
     // distancia/chunk aqui por simplicidad (mismo criterio MVP que
     // el resto de los broadcasts de Player.cpp).
+    //
+    // BUG FIX (mismo mecanismo que el de MoveEntityPacket en
+    // handleMovePlayer): hurtEv->eid referencia la entidad del que
+    // recibió el golpe — mandarlo a un jugador que todavía está en su
+    // ventana de streaming de chunks (sin spawned() todavía) le llega
+    // como un paquete de una entidad que su cliente nunca conoció.
     auto hurtEv = std::make_shared<network::protocol::EntityEventPacket>();
     hurtEv->eid = target->runtimeId();
     hurtEv->event = died ? network::protocol::EntityEventPacket::DEATH_ANIMATION
                          : network::protocol::EntityEventPacket::HURT_ANIMATION;
     for (auto& other : srv_->playersSnapshot()) {
         if (!other) continue;
+        if (!other->spawned()) continue;
         other->sendPacket(hurtEv);
     }
     auto sh = std::make_shared<network::protocol::SetHealthPacket>();
@@ -2928,6 +2970,14 @@ void Player::onUpdate(uint64_t current_tick) {
             if (leftover_count == 0) {
                 // Full pickup — send TakeItemEntityPacket to viewers
                 // + RemoveEntityPacket to picker.
+                //
+                // BUG FIX (mismo mecanismo que MoveEntityPacket/
+                // EntityEventPacket más arriba): entityId referencia AL
+                // JUGADOR que recogió el item — un viewer que todavía
+                // esté en su ventana de streaming de chunks (sin
+                // spawned() todavía) puede ya estar "trackeando" este
+                // chunk (el tracking arranca antes del spawn) sin
+                // conocer todavía la entidad de quien recogió el item.
                 auto pk_viewer = std::make_shared<network::protocol::TakeItemEntityPacket>();
                 pk_viewer->target   = di->eid;
                 pk_viewer->entityId = runtimeId();
@@ -2937,6 +2987,7 @@ void Player::onUpdate(uint64_t current_tick) {
                     if (!other) continue;
                     if (other.get() == this) continue;
                     if (other->isPendingRemoval()) continue;
+                    if (!other->spawned()) continue;
                     if (!other->isTrackingChunk(pk_cx, pk_cz)) continue;
                     other->sendPacket(pk_viewer);
                 }
