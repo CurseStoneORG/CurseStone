@@ -881,11 +881,38 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
         return;
     }
 
-    // 4. Skin sanity check (PMMP requires 64*32*4 or 64*64*4 bytes).
+    // 4. Skin sanity check (PMMP requires 64*32*4 or 64*64*4 bytes for
+    // the LEGACY skin format used by MCPE 0.15.x). Any client sending a
+    // skin outside those two exact sizes — which in practice is most
+    // modern MCPE-compatible clients/launchers, since they default to
+    // newer Persona/geometry-based skin formats or re-encoded PNGs of
+    // other dimensions — used to hit this branch and just `return;`
+    // here without ever finishing the login handshake.
+    //
+    // ROOT CAUSE of "connects but gets kicked/times out immediately":
+    // that early return skipped EVERYTHING after it — logged_in_ was
+    // never set to true, no PlayStatusPacket was ever sent, and
+    // close()/kick() were never called either. The client was left
+    // waiting forever for a server response to its LoginPacket that
+    // was simply never coming. RakLib's own session-timeout logic
+    // (no application traffic for N seconds) eventually killed the
+    // connection from the outside, which is exactly what shows up on
+    // the client as "connected, then kicked/timed out almost
+    // instantly" — the log message ("...accepting") was a lie: nothing
+    // was actually accepted, the function just silently gave up.
+    //
+    // Fix: a non-standard skin size is not a reason to abort the
+    // handshake at all — just don't trust pk.skinData verbatim and
+    // fall back to a safe default skin, then keep going through the
+    // rest of the normal login flow below (whitelist/ban/dup-session/
+    // NBT/spawn), exactly like PMMP does (it clamps/replaces invalid
+    // skin data but never drops the connection over it).
     size_t sl = pk.skinData.size();
     if (sl != 64*32*4 && sl != 64*64*4) {
-        utils::MainLogger::get().warn("Non-standard skin size — accepting");
-        return;
+        utils::MainLogger::get().warn(
+            "Non-standard skin size (" + std::to_string(sl) +
+            " bytes) from " + cfg_.username + " — using default skin");
+        pk.skinData.assign(64*32*4, 0);
     }
 
     // 5. Server full?

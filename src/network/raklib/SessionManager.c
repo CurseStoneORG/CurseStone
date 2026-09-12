@@ -17,6 +17,7 @@
 #include "RakLib.h"
 #include "../../utils/Utils.h"
 #include "../../utils/BinaryStream.h"
+#include <stdio.h>
 
 // RakNet protocol packets
 #include "protocol/Packet.h"
@@ -901,9 +902,62 @@ static void handle_encapsulated(mcp_rak_session_manager_t* sm,
             size_t  dp_len = mcp_rak_session_build_datagram(s, dp, sizeof(dp),
                                 dgram, dgram_len, MCP_RELIABILITY_UNRELIABLE, 0,
                                 false, 0, 0, 0);
-            if (dp_len > 0)
-                mcp_rak_session_manager_send(sm, dp, dp_len, s->ip, s->port);
+            // DIAGNOSTIC (temporary — remove once the "connects but times
+            // out, 0 sent_packets logged" report is confirmed fixed):
+            // this send path bypasses mcp_rak_session_manager_send_
+            // encapsulated(), which is the ONLY function that increments
+            // diag_sent_packets. That means the existing per-session
+            // diagnostic dump can show sent_packets=0 even when
+            // SERVER_HANDSHAKE genuinely went out over the socket — the
+            // counter simply never saw it. Logging directly here removes
+            // that blind spot and tells us definitively whether the
+            // server-side send actually happens, what size it built, and
+            // what raw sendto() returned, for the very packet that
+            // determines whether the client ever completes the RakNet
+            // handshake.
+            {
+                char ipStr2[20];
+                snprintf(ipStr2, sizeof(ipStr2), "%u.%u.%u.%u",
+                         s->ip[0], s->ip[1], s->ip[2], s->ip[3]);
+                char buf[192];
+                snprintf(buf, sizeof(buf),
+                    "[RakLib][diag] CLIENT_CONNECT from %s:%u — "
+                    "dgram_len=%zu dp_len=%zu",
+                    ipStr2, s->port, dgram_len, dp_len);
+                if (sm->instance && sm->instance->on_raw_packet) {
+                    // Reuse on_raw_packet purely as a text sink isn't
+                    // right either — fall through to stderr instead so
+                    // this never depends on a callback being wired up.
+                }
+                fprintf(stderr, "%s\n", buf);
+            }
+            if (dp_len > 0) {
+                ssize_t sr = mcp_rak_session_manager_send(sm, dp, dp_len, s->ip, s->port);
+                fprintf(stderr,
+                    "[RakLib][diag] SERVER_HANDSHAKE sendto() returned %zd "
+                    "(dp_len=%zu)\n", (ssize_t)sr, dp_len);
+            } else {
+                fprintf(stderr,
+                    "[RakLib][diag] build_datagram for SERVER_HANDSHAKE "
+                    "returned 0 — nothing sent!\n");
+            }
             return;
+        }
+
+        // DIAGNOSTIC (temporary): anything else received while still in
+        // CONNECTING_2 was previously dropped completely silently — no
+        // log, no response, nothing. If the client is retrying
+        // CLIENT_CONNECT with a slightly different payload shape (e.g.
+        // an extra trailing byte some client builds add) it would fail
+        // the `plen >= 17` + pid check above and land here instead,
+        // which would explain recv_packets climbing to 17 while the
+        // server stays completely silent — every retry silently missing
+        // the 0x09 branch above.
+        if (pid != 0x13 && pid != 0x15) {
+            fprintf(stderr,
+                "[RakLib][diag] Unhandled packet in CONNECTING_2: pid=0x%02x "
+                "plen=%zu from %u.%u.%u.%u:%u\n",
+                pid, plen, s->ip[0], s->ip[1], s->ip[2], s->ip[3], s->port);
         }
 
         // ---- CLIENT_HANDSHAKE (0x13) ----
