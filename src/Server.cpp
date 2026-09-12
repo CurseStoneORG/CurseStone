@@ -115,64 +115,6 @@ void Server::loadConfig() {
 
     ip_            = get_str("server.ip", "server-ip", "0.0.0.0");
     port_          = (uint16_t)get_int("server.port", "server-port", 19132);
-
-    // ROOT CAUSE FIX ("works on local/Android host, but the public
-    // Linux/Pterodactyl server never sees a single incoming packet —
-    // not even the raw RakNet CLIENT_CONNECT, confirmed by diagnostic
-    // logging added directly in SessionManager.c never firing"):
-    //
-    // Pterodactyl (Wings) assigns a public port per server instance —
-    // shown in the panel as e.g. "gold.magmanode.com:27526" — and only
-    // forwards UDP traffic on THAT port into the container. It does
-    // this independently of whatever is written in server.properties,
-    // which the panel doesn't control or rewrite once the egg's default
-    // file has been copied into place on first boot. This binary's
-    // bundled resources/server.properties hardcodes server-port=19132
-    // (the standard Bedrock port), so on a fresh install the process
-    // binds 19132 inside the container while Wings is only forwarding
-    // 27526 from the outside — every client packet arrives at Wings,
-    // gets forwarded to a port nothing is listening on, and is dropped
-    // before it ever reaches this process. That's invisible from
-    // inside the server (no failed bind, no error — the bind on 19132
-    // succeeds just fine) and only shows up as "clients can't connect
-    // to the public address" while a direct/local connection (which
-    // isn't going through that port-forward at all) works normally —
-    // exactly the reported pattern.
-    //
-    // Pterodactyl eggs are expected to read the actual assigned port
-    // from the SERVER_PORT (and SERVER_IP, less commonly overridden)
-    // environment variables it injects into the container at startup,
-    // precisely because the assigned port is chosen per-installation
-    // and can't be known in advance by any bundled config file. Give
-    // those precedence over server.properties/atomikpe.yml whenever
-    // they're present — this matches what every other Pterodactyl-
-    // compatible server software does, and means a stale or
-    // never-updated server-port in the properties file can no longer
-    // silently strand the process on the wrong port.
-    if (const char* envPort = std::getenv("SERVER_PORT")) {
-        if (envPort[0] != '\0') {
-            try {
-                int p = std::stoi(envPort);
-                if (p > 0 && p <= 65535) {
-                    if ((uint16_t)p != port_) {
-                        utils::MainLogger::get().info(
-                            "SERVER_PORT env var (" + std::string(envPort) +
-                            ") overrides server-port from config (" +
-                            std::to_string(port_) + ")");
-                    }
-                    port_ = (uint16_t)p;
-                }
-            } catch (...) {
-                utils::MainLogger::get().warn(
-                    "Ignoring malformed SERVER_PORT env var: " + std::string(envPort));
-            }
-        }
-    }
-    if (const char* envIp = std::getenv("SERVER_IP")) {
-        if (envIp[0] != '\0') {
-            ip_ = envIp;
-        }
-    }
     motd_          = get_str("server.motd", "motd", "AtomikPE");
     max_players_   = (int)get_int("server.max-players", "max-players", 20);
     gamemode_      = (int)get_int("server.gamemode", "gamemode", 0);
