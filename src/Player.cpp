@@ -2726,18 +2726,34 @@ void Player::onUpdate(uint64_t current_tick) {
         // tick, not just when moved — so chunks from sendChunksAroundSpawn()
         // get streamed even though the player hasn't moved yet.
         //
-        // BUG FIX (network flood): Was 4 chunks/tick. The workbench showed
-        // this floods the client with 60+ UDP fragments in 3ms, overwhelming
-        // the MCPE 0.15 client's receive buffer and causing it to stop
-        // responding → "Disconnected from server" timeout. This limit is a
-        // NETWORK-SEND throttle only — it stays conservative regardless of
-        // how fast generation itself is.
+        // BUG FIX (reporte de usuario: "el mundo/terreno no se renderiza y
+        // está vacío"): el throttle se había bajado a 1 chunk/tick para
+        // arreglar un flood de red, pero nadie ajustó esto en conjunto con
+        // view_distance=8 (Player.h) — eso son (2*8+1)^2 = 289 chunks en el
+        // área visible. A 1 chunk/tick (50ms) eso son ~14.4 SEGUNDOS para
+        // terminar de llenar el área completa. El umbral de primer spawn
+        // (FIRST_SPAWN_CHUNK_THRESHOLD=9, un 3x3) sí se cumple rápido y
+        // dispara doFirstSpawn() casi al instante — el jugador entra a un
+        // mundo donde solo hay un cuadrado de 48x48 bloques cargado
+        // alrededor suyo, y el resto del horizonte (hasta donde el cliente
+        // MCPE intenta renderizar) se ve vacío/negro durante los
+        // siguientes ~14 segundos mientras el resto llega de a 1 por tick.
+        // Esto coincide exactamente con lo reportado: no es que el chunk
+        // nunca llegue, es que tarda demasiado en llegar comparado con el
+        // área que el cliente ya intenta mostrar desde el primer instante.
         //
-        // PMMP sends 1 chunk per tick by default. We use 2 as a balance
-        // between load time and stability. Each chunk is ~83KB uncompressed
-        // → ~15KB compressed → ~10-15 RakNet fragments. At 2 chunks/tick
-        // that's 20-30 fragments per 50ms tick, which the client can handle.
-        constexpr int MAX_CHUNKS_PER_TICK = 1;
+        // Fix: subir el throttle a un punto medio más razonable. El propio
+        // comentario histórico de este bloque decía "usamos 2 como
+        // balance" pero el valor real había quedado en 1 — inconsistencia
+        // que sugiere que se bajó de más al perseguir el bug del flood.
+        // 3 chunks/tick sigue siendo conservador (30-45 fragmentos RakNet
+        // por tick de 50ms, dentro de lo que el cliente MCPE 0.15 tolera
+        // según el propio análisis de flood de más arriba, que marcó el
+        // límite real en 60+ fragmentos en 3ms — un caso muy distinto,
+        // ráfaga sin throttle ninguno) y reduce el tiempo de llenado total
+        // de ~14.4s a ~4.8s, con margen de sobra para no repetir el
+        // desconecte por timeout.
+        constexpr int MAX_CHUNKS_PER_TICK = 3;
         int chunks_sent_this_tick = 0;
 
         // FIX (chunk generation was the real bottleneck, not just the
