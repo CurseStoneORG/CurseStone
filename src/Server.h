@@ -28,6 +28,7 @@
 #include <unordered_map>
 #include <cstdint>
 #include <unordered_set>
+#include <csignal>
 
 namespace atomikpe {
 class Player;
@@ -64,6 +65,26 @@ public:
 
     // Cleanly shut down: disconnect players, save level, close sockets.
     void shutdown();
+
+    // Registers an external "stop requested" flag for runTickLoop() to
+    // poll once per iteration on the MAIN thread. main.cpp points this
+    // at a volatile sig_atomic_t that its SIGINT/SIGTERM handler sets.
+    //
+    // This indirection exists because the signal handler itself must
+    // never call shutdown() directly — shutdown() logs (malloc + mutex
+    // via the async logger) and spawns a watchdog std::thread
+    // (pthread_create), neither of which is async-signal-safe. Doing
+    // that inside the handler can deadlock the process if the signal
+    // interrupts a thread already holding an internal libc lock (e.g.
+    // mid-malloc) — deterministic on Linux/glibc, which is why this
+    // only ever showed up there: the server would appear to never
+    // finish starting, or /stop would hang forever with the process
+    // still alive. Polling a plain flag from ordinary (non-signal)
+    // code on the main thread keeps shutdown() itself unchanged and
+    // safe to call from here.
+    void setExternalStopFlag(const volatile std::sig_atomic_t* flag) {
+        external_stop_flag_ = flag;
+    }
 
     bool isRunning() const { return running_.load(std::memory_order_relaxed); }
     const std::string& getDataPath() const { return dataPath_; }
@@ -206,6 +227,9 @@ private:
     std::atomic<bool> running_{false};
     uint64_t currentTick_{0};
     std::atomic<bool> tick_loop_exited_{false};  // set true when runTickLoop returns
+    // See setExternalStopFlag() above. Read only from runTickLoop() on
+    // the main thread — never dereferenced from signal context here.
+    const volatile std::sig_atomic_t* external_stop_flag_ = nullptr;
     int tps_ = 20;
 
     // Config (mirrors resources/atomikpe.yml).
