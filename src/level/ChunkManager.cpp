@@ -141,6 +141,53 @@ mcp_chunk_t* ChunkManager::getChunkOrRequestAsync(int32_t x, int32_t z, schedule
         pending_.insert(key);
     }
 
+    // FIX (root cause of "some chunks never render again after
+    // rejoining"): `pending_` marks (x,z) as in-flight so we don't
+    // submit duplicate generation work, and every past return path
+    // out of this function was responsible for calling
+    // pending_.erase(key) itself before returning. The disk-load path
+    // below only did that erase on the SUCCESS branch (loadChunk() has
+    // a value AND the dynamic_cast succeeds AND releaseChunk() returns
+    // non-null). If loadChunk() returned a value but any of those
+    // conditions failed — a chunk that exists on disk but whose
+    // ChunkAdapter couldn't be reconstituted (partially-written NBT/
+    // region record, adapter type mismatch, etc.) — execution fell
+    // through to the generation branch below WITHOUT clearing
+    // `pending_` first. From that point on, every future call to
+    // getChunkOrRequestAsync() for that exact (x,z) saw
+    // pending_.count(key) > 0 at the very top of this function and
+    // returned nullptr immediately, forever — no retry, no fallback to
+    // generation, nothing. The chunk was permanently stuck "in flight"
+    // for the lifetime of the process.
+    //
+    // This is invisible on a brand-new world: nothing is on disk yet,
+    // so loadChunk() never has a value and every chunk takes the
+    // generation path, which always clears `pending_` correctly
+    // (either in the async callback or the submit-failure branch).
+    // It only starts happening once chunks that were saved to disk
+    // (on unload/flushDirty) get re-requested on a later join — which
+    // matches exactly the reported symptom: chunks render fine on
+    // first entry, but some go missing/never load after leaving and
+    // reconnecting.
+    //
+    // Fix: guarantee pending_.erase(key) runs on EVERY exit from this
+    // point on, unless we've actually handed the chunk off to the
+    // async pool (in which case the submitted task/callback owns
+    // clearing it). A tiny RAII guard makes that automatic instead of
+    // relying on every future return statement remembering to do it.
+    bool handed_to_pool = false;
+    struct PendingGuard {
+        std::mutex& mtx;
+        std::unordered_set<ChunkKey, ChunkKeyHash>& pending;
+        ChunkKey key;
+        bool& handed_to_pool;
+        ~PendingGuard() {
+            if (handed_to_pool) return;  // async task/callback owns the erase now
+            std::lock_guard<std::mutex> lk(mtx);
+            pending.erase(key);
+        }
+    } guard{pending_mtx_, pending_, key, handed_to_pool};
+
     // Try disk first — cheap enough to do on the calling (main) thread;
     // only actual terrain generation goes to a worker.
     if (provider_) {
@@ -152,11 +199,14 @@ mcp_chunk_t* ChunkManager::getChunkOrRequestAsync(int32_t x, int32_t z, schedule
                 mcp_chunk_t* raw = adapter->releaseChunk();
                 if (raw) {
                     setChunk(x, z, raw);
-                    std::lock_guard<std::mutex> lk(pending_mtx_);
-                    pending_.erase(key);
-                    return raw;
+                    return raw;   // guard erases pending_ on the way out
                 }
             }
+            // loadChunk() had a value but we couldn't extract a usable
+            // chunk from it (bad adapter / null release) — fall through
+            // to generation below instead of leaving this chunk stuck.
+            // The guard above ensures `pending_` gets cleared even
+            // though we're about to re-insert it for the async submit.
         }
     }
 
@@ -173,12 +223,15 @@ mcp_chunk_t* ChunkManager::getChunkOrRequestAsync(int32_t x, int32_t z, schedule
             pending_.erase(key);
         });
 
-    if (!pool->submit([task]{ task->run(); })) {
-        // Pool refused (shutting down) — undo the pending mark so we
-        // don't leak the slot; caller will just see nullptr this tick.
-        std::lock_guard<std::mutex> lk(pending_mtx_);
-        pending_.erase(key);
+    if (pool->submit([task]{ task->run(); })) {
+        // Successfully handed off — the callback above now owns
+        // clearing `pending_` once generation finishes. Tell the guard
+        // not to erase it out from under the in-flight task.
+        handed_to_pool = true;
     }
+    // Pool refused (shutting down): handed_to_pool stays false, so the
+    // guard erases pending_ on return — caller just sees nullptr this
+    // tick and can retry later instead of the slot leaking forever.
     return nullptr;
 }
 
