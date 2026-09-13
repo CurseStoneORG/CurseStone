@@ -18,6 +18,12 @@
 #include "tile/TileSign.h"
 #include "nbt/NBT.h"
 #include "nbt/tag/CompoundTag.h"
+#include "Player.h"
+#include "Server.h"
+#include "block/BlockIds.h"
+#include "block/BlockFire.h"
+#include "network/protocol/LevelEventPacket.h"
+#include "network/protocol/UpdateBlockPacket.h"
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -214,6 +220,7 @@ int Level::save() {
 
 void Level::tick(uint64_t current_tick) {
     advanceTime(1);
+    doWeatherTick(current_tick);
     // Sweep dropped-items registry: erase any items marked as taken.
     // This avoids the map growing unbounded as players pick up items.
     {
@@ -477,6 +484,152 @@ int Level::unloadDistantChunks(const std::vector<ChunkViewer>& viewers, int32_t 
         if (chunks_.unloadChunk(cx, cz, /*save=*/true)) ++unloaded;
     }
     return unloaded;
+}
+
+// ============================================================
+// Weather system — estado + lluvia que apaga fuego
+// ============================================================
+// Wire format note (protocol 84): the client has NO dedicated weather
+// packet. Rain is controlled via LevelEventPacket evidence 3001 (start)
+// / 3002 (stop), thunder adds 3003 / 3004 on top. All coordinates and
+// the data field are sent as zero — mirrors what PMMP broadcastLevelEvent
+// callers pass for these events.
+static void broadcastWeatherEvent(bool raining, bool thundering) {
+    auto& srv = Server::getInstance();
+    auto start = raining
+        ? network::protocol::LevelEventPacket::EVENT_START_RAIN
+        : network::protocol::LevelEventPacket::EVENT_STOP_RAIN;
+    auto pk = std::make_shared<network::protocol::LevelEventPacket>();
+    pk->evid = start;
+    for (auto& p : srv.playersSnapshot()) {
+        if (p && p->spawned()) p->sendPacket(pk);
+    }
+    if (thundering) {
+        auto tp = std::make_shared<network::protocol::LevelEventPacket>();
+        tp->evid = network::protocol::LevelEventPacket::EVENT_START_THUNDER;
+        for (auto& p : srv.playersSnapshot()) {
+            if (p && p->spawned()) p->sendPacket(tp);
+        }
+    }
+}
+
+void Level::setRaining(bool raining, int32_t durationTicks) {
+    if (raining_ == raining) return;          // no-op — evita re-broadcasts
+    raining_ = raining;
+    rain_ticks_left_ = durationTicks > 0 ? durationTicks : -1;
+    if (!raining) thundering_ = false;        // sin lluvia no puede haber trueno
+    broadcastWeatherEvent(raining_, thundering_);
+    utils::MainLogger::get().info(raining
+        ? "[Weather] Rain started in level '" + cfg_.name + "'"
+        : "[Weather] Rain stopped in level '" + cfg_.name + "'");
+}
+
+void Level::setThundering(bool thundering, int32_t durationTicks) {
+    if (thundering_ == thundering) return;
+    if (thundering && !raining_) {
+        // Trueno sin lluvia no existe — enciende la lluvia primero.
+        setRaining(true, durationTicks);
+    }
+    thundering_ = thundering;
+    thunder_ticks_left_ = durationTicks > 0 ? durationTicks : -1;
+    auto tp = std::make_shared<network::protocol::LevelEventPacket>();
+    tp->evid = thundering
+        ? network::protocol::LevelEventPacket::EVENT_START_THUNDER
+        : network::protocol::LevelEventPacket::EVENT_STOP_THUNDER;
+    for (auto& p : Server::getInstance().playersSnapshot()) {
+        if (p && p->spawned()) p->sendPacket(tp);
+    }
+}
+
+// ---------------------------------------------------------------
+// doWeatherTick — called from Level::tick() every server tick.
+//
+//  1. Counts down rain/thunder durations (when bounded).
+//  2. While raining, extinguishes exposed fire: walks a rotating
+//     window of CHUNKS_PER_TICK loaded chunks per tick and replaces
+//     every FIRE block whose column has sky above it with AIR.
+//     Chunk scans read section->blocks directly (4096 bytes each,
+//     no per-block accessor call); per-column sky checks use the
+//     height map, so "exposed" means "sky directly above", matching
+//     how the rain visibly falls. Vanilla PMMP also has a chance
+//     component; we keep it deterministic here and cap the work per
+//     tick (MAX_EXTINGUISH_PER_TICK) so a large burning area can
+//     never stall the tick loop (the same philosophy that killed
+//     fire propagation in v6).
+//  3. Sends UpdateBlockPacket to every online player for each block
+//     changed, so clients see the fire die instead of finding out on
+//     the next chunk resync.
+// ---------------------------------------------------------------
+void Level::doWeatherTick(uint64_t current_tick) {
+    // 1. Durations.
+    if (raining_ && rain_ticks_left_ > 0) {
+        if (--rain_ticks_left_ <= 0) setRaining(false);
+    }
+    if (thundering_ && thunder_ticks_left_ > 0) {
+        if (--thunder_ticks_left_ <= 0) setThundering(false);
+    }
+    if (!raining_) return;
+
+    // 2. Fire sweep (only while raining).
+    auto coords = chunks_.loadedChunkCoords();
+    if (coords.empty()) return;
+    int extinguished = 0;
+    for (int i = 0; i < WEATHER_CHUNKS_PER_TICK && extinguished < MAX_EXTINGUISH_PER_TICK; ++i) {
+        const auto& [cx, cz] = coords[(rain_scan_offset_ + (uint64_t)i) % coords.size()];
+        mcp_chunk_t* c = chunks_.getChunkIfLoaded(cx, cz);
+        if (!c) continue;
+
+        for (uint8_t sy = 0; sy < 16; ++sy) {
+            mcp_chunk_section_t* sec = c->sections[sy];
+            if (!sec || !sec->blocks) continue;
+            // Cheap pre-filter: is there ANY fire in this 4096-block
+            // section? Avoids 4096 iterations on every section of
+            // every chunk when there is no fire anywhere.
+            if (!std::memchr(sec->blocks, (int)block::FIRE, 4096)) continue;
+
+            for (int ly = 0; ly < 16 && extinguished < MAX_EXTINGUISH_PER_TICK; ++ly) {
+                int32_t y = (int32_t)sy * 16 + ly;
+                for (int j = 0; j < 4096 && extinguished < MAX_EXTINGUISH_PER_TICK; ++j) {
+                    if (sec->blocks[j] != (uint8_t)block::FIRE) continue;
+                    int lx = j & 15;
+                    int lz = (j >> 4) & 15;
+                    // Exposed = sky visible above this column. The height
+                    // map stores topmost light-blocking block + 1 per
+                    // column, and FIRE itself never inflates it
+                    // (mcp_block_light_opacity(FIRE) == 0), so a fire
+                    // whose top face touches open sky has y >= h here.
+                    int32_t h = c->height_map ? c->height_map[(lz << 4) | lx] : 256;
+                    if (y < h) continue;
+                    int32_t wx = (cx << 4) | lx;
+                    int32_t wz = (cz << 4) | lz;
+                    // Route through Level::setBlock so the chunk dirty
+                    // flag is set (and stays on the same write path as
+                    // the rest of the server).
+                    setBlock(wx, y, wz, block::AIR, 0);
+                    auto up = std::make_shared<network::protocol::UpdateBlockPacket>();
+                    up->x = wx; up->z = wz;
+                    up->y = (uint8_t)y;
+                    up->blockId = block::AIR;
+                    up->blockData = 0;
+                    up->flags = network::protocol::UpdateBlockPacket::FLAG_ALL;
+                    for (auto& p : Server::getInstance().playersSnapshot()) {
+                        if (p && p->spawned()) p->sendPacket(up);
+                    }
+                    ++extinguished;
+                }
+            }
+        }
+    }
+    rain_scan_offset_ += WEATHER_CHUNKS_PER_TICK;
+
+    // 3. One rate-limited log line so operators can SEE the feature work.
+    if (extinguished > 0 &&
+        current_tick - last_fire_extinguish_log_ >= FIRE_EXTINGUISH_LOG_INTERVAL) {
+        last_fire_extinguish_log_ = current_tick;
+        utils::MainLogger::get().info(
+            "[Weather] Rain extinguished " + std::to_string(extinguished) +
+            " fire block(s) in level '" + cfg_.name + "'");
+    }
 }
 
 } // namespace atomikpe::level

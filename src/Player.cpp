@@ -1129,6 +1129,20 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
         sendPacket(st, true);
     }
 
+    // Weather sync — players joining while it's raining must get the
+    // rain/thunder LevelEvents or they'll see clear skies until the
+    // next weather change (LevelEventPacket.h is already included).
+    if (srv_ && srv_->getDefaultLevel() && srv_->getDefaultLevel()->isRaining()) {
+        auto rain = std::make_shared<network::protocol::LevelEventPacket>();
+        rain->evid = network::protocol::LevelEventPacket::EVENT_START_RAIN;
+        sendPacket(rain, true);
+        if (srv_->getDefaultLevel()->isThundering()) {
+            auto th = std::make_shared<network::protocol::LevelEventPacket>();
+            th->evid = network::protocol::LevelEventPacket::EVENT_START_THUNDER;
+            sendPacket(th, true);
+        }
+    }
+
     // SetSpawnPosition.
     if (srv_ && srv_->getDefaultLevel()) {
         auto sp = srv_->getDefaultLevel()->spawn();
