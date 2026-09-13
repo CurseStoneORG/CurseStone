@@ -226,6 +226,10 @@ typedef struct mcp_rak_session {
     // was actually happening in the reliability layer at the time. ----
     uint64_t  diag_recv_packets;
     uint64_t  diag_sent_packets;
+    // FIX: one-shot flag so a hard UDP sendto() failure (e.g. outbound UDP
+    // blocked by a hosting panel's firewall) is logged exactly once per
+    // session instead of spamming the console on every retransmit.
+    bool      diag_send_fail_logged;
     uint64_t  diag_ack_received;
     uint64_t  diag_nack_received;
     uint64_t  diag_retransmits;

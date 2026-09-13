@@ -171,6 +171,43 @@ bool mcp_rak_session_manager_send_encapsulated(mcp_rak_session_manager_t* sm,
 }
 
 // =========================================================================
+// FIX (the Magmanode/"timeout without ever opening a session" diagnosis):
+// every handshake-phase reply (UNCONNECTED_PONG, OPEN_CONNECTION_REPLY_1/2)
+// used to go straight to the raw socket send, bypassing diag_sent_packets
+// and last_packet_sent_ms. A session that died during the handshake printed
+// the misleading "sent_packets=0 since_last_packet_sent_ms=<full session>"
+// seen in real disconnect dumps — even though replies HAD gone out — making
+// it impossible to tell "the server never replied" (code bug) from "the
+// server replied, the network lost it" (hosting panel / firewall / lossy
+// mobile-CGNAT path). This wrapper counts successful sends, stamps the sent
+// clock, and logs the FIRST send failure per session, so a host whose
+// outbound UDP is blocked shows one explicit WARNING in the console instead
+// of silently looking like a client that vanished into thin air.
+// `s` may be NULL for pre-session traffic (server-list pings) — such sends
+// are not counted (no session to count on) and never spam failure logs.
+// =========================================================================
+static ssize_t sm_send_reply(mcp_rak_session_manager_t* sm, mcp_rak_session_t* s,
+                             const uint8_t* data, size_t len,
+                             const uint8_t ip[4], uint16_t port) {
+    if (!sm || !data || !ip || len == 0) return -1;
+    ssize_t r = mcp_rak_session_manager_send(sm, data, len, ip, port);
+    if (r > 0) {
+        if (s) {
+            s->diag_sent_packets++;
+            s->last_packet_sent_ms = mcp_utils_time_ms();
+        }
+    } else if (r < 0 && s && !s->diag_send_fail_logged) {
+        fprintf(stderr,
+            "[NET] WARNING: UDP send to %u.%u.%u.%u:%u FAILED (result=%zd). "
+            "Outbound UDP may be blocked by the host firewall/panel — "
+            "clients will time out during the handshake.\n",
+            ip[0], ip[1], ip[2], ip[3], port, (ssize_t)r);
+        s->diag_send_fail_logged = true;
+    }
+    return r;
+}
+
+// =========================================================================
 // RakNet binary helpers (inline)
 // =========================================================================
 static void write_u8(uint8_t* b, size_t* oi, uint8_t v) {
@@ -894,52 +931,38 @@ static void handle_encapsulated(mcp_rak_session_manager_t* sm,
             int64_t send_ping = (int64_t)rb_u64_be(payload, plen, &i);
             s->client_id = client_id;
 
-            // Reply: SERVER_HANDSHAKE (0x10) — UNRELIABLE encapsulated
+            // Reply: SERVER_HANDSHAKE (0x10).
+            //
+            // FIX (root cause of "never opens a session, then TIMEOUT" on
+            // lossy paths — mobile CGNAT, WiFi, shared hosting panels): this
+            // reply used to be built by hand and fired off as a raw,
+            // UNRELIABLE datagram straight to the socket. Unreliable means
+            // the client never ACKs it, so ONE lost datagram was gone
+            // forever: the client sits waiting for the handshake, gives up
+            // after ~10s of silence, and the server keeps the half-open
+            // session until the 30s sweep prints exactly the
+            // recv_packets=1 / sent_packets=0 / TIMEOUT dump from the
+            // Magmanode report. Wired, low-loss paths (and the playit.gg
+            // relay, a clean server-to-server hop) rarely lose it — which
+            // is why the tunnel "fixed" it while Magmanode/local kept
+            // failing. Real RakNet sends ConnectionRequestAccepted as
+            // RELIABLE_ORDERED on channel 0: the client ACKs or NACKs it,
+            // the NACK path resends from the recovery queue, and the 5s
+            // stale-retransmit sweep covers outright loss. Going through
+            // the standard encapsulated send path ALSO feeds
+            // diag_sent_packets/last_packet_sent_ms, so the disconnect
+            // dump stops lying about the handshake phase.
             dgram_len = build_server_handshake(dgram, sizeof(dgram),
                                                 s->ip, s->port, send_ping);
-            // Wrap in DataPacket_4 (0x84) with UNRELIABLE — always fits, no split needed
-            uint8_t dp[RAKLIB_MAX_MTU + 64];
-            size_t  dp_len = mcp_rak_session_build_datagram(s, dp, sizeof(dp),
-                                dgram, dgram_len, MCP_RELIABILITY_UNRELIABLE, 0,
-                                false, 0, 0, 0);
-            // DIAGNOSTIC (temporary — remove once the "connects but times
-            // out, 0 sent_packets logged" report is confirmed fixed):
-            // this send path bypasses mcp_rak_session_manager_send_
-            // encapsulated(), which is the ONLY function that increments
-            // diag_sent_packets. That means the existing per-session
-            // diagnostic dump can show sent_packets=0 even when
-            // SERVER_HANDSHAKE genuinely went out over the socket — the
-            // counter simply never saw it. Logging directly here removes
-            // that blind spot and tells us definitively whether the
-            // server-side send actually happens, what size it built, and
-            // what raw sendto() returned, for the very packet that
-            // determines whether the client ever completes the RakNet
-            // handshake.
-            {
-                char ipStr2[20];
-                snprintf(ipStr2, sizeof(ipStr2), "%u.%u.%u.%u",
-                         s->ip[0], s->ip[1], s->ip[2], s->ip[3]);
-                char buf[192];
-                snprintf(buf, sizeof(buf),
-                    "[RakLib][diag] CLIENT_CONNECT from %s:%u — "
-                    "dgram_len=%zu dp_len=%zu",
-                    ipStr2, s->port, dgram_len, dp_len);
-                if (sm->instance && sm->instance->on_raw_packet) {
-                    // Reuse on_raw_packet purely as a text sink isn't
-                    // right either — fall through to stderr instead so
-                    // this never depends on a callback being wired up.
-                }
-                fprintf(stderr, "%s\n", buf);
-            }
-            if (dp_len > 0) {
-                ssize_t sr = mcp_rak_session_manager_send(sm, dp, dp_len, s->ip, s->port);
+            if (dgram_len == 0 ||
+                !mcp_rak_session_manager_send_encapsulated(
+                    sm, s->ip, s->port, dgram, dgram_len,
+                    MCP_RELIABILITY_RELIABLE_ORDERED, 0)) {
                 fprintf(stderr,
-                    "[RakLib][diag] SERVER_HANDSHAKE sendto() returned %zd "
-                    "(dp_len=%zu)\n", (ssize_t)sr, dp_len);
-            } else {
-                fprintf(stderr,
-                    "[RakLib][diag] build_datagram for SERVER_HANDSHAKE "
-                    "returned 0 — nothing sent!\n");
+                    "[NET] WARNING: SERVER_HANDSHAKE for %u.%u.%u.%u:%u could "
+                    "not be sent (build failed or socket send failed) — the "
+                    "client will time out.\n",
+                    s->ip[0], s->ip[1], s->ip[2], s->ip[3], s->port);
             }
             return;
         }
@@ -1034,8 +1057,11 @@ static void handle_encapsulated(mcp_rak_session_manager_t* sm,
             size_t dp_len = mcp_rak_session_build_datagram(s, dp, sizeof(dp),
                                 dgram, dgram_len, MCP_RELIABILITY_UNRELIABLE, 0,
                                 false, 0, 0, 0);
+            // FIX: count this send (see sm_send_reply) so the disconnect
+            // dump reflects keepalive traffic instead of always showing
+            // sent_packets frozen at 0.
             if (dp_len > 0)
-                mcp_rak_session_manager_send(sm, dp, dp_len, s->ip, s->port);
+                sm_send_reply(sm, s, dp, dp_len, s->ip, s->port);
             return;
         }
 
@@ -1085,6 +1111,12 @@ static void handle_data_packet(mcp_rak_session_manager_t* sm,
         // recover, they were simply never part of this session.
         s->last_recv_seq = (int32_t)seq; // stored only as a bit pattern now
         s->window_start  = seq; // will be re-centered below via diff==0 path
+        // FIX: window_end used to stay at its init value
+        // (MCP_SESSION_WINDOW_SIZE) while window_start jumped to the
+        // client's actual first sequence number, leaving a lopsided window
+        // [seq, 2048) whenever the first seq was large. Center it the same
+        // way every later slide does.
+        s->window_end    = (seq + MCP_SESSION_WINDOW_SIZE / 2) & MCP_SEQ24_MASK;
     } else {
         uint32_t last = (uint32_t)s->last_recv_seq & MCP_SEQ24_MASK;
         if (seq24_less(seq, s->window_start) ||
@@ -1161,10 +1193,24 @@ static void handle_data_packet(mcp_rak_session_manager_t* sm,
         // for the old one.
         uint32_t old_start = s->window_start;
         uint32_t new_start = (seq - MCP_SESSION_WINDOW_SIZE / 2) & MCP_SEQ24_MASK;
-        uint32_t m = old_start;
-        while (m != new_start) {
-            s->recv_window[m % MCP_SESSION_WINDOW_SIZE] = false;
-            m = (m + 1) & MCP_SEQ24_MASK;
+        // FIX (stall): the clear-ahead walk below used to have no bound on
+        // the distance. On a session's FIRST advance, old_start is the init
+        // value 0 while new_start is seq-1024 — numerically ~16.7 million
+        // slots BEHIND old_start in the circular 24-bit space — so that one
+        // datagram spun the loop ~16.7M times (tens of ms of hard stall on
+        // the network path, right in the middle of the handshake), and any
+        // large forward jump repeated it. The loop only ever needs to clear
+        // the slots the window slides OVER (at most MCP_SESSION_WINDOW_SIZE
+        // of them); anything farther is covered by clearing the whole array.
+        uint32_t fwd = (new_start - old_start) & MCP_SEQ24_MASK;
+        if (fwd >= MCP_SESSION_WINDOW_SIZE) {
+            memset(s->recv_window, 0, sizeof(s->recv_window));
+        } else {
+            uint32_t m = old_start;
+            while (m != new_start) {
+                s->recv_window[m % MCP_SESSION_WINDOW_SIZE] = false;
+                m = (m + 1) & MCP_SEQ24_MASK;
+            }
         }
         s->last_recv_seq = (int32_t)seq;
         s->window_start  = new_start;
@@ -1511,7 +1557,9 @@ static void handle_unconnected(mcp_rak_session_manager_t* sm,
         out_len = build_unconnected_pong(out, sizeof(out),
                                           ping_time, sm->server_id,
                                           sm->server_name);
-        mcp_rak_session_manager_send(sm, out, out_len, ip, port);
+        // FIX: count this reply (see sm_send_reply) so sends are visible
+        // in the disconnect dump instead of always reporting 0.
+        sm_send_reply(sm, NULL, out, out_len, ip, port);
         return;
     }
 
@@ -1525,22 +1573,45 @@ static void handle_unconnected(mcp_rak_session_manager_t* sm,
         // We accept 6 and also 8 (some clients send 8).
         // If wrong protocol we could reject, but PMMP just ignores; we accept.
 
-        // Create/find session
-        mcp_rak_session_t* s = mcp_rak_session_manager_get_or_create(sm, ip, port);
-        if (!s) return;
+        mcp_rak_session_t* s = mcp_rak_session_manager_find(sm, ip, port);
+        if (s && s->state > MCP_SESSION_STATE_CONNECTING_1) {
+            // FIX (state downgrade): a duplicate/late OCR1 used to RESET a
+            // session that had already progressed (CONNECTING_2/CONNECTED)
+            // back to CONNECTING_1 via get_or_create + unconditional state
+            // assignment. On a lossy path the client losing REPLY_2 and
+            // restarting its handshake would silently tear down progress it
+            // had already made; its very next CLIENT_CONNECT /
+            // CLIENT_HANDSHAKE then arrived at a session in the wrong state
+            // and was silently ignored — the "never opens a session"
+            // signature. A still-alive session now just gets a fresh REPLY_1
+            // so the client can continue WITHOUT losing state; only a dead
+            // session (silent >10s) is reset for a new handshake attempt.
+            uint64_t now = mcp_utils_time_ms();
+            uint64_t last_seen = s->last_activity_ms > s->last_packet_received_ms
+                                 ? s->last_activity_ms : s->last_packet_received_ms;
+            if ((now - last_seen) <= 10000) {
+                out_len = build_ocr1_reply(out, sizeof(out), sm->server_id, mtu);
+                sm_send_reply(sm, s, out, out_len, ip, port);
+                return;
+            }
+        }
+        if (!s) {
+            s = mcp_rak_session_manager_get_or_create(sm, ip, port);
+            if (!s) return;
+        }
         s->mtu   = mtu;
         s->state = MCP_SESSION_STATE_CONNECTING_1;
         s->last_activity_ms = mcp_utils_time_ms();
 
         out_len = build_ocr1_reply(out, sizeof(out), sm->server_id, mtu);
-        mcp_rak_session_manager_send(sm, out, out_len, ip, port);
+        sm_send_reply(sm, s, out, out_len, ip, port);
         return;
     }
 
     // ---- OPEN_CONNECTION_REQUEST_2 (0x07) ----
     if (pid == 0x07) {
         mcp_rak_session_t* s = mcp_rak_session_manager_find(sm, ip, port);
-        if (!s || s->state != MCP_SESSION_STATE_CONNECTING_1) {
+        if (!s) {
             // Can create fresh if state was lost
             s = mcp_rak_session_manager_get_or_create(sm, ip, port);
             if (!s) return;
@@ -1554,6 +1625,24 @@ static void handle_unconnected(mcp_rak_session_manager_t* sm,
         if (mtu > RAKLIB_MAX_MTU) mtu = RAKLIB_MAX_MTU;
         if (mtu < RAKLIB_MIN_MTU) mtu = RAKLIB_MIN_MTU;
 
+        // FIX (state downgrade): same guard as the OCR1 handler — a
+        // duplicate/retransmitted OCR2 must not reset a session that is
+        // already in CONNECTING_2 or CONNECTED (it used to assign
+        // state=CONNECTING_2 unconditionally, clobbering a live session).
+        // Reply so the client can proceed, keep the state.
+        if (s->state != MCP_SESSION_STATE_UNCONNECTED &&
+            s->state != MCP_SESSION_STATE_CONNECTING_1) {
+            uint64_t now = mcp_utils_time_ms();
+            uint64_t last_seen = s->last_activity_ms > s->last_packet_received_ms
+                                 ? s->last_activity_ms : s->last_packet_received_ms;
+            if ((now - last_seen) <= 10000) {
+                out_len = build_ocr2_reply(out, sizeof(out),
+                                            sm->server_id, ip, port, mtu);
+                sm_send_reply(sm, s, out, out_len, ip, port);
+                return;
+            }
+        }
+
         s->mtu       = mtu;
         s->client_id = client_id;
         s->state     = MCP_SESSION_STATE_CONNECTING_2;
@@ -1561,7 +1650,7 @@ static void handle_unconnected(mcp_rak_session_manager_t* sm,
 
         out_len = build_ocr2_reply(out, sizeof(out),
                                     sm->server_id, ip, port, mtu);
-        mcp_rak_session_manager_send(sm, out, out_len, ip, port);
+        sm_send_reply(sm, s, out, out_len, ip, port);
         return;
     }
 
