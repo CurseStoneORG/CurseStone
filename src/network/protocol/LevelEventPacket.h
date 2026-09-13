@@ -43,6 +43,14 @@ public:
     static constexpr int16_t EVENT_SOUND_BLOCK_PLACE      = 1052;
     // ---- Particle event ids (PMMP LevelEventPacket::EVENT_PARTICLE_*) ----
     static constexpr int16_t EVENT_PARTICLE_DESTROY      = 2001;  // break particle + sound
+    // ---- Weather event ids (PMMP LevelEventPacket::EVENT_START_RAIN, etc.) ----
+    // 3001 inicia la lluvia en el cliente; 3003 añade el trueno encima.
+    // En protocolo 84 (MCPE 0.15.x) no hay packet de clima dedicado:
+    // el clima se controla íntegramente con estos LevelEvents.
+    static constexpr int16_t EVENT_START_RAIN    = 3001;
+    static constexpr int16_t EVENT_STOP_RAIN     = 3002;
+    static constexpr int16_t EVENT_START_THUNDER = 3003;
+    static constexpr int16_t EVENT_STOP_THUNDER  = 3004;
 
     int16_t  evid = 0;
     float    x = 0, y = 0, z = 0;

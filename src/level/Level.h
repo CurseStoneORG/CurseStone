@@ -77,6 +77,40 @@ public:
     int32_t time() const { return cfg_.time; }
     void setTime(int32_t t) { cfg_.time = t; }
     void advanceTime(int dt_ticks) { cfg_.time = (cfg_.time + dt_ticks) % 24000; }
+
+    // ----- Weather system -----
+    // Per-level rain/thunder state. Mirrors PMMP Level::$rainLevel /
+    // $thunderLevel via two booleans. Drives two things:
+    //   1. Client visuals: LevelEventPacket 3001/3002 (rain on/off) +
+    //      3003/3004 (thunder) broadcast to every online player.
+    //   2. Fire extinguishing: when raining, the per-chunk fire sweep in
+    //      tick() replaces exposed FIRE blocks (id 51) with AIR.
+    // State starts clear and is NOT persisted across restarts yet.
+    bool isRaining() const { return raining_; }
+    bool isThundering() const { return thundering_; }
+    // Elapsed ticks of the current weather state; -1 = forever.
+    int32_t rainTicksLeft() const { return rain_ticks_left_; }
+    // Changes the weather state. Broadcasts the corresponding
+    // LevelEventPackets to all players online right now (players who
+    // connect later get re-synced by Player.cpp's doFirstSpawn).
+    // Passing durationTicks <= 0 means "until /weather is used again".
+    void setRaining(bool raining,
+                    int32_t durationTicks = 0);
+    void setThundering(bool thundering,
+                       int32_t durationTicks = 0);
+    // Processed from tick(): weather duration countdown + fire sweep.
+    //
+    // Tuning constants for the rain fire-sweep (defined in Level.cpp):
+    //   WEATHER_CHUNKS_PER_TICK — chunks scanned per tick while raining
+    //   (256 loaded chunks = full pass every 6.4s at 20 TPS).
+    //   MAX_EXTINGUISH_PER_TICK — hard cap of block updates per tick so a
+    //   huge burning forest can never stall the loop.
+    //   FIRE_EXTINGUISH_LOG_INTERVAL — min ticks between "rain extinguished
+    //   N fire blocks" log lines.
+    static constexpr int WEATHER_CHUNKS_PER_TICK = 8;
+    static constexpr int MAX_EXTINGUISH_PER_TICK = 40;
+    static constexpr uint64_t FIRE_EXTINGUISH_LOG_INTERVAL = 40;
+    void doWeatherTick(uint64_t current_tick);
     // Spawn point.
     mcp_vector3_t spawn() const { return spawn_; }
     void setSpawn(mcp_vector3_t v) { spawn_ = v; }
@@ -205,6 +239,14 @@ private:
     std::shared_ptr<generator::Generator> generator_;
     mcp_vector3_t spawn_;
     std::unordered_map<uint64_t, class ChunkLoader*> loaders_;
+
+    // ----- Weather state (see isRaining/setRaining above) -----
+    bool    raining_ = false;
+    bool    thundering_ = false;
+    int32_t rain_ticks_left_ = -1;     // -1 = lasts until changed manually
+    int32_t thunder_ticks_left_ = -1;
+    uint64_t rain_scan_offset_ = 0;    // rotating chunk scan cursor (round-robin)
+    uint64_t last_fire_extinguish_log_ = 0;  // rate-limits the extinguido log
 
     // All dropped items in this level, keyed by runtime entity id.
     // Tick sweep removes items with taken==true.
