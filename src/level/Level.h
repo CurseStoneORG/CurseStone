@@ -79,25 +79,39 @@ public:
     void advanceTime(int dt_ticks) { cfg_.time = (cfg_.time + dt_ticks) % 24000; }
 
     // ----- Weather system -----
-    // Per-level rain/thunder state. Mirrors PMMP Level::$rainLevel /
-    // $thunderLevel via two booleans. Drives two things:
-    //   1. Client visuals: LevelEventPacket 3001/3002 (rain on/off) +
-    //      3003/3004 (thunder) broadcast to every online player.
-    //   2. Fire extinguishing: when raining, the per-chunk fire sweep in
-    //      tick() replaces exposed FIRE blocks (id 51) with AIR.
-    // State starts clear and is NOT persisted across restarts yet.
-    bool isRaining() const { return raining_; }
-    bool isThundering() const { return thundering_; }
+    // Ported from Dr1xyDev/Infinity (pocketmine/level/weather/Weather.php),
+    // the reference implementation for MCPE 0.15.10 weather.
+    //
+    // The client has NO dedicated weather packet — weather is driven by two
+    // LevelEventPackets (rain 3001/3003 + thunder 3002/3004) and, critically,
+    // BOTH must carry a non-zero `data` strength or the 0.15.10 client
+    // renders nothing (clear sky). Infinity rolls:
+    //   rain strength:    90000..110000
+    //   thunder strength: 30000..40000
+    // and always sends the pair as reset-then-set (STOP_RAIN/STOP_THUNDER
+    // first, then the START events for the active state).
+    enum WeatherState : int {
+        WEATHER_CLEAR = 0,
+        WEATHER_RAIN = 1,
+        WEATHER_RAINY_THUNDER = 2,
+        WEATHER_THUNDER = 3,
+    };
+    int weatherState() const { return weather_state_; }
+    bool isRaining() const {
+        return weather_state_ == WEATHER_RAIN || weather_state_ == WEATHER_RAINY_THUNDER;
+    }
+    bool isThundering() const {
+        return weather_state_ == WEATHER_RAINY_THUNDER || weather_state_ == WEATHER_THUNDER;
+    }
     // Elapsed ticks of the current weather state; -1 = forever.
-    int32_t rainTicksLeft() const { return rain_ticks_left_; }
-    // Changes the weather state. Broadcasts the corresponding
-    // LevelEventPackets to all players online right now (players who
-    // connect later get re-synced by Player.cpp's doFirstSpawn).
-    // Passing durationTicks <= 0 means "until /weather is used again".
-    void setRaining(bool raining,
-                    int32_t durationTicks = 0);
-    void setThundering(bool thundering,
-                       int32_t durationTicks = 0);
+    int32_t weatherTicksLeft() const { return weather_ticks_left_; }
+    // Changes the weather state and re-sends the full packet pair to every
+    // online player (players who connect later get re-synced by Player.cpp
+    // via sendWeatherTo). Passing durationTicks <= 0 means "until /weather
+    // is used again". Throws no events (WeatherChangeEvent not wired yet).
+    void setWeather(int state, int32_t durationTicks = 0);
+    // Sends the current weather packet pair to one player (join sync).
+    void sendWeatherTo(class Player* p);
     // Processed from tick(): weather duration countdown + fire sweep.
     //
     // Tuning constants for the rain fire-sweep (defined in Level.cpp):
@@ -240,13 +254,15 @@ private:
     mcp_vector3_t spawn_;
     std::unordered_map<uint64_t, class ChunkLoader*> loaders_;
 
-    // ----- Weather state (see isRaining/setRaining above) -----
-    bool    raining_ = false;
-    bool    thundering_ = false;
-    int32_t rain_ticks_left_ = -1;     // -1 = lasts until changed manually
-    int32_t thunder_ticks_left_ = -1;
-    uint64_t rain_scan_offset_ = 0;    // rotating chunk scan cursor (round-robin)
-    uint64_t last_fire_extinguish_log_ = 0;  // rate-limits the extinguido log
+    // ----- Weather state (see isRaining/setWeather above) -----
+    // Infinity model: one integer state 0..3 + per-state strengths that
+    // ride in the LevelEventPacket `data` field.
+    int      weather_state_ = WEATHER_CLEAR;
+    int32_t  weather_ticks_left_ = -1;      // -1 = lasts until changed manually
+    uint32_t rain_strength_ = 100000;       // data for rain events (3001/3003)
+    uint32_t thunder_strength_ = 35000;     // data for thunder events (3002/3004)
+    uint64_t rain_scan_offset_ = 0;         // rotating chunk scan cursor (round-robin)
+    uint64_t last_fire_extinguish_log_ = 0; // rate-limits the extinguido log
 
     // All dropped items in this level, keyed by runtime entity id.
     // Tick sweep removes items with taken==true.

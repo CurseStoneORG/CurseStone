@@ -3,16 +3,19 @@
 #include "level/Level.h"
 #include "Player.h"
 
-// /weather <clear|rain|thunder> [duration in seconds]
+// /weather <clear|rain|thunder> [duration]
 //
-// Mirrors vanilla/PMMP semantics:
-//   clear   -> stops rain (and thunder with it)
-//   rain    -> starts rain, stops thunder
-//   thunder -> starts rain + thunder
+// Ported from Dr1xyDev/Infinity WeatherCommand.php (the reference for
+// MCPE 0.15.10): state ids are 0=clear, 1=rain, 2=rainy_thunder,
+// 3=thunder, and the duration argument is in SECONDS (Infinity sends
+// it in ticks, but seconds is what vanilla /weather uses and what a
+// human types). Without a duration the state lasts until changed
+// again — Infinity would instead roll a random 6000-12000 tick cycle;
+// we only do that for the auto-clear below, not for manual use.
 //
-// The optional duration is given in SECONDS (like vanilla /weather),
-// converted to ticks at 20 TPS server-side. Without a duration the
-// weather stays until changed again.
+// NOTE: we accept this command from BOTH the console and players. The
+// console variant ignores the optional level-name argument Infinity
+// supports because AtomikPE currently has exactly one level.
 namespace atomikpe {
 
 bool WeatherCommand::execute(CommandSender* sender, const std::string& label,
@@ -26,12 +29,16 @@ bool WeatherCommand::execute(CommandSender* sender, const std::string& label,
 
     if (args.empty()) {
         sender->sendMessage("Usage: /weather <clear|rain|thunder> [duration in seconds]");
-        sender->sendMessage("Current: " + std::string(lvl->isRaining()
-            ? (lvl->isThundering() ? "thunder" : "rain") : "clear"));
+        const char* names[4] = { "clear", "rain", "rain+thunder", "thunder" };
+        sender->sendMessage(std::string("Current: ") +
+            names[lvl->weatherState() & 3] +
+            (lvl->weatherTicksLeft() > 0
+                ? " (" + std::to_string(lvl->weatherTicksLeft() / 20) + "s left)"
+                : ""));
         return true;
     }
 
-    // Duration: seconds -> ticks (20 TPS). 0 / omitted = forever.
+    // Duration: seconds -> ticks (20 TPS). 0 / omitted = until changed.
     int32_t duration_ticks = 0;
     if (args.size() >= 2) {
         try {
@@ -48,18 +55,21 @@ bool WeatherCommand::execute(CommandSender* sender, const std::string& label,
     }
 
     const std::string& w = args[0];
-    if (w == "clear" || w == "0") {
-        lvl->setThundering(false);
-        lvl->setRaining(false);
+    if (w == "clear" || w == "sunny" || w == "fine" || w == "0") {
+        lvl->setWeather(level::Level::WEATHER_CLEAR, duration_ticks);
         sender->sendMessage("Weather cleared");
-    } else if (w == "rain" || w == "1") {
-        lvl->setThundering(false);
-        lvl->setRaining(true, duration_ticks);
+    } else if (w == "rain" || w == "rainy" || w == "1") {
+        lvl->setWeather(level::Level::WEATHER_RAIN, duration_ticks);
         sender->sendMessage("Rain started" +
             std::string(duration_ticks > 0 ? " (" + std::to_string(duration_ticks / 20) + "s)" : ""));
-    } else if (w == "thunder" || w == "2") {
-        lvl->setThundering(true, duration_ticks);
+    } else if (w == "storm" || w == "rain_thunder" || w == "rainy_thunder" || w == "2") {
+        lvl->setWeather(level::Level::WEATHER_RAINY_THUNDER, duration_ticks);
         sender->sendMessage("Thunderstorm started" +
+            std::string(duration_ticks > 0 ? " (" + std::to_string(duration_ticks / 20) + "s)" : ""));
+    } else if (w == "thunder" || w == "3") {
+        // Infinity's bare "thunder" is state 3: thunder WITHOUT rain.
+        lvl->setWeather(level::Level::WEATHER_THUNDER, duration_ticks);
+        sender->sendMessage("Thunder started" +
             std::string(duration_ticks > 0 ? " (" + std::to_string(duration_ticks / 20) + "s)" : ""));
     } else {
         sender->sendMessage("Usage: /weather <clear|rain|thunder> [duration in seconds]");

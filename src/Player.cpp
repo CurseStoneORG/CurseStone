@@ -1129,18 +1129,11 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
         sendPacket(st, true);
     }
 
-    // Weather sync — players joining while it's raining must get the
-    // rain/thunder LevelEvents or they'll see clear skies until the
-    // next weather change (LevelEventPacket.h is already included).
-    if (srv_ && srv_->getDefaultLevel() && srv_->getDefaultLevel()->isRaining()) {
-        auto rain = std::make_shared<network::protocol::LevelEventPacket>();
-        rain->evid = network::protocol::LevelEventPacket::EVENT_START_RAIN;
-        sendPacket(rain, true);
-        if (srv_->getDefaultLevel()->isThundering()) {
-            auto th = std::make_shared<network::protocol::LevelEventPacket>();
-            th->evid = network::protocol::LevelEventPacket::EVENT_START_THUNDER;
-            sendPacket(th, true);
-        }
+    // Weather sync — players joining mid-weather get the full reset+set
+    // pair (same packets Infinity's sendWeather sends on join), with the
+    // strength carried in `data` so the 0.15.10 client actually renders it.
+    if (srv_ && srv_->getDefaultLevel()) {
+        srv_->getDefaultLevel()->sendWeatherTo(this);
     }
 
     // SetSpawnPosition.

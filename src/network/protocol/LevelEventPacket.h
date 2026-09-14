@@ -43,13 +43,19 @@ public:
     static constexpr int16_t EVENT_SOUND_BLOCK_PLACE      = 1052;
     // ---- Particle event ids (PMMP LevelEventPacket::EVENT_PARTICLE_*) ----
     static constexpr int16_t EVENT_PARTICLE_DESTROY      = 2001;  // break particle + sound
-    // ---- Weather event ids (PMMP LevelEventPacket::EVENT_START_RAIN, etc.) ----
-    // 3001 inicia la lluvia en el cliente; 3003 añade el trueno encima.
-    // En protocolo 84 (MCPE 0.15.x) no hay packet de clima dedicado:
-    // el clima se controla íntegramente con estos LevelEvents.
+    // ---- Weather event ids (Dr1xyDev/Infinity LevelEventPacket, MCPE 0.15.10) ----
+    // NOTE: on protocol 84 START_THUNDER is 3002 and STOP_RAIN is 3003 —
+    // the intuitive order (start=odd, stop=even) is WRONG here and the
+    // client silently ignores mis-numbered events.
+    // CRITICAL: the client renders NOTHING unless `data` carries a
+    // non-zero strength. Infinity always sends
+    //   rain:    mt_rand(90000, 110000)
+    //   thunder: mt_rand(30000, 40000)
+    // A LevelEventPacket with evid=3001 and data=0 is a no-op on the
+    // 0.15.10 client (sky stays clear) — that was the original bug.
     static constexpr int16_t EVENT_START_RAIN    = 3001;
-    static constexpr int16_t EVENT_STOP_RAIN     = 3002;
-    static constexpr int16_t EVENT_START_THUNDER = 3003;
+    static constexpr int16_t EVENT_START_THUNDER = 3002;
+    static constexpr int16_t EVENT_STOP_RAIN     = 3003;
     static constexpr int16_t EVENT_STOP_THUNDER  = 3004;
 
     int16_t  evid = 0;
