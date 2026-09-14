@@ -24,6 +24,12 @@
 #include "block/BlockFire.h"
 #include "network/protocol/LevelEventPacket.h"
 #include "network/protocol/UpdateBlockPacket.h"
+#include "network/protocol/AddEntityPacket.h"
+#include "network/protocol/ExplodePacket.h"
+#include "network/protocol/RemoveEntityPacket.h"
+#include "scheduler/ServerScheduler.h"
+#include "scheduler/Task.h"
+#include <cmath>
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -549,6 +555,115 @@ void Level::setWeather(int state, int32_t durationTicks) {
 }
 
 // ---------------------------------------------------------------
+// Lightning — ported from Dr1xyDev/Infinity Lightning.php
+// ---------------------------------------------------------------
+namespace {
+
+// Removes the bolt entity ~1 second after the strike (Infinity:
+// onUpdate -> age > 20 ticks -> kill/close). Runs on the main thread
+// via the scheduler, same constraints as every other sync task.
+class LightningRemovalTask : public scheduler::Task {
+public:
+    explicit LightningRemovalTask(int64_t eid) : eid_(eid) {}
+    void onRun() override {
+        auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
+        rm->eid = eid_;
+        for (auto& p : Server::getInstance().playersSnapshot()) {
+            if (p && p->spawned()) p->sendPacket(rm);
+        }
+    }
+private:
+    int64_t eid_;
+};
+
+} // namespace
+
+void Level::spawnLightning(double x, double y, double z, bool withFire) {
+    int64_t eid = Server::getInstance().allocateEid();
+
+    // Bolt + shockwave to every online player (Infinity spawnTo:
+    // AddEntityPacket type 93 + ExplodePacket radius 10, records=[]).
+    auto add = std::make_shared<network::protocol::AddEntityPacket>();
+    add->eid = eid;
+    add->type = network::protocol::AddEntityPacket::TYPE_LIGHTNING;
+    add->x = (float)x; add->y = (float)y; add->z = (float)z;
+    auto exp = std::make_shared<network::protocol::ExplodePacket>();
+    exp->x = (float)x; exp->y = (float)y; exp->z = (float)z;
+    exp->radius = 10.0f;
+    for (auto& p : Server::getInstance().playersSnapshot()) {
+        if (p && p->spawned()) {
+            p->sendPacket(add);
+            p->sendPacket(exp);
+        }
+    }
+
+    // Despawn (Infinity: age > 20 ticks).
+    scheduler::ServerScheduler::get().scheduleSync(
+        std::make_shared<LightningRemovalTask>(eid), 20);
+
+    // Damage + ignite players inside Infinity's grow(4, 3, 4) box:
+    // mt_rand(8, 20) damage, setOnFire(mt_rand(3, 8)) — survival only.
+    if (Server::getInstance().difficulty() > 0) {
+        for (auto& p : Server::getInstance().playersSnapshot()) {
+            if (!p || !p->spawned()) continue;
+            const auto& pos = p->getNextPosition();
+            if (std::fabs(pos.x - x) > 4.0 || std::fabs(pos.y - y) > 3.0 ||
+                std::fabs(pos.z - z) > 4.0) continue;
+            p->attack(8.0f + (float)(std::rand() % 13));
+            p->setOnFire(3 + std::rand() % 6);
+        }
+    }
+
+    // Ground fire (Infinity lightningFire): fire at the strike position
+    // when the block there is replaceable. With rain active the sweep
+    // will put it out shortly after — same as vanilla.
+    if (withFire) {
+        int32_t bx = (int32_t)std::floor(x);
+        int32_t bz = (int32_t)std::floor(z);
+        int32_t by = (int32_t)std::floor(y);
+        if (by >= 0 && by <= 255 && isChunkLoaded(bx, bz)) {
+            uint8_t at = getBlockId(bx, by, bz);
+            uint8_t below = by > 0 ? getBlockId(bx, by - 1, bz) : block::AIR;
+            bool below_liquid = (below == block::WATER || below == block::FLOWING_WATER ||
+                                 below == block::LAVA  || below == block::FLOWING_LAVA);
+            if ((at == block::AIR || at == block::TALL_GRASS) && !below_liquid) {
+                setBlock(bx, by, bz, block::FIRE, 0);
+                auto up = std::make_shared<network::protocol::UpdateBlockPacket>();
+                up->x = bx; up->z = bz;
+                up->y = (uint8_t)by;
+                up->blockId = block::FIRE;
+                up->flags = network::protocol::UpdateBlockPacket::FLAG_ALL;
+                for (auto& p : Server::getInstance().playersSnapshot()) {
+                    if (p && p->spawned()) p->sendPacket(up);
+                }
+            }
+        }
+    }
+}
+
+void Level::strikeRandomPlayerLightning() {
+    // Infinity Weather::calcWeather: pick a random player, strike at
+    // (p.x + mt_rand(-64, 64), highestBlock, p.z + mt_rand(-64, 64)).
+    auto players = Server::getInstance().playersSnapshot();
+    Player* target = nullptr;
+    for (auto& p : players) {
+        if (p && p->spawned()) { target = p.get(); break; }
+    }
+    if (!target) return;
+
+    const auto& tpos = target->getNextPosition();
+    int32_t bx = (int32_t)std::floor(tpos.x) + (std::rand() % 129 - 64);
+    int32_t bz = (int32_t)std::floor(tpos.z) + (std::rand() % 129 - 64);
+    if (!isChunkLoaded(bx, bz)) return;   // strike fell outside loaded world
+    mcp_chunk_t* c = chunks_.getChunkIfLoaded(bx >> 4, bz >> 4);
+    if (!c || !c->height_map) return;
+    // height_map = topmost light-blocking block + 1 => first AIR y.
+    int32_t y = c->height_map[((bz & 15) << 4) | (bx & 15)];
+    if (y <= 0 || y > 255) return;
+    spawnLightning((double)bx + 0.5, (double)y, (double)bz + 0.5, /*withFire=*/true);
+}
+
+// ---------------------------------------------------------------
 // doWeatherTick — called from Level::tick() every server tick.
 //
 //  1. Counts down rain/thunder durations (when bounded).
@@ -572,6 +687,18 @@ void Level::doWeatherTick(uint64_t current_tick) {
     if (weather_ticks_left_ > 0) {
         if (--weather_ticks_left_ <= 0) setWeather(WEATHER_CLEAR);
     }
+
+    // 1.5. Lightning strikes (Infinity Weather::calcWeather strikes
+    // when weatherNow >= RAINY_THUNDER, i.e. states 2 AND 3 — this is
+    // also why the check sits above the isRaining() early-return:
+    // state 3 thunders without rain). Every LIGHTNING_STRIKE_INTERVAL
+    // ticks, strike within ±64 blocks of a random player. With no
+    // players online the timer just keeps sliding forward.
+    if (isThundering() && current_tick >= next_lightning_tick_) {
+        next_lightning_tick_ = current_tick + LIGHTNING_STRIKE_INTERVAL;
+        strikeRandomPlayerLightning();
+    }
+
     if (!isRaining()) return;
 
     // 2. Fire sweep (only while raining).
@@ -591,36 +718,43 @@ void Level::doWeatherTick(uint64_t current_tick) {
             // every chunk when there is no fire anywhere.
             if (!std::memchr(sec->blocks, (int)block::FIRE, 4096)) continue;
 
-            for (int ly = 0; ly < 16 && extinguished < MAX_EXTINGUISH_PER_TICK; ++ly) {
-                int32_t y = (int32_t)sy * 16 + ly;
-                for (int j = 0; j < 4096 && extinguished < MAX_EXTINGUISH_PER_TICK; ++j) {
-                    if (sec->blocks[j] != (uint8_t)block::FIRE) continue;
-                    int lx = j & 15;
-                    int lz = (j >> 4) & 15;
-                    // Exposed = sky visible above this column. The height
-                    // map stores topmost light-blocking block + 1 per
-                    // column, and FIRE itself never inflates it
-                    // (mcp_block_light_opacity(FIRE) == 0), so a fire
-                    // whose top face touches open sky has y >= h here.
-                    int32_t h = c->height_map ? c->height_map[(lz << 4) | lx] : 256;
-                    if (y < h) continue;
-                    int32_t wx = (cx << 4) | lx;
-                    int32_t wz = (cz << 4) | lz;
-                    // Route through Level::setBlock so the chunk dirty
-                    // flag is set (and stays on the same write path as
-                    // the rest of the server).
-                    setBlock(wx, y, wz, block::AIR, 0);
-                    auto up = std::make_shared<network::protocol::UpdateBlockPacket>();
-                    up->x = wx; up->z = wz;
-                    up->y = (uint8_t)y;
-                    up->blockId = block::AIR;
-                    up->blockData = 0;
-                    up->flags = network::protocol::UpdateBlockPacket::FLAG_ALL;
-                    for (auto& p : Server::getInstance().playersSnapshot()) {
-                        if (p && p->spawned()) p->sendPacket(up);
-                    }
-                    ++extinguished;
+            // BUG FIX ("extinguished 6 fire block(s)" spam, fire never
+            // dies): the scan previously wrapped the j-loop in an extra
+            // `ly` 0..15 loop that re-walked the whole 4096-block array
+            // 16 times, while deriving the world Y from `ly` instead of
+            // from the hit index. The blocks array is XZY-packed
+            // (x | z<<4 | y<<8), so j>>8 IS the section-relative y — the
+            // old code set AIR 16 blocks below the real fire and counted
+            // the same fire once per mismatched ly, so the memory never
+            // changed and the log repeated forever. y now comes from j.
+            for (int j = 0; j < 4096 && extinguished < MAX_EXTINGUISH_PER_TICK; ++j) {
+                if (sec->blocks[j] != (uint8_t)block::FIRE) continue;
+                int lx = j & 15;
+                int lz = (j >> 4) & 15;
+                int32_t y = ((int32_t)sy << 4) | (j >> 8);
+                // Exposed = sky visible above this column. The height
+                // map stores topmost light-blocking block + 1 per
+                // column, and FIRE itself never inflates it
+                // (mcp_block_light_opacity(FIRE) == 0), so a fire
+                // whose top face touches open sky has y >= h here.
+                int32_t h = c->height_map ? c->height_map[(lz << 4) | lx] : 256;
+                if (y < h) continue;
+                int32_t wx = (cx << 4) | lx;
+                int32_t wz = (cz << 4) | lz;
+                // Route through Level::setBlock so the chunk dirty
+                // flag is set (and stays on the same write path as
+                // the rest of the server).
+                setBlock(wx, y, wz, block::AIR, 0);
+                auto up = std::make_shared<network::protocol::UpdateBlockPacket>();
+                up->x = wx; up->z = wz;
+                up->y = (uint8_t)y;
+                up->blockId = block::AIR;
+                up->blockData = 0;
+                up->flags = network::protocol::UpdateBlockPacket::FLAG_ALL;
+                for (auto& p : Server::getInstance().playersSnapshot()) {
+                    if (p && p->spawned()) p->sendPacket(up);
                 }
+                ++extinguished;
             }
         }
     }

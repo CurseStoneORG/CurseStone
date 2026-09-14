@@ -124,7 +124,19 @@ public:
     static constexpr int WEATHER_CHUNKS_PER_TICK = 8;
     static constexpr int MAX_EXTINGUISH_PER_TICK = 40;
     static constexpr uint64_t FIRE_EXTINGUISH_LOG_INTERVAL = 40;
+    // Infinity Server.php: lightningTime = 200 ticks between strikes.
+    static constexpr uint64_t LIGHTNING_STRIKE_INTERVAL = 200;
     void doWeatherTick(uint64_t current_tick);
+
+    // ----- Lightning (ported from Dr1xyDev/Infinity Lightning.php) -----
+    // Spawns a visual lightning bolt at (x, y, z) for every online
+    // player: AddEntityPacket(type=93) + ExplodePacket(radius=10),
+    // then removes the entity ~1 second later via the scheduler
+    // (Infinity: age > 20 ticks -> kill). Damages and ignites players
+    // within Infinity's grow(4,3,4) box when difficulty > 0, and with
+    // withFire=true may leave a fire block on the strike position
+    // (Infinity's lightningFire behaviour).
+    void spawnLightning(double x, double y, double z, bool withFire);
     // Spawn point.
     mcp_vector3_t spawn() const { return spawn_; }
     void setSpawn(mcp_vector3_t v) { spawn_ = v; }
@@ -263,6 +275,12 @@ private:
     uint32_t thunder_strength_ = 35000;     // data for thunder events (3002/3004)
     uint64_t rain_scan_offset_ = 0;         // rotating chunk scan cursor (round-robin)
     uint64_t last_fire_extinguish_log_ = 0; // rate-limits the extinguido log
+    uint64_t next_lightning_tick_ = 0;      // next tick allowed to strike
+
+    // Picks a random online player and strikes lightning within ±64
+    // blocks of them at the highest block of that column (Infinity
+    // Weather::calcWeather). Only fires while thundering.
+    void strikeRandomPlayerLightning();
 
     // All dropped items in this level, keyed by runtime entity id.
     // Tick sweep removes items with taken==true.
