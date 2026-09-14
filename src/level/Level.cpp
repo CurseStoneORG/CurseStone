@@ -487,57 +487,64 @@ int Level::unloadDistantChunks(const std::vector<ChunkViewer>& viewers, int32_t 
 }
 
 // ============================================================
-// Weather system — estado + lluvia que apaga fuego
+// Weather system — ported from Dr1xyDev/Infinity Weather.php
 // ============================================================
-// Wire format note (protocol 84): the client has NO dedicated weather
-// packet. Rain is controlled via LevelEventPacket evidence 3001 (start)
-// / 3002 (stop), thunder adds 3003 / 3004 on top. All coordinates and
-// the data field are sent as zero — mirrors what PMMP broadcastLevelEvent
-// callers pass for these events.
-static void broadcastWeatherEvent(bool raining, bool thundering) {
-    auto& srv = Server::getInstance();
-    auto start = raining
-        ? network::protocol::LevelEventPacket::EVENT_START_RAIN
-        : network::protocol::LevelEventPacket::EVENT_STOP_RAIN;
-    auto pk = std::make_shared<network::protocol::LevelEventPacket>();
-    pk->evid = start;
-    for (auto& p : srv.playersSnapshot()) {
-        if (p && p->spawned()) p->sendPacket(pk);
+// Wire format (protocol 84 / MCPE 0.15.10, verified against
+// Dr1xyDev/Infinity LevelEventPacket.php + Weather.php):
+//   - evid 3001 EVENT_START_RAIN, 3002 EVENT_START_THUNDER,
+//     3003 EVENT_STOP_RAIN,     3004 EVENT_STOP_THUNDER.
+//   - The `data` field MUST carry a non-zero strength or the 0.15.10
+//     client renders nothing (clear sky): rain rolls 90000..110000,
+//     thunder 30000..40000.
+//   - Infinity sends the pair as reset-then-set: STOP_RAIN +
+//     STOP_THUNDER always first, then the START events for the new
+//     state. Re-sending the full pair is idempotent on the client and
+//     guarantees a clean transition between any two states.
+void Level::sendWeatherTo(Player* p) {
+    if (!p) return;
+    auto stop_rain = std::make_shared<network::protocol::LevelEventPacket>();
+    stop_rain->evid = network::protocol::LevelEventPacket::EVENT_STOP_RAIN;
+    stop_rain->data = (int32_t)rain_strength_;
+    p->sendPacket(stop_rain);
+
+    auto stop_thunder = std::make_shared<network::protocol::LevelEventPacket>();
+    stop_thunder->evid = network::protocol::LevelEventPacket::EVENT_STOP_THUNDER;
+    stop_thunder->data = (int32_t)thunder_strength_;
+    p->sendPacket(stop_thunder);
+
+    if (isRaining()) {
+        auto start = std::make_shared<network::protocol::LevelEventPacket>();
+        start->evid = network::protocol::LevelEventPacket::EVENT_START_RAIN;
+        start->data = (int32_t)rain_strength_;
+        p->sendPacket(start);
     }
-    if (thundering) {
-        auto tp = std::make_shared<network::protocol::LevelEventPacket>();
-        tp->evid = network::protocol::LevelEventPacket::EVENT_START_THUNDER;
-        for (auto& p : srv.playersSnapshot()) {
-            if (p && p->spawned()) p->sendPacket(tp);
-        }
+    if (isThundering()) {
+        auto start = std::make_shared<network::protocol::LevelEventPacket>();
+        start->evid = network::protocol::LevelEventPacket::EVENT_START_THUNDER;
+        start->data = (int32_t)thunder_strength_;
+        p->sendPacket(start);
     }
 }
 
-void Level::setRaining(bool raining, int32_t durationTicks) {
-    if (raining_ == raining) return;          // no-op — evita re-broadcasts
-    raining_ = raining;
-    rain_ticks_left_ = durationTicks > 0 ? durationTicks : -1;
-    if (!raining) thundering_ = false;        // sin lluvia no puede haber trueno
-    broadcastWeatherEvent(raining_, thundering_);
-    utils::MainLogger::get().info(raining
-        ? "[Weather] Rain started in level '" + cfg_.name + "'"
-        : "[Weather] Rain stopped in level '" + cfg_.name + "'");
-}
-
-void Level::setThundering(bool thundering, int32_t durationTicks) {
-    if (thundering_ == thundering) return;
-    if (thundering && !raining_) {
-        // Trueno sin lluvia no existe — enciende la lluvia primero.
-        setRaining(true, durationTicks);
-    }
-    thundering_ = thundering;
-    thunder_ticks_left_ = durationTicks > 0 ? durationTicks : -1;
-    auto tp = std::make_shared<network::protocol::LevelEventPacket>();
-    tp->evid = thundering
-        ? network::protocol::LevelEventPacket::EVENT_START_THUNDER
-        : network::protocol::LevelEventPacket::EVENT_STOP_THUNDER;
+void Level::setWeather(int state, int32_t durationTicks) {
+    if (state < WEATHER_CLEAR || state > WEATHER_THUNDER) state = WEATHER_CLEAR;
+    bool changed = (weather_state_ != state);
+    weather_state_ = state;
+    weather_ticks_left_ = durationTicks > 0 ? durationTicks : -1;
+    // Re-roll the strengths on every change, like Infinity's setWeather
+    // (mt_rand(90000,110000) / mt_rand(30000,40000)).
+    rain_strength_    = 90000 + (uint32_t)(rand() % 20001);
+    thunder_strength_ = 30000 + (uint32_t)(rand() % 10001);
     for (auto& p : Server::getInstance().playersSnapshot()) {
-        if (p && p->spawned()) p->sendPacket(tp);
+        if (p && p->spawned()) sendWeatherTo(p.get());
+    }
+    if (changed) {
+        static const char* kNames[4] = { "clear", "rain", "rain+thunder", "thunder" };
+        utils::MainLogger::get().info(std::string("[Weather] Level '") + cfg_.name +
+            "' -> " + kNames[state] +
+            (weather_ticks_left_ > 0
+                ? " (" + std::to_string(weather_ticks_left_ / 20) + "s)"
+                : ""));
     }
 }
 
@@ -561,14 +568,11 @@ void Level::setThundering(bool thundering, int32_t durationTicks) {
 //     the next chunk resync.
 // ---------------------------------------------------------------
 void Level::doWeatherTick(uint64_t current_tick) {
-    // 1. Durations.
-    if (raining_ && rain_ticks_left_ > 0) {
-        if (--rain_ticks_left_ <= 0) setRaining(false);
+    // 1. Duration countdown.
+    if (weather_ticks_left_ > 0) {
+        if (--weather_ticks_left_ <= 0) setWeather(WEATHER_CLEAR);
     }
-    if (thundering_ && thunder_ticks_left_ > 0) {
-        if (--thunder_ticks_left_ <= 0) setThundering(false);
-    }
-    if (!raining_) return;
+    if (!isRaining()) return;
 
     // 2. Fire sweep (only while raining).
     auto coords = chunks_.loadedChunkCoords();
