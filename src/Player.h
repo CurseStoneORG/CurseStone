@@ -21,6 +21,7 @@
 #include "item/ItemStack.h"                // ItemStack for getDrops()
 #include <memory>
 #include <string>
+#include "utils/MainLogger.hpp"
 #include <atomic>
 #include <mutex>
 #include <unordered_set>
@@ -162,6 +163,46 @@ public:
 
     // --- Tick ---
     void onUpdate(uint64_t current_tick);
+    // Client spawn ACK (PlayStatus PLAYER_SPAWN). Marks this client as
+    // actually rendering the world; clears used_chunks_ and re-streams
+    // everything in view so any chunk lost during the client's loading
+    // screen gets delivered. See handleDataPacket(PLAY_STATUS_PACKET).
+    // Client spawn ACK (PlayStatus PLAYER_SPAWN). Marks this client as
+    // actually rendering the world; clears used_chunks_ and re-centers the
+    // streaming queue so any chunk lost during the client's loading screen
+    // gets delivered. See handleDataPacket(PLAY_STATUS_PACKET).
+    //
+    // ROOT CAUSE this closes ("a veces los chunks no se renderizan"):
+    // every FullChunkDataPacket sent BEFORE the client's spawn ACK can be
+    // silently discarded by the client while it is still on its loading
+    // screen, yet used_chunks_ had already marked those chunks as sent —
+    // so they were never re-sent and the world showed a permanent hole
+    // exactly where the pre-ACK burst went. Clearing the set and letting
+    // onUpdate() re-stream in view is safe: chunks the client DID keep are
+    // ignored by it as duplicates; the ones it lost now arrive. The actual
+    // sending stays inside the usual MAX_CHUNKS_PER_TICK throttle.
+    void handleClientSpawnAck() {
+        if (!srv_ || !srv_->getDefaultLevel()) return;
+        {
+            std::lock_guard<std::mutex> lk(chunks_mtx_);
+            used_chunks_.clear();
+        }
+        // Recenter the streaming queue on the player's current chunk;
+        // onUpdate() rebuilds the spiral order every tick (center-outward,
+        // throttled) and, with used_chunks_ empty, re-sends the whole view.
+        int cx = (int)(pos_.x) >> 4;
+        int cz = (int)(pos_.z) >> 4;
+        {
+            std::lock_guard<std::mutex> lk(queue_mtx_);
+            chunk_queue_.clear();
+            chunk_queue_.emplace_back(cx, cz);
+        }
+        if (srv_ && srv_->advancedLog()) {
+            utils::MainLogger::get().info("[CHUNKS] Client spawn ACK for " +
+                cfg_.username + " - re-streaming view radius " +
+                std::to_string(cfg_.view_distance));
+        }
+    }
 
     // --- Inventory ---
     std::shared_ptr<inventory::PlayerInventory> getInventory() const { return inv_; }

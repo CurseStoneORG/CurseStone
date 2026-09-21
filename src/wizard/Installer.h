@@ -1,15 +1,11 @@
-// Installer — first-run setup wizard. Asks the user for:
-//   - language
-//   - server name (motd)
-//   - max players
-//   - port
-//   - level name + type (normal/flat)
-//   - gamemode
-//   - difficulty
-//   - whether to enable whitelist
-//
-// Saves the result as atomikpe.yml. Mirrors pocketmine/wizard
-// /Installer.php.
+// Installer — first-run config seeding. As of the "no-setup" change,
+// the server NEVER asks questions on first boot: main.cpp only calls
+// shouldRun() + generateDefaultConfig(), which silently writes the
+// default atomikpe.yml (same content as resources/atomikpe.yml) and
+// logs one informational line. The interactive runWizard() is kept for
+// manual/opt-in use (e.g. a future `--setup` flag) but is no longer on
+// any startup path. Mirrors pocketmine/wizard/Installer.php minus the
+// interactive flow.
 #pragma once
 #include <string>
 namespace atomikpe::wizard {
