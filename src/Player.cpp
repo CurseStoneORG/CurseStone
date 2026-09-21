@@ -383,7 +383,39 @@ void Player::teleport(double x, double y, double z) {
         this, pos_.x, pos_.y, pos_.z, x, y, z);
     if (ev.isCancelled()) return;
 
+    int32_t old_cx = (int)pos_.x >> 4;
+    int32_t old_cz = (int)pos_.z >> 4;
     pos_.x = ev.toX; pos_.y = ev.toY; pos_.z = ev.toZ;
+    int32_t new_cx = (int)pos_.x >> 4;
+    int32_t new_cz = (int)pos_.z >> 4;
+
+    // CHUNK FIX ("chunks missing after /tp or respawn"): the client
+    // renders nothing around the destination until we send it there, and
+    // the streaming loop in onUpdate() only reacts to CROSSING a chunk
+    // boundary via its `moved` detection. That detection compares against
+    // chunk_queue_'s front entry — after a teleport the queue still held
+    // the OLD center, so the very next tick recorded "moved" once, then
+    // recentered; but every chunk in the new radius that had already been
+    // marked in used_chunks_ by an earlier pass through that area (or by
+    // the spawn-ACK re-stream) was SKIPPED as "already sent" even though
+    // the client teleported away and may no longer have them loaded.
+    // Clearing the per-player sent-set + re-queuing the new spiral makes
+    // the destination stream exactly like a fresh spawn: chunks the
+    // client still holds arrive as duplicates it ignores, missing ones
+    // now render. Only do this when the teleport actually crossed into
+    // another chunk — a 2-block hop inside the same chunk needs nothing.
+    if (new_cx != old_cx || new_cz != old_cz) {
+        {
+            std::lock_guard<std::mutex> lk(chunks_mtx_);
+            used_chunks_.clear();
+        }
+        {
+            std::lock_guard<std::mutex> lk(queue_mtx_);
+            chunk_queue_.clear();
+            chunk_queue_.emplace_back(new_cx, new_cz);
+        }
+    }
+
     // Optionally broadcast a MovePlayerPacket to confirm position to the client.
     if (spawned_.load(std::memory_order_relaxed)) {
         auto pk = std::make_shared<network::protocol::MovePlayerPacket>();
@@ -512,6 +544,25 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
         case network::protocol::LOGIN_PACKET:
             if (auto* lp = dynamic_cast<network::protocol::LoginPacket*>(&p)) {
                 handleLogin(*lp);
+            }
+            break;
+        case network::protocol::PLAY_STATUS_PACKET:
+            // Client → server spawn ACK. The 0.15.x client answers our
+            // PlayStatus(PLAYER_SPAWN) with its own PLAYER_SPAWN packet
+            // once it has actually finished loading into the world. This
+            // is the ONLY reliable signal that the client is rendering —
+            // and the root-cause fix for "sometimes chunks never render":
+            // every FullChunkDataPacket sent BEFORE this ACK can be
+            // silently discarded by the client (it hasn't finished arming
+            // its world renderer yet), while used_chunks_ already marked
+            // those chunks as sent, so they were never re-sent. The world
+            // then shows a permanent hole exactly where the pre-ACK burst
+            // went. On ACK: clear the sent-set and re-stream everything
+            // in view — chunks the client kept are cheap no-ops for it,
+            // missing ones now arrive and fill the hole.
+            if (auto* ps = dynamic_cast<network::protocol::PlayStatusPacket*>(&p);
+                ps && ps->status == network::protocol::PlayStatusPacket::PLAYER_SPAWN) {
+                handleClientSpawnAck();
             }
             break;
         case network::protocol::MOVE_PLAYER_PACKET:

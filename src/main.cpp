@@ -5,6 +5,7 @@
 #include "Server.h"
 #include "CrashDump.h"
 #include "wizard/Installer.h"
+#include "utils/MainLogger.hpp"
 #include "logger/AsyncMainLogger.h"
 #include "utils/MainLogger.hpp"
 
@@ -248,12 +249,26 @@ int main(int argc, char* argv[]) {
     atomikpe::CrashDump crashDump(dataPath + "/crashdumps");
     g_crashDump = &crashDump;
 
-    // First-run setup wizard
-    wizard::Installer installer(dataPath);
-    if (installer.shouldRun()) {
-        if (!installer.runWizard()) {
-            fputs("Setup failed; generating default config instead.\n", stderr);
-            installer.generateDefaultConfig();
+    // First-run setup: NO interactive wizard anymore. The server is
+    // fully playable straight out of the box — if there is no config
+    // yet, the default atomikpe.yml is written SILENTLY (no stdin
+    // prompts, which also broke headless/systemd/Android runs where
+    // stdin is closed and fgets returned EOF for every question).
+    // Operators customize settings by editing the generated files
+    // afterwards. Server::start() additionally seeds
+    // server.properties from resources/ on first boot.
+    {
+        wizard::Installer installer(dataPath);
+        if (installer.shouldRun()) {
+            if (installer.generateDefaultConfig()) {
+                utils::MainLogger::get().info(
+                    "First run: default config written (no setup questions). "
+                    "Edit atomikpe.yml / server.properties to customize.");
+            } else {
+                // Config file could not be created — loadConfig() falls
+                // back to built-in defaults, so the server still boots.
+                fputs("Could not write default config; using built-in defaults.\n", stderr);
+            }
         }
     }
 

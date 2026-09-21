@@ -216,9 +216,32 @@ mcp_chunk_t* ChunkManager::getChunkOrRequestAsync(int32_t x, int32_t z, schedule
         [this, key](mcp_chunk_t* c) {
             // GenerationTask::run() already filled light/biome defaults
             // and ran generate()+populate() before calling us — just
-            // hand the finished chunk to the map (thread-safe on its
-            // own) and clear the in-flight marker.
-            if (c) setChunk(c->x, c->z, c);
+            // hand the finished chunk to the map and clear the in-flight
+            // marker.
+            //
+            // RACE FIX ("a veces los chunks no se renderizan" + ediciones
+            // que desaparecían): while this task ran on a worker, the MAIN
+            // thread could have loaded the same chunk from disk or had it
+            // created/edited synchronously (getChunk() fallback, block
+            // place/break, tile hydration). setChunk() blindly REPLACED
+            // that live chunk with this freshly generated copy — losing
+            // player edits and, worse, swapping chunk memory mid-tick
+            // while other pointers to the old chunk were in use. Now: if
+            // a chunk is already present in the map for this key, the
+            // generated copy is discarded (destroyed — no leak) and the
+            // live chunk stays. Generated content matches what would have
+            // been produced anyway; the live copy may additionally carry
+            // real edits, which are strictly newer information.
+            bool installed = false;
+            if (c) {
+                std::lock_guard<std::mutex> lk(mtx_);
+                auto it = chunks_.find(key);
+                if (it == chunks_.end() || !it->second) {
+                    chunks_[key] = c;
+                    installed = true;
+                }
+            }
+            if (c && !installed) mcp_chunk_destroy(c);
             std::lock_guard<std::mutex> lk(pending_mtx_);
             pending_.erase(key);
         });
