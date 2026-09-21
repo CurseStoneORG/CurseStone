@@ -108,7 +108,8 @@ level:
   seed: 0
 
 memory:
-  max-mb: 512
+  max-mb: 512            # RSS budget (MB) for the global GarbageCollector
+  gc-interval-ticks: 200 # ticks between GC passes (200 = 10s at 20 TPS)
 
 network:
   compression-level: 7
