@@ -37,7 +37,10 @@ struct DroppedItem {
     uint16_t damage = 0;
     double   x = 0.0, y = 0.0, z = 0.0;
     uint64_t spawn_tick = 0;     // when it was dropped (server tick)
-    uint32_t pickup_delay_ticks = 10;  // ~0.5s at 20 TPS — Nukkit default
+    // 5-tick (~0.25s) default — matches the value Player::dropItem() uses
+    // when it registers drops; both MUST be the same or the pickup gate in
+    // Player::onUpdate() and the intent of the registry disagree.
+    uint32_t pickup_delay_ticks = 5;
     bool     taken = false;      // marked for removal after pickup
 };
 
@@ -142,8 +145,24 @@ public:
     void setSpawn(mcp_vector3_t v) { spawn_ = v; }
     // Save all dirty chunks (routes to the LevelProvider).
     int save();
-    // Tick this level — entities, tile entities, scheduled blocks.
+    // Tick this level — time + weather ONLY. Item-entity reclamation used
+    // to live here but now belongs to the global GC (see collectDroppedItems): a
+    // per-tick sweep inside the level freed records that player pickup
+    // handlers were still holding, which is one of the scattered GCs that
+    // desynchronized player actions from server state.
     void tick(uint64_t current_tick);
+    // THE dropped-item GC pass. Called ONLY by the global MemoryManager
+    // collector (and at shutdown), never from tick() — so a record never
+    // vanishes while a player's pickup handler is mid-transaction.
+    //   1. Items older than the despawn age (6000 ticks / 5 min, vanilla
+    //      EntityItem lifetime) are removed and an RemoveEntityPacket is
+    //      broadcast to every spawned player so clients despawn them too —
+    //      previously items lived forever (registry leak) AND clients kept
+    //      rendering an entity the server had already forgotten.
+    //   2. Then entries marked `taken` (fully picked up) are erased.
+    // Returns the number of records removed. `current_tick` is the server
+    // tick the pass runs at.
+    size_t collectDroppedItems(uint64_t current_tick);
     // Generator accessor for AsyncPool workers.
     std::shared_ptr<generator::Generator> generator() const { return generator_; }
     // The active LevelProvider (Anvil by default).

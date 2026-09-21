@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // Server singleton implementation (Phase 21 completion).
 #include "Server.h"
+#include "MemoryManager.h"
 #include "workbench/WorkbenchManager.h"
 #include "Player.h"
 #include "utils/MainLogger.h"
@@ -125,6 +126,18 @@ void Server::loadConfig() {
     view_distance_ = (int)get_int("server.view-distance", "view-distance", 8);
     async_workers_ = (int)get_int("settings.async-workers", "async-workers", 4);
     autosave_ticks_ = (int)get_int("server.autosave-ticks", "autosave-ticks", 6000);
+
+    // Memory budget for the global GarbageCollector. Previously this key
+    // existed in atomikpe.yml but was never read — MemoryManager silently
+    // ran on its hardcoded 512 MB default. Also expose the GC pass
+    // interval (ticks between coordinated sweeps; 200 ticks = 10s at
+    // 20 TPS). Must be set BEFORE the tick loop starts so the very first
+    // collect() already honors the operator's budget.
+    MemoryManager::get().setLimitMB(
+        (int)get_int("memory.max-mb", "max-mb", 512));
+    MemoryManager::get().setGcIntervalTicks(
+        (uint64_t)std::max<int64_t>(
+            20, get_int("memory.gc-interval-ticks", "gc-interval-ticks", 200)));
 
     // If we just loaded the .properties file (no YAML), create the
     // server.properties in the data dir from the default resource so the
@@ -347,6 +360,11 @@ void Server::runTickLoop() {
     // saveAll() runs single-threaded before any destructor fires.
     // ====================================================================
     if (network_) network_->tick();   // graceful RakLib close
+    // Final global GC pass BEFORE saveAll(): flushes tile/entities, saves
+    // out-of-view chunks as part of the chunk sweep, and drops picked-up
+    // item records so nothing stale is written back to disk. Forced —
+    // rate limiting must not eat the last pass.
+    MemoryManager::get().collect(/*force=*/true);
     saveAll();
     if (console_reader_) console_reader_->stop();
     utils::MainLogger::get().info("Shutdown complete.");
@@ -393,58 +411,22 @@ void Server::tick() {
     WorkbenchManager::get().onTickPhase("level",
         (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
 
-    // --- Phase: chunk unload sweep ---
-    // Runs every 100 ticks (~5s at 20 TPS), not every tick — this walks
-    // every loaded chunk and can trigger disk saves, so it's priced like
-    // an occasional maintenance pass, not per-tick work. Frees chunks
-    // (and any tile-entities inside them — see Level::evictTilesForChunk)
-    // that no connected player can currently see. Before this existed,
-    // ChunkManager only ever grew: getChunk() added chunks on demand but
-    // nothing ever called the equivalent of unloadChunk(), so a server
-    // left running would accumulate every chunk any player had ever
-    // walked near, for the lifetime of the process.
-    if (level_ && currentTick_ % 100 == 0) {
-        t0 = std::chrono::steady_clock::now();
-        std::vector<level::Level::ChunkViewer> viewers;
-        {
-            std::lock_guard<std::mutex> lk(players_mtx_);
-            viewers.reserve(players_.size());
-            for (auto& p : players_) {
-                if (!p) continue;
-                // FIX: buildChunkSpiral() now takes a true per-axis
-                // radius (see Player.cpp), so viewDistance() itself is
-                // the real radius a player can see — no more /2
-                // compensation needed here.
-                viewers.push_back({p->chunkX(), p->chunkZ(), p->viewDistance()});
-            }
-        }
-        // BUG FIX (root cause of "chunks never render again after
-        // reconnecting"): viewers can be EMPTY during the gap between a
-        // player disconnecting and (maybe) someone reconnecting — this
-        // sweep runs on a fixed tick interval regardless of player
-        // count. With an empty viewer list, unloadDistantChunks() found
-        // that NO loaded chunk was "needed" by anyone, and unloaded
-        // (synchronously saved + freed) the ENTIRE in-memory world,
-        // spawn chunks included. The next player to log in then has to
-        // reload/regenerate every chunk around their saved position,
-        // including the one they're literally standing in, one chunk
-        // per tick — which is exactly the "stuck in an empty chunk,
-        // world looks empty" symptom, and only ever on a RECONNECT
-        // because the first-ever join never hit an empty-viewers sweep.
-        // Skip the sweep entirely when nobody is online; there is
-        // nothing to unload for yet, and the world stays warm in memory
-        // for whoever logs in next.
-        if (!viewers.empty()) {
-            int unloaded = level_->unloadDistantChunks(viewers);
-            if (unloaded > 0 && advancedLog()) {
-                utils::MainLogger::get().info("[Chunks] Unloaded " + std::to_string(unloaded) +
-                    " chunk(s) out of view.");
-            }
-        }
-        t1 = std::chrono::steady_clock::now();
-        WorkbenchManager::get().onTickPhase("chunk_unload",
-            (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
-    }
+    // --- Phase: global GC ---
+    // THE single GarbageCollector pass for the whole server. Everything
+    // that reclaims shared world memory funnels through here:
+    // chunk unload sweep (was a separate 100-tick schedule in this very
+    // function) + dropped-item despawn/taken sweep (was a per-tick sweep
+    // inside Level::tick) + heap trim. Centralizing matters: independent
+    // reclaimer schedules were freeing world state (dropped items, tiles,
+    // chunks) in the middle of player actions — the "player actions
+    // desyncing from the server" symptom. Rate limiting inside
+    // MemoryManager::collect() keeps the pass off every tick; it prices
+    // like the old chunk sweep (occasional maintenance, may hit disk).
+    t0 = std::chrono::steady_clock::now();
+    MemoryManager::get().collect();
+    t1 = std::chrono::steady_clock::now();
+    WorkbenchManager::get().onTickPhase("gc",
+        (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
 
     // --- Phase: network (first pass) ---
     // CRITICAL: process network BEFORE player updates.

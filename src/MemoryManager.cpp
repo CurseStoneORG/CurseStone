@@ -1,10 +1,29 @@
 #include "MemoryManager.h"
+
+#include "Player.h"
+#include "Server.h"
+#include "level/Level.h"
+#include "utils/MainLogger.hpp"
+#include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <string>
+
+#ifdef __GLIBC__
+#include <malloc.h>
+#endif
+
 namespace atomikpe {
-MemoryManager& MemoryManager::get() { static MemoryManager m; return m; }
+
+MemoryManager& MemoryManager::get() {
+    static MemoryManager m;   // the ONE and only global GarbageCollector
+    return m;
+}
+
 int64_t MemoryManager::currentUsageKB() const {
-    // Linux: read /proc/self/status VmRSS
+    // Linux: read /proc/self/status VmRSS. Windows/Android fallbacks keep
+    // this a no-op returning 0 (shouldGc() then never fires spuriously).
+#if defined(__linux__)
     std::ifstream f("/proc/self/status");
     std::string line;
     while (std::getline(f, line)) {
@@ -13,10 +32,74 @@ int64_t MemoryManager::currentUsageKB() const {
             if (i != std::string::npos) return std::stoll(line.substr(i));
         }
     }
+#endif
     return 0;
 }
+
 bool MemoryManager::shouldGc() const {
+    if (limit_mb_ <= 0) return false;
     return currentUsageKB() > (int64_t)limit_mb_ * 1024;
 }
-void MemoryManager::runGc() { /* glibc malloc_trim(0) */ }
-} // namespace
+
+// ---------------------------------------------------------------
+// The global collection pass. Called from Server::tick() every
+// gc_interval_ticks_, on the main thread, once — replacing the old
+// scattered independent schedules.
+// ---------------------------------------------------------------
+void MemoryManager::collect(bool force) {
+    const uint64_t tick = Server::getInstance().getCurrentTick();
+
+    // Rate limit: only one pass per interval. `force` (shutdown / manual)
+    // bypasses the gate but never bypasses single-entry exclusivity.
+    uint64_t expected = last_collect_tick_.load(std::memory_order_relaxed);
+    while (true) {
+        if (!force && tick - expected < gc_interval_ticks_) return;
+        if (last_collect_tick_.compare_exchange_weak(
+                expected, tick, std::memory_order_relaxed,
+                std::memory_order_relaxed)) {
+            break;
+        }
+        // expected was reloaded with the current value by the failed CAS;
+        // loop back and re-check the interval gate with fresh data.
+    }
+
+    // 1) Chunk GC — free chunks no viewer can see, flushed + saved.
+    //    Runs here INSTEAD of Server::tick's own 100-tick sweep: same
+    //    amount of work, but on the single coordinated GC schedule.
+    if (level::Level* lvl = Server::getInstance().getDefaultLevel()) {
+        std::vector<level::Level::ChunkViewer> viewers;
+        {
+            auto snap = Server::getInstance().playersSnapshot();
+            viewers.reserve(snap.size());
+            for (auto& p : snap) {
+                if (!p) continue;
+                viewers.push_back({p->chunkX(), p->chunkZ(), p->viewDistance()});
+            }
+        }
+        if (!viewers.empty()) {
+            int unloaded = lvl->unloadDistantChunks(viewers);
+            if (unloaded > 0 && Server::getInstance().advancedLog()) {
+                utils::MainLogger::get().info("[GC] Unloaded " +
+                    std::to_string(unloaded) + " chunk(s) out of view.");
+            }
+        }
+    }
+
+    // 2) Dropped-item GC — despawn items by AGE (5 min like vanilla),
+    //    then drop taken entries. The removal happens on the GC's own
+    //    schedule, never mid-pickup inside a player's update handler:
+    //    this is what fixes the pickup/rollback desync.
+    if (level::Level* lvl = Server::getInstance().getDefaultLevel()) {
+        lvl->collectDroppedItems(tick);
+    }
+
+#ifdef __GLIBC__
+    // 3) Return freed heap to the OS. glibc keeps freed small blocks in
+    //    its bins; without this RSS never goes back down.
+    malloc_trim(0);
+#endif
+
+    collects_.fetch_add(1, std::memory_order_relaxed);
+}
+
+} // namespace atomikpe

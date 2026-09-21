@@ -38,6 +38,7 @@
 #include <cstdlib>
 #include <algorithm>
 #include <fstream>
+#include <cstddef>
 #include <sstream>
 #include <string>
 
@@ -227,19 +228,70 @@ int Level::save() {
 void Level::tick(uint64_t current_tick) {
     advanceTime(1);
     doWeatherTick(current_tick);
-    // Sweep dropped-items registry: erase any items marked as taken.
-    // This avoids the map growing unbounded as players pick up items.
+    // NOTE: the dropped-items sweep used to run here every tick. It was
+    // moved to collectDroppedItems(), driven by the single global GC in
+    // MemoryManager — running an independent reclaimer inside tick() freed
+    // records out from under player pickup handlers (taken-flag race →
+    // phantom pickups) and was one of the scattered GCs this codebase had.
+    (void)current_tick;
+}
+
+size_t Level::collectDroppedItems(uint64_t current_tick) {
+    constexpr uint64_t DESPAWN_TICKS = 6000;  // 5 min at 20 TPS — vanilla EntityItem lifetime
+
+    // Phase 1: despawn expired items. Snapshot FIRST, then broadcast with
+    // no registry lock held (lock-ordering rule used by every other
+    // Level method that sends packets). This pass only ever runs on the
+    // main thread between player updates (it is driven by the global GC in
+    // Server::tick), so it can never interleave with a pickup handler that
+    // holds a DroppedItem* snapshot. Additionally, if a pickup transaction
+    // straddles a pass boundary, Player::onUpdate() re-checks the claim via
+    // tryClaimDroppedItem (false once the eid is erased), so it rolls back
+    // instead of duplicating.
+    std::vector<int64_t> expired;
     {
         std::lock_guard<std::mutex> lk(dropped_items_mtx_);
         for (auto it = dropped_items_.begin(); it != dropped_items_.end(); ) {
-            if (it->second && it->second->taken) {
+            if (!it->second) { it = dropped_items_.erase(it); continue; }
+            if (!it->second->taken &&
+                current_tick - it->second->spawn_tick >= DESPAWN_TICKS) {
+                expired.push_back(it->first);
                 it = dropped_items_.erase(it);
             } else {
                 ++it;
             }
         }
     }
-    (void)current_tick;
+    if (!expired.empty()) {
+        auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
+        // One packet per eid — RemoveEntityPacket carries a single eid.
+        for (size_t i = 0; i < expired.size(); ++i) {
+            if (i > 0) rm = std::make_shared<network::protocol::RemoveEntityPacket>();
+            rm->eid = expired[i];
+            for (auto& p : Server::getInstance().playersSnapshot()) {
+                if (p && p->spawned()) p->sendPacket(rm);
+            }
+        }
+    }
+
+    // Phase 2: drop fully-picked-up entries (the old tick() sweep job).
+    // Safe: by the time a record is `taken`, the picking player has already
+    // received its inventory + RemoveEntityPacket, and other players got
+    // their TakeItemEntityPacket — nothing is mid-transaction on this
+    // record anymore, so erasing it cannot desync anyone.
+    size_t removed = expired.size();
+    {
+        std::lock_guard<std::mutex> lk(dropped_items_mtx_);
+        for (auto it = dropped_items_.begin(); it != dropped_items_.end(); ) {
+            if (it->second && it->second->taken) {
+                it = dropped_items_.erase(it);
+                ++removed;
+            } else {
+                ++it;
+            }
+        }
+    }
+    return removed;
 }
 
 void Level::registerLoader(uint64_t id, class ChunkLoader* loader) {
