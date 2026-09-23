@@ -77,7 +77,8 @@ public:
     void handleChat(const std::string& message);
     void handleBlockBreak(int x, int y, int z);
     void handleBlockPlace(int x, int y, int z, uint8_t face,
-                          int16_t heldItemId, uint8_t heldCount, uint16_t heldDamage);
+                          int16_t heldItemId, uint8_t heldCount, uint16_t heldDamage,
+                          float fx = 0.5f, float fy = 0.5f, float fz = 0.5f);
     void handlePlayerAction(int action, int x, int y, int z, int face);
 
     // Ataque cuerpo a cuerpo (INTERACT_PACKET, ACTION_LEFT_CLICK contra

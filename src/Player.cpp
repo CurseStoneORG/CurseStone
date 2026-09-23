@@ -38,6 +38,7 @@
 #include "redstone/RedstoneManager.h"
 #include "item/ItemConstants.h"
 #include "block/BlockIds.h"
+#include "block/BlockOrientation.h"
 #include "event/EventManager.h"
 #include "event/player/PlayerJoinEvent.h"
 #include "event/player/PlayerQuitEvent.h"
@@ -607,7 +608,8 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                 // full int16_t value through.
                 handleBlockPlace(ui->x, ui->y, ui->z, ui->face,
                                  ui->itemId,
-                                 ui->itemCount, ui->itemDamage);
+                                 ui->itemCount, ui->itemDamage,
+                                 ui->fx, ui->fy, ui->fz);
             }
             break;
         case network::protocol::REMOVE_BLOCK_PACKET:
@@ -1789,8 +1791,109 @@ void Player::handleBlockBreak(int x, int y, int z) {
     }
 }
 
+namespace {
+
+// isStairsId — escaleras de MCPE 0.15 / protocolo 84. Cubre las de
+// BlockIds.h (53, 67, 108, 109, 114, 156) más las variantes de madera
+// que existen en la familia (128, 134-136, 163, 164, 180, 203) por si
+// se registran después; un id extra aquí no afecta a nada más.
+bool isStairsId(uint8_t id) {
+    switch (id) {
+        case 53: case 67: case 108: case 109: case 114:
+        case 128: case 134: case 135: case 136:
+        case 156: case 163: case 164: case 180: case 203:
+            return true;
+        default:
+            return false;
+    }
+}
+
+// computeVanillaPlacementMeta — metadatos de COLOCACIÓN vanilla para el
+// bloque recién puesto, con la misma referencia que usa todo el
+// proyecto para el comportamiento de protocolo 84: Nukkit. Las tablas
+// de orientación viven en block/BlockOrientation.h (única fuente de
+// verdad; antes cada bloque tenía su tabla suelta). Solo orienta los
+// bloques que en vanilla lo hacen; el resto conserva baseData tal cual.
+//
+//   face : cara clickeada (0=bottom..5=east) del UseItemPacket
+//   yaw  : yaw del jugador en el momento de colocar
+//   hitY : componente Y del punto de impacto (0..1) — sirve para slabs
+//          (mitad superior) y trampillas (montada arriba)
+uint8_t computeVanillaPlacementMeta(uint8_t blockId, uint8_t baseData,
+                                    uint8_t face, float yaw, float hitY) {
+    using block::BlockOrientation;
+    const uint8_t q = BlockOrientation::quadrant(yaw); // 0=S 1=W 2=N 3=E
+
+    // Escaleras: siempre miran hacia el jugador (Nukkit BlockStairs.place,
+    // faces {2,1,3,0}). Las esquinas/uniones las calcula el cliente a
+    // partir del meta de los vecinos — el servidor sólo guarda los 2 bits.
+    if (isStairsId(blockId)) {
+        return BlockOrientation::stairsMeta(q);
+    }
+
+    // Slabs / doubleslabs: bits bajos = variante, bit 0x08 = mitad superior
+    // cuando el click apunta a la mitad alta del lado de la cara.
+    if (blockId == 44 /*SLAB*/ || blockId == block::SLAB_WOOD ||
+        blockId == block::DOUBLE_SLAB_ID || blockId == block::DOUBLE_SLAB_WOOD) {
+        return (uint8_t)((baseData & 0x07) | ((face != 0 && hitY > 0.5f) ? 0x08 : 0x00));
+    }
+
+    switch (blockId) {
+        // --- Orientados hacia el jugador (frente = cuadrante) ---
+        case block::FURNACE:
+        case block::BURNING_FURNACE:
+        case block::CHEST:
+        case block::DISPENSER:
+        case block::DROPPER:
+            return BlockOrientation::horizontalFaceMeta(q);
+
+        // --- Pegados a la cara clickeada ---
+        case block::LADDER:
+        case block::WALL_SIGN:
+        case block::STONE_BUTTON:
+            return BlockOrientation::ladderMeta(face);
+        case block::TORCH:
+            return BlockOrientation::torchMeta(face);
+        case block::LEVER:
+            return BlockOrientation::leverMeta(face, face != 0 && hitY > 0.5f);
+        case block::VINE:
+            return BlockOrientation::vineMeta(face);
+
+        // --- Trampillas: orientación por yaw + bit 0x04 si se monta arriba ---
+        case block::TRAPDOOR:
+        case block::TRAPDOOR_IRON:
+            return (uint8_t)(BlockOrientation::trapdoorMeta(q) |
+                             ((face != 0 && hitY > 0.5f) ? 0x04 : 0x00));
+
+        // --- Yunque: eje este-oeste por defecto, rota con el yaw ---
+        case block::ANVIL:
+            return BlockOrientation::anvilMeta(q);
+
+        // --- Calabaza / repeater: miran HACIA el jugador (opuesto) ---
+        case block::PUMPKIN:
+        case block::LIT_PUMPKIN:
+        case block::UNPOWERED_REPEATER:
+        case block::POWERED_REPEATER:
+            return (uint8_t)((baseData & 0x0C) | BlockOrientation::yawToMetaOpposite(yaw));
+
+        // --- Troncos / cuarzo pilar / heno: eje según la cara de click ---
+        case block::LOG:
+        case 157: /* LOG2 (acacia/dark oak) */
+        case block::QUARTZ_BLOCK:
+        case block::HAY_BALE:
+            return BlockOrientation::axisMeta(face, baseData);
+
+        // Hopper guarda su meta (modo de salida); el resto conserva baseData.
+        default:
+            return baseData;
+    }
+}
+
+} // namespace
+
 void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
-                              int16_t heldItemId, uint8_t heldCount, uint16_t heldDamage) {
+                              int16_t heldItemId, uint8_t heldCount, uint16_t heldDamage,
+                              float fx, float fy, float fz) {
     if (!spawned_.load(std::memory_order_relaxed)) return;
     if (!srv_ || !srv_->getDefaultLevel()) return;
 
@@ -1865,6 +1968,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     bool    consumeItem     = false; // decrement inventory stack?
     bool    skipPlaceSound  = false; // for fire/water/lava (PMMP doesn't play it)
     (void)heldCount;  // currently unused — kept for API parity with PMMP
+    (void)fx; (void)fz;  // hit point X/Z — la orientación vanilla sólo usa fy (slabs/trapdoors)
 
     if (heldItemId == 0) {
         // Empty hand — no placement. BUT, in MCPE 0.15.x the client also
@@ -1977,12 +2081,11 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         // ESTE proyecto (esquema propio — ver nota en
         // RedstoneManager.cpp sobre por qué no se replica el legado
         // ambiguo de Java): 0=sur, 1=oeste, 2=norte, 3=este.
-        float yawDeg = yaw();
-        // Normaliza a [0, 360) antes de la fórmula — yaw() puede venir
-        // negativo o >360 tras varias vueltas del jugador.
-        yawDeg = std::fmod(yawDeg, 360.0f);
-        if (yawDeg < 0.0f) yawDeg += 360.0f;
-        uint8_t doorFacing = (uint8_t)(((int)((yawDeg + 45.0f) / 90.0f)) & 0x03);
+        // Orientación vanilla Nukkit (BlockDoor.place): {1,2,3,0} sobre
+        // el cuadrante yaw→{S,W,N,E} — tabla única en BlockOrientation.h
+        // (reemplaza la fórmula suelta que había aquí).
+        uint8_t doorFacing = block::BlockOrientation::doorMeta(
+            block::BlockOrientation::quadrant(yaw()));
 
         uint8_t lowerData = doorFacing & 0x03;       // bits 0-1: orientación; bit 0x04 (abierta) empieza en 0; bit 0x08 (superior) en 0
         uint8_t upperData = 0x08 | (doorFacing & 0x03); // bit 0x08 fijo (es superior); conserva orientación para que ambas mitades sepan hacia dónde mira la puerta sin tener que consultar la otra
@@ -2036,17 +2139,11 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         } else if (pitchDeg >= 60.0f) {
             pistonFacing = 0; // mirando marcadamente hacia abajo → pistón apunta abajo
         } else {
-            // Mismo esquema de 4 cuadrantes que la puerta, pero mapeado
-            // a los bits de PISTÓN (0-5), que usan una convención
-            // distinta a la de puerta: 2=norte,3=sur,4=oeste,5=este
-            // (confirmado por búsqueda — ver RedstoneManager.cpp).
-            float yawDeg = yaw();
-            yawDeg = std::fmod(yawDeg, 360.0f);
-            if (yawDeg < 0.0f) yawDeg += 360.0f;
-            uint8_t quadrant = (uint8_t)(((int)((yawDeg + 45.0f) / 90.0f)) & 0x03);
-            // quadrant: 0=sur,1=oeste,2=norte,3=este (mismo cálculo que doorFacing)
-            static const uint8_t quadrantToPistonBits[4] = {3, 4, 2, 5}; // sur,oeste,norte,este
-            pistonFacing = quadrantToPistonBits[quadrant];
+            // Tabla vanilla Nukkit (pistón): {3,4,2,5} sobre el mismo
+            // cuadrante yaw→{S,W,N,E} — BlockOrientation.h (antes era una
+            // tabla local duplicada con los mismos valores).
+            pistonFacing = block::BlockOrientation::pistonMeta(
+                block::BlockOrientation::quadrant(yaw()));
         }
 
         mcp_chunk_set_block_full(chP, localXP, placeY, localZP, pistonId, pistonFacing);
@@ -2064,9 +2161,13 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         }
         return;
     } else if (heldItemId >= 1 && heldItemId <= 255) {
-        // Block item — place it directly. data = low 4 bits of heldDamage.
+        // Block item — place it directly. Base data = low 4 bits of
+        // heldDamage; encima se aplica la orientación vanilla
+        // (computeVanillaPlacementMeta: escaleras hacia el jugador,
+        // horno/cofre/dispenser de cara, troncos por eje, etc.).
         placedBlockId   = static_cast<uint8_t>(heldItemId);
-        placedBlockData = (uint8_t)(heldDamage & 0x0F);
+        placedBlockData = computeVanillaPlacementMeta(
+            (uint8_t)heldItemId, (uint8_t)(heldDamage & 0x0F), face, yaw(), fy);
         consumeItem     = !(cfg_.gamemode & 1);  // survival only
     } else if (heldItemId == 331) {
         // Redstone dust item -> Redstone Wire block (55).
