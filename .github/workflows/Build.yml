@@ -6,6 +6,21 @@ on:
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
+  # Permite que release.yml llame a estos builds reutilizando los binarios.
+  workflow_call:
+    inputs:
+      version:
+        description: 'Versión del release (ej. Atomik-alpha-v1.0)'
+        required: false
+        type: string
+      body:
+        description: 'Descripción / notas del release'
+        required: false
+        type: string
+      prerelease:
+        description: 'Marcar como pre-release'
+        required: false
+        type: boolean
 
 jobs:
   # ─────────────────────────────────────────────
@@ -176,4 +191,3 @@ jobs:
             dist/AtomikPE-linux-x86_64
             dist/AtomikPE-android-arm64
           generate_release_notes: true
-

@@ -1,0 +1,70 @@
+name: Release personalizado
+
+# Crea un release de GitHub con la versión y descripción que tú elijas
+# (ej. versión: "Atomik-alpha-v1.0") y adjunta los binarios de
+# Linux x86_64 y Android ARM64 ya compilados.
+#
+# Cómo usarlo:
+#   GitHub → Actions → "Release personalizado" → Run workflow
+#   (o gh workflow run release.yml -f version=Atomik-alpha-v1.0 -f body="..." )
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Versión del release (ej. Atomik-alpha-v1.0)'
+        required: true
+        type: string
+      body:
+        description: 'Descripción / notas del release'
+        required: true
+        type: string
+      prerelease:
+        description: 'Marcar como pre-release (alpha/beta)'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  # Reutiliza los builds de Build.yml (Linux x86_64 + Android ARM64).
+  build:
+    name: Compilar binarios
+    uses: ./.github/workflows/Build.yml
+    with:
+      version: ${{ inputs.version }}
+      body: ${{ inputs.body }}
+      prerelease: ${{ inputs.prerelease }}
+
+  # Publica el release con los binarios adjuntos.
+  publish:
+    name: Crear release ${{ inputs.version }}
+    runs-on: ubuntu-22.04
+    needs: [ build ]
+
+    steps:
+      - name: Descargar binarios
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+
+      - name: Renombrar binarios con la versión
+        run: |
+          VERSION='${{ inputs.version }}'
+          mv dist/AtomikPE-linux-x86_64/AtomikPE   "dist/AtomikPE-${VERSION}-linux-x86_64"
+          mv dist/AtomikPE-android-arm64/AtomikPE  "dist/AtomikPE-${VERSION}-android-arm64"
+          ls -la dist/
+
+      - name: Publicar release en GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.version }}
+          name: ${{ inputs.version }}
+          body: ${{ inputs.body }}
+          prerelease: ${{ inputs.prerelease }}
+          files: |
+            dist/AtomikPE-${{ inputs.version }}-linux-x86_64
+            dist/AtomikPE-${{ inputs.version }}-android-arm64
+          fail_on_unmatched_files: true

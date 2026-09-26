@@ -16,6 +16,38 @@ git push origin v1.0.0
 
 ---
 
+## Opción 1.5 — Release personalizado (versión y descripción custom)
+
+El workflow **"Release personalizado"** (`.github/workflows/release.yml`) compila
+Linux x86_64 + Android ARM64 y crea un release con el nombre, la versión y la
+descripción que tú quieras (ej. `Atomik-alpha-v1.0`), adjuntando los binarios:
+
+- `AtomikPE-<versión>-linux-x86_64`
+- `AtomikPE-<versión>-android-arm64`
+
+**Desde GitHub (UI):**
+1. Ve a **Actions → Release personalizado → Run workflow**
+2. Rellena:
+   - **version**: `Atomik-alpha-v1.0`
+   - **body**: descripción / notas del release
+   - **prerelease**: márcalo si es alpha/beta
+
+**Desde la terminal (gh CLI):**
+```bash
+gh workflow run release.yml \
+  -f version="Atomik-alpha-v1.0" \
+  -f body="Primera alpha de AtomikPE" \
+  -f prerelease=true
+
+# Ver el progreso:
+gh run watch
+```
+
+> Nota: también sigue funcionando el release automático por tag `vX.X.X`
+> (job `release` de `Build.yml`).
+
+---
+
 ## Opción 2 — Linux x86_64 (VPS / PC)
 
 ```bash
