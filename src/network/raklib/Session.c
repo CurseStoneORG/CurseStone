@@ -385,32 +385,34 @@ bool mcp_rak_session_send_payload(mcp_rak_session_t* s,
     uint8_t  buf[RAKLIB_MAX_MTU + 64];
     bool     ok = true;
 
-    // BUG FIX: All fragments of the same split packet MUST share the SAME
-    // messageIndex and orderIndex. PMMP's Session.php increments these ONCE
-    // before the loop, then passes the same value to each fragment.
+    // FIX (chunks not rendering / stuck in the sky, Linux release only):
+    // per PMMP SendReliabilityLayer::sendPacket(), each FRAGMENT of a split
+    // packet is its own reliable message on the wire: messageIndex is
+    // incremented once per fragment, while all fragments of one split share
+    // the packet's single orderIndex. The previous "fix" here did the exact
+    // opposite — it pinned messageIndex to the same value for every fragment
+    // (so the client's RakNet layer saw fragments 2..N as duplicates of the
+    // first one and dropped them; the split never completed reassembly and
+    // the client rendered nothing — visible as an empty world with the
+    // player falling in the sky — while chat, which is small enough to avoid
+    // splitting, kept working) and it incremented orderIndex per fragment
+    // (irrelevant for RELIABLE-unordered chunk sends, but wrong for any
+    // future RELIABLE_ORDERED split).
     //
-    // Before this fix, build_datagram() was incrementing s->message_index
-    // and s->channel_index for EACH fragment, causing the MCPE client's
-    // RakNet layer to see fragments as independent reliable packets instead
-    // of parts of one split packet. This corrupted the client's ordering
-    // buffer and caused it to silently stop responding after ~2 minutes
-    // of chunk data transfers.
-    //
-    // We pre-allocate the messageIndex and orderIndex here, then pass
-    // them via a temporary hack: we save the current values, and in the
-    // loop we restore them before each build_datagram call so that
-    // build_datagram reads the same value every time.
-    uint32_t saved_message_index = s->message_index;
+    // Correct behavior:
+    //   - messageIndex: leave s->message_index alone — build_datagram()
+    //     increments it naturally once per fragment.
+    //   - orderIndex: snapshot once here and restore before each fragment so
+    //     all fragments carry the same orderIndex (build_datagram increments
+    //     the per-channel counter only when the reliability is ordered; for
+    //     unordered chunk sends this value never reaches the wire).
     uint32_t saved_channel_index = s->channel_index[(uint8_t)(order_channel & 0x1F)];
 
     for (uint32_t idx = 0; idx < split_count; ++idx) {
         size_t offset   = (size_t)idx * frag_size;
         size_t this_len = (plen - offset < frag_size) ? (plen - offset) : frag_size;
 
-        // Restore the same messageIndex and orderIndex for every fragment
-        // so build_datagram writes the same value and only increments once
-        // (which we overwrite on the next iteration).
-        s->message_index = saved_message_index;
+        // Same orderIndex for every fragment of this split packet.
         s->channel_index[(uint8_t)(order_channel & 0x1F)] = saved_channel_index;
 
         size_t n = mcp_rak_session_build_datagram(
@@ -423,12 +425,12 @@ bool mcp_rak_session_send_payload(mcp_rak_session_t* s,
             ok = false;
     }
 
-    // After the loop, advance the counters ONCE (as PMMP does).
-    // build_datagram already incremented them on the last call, but
-    // we restored the saved value before each call, so the last call
-    // incremented from saved_message_index to saved_message_index+1.
-    // That's correct — the counters are now at saved+1, ready for the
-    // next packet.
+    // After the loop:
+    //   - message_index was advanced once per fragment by build_datagram()
+    //     (exactly what PMMP's SendReliabilityLayer does for split packets).
+    //   - the per-channel order counter was restored to its snapshot before
+    //     each fragment, so it ends at snapshot+1: all fragments shared one
+    //     orderIndex and the next packet gets the following one.
     return ok;
 }
 // --------------------------------------------------------------------------
