@@ -5,7 +5,7 @@
 #include <string>
 #include <cstdint>
 
-namespace atomikpe::utils {
+namespace cursestone::utils {
 
 class VersionString {
 public:
@@ -31,4 +31,4 @@ private:
     std::string suffix_;
 };
 
-} // namespace atomikpe::utils
+} // namespace cursestone::utils

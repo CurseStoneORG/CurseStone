@@ -9,21 +9,21 @@
 #include "../Event.h"
 #include "../../inventory/Inventory.h"
 #include <memory>
-namespace atomikpe { class Player; }
-namespace atomikpe::event::inventory {
+namespace cursestone { class Player; }
+namespace cursestone::event::inventory {
 
 class InventoryEvent : public Event {
 public:
-    std::shared_ptr<atomikpe::inventory::Inventory> inv;
+    std::shared_ptr<cursestone::inventory::Inventory> inv;
 
-    explicit InventoryEvent(std::shared_ptr<atomikpe::inventory::Inventory> inventory)
+    explicit InventoryEvent(std::shared_ptr<cursestone::inventory::Inventory> inventory)
         : inv(std::move(inventory)) {}
 
-    std::shared_ptr<atomikpe::inventory::Inventory> getInventory() { return inv; }
+    std::shared_ptr<cursestone::inventory::Inventory> getInventory() { return inv; }
 
     const std::string& eventName() const override {
         static std::string n = "InventoryEvent"; return n;
     }
 };
 
-} // namespace atomikpe::event::inventory
+} // namespace cursestone::event::inventory

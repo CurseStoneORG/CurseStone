@@ -2,7 +2,7 @@
 // AddEntityPacket to tell the client which model/texture to load.
 #pragma once
 #include <cstdint>
-namespace atomikpe::entity {
+namespace cursestone::entity {
 enum EntityId : int32_t {
     EITEM_ITEM             = 1,
     EITEM_XP_ORB            = 2,

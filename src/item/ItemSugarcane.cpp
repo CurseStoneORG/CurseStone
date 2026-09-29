@@ -1,2 +1,2 @@
 #include "ItemSugarcane.h"
-namespace atomikpe::item {}
+namespace cursestone::item {}

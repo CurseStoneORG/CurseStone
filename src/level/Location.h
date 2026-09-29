@@ -2,7 +2,7 @@
 #pragma once
 #include "Position.h"
 
-namespace atomikpe::level {
+namespace cursestone::level {
 
 class Location : public Position {
 public:
@@ -20,4 +20,4 @@ protected:
     double yaw_{0}, pitch_{0};
 };
 
-} // namespace atomikpe::level
+} // namespace cursestone::level

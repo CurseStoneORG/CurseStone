@@ -6,7 +6,7 @@
 #include <iomanip>
 #include <sstream>
 #include <cstdlib>
-namespace atomikpe {
+namespace cursestone {
 namespace {
 // Escape a string for inclusion as a JSON string literal. Backslashes,
 // quotes and control chars are escaped per RFC 8259. Without this,
@@ -52,8 +52,8 @@ void CrashDump::crash(const std::string& reason, const std::string& trace) {
     std::ofstream f(fname.str());
     if (f) {
         f << "{\n"
-          << "  \"version\": \"" << ATOMIKPE_VERSION << "\",\n"
-          << "  \"codename\": \"" << ATOMIKPE_CODENAME << "\",\n"
+          << "  \"version\": \"" << CURSESTONE_VERSION << "\",\n"
+          << "  \"codename\": \"" << CURSESTONE_CODENAME << "\",\n"
           << "  \"minecraft\": \"" << MINECRAFT_VERSION << "\",\n"
           << "  \"protocol\": " << PROTOCOL_VERSION << ",\n"
           << "  \"timestamp_utc\": \""
@@ -67,9 +67,9 @@ void CrashDump::crash(const std::string& reason, const std::string& trace) {
     // Best-effort log file (human readable).
     std::ofstream lf(log_path);
     if (lf) {
-        lf << "AtomikPE crash dump\n"
+        lf << "CurseStone crash dump\n"
            << "==================\n"
-           << "Version:    " << ATOMIKPE_VERSION << " \"" << ATOMIKPE_CODENAME << "\"\n"
+           << "Version:    " << CURSESTONE_VERSION << " \"" << CURSESTONE_CODENAME << "\"\n"
            << "Minecraft:  " << MINECRAFT_VERSION << " (protocol " << PROTOCOL_VERSION << ")\n"
            << "Time (UTC): " << std::put_time(std::gmtime(&t_c), "%Y-%m-%d %H:%M:%S") << "\n"
            << "Reason:     " << reason << "\n"

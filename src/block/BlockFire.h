@@ -8,7 +8,7 @@
 //   - Fuego eterno sobre Netherrack
 //   - Extinción por lluvia, edad > 3 sin suelo sólido, etc.
 //
-// Diferencias con el PHP original (adaptadas a la arquitectura C++ de AtomikPE):
+// Diferencias con el PHP original (adaptadas a la arquitectura C++ de CurseStone):
 //   - scheduleUpdate() usa ServerScheduler::scheduleSync() en vez de
 //     la cola interna de PMMP.
 //   - Level no expone getBlockData() todavía; se accede via chunks() directamente.
@@ -23,12 +23,12 @@
 #include <cstdint>
 #include <string>
 
-namespace atomikpe {
+namespace cursestone {
     namespace level { class Level; }
     namespace entity { class Entity; }
 }
 
-namespace atomikpe::block {
+namespace cursestone::block {
 
 class BlockFire : public BlockTransparent {
 public:
@@ -84,4 +84,4 @@ private:
                                                    int32_t x, int32_t y, int32_t z);
 };
 
-} // namespace atomikpe::block
+} // namespace cursestone::block

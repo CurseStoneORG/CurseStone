@@ -18,7 +18,7 @@
 #include "ChunkManager.h"
 #include <string.h>
 
-namespace atomikpe::level {
+namespace cursestone::level {
 
 ChunkManager::ChunkManager() {}
 ChunkManager::~ChunkManager() {

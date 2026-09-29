@@ -1,2 +1,2 @@
 #include "ItemWheatSeeds.h"
-namespace atomikpe::item {}
+namespace cursestone::item {}

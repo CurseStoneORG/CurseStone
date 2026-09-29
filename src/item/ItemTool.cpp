@@ -1,2 +1,2 @@
 #include "ItemTool.h"
-namespace atomikpe::item {}
+namespace cursestone::item {}

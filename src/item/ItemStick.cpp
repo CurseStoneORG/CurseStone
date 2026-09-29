@@ -1,2 +1,2 @@
 #include "ItemStick.h"
-namespace atomikpe::item {}
+namespace cursestone::item {}

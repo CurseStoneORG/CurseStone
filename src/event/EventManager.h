@@ -48,7 +48,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace atomikpe::event {
+namespace cursestone::event {
 
 class EventManager {
 public:
@@ -119,4 +119,4 @@ private:
     std::unordered_map<std::type_index, std::unique_ptr<HandlerList>> lists_;
 };
 
-} // namespace atomikpe::event
+} // namespace cursestone::event

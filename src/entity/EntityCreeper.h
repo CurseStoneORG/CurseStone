@@ -1,7 +1,7 @@
 #pragma once
 #include "Monster.h"
 #include <string>
-namespace atomikpe::entity {
+namespace cursestone::entity {
 class EntityCreeper : public Monster {
 public:
     using Monster::Monster;

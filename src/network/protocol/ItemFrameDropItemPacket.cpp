@@ -2,7 +2,7 @@
 // ItemFrameDropItemPacket implementation (stub).
 #include "ItemFrameDropItemPacket.h"
 
-namespace atomikpe::network::protocol {
+namespace cursestone::network::protocol {
 
 void ItemFrameDropItemPacket::encode(std::vector<uint8_t>& out) const {
     (void)out;
@@ -16,4 +16,4 @@ bool ItemFrameDropItemPacket::decode(const uint8_t* data, size_t len) {
     return true;
 }
 
-} // namespace atomikpe::network::protocol
+} // namespace cursestone::network::protocol

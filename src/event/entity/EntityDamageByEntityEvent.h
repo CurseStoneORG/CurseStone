@@ -2,13 +2,13 @@
 // EntityDamageByEntityEvent.h — ported from cn.nukkit.event.entity.EntityDamageByEntityEvent
 #pragma once
 #include "EntityDamageEvent.h"
-namespace atomikpe { namespace entity { class Entity; } }
-namespace atomikpe::event::entity {
+namespace cursestone { namespace entity { class Entity; } }
+namespace cursestone::event::entity {
 class EntityDamageByEntityEvent : public EntityDamageEvent {
 public:
-    atomikpe::entity::Entity* damager = nullptr;
+    cursestone::entity::Entity* damager = nullptr;
 
-    EntityDamageByEntityEvent(atomikpe::entity::Entity* e, float amount, atomikpe::entity::Entity* d)
+    EntityDamageByEntityEvent(cursestone::entity::Entity* e, float amount, cursestone::entity::Entity* d)
         : EntityDamageEvent(e, amount, DamageCause::ENTITY_ATTACK), damager(d) {
     }
 

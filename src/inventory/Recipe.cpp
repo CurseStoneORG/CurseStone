@@ -1,2 +1,2 @@
 #include "Recipe.h"
-namespace atomikpe::inventory {}
+namespace cursestone::inventory {}

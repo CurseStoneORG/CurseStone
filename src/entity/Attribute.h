@@ -2,7 +2,7 @@
 // attack_damage, knockback_resistance. Sent in UpdateAttributesPacket.
 #pragma once
 #include <string>
-namespace atomikpe::entity {
+namespace cursestone::entity {
 class Attribute {
 public:
     Attribute() = default;

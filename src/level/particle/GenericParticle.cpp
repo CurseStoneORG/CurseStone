@@ -1,2 +1,2 @@
 #include "GenericParticle.h"
-namespace atomikpe::level::particle {}
+namespace cursestone::level::particle {}

@@ -6,7 +6,7 @@
 #include <cmath>
 #include <string>
 
-namespace atomikpe::math {
+namespace cursestone::math {
 
 struct Vec3 {
     double x{0}, y{0}, z{0};
@@ -46,4 +46,4 @@ struct Vec3 {
     }
 };
 
-} // namespace atomikpe::math
+} // namespace cursestone::math

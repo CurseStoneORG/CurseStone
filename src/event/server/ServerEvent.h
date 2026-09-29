@@ -6,7 +6,7 @@
 #pragma once
 #include "../Event.h"
 #include <string>
-namespace atomikpe::event::server {
+namespace cursestone::event::server {
 
 class ServerEvent : public Event {
 public:
@@ -15,4 +15,4 @@ public:
     }
 };
 
-} // namespace atomikpe::event::server
+} // namespace cursestone::event::server

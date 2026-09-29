@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Anvil.h — Nukkit Anvil LevelProvider, ported to AtomikPE's C++ core.
+// Anvil.h — Nukkit Anvil LevelProvider, ported to CurseStone's C++ core.
 //
 // This is the on-disk world format used by Nukkit InfinityEdition:
 //   worlds/<name>/level.dat      (GZIP-compressed big-endian NBT, root → "Data")
@@ -29,7 +29,7 @@
 #include "../LevelProvider.h"
 #include "AnvilRegionLoader.h"
 
-namespace atomikpe::level::format::anvil {
+namespace cursestone::level::format::anvil {
 
 class Anvil : public LevelProvider {
 public:
@@ -111,4 +111,4 @@ struct AnvilRegistrar {
 };
 extern AnvilRegistrar g_anvil_registrar_;
 
-} // namespace atomikpe::level::format::anvil
+} // namespace cursestone::level::format::anvil

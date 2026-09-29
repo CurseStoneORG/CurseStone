@@ -15,12 +15,12 @@
 #pragma once
 #include <cstdint>
 #include <atomic>
-namespace atomikpe {
+namespace cursestone {
 class MemoryManager {
 public:
     static MemoryManager& get();
 
-    // Config (from atomikpe.yml).
+    // Config (from cursestone.yml).
     void setLimitMB(int mb) { limit_mb_ = mb; }
     int limitMB() const { return limit_mb_; }
     // Interval between global GC passes, in ticks (20 TPS => 10s).

@@ -1,2 +1,2 @@
 #include "ItemIronBoots.h"
-namespace atomikpe::item {}
+namespace cursestone::item {}

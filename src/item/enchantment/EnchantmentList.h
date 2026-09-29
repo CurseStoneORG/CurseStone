@@ -3,7 +3,7 @@
 #pragma once
 #include "Enchantment.h"
 #include <vector>
-namespace atomikpe::item::enchantment {
+namespace cursestone::item::enchantment {
 struct EnchantmentEntry { EnchantmentId id; uint8_t level; };
 class EnchantmentList {
 public:

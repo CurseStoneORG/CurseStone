@@ -1,2 +1,2 @@
 #include "BlockDirt.h"
-namespace atomikpe::block {}
+namespace cursestone::block {}

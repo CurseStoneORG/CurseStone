@@ -1,9 +1,9 @@
 #include "TileFurnace.h"
 #include "item/ItemStack.h"
-namespace atomikpe::tile {
-void TileFurnace::setItem(int /*slot*/, const atomikpe::item::ItemStack& /*it*/) { dirty_ = true; }
-atomikpe::item::ItemStack TileFurnace::getItem(int /*slot*/) const {
-    return atomikpe::item::ItemStack{0,0,0};
+namespace cursestone::tile {
+void TileFurnace::setItem(int /*slot*/, const cursestone::item::ItemStack& /*it*/) { dirty_ = true; }
+cursestone::item::ItemStack TileFurnace::getItem(int /*slot*/) const {
+    return cursestone::item::ItemStack{0,0,0};
 }
 void TileFurnace::removeItem(int /*slot*/) { dirty_ = true; }
 void TileFurnace::tick(uint64_t) {

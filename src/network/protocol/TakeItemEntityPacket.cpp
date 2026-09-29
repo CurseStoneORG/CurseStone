@@ -2,7 +2,7 @@
 // TakeItemEntityPacket implementation.
 #include "TakeItemEntityPacket.h"
 
-namespace atomikpe::network::protocol {
+namespace cursestone::network::protocol {
 
 void TakeItemEntityPacket::encode(std::vector<uint8_t>& out) const {
     // Format: [1 byte ID 0x11] [Int64 BE target] [Int64 BE entityId]
@@ -24,4 +24,4 @@ bool TakeItemEntityPacket::decode(const uint8_t* /*data*/, size_t /*len*/) {
     return true;
 }
 
-} // namespace atomikpe::network::protocol
+} // namespace cursestone::network::protocol

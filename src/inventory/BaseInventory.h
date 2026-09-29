@@ -12,7 +12,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <string>
-namespace atomikpe::inventory {
+namespace cursestone::inventory {
 
 class BaseInventory : public Inventory {
 public:
@@ -74,4 +74,4 @@ protected:
     InventoryHolder* holder_ = nullptr;
 };
 
-} // namespace atomikpe::inventory
+} // namespace cursestone::inventory

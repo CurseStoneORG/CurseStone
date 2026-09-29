@@ -4,7 +4,7 @@
 // PMMP decode: getByte(windowid) + getShort(slot) + getShort(hotbarSlot) + getSlot(item)
 #include "ContainerSetSlotPacket.h"
 
-namespace atomikpe::network::protocol {
+namespace cursestone::network::protocol {
 
 void ContainerSetSlotPacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
@@ -43,4 +43,4 @@ bool ContainerSetSlotPacket::decode(const uint8_t* buf, size_t len) {
     return true;
 }
 
-} // namespace atomikpe::network::protocol
+} // namespace cursestone::network::protocol

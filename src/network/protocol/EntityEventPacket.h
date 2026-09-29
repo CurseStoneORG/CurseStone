@@ -10,7 +10,7 @@
 #include <vector>
 #include <cstdint>
 
-namespace atomikpe::network::protocol {
+namespace cursestone::network::protocol {
 
 class EntityEventPacket : public DataPacket {
 public:
@@ -19,7 +19,7 @@ public:
     // Solo se usan los eventos que el pipeline de combate actual
     // dispara de verdad — el resto de la tabla de PMMP (tame,
     // fish-hook, ambient sound, etc.) no aplica todavia porque esas
-    // mecanicas no existen en AtomikPE.
+    // mecanicas no existen en CurseStone.
     static constexpr uint8_t HURT_ANIMATION  = 2;
     static constexpr uint8_t DEATH_ANIMATION = 3;
 
@@ -30,4 +30,4 @@ public:
     bool decode(const uint8_t* data, size_t len) override;
 };
 
-} // namespace atomikpe::network::protocol
+} // namespace cursestone::network::protocol

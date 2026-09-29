@@ -1,2 +1,2 @@
 #include "Enchantment.h"
-namespace atomikpe::item::enchantment {}
+namespace cursestone::item::enchantment {}

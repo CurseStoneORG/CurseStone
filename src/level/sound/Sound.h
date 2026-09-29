@@ -4,7 +4,7 @@
 #pragma once
 #include "level/Position.h"
 #include <cstdint>
-namespace atomikpe::level::sound {
+namespace cursestone::level::sound {
 enum SoundId : uint32_t {
     SOUND_CLICK       = 1000,
     SOUND_DOOR        = 1004,

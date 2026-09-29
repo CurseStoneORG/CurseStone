@@ -5,7 +5,7 @@
 #include "MainLogger.h"
 #include <string>
 
-namespace atomikpe::utils {
+namespace cursestone::utils {
 
 class MainLogger {
 public:
@@ -35,4 +35,4 @@ private:
     MainLogger() = default;
 };
 
-} // namespace atomikpe::utils
+} // namespace cursestone::utils

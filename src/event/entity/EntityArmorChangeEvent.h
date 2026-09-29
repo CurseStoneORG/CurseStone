@@ -4,17 +4,17 @@
 #include "EntityEvent.h"
 #include "../Cancellable.h"
 #include "../../item/ItemStack.h"
-namespace atomikpe { namespace entity { class Entity; } }
-namespace atomikpe::event::entity {
+namespace cursestone { namespace entity { class Entity; } }
+namespace cursestone::event::entity {
 class EntityArmorChangeEvent : public EntityEvent, public Cancellable {
 public:
-    atomikpe::item::ItemStack oldItem;
-    atomikpe::item::ItemStack newItem;
+    cursestone::item::ItemStack oldItem;
+    cursestone::item::ItemStack newItem;
     int slot = 0;
 
-    EntityArmorChangeEvent(atomikpe::entity::Entity* e,
-                           const atomikpe::item::ItemStack& old,
-                           const atomikpe::item::ItemStack& nw,
+    EntityArmorChangeEvent(cursestone::entity::Entity* e,
+                           const cursestone::item::ItemStack& old,
+                           const cursestone::item::ItemStack& nw,
                            int s)
         : EntityEvent(e), oldItem(old), newItem(nw), slot(s) {}
 

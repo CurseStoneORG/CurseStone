@@ -19,7 +19,7 @@
 #include "FullChunk.h"
 #include "Chunk.h"
 
-namespace atomikpe::level::format {
+namespace cursestone::level::format {
 
 class ChunkAdapter : public FullChunk {
 public:
@@ -86,4 +86,4 @@ private:
     bool          owns_chunk_ = true;  // false when created via borrow()
 };
 
-} // namespace atomikpe::level::format
+} // namespace cursestone::level::format

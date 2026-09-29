@@ -8,7 +8,7 @@
 #include <memory>
 #include <atomic>
 
-namespace atomikpe {
+namespace cursestone {
 class Server;
 
 namespace network {
@@ -28,4 +28,4 @@ private:
 };
 
 } // namespace network
-} // namespace atomikpe
+} // namespace cursestone

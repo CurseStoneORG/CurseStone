@@ -1,7 +1,7 @@
 #pragma once
 #include "command/Command.h"
 #include <string>
-namespace atomikpe {
+namespace cursestone {
 class StopCommand : public Command {
 public:
     StopCommand() : Command("stop", "Stop the server") {}

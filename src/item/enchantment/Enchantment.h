@@ -3,7 +3,7 @@
 #pragma once
 #include <cstdint>
 #include <string>
-namespace atomikpe::item::enchantment {
+namespace cursestone::item::enchantment {
 enum EnchantmentId : uint16_t {
     ENCH_PROTECTION         = 0,
     ENCH_FIRE_PROTECTION     = 1,

@@ -1,2 +1,2 @@
 #include "EntityCreeper.h"
-namespace atomikpe::entity {}
+namespace cursestone::entity {}

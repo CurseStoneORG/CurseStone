@@ -16,7 +16,7 @@
 #include <sstream>
 #include <iostream>
 
-namespace atomikpe {
+namespace cursestone {
 namespace network {
 
 void Network::registerInterface(std::unique_ptr<SourceInterface> iface) {
@@ -304,4 +304,4 @@ bool Network::isBlocked(const std::string& ip) const {
 }
 
 } // namespace network
-} // namespace atomikpe
+} // namespace cursestone

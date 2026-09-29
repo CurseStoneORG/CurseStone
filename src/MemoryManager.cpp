@@ -13,7 +13,7 @@
 #include <malloc.h>
 #endif
 
-namespace atomikpe {
+namespace cursestone {
 
 MemoryManager& MemoryManager::get() {
     static MemoryManager m;   // the ONE and only global GarbageCollector
@@ -102,4 +102,4 @@ void MemoryManager::collect(bool force) {
     collects_.fetch_add(1, std::memory_order_relaxed);
 }
 
-} // namespace atomikpe
+} // namespace cursestone

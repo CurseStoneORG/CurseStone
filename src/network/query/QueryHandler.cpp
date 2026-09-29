@@ -11,7 +11,7 @@
 #include <sstream>
 #include <chrono>
 
-namespace atomikpe {
+namespace cursestone {
 namespace network {
 
 void QueryHandler::start() {
@@ -45,4 +45,4 @@ bool QueryHandler::handlePacket(const std::string& ip, uint16_t port,
 }
 
 } // namespace network
-} // namespace atomikpe
+} // namespace cursestone

@@ -7,7 +7,7 @@
 
 #include <utility>
 
-namespace atomikpe::level::format {
+namespace cursestone::level::format {
 
 ChunkAdapter::ChunkAdapter(int32_t x, int32_t z) : owns_chunk_(true) {
     chunk_ = mcp_chunk_new(x, z);
@@ -128,4 +128,4 @@ std::vector<uint8_t> ChunkAdapter::networkSerialize() const {
     return out;
 }
 
-} // namespace atomikpe::level::format
+} // namespace cursestone::level::format

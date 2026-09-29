@@ -1,7 +1,7 @@
 #pragma once
 #include "command/Command.h"
 #include <string>
-namespace atomikpe {
+namespace cursestone {
 class GamemodeCommand : public Command {
 public:
     GamemodeCommand(const std::string& name = "gamemode") : Command(name, "Set gamemode") {}

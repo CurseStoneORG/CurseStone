@@ -2,7 +2,7 @@
 #include "BlockWater.h"
 #include <string>
 #include "BlockIds.h"
-namespace atomikpe::block {
+namespace cursestone::block {
 class BlockWaterStill : public BlockWater {
 public:
     uint8_t id() const override { return WATER_STILL; }

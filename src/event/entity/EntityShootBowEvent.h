@@ -4,17 +4,17 @@
 #include "EntityEvent.h"
 #include "../Cancellable.h"
 #include "../../item/ItemStack.h"
-namespace atomikpe { namespace entity { class Entity; } }
-namespace atomikpe::event::entity {
+namespace cursestone { namespace entity { class Entity; } }
+namespace cursestone::event::entity {
 class EntityShootBowEvent : public EntityEvent, public Cancellable {
 public:
-    atomikpe::item::ItemStack bow;
-    atomikpe::entity::Entity* projectile = nullptr;
+    cursestone::item::ItemStack bow;
+    cursestone::entity::Entity* projectile = nullptr;
     float force = 0.0f;
 
-    EntityShootBowEvent(atomikpe::entity::Entity* e,
-                        const atomikpe::item::ItemStack& b,
-                        atomikpe::entity::Entity* p, float f)
+    EntityShootBowEvent(cursestone::entity::Entity* e,
+                        const cursestone::item::ItemStack& b,
+                        cursestone::entity::Entity* p, float f)
         : EntityEvent(e), bow(b), projectile(p), force(f) {}
 
     const std::string& eventName() const override {

@@ -4,8 +4,8 @@
 #pragma once
 #include "Living.h"
 #include <memory>
-namespace atomikpe::inventory { class PlayerInventory; }
-namespace atomikpe::entity {
+namespace cursestone::inventory { class PlayerInventory; }
+namespace cursestone::entity {
 class Human : public Living {
 public:
     using Living::Living;

@@ -3,7 +3,7 @@
 #pragma once
 #include <string>
 #include "command/CommandSender.h"
-namespace atomikpe {
+namespace cursestone {
 class IPlayer : public CommandSender {
 public:
     virtual bool isOnline() const = 0;

@@ -21,9 +21,9 @@
 #include "Server.h"
 #include <memory>
 
-namespace atomikpe::item {
+namespace cursestone::item {
 
-using namespace atomikpe::block;
+using namespace cursestone::block;
 
 // ============================================================
 // applyDurability
@@ -152,4 +152,4 @@ bool ItemFlintSteel::onActivate(level::Level* level, Player* player,
     return true;
 }
 
-} // namespace atomikpe::item
+} // namespace cursestone::item

@@ -5,9 +5,9 @@
 #include "../Cancellable.h"
 #include "../../item/ItemStack.h"
 #include <vector>
-namespace atomikpe { class Player; }
+namespace cursestone { class Player; }
 
-namespace atomikpe::event::inventory {
+namespace cursestone::event::inventory {
 
 // Forward-declare Recipe — will be a proper class when the crafting
 // system is ported.
@@ -15,17 +15,17 @@ class Recipe;
 
 class CraftItemEvent : public Event, public Cancellable {
 public:
-    std::vector<atomikpe::item::ItemStack> input;
+    std::vector<cursestone::item::ItemStack> input;
     Recipe* recipe;
-    atomikpe::Player* player;
-    CraftItemEvent(atomikpe::Player* p, std::vector<atomikpe::item::ItemStack> in, Recipe* r)
+    cursestone::Player* player;
+    CraftItemEvent(cursestone::Player* p, std::vector<cursestone::item::ItemStack> in, Recipe* r)
         : input(std::move(in)), recipe(r), player(p) {}
-    std::vector<atomikpe::item::ItemStack> getInput() { return input; }
+    std::vector<cursestone::item::ItemStack> getInput() { return input; }
     Recipe* getRecipe() { return recipe; }
-    atomikpe::Player* getPlayer() { return player; }
+    cursestone::Player* getPlayer() { return player; }
     const std::string& eventName() const override {
         static std::string n = "CraftItemEvent"; return n;
     }
 };
 
-} // namespace atomikpe::event::inventory
+} // namespace cursestone::event::inventory

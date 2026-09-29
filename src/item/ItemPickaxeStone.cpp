@@ -1,2 +1,2 @@
 #include "ItemPickaxeStone.h"
-namespace atomikpe::item {}
+namespace cursestone::item {}

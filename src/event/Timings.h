@@ -7,7 +7,7 @@
 #include <string>
 #include <chrono>
 #include <cstdint>
-namespace atomikpe::event {
+namespace cursestone::event {
 class Timings {
 public:
     static Timings& get();

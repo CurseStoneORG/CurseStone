@@ -8,7 +8,7 @@
 #include "ServerEvent.h"
 #include <string>
 
-namespace atomikpe::event::server {
+namespace cursestone::event::server {
 
 class QueryRegenerateEvent : public ServerEvent {
 public:
@@ -27,4 +27,4 @@ public:
     }
 };
 
-} // namespace atomikpe::event::server
+} // namespace cursestone::event::server

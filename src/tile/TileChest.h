@@ -17,15 +17,15 @@
 #include "item/ItemStack.h"   // required for ItemStack return/param types below
 #include "inventory/ChestInventory.h"
 #include <memory>
-namespace atomikpe::tile {
+namespace cursestone::tile {
 class TileChest : public Tile, public Container, public Nameable, public Spawnable {
 public:
-    TileChest(atomikpe::level::Position pos)
+    TileChest(cursestone::level::Position pos)
         : Tile("Chest", pos),
-          inventory_(std::make_shared<atomikpe::inventory::ChestInventory>()) {}
+          inventory_(std::make_shared<cursestone::inventory::ChestInventory>()) {}
     int size() const override { return SIZE; }
-    void setItem(int slot, const atomikpe::item::ItemStack& it) override;
-    atomikpe::item::ItemStack getItem(int slot) const override;
+    void setItem(int slot, const cursestone::item::ItemStack& it) override;
+    cursestone::item::ItemStack getItem(int slot) const override;
     void removeItem(int slot) override;
     void spawnTo(void* player) override {}
     void writeNBT(mcp_tag_t* tag) const override;
@@ -35,7 +35,7 @@ public:
     // straight to InventoryOpenEvent / ContainerSetContentPacket — no
     // copy, so edits made through either the Container interface above
     // or directly via this Inventory land in the same 27 slots.
-    std::shared_ptr<atomikpe::inventory::ChestInventory> inventory() const { return inventory_; }
+    std::shared_ptr<cursestone::inventory::ChestInventory> inventory() const { return inventory_; }
 
     // How many players currently have this chest open. Player::openChestAt/
     // closeOpenChest keep this in sync. Not used to gate concurrent access
@@ -49,7 +49,7 @@ public:
 
 private:
     static constexpr int SIZE = 27;
-    std::shared_ptr<atomikpe::inventory::ChestInventory> inventory_;
+    std::shared_ptr<cursestone::inventory::ChestInventory> inventory_;
     int viewer_count_ = 0;
     std::weak_ptr<TileChest> pair_;  // paired chest (double chest)
 };

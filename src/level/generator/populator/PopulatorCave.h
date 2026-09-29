@@ -1,6 +1,6 @@
 #pragma once
 #include "Populator.h"
-namespace atomikpe::level::generator::populator {
+namespace cursestone::level::generator::populator {
 class PopulatorCave : public Populator {
 public:
     explicit PopulatorCave(int attempts) : attempts_(attempts) {}

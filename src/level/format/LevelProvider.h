@@ -20,9 +20,9 @@
 #include "../../main.h"
 #include "FullChunk.h"
 
-namespace atomikpe::level::generator { class Generator; }
+namespace cursestone::level::generator { class Generator; }
 
-namespace atomikpe::level::format {
+namespace cursestone::level::format {
 
 class LevelProvider {
 public:
@@ -58,7 +58,7 @@ public:
     virtual void    setSpawn(const math::Vector3& v) = 0;
 
     // Generator plumbing — set by Level::load() based on
-    // atomikpe.yml `level.generator`. The provider doesn't
+    // cursestone.yml `level.generator`. The provider doesn't
     // generate by itself; it delegates to the generator when a chunk
     // is requested that isn't on disk.
     virtual void    setGenerator(generator::Generator* g) = 0;
@@ -71,4 +71,4 @@ public:
     virtual void    saveLevelData() = 0;
 };
 
-} // namespace atomikpe::level::format
+} // namespace cursestone::level::format

@@ -2,7 +2,7 @@
 #include "Attribute.h"
 #include <string>
 #include <unordered_map>
-namespace atomikpe::entity {
+namespace cursestone::entity {
 class AttributeMap {
 public:
     void set(const Attribute& a) { map_[a.name()] = a; }

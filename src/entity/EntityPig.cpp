@@ -1,2 +1,2 @@
 #include "EntityPig.h"
-namespace atomikpe::entity {}
+namespace cursestone::entity {}

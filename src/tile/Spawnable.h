@@ -2,7 +2,7 @@
 // furnace, sign). Used by the network layer to broadcast tile
 // state changes.
 #pragma once
-namespace atomikpe::tile {
+namespace cursestone::tile {
 class Spawnable {
 public:
     virtual ~Spawnable() = default;

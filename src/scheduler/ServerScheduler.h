@@ -33,7 +33,7 @@
 #include <deque>
 #include <utility>
 #include <cstdint>
-namespace atomikpe::scheduler {
+namespace cursestone::scheduler {
 class AsyncTask;
 class ServerScheduler {
 public:

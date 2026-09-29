@@ -1,7 +1,7 @@
 #pragma once
 #include "command/Command.h"
 #include <string>
-namespace atomikpe {
+namespace cursestone {
 class VersionCommand : public Command {
 public:
     VersionCommand() : Command("version", "Show server version info") {}

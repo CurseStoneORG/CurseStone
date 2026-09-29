@@ -4,7 +4,7 @@
 #include "level/generator/populator/Populator.h"
 #include <vector>
 #include <memory>
-namespace atomikpe::level::generator {
+namespace cursestone::level::generator {
 class Normal : public Generator {
 public:
     explicit Normal(int64_t seed);

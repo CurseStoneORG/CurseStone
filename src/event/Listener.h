@@ -4,11 +4,11 @@
 // Marker interface for event listener classes. In C++ this is an empty
 // base class that listener classes inherit from.
 #pragma once
-namespace atomikpe::event {
+namespace cursestone::event {
 
 class Listener {
 public:
     virtual ~Listener() = default;
 };
 
-} // namespace atomikpe::event
+} // namespace cursestone::event

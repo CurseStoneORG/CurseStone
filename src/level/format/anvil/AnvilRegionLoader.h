@@ -26,7 +26,7 @@
 #include <string>
 #include <vector>
 
-namespace atomikpe::level::format::anvil {
+namespace cursestone::level::format::anvil {
 
 constexpr int32_t kRegionSize        = 32;     // 32x32 chunks per region
 constexpr int32_t kChunkSlotCount    = 1024;   // 32 * 32
@@ -94,4 +94,4 @@ private:
     long                       last_used_ = 0;
 };
 
-} // namespace atomikpe::level::format::anvil
+} // namespace cursestone::level::format::anvil

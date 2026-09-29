@@ -1,2 +1,2 @@
 #include "BlockGravel.h"
-namespace atomikpe::block {}
+namespace cursestone::block {}

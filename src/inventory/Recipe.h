@@ -6,14 +6,14 @@
 #include <vector>
 #include <string>
 #include <array>
-namespace atomikpe::inventory {
+namespace cursestone::inventory {
 enum RecipeType { RECIPE_SHAPED = 0, RECIPE_SHAPELESS = 1, RECIPE_FURNACE = 2 };
 class Recipe {
 public:
-    Recipe(RecipeType type, atomikpe::item::ItemStack result)
+    Recipe(RecipeType type, cursestone::item::ItemStack result)
         : type_(type), result_(result) {}
     RecipeType type() const { return type_; }
-    const atomikpe::item::ItemStack& result() const { return result_; }
+    const cursestone::item::ItemStack& result() const { return result_; }
     // Shaped recipe: 3x3 grid of item ids (0 = no requirement).
     void setGrid(const std::array<uint16_t, 9>& g) { grid_ = g; }
     const std::array<uint16_t, 9>& grid() const { return grid_; }
@@ -24,7 +24,7 @@ public:
     uint64_t uuid() const { return uuid_; }
 private:
     RecipeType type_;
-    atomikpe::item::ItemStack result_;
+    cursestone::item::ItemStack result_;
     std::array<uint16_t, 9> grid_;
     std::vector<uint16_t> ingredients_;
     uint64_t uuid_ = 0;

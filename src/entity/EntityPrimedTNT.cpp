@@ -1,2 +1,2 @@
 #include "EntityPrimedTNT.h"
-namespace atomikpe::entity {}
+namespace cursestone::entity {}

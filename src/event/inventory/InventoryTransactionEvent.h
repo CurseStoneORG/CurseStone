@@ -3,7 +3,7 @@
 #pragma once
 #include "../Event.h"
 #include "../Cancellable.h"
-namespace atomikpe::event::inventory {
+namespace cursestone::event::inventory {
 
 // Forward-declare — TransactionGroup is a future class that tracks
 // multi-inventory slot changes (e.g. dragging items between containers).
@@ -19,4 +19,4 @@ public:
     }
 };
 
-} // namespace atomikpe::event::inventory
+} // namespace cursestone::event::inventory

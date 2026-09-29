@@ -2,10 +2,10 @@
 #include "Tile.h"
 #include "Spawnable.h"
 #include <string>
-namespace atomikpe::tile {
+namespace cursestone::tile {
 class TileSpawner : public Tile, public Spawnable {
 public:
-    TileSpawner(atomikpe::level::Position pos) : Tile("MobSpawner", pos) {}
+    TileSpawner(cursestone::level::Position pos) : Tile("MobSpawner", pos) {}
     void spawnTo(void* /*p*/) override {}
     int spawnDelay() const { return delay_; }
     void setDelay(int d) { delay_ = d; dirty_ = true; }

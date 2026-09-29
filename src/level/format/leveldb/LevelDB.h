@@ -13,9 +13,9 @@
 //
 // Full LevelDB support requires linking against Google's leveldb
 // library. Phase 8 ships a stub that compiles cleanly with
-// ATOMIKPE_LEVELDB=0 and returns "chunk not on disk" for every
+// CURSESTONE_LEVELDB=0 and returns "chunk not on disk" for every
 // request. When the build finds leveldb (via cmake/FindLevelDB.cmake
-// and ATOMIKPE_LEVELDB=1), a real backend lands in Phase 12+.
+// and CURSESTONE_LEVELDB=1), a real backend lands in Phase 12+.
 //
 // Design rationale: keeping the API identical to anvil/Anvil means
 // Level::load() can pick a provider by name without format-specific
@@ -30,7 +30,7 @@
 #include "../../../main.h"
 #include "../LevelProvider.h"
 
-namespace atomikpe::level::format::leveldb {
+namespace cursestone::level::format::leveldb {
 
 class LevelDB : public LevelProvider {
 public:
@@ -86,4 +86,4 @@ struct LevelDBRegistrar {
 };
 extern LevelDBRegistrar g_leveldb_registrar_;
 
-} // namespace atomikpe::level::format::leveldb
+} // namespace cursestone::level::format::leveldb

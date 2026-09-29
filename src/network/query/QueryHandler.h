@@ -13,7 +13,7 @@
 #include <unordered_map>
 #include <chrono>
 
-namespace atomikpe {
+namespace cursestone {
 class Server;
 
 namespace network {
@@ -44,4 +44,4 @@ private:
 };
 
 } // namespace network
-} // namespace atomikpe
+} // namespace cursestone

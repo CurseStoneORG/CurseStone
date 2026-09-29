@@ -3,7 +3,7 @@
 // /event/Event.php. (No plugin API yet — handler dispatch is internal.)
 #pragma once
 #include <string>
-namespace atomikpe::event {
+namespace cursestone::event {
 class Event {
 public:
     virtual ~Event() = default;

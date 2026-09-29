@@ -8,7 +8,7 @@
 #include <unordered_map>
 #include <memory>
 #include <vector>
-namespace atomikpe::permission {
+namespace cursestone::permission {
 class PermissibleBase : public Permissible {
 public:
     bool hasPermission(const std::string& name) const override;

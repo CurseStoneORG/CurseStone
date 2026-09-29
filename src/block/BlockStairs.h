@@ -1,6 +1,6 @@
 #pragma once
 #include "BlockTransparent.h"
-namespace atomikpe::block {
+namespace cursestone::block {
 class BlockStairs : public BlockTransparent {
 public:
     bool isSolid() const override { return false; }

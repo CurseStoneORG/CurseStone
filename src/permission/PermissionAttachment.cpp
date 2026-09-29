@@ -1,2 +1,2 @@
 #include "PermissionAttachment.h"
-namespace atomikpe::permission {}
+namespace cursestone::permission {}

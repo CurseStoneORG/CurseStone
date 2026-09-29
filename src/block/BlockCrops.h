@@ -1,6 +1,6 @@
 #pragma once
 #include "BlockFlowable.h"
-namespace atomikpe::block {
+namespace cursestone::block {
 class BlockCrops : public BlockFlowable {
 public:
     bool isSolid() const override { return false; }

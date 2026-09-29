@@ -7,7 +7,7 @@
 #pragma once
 #include "BlockFormEvent.h"
 #include <cstdint>
-namespace atomikpe::event::block {
+namespace cursestone::event::block {
 
 // NOTA: no hereda Cancellable directamente — llega vía BlockFormEvent
 // -> BlockGrowEvent. Repetirlo aquí crearía un tercer subobjeto
@@ -27,4 +27,4 @@ public:
     }
 };
 
-} // namespace atomikpe::event::block
+} // namespace cursestone::event::block

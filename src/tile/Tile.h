@@ -21,14 +21,14 @@
 #include <string>           // required for std::string id_ and Tile(std::string, ...)
 #include "level/Position.h"
 #include "nbt/tag/Tag.h"    // mcp_tag_t
-namespace atomikpe::tile {
+namespace cursestone::tile {
 class Tile {
 public:
-    Tile(std::string id, atomikpe::level::Position pos)
+    Tile(std::string id, cursestone::level::Position pos)
         : id_(std::move(id)), pos_(pos) {}
     virtual ~Tile() = default;
     const std::string& getId() const { return id_; }
-    const atomikpe::level::Position& position() const { return pos_; }
+    const cursestone::level::Position& position() const { return pos_; }
     void markDirty() { dirty_ = true; }
     bool isDirty() const { return dirty_; }
     // Clears the dirty flag after a successful write to the chunk's
@@ -53,7 +53,7 @@ public:
     virtual void readNBT(const mcp_tag_t* tag);
 protected:
     std::string id_;                  // "Chest", "Furnace", "Sign", ...
-    atomikpe::level::Position pos_;
+    cursestone::level::Position pos_;
     bool dirty_ = true;
 };
 } // namespace

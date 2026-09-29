@@ -1,7 +1,7 @@
 #include "OpCommand.h"
 #include "Server.h"
 #include "Player.h"
-namespace atomikpe {
+namespace cursestone {
 bool OpCommand::execute(CommandSender* sender, const std::string&,
                     const std::vector<std::string>& args) {
     if (args.empty()) { sender->sendMessage("Usage: /op <player>"); return true; }

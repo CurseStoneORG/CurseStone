@@ -1,2 +1,2 @@
 #include "ItemShovelGolden.h"
-namespace atomikpe::item {}
+namespace cursestone::item {}

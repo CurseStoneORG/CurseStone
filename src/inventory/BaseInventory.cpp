@@ -11,7 +11,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace atomikpe::inventory {
+namespace cursestone::inventory {
 
 // ---- Constructors ----
 BaseInventory::BaseInventory(InventoryHolder* holder, std::shared_ptr<InventoryType> type)
@@ -285,4 +285,4 @@ void BaseInventory::sendSlot(int index, Player* player) {
     player->sendPacket(pk);
 }
 
-} // namespace atomikpe::inventory
+} // namespace cursestone::inventory

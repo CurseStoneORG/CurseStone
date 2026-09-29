@@ -2,7 +2,7 @@
 // UpdateAttributesPacket implementation (stub).
 #include "UpdateAttributesPacket.h"
 
-namespace atomikpe::network::protocol {
+namespace cursestone::network::protocol {
 
 void UpdateAttributesPacket::encode(std::vector<uint8_t>& out) const {
     (void)out;
@@ -16,4 +16,4 @@ bool UpdateAttributesPacket::decode(const uint8_t* data, size_t len) {
     return true;
 }
 
-} // namespace atomikpe::network::protocol
+} // namespace cursestone::network::protocol

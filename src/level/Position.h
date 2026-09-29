@@ -7,7 +7,7 @@
 #include <memory>
 #include <cmath>
 
-namespace atomikpe::level {
+namespace cursestone::level {
 class Level;
 
 class Position {
@@ -38,4 +38,4 @@ protected:
     std::shared_ptr<Level> level_;
 };
 
-} // namespace atomikpe::level
+} // namespace cursestone::level

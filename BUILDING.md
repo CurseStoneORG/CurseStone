@@ -1,4 +1,4 @@
-# Cómo compilar AtomikPE
+# Cómo compilar CurseStone
 
 ## Opción 1 — GitHub Actions (recomendado)
 
@@ -20,23 +20,23 @@ git push origin v1.0.0
 
 El workflow **"Release personalizado"** (`.github/workflows/release.yml`) compila
 Linux x86_64 + Android ARM64 y crea un release con el nombre, la versión y la
-descripción que tú quieras (ej. `Atomik-alpha-v1.0`), adjuntando los binarios:
+descripción que tú quieras (ej. `CurseStone-alpha-v1.0`), adjuntando los binarios:
 
-- `AtomikPE-<versión>-linux-x86_64`
-- `AtomikPE-<versión>-android-arm64`
+- `CurseStone-<versión>-linux-x86_64`
+- `CurseStone-<versión>-android-arm64`
 
 **Desde GitHub (UI):**
 1. Ve a **Actions → Release personalizado → Run workflow**
 2. Rellena:
-   - **version**: `Atomik-alpha-v1.0`
+   - **version**: `CurseStone-alpha-v1.0`
    - **body**: descripción / notas del release
    - **prerelease**: márcalo si es alpha/beta
 
 **Desde la terminal (gh CLI):**
 ```bash
 gh workflow run release.yml \
-  -f version="Atomik-alpha-v1.0" \
-  -f body="Primera alpha de AtomikPE" \
+  -f version="CurseStone-alpha-v1.0" \
+  -f body="Primera alpha de CurseStone" \
   -f prerelease=true
 
 # Ver el progreso:
@@ -54,7 +54,7 @@ gh run watch
 sudo apt-get install cmake ninja-build gcc-12 g++-12 zlib1g-dev libleveldb-dev
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
-./build/AtomikPE
+./build/CurseStone
 ```
 
 ---
@@ -76,7 +76,7 @@ cmake -B build -G Ninja \
 cmake --build build --parallel
 
 # Correr
-./build/AtomikPE
+./build/CurseStone
 ```
 
 > Termux detecta automáticamente ARM64, no necesitas pasar el toolchain manualmente.

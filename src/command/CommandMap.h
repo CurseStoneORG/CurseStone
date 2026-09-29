@@ -2,7 +2,7 @@
 #include "Command.h"
 #include <string>
 #include <vector>
-namespace atomikpe {
+namespace cursestone {
 class CommandMap {
 public:
     virtual ~CommandMap() = default;

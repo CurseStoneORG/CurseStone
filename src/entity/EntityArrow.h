@@ -1,7 +1,7 @@
 #pragma once
 #include "Projectile.h"
 #include <string>
-namespace atomikpe::entity {
+namespace cursestone::entity {
 class EntityArrow : public Projectile {
 public:
     using Projectile::Projectile;

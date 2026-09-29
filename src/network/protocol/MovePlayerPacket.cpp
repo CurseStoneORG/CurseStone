@@ -4,7 +4,7 @@
 // PMMP: putLong (BE) + 6× putFloat (BE) + putByte (mode) + putByte (onGround).
 #include "MovePlayerPacket.h"
 
-namespace atomikpe::network::protocol {
+namespace cursestone::network::protocol {
 
 void MovePlayerPacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
@@ -35,4 +35,4 @@ bool MovePlayerPacket::decode(const uint8_t* data, size_t len) {
     return true;
 }
 
-} // namespace atomikpe::network::protocol
+} // namespace cursestone::network::protocol

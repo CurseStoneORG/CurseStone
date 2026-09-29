@@ -13,7 +13,7 @@
 
 #include <cstring>
 
-namespace atomikpe::network::protocol {
+namespace cursestone::network::protocol {
 
 void AddPlayerPacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
@@ -63,4 +63,4 @@ bool AddPlayerPacket::decode(const uint8_t* data, size_t len) {
     return r.readU8(metaCount);
 }
 
-} // namespace atomikpe::network::protocol
+} // namespace cursestone::network::protocol

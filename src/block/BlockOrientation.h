@@ -30,7 +30,7 @@
 #pragma once
 #include <cstdint>
 
-namespace atomikpe::block {
+namespace cursestone::block {
 
 struct BlockOrientation {
     // yaw (grados, [0,360)) → cuadrante 0=sur,1=oeste,2=norte,3=este.
@@ -135,4 +135,4 @@ struct BlockOrientation {
     }
 };
 
-} // namespace atomikpe::block
+} // namespace cursestone::block

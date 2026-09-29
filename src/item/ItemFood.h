@@ -1,6 +1,6 @@
 #pragma once
 #include "Item.h"
-namespace atomikpe::item {
+namespace cursestone::item {
 class ItemFood : public Item {
 public:
     ItemFood(uint16_t id, int food, float saturation = 0.6f)

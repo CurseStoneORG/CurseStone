@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <string>
 
-namespace atomikpe::level::generator::biome {
+namespace cursestone::level::generator::biome {
 
 enum BiomeId : uint8_t {
     BIOME_OCEAN        = 0,

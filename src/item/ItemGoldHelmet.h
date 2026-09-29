@@ -1,7 +1,7 @@
 #pragma once
 #include "ItemArmor.h"
 #include <string>
-namespace atomikpe::item {
+namespace cursestone::item {
 class ItemGoldHelmet : public ItemArmor {
 public:
     ItemGoldHelmet() : ItemArmor(314, ArmorMaterial::ARMOR_GOLD, ArmorSlot::HELMET, 2) {}

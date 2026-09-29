@@ -1,2 +1,2 @@
 #include "ItemIronChestplate.h"
-namespace atomikpe::item {}
+namespace cursestone::item {}

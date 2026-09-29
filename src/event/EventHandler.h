@@ -6,7 +6,7 @@
 // @EventHandler annotation.
 #pragma once
 #include "EventPriority.h"
-namespace atomikpe::event {
+namespace cursestone::event {
 
 struct EventHandler {
     EventPriority priority = EventPriority::NORMAL;
@@ -17,4 +17,4 @@ struct EventHandler {
         : priority(p), ignoreCancelled(ignore) {}
 };
 
-} // namespace atomikpe::event
+} // namespace cursestone::event

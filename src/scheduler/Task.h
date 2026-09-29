@@ -11,7 +11,7 @@
 #pragma once
 #include <cstdint>
 #include <atomic>
-namespace atomikpe::scheduler {
+namespace cursestone::scheduler {
 class TaskHandler;
 class Task {
 public:

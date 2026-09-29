@@ -2,7 +2,7 @@
 #include "BlockTorch.h"
 #include <string>
 #include "BlockIds.h"
-namespace atomikpe::block {
+namespace cursestone::block {
 class BlockRedstoneTorch : public BlockTorch {
 public:
     // FIX: "REDSTONE_TORCH" (sin sufijo) no existe en BlockIds.h — solo

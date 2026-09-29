@@ -4,16 +4,16 @@
 #include "PlayerEvent.h"
 #include "../Cancellable.h"
 #include <string>
-namespace atomikpe { class Player; }
+namespace cursestone { class Player; }
 
-namespace atomikpe::event::player {
+namespace cursestone::event::player {
 class PlayerKickEvent : public PlayerEvent, public Cancellable {
 public:
     std::string reason;
-    PlayerKickEvent(atomikpe::Player* p, const std::string& r)
+    PlayerKickEvent(cursestone::Player* p, const std::string& r)
         : PlayerEvent(p), reason(r) {}
     const std::string& eventName() const override {
         static std::string n = "PlayerKickEvent"; return n;
     }
 };
-} // namespace atomikpe::event::player
+} // namespace cursestone::event::player

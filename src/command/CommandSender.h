@@ -3,7 +3,7 @@
 #pragma once
 #include <string>
 #include <memory>
-namespace atomikpe {
+namespace cursestone {
 class CommandSender {
 public:
     virtual ~CommandSender() = default;

@@ -9,7 +9,7 @@
 // which is little-endian (PMMP putLShort = pack("v", …)).
 #include "UseItemPacket.h"
 
-namespace atomikpe::network::protocol {
+namespace cursestone::network::protocol {
 
 namespace {
 // PMMP Slot decoder (BinaryStream::getSlot).
@@ -51,4 +51,4 @@ bool UseItemPacket::decode(const uint8_t* data, size_t len) {
     return readSlot(r, itemId, itemCount, itemDamage);
 }
 
-} // namespace atomikpe::network::protocol
+} // namespace cursestone::network::protocol

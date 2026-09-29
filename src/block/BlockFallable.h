@@ -4,6 +4,6 @@
 // by Level::tick.
 #pragma once
 #include "BlockSolid.h"
-namespace atomikpe::block {
+namespace cursestone::block {
 class BlockFallable : public BlockSolid {};
 } // namespace

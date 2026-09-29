@@ -1,2 +1,2 @@
 #include "Permission.h"
-namespace atomikpe::permission {}
+namespace cursestone::permission {}

@@ -6,15 +6,15 @@
 #pragma once
 #include "LevelEvent.h"
 #include <string>
-namespace atomikpe { namespace level { class Level; } }
+namespace cursestone { namespace level { class Level; } }
 
-namespace atomikpe::event::level {
+namespace cursestone::event::level {
 
 class SpawnChangeEvent : public LevelEvent {
 public:
     double prevX, prevY, prevZ;
 
-    SpawnChangeEvent(atomikpe::level::Level* l, double px, double py, double pz)
+    SpawnChangeEvent(cursestone::level::Level* l, double px, double py, double pz)
         : LevelEvent(l), prevX(px), prevY(py), prevZ(pz) {}
 
     const std::string& eventName() const override {
@@ -22,4 +22,4 @@ public:
     }
 };
 
-} // namespace atomikpe::event::level
+} // namespace cursestone::event::level

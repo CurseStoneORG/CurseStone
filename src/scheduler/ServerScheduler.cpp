@@ -13,7 +13,7 @@
 #include <exception>
 #include <string>
 
-namespace atomikpe::scheduler {
+namespace cursestone::scheduler {
 
 ServerScheduler& ServerScheduler::get() { static ServerScheduler s; return s; }
 

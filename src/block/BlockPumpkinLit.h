@@ -2,7 +2,7 @@
 #include "BlockPumpkin.h"
 #include <string>
 #include "BlockIds.h"
-namespace atomikpe::block {
+namespace cursestone::block {
 class BlockPumpkinLit : public BlockPumpkin {
 public:
     uint8_t id() const override { return PUMPKIN_LIT; }

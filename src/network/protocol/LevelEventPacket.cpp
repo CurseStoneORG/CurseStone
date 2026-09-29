@@ -11,7 +11,7 @@
 // Total body size: 2 + 4 + 4 + 4 + 4 = 18 bytes.
 #include "LevelEventPacket.h"
 
-namespace atomikpe::network::protocol {
+namespace cursestone::network::protocol {
 
 void LevelEventPacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
@@ -34,4 +34,4 @@ bool LevelEventPacket::decode(const uint8_t* buf, size_t len) {
     return true;
 }
 
-} // namespace atomikpe::network::protocol
+} // namespace cursestone::network::protocol

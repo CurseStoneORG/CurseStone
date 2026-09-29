@@ -6,11 +6,11 @@
 #include <fstream>
 #include <filesystem>
 #include <cstdio>
-namespace atomikpe::wizard {
+namespace cursestone::wizard {
 namespace fs = std::filesystem;
 
 bool Installer::shouldRun() const {
-    return !fs::exists(data_path_ + "/atomikpe.yml");
+    return !fs::exists(data_path_ + "/cursestone.yml");
 }
 
 std::string Installer::ask(const std::string& q, const std::string& def) {
@@ -44,10 +44,10 @@ int Installer::askInt(const std::string& q, int def) {
 
 bool Installer::runWizard() {
     if (!shouldRun()) return true;  // already configured
-    utils::MainLogger::get().info("Welcome to AtomikPE! First-run setup:");
+    utils::MainLogger::get().info("Welcome to CurseStone! First-run setup:");
     auto& lang = InstallerLang::get();
     lang.load("eng");
-    std::string name     = ask(lang.get("installer.name_question"), "AtomikPE");
+    std::string name     = ask(lang.get("installer.name_question"), "CurseStone");
     int max_players      = askInt(lang.get("installer.max_players_question"), 20);
     int port              = askInt(lang.get("installer.port_question"), 19132);
     std::string level_name = ask(lang.get("installer.level_name_question"), "world");
@@ -75,16 +75,16 @@ bool Installer::runWizard() {
     cfg.setInt("level.seed", 0);
 
     fs::create_directories(data_path_);
-    bool ok = cfg.saveYaml(data_path_ + "/atomikpe.yml");
-    if (ok) utils::MainLogger::get().info("Saved atomikpe.yml");
+    bool ok = cfg.saveYaml(data_path_ + "/cursestone.yml");
+    if (ok) utils::MainLogger::get().info("Saved cursestone.yml");
     else    utils::MainLogger::get().error("Failed to save config");
     return ok;
 }
 
 bool Installer::generateDefaultConfig() {
-    if (fs::exists(data_path_ + "/atomikpe.yml")) return true;
+    if (fs::exists(data_path_ + "/cursestone.yml")) return true;
     fs::create_directories(data_path_);
-    std::ofstream f(data_path_ + "/atomikpe.yml");
+    std::ofstream f(data_path_ + "/cursestone.yml");
     f << R"YAML(settings:
   language: "eng"
   shutdown-message: "Server closed"
@@ -93,7 +93,7 @@ bool Installer::generateDefaultConfig() {
 server:
   ip: "0.0.0.0"
   port: 19132
-  motd: "AtomikPE"
+  motd: "CurseStone"
   max-players: 20
   gamemode: 0
   difficulty: 1

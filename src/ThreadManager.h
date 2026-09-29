@@ -4,7 +4,7 @@
 #include <thread>
 #include <vector>
 #include <memory>
-namespace atomikpe {
+namespace cursestone {
 class ThreadManager {
 public:
     static ThreadManager& get();

@@ -5,7 +5,7 @@
 #pragma once
 #include "../Event.h"
 #include <cstdint>
-namespace atomikpe::event::block {
+namespace cursestone::event::block {
 
 class BlockEvent : public Event {
 public:
@@ -16,4 +16,4 @@ public:
     }
 };
 
-} // namespace atomikpe::event::block
+} // namespace cursestone::event::block

@@ -6,9 +6,9 @@
 #include "network/protocol/UpdateBlockPacket.h"
 #include <algorithm>
 
-namespace atomikpe::redstone {
+namespace cursestone::redstone {
 
-using atomikpe::level::Level;
+using cursestone::level::Level;
 
 // ============================================================
 // broadcastBlock — avisa a todos los jugadores que estén viendo el
@@ -17,7 +17,7 @@ using atomikpe::level::Level;
 // romper/colocar bloques (mismo paquete, mismo criterio de a quién
 // mandárselo).
 // ============================================================
-static void broadcastBlock(atomikpe::Server* server, int32_t x, int32_t y, int32_t z,
+static void broadcastBlock(cursestone::Server* server, int32_t x, int32_t y, int32_t z,
                              uint8_t blockId, uint8_t blockData) {
     if (!server) return;
     auto ubp = std::make_shared<network::protocol::UpdateBlockPacket>();
@@ -112,7 +112,7 @@ bool isPowered(Level* level, int32_t x, int32_t y, int32_t z) {
 // estado preserva los demás bits intactos, así la orientación visual
 // del bloque no cambia al accionarlo.
 // ============================================================
-bool tryInteract(Level* level, atomikpe::Server* server, int32_t x, int32_t y, int32_t z) {
+bool tryInteract(Level* level, cursestone::Server* server, int32_t x, int32_t y, int32_t z) {
     if (!level) return false;
     if (y < 0 || y >= 256) return false;
     if (!level->isChunkLoaded(x, z)) return false;
@@ -176,7 +176,7 @@ bool tryInteract(Level* level, atomikpe::Server* server, int32_t x, int32_t y, i
 // máximo de 15 bloques de wire consecutivos antes de que la potencia
 // llegue a 0 y la recursión se detenga por sí sola.
 // ============================================================
-static void updateWireInternal(Level* level, atomikpe::Server* server,
+static void updateWireInternal(Level* level, cursestone::Server* server,
                                  int32_t x, int32_t y, int32_t z, int depth) {
     if (!level) return;
     if (depth > 16) return; // guarda de seguridad extra (nunca debería alcanzarse)
@@ -253,7 +253,7 @@ static void updateWireInternal(Level* level, atomikpe::Server* server,
     }
 }
 
-void updateWireAt(Level* level, atomikpe::Server* server, int32_t x, int32_t y, int32_t z) {
+void updateWireAt(Level* level, cursestone::Server* server, int32_t x, int32_t y, int32_t z) {
     updateWireInternal(level, server, x, y, z, 0);
 }
 
@@ -264,7 +264,7 @@ void updateWireAt(Level* level, atomikpe::Server* server, int32_t x, int32_t y, 
 // consumidor de señal, no un conductor — así que no hay riesgo de
 // cascada aquí en absoluto.
 // ============================================================
-void updateLampAt(Level* level, atomikpe::Server* server, int32_t x, int32_t y, int32_t z) {
+void updateLampAt(Level* level, cursestone::Server* server, int32_t x, int32_t y, int32_t z) {
     if (!level) return;
     if (y < 0 || y >= 256) return;
     if (!level->isChunkLoaded(x, z)) return;
@@ -294,7 +294,7 @@ void updateLampAt(Level* level, atomikpe::Server* server, int32_t x, int32_t y, 
 // esta función (notifyNeighbors) también notifica al resto de vecinos
 // del bloque que originó el cambio.
 // ============================================================
-void updateRedstoneTorchAt(Level* level, atomikpe::Server* server, int32_t x, int32_t y, int32_t z) {
+void updateRedstoneTorchAt(Level* level, cursestone::Server* server, int32_t x, int32_t y, int32_t z) {
     if (!level) return;
     if (y < 1 || y >= 256) return; // necesita soporte debajo; y=0 no tiene bloque debajo
     if (!level->isChunkLoaded(x, z)) return;
@@ -374,7 +374,7 @@ void updateRedstoneTorchAt(Level* level, atomikpe::Server* server, int32_t x, in
 //   - Bits 0x01-0x02: orientación/bisagra, fijados al colocar
 //     (Player.cpp) y nunca tocados por este motor.
 // ============================================================
-void updateDoorAt(Level* level, atomikpe::Server* server, int32_t x, int32_t y, int32_t z) {
+void updateDoorAt(Level* level, cursestone::Server* server, int32_t x, int32_t y, int32_t z) {
     if (!level) return;
     if (y < 0 || y >= 256) return;
     if (!level->isChunkLoaded(x, z)) return;
@@ -428,7 +428,7 @@ static void pistonDirOffset(uint8_t dirBits, int32_t& ox, int32_t& oy, int32_t& 
     }
 }
 
-void updatePistonAt(Level* level, atomikpe::Server* server, int32_t x, int32_t y, int32_t z) {
+void updatePistonAt(Level* level, cursestone::Server* server, int32_t x, int32_t y, int32_t z) {
     if (!level) return;
     if (y < 0 || y >= 256) return;
     if (!level->isChunkLoaded(x, z)) return;
@@ -498,7 +498,7 @@ void updatePistonAt(Level* level, atomikpe::Server* server, int32_t x, int32_t y
 // colocar un bloque en (x,y,z); revisa los 6 vecinos y dispara su
 // actualización si son componentes de redstone.
 // ============================================================
-void notifyNeighbors(Level* level, atomikpe::Server* server, int32_t x, int32_t y, int32_t z) {
+void notifyNeighbors(Level* level, cursestone::Server* server, int32_t x, int32_t y, int32_t z) {
     if (!level) return;
     static const int32_t dx[6] = {1, -1, 0, 0, 0, 0};
     static const int32_t dy[6] = {0, 0, 1, -1, 0, 0};
@@ -552,4 +552,4 @@ void notifyNeighbors(Level* level, atomikpe::Server* server, int32_t x, int32_t 
     }
 }
 
-} // namespace atomikpe::redstone
+} // namespace cursestone::redstone

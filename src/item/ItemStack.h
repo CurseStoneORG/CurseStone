@@ -3,7 +3,7 @@
 // the polymorphic Item* happens at the inventory boundary.
 #pragma once
 #include <cstdint>
-namespace atomikpe::item {
+namespace cursestone::item {
 struct ItemStack {
     uint16_t id = 0;
     uint8_t  meta = 0;

@@ -9,7 +9,7 @@
 #include <functional>
 #include <memory>
 #include <string.h>
-namespace atomikpe::level::generator {
+namespace cursestone::level::generator {
 class GenerationTask {
 public:
     using DoneCallback = std::function<void(mcp_chunk_t*)>;

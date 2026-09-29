@@ -4,7 +4,7 @@
 #pragma once
 #include "Task.h"
 #include <memory>
-namespace atomikpe::scheduler {
+namespace cursestone::scheduler {
 class TaskHandler {
 public:
     TaskHandler(uint64_t task_id, std::shared_ptr<Task> task)

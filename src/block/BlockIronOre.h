@@ -2,7 +2,7 @@
 #include "BlockSolid.h"
 #include <string>
 #include "BlockIds.h"
-namespace atomikpe::block {
+namespace cursestone::block {
 class BlockIronOre : public BlockSolid {
 public:
     uint8_t id() const override { return IRON_ORE; }

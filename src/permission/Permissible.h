@@ -2,7 +2,7 @@
 // (Players, CommandSenders).
 #pragma once
 #include <string>
-namespace atomikpe::permission {
+namespace cursestone::permission {
 class Permissible {
 public:
     virtual ~Permissible() = default;

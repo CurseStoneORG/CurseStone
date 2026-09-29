@@ -2,7 +2,7 @@
 #include "EventManager.h"
 #include <vector>
 
-namespace atomikpe::event {
+namespace cursestone::event {
 
 EventManager& EventManager::get() {
     static EventManager instance;
@@ -50,4 +50,4 @@ void EventManager::call(Event& event) {
     list->dispatch(event);
 }
 
-} // namespace atomikpe::event
+} // namespace cursestone::event

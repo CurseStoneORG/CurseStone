@@ -1,2 +1,2 @@
 #include "TileSpawner.h"
-namespace atomikpe::tile {}
+namespace cursestone::tile {}

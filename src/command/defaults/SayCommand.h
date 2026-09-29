@@ -1,7 +1,7 @@
 #pragma once
 #include "command/Command.h"
 #include <string>
-namespace atomikpe {
+namespace cursestone {
 class SayCommand : public Command {
 public:
     SayCommand() : Command("say", "Broadcast a message") {}

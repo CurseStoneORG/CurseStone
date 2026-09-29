@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // EntityEventPacket.cpp — encode/decode.
-// PMMP: putLong(eid) + putByte(event). Clientbound only in AtomikPE
+// PMMP: putLong(eid) + putByte(event). Clientbound only in CurseStone
 // (server never needs to parse this coming FROM the client), but
 // decode() is still implemented for symmetry/tests.
 #include "EntityEventPacket.h"
 
-namespace atomikpe::network::protocol {
+namespace cursestone::network::protocol {
 
 void EntityEventPacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
@@ -19,4 +19,4 @@ bool EntityEventPacket::decode(const uint8_t* data, size_t len) {
     return r.readU8(event);
 }
 
-} // namespace atomikpe::network::protocol
+} // namespace cursestone::network::protocol

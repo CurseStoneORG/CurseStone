@@ -1,2 +1,2 @@
 #include "Monster.h"
-namespace atomikpe::entity {}
+namespace cursestone::entity {}

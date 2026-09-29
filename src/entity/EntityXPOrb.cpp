@@ -1,2 +1,2 @@
 #include "EntityXPOrb.h"
-namespace atomikpe::entity {}
+namespace cursestone::entity {}

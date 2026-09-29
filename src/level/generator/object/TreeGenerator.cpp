@@ -1,7 +1,7 @@
 #include "TreeGenerator.h"
 #include <cstdlib>
 #include "level/format/Chunk.h"
-namespace atomikpe::level::generator::object {
+namespace cursestone::level::generator::object {
 bool TreeGenerator::place(mcp_chunk_t* c, int x, int y, int z, TreeType t) {
     if (x < 0 || x >= 16 || z < 0 || z >= 16) return false;
     if (y < 0 || y >= 256 - 7) return false;

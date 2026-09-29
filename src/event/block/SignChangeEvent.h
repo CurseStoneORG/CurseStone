@@ -10,16 +10,16 @@
 #include <array>
 #include <cstdint>
 #include <string>
-namespace atomikpe { class Player; }
-namespace atomikpe::event::block {
+namespace cursestone { class Player; }
+namespace cursestone::event::block {
 
 class SignChangeEvent : public BlockEvent, public Cancellable {
 public:
-    atomikpe::Player* player;
+    cursestone::Player* player;
     std::array<std::string, 4> lines;
 
     SignChangeEvent(int32_t bx, int32_t by, int32_t bz,
-                    atomikpe::Player* p,
+                    cursestone::Player* p,
                     std::array<std::string, 4> l)
         : BlockEvent(bx, by, bz), player(p), lines(std::move(l)) {}
 
@@ -36,4 +36,4 @@ public:
     }
 };
 
-} // namespace atomikpe::event::block
+} // namespace cursestone::event::block

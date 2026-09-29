@@ -18,12 +18,12 @@
 #include <string>
 #include <cstdint>
 
-namespace atomikpe {
+namespace cursestone {
     class Player;
     namespace level { class Level; }
 }
 
-namespace atomikpe::item {
+namespace cursestone::item {
 
 class ItemFlintSteel : public Item {
 public:
@@ -93,4 +93,4 @@ private:
                             int32_t yBase, int32_t yMax);
 };
 
-} // namespace atomikpe::item
+} // namespace cursestone::item

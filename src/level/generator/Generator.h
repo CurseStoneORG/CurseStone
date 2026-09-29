@@ -14,7 +14,7 @@
 #include "math/Vector3.h"
 #include <stdint.h>
 
-namespace atomikpe::level::generator {
+namespace cursestone::level::generator {
 
 struct GenerationContext {
     int64_t seed;          // world seed

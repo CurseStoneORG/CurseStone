@@ -1,7 +1,7 @@
 #pragma once
 #include "Animal.h"
 #include <string>
-namespace atomikpe::entity {
+namespace cursestone::entity {
 class EntitySheep : public Animal {
 public:
     using Animal::Animal;

@@ -36,7 +36,7 @@
 #include <exception>
 #include <string>
 #include "../utils/MainLogger.hpp"
-namespace atomikpe::scheduler {
+namespace cursestone::scheduler {
 class AsyncPool {
 public:
     explicit AsyncPool(int n_workers = 4) : n_(n_workers > 0 ? n_workers : 1) {

@@ -5,18 +5,18 @@
 // player that triggered the event.
 #pragma once
 #include "../Event.h"
-namespace atomikpe { class Player; }
+namespace cursestone { class Player; }
 
-namespace atomikpe::event::player {
+namespace cursestone::event::player {
 
 class PlayerEvent : public Event {
 public:
-    atomikpe::Player* player = nullptr;
-    explicit PlayerEvent(atomikpe::Player* p = nullptr) : player(p) {}
-    atomikpe::Player* getPlayer() { return player; }
+    cursestone::Player* player = nullptr;
+    explicit PlayerEvent(cursestone::Player* p = nullptr) : player(p) {}
+    cursestone::Player* getPlayer() { return player; }
     const std::string& eventName() const override {
         static std::string n = "PlayerEvent"; return n;
     }
 };
 
-} // namespace atomikpe::event::player
+} // namespace cursestone::event::player

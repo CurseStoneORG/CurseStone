@@ -1,2 +1,2 @@
 #include "GenericSound.h"
-namespace atomikpe::level::sound {}
+namespace cursestone::level::sound {}

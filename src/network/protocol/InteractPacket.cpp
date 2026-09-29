@@ -5,7 +5,7 @@
 // implemented for symmetry/tests.
 #include "InteractPacket.h"
 
-namespace atomikpe::network::protocol {
+namespace cursestone::network::protocol {
 
 void InteractPacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
@@ -19,4 +19,4 @@ bool InteractPacket::decode(const uint8_t* data, size_t len) {
     return r.readI64BE(target);
 }
 
-} // namespace atomikpe::network::protocol
+} // namespace cursestone::network::protocol

@@ -1,9 +1,9 @@
-// Permission — a single permission node (e.g. "atomikpe.command.stop").
-// Permissions form a tree with wildcards ("atomikpe.command.*").
+// Permission — a single permission node (e.g. "cursestone.command.stop").
+// Permissions form a tree with wildcards ("cursestone.command.*").
 // Mirrors pocketmine/permission/Permission.php.
 #pragma once
 #include <string>
-namespace atomikpe::permission {
+namespace cursestone::permission {
 class Permission {
 public:
     explicit Permission(std::string name, std::string description = "")

@@ -1,2 +1,2 @@
 #include "ItemCookedChicken.h"
-namespace atomikpe::item {}
+namespace cursestone::item {}

@@ -36,7 +36,7 @@
 #include <unordered_map>
 #include <cstdint>
 
-namespace atomikpe {
+namespace cursestone {
 
 // ---- Tick profiler sample ----
 struct TickSample {
@@ -170,4 +170,4 @@ private:
     uint64_t start_time_ms_ = 0;
 };
 
-} // namespace atomikpe
+} // namespace cursestone

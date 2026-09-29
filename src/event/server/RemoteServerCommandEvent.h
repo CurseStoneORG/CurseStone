@@ -6,18 +6,18 @@
 #pragma once
 #include "ServerCommandEvent.h"
 #include <string>
-namespace atomikpe { class CommandSender; }
+namespace cursestone { class CommandSender; }
 
-namespace atomikpe::event::server {
+namespace cursestone::event::server {
 
 class RemoteServerCommandEvent : public ServerCommandEvent {
 public:
     RemoteServerCommandEvent(void* sender, const std::string& cmd)
-        : ServerCommandEvent(static_cast<atomikpe::CommandSender*>(sender), cmd) {}
+        : ServerCommandEvent(static_cast<cursestone::CommandSender*>(sender), cmd) {}
 
     const std::string& eventName() const override {
         static std::string n = "RemoteServerCommandEvent"; return n;
     }
 };
 
-} // namespace atomikpe::event::server
+} // namespace cursestone::event::server

@@ -1,2 +1,2 @@
 #include "BlockWheat.h"
-namespace atomikpe::block {}
+namespace cursestone::block {}

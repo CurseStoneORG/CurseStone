@@ -38,7 +38,7 @@
 #include "ContainerSetContentPacket.h"
 #include "ContainerSetSlotPacket.h"
 
-namespace atomikpe::network::protocol {
+namespace cursestone::network::protocol {
 
 std::shared_ptr<DataPacket> PacketPool::create(uint8_t pid) const {
     switch (pid) {
@@ -77,4 +77,4 @@ std::shared_ptr<DataPacket> PacketPool::create(uint8_t pid) const {
     }
 }
 
-} // namespace atomikpe::network::protocol
+} // namespace cursestone::network::protocol

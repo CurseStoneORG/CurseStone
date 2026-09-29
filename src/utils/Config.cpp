@@ -8,7 +8,7 @@
 #include <cctype>
 #include <algorithm>
 
-namespace atomikpe::utils {
+namespace cursestone::utils {
 
 // ---- Node construction ----
 static Config::NodePtr makeNode_(Config::Node::Type t) {
@@ -323,4 +323,4 @@ void Config::setBool(const std::string& key, bool v) {
     setString(key, v ? "true" : "false");
 }
 
-} // namespace atomikpe::utils
+} // namespace cursestone::utils

@@ -17,7 +17,7 @@
 #include <cstdio>
 #include <zlib.h>
 
-namespace atomikpe::network::protocol {
+namespace cursestone::network::protocol {
 
 // ---- Minimal base64url decoder (no padding) ----
 static bool base64UrlDecode(const std::string& in, std::vector<uint8_t>& out) {
@@ -241,4 +241,4 @@ void LoginPacket::parseClientDataPayload() {
     base64UrlDecode(skinB64, skinData);
 }
 
-} // namespace atomikpe::network::protocol
+} // namespace cursestone::network::protocol

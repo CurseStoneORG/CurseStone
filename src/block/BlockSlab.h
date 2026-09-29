@@ -1,7 +1,7 @@
 #pragma once
 #include "BlockTransparent.h"
 #include <string>
-namespace atomikpe::block {
+namespace cursestone::block {
 class BlockSlab : public BlockTransparent {
 public:
     uint8_t id() const override { return 44; }

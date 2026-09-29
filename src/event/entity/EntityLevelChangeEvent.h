@@ -3,16 +3,16 @@
 #pragma once
 #include "EntityEvent.h"
 #include "../Cancellable.h"
-namespace atomikpe { namespace entity { class Entity; } }
-namespace atomikpe { namespace level { class Level; } }
-namespace atomikpe::event::entity {
+namespace cursestone { namespace entity { class Entity; } }
+namespace cursestone { namespace level { class Level; } }
+namespace cursestone::event::entity {
 class EntityLevelChangeEvent : public EntityEvent, public Cancellable {
 public:
-    atomikpe::level::Level* level = nullptr;
+    cursestone::level::Level* level = nullptr;
     int oldLevelId = 0;
     int newLevelId = 0;
 
-    EntityLevelChangeEvent(atomikpe::entity::Entity* e, atomikpe::level::Level* lvl, int oldId, int newId)
+    EntityLevelChangeEvent(cursestone::entity::Entity* e, cursestone::level::Level* lvl, int oldId, int newId)
         : EntityEvent(e), level(lvl), oldLevelId(oldId), newLevelId(newId) {}
 
     const std::string& eventName() const override {

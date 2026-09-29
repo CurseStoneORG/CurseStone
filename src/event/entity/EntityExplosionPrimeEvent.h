@@ -3,14 +3,14 @@
 #pragma once
 #include "EntityEvent.h"
 #include "../Cancellable.h"
-namespace atomikpe { namespace entity { class Entity; } }
-namespace atomikpe::event::entity {
+namespace cursestone { namespace entity { class Entity; } }
+namespace cursestone::event::entity {
 class EntityExplosionPrimeEvent : public EntityEvent, public Cancellable {
 public:
     float radius = 0.0f;
     bool fireBreaking = false;
 
-    EntityExplosionPrimeEvent(atomikpe::entity::Entity* e, float r, bool fb)
+    EntityExplosionPrimeEvent(cursestone::entity::Entity* e, float r, bool fb)
         : EntityEvent(e), radius(r), fireBreaking(fb) {}
 
     const std::string& eventName() const override {

@@ -15,8 +15,8 @@
 //
 // NOTE: we accept this command from BOTH the console and players. The
 // console variant ignores the optional level-name argument Infinity
-// supports because AtomikPE currently has exactly one level.
-namespace atomikpe {
+// supports because CurseStone currently has exactly one level.
+namespace cursestone {
 
 bool WeatherCommand::execute(CommandSender* sender, const std::string& label,
                     const std::vector<std::string>& args) {
@@ -77,4 +77,4 @@ bool WeatherCommand::execute(CommandSender* sender, const std::string& label,
     return true;
 }
 
-} // namespace atomikpe
+} // namespace cursestone

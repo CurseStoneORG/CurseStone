@@ -12,7 +12,7 @@
 #include <cstdint>
 #include <functional>
 
-namespace atomikpe::level {
+namespace cursestone::level {
 
 class SimpleChunkManager : public ChunkManager {
 public:
@@ -60,4 +60,4 @@ private:
     std::shared_ptr<format::LevelProvider> provider_;
 };
 
-} // namespace atomikpe::level
+} // namespace cursestone::level

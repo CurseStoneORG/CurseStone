@@ -3,7 +3,7 @@
 #pragma once
 #include "Task.h"
 #include <functional>
-namespace atomikpe::scheduler {
+namespace cursestone::scheduler {
 class CallbackTask : public Task {
 public:
     explicit CallbackTask(std::function<void()> fn) : fn_(std::move(fn)) {}

@@ -6,7 +6,7 @@
 // context (e.g. who to send packets to, where to spawn the container).
 #pragma once
 #include <memory>
-namespace atomikpe::inventory {
+namespace cursestone::inventory {
 
 class Inventory;
 
@@ -18,4 +18,4 @@ public:
     virtual std::shared_ptr<Inventory> getInventory() = 0;
 };
 
-} // namespace atomikpe::inventory
+} // namespace cursestone::inventory

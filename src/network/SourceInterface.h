@@ -7,7 +7,7 @@
 #include <string>
 #include <cstdint>
 
-namespace atomikpe::network {
+namespace cursestone::network {
 
 class SourceInterface {
 public:
@@ -18,4 +18,4 @@ public:
     virtual void tick() = 0;
 };
 
-} // namespace atomikpe::network
+} // namespace cursestone::network

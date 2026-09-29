@@ -6,7 +6,7 @@
 // All multi-byte values are big-endian EXCEPT nbtLen which is LE.
 #include "AddItemEntityPacket.h"
 
-namespace atomikpe::network::protocol {
+namespace cursestone::network::protocol {
 
 void AddItemEntityPacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
@@ -52,4 +52,4 @@ bool AddItemEntityPacket::decode(const uint8_t* buf, size_t len) {
     return true;
 }
 
-} // namespace atomikpe::network::protocol
+} // namespace cursestone::network::protocol

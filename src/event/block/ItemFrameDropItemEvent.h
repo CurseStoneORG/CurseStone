@@ -8,16 +8,16 @@
 #include "../Cancellable.h"
 #include "../../item/ItemStack.h"
 #include <cstdint>
-namespace atomikpe { class Player; }
-namespace atomikpe::event::block {
+namespace cursestone { class Player; }
+namespace cursestone::event::block {
 
 class ItemFrameDropItemEvent : public BlockEvent, public Cancellable {
 public:
-    atomikpe::Player* player;
-    atomikpe::item::ItemStack item;
+    cursestone::Player* player;
+    cursestone::item::ItemStack item;
     ItemFrameDropItemEvent(int32_t bx, int32_t by, int32_t bz,
-                           atomikpe::Player* p,
-                           const atomikpe::item::ItemStack& it)
+                           cursestone::Player* p,
+                           const cursestone::item::ItemStack& it)
         : BlockEvent(bx, by, bz), player(p), item(it) {}
 
     const std::string& eventName() const override {
@@ -25,4 +25,4 @@ public:
     }
 };
 
-} // namespace atomikpe::event::block
+} // namespace cursestone::event::block

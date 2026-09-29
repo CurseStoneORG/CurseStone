@@ -2,18 +2,18 @@
 // PlayerBedLeaveEvent.h — ported from cn.nukkit.event.player.PlayerBedLeaveEvent
 #pragma once
 #include "PlayerEvent.h"
-namespace atomikpe { class Player; }
+namespace cursestone { class Player; }
 
-namespace atomikpe::event::player {
+namespace cursestone::event::player {
 class PlayerBedLeaveEvent : public PlayerEvent {
 public:
     int x = 0;
     int y = 0;
     int z = 0;
-    PlayerBedLeaveEvent(atomikpe::Player* p, int bx, int by, int bz)
+    PlayerBedLeaveEvent(cursestone::Player* p, int bx, int by, int bz)
         : PlayerEvent(p), x(bx), y(by), z(bz) {}
     const std::string& eventName() const override {
         static std::string n = "PlayerBedLeaveEvent"; return n;
     }
 };
-} // namespace atomikpe::event::player
+} // namespace cursestone::event::player
