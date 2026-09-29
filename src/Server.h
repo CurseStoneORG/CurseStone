@@ -200,6 +200,11 @@ public:
     // --- Nukkit-compat: Recipe list ---
     void sendRecipeList(Player* player);
 
+    // CraftingManager global (recetas cargadas de resources/recipes.json
+    // al arranque). Consumido por Player::handleCraftingEvent y
+    // TileFurnace::tick. Puede ser nullptr antes de start().
+    inventory::CraftingManager* craftingManager() const { return crafting_.get(); }
+
     // --- Nukkit-compat: Player list data (PlayerListPacket broadcast) ---
     void updatePlayerListData(const std::string& uuid, const std::string& name,
                                int64_t eid, const std::string& skin = "");

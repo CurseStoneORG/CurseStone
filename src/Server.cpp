@@ -23,6 +23,7 @@
 #include "block/BlockRegistry.h"
 #include "item/Item.h"
 #include "inventory/CraftingManager.h"
+#include "network/protocol/CraftingDataPacket.h"
 #include "scheduler/AsyncPool.h"
 #include "scheduler/ServerScheduler.h"
 #include "level/Level.h"
@@ -294,7 +295,14 @@ void Server::start(const std::string& dataPath) {
     command_map_ = std::make_shared<SimpleCommandMap>();
     registerDefaultCommands(*command_map_);
     crafting_ = std::make_shared<inventory::CraftingManager>();
-    crafting_->loadFromJson(dataPath_ + "/resources/recipes.json");
+    int recipeCount = crafting_->loadFromJson(dataPath_ + "/resources/recipes.json");
+    if (recipeCount > 0) {
+        utils::MainLogger::get().info("Loaded " + std::to_string(recipeCount) +
+            " crafting recipes");
+    } else {
+        utils::MainLogger::get().warn("No crafting recipes loaded (" +
+            dataPath_ + "/resources/recipes.json)");
+    }
     async_pool_ = std::make_shared<scheduler::AsyncPool>(async_workers_);
     utils::MainLogger::get().info("Opening network interface...");
     openNetwork();
@@ -409,6 +417,15 @@ void Server::tick() {
     if (level_) level_->tick(currentTick_);
     t1 = std::chrono::steady_clock::now();
     WorkbenchManager::get().onTickPhase("level",
+        (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
+
+    // --- Phase: block entities (furnaces) ---
+    // Fuera de Level::tick para mantener esa fase libre de envíos de
+    // packets (el horno manda progreso/contenido a viewers aquí).
+    t0 = std::chrono::steady_clock::now();
+    if (level_) level_->tickTiles(currentTick_);
+    t1 = std::chrono::steady_clock::now();
+    WorkbenchManager::get().onTickPhase("tiles",
         (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
 
     // --- Phase: global GC ---
@@ -883,9 +900,16 @@ void Server::titleTick() {
     }
 }
 
-void Server::sendRecipeList(Player* /*player*/) {
+void Server::sendRecipeList(Player* player) {
     // Nukkit: sends the full crafting recipe list to a player.
-    // We handle this in Player::doFirstSpawn via CraftingManager.
+    // Implementación real: arma un CraftingDataPacket con TODAS las
+    // recetas cargadas y lo manda a este jugador (doFirstSpawn ya lo
+    // manda por su cuenta; este método queda para re-syncs manuales,
+    // igual que el sendRecipeList() de Nukkit).
+    if (!player || !crafting_) return;
+    auto cd = std::make_shared<network::protocol::CraftingDataPacket>();
+    cd->addAllRecipes(*crafting_);
+    player->sendPacket(cd);
 }
 
 void Server::updatePlayerListData(const std::string& /*uuid*/,

@@ -30,9 +30,10 @@ class ContainerOpenPacket : public DataPacket {
 public:
     uint8_t pid() const override { return CONTAINER_OPEN_PACKET; }
 
-    // Window "type" byte — PMMP's WindowTypes table. Only the one this
-    // project actually opens is named here; add more as they're needed.
+    // Window "type" byte — PMMP's WindowTypes table. Only the ones this
+    // project actually opens are named here; add more as they're needed.
     static constexpr uint8_t TYPE_CONTAINER = 0;
+    static constexpr uint8_t TYPE_FURNACE   = 2;   // WORKBENCH=1, FURNACE=2
 
     uint8_t  windowid  = 0;
     uint8_t  type      = TYPE_CONTAINER;

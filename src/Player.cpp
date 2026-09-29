@@ -38,6 +38,8 @@
 #include "redstone/RedstoneManager.h"
 #include "item/ItemConstants.h"
 #include "block/BlockIds.h"
+#include "tile/TileFurnace.h"
+#include "inventory/FurnaceInventory.h"
 #include "block/BlockOrientation.h"
 #include "event/EventManager.h"
 #include "event/player/PlayerJoinEvent.h"
@@ -58,9 +60,15 @@
 #include "network/protocol/ContainerSetSlotPacket.h"
 #include "network/protocol/ContainerOpenPacket.h"
 #include "network/protocol/ContainerClosePacket.h"
+#include "network/protocol/CraftingDataPacket.h"
+#include "network/protocol/CraftingEventPacket.h"
+#include "network/protocol/ContainerSetDataPacket.h"
 #include "event/inventory/InventoryOpenEvent.h"
+#include "event/inventory/InventoryClickEvent.h"
+#include "event/inventory/CraftItemEvent.h"
 #include "tile/TileChest.h"
 #include "block/BlockIds.h"
+#include "inventory/CraftingManager.h"
 #include "network/protocol/Info.h"
 #include "network/protocol/PacketPool.h"
 #include "inventory/PlayerInventory.h"
@@ -713,6 +721,36 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                         break;
                     }
 
+                    // Horno — misma mecánica que el cofre: click en la
+                    // ventana FURNACE_WINDOW_ID escribe directo en el
+                    // TileFurnace (slots 0=input, 1=fuel, 2=output) y
+                    // confirma el slot para que el cliente no lo revierta.
+                    // Al cambiar el input/fuel, el tick del horno se
+                    // encarga de reencender fuel o resetear cook_time.
+                    if (cs->windowid == FURNACE_WINDOW_ID) {
+                        if (open_furnace_ && cs->slot >= 0 && cs->slot < 3) {
+                            auto f = open_furnace_;
+                            inventory::Inventory* fInvRaw =
+                                static_cast<inventory::Inventory*>(f->inventory().get());
+                            auto cev = event::EventManager::get().fire<event::inventory::InventoryClickEvent>(
+                                std::shared_ptr<inventory::Inventory>(std::shared_ptr<void>(), fInvRaw),
+                                this, (int)cs->slot, it);
+                            if (!cev.isCancelled()) {
+                                f->setItem(cs->slot, it);
+                            }
+                            auto confirm = std::make_shared<network::protocol::ContainerSetSlotPacket>();
+                            confirm->windowid = FURNACE_WINDOW_ID;
+                            confirm->slot = cs->slot;
+                            confirm->hotbarSlot = cs->slot;
+                            auto cur = f->getItem(cs->slot);
+                            confirm->itemId     = (int16_t)cur.id;
+                            confirm->itemCount  = cur.count;
+                            confirm->itemDamage = (int16_t)cur.meta;
+                            sendPacket(confirm);
+                        }
+                        break;
+                    }
+
                     // InventoryClickEvent — cubre el flujo de "click en el
                     // inventario propio del jugador" (windowid 0x00/0x78/
                     // 0x7a/0x79). El caso de cofre (windowid==CHEST_WINDOW_ID)
@@ -882,8 +920,31 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
             // telling us "a container closed" and we have one open, it's
             // this one. closeOpenChest() is itself a no-op if nothing is
             // open, so this is safe even for a stray/duplicate packet.
+            //
+            // Fix del craft-en-inventario: cuando la ventana que se
+            // cierra es la 0 (inventario del jugador) y NO hay ningún
+            // otro contenedor abierto, el cliente pudo haber dejado un
+            // craft 2x2 pendiente (armó la receta y cerró sin mandar
+            // CraftingEventPacket). Intentamos resolverlo server-side
+            // ANTES de considerar cerrado el flujo.
+            if (!open_chest_ && !open_furnace_) {
+                handleInventoryCraft();
+            }
             closeOpenChest();
             break;
+        case network::protocol::CRAFTING_EVENT_PACKET: {
+            // El flujo real de crafteo MCPE 0.15.x: el cliente arma la
+            // grilla, y al tomar el resultado manda ESTE packet con el
+            // UUID de la receta + los items que sacó/puso. El server
+            // valida contra recipes.json, consume ingredientes del
+            // inventario real y da el resultado. Ver handleCraftingEvent()
+            // (portado 1:1 de Genisys Player.php case
+            // CRAFTING_EVENT_PACKET, protocolo 84).
+            if (auto* ce = dynamic_cast<network::protocol::CraftingEventPacket*>(&p)) {
+                handleCraftingEvent(ce->id, ce->input, ce->output, ce->windowId);
+            }
+            break;
+        }
         case network::protocol::INTERACT_PACKET:
             if (auto* ip = dynamic_cast<network::protocol::InteractPacket*>(&p)) {
                 handleInteract(ip->action, ip->target);
@@ -1455,6 +1516,22 @@ void Player::doFirstSpawn() {
     // el jugador tenga oportunidad de interactuar con nada.
     sendInventory();
 
+    // CraftingDataPacket — la lista COMPLETA de recetas (338: shaped,
+    // shapeless y furnace). Es un packet global, no por-ventana: el
+    // cliente MCPE 0.15.x filtra qué recetas muestra según la UI que
+    // esté usando (inventario 2x2 vs mesa 3x3). Sin esto el cliente
+    // muetra la grilla pero ningún resultado y el click en el slot de
+    // resultado no produce nada.
+    if (srv_) {
+        auto cd = std::make_shared<network::protocol::CraftingDataPacket>();
+        if (auto* mgr = srv_->craftingManager()) {
+            cd->addAllRecipes(*mgr);
+            utils::MainLogger::get().info("Sent " +
+                std::to_string(mgr->size()) + " recipes to " + cfg_.username);
+        }
+        sendPacket(cd);
+    }
+
     // Broadcast a PlayerListPacket (ADD) with all currently-online players.
     //
     // BUG FIX: mismo criterio que el AddPlayerPacket de abajo — si otro
@@ -1954,6 +2031,28 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         return;
     }
 
+    // Horno — mismo patrón que el cofre: click derecho abre su UI
+    // (ventana FURNACE_WINDOW_ID) en vez de colocar un bloque encima.
+    if (lvl->getBlockId(x, y, z) == block::FURNACE ||
+        lvl->getBlockId(x, y, z) == block::BURNING_FURNACE) {
+        openFurnaceAt(x, y, z);
+        return;
+    }
+
+    // Mesa de crafteo (WORKBENCH 58) — el cliente 0.15.x abre su UI de
+    // crafteo 3x3 por su cuenta al click derecho (use-item on block);
+    // server-side solo garantizamos que le llegue el CraftingDataPacket
+    // con las recetas (se manda una vez en doFirstSpawn). No se abre
+    // ninguna ventana server-side: las recetas viajan TODAS en un solo
+    // packet global y el cliente filtra big/small según dónde esté
+    // crafteando.
+    if (lvl->getBlockId(x, y, z) == block::WORKBENCH &&
+        srv_ && srv_->advancedLog()) {
+        utils::MainLogger::get().info("[CRAFT] " + cfg_.username +
+            " opened crafting table at " +
+            std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(z));
+    }
+
     // ---- Decide what block (if any) to place based on held item ----
     // PMMP-style item→block mapping. Item ids 256+ are tools / buckets /
     // etc. and need special handling. Item ids 1..255 are direct block
@@ -2327,6 +2426,18 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int /*face*/) {
     if (action == network::protocol::PlayerActionPacket::ACTION_SPAWN_SAME_DIMENSION) {
         respawn();
     }
+    // Mesa de crafteo (bloque WORKBENCH=58): el 0.15.x manda
+    // ACTION_SET_SLOTS (?6) al abrir la UI de la mesa. No hay estado
+    // server-side que mantener (las 336 recetas ya se mandaron en
+    // doFirstSpawn), pero lo logueamos para diagnóstico.
+    if (srv_ && srv_->advancedLog() && x != 0 && y != 0 && z != 0) {
+        auto* lvl = srv_->getDefaultLevel();
+        if (lvl && lvl->getBlockId(x, y, z) == block::WORKBENCH) {
+            utils::MainLogger::get().info("[CRAFT] " + cfg_.username +
+                " used crafting table at " +
+                std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(z));
+        }
+    }
 }
 
 // ============================================================
@@ -2453,14 +2564,261 @@ void Player::openChestAt(int x, int y, int z) {
 }
 
 void Player::closeOpenChest() {
-    if (!open_chest_) return;
+    // Cubre ambos contenedores (cofre o horno) — solo UNO puede estar
+    // abierto a la vez, así que basta con cerrar el que esté seteado.
+    if (open_chest_) {
+        auto cp = std::make_shared<network::protocol::ContainerClosePacket>();
+        cp->windowid = CHEST_WINDOW_ID;
+        sendPacket(cp);
 
-    auto cp = std::make_shared<network::protocol::ContainerClosePacket>();
-    cp->windowid = CHEST_WINDOW_ID;
-    sendPacket(cp);
+        open_chest_->removeViewer();
+        open_chest_.reset();
+    }
+    if (open_furnace_) {
+        auto cp = std::make_shared<network::protocol::ContainerClosePacket>();
+        cp->windowid = FURNACE_WINDOW_ID;
+        sendPacket(cp);
 
-    open_chest_->removeViewer();
-    open_chest_.reset();
+        open_furnace_->removeViewer(this);
+        open_furnace_.reset();
+    }
+}
+
+// openFurnaceAt — espejo exacto de openChestAt para el horno:
+// TileFurnace persistente via Level::getTile/setTile, viewers para el
+// progreso del tick, ContainerOpenPacket tipo FURNACE y volcado de
+// los 3 slots (input / fuel / output).
+void Player::openFurnaceAt(int x, int y, int z) {
+    if (!srv_ || !srv_->getDefaultLevel()) return;
+    auto* lvl = srv_->getDefaultLevel();
+
+    // Solo un contenedor abierto por jugador.
+    if (open_chest_ || open_furnace_) {
+        closeOpenChest();
+    }
+
+    std::shared_ptr<tile::TileFurnace> furnace;
+    auto existing = lvl->getTile(x, y, z);
+    if (existing) {
+        furnace = std::dynamic_pointer_cast<tile::TileFurnace>(existing);
+        if (!furnace) return;   // otro tipo de tile en esa posición
+    } else {
+        furnace = std::make_shared<tile::TileFurnace>(
+            cursestone::level::Position((double)x, (double)y, (double)z));
+        lvl->setTile(x, y, z, furnace);
+    }
+
+    // InventoryOpenEvent — cancelable (protección de zona, etc.), igual
+    // que en openChestAt().
+    inventory::Inventory* fInvRaw =
+        static_cast<inventory::Inventory*>(furnace->inventory().get());
+    auto ev = event::EventManager::get().fire<event::inventory::InventoryOpenEvent>(
+        std::shared_ptr<inventory::Inventory>(std::shared_ptr<void>(), fInvRaw), this);
+    if (ev.isCancelled()) return;
+
+    furnace->addViewer(this);
+    open_furnace_ = furnace;
+
+    auto op = std::make_shared<network::protocol::ContainerOpenPacket>();
+    op->windowid = FURNACE_WINDOW_ID;
+    op->type     = network::protocol::ContainerOpenPacket::TYPE_FURNACE;
+    op->slots    = 3;
+    op->x = x; op->y = y; op->z = z;
+    op->entityId = -1;
+    sendPacket(op);
+
+    // Volcado completo de los 3 slots — mismo motivo que el cofre:
+    // BaseInventory::sendContents() hardcodea windowid=0.
+    auto content = std::make_shared<network::protocol::ContainerSetContentPacket>();
+    content->windowid = FURNACE_WINDOW_ID;
+    content->slots.reserve(3);
+    for (int i = 0; i < 3; ++i) content->slots.push_back(furnace->getItem(i));
+    sendPacket(content);
+
+    // Estado inicial de flecha/llama para que la UI no arranque en un
+    // estado fantasma (ContainerSetDataPacket property 0/1).
+    furnace->sendProgressToViewers();
+
+    if (srv_ && srv_->advancedLog()) {
+        utils::MainLogger::get().info("[FURNACE] " + cfg_.username + " opened furnace at " +
+            std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(z));
+    }
+}
+
+// ============================================================
+// handleCraftingEvent — el flujo real de crafteo (protocolo 84).
+//
+// Portado del case CRAFTING_EVENT_PACKET de Genisys Player.php (la
+// MISMA versión de protocolo que habla este server):
+//   1. Buscar la receta por los 16 bytes del UUID (los mismos que
+//      escribimos en CraftingDataPacket).
+//   2. Verificar que el jugador REALMENTE tiene los ingredientes en
+//      su inventario (confianza cero en el packet).
+//   3. CraftItemEvent (cancelable).
+//   4. Consumir ingredientes y dar el resultado.
+//   5. Cerrar la ventana de crafteo y re-sincronizar el inventario
+//      con ContainerSetContentPacket windowid=0 — así es como el
+//      cliente 0.15.x "ve" el resultado.
+// ============================================================
+void Player::handleCraftingEvent(
+        const std::array<uint8_t, 16>& recipe_uuid,
+        const std::vector<cursestone::item::ItemStack>& input,
+        const std::vector<cursestone::item::ItemStack>& output,
+        uint8_t window_id) {
+    if (!spawned_.load(std::memory_order_relaxed)) return;
+    if (!inv_ || !srv_) return;
+    (void)input; (void)output;  // la verdad está en inv_, no en el packet
+
+    auto* mgr = srv_->craftingManager();
+    const inventory::Recipe* recipe =
+        mgr ? mgr->getRecipeByUuidBytes(recipe_uuid.data()) : nullptr;
+    if (!recipe) {
+        // UUID desconocido. Resync del inventario y cerrar la ventana
+        // que el cliente dejó abierta (Genisys: sendContents + break).
+        utils::MainLogger::get().debug("Player " + cfg_.username +
+            " sent unknown crafting recipe UUID");
+        if (window_id != 0 && window_id != CHEST_WINDOW_ID &&
+            window_id != FURNACE_WINDOW_ID) {
+            auto cp = std::make_shared<network::protocol::ContainerClosePacket>();
+            cp->windowid = window_id;
+            sendPacket(cp);
+        }
+        sendInventory();
+        return;
+    }
+
+    // ---- Conteo de ingredientes requeridos (id + meta) ----
+    struct Need { uint16_t id; int16_t meta; int count; };
+    std::vector<Need> needs;
+    auto addNeed = [&](uint16_t id, int16_t meta, int count) {
+        for (auto& n : needs) {
+            if (n.id == id && n.meta == meta) { n.count += count; return; }
+        }
+        needs.push_back({id, meta, count});
+    };
+    if (recipe->type() == inventory::RECIPE_SHAPED) {
+        const auto& g = recipe->grid();
+        const auto& m = recipe->gridMeta();
+        for (int i = 0; i < 9; ++i) {
+            if (g[i] != 0) addNeed(g[i], m[i], 1);
+        }
+    } else if (recipe->type() == inventory::RECIPE_SHAPELESS) {
+        const auto& ing = recipe->ingredients();
+        const auto& im = recipe->ingredientMeta();
+        for (size_t i = 0; i < ing.size(); ++i) {
+            addNeed(ing[i], i < im.size() ? im[i] : (int16_t)-1, 1);
+        }
+    } else {
+        return;  // las recetas de horno no se craftean en la grilla
+    }
+
+    // ---- Validar contra el inventario real (slots 0..35) ----
+    // meta == -1 en la receta = acepta cualquier damage (equals con
+    // anyDamage de PMMP).
+    bool canCraft = true;
+    std::vector<int> used(inv_->getSize(), 0);
+    for (const auto& n : needs) {
+        int found = 0;
+        for (int slot = 0; slot < inv_->getSize(); ++slot) {
+            auto it = inv_->getItem(slot);
+            if (it.id != n.id) continue;
+            if (n.meta >= 0 && it.meta != (uint16_t)n.meta) continue;
+            int avail = it.count - used[slot];
+            if (avail <= 0) continue;
+            int take = std::min(avail, n.count - found);
+            used[slot] += take;
+            found += take;
+            if (found >= n.count) break;
+        }
+        if (found < n.count) { canCraft = false; break; }
+    }
+    if (!canCraft) {
+        utils::MainLogger::get().debug("Player " + cfg_.username +
+            " lacks ingredients for recipe " + std::to_string(recipe->uuid()));
+        sendInventory();
+        return;
+    }
+
+    // ---- CraftItemEvent (cancelable) ----
+    auto ev = event::EventManager::get().fire<event::inventory::CraftItemEvent>(
+        this, std::static_pointer_cast<inventory::Inventory>(inv_), *recipe);
+    if (ev.isCancelled()) {
+        sendInventory();
+        return;
+    }
+
+    // ---- Consumir ingredientes (marcados en used[]) ----
+    for (int slot = 0; slot < inv_->getSize(); ++slot) {
+        if (used[slot] == 0) continue;
+        auto it = inv_->getItem(slot);
+        it.count -= used[slot];
+        if (it.count <= 0) it = cursestone::item::ItemStack::EMPTY();
+        inv_->setItem(slot, it);
+    }
+
+    // ---- Dar el resultado (o dropearlo si no cabe) ----
+    auto result = recipe->result();
+    if (result.count <= 0) result.count = 1;
+    auto leftover = inv_->addItem({result});
+    for (const auto& extra : leftover) {
+        if (!extra.isEmpty()) {
+            dropItem((int)pos_.x, (int)pos_.y, (int)pos_.z,
+                     extra.id, (uint8_t)extra.count, extra.meta);
+        }
+    }
+
+    // ---- Cerrar la ventana de crafteo + resync (el ack del 0.15.x) ----
+    if (window_id != 0 && window_id != CHEST_WINDOW_ID &&
+        window_id != FURNACE_WINDOW_ID) {
+        auto cp = std::make_shared<network::protocol::ContainerClosePacket>();
+        cp->windowid = window_id;
+        sendPacket(cp);
+    }
+    sendInventory();
+
+    if (srv_ && srv_->advancedLog()) {
+        utils::MainLogger::get().info("[CRAFT] " + cfg_.username + " crafted id=" +
+            std::to_string(result.id) + " count=" + std::to_string(result.count));
+    }
+}
+
+// handleInventoryCraft — fallback "sin event": cuando el cliente arma
+// la receta EN el inventario 2x2 y la ventana se cierra sin que haya
+// llegado un CraftingEventPacket, el resultado queda como item fantasma
+// en la grilla del cliente. En ese close intentamos matchear la grilla
+// 2x2 contra las recetas y, si matchea, corremos el mismo flujo del
+// event-path (validar + consumir + dar). Mismo orden de slots que
+// sendInventory(): 0..3 = grilla 2x2.
+void Player::handleInventoryCraft() {
+    if (!inv_ || !srv_) return;
+    auto* mgr = srv_->craftingManager();
+    if (!mgr) return;
+
+    std::array<uint16_t, 9> grid{};
+    std::array<uint16_t, 9> meta{};
+    bool any = false;
+    for (int i = 0; i < 4; ++i) {
+        auto it = inv_->getItem(i);
+        if (!it.isEmpty()) { grid[i] = it.id; meta[i] = it.meta; any = true; }
+    }
+    if (!any) return;
+
+    const inventory::Recipe* r = mgr->matchShapedWithMeta(grid, meta);
+    if (!r) {
+        std::vector<std::pair<uint16_t, uint16_t>> pairs;  // (id, meta)
+        for (int i = 0; i < 4; ++i) {
+            if (grid[i] != 0) pairs.push_back({grid[i], meta[i]});
+        }
+        std::sort(pairs.begin(), pairs.end());
+        std::vector<uint16_t> ids, metas;
+        ids.reserve(pairs.size());
+        metas.reserve(pairs.size());
+        for (auto& pr : pairs) { ids.push_back(pr.first); metas.push_back(pr.second); }
+        r = mgr->matchShapelessWithMeta(ids, metas);
+    }
+    if (!r) return;
+
+    handleCraftingEvent(r->uuidBytes(), {}, {}, 0);
 }
 
 // ============================================================

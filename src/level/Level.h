@@ -151,6 +151,11 @@ public:
     // handlers were still holding, which is one of the scattered GCs that
     // desynchronized player actions from server state.
     void tick(uint64_t current_tick);
+    // Tick de block entities (hornos: fundido + fuel + progreso de UI).
+    // Llamado UNA VEZ por tick desde Server::tick (fuera de
+    // Level::tick para no bloquear la fase de tiempo/clima con I/O de
+    // packets de contenedores). Devuelve cuántos tiles se tiquearon.
+    size_t tickTiles(uint64_t current_tick);
     // THE dropped-item GC pass. Called ONLY by the global MemoryManager
     // collector (and at shutdown), never from tick() — so a record never
     // vanishes while a player's pickup handler is mid-transaction.

@@ -15,6 +15,7 @@
 #include "utils/MainLogger.hpp"
 #include "tile/Tile.h"
 #include "tile/TileChest.h"
+#include "tile/TileFurnace.h"
 #include "tile/TileSign.h"
 #include "nbt/NBT.h"
 #include "nbt/tag/CompoundTag.h"
@@ -294,6 +295,22 @@ size_t Level::collectDroppedItems(uint64_t current_tick) {
     return removed;
 }
 
+size_t Level::tickTiles(uint64_t current_tick) {
+    std::vector<std::shared_ptr<cursestone::tile::Tile>> snapshot;
+    {
+        std::lock_guard<std::mutex> lk(tiles_mtx_);
+        snapshot.reserve(tiles_.size());
+        for (auto& [_, t] : tiles_) snapshot.push_back(t);
+    }
+    size_t n = 0;
+    for (auto& t : snapshot) {
+        if (!t) continue;
+        t->tick(current_tick);
+        ++n;
+    }
+    return n;
+}
+
 void Level::registerLoader(uint64_t id, class ChunkLoader* loader) {
     loaders_[id] = loader;
 }
@@ -406,12 +423,14 @@ void Level::ensureTilesLoaded(int32_t cx, int32_t cz) {
             tile = std::make_shared<cursestone::tile::TileChest>(pos);
         } else if (std::strcmp(id, "Sign") == 0) {
             tile = std::make_shared<cursestone::tile::TileSign>(pos);
+        } else if (std::strcmp(id, "Furnace") == 0) {
+            // El horno ahora persiste contenido real (3 slots + burn/
+            // cook ticks — ver TileFurnace::writeNBT), así que se
+            // reconstruye igual que el cofre.
+            tile = std::make_shared<cursestone::tile::TileFurnace>(pos);
         }
-        // Other tile ids (Furnace, MobSpawner, ...) don't persist real
-        // content yet — see Tile::writeNBT's base no-op — so there's
-        // nothing meaningful to reconstruct for them here. They keep
-        // living purely in the in-memory registry via setTile(), same
-        // as before this change.
+        // Other tile ids (MobSpawner, ...) still live purely in the
+        // in-memory registry via setTile().
         if (tile) {
             tile->readNBT(tag);
             std::lock_guard<std::mutex> lk(tiles_mtx_);
