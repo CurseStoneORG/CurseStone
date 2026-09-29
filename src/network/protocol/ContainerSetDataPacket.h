@@ -2,10 +2,11 @@
 // ContainerSetDataPacket — server→client "cambió una propiedad de un
 // contenedor abierto" (MCPE protocol 84).
 //
-// Genisys encode:
+// Formato p84 verificado contra Dr1xyDev/Infinity + Nukkit 2016:
+// shorts BIG-endian, no varints:
 //   putByte(windowid)
-//   putVarInt(property)
-//   putVarInt(value)
+//   putShort(BE) property
+//   putShort(BE) value
 //
 // Se usa para la UI del horno: flecha de progreso (property 0) y
 // llama de fuego (property 1), solo mientras el jugador lo tiene
