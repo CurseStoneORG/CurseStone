@@ -1,2 +1,2 @@
 #include "FurnaceInventory.h"
-namespace atomikpe::inventory {}
+namespace cursestone::inventory {}

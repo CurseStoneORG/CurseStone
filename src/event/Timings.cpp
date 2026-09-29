@@ -1,4 +1,4 @@
 #include "Timings.h"
-namespace atomikpe::event {
+namespace cursestone::event {
 Timings& Timings::get() { static Timings t; return t; }
 } // namespace

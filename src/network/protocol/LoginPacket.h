@@ -17,7 +17,7 @@
 #include <vector>
 #include <cstdint>
 
-namespace atomikpe::network::protocol {
+namespace cursestone::network::protocol {
 
 class LoginPacket : public DataPacket {
 public:
@@ -47,4 +47,4 @@ private:
     void parseClientDataPayload();
 };
 
-} // namespace atomikpe::network::protocol
+} // namespace cursestone::network::protocol

@@ -10,7 +10,7 @@
 #include <algorithm>
 #include <cstring>
 
-namespace atomikpe::inventory {
+namespace cursestone::inventory {
 
 // ---- Constructor ----
 PlayerInventory::PlayerInventory()
@@ -163,4 +163,4 @@ void PlayerInventory::sendSlot(int index, Player* player) {
     player->sendPacket(pk);
 }
 
-} // namespace atomikpe::inventory
+} // namespace cursestone::inventory

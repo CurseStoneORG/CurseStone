@@ -4,7 +4,7 @@
 #pragma once
 #include <string>
 #include <unordered_map>
-namespace atomikpe::wizard {
+namespace cursestone::wizard {
 class InstallerLang {
 public:
     static InstallerLang& get();

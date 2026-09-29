@@ -19,12 +19,12 @@
 #include "math/Vector3.h"
 #include "level/ChunkManager.h"
 #include "level/format/LevelProvider.h"
-namespace atomikpe {
+namespace cursestone {
 class Player; class Entity;
 namespace tile { class Tile; }
 namespace level::generator { class Generator; }
 }
-namespace atomikpe::level {
+namespace cursestone::level {
 
 // DroppedItem — a lightweight record of an item entity lying on the ground.
 // Mirrors Nukkit's EntityItem (sans the full entity-tick machinery): we
@@ -205,8 +205,8 @@ public:
     // into its chunk's tile_entities array before ChunkManager::flushDirty()
     // hands the chunk to the LevelProvider. Chest contents now survive a
     // server restart, not just a close/reopen in the same session.
-    std::shared_ptr<atomikpe::tile::Tile> getTile(int32_t x, int32_t y, int32_t z);
-    void setTile(int32_t x, int32_t y, int32_t z, std::shared_ptr<atomikpe::tile::Tile> t);
+    std::shared_ptr<cursestone::tile::Tile> getTile(int32_t x, int32_t y, int32_t z);
+    void setTile(int32_t x, int32_t y, int32_t z, std::shared_ptr<cursestone::tile::Tile> t);
     void removeTile(int32_t x, int32_t y, int32_t z);
 
     // ----- Chunk memory eviction -----
@@ -308,7 +308,7 @@ private:
 
     // All tile-entities in this level, keyed by a packed (x,y,z) block
     // position. See getTile/setTile/removeTile above.
-    std::unordered_map<uint64_t, std::shared_ptr<atomikpe::tile::Tile>> tiles_;
+    std::unordered_map<uint64_t, std::shared_ptr<cursestone::tile::Tile>> tiles_;
     mutable std::mutex tiles_mtx_;
     // Chunks whose tile_entities blobs have already been decoded into
     // tiles_ this session, keyed the same way ChunkManager keys chunks

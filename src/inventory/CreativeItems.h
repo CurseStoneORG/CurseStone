@@ -16,7 +16,7 @@
 #include <vector>
 #include <cstdint>
 
-namespace atomikpe::inventory {
+namespace cursestone::inventory {
 
 struct CreativeItemDef {
     uint16_t id;
@@ -597,12 +597,12 @@ inline const std::vector<CreativeItemDef>& creativeItemTable() {
 }
 
 // Returns the creative items as ItemStack values (count=1, meta=damage).
-inline std::vector<atomikpe::item::ItemStack> getCreativeItems() {
+inline std::vector<cursestone::item::ItemStack> getCreativeItems() {
     const auto& table = creativeItemTable();
-    std::vector<atomikpe::item::ItemStack> out;
+    std::vector<cursestone::item::ItemStack> out;
     out.reserve(table.size());
     for (const auto& e : table) {
-        atomikpe::item::ItemStack s;
+        cursestone::item::ItemStack s;
         s.id    = e.id;
         s.meta  = e.damage;
         s.count = 1;
@@ -611,4 +611,4 @@ inline std::vector<atomikpe::item::ItemStack> getCreativeItems() {
     return out;
 }
 
-} // namespace atomikpe::inventory
+} // namespace cursestone::inventory

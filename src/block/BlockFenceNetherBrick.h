@@ -2,7 +2,7 @@
 #include "BlockFence.h"
 #include <string>
 #include "BlockIds.h"
-namespace atomikpe::block {
+namespace cursestone::block {
 class BlockFenceNetherBrick : public BlockFence {
 public:
     uint8_t id() const override { return FENCE_NETHER_BRICK; }

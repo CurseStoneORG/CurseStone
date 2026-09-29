@@ -3,7 +3,7 @@
 #pragma once
 #include <string>
 #include <cstdint>
-namespace atomikpe::permission {
+namespace cursestone::permission {
 class BanEntry {
 public:
     BanEntry(std::string target, std::string reason = "Banned", int64_t expires = 0)

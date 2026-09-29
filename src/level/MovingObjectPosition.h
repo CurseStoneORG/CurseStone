@@ -6,9 +6,9 @@
 #pragma once
 #include "math/Vector3.h"
 #include <cstdint>
-namespace atomikpe { class Entity; }
+namespace cursestone { class Entity; }
 
-namespace atomikpe::level {
+namespace cursestone::level {
 
 class MovingObjectPosition {
 public:
@@ -24,7 +24,7 @@ public:
     math::Vector3 hitVector{0, 0, 0};
 
     // Only valid when typeOfHit == 1.
-    atomikpe::Entity* entityHit = nullptr;
+    cursestone::Entity* entityHit = nullptr;
 
     static MovingObjectPosition fromBlock(int x, int y, int z, int side,
                                             const math::Vector3& hit) {
@@ -36,7 +36,7 @@ public:
         return r;
     }
 
-    static MovingObjectPosition fromEntity(atomikpe::Entity* e,
+    static MovingObjectPosition fromEntity(cursestone::Entity* e,
                                             double x, double y, double z) {
         MovingObjectPosition r;
         r.typeOfHit = 1;
@@ -46,4 +46,4 @@ public:
     }
 };
 
-} // namespace atomikpe::level
+} // namespace cursestone::level

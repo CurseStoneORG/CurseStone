@@ -15,7 +15,7 @@
 #include <vector>
 #include <cstdint>
 
-namespace atomikpe::network::protocol {
+namespace cursestone::network::protocol {
 
 class RemoveBlockPacket : public DataPacket {
 public:
@@ -29,4 +29,4 @@ public:
     bool decode(const uint8_t* data, size_t len) override;
 };
 
-} // namespace atomikpe::network::protocol
+} // namespace cursestone::network::protocol

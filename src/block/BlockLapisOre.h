@@ -1,7 +1,7 @@
 #pragma once
 #include "BlockSolid.h"
 #include <string>
-namespace atomikpe::block {
+namespace cursestone::block {
 class BlockLapisOre : public BlockSolid {
 public:
     uint8_t id() const override { return 21; }

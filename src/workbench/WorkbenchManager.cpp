@@ -12,7 +12,7 @@
 #include <sys/stat.h>
 #include <iomanip>
 
-namespace atomikpe {
+namespace cursestone {
 
 static uint64_t now_ms() {
     return (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -657,4 +657,4 @@ void WorkbenchManager::exportSummary(const std::string& dir) {
     }
 }
 
-} // namespace atomikpe
+} // namespace cursestone

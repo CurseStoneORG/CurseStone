@@ -5,10 +5,10 @@
 #include "Spawnable.h"
 #include <string>
 #include <array>
-namespace atomikpe::tile {
+namespace cursestone::tile {
 class TileSign : public Tile, public Spawnable {
 public:
-    TileSign(atomikpe::level::Position pos) : Tile("Sign", pos) {}
+    TileSign(cursestone::level::Position pos) : Tile("Sign", pos) {}
     const std::array<std::string, 4>& lines() const { return lines_; }
     void setLine(int idx, std::string text) { lines_[idx] = std::move(text); dirty_ = true; }
     void spawnTo(void* /*player*/) override {}

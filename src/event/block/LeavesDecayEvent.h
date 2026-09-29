@@ -7,7 +7,7 @@
 #include "BlockEvent.h"
 #include "../Cancellable.h"
 #include <cstdint>
-namespace atomikpe::event::block {
+namespace cursestone::event::block {
 
 class LeavesDecayEvent : public BlockEvent, public Cancellable {
 public:
@@ -19,4 +19,4 @@ public:
     }
 };
 
-} // namespace atomikpe::event::block
+} // namespace cursestone::event::block

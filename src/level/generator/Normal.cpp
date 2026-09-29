@@ -7,7 +7,7 @@
 #include "level/generator/populator/PopulatorCave.h"
 #include "level/generator/object/OreGenerator.h"
 #include <cmath>
-namespace atomikpe::level::generator {
+namespace cursestone::level::generator {
 Normal::Normal(int64_t seed) : seed_(seed) {
     height_noise_ = mcp_simplex_new(seed);
     cave_noise_   = mcp_simplex_new(seed ^ 0xC0FFEE);
@@ -74,7 +74,7 @@ void Normal::generate(GenerationContext& ctx) {
             // PEDIDO DEL USUARIO. El ajuste (más octavas, mayor frecuencia
             // y amplitud) causó que el mundo dejara de renderizarse bien
             // del lado del cliente ("el terreno no se ve, queda vacío").
-            // El generador vuelve a los parámetros originales de AtomikOLD
+            // El generador vuelve a los parámetros originales de CurseStoneOLD
             // (frecuencia 0.008, 3 octavas, persistencia 0.35, amplitud
             // 18), que sí renderizaban correctamente. El patrón de
             // "franjas paralelas" queda sin resolver por ahora — hay que

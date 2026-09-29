@@ -3,7 +3,7 @@
 #pragma once
 #include "command/Command.h"
 #include <string>
-namespace atomikpe {
+namespace cursestone {
 class WorkbenchCommand : public Command {
 public:
     WorkbenchCommand() : Command("workbench", "Server diagnostics: start/stop/status/report") {}

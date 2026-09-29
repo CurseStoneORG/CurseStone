@@ -1,7 +1,7 @@
 #pragma once
 #include "Item.h"
 #include <cstdint>
-namespace atomikpe::item {
+namespace cursestone::item {
 enum ArmorMaterial : int {
     ARMOR_LEATHER = 0, ARMOR_CHAIN = 1, ARMOR_IRON = 2, ARMOR_GOLD = 3, ARMOR_DIAMOND = 4,
 };

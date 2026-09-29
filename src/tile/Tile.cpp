@@ -1,6 +1,6 @@
 #include "Tile.h"
 #include "nbt/tag/CompoundTag.h"
-namespace atomikpe::tile {
+namespace cursestone::tile {
 void Tile::writeNBT(mcp_tag_t* tag) const {
     if (!tag) return;
     mcp_compound_tag_set_string(tag, "id", id_.c_str());

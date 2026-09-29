@@ -1,5 +1,5 @@
 #include "PermissibleBase.h"
-namespace atomikpe::permission {
+namespace cursestone::permission {
 bool PermissibleBase::hasPermission(const std::string& name) const {
     // Exact match
     if (auto it = perms_.find(name); it != perms_.end()) return it->second;

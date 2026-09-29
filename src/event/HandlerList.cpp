@@ -6,7 +6,7 @@
 #include <exception>
 #include <string>
 
-namespace atomikpe::event {
+namespace cursestone::event {
 
 uint64_t HandlerList::registerListener(void* owner, EventPriority priority,
                                         bool ignoreCancelled,
@@ -105,4 +105,4 @@ void HandlerList::dispatch(Event& event) const {
     }
 }
 
-} // namespace atomikpe::event
+} // namespace cursestone::event

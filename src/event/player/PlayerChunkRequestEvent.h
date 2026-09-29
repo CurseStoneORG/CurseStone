@@ -4,17 +4,17 @@
 #include "PlayerEvent.h"
 #include "../Cancellable.h"
 #include <cstdint>
-namespace atomikpe { class Player; }
+namespace cursestone { class Player; }
 
-namespace atomikpe::event::player {
+namespace cursestone::event::player {
 class PlayerChunkRequestEvent : public PlayerEvent, public Cancellable {
 public:
     int32_t chunkX = 0;
     int32_t chunkZ = 0;
-    PlayerChunkRequestEvent(atomikpe::Player* p, int32_t cx, int32_t cz)
+    PlayerChunkRequestEvent(cursestone::Player* p, int32_t cx, int32_t cz)
         : PlayerEvent(p), chunkX(cx), chunkZ(cz) {}
     const std::string& eventName() const override {
         static std::string n = "PlayerChunkRequestEvent"; return n;
     }
 };
-} // namespace atomikpe::event::player
+} // namespace cursestone::event::player

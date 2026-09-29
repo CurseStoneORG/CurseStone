@@ -4,9 +4,9 @@
 #include "PlayerEvent.h"
 #include "../Cancellable.h"
 #include "../../item/ItemStack.h"
-namespace atomikpe { class Player; }
+namespace cursestone { class Player; }
 
-namespace atomikpe::event::player {
+namespace cursestone::event::player {
 class PlayerInteractEvent : public PlayerEvent, public Cancellable {
 public:
     static constexpr int LEFT_CLICK_BLOCK  = 0;
@@ -20,14 +20,14 @@ public:
     int blockY = 0;
     int blockZ = 0;
     int face = 0;
-    atomikpe::item::ItemStack item;
+    cursestone::item::ItemStack item;
 
-    PlayerInteractEvent(atomikpe::Player* p, int act, int bx, int by, int bz,
-                        int f, const atomikpe::item::ItemStack& it)
+    PlayerInteractEvent(cursestone::Player* p, int act, int bx, int by, int bz,
+                        int f, const cursestone::item::ItemStack& it)
         : PlayerEvent(p), action(act), blockX(bx), blockY(by), blockZ(bz),
           face(f), item(it) {}
     const std::string& eventName() const override {
         static std::string n = "PlayerInteractEvent"; return n;
     }
 };
-} // namespace atomikpe::event::player
+} // namespace cursestone::event::player

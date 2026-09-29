@@ -10,7 +10,7 @@
 #include <cstdint>
 #include <cstring>
 
-namespace atomikpe::level::format::leveldb {
+namespace cursestone::level::format::leveldb {
 
 LevelDBRegistrar g_leveldb_registrar_;
 LevelDBRegistrar::LevelDBRegistrar() {
@@ -51,7 +51,7 @@ std::vector<uint8_t> LevelDB::chunkKey(int32_t cx, int32_t cz, uint8_t type) {
 }
 
 bool LevelDB::hasLevelDB() {
-#if ATOMIKPE_LEVELDB
+#if CURSESTONE_LEVELDB
     return true;
 #else
     return false;
@@ -78,4 +78,4 @@ LevelDB::listChunks() const {
     return {};
 }
 
-} // namespace atomikpe::level::format::leveldb
+} // namespace cursestone::level::format::leveldb

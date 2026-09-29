@@ -16,7 +16,7 @@
 #include <functional>
 #include <cstdint>
 
-namespace atomikpe::event {
+namespace cursestone::event {
 
 struct RegisteredListener {
     uint64_t id = 0;
@@ -26,4 +26,4 @@ struct RegisteredListener {
     std::function<void(Event&)> callback;
 };
 
-} // namespace atomikpe::event
+} // namespace cursestone::event

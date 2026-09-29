@@ -12,20 +12,20 @@
 // separately by mcp_block_light_emission below.
 uint8_t mcp_block_light_opacity(uint8_t block_id) {
     if (block_id == 0) return 0; // air — fast path, avoids touching the registry
-    atomikpe::block::Block* b = atomikpe::block::Block::get(block_id);
+    cursestone::block::Block* b = cursestone::block::Block::get(block_id);
     if (!b) return 15; // unknown id — treat as solid, same fallback as Block::get
     return b->isTransparent() ? 0 : 15;
 }
 
 uint8_t mcp_block_light_emission(uint8_t block_id) {
     if (block_id == 0) return 0;
-    atomikpe::block::Block* b = atomikpe::block::Block::get(block_id);
+    cursestone::block::Block* b = cursestone::block::Block::get(block_id);
     if (!b) return 0;
     return b->getLightLevel();
 }
 
-namespace atomikpe::block {
-atomikpe::math::AxisAlignedBB Block::getBoundingBox() const {
+namespace cursestone::block {
+cursestone::math::AxisAlignedBB Block::getBoundingBox() const {
     return {0,0,0, 1,1,1};
 }
 std::vector<std::unique_ptr<Block>>& Block::registry() {

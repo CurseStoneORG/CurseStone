@@ -2,14 +2,14 @@
 // EntityDamageByChildEntityEvent.h — ported from cn.nukkit.event.entity.EntityDamageByChildEntityEvent
 #pragma once
 #include "EntityDamageByEntityEvent.h"
-namespace atomikpe { namespace entity { class Entity; } }
-namespace atomikpe::event::entity {
+namespace cursestone { namespace entity { class Entity; } }
+namespace cursestone::event::entity {
 class EntityDamageByChildEntityEvent : public EntityDamageByEntityEvent {
 public:
-    atomikpe::entity::Entity* child = nullptr;
+    cursestone::entity::Entity* child = nullptr;
 
-    EntityDamageByChildEntityEvent(atomikpe::entity::Entity* e, float amount,
-                                   atomikpe::entity::Entity* d, atomikpe::entity::Entity* c)
+    EntityDamageByChildEntityEvent(cursestone::entity::Entity* e, float amount,
+                                   cursestone::entity::Entity* d, cursestone::entity::Entity* c)
         : EntityDamageByEntityEvent(e, amount, d), child(c) {}
 
     const std::string& eventName() const override {

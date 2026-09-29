@@ -2,7 +2,7 @@
 #include "BlockFlowable.h"
 #include <string>
 #include "BlockIds.h"
-namespace atomikpe::block {
+namespace cursestone::block {
 class BlockDoublePlant : public BlockFlowable {
 public:
     uint8_t id() const override { return DOUBLE_PLANT; }

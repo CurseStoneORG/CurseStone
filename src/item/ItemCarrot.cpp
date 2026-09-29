@@ -1,2 +1,2 @@
 #include "ItemCarrot.h"
-namespace atomikpe::item {}
+namespace cursestone::item {}

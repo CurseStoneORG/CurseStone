@@ -1,2 +1,2 @@
 #include "EntityFallingSand.h"
-namespace atomikpe::entity {}
+namespace cursestone::entity {}

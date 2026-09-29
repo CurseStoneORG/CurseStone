@@ -13,7 +13,7 @@
 #include <vector>
 #include <cstdint>
 
-namespace atomikpe {
+namespace cursestone {
 
 class Player;
 class Server;
@@ -79,4 +79,4 @@ private:
 };
 
 } // namespace network
-} // namespace atomikpe
+} // namespace cursestone

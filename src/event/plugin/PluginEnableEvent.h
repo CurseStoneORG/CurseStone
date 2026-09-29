@@ -6,7 +6,7 @@
 #include "PluginEvent.h"
 #include <string>
 
-namespace atomikpe::event::plugin {
+namespace cursestone::event::plugin {
 
 class PluginEnableEvent : public PluginEvent {
 public:
@@ -17,4 +17,4 @@ public:
     }
 };
 
-} // namespace atomikpe::event::plugin
+} // namespace cursestone::event::plugin

@@ -1,6 +1,6 @@
 #pragma once
 #include "Entity.h"
-namespace atomikpe::entity {
+namespace cursestone::entity {
 class Projectile : public Entity {
 public:
     using Entity::Entity;

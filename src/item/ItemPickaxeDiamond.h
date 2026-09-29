@@ -1,7 +1,7 @@
 #pragma once
 #include "ItemTool.h"
 #include <string>
-namespace atomikpe::item {
+namespace cursestone::item {
 class ItemPickaxeDiamond : public ItemTool {
 public:
     ItemPickaxeDiamond() : ItemTool(278, ToolType::PICKAXE, ToolMaterial::TOOL_DIAMOND) {}

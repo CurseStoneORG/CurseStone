@@ -1,5 +1,5 @@
 #pragma once
 #include "command/CommandMap.h"
-namespace atomikpe {
+namespace cursestone {
 void registerDefaultCommands(CommandMap& map);
 } // namespace

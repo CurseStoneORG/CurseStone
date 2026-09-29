@@ -2,7 +2,7 @@
 #include "BlockStairs.h"
 #include <string>
 #include "BlockIds.h"
-namespace atomikpe::block {
+namespace cursestone::block {
 class BlockStairsNetherBrick : public BlockStairs {
 public:
     uint8_t id() const override { return NETHER_BRICK_STAIRS; }

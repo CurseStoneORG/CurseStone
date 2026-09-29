@@ -2,14 +2,14 @@
 #include "item/ItemStack.h"
 #include "nbt/tag/CompoundTag.h"
 #include "nbt/tag/ListTag.h"
-namespace atomikpe::tile {
-void TileChest::setItem(int slot, const atomikpe::item::ItemStack& it) {
+namespace cursestone::tile {
+void TileChest::setItem(int slot, const cursestone::item::ItemStack& it) {
     if (slot < 0 || slot >= SIZE) return;
     inventory_->setItem(slot, it);
     dirty_ = true;
 }
-atomikpe::item::ItemStack TileChest::getItem(int slot) const {
-    if (slot < 0 || slot >= SIZE) return atomikpe::item::ItemStack::EMPTY();
+cursestone::item::ItemStack TileChest::getItem(int slot) const {
+    if (slot < 0 || slot >= SIZE) return cursestone::item::ItemStack::EMPTY();
     return inventory_->getItem(slot);
 }
 void TileChest::removeItem(int slot) {
@@ -54,7 +54,7 @@ void TileChest::readNBT(const mcp_tag_t* tag) {
         if (!entry || mcp_tag_get_type(entry) != MCP_TAG_COMPOUND) continue;
         int slot = mcp_compound_tag_get_byte(entry, "Slot", -1);
         if (slot < 0 || slot >= SIZE) continue;
-        atomikpe::item::ItemStack stack;
+        cursestone::item::ItemStack stack;
         stack.id = static_cast<uint16_t>(mcp_compound_tag_get_short(entry, "id", 0));
         stack.meta = static_cast<uint8_t>(mcp_compound_tag_get_short(entry, "Damage", 0));
         stack.count = mcp_compound_tag_get_byte(entry, "Count", 0);

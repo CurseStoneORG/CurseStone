@@ -1,2 +1,2 @@
 #include "BlockNetherrack.h"
-namespace atomikpe::block {}
+namespace cursestone::block {}

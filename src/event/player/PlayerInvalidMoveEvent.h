@@ -4,18 +4,18 @@
 #include "PlayerEvent.h"
 #include "../Cancellable.h"
 #include <cmath>
-namespace atomikpe { class Player; }
+namespace cursestone { class Player; }
 
-namespace atomikpe::event::player {
+namespace cursestone::event::player {
 class PlayerInvalidMoveEvent : public PlayerEvent, public Cancellable {
 public:
     double x = 0.0;
     double y = 0.0;
     double z = 0.0;
-    PlayerInvalidMoveEvent(atomikpe::Player* p, double px, double py, double pz)
+    PlayerInvalidMoveEvent(cursestone::Player* p, double px, double py, double pz)
         : PlayerEvent(p), x(px), y(py), z(pz) {}
     const std::string& eventName() const override {
         static std::string n = "PlayerInvalidMoveEvent"; return n;
     }
 };
-} // namespace atomikpe::event::player
+} // namespace cursestone::event::player

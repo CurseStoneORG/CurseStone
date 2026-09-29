@@ -2,7 +2,7 @@
 // AddEntityPacket.cpp — encoder per Infinity AddEntityPacket.php.
 #include "AddEntityPacket.h"
 
-namespace atomikpe::network::protocol {
+namespace cursestone::network::protocol {
 
 void AddEntityPacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
@@ -31,4 +31,4 @@ bool AddEntityPacket::decode(const uint8_t* data, size_t len) {
     return true;  // server→client only
 }
 
-} // namespace atomikpe::network::protocol
+} // namespace cursestone::network::protocol

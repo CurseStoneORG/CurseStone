@@ -7,16 +7,16 @@
 #include "ServerEvent.h"
 #include "../Cancellable.h"
 #include <string>
-namespace atomikpe { class Player; }
+namespace cursestone { class Player; }
 
-namespace atomikpe::event::server {
+namespace cursestone::event::server {
 
 class DataPacketReceiveEvent : public ServerEvent, public Cancellable {
 public:
     void* packet;
-    atomikpe::Player* player;
+    cursestone::Player* player;
 
-    DataPacketReceiveEvent(atomikpe::Player* p, void* pk)
+    DataPacketReceiveEvent(cursestone::Player* p, void* pk)
         : packet(pk), player(p) {}
 
     const std::string& eventName() const override {
@@ -24,4 +24,4 @@ public:
     }
 };
 
-} // namespace atomikpe::event::server
+} // namespace cursestone::event::server

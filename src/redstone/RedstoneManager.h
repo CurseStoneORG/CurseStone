@@ -27,10 +27,10 @@
 #pragma once
 #include <cstdint>
 
-namespace atomikpe::level { class Level; }
-namespace atomikpe { class Server; }
+namespace cursestone::level { class Level; }
+namespace cursestone { class Server; }
 
-namespace atomikpe::redstone {
+namespace cursestone::redstone {
 
 // Se llama tras romper o colocar CUALQUIER bloque en (x,y,z). Revisa los
 // 6 vecinos inmediatos y, si alguno es un componente de redstone
@@ -40,7 +40,7 @@ namespace atomikpe::redstone {
 //
 // Esta es la función principal que el resto del proyecto necesita
 // llamar — todo lo demás en este módulo es implementación interna.
-void notifyNeighbors(atomikpe::level::Level* level, atomikpe::Server* server,
+void notifyNeighbors(cursestone::level::Level* level, cursestone::Server* server,
                       int32_t x, int32_t y, int32_t z);
 
 // Recalcula la potencia (0-15) que debería tener un bloque de redstone
@@ -48,7 +48,7 @@ void notifyNeighbors(atomikpe::level::Level* level, atomikpe::Server* server,
 // mundo si cambió — propagando en cascada ACOTADA (máx. 15 pasos) a los
 // wires vecinos si el cambio de potencia los afecta a ellos también.
 // Transmite cada wire que cambie a los jugadores cercanos.
-void updateWireAt(atomikpe::level::Level* level, atomikpe::Server* server,
+void updateWireAt(cursestone::level::Level* level, cursestone::Server* server,
                    int32_t x, int32_t y, int32_t z);
 
 // Recalcula si una lámpara de redstone en (x,y,z) debe estar encendida
@@ -56,7 +56,7 @@ void updateWireAt(atomikpe::level::Level* level, atomikpe::Server* server,
 // señal actualmente, y transmite el cambio si corresponde. A diferencia
 // del wire, la lámpara solo consume señal, nunca la propaga — no hay
 // riesgo de cascada al llamar esto.
-void updateLampAt(atomikpe::level::Level* level, atomikpe::Server* server,
+void updateLampAt(cursestone::level::Level* level, cursestone::Server* server,
                    int32_t x, int32_t y, int32_t z);
 
 // Devuelve la potencia de señal (0-15) que el bloque en (x,y,z) aporta
@@ -64,13 +64,13 @@ void updateLampAt(atomikpe::level::Level* level, atomikpe::Server* server,
 // wire ya calculado, y palancas/botones activados. Devuelve 0 si el
 // bloque no es una fuente de señal o está apagado. No cambia nada en
 // el mundo, así que no necesita Server*.
-int getEmittedPower(atomikpe::level::Level* level, int32_t x, int32_t y, int32_t z);
+int getEmittedPower(cursestone::level::Level* level, int32_t x, int32_t y, int32_t z);
 
 // True si el bloque en (x,y,z) está actualmente recibiendo señal de
 // redstone (potencia > 0) desde cualquiera de sus vecinos o desde sí
 // mismo (para wire). Es lo que consultan puertas/pistones/lámparas para
 // decidir si deben activarse.
-bool isPowered(atomikpe::level::Level* level, int32_t x, int32_t y, int32_t z);
+bool isPowered(cursestone::level::Level* level, int32_t x, int32_t y, int32_t z);
 
 // Intenta interactuar con un componente de redstone accionable por el
 // jugador (palanca, botón, puerta de madera — la de hierro NO
@@ -83,7 +83,7 @@ bool isPowered(atomikpe::level::Level* level, int32_t x, int32_t y, int32_t z);
 // componente accionable, no hace nada y devuelve false — así el
 // llamador (Player) sabe si debe seguir con su propia lógica de
 // colocación de item.
-bool tryInteract(atomikpe::level::Level* level, atomikpe::Server* server,
+bool tryInteract(cursestone::level::Level* level, cursestone::Server* server,
                   int32_t x, int32_t y, int32_t z);
 
 // Recalcula si una antorcha de redstone en (x,y,z) debe estar
@@ -96,7 +96,7 @@ bool tryInteract(atomikpe::level::Level* level, atomikpe::Server* server,
 // antorchas orientadas hacia abajo (colocadas sobre un bloque) — es el
 // caso que cubre notifyNeighbors hoy; antorchas en pared quedan como
 // extensión futura documentada (ver comentario en el .cpp).
-void updateRedstoneTorchAt(atomikpe::level::Level* level, atomikpe::Server* server,
+void updateRedstoneTorchAt(cursestone::level::Level* level, cursestone::Server* server,
                              int32_t x, int32_t y, int32_t z);
 
 // Recalcula si una puerta (madera o hierro) debe estar abierta o
@@ -108,7 +108,7 @@ void updateRedstoneTorchAt(atomikpe::level::Level* level, atomikpe::Server* serv
 // que notifyNeighbors pueda llamarla con cualquiera de las dos mitades
 // sin distinguir cuál es cuál. Sincroniza el bit 0x04 en ambas mitades
 // y transmite el cambio de las que hayan cambiado.
-void updateDoorAt(atomikpe::level::Level* level, atomikpe::Server* server,
+void updateDoorAt(cursestone::level::Level* level, cursestone::Server* server,
                    int32_t x, int32_t y, int32_t z);
 
 // Recalcula si un pistón (normal o pegajoso) en (x,y,z) debe estar
@@ -125,7 +125,7 @@ void updateDoorAt(atomikpe::level::Level* level, atomikpe::Server* server,
 // sin límite. Al retraer: quita el PISTON_HEAD (vuelve a aire); un
 // pistón pegajoso además intentaría traer de vuelta el bloque
 // empujado, lo cual también queda documentado como extensión futura.
-void updatePistonAt(atomikpe::level::Level* level, atomikpe::Server* server,
+void updatePistonAt(cursestone::level::Level* level, cursestone::Server* server,
                      int32_t x, int32_t y, int32_t z);
 
-} // namespace atomikpe::redstone
+} // namespace cursestone::redstone

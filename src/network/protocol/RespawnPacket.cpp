@@ -4,7 +4,7 @@
 // practice, decode() implemented for symmetry/tests.
 #include "RespawnPacket.h"
 
-namespace atomikpe::network::protocol {
+namespace cursestone::network::protocol {
 
 void RespawnPacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
@@ -20,4 +20,4 @@ bool RespawnPacket::decode(const uint8_t* data, size_t len) {
     return r.readF32BE(z);
 }
 
-} // namespace atomikpe::network::protocol
+} // namespace cursestone::network::protocol

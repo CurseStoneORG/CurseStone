@@ -13,7 +13,7 @@
 //           ├── "zPos"            : Int
 //           ├── "LastUpdate"      : Long
 //           ├── "InhabitedTime"   : Long
-//           ├── "vxl"             : Byte         (AtomikPE-specific marker)
+//           ├── "vxl"             : Byte         (CurseStone-specific marker)
 //           ├── "TerrainGenerated": Byte (0/1)
 //           ├── "TerrainPopulated": Byte (0/1)
 //           ├── "LightPopulated"  : Byte (0/1)
@@ -28,7 +28,7 @@
 //           ├── "Entities"        : ListTag<CompoundTag>
 //           └── "TileEntities"    : ListTag<CompoundTag>
 //
-// The AtomikPE chunk has 16 sections (256-tall). We persist only the
+// The CurseStone chunk has 16 sections (256-tall). We persist only the
 // lower 8 sections (Y 0..7, i.e. block Y 0..127) since MCPE 0.15.x is
 // 128-tall — matching what Nukkit stores in its Anvil format. Upper
 // sections are dropped on save and zero-initialized on load.

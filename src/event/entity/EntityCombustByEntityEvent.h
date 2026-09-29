@@ -2,13 +2,13 @@
 // EntityCombustByEntityEvent.h — ported from cn.nukkit.event.entity.EntityCombustByEntityEvent
 #pragma once
 #include "EntityCombustEvent.h"
-namespace atomikpe { namespace entity { class Entity; } }
-namespace atomikpe::event::entity {
+namespace cursestone { namespace entity { class Entity; } }
+namespace cursestone::event::entity {
 class EntityCombustByEntityEvent : public EntityCombustEvent {
 public:
-    atomikpe::entity::Entity* combustor = nullptr;
+    cursestone::entity::Entity* combustor = nullptr;
 
-    EntityCombustByEntityEvent(atomikpe::entity::Entity* e, int s, atomikpe::entity::Entity* c)
+    EntityCombustByEntityEvent(cursestone::entity::Entity* e, int s, cursestone::entity::Entity* c)
         : EntityCombustEvent(e, s), combustor(c) {}
 
     const std::string& eventName() const override {

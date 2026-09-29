@@ -3,7 +3,7 @@
 // PMMP: putByte(type) + putInt(count) + per-entry fields (BE).
 #include "PlayerListPacket.h"
 
-namespace atomikpe::network::protocol {
+namespace cursestone::network::protocol {
 
 void PlayerListPacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
@@ -43,4 +43,4 @@ bool PlayerListPacket::decode(const uint8_t* data, size_t len) {
     return true;
 }
 
-} // namespace atomikpe::network::protocol
+} // namespace cursestone::network::protocol

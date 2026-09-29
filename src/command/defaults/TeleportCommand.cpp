@@ -1,7 +1,7 @@
 #include "TeleportCommand.h"
 #include "Server.h"
 #include "Player.h"
-namespace atomikpe {
+namespace cursestone {
 bool TeleportCommand::execute(CommandSender* sender, const std::string&,
                     const std::vector<std::string>& args) {
     if (args.size() < 3) {

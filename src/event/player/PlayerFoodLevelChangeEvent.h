@@ -3,16 +3,16 @@
 #pragma once
 #include "PlayerEvent.h"
 #include "../Cancellable.h"
-namespace atomikpe { class Player; }
+namespace cursestone { class Player; }
 
-namespace atomikpe::event::player {
+namespace cursestone::event::player {
 class PlayerFoodLevelChangeEvent : public PlayerEvent, public Cancellable {
 public:
     int foodLevel = 0;
-    PlayerFoodLevelChangeEvent(atomikpe::Player* p, int fl)
+    PlayerFoodLevelChangeEvent(cursestone::Player* p, int fl)
         : PlayerEvent(p), foodLevel(fl) {}
     const std::string& eventName() const override {
         static std::string n = "PlayerFoodLevelChangeEvent"; return n;
     }
 };
-} // namespace atomikpe::event::player
+} // namespace cursestone::event::player

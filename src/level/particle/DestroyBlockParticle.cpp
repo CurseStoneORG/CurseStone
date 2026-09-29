@@ -1,2 +1,2 @@
 #include "DestroyBlockParticle.h"
-namespace atomikpe::level::particle {}
+namespace cursestone::level::particle {}

@@ -2,7 +2,7 @@
 #include "BlockRedstoneLamp.h"
 #include <string>
 #include "BlockIds.h"
-namespace atomikpe::block {
+namespace cursestone::block {
 class BlockLitRedstoneLamp : public BlockRedstoneLamp {
 public:
     uint8_t id() const override { return LIT_REDSTONE_LAMP; }

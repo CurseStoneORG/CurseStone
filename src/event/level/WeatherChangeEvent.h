@@ -6,15 +6,15 @@
 #include "WeatherEvent.h"
 #include "../Cancellable.h"
 #include <string>
-namespace atomikpe { namespace level { class Level; } }
+namespace cursestone { namespace level { class Level; } }
 
-namespace atomikpe::event::level {
+namespace cursestone::event::level {
 
 class WeatherChangeEvent : public WeatherEvent, public Cancellable {
 public:
     bool to;
 
-    WeatherChangeEvent(atomikpe::level::Level* l, bool t)
+    WeatherChangeEvent(cursestone::level::Level* l, bool t)
         : WeatherEvent(l), to(t) {}
 
     const std::string& eventName() const override {
@@ -22,4 +22,4 @@ public:
     }
 };
 
-} // namespace atomikpe::event::level
+} // namespace cursestone::event::level

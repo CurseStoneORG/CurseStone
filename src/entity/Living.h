@@ -7,7 +7,7 @@
 #include "Effect.h"
 #include <vector>
 #include <memory>
-namespace atomikpe::entity {
+namespace cursestone::entity {
 class Living : public Entity {
 public:
     using Entity::Entity;

@@ -2,7 +2,7 @@
 // MobArmorEquipmentPacket.cpp — decode (client→server).
 #include "MobArmorEquipmentPacket.h"
 
-namespace atomikpe::network::protocol {
+namespace cursestone::network::protocol {
 
 namespace {
 bool readSlot(PacketReader& r, int16_t& id, uint8_t& count, int16_t& damage) {
@@ -34,4 +34,4 @@ bool MobArmorEquipmentPacket::decode(const uint8_t* buf, size_t len) {
     return true;
 }
 
-} // namespace atomikpe::network::protocol
+} // namespace cursestone::network::protocol

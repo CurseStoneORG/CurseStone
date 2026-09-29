@@ -4,7 +4,7 @@
 // are pure items (tools, food, etc.).
 #pragma once
 #include <cstdint>
-namespace atomikpe::item {
+namespace cursestone::item {
 enum ItemId : uint16_t {
     // Tools
     ITEM_WOOD_PICKAXE = 270, ITEM_STONE_PICKAXE = 274, ITEM_IRON_PICKAXE = 257,

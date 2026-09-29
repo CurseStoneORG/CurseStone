@@ -6,7 +6,7 @@
 #include "MoveEntityPacket.h"
 #include <cmath>
 
-namespace atomikpe::network::protocol {
+namespace cursestone::network::protocol {
 
 static inline uint8_t angleToByte(float deg) {
     // Normalize to [0, 360) then scale to [0, 256).
@@ -47,4 +47,4 @@ bool MoveEntityPacket::decode(const uint8_t* data, size_t len) {
     return true;
 }
 
-} // namespace atomikpe::network::protocol
+} // namespace cursestone::network::protocol

@@ -4,21 +4,21 @@
 #include "../block/BlockEvent.h"
 #include "../Cancellable.h"
 #include "../../item/ItemStack.h"
-namespace atomikpe { class BlockEntityFurnace; }
+namespace cursestone { class BlockEntityFurnace; }
 
-namespace atomikpe::event::inventory {
+namespace cursestone::event::inventory {
 
-class FurnaceBurnEvent : public atomikpe::event::block::BlockEvent, public Cancellable {
+class FurnaceBurnEvent : public cursestone::event::block::BlockEvent, public Cancellable {
 public:
-    atomikpe::BlockEntityFurnace* furnace;
-    atomikpe::item::ItemStack fuel;
+    cursestone::BlockEntityFurnace* furnace;
+    cursestone::item::ItemStack fuel;
     int16_t burnTime;
     bool burning;
-    FurnaceBurnEvent(atomikpe::BlockEntityFurnace* f, const atomikpe::item::ItemStack& fuel,
+    FurnaceBurnEvent(cursestone::BlockEntityFurnace* f, const cursestone::item::ItemStack& fuel,
                       int16_t bt)
         : BlockEvent(0, 0, 0), furnace(f), fuel(fuel), burnTime(bt), burning(true) {}
-    atomikpe::BlockEntityFurnace* getFurnace() { return furnace; }
-    atomikpe::item::ItemStack getFuel() { return fuel; }
+    cursestone::BlockEntityFurnace* getFurnace() { return furnace; }
+    cursestone::item::ItemStack getFuel() { return fuel; }
     int16_t getBurnTime() { return burnTime; }
     void setBurnTime(int16_t bt) { burnTime = bt; }
     bool isBurning() { return burning; }
@@ -28,4 +28,4 @@ public:
     }
 };
 
-} // namespace atomikpe::event::inventory
+} // namespace cursestone::event::inventory

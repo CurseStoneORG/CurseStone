@@ -1,6 +1,6 @@
 #pragma once
 #include "Event.h"
-namespace atomikpe::event {
+namespace cursestone::event {
 class Cancellable {
 public:
     virtual ~Cancellable() = default;

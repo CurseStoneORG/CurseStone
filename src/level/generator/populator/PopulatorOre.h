@@ -3,7 +3,7 @@
 #include "Populator.h"
 #include "level/generator/object/OreGenerator.h"
 #include <vector>
-namespace atomikpe::level::generator::populator {
+namespace cursestone::level::generator::populator {
 class PopulatorOre : public Populator {
 public:
     explicit PopulatorOre(std::vector<object::OreVein> veins) : veins_(std::move(veins)) {}

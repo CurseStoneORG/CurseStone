@@ -3,7 +3,7 @@
 // DefaultPermissions.
 #pragma once
 #include "Permissible.h"
-namespace atomikpe::permission {
+namespace cursestone::permission {
 class DefaultPermissions {
 public:
     static void registerCorePermissions(Permissible& p);

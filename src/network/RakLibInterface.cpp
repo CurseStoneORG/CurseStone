@@ -17,7 +17,7 @@
 #include <string>
 #include <chrono>
 
-namespace atomikpe {
+namespace cursestone {
 namespace network {
 
 // ============================================================================
@@ -47,7 +47,7 @@ void RakLibInterface::start() {
 
     std::string host_str = "0.0.0.0";
     uint16_t    port     = 19132;
-    std::string motd_str = "AtomikPE";
+    std::string motd_str = "CurseStone";
     int         max_players = 20;
     int         online     = 0;
     if (server_) {
@@ -394,4 +394,4 @@ void RakLibInterface::c_onTick(void* impl) {
 }
 
 } // namespace network
-} // namespace atomikpe
+} // namespace cursestone

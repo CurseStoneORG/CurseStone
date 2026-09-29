@@ -2,7 +2,7 @@
 #include "BlockGrass.h"
 #include <string>
 #include "BlockIds.h"
-namespace atomikpe::block {
+namespace cursestone::block {
 class BlockGrassPath : public BlockGrass {
 public:
     uint8_t id() const override { return GRASS_PATH; }

@@ -6,13 +6,13 @@
 #include "ChunkEvent.h"
 #include "../Cancellable.h"
 #include <string>
-namespace atomikpe { namespace level { class Level; } }
+namespace cursestone { namespace level { class Level; } }
 
-namespace atomikpe::event::level {
+namespace cursestone::event::level {
 
 class ChunkUnloadEvent : public ChunkEvent, public Cancellable {
 public:
-    ChunkUnloadEvent(atomikpe::level::Level* l, void* c)
+    ChunkUnloadEvent(cursestone::level::Level* l, void* c)
         : ChunkEvent(l, c) {}
 
     const std::string& eventName() const override {
@@ -20,4 +20,4 @@ public:
     }
 };
 
-} // namespace atomikpe::event::level
+} // namespace cursestone::event::level

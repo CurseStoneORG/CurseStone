@@ -78,7 +78,7 @@
 #include "ItemGoldLeggings.h"
 #include "ItemGoldBoots.h"
 #include <memory>
-namespace atomikpe::item {
+namespace cursestone::item {
 void Item::registerAll() {
     registerItem(std::make_unique<ItemApple>());
     registerItem(std::make_unique<ItemBread>());

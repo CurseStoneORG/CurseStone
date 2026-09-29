@@ -6,16 +6,16 @@
 #pragma once
 #include "PlayerEvent.h"
 #include <string>
-namespace atomikpe { class Player; }
+namespace cursestone { class Player; }
 
-namespace atomikpe::event::player {
+namespace cursestone::event::player {
 class PlayerMessageEvent : public PlayerEvent {
 public:
     std::string message;
-    PlayerMessageEvent(atomikpe::Player* p, const std::string& msg)
+    PlayerMessageEvent(cursestone::Player* p, const std::string& msg)
         : PlayerEvent(p), message(msg) {}
     const std::string& eventName() const override {
         static std::string n = "PlayerMessageEvent"; return n;
     }
 };
-} // namespace atomikpe::event::player
+} // namespace cursestone::event::player

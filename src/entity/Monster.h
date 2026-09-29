@@ -3,7 +3,7 @@
 // "wandering" feel, but proper mob AI is out of scope.
 #pragma once
 #include "Creature.h"
-namespace atomikpe::entity {
+namespace cursestone::entity {
 class Monster : public Creature {
 public:
     using Creature::Creature;

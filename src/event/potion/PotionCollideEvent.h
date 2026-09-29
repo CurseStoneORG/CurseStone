@@ -8,7 +8,7 @@
 #include "../Cancellable.h"
 #include <string>
 
-namespace atomikpe::event::potion {
+namespace cursestone::event::potion {
 
 class PotionCollideEvent : public PotionEvent, public Cancellable {
 public:
@@ -22,4 +22,4 @@ public:
     }
 };
 
-} // namespace atomikpe::event::potion
+} // namespace cursestone::event::potion

@@ -2,7 +2,7 @@
 #include "BlockDirt.h"
 #include <string>
 #include "BlockIds.h"
-namespace atomikpe::block {
+namespace cursestone::block {
 class BlockPodzol : public BlockDirt {
 public:
     uint8_t id() const override { return PODZOL; }

@@ -9,13 +9,13 @@
 #include "event/Event.h"
 #include <string>
 #include "event/Cancellable.h"
-namespace atomikpe { class Player; }
-namespace atomikpe::event::player {
+namespace cursestone { class Player; }
+namespace cursestone::event::player {
 class PlayerQuitEvent : public Event, public Cancellable {
 public:
-    atomikpe::Player* player;
+    cursestone::Player* player;
     std::string message;
-    PlayerQuitEvent(atomikpe::Player* p = nullptr, std::string msg = "")
+    PlayerQuitEvent(cursestone::Player* p = nullptr, std::string msg = "")
         : player(p), message(std::move(msg)) {}
     const std::string& eventName() const override {
         static std::string n = "PlayerQuitEvent"; return n;

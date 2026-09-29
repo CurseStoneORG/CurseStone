@@ -5,7 +5,7 @@
 #include "Server.h"
 #include "utils/TextColor.h"
 
-namespace atomikpe {
+namespace cursestone {
 
 bool WorkbenchCommand::execute(CommandSender* sender, const std::string&,
                                 const std::vector<std::string>& args) {
@@ -39,4 +39,4 @@ bool WorkbenchCommand::execute(CommandSender* sender, const std::string&,
     return true;
 }
 
-} // namespace atomikpe
+} // namespace cursestone

@@ -8,7 +8,7 @@
 #include <string>
 #include <unordered_map>
 #include <memory>
-namespace atomikpe::inventory {
+namespace cursestone::inventory {
 
 class InventoryType {
 public:
@@ -49,4 +49,4 @@ private:
     static bool initialized_;
 };
 
-} // namespace atomikpe::inventory
+} // namespace cursestone::inventory

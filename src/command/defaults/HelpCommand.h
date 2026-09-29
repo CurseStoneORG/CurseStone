@@ -1,7 +1,7 @@
 #pragma once
 #include "command/Command.h"
 #include <string>
-namespace atomikpe {
+namespace cursestone {
 class HelpCommand : public Command {
 public:
     HelpCommand(const std::string& name = "help") : Command(name, "Show available commands") {}

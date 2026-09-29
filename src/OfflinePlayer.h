@@ -1,7 +1,7 @@
 #pragma once
 #include "IPlayer.h"
 #include <string>
-namespace atomikpe {
+namespace cursestone {
 class Server;
 class OfflinePlayer : public IPlayer {
 public:

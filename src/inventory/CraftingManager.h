@@ -7,7 +7,7 @@
 #include <vector>
 #include <memory>
 #include <string>
-namespace atomikpe::inventory {
+namespace cursestone::inventory {
 class CraftingManager {
 public:
     CraftingManager();

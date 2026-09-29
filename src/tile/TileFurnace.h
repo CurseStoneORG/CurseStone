@@ -9,15 +9,15 @@
 #include "Spawnable.h"
 #include "item/ItemStack.h"   // required for std::vector<ItemStack> member below
 #include <vector>
-namespace atomikpe::tile {
+namespace cursestone::tile {
 class TileFurnace : public Tile, public Container, public Nameable, public Spawnable {
 public:
-    TileFurnace(atomikpe::level::Position pos) : Tile("Furnace", pos) {
+    TileFurnace(cursestone::level::Position pos) : Tile("Furnace", pos) {
         contents_.resize(3);
     }
     int size() const override { return 3; }
-    void setItem(int slot, const atomikpe::item::ItemStack& it) override;
-    atomikpe::item::ItemStack getItem(int slot) const override;
+    void setItem(int slot, const cursestone::item::ItemStack& it) override;
+    cursestone::item::ItemStack getItem(int slot) const override;
     void removeItem(int slot) override;
     void spawnTo(void* /*player*/) override {}
     void tick(uint64_t /*t*/) override;
@@ -26,7 +26,7 @@ public:
     int maxBurnTime() const { return 200; }
     int maxCookTime() const { return 200; }
 private:
-    std::vector<atomikpe::item::ItemStack> contents_;
+    std::vector<cursestone::item::ItemStack> contents_;
     int burn_time_ = 0;
     int cook_time_ = 0;
 };

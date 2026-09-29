@@ -4,7 +4,7 @@
 
 #include <cstring>
 
-namespace atomikpe::network::protocol {
+namespace cursestone::network::protocol {
 
 bool PacketReader::readU8(uint8_t& v) {
     if (off_ + 1 > len_) return false;
@@ -134,4 +134,4 @@ bool PacketReader::readVarI64(int64_t& v) {
     v = mcp_varint_unzigzag_i64(u); return true;
 }
 
-} // namespace atomikpe::network::protocol
+} // namespace cursestone::network::protocol

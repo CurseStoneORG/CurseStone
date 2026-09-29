@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 #include <cstdint>
-namespace atomikpe::scheduler {
+namespace cursestone::scheduler {
 class FileWriteTask : public AsyncTask {
 public:
     FileWriteTask(std::string path, std::vector<uint8_t> bytes)

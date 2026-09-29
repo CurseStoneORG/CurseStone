@@ -1,2 +1,2 @@
 #include "ItemLeatherBoots.h"
-namespace atomikpe::item {}
+namespace cursestone::item {}

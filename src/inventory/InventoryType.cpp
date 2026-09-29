@@ -2,7 +2,7 @@
 // InventoryType.cpp — ported from cn.nukkit.inventory.InventoryType
 #include "InventoryType.h"
 
-namespace atomikpe::inventory {
+namespace cursestone::inventory {
 
 std::unordered_map<int, std::shared_ptr<InventoryType>>& InventoryType::defaults() {
     static std::unordered_map<int, std::shared_ptr<InventoryType>> d;
@@ -37,4 +37,4 @@ std::shared_ptr<InventoryType> InventoryType::get(int index) {
     return it->second;
 }
 
-} // namespace atomikpe::inventory
+} // namespace cursestone::inventory

@@ -5,6 +5,6 @@
 // This file is kept only for backward compat with CMakeLists.txt
 // (which globs *.cpp).
 #include "Inventory.h"
-namespace atomikpe::inventory {
+namespace cursestone::inventory {
 // No-op — everything is in BaseInventory.cpp / PlayerInventory.cpp.
-} // namespace atomikpe::inventory
+} // namespace cursestone::inventory

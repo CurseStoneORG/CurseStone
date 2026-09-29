@@ -3,8 +3,8 @@
 #pragma once
 #include "EntityEvent.h"
 #include "../Cancellable.h"
-namespace atomikpe { namespace entity { class Entity; } }
-namespace atomikpe::event::entity {
+namespace cursestone { namespace entity { class Entity; } }
+namespace cursestone::event::entity {
 class CreeperPowerEvent : public EntityEvent, public Cancellable {
 public:
     static constexpr int POWER_CAUSE_LIGHTNING = 0;
@@ -13,7 +13,7 @@ public:
 
     int powerCause = 0;
 
-    CreeperPowerEvent(atomikpe::entity::Entity* e, int cause)
+    CreeperPowerEvent(cursestone::entity::Entity* e, int cause)
         : EntityEvent(e), powerCause(cause) {}
 
     const std::string& eventName() const override {

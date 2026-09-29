@@ -1,2 +1,2 @@
 #include "Projectile.h"
-namespace atomikpe::entity {}
+namespace cursestone::entity {}

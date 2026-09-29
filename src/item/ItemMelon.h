@@ -1,7 +1,7 @@
 #pragma once
 #include "ItemFood.h"
 #include <string>
-namespace atomikpe::item {
+namespace cursestone::item {
 class ItemMelon : public ItemFood {
 public:
     ItemMelon() : ItemFood(360, 2) {}

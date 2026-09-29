@@ -1,4 +1,4 @@
-# Atomik
+# CurseStone
 
 Server software for Minecraft: Pocket Edition 0.15.10 (Protocol 84), written in C and C++.
 
@@ -13,12 +13,12 @@ cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 ```
 
-The resulting binary is `AtomikPE` for ready to start server
+The resulting binary is `CurseStone` for ready to start server
 
 ## Running
 
 ```
-./AtomikPE
+./CurseStone
 ```
 
 If no configuration exists in the working directory, the first-run wizard generates one and creates a fresh world. The server binds UDP `19132` by default.
@@ -28,9 +28,9 @@ If no configuration exists in the working directory, the first-run wizard genera
 Two config files are read from the data directory:
 
 - `server.properties` — key/value file, checked first if present.
-- `atomikpe.yml` — the native format
+- `cursestone.yml` — the native format
 
-Both are seeded from `resources/` on first run. `server.properties` covers the common settings (port, max players, view distance, gamemode, difficulty, world name/seed); `atomikpe.yml` additionally exposes memory limits and async worker count.
+Both are seeded from `resources/` on first run. `server.properties` covers the common settings (port, max players, view distance, gamemode, difficulty, world name/seed); `cursestone.yml` additionally exposes memory limits and async worker count.
 
 ## Project layout
 

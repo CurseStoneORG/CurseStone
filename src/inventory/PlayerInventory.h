@@ -13,7 +13,7 @@
 #pragma once
 #include "BaseInventory.h"
 #include <array>
-namespace atomikpe::inventory {
+namespace cursestone::inventory {
 
 // Backward-compat constants used by Player.cpp.
 // SIZE is the number of slots EXCLUDING the 4 armor slots (Nukkit's
@@ -98,4 +98,4 @@ private:
     Player* owner_ = nullptr;  // the Player who owns this inventory
 };
 
-} // namespace atomikpe::inventory
+} // namespace cursestone::inventory

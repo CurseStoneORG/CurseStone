@@ -2,7 +2,7 @@
 #include "BlockLava.h"
 #include <string>
 #include "BlockIds.h"
-namespace atomikpe::block {
+namespace cursestone::block {
 class BlockLavaStill : public BlockLava {
 public:
     uint8_t id() const override { return LAVA_STILL; }

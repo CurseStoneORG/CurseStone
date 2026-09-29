@@ -3,15 +3,15 @@
 #pragma once
 #include "EntityEvent.h"
 #include "../Cancellable.h"
-namespace atomikpe { namespace entity { class Entity; } }
-namespace atomikpe::event::entity {
+namespace cursestone { namespace entity { class Entity; } }
+namespace cursestone::event::entity {
 class ProjectileHitEvent : public EntityEvent, public Cancellable {
 public:
     int x = 0;
     int y = 0;
     int z = 0;
 
-    ProjectileHitEvent(atomikpe::entity::Entity* e, int bx, int by, int bz)
+    ProjectileHitEvent(cursestone::entity::Entity* e, int bx, int by, int bz)
         : EntityEvent(e), x(bx), y(by), z(bz) {}
 
     const std::string& eventName() const override {

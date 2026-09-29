@@ -3,7 +3,7 @@
 #pragma once
 #include "BaseInventory.h"
 #include "InventoryType.h"
-namespace atomikpe::inventory {
+namespace cursestone::inventory {
 class FurnaceInventory : public BaseInventory {
 public:
     FurnaceInventory()

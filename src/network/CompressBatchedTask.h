@@ -9,7 +9,7 @@
 #include <functional>
 #include <memory>
 
-namespace atomikpe::network {
+namespace cursestone::network {
 
 class CompressBatchedTask : public scheduler::AsyncTask {
 public:
@@ -29,4 +29,4 @@ private:
     std::vector<uint8_t>  result_;   // populated by onRun()
 };
 
-} // namespace atomikpe::network
+} // namespace cursestone::network

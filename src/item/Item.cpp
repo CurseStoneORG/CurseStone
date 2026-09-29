@@ -1,6 +1,6 @@
 #include "Item.h"
 #include <vector>
-namespace atomikpe::item {
+namespace cursestone::item {
 std::vector<std::unique_ptr<Item>>& Item::registry() {
     static std::vector<std::unique_ptr<Item>> r;
     if (r.empty()) r.resize(65536);

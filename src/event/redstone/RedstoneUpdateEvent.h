@@ -8,9 +8,9 @@
 #include <cstdint>
 #include <string>
 
-namespace atomikpe::event::redstone {
+namespace cursestone::event::redstone {
 
-class RedstoneUpdateEvent : public atomikpe::event::block::BlockUpdateEvent {
+class RedstoneUpdateEvent : public cursestone::event::block::BlockUpdateEvent {
 public:
     RedstoneUpdateEvent(int32_t bx, int32_t by, int32_t bz)
         : BlockUpdateEvent(bx, by, bz) {}
@@ -20,4 +20,4 @@ public:
     }
 };
 
-} // namespace atomikpe::event::redstone
+} // namespace cursestone::event::redstone

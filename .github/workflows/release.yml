@@ -1,18 +1,18 @@
 name: Release personalizado
 
 # Crea un release de GitHub con la versión y descripción que tú elijas
-# (ej. versión: "Atomik-alpha-v1.0") y adjunta los binarios de
+# (ej. versión: "CurseStone-alpha-v1.0") y adjunta los binarios de
 # Linux x86_64 y Android ARM64 ya compilados.
 #
 # Cómo usarlo:
 #   GitHub → Actions → "Release personalizado" → Run workflow
-#   (o gh workflow run release.yml -f version=Atomik-alpha-v1.0 -f body="..." )
+#   (o gh workflow run release.yml -f version=CurseStone-alpha-v1.0 -f body="..." )
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Versión del release (ej. Atomik-alpha-v1.0)'
+        description: 'Versión del release (ej. CurseStone-alpha-v1.0)'
         required: true
         type: string
       body:
@@ -53,8 +53,8 @@ jobs:
       - name: Renombrar binarios con la versión
         run: |
           VERSION='${{ inputs.version }}'
-          mv dist/AtomikPE-linux-x86_64/AtomikPE   "dist/AtomikPE-${VERSION}-linux-x86_64"
-          mv dist/AtomikPE-android-arm64/AtomikPE  "dist/AtomikPE-${VERSION}-android-arm64"
+          mv dist/CurseStone-linux-x86_64/CurseStone   "dist/CurseStone-${VERSION}-linux-x86_64"
+          mv dist/CurseStone-android-arm64/CurseStone  "dist/CurseStone-${VERSION}-android-arm64"
           ls -la dist/
 
       - name: Publicar release en GitHub
@@ -65,6 +65,6 @@ jobs:
           body: ${{ inputs.body }}
           prerelease: ${{ inputs.prerelease }}
           files: |
-            dist/AtomikPE-${{ inputs.version }}-linux-x86_64
-            dist/AtomikPE-${{ inputs.version }}-android-arm64
+            dist/CurseStone-${{ inputs.version }}-linux-x86_64
+            dist/CurseStone-${{ inputs.version }}-android-arm64
           fail_on_unmatched_files: true

@@ -17,7 +17,7 @@
 #include <memory>
 #include <cstdint>
 
-namespace atomikpe {
+namespace cursestone {
 
 class Player;  // forward
 
@@ -73,4 +73,4 @@ public:
 };
 
 } // namespace inventory
-} // namespace atomikpe
+} // namespace cursestone

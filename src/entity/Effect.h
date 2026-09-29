@@ -2,7 +2,7 @@
 #pragma once
 #include <cstdint>
 #include <string>
-namespace atomikpe::entity {
+namespace cursestone::entity {
 enum EffectId : uint8_t {
     EFF_SPEED = 1, EFF_SLOWNESS = 2, EFF_HASTE = 3, EFF_MINING_FATIGUE = 4,
     EFF_STRENGTH = 5, EFF_INSTANT_HEALTH = 6, EFF_INSTANT_DAMAGE = 7,

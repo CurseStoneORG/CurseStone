@@ -1,2 +1,2 @@
 #include "ItemSwordWooden.h"
-namespace atomikpe::item {}
+namespace cursestone::item {}

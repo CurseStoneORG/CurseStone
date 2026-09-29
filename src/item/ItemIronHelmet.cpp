@@ -1,2 +1,2 @@
 #include "ItemIronHelmet.h"
-namespace atomikpe::item {}
+namespace cursestone::item {}

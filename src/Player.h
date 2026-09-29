@@ -1,6 +1,6 @@
 // Player — full player session. Owns the network session, inventory,
 // view distance, current chunk, gamemode, position, and a per-player
-// tick. The Player class is the most complex class in AtomikPE;
+// tick. The Player class is the most complex class in CurseStone;
 // it's the bridge between the protocol layer (LoginPacket → MovePlayerPacket)
 // and the world layer (Level, Chunk, Entity).
 //
@@ -26,7 +26,7 @@
 #include <mutex>
 #include <unordered_set>
 #include <vector>
-namespace atomikpe {
+namespace cursestone {
 class Server;
 class Network;
 class SourceInterface;
@@ -286,7 +286,7 @@ public:
     void setAutoJump(bool /*v*/) {}
 
     // --- Drops (Nukkit: getDrops) ---
-    std::vector<atomikpe::item::ItemStack> getDrops() const;
+    std::vector<cursestone::item::ItemStack> getDrops() const;
 
     // --- Windows (Nukkit: getWindowId/addWindow/removeWindow) ---
     int getWindowId(void* /*inventory*/) const { return -1; }
@@ -306,7 +306,7 @@ public:
     // --- Killer (Nukkit: getKiller) ---
     Entity* getKiller() const { return nullptr; }
 
-    // Damage constante de mano vacia. AtomikPE no tiene todavia una
+    // Damage constante de mano vacia. CurseStone no tiene todavia una
     // tabla de dano por item (espadas/hachas), asi que todo golpe
     // cuerpo a cuerpo usa este valor fijo hasta que exista una.
     static constexpr float BASE_ATTACK_DAMAGE = 1.0f;

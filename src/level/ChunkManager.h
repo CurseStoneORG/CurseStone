@@ -11,10 +11,10 @@
 #include <mutex>
 #include <vector>
 #include <utility>
-namespace atomikpe::level::generator { class Generator; }
-namespace atomikpe::scheduler { class AsyncPool; }
+namespace cursestone::level::generator { class Generator; }
+namespace cursestone::scheduler { class AsyncPool; }
 
-namespace atomikpe::level {
+namespace cursestone::level {
 
 class ChunkManager {
 public:

@@ -1,2 +1,2 @@
 #include "ChestInventory.h"
-namespace atomikpe::inventory {}
+namespace cursestone::inventory {}

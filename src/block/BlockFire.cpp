@@ -33,7 +33,7 @@
 #include <cstdlib>
 #include <algorithm>
 
-namespace atomikpe::block {
+namespace cursestone::block {
 
 // ============================================================
 // scheduleUpdate — NO-OP in v6.
@@ -178,4 +178,4 @@ void BlockFire::onScheduledUpdate(level::Level* /*level*/,
     // Intentionally empty — fire is a static visual block in v6.
 }
 
-} // namespace atomikpe::block
+} // namespace cursestone::block

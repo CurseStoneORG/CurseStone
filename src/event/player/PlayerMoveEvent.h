@@ -11,14 +11,14 @@
 #include "event/Event.h"
 #include <string>
 #include "event/Cancellable.h"
-namespace atomikpe { class Player; }
-namespace atomikpe::event::player {
+namespace cursestone { class Player; }
+namespace cursestone::event::player {
 class PlayerMoveEvent : public Event, public Cancellable {
 public:
-    atomikpe::Player* player;
+    cursestone::Player* player;
     double fromX = 0.0, fromY = 0.0, fromZ = 0.0;
     double toX = 0.0, toY = 0.0, toZ = 0.0;
-    PlayerMoveEvent(atomikpe::Player* p, double fx, double fy, double fz,
+    PlayerMoveEvent(cursestone::Player* p, double fx, double fy, double fz,
                     double tx, double ty, double tz)
         : player(p), fromX(fx), fromY(fy), fromZ(fz),
           toX(tx), toY(ty), toZ(tz) {}

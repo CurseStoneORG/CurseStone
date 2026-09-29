@@ -1,2 +1,2 @@
 #include "ItemFlint.h"
-namespace atomikpe::item {}
+namespace cursestone::item {}

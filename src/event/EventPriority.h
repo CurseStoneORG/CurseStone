@@ -15,7 +15,7 @@
 #pragma once
 #include <cstdint>
 
-namespace atomikpe::event {
+namespace cursestone::event {
 
 enum class EventPriority : uint8_t {
     LOWEST  = 0,
@@ -30,4 +30,4 @@ enum class EventPriority : uint8_t {
 // su array de buckets. Mantener en sync con el enum de arriba.
 constexpr int kEventPriorityCount = 6;
 
-} // namespace atomikpe::event
+} // namespace cursestone::event

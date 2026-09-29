@@ -91,7 +91,7 @@
 #include <mutex>
 #include <unordered_set>
 
-namespace atomikpe {
+namespace cursestone {
 
 // ============================================================
 // Phase 0 — Player construction / destruction
@@ -491,10 +491,10 @@ void Player::setGamemode(int gm) {
 // reflejar el item es una confirmación que coincida con los mismos
 // campos que ÉL mandó — esos son los que su UI está esperando de
 // vuelta, sea cual sea el significado exacto que le da internamente.
-static void giveCreativeItem(atomikpe::Player* player,
-                              std::shared_ptr<atomikpe::inventory::PlayerInventory> inv,
+static void giveCreativeItem(cursestone::Player* player,
+                              std::shared_ptr<cursestone::inventory::PlayerInventory> inv,
                               const network::protocol::ContainerSetSlotPacket& cs,
-                              atomikpe::item::ItemStack it) {
+                              cursestone::item::ItemStack it) {
     if (!player || !inv) return;
     // FALLBACK: si el ítem que venía embebido en el paquete llega vacío
     // (id==0), puede que para el gesto "tap en el catálogo" el cliente
@@ -505,7 +505,7 @@ static void giveCreativeItem(atomikpe::Player* player,
     // qué item es ese índice. No hay riesgo en probar esto primero: si
     // `it` ya traía datos válidos, esta rama ni se toca.
     if (it.id == 0) {
-        const auto& catalog = atomikpe::inventory::getCreativeItems();
+        const auto& catalog = cursestone::inventory::getCreativeItems();
         if (cs.slot >= 0 && (size_t)cs.slot < catalog.size()) {
             it = catalog[(size_t)cs.slot];
         }
@@ -651,7 +651,7 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
             //     Routed to open_chest_->inventory() instead of inv_.
             if (auto* cs = dynamic_cast<network::protocol::ContainerSetSlotPacket*>(&p)) {
                 if (inv_) {
-                    atomikpe::item::ItemStack it;
+                    cursestone::item::ItemStack it;
                     it.id    = static_cast<uint16_t>(cs->itemId);
                     it.count = cs->itemCount;
                     it.meta  = static_cast<uint8_t>(cs->itemDamage & 0xFF);
@@ -1083,7 +1083,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
                         dest_slot = inventory::PlayerInventory::ARMOR_OFFSET
                                   + (nbt_slot - 100);
                     } else if (nbt_slot >= 36 && nbt_slot < 45) {
-                        // Legacy AtomikPE layout (armor at 36..39).
+                        // Legacy CurseStone layout (armor at 36..39).
                         dest_slot = nbt_slot;
                     }
                     // BUG FIX (reporte de usuario: "me equipo armadura, me
@@ -1321,7 +1321,7 @@ void Player::sendChunksAroundSpawn() {
 // Helper: transmite un cambio de bloque puntual a todos los jugadores
 // que estén viendo ese chunk. Se usa para componentes de redstone que
 // cambian más de un bloque (por ejemplo, puertas).
-static void broadcastBlockChange(atomikpe::Server* server, int32_t x, int32_t y, int32_t z,
+static void broadcastBlockChange(cursestone::Server* server, int32_t x, int32_t y, int32_t z,
                                    uint8_t blockId, uint8_t blockData) {
     if (!server) return;
     auto ubp = std::make_shared<network::protocol::UpdateBlockPacket>();
@@ -1736,7 +1736,7 @@ void Player::handleBlockBreak(int x, int y, int z) {
     ch->dirty = true;
 
     // Redstone: breaking a block can disconnect a circuit or remove a support.
-    atomikpe::redstone::notifyNeighbors(lvl, srv_, x, y, z);
+    cursestone::redstone::notifyNeighbors(lvl, srv_, x, y, z);
 
     // Broadcast UpdateBlockPacket.
     auto ubp = std::make_shared<network::protocol::UpdateBlockPacket>();
@@ -1919,7 +1919,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
 
     // Redstone components such as levers and buttons react to a click
     // before normal item/block placement is considered.
-    if (atomikpe::redstone::tryInteract(lvl, srv_, x, y, z)) {
+    if (cursestone::redstone::tryInteract(lvl, srv_, x, y, z)) {
         return;
     }
 
@@ -1989,7 +1989,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
                 int tlx = x & 15, tlz = z & 15;
                 mcp_chunk_set_block_full(tch, tlx, y, tlz, 0, 0);
                 tch->dirty = true;
-                atomikpe::redstone::notifyNeighbors(lvl, srv_, x, y, z);
+                cursestone::redstone::notifyNeighbors(lvl, srv_, x, y, z);
 
                 // Broadcast UpdateBlockPacket to nearby players.
                 auto ubp = std::make_shared<network::protocol::UpdateBlockPacket>();
@@ -2097,8 +2097,8 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         broadcastBlockChange(srv_, placeX, placeY, placeZ, doorId, lowerData);
         broadcastBlockChange(srv_, placeX, placeY + 1, placeZ, doorId, upperData);
 
-        atomikpe::redstone::notifyNeighbors(lvl, srv_, placeX, placeY, placeZ);
-        atomikpe::redstone::notifyNeighbors(lvl, srv_, placeX, placeY + 1, placeZ);
+        cursestone::redstone::notifyNeighbors(lvl, srv_, placeX, placeY, placeZ);
+        cursestone::redstone::notifyNeighbors(lvl, srv_, placeX, placeY + 1, placeZ);
 
         if (!(cfg_.gamemode & 1) && inv_) { // survival only
             int held = inv_->heldSlot();
@@ -2149,7 +2149,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         mcp_chunk_set_block_full(chP, localXP, placeY, localZP, pistonId, pistonFacing);
         chP->dirty = true;
         broadcastBlockChange(srv_, placeX, placeY, placeZ, pistonId, pistonFacing);
-        atomikpe::redstone::notifyNeighbors(lvl, srv_, placeX, placeY, placeZ);
+        cursestone::redstone::notifyNeighbors(lvl, srv_, placeX, placeY, placeZ);
 
         if (!(cfg_.gamemode & 1) && inv_) {
             int held = inv_->heldSlot();
@@ -2260,7 +2260,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     ch->dirty = true;
 
     // Redstone: placing a component may connect or power a neighboring circuit.
-    atomikpe::redstone::notifyNeighbors(lvl, srv_, placeX, placeY, placeZ);
+    cursestone::redstone::notifyNeighbors(lvl, srv_, placeX, placeY, placeZ);
 
     // Decrement inventory (only in survival — PMMP skips in creative).
     if (consumeItem && inv_) {
@@ -2410,7 +2410,7 @@ void Player::openChestAt(int x, int y, int z) {
         if (!chest) return;
     } else {
         chest = std::make_shared<tile::TileChest>(
-            atomikpe::level::Position((double)x, (double)y, (double)z));
+            cursestone::level::Position((double)x, (double)y, (double)z));
         lvl->setTile(x, y, z, chest);
     }
 
@@ -2468,7 +2468,7 @@ void Player::closeOpenChest() {
 //
 // MCPE 0.15.x sends InteractPacket with ACTION_LEFT_CLICK when the
 // player attacks an entity (right-click uses ACTION_RIGHT_CLICK for
-// things like feeding/taming, which AtomikPE doesn't implement yet —
+// things like feeding/taming, which CurseStone doesn't implement yet —
 // only the attack path is wired here).
 //
 // Scope, deliberately minimal:
@@ -2476,7 +2476,7 @@ void Player::closeOpenChest() {
 //     AI mobs to hit yet (README: "No mob AI (entities exist as data
 //     structs only, no pathfinding)").
 //   - Flat BASE_ATTACK_DAMAGE for every hit — no per-item damage
-//     table (swords/axes) exists in AtomikPE yet.
+//     table (swords/axes) exists in CurseStone yet.
 //   - No knockback, no invulnerability-ticks beyond the plain
 //     cooldown below, no reach/distance check. This is a foundation
 //     for EntityDamageByEntityEvent/PlayerDeathEvent to have
@@ -3088,7 +3088,7 @@ void Player::onUpdate(uint64_t current_tick) {
             double dist_sq = dx*dx + dy*dy + dz*dz;
             if (dist_sq > 6.25) continue;
 
-            atomikpe::item::ItemStack pickup;
+            cursestone::item::ItemStack pickup;
             pickup.id    = di->itemId;
             pickup.count = di->count;
             pickup.meta  = (uint8_t)(di->damage & 0xFF);
@@ -3102,7 +3102,7 @@ void Player::onUpdate(uint64_t current_tick) {
             if (!can_pickup) continue;
 
             // Add to inventory FIRST.
-            std::vector<atomikpe::item::ItemStack> leftovers =
+            std::vector<cursestone::item::ItemStack> leftovers =
                 inv_->addItem({pickup});
             int leftover_count = leftovers.empty() ? 0 : leftovers[0].count;
             int absorbed = pickup.count - leftover_count;
@@ -3115,7 +3115,7 @@ void Player::onUpdate(uint64_t current_tick) {
             if (!lvl->tryClaimDroppedItem(di->eid)) {
                 // Another player got it first — rollback the inventory
                 // addition by removing the items we just added.
-                atomikpe::item::ItemStack rollback;
+                cursestone::item::ItemStack rollback;
                 rollback.id = pickup.id;
                 rollback.meta = pickup.meta;
                 rollback.count = absorbed;
@@ -3309,4 +3309,4 @@ bool Player::batchDataPacket(const std::vector<uint8_t>& data) {
     return true;
 }
 
-} // namespace atomikpe
+} // namespace cursestone

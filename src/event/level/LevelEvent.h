@@ -6,15 +6,15 @@
 #pragma once
 #include "../Event.h"
 #include <string>
-namespace atomikpe { namespace level { class Level; } }
+namespace cursestone { namespace level { class Level; } }
 
-namespace atomikpe::event::level {
+namespace cursestone::event::level {
 
 class LevelEvent : public Event {
 public:
-    atomikpe::level::Level* level;
+    cursestone::level::Level* level;
 
-    explicit LevelEvent(atomikpe::level::Level* l)
+    explicit LevelEvent(cursestone::level::Level* l)
         : level(l) {}
 
     const std::string& eventName() const override {
@@ -22,4 +22,4 @@ public:
     }
 };
 
-} // namespace atomikpe::event::level
+} // namespace cursestone::event::level

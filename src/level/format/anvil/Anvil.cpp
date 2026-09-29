@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Anvil.cpp — Nukkit Anvil LevelProvider ported to AtomikPE C++.
+// Anvil.cpp — Nukkit Anvil LevelProvider ported to CurseStone C++.
 //
 // Wires together AnvilRegionLoader (the .mca file codec) and
-// AnvilChunkCodec (the per-chunk NBT codec) behind AtomikPE's
+// AnvilChunkCodec (the per-chunk NBT codec) behind CurseStone's
 // LevelProvider interface. level.dat is GZIP-compressed big-endian NBT
 // matching Nukkit's Anvil.generate() output.
 #include "Anvil.h"
@@ -32,7 +32,7 @@
 #include <sys/types.h>
 #include <zlib.h>
 
-namespace atomikpe::level::format::anvil {
+namespace cursestone::level::format::anvil {
 
 // ============================================================================
 // Registrar — installs "anvil" into LevelProviderManager at process start.
@@ -572,4 +572,4 @@ bool Anvil::generate(const std::string& path, const std::string& name,
     return write_file(level_dat, gz.data(), gz.size());
 }
 
-} // namespace atomikpe::level::format::anvil
+} // namespace cursestone::level::format::anvil

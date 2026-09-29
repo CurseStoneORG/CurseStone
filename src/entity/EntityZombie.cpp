@@ -1,2 +1,2 @@
 #include "EntityZombie.h"
-namespace atomikpe::entity {}
+namespace cursestone::entity {}

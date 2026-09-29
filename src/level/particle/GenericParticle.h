@@ -1,6 +1,6 @@
 #pragma once
 #include "Particle.h"
-namespace atomikpe::level::particle {
+namespace cursestone::level::particle {
 class GenericParticle : public Particle {
 public:
     GenericParticle(ParticleId id, Position pos) : Particle(id, pos) {}

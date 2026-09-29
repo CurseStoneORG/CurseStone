@@ -1,6 +1,6 @@
 #include "TileSign.h"
 #include "nbt/tag/CompoundTag.h"
-namespace atomikpe::tile {
+namespace cursestone::tile {
 // PMMP/Nukkit legacy key each line as "Text1".."Text4" (plain strings,
 // not JSON — that's a Bedrock-modern-protocol thing this legacy-84
 // project doesn't use).

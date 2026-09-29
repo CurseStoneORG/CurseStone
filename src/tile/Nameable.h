@@ -1,7 +1,7 @@
 // Nameable — tile that has a custom name (chest with custom name).
 #pragma once
 #include <string>
-namespace atomikpe::tile {
+namespace cursestone::tile {
 class Nameable {
 public:
     virtual ~Nameable() = default;

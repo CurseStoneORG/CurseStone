@@ -7,7 +7,7 @@
 #pragma once
 #include "BlockGrowEvent.h"
 #include <cstdint>
-namespace atomikpe::event::block {
+namespace cursestone::event::block {
 
 // NOTA: no hereda Cancellable directamente — BlockGrowEvent ya lo hace.
 // Heredarlo de nuevo aquí crearía un diamante no-virtual (dos
@@ -24,4 +24,4 @@ public:
     }
 };
 
-} // namespace atomikpe::event::block
+} // namespace cursestone::event::block

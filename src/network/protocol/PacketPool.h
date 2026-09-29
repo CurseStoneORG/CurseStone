@@ -13,7 +13,7 @@
 #include <memory>
 #include <functional>
 
-namespace atomikpe::network::protocol {
+namespace cursestone::network::protocol {
 
 class PacketPool {
 public:
@@ -33,4 +33,4 @@ private:
     PacketPool() = default;
 };
 
-} // namespace atomikpe::network::protocol
+} // namespace cursestone::network::protocol

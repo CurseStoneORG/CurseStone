@@ -2,11 +2,11 @@
 // ItemSpawnEvent.h — ported from cn.nukkit.event.entity.ItemSpawnEvent
 #pragma once
 #include "EntityEvent.h"
-namespace atomikpe { namespace entity { class Entity; } }
-namespace atomikpe::event::entity {
+namespace cursestone { namespace entity { class Entity; } }
+namespace cursestone::event::entity {
 class ItemSpawnEvent : public EntityEvent {
 public:
-    explicit ItemSpawnEvent(atomikpe::entity::Entity* e) : EntityEvent(e) {}
+    explicit ItemSpawnEvent(cursestone::entity::Entity* e) : EntityEvent(e) {}
 
     const std::string& eventName() const override {
         static std::string n = "ItemSpawnEvent"; return n;

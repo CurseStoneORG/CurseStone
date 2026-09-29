@@ -2,7 +2,7 @@
 // ExplodePacket.cpp — encoder per Infinity ExplodePacket.php.
 #include "ExplodePacket.h"
 
-namespace atomikpe::network::protocol {
+namespace cursestone::network::protocol {
 
 void ExplodePacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
@@ -18,4 +18,4 @@ bool ExplodePacket::decode(const uint8_t* data, size_t len) {
     return true;  // server→client only
 }
 
-} // namespace atomikpe::network::protocol
+} // namespace cursestone::network::protocol

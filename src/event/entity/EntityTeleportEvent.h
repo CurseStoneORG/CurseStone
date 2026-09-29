@@ -3,8 +3,8 @@
 #pragma once
 #include "EntityEvent.h"
 #include "../Cancellable.h"
-namespace atomikpe { namespace entity { class Entity; } }
-namespace atomikpe::event::entity {
+namespace cursestone { namespace entity { class Entity; } }
+namespace cursestone::event::entity {
 class EntityTeleportEvent : public EntityEvent, public Cancellable {
 public:
     double fromX = 0.0;
@@ -14,7 +14,7 @@ public:
     double toY = 0.0;
     double toZ = 0.0;
 
-    EntityTeleportEvent(atomikpe::entity::Entity* e,
+    EntityTeleportEvent(cursestone::entity::Entity* e,
                         double fx, double fy, double fz,
                         double tx, double ty, double tz)
         : EntityEvent(e), fromX(fx), fromY(fy), fromZ(fz),

@@ -42,7 +42,7 @@
 #include <sstream>
 #include <string>
 
-namespace atomikpe::level {
+namespace cursestone::level {
 
 // Creates `path` and every missing parent directory (mkdir -p
 // semantics). The previous version of this function was a single
@@ -351,7 +351,7 @@ bool Level::tryClaimDroppedItem(int64_t eid) {
 // ============================================================
 // Tile-entity registry
 // ============================================================
-std::shared_ptr<atomikpe::tile::Tile> Level::getTile(int32_t x, int32_t y, int32_t z) {
+std::shared_ptr<cursestone::tile::Tile> Level::getTile(int32_t x, int32_t y, int32_t z) {
     ensureTilesLoaded(x >> 4, z >> 4);
     std::lock_guard<std::mutex> lk(tiles_mtx_);
     auto it = tiles_.find(packTilePos(x, y, z));
@@ -359,7 +359,7 @@ std::shared_ptr<atomikpe::tile::Tile> Level::getTile(int32_t x, int32_t y, int32
     return it->second;
 }
 
-void Level::setTile(int32_t x, int32_t y, int32_t z, std::shared_ptr<atomikpe::tile::Tile> t) {
+void Level::setTile(int32_t x, int32_t y, int32_t z, std::shared_ptr<cursestone::tile::Tile> t) {
     std::lock_guard<std::mutex> lk(tiles_mtx_);
     tiles_[packTilePos(x, y, z)] = std::move(t);
 }
@@ -400,12 +400,12 @@ void Level::ensureTilesLoaded(int32_t cx, int32_t cz) {
         int32_t ty = mcp_compound_tag_get_int(tag, "y", 0);
         int32_t tz = mcp_compound_tag_get_int(tag, "z", 0);
 
-        std::shared_ptr<atomikpe::tile::Tile> tile;
-        atomikpe::level::Position pos(tx, ty, tz);
+        std::shared_ptr<cursestone::tile::Tile> tile;
+        cursestone::level::Position pos(tx, ty, tz);
         if (std::strcmp(id, "Chest") == 0) {
-            tile = std::make_shared<atomikpe::tile::TileChest>(pos);
+            tile = std::make_shared<cursestone::tile::TileChest>(pos);
         } else if (std::strcmp(id, "Sign") == 0) {
-            tile = std::make_shared<atomikpe::tile::TileSign>(pos);
+            tile = std::make_shared<cursestone::tile::TileSign>(pos);
         }
         // Other tile ids (Furnace, MobSpawner, ...) don't persist real
         // content yet — see Tile::writeNBT's base no-op — so there's
@@ -433,7 +433,7 @@ void Level::syncTilesToChunks() {
     // dirty chest and one untouched chest would lose the untouched
     // chest's blob entirely — clear_tile_entities doesn't know which
     // entries "should" survive, it just empties the array.
-    std::unordered_map<uint64_t, std::vector<std::shared_ptr<atomikpe::tile::Tile>>> byChunk;
+    std::unordered_map<uint64_t, std::vector<std::shared_ptr<cursestone::tile::Tile>>> byChunk;
     bool anyDirty = false;
     {
         std::lock_guard<std::mutex> lk(tiles_mtx_);
@@ -486,7 +486,7 @@ void Level::evictTilesForChunk(int32_t cx, int32_t cz) {
     // Snapshot this chunk's tiles, then release tiles_mtx_ before doing
     // any NBT work or touching chunks_ — same lock-ordering rule
     // syncTilesToChunks() already follows above.
-    std::vector<std::shared_ptr<atomikpe::tile::Tile>> tilesInChunk;
+    std::vector<std::shared_ptr<cursestone::tile::Tile>> tilesInChunk;
     {
         std::lock_guard<std::mutex> lk(tiles_mtx_);
         for (auto it = tiles_.begin(); it != tiles_.end(); ) {
@@ -822,4 +822,4 @@ void Level::doWeatherTick(uint64_t current_tick) {
     }
 }
 
-} // namespace atomikpe::level
+} // namespace cursestone::level

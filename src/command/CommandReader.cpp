@@ -1,2 +1,2 @@
 #include "CommandReader.h"
-namespace atomikpe {}
+namespace cursestone {}

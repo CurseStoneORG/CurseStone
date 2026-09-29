@@ -14,7 +14,7 @@
 #include <exception>
 #include <string>
 #include "../utils/MainLogger.hpp"
-namespace atomikpe::scheduler {
+namespace cursestone::scheduler {
 class AsyncWorker {
 public:
     using Work = std::function<void()>;

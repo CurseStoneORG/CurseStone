@@ -5,7 +5,7 @@
 #include <cctype>
 #include <sstream>
 
-namespace atomikpe::utils {
+namespace cursestone::utils {
 
 VersionString::VersionString(const std::string& s) {
     size_t i = 0;
@@ -54,4 +54,4 @@ std::string VersionString::toString() const {
     return o.str();
 }
 
-} // namespace atomikpe::utils
+} // namespace cursestone::utils

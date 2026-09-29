@@ -4,7 +4,7 @@
 // PMMP decode: getInt(eid), getInt (unknown1), getSlot, getByte (slot), getByte (selectedSlot)
 #include "MobEquipmentPacket.h"
 
-namespace atomikpe::network::protocol {
+namespace cursestone::network::protocol {
 
 namespace {
 bool readSlot(PacketReader& r, int16_t& id, uint8_t& count, int16_t& damage) {
@@ -39,4 +39,4 @@ bool MobEquipmentPacket::decode(const uint8_t* data, size_t len) {
     return true;
 }
 
-} // namespace atomikpe::network::protocol
+} // namespace cursestone::network::protocol

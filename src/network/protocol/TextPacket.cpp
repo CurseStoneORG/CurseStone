@@ -6,7 +6,7 @@
 
 #include <cstdint>
 
-namespace atomikpe::network::protocol {
+namespace cursestone::network::protocol {
 
 void TextPacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
@@ -63,4 +63,4 @@ bool TextPacket::decode(const uint8_t* data, size_t len) {
     return false;
 }
 
-} // namespace atomikpe::network::protocol
+} // namespace cursestone::network::protocol

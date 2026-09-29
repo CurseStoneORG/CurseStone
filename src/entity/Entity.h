@@ -8,7 +8,7 @@
 #include "math/Vector3.h"
 #include "math/AxisAlignedBB.h"
 #include "level/Position.h"
-namespace atomikpe {
+namespace cursestone {
 namespace entity {
 class Entity {
 public:
@@ -17,17 +17,17 @@ public:
     int64_t runtimeId() const { return runtime_id_; }
     int32_t networkId() const { return network_id_; }
     void setNetworkId(int32_t id) { network_id_ = id; }
-    const atomikpe::math::Vector3& position() const { return pos_; }
-    const atomikpe::math::Vector3& motion() const  { return motion_; }
-    void setPosition(atomikpe::math::Vector3 p) { pos_ = p; }
-    void setMotion(atomikpe::math::Vector3 m) { motion_ = m; }
+    const cursestone::math::Vector3& position() const { return pos_; }
+    const cursestone::math::Vector3& motion() const  { return motion_; }
+    void setPosition(cursestone::math::Vector3 p) { pos_ = p; }
+    void setMotion(cursestone::math::Vector3 m) { motion_ = m; }
     float yaw() const { return yaw_; }
     float pitch() const { return pitch_; }
     void setRotation(float yaw, float pitch) { yaw_ = yaw; pitch_ = pitch; }
     bool onGround() const { return on_ground_; }
     void setOnGround(bool b) { on_ground_ = b; }
     // Bounding box for collision (defaults to 0.6×1.8×0.6).
-    virtual atomikpe::math::AxisAlignedBB getBoundingBox() const;
+    virtual cursestone::math::AxisAlignedBB getBoundingBox() const;
     // Ticks this entity. Default: gravity + friction + simple AABB
     // collision against blocks in the level.
     virtual void tick(uint64_t current_tick);
@@ -38,7 +38,7 @@ public:
     // ---- Damage / status effects (stubs) ----
     // These exist so BlockFire::onEntityCollide can compile against a
     // fully-formed Entity API. The damage / fire-on-entity systems are
-    // not implemented yet in AtomikPE — the bodies are intentional no-ops
+    // not implemented yet in CurseStone — the bodies are intentional no-ops
     // and marked with TODO so they're easy to find later.
     // mirrors PMMP Entity::attack(EntityDamageEvent)
     virtual void attack(float /*damage*/) { /* TODO: damage event pipeline */ }
@@ -47,8 +47,8 @@ public:
 protected:
     int64_t runtime_id_;
     int32_t network_id_ = 0;
-    atomikpe::math::Vector3 pos_;
-    atomikpe::math::Vector3 motion_;
+    cursestone::math::Vector3 pos_;
+    cursestone::math::Vector3 motion_;
     float yaw_ = 0.0f, pitch_ = 0.0f;
     bool on_ground_ = false;
     bool closed_ = false;

@@ -1,6 +1,6 @@
 #pragma once
 #include "Populator.h"
-namespace atomikpe::level::generator::populator {
+namespace cursestone::level::generator::populator {
 class PopulatorTallGrass : public Populator {
 public:
     explicit PopulatorTallGrass(int attempts_per_chunk) : attempts_(attempts_per_chunk) {}

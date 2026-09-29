@@ -1,2 +1,2 @@
 #include "ItemCoal.h"
-namespace atomikpe::item {}
+namespace cursestone::item {}

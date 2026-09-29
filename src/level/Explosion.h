@@ -7,7 +7,7 @@
 #include "level/Position.h"
 #include <vector>
 #include <cstdint>
-namespace atomikpe::level {
+namespace cursestone::level {
 class Explosion {
 public:
     Explosion(Position pos, float power)

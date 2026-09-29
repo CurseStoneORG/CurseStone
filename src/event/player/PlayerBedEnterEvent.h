@@ -3,18 +3,18 @@
 #pragma once
 #include "PlayerEvent.h"
 #include "../Cancellable.h"
-namespace atomikpe { class Player; }
+namespace cursestone { class Player; }
 
-namespace atomikpe::event::player {
+namespace cursestone::event::player {
 class PlayerBedEnterEvent : public PlayerEvent, public Cancellable {
 public:
     int x = 0;
     int y = 0;
     int z = 0;
-    PlayerBedEnterEvent(atomikpe::Player* p, int bx, int by, int bz)
+    PlayerBedEnterEvent(cursestone::Player* p, int bx, int by, int bz)
         : PlayerEvent(p), x(bx), y(by), z(bz) {}
     const std::string& eventName() const override {
         static std::string n = "PlayerBedEnterEvent"; return n;
     }
 };
-} // namespace atomikpe::event::player
+} // namespace cursestone::event::player

@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <cctype>
 
-namespace atomikpe::utils {
+namespace cursestone::utils {
 
 // Split string on a single-char delimiter (whitespace-aware).
 inline std::vector<std::string> split(const std::string& s, char delim) {
@@ -42,4 +42,4 @@ inline std::string toUpper(std::string s) {
     return s;
 }
 
-} // namespace atomikpe::utils
+} // namespace cursestone::utils

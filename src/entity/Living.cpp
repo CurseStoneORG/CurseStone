@@ -3,7 +3,7 @@
 #include "event/entity/EntityDamageEvent.h"
 #include "event/entity/EntityDamageByEntityEvent.h"
 
-namespace atomikpe::entity {
+namespace cursestone::entity {
 
 bool Living::applyDamage(float amount) {
     bool was_alive = health_ > 0.0f;

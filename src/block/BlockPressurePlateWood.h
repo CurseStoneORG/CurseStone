@@ -2,7 +2,7 @@
 #include "BlockPressurePlate.h"
 #include <string>
 #include "BlockIds.h"
-namespace atomikpe::block {
+namespace cursestone::block {
 class BlockPressurePlateWood : public BlockPressurePlate {
 public:
     uint8_t id() const override { return WOOD_PRESSURE_PLATE; }

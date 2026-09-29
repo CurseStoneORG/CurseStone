@@ -2,7 +2,7 @@
 #include "BlockStairsWood.h"
 #include <string>
 #include "BlockIds.h"
-namespace atomikpe::block {
+namespace cursestone::block {
 class BlockStairsJungle : public BlockStairsWood {
 public:
     uint8_t id() const override { return WOOD_STAIRS; }

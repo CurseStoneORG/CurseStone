@@ -1,6 +1,6 @@
 #pragma once
 #include "Living.h"
-namespace atomikpe::entity {
+namespace cursestone::entity {
 class Creature : public Living {
 public:
     using Living::Living;

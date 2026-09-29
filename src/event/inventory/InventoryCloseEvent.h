@@ -2,17 +2,17 @@
 // InventoryCloseEvent.h — ported from cn.nukkit.event.inventory.InventoryCloseEvent
 #pragma once
 #include "InventoryEvent.h"
-namespace atomikpe::event::inventory {
+namespace cursestone::event::inventory {
 
 class InventoryCloseEvent : public InventoryEvent {
 public:
-    atomikpe::Player* who;
-    InventoryCloseEvent(std::shared_ptr<atomikpe::inventory::Inventory> inv, atomikpe::Player* p)
+    cursestone::Player* who;
+    InventoryCloseEvent(std::shared_ptr<cursestone::inventory::Inventory> inv, cursestone::Player* p)
         : InventoryEvent(std::move(inv)), who(p) {}
-    atomikpe::Player* getPlayer() { return who; }
+    cursestone::Player* getPlayer() { return who; }
     const std::string& eventName() const override {
         static std::string n = "InventoryCloseEvent"; return n;
     }
 };
 
-} // namespace atomikpe::event::inventory
+} // namespace cursestone::event::inventory

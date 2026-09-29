@@ -53,7 +53,7 @@
 #include <sys/types.h>
 #include <cctype>
 
-namespace atomikpe {
+namespace cursestone {
 
 Server::Server() = default;
 Server::~Server() = default;
@@ -63,9 +63,9 @@ void Server::loadConfig() {
     Config cfg;
 
     // First try PMMP-style server.properties (key=value INI file).
-    // If it doesn't exist, fall back to atomikpe.yml.
+    // If it doesn't exist, fall back to cursestone.yml.
     std::string props_path = dataPath_ + "/server.properties";
-    std::string yaml_path  = dataPath_ + "/atomikpe.yml";
+    std::string yaml_path  = dataPath_ + "/cursestone.yml";
     bool loaded_props = false;
     if (cfg.loadIni(props_path)) {
         loaded_props = true;
@@ -116,7 +116,7 @@ void Server::loadConfig() {
 
     ip_            = get_str("server.ip", "server-ip", "0.0.0.0");
     port_          = (uint16_t)get_int("server.port", "server-port", 19132);
-    motd_          = get_str("server.motd", "motd", "AtomikPE");
+    motd_          = get_str("server.motd", "motd", "CurseStone");
     max_players_   = (int)get_int("server.max-players", "max-players", 20);
     gamemode_      = (int)get_int("server.gamemode", "gamemode", 0);
     difficulty_    = (int)get_int("server.difficulty", "difficulty", 1);
@@ -128,7 +128,7 @@ void Server::loadConfig() {
     autosave_ticks_ = (int)get_int("server.autosave-ticks", "autosave-ticks", 6000);
 
     // Memory budget for the global GarbageCollector. Previously this key
-    // existed in atomikpe.yml but was never read — MemoryManager silently
+    // existed in cursestone.yml but was never read — MemoryManager silently
     // ran on its hardcoded 512 MB default. Also expose the GC pass
     // interval (ticks between coordinated sweeps; 200 ticks = 10s at
     // 20 TPS). Must be set BEFORE the tick loop starts so the very first
@@ -161,8 +161,8 @@ void Server::initLogger() {
     // to disk in real time (PMMP-equivalent: pocketmine.log).
     std::string log_path = dataPath_ + "/server.log";
     mcp_main_logger_init(log_path.c_str(), /*colored=*/true);
-    utils::MainLogger::get().info(std::string(ATOMIKPE_NAME) +
-        " v" + ATOMIKPE_VERSION + " (codename: " + ATOMIKPE_CODENAME + ")");
+    utils::MainLogger::get().info(std::string(CURSESTONE_NAME) +
+        " v" + CURSESTONE_VERSION + " (codename: " + CURSESTONE_CODENAME + ")");
     utils::MainLogger::get().info("Target: Minecraft PE " + std::string(MINECRAFT_VERSION) +
         ", protocol " + std::to_string(PROTOCOL_VERSION));
     utils::MainLogger::get().info("Log file: " + log_path);
@@ -188,11 +188,11 @@ void Server::openNetwork() {
 }
 
 void Server::loadDefaultLevel() {
-    // Load level name/format/generator from server.properties or atomikpe.yml.
+    // Load level name/format/generator from server.properties or cursestone.yml.
     using utils::Config;
     Config cfg;
     cfg.loadIni(dataPath_ + "/server.properties");
-    cfg.loadYaml(dataPath_ + "/atomikpe.yml");
+    cfg.loadYaml(dataPath_ + "/cursestone.yml");
 
     auto get_str = [&](const char* yaml_key, const char* ini_key,
                        const char* def) -> std::string {
@@ -336,8 +336,8 @@ void Server::runTickLoop() {
         tick();
         auto elapsed = std::chrono::steady_clock::now() - start_ts;
         auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
-        if (elapsed_ms < ATOMIK_TICK_MS) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(ATOMIK_TICK_MS - elapsed_ms));
+        if (elapsed_ms < CURSESTONE_TICK_MS) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(CURSESTONE_TICK_MS - elapsed_ms));
         }
         // Compute TPS once per second.
         if (currentTick_ - last_tick_count >= 20) {
@@ -686,7 +686,7 @@ NbtPtr Server::getOfflinePlayerData(const std::string& name) {
     if (buf.empty()) return buildDefaultPlayerNbt(this, name);
 
     // Nukkit-style player.dat: GZIP-compressed big-endian NBT.
-    // Fall back to plain little-endian for legacy AtomikPE files.
+    // Fall back to plain little-endian for legacy CurseStone files.
     mcp_tag_t* root = nullptr;
     {
         // Try GZIP + big-endian first.
@@ -718,7 +718,7 @@ NbtPtr Server::getOfflinePlayerData(const std::string& name) {
         root = mcp_nbt_read_bytes(buf.data(), buf.size(), /*little_endian=*/false);
     }
     if (!root) {
-        // Legacy: try plain little-endian (uncompressed, old AtomikPE).
+        // Legacy: try plain little-endian (uncompressed, old CurseStone).
         root = mcp_nbt_read_bytes(buf.data(), buf.size(), /*little_endian=*/true);
     }
     if (!root) {
@@ -906,4 +906,4 @@ void Server::sendFullPlayerListData(Player* /*target*/) {
     // We handle this in Player::doFirstSpawn already.
 }
 
-} // namespace atomikpe
+} // namespace cursestone

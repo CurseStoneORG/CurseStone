@@ -2,16 +2,16 @@
 // PlayerBucketEmptyEvent.h — ported from cn.nukkit.event.player.PlayerBucketEmptyEvent
 #pragma once
 #include "PlayerBucketEvent.h"
-namespace atomikpe { class Player; }
+namespace cursestone { class Player; }
 
-namespace atomikpe::event::player {
+namespace cursestone::event::player {
 class PlayerBucketEmptyEvent : public PlayerBucketEvent {
 public:
-    PlayerBucketEmptyEvent(atomikpe::Player* p, const atomikpe::item::ItemStack& b,
+    PlayerBucketEmptyEvent(cursestone::Player* p, const cursestone::item::ItemStack& b,
                            int bx, int by, int bz, int f)
         : PlayerBucketEvent(p, b, bx, by, bz, f) {}
     const std::string& eventName() const override {
         static std::string n = "PlayerBucketEmptyEvent"; return n;
     }
 };
-} // namespace atomikpe::event::player
+} // namespace cursestone::event::player

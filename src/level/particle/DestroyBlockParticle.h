@@ -1,7 +1,7 @@
 #pragma once
 #include "Particle.h"
 #include <cstdint>
-namespace atomikpe::level::particle {
+namespace cursestone::level::particle {
 class DestroyBlockParticle : public Particle {
 public:
     DestroyBlockParticle(Position pos, uint8_t block_id)

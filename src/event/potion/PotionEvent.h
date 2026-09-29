@@ -7,7 +7,7 @@
 #include "../Event.h"
 #include <string>
 
-namespace atomikpe::event::potion {
+namespace cursestone::event::potion {
 
 class PotionEvent : public Event {
 public:
@@ -20,4 +20,4 @@ public:
     }
 };
 
-} // namespace atomikpe::event::potion
+} // namespace cursestone::event::potion

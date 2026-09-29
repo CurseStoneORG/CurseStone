@@ -2,7 +2,7 @@
 // ClientboundMapItemDataPacket implementation (stub).
 #include "ClientboundMapItemDataPacket.h"
 
-namespace atomikpe::network::protocol {
+namespace cursestone::network::protocol {
 
 void ClientboundMapItemDataPacket::encode(std::vector<uint8_t>& out) const {
     (void)out;
@@ -16,4 +16,4 @@ bool ClientboundMapItemDataPacket::decode(const uint8_t* data, size_t len) {
     return true;
 }
 
-} // namespace atomikpe::network::protocol
+} // namespace cursestone::network::protocol

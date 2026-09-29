@@ -3,7 +3,7 @@
 // PMMP: putInt(radius).
 #include "ChunkRadiusUpdatedPacket.h"
 
-namespace atomikpe::network::protocol {
+namespace cursestone::network::protocol {
 
 void ChunkRadiusUpdatedPacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
@@ -15,4 +15,4 @@ bool ChunkRadiusUpdatedPacket::decode(const uint8_t* data, size_t len) {
     return r.readI32BE(radius);
 }
 
-} // namespace atomikpe::network::protocol
+} // namespace cursestone::network::protocol

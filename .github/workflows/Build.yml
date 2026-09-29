@@ -1,4 +1,4 @@
-name: Build AtomikPE
+name: Build CurseStone
 
 on:
   push:
@@ -10,7 +10,7 @@ on:
   workflow_call:
     inputs:
       version:
-        description: 'Versión del release (ej. Atomik-alpha-v1.0)'
+        description: 'Versión del release (ej. CurseStone-alpha-v1.0)'
         required: false
         type: string
       body:
@@ -63,8 +63,8 @@ jobs:
       - name: Subir binario Linux
         uses: actions/upload-artifact@v4
         with:
-          name: AtomikPE-linux-x86_64
-          path: build/linux-release/AtomikPE
+          name: CurseStone-linux-x86_64
+          path: build/linux-release/CurseStone
           retention-days: 7
 
   # ─────────────────────────────────────────────
@@ -135,7 +135,7 @@ jobs:
           cmake --build build-arm64 --parallel
           cmake --install build-arm64
 
-      - name: Configure AtomikPE para ARM64
+      - name: Configure CurseStone para ARM64
         run: |
           cmake -B build/android-arm64 \
             -G Ninja \
@@ -157,8 +157,8 @@ jobs:
       - name: Subir binario ARM64
         uses: actions/upload-artifact@v4
         with:
-          name: AtomikPE-android-arm64
-          path: build/android-arm64/AtomikPE
+          name: CurseStone-android-arm64
+          path: build/android-arm64/CurseStone
           retention-days: 14
 
   # ─────────────────────────────────────────────
@@ -181,13 +181,13 @@ jobs:
 
       - name: Renombrar binarios
         run: |
-          mv dist/AtomikPE-linux-x86_64/AtomikPE   dist/AtomikPE-linux-x86_64
-          mv dist/AtomikPE-android-arm64/AtomikPE  dist/AtomikPE-android-arm64
+          mv dist/CurseStone-linux-x86_64/CurseStone   dist/CurseStone-linux-x86_64
+          mv dist/CurseStone-android-arm64/CurseStone  dist/CurseStone-android-arm64
 
       - name: Publicar Release en GitHub
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/AtomikPE-linux-x86_64
-            dist/AtomikPE-android-arm64
+            dist/CurseStone-linux-x86_64
+            dist/CurseStone-android-arm64
           generate_release_notes: true

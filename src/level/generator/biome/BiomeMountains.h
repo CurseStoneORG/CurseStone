@@ -1,7 +1,7 @@
 // BiomeMountains — concrete biome.
 #pragma once
 #include "Biome.h"
-namespace atomikpe::level::generator::biome {
+namespace cursestone::level::generator::biome {
 class BiomeMountains : public Biome {
 public:
     uint8_t id() const override;

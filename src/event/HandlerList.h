@@ -39,7 +39,7 @@
 #include <cstdint>
 #include <functional>
 
-namespace atomikpe::event {
+namespace cursestone::event {
 
 class HandlerList {
 public:
@@ -74,4 +74,4 @@ private:
     uint64_t next_id_ = 1;
 };
 
-} // namespace atomikpe::event
+} // namespace cursestone::event

@@ -1,7 +1,7 @@
 #include "OfflinePlayer.h"
 #include "Server.h"
 #include "utils/MainLogger.hpp"
-namespace atomikpe {
+namespace cursestone {
 void OfflinePlayer::sendMessage(const std::string& msg) {
     // Offline players have no session — log the message at debug level.
     utils::MainLogger::get().debug("[OfflinePlayer:" + name_ + "] " + msg);

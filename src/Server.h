@@ -2,7 +2,7 @@
 // Server — singleton. Mirrors pocketmine/Server.php.
 //
 // Responsibilities:
-//   1. Boot: load atomikpe.yml, init logger, register blocks/items,
+//   1. Boot: load cursestone.yml, init logger, register blocks/items,
 //      create CommandMap + register default commands, create the
 //      default Level (overworld), open the RakLibInterface.
 //   2. Tick (every 50ms): advance scheduler, tick level(s), tick
@@ -30,7 +30,7 @@
 #include <unordered_set>
 #include <csignal>
 
-namespace atomikpe {
+namespace cursestone {
 class Player;
 class CommandMap;
 class CommandReader;
@@ -232,10 +232,10 @@ private:
     const volatile std::sig_atomic_t* external_stop_flag_ = nullptr;
     int tps_ = 20;
 
-    // Config (mirrors resources/atomikpe.yml).
+    // Config (mirrors resources/cursestone.yml).
     std::string ip_ = "0.0.0.0";
     uint16_t port_ = 19132;
-    std::string motd_ = "AtomikPE";
+    std::string motd_ = "CurseStone";
     int max_players_ = 20;
     int view_distance_ = 8;
     int gamemode_ = 0;
@@ -268,4 +268,4 @@ private:
     std::unique_ptr<permission::BanList> ip_bans_;
 };
 
-} // namespace atomikpe
+} // namespace cursestone

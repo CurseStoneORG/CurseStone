@@ -13,7 +13,7 @@
 #include <atomic>
 #include <functional>
 #include <string>
-namespace atomikpe {
+namespace cursestone {
 class CommandReader {
 public:
     using LineCallback = std::function<void(const std::string&)>;

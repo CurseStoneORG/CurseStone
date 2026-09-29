@@ -1,7 +1,7 @@
 #pragma once
 #include <string>
 #include <unordered_map>
-namespace atomikpe::permission {
+namespace cursestone::permission {
 class PermissionAttachment {
 public:
     void setPermission(const std::string& name, bool value) { perms_[name] = value; }

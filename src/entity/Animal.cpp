@@ -1,2 +1,2 @@
 #include "Animal.h"
-namespace atomikpe::entity {}
+namespace cursestone::entity {}

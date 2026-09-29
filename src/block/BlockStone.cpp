@@ -1,2 +1,2 @@
 #include "BlockStone.h"
-namespace atomikpe::block {}
+namespace cursestone::block {}

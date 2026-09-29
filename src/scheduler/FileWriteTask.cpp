@@ -2,7 +2,7 @@
 #include "../utils/MainLogger.hpp"
 #include <fstream>
 #include <string>
-namespace atomikpe::scheduler {
+namespace cursestone::scheduler {
 void FileWriteTask::onRun() {
     // FIX: previously this ignored every possible failure — a missing
     // parent directory, a full disk, a permissions error — and just

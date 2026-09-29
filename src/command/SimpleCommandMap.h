@@ -4,7 +4,7 @@
 #include <unordered_map>
 #include <vector>
 #include <memory>
-namespace atomikpe {
+namespace cursestone {
 class SimpleCommandMap : public CommandMap {
 public:
     bool registerCommand(std::unique_ptr<Command> cmd) override;

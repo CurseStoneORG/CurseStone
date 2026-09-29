@@ -15,7 +15,7 @@
 #include "defaults/SaveCommand.h"
 #include "defaults/WorkbenchCommand.h"
 #include <memory>
-namespace atomikpe {
+namespace cursestone {
 void registerDefaultCommands(CommandMap& map) {
     map.registerCommand(std::make_unique<StopCommand>());
     map.registerCommand(std::make_unique<HelpCommand>("help"));

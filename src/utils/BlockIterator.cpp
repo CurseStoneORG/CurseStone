@@ -8,7 +8,7 @@ extern "C" {
 
 #include <cmath>
 
-namespace atomikpe::utils {
+namespace cursestone::utils {
 
 BlockIterator::BlockIterator(const math::Vector3& start,
                               const math::Vector3& direction,
@@ -71,4 +71,4 @@ bool BlockIterator::next() {
     return traveled_ <= maxDistance_;
 }
 
-} // namespace atomikpe::utils
+} // namespace cursestone::utils

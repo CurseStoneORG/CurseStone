@@ -1,2 +1,2 @@
 #include "ItemEgg.h"
-namespace atomikpe::item {}
+namespace cursestone::item {}

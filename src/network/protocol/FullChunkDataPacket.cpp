@@ -5,7 +5,7 @@
 // All ints are BE.
 #include "FullChunkDataPacket.h"
 
-namespace atomikpe::network::protocol {
+namespace cursestone::network::protocol {
 
 void FullChunkDataPacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
@@ -30,4 +30,4 @@ bool FullChunkDataPacket::decode(const uint8_t* buf, size_t len) {
     return r.readBytes(data.data(), need);
 }
 
-} // namespace atomikpe::network::protocol
+} // namespace cursestone::network::protocol

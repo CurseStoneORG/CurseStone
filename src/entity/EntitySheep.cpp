@@ -1,2 +1,2 @@
 #include "EntitySheep.h"
-namespace atomikpe::entity {}
+namespace cursestone::entity {}

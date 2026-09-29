@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// AtomikPE entry point.
+// CurseStone entry point.
 // Initializes the server singleton and runs the main tick loop.
 #include "main.h"
 #include "Server.h"
@@ -31,14 +31,14 @@
 // so the crashdump still gets written (just without a stack walk).
 #if defined(__GLIBC__) || defined(__linux__) && !defined(__ANDROID__)
     // glibc / Linux native — use execinfo when available.
-    #define ATOMIK_HAVE_EXECINFO 1
+    #define CURSESTONE_HAVE_EXECINFO 1
     #include <execinfo.h>
 #elif defined(__ANDROID__) || defined(__BIONIC__)
     // Bionic — _Unwind_Backtrace from libunwind is the only portable way.
-    #define ATOMIK_HAVE_UNWIND 1
+    #define CURSESTONE_HAVE_UNWIND 1
     #include <unwind.h>
 #elif defined(__APPLE__)
-    #define ATOMIK_HAVE_EXECINFO 1
+    #define CURSESTONE_HAVE_EXECINFO 1
     #include <execinfo.h>
 #endif
 
@@ -48,12 +48,12 @@
 namespace {
 
 std::atomic<bool> g_shouldRun{true};
-atomikpe::CrashDump* g_crashDump = nullptr;
+cursestone::CrashDump* g_crashDump = nullptr;
 
 // ROOT CAUSE FIX ("server never marked as running / shutdown doesn't
 // fully stop the process, only ever seen on Linux"):
 //
-// handleSignal() used to call atomikpe::Server::getInstance().shutdown()
+// handleSignal() used to call cursestone::Server::getInstance().shutdown()
 // directly from inside the SIGINT/SIGTERM handler. Server::shutdown()
 // does real work: it builds a std::string and logs through the async
 // logger (malloc + mutex lock inside the logger's ring buffer), and it
@@ -104,7 +104,7 @@ volatile std::sig_atomic_t g_stopRequested = 0;
 // but in practice this only runs on fatal signals — the worst case
 // is a corrupted crash dump, which is better than nothing.
 
-#if defined(ATOMIK_HAVE_UNWIND)
+#if defined(CURSESTONE_HAVE_UNWIND)
 // libunwind-based backtrace (Android / bionic).
 struct UnwindContext {
     char** buf;        // not used; we write directly into `out`
@@ -131,7 +131,7 @@ std::string capture_backtrace(int max_frames = 32) {
     std::string out;
     out.reserve(512);
 
-#if defined(ATOMIK_HAVE_EXECINFO)
+#if defined(CURSESTONE_HAVE_EXECINFO)
     void* frames[32];
     int n = backtrace(frames, max_frames);
     char** syms = backtrace_symbols(frames, n);
@@ -140,7 +140,7 @@ std::string capture_backtrace(int max_frames = 32) {
         out += '\n';
     }
     free(syms);
-#elif defined(ATOMIK_HAVE_UNWIND)
+#elif defined(CURSESTONE_HAVE_UNWIND)
     UnwindContext uc{nullptr, &out, max_frames, 0};
     _Unwind_Backtrace(unwind_cb, &uc);
     if (uc.count == 0) {
@@ -188,7 +188,7 @@ void handleSignal(int sig) {
     // Also dump to stderr for immediate visibility.
     // Using write() instead of fputs because fputs can call malloc on
     // some stdio implementations, and malloc is not async-signal-safe.
-    const char header[] = "\n=== AtomikPE crash ===\n";
+    const char header[] = "\n=== CurseStone crash ===\n";
     write(STDERR_FILENO, header, sizeof(header) - 1);
     write(STDERR_FILENO, reason, std::strlen(reason));
     write(STDERR_FILENO, "\n", 1);
@@ -207,13 +207,13 @@ void handleSignal(int sig) {
 } // namespace
 
 int main(int argc, char* argv[]) {
-    using namespace atomikpe;
+    using namespace cursestone;
 
     // Banner — use fputs instead of std::cout to avoid mixing C and
     // C++ I/O streams (the async logger uses fputs on stdout).
     {
-        std::string banner = std::string(ATOMIKPE_NAME) + " v" +
-            ATOMIKPE_VERSION + " \"" + ATOMIKPE_CODENAME + "\"\n" +
+        std::string banner = std::string(CURSESTONE_NAME) + " v" +
+            CURSESTONE_VERSION + " \"" + CURSESTONE_CODENAME + "\"\n" +
             "Targeting Minecraft " + MINECRAFT_VERSION +
             " (protocol " + std::to_string(PROTOCOL_VERSION) + ")\n\n";
         fputs(banner.c_str(), stdout);
@@ -246,12 +246,12 @@ int main(int argc, char* argv[]) {
     // because mkdir can call malloc and deadlock).
     std::error_code ec;
     std::filesystem::create_directories(dataPath + "/crashdumps", ec);
-    atomikpe::CrashDump crashDump(dataPath + "/crashdumps");
+    cursestone::CrashDump crashDump(dataPath + "/crashdumps");
     g_crashDump = &crashDump;
 
     // First-run setup: NO interactive wizard anymore. The server is
     // fully playable straight out of the box — if there is no config
-    // yet, the default atomikpe.yml is written SILENTLY (no stdin
+    // yet, the default cursestone.yml is written SILENTLY (no stdin
     // prompts, which also broke headless/systemd/Android runs where
     // stdin is closed and fgets returned EOF for every question).
     // Operators customize settings by editing the generated files
@@ -263,7 +263,7 @@ int main(int argc, char* argv[]) {
             if (installer.generateDefaultConfig()) {
                 utils::MainLogger::get().info(
                     "First run: default config written (no setup questions). "
-                    "Edit atomikpe.yml / server.properties to customize.");
+                    "Edit cursestone.yml / server.properties to customize.");
             } else {
                 // Config file could not be created — loadConfig() falls
                 // back to built-in defaults, so the server still boots.
