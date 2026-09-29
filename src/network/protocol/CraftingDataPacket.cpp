@@ -1,29 +1,49 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // CraftingDataPacket — implementación (encode server→client).
 //
-// Formato verificado contra el CraftingDataPacket.php real de Genisys
-// (protocolo 84, MCPE 0.15.10) y BinaryStream::putSlot del mismo repo.
+// Formato verificado BYTE A BYTE contra el CraftingDataPacket.php real
+// de Dr1xyDev/Infinity (protocolo 84, MCPE 0.15.10), cross-checkeado
+// con Nukkit 2016 (mismo formato de la era) y Genisys para la
+// orientación de datos de recipes.json (fila-por-fila, anclado
+// arriba-izquierda).
+//
+// Resumen del wire format (ver CraftingDataPacket.h):
+//   putInt BE(count) — luego POR CADA entrada: putInt BE(type),
+//   putInt BE(bodyLen), body crudo — putByte(cleanRecipes).
+//   putSlot usa shorts BE: id, count (byte), damage, nbtLen (LE).
+//
+// BUG FIX (crash del APK al unirse): la versión anterior escribía
+// varints y omitía el length-prefix por entrada — un formato que no
+// existe en el protocolo 84. El cliente delimitaba cada entrada con
+// su longitud real, leía el primer campo del body como si fuera el
+// type de la siguiente entrada y el packet entero se parseaba como
+// basura → kick/crash total del APK al llegar el packet en el spawn.
 #include "CraftingDataPacket.h"
 #include "inventory/CraftingManager.h"
 
 namespace cursestone::network::protocol {
 namespace {
 
-// BinaryStream::putSlot fiel a protocolo 84:
-//   id == 0            → putVarInt(0) y nada más
-//   resto              → putVarInt(id) + putVarInt((damage<<8)|count)
+// BinaryStream::putSlot fiel a protocolo 84 (Infinity putSlot):
+//   id == 0            → putShort(0) y nada más
+//   resto              → putShort(id) + putByte(count) + putShort(damage)
 //                        + putLShort(nbtLen) + nbt
-// damage negativo (receta "any damage", -1) viaja sign-extendido en el
-// varint con signo — igual que el Item::get(id, -1) de PMMP.
+// damage negativo (receta "any damage", -1) viaja como 0xFFFF en el
+// short BE — exactamente lo que Item::get(id, -1) produce en PMMP.
 void putSlotRaw(PacketWriter& w, uint16_t id, int16_t meta, uint8_t count) {
     if (id == 0) {
-        w.writeVarI32(0);
+        w.writeI16BE(0);
         return;
     }
-    w.writeVarU32(id);
-    int32_t aux = (static_cast<int32_t>(meta) << 8) | (count & 0xFF);
-    w.writeVarI32(aux);
-    w.writeU16LE(0);   // nbtLen = 0
+    w.writeI16BE(static_cast<int16_t>(id));
+    w.writeU8(count);
+    w.writeI16BE(meta);          // -1 → 0xFFFF, igual que PMMP
+    w.writeU16LE(0);             // nbtLen = 0 (putLShort = LE)
+}
+
+// BinaryStream::putInt — 4 bytes BIG-endian con signo (pack("N")).
+void putIntBE(PacketWriter& w, int32_t v) {
+    w.writeI32BE(v);
 }
 
 } // namespace
@@ -50,66 +70,91 @@ void CraftingDataPacket::addAllRecipes(const inventory::CraftingManager& mgr) {
 
 void CraftingDataPacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
-    w.writeVarU32(static_cast<uint32_t>(entries_.size()));
+    putIntBE(w, static_cast<int32_t>(entries_.size()));
+
+    // Body de una entrada — se escribe a un stream temporal para poder
+    // anteponer (type, length) por entrada, igual que el $writer
+    // temporal del encode() de Infinity.
+    std::vector<uint8_t> body;
 
     for (const auto& rec : entries_) {
+        body.clear();
+        PacketWriter bw(body);
+
+        // OJO: el enum interno RecipeType (SHAPED=0/SHAPELESS=1) está
+        // INVERTIDO respecto a las constantes del wire (ENTRY_SHAPELESS=0/
+        // ENTRY_SHAPED=1) — mapear explícitamente, nunca cast directo.
+        int32_t entryType = -1;
+
         switch (rec.type) {
             case inventory::RECIPE_SHAPED: {
-                w.writeVarI32(ENTRY_SHAPED);
-                w.writeVarI32(rec.width);
-                w.writeVarI32(rec.height);
-                // Celdas fila por fila, SIN padding — exactamente
-                // Width x Height. Requirement por celda = 1 (Nukkit/PMMP
-                // fuerzan count 1 por ingrediente; el "Count: 9" del JSON
-                // legacy de Nukkit es un artefacto del generador).
+                entryType = ENTRY_SHAPED;
+                putIntBE(bw, rec.width);
+                putIntBE(bw, rec.height);
+                // Celdas fila-por-fila: z<Height exterior, x<Width
+                // interior (Genisys/Infinity). Recipe::grid está anclado
+                // arriba-izquierda en fila-major (row*3+col), así que el
+                // índice lineal es exactamente row*width + col SIN
+                // padding — Width x Height celdas exactas. Requirement
+                // por celda = 1 (el "Count: 9" del JSON legacy de Nukkit
+                // es un artefacto del generador; PMMP también fuerza 1).
                 const auto& grid = rec.grid;
                 const auto& meta = rec.gridMeta;
                 for (int row = 0; row < rec.height; ++row) {
                     for (int col = 0; col < rec.width; ++col) {
                         int i = row * 3 + col;
-                        putSlotRaw(w, grid[i], meta[i], 1);
+                        putSlotRaw(bw, grid[i], meta[i], 1);
                     }
                 }
-                w.writeVarU32(1);
-                putSlotRaw(w, rec.result.id,
+                putIntBE(bw, 1);
+                putSlotRaw(bw, rec.result.id,
                            static_cast<int16_t>(rec.result.meta),
                            static_cast<uint8_t>(rec.result.count));
-                w.writeBytes(rec.uuid.data(), 16);
+                bw.writeBytes(rec.uuid.data(), 16);
                 break;
             }
             case inventory::RECIPE_SHAPELESS: {
-                w.writeVarI32(ENTRY_SHAPELESS);
+                entryType = ENTRY_SHAPELESS;
                 const auto& ing = rec.ingredients;
                 const auto& imeta = rec.ingredientMeta;
-                w.writeVarU32(static_cast<uint32_t>(ing.size()));
+                putIntBE(bw, static_cast<int32_t>(ing.size()));
                 for (size_t i = 0; i < ing.size(); ++i) {
                     int16_t m = i < imeta.size() ? imeta[i] : 0;
-                    putSlotRaw(w, ing[i], m, 1);
+                    putSlotRaw(bw, ing[i], m, 1);
                 }
-                w.writeVarU32(1);
-                putSlotRaw(w, rec.result.id,
+                putIntBE(bw, 1);
+                putSlotRaw(bw, rec.result.id,
                            static_cast<int16_t>(rec.result.meta),
                            static_cast<uint8_t>(rec.result.count));
-                w.writeBytes(rec.uuid.data(), 16);
+                bw.writeBytes(rec.uuid.data(), 16);
                 break;
             }
             case inventory::RECIPE_FURNACE: {
                 uint16_t inputId = rec.ingredients.empty() ? 0 : rec.ingredients[0];
                 if (rec.furnaceInputMeta >= 0) {
-                    w.writeVarI32(ENTRY_FURNACE_DATA);
-                    w.writeVarI32(inputId);
-                    w.writeVarI32(rec.furnaceInputMeta);
+                    entryType = ENTRY_FURNACE_DATA;
+                    // ENTRY_FURNACE_DATA: (id << 16) | damage como UN
+                    // solo int BE (writeFurnaceRecipe de Infinity).
+                    putIntBE(bw, (static_cast<int32_t>(inputId) << 16) |
+                                     static_cast<int32_t>(rec.furnaceInputMeta));
                 } else {
-                    w.writeVarI32(ENTRY_FURNACE);
-                    w.writeVarI32(inputId);
+                    entryType = ENTRY_FURNACE;
+                    putIntBE(bw, inputId);
                 }
-                putSlotRaw(w, rec.result.id,
+                putSlotRaw(bw, rec.result.id,
                            static_cast<int16_t>(rec.result.meta),
                            static_cast<uint8_t>(rec.result.count));
                 break;
             }
+            default:
+                continue;   // tipo desconocido — no mandar la entrada
         }
+
+        putIntBE(w, entryType);
+        putIntBE(w, static_cast<int32_t>(body.size()));
+        w.writeBytes(body.data(), body.size());
     }
+
     w.writeU8(cleanRecipes ? 1 : 0);
 }
 

@@ -1481,6 +1481,26 @@ void Player::doFirstSpawn() {
         sendPacket(as);
     }
 
+    // CraftingDataPacket — la lista COMPLETA de recetas (shaped,
+    // shapeless y furnace). Se manda ANTES de PLAYER_SPAWN, igual que
+    // Infinity/Genisys (Server::onPlayerLogin → sendRecipeList antes de
+    // que el cliente salga de la pantalla de carga): algunos clientes
+    // 0.15 aplican el cleanRecipes y dejan de aceptar la lista si llega
+    // después del spawn. Es un packet global, no por-ventana: el
+    // cliente MCPE 0.15.x filtra qué recetas muestra según la UI que
+    // esté usando (inventario 2x2 vs mesa 3x3). Sin esto el cliente
+    // muestra la grilla pero ningún resultado y el click en el slot de
+    // resultado no produce nada.
+    if (srv_) {
+        auto cd = std::make_shared<network::protocol::CraftingDataPacket>();
+        if (auto* mgr = srv_->craftingManager()) {
+            cd->addAllRecipes(*mgr);
+            utils::MainLogger::get().info("Sent " +
+                std::to_string(mgr->size()) + " recipes to " + cfg_.username);
+        }
+        sendPacket(cd);
+    }
+
     // PLAYER_SPAWN — tells the client "you can show the world now".
     {
         auto ps = std::make_shared<network::protocol::PlayStatusPacket>();
@@ -1515,22 +1535,6 @@ void Player::doFirstSpawn() {
     // Fix: mandar el inventario propio completo acá también, antes de que
     // el jugador tenga oportunidad de interactuar con nada.
     sendInventory();
-
-    // CraftingDataPacket — la lista COMPLETA de recetas (338: shaped,
-    // shapeless y furnace). Es un packet global, no por-ventana: el
-    // cliente MCPE 0.15.x filtra qué recetas muestra según la UI que
-    // esté usando (inventario 2x2 vs mesa 3x3). Sin esto el cliente
-    // muetra la grilla pero ningún resultado y el click en el slot de
-    // resultado no produce nada.
-    if (srv_) {
-        auto cd = std::make_shared<network::protocol::CraftingDataPacket>();
-        if (auto* mgr = srv_->craftingManager()) {
-            cd->addAllRecipes(*mgr);
-            utils::MainLogger::get().info("Sent " +
-                std::to_string(mgr->size()) + " recipes to " + cfg_.username);
-        }
-        sendPacket(cd);
-    }
 
     // Broadcast a PlayerListPacket (ADD) with all currently-online players.
     //

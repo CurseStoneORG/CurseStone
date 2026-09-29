@@ -1,31 +1,49 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // CraftingDataPacket — server→client recipe list (MCPE protocol 84).
 //
-// PMMP/Genisys wire format (CraftingDataPacket::encode):
-//   putUnsignedVarInt(count(entries))
+// Wire format verificado BYTE A BYTE contra Dr1xyDev/Infinity
+// (pocketmine/network/protocol/CraftingDataPacket.php, protocolo 84 /
+// MCPE 0.15.10) y cross-checkeado con Nukkit 2016 (mismo formato):
+//
+//   putInt(BE)   count(entries)          <- Binary::writeInt = pack("N")
 //   foreach entry:
-//     putVarInt(entryType)
-//     ...entry body...
-//   putBool(cleanRecipes)
+//     putInt(BE)   entryType
+//     putInt(BE)   strlen(body)          <- LENGTH-PREFIX por entrada
+//     <body crudo>
+//   putByte     cleanRecipes
+//
+// El length-prefix por entrada es CRÍTICO: el cliente lo usa para
+// delimitar cada cuerpo y saltar entradas desconocidas. Sin él, el
+// primer campo del cuerpo se interpreta como el type de la siguiente
+// entrada y todo el packet se parsea como basura (kick/crash del APK).
 //
 // Entry bodies:
 //   ENTRY_SHAPELESS (0):
-//     putUnsignedVarInt(ingredientCount); putSlot(each);
-//     putUnsignedVarInt(1); putSlot(result);
+//     putInt(BE) ingredientCount; putSlot(each);
+//     putInt(BE) 1; putSlot(result);
 //     putUUID(16 raw bytes)
 //   ENTRY_SHAPED (1):
-//     putVarInt(width); putVarInt(height);
-//     putSlot(width*height celdas, fila por fila, SIN padding);
-//     putUnsignedVarInt(1); putSlot(result);
+//     putInt(BE) width; putInt(BE) height;
+//     putSlot(width*height celdas, fila-por-fila: z<Height exterior,
+//             x<Width interior — idéntico a Genisys/Infinity, y recipes.json
+//             es fila-major anclado arriba-izquierda, como Recipe::grid)
+//     putInt(BE) 1; putSlot(result);
 //     putUUID(16 raw bytes)
-//   ENTRY_FURNACE (2):  putVarInt(inputId); putSlot(result);
+//   ENTRY_FURNACE (2):   putInt(BE) inputId; putSlot(result);
 //   ENTRY_FURNACE_DATA (3):
-//     putVarInt(inputId); putVarInt(inputDamage); putSlot(result);
+//     putInt(BE) (inputId << 16) | inputDamage;   <- UN solo int, no dos
+//     putSlot(result);
 //
-// putSlot (BinaryStream::putSlot, protocolo 84):
-//   id==0  → putVarInt(0)
-//   else   → putVarInt(id) + putVarInt((damage << 8) | count)
-//            + putLShort(nbtLen) + nbt   (nbtLen=0 acá)
+// putSlot (BinaryStream::putSlot p84 — shorts BIG-endian, no varints):
+//   id==0  → putShort(0)                       (2 bytes, nada más)
+//   resto  → putShort(id) + putByte(count) + putShort(damage)
+//            + putLShort(nbtLen) + nbt   (nbtLen=0 acá; LShort sí es LE)
+//   damage -1 ("any damage") viaja como 0xFFFF en el short BE.
+//
+// cleanRecipes: Infinity/Genisys lo mandan en true (generateRecipeList
+// hace $pk->cleanRecipes = true). El cliente borra sus recetas por
+// defecto y usa SOLO las nuestras — con la lista completa cargada de
+// recipes.json es lo correcto.
 #pragma once
 
 #include "DataPacket.h"

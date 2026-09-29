@@ -2,13 +2,14 @@
 // CraftingEventPacket — client→server "el jugador crafteó esto" (MCPE
 // protocol 84).
 //
-// PMMP/Genisys decode:
+// Formato p84 verificado contra Dr1xyDev/Infinity + Nukkit 2016 —
+// getInt BE y slots de shorts BE (NO varints, NO putString):
 //   getByte()      windowId
-//   getVarInt()    type
+//   getInt(BE)     type
 //   get(16)        id (UUID binario de la receta — el mismo que el
 //                  server escribió en CraftingDataPacket)
-//   getUnsignedVarInt() size; getSlot() × size    (input, máx 128)
-//   getUnsignedVarInt() size; getSlot() × size    (output, máx 128)
+//   getInt(BE) size; getSlot() × size    (input, máx 128)
+//   getInt(BE) size; getSlot() × size    (output, máx 128)
 //
 // El server NUNCA encodea este packet (encode() de Genisys es vacío) —
 // el flujo se cierra con ContainerSetContentPacket windowid=0.
