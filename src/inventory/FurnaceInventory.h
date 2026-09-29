@@ -1,15 +1,25 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// FurnaceInventory — 3-slot container inventory (mirrors Nukkit FurnaceInventory).
+// FurnaceInventory — 3-slot container inventory (mirrors Nukkit
+// FurnaceInventory).
+//
+// Es el backing store real de TileFurnace (misma arquitectura que
+// ChestInventory para TileChest): un único lugar donde viven los 3
+// slots (0=INPUT, 1=FUEL, 2=RESULT) para que inventario, NBT y UI no
+// puedan divergir.
 #pragma once
 #include "BaseInventory.h"
 #include "InventoryType.h"
 namespace cursestone::inventory {
+
 class FurnaceInventory : public BaseInventory {
 public:
     FurnaceInventory()
         : BaseInventory(nullptr, InventoryType::get(InventoryType::FURNACE)) {}
-    int INPUT  = 0;
-    int FUEL   = 1;
-    int RESULT = 2;
+
+    // Índices de slot (convención Nukkit).
+    static constexpr int INPUT  = 0;
+    static constexpr int FUEL   = 1;
+    static constexpr int RESULT = 2;
 };
-} // namespace
+
+} // namespace cursestone::inventory

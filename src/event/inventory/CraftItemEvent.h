@@ -1,28 +1,30 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // CraftItemEvent.h — ported from cn.nukkit.event.inventory.CraftItemEvent
+//
+// Se dispara cuando un jugador completa un crafteo (CraftingEventPacket
+// validado, o fallback del close del inventario). Un listener puede
+// cancelarlo para impedir el craft (p. ej. región protegida); el server
+// entonces NO consume ingredientes NI da resultado, y re-sincroniza el
+// inventario del jugador.
 #pragma once
-#include "../Event.h"
+#include "InventoryEvent.h"
 #include "../Cancellable.h"
-#include "../../item/ItemStack.h"
-#include <vector>
-namespace cursestone { class Player; }
-
+#include "../../inventory/Recipe.h"
 namespace cursestone::event::inventory {
 
-// Forward-declare Recipe — will be a proper class when the crafting
-// system is ported.
-class Recipe;
-
-class CraftItemEvent : public Event, public Cancellable {
+class CraftItemEvent : public InventoryEvent, public Cancellable {
 public:
-    std::vector<cursestone::item::ItemStack> input;
-    Recipe* recipe;
-    cursestone::Player* player;
-    CraftItemEvent(cursestone::Player* p, std::vector<cursestone::item::ItemStack> in, Recipe* r)
-        : input(std::move(in)), recipe(r), player(p) {}
-    std::vector<cursestone::item::ItemStack> getInput() { return input; }
-    Recipe* getRecipe() { return recipe; }
-    cursestone::Player* getPlayer() { return player; }
+    cursestone::Player* who;
+    const cursestone::inventory::Recipe* recipe;
+
+    CraftItemEvent(cursestone::Player* p,
+                   std::shared_ptr<cursestone::inventory::Inventory> inv,
+                   const cursestone::inventory::Recipe& r)
+        : InventoryEvent(std::move(inv)), who(p), recipe(&r) {}
+
+    cursestone::Player* getPlayer() { return who; }
+    const cursestone::inventory::Recipe* getRecipe() const { return recipe; }
+
     const std::string& eventName() const override {
         static std::string n = "CraftItemEvent"; return n;
     }

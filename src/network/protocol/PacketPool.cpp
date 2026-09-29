@@ -37,6 +37,7 @@
 #include "AddItemEntityPacket.h"
 #include "ContainerSetContentPacket.h"
 #include "ContainerSetSlotPacket.h"
+#include "CraftingEventPacket.h"
 
 namespace cursestone::network::protocol {
 
@@ -71,6 +72,7 @@ std::shared_ptr<DataPacket> PacketPool::create(uint8_t pid) const {
         case ADD_ITEM_ENTITY_PACKET:        return std::make_shared<AddItemEntityPacket>();
         case CONTAINER_SET_CONTENT_PACKET:  return std::make_shared<ContainerSetContentPacket>();
         case CONTAINER_SET_SLOT_PACKET:     return std::make_shared<ContainerSetSlotPacket>();
+        case CRAFTING_EVENT_PACKET:         return std::make_shared<CraftingEventPacket>();
         default:
             // Unknown packet — return nullptr so callers can log + skip.
             return nullptr;

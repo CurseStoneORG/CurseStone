@@ -33,7 +33,7 @@ class SourceInterface;
 namespace level { class Level; }
 namespace network::protocol { class DataPacket; class LoginPacket; }
 namespace inventory { class PlayerInventory; }
-namespace tile { class TileChest; }
+namespace tile { class TileChest; class TileFurnace; }
 
 struct PlayerConfig {
     std::string username;
@@ -107,12 +107,20 @@ public:
     // un contenedor abierto a la vez.
     void openChestAt(int x, int y, int z);
 
-    // Cierra el cofre que este jugador tiene abierto actualmente (si
-    // hay uno). Manda ContainerClosePacket, decrementa el contador de
-    // viewers del TileChest y limpia open_chest_. No-op si no hay
-    // ningun cofre abierto. Se llama al recibir CONTAINER_CLOSE_PACKET,
-    // antes de abrir otro cofre, y desde close() al desconectarse.
+    // Cierra el contenedor que este jugador tiene abierto actualmente
+    // (cofre o horno). Manda ContainerClosePacket, saca al jugador de
+    // los viewers del tile y limpia open_container_. No-op si no hay
+    // ninguno abierto. Se llama al recibir CONTAINER_CLOSE_PACKET,
+    // antes de abrir otro contenedor, y desde close() al desconectarse.
     void closeOpenChest();
+
+    // Abre el horno en (x,y,z). Espejo exacto de openChestAt():
+    // reutiliza (o crea) el TileFurnace via Level::getTile/setTile,
+    // dispara InventoryOpenEvent (cancelable), registra al jugador en
+    // los viewers del tile (para que TileFurnace::tick le mande el
+    // progreso via ContainerSetDataPacket), abre la ventana
+    // FURNACE_WINDOW_ID y manda el volcado completo de los 3 slots.
+    void openFurnaceAt(int x, int y, int z);
 
     // Spawn a dropped item entity at the given position with a small random
     // outward motion. Mirrors PMMP `Level::dropItem`. Returns the allocated
@@ -208,6 +216,11 @@ public:
     // --- Inventory ---
     std::shared_ptr<inventory::PlayerInventory> getInventory() const { return inv_; }
 
+    // Contenedor genérico abierto (cofre o horno). El dispatcher de
+    // ContainerSetSlotPacket lo usa para rutear clicks en la ventana 1
+    // (cofre) o 2 (horno) sin duplicar código por tipo.
+    inventory::Inventory* openContainerInventory() const;
+
     // --- Coordinates for chunk sending ---
     int chunkX() const { return (int)(pos_.x) >> 4; }
     int chunkZ() const { return (int)(pos_.z) >> 4; }
@@ -293,6 +306,22 @@ public:
     int addWindow(void* /*inventory*/, int /*forceId*/ = -1) { return -1; }
     void removeWindow(void* /*inventory*/) {}
 
+    // --- Crafting (MCPE 0.15.x CraftingEventPacket) ---
+    // Estado del último CraftingEventPacket recibido. El cliente manda
+    // ESTE packet (no ContainerSetSlot) cuando termina de craftear:
+    // trae el UUID de la receta + input/output reportado. El flujo
+    // server-side es: validar receta + materiales en inv_, consumir
+    // ingredientes y dar el resultado — ver handleCraftingEvent().
+    void handleCraftingEvent(const std::array<uint8_t, 16>& recipe_uuid,
+                             const std::vector<cursestone::item::ItemStack>& input,
+                             const std::vector<cursestone::item::ItemStack>& output,
+                             uint8_t window_id);
+
+    // Fallback: matchea la grilla 2x2 del inventario contra las recetas
+    // y ejecuta el craft si hay match. Llamado desde el
+    // CONTAINER_CLOSE_PACKET de la ventana 0 (ver Player.cpp).
+    void handleInventoryCraft();
+
     // --- Dimension (Nukkit: setDimension/teleportToNether/teleportToOverworld) ---
     void setDimension() {}
     void teleportToNether() {}
@@ -327,6 +356,12 @@ public:
     // unicos otros windowid que este servidor entiende.
     static constexpr uint8_t CHEST_WINDOW_ID = 1;
 
+    // Ventana del horno abierto. Mismo esquema de id fijo que
+    // CHEST_WINDOW_ID: un jugador solo tiene UN contenedor abierto a la
+    // vez, y el cliente MCPE 0.15.x distingue "horno" de "cofre" por
+    // el TYPE byte de ContainerOpenPacket (TYPE_FURNACE), no por el id.
+    static constexpr uint8_t FURNACE_WINDOW_ID = 2;
+
     // --- Batch packets (Nukkit: batchDataPacket/dataPacket/directDataPacket) ---
     bool batchDataPacket(const std::vector<uint8_t>& data);
     bool dataPacket(std::shared_ptr<network::protocol::DataPacket> pk) { sendPacket(pk); return true; }
@@ -345,10 +380,12 @@ private:
     network::AdvancedSourceInterface* adv_iface_ = nullptr;
     std::shared_ptr<inventory::PlayerInventory> inv_;
     std::shared_ptr<Level> level_;
-    // The chest this player currently has open, if any. Only ever one
-    // at a time (see CHEST_WINDOW_ID). nullptr when no container is
-    // open. Set by openChestAt(), cleared by closeOpenChest().
+    // El contenedor abierto ahora mismo (cofre o horno), tipado por
+    // tipo de tile. Solo hay UNO a la vez (ver CHEST_WINDOW_ID /
+    // FURNACE_WINDOW_ID). Set por openChestAt()/openFurnaceAt(),
+    // limpiado por closeOpenChest().
     std::shared_ptr<tile::TileChest> open_chest_;
+    std::shared_ptr<tile::TileFurnace> open_furnace_;
     NbtPtr named_tag_;                       // player.dat contents (lazy load)
     std::atomic<bool> connected_{false};
     std::atomic<bool> logged_in_{false};
