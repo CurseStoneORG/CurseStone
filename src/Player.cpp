@@ -29,6 +29,7 @@
 #include "network/protocol/RemoveBlockPacket.h"
 #include "network/protocol/UpdateBlockPacket.h"
 #include "network/protocol/LevelEventPacket.h"
+#include "network/protocol/AnimatePacket.h"
 #include "network/protocol/MobEquipmentPacket.h"
 #include "network/protocol/MobArmorEquipmentPacket.h"
 #include "network/protocol/AddItemEntityPacket.h"
@@ -627,12 +628,45 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
             break;
         case network::protocol::MOB_EQUIPMENT_PACKET:
             // Client tells us which hotbar slot the player is now holding.
+            //
+            // Protocol 84 quirk (Genisys 0.15.10): a plain hotbar tap
+            // sends slot == selectedSlot == 0..8 (raw hotbar index), but
+            // equipping an item from the *inventory screen* sends
+            // slot = full inventory index (9..35) with selectedSlot = the
+            // hotbar row it belongs to. Only the selectedSlot byte is the
+            // real held-slot for the 9 hotbar positions.
             if (auto* me = dynamic_cast<network::protocol::MobEquipmentPacket*>(&p)) {
-                if (inv_ && me->hotbarSlot < 9) {
-                    inv_->setHeldSlot(me->hotbarSlot);
-                    if (srv_ && srv_->advancedLog()) {
-                        utils::MainLogger::get().info("[INV] " + cfg_.username +
-                            " switched to hotbar slot " + std::to_string(me->hotbarSlot));
+                if (inv_) {
+                    int held = me->selectedSlot;
+                    if (held < 0 || held > 8) held = me->hotbarSlot;
+                    if (held >= 0 && held < 9) {
+                        inv_->setHeldSlot(held);
+                        if (srv_ && srv_->advancedLog()) {
+                            utils::MainLogger::get().info("[INV] " + cfg_.username +
+                                " switched to hotbar slot " + std::to_string(held));
+                        }
+                    }
+                }
+            }
+            break;
+        case network::protocol::ANIMATE_PACKET:
+            // Client swung its arm (mining/punching/placing). PMMP
+            // ignores this server-side; we rebroadcast it to nearby
+            // players so arm swings are visible between clients. The
+            // client renders its own swing locally, so we exclude the
+            // origin player — same broadcast pattern as item pickups.
+            if (auto* an = dynamic_cast<network::protocol::AnimatePacket*>(&p)) {
+                an->eid = runtimeId();
+                auto fwd = std::make_shared<network::protocol::AnimatePacket>(*an);
+                if (srv_) {
+                    const auto& pos = position();
+                    int32_t an_cx = (int32_t)pos.x >> 4;
+                    int32_t an_cz = (int32_t)pos.z >> 4;
+                    for (auto& other : srv_->playersSnapshot()) {
+                        if (!other || other.get() == this) continue;
+                        if (other->isPendingRemoval() || !other->spawned()) continue;
+                        if (!other->isTrackingChunk(an_cx, an_cz)) continue;
+                        other->sendPacket(fwd);
                     }
                 }
             }
@@ -910,7 +944,6 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
         // Packets we acknowledge but don't act on for the MVP.
         case network::protocol::BATCH_PACKET:
         case network::protocol::PLAYER_INPUT_PACKET:
-        case network::protocol::ANIMATE_PACKET:
             break;
         case network::protocol::CONTAINER_CLOSE_PACKET:
             // Client closed whatever container UI it had open (X button,

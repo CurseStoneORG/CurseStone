@@ -32,6 +32,7 @@
 #include "RemoveBlockPacket.h"
 #include "UpdateBlockPacket.h"
 #include "LevelEventPacket.h"
+#include "AnimatePacket.h"
 #include "MobEquipmentPacket.h"
 #include "MobArmorEquipmentPacket.h"
 #include "AddItemEntityPacket.h"
@@ -67,6 +68,7 @@ std::shared_ptr<DataPacket> PacketPool::create(uint8_t pid) const {
         case REMOVE_BLOCK_PACKET:           return std::make_shared<RemoveBlockPacket>();
         case UPDATE_BLOCK_PACKET:           return std::make_shared<UpdateBlockPacket>();
         case LEVEL_EVENT_PACKET:            return std::make_shared<LevelEventPacket>();
+        case ANIMATE_PACKET:                 return std::make_shared<AnimatePacket>();
         case MOB_EQUIPMENT_PACKET:           return std::make_shared<MobEquipmentPacket>();
         case MOB_ARMOR_EQUIPMENT_PACKET:    return std::make_shared<MobArmorEquipmentPacket>();
         case ADD_ITEM_ENTITY_PACKET:        return std::make_shared<AddItemEntityPacket>();
