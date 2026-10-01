@@ -1,18 +1,24 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// AnimatePacket implementation (stub).
+// AnimatePacket.cpp — decode/encode (protocol 84).
+//
+// Genisys AnimatePacket (0.15.10) field order:
+//   putVarInt(action) | putEntityId(eid)
+//
+// Actions (PMMP AnimatePacket): 1 = swing arm.
 #include "AnimatePacket.h"
 
 namespace cursestone::network::protocol {
 
 void AnimatePacket::encode(std::vector<uint8_t>& out) const {
-    (void)out;
-    // TODO: Phase 6 stub — implement when packets are wired into Player handlers.
+    PacketWriter w(out);
+    w.writeVarU32(action);
+    w.writeI64BE(eid);
 }
 
 bool AnimatePacket::decode(const uint8_t* data, size_t len) {
-    (void)data;
-    (void)len;
-    // TODO: Phase 6 stub.
+    PacketReader r(data, len);
+    if (!r.readVarU32(action)) return false;
+    if (!r.readI64BE(eid))     return false;
     return true;
 }
 

@@ -1,13 +1,21 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// MobEquipmentPacket.h — client→server hotbar selection / item equip.
+// MobEquipmentPacket — client→server hotbar selection / item equip.
 //
-// PMMP wire format (protocol 84) — MobEquipmentPacket::decode:
-//   [1 byte ID 0x1b]
-//   [Int64 BE] eid
-//   [Int32 BE] unknown1  (PMMP reads but ignores)
-//   [Slot]     item       (variable-length)
-//   [Uint8]    slot       (selected hotbar slot 0..8)
-//   [Uint8]    selectedSlot
+// MCPE protocol 84 (MCPE 0.15.10) wire format — Genisys
+// MobEquipmentPacket::decode (iTXTech/Genisys, src/pocketmine/network/
+// protocol/MobEquipmentPacket.php):
+//
+//   [1 byte  ID 0x1b]
+//   [Long BE] eid           — getEntityId()
+//   [Slot]    item          — getSlot()
+//   [Byte]    slot          — getByte() — hotbar slot index 0..8
+//   [Byte]    selectedSlot  — getByte() — selected slot on the client's
+//                             hotbar UI (0..8)
+//
+// NOTE: Genisys (0.15.10, protocol 84) reads NO "unknown1" int32 here —
+// that extra int32 only exists in the old pre-0.15 PocketMine packet,
+// which is exactly why the previous decoder failed with
+// "decode() fallo para ID 0x1b".
 #pragma once
 
 #include "DataPacket.h"
@@ -21,13 +29,15 @@ public:
     uint8_t pid() const override { return MOB_EQUIPMENT_PACKET; }
 
     int64_t  eid = 0;
-    int32_t  unknown1 = 0;
-    // Decoded item slot.
+    // Decoded item slot (the item the player just selected/equipped).
     int16_t  itemId = 0;
     uint8_t  itemCount = 0;
     int16_t  itemDamage = 0;
     // Hotbar slot the player is now holding (0..8).
     uint8_t  hotbarSlot = 0;
+    // Second byte sent by the client (selectedSlot in PMMP). Kept for
+    // protocol fidelity; the server only acts on hotbarSlot.
+    uint8_t  selectedSlot = 0;
 
     void encode(std::vector<uint8_t>& out) const override;
     bool decode(const uint8_t* data, size_t len) override;
