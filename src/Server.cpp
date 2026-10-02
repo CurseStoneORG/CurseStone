@@ -3,6 +3,7 @@
 #include "Server.h"
 #include "MemoryManager.h"
 #include "workbench/WorkbenchManager.h"
+#include "diagnostics/Diagnostics.h"
 #include "Player.h"
 #include "utils/MainLogger.h"
 #include "utils/MainLogger.hpp"
@@ -254,6 +255,11 @@ void Server::start(const std::string& dataPath) {
     dataPath_ = dataPath;
     running_.store(true, std::memory_order_relaxed);
 
+    // Diagnostics: mark the server start so crashdumps can report uptime.
+    diagnostics::Diagnostics::get().setUptimeStart(
+        (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count());
+
     // Ensure data dir exists.
     ::mkdir(dataPath_.c_str(), 0755);
     ::mkdir((dataPath_ + "/resources").c_str(), 0755);
@@ -380,6 +386,9 @@ void Server::runTickLoop() {
 void Server::tick() {
     ++currentTick_;
 
+    // Diagnostics: keep the current tick visible to crashdumps.
+    diagnostics::Diagnostics::get().setTick(currentTick_);
+
     // --- Workbench: tick start hook ---
     auto wb_start = std::chrono::steady_clock::now();
     WorkbenchManager::get().onTickStart();
@@ -468,6 +477,38 @@ void Server::tick() {
         auto pt1 = std::chrono::steady_clock::now();
         WorkbenchManager::get().onPlayerUpdate(p->getName(),
             (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(pt1 - pt0).count());
+    }
+
+    // Diagnostics: refresh the online-player snapshot (twice per second).
+    // It is captured here, on the main thread, so the SIGSEGV handler can
+    // read a ready-made snapshot instead of touching server state while
+    // the process is dying.
+    if (currentTick_ % 10 == 0) {
+        uint64_t now_wall = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        std::vector<diagnostics::PlayerSnapshot> ps;
+        ps.reserve(snap.size());
+        for (auto& p : snap) {
+            if (!p) continue;
+            diagnostics::PlayerSnapshot s;
+            s.name = p->getName();
+            s.ip = p->ip();
+            s.port = p->port();
+            s.eid = p->runtimeId();
+            auto pos = p->getNextPosition();
+            s.x = pos.x; s.y = pos.y; s.z = pos.z;
+            s.cx = p->chunkX();
+            s.cz = p->chunkZ();
+            s.gamemode = p->gamemode();
+            s.connected = p->isConnected();
+            s.logged_in = p->loggedIn();
+            s.spawned = p->spawned();
+            s.open_container = p->hasOpenContainer();
+            uint64_t la = p->lastActivityMs();
+            s.ms_since_activity = (la > 0 && now_wall > la) ? (now_wall - la) : 0;
+            ps.push_back(std::move(s));
+        }
+        diagnostics::Diagnostics::get().updatePlayers(std::move(ps));
     }
 
     // --- Phase: network (second pass — flush outbound) ---

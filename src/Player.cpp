@@ -1,6 +1,9 @@
 #include "Player.h"
 #include "workbench/WorkbenchManager.h"
+#include "diagnostics/Diagnostics.h"
 #include "Server.h"
+#include <exception>
+#include <stdexcept>
 #include "level/Level.h"
 #include "network/Network.h"
 #include "network/SourceInterface.h"
@@ -347,6 +350,11 @@ void Player::sendPacket(std::shared_ptr<network::protocol::DataPacket> p,
     p->writePacket(body);
     if (body.empty()) return;
 
+    // Always-on diagnostics: keep the last packets per server so a crash
+    // or error report shows what was flowing just before it happened.
+    diagnostics::Diagnostics::get().recordPacket(
+        /*out=*/true, cfg_.username, p->pid(), body.size());
+
     // Wrap in a BatchPacket for compression (PMMP semantics). The wire
     // shape is [0x06][BE int32 compressedLen][zlib([BE int32 subLen][sub])].
     network::protocol::BatchPacket batch;
@@ -376,10 +384,24 @@ void Player::sendMessage(const std::string& msg) {
 }
 
 void Player::kick(const std::string& reason) {
+    kick(reason, "");
+}
+
+void Player::kick(const std::string& reason, const std::string& detail) {
     // Send a DisconnectPacket first, then close the RakNet session.
+    //
+    // Nukkit parity: the disconnect screen the client renders carries the
+    // full message, so server-side errors that lead to a kick are shown to
+    // the player instead of vanishing into the console. `detail` is the
+    // extra diagnostic line (e.g. the exception message).
+    std::string message = reason;
+    if (!detail.empty()) {
+        message += "\n";
+        message += detail;
+    }
     if (connected_.load(std::memory_order_relaxed)) {
         auto dp = std::make_shared<network::protocol::DisconnectPacket>();
-        dp->message = reason;
+        dp->message = message;
         sendPacket(dp);
     }
     // Force-close the RakLib session so the client disconnects promptly.
@@ -388,7 +410,7 @@ void Player::kick(const std::string& reason) {
     // RakLib timeout path). closeSession() will trigger RakLib to fire
     // onCloseSession() → close(), but call_once() makes that a no-op.
     if (adv_iface_ && !cfg_.ip.empty()) {
-        adv_iface_->closeSession(cfg_.ip, cfg_.port, reason);
+        adv_iface_->closeSession(cfg_.ip, cfg_.port, message);
     }
     close(reason);
 }
@@ -561,6 +583,17 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
     WorkbenchManager::get().onPacketIn(
         cfg_.ip + ":" + std::to_string(cfg_.port), pid, 0);
 
+    // Always-on diagnostics: record the incoming packet and set the current
+    // "action" so a crash/error dump shows exactly which packet was being
+    // handled when things went wrong (crashdumps before this showed neither).
+    diagnostics::Diagnostics::get().recordPacket(
+        /*out=*/false, cfg_.username, pid, 0);
+
+    // Wrap the dispatch in try/catch so a bug in a single packet handler can
+    // never take the whole server down silently. On exception we log a full
+    // report (crashdumps/error_*.json) and kick just the offending player
+    // with the error in the disconnect message, like Nukkit does.
+    try {
     switch (pid) {
         case network::protocol::LOGIN_PACKET:
             if (auto* lp = dynamic_cast<network::protocol::LoginPacket*>(&p)) {
@@ -1063,6 +1096,38 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                 " sent unhandled packet id=0x" + hex);
             break;
         }
+    }
+    } catch (const std::exception& e) {
+        handlePacketError(pid, std::string("std::exception: ") + e.what());
+    } catch (...) {
+        handlePacketError(pid, "unknown exception (non-std) while handling packet");
+    }
+}
+
+// Central handler for an exception thrown while dispatching a packet.
+// Writes an always-on report (players + recent packets + errors) and kicks
+// the affected player with the error visible on their disconnect screen.
+void Player::handlePacketError(uint8_t pid, const std::string& what) {
+    char hex[8];
+    std::snprintf(hex, sizeof(hex), "%02x", pid);
+    const std::string summary =
+        "Internal server error handling packet 0x" + std::string(hex) +
+        " from " + cfg_.username + ": " + what;
+
+    // Never let diagnostics itself throw out of the catch block.
+    try {
+        diagnostics::Diagnostics::get().writeReport(
+            "exception", summary,
+            "class=Player::handleDataPacket pid=0x" + std::string(hex));
+    } catch (...) {}
+
+    // Nukkit-style: surface the error to the player instead of a bare kick.
+    try {
+        kick("Internal server error",
+             "The server hit an error while processing your action and the "
+             "error was logged. Details: " + what);
+    } catch (...) {
+        close("server error");
     }
 }
 

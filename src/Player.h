@@ -72,6 +72,9 @@ public:
 
     // --- Network callbacks (called from Network::dispatchSingle) ---
     void handleDataPacket(network::protocol::DataPacket& p);
+    // Called when a packet handler throws. Writes a diagnostics report and
+    // kicks this player with the error attached (Nukkit-style).
+    void handlePacketError(uint8_t pid, const std::string& what);
     void handleLogin(network::protocol::LoginPacket& p);
     void handleMovePlayer(double x, double y, double z, float yaw, float pitch);
     void handleChat(const std::string& message);
@@ -193,6 +196,11 @@ public:
                      bool ordered = false);
     void sendMessage(const std::string& msg) override;
     void kick(const std::string& reason = "disconnect.kick");
+    // Nukkit-style kick: the DisconnectPacket the client shows on screen
+    // carries both `reason` and an extra `detail` line. Used to surface
+    // server-side errors (e.g. an exception while handling a packet) to
+    // the affected player instead of silently dropping them.
+    void kick(const std::string& reason, const std::string& detail);
     void teleport(double x, double y, double z);
 
     // --- Spawning ---
@@ -253,6 +261,10 @@ public:
     // (cofre) o 2 (horno) sin duplicar código por tipo.
     inventory::Inventory* openContainerInventory() const;
 
+    // True if this player currently has a container (chest/furnace) open.
+    // Used by the diagnostics snapshot; see open_chest_/open_furnace_.
+    bool hasOpenContainer() const { return open_chest_ != nullptr || open_furnace_ != nullptr; }
+
     // --- Coordinates for chunk sending ---
     int chunkX() const { return (int)(pos_.x) >> 4; }
     int chunkZ() const { return (int)(pos_.z) >> 4; }
@@ -263,6 +275,8 @@ public:
     // instance is owned by Network). Lifetime is bounded by Network's lifetime.
     void setSourceInterface(network::AdvancedSourceInterface* iface) { adv_iface_ = iface; }
     network::AdvancedSourceInterface* sourceInterface() const { return adv_iface_; }
+    // Wall-clock ms of the last received packet (for diagnostics).
+    uint64_t lastActivityMs() const { return last_activity_ms_; }
     Server* server() const { return srv_; }
     const PlayerConfig& config() const { return cfg_; }
     const std::string& ip() const { return cfg_.ip; }
