@@ -1,196 +1,17 @@
 // CraftingManager.cpp — registra las recetas de crafteo y construye el
 // indice de busqueda.
 //
-// Las recetas ESTANDAR se registran EN CODIGO dentro de
-// registerBuiltinRecipes() (abajo), no se leen de un archivo: el
-// antiguo resources/recipes.json no viajaba con el binario, asi que una
-// release limpia arrancaba sin ninguna receta. El estilo sigue a
-// Dr1xyDev/Nukkit-InfinityEdition, que tambien declara todas las suyas
-// en el CraftingManager en vez de leerlas de un recurso empaquetado.
-//
-// loadFromJson() sigue existiendo como extension opcional para cargar
-// recetas extra desde un JSON con el mismo formato de Nukkit; para eso
-// si queda el mini-parser JSON de objetivo unico.
+// El set completo vive EN CODIGO, en registerBuiltinRecipes() mas abajo:
+// una llamada shaped()/shapeless()/furnace() por receta. No hay ningun
+// archivo de recetas que cargar: antes se leia uno externo que no se
+// empaqueta con el binario, asi que una release limpia arrancaba sin
+// ninguna receta y el crafting quedaba dead sin que nadie lo notara. El
+// estilo sigue a Dr1xyDev/Nukkit-InfinityEdition, que tambien declara
+// todas las suyas en el CraftingManager.
 #include "CraftingManager.h"
 #include "item/ItemConstants.h"
 #include <algorithm>
-#include <cstdio>
-#include <fstream>
-#include <sstream>
-#include <unordered_map>
-#include <cctype>
-#include <stdexcept>
 namespace cursestone::inventory {
-namespace {
-// ============================================================
-// Mini-parser JSON — devuelve el documento como variantes propias.
-// ============================================================
-struct JVal;
-using JArray = std::vector<JVal>;
-// Un vector de pares en lugar de unordered_map: JVal es un tipo
-// recursivo (OBJ contiene JVals) y un map con tipo incompleto no
-// compila. Los objetos de recipes.json tienen <= 6 claves, así que la
-// búsqueda lineal es incluso más rápida que hashear.
-struct JVal {
-    enum Kind { NUL, NUM, BOOL, STR, ARR, OBJ } kind = NUL;
-    double num = 0;
-    bool b = false;
-    std::string str;
-    JArray arr;
-    std::vector<std::pair<std::string, JVal>> obj;
-    bool isNum() const { return kind == NUM; }
-    bool isArr() const { return kind == ARR; }
-    bool isObj() const { return kind == OBJ; }
-    // get("k") devuelve nullptr si no es objeto o no existe la clave.
-    const JVal* get(const std::string& k) const {
-        if (kind != OBJ) return nullptr;
-        for (const auto& kv : obj) {
-            if (kv.first == k) return &kv.second;
-        }
-        return nullptr;
-    }
-};
-class JsonParser {
-public:
-    explicit JsonParser(const std::string& s) : s_(s) {}
-    JVal parse() {
-        JVal v = parseValue();
-        skipWs();
-        if (pos_ != s_.size()) fail("trailing garbage");
-        return v;
-    }
-private:
-    const std::string& s_;
-    size_t pos_ = 0;
-    [[noreturn]] void fail(const std::string& what) const {
-        throw std::runtime_error(std::string("recipes.json: ") + what +
-                                 " at byte " + std::to_string(pos_));
-    }
-    void skipWs() {
-        while (pos_ < s_.size() &&
-               (s_[pos_] == ' ' || s_[pos_] == '\t' ||
-                s_[pos_] == '\n' || s_[pos_] == '\r')) ++pos_;
-    }
-    char peek() {
-        if (pos_ >= s_.size()) fail("unexpected end of input");
-        return s_[pos_];
-    }
-    void expect(char c) {
-        if (peek() != c) fail(std::string("expected '") + c + "'");
-        ++pos_;
-    }
-    JVal parseValue() {
-        skipWs();
-        char c = peek();
-        switch (c) {
-            case '{': return parseObject();
-            case '[': return parseArray();
-            case '"': { JVal v; v.kind = JVal::STR; v.str = parseString(); return v; }
-            case 't': case 'f': return parseBool();
-            case 'n': return parseNull();
-            default:  return parseNumber();
-        }
-    }
-    JVal parseObject() {
-        JVal v; v.kind = JVal::OBJ;
-        expect('{'); skipWs();
-        if (peek() == '}') { ++pos_; return v; }
-        for (;;) {
-            skipWs();
-            std::string key = parseString();
-            skipWs(); expect(':');
-            v.obj.push_back({std::move(key), parseValue()});
-            skipWs();
-            char c = peek();
-            if (c == ',') { ++pos_; continue; }
-            if (c == '}') { ++pos_; return v; }
-            fail("expected ',' or '}' in object");
-        }
-    }
-    JVal parseArray() {
-        JVal v; v.kind = JVal::ARR;
-        expect('['); skipWs();
-        if (peek() == ']') { ++pos_; return v; }
-        for (;;) {
-            v.arr.push_back(parseValue());
-            skipWs();
-            char c = peek();
-            if (c == ',') { ++pos_; continue; }
-            if (c == ']') { ++pos_; return v; }
-            fail("expected ',' or ']' in array");
-        }
-    }
-    std::string parseString() {
-        expect('"');
-        std::string out;
-        while (pos_ < s_.size() && s_[pos_] != '"') {
-            char c = s_[pos_++];
-            if (c == '\\' && pos_ < s_.size()) {
-                char e = s_[pos_++];
-                switch (e) {
-                    case '"': out.push_back('"'); break;
-                    case '\\': out.push_back('\\'); break;
-                    case '/': out.push_back('/'); break;
-                    case 'n': out.push_back('\n'); break;
-                    case 't': out.push_back('\t'); break;
-                    case 'r': out.push_back('\r'); break;
-                    case 'b': out.push_back('\b'); break;
-                    case 'f': out.push_back('\f'); break;
-                    case 'u': {
-                        // \uXXXX — recipes.json no usa non-ASCII, así que
-                        // basta con consumir los 4 hex y mapear a '?'
-                        // (los únicos escapes reales serían ASCII).
-                        if (pos_ + 4 > s_.size()) fail("bad \\u escape");
-                        pos_ += 4;
-                        out.push_back('?');
-                        break;
-                    }
-                    default: fail("bad escape");
-                }
-            } else {
-                out.push_back(c);
-            }
-        }
-        expect('"');
-        return out;
-    }
-    JVal parseBool() {
-        if (s_.compare(pos_, 4, "true") == 0) { pos_ += 4; JVal v; v.kind = JVal::BOOL; v.b = true; return v; }
-        if (s_.compare(pos_, 5, "false") == 0) { pos_ += 5; JVal v; v.kind = JVal::BOOL; v.b = false; return v; }
-        fail("bad literal");
-    }
-    JVal parseNull() {
-        if (s_.compare(pos_, 4, "null") != 0) fail("bad literal");
-        pos_ += 4;
-        return JVal{};  // kind = NUL
-    }
-    JVal parseNumber() {
-        size_t start = pos_;
-        if (peek() == '-') ++pos_;
-        while (pos_ < s_.size() &&
-               (std::isdigit((unsigned char)s_[pos_]) || s_[pos_] == '.' ||
-                s_[pos_] == 'e' || s_[pos_] == 'E' ||
-                s_[pos_] == '+' || s_[pos_] == '-')) ++pos_;
-        if (pos_ == start) fail("bad number");
-        JVal v; v.kind = JVal::NUM;
-        v.num = std::stod(s_.substr(start, pos_ - start));
-        return v;
-    }
-};
-// Helpers de lectura con default.
-int jInt(const JVal* v, int def) { return (v && v->isNum()) ? (int)v->num : def; }
-// Item {ID, Count, Damage, NBT} del JSON -> ItemStack.
-cursestone::item::ItemStack jItem(const JVal* v) {
-    cursestone::item::ItemStack s;
-    if (!v || !v->isObj()) return s;
-    s.id    = (uint16_t)jInt(v->get("ID"), 0);
-    s.count = jInt(v->get("Count"), 0);
-    s.meta  = (uint8_t)(jInt(v->get("Damage"), 0) & 0xFF);
-    return s;
-}
-// Meta cruda del JSON (-1 = any damage).
-int16_t jMeta(const JVal* v) { return (int16_t)jInt(v->get("Damage"), -1); }
-} // namespace
 CraftingManager::CraftingManager() = default;
 
 
@@ -283,10 +104,12 @@ void CraftingManager::buildIndex() {
 }
 
 // ============================================================
-// registerBuiltinRecipes — el set de recetas de MCPE 0.15.10
-// (protocolo 84), declarado en codigo. Este bloque lo genera
-// tools/gen_recipes.py desde el antiguo resources/recipes.json; para
-// regenerar el dataset se corre el script y se pega el resultado aqui.
+// registerBuiltinRecipes — el set completo de recetas de MCPE 0.15.10
+// (protocolo 84), declarado en codigo. Esta es la unica fuente de
+// verdad de las recetas: para agregar o cambiar una se edita esta
+// funcion, no hay ningun archivo externo que cargar.
+//
+// 290 shaped, 23 shapeless, 23 furnace.
 //
 // Cada linea es una receta: shaped(w, h, grilla 3x3, resultado),
 // shapeless(ingredientes, resultado) o furnace(entrada, meta, resultado).
@@ -294,17 +117,12 @@ void CraftingManager::buildIndex() {
 int CraftingManager::registerBuiltinRecipes() {
     recipes_.clear();
     using namespace cursestone;
-    // Recetas registradas EN CODIGO, no cargadas desde un archivo
-    // en resources/ (ese archivo no viaja con el binario, por eso
-    // la release "Obsidian" arrancaba sin ninguna receta). Estilo
-    // alineado con Dr1xyDev/Nukkit-InfinityEdition, que las registra
-    // todas en el constructor de su CraftingManager.
-    //
-    // Mismo dataset que el antigo resources/recipes.json:
-    // 290 shaped, 23 shapeless, 23 furnace.
+    // Recetas registradas EN CODIGO, sin ningun archivo externo.
+    // Estilo alineado con Dr1xyDev/Nukkit-InfinityEdition, que las
+    // registra todas en el constructor de su CraftingManager.
 
     // ---- Shaped: grilla 3x3 (0 = celda vacia, -1 = cualquier
-    // ---- damage). El pad del grid coincide con recipes.json. ----
+    // ---- damage). La grilla viene zero-padded a 3x3. ----
     shaped(3, 3,
      {{item::PLANK, -1}, {item::PLANK, -1}, {item::PLANK, -1},
      {0, -1}, {item::STICK, 0}, {0, -1},
@@ -1518,120 +1336,8 @@ int CraftingManager::registerBuiltinRecipes() {
 
     buildIndex();
     return (int)recipes_.size();
-
-    buildIndex();
-    return (int)recipes_.size();
 }
 
-// ============================================================
-// loadFromJson (opcional) — carga recetas EXTRA desde un archivo con
-// el formato de Nukkit. No hace falta para el set basico: eso ya quedo
-// registrado en registerBuiltinRecipes().
-// ============================================================
-int CraftingManager::loadFromJson(const std::string& json_path) {
-    std::ifstream f(json_path, std::ios::binary);
-    if (!f.good()) return 0;
-    std::stringstream ss; ss << f.rdbuf();
-    std::string src = ss.str();
-    JVal root;
-    try {
-        root = JsonParser(src).parse();
-    } catch (const std::exception& e) {
-        // Un recipes.json roto no debe tumbar el arranque del server —
-        // se loguea por stderr (el logger del server no llega acá
-        // porque CraftingManager no conoce Server) y se sigue sin
-        // recetas, igual que antes del fix.
-        std::fprintf(stderr, "[CraftingManager] %s\n", e.what());
-        return 0;
-    }
-    if (!root.isArr()) return 0;
-    // No se limpia recipes_: lo que se lee aca se ANADE a lo ya
-    // registrado por registerBuiltinRecipes(). Llamar loadFromJson()
-    // sin haber llamado antes a registerBuiltinRecipes() deja estas
-    // como las unicas recetas.
-    const size_t before = recipes_.size();
-    for (const auto& r : root.arr) {
-        if (!r.isObj()) continue;
-        int type = jInt(r.get("Type"), -1);
-        const JVal* ing = r.get("Ingredients");
-        if (!ing) continue;
-        const JVal* resArr = r.get("Result");
-        cursestone::item::ItemStack result;
-        if (resArr && resArr->isArr() && !resArr->arr.empty()) {
-            // shaped/shapeless: Result es una lista con un item.
-            result = jItem(&resArr->arr.front());
-        } else if (resArr) {
-            // furnace: Result es un objeto item directo.
-            result = jItem(resArr);
-        }
-        if (type == 1 && ing->isArr()) {
-            // ---- Shaped: Ingredients = lista Width*Height, fila por
-            // ---- fila, ID 0 = vacío.
-            const JVal* wv = r.get("Width");
-            const JVal* hv = r.get("Height");
-            int w = jInt(wv, 0), h = jInt(hv, 0);
-            if (w <= 0 || h <= 0) continue;
-            size_t cells = (size_t)w * (size_t)h;
-            if (ing->arr.size() != cells) continue;
-            auto rec = std::make_unique<Recipe>(RECIPE_SHAPED, result);
-            rec->setSize(w, h);
-            std::array<uint16_t, 9> grid{};
-            std::array<int16_t, 9> meta{};
-            for (size_t row = 0; row < (size_t)h; ++row) {
-                for (size_t col = 0; col < (size_t)w; ++col) {
-                    const JVal& cell = ing->arr[row * w + col];
-                    grid[row * 3 + col] = (uint16_t)jInt(cell.get("ID"), 0);
-                    meta[row * 3 + col] = jMeta(&cell);
-                }
-            }
-            rec->setGrid(grid);
-            rec->setGridMeta(meta);
-            recipes_.push_back(std::move(rec));
-        } else if (type == 0 && ing->isArr()) {
-            // ---- Shapeless: Ingredients = lista plana de items.
-            if (ing->arr.empty()) continue;
-            auto rec = std::make_unique<Recipe>(RECIPE_SHAPELESS, result);
-            std::vector<uint16_t> ids;
-            std::vector<int16_t> metas;
-            ids.reserve(ing->arr.size());
-            metas.reserve(ing->arr.size());
-            for (const auto& cell : ing->arr) {
-                ids.push_back((uint16_t)jInt(cell.get("ID"), 0));
-                metas.push_back(jMeta(&cell));
-            }
-            // matchShapeless compara contra la lista ordenada.
-            std::vector<size_t> order(ids.size());
-            for (size_t i = 0; i < order.size(); ++i) order[i] = i;
-            std::sort(order.begin(), order.end(),
-                      [&](size_t a, size_t b) { return ids[a] < ids[b]; });
-            std::vector<uint16_t> sortedIds;
-            std::vector<int16_t> sortedMetas;
-            sortedIds.reserve(ids.size());
-            sortedMetas.reserve(ids.size());
-            for (size_t i : order) {
-                sortedIds.push_back(ids[i]);
-                sortedMetas.push_back(metas[i]);
-            }
-            rec->setIngredients(sortedIds);
-            rec->setIngredientMeta(sortedMetas);
-            recipes_.push_back(std::move(rec));
-        } else if (type == 2 && ing && ing->isNum()) {
-            // ---- Furnace: Ingredients es un NÚMERO escalar (el id de
-            // entrada), no una lista. Damage opcional (default -1 =
-            // any damage, ENTRY_FURNACE en el wire).
-            auto rec = std::make_unique<Recipe>(RECIPE_FURNACE, result);
-            rec->setIngredients({(uint16_t)(int16_t)ing->num});
-            rec->setFurnaceInputMeta((int16_t)jInt(r.get("Damage"), -1));
-            recipes_.push_back(std::move(rec));
-        } else {
-            // Type 3/5 (furnace-data legacy, multi-recipe) — ignoradas.
-        }
-    }
-    // Reindexar TODAS las recetas (las builtin + las nuevas) para que
-    // los UUID sean consecutivos y unicos en el set completo.
-    buildIndex();
-    return (int)(recipes_.size() - before);
-}
 // ============================================================
 // Búsquedas
 // ============================================================
@@ -1677,9 +1383,8 @@ const Recipe* CraftingManager::matchShaped(const std::array<uint16_t, 9>& grid) 
         bool anyMeta = false;
         for (int16_t m : r->gridMeta()) if (m < 0) { anyMeta = true; break; }
         if (anyMeta) continue;
-        // Búsqueda traslacional: la receta está escrita arriba-izquierda
-        // en recipes.json, pero el jugador puede ponerla en cualquier
-        // posición del 3x3.
+        // Búsqueda traslacional: la receta está escrita arriba-izquierda,
+        // pero el jugador puede ponerla en cualquier posición del 3x3.
         for (int dy = 0; dy + r->height() <= 3; ++dy) {
             for (int dx = 0; dx + r->width() <= 3; ++dx) {
                 if (shapedFitsAt(r->grid(), r->gridMeta(), r->width(), r->height(),

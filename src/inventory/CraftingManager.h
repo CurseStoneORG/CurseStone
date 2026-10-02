@@ -5,7 +5,6 @@
 #include "Recipe.h"
 #include <vector>
 #include <memory>
-#include <string>
 #include <array>
 #include <cstdint>
 #include <initializer_list>
@@ -18,25 +17,20 @@ class CraftingManager {
 public:
     CraftingManager();
 
-    // Registra las recetas ESTANDAR de MCPE 0.15.10 (protocolo 84)
+    // Registra TODAS las recetas de MCPE 0.15.10 (protocolo 84)
     // llamando shaped()/shapeless()/furnace() desde
     // registerBuiltinRecipes(), en el .cpp. Devuelve cuantas quedaron.
     //
-    // Antes estas recetas vivian en resources/recipes.json y se leian
-    // con loadFromJson(). Ese archivo NO viaja con el binario, asi que
-    // una release limpia arrancaba con 0 recetas ("No crafting recipes
-    // loaded") y el crafting quedaba dead. Ahora estan compiladas en el
-    // binario. Estilo alineado con Dr1xyDev/Nukkit-InfinityEdition, que
-    // declara todas las recetas en su CraftingManager en vez de leerlas
-    // de un recurso empaquetado.
+    // El set completo vive en codigo: no hay ningun archivo de recetas
+    // que cargar. Antes se leia uno externo que no se empaqueta con el
+    // binario, asi que una release limpia arrancaba con 0 recetas y el
+    // crafting quedaba dead. Estilo alineado con
+    // Dr1xyDev/Nukkit-InfinityEdition, que declara todas las recetas en
+    // su CraftingManager.
+    //
+    // Para agregar o cambiar una receta se edita registerBuiltinRecipes()
+    // en el .cpp; no hay ninguna ruta de carga externa.
     int registerBuiltinRecipes();
-
-    // Carga recetas ADICIONALES desde un JSON con el formato de Nukkit
-    // ({Type, Ingredients, Result, Height, Width}). Opcional: se puede
-    // llamar despues de registerBuiltinRecipes() para extender el set
-    // base, pero no hace falta para tener recetas funcionando. Devuelve
-    // el numero de recetas anadidas (no el total).
-    int loadFromJson(const std::string& json_path);
 
     // Finds the matching shaped recipe for a 3x3 grid (item ids only).
     // grid() de la receta tambien esta zero-padded, asi que la
@@ -114,7 +108,7 @@ private:
 
     // Asigna UUID deterministas (1, 2, 3...) a todas las recetas
     // registradas y construye el indice por bytes. Se llama una vez al
-    // terminar de registrar (registerBuiltinRecipes / loadFromJson).
+    // terminar de registrar, en registerBuiltinRecipes().
     void buildIndex();
 
     std::vector<std::unique_ptr<Recipe>> recipes_;

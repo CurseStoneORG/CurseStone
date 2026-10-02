@@ -1,5 +1,6 @@
 // Vuelca el set de recetas registrado en codigo a texto plano, una
-// receta por linea, para compararlo contra resources/recipes.json.
+// receta por linea. Sirve para inspeccionar o diffear el dataset sin
+// levantar el server.
 //
 //   g++ -std=c++20 -Isrc tools/dump_recipes.cpp \
 //       src/inventory/CraftingManager.cpp -o /tmp/dump && /tmp/dump

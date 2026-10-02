@@ -2,16 +2,14 @@
 // pattern; shapeless recipes have a list of ingredients. Result is
 // always an ItemStack.
 //
-// Los datos salen de resources/recipes.json (formato Nukkit):
-//   - Type 0 (shapeless): Ingredients = lista de {ID, Count, Damage}
-//   - Type 1 (shaped):    Ingredients = lista de Width*Height entradas
-//                         {ID, Count, Damage} en orden fila-por-fila,
-//                         donde ID 0 = celda vacía.
-//   - Type 2 (furnace):   Ingredients = un SOLO número (el item id de
-//                         entrada; NO es una lista como en shaped).
+// Las recetas se registran en CraftingManager::registerBuiltinRecipes(),
+// en codigo. Cada tipo se construye con su helper:
+//   - RECIPE_SHAPED    shaped(w, h, grilla 3x3, resultado)
+//   - RECIPE_SHAPELESS shapeless(ingredientes, resultado)
+//   - RECIPE_FURNACE   furnace(entrada, meta, resultado)
 //
-// El campo Damage de cada ingrediente es -1 cuando la receta acepta
-// cualquier meta ("any damage", Nukkit item->hasAnyDamageValue()).
+// El meta de cada ingrediente es -1 cuando la receta acepta cualquier
+// meta ("any damage", Nukkit item->hasAnyDamageValue()).
 #pragma once
 #include "item/ItemStack.h"
 #include <vector>
@@ -41,10 +39,10 @@ public:
     // 1:1 con ingredients(); si viene corto se trata como -1.
     void setIngredientMeta(const std::vector<int16_t>& ms) { ingredient_meta_ = ms; }
     const std::vector<int16_t>& ingredientMeta() const { return ingredient_meta_; }
-    // Bounding box del patrón shaped tal como está escrito en
-    // recipes.json (1..3). Para matchShaped basta grid(); width/height
-    // se guardan para el CraftingDataPacket (que serializa el patrón
-    // SIN padding, Width x Height celdas exactas).
+    // Bounding box del patrón shaped tal como se registro (1..3). Para
+    // matchShaped basta grid(); width/height se guardan para el
+    // CraftingDataPacket (que serializa el patrón SIN padding,
+    // Width x Height celdas exactas).
     void setSize(int w, int h) { width_ = w; height_ = h; }
     int width()  const { return width_;  }
     int height() const { return height_; }

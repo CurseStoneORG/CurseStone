@@ -1,5 +1,5 @@
 // TileFurnace.cpp — horno completo (PMMP Tile/Furnace.php):
-// consume fuel, funde el input según recipes.json, escribe el
+// consume fuel, funde el input según el CraftingManager, escribe el
 // resultado en el slot 2 y sincroniza progreso/contenido con el
 // cliente mientras haya alguien mirando.
 #include "TileFurnace.h"
@@ -62,7 +62,7 @@ int TileFurnace::fuelBurnTicks(uint16_t id) {
     }
 }
 // ============================================================
-// Fundición — delega en CraftingManager (recipes.json Type 2).
+// Fundición — delega en CraftingManager (recetas RECIPE_FURNACE).
 // ============================================================
 bool TileFurnace::smeltResult(const cursestone::item::ItemStack& in,
                               cursestone::item::ItemStack& out) const {
