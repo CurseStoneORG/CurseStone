@@ -1,8 +1,19 @@
-// Biome — abstract biome descriptor.
-// Biomes in MCPE 0.15.x are encoded as a single byte per column
-// (256 bytes per chunk). The biome_definitions.json maps each ID
-// to properties (temperature, rainfall, topBlock, fillerBlock).
-// Implementations are flyweights: stateless, identified by ID.
+// Biome — descriptor abstracto de bioma.
+//
+// En MCPE 0.15.x cada columna del chunk lleva un byte de bioma (256
+// bytes por chunk). Ese byte es el id del enum BiomeId de abajo, y cada
+// bioma concreto (BiomePlains, BiomeDesert, ...) declara sus propiedades
+// — temperatura, lluvia, bloque superficial y de relleno — en su .h.
+//
+// Las propiedades viven TODAS en codigo: no hay ningun archivo de
+// definiciones que cargar. Los valores por defecto de esta clase base
+// solo aplican a los biomas que no los sobreescriban.
+//
+// OJO con los ids: el enum BiomeId es la unica fuente de verdad y sus
+// valores son los que viajan en el chunk. El id de un bioma NO es su
+// posicion en un listado; use siempre la constante del enum.
+//
+// Implementaciones son flyweights: sin estado, identificadas por id.
 #pragma once
 #include <cstdint>
 #include <string>
