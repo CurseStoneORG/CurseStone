@@ -709,7 +709,8 @@ void Level::spawnLightning(double x, double y, double z, bool withFire) {
         int32_t by = (int32_t)std::floor(y);
         if (by >= 0 && by <= 255 && isChunkLoaded(bx, bz)) {
             uint8_t at = getBlockId(bx, by, bz);
-            uint8_t below = by > 0 ? getBlockId(bx, by - 1, bz) : block::AIR;
+            uint8_t below = by > 0 ? getBlockId(bx, by - 1, bz)
+                                   : static_cast<uint8_t>(block::AIR);
             bool below_liquid = (below == block::WATER || below == block::FLOWING_WATER ||
                                  below == block::LAVA  || below == block::FLOWING_LAVA);
             if ((at == block::AIR || at == block::TALL_GRASS) && !below_liquid) {
