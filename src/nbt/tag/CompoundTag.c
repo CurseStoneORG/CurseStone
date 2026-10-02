@@ -155,7 +155,14 @@ double  mcp_compound_tag_get_double(const mcp_tag_t* s, const char* n, double d)
 const char* mcp_compound_tag_get_string(const mcp_tag_t* s, const char* n, const char* d) {
     const mcp_tag_t* t = mcp_compound_tag_get(s, n);
     if (!t || t->type != MCP_TAG_STRING) return d;
-    return ((const mcp_string_tag_t*)t)->value;
+    const char* v = ((const mcp_string_tag_t*)t)->value;
+    // This function MUST NOT return NULL. Almost every caller feeds the
+    // result straight into a std::string, and std::string(NULL) is
+    // undefined behaviour — in a release build it is strlen(NULL) and a
+    // SIGSEGV. Returning the caller's default whenever the stored value is
+    // missing makes the accessor total, so all 12 call sites are safe
+    // rather than each having to guard its own result.
+    return v ? v : (d ? d : "");
 }
 
 const mcp_tag_t* mcp_compound_tag_get_compound(const mcp_tag_t* s, const char* n) {

@@ -329,6 +329,13 @@ private:
     // same blobs (and re-constructing duplicate Tile objects) on every
     // single getTile() call for a chunk that's already hydrated.
     std::unordered_set<uint64_t> tiles_hydrated_chunks_;
+    // Chunks whose tile_entities array is stale because a tile was REMOVED
+    // from them (breaking a chest/sign/furnace). syncTilesToChunks() only
+    // rebuilds chunks that still hold at least one live tile, so without
+    // this set the removed tile's NBT blob stayed in the chunk forever and
+    // came back on the next restart: a sign you broke would reappear with
+    // its old text, on top of an air block.
+    std::unordered_set<uint64_t> tiles_dirty_chunks_;
     static uint64_t packChunkPos(int32_t cx, int32_t cz) {
         uint64_t ux = static_cast<uint64_t>(static_cast<uint32_t>(cx));
         uint64_t uz = static_cast<uint64_t>(static_cast<uint32_t>(cz));
