@@ -22,10 +22,11 @@ inline constexpr int kSeaLevel = 64;
 
 // Owns the noise layers: terrain shape, climate and rivers.
 struct TerrainNoise {
-    mcp_simplex_t* height = nullptr;   // continents + hills + ridges + detail
-    mcp_simplex_t* temp   = nullptr;   // climate: temperature
-    mcp_simplex_t* humid  = nullptr;   // climate: humidity
-    mcp_simplex_t* river  = nullptr;   // river network (value crosses 0)
+    mcp_simplex_t* height  = nullptr;  // continents + hills + ridges + detail
+    mcp_simplex_t* temp    = nullptr;  // climate: temperature
+    mcp_simplex_t* humid   = nullptr;  // climate: humidity
+    mcp_simplex_t* river   = nullptr;  // river network (value crosses 0)
+    mcp_simplex_t* surface = nullptr;  // gravel patches + bare (tree-less) ground
 
     explicit TerrainNoise(int64_t seed);
     ~TerrainNoise();
@@ -45,9 +46,38 @@ int heightFromRaw(const double raw[3][3]);
 int columnHeight(const TerrainNoise& n, double wx, double wz);
 
 // River proximity mask in [0,1]: 1 at the channel centre, 0 outside it.
+// This is the NARROW mask — it decides where the water actually is, so it
+// is deliberately thin: a vanilla river is a few blocks wide, not a lake.
 // Rivers follow the zero contour of the river noise, so they form a
 // connected network that cuts through hills and mountains.
 double riverMask(const TerrainNoise& n, double wx, double wz);
+
+// Wide, gentle mask in [0,1] shaping the VALLEY the river runs through.
+// This is deliberately much broader than riverMask(): the water sits in a
+// thin channel at the bottom of a wide, softly sloping valley, which is
+// what vanilla does. Keeping the two separate is what stops the river from
+// becoming a deep slot canyon with vertical walls.
+double riverValley(const TerrainNoise& n, double wx, double wz);
+
+// Even wider and much shallower skirt around riverValley(). Together the two
+// carve a valley with a long, gentle approach instead of a step down to the
+// water — a single wide valley measurably made the banks steeper, because
+// widening the mask only pushes the same drop further from the centre.
+double riverShoulder(const TerrainNoise& n, double wx, double wz);
+
+// True when this column is a shoreline: at (or within a couple of blocks
+// of) the water level AND within `radius` columns of open water. Shared by
+// the biome choice and the surface-block choice so the two can never
+// disagree about where the beach is.
+bool isShore(const TerrainNoise& n, double wx, double wz, int h, int radius = 2);
+
+// Gravel patch mask in [0,1]: rare patches of gravel on the surface,
+// clustered around rivers and coastlines the way vanilla scatters them.
+double gravelPatch(const TerrainNoise& n, double wx, double wz, int h);
+
+// Tree-free mask in [0,1]: rare open patches where no tree grows, biased
+// towards river banks and plains. 1 = guaranteed no tree, 0 = unaffected.
+double treeFreeMask(const TerrainNoise& n, double wx, double wz, int h);
 
 // Biome id for a world column, given its height. Pure function of the
 // world coordinates, matching what Normal::generate stores.

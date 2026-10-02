@@ -3,6 +3,7 @@
 #include "level/generator/TerrainShape.h"
 #include "level/generator/biome/BiomeRegistry.h"
 #include "block/BlockIds.h"
+#include <algorithm>
 
 namespace cursestone::level::generator::populator {
 
@@ -48,6 +49,18 @@ void plantChunkTrees(const TerrainNoise& noise, GenerationContext& ctx, int atte
         const auto& cfg = biome::BiomeRegistry::forId(biome);
         if (cfg.trees.empty() || cfg.treeAmount <= 0) continue;
         if (rng.nextInt(16) >= cfg.treeAmount) continue;
+
+        // Rare open pockets: a low-frequency mask that occasionally rejects
+        // a tree no matter how dense the biome is, so river banks and plains
+        // get occasional BARE clearings instead of just thinner forest. The
+        // probability is ramped with the mask so the core of a clearing ends
+        // up effectively treeless — using the raw mask value only halved the
+        // tree density inside it, which is thinner woods, not a clearing.
+        const double bare = treeFreeMask(noise, wx, wz, h);
+        if (bare > 0.0) {
+            const double p = std::min(1.0, bare * 1.7);
+            if (rng.nextInt(1000) < (int)(p * 1000.0)) continue;
+        }
 
         const uint8_t ground = cfg.topBlock;
         if (ground == (uint8_t)block::BlockId::SNOW_BLOCK ||
