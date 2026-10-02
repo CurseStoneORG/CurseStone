@@ -55,15 +55,32 @@ bool columnCanHoldTree(const TerrainNoise& noise, int wx, int wz, int h,
     return true;
 }
 
-// Plant one tree. Callers must have already cleared the column with
-// columnCanHoldTree().
+// Plant one tree of an explicit species. Callers must have already cleared
+// the column with columnCanHoldTree().
+void plantSpecies(GenerationContext& ctx, GenRandom& rng, int h,
+                  int wx, int wz, int cbx, int cbz, object::TreeType type,
+                  uint8_t ground) {
+    object::TreeGenerator::place(ctx.chunk, wx - cbx, h, wz - cbz,
+                                 type, ground, rng);
+}
+
+// Plant one tree, species taken from the biome's weighted list. Callers
+// must have already cleared the column with columnCanHoldTree().
 void plantAt(const TerrainNoise& noise, GenerationContext& ctx, GenRandom& rng,
              int wx, int wz, int cbx, int cbz, uint8_t biome, uint8_t ground) {
     const int h = columnHeight(noise, wx, wz);
-    object::TreeGenerator::place(ctx.chunk, wx - cbx, h, wz - cbz,
-                                 pickSpecies(
-                                     biome::BiomeRegistry::forId(biome).trees, rng),
-                                 ground, rng);
+    plantSpecies(ctx, rng, h, wx, wz, cbx, cbz,
+                 pickSpecies(biome::BiomeRegistry::forId(biome).trees, rng),
+                 ground);
+}
+
+// Biomes whose trees come from the grove pass (and ONLY from it), instead
+// of the per-slot scatter of pass 2: plains, savanna and their raised
+// variants.
+inline bool isGroveBiome(uint8_t b) {
+    return b == biome::BIOME_PLAINS || b == biome::BIOME_SAVANNA ||
+           b == biome::BIOME_PLAINS_PLATEAU ||
+           b == biome::BIOME_SAVANNA_PLATEAU;
 }
 
 // Trees inside one cluster of plains.
@@ -122,8 +139,7 @@ void plantChunkTrees(const TerrainNoise& noise, GenerationContext& ctx, int atte
         // The grove only counts if its centre really is open grassland.
         const int ch = columnHeight(noise, cxw, czw);
         const uint8_t cBiome = columnBiome(noise, cxw, czw, ch);
-        if (cBiome != biome::BIOME_PLAINS && cBiome != biome::BIOME_SAVANNA)
-            continue;
+        if (!isGroveBiome(cBiome)) continue;
 
         // 2-4 trees. The user asked for 3-4 blocks between trunks, which is
         // also roughly what vanilla does, so that is the hard minimum. It is
@@ -152,7 +168,7 @@ void plantChunkTrees(const TerrainNoise& noise, GenerationContext& ctx, int atte
             if (riverMask(noise, wx, wz) > 0.05) continue;
             if (isShore(noise, wx, wz, h)) continue;
             const uint8_t b = columnBiome(noise, wx, wz, h);
-            if (b != biome::BIOME_PLAINS && b != biome::BIOME_SAVANNA) continue;
+            if (!isGroveBiome(b)) continue;
             uint8_t ground = 0;
             if (!columnCanHoldTree(noise, wx, wz, h, b, ground)) continue;
             // A grove on a slope is fine, but keep the ground consistent.
@@ -160,6 +176,33 @@ void plantChunkTrees(const TerrainNoise& noise, GenerationContext& ctx, int atte
             planted.emplace_back(wx, wz);
             placed.push_back({wx, wz});
         }
+    }
+
+    // ---- Pass 1.5: birch copses along the rivers in the plains -------
+    // Birch hugs the river banks in the grassland: common enough to be a
+    // recognisable feature of a river walk, rare enough that most reaches
+    // have none. Only the plains count — the woodland patches, the savanna
+    // and every other biome keep their own species.
+    constexpr int kRiverBirchTries = 3;
+    for (int i = 0; i < kRiverBirchTries; ++i) {
+        if (rng.nextInt(100) >= 32) continue;           // rare-to-common
+        const int wx = nx * 16 + (int)rng.nextInt(16);
+        const int wz = nz * 16 + (int)rng.nextInt(16);
+        const int h = columnHeight(noise, wx, wz);
+        if (h < kSeaLevel || h > 119) continue;
+        // On the river bank: inside the river's valley, but out of the
+        // water and off the shoreline.
+        if (riverValley(noise, wx, wz) <= 0.10) continue;
+        if (riverMask(noise, wx, wz) > 0.05) continue;
+        if (isShore(noise, wx, wz, h)) continue;
+        const uint8_t b = columnBiome(noise, wx, wz, h);
+        if (b != biome::BIOME_PLAINS && b != biome::BIOME_PLAINS_PLATEAU)
+            continue;
+        if (tooCloseToPlanted(planted, wx, wz, 3)) continue;
+        uint8_t ground = 0;
+        if (!columnCanHoldTree(noise, wx, wz, h, b, ground)) continue;
+        plantSpecies(ctx, rng, h, wx, wz, cbx, cbz, object::TREE_BIRCH, ground);
+        planted.emplace_back(wx, wz);
     }
 
     // ---- Pass 2: the rest of the biomes, as before -------------------
@@ -179,12 +222,13 @@ void plantChunkTrees(const TerrainNoise& noise, GenerationContext& ctx, int atte
         const auto& cfg = biome::BiomeRegistry::forId(biome);
         if (cfg.trees.empty() || cfg.treeAmount <= 0) continue;
 
-        // Plains and savanna are handled by the grove pass above and ONLY
-        // by it. Letting them through here as well is what kept saturating
-        // the plains: the groves were spaced properly and then this pass
-        // sprinkled lone oaks on top of them at 1 block apart, which is
-        // exactly the scattered look the groves were meant to replace.
-        if (biome == biome::BIOME_PLAINS || biome == biome::BIOME_SAVANNA) continue;
+        // Plains/savanna (and their raised variants) are handled by the
+        // grove pass above and ONLY by it. Letting them through here as
+        // well is what kept saturating the plains: the groves were spaced
+        // properly and then this pass sprinkled lone oaks on top of them at
+        // 1 block apart, which is exactly the scattered look the groves
+        // were meant to replace.
+        if (isGroveBiome(biome)) continue;
 
         if (rng.nextInt(16) >= cfg.treeAmount) continue;
 

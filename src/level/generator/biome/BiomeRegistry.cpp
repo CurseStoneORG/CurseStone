@@ -15,6 +15,7 @@ const BiomeConfig& BiomeRegistry::forId(uint8_t id) {
         case BIOME_FROZEN_RIVER:     return oceanBiome();
         case BIOME_BEACH:            return beachBiome();
         case BIOME_PLAINS:           return plainsBiome();
+        case BIOME_PLAINS_PLATEAU:   return plainsPlateauBiome();
         case BIOME_FOREST:
         case BIOME_FOREST_HILLS:     return forestBiome();
         case BIOME_DESERT:

@@ -40,6 +40,100 @@ double plainsFactor(const TerrainNoise& n, double wx, double wz) {
     return std::clamp(std::max(inland * 0.85, coast * 0.95), 0.0, 1.0);
 }
 
+double tempAt(const TerrainNoise& n, double wx, double wz) {
+    return mcp_simplex_fbm2d(n.temp, wx * 0.0004, wz * 0.0004, 2, 0.5, 2.0);
+}
+
+double humidAt(const TerrainNoise& n, double wx, double wz) {
+    return mcp_simplex_fbm2d(n.humid, wx * 0.0005 + 512.0,
+                             wz * 0.0005 - 256.0, 2, 0.5, 2.0);
+}
+
+double plainsPlateau(const TerrainNoise& n, double wx, double wz) {
+    // ~120-block patches that stand the grassland a few blocks higher than
+    // the plain next to it and keep it flat on top: big enough to read as a
+    // plateau you can walk across, small enough to be a VARIANT inside a
+    // plain rather than another continent. Everything is gated on
+    // plainsFactor, which is the same factor the relief damping and the
+    // biome choice read, so the raised table, the flat ground and the
+    // plains biome always agree on where a plain is.
+    const double patch = smoothstep(0.02, 0.40,
+        mcp_simplex_fbm2d(n.surface, wx * 0.0060 + 9100.0,
+                          wz * 0.0060 - 2700.0, 2, 0.5, 2.0));
+    if (patch <= 0.0) return 0.0;
+    return patch * smoothstep(0.45, 0.72, plainsFactor(n, wx, wz));
+}
+
+double plainsForest(const TerrainNoise& n, double wx, double wz) {
+    // Woodland-scale patches inside the grassland. Same idea as the
+    // plateau: the biome selection turns this into BIOME_FOREST, so the
+    // patch gets real forest density instead of a handful of stray oaks.
+    const double patch = smoothstep(0.20, 0.48,
+        mcp_simplex_fbm2d(n.surface, wx * 0.0062 - 6100.0,
+                          wz * 0.0062 + 2450.0, 2, 0.5, 2.0));
+    if (patch <= 0.0) return 0.0;
+    return patch * smoothstep(0.45, 0.70, plainsFactor(n, wx, wz));
+}
+
+double savannaFactor(const TerrainNoise& n, double wx, double wz) {
+    const double t  = tempAt(n, wx, wz);
+    const double hu = humidAt(n, wx, wz);
+    // Ask the biome selection directly whether this climate is a savanna.
+    // Hand-rolling the temperature/humidity cuts again would be one more
+    // place for the flattened ground and the biome byte to disagree — and
+    // the height is passed at sea level + 4 so the ocean/mountain overrides
+    // in select() can never answer here.
+    if (biome::BiomeRegistry::select(t, hu, kSeaLevel + 4, kSeaLevel) !=
+        biome::BIOME_SAVANNA)
+        return 0.0;
+    // Long stretches rather than a uniform sheet: the low-relief savanna
+    // comes in patches a couple of hundred blocks wide.
+    return smoothstep(-0.10, 0.22,
+        mcp_simplex_fbm2d(n.surface, wx * 0.0046 + 4200.0,
+                          wz * 0.0046 - 8800.0, 2, 0.5, 2.0));
+}
+
+double savannaCanyon(const TerrainNoise& n, double wx, double wz) {
+    // Hard-gated to the CORE of a savanna, so a canyon can never appear in
+    // (or next to) the plains, the desert or the jungle.
+    const double core = smoothstep(0.62, 0.85, savannaFactor(n, wx, wz));
+    if (core <= 0.0) return 0.0;
+    // Margin: a canyon has to sit WELL INSIDE the savanna, never on the
+    // border with another biome, so the savanna is sampled a few blocks out
+    // in all eight directions and the canyon is dropped if any of them has
+    // stopped being savanna. The margin is only paid for on the candidate
+    // columns (core > 0), so the rest of the world never sees it.
+    constexpr double kMargin = 0.55;   // = the savanna biome threshold
+    constexpr double kM = 8.0;
+    if (savannaFactor(n, wx - kM, wz) < kMargin ||
+        savannaFactor(n, wx + kM, wz) < kMargin ||
+        savannaFactor(n, wx, wz - kM) < kMargin ||
+        savannaFactor(n, wx, wz + kM) < kMargin ||
+        savannaFactor(n, wx - kM, wz - kM) < kMargin ||
+        savannaFactor(n, wx + kM, wz - kM) < kMargin ||
+        savannaFactor(n, wx - kM, wz + kM) < kMargin ||
+        savannaFactor(n, wx + kM, wz + kM) < kMargin)
+        return 0.0;
+    // ...and inland: a canyon never overlooks a shoreline, so no beach or
+    // ocean can end up sitting next to one. `continentField` is the cheap
+    // proxy for "is there land here" — it is the same field the coast is
+    // built from, and it cannot recurse back into the terrain height the
+    // way a rawColumnHeight() probe would.
+    constexpr double kInland = -0.10;  // the shoreline/beach band sits below this
+    if (continentField(n, wx - kM, wz) < kInland ||
+        continentField(n, wx + kM, wz) < kInland ||
+        continentField(n, wx, wz - kM) < kInland ||
+        continentField(n, wx, wz + kM) < kInland)
+        return 0.0;
+    const double notPlains =
+        1.0 - smoothstep(0.35, 0.55, plainsFactor(n, wx, wz));
+    if (notPlains <= 0.0) return 0.0;
+    // Narrow ramp on purpose: the wall of the canyon is the ramp itself.
+    return core * notPlains * smoothstep(0.00, 0.28,
+        mcp_simplex_fbm2d(n.surface, wx * 0.0052 + 15500.0,
+                          wz * 0.0052 + 7300.0, 2, 0.5, 2.0));
+}
+
 TerrainNoise::TerrainNoise(int64_t seed) {
     height  = mcp_simplex_new(seed);
     temp    = mcp_simplex_new(seed ^ 0xBA5EBA11);
@@ -99,12 +193,21 @@ double rawColumnHeight(const TerrainNoise& n, double wx, double wz) {
     // flat areas WIDE instead of a patch of flat ground surrounded by
     // hills, and the biome choice reads the same factor so "plains" means
     // the same flat thing in both places.
+    //
+    // The savanna plains use the very same damping (savannaFactor), so a
+    // savanna comes out as long, level ground a couple of blocks high, and
+    // the canyon table below rides on top of that.
     const double plains = plainsFactor(n, wx, wz);
+    const double savanna = savannaFactor(n, wx, wz);
     // 0.90 rather than 0.78: at full plains the relief was still 22% of the
     // hills and the measured step between neighbouring plains columns came
     // out no flatter than the rest of the world, which is the opposite of
     // what makes a plain read as a plain.
-    const double relief = 1.0 - 0.90 * plains;
+    //
+    // The savanna is damped a little less (0.78) so its surface keeps the
+    // 2-3 block roll the plains deliberately shave off.
+    const double damp = (savanna > plains) ? 0.78 : 0.90;
+    const double relief = 1.0 - damp * std::max(plains, savanna);
 
     double h = 70.0 + cont * 31.0;                       // 39 .. 101 base
     // The broad swell is damped too. It was the one layer still at full
@@ -121,6 +224,21 @@ double rawColumnHeight(const TerrainNoise& n, double wx, double wz) {
     h += (outcrop - 0.30) * 9.5 * relief * smoothstep(84.0, 100.0, h) *
          smoothstep(0.18, 0.55, cont);
 
+    // ---- Plains variant: a raised table ---------------------------------
+    // A few blocks above the ordinary plain and flat on top. It is applied
+    // AFTER the relief layers so the table keeps the flatness of the plain
+    // it was cut out of, and BEFORE the river carve so a river still cuts
+    // straight through it instead of running around it.
+    h += 3.2 * plainsPlateau(n, wx, wz);
+
+    // ---- Savanna canyons ------------------------------------------------
+    // A broad table ~25 blocks above the savanna plain (measured: ~20-25 in
+    // game). The gate is steep, so the step from the plain up onto the table
+    // is a canyon wall; the top itself inherits the savanna's damped relief
+    // (1-2 block steps), and the river carve right below this runs through
+    // it.
+    h += 28.0 * savannaCanyon(n, wx, wz);
+
     // ---- Rivers ---------------------------------------------------------
     // Three stages, on purpose. A WIDE valley lowers the land into a gentle
     // bowl, a still wider SKIRT eases the approach, and only then does the
@@ -133,8 +251,15 @@ double rawColumnHeight(const TerrainNoise& n, double wx, double wz) {
         // Depth scales with how high the ground stands above sea level, so
         // a hill becomes a valley the river runs along — but it is CAPPED,
         // so even a tall mountain gets a broad valley rather than a gorge.
+        //
+        // The valley may lower the land TOWARD the water but never INTO it:
+        // only the narrow channel mask below is allowed to cut the bed under
+        // sea level. Without this clamp the valley floor of flat ground ends
+        // up under the water line and the entire valley fills up — the wide
+        // rivers the transect check kept catching on some seeds.
         const double above = std::max(0.0, h - (double)kSeaLevel);
-        const double depth = std::min(5.0 + above * 0.40, 13.0);
+        const double depth = std::min(std::min(5.0 + above * 0.40, 13.0),
+                                      std::max(0.0, h - (double)(kSeaLevel + 1)));
         h -= rv * rv * (3.0 - 2.0 * rv) * depth;
     }
 
@@ -148,7 +273,8 @@ double rawColumnHeight(const TerrainNoise& n, double wx, double wz) {
         // The skirt only really matters where there is height to ease away
         // from.
         const double above = std::max(0.0, h - (double)kSeaLevel);
-        const double depth = std::min(0.8 + above * 0.38, 9.0);
+        const double depth = std::min(std::min(0.8 + above * 0.38, 9.0),
+                                      std::max(0.0, h - (double)(kSeaLevel + 1)));
         h -= rs * rs * (3.0 - 2.0 * rs) * depth;
     }
 
@@ -198,21 +324,44 @@ namespace {
 // Shared river field: the zero contour of a low-frequency fbm. Both the
 // narrow channel mask and the wide valley mask read the SAME field, so the
 // water always sits at the bottom of the valley that was carved for it.
+//
+// Three octaves rather than two: the extra detail breaks up the long flat
+// stretches the two-octave field could have right at zero. On a flat spot
+// the zero contour is ill-defined, the block distance blows up or collapses
+// and the river either vanished or flooded the whole flat — the wide rivers
+// that showed up on some seeds.
 inline double riverField(const TerrainNoise& n, double wx, double wz) {
-    return mcp_simplex_fbm2d(n.river, wx * 0.0013, wz * 0.0013, 2, 0.5, 2.0);
+    return mcp_simplex_fbm2d(n.river, wx * 0.0013, wz * 0.0013, 3, 0.5, 2.0);
+}
+
+// Distance in BLOCKS from the river's zero contour, estimated as
+// |field| / |gradient|.
+//
+// Measuring the channel in raw field units (|field| < kEdge) is what made
+// rivers read as a string of wide ponds: wherever the field flattens out a
+// tiny |field| covers tens of blocks, so the "narrow" threshold opened up
+// into a lake. Dividing by the gradient turns the threshold into a real
+// distance, so the water keeps the same width whether the field is steep or
+// almost flat and a flat spot can no longer inflate the river.
+inline double riverDistance(const TerrainNoise& n, double wx, double wz) {
+    const double v  = riverField(n, wx, wz);
+    const double gx = riverField(n, wx + 1.0, wz) - riverField(n, wx - 1.0, wz);
+    const double gz = riverField(n, wx, wz + 1.0) - riverField(n, wx, wz - 1.0);
+    const double g  = 0.5 * std::sqrt(gx * gx + gz * gz);   // field per block
+    if (g < 1e-9) return 1e9;                               // no contour here
+    return std::fabs(v) / g;
 }
 
 } // namespace
 
 double riverMask(const TerrainNoise& n, double wx, double wz) {
-    // Rivers are the zero contour of this low-frequency field. |value|
-    // is small along the contour, so it becomes a smooth channel.
-    const double d = std::fabs(riverField(n, wx, wz));
-    // Narrow on purpose: a vanilla river is only a few blocks wide. The old
-    // kEdge of 0.165 spread the water over ~3x the width, which read as a
-    // string of wide ponds rather than a river.
-    constexpr double kCore = 0.030;   // fully carved channel floor
-    constexpr double kEdge = 0.078;   // river bank
+    // Rivers are the zero contour of the low-frequency field, so the water
+    // is the set of columns within a couple of blocks of that contour.
+    const double d = riverDistance(n, wx, wz);
+    // Measured in BLOCKS now (see riverDistance). Thin on purpose: a
+    // vanilla river is a few blocks of water, not a lake.
+    constexpr double kCore = 0.4;   // fully carved channel floor
+    constexpr double kEdge = 1.75;  // river bank
     if (d >= kEdge) return 0.0;
     if (d <= kCore) return 1.0;
     const double t = (d - kCore) / (kEdge - kCore);
@@ -223,20 +372,23 @@ double riverValley(const TerrainNoise& n, double wx, double wz) {
     const double d = std::fabs(riverField(n, wx, wz));
     // Much wider than riverMask(): this is the valley the river runs along,
     // and its edges fade out over a long distance so the banks slope
-    // instead of dropping off a cliff.
+    // instead of dropping off a cliff. Note this is still the raw FIELD
+    // magnitude, not the block distance: the valley is supposed to be a
+    // broad, soft bowl, and the terrain carve below is clamped so it can
+    // never dig a bowl deep enough to fill with water.
     constexpr double kValley = 0.40;
     if (d >= kValley) return 0.0;
     return 1.0 - smoothstep(0.0, kValley, d);
 }
 
 double riverShoulder(const TerrainNoise& n, double wx, double wz) {
-    const double d = std::fabs(riverField(n, wx, wz));
     // A very wide, shallow skirt around the valley. One wide valley on its
     // own was measured to make the banks STEEPER, not gentler: widening the
     // mask just moved the same drop further out, so the step from valley
     // floor to untouched ground stayed abrupt. Adding this second, much
     // broader and shallower tier on top spreads the remaining drop over a
     // long distance, which is what actually flattens the transition.
+    const double d = std::fabs(riverField(n, wx, wz));
     constexpr double kShoulder = 0.78;
     if (d >= kShoulder) return 0.0;
     return 1.0 - smoothstep(0.0, kShoulder, d);
@@ -359,10 +511,8 @@ double treeFreeMask(const TerrainNoise& n, double wx, double wz, int h) {
 uint8_t columnBiome(const TerrainNoise& n, double wx, double wz, int h) {
     using namespace biome;
 
-    const double t  = mcp_simplex_fbm2d(n.temp, wx * 0.0004, wz * 0.0004,
-                                        2, 0.5, 2.0);
-    const double hu = mcp_simplex_fbm2d(n.humid, wx * 0.0005 + 512.0,
-                                        wz * 0.0005 - 256.0, 2, 0.5, 2.0);
+    const double t  = tempAt(n, wx, wz);
+    const double hu = humidAt(n, wx, wz);
 
     // Below sea level minus a shallow margin: open ocean.
     if (h < kSeaLevel - 2) return BIOME_OCEAN;
@@ -372,23 +522,36 @@ uint8_t columnBiome(const TerrainNoise& n, double wx, double wz, int h) {
     if (h < kSeaLevel && riverMask(n, wx, wz) > 0.25)
         return (t < -0.25) ? BIOME_FROZEN_RIVER : BIOME_RIVER;
 
-    uint8_t b = BiomeRegistry::select(t, hu, h, kSeaLevel);
-    if (b == BIOME_OCEAN) b = BIOME_PLAINS;
-
-    // Where the terrain has actually been flattened into open grassland,
-    // prefer plains whatever the climate says. The biome has to agree with
-    // the shape of the ground, otherwise you get forests and jungles
-    // standing on open plains and vice versa — and the plains themselves
-    // end up full of trees the terrain was flattened to make room for.
-    if (plainsFactor(n, wx, wz) > 0.55 && h < kSeaLevel + 16)
-        b = BIOME_PLAINS;
-
     // Beach: only along the OCEAN. A river bank is normally grass, so
     // giving river columns BIOME_BEACH (whose top block is sand) is what
     // used to make every river run between two sandy strips. Uses the same
     // isOceanShore() the surface fill uses, so the biome and the sand on
     // the ground can never disagree.
     if (isOceanShore(n, wx, wz, h)) return BIOME_BEACH;
+
+    // Where the terrain has actually been flattened into open grassland,
+    // the biome has to agree with the shape of the ground, otherwise you
+    // get forests and jungles standing on open plains and vice versa — and
+    // the plains themselves end up full of trees the terrain was flattened
+    // to make room for. The two variants read the SAME masks the terrain
+    // uses, so the raised table and the woodland patches line up exactly.
+    if (plainsFactor(n, wx, wz) > 0.55 && h < kSeaLevel + 16) {
+        if (plainsForest(n, wx, wz) > 0.55) return BIOME_FOREST;
+        if (plainsPlateau(n, wx, wz) > 0.55) return BIOME_PLAINS_PLATEAU;
+        return BIOME_PLAINS;
+    }
+
+    // Savanna: the low-relief plains and, inside their core, the raised
+    // canyon tables. The height cap is generous because the canyon table
+    // itself stands ~22 blocks above the plain.
+    const double sf = savannaFactor(n, wx, wz);
+    if (sf > 0.55 && h < kSeaLevel + 45) {
+        if (savannaCanyon(n, wx, wz) > 0.45) return BIOME_SAVANNA_PLATEAU;
+        return BIOME_SAVANNA;
+    }
+
+    uint8_t b = BiomeRegistry::select(t, hu, h, kSeaLevel);
+    if (b == BIOME_OCEAN) b = BIOME_PLAINS;
     return b;
 }
 

@@ -47,6 +47,12 @@ enum BiomeId : uint8_t {
     BIOME_SAVANNA       = 35,
     BIOME_SAVANNA_PLATEAU = 36,
     BIOME_MESA          = 37,
+
+    // Plains variant: the same grassland, raised a few blocks and flat on
+    // top. The byte value reuses the vanilla plains-variant id (129) so the
+    // MCPE 0.15.x client knows the biome and renders it with plains colours
+    // instead of falling back to "unknown".
+    BIOME_PLAINS_PLATEAU = 129,
 };
 
 class Biome {
