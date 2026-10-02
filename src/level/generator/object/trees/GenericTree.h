@@ -22,12 +22,17 @@ class GenericTree {
 public:
     virtual ~GenericTree() = default;
 
-    // Generates the tree at (sourceX, sourceY, sourceZ). Returns false if
-    // there was no room / unsuitable soil (nothing is written then).
+    // Generates the tree at (sourceX, sourceY, sourceZ). `soilId` is the
+    // block directly below the trunk (sourceY - 1); it is passed in rather
+    // than read from the chunk because the trunk may live in a neighbouring
+    // chunk while only its overlap is written into this one. Coordinates
+    // are relative to the target chunk and may fall outside 0..15 — every
+    // write is clipped, which is what lets trees span chunk borders.
+    // Returns false if there was no room / unsuitable soil.
     // Virtual: some species (acacia, dark oak, big oak) replace the whole
     // layout with their own algorithm.
     virtual bool generate(mcp_chunk_t* c, int sourceX, int sourceY, int sourceZ,
-                          GenRandom& rng);
+                          uint8_t soilId, GenRandom& rng);
 
 protected:
     // Species parameters (height, log/leaf ids + data). Subclasses set

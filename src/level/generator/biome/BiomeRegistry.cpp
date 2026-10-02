@@ -10,6 +10,9 @@ using namespace cursestone::level::generator::biome; // (Biome.h ids)
 const BiomeConfig& BiomeRegistry::forId(uint8_t id) {
     switch (id) {
         case BIOME_OCEAN:            return oceanBiome();
+        // Rivers share the ocean's surface (sand/gravel bed, no trees).
+        case BIOME_RIVER:
+        case BIOME_FROZEN_RIVER:     return oceanBiome();
         case BIOME_BEACH:            return beachBiome();
         case BIOME_PLAINS:           return plainsBiome();
         case BIOME_FOREST:

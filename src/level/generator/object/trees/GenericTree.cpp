@@ -81,22 +81,22 @@ void GenericTree::placeTrunk(mcp_chunk_t* c, int sourceX, int sourceY,
 }
 
 bool GenericTree::generate(mcp_chunk_t* c, int sourceX, int sourceY,
-                           int sourceZ, GenRandom& rng) {
+                           int sourceZ, uint8_t soilId, GenRandom& rng) {
     init(rng);
 
     if (sourceY < 2 || sourceY > 124) return false;
-    if (!inXZ(sourceX) || !inXZ(sourceZ)) return false;
-
-    uint8_t soil = mcp_chunk_get_block_id(c, sourceX, sourceY - 1, sourceZ);
-    if (!canPlaceOn(soil)) return false;
+    if (!canPlaceOn(soilId)) return false;
 
     placeCanopy(c, sourceX, sourceY, sourceZ, rng);
     placeTrunk(c, sourceX, sourceY, sourceZ, rng);
 
-    // The block right under the trunk always becomes dirt (reference).
-    uint8_t below = mcp_chunk_get_block_id(c, sourceX, sourceY - 1, sourceZ);
-    if (below == (uint8_t)BlockId::GRASS || below == (uint8_t)BlockId::DIRT)
-        setForced(c, sourceX, sourceY - 1, sourceZ, (uint8_t)BlockId::DIRT, 0);
+    // The block right under the trunk always becomes dirt (reference). Only
+    // touches the chunk when the trunk actually falls inside it.
+    if (inXZ(sourceX) && inXZ(sourceZ)) {
+        uint8_t below = mcp_chunk_get_block_id(c, sourceX, sourceY - 1, sourceZ);
+        if (below == (uint8_t)BlockId::GRASS || below == (uint8_t)BlockId::DIRT)
+            setForced(c, sourceX, sourceY - 1, sourceZ, (uint8_t)BlockId::DIRT, 0);
+    }
     return true;
 }
 

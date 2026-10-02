@@ -1,6 +1,6 @@
 #pragma once
 #include "Generator.h"
-#include "level/generator/noise/SimplexNoise.h"
+#include "level/generator/TerrainShape.h"
 #include "level/generator/populator/Populator.h"
 #include <vector>
 #include <memory>
@@ -17,10 +17,10 @@ public:
         return mcp_v3(127.5, 128.0, 127.5);
     }
 private:
-    mcp_simplex_t* height_noise_;   // terrain shape
-    mcp_simplex_t* temp_noise_;     // climate: temperature
-    mcp_simplex_t* humid_noise_;    // climate: humidity
-    std::vector<std::unique_ptr<populator::Populator>> populators_;
     int64_t seed_;
+    // Terrain shape + climate + rivers, shared with the feature populators
+    // through TerrainShape so trees can span chunk borders.
+    TerrainNoise noise_;
+    std::vector<std::unique_ptr<populator::Populator>> populators_;
 };
 } // namespace

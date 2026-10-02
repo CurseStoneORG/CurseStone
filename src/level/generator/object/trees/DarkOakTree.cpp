@@ -51,12 +51,10 @@ void DarkOakTree::canopy(mcp_chunk_t* c, int cx, int trunkTopY, int cz, GenRando
 }
 
 bool DarkOakTree::generate(mcp_chunk_t* c, int sourceX, int sourceY,
-                           int sourceZ, GenRandom& rng) {
+                           int sourceZ, uint8_t soilId, GenRandom& rng) {
     init(rng);
     if (sourceY < 2 || sourceY > 124) return false;
-    if (!inXZ(sourceX) || !inXZ(sourceZ)) return false;
-    uint8_t soil = mcp_chunk_get_block_id(c, sourceX, sourceY - 1, sourceZ);
-    if (!canPlaceOn(soil)) return false;
+    if (!canPlaceOn(soilId)) return false;
 
     float d = rng.nextFloat() * (float)(M_PI * 2.0);
     int dx = (int)(std::cos(d) + 1.5F) - 1;
@@ -90,9 +88,11 @@ bool DarkOakTree::generate(mcp_chunk_t* c, int sourceX, int sourceY,
     // Soil under the whole 2x2 trunk becomes dirt.
     for (int i = 0; i <= 1; ++i) {
         for (int j = 0; j <= 1; ++j) {
-            uint8_t b = mcp_chunk_get_block_id(c, sourceX + i, sourceY - 1, sourceZ + j);
+            int bx = sourceX + i, bz = sourceZ + j;
+            if (!inXZ(bx) || !inXZ(bz)) continue;
+            uint8_t b = mcp_chunk_get_block_id(c, bx, sourceY - 1, bz);
             if (b == (uint8_t)BlockId::GRASS || b == (uint8_t)BlockId::DIRT)
-                setForced(c, sourceX + i, sourceY - 1, sourceZ + j, (uint8_t)BlockId::DIRT, 0);
+                setForced(c, bx, sourceY - 1, bz, (uint8_t)BlockId::DIRT, 0);
         }
     }
     return true;

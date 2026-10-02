@@ -12,34 +12,34 @@
 namespace cursestone::level::generator::object {
 
 bool TreeGenerator::place(mcp_chunk_t* c, int x, int y, int z, TreeType t,
-                          GenRandom& rng) {
+                          uint8_t soilId, GenRandom& rng) {
     switch (t) {
         case TREE_OAK: {
-            trees::OakTree tr;     return tr.generate(c, x, y, z, rng);
+            trees::OakTree tr;     return tr.generate(c, x, y, z, soilId, rng);
         }
         case TREE_BIG_OAK: {
-            trees::BigOakTree tr;  return tr.generate(c, x, y, z, rng);
+            trees::BigOakTree tr;  return tr.generate(c, x, y, z, soilId, rng);
         }
         case TREE_BIRCH: {
-            trees::BirchTree tr;   return tr.generate(c, x, y, z, rng);
+            trees::BirchTree tr;   return tr.generate(c, x, y, z, soilId, rng);
         }
         case TREE_SPRUCE: {
-            trees::SpruceTree tr;  return tr.generate(c, x, y, z, rng);
+            trees::SpruceTree tr;  return tr.generate(c, x, y, z, soilId, rng);
         }
         case TREE_JUNGLE: {
-            trees::JungleTree tr;  return tr.generate(c, x, y, z, rng);
+            trees::JungleTree tr;  return tr.generate(c, x, y, z, soilId, rng);
         }
         case TREE_ACACIA: {
-            trees::AcaciaTree tr;  return tr.generate(c, x, y, z, rng);
+            trees::AcaciaTree tr;  return tr.generate(c, x, y, z, soilId, rng);
         }
         case TREE_DARK_OAK: {
-            trees::DarkOakTree tr; return tr.generate(c, x, y, z, rng);
+            trees::DarkOakTree tr; return tr.generate(c, x, y, z, soilId, rng);
         }
         case TREE_SWAMP: {
-            trees::SwampTree tr;   return tr.generate(c, x, y, z, rng);
+            trees::SwampTree tr;   return tr.generate(c, x, y, z, soilId, rng);
         }
         default: {
-            trees::OakTree tr;     return tr.generate(c, x, y, z, rng);
+            trees::OakTree tr;     return tr.generate(c, x, y, z, soilId, rng);
         }
     }
 }
