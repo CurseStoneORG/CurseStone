@@ -1,7 +1,6 @@
-// CraftingManager — loads recipes.json at server startup, stores
-// all known recipes, and answers "what does this 3x3 grid produce?"
-// queries from CraftingEventPacket. Mirrors pocketmine/inventory
-// /CraftingManager.
+// CraftingManager — registra las recetas de crafteo y responde "qué
+// produce esta grilla 3x3?" a partir de CraftingEventPacket.
+// Espeja pocketmine/inventory/CraftingManager.
 #pragma once
 #include "Recipe.h"
 #include <vector>
@@ -9,57 +8,119 @@
 #include <string>
 #include <array>
 #include <cstdint>
+#include <initializer_list>
+#include <utility>
 #include <unordered_map>
+
 namespace cursestone::inventory {
+
 class CraftingManager {
 public:
     CraftingManager();
-    // Loads recipes from resources/recipes.json. Returns count loaded.
-    // El formato es el JSON de Nukkit: un array de objetos con
-    // {Type, Ingredients, Result, Height, Width} (Height/Width solo en
-    // shaped; en furnace Ingredients es un escalar). No usa una lib
-    // externa: hay un mini-parser JSON de objetivo único dentro del
-    // .cpp porque el proyecto no depende de ninguna.
+
+    // Registra las recetas ESTANDAR de MCPE 0.15.10 (protocolo 84)
+    // llamando shaped()/shapeless()/furnace() desde
+    // registerBuiltinRecipes(), en el .cpp. Devuelve cuantas quedaron.
+    //
+    // Antes estas recetas vivian en resources/recipes.json y se leian
+    // con loadFromJson(). Ese archivo NO viaja con el binario, asi que
+    // una release limpia arrancaba con 0 recetas ("No crafting recipes
+    // loaded") y el crafting quedaba dead. Ahora estan compiladas en el
+    // binario. Estilo alineado con Dr1xyDev/Nukkit-InfinityEdition, que
+    // declara todas las recetas en su CraftingManager en vez de leerlas
+    // de un recurso empaquetado.
+    int registerBuiltinRecipes();
+
+    // Carga recetas ADICIONALES desde un JSON con el formato de Nukkit
+    // ({Type, Ingredients, Result, Height, Width}). Opcional: se puede
+    // llamar despues de registerBuiltinRecipes() para extender el set
+    // base, pero no hace falta para tener recetas funcionando. Devuelve
+    // el numero de recetas anadidas (no el total).
     int loadFromJson(const std::string& json_path);
+
     // Finds the matching shaped recipe for a 3x3 grid (item ids only).
-    // grid() de la receta también está zero-padded, así que la
-    // comparación es directa. Ignora recipes con "any damage" en
+    // grid() de la receta tambien esta zero-padded, asi que la
+    // comparacion es directa. Ignora recipes con "any damage" en
     // alguna celda (para esas usar matchShapedWithMeta).
     const Recipe* matchShaped(const std::array<uint16_t, 9>& grid) const;
-    // Igual que matchShaped pero validando también el meta de cada
+
+    // Igual que matchShaped pero validando tambien el meta de cada
     // celda (grid_meta); las celdas de receta con meta -1 aceptan
     // cualquier damage del jugador.
     const Recipe* matchShapedWithMeta(const std::array<uint16_t, 9>& grid,
                                       const std::array<uint16_t, 9>& grid_meta) const;
+
     // Finds the matching shapeless recipe for an ingredient list.
     // `ingredients` debe venir ordenado ascendente (ids). Ignora
     // recipes con "any damage" (usar matchShapelessWithMeta).
     const Recipe* matchShapeless(const std::vector<uint16_t>& ing) const;
+
     // Igual que matchShapeless validando meta por ingrediente
     // (-1 en la receta = cualquier damage).
     const Recipe* matchShapelessWithMeta(const std::vector<uint16_t>& ing,
                                          const std::vector<uint16_t>& meta) const;
+
     // Finds furnace result for a given input id (any damage).
     const Recipe* matchFurnace(uint16_t input_id) const;
+
     // Igual que matchFurnace pero exigiendo damage exacto cuando la
     // receta lo declara (meta != -1). Usado por TileFurnace, donde el
     // input tiene meta concreto.
     const Recipe* matchFurnaceWithMeta(uint16_t input_id, uint16_t meta) const;
-    // Búsqueda por los 16 bytes del UUID de receta (binario, mismo
-    // orden que el que escribió CraftingDataPacket). El cliente los
+
+    // Busqueda por los 16 bytes del UUID de receta (binario, mismo
+    // orden que el que escribio CraftingDataPacket). El cliente los
     // ecoa en CraftingEventPacket — esta es la lookup principal del
     // flujo de crafteo. Devuelve nullptr si no existe.
     const Recipe* getRecipeByUuidBytes(const uint8_t* uuid16) const;
+
     // Recipes agrupadas por item resultante — usado como fallback
     // cuando el UUID que ecoa el cliente no coincide (bug conocido de
     // Win10: ecoa el UUID de otra receta desplazada en la grilla).
-    std::vector<const Recipe*> recipesByResult(uint16_t result_id, uint16_t result_meta) const;
+    std::vector<const Recipe*> recipesByResult(uint16_t result_id,
+                                               uint16_t result_meta) const;
+
     size_t size() const { return recipes_.size(); }
     const std::vector<std::unique_ptr<Recipe>>& recipes() const { return recipes_; }
+
 private:
+    // Helpers de registro — los usa registerBuiltinRecipes() para
+    // escribir cada receta como una linea legible en vez de construir
+    // los Recipe a mano con los setters.
+    //
+    // shaped(): `grid` son las 9 celdas en orden row-major (3x3
+    // zero-padded). Cada celda es {item_id, meta}; id 0 = celda vacia
+    // y meta -1 = "cualquier damage", que es lo que matchShaped() y
+    // matchShapedWithMeta() esperan. w x h es el bounding box real del
+    // patron: lo demas de la grilla tiene que estar vacio.
+    //
+    // Se toma initializer_list y no std::array<std::pair<...>,9> porque
+    // std::pair no es un aggregate: no elide los braces internos y una
+    // lista de 9 pares a mano necesita un nivel extra de llaves, lo que
+    // haria ilegible el dataset. Con initializer_list cada celda se
+    // escribe plano: {{5,-1},{5,-1},{0,-1}, ...}.
+    void shaped(int w, int h,
+                std::initializer_list<std::pair<uint16_t, int16_t>> grid,
+                cursestone::item::ItemStack result);
+
+    // shapeless(): lista de ingredientes sin orden en la grilla.
+    void shapeless(std::initializer_list<std::pair<uint16_t, int16_t>> ing,
+                   cursestone::item::ItemStack result);
+
+    // furnace(): input_meta -1 = "cualquier damage" (lo que
+    // matchFurnace() trata como ENTRY_FURNACE en el wire).
+    void furnace(uint16_t input_id, int16_t input_meta,
+                 cursestone::item::ItemStack result);
+
+    // Asigna UUID deterministas (1, 2, 3...) a todas las recetas
+    // registradas y construye el indice por bytes. Se llama una vez al
+    // terminar de registrar (registerBuiltinRecipes / loadFromJson).
+    void buildIndex();
+
     std::vector<std::unique_ptr<Recipe>> recipes_;
-    // Índice uuid(16 bytes crudos) -> receta, construido al final de
-    // loadFromJson. El array de 16 bytes como clave via array<uint8_t,16>
+
+    // Indice uuid(16 bytes crudos) -> receta, construido por
+    // buildIndex(). El array de 16 bytes como clave via array<uint8_t,16>
     // (hashable con un functor propio).
     struct Uuid16Hash {
         size_t operator()(const std::array<uint8_t, 16>& k) const {
@@ -70,4 +131,5 @@ private:
     };
     std::unordered_map<std::array<uint8_t,16>, Recipe*, Uuid16Hash> by_uuid_;
 };
-} // namespace
+
+} // namespace cursestone::inventory
