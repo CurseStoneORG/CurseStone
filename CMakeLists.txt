@@ -41,6 +41,22 @@ target_include_directories(CurseStone PRIVATE ${CMAKE_SOURCE_DIR}/src)
 find_package(Threads REQUIRED)
 target_link_libraries(CurseStone PRIVATE Threads::Threads)
 
+# ---- Backtraces con símbolos en los crashdumps ----
+#
+# src/main.cpp captura el stack en el signal handler de SIGSEGV. Con
+# glibc eso es backtrace()/backtrace_symbols() (<execinfo.h>), que solo
+# resuelve nombres de funcion si el simbolo esta en la tabla dinamica
+# del ejecutable — sin -rdynamic salen direcciones crudas y el crash
+# queda indiagnosticable.
+#
+# ENABLE_EXPORTS es la forma de CMake de pedir -rdynamic. En MSVC es
+# inofensivo (no genera flag), asi que se aplica sin condition.
+set_target_properties(CurseStone PROPERTIES ENABLE_EXPORTS ON)
+if(APPLE)
+    # Mach-O no usa -rdynamic: los simbolos salen del UNWIND table.
+    target_link_options(CurseStone PRIVATE -Wl,-export_dynamic)
+endif()
+
 # ---- zlib (packet compression) ----
 find_package(ZLIB REQUIRED)
 target_link_libraries(CurseStone PRIVATE ZLIB::ZLIB)
