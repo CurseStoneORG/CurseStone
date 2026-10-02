@@ -33,7 +33,7 @@ class SourceInterface;
 namespace level { class Level; }
 namespace network::protocol { class DataPacket; class LoginPacket; class DropItemPacket; class BlockEntityDataPacket; }
 namespace inventory { class PlayerInventory; }
-namespace tile { class TileChest; class TileFurnace; }
+namespace tile { class Tile; class TileChest; class TileFurnace; }
 
 struct PlayerConfig {
     std::string username;
@@ -143,6 +143,14 @@ public:
     // hambre y descuenta una unidad del stack. Llamado desde
     // ENTITY_EVENT_PACKET (evento 9, Eating).
     void consumeHeldItem();
+
+    // Serializa el NBT de un block entity (cartel, cofre, horno...) y manda
+    // un BlockEntityDataPacket a los jugadores que trackean su chunk. Si
+    // `only` no es null, se envía únicamente a ese jugador (equivale a
+    // Genisys Tile::spawnTo($player)); si es null, a todos los viewers del
+    // chunk (equivale a Tile::spawnToAll()).
+    void sendBlockEntityData(int32_t x, int32_t y, int32_t z,
+                             tile::Tile& t, Player* only = nullptr);
 
     // Send the creative-inventory contents (ContainerSetContentPacket with
     // windowid=0x79). Mirrors PMMP Player.php:2301 + 1461.
