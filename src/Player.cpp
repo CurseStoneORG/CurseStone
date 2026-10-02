@@ -35,6 +35,7 @@
 #include "network/protocol/AddItemEntityPacket.h"
 #include "network/protocol/TakeItemEntityPacket.h"
 #include "item/ItemFlintSteel.h"
+#include "item/Item.h"
 #include "block/BlockFire.h"
 #include "redstone/RedstoneManager.h"
 #include "item/ItemConstants.h"
@@ -57,6 +58,7 @@
 #include "network/protocol/InteractPacket.h"
 #include "network/protocol/EntityEventPacket.h"
 #include "network/protocol/RespawnPacket.h"
+#include "network/protocol/DropItemPacket.h"
 #include "network/protocol/ContainerSetContentPacket.h"
 #include "network/protocol/ContainerSetSlotPacket.h"
 #include "network/protocol/ContainerOpenPacket.h"
@@ -64,6 +66,14 @@
 #include "network/protocol/CraftingDataPacket.h"
 #include "network/protocol/CraftingEventPacket.h"
 #include "network/protocol/ContainerSetDataPacket.h"
+#include "network/protocol/BlockEntityDataPacket.h"
+#include "network/protocol/ItemFrameDropItemPacket.h"
+#include "event/player/PlayerDropItemEvent.h"
+#include "event/player/PlayerItemConsumeEvent.h"
+#include "event/block/SignChangeEvent.h"
+#include "tile/TileSign.h"
+#include "nbt/NBT.h"
+#include "nbt/tag/CompoundTag.h"
 #include "event/inventory/InventoryOpenEvent.h"
 #include "event/inventory/InventoryClickEvent.h"
 #include "event/inventory/CraftItemEvent.h"
@@ -944,6 +954,9 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
         // Packets we acknowledge but don't act on for the MVP.
         case network::protocol::BATCH_PACKET:
         case network::protocol::PLAYER_INPUT_PACKET:
+        // Genisys: `case ProtocolInfo::SET_HEALTH_PACKET: //Not used` — el
+        // cliente lo manda como confirmación de vida, el servidor lo ignora.
+        case network::protocol::SET_HEALTH_PACKET:
             break;
         case network::protocol::CONTAINER_CLOSE_PACKET:
             // Client closed whatever container UI it had open (X button,
@@ -981,6 +994,41 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
         case network::protocol::INTERACT_PACKET:
             if (auto* ip = dynamic_cast<network::protocol::InteractPacket*>(&p)) {
                 handleInteract(ip->action, ip->target);
+            }
+            break;
+        case network::protocol::ENTITY_EVENT_PACKET:
+            // Genisys case ENTITY_EVENT_PACKET: sólo el evento 9 (Eating)
+            // tiene efecto real — consumeHeldItem(). El resto se ignora.
+            if (auto* ee = dynamic_cast<network::protocol::EntityEventPacket*>(&p)) {
+                if (spawned() && ee->event == 9 /*Eating*/) {
+                    consumeHeldItem();
+                }
+            }
+            break;
+        case network::protocol::DROP_ITEM_PACKET:
+            if (auto* dp = dynamic_cast<network::protocol::DropItemPacket*>(&p)) {
+                handleDropItem(*dp);
+            }
+            break;
+        case network::protocol::BLOCK_ENTITY_DATA_PACKET:
+            // Edición de cartel (cliente→servidor). Portado de Genisys
+            // case BLOCK_ENTITY_DATA_PACKET: valida que el tile sea un
+            // Sign, verifica el Creator contra el UUID del jugador y
+            // dispara SignChangeEvent (cancelable).
+            if (auto* be = dynamic_cast<network::protocol::BlockEntityDataPacket*>(&p)) {
+                handleSignEdit(*be);
+            }
+            break;
+        case network::protocol::ITEM_FRAME_DROP_ITEM_PACKET:
+            // Genisys sólo actúa si el tile en (x,y,z) es un ItemFrame.
+            // CurseStone todavía no implementa item frames (no hay
+            // TileItemFrame), así que — igual que Genisys cuando el tile
+            // no es un frame — no hay nada que soltar. El paquete queda
+            // reconocido y decodificado en vez de "ID desconocido".
+            if (auto* ifr = dynamic_cast<network::protocol::ItemFrameDropItemPacket*>(&p)) {
+                // no-op por ahora (sin TileItemFrame). Se referencia para
+                // evitar el warning de variable no usada.
+                (void)ifr;
             }
             break;
         default: {
@@ -3061,6 +3109,118 @@ int64_t Player::dropItem(int x, int y, int z, uint16_t itemId, uint8_t count, ui
             std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(z));
     }
     return eid;
+}
+
+// ============================================================
+// handleDropItem — portado 1:1 de Genisys Player::handleDataPacket
+// case DROP_ITEM_PACKET (protocolo 84):
+//   1. Verifica que el jugador esté spawned/vivo.
+//   2. Confirma que el item esté realmente en el inventario (confianza
+//      cero en el paquete).
+//   3. PlayerDropItemEvent (cancelable); si se cancela, reenvía el slot.
+//   4. Quita el stack del inventario y suelta la entidad item.
+// ============================================================
+void Player::handleDropItem(network::protocol::DropItemPacket& pk) {
+    if (!spawned() || !inv_) return;
+
+    item::ItemStack want{};
+    want.id    = (uint16_t)pk.itemId;
+    want.meta  = (uint8_t)pk.itemDamage;
+    want.count = (int)pk.itemCount;
+    if (want.isEmpty()) return;
+
+    if (!inv_->contains(want)) { sendInventory(); return; }
+    int slot = inv_->first(want);
+    if (slot < 0) { sendInventory(); return; }
+
+    item::ItemStack dropped = inv_->getItem(slot);
+    auto ev = event::EventManager::get().fire<event::player::PlayerDropItemEvent>(this, dropped);
+    if (ev.isCancelled()) { sendSlot(slot); return; }
+
+    inv_->remove(dropped);
+    dropItem((int)std::floor(pos_.x),
+             (int)std::floor(pos_.y + 1.3),
+             (int)std::floor(pos_.z),
+             dropped.id, (uint8_t)dropped.count, dropped.meta);
+    // El cliente hace el drop de forma optimista; re-sincronizamos el
+    // inventario para que el slot quede consistente server-side.
+    sendInventory();
+}
+
+// ============================================================
+// consumeHeldItem — portado de Genisys Player::consumeHeldItem().
+// Llamado desde ENTITY_EVENT_PACKET (evento 9, Eating). Sólo los items
+// FoodSource tienen efecto; el resto es no-op.
+// ============================================================
+void Player::consumeHeldItem() {
+    if (!spawned() || !inv_) return;
+    item::ItemStack held = inv_->getHeldItem();
+    if (held.isEmpty()) return;
+
+    item::Item* def = item::Item::get(held.id);
+    if (!def || !def->isFood()) return;
+
+    auto ev = event::EventManager::get().fire<event::player::PlayerItemConsumeEvent>(this, held);
+    if (ev.isCancelled()) { sendInventory(); return; }
+
+    int restored = def->foodPoints();
+    if (restored > 0) {
+        int h = foodLevel() + restored;
+        setFoodLevel(h > 20 ? 20 : h);
+    }
+    held.count -= 1;
+    inv_->setItemInHand(held.count > 0 ? held : item::ItemStack::EMPTY());
+    sendInventory();
+}
+
+// ============================================================
+// handleSignEdit — portado de Genisys Player::handleDataPacket case
+// BLOCK_ENTITY_DATA_PACKET (protocolo 84): edición de cartel.
+//   - descarta ediciones a más de 100 bloques;
+//   - exige que el tile sea un Sign y que el NBT "id" sea "Sign";
+//   - sólo el Creator (UUID del jugador) puede editar;
+//   - dispara SignChangeEvent (cancelable) y aplica las líneas.
+// ============================================================
+void Player::handleSignEdit(network::protocol::BlockEntityDataPacket& pk) {
+    if (!spawned() || !srv_) return;
+    level::Level* lvl = srv_->getDefaultLevel();
+    if (!lvl) return;
+
+    double dx = (double)pk.x - pos_.x;
+    double dy = (double)pk.y - pos_.y;
+    double dz = (double)pk.z - pos_.z;
+    if (dx * dx + dy * dy + dz * dz > 10000.0) return;
+
+    auto tile = lvl->getTile(pk.x, pk.y, pk.z);
+    auto sign = std::dynamic_pointer_cast<tile::TileSign>(tile);
+    if (!sign) return;
+    if (pk.namedtag.empty()) return;
+
+    mcp_tag_t* root = mcp_nbt_read_bytes(pk.namedtag.data(), pk.namedtag.size(),
+                                         /*little_endian=*/true);
+    if (!root) return;
+
+    std::string id = mcp_compound_tag_get_string(root, "id", "");
+    if (id != "Sign") { mcp_tag_destroy(root); return; }
+
+    std::array<std::string, 4> lines = {
+        mcp_compound_tag_get_string(root, "Text1", ""),
+        mcp_compound_tag_get_string(root, "Text2", ""),
+        mcp_compound_tag_get_string(root, "Text3", ""),
+        mcp_compound_tag_get_string(root, "Text4", "")
+    };
+    std::string creator = mcp_compound_tag_get_string(root, "Creator", "");
+    mcp_tag_destroy(root);
+
+    auto ev = event::EventManager::get().fire<event::block::SignChangeEvent>(
+        pk.x, pk.y, pk.z, this, lines);
+    if (creator != cfg_.uuid) ev.setCancelled(true);
+    if (ev.isCancelled()) return;
+
+    for (int i = 0; i < 4; ++i) sign->setLine(i, ev.getLine(i));
+    // TODO: reenviar BlockEntityData del cartel a los viewers para que el
+    // texto se vea sin recargar el chunk (no hay broadcast de block
+    // entities todavía). El texto queda persistido en el tile.
 }
 
 // ============================================================
