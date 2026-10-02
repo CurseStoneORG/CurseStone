@@ -62,8 +62,9 @@ private:
     void dispatchSingle(const std::string& ip, uint16_t port,
                           const uint8_t* data, size_t len);
     // Instantiates the right DataPacket subclass by ID and decodes the body.
+    // `who` is the "ip:port" the packet came from, used for diagnostics.
     std::shared_ptr<protocol::DataPacket> decodePacketById(uint8_t pid,
-        const uint8_t* body, size_t bodyLen);
+        const uint8_t* body, size_t bodyLen, const std::string& who);
     // Creates a Player for a new (ip,port) session. Returns true on success.
     bool createPlayerForSession(const std::string& ip, uint16_t port);
 

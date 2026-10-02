@@ -1167,7 +1167,11 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
         if (!ok) { close("disconnectionScreen.invalidName"); return; }
     }
     std::string lower = cfg_.username;
-    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+    // Cast to unsigned char: ::tolower with a negative value (char is
+    // signed on x86 Linux, unsigned on ARM/Android) is undefined
+    // behaviour and can index outside glibc's ctype table.
+    std::transform(lower.begin(), lower.end(), lower.begin(),
+                   [](unsigned char c) { return (char)::tolower(c); });
     if (lower == "rcon" || lower == "console") {
         close("disconnectionScreen.invalidName");
         return;
@@ -1235,7 +1239,8 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
             if (other.get() == this) continue;
             if (!other) continue;
             std::string on = other->getName();
-            std::transform(on.begin(), on.end(), on.begin(), ::tolower);
+            std::transform(on.begin(), on.end(), on.begin(),
+                           [](unsigned char c) { return (char)::tolower(c); });
             if (on == lower) {
                 other->kick("logged in from another location");
             } else if (other->loggedIn() && !other->config().uuid.empty() &&

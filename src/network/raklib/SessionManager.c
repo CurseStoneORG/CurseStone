@@ -444,6 +444,30 @@ static size_t build_server_handshake(uint8_t* out, size_t cap,
 // MTU = total packet size (including UDP+IP headers which we don't see)
 // Standard MCPE estimate: payload_size + 28 (20 IP + 8 UDP)
 // =========================================================================
+// Log a handshake-stage packet that was refused or could not be parsed.
+//
+// Handshake packets (OCR1/OCR2/CLIENT_CONNECT/CLIENT_HANDSHAKE) arrive a
+// handful of times per connection, so logging them unconditionally is
+// safe. This exists because those packets used to be dropped with a bare
+// `return`: a client whose handshake the server could not parse produced
+// a completely EMPTY log — the server never created a session and never
+// said why, which is exactly the "it just says the session closed and
+// nothing else" symptom. Data packets are NOT logged here (far too many).
+static void note_handshake_drop(const uint8_t* data, size_t len,
+                                const uint8_t ip[4], uint16_t port,
+                                const char* why) {
+    char hex[80];
+    size_t cap = len < 16 ? len : 16;
+    size_t o = 0;
+    hex[0] = '\0';
+    for (size_t i = 0; i < cap && o + 4 < sizeof(hex); ++i)
+        o += (size_t)snprintf(hex + o, sizeof(hex) - o, "%02x ", data[i]);
+    fprintf(stderr,
+            "[NET] DROPPED 0x%02x packet from %u.%u.%u.%u:%u (%zu bytes)"
+            " -- %s | first bytes: %s\n",
+            data[0], ip[0], ip[1], ip[2], ip[3], port, len, why, hex);
+}
+
 static bool decode_ocr1(const uint8_t* data, size_t len,
                           uint8_t* out_protocol, uint16_t* out_mtu) {
     if (len < 18) return false; // 1(id) + 16(magic) + 1(protocol) min
@@ -463,19 +487,28 @@ static bool decode_ocr1(const uint8_t* data, size_t len,
 static bool decode_ocr2(const uint8_t* data, size_t len,
                           uint16_t* out_mtu, int64_t* out_client_id,
                           uint16_t* out_server_port) {
-    if (len < 34) return false;
-    size_t i = 1 + 16; // skip id + magic
-    // server address: [ver u8][ip 4 bytes][port u16 BE]
-    uint8_t ver = data[i++];
-    (void)ver;
-    i += 4; // ip bytes
+    // Layout: [id][magic 16][serverAddress][mtu u16 BE][clientID i64]
+    //
+    // RakNet's serverAddress is 7 bytes: [version u8][ip 4][port 2],
+    // making a conforming packet 34 bytes. Several clients in the wild
+    // (e.g. the LegacyBot stress tester) omit the version byte and write
+    // only 6, so the whole packet arrives 33 bytes long. The old code
+    // demanded `len >= 34` and dropped those packets SILENTLY, so such a
+    // client never received OPEN_CONNECTION_REPLY_2 and just sat there
+    // timing out. Accept both forms: 7-byte address whenever the packet
+    // is long enough for the canonical layout, 6-byte otherwise. Every
+    // read is bounds-checked, and the trailing clientID is optional
+    // (older clients omit it) rather than a hard failure.
+    if (len < 1 + 16 + 6 + 2) return false;
+    size_t i = 1 + 16;                 // skip id + magic
+    size_t addr = (len >= 1 + 16 + 7 + 2 + 8) ? 7 : 6;
+    if (len < i + addr + 2) return false;
+    i += addr - 2;                     // land on the port field
     *out_server_port = (uint16_t)((data[i] << 8) | data[i+1]); i += 2;
-    // mtu
     *out_mtu = (uint16_t)((data[i] << 8) | data[i+1]); i += 2;
     if (*out_mtu > RAKLIB_MAX_MTU) *out_mtu = RAKLIB_MAX_MTU;
-    // client id
-    if (i + 8 > len) return false;
-    *out_client_id = rb_i64_be(data, len, &i);
+    *out_client_id = 0;
+    if (i + 8 <= len) *out_client_id = rb_i64_be(data, len, &i);
     return true;
 }
 
@@ -626,8 +659,50 @@ static size_t parse_encap_record(const uint8_t* buf, size_t buf_len,
 //
 // Returns true if the message should be processed, false if it's a
 // duplicate or too far outside the window to be trusted.
+//
+// `payload`/`plen` are the bytes of the message being delivered. They are
+// used ONLY to tell a true retransmit (same index, same bytes -> drop)
+// apart from a client that reuses one index for several distinct messages
+// (same index, different bytes -> accept). See reliable_seen[] in
+// Session.h for why that distinction matters.
 // =========================================================================
-static bool reliable_index_accept(mcp_rak_session_t* s, uint32_t message_index) {
+static uint32_t reliable_payload_hash(const uint8_t* p, size_t n) {
+    // FNV-1a, 32-bit.
+    uint32_t h = 2166136261u;
+    for (size_t i = 0; i < n; ++i) {
+        h ^= p[i];
+        h *= 16777619u;
+    }
+    return h;
+}
+
+static void reliable_remember(mcp_rak_session_t* s, uint32_t message_index,
+                              const uint8_t* payload, size_t plen) {
+    uint32_t i = s->reliable_seen_next % MCP_RELIABLE_SEEN_SLOTS;
+    s->reliable_seen[i].index = message_index;
+    s->reliable_seen[i].hash  = reliable_payload_hash(payload, plen);
+    s->reliable_seen[i].len   = (uint32_t)plen;
+    s->reliable_seen[i].used  = true;
+    s->reliable_seen_next = i + 1;
+}
+
+// True when this exact (index, bytes) pair was already delivered.
+static bool reliable_already_delivered(mcp_rak_session_t* s,
+                                       uint32_t message_index,
+                                       const uint8_t* payload, size_t plen) {
+    if (!payload) return false;
+    uint32_t h = reliable_payload_hash(payload, plen);
+    for (uint32_t i = 0; i < MCP_RELIABLE_SEEN_SLOTS; ++i) {
+        if (!s->reliable_seen[i].used) continue;
+        if (s->reliable_seen[i].index != message_index) continue;
+        if (s->reliable_seen[i].hash == h && s->reliable_seen[i].len == plen)
+            return true;
+    }
+    return false;
+}
+
+static bool reliable_index_accept(mcp_rak_session_t* s, uint32_t message_index,
+                                    const uint8_t* payload, size_t plen) {
     if (s->last_reliable_index < 0) {
         // FIX: first reliable message this session has ever seen — center
         // the window on WHATEVER index it actually is, not unconditionally
@@ -651,8 +726,25 @@ static bool reliable_index_accept(mcp_rak_session_t* s, uint32_t message_index) 
     if (!seq24_less(message_index, s->reliable_window_start) &&
         seq24_diff(message_index, s->reliable_window_start) < MCP_RELIABLE_WINDOW_SIZE) {
         uint32_t slot = message_index % MCP_RELIABLE_WINDOW_SIZE;
-        if (s->reliable_recv_window[slot]) return false; // duplicate
+        if (s->reliable_recv_window[slot]) {
+            // Index already used. Only treat it as a duplicate when these
+            // are the very same bytes (a retransmit). A client that reuses
+            // one index for DIFFERENT messages is non-conforming, but
+            // dropping its traffic silently strands the session before it
+            // ever logs in, so let it through instead.
+            if (reliable_already_delivered(s, message_index, payload, plen)) {
+                fprintf(stderr,
+                    "[NET] Duplicate reliable message dropped "
+                    "(index=%u, %zu bytes) from %u.%u.%u.%u:%u\n",
+                    message_index, plen,
+                    s->ip[0], s->ip[1], s->ip[2], s->ip[3], s->port);
+                return false;
+            }
+            reliable_remember(s, message_index, payload, plen);
+            return true;
+        }
         s->reliable_recv_window[slot] = true;
+        reliable_remember(s, message_index, payload, plen);
         if (seq24_greater(message_index, (uint32_t)s->last_reliable_index)) {
             s->last_reliable_index = (int32_t)message_index;
         }
@@ -711,6 +803,34 @@ static void handle_encapsulated(mcp_rak_session_manager_t* sm,
 // (either the missing packet arrives, or — for datagrams that were
 // never ordered/reliable — there's nothing to wait for).
 // =========================================================================
+// True when this exact (channel, order_index, bytes) was already delivered.
+static bool order_already_delivered(mcp_rak_session_t* s, uint8_t chan,
+                                    uint32_t order_index,
+                                    const uint8_t* payload, size_t plen) {
+    if (!payload) return false;
+    uint32_t h = reliable_payload_hash(payload, plen);
+    for (uint32_t i = 0; i < MCP_ORDER_DELIVERED_SLOTS; ++i) {
+        if (!s->order_delivered[i].used) continue;
+        if (s->order_delivered[i].chan != chan) continue;
+        if (s->order_delivered[i].index != order_index) continue;
+        if (s->order_delivered[i].hash == h && s->order_delivered[i].len == plen)
+            return true;
+    }
+    return false;
+}
+
+static void order_remember_delivered(mcp_rak_session_t* s, uint8_t chan,
+                                     uint32_t order_index,
+                                     const uint8_t* payload, size_t plen) {
+    uint32_t i = s->order_delivered_next % MCP_ORDER_DELIVERED_SLOTS;
+    s->order_delivered[i].chan  = chan;
+    s->order_delivered[i].index = order_index;
+    s->order_delivered[i].hash  = payload ? reliable_payload_hash(payload, plen) : 0;
+    s->order_delivered[i].len   = (uint32_t)plen;
+    s->order_delivered[i].used  = true;
+    s->order_delivered_next = i + 1;
+}
+
 static void deliver_ordered(mcp_rak_session_manager_t* sm,
                               mcp_rak_session_t* s,
                               bool is_ordered, uint32_t order_index,
@@ -733,7 +853,35 @@ static void deliver_ordered(mcp_rak_session_manager_t* sm,
         // message index instead of plain `<`, which breaks exactly at the
         // 24-bit boundary the same way documented in seq24_* above.
         if (seq24_less(order_index, s->recv_order_index[chan])) {
-            // Stale/duplicate (retransmit of something already delivered).
+            // Normally a stale index = retransmit of something already
+            // delivered, so drop it. Compare the bytes before believing
+            // that: a client that keeps reusing ONE order index for every
+            // packet (some stress testers do) would otherwise have all of
+            // its traffic after the first packet discarded here, leaving
+            // the session half-open with an empty log. Identical bytes =
+            // real retransmit; different bytes = a new message wearing an
+            // old index, so deliver it.
+            if (order_already_delivered(s, chan, order_index, payload, plen)) {
+                s->diag_order_duplicate++;
+                return;
+            }
+            if (!s->diag_order_index_reuse_logged) {
+                s->diag_order_index_reuse_logged = true;
+                fprintf(stderr,
+                    "[NET] WARNING: %u.%u.%u.%u:%u reuses ordered-channel "
+                    "order indexes (got %u, expected %u). Delivering it "
+                    "anyway; packet reordering protection is degraded for "
+                    "this session.\n",
+                    s->ip[0], s->ip[1], s->ip[2], s->ip[3], s->port,
+                    order_index, s->recv_order_index[chan]);
+            }
+            s->diag_order_index_reuse++;
+            order_remember_delivered(s, chan, order_index, payload, plen);
+            // Re-anchor the channel on this index so the next packet is
+            // compared against what we just accepted.
+            s->recv_order_index[chan] = (order_index + 1) & MCP_SEQ24_MASK;
+            s->recv_order_advanced_ms[chan] = mcp_utils_time_ms();
+            handle_encapsulated(sm, s, payload, plen);
             return;
         }
         // FIX #3-A: reject if this exact order_index is already sitting
@@ -741,11 +889,28 @@ static void deliver_ordered(mcp_rak_session_manager_t* sm,
         // still-pending ordered packet would claim a SECOND slot for the
         // same index — wasting capacity and, when the gap finally
         // closes, delivering that payload to the game layer twice.
+        // Same bytes = genuine duplicate; different bytes = a new message
+        // reusing the index, which replaces the held one.
+        int hold_replace = -1;
         for (int k = 0; k < MCP_ORDER_HOLD_CAP; ++k) {
-            if (s->order_hold[chan][k].used &&
-                s->order_hold[chan][k].order_index == order_index) {
-                return; // already holding this index — ignore the duplicate
+            if (!s->order_hold[chan][k].used) continue;
+            if (s->order_hold[chan][k].order_index != order_index) continue;
+            if (s->order_hold[chan][k].len == plen &&
+                memcmp(s->order_hold[chan][k].data, payload, plen) == 0)
+                return; // already holding these exact bytes
+            hold_replace = k;
+            break;
+        }
+        if (hold_replace >= 0) {
+            uint8_t* copy = (uint8_t*)malloc(plen);
+            if (copy) {
+                memcpy(copy, payload, plen);
+                free(s->order_hold[chan][hold_replace].data);
+                s->order_hold[chan][hold_replace].data        = copy;
+                s->order_hold[chan][hold_replace].len         = plen;
+                s->order_hold[chan][hold_replace].stored_ms   = mcp_utils_time_ms();
             }
+            return;
         }
         bool stored = false;
         for (int k = 0; k < MCP_ORDER_HOLD_CAP; ++k) {
@@ -792,6 +957,7 @@ static void deliver_ordered(mcp_rak_session_manager_t* sm,
     // then drain any held packets that are now next in line.
     s->recv_order_index[chan] = (s->recv_order_index[chan] + 1) & MCP_SEQ24_MASK;
     s->recv_order_advanced_ms[chan] = mcp_utils_time_ms();
+    order_remember_delivered(s, chan, order_index, payload, plen);
     handle_encapsulated(sm, s, payload, plen);
 
     bool advanced = true;
@@ -802,11 +968,15 @@ static void deliver_ordered(mcp_rak_session_manager_t* sm,
                 s->order_hold[chan][k].order_index == s->recv_order_index[chan]) {
                 uint8_t* held_data = s->order_hold[chan][k].data;
                 size_t   held_len  = s->order_hold[chan][k].len;
+                // Record the HELD packet's own index, not the index of the
+                // packet that just closed the gap.
+                uint32_t held_index = s->order_hold[chan][k].order_index;
                 s->order_hold[chan][k].used = false;
                 s->order_hold[chan][k].data = NULL;
                 s->recv_order_index[chan] = (s->recv_order_index[chan] + 1) & MCP_SEQ24_MASK;
                 s->recv_order_advanced_ms[chan] = mcp_utils_time_ms();
                 if (held_data) {
+                    order_remember_delivered(s, chan, held_index, held_data, held_len);
                     handle_encapsulated(sm, s, held_data, held_len);
                     free(held_data);
                 }
@@ -1275,7 +1445,8 @@ static void handle_data_packet(mcp_rak_session_manager_t* sm,
         // payload instead (see the split-completion branch below), which
         // is the point at which "duplicate of an already-delivered
         // message" is actually the right question to ask.
-        if (is_reliable && !has_split && !reliable_index_accept(s, message_index)) {
+        if (is_reliable && !has_split &&
+            !reliable_index_accept(s, message_index, epayload, eplen)) {
             ptr += consumed;
             rem -= consumed;
             continue;
@@ -1367,7 +1538,8 @@ static void handle_data_packet(mcp_rak_session_manager_t* sm,
                 // where the message it actually describes exists as a
                 // whole.
                 bool duplicate = slot->is_reliable &&
-                                  !reliable_index_accept(s, slot->message_index);
+                                  !reliable_index_accept(s, slot->message_index,
+                                                         NULL, 0);
                 if (!duplicate) {
                     // Calculate total size
                     size_t total = 0;
@@ -1447,7 +1619,8 @@ static void log_session_diagnostics(const mcp_rak_session_t* s, const char* reas
         "  ack_received=%llu nack_received=%llu retransmits=%llu\n"
         "  recovery_occupied=%u recovery_peak=%u recovery_overwrites=%u (cap=%u)\n"
         "  split_active_now=%u split_completed=%llu split_expired=%u split_evicted=%u\n"
-        "  order_hold_active_now=%u order_hold_peak=%u order_hold_full=%u order_duplicate=%u order_forced_skip=%u\n",
+        "  order_hold_active_now=%u order_hold_peak=%u order_hold_full=%u order_duplicate=%u order_forced_skip=%u\n"
+        "  order_index_reuse=%u\n",
         s->ip[0], s->ip[1], s->ip[2], s->ip[3], s->port,
         reason,
         (unsigned long long)(now - s->start_time_ms),
@@ -1463,7 +1636,8 @@ static void log_session_diagnostics(const mcp_rak_session_t* s, const char* reas
         split_active_now, (unsigned long long)s->diag_split_completed,
         s->diag_split_expired, s->diag_split_evicted,
         order_hold_active_now, s->diag_order_hold_peak,
-        s->diag_order_hold_full, s->diag_order_duplicate, s->diag_order_forced_skip);
+        s->diag_order_hold_full, s->diag_order_duplicate, s->diag_order_forced_skip,
+        s->diag_order_index_reuse);
 }
 
 // =========================================================================
@@ -1551,7 +1725,11 @@ static void handle_unconnected(mcp_rak_session_manager_t* sm,
 
     // ---- UNCONNECTED_PING (0x01) / PING_OPEN_CONNECTIONS (0x02) ----
     if (pid == 0x01 || pid == 0x02) {
-        if (len < 17) return;
+        if (len < 17) {
+            note_handshake_drop(data, len, ip, port,
+                                "unconnected ping shorter than 17 bytes");
+            return;
+        }
         size_t pi = 1;
         uint64_t ping_time = rb_u64_le(data, len, &pi);
         out_len = build_unconnected_pong(out, sizeof(out),
@@ -1567,7 +1745,11 @@ static void handle_unconnected(mcp_rak_session_manager_t* sm,
     if (pid == 0x05) {
         uint8_t  protocol;
         uint16_t mtu;
-        if (!decode_ocr1(data, len, &protocol, &mtu)) return;
+        if (!decode_ocr1(data, len, &protocol, &mtu)) {
+            note_handshake_drop(data, len, ip, port,
+                                "OPEN_CONNECTION_REQUEST_1 needs at least 18 bytes");
+            return;
+        }
 
         // Protocol check: MCPE 0.15.10 uses RakNet protocol 6
         // We accept 6 and also 8 (some clients send 8).
@@ -1597,7 +1779,11 @@ static void handle_unconnected(mcp_rak_session_manager_t* sm,
         }
         if (!s) {
             s = mcp_rak_session_manager_get_or_create(sm, ip, port);
-            if (!s) return;
+            if (!s) {
+                note_handshake_drop(data, len, ip, port,
+                                    "no free session slot for OPEN_CONNECTION_REQUEST_1");
+                return;
+            }
         }
         s->mtu   = mtu;
         s->state = MCP_SESSION_STATE_CONNECTING_1;
@@ -1614,12 +1800,20 @@ static void handle_unconnected(mcp_rak_session_manager_t* sm,
         if (!s) {
             // Can create fresh if state was lost
             s = mcp_rak_session_manager_get_or_create(sm, ip, port);
-            if (!s) return;
+            if (!s) {
+                note_handshake_drop(data, len, ip, port,
+                                    "no free session slot for OPEN_CONNECTION_REQUEST_2");
+                return;
+            }
         }
         uint16_t mtu;
         int64_t  client_id;
         uint16_t srv_port;
-        if (!decode_ocr2(data, len, &mtu, &client_id, &srv_port)) return;
+        if (!decode_ocr2(data, len, &mtu, &client_id, &srv_port)) {
+            note_handshake_drop(data, len, ip, port,
+                                "OPEN_CONNECTION_REQUEST_2 too short to parse");
+            return;
+        }
 
         // Clamp MTU like PMMP
         if (mtu > RAKLIB_MAX_MTU) mtu = RAKLIB_MAX_MTU;

@@ -164,7 +164,8 @@ void Network::dispatchSingle(const std::string& ip, uint16_t port,
 
     // Decode the body (everything after the leading ID byte) via the
     // PacketPool registry and forward to the Player's dispatcher.
-    auto pkt = decodePacketById(pid, data + 1, len - 1);
+    auto pkt = decodePacketById(pid, data + 1, len - 1,
+                                ip + ":" + std::to_string(port));
     if (!pkt) return;
     // CRITICAL: skip if the player was closed between the lock() above
     // and here. connected_ is atomic; if false, the player is being
@@ -174,7 +175,7 @@ void Network::dispatchSingle(const std::string& ip, uint16_t port,
 }
 
 std::shared_ptr<protocol::DataPacket> Network::decodePacketById(uint8_t pid,
-        const uint8_t* body, size_t bodyLen) {
+        const uint8_t* body, size_t bodyLen, const std::string& who) {
     // Helper local: primeros N bytes en hex, para diagnóstico.
     auto hexDump = [](const uint8_t* b, size_t n) {
         size_t cap = n < 40 ? n : 40;
@@ -234,6 +235,21 @@ std::shared_ptr<protocol::DataPacket> Network::decodePacketById(uint8_t pid,
             " bytes=" + hexDump(body, bodyLen));
     }
     if (!ok) {
+        // A LoginPacket that cannot be decoded is the one failure that
+        // leaves the operator with NO clue: no Player is ever created, so
+        // no "Closing player ..." line is printed either and the only
+        // thing left in the log is "Session opened" + "Session closed" —
+        // exactly the "no session was created" report. Always log the
+        // concrete reason (short buffer / bad outerLen / zlib stream).
+        if (pid == protocol::LOGIN_PACKET) {
+            auto* lp = dynamic_cast<protocol::LoginPacket*>(pkt.get());
+            utils::MainLogger::get().warn(
+                "LoginPacket from " + who + " could not be decoded (len=" +
+                std::to_string(bodyLen) + "): " +
+                (!lp || lp->decode_error.empty() ? std::string("unknown")
+                                                  : lp->decode_error) +
+                " — no session created");
+        }
         // Decode failed — silently drop (log above already covered it
         // when advancedLog() is on).
         return nullptr;
