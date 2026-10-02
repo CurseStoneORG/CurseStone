@@ -21,6 +21,25 @@ inline double landMask(double cont) { return smoothstep(-0.28, 0.02, cont); }
 
 } // namespace
 
+double continentField(const TerrainNoise& n, double wx, double wz) {
+    return mcp_simplex_fbm2d(n.height, wx * 0.0010, wz * 0.0010, 3, 0.5, 2.0);
+}
+
+double plainsFactor(const TerrainNoise& n, double wx, double wz) {
+    const double cont = continentField(n, wx, wz);
+    // Two terms. A biome-scale patch noise so plains also occur well inland,
+    // and a coastal band keyed off `cont` so that the shelf of land just
+    // above the ocean is almost always plains. The coastal term is what
+    // puts the wide open grassland right against the sea, with hills and
+    // forest further back — the shape the reference generator produces.
+    const double p = mcp_simplex_fbm2d(n.surface, wx * 0.0017 + 3300.0,
+                                       wz * 0.0017 - 1700.0, 2, 0.5, 2.0);
+    const double inland = smoothstep(0.02, 0.40, p);
+    const double coast = smoothstep(-0.12, 0.10, cont) *
+                         (1.0 - smoothstep(0.14, 0.38, cont));
+    return std::clamp(std::max(inland * 0.85, coast * 0.95), 0.0, 1.0);
+}
+
 TerrainNoise::TerrainNoise(int64_t seed) {
     height  = mcp_simplex_new(seed);
     temp    = mcp_simplex_new(seed ^ 0xBA5EBA11);
@@ -39,8 +58,7 @@ TerrainNoise::~TerrainNoise() {
 
 double rawColumnHeight(const TerrainNoise& n, double wx, double wz) {
     // Continent shape (oceans vs. land). Long wavelength.
-    const double cont = mcp_simplex_fbm2d(n.height, wx * 0.0010, wz * 0.0010,
-                                          3, 0.5, 2.0);
+    const double cont = continentField(n, wx, wz);
     // Broad rolling swells — the large-scale swell that makes hills read as
     // hills instead of as one uniform bump field.
     const double broad = mcp_simplex_fbm2d(n.height, wx * 0.0022 + 313.0,
@@ -76,17 +94,31 @@ double rawColumnHeight(const TerrainNoise& n, double wx, double wz) {
     outcrop = outcrop * outcrop * outcrop;
 
     const double land = landMask(cont);
+    // Plains are genuinely flat: the relief layers are damped where
+    // plainsFactor says we are on open grassland. This is what makes the
+    // flat areas WIDE instead of a patch of flat ground surrounded by
+    // hills, and the biome choice reads the same factor so "plains" means
+    // the same flat thing in both places.
+    const double plains = plainsFactor(n, wx, wz);
+    // 0.90 rather than 0.78: at full plains the relief was still 22% of the
+    // hills and the measured step between neighbouring plains columns came
+    // out no flatter than the rest of the world, which is the opposite of
+    // what makes a plain read as a plain.
+    const double relief = 1.0 - 0.90 * plains;
 
     double h = 70.0 + cont * 31.0;                       // 39 .. 101 base
-    h += broad * (13.0 * land + 1.5 * (1.0 - land));     // large swells
-    h += hill * (16.0 * land + 3.0 * (1.0 - land));      // hills
-    h += ridge * 24.0 * land * smoothstep(0.30, 0.62, cont); // mountains (rare)
+    // The broad swell is damped too. It was the one layer still at full
+    // strength inside a plain, and since it is the largest term it is the
+    // one that decides whether two neighbouring columns differ at all.
+    h += broad * (13.0 * land * (0.30 + 0.70 * relief) + 1.5 * (1.0 - land));
+    h += hill * (16.0 * land * relief + 3.0 * (1.0 - land));      // hills
+    h += ridge * 24.0 * land * relief * smoothstep(0.30, 0.62, cont); // mountains
     // Detail is boosted where the ground is already high: highland gets
     // craggier, lowland stays smooth, which is what vanilla does.
     const double highland = smoothstep(70.0, 92.0, h);
-    h += det * (3.6 * land + 0.6) * (1.0 + 0.8 * highland);
-    h += crag * (5.5 * land + 0.3);
-    h += (outcrop - 0.30) * 9.5 * smoothstep(84.0, 100.0, h) *
+    h += det * (3.6 * land * relief + 0.25) * (1.0 + 0.8 * highland);
+    h += crag * (5.5 * land * relief + 0.12);
+    h += (outcrop - 0.30) * 9.5 * relief * smoothstep(84.0, 100.0, h) *
          smoothstep(0.18, 0.55, cont);
 
     // ---- Rivers ---------------------------------------------------------
@@ -211,17 +243,17 @@ double riverShoulder(const TerrainNoise& n, double wx, double wz) {
 }
 
 bool isShore(const TerrainNoise& n, double wx, double wz, int h, int radius) {
-    // radius defaults to 2 (see header): a 2-3 block wide band of sand at the
-    // water line, which is what a vanilla beach actually is.
-    // Only land within a couple of blocks of the water line can be a beach.
-    // Everything else short-circuits, which keeps this cheap: it is called
-    // per column but the expensive neighbour sampling only runs on the
-    // handful of columns that are actually near the water.
+    // radius defaults to 2 (see header): a 2-3 block wide band at the water
+    // line, which is what a vanilla beach actually is.
+    //
     // Only land within a couple of blocks of the water line can be a beach.
     // The window is deliberately tight: a wide one turns every low-lying
     // plain into a beach, because in flat coastal country plenty of ground
     // sits at that height. Vanilla beaches are a narrow band right at the
     // water's edge.
+    //
+    // This is also the cheap-guard: the expensive neighbour sampling below
+    // only runs for the handful of columns that are actually near water.
     if (h < kSeaLevel - 1 || h > kSeaLevel + 2) return false;
     // Neighbour test uses the RAW height rather than the smoothed
     // columnHeight(): this predicate runs for every near-water column
@@ -238,6 +270,52 @@ bool isShore(const TerrainNoise& n, double wx, double wz, int h, int radius) {
         }
     }
     return false;
+}
+
+bool isOceanShore(const TerrainNoise& n, double wx, double wz, int h, int radius) {
+    if (h < kSeaLevel - 1 || h > kSeaLevel + 2) return false;
+    for (int dx = -radius; dx <= radius; ++dx) {
+        for (int dz = -radius; dz <= radius; ++dz) {
+            if (dx == 0 && dz == 0) continue;
+            if (rawColumnHeight(n, wx + dx, wz + dz) >= (double)kSeaLevel - 0.5)
+                continue;   // that neighbour is not water
+            // The water we touch has to be OCEAN. A river channel is also
+            // water at the same level, but a sandy bank is the NORM along
+            // the sea and only an occasional accident along a river — and
+            // this test is what tells the two apart.
+            if (riverMask(n, wx + dx, wz + dz) < 0.15) return true;
+        }
+    }
+    return false;
+}
+
+double riverSandBank(const TerrainNoise& n, double wx, double wz) {
+    // Rare but LONG sand banks along rivers.
+    //
+    // Two things decide whether a stretch of bank is sand, and they have to
+    // be kept separate. Which REACH of river is sandy comes from a very low
+    // frequency field (~350-block wavelength) — that is what makes the sand
+    // run in long stretches along the river instead of dropping round
+    // patches every few blocks. The valley mask then decides WHERE on the
+    // bank it is allowed to appear.
+    //
+    // The valley is used as a smooth GATE rather than multiplied in as a
+    // weight. Multiplying by the raw valley made the result fall off towards
+    // the top of the bank, so the column only cleared the threshold in the
+    // few blocks right at the water line and the measured stretches came out
+    // 4 blocks long. Ramping it to 1 well inside the valley instead keeps the
+    // whole bank of a chosen reach at full strength.
+    const double v = riverValley(n, wx, wz);
+    if (v <= 0.06) return 0.0;
+    const double nearRiver = smoothstep(0.06, 0.20, v);
+
+    const double s = mcp_simplex_fbm2d(n.surface, wx * 0.0028 + 8080.0,
+                                       wz * 0.0028 + 4040.0, 2, 0.5, 2.0);
+    constexpr double kStart = 0.34;
+    constexpr double kEdge  = 0.66;
+    if (s <= kStart) return 0.0;
+    const double t = (s - kStart) / (kEdge - kStart);
+    return t * t * (3.0 - 2.0 * t) * nearRiver;
 }
 
 double gravelPatch(const TerrainNoise& n, double wx, double wz, int h) {
@@ -297,10 +375,20 @@ uint8_t columnBiome(const TerrainNoise& n, double wx, double wz, int h) {
     uint8_t b = BiomeRegistry::select(t, hu, h, kSeaLevel);
     if (b == BIOME_OCEAN) b = BIOME_PLAINS;
 
-    // Beach: a land column at/near sea level that has open water within a
-    // few columns. Uses the same isShore() the surface fill uses, so the
-    // biome and the sand on the ground can never disagree.
-    if (isShore(n, wx, wz, h)) return BIOME_BEACH;
+    // Where the terrain has actually been flattened into open grassland,
+    // prefer plains whatever the climate says. The biome has to agree with
+    // the shape of the ground, otherwise you get forests and jungles
+    // standing on open plains and vice versa — and the plains themselves
+    // end up full of trees the terrain was flattened to make room for.
+    if (plainsFactor(n, wx, wz) > 0.55 && h < kSeaLevel + 16)
+        b = BIOME_PLAINS;
+
+    // Beach: only along the OCEAN. A river bank is normally grass, so
+    // giving river columns BIOME_BEACH (whose top block is sand) is what
+    // used to make every river run between two sandy strips. Uses the same
+    // isOceanShore() the surface fill uses, so the biome and the sand on
+    // the ground can never disagree.
+    if (isOceanShore(n, wx, wz, h)) return BIOME_BEACH;
     return b;
 }
 

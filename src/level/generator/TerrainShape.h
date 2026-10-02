@@ -66,10 +66,31 @@ double riverValley(const TerrainNoise& n, double wx, double wz);
 double riverShoulder(const TerrainNoise& n, double wx, double wz);
 
 // True when this column is a shoreline: at (or within a couple of blocks
-// of) the water level AND within `radius` columns of open water. Shared by
-// the biome choice and the surface-block choice so the two can never
-// disagree about where the beach is.
+// of) the water level AND within `radius` columns of open water.
 bool isShore(const TerrainNoise& n, double wx, double wz, int h, int radius = 2);
+
+// Same test, but the water it touches must be OCEAN and not a river
+// channel. This is what separates the two very different cases the
+// reference generator makes: sandy beaches are the NORM along the sea,
+// while a river bank is normally grass and only occasionally sand.
+bool isOceanShore(const TerrainNoise& n, double wx, double wz, int h, int radius = 2);
+
+// Rare but LONG sand banks along rivers, in [0,1]. Deliberately built from
+// a very low-frequency field so that when it does fire it runs alongside
+// the river for hundreds of blocks instead of making round patches, and it
+// is gated on the river valley so it can only ever appear next to water.
+double riverSandBank(const TerrainNoise& n, double wx, double wz);
+
+// Continent field (the long-wavelength ocean/land shape), exposed so the
+// biome choice and the height field can agree on where the coast is.
+double continentField(const TerrainNoise& n, double wx, double wz);
+
+// How "plain" this column is, in [0,1]. Broad, flat regions that are
+// strongly biased toward coastal lowland, so the big open grassland sits
+// against the sea the way the reference does. The terrain amplitude and
+// the biome choice both read this, which is what keeps "plains" meaning
+// the same flat thing in both.
+double plainsFactor(const TerrainNoise& n, double wx, double wz);
 
 // Gravel patch mask in [0,1]: rare patches of gravel on the surface,
 // clustered around rivers and coastlines the way vanilla scatters them.

@@ -13,7 +13,7 @@ const BiomeConfig& plainsBiome() {
         .fillerBlock = 3,    // dirt
         .snowy = false,
         .underwater = false,
-        .treeAmount = 4,
+        .treeAmount = 2,
         .trees = {
             { object::TREE_OAK, 7 },
             { object::TREE_BIG_OAK, 2 },
