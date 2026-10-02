@@ -221,6 +221,45 @@ typedef struct mcp_rak_session {
     bool      reliable_recv_window[MCP_RELIABLE_WINDOW_SIZE];
     int32_t   last_reliable_index; // -1 = nothing received yet
 
+    // Payload-aware duplicate detection for reliable messages.
+    //
+    // reliable_recv_window[] above can only answer "have I seen this
+    // message index?". That is enough to suppress a genuine RETRANSMIT
+    // (which reuses both the index and the bytes), but it cannot tell a
+    // retransmit apart from a client that REUSES an index for a different
+    // message. Some clients in the wild (e.g. the LegacyBot stress
+    // tester) never increment reliableMessageNumber and send 0 for every
+    // reliable-ordered packet, so the window accepted the first packet
+    // and silently discarded the rest as "duplicates" — the
+    // CLIENT_HANDSHAKE and the LoginPacket never reached the game layer,
+    // no session was ever opened, and the log stayed completely empty.
+    // This ring remembers the (index, payload-hash) of recently accepted
+    // messages so a repeat is only dropped when the bytes match too.
+#define MCP_RELIABLE_SEEN_SLOTS 256
+    struct {
+        uint32_t index;
+        uint32_t hash;
+        uint32_t len;
+        bool     used;
+    } reliable_seen[MCP_RELIABLE_SEEN_SLOTS];
+    uint32_t  reliable_seen_next;
+
+    // Same idea for RELIABLE_ORDERED channels. A stale order_index is
+    // normally a retransmit of something already delivered and is dropped;
+    // but a client that keeps reusing one order_index for every packet
+    // would otherwise have ALL of its traffic after the first packet
+    // discarded silently, stranding the session before login.
+#define MCP_ORDER_DELIVERED_SLOTS 64
+    struct {
+        uint8_t  chan;
+        uint32_t index;
+        uint32_t hash;
+        uint32_t len;
+        bool     used;
+    } order_delivered[MCP_ORDER_DELIVERED_SLOTS];
+    uint32_t  order_delivered_next;
+    bool      diag_order_index_reuse_logged;
+
     // ---- Diagnostics (point #12/#13 in the audit): counters surfaced in
     // the disconnect log so a timeout/kick can be correlated with what
     // was actually happening in the reliability layer at the time. ----
@@ -252,6 +291,9 @@ typedef struct mcp_rak_session {
     // so the disconnect log can tell the two apart instead of one
     // number silently meaning either thing.
     uint32_t  diag_order_forced_skip;
+    // Packets accepted despite arriving on an already-used order index,
+    // i.e. a client that reuses one order index for the whole session.
+    uint32_t  diag_order_index_reuse;
 
     // MTU negotiated during handshake
     uint16_t  mtu;

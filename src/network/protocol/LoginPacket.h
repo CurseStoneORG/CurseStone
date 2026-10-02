@@ -41,6 +41,10 @@ public:
     std::string deviceModel   = "Standard";
     int         deviceOS      = -1;   // -1 = unknown
     int         clientId       = 0;
+    // Why decode() gave up (empty on success). Surfaced in the console
+    // log so an operator can tell a malformed/short buffer from a zlib
+    // failure instead of only seeing "no session created".
+    std::string decode_error;
 
 private:
     // Parses the third segment of the clientData JWT (a JSON object).

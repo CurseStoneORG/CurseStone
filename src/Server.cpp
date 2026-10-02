@@ -836,9 +836,11 @@ Player* Server::getPlayerExact(const std::string& name) const {
     for (const auto& p : snap) {
         if (p) {
             std::string pn = p->getName();
-            std::transform(pn.begin(), pn.end(), pn.begin(), ::tolower);
+            std::transform(pn.begin(), pn.end(), pn.begin(),
+                   [](unsigned char c) { return (char)::tolower(c); });
             std::string nl = name;
-            std::transform(nl.begin(), nl.end(), nl.begin(), ::tolower);
+            std::transform(nl.begin(), nl.end(), nl.begin(),
+                   [](unsigned char c) { return (char)::tolower(c); });
             if (pn == nl) return p.get();
         }
     }
@@ -848,11 +850,13 @@ Player* Server::getPlayerExact(const std::string& name) const {
 std::vector<Player*> Server::matchPlayer(const std::string& partialName) const {
     std::vector<Player*> result;
     std::string lower = partialName;
-    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+    std::transform(lower.begin(), lower.end(), lower.begin(),
+                   [](unsigned char c) { return (char)::tolower(c); });
     for (const auto& p : playersSnapshot()) {
         if (!p) continue;
         std::string pn = p->getName();
-        std::transform(pn.begin(), pn.end(), pn.begin(), ::tolower);
+        std::transform(pn.begin(), pn.end(), pn.begin(),
+                   [](unsigned char c) { return (char)::tolower(c); });
         if (pn.find(lower) != std::string::npos) {
             result.push_back(p.get());
         }
