@@ -87,24 +87,33 @@ double savannaFactor(const TerrainNoise& n, double wx, double wz) {
         biome::BIOME_SAVANNA)
         return 0.0;
     // Long stretches rather than a uniform sheet: the low-relief savanna
-    // comes in patches a couple of hundred blocks wide.
-    return smoothstep(-0.10, 0.22,
-        mcp_simplex_fbm2d(n.surface, wx * 0.0046 + 4200.0,
-                          wz * 0.0046 - 8800.0, 2, 0.5, 2.0));
+    // comes in patches a few hundred blocks wide. The mask is deliberately
+    // low-frequency and the ramp is wide, because a narrow one left the
+    // savanna (and the plateau cut out of it) as thin slivers between the
+    // plains and the desert.
+    return smoothstep(-0.16, 0.18,
+        mcp_simplex_fbm2d(n.surface, wx * 0.0032 + 4200.0,
+                          wz * 0.0032 - 8800.0, 2, 0.5, 2.0));
 }
 
 double savannaCanyon(const TerrainNoise& n, double wx, double wz) {
     // Hard-gated to the CORE of a savanna, so a canyon can never appear in
     // (or next to) the plains, the desert or the jungle.
-    const double core = smoothstep(0.62, 0.85, savannaFactor(n, wx, wz));
+    // The ramp starts right at the savanna threshold (0.45) so the plateau
+    // covers a wide, contiguous share of the savanna instead of only its
+    // deepest core. A higher threshold made the tables come out as thin
+    // ribbons, which is exactly what the savanna plateaus looked like.
+    const double core = smoothstep(0.45, 0.64, savannaFactor(n, wx, wz));
     if (core <= 0.0) return 0.0;
     // Margin: a canyon has to sit WELL INSIDE the savanna, never on the
     // border with another biome, so the savanna is sampled a few blocks out
     // in all eight directions and the canyon is dropped if any of them has
     // stopped being savanna. The margin is only paid for on the candidate
-    // columns (core > 0), so the rest of the world never sees it.
-    constexpr double kMargin = 0.55;   // = the savanna biome threshold
-    constexpr double kM = 8.0;
+    // columns (core > 0), so the rest of the world never sees it. It is
+    // kept small (6 blocks, the savanna threshold itself) so it does not
+    // eat into the width of the table.
+    constexpr double kMargin = 0.45;   // = the savanna biome threshold
+    constexpr double kM = 6.0;
     if (savannaFactor(n, wx - kM, wz) < kMargin ||
         savannaFactor(n, wx + kM, wz) < kMargin ||
         savannaFactor(n, wx, wz - kM) < kMargin ||
@@ -128,10 +137,13 @@ double savannaCanyon(const TerrainNoise& n, double wx, double wz) {
     const double notPlains =
         1.0 - smoothstep(0.35, 0.55, plainsFactor(n, wx, wz));
     if (notPlains <= 0.0) return 0.0;
-    // Narrow ramp on purpose: the wall of the canyon is the ramp itself.
-    return core * notPlains * smoothstep(0.00, 0.28,
-        mcp_simplex_fbm2d(n.surface, wx * 0.0052 + 15500.0,
-                          wz * 0.0052 + 7300.0, 2, 0.5, 2.0));
+    // Broad patch mask: low frequency so the tables come out hundreds of
+    // blocks across rather than as small mounds, with a wide ramp so the
+    // transition from the plain up onto the table is a proper wall instead
+    // of a narrow spike.
+    return core * notPlains * smoothstep(-0.02, 0.22,
+        mcp_simplex_fbm2d(n.surface, wx * 0.0034 + 15500.0,
+                          wz * 0.0034 + 7300.0, 2, 0.5, 2.0));
 }
 
 TerrainNoise::TerrainNoise(int64_t seed) {
@@ -325,13 +337,30 @@ namespace {
 // narrow channel mask and the wide valley mask read the SAME field, so the
 // water always sits at the bottom of the valley that was carved for it.
 //
-// Three octaves rather than two: the extra detail breaks up the long flat
-// stretches the two-octave field could have right at zero. On a flat spot
-// the zero contour is ill-defined, the block distance blows up or collapses
-// and the river either vanished or flooded the whole flat — the wide rivers
-// that showed up on some seeds.
+// Domain warping is what makes the rivers SERPENTINE. On its own the zero
+// contour of a smooth field is already a single connected network (every
+// reach of {field == 0} either joins another reach at a saddle or runs out
+// to the sea), but at this low frequency each reach runs almost perfectly
+// straight for hundreds of blocks, which is why the rivers read as a few
+// long canals instead of rivers that wander and merge with each other.
+// Displacing the sampling point by a slow independent noise field first
+// bends every reach without ever disconnecting one from the next.
+//
+// Four octaves: the extra detail keeps the contour from flattening into a
+// straight line at any scale and breaks up the long flat stretches the
+// field could have right at zero. On a flat spot the zero contour is
+// ill-defined, the block distance blows up or collapses and the river used
+// to vanish or flood the whole flat.
 inline double riverField(const TerrainNoise& n, double wx, double wz) {
-    return mcp_simplex_fbm2d(n.river, wx * 0.0013, wz * 0.0013, 3, 0.5, 2.0);
+    constexpr double kWarpFreq = 0.00085;   // ~1100-block wavelength
+    constexpr double kAmp      = 34.0;      // blocks of sideways displacement
+    const double ox = mcp_simplex_fbm2d(n.surface, wx * kWarpFreq + 12000.0,
+                                        wz * kWarpFreq - 3100.0, 2, 0.5, 2.0);
+    const double oz = mcp_simplex_fbm2d(n.surface, wx * kWarpFreq - 7300.0,
+                                        wz * kWarpFreq + 9100.0, 2, 0.5, 2.0);
+    return mcp_simplex_fbm2d(n.river,
+                             (wx + ox * kAmp) * 0.0014,
+                             (wz + oz * kAmp) * 0.0014, 4, 0.5, 2.0);
 }
 
 // Distance in BLOCKS from the river's zero contour, estimated as
@@ -358,10 +387,14 @@ double riverMask(const TerrainNoise& n, double wx, double wz) {
     // Rivers are the zero contour of the low-frequency field, so the water
     // is the set of columns within a couple of blocks of that contour.
     const double d = riverDistance(n, wx, wz);
-    // Measured in BLOCKS now (see riverDistance). Thin on purpose: a
-    // vanilla river is a few blocks of water, not a lake.
-    constexpr double kCore = 0.4;   // fully carved channel floor
-    constexpr double kEdge = 1.75;  // river bank
+    // Measured in BLOCKS now (see riverDistance). Deliberately a few
+    // blocks wide — a river, not a lake — but a touch wider than the
+    // original 0.4/1.75 so the channel reads as a real river you can see
+    // from the bank instead of a one-block ditch. Measured median water
+    // width went from ~2-3 blocks to ~4, which is the "un poco más ancho"
+    // that was asked for without turning it into a canal.
+    constexpr double kCore = 0.45;  // fully carved channel floor
+    constexpr double kEdge = 1.9;   // river bank
     if (d >= kEdge) return 0.0;
     if (d <= kCore) return 1.0;
     const double t = (d - kCore) / (kEdge - kCore);

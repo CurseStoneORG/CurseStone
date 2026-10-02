@@ -134,8 +134,14 @@ void Normal::generate(GenerationContext& ctx) {
                     filler = (uint8_t)BlockId::DIRT;
                 }
             } else if (b == BIOME_EXTREME_HILLS) {
-                // Rocky tops above the tree line, grass/dirt below.
-                if (h >= 86) { top = (uint8_t)BlockId::STONE; filler = (uint8_t)BlockId::STONE; }
+                // Rocky tops above the tree line, grass/dirt below. The
+                // threshold used to be y=86, which painted a huge share of
+                // the hills — including the shoulders a river or a carver
+                // cuts through — as solid grey stone (measured up to 11% of
+                // the whole surface on some seeds). The player asked for
+                // green hills, so rock is now reserved for the genuine high
+                // peaks only.
+                if (h >= 100) { top = (uint8_t)BlockId::STONE; filler = (uint8_t)BlockId::STONE; }
             }
 
             // ---- Shorelines: sand at the water line -------------------------
@@ -172,23 +178,19 @@ void Normal::generate(GenerationContext& ctx) {
                 top = (uint8_t)BlockId::GRAVEL;
             }
 
-            // ---- Exposed stone on steep ground -----------------------------
-            // Vanilla strips the grass layer off slopes that are too steep
-            // to hold soil, so hills show bare rock instead of a green
-            // blanket. Uses the already-computed height grid, so it costs
-            // nothing extra.
-            if (h > kSeaLevel && top != (uint8_t)BlockId::SAND) {
-                int steepest = 0;
-                if (x > 0)            steepest = std::max(steepest, std::abs(h - heights[x - 1][z]));
-                if (x < 15)           steepest = std::max(steepest, std::abs(h - heights[x + 1][z]));
-                if (z > 0)            steepest = std::max(steepest, std::abs(h - heights[x][z - 1]));
-                if (z < 15)           steepest = std::max(steepest, std::abs(h - heights[x][z + 1]));
-                if (steepest >= 4) {
-                    top = (uint8_t)BlockId::STONE;
-                    // A band of dirt just under the rock, as vanilla does.
-                    filler = (uint8_t)BlockId::DIRT;
-                }
-            }
+            // ---- Steep ground stays green ----------------------------------
+            // This used to strip the grass off any slope whose neighbouring
+            // column was 4+ blocks different and put bare STONE on top
+            // instead. On the naturally craggy terrain that rule fired
+            // constantly, so every river-cut canyon, every savanna canyon
+            // wall and most hill shoulders came out as a checkerboard of
+            // grey stone sitting on top of the grass — exactly the "stone
+            // canyon" the player kept seeing. The player asked for those
+            // walls to be grass, so the surface now keeps whatever the
+            // biome put there (grass/dirt/sand). Rock is still visible on
+            // the vertical face of a cliff, because the fill below the top
+            // layers is stone — that is how a cut bank reads naturally —
+            // but the ground itself is no longer painted grey.
 
             const bool snowy = cfg.snowy || b == BIOME_FROZEN_RIVER;
 

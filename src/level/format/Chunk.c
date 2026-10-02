@@ -509,29 +509,65 @@ void mcp_chunk_propagate_sky_light(mcp_chunk_t* c) {
 
 // ---------------------------------------------------------------- network serialization
 
-// Color de "grasscolor" clásico por bioma, para el array de biome
-// colors del FullChunkDataPacket (protocolo 84 / MCPE 0.15.x — ver
-// el comentario dentro de mcp_chunk_network_serialize).
+// Color de "grasscolor" por bioma, para el array de biome colors del
+// FullChunkDataPacket (protocolo 84 / MCPE 0.15.x — ver el comentario
+// dentro de mcp_chunk_network_serialize).
 //
-// OJO: los ids de este switch siguen la tabla clásica de grasscolor
+// IMPORTANTE: los ids de este switch son EXACTAMENTE los del enum
+// BiomeId de level/generator/biome/Biome.h, que es el byte que viaja en
+// el chunk. Antes este switch seguia la tabla clasica de grasscolor
 // (0=ocean, 1=plains, 2=desert, 3=forest, 4=mountains, 5=beach,
-// 6=taiga, 7=swampland, 8=hell), que NO es la numeracion del enum
-// BiomeId de level/generator/biome/Biome.h (donde 5=TAIGA, 6=SWAMPLAND,
-// 7=RIVER y BEACH=16). Está desalineado a proposito hasta que ambos
-// lados se unifiquen; cambiarlo cambia el color del mundo.
+// 6=taiga, 7=swampland, 8=hell), que NO coincide con BiomeId a partir
+// del 5 (ahi BiomeId tiene 5=TAIGA, 6=SWAMPLAND, 7=RIVER). Ademas
+// todos los biomas con id >= 9 (frozen, ice plains, beach=16, jungle,
+// savanna=35, mesa=37, plains_plateau=129, ...) caian en el default y
+// salian con el verde de plains. Ese desalineamiento es la razon de
+// que el pasto NO cambiara de tono segun el bioma: savana, jungla,
+// tundra y pantano salian todos del mismo color.
 //
-// Bioma desconocido -> plains.
+// Ahora cada bioma tiene su tono, agrupado por clima: frio = verde
+// palido azulado, taiga = verde grisaceo de conifera, pantano = oliva
+// oscuro, sabana/desierto = verde amarillento seco, jungla = verde
+// intenso y saturado, meseta/hell = marron. Bioma desconocido -> plains.
 static void mcp_biome_grass_color(uint8_t biomeId, uint8_t* r, uint8_t* g, uint8_t* b) {
     switch (biomeId) {
-        case 0: *r = 0x8E; *g = 0xB9; *b = 0x71; break; // ocean (piso, no se ve pasto real)
-        case 1: *r = 0x91; *g = 0xBD; *b = 0x59; break; // plains
-        case 2: *r = 0xBF; *g = 0xB7; *b = 0x55; break; // desert
-        case 3: *r = 0x79; *g = 0xC0; *b = 0x5A; break; // forest
-        case 4: *r = 0x8A; *g = 0xB6; *b = 0x89; break; // mountains
-        case 5: *r = 0x91; *g = 0xBD; *b = 0x59; break; // beach (igual a plains)
-        case 6: *r = 0x86; *g = 0xB8; *b = 0x7F; break; // taiga
-        case 7: *r = 0x4C; *g = 0x76; *b = 0x3C; break; // swampland (color fijo, como en Java)
-        case 8: *r = 0x90; *g = 0x59; *b = 0x57; break; // hell (no hay pasto real)
+        // --- Templado ---
+        case 0:  *r = 0x8E; *g = 0xB9; *b = 0x71; break; // OCEAN
+        case 1:  *r = 0x91; *g = 0xBD; *b = 0x59; break; // PLAINS
+        case 3:  *r = 0x79; *g = 0xC0; *b = 0x5A; break; // FOREST
+        case 4:  *r = 0x8A; *g = 0xB6; *b = 0x89; break; // EXTREME_HILLS
+        case 7:  *r = 0x8E; *g = 0xB9; *b = 0x71; break; // RIVER
+        case 16: *r = 0x91; *g = 0xBD; *b = 0x59; break; // BEACH (igual a plains)
+        case 18: *r = 0x79; *g = 0xC0; *b = 0x5A; break; // FOREST_HILLS
+        case 20: *r = 0x8A; *g = 0xB6; *b = 0x89; break; // MOUNTAINS
+        case 129:*r = 0x91; *g = 0xBD; *b = 0x59; break; // PLAINS_PLATEAU
+
+        // --- Frio: verde palido azulado ---
+        case 5:  *r = 0x86; *g = 0xB7; *b = 0x83; break; // TAIGA
+        case 10: *r = 0x80; *g = 0xB4; *b = 0x97; break; // FROZEN_OCEAN
+        case 11: *r = 0x80; *g = 0xB4; *b = 0x97; break; // FROZEN_RIVER
+        case 12: *r = 0x80; *g = 0xB4; *b = 0x97; break; // ICE_PLAINS
+        case 13: *r = 0x80; *g = 0xB4; *b = 0x97; break; // ICE_MOUNTAINS
+        case 19: *r = 0x86; *g = 0xB7; *b = 0x83; break; // TAIGA_HILLS
+
+        // --- Humedo: verde oscuro ---
+        case 6:  *r = 0x6A; *g = 0x70; *b = 0x39; break; // SWAMPLAND (oliva, como en Java)
+        case 21: *r = 0x59; *g = 0xC9; *b = 0x3C; break; // JUNGLE
+        case 22: *r = 0x59; *g = 0xC9; *b = 0x3C; break; // JUNGLE_HILLS
+        case 14: *r = 0x55; *g = 0xC9; *b = 0x3F; break; // MUSHROOM
+        case 15: *r = 0x55; *g = 0xC9; *b = 0x3F; break; // MUSHROOM_ISLAND
+
+        // --- Calido/seco: verde amarillento ---
+        case 2:  *r = 0xBF; *g = 0xB7; *b = 0x55; break; // DESERT
+        case 17: *r = 0xBF; *g = 0xB7; *b = 0x55; break; // DESERT_HILLS
+        case 35: *r = 0xBF; *g = 0xB7; *b = 0x55; break; // SAVANNA
+        case 36: *r = 0xBD; *g = 0xB2; *b = 0x5F; break; // SAVANNA_PLATEAU
+        case 37: *r = 0x90; *g = 0x81; *b = 0x4D; break; // MESA
+
+        // --- No terrestre ---
+        case 8:  *r = 0x90; *g = 0x59; *b = 0x57; break; // HELL
+        case 9:  *r = 0x8E; *g = 0xB9; *b = 0x71; break; // SKY
+
         default: *r = 0x91; *g = 0xBD; *b = 0x59; break; // desconocido -> plains
     }
 }
