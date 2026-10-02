@@ -10,7 +10,7 @@ namespace cursestone::level::generator::object::trees {
 class DarkOakTree : public GenericTree {
 public:
     bool generate(mcp_chunk_t* c, int sourceX, int sourceY, int sourceZ,
-                  GenRandom& rng) override;
+                  uint8_t soilId, GenRandom& rng) override;
 
 protected:
     void init(GenRandom& rng) override;

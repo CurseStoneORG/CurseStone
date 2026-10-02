@@ -37,12 +37,10 @@ void AcaciaTree::canopy(mcp_chunk_t* c, int cx, int trunkTopY, int cz,
 }
 
 bool AcaciaTree::generate(mcp_chunk_t* c, int sourceX, int sourceY,
-                          int sourceZ, GenRandom& rng) {
+                          int sourceZ, uint8_t soilId, GenRandom& rng) {
     init(rng);
     if (sourceY < 2 || sourceY > 124) return false;
-    if (!inXZ(sourceX) || !inXZ(sourceZ)) return false;
-    uint8_t soil = mcp_chunk_get_block_id(c, sourceX, sourceY - 1, sourceZ);
-    if (!canPlaceOn(soil)) return false;
+    if (!canPlaceOn(soilId)) return false;
 
     // Direction of the trunk twist (reduced to NESW).
     float d = rng.nextFloat() * (float)(M_PI * 2.0);
@@ -104,9 +102,11 @@ bool AcaciaTree::generate(mcp_chunk_t* c, int sourceX, int sourceY,
         }
     }
 
-    uint8_t below = mcp_chunk_get_block_id(c, sourceX, sourceY - 1, sourceZ);
-    if (below == (uint8_t)BlockId::GRASS || below == (uint8_t)BlockId::DIRT)
-        setForced(c, sourceX, sourceY - 1, sourceZ, (uint8_t)BlockId::DIRT, 0);
+    if (inXZ(sourceX) && inXZ(sourceZ)) {
+        uint8_t below = mcp_chunk_get_block_id(c, sourceX, sourceY - 1, sourceZ);
+        if (below == (uint8_t)BlockId::GRASS || below == (uint8_t)BlockId::DIRT)
+            setForced(c, sourceX, sourceY - 1, sourceZ, (uint8_t)BlockId::DIRT, 0);
+    }
     return true;
 }
 

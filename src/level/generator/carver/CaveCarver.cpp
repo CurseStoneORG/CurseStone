@@ -199,6 +199,13 @@ bool CaveCarver::isLiquid(uint8_t id) {
 }
 
 void CaveCarver::digBlock(mcp_chunk_t* chunk, int8_t x, int16_t y, int8_t z) const {
+    // Never break through the terrain surface: keep at least the top ground
+    // block intact so caves do not punch holes in the sky or open the ocean
+    // floor. The heightmap is set by the terrain pass (generate()) before
+    // the carver runs.
+    const int top = mcp_chunk_get_height_map(chunk, x, z);
+    if (top > 1 && y >= top - 1) return;
+
     if (!canReplaceBlock(chunk, x, y, z)) return;
 
     if ((y - 1) < kLiquidAltitude) {
@@ -222,6 +229,10 @@ bool CaveCarver::canReplaceBlock(const mcp_chunk_t* chunk, int8_t x, int16_t y, 
         block == (uint8_t)BlockId::WOOD_2 || block == (uint8_t)BlockId::LEAVES_2) {
         return false;
     }
+
+    // Never carve a block directly under water/lava: that would drain the
+    // body of liquid sitting on top of it (ocean / lake floors).
+    if (isLiquid(above)) return false;
 
     if (y > kLiquidAltitude) {
         const int ox[4] = { x - 1, x + 1, x, x };

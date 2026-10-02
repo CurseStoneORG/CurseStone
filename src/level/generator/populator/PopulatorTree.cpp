@@ -1,10 +1,13 @@
 #include "PopulatorTree.h"
 #include "PopulatorUtil.h"
+#include "level/generator/TerrainShape.h"
 #include "level/generator/biome/BiomeRegistry.h"
+#include "block/BlockIds.h"
 
 namespace cursestone::level::generator::populator {
 
 namespace {
+
 // Weighted species pick from a biome's tree list.
 object::TreeType pickSpecies(const std::vector<biome::TreeSpawn>& trees, GenRandom& rng) {
     int total = 0;
@@ -17,32 +20,62 @@ object::TreeType pickSpecies(const std::vector<biome::TreeSpawn>& trees, GenRand
     }
     return trees.back().type;
 }
-} // namespace
 
-void PopulatorTree::populate(GenerationContext& ctx) {
-    GenRandom rng = chunkRandom(ctx.seed, ctx.chunk_x, ctx.chunk_z, 0x5EEDCAFE);
+// Plants every tree that chunk (nx,nz) wants, writing into `ctx.chunk` —
+// whose coordinates are (nx*16 + lx - cbx, nz*16 + lz - cbz), clipped to
+// the target chunk by the tree writer. Running this for the target chunk's
+// own chunk gives its trees; running it for the 8 neighbours gives the
+// overlapping part of *their* trees, which is what keeps a tree that
+// crosses a border from being cut in half.
+void plantChunkTrees(const TerrainNoise& noise, GenerationContext& ctx, int attempts,
+                     int nx, int nz, int cbx, int cbz) {
+    GenRandom rng = chunkRandom(ctx.seed, nx, nz, 0x5EEDCAFE);
 
     // 16 candidate slots per chunk; each slot only plants a tree if the
     // biome under it wants trees (density comes from BiomeConfig).
-    for (int i = 0; i < 16; ++i) {
-        int x = (int)rng.nextInt(16);
-        int z = (int)rng.nextInt(16);
-        uint8_t biome = mcp_chunk_get_biome(ctx.chunk, x, z);
+    for (int i = 0; i < attempts; ++i) {
+        const int lx = (int)rng.nextInt(16);
+        const int lz = (int)rng.nextInt(16);
+        const int wx = nx * 16 + lx;
+        const int wz = nz * 16 + lz;
+
+        // Trunk base Y and biome are pure functions of the world column, so
+        // every chunk that renders this tree agrees on where it goes.
+        const int h = columnHeight(noise, wx, wz);
+        if (h < 2 || h > 119) continue;
+
+        const uint8_t biome = columnBiome(noise, wx, wz, h);
         const auto& cfg = biome::BiomeRegistry::forId(biome);
         if (cfg.trees.empty() || cfg.treeAmount <= 0) continue;
         if (rng.nextInt(16) >= cfg.treeAmount) continue;
 
-        int y = surfaceY(ctx.chunk, x, z);
-        if (y < 1 || y > 118) continue;
-
-        uint8_t ground = mcp_chunk_get_block_id(ctx.chunk, x, y, z);
+        const uint8_t ground = cfg.topBlock;
         if (ground == (uint8_t)block::BlockId::SNOW_BLOCK ||
             ground == (uint8_t)block::BlockId::ICE) {
             continue;   // no trees straight on ice/snow blocks
         }
 
         object::TreeType t = pickSpecies(cfg.trees, rng);
-        object::TreeGenerator::place(ctx.chunk, x, y + 1, z, t, rng);
+        object::TreeGenerator::place(ctx.chunk, wx - cbx, h, wz - cbz, t, ground, rng);
     }
 }
+
+} // namespace
+
+void PopulatorTree::populate(GenerationContext& ctx) {
+    TerrainNoise noise(ctx.seed);
+    const int cbx = ctx.chunk_x * 16;
+    const int cbz = ctx.chunk_z * 16;
+
+    // Rescan the 3x3 chunk neighbourhood: the target chunk plus the eight
+    // around it. A tree whose trunk is in a neighbour still has its canopy
+    // and logs written here wherever they overlap this chunk, so nothing is
+    // chopped at the border anymore.
+    for (int nx = ctx.chunk_x - 1; nx <= ctx.chunk_x + 1; ++nx)
+        for (int nz = ctx.chunk_z - 1; nz <= ctx.chunk_z + 1; ++nz)
+            plantChunkTrees(noise, ctx, attempts_, nx, nz, cbx, cbz);
+
+    ctx.chunk->dirty = true;
+}
+
 } // namespace cursestone::level::generator::populator

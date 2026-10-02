@@ -10,6 +10,7 @@
 #include "level/generator/biome/Biome.h"
 #include "level/generator/biome/BiomeRegistry.h"
 #include "block/BlockIds.h"
+#include <algorithm>
 #include <cmath>
 
 namespace cursestone::level::generator {
@@ -17,24 +18,7 @@ namespace cursestone::level::generator {
 using namespace biome;
 using object::OreVein;
 
-namespace {
-
-constexpr int kSeaLevel = 64;
-
-inline double smoothstep(double e0, double e1, double x) {
-    double t = (x - e0) / (e1 - e0);
-    if (t < 0.0) t = 0.0;
-    else if (t > 1.0) t = 1.0;
-    return t * t * (3.0 - 2.0 * t);
-}
-
-} // namespace
-
-Normal::Normal(int64_t seed) : seed_(seed) {
-    height_noise_ = mcp_simplex_new(seed);
-    temp_noise_   = mcp_simplex_new(seed ^ 0xBA5EBA11);
-    humid_noise_  = mcp_simplex_new(seed ^ 0x0FF1CE);
-
+Normal::Normal(int64_t seed) : seed_(seed), noise_(seed) {
     // Vanilla ore distribution (ported from the reference's OrePopulator).
     std::vector<OreVein> ores = {
         {3,  1,   0, 128, 32, 10},  // dirt patches
@@ -48,14 +32,17 @@ Normal::Normal(int64_t seed) : seed_(seed) {
     };
 
     // Populator order matters: ores + caves first (they edit raw ground),
-    // then lakes, then vegetation on the final surface. Feature populators
-    // all use 16 candidate slots per chunk; the actual density comes from
-    // each biome's BiomeConfig amounts, so their ctor argument only sets
-    // the slot count, not the frequency.
+    // then vegetation on the final surface. Feature populators all use 16
+    // candidate slots per chunk; the actual density comes from each biome's
+    // BiomeConfig amounts, so their ctor argument only sets the slot count.
+    //
+    // NOTE: the water/lava lake populators that used to sit between caves
+    // and trees are gone on purpose — the user reported small pools
+    // ("charcos") appearing all over the surface. Rivers are now part of
+    // the terrain shape itself (see TerrainShape), so no lake pass is
+    // needed.
     populators_.push_back(std::make_unique<populator::PopulatorOre>(std::move(ores)));
     populators_.push_back(std::make_unique<populator::PopulatorCave>(16));
-    populators_.push_back(std::make_unique<populator::PopulatorLake>(2, 9));   // water
-    populators_.push_back(std::make_unique<populator::PopulatorLake>(1, 11));  // lava
 
     populators_.push_back(std::make_unique<populator::PopulatorTree>(16));
     populators_.push_back(std::make_unique<populator::PopulatorTallGrass>(16));
@@ -72,11 +59,7 @@ Normal::Normal(int64_t seed) : seed_(seed) {
     populators_.push_back(std::make_unique<populator::PopulatorWaterLily>(16));
 }
 
-Normal::~Normal() {
-    mcp_simplex_destroy(height_noise_);
-    mcp_simplex_destroy(temp_noise_);
-    mcp_simplex_destroy(humid_noise_);
-}
+Normal::~Normal() = default;
 
 void Normal::generate(GenerationContext& ctx) {
     using cursestone::block::BlockId;
@@ -85,96 +68,34 @@ void Normal::generate(GenerationContext& ctx) {
     const int baseZ = ctx.chunk_z * 16;
 
     // ---- Height field ----------------------------------------------------
-    // Three very-low-frequency layers, sampled on a window with a 2-block
-    // margin (world columns -2..17) so two separable blur passes stay
-    // seamless across chunk borders: the raw noise is a pure function of
-    // world coordinates, so neighbouring chunks compute identical values
-    // for shared columns.
-    //
-    //   cont — continent shape (oceans vs. land), wavelength ~900 blocks
-    //   hill — relief, wavelength ~240 blocks
-    //   det  — gentle surface detail, wavelength ~95 blocks
-    //
-    // Amplitudes are chosen so the typical per-block gradient stays well
-    // under 1: after the blur passes almost every slope is walkable
-    // (steps of at most 1 block), instead of the old 2-3 block terraces.
-    constexpr int kWin = 20;                 // world offsets -2 .. 17
-    double raw[kWin][kWin];
-
-    for (int i = 0; i < kWin; ++i) {
-        for (int j = 0; j < kWin; ++j) {
-            const double wx = baseX + i - 2;
-            const double wz = baseZ + j - 2;
-
-            const double cont = mcp_simplex_fbm2d(height_noise_,
-                wx * 0.0011, wz * 0.0011, 3, 0.5, 2.0);
-            const double hill = mcp_simplex_fbm2d(height_noise_,
-                wx * 0.0042 + 77.3, wz * 0.0042 - 41.7, 3, 0.5, 2.0);
-            const double det = mcp_simplex_fbm2d(height_noise_,
-                wx * 0.0105 + 900.0, wz * 0.0105 + 300.0, 2, 0.5, 2.0);
-
-            // land: 0 over deep ocean, 1 over the continent.
-            const double land = smoothstep(-0.35, -0.02, cont);
-
-            double h = 68.0 + cont * 30.0;              // base curve 38..98
-            h += hill * (15.0 * land + 3.0 * (1.0 - land));
-            h += det * (2.5 * land + 0.5);
-            raw[i][j] = h;
-        }
-    }
-
-    // Two separable (1,2,1)/4 blur passes over the window. Valid interior
-    // after both passes: i in [2, kWin-3] => world x 0..15.
-    double blur[kWin][kWin];
-    for (int i = 1; i < kWin - 1; ++i)
-        for (int j = 0; j < kWin; ++j)
-            blur[i][j] = (raw[i - 1][j] + 2.0 * raw[i][j] + raw[i + 1][j]) * 0.25;
-
-    double final[kWin][kWin];
-    for (int i = 2; i < kWin - 2; ++i)
-        for (int j = 1; j < kWin - 1; ++j)
-            final[i][j] = (blur[i][j - 1] + 2.0 * blur[i][j] + blur[i][j + 1]) * 0.25;
+    // Raw column heights are a pure function of world coordinates, computed
+    // on an 18x18 grid (1-block margin) so the smoothing kernel and the
+    // beach/water neighbour test are identical at every chunk border. Two
+    // neighbouring chunks therefore agree on every shared column.
+    constexpr int GW = 18;   // world offsets -1 .. 16
+    double raw[GW][GW];
+    for (int i = 0; i < GW; ++i)
+        for (int j = 0; j < GW; ++j)
+            raw[i][j] = rawColumnHeight(noise_, baseX - 1 + i, baseZ - 1 + j);
 
     int heights[16][16];
+    for (int x = 0; x < 16; ++x) {
+        for (int z = 0; z < 16; ++z) {
+            double k[3][3];
+            for (int a = 0; a < 3; ++a)
+                for (int b = 0; b < 3; ++b)
+                    k[a][b] = raw[x + a][z + b];
+            heights[x][z] = heightFromRaw(k);
+        }
+    }
+
+    // ---- Biomes ----------------------------------------------------------
+    // columnBiome() is the same pure function the tree populator uses, so a
+    // tree's species is decided identically by whichever chunk renders it.
+    uint8_t biomes[16][16];
     for (int x = 0; x < 16; ++x)
         for (int z = 0; z < 16; ++z)
-            heights[x][z] = (int)std::lround(final[x + 2][z + 2]);
-
-    // ---- Climate + biome selection --------------------------------------
-    // Temperature/humidity use very low frequencies (features every 400+
-    // blocks) and BiomeRegistry::select applies wide climate bands, so a
-    // biome spans hundreds of blocks instead of flickering every few
-    // metres. The pass below also rewrites the ids so every stored id is a
-    // base biome id.
-    uint8_t biomes[16][16];
-    for (int x = 0; x < 16; ++x) {
-        for (int z = 0; z < 16; ++z) {
-            const double wx = baseX + x;
-            const double wz = baseZ + z;
-            const double t  = mcp_simplex_fbm2d(temp_noise_,
-                wx * 0.0004, wz * 0.0004, 2, 0.5, 2.0);
-            const double hu = mcp_simplex_fbm2d(humid_noise_,
-                wx * 0.0005 + 512.0, wz * 0.0005 - 256.0, 2, 0.5, 2.0);
-            biomes[x][z] = BiomeRegistry::select(t, hu, heights[x][z], kSeaLevel);
-        }
-    }
-
-    // Ocean + beach classification: a land column at/just above sea level
-    // next to open water becomes a beach.
-    for (int x = 0; x < 16; ++x) {
-        for (int z = 0; z < 16; ++z) {
-            if (heights[x][z] < kSeaLevel - 2) { biomes[x][z] = BIOME_OCEAN; continue; }
-            if (biomes[x][z] == BIOME_OCEAN) { biomes[x][z] = BIOME_PLAINS; }
-            if (heights[x][z] > kSeaLevel + 2) continue;
-            const int dx[4] = { -1, 1, 0, 0 };
-            const int dz[4] = { 0, 0, -1, 1 };
-            for (int i = 0; i < 4; ++i) {
-                int nx = x + dx[i], nz = z + dz[i];
-                if (nx < 0 || nx > 15 || nz < 0 || nz > 15) continue;
-                if (heights[nx][nz] < kSeaLevel - 2) { biomes[x][z] = BIOME_BEACH; break; }
-            }
-        }
-    }
+            biomes[x][z] = columnBiome(noise_, baseX + x, baseZ + z, heights[x][z]);
 
     // ---- Fill columns ----------------------------------------------------
     for (int x = 0; x < 16; ++x) {
@@ -190,12 +111,15 @@ void Normal::generate(GenerationContext& ctx) {
             if (b == BIOME_OCEAN) {
                 top = (h > 58) ? (uint8_t)BlockId::SAND : (uint8_t)BlockId::GRAVEL;
                 filler = (uint8_t)BlockId::GRAVEL;
+            } else if (b == BIOME_RIVER || b == BIOME_FROZEN_RIVER) {
+                top = (uint8_t)BlockId::SAND;
+                filler = (h > 58) ? (uint8_t)BlockId::SAND : (uint8_t)BlockId::GRAVEL;
             } else if (b == BIOME_EXTREME_HILLS) {
                 // Rocky tops above the tree line, grass/dirt below.
                 if (h >= 86) { top = (uint8_t)BlockId::STONE; filler = (uint8_t)BlockId::STONE; }
             }
 
-            const bool snowy = cfg.snowy;
+            const bool snowy = cfg.snowy || b == BIOME_FROZEN_RIVER;
 
             for (int y = 0; y < h; ++y) {
                 uint8_t id;
@@ -206,7 +130,7 @@ void Normal::generate(GenerationContext& ctx) {
                 mcp_chunk_set_block_id(c, x, y, z, id);
             }
 
-            // Water up to sea level.
+            // Water up to sea level (oceans and rivers alike — same level).
             for (int y = h; y < kSeaLevel; ++y)
                 mcp_chunk_set_block_id(c, x, y, z, (uint8_t)BlockId::WATER);
 
@@ -214,10 +138,11 @@ void Normal::generate(GenerationContext& ctx) {
             if (snowy && h < kSeaLevel)
                 mcp_chunk_set_block_id(c, x, kSeaLevel - 1, z, (uint8_t)BlockId::ICE);
 
-            // Snow layer on top of cold grass above water level.
+            // Snow layer on top of cold grass above water level. The ground
+            // block sits at h-1, so the snow layer goes at h.
             if (snowy && h >= kSeaLevel && h < 100 &&
-                mcp_chunk_get_block_id(c, x, h, z) == (uint8_t)BlockId::GRASS) {
-                mcp_chunk_set_block_id(c, x, h + 1, z, (uint8_t)BlockId::SNOW_LAYER);
+                mcp_chunk_get_block_id(c, x, h - 1, z) == (uint8_t)BlockId::GRASS) {
+                mcp_chunk_set_block_id(c, x, h, z, (uint8_t)BlockId::SNOW_LAYER);
             }
 
             mcp_chunk_set_biome(c, x, z, b);
