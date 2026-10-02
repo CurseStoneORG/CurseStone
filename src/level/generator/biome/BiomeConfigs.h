@@ -9,6 +9,7 @@ namespace cursestone::level::generator::biome {
 const BiomeConfig& oceanBiome();
 const BiomeConfig& beachBiome();
 const BiomeConfig& plainsBiome();
+const BiomeConfig& plainsPlateauBiome();
 const BiomeConfig& forestBiome();
 const BiomeConfig& desertBiome();
 const BiomeConfig& taigaBiome();

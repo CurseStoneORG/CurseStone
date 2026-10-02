@@ -44,6 +44,11 @@ Normal::Normal(int64_t seed) : seed_(seed), noise_(seed) {
     populators_.push_back(std::make_unique<populator::PopulatorOre>(std::move(ores)));
     populators_.push_back(std::make_unique<populator::PopulatorCave>(16));
 
+    // Very rare lava pools on the flat plains. It runs after the caves and
+    // before the vegetation on purpose: the pools are then part of the raw
+    // ground, so no tree or flower gets planted over a fresh one.
+    populators_.push_back(std::make_unique<populator::PopulatorLavaPool>(1));
+
     populators_.push_back(std::make_unique<populator::PopulatorTree>(16));
     populators_.push_back(std::make_unique<populator::PopulatorTallGrass>(16));
     populators_.push_back(std::make_unique<populator::PopulatorDoublePlant>(16, 2)); // large grass

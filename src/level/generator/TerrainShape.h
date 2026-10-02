@@ -92,6 +92,37 @@ double continentField(const TerrainNoise& n, double wx, double wz);
 // the same flat thing in both.
 double plainsFactor(const TerrainNoise& n, double wx, double wz);
 
+// Climate at a world column, in [-1, 1]. Exposed so the terrain and the
+// biome selection read the exact same temperature/humidity (the savanna
+// flattening below has to agree with BiomeRegistry::select).
+double tempAt(const TerrainNoise& n, double wx, double wz);
+double humidAt(const TerrainNoise& n, double wx, double wz);
+
+// ---- Plains variant -----------------------------------------------------
+// Raised plains variant gate in [0,1]: broad patches that stand a few
+// blocks ABOVE the surrounding plains and stay flat on top. Already gated
+// on plainsFactor, so it can only ever fire on actual grassland.
+double plainsPlateau(const TerrainNoise& n, double wx, double wz);
+
+// Forest patches inside the plains, in [0,1]. Broad woodland-scale
+// patches that turn open grassland into a patch of forest (the biome
+// selection uses the same mask, so the trees and the biome agree).
+double plainsForest(const TerrainNoise& n, double wx, double wz);
+
+// ---- Savanna -----------------------------------------------------------
+// How strongly this column is a savanna PLAIN, in [0,1]: warm and
+// moderately dry (never as dry as the desert, never as wet as the jungle)
+// and inside a broad patch mask, so savanna comes in long stretches of
+// low-relief ground instead of a thin climate stripe.
+double savannaFactor(const TerrainNoise& n, double wx, double wz);
+
+// Savanna canyon gate in [0,1]: a broad raised table ~25 blocks above the
+// savanna plain, with steep canyon walls. Gated hard on the CORE of a
+// savanna (savannaFactor), so it can never leak into plains, desert or
+// jungle, and its own mask is thresholded sharply so the transition to the
+// surrounding savanna reads as a canyon wall.
+double savannaCanyon(const TerrainNoise& n, double wx, double wz);
+
 // Gravel patch mask in [0,1]: rare patches of gravel on the surface,
 // clustered around rivers and coastlines the way vanilla scatters them.
 double gravelPatch(const TerrainNoise& n, double wx, double wz, int h);

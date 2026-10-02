@@ -82,6 +82,18 @@ private:
     uint8_t liquid_;
 };
 
+// Very rare lava pools on flat plains. The pool is a shallow lava puddle
+// ringed with stone; the populator rolls once per chunk, so pools are an
+// event rather than a second biome.
+class PopulatorLavaPool : public Populator {
+public:
+    explicit PopulatorLavaPool(int attempts) : attempts_(attempts) {}
+    const char* name() const override { return "lavapool"; }
+    void populate(GenerationContext& ctx) override;
+private:
+    int attempts_;
+};
+
 class PopulatorWaterLily : public Populator {
 public:
     explicit PopulatorWaterLily(int attempts) : attempts_(attempts) {}
