@@ -10,9 +10,16 @@ void GenRandom::setSeed(int64_t s) {
     const int64_t Z = 521288629;
     const int64_t W = 88675123;
     x_ = X ^ s;
-    y_ = Y ^ (s << 17) | ((s >> 15) & 0x7fffffff) & 0xffffffff;
-    z_ = Z ^ (s << 31) | ((s >> 1) & 0x7fffffff) & 0xffffffff;
-    w_ = W ^ (s << 18) | ((s >> 14) & 0x7fffffff) & 0xffffffff;
+    // NOTE: the parentheses around the `|` are REQUIRED and were missing
+    // before. `|` binds looser than `^`, so `Y ^ a | b & c` parsed as
+    // `(Y ^ a) | (b & c)` instead of the intended `Y ^ (a | (b & c))` —
+    // which both mixed a signed seed into the low bits and, worse, made
+    // the generator state depend on operator precedence rather than on
+    // the formula. Any platform where int64_t shifts behaved differently
+    // produced a different sequence, so worlds stopped being reproducible.
+    y_ = Y ^ ((s << 17) | (((s >> 15) & 0x7fffffff) & 0xffffffff));
+    z_ = Z ^ ((s << 31) | (((s >> 1) & 0x7fffffff) & 0xffffffff));
+    w_ = W ^ ((s << 18) | (((s >> 14) & 0x7fffffff) & 0xffffffff));
 }
 
 int64_t GenRandom::nextSignedInt() {

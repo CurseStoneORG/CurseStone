@@ -29,7 +29,7 @@ BaseInventory::BaseInventory(InventoryHolder* holder, std::shared_ptr<InventoryT
 BaseInventory::BaseInventory(InventoryHolder* holder, std::shared_ptr<InventoryType> type,
                                const std::unordered_map<int, item::ItemStack>& items,
                                int overrideSize, const std::string& overrideTitle)
-    : holder_(holder), type_(type) {
+    : type_(type), holder_(holder) {
     if (overrideSize > 0) size_ = overrideSize;
     else if (type_)      size_ = type_->getDefaultSize();
     if (!overrideTitle.empty()) title_ = overrideTitle;
