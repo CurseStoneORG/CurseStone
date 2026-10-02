@@ -52,7 +52,7 @@ void ObjectDecorators::cactus(mcp_chunk_t* c, int x, int y, int z, GenRandom& rn
             return;
         }
     }
-    for (int i = 1; i <= h; ++i) put(c, x, y + i, z, (uint8_t)BlockId::CACTUS, 0);
+    for (int i = 1; i <= h; ++i) put(c, x, y + i, z, (uint8_t)BlockId::CACTUS_BIG, 0);
 }
 
 void ObjectDecorators::sugarCane(mcp_chunk_t* c, int x, int y, int z, GenRandom& rng) {

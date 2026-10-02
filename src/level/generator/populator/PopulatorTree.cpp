@@ -1,61 +1,47 @@
 #include "PopulatorTree.h"
 #include "PopulatorUtil.h"
-#include "level/generator/biome/Biome.h"
-using namespace cursestone::level::generator::biome;
+#include "level/generator/biome/BiomeRegistry.h"
 
 namespace cursestone::level::generator::populator {
 
 namespace {
-object::TreeType speciesForBiome(uint8_t b, GenRandom& rng) {
-    switch (b) {
-        case BIOME_PLAINS:
-            return (rng.nextInt(6) == 0) ? object::TREE_BIG_OAK : object::TREE_OAK;
-        case BIOME_FOREST:
-        case BIOME_FOREST_HILLS: {
-            int r = (int)rng.nextInt(10);
-            if (r < 5) return object::TREE_OAK;
-            if (r < 8) return object::TREE_BIRCH;
-            return object::TREE_BIG_OAK;
-        }
-        case BIOME_TAIGA:
-        case BIOME_TAIGA_HILLS:
-        case BIOME_EXTREME_HILLS:
-            return (rng.nextInt(4) == 0) ? object::TREE_OAK : object::TREE_SPRUCE;
-        case BIOME_SWAMPLAND:
-            return object::TREE_SWAMP;
-        case BIOME_JUNGLE:
-        case BIOME_JUNGLE_HILLS:
-            return object::TREE_JUNGLE;
-        case BIOME_SAVANNA:
-        case BIOME_SAVANNA_PLATEAU:
-            return object::TREE_ACACIA;
-        default:
-            return object::TREE_OAK;
+// Weighted species pick from a biome's tree list.
+object::TreeType pickSpecies(const std::vector<biome::TreeSpawn>& trees, GenRandom& rng) {
+    int total = 0;
+    for (const auto& t : trees) total += t.weight;
+    if (total <= 0) return object::TREE_OAK;
+    int r = (int)rng.nextInt(total);
+    for (const auto& t : trees) {
+        r -= t.weight;
+        if (r < 0) return t.type;
     }
+    return trees.back().type;
 }
 } // namespace
 
 void PopulatorTree::populate(GenerationContext& ctx) {
     GenRandom rng = chunkRandom(ctx.seed, ctx.chunk_x, ctx.chunk_z, 0x5EEDCAFE);
 
-    int count = attempts_;
-    if (rng.nextInt(10) == 0) ++count;
-
-    for (int i = 0; i < count; ++i) {
+    // 16 candidate slots per chunk; each slot only plants a tree if the
+    // biome under it wants trees (density comes from BiomeConfig).
+    for (int i = 0; i < 16; ++i) {
         int x = (int)rng.nextInt(16);
         int z = (int)rng.nextInt(16);
-        int y = surfaceY(ctx.chunk, x, z);
-        if (y < 1 || y > 120) continue;
         uint8_t biome = mcp_chunk_get_biome(ctx.chunk, x, z);
-        if (!biomeHasVegetation(biome)) continue;
-        // No trees on bare snow/ice/high stone.
+        const auto& cfg = biome::BiomeRegistry::forId(biome);
+        if (cfg.trees.empty() || cfg.treeAmount <= 0) continue;
+        if (rng.nextInt(16) >= cfg.treeAmount) continue;
+
+        int y = surfaceY(ctx.chunk, x, z);
+        if (y < 1 || y > 118) continue;
+
         uint8_t ground = mcp_chunk_get_block_id(ctx.chunk, x, y, z);
         if (ground == (uint8_t)block::BlockId::SNOW_BLOCK ||
-            ground == (uint8_t)block::BlockId::ICE ||
-            ground == (uint8_t)block::BlockId::STONE) {
-            continue;
+            ground == (uint8_t)block::BlockId::ICE) {
+            continue;   // no trees straight on ice/snow blocks
         }
-        object::TreeType t = speciesForBiome(biome, rng);
+
+        object::TreeType t = pickSpecies(cfg.trees, rng);
         object::TreeGenerator::place(ctx.chunk, x, y + 1, z, t, rng);
     }
 }
