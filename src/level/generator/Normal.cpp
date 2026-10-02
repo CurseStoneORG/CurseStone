@@ -114,24 +114,49 @@ void Normal::generate(GenerationContext& ctx) {
                 top = (h > 58) ? (uint8_t)BlockId::SAND : (uint8_t)BlockId::GRAVEL;
                 filler = (uint8_t)BlockId::GRAVEL;
             } else if (b == BIOME_RIVER || b == BIOME_FROZEN_RIVER) {
-                top = (uint8_t)BlockId::SAND;
-                filler = (h > 58) ? (uint8_t)BlockId::SAND : (uint8_t)BlockId::GRAVEL;
+                // Submerged river bed: sand/gravel, like vanilla. The BANK is
+                // a different matter — it used to be sand unconditionally,
+                // which is why every river ran between two sandy strips
+                // instead of through green country. A bank is grass and
+                // dirt like the land around it, and only the rare long
+                // sand bank below turns it to sand.
+                if (h < kSeaLevel) {
+                    top = (uint8_t)BlockId::SAND;
+                    filler = (h > 58) ? (uint8_t)BlockId::SAND : (uint8_t)BlockId::GRAVEL;
+                } else {
+                    top = (h < kSeaLevel + 2) ? (uint8_t)BlockId::GRAVEL
+                                              : (uint8_t)BlockId::GRASS;
+                    filler = (uint8_t)BlockId::DIRT;
+                }
             } else if (b == BIOME_EXTREME_HILLS) {
                 // Rocky tops above the tree line, grass/dirt below.
                 if (h >= 86) { top = (uint8_t)BlockId::STONE; filler = (uint8_t)BlockId::STONE; }
             }
 
             // ---- Shorelines: sand at the water line -------------------------
-            // Vanilla lays sand along the banks of rivers and at the edge of
-            // the ocean, at roughly the height of the water — not only on the
-            // submerged block itself. isShore() is the same predicate that
-            // picks BIOME_BEACH, so the beach biome and the sand agree.
-            const bool shore = (b != BIOME_OCEAN) && isShore(noise_, baseX + x, baseZ + z, h);
+            // Sand belongs along the OCEAN edge, at roughly the height of
+            // the water — not only on the submerged block itself.
+            // isOceanShore() is the same predicate that picks BIOME_BEACH,
+            // so the beach biome and the sand agree, and it deliberately
+            // ignores river channels: river banks are green.
+            const bool shore = (b != BIOME_OCEAN) && isOceanShore(noise_, wx, wz, h);
             if (shore && top != (uint8_t)BlockId::STONE) {
                 top = (uint8_t)BlockId::SAND;
                 // Sand on top of dirt, the way a beach is built up.
                 if (filler == (uint8_t)BlockId::GRASS || filler == (uint8_t)BlockId::DIRT)
                     filler = (uint8_t)BlockId::SAND;
+            }
+
+            // ---- Rare but long sand banks along rivers --------------------
+            // Every so often a river does run past a proper sandy stretch.
+            // The mask is low-frequency on purpose, so when it fires it
+            // follows the river for hundreds of blocks rather than making
+            // round patches — and it stays rare because it is gated on the
+            // river valley AND thresholded hard.
+            if (!shore && h >= kSeaLevel &&
+                riverSandBank(noise_, wx, wz) > 0.62) {
+                top = (uint8_t)BlockId::SAND;
+                filler = (uint8_t)BlockId::SAND;
             }
 
             // ---- Rare gravel patches ---------------------------------------
