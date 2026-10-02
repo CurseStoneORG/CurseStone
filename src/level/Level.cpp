@@ -386,6 +386,21 @@ void Level::removeTile(int32_t x, int32_t y, int32_t z) {
     tiles_.erase(packTilePos(x, y, z));
 }
 
+std::vector<std::shared_ptr<cursestone::tile::Tile>> Level::getTilesInChunk(int32_t cx, int32_t cz) {
+    ensureTilesLoaded(cx, cz);
+    std::vector<std::shared_ptr<cursestone::tile::Tile>> out;
+    std::lock_guard<std::mutex> lk(tiles_mtx_);
+    for (auto& kv : tiles_) {
+        auto& t = kv.second;
+        if (!t) continue;
+        const auto& p = t->position();
+        if (((int32_t)p.x >> 4) == cx && ((int32_t)p.z >> 4) == cz) {
+            out.push_back(t);
+        }
+    }
+    return out;
+}
+
 // ============================================================
 // Tile-entity persistence (NBT <-> mcp_chunk_t::tile_entities)
 // ============================================================

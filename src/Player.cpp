@@ -1898,6 +1898,17 @@ void Player::handleBlockBreak(int x, int y, int z) {
     mcp_chunk_recalculate_height_map(ch);
     ch->dirty = true;
 
+    // Block-entity cleanup: si el bloque roto tenía un tile (cofre, horno,
+    // cartel) hay que sacarlo del registro. Si no se hace, al re-colocar
+    // algo en esa misma posición el tile viejo "revive" con su contenido/
+    // estado anterior — el mismo tipo de bug de persistencia que el del
+    // cartel. PMMP lo resuelve en Tile::onBreak / Level::useBreakOn.
+    if (blockId == block::CHEST || blockId == block::FURNACE ||
+        blockId == block::BURNING_FURNACE ||
+        blockId == block::SIGN_POST || blockId == block::WALL_SIGN) {
+        lvl->removeTile(x, y, z);
+    }
+
     // Redstone: breaking a block can disconnect a circuit or remove a support.
     cursestone::redstone::notifyNeighbors(lvl, srv_, x, y, z);
 
@@ -2345,6 +2356,26 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
             }
         }
         return;
+    } else if (heldItemId == item::SIGN) {
+        // Cartel (item 323). El bloque real es SIGN_POST (63) o WALL_SIGN
+        // (68) — ninguno es igual al id de item, así que no entra en la
+        // rama genérica de "block item" (1..255). Portado de Genisys
+        // block/SignPost.php::place():
+        //   face 0 (cara de abajo) → no se puede colocar;
+        //   face 1 (cara de arriba) → cartel de pie, meta = rotación yaw;
+        //   faces 2..5 (lateral)    → cartel de pared, meta = cara clickeada.
+        if (face == 0) return;
+        if (face == 1) {
+            placedBlockId   = block::SIGN_POST;   // 63
+            placedBlockData = (uint8_t)(
+                ((int)std::floor((yaw() + 180.0f) * 16.0f / 360.0f + 0.5f)) & 0x0F);
+        } else {
+            placedBlockId   = block::WALL_SIGN;   // 68
+            // BlockSignPost.place usa meta = cara clickeada (2..5), igual
+            // que la escalera de mano — ladderMeta lo devuelve tal cual.
+            placedBlockData = block::BlockOrientation::ladderMeta(face);
+        }
+        consumeItem = !(cfg_.gamemode & 1);  // survival only
     } else if (heldItemId >= 1 && heldItemId <= 255) {
         // Block item — place it directly. Base data = low 4 bits of
         // heldDamage; encima se aplica la orientación vanilla
@@ -2444,6 +2475,18 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     mcp_chunk_set_block_full(ch, localX, placeY, localZ, placedBlockId, placedBlockData);
     ch->dirty = true;
 
+    // Block-entity: los carteles necesitan un TileSign en el registro del
+    // Level para que el texto (y el propio tile) sobreviva al save/reload.
+    // PMMP crea el Tile al colocar el bloque; acá se hace explícito. Esto
+    // es lo que arregla el "cartel que desaparece al re-ingresar": antes
+    // el ítem 323 no colocaba NADA server-side (ni bloque ni tile).
+    if (placedBlockId == block::SIGN_POST || placedBlockId == block::WALL_SIGN) {
+        auto sign = std::make_shared<tile::TileSign>(
+            cursestone::level::Position((double)placeX, (double)placeY, (double)placeZ));
+        sign->setCreator(cfg_.uuid);
+        lvl->setTile(placeX, placeY, placeZ, sign);
+    }
+
     // Redstone: placing a component may connect or power a neighboring circuit.
     cursestone::redstone::notifyNeighbors(lvl, srv_, placeX, placeY, placeZ);
 
@@ -2492,6 +2535,14 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
             // Skip the place sound for fire/water/lava (PMMP behaviour).
             if (!skipPlaceSound) other->sendPacket(sndEv);
         }
+    }
+
+    // El cartel recién colocado: sincroniza su BlockEntityData a los que
+    // trackean el chunk (PMMP Sign::spawnToAll() al crearse el tile), ya
+    // con el bloque difundido, para que el cliente tenga la entidad.
+    if (placedBlockId == block::SIGN_POST || placedBlockId == block::WALL_SIGN) {
+        auto t = lvl->getTile(placeX, placeY, placeZ);
+        if (t) sendBlockEntityData(placeX, placeY, placeZ, *t, nullptr);
     }
 
     if (srv_ && srv_->advancedLog()) {
@@ -3032,6 +3083,11 @@ static std::pair<uint16_t, uint16_t> lookupBlockDrop(uint8_t blockId, uint8_t bl
         case 7:  return {0,   0};                   // Bedrock -> unbreakable
         case 46: return {0,   0};                   // TNT -> no drop
         case 51: return {0,   0};                   // FIRE -> no drop (PMMP Fire::getDrops() = [])
+        case 54: return {54,  0};                   // Chest -> chest item
+        case 61: return {61,  0};                   // Furnace -> furnace item
+        case 62: return {61,  0};                   // Burning Furnace -> furnace item
+        case 63: return {323, 0};                   // Standing Sign -> sign item (Genisys SignPost::getDrops)
+        case 68: return {323, 0};                   // Wall Sign -> sign item (Genisys WallSign::getDrops)
         default: return {blockId, blockData};       // Default: drop self
     }
 }
@@ -3210,14 +3266,17 @@ void Player::handleSignEdit(network::protocol::BlockEntityDataPacket& pk) {
         mcp_compound_tag_get_string(root, "Text3", ""),
         mcp_compound_tag_get_string(root, "Text4", "")
     };
-    std::string creator = mcp_compound_tag_get_string(root, "Creator", "");
     mcp_tag_destroy(root);
 
+    // Genisys compara el Creator contra el NBT DEL TILE del servidor
+    // (`$t->namedtag["Creator"]`), no contra el paquete — el cliente NUNCA
+    // manda Creator en su BlockEntityData, así que leerlo del paquete haría
+    // que toda edición se cancelara (bug). El dueño es quien colocó el
+    // cartel (Player::handleBlockPlace setea el Creator del tile).
     auto ev = event::EventManager::get().fire<event::block::SignChangeEvent>(
         pk.x, pk.y, pk.z, this, lines);
-    // Genisys: si el Creator no existe o no coincide con el UUID del
-    // jugador, la edición se cancela.
-    if (creator != cfg_.uuid) ev.setCancelled(true);
+    const std::string& creator = sign->creator();
+    if (creator.empty() || creator != cfg_.uuid) ev.setCancelled(true);
     if (ev.isCancelled()) {
         // Genisys: `$t->spawnTo($this)` — reenvía el NBT actual del cartel
         // al editor para revertir el texto que el cliente ya mostró.
@@ -3269,6 +3328,22 @@ void Player::sendBlockEntityData(int32_t x, int32_t y, int32_t z,
         if (other.get() == this || other->isTrackingChunk(cx, cz)) {
             other->sendPacket(pk);
         }
+    }
+}
+
+// ============================================================
+// sendChunkTiles — reenvía los BlockEntityData de todos los tiles del
+// chunk a ESTE jugador. PMMP manda los tiles junto con el chunk; sin
+// esto, al reconectar el cliente recibe el bloque del cartel pero no su
+// NBT, así que el texto no se renderiza hasta que alguien lo re-edite.
+// ============================================================
+void Player::sendChunkTiles(int32_t cx, int32_t cz) {
+    if (!srv_ || !srv_->getDefaultLevel()) return;
+    auto tiles = srv_->getDefaultLevel()->getTilesInChunk(cx, cz);
+    for (auto& t : tiles) {
+        if (!t) continue;
+        const auto& p = t->position();
+        sendBlockEntityData((int32_t)p.x, (int32_t)p.y, (int32_t)p.z, *t, this);
     }
 }
 
@@ -3631,6 +3706,7 @@ void Player::onUpdate(uint64_t current_tick) {
             pk->data.assign(buf, buf + outLen);
             free(buf);
             sendPacket(pk);
+            sendChunkTiles(chX, chZ);
             { std::lock_guard<std::mutex> lk(chunks_mtx_); used_chunks_.insert(hash); }
             chunks_sent_this_tick++;
         }
@@ -3866,6 +3942,7 @@ void Player::sendChunk(int cx, int cz) {
     pk->data.assign(buf, buf + outLen);
     free(buf);
     sendPacket(pk);
+    sendChunkTiles(cx, cz);
     int64_t hash = ((int64_t)cx << 32) | ((uint32_t)cz);
     std::lock_guard<std::mutex> lk(chunks_mtx_);
     used_chunks_.insert(hash);
