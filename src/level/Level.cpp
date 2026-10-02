@@ -383,7 +383,17 @@ void Level::setTile(int32_t x, int32_t y, int32_t z, std::shared_ptr<cursestone:
 
 void Level::removeTile(int32_t x, int32_t y, int32_t z) {
     std::lock_guard<std::mutex> lk(tiles_mtx_);
-    tiles_.erase(packTilePos(x, y, z));
+    auto it = tiles_.find(packTilePos(x, y, z));
+    if (it == tiles_.end()) return;
+    tiles_.erase(it);
+    // The NBT blob of the tile we just dropped is still sitting in the
+    // owning chunk's tile_entities array. syncTilesToChunks() rebuilds a
+    // chunk from the tiles that are STILL LIVE, so a chunk whose only tile
+    // was just broken would never be visited and the stale blob would
+    // survive to disk — the sign/chest would come back after a restart.
+    // Mark the chunk so the next sync clears and rewrites it even though
+    // it no longer has any tile.
+    tiles_dirty_chunks_.insert(packChunkPos(x >> 4, z >> 4));
 }
 
 std::vector<std::shared_ptr<cursestone::tile::Tile>> Level::getTilesInChunk(int32_t cx, int32_t cz) {
@@ -469,6 +479,7 @@ void Level::syncTilesToChunks() {
     // entries "should" survive, it just empties the array.
     std::unordered_map<uint64_t, std::vector<std::shared_ptr<cursestone::tile::Tile>>> byChunk;
     bool anyDirty = false;
+    std::vector<uint64_t> emptiedChunks;
     {
         std::lock_guard<std::mutex> lk(tiles_mtx_);
         for (auto& [_, t] : tiles_) {
@@ -478,6 +489,13 @@ void Level::syncTilesToChunks() {
             int32_t cz = static_cast<int32_t>(t->position().z) >> 4;
             byChunk[packChunkPos(cx, cz)].push_back(t);
         }
+        // Chunks that lost a tile need rebuilding even when they hold no
+        // live tiles left: seed them with an empty list so the loop below
+        // clears their stale tile_entities array instead of skipping them.
+        for (uint64_t ck : tiles_dirty_chunks_) {
+            if (byChunk.find(ck) == byChunk.end()) byChunk[ck] = {};
+        }
+        anyDirty = anyDirty || !tiles_dirty_chunks_.empty();
     }
     if (!anyDirty) return;  // nothing changed since the last save()
 
@@ -487,7 +505,12 @@ void Level::syncTilesToChunks() {
         // chunk holding only untouched tiles.
         bool chunkHasDirty = false;
         for (auto& t : tilesInChunk) if (t->isDirty()) { chunkHasDirty = true; break; }
-        if (!chunkHasDirty) continue;
+        bool emptied = false;
+        {
+            std::lock_guard<std::mutex> lk(tiles_mtx_);
+            emptied = tiles_dirty_chunks_.count(ckey) != 0;
+        }
+        if (!chunkHasDirty && !emptied) continue;
 
         int32_t cx = static_cast<int32_t>(ckey >> 32);
         int32_t cz = static_cast<int32_t>(ckey & 0xFFFFFFFFULL);
@@ -508,6 +531,10 @@ void Level::syncTilesToChunks() {
             mcp_tag_destroy(tag);
         }
         c->dirty = true;  // ensure flushDirty() picks this chunk up
+        if (emptied) {
+            std::lock_guard<std::mutex> lk(tiles_mtx_);
+            tiles_dirty_chunks_.erase(ckey);
+        }
     }
 }
 
