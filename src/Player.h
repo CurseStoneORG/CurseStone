@@ -31,7 +31,7 @@ class Server;
 class Network;
 class SourceInterface;
 namespace level { class Level; }
-namespace network::protocol { class DataPacket; class LoginPacket; }
+namespace network::protocol { class DataPacket; class LoginPacket; class DropItemPacket; class BlockEntityDataPacket; }
 namespace inventory { class PlayerInventory; }
 namespace tile { class TileChest; class TileFurnace; }
 
@@ -126,6 +126,23 @@ public:
     // outward motion. Mirrors PMMP `Level::dropItem`. Returns the allocated
     // runtime entity ID (or 0 if the item id was 0).
     int64_t dropItem(int x, int y, int z, uint16_t itemId, uint8_t count, uint16_t damage);
+
+    // Portado de Genisys Player::handleDataPacket case DROP_ITEM_PACKET:
+    // valida que el item esté en el inventario, dispara PlayerDropItemEvent
+    // (cancelable) y suelta una entidad item con movimiento hacia adelante.
+    void handleDropItem(network::protocol::DropItemPacket& pk);
+
+    // Portado de Genisys Player::handleDataPacket case
+    // BLOCK_ENTITY_DATA_PACKET: edición de cartel. Valida distancia,
+    // que el tile sea un Sign y el Creator contra el UUID del jugador, y
+    // dispara SignChangeEvent (cancelable) antes de aplicar el texto.
+    void handleSignEdit(network::protocol::BlockEntityDataPacket& pk);
+
+    // Portado de Genisys Player::consumeHeldItem(): si el item de la mano
+    // es comida, dispara PlayerItemConsumeEvent (cancelable), repone
+    // hambre y descuenta una unidad del stack. Llamado desde
+    // ENTITY_EVENT_PACKET (evento 9, Eating).
+    void consumeHeldItem();
 
     // Send the creative-inventory contents (ContainerSetContentPacket with
     // windowid=0x79). Mirrors PMMP Player.php:2301 + 1461.

@@ -36,9 +36,16 @@
 #include "MobEquipmentPacket.h"
 #include "MobArmorEquipmentPacket.h"
 #include "AddItemEntityPacket.h"
+#include "EntityEventPacket.h"
+#include "InteractPacket.h"
+#include "DropItemPacket.h"
+#include "ContainerOpenPacket.h"
+#include "ContainerClosePacket.h"
 #include "ContainerSetContentPacket.h"
 #include "ContainerSetSlotPacket.h"
 #include "CraftingEventPacket.h"
+#include "BlockEntityDataPacket.h"
+#include "ItemFrameDropItemPacket.h"
 
 namespace cursestone::network::protocol {
 
@@ -72,9 +79,21 @@ std::shared_ptr<DataPacket> PacketPool::create(uint8_t pid) const {
         case MOB_EQUIPMENT_PACKET:           return std::make_shared<MobEquipmentPacket>();
         case MOB_ARMOR_EQUIPMENT_PACKET:    return std::make_shared<MobArmorEquipmentPacket>();
         case ADD_ITEM_ENTITY_PACKET:        return std::make_shared<AddItemEntityPacket>();
+        case ENTITY_EVENT_PACKET:           return std::make_shared<EntityEventPacket>();
+        case INTERACT_PACKET:               return std::make_shared<InteractPacket>();
+        // La lista de abajo cubre EXACTAMENTE el conjunto de paquetes
+        // cliente→servidor que maneja el switch de Genisys 0.15.10
+        // (PocketMine\Player::handleDataPacket, protocolo 84). Sin el case
+        // correspondiente, un paquete legítimo del cliente se descartaba
+        // como "ID desconocido" y el estado se desincronizaba.
+        case DROP_ITEM_PACKET:              return std::make_shared<DropItemPacket>();
+        case CONTAINER_OPEN_PACKET:         return std::make_shared<ContainerOpenPacket>();
+        case CONTAINER_CLOSE_PACKET:        return std::make_shared<ContainerClosePacket>();
         case CONTAINER_SET_CONTENT_PACKET:  return std::make_shared<ContainerSetContentPacket>();
         case CONTAINER_SET_SLOT_PACKET:     return std::make_shared<ContainerSetSlotPacket>();
         case CRAFTING_EVENT_PACKET:         return std::make_shared<CraftingEventPacket>();
+        case BLOCK_ENTITY_DATA_PACKET:      return std::make_shared<BlockEntityDataPacket>();
+        case ITEM_FRAME_DROP_ITEM_PACKET:   return std::make_shared<ItemFrameDropItemPacket>();
         default:
             // Unknown packet — return nullptr so callers can log + skip.
             return nullptr;
