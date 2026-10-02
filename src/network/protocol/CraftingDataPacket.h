@@ -25,8 +25,9 @@
 //   ENTRY_SHAPED (1):
 //     putInt(BE) width; putInt(BE) height;
 //     putSlot(width*height celdas, fila-por-fila: z<Height exterior,
-//             x<Width interior — idéntico a Genisys/Infinity, y recipes.json
-//             es fila-major anclado arriba-izquierda, como Recipe::grid)
+//             x<Width interior — idéntico a Genisys/Infinity, y el
+//             patrón es fila-major anclado arriba-izquierda, como
+//             Recipe::grid)
 //     putInt(BE) 1; putSlot(result);
 //     putUUID(16 raw bytes)
 //   ENTRY_FURNACE (2):   putInt(BE) inputId; putSlot(result);
@@ -42,8 +43,8 @@
 //
 // cleanRecipes: Infinity/Genisys lo mandan en true (generateRecipeList
 // hace $pk->cleanRecipes = true). El cliente borra sus recetas por
-// defecto y usa SOLO las nuestras — con la lista completa cargada de
-// recipes.json es lo correcto.
+// defecto y usa SOLO las nuestras — con la lista completa que manda el
+// CraftingManager es lo correcto.
 #pragma once
 
 #include "DataPacket.h"

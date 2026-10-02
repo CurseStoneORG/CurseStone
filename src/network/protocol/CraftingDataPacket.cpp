@@ -4,7 +4,7 @@
 // Formato verificado BYTE A BYTE contra el CraftingDataPacket.php real
 // de Dr1xyDev/Infinity (protocolo 84, MCPE 0.15.10), cross-checkeado
 // con Nukkit 2016 (mismo formato de la era) y Genisys para la
-// orientación de datos de recipes.json (fila-por-fila, anclado
+// orientación de datos de las recetas (fila-por-fila, anclado
 // arriba-izquierda).
 //
 // Resumen del wire format (ver CraftingDataPacket.h):

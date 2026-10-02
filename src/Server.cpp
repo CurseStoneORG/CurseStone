@@ -295,18 +295,11 @@ void Server::start(const std::string& dataPath) {
     command_map_ = std::make_shared<SimpleCommandMap>();
     registerDefaultCommands(*command_map_);
     crafting_ = std::make_shared<inventory::CraftingManager>();
-    // Las recetas base van EN CODIGO (CraftingManager::registerBuiltinRecipes),
-    // no en resources/recipes.json: ese archivo no se empaqueta con el
-    // binario, asi que leerlo desde ahi dejaba la release sin ninguna
-    // receta. Si el operador quiere extenderlas, el JSON del directorio
-    // de datos se carga encima como recipes ADICIONALES.
+    // Las recetas van EN CODIGO (CraftingManager::registerBuiltinRecipes):
+    // no hay ningun archivo de recetas que cargar. Antes se leia uno
+    // externo que no se empaqueta con el binario, asi que una release
+    // limpia se quedaba sin ninguna receta.
     int recipeCount = crafting_->registerBuiltinRecipes();
-    int extraRecipes = crafting_->loadFromJson(dataPath_ + "/resources/recipes.json");
-    if (extraRecipes > 0) {
-        recipeCount += extraRecipes;
-        utils::MainLogger::get().info("Loaded " + std::to_string(extraRecipes) +
-            " extra crafting recipes from " + dataPath_ + "/resources/recipes.json");
-    }
     utils::MainLogger::get().info("Loaded " + std::to_string(recipeCount) +
         " crafting recipes");
     async_pool_ = std::make_shared<scheduler::AsyncPool>(async_workers_);

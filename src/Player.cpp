@@ -983,7 +983,7 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
             // El flujo real de crafteo MCPE 0.15.x: el cliente arma la
             // grilla, y al tomar el resultado manda ESTE packet con el
             // UUID de la receta + los items que sacó/puso. El server
-            // valida contra recipes.json, consume ingredientes del
+            // valida contra el CraftingManager, consume ingredientes del
             // inventario real y da el resultado. Ver handleCraftingEvent()
             // (portado 1:1 de Genisys Player.php case
             // CRAFTING_EVENT_PACKET, protocolo 84).
