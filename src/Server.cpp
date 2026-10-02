@@ -164,7 +164,7 @@ void Server::initLogger() {
     mcp_main_logger_init(log_path.c_str(), /*colored=*/true);
     utils::MainLogger::get().info(std::string(CURSESTONE_NAME) +
         " v" + CURSESTONE_VERSION + " (codename: " + CURSESTONE_CODENAME + ")");
-    utils::MainLogger::get().info("Target: Minecraft PE " + std::string(MINECRAFT_VERSION) +
+    utils::MainLogger::get().info(" Minecraft PE " + std::string(MINECRAFT_VERSION) +
         ", protocol " + std::to_string(PROTOCOL_VERSION));
     utils::MainLogger::get().info("Log file: " + log_path);
 }
@@ -172,7 +172,7 @@ void Server::initLogger() {
 void Server::registerBlocksAndItems() {
     block::register_all_blocks();
     item::Item::registerAll();
-    utils::MainLogger::get().info("Registered blocks + items");
+    utils::MainLogger::get().info("Registered IDs");
 }
 
 void Server::openNetwork() {
@@ -316,7 +316,7 @@ void Server::start(const std::string& dataPath) {
     auto boot_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         boot_end - boot_start).count();
     double boot_sec = (double)boot_ms / 1000.0;
-    utils::MainLogger::get().info("Server ready. Tick loop starting...");
+    utils::MainLogger::get().info("Server ready Tick loop starting...");
     utils::MainLogger::get().info("Server started in " +
         std::to_string(boot_sec) + "s");
 
