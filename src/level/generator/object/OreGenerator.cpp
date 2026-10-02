@@ -1,34 +1,82 @@
-#include "OreGenerator.h"
-#include "level/format/Chunk.h"
-#include "level/generator/noise/SimplexNoise.h"
+// SPDX-License-Identifier: LGPL-3.0-or-later
+#include "level/generator/object/OreGenerator.h"
+#include "level/generator/noise/GenRandom.h"
+
+#include <cmath>
+
 namespace cursestone::level::generator::object {
-int OreGenerator::place(mcp_chunk_t* c, int64_t seed, const OreVein& v) {
-    uint32_t h = mcp_simplex_hash(seed ^ ((int64_t)v.block_id << 32), c->x, c->z);
-    if (h % (uint32_t)v.rarity != 0) return 0;
-    uint64_t state = (uint64_t)h;
-    auto next = [&]() -> uint64_t {
-        state = (state ^ (state >> 30)) * 0xbf58476d1ce4e5b9ULL;
-        state = (state ^ (state >> 27)) * 0x94d049bb133111ebULL;
-        state ^= state >> 31;
-        return state;
-    };
-    int bx = (int)(next() % 16);
-    int by = (int)(v.min_y + (next() % (uint64_t)(v.max_y - v.min_y + 1)));
-    int bz = (int)(next() % 16);
-    int placed = 0;
-    for (int i = 0; i < v.vein_size; ++i) {
-        int dx = (int)(next() % 3) - 1;
-        int dy = (int)(next() % 3) - 1;
-        int dz = (int)(next() % 3) - 1;
-        int x = bx + dx, y = by + dy, z = bz + dz;
-        if (x < 0 || x >= 16 || y < 0 || y >= 256 || z < 0 || z >= 16) continue;
-        // only replace stone (1) — preserves existing terrain
-        if (mcp_chunk_get_block_id(c, x, y, z) == 1) {
-            mcp_chunk_set_block_full(c, x, y, z, v.block_id, 0);
-            ++placed;
-        }
-    }
-    if (placed) c->dirty = true;
-    return placed;
+
+using cursestone::level::generator::GenRandom;
+
+namespace {
+constexpr int kMaxY = 127;
+inline bool inXZ(int v) { return v >= 0 && v < 16; }
+inline bool inY(int y) { return y >= 0 && y <= kMaxY; }
+
+inline double normalizedSquared(double origin, double radius, int v) {
+    double d = (v + 0.5 - origin) / radius;
+    return d * d;
 }
 } // namespace
+
+int OreGenerator::place(mcp_chunk_t* c, int64_t seed, const OreVein& v) {
+    // Per (chunk, ore) seed so results are deterministic and independent of
+    // the order chunks/veins are generated in.
+    int64_t mixed = seed ^ ((int64_t)v.block_id << 40) ^
+                    ((int64_t)c->x * 73856093LL) ^ ((int64_t)c->z * 19349663LL);
+    GenRandom rng(mixed);
+
+    int placed = 0;
+    int span = (v.max_y > v.min_y) ? (v.max_y - v.min_y) : 0;
+
+    for (int n = 0; n < v.total; ++n) {
+        double sourceX = (double)rng.nextInt(16);
+        double sourceZ = (double)rng.nextInt(16);
+        double sourceY = (double)(v.min_y + (span > 0 ? (int)rng.nextInt(span) : 0));
+
+        double amount = (double)v.amount;
+        float angle = rng.nextFloat() * (float)M_PI;
+        double dx1 = sourceX + (sin(angle) * amount / 8.0);
+        double dx2 = sourceX - (sin(angle) * amount / 8.0);
+        double dz1 = sourceZ + (cos(angle) * amount / 8.0);
+        double dz2 = sourceZ - (cos(angle) * amount / 8.0);
+        double dy1 = sourceY + (double)rng.nextInt(3) - 2.0;
+        double dy2 = sourceY + (double)rng.nextInt(3) - 2.0;
+
+        for (int i = 0; i < v.amount; ++i) {
+            double originX = dx1 + (dx2 - dx1) * i / amount;
+            double originY = dy1 + (dy2 - dy1) * i / amount;
+            double originZ = dz1 + (dz2 - dz1) * i / amount;
+            double q = (double)rng.nextFloat() * amount / 16.0;
+            double radiusH = (sin((double)i * (double)M_PI / amount) + q + 1.0) / 2.0;
+            double radiusV = (sin((double)i * (double)M_PI / amount) + q + 1.0) / 2.0;
+            if (radiusH < 0.6) radiusH = 0.6;
+            if (radiusV < 0.6) radiusV = 0.6;
+
+            for (int x = (int)(originX - radiusH); x <= (int)(originX + radiusH); ++x) {
+                if (!inXZ(x)) continue;
+                double sx = normalizedSquared(originX, radiusH, x);
+                if (sx >= 1.0) continue;
+
+                for (int y = (int)(originY - radiusV); y <= (int)(originY + radiusV); ++y) {
+                    if (!inY(y)) continue;
+                    double sy = normalizedSquared(originY, radiusV, y);
+                    if (sx + sy >= 1.0) continue;
+
+                    for (int z = (int)(originZ - radiusH); z <= (int)(originZ + radiusH); ++z) {
+                        if (!inXZ(z)) continue;
+                        double sz = normalizedSquared(originZ, radiusH, z);
+                        if (sx + sy + sz < 1.0 &&
+                            mcp_chunk_get_block_id(c, x, y, z) == v.target_id) {
+                            mcp_chunk_set_block_id(c, x, y, z, v.block_id);
+                            ++placed;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return placed;
+}
+
+} // namespace cursestone::level::generator::object

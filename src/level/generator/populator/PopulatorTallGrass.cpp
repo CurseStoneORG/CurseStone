@@ -1,28 +1,24 @@
 #include "PopulatorTallGrass.h"
-#include "level/generator/noise/SimplexNoise.h"
-#include "level/format/Chunk.h"
+#include "PopulatorUtil.h"
+#include "level/generator/object/ObjectDecorators.h"
+#include "level/generator/biome/Biome.h"
+using namespace cursestone::level::generator::biome;
+
 namespace cursestone::level::generator::populator {
 void PopulatorTallGrass::populate(GenerationContext& ctx) {
-    uint64_t state = (uint64_t)mcp_simplex_hash(ctx.seed ^ 0x67726173, ctx.chunk_x, ctx.chunk_z);
-    auto next = [&]() -> uint64_t {
-        state = (state ^ (state >> 30)) * 0xbf58476d1ce4e5b9ULL;
-        state = (state ^ (state >> 27)) * 0x94d049bb133111ebULL;
-        state ^= state >> 31;
-        return state;
-    };
-    int placed = 0;
+    GenRandom rng = chunkRandom(ctx.seed, ctx.chunk_x, ctx.chunk_z, 0x67726173);
     for (int i = 0; i < attempts_; ++i) {
-        int x = (int)(next() % 16);
-        int z = (int)(next() % 16);
-        int y = 255;
-        for (; y > 0; --y) {
-            if (mcp_chunk_get_block_id(ctx.chunk, x, y, z) == 2) break; // on grass
-        }
-        if (y > 0 && y < 255) {
-            mcp_chunk_set_block_full(ctx.chunk, x, y + 1, z, 31, 1); // tall grass
-            ++placed;
-        }
+        int x = (int)rng.nextInt(16);
+        int z = (int)rng.nextInt(16);
+        uint8_t biome = mcp_chunk_get_biome(ctx.chunk, x, z);
+        if (!biomeHasVegetation(biome)) continue;
+        int y = surfaceY(ctx.chunk, x, z);
+        if (y < 0) continue;
+        // Taiga/cold biomes grow ferns (data 2); the rest grow tall grass.
+        uint8_t data = (biome == BIOME_TAIGA || biome == BIOME_TAIGA_HILLS ||
+                        biome == BIOME_EXTREME_HILLS) ? 2 : 1;
+        object::ObjectDecorators::tallGrass(ctx.chunk, x, y, z, data);
     }
-    if (placed) ctx.chunk->dirty = true;
+    ctx.chunk->dirty = true;
 }
-} // namespace
+} // namespace cursestone::level::generator::populator
