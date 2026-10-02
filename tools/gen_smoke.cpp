@@ -8,6 +8,7 @@
 #include "block/BlockIds.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <map>
 #include <string>
 
@@ -21,8 +22,12 @@ int main() {
     std::map<uint8_t, long> biomes;
     int trees = 0, ores = 0, caves = 0, grass = 0, water = 0, sand = 0;
     int minH = 999, maxH = -1;
+    long steps2 = 0;      // adjacent column pairs with |dh| >= 2 (unclimbable)
+    long maxStep = 0;     // biggest |dh| between adjacent columns
+    long bioEdges = 0;    // adjacent column pairs with different biomes
+    long pairs = 0;       // total adjacent column pairs
 
-    const int R = 6; // -R..R chunks
+    const int R = 12; // -R..R chunks
     for (int cxi = -R; cxi <= R; ++cxi) {
         for (int czi = -R; czi <= R; ++czi) {
             mcp_chunk_t* c = mcp_chunk_new(cxi, czi);
@@ -34,14 +39,33 @@ int main() {
             ctx.chunk = c;
 
             gen.generate(ctx);
-            gen.populate(ctx);
 
+            // Terrain slope + biome statistics right after generate():
+            // populate() raises height_map with trees/vegetation on purpose
+            // (lighting), which would fake unclimbable steps here.
             for (int x = 0; x < 16; ++x) {
                 for (int z = 0; z < 16; ++z) {
                     int h = mcp_chunk_get_height_map(c, x, z);
                     if (h < minH) minH = h;
                     if (h > maxH) maxH = h;
                     biomes[mcp_chunk_get_biome(c, x, z)]++;
+                    if (x > 0) {
+                        long d = std::labs((long)h - (long)mcp_chunk_get_height_map(c, x - 1, z));
+                        pairs++; if (d > maxStep) maxStep = d; if (d >= 2) steps2++;
+                        if (mcp_chunk_get_biome(c, x, z) != mcp_chunk_get_biome(c, x - 1, z)) bioEdges++;
+                    }
+                    if (z > 0) {
+                        long d = std::labs((long)h - (long)mcp_chunk_get_height_map(c, x, z - 1));
+                        pairs++; if (d > maxStep) maxStep = d; if (d >= 2) steps2++;
+                        if (mcp_chunk_get_biome(c, x, z) != mcp_chunk_get_biome(c, x, z - 1)) bioEdges++;
+                    }
+                }
+            }
+
+            gen.populate(ctx);
+
+            for (int x = 0; x < 16; ++x) {
+                for (int z = 0; z < 16; ++z) {
                     for (int y = 0; y < 128; ++y) {
                         uint8_t id = mcp_chunk_get_block_id(c, x, y, z);
                         totals[id]++;
@@ -69,11 +93,14 @@ int main() {
                 totals[(int)BlockId::BEDROCK], totals[(int)BlockId::LEAVES] + totals[(int)BlockId::LEAVES_2],
                 totals[(int)BlockId::TALL_GRASS],
                 totals[(int)BlockId::FLOWER_YELLOW] + totals[(int)BlockId::FLOWER_RED],
-                totals[(int)BlockId::CACTUS], totals[(int)BlockId::SUGARCANE]);
+                totals[(int)BlockId::CACTUS_BIG], totals[(int)BlockId::SUGARCANE]);
 
     std::printf("biomes:");
     for (auto& kv : biomes) std::printf(" %d=%ld", (int)kv.first, kv.second);
     std::printf("\n");
+    std::printf("max adjacent step=%ld steps>=2=%ld (%.2f%% of pairs) biome-edges=%.2f%%\n",
+                maxStep, steps2, 100.0 * steps2 / (double)(pairs ? pairs : 1),
+                100.0 * bioEdges / (double)(pairs ? pairs : 1));
 
     bool ok = true;
     if (minH < 1 || maxH > 127) { std::printf("FAIL: height out of range\n"); ok = false; }

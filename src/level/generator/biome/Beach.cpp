@@ -1,0 +1,31 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// Beach — biome 16. Sand strip between land and ocean. No trees.
+#include "BiomeConfig.h"
+
+namespace cursestone::level::generator::biome {
+const BiomeConfig& beachBiome() {
+    static const BiomeConfig c{
+        .id = 16,
+        .name = "beach",
+        .temp = 0.5f,
+        .humid = 0.5f,
+        .topBlock = 12,      // sand
+        .fillerBlock = 12,   // sand
+        .snowy = false,
+        .underwater = false,
+        .treeAmount = 0,
+        .trees = {},
+        .grassAmount = 0,
+        .flowerAmount = 0,
+        .doublePlantAmount = 0,
+        .cactusAmount = 0,
+        .deadBushAmount = 0,
+        .sugarCaneAmount = 1, // grows right at the waterline
+        .mushroomAmount = 0,
+        .pumpkinAmount = 0,
+        .melonAmount = 0,
+        .waterLilyAmount = 0,
+    };
+    return c;
+}
+} // namespace cursestone::level::generator::biome
