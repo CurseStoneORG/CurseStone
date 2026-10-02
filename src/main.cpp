@@ -4,6 +4,7 @@
 #include "main.h"
 #include "Server.h"
 #include "CrashDump.h"
+#include "diagnostics/Diagnostics.h"
 #include "wizard/Installer.h"
 #include "utils/MainLogger.hpp"
 #include "logger/AsyncMainLogger.h"
@@ -18,6 +19,7 @@
 #include <cstring>      // strlen
 #include <string>
 #include <cstdio>       // snprintf
+#include <exception>    // std::set_terminate / current_exception
 #if defined(__linux__) || defined(__APPLE__)
 #include <sys/resource.h>   // getrlimit/setrlimit (RLIMIT_CORE)
 #endif
@@ -157,6 +159,35 @@ std::string capture_backtrace(int max_frames = 32) {
     return out;
 }
 
+// Uncaught C++ exception handler. std::terminate is installed below so an
+// exception escaping main()/a worker records a full diagnostics report and
+// then aborts (SIGABRT), which routes into handleSignal() and produces the
+// regular crashdump. Without this, the terminate reason was invisible.
+void handleTerminate() {
+    const char* what = "unknown exception";
+    std::string msg = "uncaught exception";
+    try {
+        if (auto ep = std::current_exception()) {
+            std::rethrow_exception(ep);
+        }
+    } catch (const std::exception& e) {
+        what = e.what();
+        msg += std::string(": ") + what;
+    } catch (...) {
+        msg += " (non-std exception)";
+    }
+    // Best effort: report + write a file, then abort into the crash path.
+    try {
+        cursestone::diagnostics::Diagnostics::get().writeReport(
+            "terminate", msg, "std::terminate called");
+    } catch (...) {}
+    const char prefix[] = "\nCurseStone: std::terminate: ";
+    (void)!write(STDERR_FILENO, prefix, sizeof(prefix) - 1);
+    (void)!write(STDERR_FILENO, msg.c_str(), msg.size());
+    (void)!write(STDERR_FILENO, "\n", 1);
+    std::abort();
+}
+
 void handleSignal(int sig) {
     // SIGINT / SIGTERM → request graceful shutdown.
     //
@@ -269,6 +300,11 @@ int main(int argc, char* argv[]) {
     std::filesystem::create_directories(dataPath + "/crashdumps", ec);
     cursestone::CrashDump crashDump(dataPath + "/crashdumps");
     g_crashDump = &crashDump;
+    // Diagnostics writes its non-fatal error reports here too.
+    cursestone::diagnostics::Diagnostics::get().setDumpDir(dataPath);
+
+    // Route uncaught C++ exceptions into the crash/report path.
+    std::set_terminate(handleTerminate);
 
     // First-run setup: NO interactive wizard anymore. The server is
     // fully playable straight out of the box — if there is no config

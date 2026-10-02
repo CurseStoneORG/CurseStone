@@ -8,6 +8,7 @@
 #include "../Player.h"
 #include "../utils/Utils.h"
 #include "../utils/MainLogger.hpp"
+#include "../diagnostics/Diagnostics.h"
 #include "protocol/BatchPacket.h"
 #include "protocol/LoginPacket.h"
 #include "protocol/DataPacket.h"
@@ -197,21 +198,29 @@ std::shared_ptr<protocol::DataPacket> Network::decodePacketById(uint8_t pid,
         // o CraftingEventPacket, ninguno de los dos existe hoy acá),
         // no había NINGUNA forma de saberlo. Gateado en advancedLog()
         // para no ensuciar el log en uso normal.
+        char pidHex[4];
+        snprintf(pidHex, sizeof(pidHex), "%02x", pid);
+        const std::string detail = "len=" + std::to_string(bodyLen) + " bytes=" + hexDump(body, bodyLen);
         if (server_ && server_->advancedLog()) {
-            char pidHex[4];
-            snprintf(pidHex, sizeof(pidHex), "%02x", pid);
             utils::MainLogger::get().warn(std::string("[PKT] ID desconocido 0x") + pidHex +
-                " len=" + std::to_string(bodyLen) + " bytes=" + hexDump(body, bodyLen));
+                " " + detail);
         }
+        // Always-on (no /workbench needed): record unknown packet IDs so a
+        // later crash/error report can reveal what the client sent.
+        diagnostics::Diagnostics::get().report("packet",
+            std::string("unknown packet id 0x") + pidHex, detail,
+            /*console=*/false);
         return nullptr;
     }
     bool ok = pkt->decode(body, bodyLen);
-    if (!ok && server_ && server_->advancedLog()) {
-        // Decode failed — antes se descartaba sin loguear nada.
+    if (!ok) {
+        // Decode failed — record it ALWAYS (a malformed packet is exactly the
+        // kind of thing that must show up in the crashdump).
         char pidHex[4];
         snprintf(pidHex, sizeof(pidHex), "%02x", pid);
-        utils::MainLogger::get().warn(std::string("[PKT] decode() fallo para ID 0x") + pidHex +
-            " len=" + std::to_string(bodyLen) + " bytes=" + hexDump(body, bodyLen));
+        const std::string detail = "len=" + std::to_string(bodyLen) + " bytes=" + hexDump(body, bodyLen);
+        diagnostics::Diagnostics::get().report("packet",
+            std::string("decode() failed for id 0x") + pidHex, detail);
     }
     // DIAGNÓSTICO extra específico para CONTAINER_SET_SLOT_PACKET
     // (0x2c) — el sospechoso del bug de creativo. Se loguea SIEMPRE

@@ -1,4 +1,5 @@
 #include "CrashDump.h"
+#include "diagnostics/Diagnostics.h"
 #include "utils/MainLogger.hpp"
 #include "main.h"
 #include <fstream>
@@ -8,76 +9,81 @@
 #include <cstdlib>
 namespace cursestone {
 namespace {
-// Escape a string for inclusion as a JSON string literal. Backslashes,
-// quotes and control chars are escaped per RFC 8259. Without this,
-// backtrace_symbols output (which contains slashes, parens and plus
-// signs) would silently truncate or corrupt the JSON file.
-std::string json_escape(const std::string& s) {
-    std::string out;
-    out.reserve(s.size() + 8);
-    for (char c : s) {
-        switch (c) {
-            case '"':  out += "\\\""; break;
-            case '\\': out += "\\\\"; break;
-            case '\b': out += "\\b";  break;
-            case '\f': out += "\\f";  break;
-            case '\n': out += "\\n";  break;
-            case '\r': out += "\\r";  break;
-            case '\t': out += "\\t";  break;
-            default:
-                if (static_cast<unsigned char>(c) < 0x20) {
-                    char buf[8];
-                    std::snprintf(buf, sizeof(buf), "\\u%04x", c);
-                    out += buf;
-                } else {
-                    out += c;
-                }
-        }
-    }
-    return out;
+
+std::string utcStamp(uint64_t wall_ms, const char* fmt) {
+    std::time_t t = static_cast<std::time_t>(wall_ms / 1000);
+    std::tm tm{};
+#if defined(_WIN32)
+    gmtime_s(&tm, &t);
+#else
+    gmtime_r(&t, &tm);
+#endif
+    char buf[48];
+    std::strftime(buf, sizeof(buf), fmt, &tm);
+    return buf;
 }
+
 } // namespace
 
 void CrashDump::crash(const std::string& reason, const std::string& trace) {
     auto t = std::chrono::system_clock::now();
     auto t_c = std::chrono::system_clock::to_time_t(t);
+    uint64_t now_ms = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            t.time_since_epoch()).count());
+
+    using cursestone::diagnostics::Diagnostics;
+    // Pull the always-on context. These renderers use try_lock, so they are
+    // safe to call from the signal handler that invokes crash().
+    std::string context = Diagnostics::get().renderContext();
+    std::string players = Diagnostics::get().renderPlayers();
+    std::string errors  = Diagnostics::get().renderRecentErrors(20);
+    std::string packets = Diagnostics::get().renderRecentPackets(40);
+
     std::ostringstream fname;
     fname << data_path_ << "/crashdump_"
           << std::put_time(std::gmtime(&t_c), "%Y%m%d_%H%M%S") << ".json";
+    std::string json_path = fname.str();
+    std::string log_path  = json_path + ".log";
 
-    // Also write a human-readable .log companion next to the JSON,
-    // because raw JSON is hard to read in a panic.
-    std::string log_path = fname.str() + ".log";
+    auto esc = diagnostics::json_escape;
 
-    std::ofstream f(fname.str());
+    std::ofstream f(json_path);
     if (f) {
         f << "{\n"
           << "  \"version\": \"" << CURSESTONE_VERSION << "\",\n"
           << "  \"codename\": \"" << CURSESTONE_CODENAME << "\",\n"
           << "  \"minecraft\": \"" << MINECRAFT_VERSION << "\",\n"
           << "  \"protocol\": " << PROTOCOL_VERSION << ",\n"
-          << "  \"timestamp_utc\": \""
-          << std::put_time(std::gmtime(&t_c), "%Y-%m-%dT%H:%M:%SZ") << "\",\n"
-          << "  \"reason\": \"" << json_escape(reason) << "\",\n"
-          << "  \"trace\": \"" << json_escape(trace) << "\"\n"
+          << "  \"timestamp_utc\": \"" << utcStamp(now_ms, "%Y-%m-%dT%H:%M:%SZ") << "\",\n"
+          << "  \"reason\": \"" << esc(reason) << "\",\n"
+          << "  \"trace\": \"" << esc(trace) << "\",\n"
+          << "  \"context\": \"" << esc(context) << "\",\n"
+          << "  \"players\": \"" << esc(players) << "\",\n"
+          << "  \"recent_errors\": \"" << esc(errors) << "\",\n"
+          << "  \"recent_packets\": \"" << esc(packets) << "\"\n"
           << "}\n";
         f.flush();
     }
 
-    // Best-effort log file (human readable).
+    // Human readable companion.
     std::ofstream lf(log_path);
     if (lf) {
         lf << "CurseStone crash dump\n"
-           << "==================\n"
+           << "====================\n"
            << "Version:    " << CURSESTONE_VERSION << " \"" << CURSESTONE_CODENAME << "\"\n"
            << "Minecraft:  " << MINECRAFT_VERSION << " (protocol " << PROTOCOL_VERSION << ")\n"
-           << "Time (UTC): " << std::put_time(std::gmtime(&t_c), "%Y-%m-%d %H:%M:%S") << "\n"
+           << "Time (UTC): " << utcStamp(now_ms, "%Y-%m-%d %H:%M:%S") << "\n"
            << "Reason:     " << reason << "\n"
+           << "\n--- Context ---\n" << context
+           << "\n--- Players ---\n" << players
+           << "\n--- Recent errors ---\n" << errors
+           << "\n--- Recent packets ---\n" << packets
            << "\n--- Backtrace ---\n" << trace << "\n";
         lf.flush();
     }
 
     utils::MainLogger::get().error("Server crash: " + reason);
-    utils::MainLogger::get().error("Crashdump written to " + fname.str());
+    utils::MainLogger::get().error("Crashdump written to " + json_path);
 }
 } // namespace
