@@ -646,16 +646,39 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
             // slot = full inventory index (9..35) with selectedSlot = the
             // hotbar row it belongs to. Only the selectedSlot byte is the
             // real held-slot for the 9 hotbar positions.
+            //
+            // BUG REAL (arreglado acá): solo se llamaba setHeldSlot(),
+            // que por debajo hace setHotbarSlotIndex(itemInHandIndex_,
+            // slot). Como itemInHandIndex_ nunca se actualizaba, cada
+            // cambio de slot reescribia hotbar_[0] con el indice nuevo:
+            //   - el item EN MANO nunca cambia de verdad, y
+            //   - hotbar_[0] y hotbar_[n] quedan apuntando al mismo slot
+            //     del inventario (links duplicados).
+            // Genisys 0.15.0 (Player.php, case MOB_EQUIPMENT_PACKET)
+            // hace DOS llamadas y en este orden:
+            //     setHeldItemIndex($packet->selectedSlot, false);
+            //     setHeldItemSlot($packet->slot);
+            // El primero es justamente lo que fija que slot de la mano
+            // estas sosteniendo; el segundo solo rearma el link cuando el
+            // cliente REORDENO items (screen de inventario), y aca eso ya
+            // lo hace el handler de ContainerSetSlot — asi que aca solo
+            // actualizamos el indice en mano.
             if (auto* me = dynamic_cast<network::protocol::MobEquipmentPacket*>(&p)) {
                 if (inv_) {
-                    int held = me->selectedSlot;
-                    if (held < 0 || held > 8) held = me->hotbarSlot;
-                    if (held >= 0 && held < 9) {
-                        inv_->setHeldSlot(held);
-                        if (srv_ && srv_->advancedLog()) {
-                            utils::MainLogger::get().info("[INV] " + cfg_.username +
-                                " switched to hotbar slot " + std::to_string(held));
-                        }
+                    // selectedSlot es un byte: el cliente puede mandar
+                    // 0..255. Solo 0..8 es un indice de hotbar valido;
+                    // si no, caemos al otro byte (hotbarSlot) y, si
+                    // tampoco sirve, dejamos el que ya teniamos.
+                    int selected = (int)me->selectedSlot;
+                    if (selected > 8) selected = (int)me->hotbarSlot;
+                    if (selected >= 0 && selected <= 8 &&
+                        selected != inv_->getHeldItemIndex()) {
+                        inv_->setHeldItemIndex(selected);
+                    }
+                    if (srv_ && srv_->advancedLog()) {
+                        utils::MainLogger::get().info("[INV] " + cfg_.username +
+                            " switched to hotbar slot " +
+                            std::to_string(inv_->getHeldItemIndex()));
                     }
                 }
             }

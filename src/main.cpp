@@ -18,6 +18,9 @@
 #include <cstring>      // strlen
 #include <string>
 #include <cstdio>       // snprintf
+#if defined(__linux__) || defined(__APPLE__)
+#include <sys/resource.h>   // getrlimit/setrlimit (RLIMIT_CORE)
+#endif
 
 // ---- Platform-specific backtrace support -------------------------------
 //
@@ -223,6 +226,24 @@ int main(int argc, char* argv[]) {
     // Install signal handlers for clean shutdown
     std::signal(SIGINT,  handleSignal);
     std::signal(SIGTERM, handleSignal);
+    // Core dumps: sin esto, un SIGSEGV en una maquina con
+    // `ulimit -c 0` (default en varias distros/systemd) se pierde sin
+    // dejar nada. Subimos el limite a "ilimitado" para que el kernel
+    // escriba el core y se pueda abrir con gdb despues. Es best-effort:
+    // si el sistema lo prohibe, seguimos igual con el crashdump JSON.
+#if defined(__linux__) || defined(__APPLE__)
+    {
+        struct rlimit rl;
+        if (getrlimit(RLIMIT_CORE, &rl) == 0) {
+            if (rl.rlim_cur != rl.rlim_max) {
+                rlim_t want = rl.rlim_max;
+                rl.rlim_cur = want;
+                (void)setrlimit(RLIMIT_CORE, &rl);
+            }
+        }
+    }
+#endif
+
     // Install crash handlers — these produce a crashdump JSON file in
     // <dataPath>/crashdumps/ before the process dies, so we can
     // post-mortem-debug freezes and crashes.
