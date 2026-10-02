@@ -99,6 +99,7 @@
 #include "nbt/tag/ByteArrayTag.h"
 
 #include <cmath>
+#include <cstdlib>
 #include <algorithm>
 #include <sstream>
 #include <cstring>
@@ -3214,13 +3215,61 @@ void Player::handleSignEdit(network::protocol::BlockEntityDataPacket& pk) {
 
     auto ev = event::EventManager::get().fire<event::block::SignChangeEvent>(
         pk.x, pk.y, pk.z, this, lines);
+    // Genisys: si el Creator no existe o no coincide con el UUID del
+    // jugador, la edición se cancela.
     if (creator != cfg_.uuid) ev.setCancelled(true);
-    if (ev.isCancelled()) return;
+    if (ev.isCancelled()) {
+        // Genisys: `$t->spawnTo($this)` — reenvía el NBT actual del cartel
+        // al editor para revertir el texto que el cliente ya mostró.
+        sendBlockEntityData(pk.x, pk.y, pk.z, *sign, this);
+        return;
+    }
 
     for (int i = 0; i < 4; ++i) sign->setLine(i, ev.getLine(i));
-    // TODO: reenviar BlockEntityData del cartel a los viewers para que el
-    // texto se vea sin recargar el chunk (no hay broadcast de block
-    // entities todavía). El texto queda persistido en el tile.
+    // Genisys: Sign::setText() termina en `$this->spawnToAll()` — el cartel
+    // se re-spawnea a todos sus viewers para que vean el texto nuevo sin
+    // recargar el chunk.
+    sendBlockEntityData(pk.x, pk.y, pk.z, *sign, nullptr);
+}
+
+// ============================================================
+// sendBlockEntityData — serializa el NBT de un tile y lo manda como
+// BlockEntityDataPacket. `only` selecciona un único destinatario
+// (Genisys Tile::spawnTo), o todos los que trackean el chunk
+// (Genisys Tile::spawnToAll). Reutilizable por cualquier block entity.
+// ============================================================
+void Player::sendBlockEntityData(int32_t x, int32_t y, int32_t z,
+                                 tile::Tile& t, Player* only) {
+    if (!srv_) return;
+
+    mcp_tag_t* tag = mcp_compound_tag_new();
+    if (!tag) return;
+    t.writeNBT(tag);
+    size_t blen = 0;
+    uint8_t* bbuf = mcp_nbt_write_bytes(tag, /*little_endian=*/true, &blen);
+    mcp_tag_destroy(tag);
+    if (!bbuf || blen == 0) { free(bbuf); return; }
+
+    auto pk = std::make_shared<network::protocol::BlockEntityDataPacket>();
+    pk->x = x;
+    pk->y = y;
+    pk->z = z;
+    pk->namedtag.assign(bbuf, bbuf + blen);
+    free(bbuf);
+
+    if (only) {
+        only->sendPacket(pk);
+        return;
+    }
+
+    int32_t cx = x >> 4;
+    int32_t cz = z >> 4;
+    for (auto& other : srv_->playersSnapshot()) {
+        if (!other) continue;
+        if (other.get() == this || other->isTrackingChunk(cx, cz)) {
+            other->sendPacket(pk);
+        }
+    }
 }
 
 // ============================================================
