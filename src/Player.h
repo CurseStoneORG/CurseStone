@@ -152,6 +152,13 @@ public:
     void sendBlockEntityData(int32_t x, int32_t y, int32_t z,
                              tile::Tile& t, Player* only = nullptr);
 
+    // Reenvía a este jugador los BlockEntityData de todos los tiles
+    // registrados en el chunk (cx,cz). Se llama después de mandar el
+    // FullChunkDataPacket, para que carteles/cofres/hornos ya guardados
+    // tengan su NBT en el cliente al reconectar (PMMP envía los tiles
+    // junto con el chunk).
+    void sendChunkTiles(int32_t cx, int32_t cz);
+
     // Send the creative-inventory contents (ContainerSetContentPacket with
     // windowid=0x79). Mirrors PMMP Player.php:2301 + 1461.
     void sendCreativeInventory();

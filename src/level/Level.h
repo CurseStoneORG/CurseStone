@@ -214,6 +214,14 @@ public:
     void setTile(int32_t x, int32_t y, int32_t z, std::shared_ptr<cursestone::tile::Tile> t);
     void removeTile(int32_t x, int32_t y, int32_t z);
 
+    // Snapshot de todos los tiles registrados en el chunk (cx,cz) en este
+    // momento (hidrata primero desde el chunk si todavía no se hizo). Lo
+    // usa Player::sendChunkTiles() para reenviar los BlockEntityData
+    // cuando el cliente recibe un chunk — sin esto, el texto de un cartel
+    // ya guardado no se renderiza al reconectar (el cliente recibe el
+    // bloque pero no su NBT).
+    std::vector<std::shared_ptr<cursestone::tile::Tile>> getTilesInChunk(int32_t cx, int32_t cz);
+
     // ----- Chunk memory eviction -----
     // Snapshot of one connected player's position for the unload sweep
     // below: which chunk they're standing in, and how far out they can
