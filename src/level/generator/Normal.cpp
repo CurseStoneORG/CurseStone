@@ -102,6 +102,8 @@ void Normal::generate(GenerationContext& ctx) {
         for (int z = 0; z < 16; ++z) {
             int h = heights[x][z];
             uint8_t b = biomes[x][z];
+            const int wx = baseX + x;
+            const int wz = baseZ + z;
             const BiomeConfig& cfg = BiomeRegistry::forId(b);
 
             uint8_t top    = cfg.topBlock;
@@ -119,6 +121,45 @@ void Normal::generate(GenerationContext& ctx) {
                 if (h >= 86) { top = (uint8_t)BlockId::STONE; filler = (uint8_t)BlockId::STONE; }
             }
 
+            // ---- Shorelines: sand at the water line -------------------------
+            // Vanilla lays sand along the banks of rivers and at the edge of
+            // the ocean, at roughly the height of the water — not only on the
+            // submerged block itself. isShore() is the same predicate that
+            // picks BIOME_BEACH, so the beach biome and the sand agree.
+            const bool shore = (b != BIOME_OCEAN) && isShore(noise_, baseX + x, baseZ + z, h);
+            if (shore && top != (uint8_t)BlockId::STONE) {
+                top = (uint8_t)BlockId::SAND;
+                // Sand on top of dirt, the way a beach is built up.
+                if (filler == (uint8_t)BlockId::GRASS || filler == (uint8_t)BlockId::DIRT)
+                    filler = (uint8_t)BlockId::SAND;
+            }
+
+            // ---- Rare gravel patches ---------------------------------------
+            // Occasional gravel on the ground near rivers, coasts and inland
+            // patches, the way vanilla scatters gravel around.
+            if (!shore && h >= kSeaLevel && top != (uint8_t)BlockId::STONE &&
+                gravelPatch(noise_, wx, wz, h) > 0.80) {
+                top = (uint8_t)BlockId::GRAVEL;
+            }
+
+            // ---- Exposed stone on steep ground -----------------------------
+            // Vanilla strips the grass layer off slopes that are too steep
+            // to hold soil, so hills show bare rock instead of a green
+            // blanket. Uses the already-computed height grid, so it costs
+            // nothing extra.
+            if (h > kSeaLevel && top != (uint8_t)BlockId::SAND) {
+                int steepest = 0;
+                if (x > 0)            steepest = std::max(steepest, std::abs(h - heights[x - 1][z]));
+                if (x < 15)           steepest = std::max(steepest, std::abs(h - heights[x + 1][z]));
+                if (z > 0)            steepest = std::max(steepest, std::abs(h - heights[x][z - 1]));
+                if (z < 15)           steepest = std::max(steepest, std::abs(h - heights[x][z + 1]));
+                if (steepest >= 4) {
+                    top = (uint8_t)BlockId::STONE;
+                    // A band of dirt just under the rock, as vanilla does.
+                    filler = (uint8_t)BlockId::DIRT;
+                }
+            }
+
             const bool snowy = cfg.snowy || b == BIOME_FROZEN_RIVER;
 
             for (int y = 0; y < h; ++y) {
@@ -127,6 +168,14 @@ void Normal::generate(GenerationContext& ctx) {
                 else if (y < h - 4)  id = (uint8_t)BlockId::STONE;
                 else if (y < h - 1)  id = filler;
                 else                 id = top;
+                // Stone runs right through the terrain layers, so a cliff or
+                // a cut bank shows rock instead of an unbroken dirt shell.
+                // Bands of it appear at random depths the way vanilla mixes
+                // stone into the subsurface.
+                if (id == (uint8_t)BlockId::STONE && y < h - 1 && y > 4) {
+                    if (((unsigned)(wx * 73856093 ^ wz * 19349663 ^ y * 83492791)) % 23u == 0u)
+                        id = (uint8_t)BlockId::DIRT;
+                }
                 mcp_chunk_set_block_id(c, x, y, z, id);
             }
 
