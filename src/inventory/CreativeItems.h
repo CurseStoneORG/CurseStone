@@ -1,16 +1,21 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// CreativeItems.h — hardcoded creative-inventory list.
+// CreativeItems.h — catalogo de items del inventario creativo.
 //
-// This file is AUTO-GENERATED from PocketMine-MP's creativeitems.json
-// for MCPE 0.15.x (protocol 84). Mirrors Nukkit's approach of hardcoding
-// the creative item list at compile-time (no runtime JSON dependency).
+// El catalogo vive ENTERO en codigo, como tabla estatica: no hay ningun
+// archivo que cargar. Sigue el enfoque de Nukkit, que hardcodea la
+// lista en compile-time. Para agregar o quitar un item se edita la
+// tabla de abajo (los invariantes los comprueba tools/creative_check).
 //
 // Total items: 566
 //
 // Each entry is {itemId, damage}; count is always 1 (PMMP default).
-// The list is in the SAME ORDER as PMMP's creativeitems.json so the
-// client-side categorization (Construction / Nature / Equipment / Items)
-// works the same way as in vanilla MCPE 0.15.
+// El ORDEN importa: el cliente categorize el catalogo por posicion
+// (Construction / Nature / Equipment / Items), asi que esta tabla sigue
+// el mismo orden que el catalogo de PMMP para MCPE 0.15.x
+// (protocolo 84) y la categorizacion queda igual que en vanilla.
+//
+// Ojo con `damage`: no siempre es un color de 4 bits. En los spawn eggs
+// (id 383) es la variante de entidad y llega hasta 48.
 #pragma once
 #include "item/ItemStack.h"
 #include <vector>
