@@ -511,8 +511,16 @@ void mcp_chunk_propagate_sky_light(mcp_chunk_t* c) {
 
 // Color de "grasscolor" clásico por bioma, para el array de biome
 // colors del FullChunkDataPacket (protocolo 84 / MCPE 0.15.x — ver
-// el comentario dentro de mcp_chunk_network_serialize). IDs según
-// resources/biome_definitions.json. Bioma desconocido -> plains.
+// el comentario dentro de mcp_chunk_network_serialize).
+//
+// OJO: los ids de este switch siguen la tabla clásica de grasscolor
+// (0=ocean, 1=plains, 2=desert, 3=forest, 4=mountains, 5=beach,
+// 6=taiga, 7=swampland, 8=hell), que NO es la numeracion del enum
+// BiomeId de level/generator/biome/Biome.h (donde 5=TAIGA, 6=SWAMPLAND,
+// 7=RIVER y BEACH=16). Está desalineado a proposito hasta que ambos
+// lados se unifiquen; cambiarlo cambia el color del mundo.
+//
+// Bioma desconocido -> plains.
 static void mcp_biome_grass_color(uint8_t biomeId, uint8_t* r, uint8_t* g, uint8_t* b) {
     switch (biomeId) {
         case 0: *r = 0x8E; *g = 0xB9; *b = 0x71; break; // ocean (piso, no se ve pasto real)
