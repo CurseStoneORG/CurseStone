@@ -38,29 +38,32 @@ constexpr double kRiverBed   = 2.4;   // half width carved to full depth
 constexpr double kRiverEdge  = 3.2;   // where the bed reaches sea level
 constexpr double kRiverShore = 3.0;   // flat grass bank at water level
 constexpr double kRiverClimb = 1.2;   // lowland: gentle terraced banks
-constexpr double kCliffClimb = 17.0;  // eroded gorge wall, ~80 deg once smoothed
+constexpr double kCliffClimb = 5.0;   // eroded gorge wall, ~65-75 deg once smoothed
 // How hard the river network is pulled towards the jungle belt, as a
 // fraction of the river field's own range. Roughly this many blocks of
 // sideways deflection across the gradient — big enough to visibly steer the
 // network, small enough that no reach is ever torn in two.
 constexpr double kRiverJungleBias = 0.24;
 
-inline double riverProfile(double d, double climb) {
-    const double bed = (double)kSeaLevel - 4.0;
-    if (d <= kRiverBed) return bed;
-    if (d <= kRiverEdge) {
-        const double t = (d - kRiverBed) / (kRiverEdge - kRiverBed);
+inline double riverProfile(double d, double climb, double width) {
+    const double bed   = (double)kSeaLevel - 4.0;
+    const double kBed  = kRiverBed * width;
+    const double kEdge = kRiverEdge * width;
+    const double kShr  = kRiverShore * width;
+    if (d <= kBed) return bed;
+    if (d <= kEdge) {
+        const double t = (d - kBed) / (kEdge - kBed);
         return bed + ((double)kSeaLevel - bed) * t;
     }
     // Flat bank at the water line, then the climb. The flat tier has to be an
     // explicit clamp, not just the start of the climb: without it the
     // profile keeps rising straight through sea level and the "bank" ends
     // up under the water instead of being a flat shelf beside it.
-    if (d <= kRiverEdge + kRiverShore) return (double)kSeaLevel;
+    if (d <= kEdge + kShr) return (double)kSeaLevel;
     // Capped so a mountain cannot be cut into a bottomless trench; past the
     // cap the broad valley terms take over.
-    const double dc = std::min(d, kRiverEdge + kRiverShore + 40.0);
-    return (double)kSeaLevel + (dc - kRiverEdge - kRiverShore) * climb;
+    const double dc = std::min(d, kEdge + kShr + 40.0);
+    return (double)kSeaLevel + (dc - kEdge - kShr) * climb;
 }
 
 // How steeply a river bank climbs. `cliff` is the erosion regime of the
@@ -73,13 +76,40 @@ inline double riverProfile(double d, double climb) {
 // the gradient steepens towards 80 degrees, which is what an eroded gorge
 // through high ground actually looks like.
 //
-// kCliffClimb sits well above the raw tan(80) = 5.67 on purpose. The
-// (1,4,1) smoothing kernel averages every column with its eight neighbours,
-// so a raw wall rising R blocks per column comes out as roughly R/3 — there
-// is a factor of about three between this constant and the slope you
-// actually walk up.
+// kCliffClimb sits above the raw tangent on purpose. The (1,4,1) smoothing
+// kernel averages every column with its eight neighbours, so a raw wall
+// rising R blocks per column comes out as roughly R/2.4 — there is a factor
+// between this constant and the slope you actually walk up. Measured on the
+// carved world: 17.0 came out at a median 76-82 degree wall, which was too
+// sheer; 5.0 measures a median near 70 degrees, inside the 65-75 band that
+// was asked for. The tail above the band is the mountain's OWN relief, not
+// the river profile — the lowland band sits at 63 degrees on the same
+// measurement.
 inline double riverClimbRate(double cliff) {
     return kRiverClimb + cliff * (kCliffClimb - kRiverClimb);
+}
+
+// How wide this reach of river is, as a scale on kRiverBed/kRiverEdge.
+//
+// riverDistance() divides the river field by its gradient precisely so the
+// water keeps a constant width whether the field is steep or nearly flat —
+// that is what stops a flat spot from inflating the river into a lake. But
+// it is also exactly why every single reach came out the same width, which
+// is not how a river behaves: real ones run narrow and quick in one stretch
+// and broad and slow in the next. This slow field (roughly 900-block
+// wavelength) restores that variation without reintroducing the ponds,
+// because it scales a distance threshold rather than a field threshold.
+inline double riverWidthScale(const TerrainNoise& n, double wx, double wz) {
+    const double w = mcp_simplex_fbm2d(n.surface, wx * 0.0011 + 61000.0,
+                                       wz * 0.0011 - 27000.0, 2, 0.5, 2.0);
+    return 0.70 + 0.60 * (w * 0.5 + 0.5);   // 0.70 .. 1.30
+}
+
+// Half width of the water at this column. riverMask, the terrain carve and
+// the biome choice all read this, so they can never disagree about how wide
+// the river is here.
+inline double riverHalfWidth(const TerrainNoise& n, double wx, double wz) {
+    return kRiverEdge * riverWidthScale(n, wx, wz);
 }
 
 } // namespace
@@ -435,7 +465,8 @@ double rawColumnHeight(const TerrainNoise& n, double wx, double wz) {
     if (land > 0.02) {
         const double fade = std::min(1.0, land / 0.30);
         const double target =
-            riverProfile(riverDistance(n, wx, wz), riverClimbRate(cliff));
+            riverProfile(riverDistance(n, wx, wz), riverClimbRate(cliff),
+                         riverWidthScale(n, wx, wz));
         h -= std::max(0.0, h - target) * fade;
     }
 
@@ -491,17 +522,17 @@ namespace {
 // ill-defined, the block distance blows up or collapses and the river used
 // to vanish or flood the whole flat.
 inline double riverField(const TerrainNoise& n, double wx, double wz, double bias) {
-    // Irregular meandering. One very broad octave (~1700-block wavelength)
-    // gives the reach its long lazy S-curves, and a second octave at only
-    // 30% amplitude and a 2.4x shorter wavelength breaks the curve up, so
-    // the river still snakes continuously but changes direction sharply
-    // and unevenly instead of reading as a smooth drawn arc.
+    // Irregular, crooked meandering. One very broad octave (~1700-block
+    // wavelength) gives the reach its overall sweep, and a second octave at
+    // 45% amplitude on a 2.8x shorter wavelength bends it the other way
+    // often enough to give the reach kinks and short reaches of different
+    // length instead of one long smooth drawn arc.
     constexpr double kWarpFreq = 0.00060;
     constexpr double kAmp      = 30.0;      // blocks of sideways displacement
     const double ox = mcp_simplex_fbm2d(n.surface, wx * kWarpFreq + 12000.0,
-                                        wz * kWarpFreq - 3100.0, 2, 0.30, 2.4);
+                                        wz * kWarpFreq - 3100.0, 2, 0.45, 2.8);
     const double oz = mcp_simplex_fbm2d(n.surface, wx * kWarpFreq - 7300.0,
-                                        wz * kWarpFreq + 9100.0, 2, 0.30, 2.4);
+                                        wz * kWarpFreq + 9100.0, 2, 0.45, 2.8);
     const double f = mcp_simplex_fbm2d(n.river,
                                        (wx + ox * kAmp) * 0.0014,
                                        (wz + oz * kAmp) * 0.0014, 4, 0.5, 2.0);
@@ -553,13 +584,12 @@ double riverMask(const TerrainNoise& n, double wx, double wz) {
     // Rivers are the zero contour of the low-frequency field, so the water
     // is the set of columns within a couple of blocks of that contour.
     const double d = riverDistance(n, wx, wz);
-    // Kept in step with the channel profile (kRiverBed / kRiverEdge) so
-    // that "is there a river here" and "what does the river carve here"
-    // can never disagree. The water itself is carved by riverProfile();
-    // this mask is the cheap 0..1 weight the biome choice and the gravel
-    // and clearing masks read.
-    constexpr double kCore = 2.4;   // fully carved channel floor
-    constexpr double kEdge = 3.2;   // water's edge
+    // Scaled by the same width field the carve uses (riverWidthScale), so
+    // "is there a river here" and "what does the river carve here" can never
+    // disagree — including on a reach where the river runs narrow.
+    const double width = riverWidthScale(n, wx, wz);
+    const double kCore = kRiverBed * width;
+    const double kEdge = kRiverEdge * width;
     if (d >= kEdge) return 0.0;
     if (d <= kCore) return 1.0;
     const double t = (d - kCore) / (kEdge - kCore);
@@ -724,7 +754,7 @@ uint8_t columnBiome(const TerrainNoise& n, double wx, double wz, int h) {
     // the bank all agree on where the river ends. The height band keeps the
     // river tag on the channel bed only: deeper water is real ocean.
     const double rd = riverDistance(n, wx, wz);
-    if (rd <= kRiverEdge + 1.6 && h < kSeaLevel && h >= kSeaLevel - 6)
+    if (rd <= riverHalfWidth(n, wx, wz) + 1.6 && h < kSeaLevel && h >= kSeaLevel - 6)
         return (t < -0.25) ? BIOME_FROZEN_RIVER : BIOME_RIVER;
 
     // Below sea level minus a shallow margin: open ocean.
