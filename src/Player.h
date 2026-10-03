@@ -324,6 +324,9 @@ public:
     // Hunger HUD sync (protocol 84 UpdateAttributesPacket): shows the
     // server-side food value on the client's hunger bar.
     void sendFoodLevel();
+    // Health-only attribute sync (Infinity Player::setHealth): updates
+    // the hearts immediately after ANY health change.
+    void sendHealthAttribute();
     // Full attribute sync (health + hunger) — used after respawn/heal.
     void sendAllAttributes();
     bool isFoodEnabled() const { return cfg_.gamemode == 0; }
@@ -426,6 +429,11 @@ protected:
     // reaparicion (RespawnPacket es un stub sin encode() real en esta
     // base de codigo todavia — ver TODO junto a la definicion).
     void onDeath() override;
+    // Living hook tras cada dano no mortal: manda la animación de golpe
+    // (HURT_ANIMATION con eid=0 = "yo" en protocolo 84, Infinity
+    // Player::attack) y sincroniza el atributo de salud al instante
+    // (Infinity Player::setHealth) para que los corazones bajen fluidos.
+    void onHealthChanged() override;
 
 private:
     Server* srv_;

@@ -2690,8 +2690,9 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int /*face*/) {
         utils::MainLogger::get().info("[ACTION] " + cfg_.username + " started breaking at " +
             std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(z));
     }
-    // Sprint toggle (protocol 84): drives the higher exhaustion rate in
-    // tickHungerAndDamage(). START_SPRINT=5 / STOP_SPRINT=6.
+    // Sprint toggle (protocol 84, Infinity PlayerActionPacket):
+    // START_SPRINT=9 / STOP_SPRINT=10 — drives the higher exhaustion
+    // rate in tickHungerAndDamage().
     if (action == network::protocol::PlayerActionPacket::ACTION_START_SPRINT) {
         sprinting_ = true;
     } else if (action == network::protocol::PlayerActionPacket::ACTION_STOP_SPRINT) {
@@ -3271,6 +3272,18 @@ void Player::onDeath() {
         auto sh = std::make_shared<network::protocol::SetHealthPacket>();
         sh->health = 0;
         sendPacket(sh);
+
+        // Infinity Player::kill(): right after setHealth(0) the server
+        // sends the RespawnPacket with the spawn position. The 0.15.10
+        // client needs it to arm the death screen's Respawn flow —
+        // without it the Respawn button does nothing and the player is
+        // stuck on the death screen (can't respawn or leave to menu).
+        {
+            math::Vector3 sp = getSpawn();
+            auto rp = std::make_shared<network::protocol::RespawnPacket>();
+            rp->x = (float)sp.x; rp->y = (float)sp.y; rp->z = (float)sp.z;
+            sendPacket(rp);
+        }
     }
     // Cleanup at death: fire goes out, food resets for the next life.
     was_on_fire_ = false;
@@ -4182,6 +4195,24 @@ math::Vector3 Player::getServerSpawnSafe() const {
     return sp;
 }
 
+// --- Health sync (Infinity Player::setHealth) -------------------
+// Health-only UpdateAttributesPacket: the client moves the hearts the
+// instant this packet arrives. Infinity syncs the HEALTH attribute on
+// EVERY setHealth() call — without this the hearts only moved on regen
+// or food changes and felt stuck for seconds after taking damage.
+void Player::sendHealthAttribute() {
+    if (!connected_.load(std::memory_order_relaxed)) return;
+    auto pk = std::make_shared<network::protocol::UpdateAttributesPacket>();
+    pk->eid = runtimeId();
+    network::protocol::UpdateAttributesPacket::Entry h;
+    h.name = "generic.health";
+    h.min = 0.0f; h.max = maxHealth();
+    h.value = health();
+    h.defaultValue = 20.0f;
+    pk->entries.push_back(h);
+    sendPacket(pk);
+}
+
 // --- Attribute sync (protocol 84 UpdateAttributesPacket) ---
 void Player::sendFoodLevel() {
     if (!connected_.load(std::memory_order_relaxed)) return;
@@ -4218,6 +4249,24 @@ void Player::sendAllAttributes() {
     sendPacket(pk);
 }
 
+// Living hook (Living::applyDamage): runs after every non-fatal damage
+// application. Mirrors two Infinity behaviours at once:
+//   * Player::attack(): EntityEventPacket HURT_ANIMATION with eid=0 —
+//     "me" in protocol 84 — so the client flashes red immediately.
+//   * Player::setHealth(): sync the HEALTH attribute so the hearts move
+//     in the same tick as the damage.
+void Player::onHealthChanged() {
+    if (!spawned_.load(std::memory_order_relaxed)) return;
+    if (isDead()) return;
+
+    auto ee = std::make_shared<network::protocol::EntityEventPacket>();
+    ee->eid = 0;   // protocol 84: eid 0 = "the local player"
+    ee->event = network::protocol::EntityEventPacket::HURT_ANIMATION;
+    sendPacket(ee);
+
+    sendHealthAttribute();
+}
+
 // --- Hunger + ambient damage pipeline (Infinity Player.php foodData/
 // processMovement) — runs once per tick for every spawned player. ---
 void Player::tickHungerAndDamage(uint64_t current_tick) {
@@ -4238,8 +4287,16 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
     uint8_t body = lvl->getBlockId(bx, by + 1, bz);   // head block
     uint8_t feet = lvl->getBlockId(bx, by - 1, bz);   // stand-on block
 
-    // ---------- 1. Drowning (Infinity processMovement) ----------
-    bool in_water = (at == block::WATER || at == block::FLOWING_WATER);
+    // ---------- 1. Drowning (Infinity Living::entityBaseTick) ----------
+    // Air drains ONLY when the HEAD is submerged: Infinity checks the
+    // block at y + getEyeHeight() (isInsideOfWater), NOT the block at the
+    // feet. Using the feet block made the server drain air while the
+    // client (which shows bubbles by camera height) still had full ones,
+    // and kept drowning the player in the surface — so diving again
+    // hurt as if the air was already spent.
+    int eye_y = (int)std::floor(pos_.y + 1.62f);   // player eye height (0.15)
+    uint8_t eye = lvl->getBlockId(bx, eye_y, bz);
+    bool in_water = (eye == block::WATER || eye == block::FLOWING_WATER);
     if (in_water) {
         if (air_ticks_ > 0) --air_ticks_;
         else if (!creative && difficulty > 0 &&

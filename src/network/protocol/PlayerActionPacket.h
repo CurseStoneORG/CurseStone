@@ -27,13 +27,15 @@ public:
     static constexpr int32_t ACTION_ABORT_BREAK = 1;
     static constexpr int32_t ACTION_STOP_BREAK  = 2;
     // El cliente manda esto cuando el jugador toca el boton de
-    // "Respawn" en la pantalla de muerte (protocolo legacy 84 — en
-    // versiones modernas de Bedrock esto se maneja distinto).
+    // "Respawn" en la pantalla de muerte (Infinity:
+    // ACTION_SPAWN_SAME_DIMENSION = 7).
     static constexpr int32_t ACTION_SPAWN_SAME_DIMENSION = 7;
-
-    // Sprint toggle (protocol 84, PMMP PlayerActionPacket):
-    static constexpr int32_t ACTION_START_SPRINT = 5;
-    static constexpr int32_t ACTION_STOP_SPRINT  = 6;
+    // Sprint toggle (protocol 84 — Infinity PlayerActionPacket.php:
+    // ACTION_START_SPRINT = 9, ACTION_STOP_SPRINT = 10. Values 5/6 are
+    // RELEASE_ITEM/STOP_SLEEPING in this protocol — using them here made
+    // the server misread those actions and never see real sprints).
+    static constexpr int32_t ACTION_START_SPRINT = 9;
+    static constexpr int32_t ACTION_STOP_SPRINT  = 10;
 
     int64_t eid = 0;
     int32_t action = 0;

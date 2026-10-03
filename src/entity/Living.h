@@ -50,6 +50,13 @@ public:
     const std::vector<std::shared_ptr<Effect>>& effects() const { return effects_; }
     void tick(uint64_t current_tick) override;
 protected:
+    // Llamado por damage()/damageByEntity() cada vez que la salud baja
+    // por dano SIN morir (cuando muere se llama onDeath()). Player lo
+    // sobreescribe para sincronizar la vida al cliente AL INSTANTE
+    // (barra de corazones fluida) y mandar la animacion de golpe, igual
+    // que Infinity (Player::setHealth + EntityEventPacket::HURT_ANIMATION).
+    virtual void onHealthChanged() {}
+
     // Llamado por damage()/damageByEntity() la primera vez que la
     // salud cae a <= 0. No-op por defecto (mobs genericos no
     // necesitan un evento de muerte todavia); Player lo sobreescribe

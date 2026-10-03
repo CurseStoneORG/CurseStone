@@ -11,6 +11,7 @@ bool Living::applyDamage(float amount) {
     if (health_ < 0) health_ = 0;
     bool just_died = was_alive && health_ <= 0.0f;
     if (just_died) onDeath();
+    else onHealthChanged();   // sincronización inmediata de la barra de corazones
     return just_died;
 }
 
