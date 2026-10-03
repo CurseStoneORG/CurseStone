@@ -213,8 +213,39 @@ void CaveCarver::digBlock(mcp_chunk_t* chunk, int8_t x, int16_t y, int8_t z) con
     } else {
         mcp_chunk_set_block_id(chunk, x, y, z, (uint8_t)BlockId::AIR);
         int16_t healY = (int16_t)(y - 1);
-        if (bid(chunk, x, healY, z) == (uint8_t)BlockId::DIRT &&
-            highestBlockAt(chunk, x, z) == healY) {
+
+        // How tall is the opening we have just carved in this column? Walk
+        // up and down from the block we hollowed out while the neighbours
+        // are already air. A tall opening (a tunnel breaking out of a
+        // hillside, or a big room) is exactly the "carved 10+ blocks of
+        // height" case the player asked about.
+        int upAir = 0;
+        for (int yy = y + 1; yy <= 127 && bid(chunk, x, yy, z) == (uint8_t)BlockId::AIR; ++yy)
+            ++upAir;
+        int downAir = 0;
+        while ((healY - downAir) >= 1 &&
+               bid(chunk, x, (int)(healY - downAir), z) == (uint8_t)BlockId::AIR)
+            ++downAir;
+        const int opening = upAir + downAir + 1;
+        const int floorY = healY - downAir;
+
+        if (opening >= 10) {
+            // Vanilla: a deep carve (a river/carver cutting through a
+            // mountain) gets a sandy floor two blocks thick instead of a
+            // bare stone shelf. Only natural ground turns to sand; anything
+            // else (ore, already-carved air) stops the skin immediately.
+            for (int fy = floorY; fy >= floorY - 1 && fy >= 1; --fy) {
+                uint8_t fb = bid(chunk, x, fy, z);
+                if (fb == (uint8_t)BlockId::DIRT || fb == (uint8_t)BlockId::GRASS ||
+                    fb == (uint8_t)BlockId::STONE || fb == (uint8_t)BlockId::SAND ||
+                    fb == (uint8_t)BlockId::GRAVEL) {
+                    mcp_chunk_set_block_id(chunk, x, fy, z, (uint8_t)BlockId::SAND);
+                } else {
+                    break;
+                }
+            }
+        } else if (bid(chunk, x, healY, z) == (uint8_t)BlockId::DIRT &&
+                   highestBlockAt(chunk, x, z) == healY) {
             mcp_chunk_set_block_id(chunk, x, healY, z, (uint8_t)BlockId::GRASS);
         }
     }
