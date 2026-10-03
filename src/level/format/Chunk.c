@@ -242,6 +242,23 @@ void mcp_chunk_set_height_map(mcp_chunk_t* c, int x, int z, int32_t h) {
     c->dirty = true;
 }
 
+void mcp_chunk_recalculate_height_map_column(mcp_chunk_t* c, int x, int z) {
+    if (!c || !c->height_map) return;
+    x &= 15;
+    z &= 15;
+    const int col = x + z * 16;
+    int32_t h = 0;
+    for (int y = 255; y >= 0; --y) {
+        uint8_t id = mcp_chunk_get_block_id(c, x, y, z);
+        if (id != 0 && mcp_block_light_opacity(id) > 0) {
+            h = y + 1;
+            break;
+        }
+    }
+    c->height_map[col] = h;
+    c->dirty = true;
+}
+
 void mcp_chunk_recalculate_height_map(mcp_chunk_t* c) {
     if (!c || !c->height_map) return;
     // BUG REAL (pasto/mundo negro): esta función marcaba como "techo"
@@ -260,20 +277,8 @@ void mcp_chunk_recalculate_height_map(mcp_chunk_t* c) {
     // (mcp_block_light_opacity) sea > 0, igual que Minecraft/PMMP
     // (Block::getLightFilter() > 0). Hojas, agua, vidrio, flores,
     // etc. son transparentes a la luz (opacidad 0) y ya no cuentan.
-    for (int col = 0; col < 256; ++col) {
-        int x = col & 15;
-        int z = (col >> 4) & 15;
-        int32_t h = 0;
-        for (int y = 255; y >= 0; --y) {
-            uint8_t id = mcp_chunk_get_block_id(c, x, y, z);
-            if (id != 0 && mcp_block_light_opacity(id) > 0) {
-                h = y + 1;
-                break;
-            }
-        }
-        c->height_map[col] = h;
-    }
-    c->dirty = true;
+    for (int col = 0; col < 256; ++col)
+        mcp_chunk_recalculate_height_map_column(c, col & 15, (col >> 4) & 15);
 }
 
 // ---------------------------------------------------------------- tile-entities + entities
@@ -377,16 +382,87 @@ void mcp_chunk_recompute_section_flags(mcp_chunk_t* c) {
 // patrón exacto de la screenshot (pasto oscuro pegado a los árboles).
 //
 // Fix: pase real de dos fases, mismo enfoque que
-// SimpleChunkManager::populateSkyLight de PMMP:
-//   Fase 1 (columna): para cada (x,z), luz = 15 desde arriba del
-//     heightmap; al bajar, cada bloque resta su opacidad
-//     (mcp_block_light_opacity) al valor de luz que sigue bajando.
-//   Fase 2 (flood-fill horizontal): la luz de cada bloque también se
-//     copia a sus 4 vecinos horizontales menos (opacidad del vecino +
-//     1), en cola, hasta estabilizar — así la luz se filtra de lado
-//     bajo aleros/ramas en vez de quedar un pilar recto por columna.
-// No toca block_light (luz de antorchas) — eso es un pase aparte que
-// no hace falta para el bug de pasto negro.
+// ------------------------------------------------------------- light pass
+//
+// This is the pass that fills a freshly generated chunk, i.e. the light
+// the CLIENT receives in the very first FullChunkDataPacket for it. It
+// used to flood only the four HORIZONTAL neighbours and never touched
+// block light at all, so a chunk shipped to the client with black under
+// every overhang and no torch light anywhere — and the client keeps that
+// initial state until a block changes near it.
+//
+// Both layers now flood in the six vanilla directions and both are
+// seeded properly. Cross-chunk continuity is still Level's job (see
+// LightEngine); this pass has to be right on its own so the first packet
+// a player receives is already sane.
+
+static uint8_t layer_get(const mcp_chunk_t* c, int x, int y, int z, int isSky) {
+    return isSky ? mcp_chunk_get_sky_light(c, x, y, z)
+                 : mcp_chunk_get_block_light(c, x, y, z);
+}
+
+static void layer_set(mcp_chunk_t* c, int x, int y, int z, uint8_t v, int isSky) {
+    if (isSky) mcp_chunk_set_sky_light(c, x, y, z, v);
+    else mcp_chunk_set_block_light(c, x, y, z, v);
+}
+
+// A step into `id` costs 1 for anything light passes through and 15 for
+// an opaque block, which blocks outright.
+static int light_cost(uint8_t id) {
+    if (id == 0) return 1;
+    const uint8_t op = mcp_block_light_opacity(id);
+    return op > 0 ? (int)op : 1;
+}
+
+// Flood one layer through the chunk from every seeded cell, in the six
+// vanilla directions. Bounded to [0, maxTop]: above that there is not a
+// single block in any column of this chunk.
+static void propagate_layer(mcp_chunk_t* c, int maxTop, int isSky) {
+    typedef struct { uint8_t x, z; uint16_t y; } LightNode;
+    const int dx[6] = {1, -1, 0, 0, 0, 0};
+    const int dy[6] = {0, 0, 1, -1, 0, 0};
+    const int dz[6] = {0, 0, 0, 0, 1, -1};
+
+    size_t cap = (size_t)16 * 16 * (size_t)(maxTop + 1);
+    if (cap == 0) cap = 1;
+    LightNode* queue = (LightNode*)malloc(cap * sizeof(LightNode));
+    if (!queue) return;
+
+    size_t qhead = 0, qtail = 0;
+    for (int x = 0; x < 16; ++x)
+        for (int z = 0; z < 16; ++z)
+            for (int y = 0; y <= maxTop; ++y)
+                if (layer_get(c, x, y, z, isSky) > 1) {
+                    if (qtail < cap)
+                        queue[qtail++] = (LightNode){(uint8_t)x, (uint8_t)z,
+                                                      (uint16_t)y};
+                }
+
+    while (qhead < qtail) {
+        const LightNode n = queue[qhead++];
+        const uint8_t cur = layer_get(c, n.x, n.y, n.z, isSky);
+        if (cur <= 1) continue;
+        for (int d = 0; d < 6; ++d) {
+            const int nx = (int)n.x + dx[d];
+            const int ny = (int)n.y + dy[d];
+            const int nz = (int)n.z + dz[d];
+            if (ny < 0 || ny > maxTop) continue;
+            // single-chunk pass: no cruzamos a chunks vecinos (Level's
+            // LightEngine se encarga del cruce de fronteras).
+            if (nx < 0 || nx > 15 || nz < 0 || nz > 15) continue;
+            const int cand = (int)cur - light_cost(mcp_chunk_get_block_id(c, nx, ny, nz));
+            if (cand <= 0) continue;
+            if ((uint8_t)cand > layer_get(c, nx, ny, nz, isSky)) {
+                layer_set(c, nx, ny, nz, (uint8_t)cand, isSky);
+                if (cand > 1 && qtail < cap)
+                    queue[qtail++] = (LightNode){(uint8_t)nx, (uint8_t)nz,
+                                                  (uint16_t)ny};
+            }
+        }
+    }
+    free(queue);
+}
+
 void mcp_chunk_propagate_sky_light(mcp_chunk_t* c) {
     if (!c) return;
 
@@ -448,61 +524,24 @@ void mcp_chunk_propagate_sky_light(mcp_chunk_t* c) {
         }
     }
 
-    // --- Fase 2: flood-fill horizontal (BFS) para que la luz se
-    // filtre bajo aleros/ramas en vez de quedar en columnas rectas ---
-    // Cola simple de (x,y,z) a revisar, acotada a [0, maxTop] — por
-    // encima de maxTop no hay nada que propagar (todo ya es 15).
-    typedef struct { uint8_t x, z; uint16_t y; } LightNode;
-    size_t cap = (size_t)16 * 16 * (size_t)(maxTop + 1);
-    if (cap == 0) cap = 1;
-    LightNode* queue = (LightNode*)malloc(cap * sizeof(LightNode));
-    if (!queue) return; // sin memoria: nos quedamos con el resultado de la fase 1
-    size_t qhead = 0, qtail = 0;
+    // --- Fase 2: inundado en las 6 direcciones, para las DOS capas ---
+    // La vertical es lo que faltaba antes: sin ella la luz no bajaba
+    // nunca y todo lo que estuviera bajo un alero o en una cueva
+    // quedaba en 0 (las "manchas negras").
+    propagate_layer(c, maxTop, /*isSky=*/1);
 
-    // Semilla: toda celda con luz > 1 puede propagar a sus vecinas.
-    for (int x = 0; x < 16; ++x) {
-        for (int z = 0; z < 16; ++z) {
+    // Block light: se siembra desde la emision de cada bloque y se
+    // inunda igual que el cielo. Antes esta capa no se tocaba nunca,
+    // asi que una antorcha no iluminaba nada.
+    for (int x = 0; x < 16; ++x)
+        for (int z = 0; z < 16; ++z)
             for (int y = 0; y <= maxTop; ++y) {
-                if (mcp_chunk_get_sky_light(c, x, y, z) > 1) {
-                    queue[qtail++] = (LightNode){(uint8_t)x, (uint8_t)z, (uint16_t)y};
-                }
+                const uint8_t e =
+                    mcp_block_light_emission(mcp_chunk_get_block_id(c, x, y, z));
+                mcp_chunk_set_block_light(c, x, y, z, e);
             }
-        }
-    }
+    propagate_layer(c, maxTop, /*isSky=*/0);
 
-    static const int dx[4] = { 1, -1, 0, 0 };
-    static const int dz[4] = { 0, 0, 1, -1 };
-
-    while (qhead < qtail) {
-        LightNode n = queue[qhead++];
-        int lx = n.x, lz = n.z, ly = n.y;
-        uint8_t curLight = mcp_chunk_get_sky_light(c, lx, ly, lz);
-        if (curLight <= 1) continue;
-
-        for (int dir = 0; dir < 4; ++dir) {
-            int nx = lx + dx[dir];
-            int nz = lz + dz[dir];
-            // single-chunk pass: no cruzamos a chunks vecinos (ver
-            // nota en Chunk.h) — solo nos quedamos dentro de 0..15.
-            if (nx < 0 || nx > 15 || nz < 0 || nz > 15) continue;
-
-            uint8_t nid = mcp_chunk_get_block_id(c, nx, ly, nz);
-            uint8_t nop = mcp_block_light_opacity(nid);
-            int dec = nop > 0 ? nop : 1;
-            int candidate = (int)curLight - dec;
-            if (candidate <= 0) continue;
-
-            uint8_t existing = mcp_chunk_get_sky_light(c, nx, ly, nz);
-            if (candidate > existing) {
-                mcp_chunk_set_sky_light(c, nx, ly, nz, (uint8_t)candidate);
-                if (candidate > 1 && qtail < cap) {
-                    queue[qtail++] = (LightNode){(uint8_t)nx, (uint8_t)nz, (uint16_t)ly};
-                }
-            }
-        }
-    }
-
-    free(queue);
     c->light_populated = true;
     c->dirty = true;
 }
@@ -673,8 +712,24 @@ uint8_t* mcp_chunk_network_serialize(const mcp_chunk_t* c, size_t* out_len) {
     }
     off += kSkyLight;
 
-    // --- Block light: all zeros ---
-    off += kBlockLight;  // already zero from calloc
+    // --- Block light: real values, same nibble packing as sky light ---
+    // BUG REAL (antorchas invisibles): esto mandaba kBlockLight bytes de
+    // cero sin mirar el chunk. Aunque el servidor calculase y guardase
+    // la luz de una antorcha (TileFurnace/Torch + el pase de
+    // generacion), el cliente recibia un array de block light todo en
+    // cero en cada FullChunkDataPacket — es decir, la luz de antorchas
+    // se quedaba enteramente en el servidor y nunca se veia en el juego.
+    for (int x = 0; x < 16; ++x) {
+        for (int z = 0; z < 16; ++z) {
+            for (int y = 0; y < 128; y += 2) {
+                uint8_t lo = mcp_chunk_get_block_light(c, x, y, z) & 0x0F;
+                uint8_t hi = mcp_chunk_get_block_light(c, x, y + 1, z) & 0x0F;
+                uint32_t ci = (uint32_t)((x << 11) | (z << 7) | y);
+                buf[off + (ci >> 1)] = (hi << 4) | lo;
+            }
+        }
+    }
+    off += kBlockLight;
 
     // --- Heightmap: one byte per column (max y with non-air block, capped at 127) ---
     if (c->height_map) {

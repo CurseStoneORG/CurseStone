@@ -81,7 +81,7 @@ static void ensureDir(const std::string& path) {
     }
 }
 
-Level::Level(LevelConfig cfg) : cfg_(std::move(cfg)) {
+Level::Level(LevelConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
     // Spawn is NOT hardcoded here — it comes from the generator's
     // getSpawn() method, mirroring Nukkit where each generator type
     // defines its own spawn (Normal, Flat, Nether all differ).
@@ -166,6 +166,11 @@ Level::Level(LevelConfig cfg) : cfg_(std::move(cfg)) {
     chunks_.setProvider(provider);
     chunks_.setGenerator(generator_);
     provider_ = provider;
+    // Cada chunk que entra al manager avisa para que su luz se
+    // recalcule junto con la de sus vecinos (no en solitario, que es
+    // lo que dejaba una franja oscura en los bordes de chunk).
+    chunks_.setOnChunkAdded(
+        [this](int32_t cx, int32_t cz) { onChunkAdded(cx, cz); });
 }
 
 Level::~Level() {
@@ -220,8 +225,26 @@ void Level::setBlock(int32_t x, int32_t y, int32_t z, uint8_t id, uint8_t data) 
     int32_t cx = x >> 4, cz = z >> 4;
     if (mcp_chunk_t* c = chunks_.getChunkIfLoaded(cx, cz)) {
         mcp_chunk_set_block_full(c, x & 15, y, z & 15, id, data);
+        // El heightmap solo SUBIA al poner un bloque; al quitarlo (o al
+        // cavar una habitacion) la columna se quedaba marcada como
+        // techada a la altura vieja, y la semilla de luz de cielo
+        // tomaba aire abierto por tierra solida -> todo negro.
+        mcp_chunk_recalculate_height_map_column(c, x & 15, z & 15);
         c->dirty = true;
+        // LuZ: antes el bloque se escribia y ya, sin recalcular nada.
+        // Por eso poner un techo dejaba la habitacion a pleno dia y
+        // romperlo la dejaba a oscuras. El radio cubre los 15 bloques
+        // que la luz puede recorrer, asi que la region recalculada
+        // siempre es coherente por si sola.
+        light_.relightAround(x, y, z, LightEngine::kRelightRadius);
     }
+}
+
+void Level::onChunkAdded(int32_t cx, int32_t cz) {
+    // Solo encola: esta funcion se llama desde el hilo del generador
+    // (dentro de ChunkManager::setChunk) y recorrer el mundo ahi
+    // bloquearia la generacion.
+    light_.onChunkAdded(cx, cz);
 }
 
 int Level::save() {
@@ -249,6 +272,10 @@ int Level::save() {
 void Level::tick(uint64_t current_tick) {
     advanceTime(1);
     doWeatherTick(current_tick);
+    // Luz pendiente de los chunks recien generados/cargados. Con un
+    // presupuesto por tick para no congelar el hilo principal cuando
+    // entra una vista llena de chunks a la vez.
+    light_.processPending(LightEngine::kPendingBudget);
     // NOTE: the dropped-items sweep used to run here every tick. It was
     // moved to collectDroppedItems(), driven by the single global GC in
     // MemoryManager — running an independent reclaimer inside tick() freed
