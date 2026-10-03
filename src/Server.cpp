@@ -9,6 +9,7 @@
 #include "utils/MainLogger.hpp"
 #include "utils/Config.h"
 #include "utils/Utils.h"
+#include "utils/TextColor.h"
 
 #include <climits>
 #include <cstring>
@@ -605,6 +606,12 @@ std::vector<std::shared_ptr<Player>> Server::playersSnapshot() const {
 void Server::broadcastMessage(const std::string& msg) {
     auto snap = playersSnapshot();
     for (auto& p : snap) if (p) p->sendMessage(msg);
+    // FIX ("los mensajes del chat nunca llegan a la consola"): every
+    // broadcast (player chat, join/quit/death messages, server say) is
+    // mirrored to the server console with the §-codes stripped — exactly
+    // like PMMP's Server::broadcastMessage logging behaviour, so an admin
+    // watching the console sees the same chat the players see in-game.
+    utils::MainLogger::get().info("[CHAT] " + TC::clean(msg));
 }
 void Server::broadcastPacket(void* /*p*/) {
     // send to each player's source interface

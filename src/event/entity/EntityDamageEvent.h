@@ -19,6 +19,15 @@ enum class DamageCause {
     CUSTOM = 0,
     ENTITY_ATTACK = 1,
     CONTACT = 2, // p.ej. tocar fuego (BlockFire::onEntityCollide)
+    // Causas ambientales (protocolo 84 / Infinity EntityDamageEvent):
+    FALL = 3,        // dano de caida
+    LAVA = 4,        // tocar lava
+    FIRE = 5,        // estar en fuego
+    FIRE_TICK = 6,   // dano de arder
+    DROWNING = 7,    // quedarse sin aire bajo el agua
+    CACTUS = 8,      // tocar cactus
+    STARVATION = 9,  // hambre en 0 (mata salvo en dificultades bajas)
+    VOID = 10,       // caer al vacio
 };
 
 class EntityDamageEvent : public Event, public Cancellable {

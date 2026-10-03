@@ -22,6 +22,14 @@ bool Living::damage(float amount) {
     return applyDamage(ev.amount);
 }
 
+bool Living::damage(float amount, event::entity::DamageCause cause) {
+    if (isDead()) return false;
+    auto ev = event::EventManager::get().fire<event::entity::EntityDamageEvent>(
+        this, amount, cause);
+    if (ev.isCancelled()) return false;
+    return applyDamage(ev.amount);
+}
+
 bool Living::damageByEntity(float amount, Entity* damager) {
     if (isDead()) return false;
     auto ev = event::EventManager::get().fire<event::entity::EntityDamageByEntityEvent>(

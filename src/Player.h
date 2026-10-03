@@ -76,7 +76,10 @@ public:
     // kicks this player with the error attached (Nukkit-style).
     void handlePacketError(uint8_t pid, const std::string& what);
     void handleLogin(network::protocol::LoginPacket& p);
-    void handleMovePlayer(double x, double y, double z, float yaw, float pitch);
+    void handleMovePlayer(double x, double y, double z, float yaw, float pitch,
+                          bool onGround);
+    // Per-tick hunger + environmental damage (fall/lava/fire/cactus/drown/starve).
+    void tickHungerAndDamage(uint64_t current_tick);
     void handleChat(const std::string& message);
     void handleBlockBreak(int x, int y, int z);
     void handleBlockPlace(int x, int y, int z, uint8_t face,
@@ -301,6 +304,9 @@ public:
     // --- Position/teleport (Nukkit: getNextPosition/getSpawn/sendPosition) ---
     math::Vector3 getNextPosition() const { return pos_; }
     math::Vector3 getSpawn() const;
+    // Server spawn with the Y snapped to the real terrain surface of the
+    // column (fixes the "first join spawns you in the sky" bug).
+    math::Vector3 getServerSpawnSafe() const;
     void sendPosition(double x, double y, double z, double yaw = 0, double pitch = 0, uint8_t mode = 0);
 
     // --- Chat/messaging (Nukkit: sendMessage/sendPopup/sendTip/sendTranslation) ---
@@ -315,6 +321,11 @@ public:
 
     // --- Health/food (Nukkit: setHealth/getFoodData/isFoodEnabled) ---
     void setHealth(int h);
+    // Hunger HUD sync (protocol 84 UpdateAttributesPacket): shows the
+    // server-side food value on the client's hunger bar.
+    void sendFoodLevel();
+    // Full attribute sync (health + hunger) — used after respawn/heal.
+    void sendAllAttributes();
     bool isFoodEnabled() const { return cfg_.gamemode == 0; }
 
     // --- Chunk management (Nukkit: isChunkLoaded/isChunkLoading/unloadChunk/sendChunk) ---
@@ -453,6 +464,28 @@ private:
     uint64_t start_time_ms_ = 0;       // Wall-clock when player joined (for workbench)
     uint64_t last_activity_ms_ = 0;    // Wall-clock of last received packet
     uint64_t last_attack_ms_ = 0;      // Wall-clock of last accepted melee attack (cooldown)
+
+    // --- Hunger + ambient damage state (Infinity Player.php foodData) ---
+    float food_saturation_ = 5.0f;   // hidden saturation, drains before food
+    int   food_tick_timer_ = 0;      // countdown to next exhaustion drain
+    int   food_depletion_ = 0;       // accumulated exhaustion (Infinity: exhaustionLevel)
+    uint64_t last_pos_y_ = 0;        // last tick's Y as uint64 for fall tracking
+    bool  last_pos_set_ = false;     // first-move guard for fall damage
+    bool  was_in_lava_ = false;      // lava-damage throttle (PMMP resetFireTicks semantics)
+    bool  was_on_fire_ = false;      // fire-tick state (carry after leaving the block)
+    uint64_t last_fire_dmg_ms_ = 0;  // fire damage interval gate (0.5s, vanilla)
+    uint64_t last_lava_dmg_ms_ = 0;  // lava damage interval gate (0.5s, vanilla)
+    uint64_t last_fire_tick_dmg_ms_ = 0;
+    uint64_t last_drown_dmg_ms_ = 0; // drowning damage interval gate (1s, vanilla)
+    uint64_t last_cactus_dmg_ms_ = 0;
+    uint64_t last_regen_ms_ = 0;     // natural-regen gate (4s at food>=17)
+    int   starve_ticks_ = 0;         // starve damage accumulator (80 ticks @1 dmg)
+    int   air_ticks_ = 300;          // remaining air underwater (vanilla 300 ticks)
+    int   fire_ticks_ = 0;           // remaining burn ticks (8s after fire/lava)
+    bool  moved_this_tick_ = false;  // set by handleMovePlayer, read by tickHungerAndDamage
+    bool  sprinting_ = false;        // client reports sprint (PlayerAction 5/6)
+    bool  on_ground_fall_check_ = true; // last client-reported onGround
+    float fall_distance_ = 0.0f;     // accumulated fall distance in blocks
 
     // Fix #3: shared spiral algorithm — single source of truth.
     static std::vector<std::pair<int32_t,int32_t>>

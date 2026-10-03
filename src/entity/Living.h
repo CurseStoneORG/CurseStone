@@ -5,6 +5,7 @@
 #include "Entity.h"
 #include "Attribute.h"
 #include "Effect.h"
+#include "event/entity/EntityDamageEvent.h"
 #include <vector>
 #include <memory>
 namespace cursestone::entity {
@@ -33,6 +34,13 @@ public:
     // entrada generico sin atacante conocido (p.ej.
     // BlockFire::onEntityCollide). Delega en damage().
     void attack(float amount) override { damage(amount); }
+
+    // Damage with an explicit cause (Infinity-style): fires
+    // EntityDamageEvent with that cause so listeners can cancel/reduce
+    // per-cause (armor on FALL, fire resistance on LAVA, etc.). Used by
+    // the ambient damage pipeline: fall damage, lava, fire, cactus,
+    // drowning, starvation.
+    virtual bool damage(float amount, event::entity::DamageCause cause);
 
     // Heal the entity by amount (capped at maxHealth).
     virtual void heal(float amount);
