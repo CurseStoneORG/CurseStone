@@ -116,7 +116,11 @@ void Normal::generate(GenerationContext& ctx) {
 
             // Vanilla-ish surface extras per biome.
             if (b == BIOME_OCEAN) {
-                top = (h > 58) ? (uint8_t)BlockId::SAND : (uint8_t)BlockId::GRAVEL;
+                // Deep floor: gravel. Shallow shelf near the shore: sand on
+                // top with gravel underneath. surfaceDepth is raised below so
+                // the bottom of an ocean is always 3-4 layers of gravel the
+                // way vanilla builds an ocean floor.
+                top = (h > 60) ? (uint8_t)BlockId::SAND : (uint8_t)BlockId::GRAVEL;
                 filler = (uint8_t)BlockId::GRAVEL;
             } else if (b == BIOME_RIVER || b == BIOME_FROZEN_RIVER) {
                 // Submerged river bed: sand/gravel, like vanilla. The BANK is
@@ -194,12 +198,36 @@ void Normal::generate(GenerationContext& ctx) {
 
             const bool snowy = cfg.snowy || b == BIOME_FROZEN_RIVER;
 
+            // How many layers (top + filler) the biome's soil occupies
+            // before the solid stone begins. Deeper soil on the face of a
+            // cliff is what keeps a cut bank GREEN/DIRT instead of a grey
+            // stone wall: a column standing N blocks above its lowest
+            // neighbour spreads its top and filler layers N blocks further
+            // down, so the exposed face shows soil. This is the fix for the
+            // "stone canyon" the savanna plateaus and river banks kept
+            // showing (the underlying stone was fine — it was the fact that
+            // a vertical cut exposed it as a flat grey slab that read as
+            // ugly). Mountains keep their rocky faces on purpose.
+            int surfaceDepth = 4;
+            if (b != BIOME_EXTREME_HILLS && b != BIOME_MOUNTAINS) {
+                int lowN = h;
+                if (x > 0)  lowN = std::min(lowN, heights[x - 1][z]);
+                if (x < 15) lowN = std::min(lowN, heights[x + 1][z]);
+                if (z > 0)  lowN = std::min(lowN, heights[x][z - 1]);
+                if (z < 15) lowN = std::min(lowN, heights[x][z + 1]);
+                surfaceDepth = std::min(4 + (h - lowN), 12);
+            }
+            // Oceans and submerged river beds keep 4 gravel layers at the
+            // bottom regardless of the surrounding relief.
+            if (b == BIOME_OCEAN || b == BIOME_RIVER || b == BIOME_FROZEN_RIVER)
+                surfaceDepth = std::max(surfaceDepth, 5);
+
             for (int y = 0; y < h; ++y) {
                 uint8_t id;
-                if (y == 0)          id = (uint8_t)BlockId::BEDROCK;
-                else if (y < h - 4)  id = (uint8_t)BlockId::STONE;
-                else if (y < h - 1)  id = filler;
-                else                 id = top;
+                if (y == 0)                       id = (uint8_t)BlockId::BEDROCK;
+                else if (y < h - surfaceDepth)    id = (uint8_t)BlockId::STONE;
+                else if (y < h - 1)               id = filler;
+                else                              id = top;
                 // Stone runs right through the terrain layers, so a cliff or
                 // a cut bank shows rock instead of an unbroken dirt shell.
                 // Bands of it appear at random depths the way vanilla mixes
