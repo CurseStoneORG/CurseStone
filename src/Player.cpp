@@ -3273,6 +3273,15 @@ void Player::onDeath() {
         sh->health = 0;
         sendPacket(sh);
 
+        // La barra de corazones del 0.15 se maneja por el ATRIBUTO
+        // generic.health (Genisys Player::setHealth -> Attribute::HEALTH
+        // setValue(..., true)), NO por SetHealthPacket. Genisys llama
+        // setHealth(0) dentro de kill(), asi que el atributo queda en 0 y
+        // el cliente muestra la pantalla de muerte. Sin esto el atributo
+        // conservaba el ultimo valor vivo -> los corazones no bajaban a 0
+        // y el cliente no armaba bien la pantalla de muerte/respawn.
+        sendHealthAttribute();
+
         // Infinity Player::kill(): right after setHealth(0) the server
         // sends the RespawnPacket with the spawn position. The 0.15.10
         // client needs it to arm the death screen's Respawn flow —
@@ -4311,6 +4320,11 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
     } else {
         air_ticks_ = 300;   // 15s of air (vanilla)
     }
+    // Un jugador que acaba de morir (p.ej. ahogado) no debe seguir
+    // procesando el resto del tick de vida: Genisys Player::onUpdate
+    // salta TODO el bloque cuando !isAlive(). Sin esto, la regeneracion
+    // de la seccion 4c volvia a curar a un muerto en el mismo tick.
+    if (isDead()) return;
     // Burn timer: set to 160 ticks (8s) on fire/lava contact; when it
     // reaches 0 the player stops burning (vanilla setOnFire semantics).
     if (fire_ticks_ > 0 && --fire_ticks_ == 0) was_on_fire_ = false;
@@ -4325,6 +4339,9 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
         damage((float)(fall_distance_ - 3.0), event::entity::DamageCause::FALL);
         fall_distance_ = 0.0f;   // landing resets the fall
     }
+    // Si el golpe de caida mato, terminar el tick aca: nada de lo que
+    // sigue (fuego/lava/hambre/regen) debe tocar a un jugador muerto.
+    if (isDead()) return;
 
     // ---------- 3. Fire / lava / cactus contact (Infinity checkBlockCollision) ----------
     if (at == block::LAVA || at == block::FLOWING_LAVA) {
@@ -4361,6 +4378,8 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
             if (!creative) damage(1.0f, event::entity::DamageCause::CACTUS); // half heart
         }
     }
+    // Lava/fuego/cactus pueden haber matado: no seguir con hambre/regen.
+    if (isDead()) return;
 
     // ---------- 4. Hunger (Infinity foodData) ----------
     if (!creative) {
