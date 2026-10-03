@@ -1193,25 +1193,28 @@ static void handle_encapsulated(mcp_rak_session_manager_t* sm,
 
     if (s->state == MCP_SESSION_STATE_CONNECTED) {
         // PING (0x00) is a RakNet-level keepalive. It does NOT mean the
-        // client is actively playing — MCPE keeps sending PINGs even after
-        // showing "Desconexion del servidor" to the user (the app stays
-        // alive in Android's background for ~60-90 seconds).
+        // client is actively playing — but it DOES mean the connection is
+        // still alive.
         //
-        // FIX: Only update last_activity_ms for GAME packets (not PING).
-        // This way, if the client stops sending game packets but keeps
-        // sending PINGs (because the app is still alive in background),
-        // the timeout fires correctly after 15 seconds.
+        // FIX (AFK kick): last_activity_ms is the CONNECTION-alive clock
+        // (what the timeout sweep checks), and every datagram touches it —
+        // PINGs included — exactly like RakLib's Connection::lastUpdate.
+        // Previously only non-PING game packets reset it, so an idle
+        // player (AFK: no input, just keepalives) was force-disconnected
+        // after 30s even though their connection was perfectly healthy.
         //
-        // PING is still answered with PONG to keep RakNet happy, but
-        // it doesn't reset the game-level activity timer.
+        // Whether the client is actually still at the controls is tracked
+        // separately by last_game_packet_received_ms (purely diagnostic),
+        // so a zombie background session is still visible in the
+        // disconnect log without ever kicking a live idle player.
         bool is_ping = (pid == 0x00);
 
+        s->last_activity_ms = mcp_utils_time_ms();
+        s->is_active = true;
         if (!is_ping) {
-            s->last_activity_ms = mcp_utils_time_ms();
             s->last_game_packet_received_ms = s->last_activity_ms;
-            s->is_active = true;
         } else {
-            s->last_ping_received_ms = mcp_utils_time_ms();
+            s->last_ping_received_ms = s->last_activity_ms;
         }
 
         // ---- PING (0x00) — internal keep-alive ----
@@ -1386,12 +1389,11 @@ static void handle_data_packet(mcp_rak_session_manager_t* sm,
         s->window_start  = new_start;
         s->window_end    = (seq + MCP_SESSION_WINDOW_SIZE / 2) & MCP_SEQ24_MASK;
     }
-    // NOTE: do NOT update last_activity_ms here. This function handles
-    // the RakNet DATA_PACKET level (sequence numbers, ACK/NACK). The
-    // actual game activity is tracked in handle_encapsulated() which
-    // only resets the timer for non-PING game packets. This prevents
-    // background PINGs and ACK traffic from keeping zombie sessions
-    // alive for 60+ seconds after the client has stopped playing.
+    // Any datagram received refreshes the session's alive clock (RakNet
+    // Connection::lastUpdate semantics). A client that only sends ACKs
+    // and keepalives still proves its connection is up, so it must NOT
+    // be reaped by the timeout sweep — that is the AFK-kick fix.
+    s->last_activity_ms = mcp_utils_time_ms();
     s->is_active = true;
     s->diag_recv_packets++;
     s->last_packet_received_ms = mcp_utils_time_ms();
@@ -1676,8 +1678,9 @@ static void handle_ack(mcp_rak_session_t* s,
             }
         }
     }
-    // NOTE: do NOT update last_activity_ms for ACKs. ACKs are RakNet
-    // transport-level confirmations, not game activity.
+    // ACKs refresh the alive clock too: they prove the client is still
+    // on the other end (AFK-kick fix — same rule as every other packet).
+    s->last_activity_ms = mcp_utils_time_ms();
 }
 // =========================================================================
 // Handle NACK (0xa0): retransmit from recovery
@@ -1708,8 +1711,8 @@ static void handle_nack(mcp_rak_session_manager_t* sm, mcp_rak_session_t* s,
             }
         }
     }
-    // NOTE: do NOT update last_activity_ms for NACKs. Same as ACKs —
-    // this is RakNet transport, not game activity.
+    // NACKs refresh the alive clock too — same rule as ACKs (AFK-kick fix).
+    s->last_activity_ms = mcp_utils_time_ms();
 }
 
 // =========================================================================
@@ -1997,19 +2000,18 @@ void mcp_rak_session_manager_tick(mcp_rak_session_manager_t* sm) {
 
         s->is_active = false;
 
-        // Timeout: 30 seconds (matches PMMP default). Only GAME packets
-        // reset last_activity_ms (PING/0x00 does NOT reset it). This way,
-        // if the client's MCPE app stays alive in Android's background
-        // sending PINGs, the server still detects the player is gone
-        // after 30s without any real game activity.
+        // Timeout (30s, RakLib/PMMP default — see MCP_SESSION_TIMEOUT_MS).
+        // last_activity_ms is refreshed by EVERY received datagram — game
+        // packets, keepalive PINGs and ACK/NACKs alike — so the sweep only
+        // removes sessions whose connection is genuinely dead (no datagram
+        // at all for the whole window). An AFK player keeps sending
+        // keepalives, so they are never kicked for being idle.
         //
-        // BUG FIX: Was 15000ms (15s) which was too aggressive for mobile
-        // clients that may experience temporary network hiccups or be
-        // overwhelmed by chunk data bursts. The workbench showed the
-        // client stopped responding after receiving 4 chunks/tick (60+
-        // UDP fragments in 3ms) and needed >15s to recover.
+        // (Historical note: this used to fire on "no non-PING game packet
+        // for 15s/30s", which force-disconnected healthy idle players —
+        // the AFK kick that players kept reporting.)
         bool should_remove = s->is_disconnecting ||
-                             mcp_rak_session_is_timed_out(s, now, 30000);
+                             mcp_rak_session_is_timed_out(s, now, MCP_SESSION_TIMEOUT_MS);
         if (should_remove) {
             // Only call on_close_session for timeout — NOT for disconnect
             // (the disconnect handler already called it when 0x15 arrived).

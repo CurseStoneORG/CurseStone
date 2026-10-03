@@ -27,6 +27,13 @@ typedef struct mcp_rak_session_manager mcp_rak_session_manager_t;
 #define MCP_SESSION_MAX_SPLIT_COUNT    4
 #define MCP_SESSION_WINDOW_SIZE     2048
 
+// Connection timeout for the session sweep, in milliseconds (30s — the
+// RakLib/PMMP default). The timeout clock means "no datagram received at
+// all": keepalive PINGs and ACK/NACK traffic both count as activity, so
+// a player who stays idle (AFK) with the game open is never kicked; only
+// a genuinely dead connection (app closed, network lost) is reaped.
+#define MCP_SESSION_TIMEOUT_MS      30000
+
 // FIX (audit priority 4/12): RakNet's 24-bit index spaces (datagram
 // sequence number, reliable message index, ordering index) all wrap at
 // this boundary. Shared here (not just in SessionManager.c, where the
@@ -299,12 +306,14 @@ typedef struct mcp_rak_session {
     uint16_t  mtu;
 
     // Timing
-    // FIX #10: last_activity_ms is kept as the canonical "does this
-    // session get to keep playing" clock (only real game packets touch
-    // it — see handle_encapsulated()). The four fields below are purely
-    // diagnostic breakdowns so a disconnect log can show what kind of
-    // traffic was/wasn't arriving, without changing what actually
-    // controls the timeout.
+    // last_activity_ms is the canonical "does this session keep its
+    // connection" clock: ANY datagram received touches it — keepalive
+    // PINGs, ACK/NACKs and real game packets alike. This matches RakLib
+    // (Connection::lastUpdate) and fixes the AFK kick: a player who is
+    // idle but still connected only emits keepalives, and must never be
+    // dropped for it. The fields below are purely diagnostic breakdowns
+    // (last_game_packet_received_ms distinguishes a truly silent session
+    // from an idle-but-alive one in disconnect logs).
     uint64_t  last_activity_ms;
     uint64_t  last_packet_received_ms;      // any RakNet datagram at all
     uint64_t  last_game_packet_received_ms; // non-PING encapsulated packet

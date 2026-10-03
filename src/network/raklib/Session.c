@@ -460,6 +460,14 @@ bool mcp_rak_session_enqueue(mcp_rak_session_t* s,
 // --------------------------------------------------------------------------
 // Timeout
 // --------------------------------------------------------------------------
+// FIX (AFK kick): a session is only stale when NO datagram whatsoever has
+// arrived for the timeout window. Keepalive PINGs (0x00) and ACK/NACK
+// traffic both count as activity — that is exactly how RakLib
+// (Connection::lastUpdate) and PMMP define the session timeout. Under the
+// old rule ("only non-PING game packets refresh the clock"), an idle but
+// perfectly healthy player — one who left the game running without input —
+// was force-disconnected after 30s with "timeout" even though the
+// connection was fully alive.
 bool mcp_rak_session_is_timed_out(const mcp_rak_session_t* s,
                                     uint64_t now_ms, uint64_t timeout_ms) {
     if (!s) return true;
