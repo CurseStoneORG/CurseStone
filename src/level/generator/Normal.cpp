@@ -123,15 +123,19 @@ void Normal::generate(GenerationContext& ctx) {
                 top = (h > 60) ? (uint8_t)BlockId::SAND : (uint8_t)BlockId::GRAVEL;
                 filler = (uint8_t)BlockId::GRAVEL;
             } else if (b == BIOME_RIVER || b == BIOME_FROZEN_RIVER) {
-                // Submerged river bed: sand/gravel, like vanilla. The BANK is
-                // a different matter — it used to be sand unconditionally,
-                // which is why every river ran between two sandy strips
-                // instead of through green country. A bank is grass and
-                // dirt like the land around it, and only the rare long
-                // sand bank below turns it to sand.
+                // Erosion deposits, the way a real river sorts the ground
+                // it works on: the fast water in the deep channel scours the
+                // bed down to GRAVEL, while the slow water at the shallow lip
+                // drops SAND. Above the waterline the bank is grass and dirt
+                // like the land around it.
                 if (h < kSeaLevel) {
-                    top = (uint8_t)BlockId::SAND;
-                    filler = (h > 58) ? (uint8_t)BlockId::SAND : (uint8_t)BlockId::GRAVEL;
+                    if (h <= kSeaLevel - 3) {      // scoured channel floor
+                        top = (uint8_t)BlockId::GRAVEL;
+                        filler = (uint8_t)BlockId::GRAVEL;
+                    } else {                        // shallow lip / margin
+                        top = (uint8_t)BlockId::SAND;
+                        filler = (uint8_t)BlockId::SAND;
+                    }
                 } else {
                     // The BANK is grass, not gravel: a vanilla river has a
                     // green bank 2-3 blocks wide with a single sand block
@@ -248,14 +252,25 @@ void Normal::generate(GenerationContext& ctx) {
             // 8, which keeps a sheer wall from becoming one flat slab while
             // still leaving the layering visible on every terrace.
             int surfaceDepth = 4;
-            if (b != BIOME_EXTREME_HILLS && b != BIOME_MOUNTAINS) {
-                int lowN = h;
-                if (x > 0)  lowN = std::min(lowN, heights[x - 1][z]);
-                if (x < 15) lowN = std::min(lowN, heights[x + 1][z]);
-                if (z > 0)  lowN = std::min(lowN, heights[x][z - 1]);
-                if (z < 15) lowN = std::min(lowN, heights[x][z + 1]);
+            int lowN = h;
+            if (x > 0)  lowN = std::min(lowN, heights[x - 1][z]);
+            if (x < 15) lowN = std::min(lowN, heights[x + 1][z]);
+            if (z > 0)  lowN = std::min(lowN, heights[x][z - 1]);
+            if (z < 15) lowN = std::min(lowN, heights[x][z + 1]);
+            if (b != BIOME_EXTREME_HILLS && b != BIOME_MOUNTAINS)
                 surfaceDepth = std::min(4 + (h - lowN) / 2, 8);
-            }
+
+            // ---- Eroded gorge: a rock cliff, not a dirt bank ---------------
+            // Where the ground stands several blocks above its neighbour the
+            // exposed face is a cut rock wall, and that is what a river gorge
+            // through high country looks like: a green lip on top and then
+            // bare stone, showing the hillside's own layers, exactly like the
+            // mountain faces. Only applied inside the river's own cut, so the
+            // terraced lowland banks and the savanna plateau walls keep the
+            // soil the player asked for there.
+            if (b != BIOME_OCEAN && b != BIOME_RIVER && b != BIOME_FROZEN_RIVER &&
+                h - lowN >= 5 && riverDistance(noise_, wx, wz) < 26.0)
+                filler = (uint8_t)BlockId::STONE;
             // Oceans and submerged river beds keep 4 gravel layers at the
             // bottom regardless of the surrounding relief.
             if (b == BIOME_OCEAN || b == BIOME_RIVER || b == BIOME_FROZEN_RIVER)
