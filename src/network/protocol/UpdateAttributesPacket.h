@@ -3,15 +3,18 @@
 // entidad (salud, hambre...) para que el cliente renderice la barra de
 // hambre del HUD.
 //
-// Wire format (protocol 84 — mirrors PMMP/Infinity UpdateAttributesPacket):
-//   [VarU32] eid (unsigned varint, no zigzag)
-//   [VarU32] count
+// Wire format (protocol 84 — mirrors Infinity/PMMP 0.15.10
+// UpdateAttributesPacket BYTE-FOR-BYTE; NO varints in this protocol):
+//   [Long BE]  eid (8 bytes, Binary::writeLong)
+//   [Short BE] count (2 bytes)
 //   for each attribute:
-//     [Float LE] min
-//     [Float LE] max
-//     [Float LE] value
-//     [Float LE] default
-//     [String]   name (varint length + bytes)
+//     [Float BE] min
+//     [Float BE] max
+//     [Float BE] value
+//     [String]   name (Short BE length + bytes — BinaryStream::putString)
+// NOTE: there is NO default-value float on the protocol-84 wire and NO
+// varints. Varint/LE encoding here desyncs the client parser (freeze on
+// "Generating terrain" + app crash).
 #pragma once
 
 #include "DataPacket.h"
@@ -29,11 +32,13 @@ public:
         float min = 0.0f;
         float max = 0.0f;
         float value = 0.0f;
+        // Server-side only — NOT serialized on the protocol-84 wire (the
+        // client derives defaults from its own attribute registry).
         float defaultValue = 0.0f;
         std::string name;
     };
 
-    // PMMP: putUnsignedVarInt(eid) — sin zigzag.
+    // Infinity: putLong($this->entityId) — 8-byte big-endian, NOT varint.
     uint64_t eid = 0;
     std::vector<Entry> entries;
 
