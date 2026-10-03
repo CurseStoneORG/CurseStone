@@ -259,12 +259,18 @@ mcp_chunk_t* ChunkManager::getChunkOrRequestAsync(int32_t x, int32_t z, schedule
 }
 
 void ChunkManager::setChunk(int32_t x, int32_t z, mcp_chunk_t* chunk) {
-    std::lock_guard<std::mutex> lk(mtx_);
-    auto key = ChunkKey{x, z};
-    auto it = chunks_.find(key);
-    if (it != chunks_.end() && it->second && it->second != chunk)
-        mcp_chunk_destroy(it->second);
-    chunks_[key] = chunk;
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        auto key = ChunkKey{x, z};
+        auto it = chunks_.find(key);
+        if (it != chunks_.end() && it->second && it->second != chunk)
+            mcp_chunk_destroy(it->second);
+        chunks_[key] = chunk;
+    }
+    // Fuera del lock: el callback (Level) solo encola el chunk para un
+    // barrido de luz posterior. Llamarlo con mtx_ cogido lo dejaria
+    // esperando justo el mutex que ChunkManager necesita.
+    if (on_chunk_added_) on_chunk_added_(x, z);
 }
 
 void ChunkManager::markDirty(int32_t x, int32_t z) {

@@ -87,6 +87,12 @@ void    mcp_chunk_set_biome (mcp_chunk_t* c, int x, int z, uint8_t b);
 int32_t mcp_chunk_get_height_map(const mcp_chunk_t* c, int x, int z);
 void    mcp_chunk_set_height_map(mcp_chunk_t* c, int x, int z, int32_t h);
 void    mcp_chunk_recalculate_height_map(mcp_chunk_t* c);
+// Same result for ONE column only. mcp_chunk_set_block_full() only ever
+// RAISES the height map, so removing a block (or digging a room) left
+// the column marked as roofed at the old height — which then made the
+// sky-light seed treat open air as solid ground. Cheap enough to call
+// on every block placement.
+void    mcp_chunk_recalculate_height_map_column(mcp_chunk_t* c, int x, int z);
 
 // Real sky-light propagation pass (replaces the old "memset 0xFF and
 // call it done" approach). Must be called AFTER

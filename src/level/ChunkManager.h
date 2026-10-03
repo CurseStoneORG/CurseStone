@@ -37,6 +37,16 @@ public:
     mcp_chunk_t* getChunkOrRequestAsync(int32_t x, int32_t z, scheduler::AsyncPool* pool);
 
     void setChunk(int32_t x, int32_t z, mcp_chunk_t* chunk);
+    // Called every time a chunk enters the manager (generated, loaded
+    // from disk, or replaced). Level installs a callback here so a chunk
+    // that appears later than its neighbours still gets its lighting
+    // swept together with them — without it a chunk keeps the lighting it
+    // was generated with in isolation and shows a dark border where the
+    // light should carry over. Must not block or touch ChunkManager:
+    // setChunk() runs on the generation worker thread.
+    void setOnChunkAdded(std::function<void(int32_t, int32_t)> cb) {
+        on_chunk_added_ = std::move(cb);
+    }
     void markDirty(int32_t x, int32_t z);
     int flushDirty();
     // Frees a single chunk's memory. If `save` is true and a provider
@@ -80,6 +90,7 @@ private:
         }
     };
     mutable std::mutex mtx_;
+    std::function<void(int32_t, int32_t)> on_chunk_added_;
     std::unordered_map<ChunkKey, mcp_chunk_t*, ChunkKeyHash> chunks_;
     std::shared_ptr<format::LevelProvider> provider_;
     std::shared_ptr<generator::Generator> generator_;

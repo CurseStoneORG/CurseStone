@@ -18,6 +18,7 @@
 #include <mutex>
 #include "math/Vector3.h"
 #include "level/ChunkManager.h"
+#include "level/LightEngine.h"
 #include "level/format/LevelProvider.h"
 namespace cursestone {
 class Player; class Entity;
@@ -69,6 +70,13 @@ public:
     // BlockFire propagation needs this to read the fire's "age" meta.
     uint8_t getBlockData(int32_t x, int32_t y, int32_t z);
     void setBlock(int32_t x, int32_t y, int32_t z, uint8_t id, uint8_t data);
+
+    // Queued from ChunkManager::setChunk() (which runs on the generation
+    // worker thread) so the new chunk gets its lighting redone together
+    // with a sweep into its neighbours — that is what closes the dark
+    // seam chunk borders used to have. The actual work happens on the
+    // main thread inside tick(), a couple of chunks per tick.
+    void onChunkAdded(int32_t cx, int32_t cz);
 
     // Swap a furnace between FURNACE and BURNING_FURNACE (vanilla shows
     // the fire by changing the block, not the tile). Returns true when
@@ -348,6 +356,11 @@ private:
     // came back on the next restart: a sign you broke would reappear with
     // its old text, on top of an air block.
     std::unordered_set<uint64_t> tiles_dirty_chunks_;
+
+    // Sky + block light propagation. setBlock() relights the region
+    // around the change and onChunkAdded() queues chunks that still need
+    // their borders swept.
+    LightEngine light_;
     static uint64_t packChunkPos(int32_t cx, int32_t cz) {
         uint64_t ux = static_cast<uint64_t>(static_cast<uint32_t>(cx));
         uint64_t uz = static_cast<uint64_t>(static_cast<uint32_t>(cz));
