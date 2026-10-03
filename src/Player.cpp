@@ -61,6 +61,7 @@
 #include "network/protocol/InteractPacket.h"
 #include "network/protocol/EntityEventPacket.h"
 #include "network/protocol/RespawnPacket.h"
+#include "network/protocol/UpdateAttributesPacket.h"
 #include "network/protocol/DropItemPacket.h"
 #include "network/protocol/ContainerSetContentPacket.h"
 #include "network/protocol/ContainerSetSlotPacket.h"
@@ -126,6 +127,13 @@ Player::Player(Server* srv, PlayerConfig cfg)
     connected_.store(true, std::memory_order_relaxed);
     setMaxHealth(20);
     setHealth(20);
+    // Hunger state — Infinity Player.php: default saturation 5, food 20.
+    food_saturation_ = 5.0f;
+    food_tick_timer_ = 0;
+    food_depletion_ = 0;
+    last_pos_set_ = false;
+    was_in_lava_ = false;
+    was_on_fire_ = false;
     // Position defaults to world spawn; overridden by processLogin if NBT had Pos.
     if (srv_ && srv_->getDefaultLevel()) {
         auto sp = srv_->getDefaultLevel()->spawn();
@@ -621,7 +629,7 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
             break;
         case network::protocol::MOVE_PLAYER_PACKET:
             if (auto* mp = dynamic_cast<network::protocol::MovePlayerPacket*>(&p)) {
-                handleMovePlayer(mp->x, mp->y, mp->z, mp->yaw, mp->pitch);
+                handleMovePlayer(mp->x, mp->y, mp->z, mp->yaw, mp->pitch, mp->onGround);
             }
             break;
         case network::protocol::TEXT_PACKET:
@@ -1287,9 +1295,17 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
                     pos_.x = (double)sx + 0.5; pos_.y = (double)sy; pos_.z = (double)sz + 0.5;
                 }
                 // else: leave the world-spawn position set in the ctor.
-            }
 
-            // --- Load inventory + armor from NBT ---
+                // FIX ("el spawn está en el cielo"): first-time players come
+                // from either the ctor default or a stale level.dat spawn Y.
+                // Snap to the real surface of the spawn column before the
+                // position is used for StartGame/chunk streaming. Returning
+                // players keep their saved PosX/PosY/PosZ — only the
+                // first-join path snaps to terrain.
+                if (srv_ && srv_->getDefaultLevel()) {
+                    pos_ = getServerSpawnSafe();
+                }
+            }
             // Mirrors cn.nukkit.Player.loadNBT(): iterate the "Inventory"
             // ListTag and route each entry by Slot number. Main inventory
             // uses slots 0..35 (hotbar is 0..8), armor uses 100..103.
@@ -1690,6 +1706,10 @@ void Player::doFirstSpawn() {
     // in creative mode (PMMP Player.php:2301 sends this right after spawn).
     sendCreativeInventory();
 
+    // Attribute sync for the freshly-spawned player (protocol 84): makes
+    // the hunger bar appear in the HUD at the server-side value.
+    sendAllAttributes();
+
     // BUG FIX ("toco un item del creativo y no llega a mi inventario, pero
     // si me desconecto y reconecto ya está ahí, y de ahí en más sí
     // funciona"): sendCreativeInventory() de arriba solo manda el CATÁLOGO
@@ -1834,7 +1854,8 @@ void Player::doFirstSpawn() {
 // ============================================================
 // Phase 7 — handleMovePlayer (basic validation + broadcast)
 // ============================================================
-void Player::handleMovePlayer(double x, double y, double z, float yaw, float pitch) {
+void Player::handleMovePlayer(double x, double y, double z, float yaw, float pitch,
+                              bool mp_onGround) {
     if (!spawned_.load(std::memory_order_relaxed)) return;
     if (isDead()) return; // congelado hasta ACTION_SPAWN_SAME_DIMENSION (ver Player::respawn)
 
@@ -1857,6 +1878,8 @@ void Player::handleMovePlayer(double x, double y, double z, float yaw, float pit
         return;
     }
 
+    // Last client-reported ground flag (used by the fall-damage check).
+    on_ground_fall_check_ = mp_onGround;
     // PlayerMoveEvent — se dispara en CADA movimiento aceptado (alta
     // frecuencia: hasta ~20/s por jugador). No throttleamos el propio
     // chequeo de cancelacion porque EventManager::call() ya es
@@ -1883,6 +1906,17 @@ void Player::handleMovePlayer(double x, double y, double z, float yaw, float pit
 
     pos_.x = x; pos_.y = y; pos_.z = z;
     yaw_ = yaw; pitch_ = pitch;
+
+    // ---- Fall-distance tracking (Infinity processMovement) ----
+    // While airborne: descending moves accumulate distance, rising moves
+    // (jump/climb) reset the baseline. Ground contact does NOT reset here
+    // — the accumulated distance must survive until tickHungerAndDamage()
+    // applies the damage exactly once (it resets the accumulator after).
+    if (!mp_onGround) {
+        if (dy < 0.0) fall_distance_ += (float)(-dy);   // accumulating fall
+        else fall_distance_ = 0.0f;                     // rising — baseline reset
+    }
+    moved_this_tick_ = true;
 
     // Broadcast MoveEntityPacket to other nearby players (so they see this
     // player move). We don't filter by distance for the MVP.
@@ -2656,6 +2690,13 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int /*face*/) {
         utils::MainLogger::get().info("[ACTION] " + cfg_.username + " started breaking at " +
             std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(z));
     }
+    // Sprint toggle (protocol 84): drives the higher exhaustion rate in
+    // tickHungerAndDamage(). START_SPRINT=5 / STOP_SPRINT=6.
+    if (action == network::protocol::PlayerActionPacket::ACTION_START_SPRINT) {
+        sprinting_ = true;
+    } else if (action == network::protocol::PlayerActionPacket::ACTION_STOP_SPRINT) {
+        sprinting_ = false;
+    }
     if (action == network::protocol::PlayerActionPacket::ACTION_SPAWN_SAME_DIMENSION) {
         respawn();
     }
@@ -2694,7 +2735,26 @@ void Player::respawn() {
         this, sp.x, sp.y, sp.z);
 
     setHealth((int)maxHealth());
+    // Respawn always lands at the server spawn, snapped to the surface of
+    // the terrain (same rule as first-join: getServerSpawnSafe()), with a
+    // fresh food bar (Infinity/Genisys respawn behaviour).
+    if (srv_ && srv_->getDefaultLevel()) {
+        math::Vector3 safe = getServerSpawnSafe();
+        ev.respawnX = safe.x;
+        ev.respawnY = safe.y;
+        ev.respawnZ = safe.z;
+    }
+    setFoodLevel(20);
+    food_saturation_ = 5.0f;
     pos_.x = ev.respawnX; pos_.y = ev.respawnY; pos_.z = ev.respawnZ;
+    // Reset per-life state.
+    air_ticks_ = 300;
+    fall_distance_ = 0.0f;
+    was_on_fire_ = false;
+    was_in_lava_ = false;
+    starve_ticks_ = 0;
+    food_tick_timer_ = 0;
+    food_depletion_ = 0;
 
     if (spawned_.load(std::memory_order_relaxed)) {
         auto rp = std::make_shared<network::protocol::RespawnPacket>();
@@ -2704,6 +2764,9 @@ void Player::respawn() {
         auto sh = std::make_shared<network::protocol::SetHealthPacket>();
         sh->health = (int32_t)health();
         sendPacket(sh);
+
+        // Full attribute re-sync (health + hunger bars back to max).
+        sendAllAttributes();
 
         auto mp = std::make_shared<network::protocol::MovePlayerPacket>();
         mp->eid = runtimeId();
@@ -3189,6 +3252,35 @@ void Player::onDeath() {
     if (!ev.isCancelled() && !ev.message.empty() && srv_) {
         srv_->broadcastMessage(ev.message);
     }
+    // Death sequence (protocol 84, mirrors PMMP Player.kill()):
+    // EntityEventPacket DEATH_ANIMATION to EVERY spawned player (the dying
+    // client first — without it the client never shows the "You died!"
+    // screen and cannot click Respawn), then SetHealthPacket(0).
+    {
+        auto ee = std::make_shared<network::protocol::EntityEventPacket>();
+        ee->eid = runtimeId();
+        ee->event = network::protocol::EntityEventPacket::DEATH_ANIMATION;
+        sendPacket(ee);
+        if (srv_) {
+            for (auto& other : srv_->playersSnapshot()) {
+                if (!other || other.get() == this || !other->spawned()) continue;
+                other->sendPacket(ee);
+            }
+        }
+
+        auto sh = std::make_shared<network::protocol::SetHealthPacket>();
+        sh->health = 0;
+        sendPacket(sh);
+    }
+    // Cleanup at death: fire goes out, food resets for the next life.
+    was_on_fire_ = false;
+    was_in_lava_ = false;
+    fall_distance_ = 0.0f;
+    food_saturation_ = 5.0f;
+    food_depletion_ = 0;
+    food_tick_timer_ = 0;
+    starve_ticks_ = 0;
+    air_ticks_ = 300;
 }
 
 // ============================================================
@@ -3877,11 +3969,12 @@ void Player::onUpdate(uint64_t current_tick) {
         }
     }
 
-    // 2. Skip gravity for now — Entity::tick applies gravity + motion but
-    // there's no collision detection, so the player would sink through the
-    // ground. The client handles its own gravity/movement and sends
-    // MovePlayerPacket to the server. We just accept the client's position.
-    // (Commented out: entity::Human::tick(current_tick);)
+    // 2. Hunger + environmental damage (fall/lava/fire/cactus/drown/starve),
+    // running every tick. The client owns its own gravity/movement and
+    // reports it via MovePlayerPacket; this pipeline only applies the
+    // consequences (Infinity foodData + processMovement/checkBlockCollision).
+    tickHungerAndDamage(current_tick);
+    moved_this_tick_ = false;   // consumed for this tick
 
     // 2.5. Pickup nearby dropped items. Mirrors Nukkit Player.checkNearEntities():
     // for each EntityItem within the player's bounding box grown by (1, 0.5, 1),
@@ -4041,6 +4134,229 @@ void Player::sendTranslation(const std::string& key) {
 math::Vector3 Player::getSpawn() const {
     if (srv_ && srv_->getDefaultLevel()) return srv_->getDefaultLevel()->spawn();
     return math::Vector3{0, 64, 0};
+}
+
+// getServerSpawnSafe — server spawn with Y snapped to the real terrain
+// surface of the column (Infinity getSafeSpawn semantics).
+//
+// FIX ("el spawn está en el cielo la primera vez que entro"): the Normal
+// generator's getSpawn() returns Nukkit's static (127.5, 128, 127.5) — a
+// Y that is only correct by luck. On most seeds the real surface at that
+// column is several blocks lower (or higher), so a first-time player
+// started the session floating in the air and fell for seconds.
+//
+// The fix scans the spawn column top-down for the first block you can
+// actually stand on (solid + nothing solid directly above), exactly like
+// Infinity's getSafeSpawn: y = highest solid block + 1. If the chunk is
+// not loaded (or is all air/void), fall back to the vanilla cloud level.
+// X/Z (+0.5 centering) stay exactly as the generator/level.dat defined
+// them, so the spawn is deterministic across restarts.
+math::Vector3 Player::getServerSpawnSafe() const {
+    math::Vector3 sp = getSpawn();
+    auto* lvl = srv_ ? srv_->getDefaultLevel() : nullptr;
+    if (!lvl) return sp;
+    int32_t bx = (int32_t)std::floor(sp.x);
+    int32_t bz = (int32_t)std::floor(sp.z);
+    auto& chunks = lvl->chunks();
+    // getChunk (not getChunkIfLoaded): at respawn-from-afar the spawn
+    // chunk may have been unloaded by the view-distance sweep — generate
+    // it synchronously (one chunk, boot-class cost) so the safe-Y scan
+    // always sees real terrain instead of falling back to Y=64.
+    mcp_chunk_t* c = chunks.getChunk(bx >> 4, bz >> 4);
+    if (c) {
+        for (int y = 127; y > 0; --y) {
+            uint8_t id = mcp_chunk_get_block_id(c, bx & 15, y, bz & 15);
+            if (id == 0) continue;                                   // air
+            if (id == block::LEAVES || id == block::LEAVES_2) continue; // canopy
+            // First non-air, non-leaves block: stand on top of it.
+            uint8_t above = mcp_chunk_get_block_id(c, bx & 15, y + 1, bz & 15);
+            if (above == 0 || above == block::WATER ||
+                above == block::FLOWING_WATER) {
+                sp.y = (double)y + 1.0;
+                return sp;
+            }
+            // Solid-with-solid-above (tree/overhang): keep scanning down.
+        }
+    }
+    if (sp.y < 1.0) sp.y = 64.0; // vanilla fallback
+    return sp;
+}
+
+// --- Attribute sync (protocol 84 UpdateAttributesPacket) ---
+void Player::sendFoodLevel() {
+    if (!connected_.load(std::memory_order_relaxed)) return;
+    auto pk = std::make_shared<network::protocol::UpdateAttributesPacket>();
+    pk->eid = runtimeId();
+    network::protocol::UpdateAttributesPacket::Entry e;
+    // EXACT name strings from Infinity's Attribute::init (Genisys/PMMP
+    // lineage): the client maps the HUD bars by these identifiers —
+    // "player.hunger" for the food bar, "generic.health" for hearts.
+    e.name = "player.hunger";
+    e.min = 0.0f; e.max = 20.0f;
+    e.value = (float)foodLevel();
+    e.defaultValue = 20.0f;
+    pk->entries.push_back(e);
+    sendPacket(pk);
+}
+
+void Player::sendAllAttributes() {
+    if (!connected_.load(std::memory_order_relaxed)) return;
+    auto pk = std::make_shared<network::protocol::UpdateAttributesPacket>();
+    pk->eid = runtimeId();
+    network::protocol::UpdateAttributesPacket::Entry h;
+    h.name = "generic.health";
+    h.min = 0.0f; h.max = maxHealth();
+    h.value = health();
+    h.defaultValue = 20.0f;
+    pk->entries.push_back(h);
+    network::protocol::UpdateAttributesPacket::Entry f;
+    f.name = "player.hunger";
+    f.min = 0.0f; f.max = 20.0f;
+    f.value = (float)foodLevel();
+    f.defaultValue = 20.0f;
+    pk->entries.push_back(f);
+    sendPacket(pk);
+}
+
+// --- Hunger + ambient damage pipeline (Infinity Player.php foodData/
+// processMovement) — runs once per tick for every spawned player. ---
+void Player::tickHungerAndDamage(uint64_t current_tick) {
+    if (!spawned_.load(std::memory_order_relaxed)) return;
+    if (isDead()) return;
+    auto* lvl = srv_ ? srv_->getDefaultLevel() : nullptr;
+    if (!lvl) return;
+
+    bool creative = isCreative();
+    int difficulty = srv_->difficulty();
+
+    uint64_t now_ms = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    int bx = (int)std::floor(pos_.x);
+    int by = (int)std::floor(pos_.y);
+    int bz = (int)std::floor(pos_.z);
+    uint8_t at   = lvl->getBlockId(bx, by, bz);
+    uint8_t body = lvl->getBlockId(bx, by + 1, bz);   // head block
+    uint8_t feet = lvl->getBlockId(bx, by - 1, bz);   // stand-on block
+
+    // ---------- 1. Drowning (Infinity processMovement) ----------
+    bool in_water = (at == block::WATER || at == block::FLOWING_WATER);
+    if (in_water) {
+        if (air_ticks_ > 0) --air_ticks_;
+        else if (!creative && difficulty > 0 &&
+                 now_ms - last_drown_dmg_ms_ >= 1000) {
+            last_drown_dmg_ms_ = now_ms;
+            damage(2.0f, event::entity::DamageCause::DROWNING); // 1 heart/s
+        }
+        // Water extinguishes fire (vanilla) and cancels pending fall damage.
+        fire_ticks_ = 0;
+        was_on_fire_ = false;
+        fall_distance_ = 0.0f;
+    } else {
+        air_ticks_ = 300;   // 15s of air (vanilla)
+    }
+    // Burn timer: set to 160 ticks (8s) on fire/lava contact; when it
+    // reaches 0 the player stops burning (vanilla setOnFire semantics).
+    if (fire_ticks_ > 0 && --fire_ticks_ == 0) was_on_fire_ = false;
+
+    // ---------- 2. Fall damage (Infinity processMovement) ----------
+    // Distance is accumulated in handleMovePlayer(); here the damage is
+    // applied exactly once when the client reports ground contact with
+    // >= 3 blocks of accumulated fall (vanilla: damage = fall - 3), and
+    // the accumulator resets so it can start over on the next fall.
+    if (!creative && difficulty > 0 && fall_distance_ >= 3.0 &&
+        on_ground_fall_check_ && !in_water) {
+        damage((float)(fall_distance_ - 3.0), event::entity::DamageCause::FALL);
+        fall_distance_ = 0.0f;   // landing resets the fall
+    }
+
+    // ---------- 3. Fire / lava / cactus contact (Infinity checkBlockCollision) ----------
+    if (at == block::LAVA || at == block::FLOWING_LAVA) {
+        if (now_ms - last_lava_dmg_ms_ >= 500) {
+            last_lava_dmg_ms_ = now_ms;
+            if (!creative) damage(4.0f, event::entity::DamageCause::LAVA); // 2 hearts
+        }
+        was_in_lava_ = true;
+        was_on_fire_ = true;
+        setOnFire(8);
+        fire_ticks_ = 160;   // 8s of burning (vanilla)
+    } else {
+        was_in_lava_ = false;
+        if (was_on_fire_ && !creative) {
+            // Fire-tick damage while burning (0.5s interval, 1 dmg vanilla).
+            if (now_ms - last_fire_tick_dmg_ms_ >= 500) {
+                last_fire_tick_dmg_ms_ = now_ms;
+                damage(1.0f, event::entity::DamageCause::FIRE_TICK);
+            }
+        }
+    }
+    if (at == block::FIRE || body == block::FIRE) {
+        if (now_ms - last_fire_dmg_ms_ >= 500) {
+            last_fire_dmg_ms_ = now_ms;
+            if (!creative) damage(1.0f, event::entity::DamageCause::FIRE);
+        }
+        was_on_fire_ = true;
+        setOnFire(8);
+        fire_ticks_ = 160;   // 8s of burning (vanilla)
+    }
+    if (at == block::CACTUS) {
+        if (now_ms - last_cactus_dmg_ms_ >= 500) {
+            last_cactus_dmg_ms_ = now_ms;
+            if (!creative) damage(1.0f, event::entity::DamageCause::CACTUS); // half heart
+        }
+    }
+
+    // ---------- 4. Hunger (Infinity foodData) ----------
+    if (!creative) {
+        // 4a. Accumulate exhaustion from real actions (0.15 values).
+        if (moved_this_tick_) {
+            food_depletion_ += sprinting_ ? 6 : 1;   // sprint 0.1, walk 0.01 (x100)
+        }
+        if (in_water) food_depletion_ += 1;
+        // 4b. Every 4.0 exhaustion (PMMP/Infinity threshold): drain 1
+        // saturation or 1 food, then wait 80 ticks before the next drain.
+        // Peaceful difficulty (0) has no food drain / starvation (vanilla).
+        if (difficulty >= 1 && food_depletion_ >= 400 && food_tick_timer_ <= 0) {
+            food_depletion_ -= 400;
+            if (food_saturation_ > 0.0f) {
+                food_saturation_ = std::max(0.0f, food_saturation_ - 1.0f);
+            } else {
+                int h = foodLevel();
+                setFoodLevel(h > 0 ? h - 1 : 0);
+            }
+            food_tick_timer_ = 80;
+            sendFoodLevel();
+        }
+        // 4c. Regen when full (17 food, every 4s) — Infinity handleOrder.
+        if (foodLevel() >= 17 && health() < maxHealth() &&
+            now_ms - last_regen_ms_ >= 4000) {
+            last_regen_ms_ = now_ms;
+            heal(1.0f);
+            sendAllAttributes();
+        }
+        // 4d. Starvation at 0 food (1 dmg every 4s). Vanilla floors:
+        // easy stops at 10 HP, normal at 1 HP, hard can kill.
+        if (difficulty >= 1 && foodLevel() <= 0 && ++starve_ticks_ >= 80) {
+            starve_ticks_ = 0;
+            float floor_hp = (difficulty >= 3) ? 0.0f
+                           : (difficulty == 2) ? 1.0f : 10.0f;
+            if (health() > floor_hp) {
+                damage(1.0f, event::entity::DamageCause::STARVATION);
+            }
+        }
+    } else {
+        // Creative: food is pinned at max, no drain, no starvation.
+        if (foodLevel() != 20) { setFoodLevel(20); sendFoodLevel(); }
+        food_saturation_ = 5.0f;
+        food_depletion_ = 0;
+        starve_ticks_ = 0;
+    }
+
+    (void)current_tick;
+    (void)difficulty;
+    (void)feet;
+    (void)last_pos_y_;
+    (void)last_pos_set_;
+    (void)was_in_lava_;
 }
 void Player::setExperience(int exp, int level) {
     (void)exp; (void)level;

@@ -31,6 +31,10 @@ public:
     // versiones modernas de Bedrock esto se maneja distinto).
     static constexpr int32_t ACTION_SPAWN_SAME_DIMENSION = 7;
 
+    // Sprint toggle (protocol 84, PMMP PlayerActionPacket):
+    static constexpr int32_t ACTION_START_SPRINT = 5;
+    static constexpr int32_t ACTION_STOP_SPRINT  = 6;
+
     int64_t eid = 0;
     int32_t action = 0;
     int32_t x = 0, y = 0, z = 0;

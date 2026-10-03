@@ -28,6 +28,7 @@
 #include "network/protocol/UpdateBlockPacket.h"
 #include "network/protocol/AddEntityPacket.h"
 #include "network/protocol/ExplodePacket.h"
+#include <cmath>
 #include "network/protocol/RemoveEntityPacket.h"
 #include "scheduler/ServerScheduler.h"
 #include "scheduler/Task.h"
@@ -171,6 +172,40 @@ Level::Level(LevelConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
     // lo que dejaba una franja oscura en los bordes de chunk).
     chunks_.setOnChunkAdded(
         [this](int32_t cx, int32_t cz) { onChunkAdded(cx, cz); });
+
+    // FIX ("el spawn está en el cielo la primera vez que entro"): the
+    // generator spawn Y (Nukkit's static 128 for Normal) is only correct
+    // by luck — on most seeds the real surface of that column is lower,
+    // so first-time players materialized in the air and fell. We now
+    // force-generate the spawn chunk at boot and snap the spawn Y to the
+    // real surface of the column (Infinity getSafeSpawn: topmost solid
+    // block + 1, skipping leaves/water). The corrected spawn is persisted
+    // to level.dat immediately so it stays stable across restarts.
+    {
+        int32_t sbx = (int32_t)std::floor(spawn_.x);
+        int32_t sbz = (int32_t)std::floor(spawn_.z);
+        if (chunks_.getChunk(sbx >> 4, sbz >> 4) != nullptr) {
+            for (int y = 127; y > 0; --y) {
+                uint8_t id = getBlockId(sbx, y, sbz);
+                if (id == 0) continue;                                    // air
+                if (id == block::LEAVES || id == block::LEAVES_2) continue; // canopy
+                uint8_t above = getBlockId(sbx, y + 1, sbz);
+                if (above == 0 || above == block::WATER ||
+                    above == block::FLOWING_WATER) {
+                    spawn_.y = (double)y + 1.0;
+                    break;
+                }
+                // Solid with solid above (tree trunk / overhang): keep down.
+            }
+            if (provider_) {
+                provider_->setSpawn(math::Vector3{
+                    (double)spawn_.x, spawn_.y, (double)spawn_.z});
+            }
+            utils::MainLogger::get().info("Spawn snapped to terrain: " +
+                std::to_string((int)spawn_.x) + ", " + std::to_string((int)spawn_.y) +
+                ", " + std::to_string((int)spawn_.z));
+        }
+    }
 }
 
 Level::~Level() {
