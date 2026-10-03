@@ -133,8 +133,12 @@ void Normal::generate(GenerationContext& ctx) {
                     top = (uint8_t)BlockId::SAND;
                     filler = (h > 58) ? (uint8_t)BlockId::SAND : (uint8_t)BlockId::GRAVEL;
                 } else {
-                    top = (h < kSeaLevel + 2) ? (uint8_t)BlockId::GRAVEL
-                                              : (uint8_t)BlockId::GRASS;
+                    // The BANK is grass, not gravel: a vanilla river has a
+                    // green bank 2-3 blocks wide with a single sand block
+                    // right at the water. The sand block is applied below
+                    // for every land column beside the water, river or not,
+                    // so the strip stays continuous.
+                    top = (uint8_t)BlockId::GRASS;
                     filler = (uint8_t)BlockId::DIRT;
                 }
             } else if (b == BIOME_EXTREME_HILLS) {
@@ -155,9 +159,40 @@ void Normal::generate(GenerationContext& ctx) {
             // so the beach biome and the sand agree, and it deliberately
             // ignores river channels: river banks are green.
             const bool shore = (b != BIOME_OCEAN) && isOceanShore(noise_, wx, wz, h);
+            // Does this land column touch water on any side? The raw grid
+            // has a one-block margin all round (GW = 18, world offsets
+            // -1..16), so all four neighbours are available even on the
+            // chunk border: column x sits at raw[x + 1].
+            const bool touchesWater =
+                raw[x][z + 1]     < (double)kSeaLevel - 0.5 ||
+                raw[x + 2][z + 1] < (double)kSeaLevel - 0.5 ||
+                raw[x + 1][z]     < (double)kSeaLevel - 0.5 ||
+                raw[x + 1][z + 2] < (double)kSeaLevel - 0.5;
             if (shore && top != (uint8_t)BlockId::STONE) {
                 top = (uint8_t)BlockId::SAND;
                 // Sand on top of dirt, the way a beach is built up.
+                if (filler == (uint8_t)BlockId::GRASS || filler == (uint8_t)BlockId::DIRT)
+                    filler = (uint8_t)BlockId::SAND;
+            }
+
+            // ---- River bank: grass, with one sand block at the water -------
+            // The reference rivers are ringed by a flat GRASS bank 2-3
+            // blocks wide, and exactly one sand block sits on the
+            // innermost column, practically touching the water. The rest of
+            // the bank keeps whatever the biome put there, which in plains,
+            // savanna and forest country is grass.
+            //
+            // "Innermost column" is tested directly — it is the land column
+            // that touches water — rather than by a distance threshold. The
+            // river profile is smoothed by the height kernel, so the block
+            // distance at which the water actually stops drifts by one or
+            // two columns depending on the terrain, and any fixed
+            // threshold put the sand either underwater or one block too far
+            // up the bank. The neighbour test is exact everywhere, and it
+            // automatically covers every land biome the bank runs through.
+            if (!shore && h >= kSeaLevel && b != BIOME_OCEAN &&
+                top != (uint8_t)BlockId::STONE && touchesWater) {
+                top = (uint8_t)BlockId::SAND;
                 if (filler == (uint8_t)BlockId::GRASS || filler == (uint8_t)BlockId::DIRT)
                     filler = (uint8_t)BlockId::SAND;
             }
@@ -199,15 +234,19 @@ void Normal::generate(GenerationContext& ctx) {
             const bool snowy = cfg.snowy || b == BIOME_FROZEN_RIVER;
 
             // How many layers (top + filler) the biome's soil occupies
-            // before the solid stone begins. Deeper soil on the face of a
-            // cliff is what keeps a cut bank GREEN/DIRT instead of a grey
-            // stone wall: a column standing N blocks above its lowest
-            // neighbour spreads its top and filler layers N blocks further
-            // down, so the exposed face shows soil. This is the fix for the
-            // "stone canyon" the savanna plateaus and river banks kept
-            // showing (the underlying stone was fine — it was the fact that
-            // a vertical cut exposed it as a flat grey slab that read as
-            // ugly). Mountains keep their rocky faces on purpose.
+            // before the solid stone begins.
+            //
+            // This is deliberately SHORT. The reference river banks are
+            // terraced, and every step shows a green grass top, a thin
+            // dirt band and then the grey stone of the hillside underneath
+            // — those horizontal dirt/stone bands are the whole look of a
+            // river cut, and they only appear if the soil layer stays thin.
+            // A previous pass stretched the soil over the full height of a
+            // cliff so no bare stone would ever show; it turned every river
+            // bank into a featureless wall of dirt and threw those bands
+            // away. The extension is now only HALF the drop and capped at
+            // 8, which keeps a sheer wall from becoming one flat slab while
+            // still leaving the layering visible on every terrace.
             int surfaceDepth = 4;
             if (b != BIOME_EXTREME_HILLS && b != BIOME_MOUNTAINS) {
                 int lowN = h;
@@ -215,7 +254,7 @@ void Normal::generate(GenerationContext& ctx) {
                 if (x < 15) lowN = std::min(lowN, heights[x + 1][z]);
                 if (z > 0)  lowN = std::min(lowN, heights[x][z - 1]);
                 if (z < 15) lowN = std::min(lowN, heights[x][z + 1]);
-                surfaceDepth = std::min(4 + (h - lowN), 12);
+                surfaceDepth = std::min(4 + (h - lowN) / 2, 8);
             }
             // Oceans and submerged river beds keep 4 gravel layers at the
             // bottom regardless of the surrounding relief.
