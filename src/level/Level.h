@@ -69,6 +69,12 @@ public:
     // BlockFire propagation needs this to read the fire's "age" meta.
     uint8_t getBlockData(int32_t x, int32_t y, int32_t z);
     void setBlock(int32_t x, int32_t y, int32_t z, uint8_t id, uint8_t data);
+
+    // Swap a furnace between FURNACE and BURNING_FURNACE (vanilla shows
+    // the fire by changing the block, not the tile). Returns true when
+    // the block actually changed, so the caller only bothers clients
+    // when there is something new to see.
+    bool setFurnaceFlame(int32_t x, int32_t y, int32_t z, bool lit);
     // Cheap probe — does NOT trigger chunk generation. BlockFire propagation
     // uses this to bail out of fire-spread into unloaded chunks instead of
     // silently treating them as AIR (which caused the runaway propagation
@@ -279,6 +285,12 @@ private:
     // No-op if the chunk isn't loaded (chunks_.getChunkIfLoaded returns
     // null) or has no tile_entities.
     void ensureTilesLoaded(int32_t cx, int32_t cz);
+
+    // Build the block entities a chunk's tile-bearing BLOCKS imply but
+    // that have no tile yet (village chests, dungeon furnaces...). The
+    // client renders and opens those through their block actor, so
+    // without this they arrive invisible and unusable.
+    void hydrateTilesFromBlocks(int32_t cx, int32_t cz, mcp_chunk_t* chunk);
     // Write every dirty tile's current NBT into its owning chunk's
     // mcp_chunk_t::tile_entities array, replacing whatever was there
     // before. Called from save(), BEFORE chunks_.flushDirty() — that's

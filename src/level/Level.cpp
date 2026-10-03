@@ -17,6 +17,7 @@
 #include "tile/TileChest.h"
 #include "tile/TileFurnace.h"
 #include "tile/TileSign.h"
+#include "tile/TileFactory.h"
 #include "nbt/NBT.h"
 #include "nbt/tag/CompoundTag.h"
 #include "Player.h"
@@ -183,6 +184,25 @@ uint8_t Level::getBlockData(int32_t x, int32_t y, int32_t z) {
     mcp_chunk_t* c = chunks_.getChunkIfLoaded(cx, cz);
     if (!c) return 0;
     return mcp_chunk_get_block_data(c, x & 15, y, z & 15);
+}
+
+// setFurnaceFlame — swap a furnace between its two block ids the way
+// vanilla does: BURNING_FURNACE (62) while there is fire in it,
+// FURNACE (61) when it goes out. Only the id changes, the facing data
+// is kept, and true is returned when the block actually changed so the
+// caller knows whether a client update is worth sending.
+bool Level::setFurnaceFlame(int32_t x, int32_t y, int32_t z, bool lit) {
+    int32_t cx = x >> 4, cz = z >> 4;
+    mcp_chunk_t* c = chunks_.getChunkIfLoaded(cx, cz);
+    if (!c) return false;
+    const uint8_t want = lit ? (uint8_t)block::BURNING_FURNACE
+                             : (uint8_t)block::FURNACE;
+    const uint8_t have = mcp_chunk_get_block_id(c, x & 15, y, z & 15);
+    if (have == want) return false;
+    const uint8_t data = mcp_chunk_get_block_data(c, x & 15, y, z & 15);
+    mcp_chunk_set_block_full(c, x & 15, y, z & 15, want, data);
+    c->dirty = true;
+    return true;
 }
 
 void Level::setBlock(int32_t x, int32_t y, int32_t z, uint8_t id, uint8_t data) {
@@ -419,50 +439,105 @@ void Level::ensureTilesLoaded(int32_t cx, int32_t cz) {
     {
         std::lock_guard<std::mutex> lk(tiles_mtx_);
         if (tiles_hydrated_chunks_.count(ckey)) return;
-        // Mark hydrated up front, even if the chunk isn't loaded yet or
-        // has no tiles — this is a "have we looked" flag, not a "did we
-        // find anything" flag. A chunk with zero chests shouldn't be
-        // re-scanned on every single getTile() call either.
-        tiles_hydrated_chunks_.insert(ckey);
     }
     mcp_chunk_t* c = chunks_.getChunkIfLoaded(cx, cz);
-    if (!c || !c->tile_entities || c->tile_entity_count == 0) return;
-
-    for (size_t i = 0; i < c->tile_entity_count; ++i) {
-        const uint8_t* blob = c->tile_entities[i];
-        size_t blen = c->tile_entity_lens ? c->tile_entity_lens[i] : 0;
-        if (!blob || blen == 0) continue;
-        // Blobs on mcp_chunk_t are stored little-endian, same convention
-        // AnvilChunkCodec already uses for these same arrays.
-        mcp_tag_t* tag = mcp_nbt_read_bytes(blob, blen, /*little_endian=*/true);
-        if (!tag) continue;
-
-        const char* id = mcp_compound_tag_get_string(tag, "id", "");
-        int32_t tx = mcp_compound_tag_get_int(tag, "x", 0);
-        int32_t ty = mcp_compound_tag_get_int(tag, "y", 0);
-        int32_t tz = mcp_compound_tag_get_int(tag, "z", 0);
-
-        std::shared_ptr<cursestone::tile::Tile> tile;
-        cursestone::level::Position pos(tx, ty, tz);
-        if (std::strcmp(id, "Chest") == 0) {
-            tile = std::make_shared<cursestone::tile::TileChest>(pos);
-        } else if (std::strcmp(id, "Sign") == 0) {
-            tile = std::make_shared<cursestone::tile::TileSign>(pos);
-        } else if (std::strcmp(id, "Furnace") == 0) {
-            // El horno ahora persiste contenido real (3 slots + burn/
-            // cook ticks — ver TileFurnace::writeNBT), así que se
-            // reconstruye igual que el cofre.
-            tile = std::make_shared<cursestone::tile::TileFurnace>(pos);
-        }
-        // Other tile ids (MobSpawner, ...) still live purely in the
-        // in-memory registry via setTile().
-        if (tile) {
-            tile->readNBT(tag);
-            std::lock_guard<std::mutex> lk(tiles_mtx_);
-            tiles_[packTilePos(tx, ty, tz)] = std::move(tile);
-        }
-        mcp_tag_destroy(tag);
+    // "Not loaded yet" is NOT the same as "already looked at":
+    // getChunkIfLoaded never generates, so a chunk that is missing here
+    // still has to be scanned once it exists. Claiming it now would burn
+    // that chunk's only hydration pass and bring back the invisible-chest
+    // bug for every container reached that way. Claim it only now, with
+    // the chunk actually in hand — a chunk with zero containers is still
+    // marked, so the scan runs once and not on every getTile().
+    if (!c) return;
+    {
+        std::lock_guard<std::mutex> lk(tiles_mtx_);
+        if (tiles_hydrated_chunks_.count(ckey)) return;  // another thread won
+        tiles_hydrated_chunks_.insert(ckey);
     }
+
+    if (c->tile_entities && c->tile_entity_count > 0) {
+        for (size_t i = 0; i < c->tile_entity_count; ++i) {
+            const uint8_t* blob = c->tile_entities[i];
+            size_t blen = c->tile_entity_lens ? c->tile_entity_lens[i] : 0;
+            if (!blob || blen == 0) continue;
+            // Blobs on mcp_chunk_t are stored little-endian, same convention
+            // AnvilChunkCodec already uses for these same arrays.
+            mcp_tag_t* tag = mcp_nbt_read_bytes(blob, blen, /*little_endian=*/true);
+            if (!tag) continue;
+
+            const char* id = mcp_compound_tag_get_string(tag, "id", "");
+            int32_t tx = mcp_compound_tag_get_int(tag, "x", 0);
+            int32_t ty = mcp_compound_tag_get_int(tag, "y", 0);
+            int32_t tz = mcp_compound_tag_get_int(tag, "z", 0);
+
+            std::shared_ptr<cursestone::tile::Tile> tile;
+            cursestone::level::Position pos(tx, ty, tz);
+            if (std::strcmp(id, "Chest") == 0) {
+                tile = std::make_shared<cursestone::tile::TileChest>(pos);
+            } else if (std::strcmp(id, "Sign") == 0) {
+                tile = std::make_shared<cursestone::tile::TileSign>(pos);
+            } else if (std::strcmp(id, "Furnace") == 0) {
+                // El horno ahora persiste contenido real (3 slots + burn/
+                // cook ticks — ver TileFurnace::writeNBT), así que se
+                // reconstruye igual que el cofre.
+                tile = std::make_shared<cursestone::tile::TileFurnace>(pos);
+            }
+            // Other tile ids (MobSpawner, ...) still live purely in the
+            // in-memory registry via setTile().
+            if (tile) {
+                tile->readNBT(tag);
+                std::lock_guard<std::mutex> lk(tiles_mtx_);
+                tiles_[packTilePos(tx, ty, tz)] = std::move(tile);
+            }
+            mcp_tag_destroy(tag);
+        }
+    }
+
+    hydrateTilesFromBlocks(cx, cz, c);
+}
+
+// hydrateTilesFromBlocks — give every tile-bearing BLOCK in the chunk a
+// tile that does not have one yet.
+//
+// This is the fix for "village chests are invisible and cannot be
+// opened": a chest placed by the generator (or loaded from a world that
+// never had one) exists only as a block. In MCPE 0.15 the client draws
+// and opens chests/furnaces through their block actor, so without this
+// pass the player sees an unknown-but-solid block, tapping it does
+// nothing, and a furnace takes the client down with it. PMMP creates
+// these tiles when the chunk is initialised, for exactly this reason.
+//
+// Only positions without a tile are filled, so this never overwrites a
+// chest the player filled or a furnace that is burning.
+void Level::hydrateTilesFromBlocks(int32_t cx, int32_t cz, mcp_chunk_t* c) {
+    using cursestone::tile::createTileForBlock;
+    using cursestone::tile::isTileBlock;
+
+    const int32_t baseX = cx * 16, baseZ = cz * 16;
+    // Gather first, insert after: taking tiles_mtx_ per block would
+    // serialise the whole scan against every other tile lookup.
+    std::vector<std::shared_ptr<cursestone::tile::Tile>> fresh;
+    for (int32_t y = 0; y < 128; ++y)
+        for (int32_t lz = 0; lz < 16; ++lz)
+            for (int32_t lx = 0; lx < 16; ++lx) {
+                const uint8_t id = mcp_chunk_get_block_id(c, lx, y, lz);
+                if (!isTileBlock(id)) continue;
+                const int32_t wx = baseX + lx, wz = baseZ + lz;
+                {
+                    std::lock_guard<std::mutex> lk(tiles_mtx_);
+                    if (tiles_.count(packTilePos(wx, y, wz))) continue;
+                }
+                fresh.push_back(createTileForBlock(
+                    id, cursestone::level::Position((double)wx, (double)y,
+                                                    (double)wz)));
+            }
+    if (fresh.empty()) return;
+
+    std::lock_guard<std::mutex> lk(tiles_mtx_);
+    for (auto& t : fresh)
+        if (t)
+            tiles_[packTilePos((int32_t)t->position().x, (int32_t)t->position().y,
+                               (int32_t)t->position().z)] = std::move(t);
 }
 
 void Level::syncTilesToChunks() {
