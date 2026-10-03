@@ -15,6 +15,9 @@ enum TreeType {
     TREE_ACACIA = 5,
     TREE_DARK_OAK = 6,
     TREE_SWAMP = 7,
+    // Vanilla big jungle tree: tall buttressed trunk, branch arms with leaf
+    // clusters, layered crown and vines. Ported from Aquamarine/PocketMine.
+    TREE_BIG_JUNGLE = 8,
 };
 
 } // namespace cursestone::level::generator::object

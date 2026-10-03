@@ -15,7 +15,10 @@ const BiomeConfig& jungleBiome() {
         .underwater = false,
         .treeAmount = 9,
         .trees = {
-            { object::TREE_JUNGLE, 7 },
+            { object::TREE_JUNGLE, 6 },
+            // The big jungle tree: rare, but it is the tree the jungle is
+            // actually known for, so it gets a real share of the slots.
+            { object::TREE_BIG_JUNGLE, 2 },
             { object::TREE_BIG_OAK, 1 },
             { object::TREE_OAK, 1 },
         },

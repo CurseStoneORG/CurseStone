@@ -8,6 +8,7 @@
 #include "trees/AcaciaTree.h"
 #include "trees/DarkOakTree.h"
 #include "trees/SwampTree.h"
+#include "trees/BigJungleTree.h"
 
 namespace cursestone::level::generator::object {
 
@@ -37,6 +38,9 @@ bool TreeGenerator::place(mcp_chunk_t* c, int x, int y, int z, TreeType t,
         }
         case TREE_SWAMP: {
             trees::SwampTree tr;   return tr.generate(c, x, y, z, soilId, rng);
+        }
+        case TREE_BIG_JUNGLE: {
+            trees::BigJungleTree tr; return tr.generate(c, x, y, z, soilId, rng);
         }
         default: {
             trees::OakTree tr;     return tr.generate(c, x, y, z, soilId, rng);
