@@ -7,6 +7,7 @@
 #include "level/generator/populator/PopulatorCave.h"
 #include "level/generator/populator/PopulatorFeatures.h"
 #include "level/generator/populator/StructurePopulator.h"
+#include "level/generator/populator/VillagePopulator.h"
 #include "level/generator/structure/DesertTemple.h"
 #include "level/generator/object/OreGenerator.h"
 #include "level/generator/biome/Biome.h"
@@ -70,6 +71,12 @@ Normal::Normal(int64_t seed) : seed_(seed), noise_(seed) {
     // footprint — and it is its own volume's air cells that carve out the
     // interior, so it cannot come before the vegetation and be buried
     // under a cactus.
+    //
+    // Villages sit right before the fixed templates: their roads and
+    // house pieces stamp their own air over the vegetation too, and if a
+    // desert temple ever shares an anchor with a village (different
+    // salts, so this is rare) the temple wins.
+    populators_.push_back(std::make_unique<populator::VillagePopulator>());
     auto structures = std::make_unique<populator::StructurePopulator>();
     structures->add(std::make_shared<structure::DesertTemple>());
     populators_.push_back(std::move(structures));
