@@ -6,6 +6,8 @@
 #include "level/generator/populator/PopulatorFlower.h"
 #include "level/generator/populator/PopulatorCave.h"
 #include "level/generator/populator/PopulatorFeatures.h"
+#include "level/generator/populator/StructurePopulator.h"
+#include "level/generator/structure/DesertTemple.h"
 #include "level/generator/object/OreGenerator.h"
 #include "level/generator/biome/Biome.h"
 #include "level/generator/biome/BiomeRegistry.h"
@@ -62,6 +64,15 @@ Normal::Normal(int64_t seed) : seed_(seed), noise_(seed) {
     populators_.push_back(std::make_unique<populator::PopulatorPumpkin>(16));
     populators_.push_back(std::make_unique<populator::PopulatorMelon>(16));
     populators_.push_back(std::make_unique<populator::PopulatorWaterLily>(16));
+
+    // Structures run LAST, the way vanilla orders them. A temple has to
+    // overwrite the vegetation that the passes above scattered over its
+    // footprint — and it is its own volume's air cells that carve out the
+    // interior, so it cannot come before the vegetation and be buried
+    // under a cactus.
+    auto structures = std::make_unique<populator::StructurePopulator>();
+    structures->add(std::make_shared<structure::DesertTemple>());
+    populators_.push_back(std::move(structures));
 }
 
 Normal::~Normal() = default;
