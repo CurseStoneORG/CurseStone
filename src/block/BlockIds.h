@@ -93,6 +93,7 @@ enum BlockId : int {
     NETHER_QUARTZ_ORE  = 153,
     QUARTZ_BLOCK       = 155,
     QUARTZ_STAIRS      = 156,
+    STONE_SLAB         = 44,   // half slab; metadata picks the stone type, +8 = top
     DROPPER            = 158,
     WHITE_CARPET       = 171,
     COAL_BLOCK         = 173,
