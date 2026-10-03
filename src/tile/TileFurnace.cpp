@@ -6,6 +6,9 @@
 #include "Player.h"
 #include "inventory/FurnaceInventory.h"
 #include "inventory/CraftingManager.h"
+#include "level/Level.h"
+#include "block/BlockIds.h"
+#include "network/protocol/UpdateBlockPacket.h"
 #include "Server.h"
 #include "network/protocol/ContainerSetContentPacket.h"
 #include "network/protocol/ContainerSetDataPacket.h"
@@ -13,8 +16,9 @@
 #include "nbt/tag/ListTag.h"
 #include <algorithm>
 namespace cursestone::tile {
-TileFurnace::TileFurnace(cursestone::level::Position pos)
-    : Tile("Furnace", pos),
+TileFurnace::TileFurnace(cursestone::level::Position pos,
+                         const cursestone::inventory::CraftingManager* recipes)
+    : Tile("Furnace", pos), recipes_(recipes),
       inv_(std::make_unique<cursestone::inventory::FurnaceInventory>()) {}
 TileFurnace::~TileFurnace() = default;
 void TileFurnace::setItem(int slot, const cursestone::item::ItemStack& it) {
@@ -66,10 +70,8 @@ int TileFurnace::fuelBurnTicks(uint16_t id) {
 // ============================================================
 bool TileFurnace::smeltResult(const cursestone::item::ItemStack& in,
                               cursestone::item::ItemStack& out) const {
-    auto& srv = cursestone::Server::getInstance();
-    // craftingManager() se agrega a Server este mismo cambio (antes el
-    // manager era un miembro privado sin accessor).
-    auto* mgr = srv.craftingManager();
+    const cursestone::inventory::CraftingManager* mgr = recipes_;
+    if (!mgr) mgr = cursestone::Server::getInstance().craftingManager();
     if (!mgr || in.isEmpty()) return false;
     const inventory::Recipe* r =
         mgr->matchFurnaceWithMeta(in.id, in.meta);
@@ -78,6 +80,29 @@ bool TileFurnace::smeltResult(const cursestone::item::ItemStack& in,
     out = r->result();
     if (out.count <= 0) out.count = 1;
     return true;
+}
+
+// setFlame — el fuego se ve cambiando el bloque (vanilla: 61 apagado /
+// 62 encendido), no solo la barra de la UI. El cambio de id se hace en
+// el Level (sin broadcast) y el UpdateBlock solo se manda si el bloque
+// cambió de verdad.
+void TileFurnace::setFlame(bool lit) {
+    if (lit == lit_) return;
+    lit_ = lit;
+    const int x = (int)pos_.x, y = (int)pos_.y, z = (int)pos_.z;
+    auto* lvl = cursestone::Server::getInstance().getDefaultLevel();
+    if (!lvl) return;
+    if (!lvl->setFurnaceFlame(x, y, z, lit)) return;
+    auto pk = std::make_shared<network::protocol::UpdateBlockPacket>();
+    pk->x = x;
+    pk->y = (uint8_t)y;
+    pk->z = z;
+    pk->blockId = lit ? (uint16_t)cursestone::block::BURNING_FURNACE
+                      : (uint16_t)cursestone::block::FURNACE;
+    pk->blockData = lvl->getBlockData(x, y, z);
+    pk->flags = 0xFF;
+    for (auto& p : cursestone::Server::getInstance().playersSnapshot())
+        if (p && p->isTrackingChunk(x >> 4, z >> 4)) p->sendPacket(pk);
 }
 // ============================================================
 // tick — el corazón del horno.
@@ -95,6 +120,8 @@ void TileFurnace::tick(uint64_t) {
     if (burn_time_ > 0) {
         --burn_time_;
     }
+    // La llama del bloque sigue al fuego real.
+    setFlame(burn_time_ > 0);
     // Encender fuel si: no hay burn activo, se puede fundir, y hay
     // fuel consumible (PMMP: checkUsedFuel).
     if (burn_time_ <= 0 && canSmelt && !fuel.isEmpty()) {
@@ -144,14 +171,15 @@ void TileFurnace::tick(uint64_t) {
     if (dirty_inventory_ && !viewers_.empty()) {
         auto content =
             std::make_shared<network::protocol::ContainerSetContentPacket>();
-        content->windowid = Player::FURNACE_WINDOW_ID;
         content->slots.resize(3);
         for (int i = 0; i < 3; ++i) content->slots[i] = inv_->getItem(i);
         for (void* v : viewers_) {
             // v es un Player* — el cast estático es válido porque solo
             // Player::openFurnaceAt registra viewers y Player nunca es
             // otra cosa. sendPacket es virtual via Player.
-            static_cast<cursestone::Player*>(v)->sendPacket(content);
+            auto* p = static_cast<cursestone::Player*>(v);
+            content->windowid = p->containerWindowId();
+            p->sendPacket(content);
         }
     }
     dirty_inventory_ = false;
@@ -171,18 +199,22 @@ void TileFurnace::sendProgressToViewers() {
         viewers_.end());
 
     auto pk = std::make_shared<network::protocol::ContainerSetDataPacket>();
-    pk->windowid = cursestone::Player::FURNACE_WINDOW_ID;
     pk->property = network::protocol::ContainerSetDataPacket::PROPERTY_FURNACE_TICKS;
     pk->value = std::clamp(cook_time_, 0, 200);
-    for (void* v : viewers_)
-        static_cast<cursestone::Player*>(v)->sendPacket(pk);
     auto pk2 = std::make_shared<network::protocol::ContainerSetDataPacket>();
-    pk2->windowid = cursestone::Player::FURNACE_WINDOW_ID;
     pk2->property = network::protocol::ContainerSetDataPacket::PROPERTY_FURNACE_FUEL;
     pk2->value = max_burn_time_ > 0
         ? std::clamp((burn_time_ * 200) / max_burn_time_, 0, 200) : 0;
-    for (void* v : viewers_)
-        static_cast<cursestone::Player*>(v)->sendPacket(pk2);
+    // Un paquete por viewer: cada jugador tiene SU propio window id de
+    // contenedor (Player::openContainerWindow), asi que un paquete
+    // compartido llevaria el id equivocado al segundo que mire.
+    for (void* v : viewers_) {
+        auto* p = static_cast<cursestone::Player*>(v);
+        pk->windowid = p->containerWindowId();
+        p->sendPacket(pk);
+        pk2->windowid = p->containerWindowId();
+        p->sendPacket(pk2);
+    }
 }
 // ============================================================
 // Persistencia — formato legacy de Nukkit {BurnDuration, BurnTicks,

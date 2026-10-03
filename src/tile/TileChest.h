@@ -27,7 +27,7 @@ public:
     void setItem(int slot, const cursestone::item::ItemStack& it) override;
     cursestone::item::ItemStack getItem(int slot) const override;
     void removeItem(int slot) override;
-    void spawnTo(void* player) override {}
+    void spawnTo(void* /*player*/) override {}
     void writeNBT(mcp_tag_t* tag) const override;
     void readNBT(const mcp_tag_t* tag) override;
 

@@ -527,7 +527,7 @@ void Player::setGamemode(int gm) {
 // puntual), y la confirmación que se manda de vuelta ECOA el mismo
 // windowid/slot/hotbarSlot que mandó el cliente en el paquete
 // original — igual que ya se hace para el cofre (ver la rama
-// CHEST_WINDOW_ID de abajo, que sí confirmó ser confiable). La idea:
+// open_chest_ de abajo, que sí confirmó ser confiable). La idea:
 // no importa en qué índice interno terminamos guardando el item, lo
 // único que el cliente necesita para dejar de mostrar el tooltip y
 // reflejar el item es una confirmación que coincida con los mismos
@@ -755,8 +755,9 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
             //   - windowid 0x79 (SPECIAL_CREATIVE): rarely sent by MCPE
             //     0.15.x clients; handled as a fallback that places the
             //     item into the held hotbar slot.
-            //   - windowid CHEST_WINDOW_ID (1): the chest this player
-            //     currently has open (see openChestAt/closeOpenChest).
+            //   - windowid == container_window_id_ (2..98): the chest or
+            //     furnace this player currently has open (see
+            //     openChestAt/openFurnaceAt/closeOpenChest).
             //     Routed to open_chest_->inventory() instead of inv_.
             if (auto* cs = dynamic_cast<network::protocol::ContainerSetSlotPacket*>(&p)) {
                 if (inv_) {
@@ -790,11 +791,11 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                     // HOTBAR. A click in the currently-open chest fires
                     // its own InventoryClickEvent against the chest's
                     // ChestInventory (not inv_), applies it there, and
-                    // confirms the slot with windowid=CHEST_WINDOW_ID —
+                    // confirms the slot with the container's window id —
                     // sendSlot() below can't be reused for this, it
                     // always confirms against inv_ (the player's own
                     // inventory).
-                    if (cs->windowid == CHEST_WINDOW_ID) {
+                    if (cs->windowid == container_window_id_ && open_chest_) {
                         if (open_chest_ && cs->slot >= 0 &&
                             cs->slot < open_chest_->inventory()->getSize()) {
                             auto chestInv = open_chest_->inventory();
@@ -810,7 +811,7 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                             // gets a confirmation packet back, whether
                             // the write actually landed or was cancelled.
                             auto confirm = std::make_shared<network::protocol::ContainerSetSlotPacket>();
-                            confirm->windowid = CHEST_WINDOW_ID;
+                            confirm->windowid = container_window_id_;
                             confirm->slot = cs->slot;
                             confirm->hotbarSlot = cs->slot;
                             auto cur = chestInv->getItem(cs->slot);
@@ -823,12 +824,13 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                     }
 
                     // Horno — misma mecánica que el cofre: click en la
-                    // ventana FURNACE_WINDOW_ID escribe directo en el
-                    // TileFurnace (slots 0=input, 1=fuel, 2=output) y
+                    // ventana del horno (container_window_id_) escribe
+                    // directo en el TileFurnace (slots 0=input, 1=fuel,
+                    // 2=output) y
                     // confirma el slot para que el cliente no lo revierta.
                     // Al cambiar el input/fuel, el tick del horno se
                     // encarga de reencender fuel o resetear cook_time.
-                    if (cs->windowid == FURNACE_WINDOW_ID) {
+                    if (cs->windowid == container_window_id_ && open_furnace_) {
                         if (open_furnace_ && cs->slot >= 0 && cs->slot < 3) {
                             auto f = open_furnace_;
                             inventory::Inventory* fInvRaw =
@@ -840,7 +842,7 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                                 f->setItem(cs->slot, it);
                             }
                             auto confirm = std::make_shared<network::protocol::ContainerSetSlotPacket>();
-                            confirm->windowid = FURNACE_WINDOW_ID;
+                            confirm->windowid = container_window_id_;
                             confirm->slot = cs->slot;
                             confirm->hotbarSlot = cs->slot;
                             auto cur = f->getItem(cs->slot);
@@ -854,8 +856,9 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
 
                     // InventoryClickEvent — cubre el flujo de "click en el
                     // inventario propio del jugador" (windowid 0x00/0x78/
-                    // 0x7a/0x79). El caso de cofre (windowid==CHEST_WINDOW_ID)
-                    // ya se resolvio y salio arriba. Un listener puede
+                    // 0x7a/0x79). El caso de cofre u horno (windowid ==
+                    // container_window_id_) ya se resolvio y salio
+                    // arriba. Un listener puede
                     // cancelar para impedir el cambio de slot (p.ej.
                     // inventario bloqueado durante un trade).
                     bool clickCancelled = false;
@@ -2222,7 +2225,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     }
 
     // Horno — mismo patrón que el cofre: click derecho abre su UI
-    // (ventana FURNACE_WINDOW_ID) en vez de colocar un bloque encima.
+    // (su propia ventana de contenedor) en vez de colocar un bloque encima.
     if (lvl->getBlockId(x, y, z) == block::FURNACE ||
         lvl->getBlockId(x, y, z) == block::BURNING_FURNACE) {
         openFurnaceAt(x, y, z);
@@ -2731,7 +2734,7 @@ void Player::openChestAt(int x, int y, int z) {
     if (!srv_ || !srv_->getDefaultLevel()) return;
     auto* lvl = srv_->getDefaultLevel();
 
-    // Only one container open at a time per player (see CHEST_WINDOW_ID).
+    // Only one container open at a time per player (see openContainerWindow).
     if (open_chest_) {
         closeOpenChest();
     }
@@ -2765,14 +2768,26 @@ void Player::openChestAt(int x, int y, int z) {
 
     chest->addViewer();
     open_chest_ = chest;
+    openContainerWindow();   // sets container_window_id_ for every packet below
 
     auto op = std::make_shared<network::protocol::ContainerOpenPacket>();
-    op->windowid = CHEST_WINDOW_ID;
+    op->windowid = container_window_id_;
     op->type     = network::protocol::ContainerOpenPacket::TYPE_CONTAINER;
     op->slots    = (int16_t)chest->inventory()->getSize();
     op->x = x; op->y = y; op->z = z;
     op->entityId = -1;  // block-based container, not entity-based
     sendPacket(op);
+
+    // The client can only draw and open a chest THROUGH its block
+    // actor: if the chunk went out before the tile existed (a chest
+    // from a village or a structure is just a block until somebody
+    // asks for it), the client has no block entity at these
+    // coordinates, shows an unknown-but-solid block and refuses to
+    // open the UI. Send it now — to everyone looking at the chunk, not
+    // just the opener. Level::ensureTilesLoaded covers the normal
+    // path (tiles exist before the chunk is sent); this covers the
+    // ones created after the fact.
+    sendBlockEntityData(x, y, z, *chest, nullptr);
 
     // Full slot dump so the client actually shows the contents. Can't
     // reuse BaseInventory::sendContents() — it hardcodes windowid=0
@@ -2780,7 +2795,7 @@ void Player::openChestAt(int x, int y, int z) {
     // collide with SPECIAL_INVENTORY and get treated as a hotbar/main
     // inventory update instead of the chest window).
     auto content = std::make_shared<network::protocol::ContainerSetContentPacket>();
-    content->windowid = CHEST_WINDOW_ID;
+    content->windowid = container_window_id_;
     content->slots.reserve(chest->inventory()->getSize());
     for (int i = 0; i < chest->inventory()->getSize(); ++i) {
         content->slots.push_back(chest->inventory()->getItem(i));
@@ -2798,7 +2813,7 @@ void Player::closeOpenChest() {
     // abierto a la vez, así que basta con cerrar el que esté seteado.
     if (open_chest_) {
         auto cp = std::make_shared<network::protocol::ContainerClosePacket>();
-        cp->windowid = CHEST_WINDOW_ID;
+        cp->windowid = container_window_id_;
         sendPacket(cp);
 
         open_chest_->removeViewer();
@@ -2806,12 +2821,13 @@ void Player::closeOpenChest() {
     }
     if (open_furnace_) {
         auto cp = std::make_shared<network::protocol::ContainerClosePacket>();
-        cp->windowid = FURNACE_WINDOW_ID;
+        cp->windowid = container_window_id_;
         sendPacket(cp);
 
         open_furnace_->removeViewer(this);
         open_furnace_.reset();
     }
+    container_window_id_ = 0;
 }
 
 // openFurnaceAt — espejo exacto de openChestAt para el horno:
@@ -2848,19 +2864,26 @@ void Player::openFurnaceAt(int x, int y, int z) {
 
     furnace->addViewer(this);
     open_furnace_ = furnace;
+    openContainerWindow();  // sets container_window_id_ for every packet below
 
     auto op = std::make_shared<network::protocol::ContainerOpenPacket>();
-    op->windowid = FURNACE_WINDOW_ID;
+    op->windowid = container_window_id_;
     op->type     = network::protocol::ContainerOpenPacket::TYPE_FURNACE;
     op->slots    = 3;
     op->x = x; op->y = y; op->z = z;
     op->entityId = -1;
     sendPacket(op);
 
+    // Mismo motivo que en el cofre: sin block entity el cliente 0.15.x
+    // no tiene sobre qué montar la UI del horno (y abrirla sin él lo
+    // revienta), asi que se le manda antes de cualquier otro paquete
+    // de la ventana.
+    sendBlockEntityData(x, y, z, *furnace, nullptr);
+
     // Volcado completo de los 3 slots — mismo motivo que el cofre:
     // BaseInventory::sendContents() hardcodea windowid=0.
     auto content = std::make_shared<network::protocol::ContainerSetContentPacket>();
-    content->windowid = FURNACE_WINDOW_ID;
+    content->windowid = container_window_id_;
     content->slots.reserve(3);
     for (int i = 0; i < 3; ++i) content->slots.push_back(furnace->getItem(i));
     sendPacket(content);
@@ -2873,6 +2896,25 @@ void Player::openFurnaceAt(int x, int y, int z) {
         utils::MainLogger::get().info("[FURNACE] " + cfg_.username + " opened furnace at " +
             std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(z));
     }
+}
+
+// ============================================================
+// openContainerWindow — assign the next window id to the container this
+// player just opened and return it.
+//
+// Infinity hands container ids out from 2 upward in a cycle
+// (Player::addWindow: max(2, ++windowCnt % 99)), because 0 is the
+// client's own inventory and 0x78/0x79/0x7a are armor/creative/hotbar.
+// We copy that range exactly: the old fixed id 1 is never sent by the
+// reference server and the client can refuse to open a window it does
+// not recognise.
+// ============================================================
+uint8_t Player::openContainerWindow() {
+    container_window_id_ = next_container_window_id_;
+    next_container_window_id_ =
+        (next_container_window_id_ >= 98) ? 2
+                                           : (uint8_t)(next_container_window_id_ + 1);
+    return container_window_id_;
 }
 
 // ============================================================
@@ -2907,8 +2949,7 @@ void Player::handleCraftingEvent(
         // que el cliente dejó abierta (Genisys: sendContents + break).
         utils::MainLogger::get().debug("Player " + cfg_.username +
             " sent unknown crafting recipe UUID");
-        if (window_id != 0 && window_id != CHEST_WINDOW_ID &&
-            window_id != FURNACE_WINDOW_ID) {
+        if (window_id != 0 && window_id != container_window_id_) {
             auto cp = std::make_shared<network::protocol::ContainerClosePacket>();
             cp->windowid = window_id;
             sendPacket(cp);
@@ -2998,8 +3039,7 @@ void Player::handleCraftingEvent(
     }
 
     // ---- Cerrar la ventana de crafteo + resync (el ack del 0.15.x) ----
-    if (window_id != 0 && window_id != CHEST_WINDOW_ID &&
-        window_id != FURNACE_WINDOW_ID) {
+    if (window_id != 0 && window_id != container_window_id_) {
         auto cp = std::make_shared<network::protocol::ContainerClosePacket>();
         cp->windowid = window_id;
         sendPacket(cp);

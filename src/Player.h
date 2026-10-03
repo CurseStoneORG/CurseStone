@@ -121,8 +121,8 @@ public:
     // reutiliza (o crea) el TileFurnace via Level::getTile/setTile,
     // dispara InventoryOpenEvent (cancelable), registra al jugador en
     // los viewers del tile (para que TileFurnace::tick le mande el
-    // progreso via ContainerSetDataPacket), abre la ventana
-    // FURNACE_WINDOW_ID y manda el volcado completo de los 3 slots.
+    // progreso via ContainerSetDataPacket), abre su ventana de
+    // contenedor y manda el volcado completo de los 3 slots.
     void openFurnaceAt(int x, int y, int z);
 
     // Spawn a dropped item entity at the given position with a small random
@@ -390,23 +390,19 @@ public:
     // modernas — esto es puramente anti-spam server-side, no gameplay.
     static constexpr uint64_t ATTACK_COOLDOWN_MS = 250;
 
-    // Ventana de contenedor fija para "el cofre que este jugador tiene
-    // abierto ahora mismo". PMMP real hace rotar windowid dinamicamente
-    // (para poder distinguir varios contenedores abiertos en simultaneo
-    // por el mismo jugador en un momento dado, ej. abrir un cofre y
-    // encima una mesa de crafteo). Este proyecto solo abre UN
-    // contenedor a la vez por jugador (ver openChestAt/closeOpenChest),
-    // asi que un id fijo alcanza — no colisiona con SPECIAL_INVENTORY
-    // (0x00) / SPECIAL_ARMOR (0x78) / SPECIAL_CREATIVE (0x79) /
-    // SPECIAL_HOTBAR (0x7a) de ContainerSetSlotPacket, que son los
-    // unicos otros windowid que este servidor entiende.
-    static constexpr uint8_t CHEST_WINDOW_ID = 1;
+    // Window id of the container this player currently has open
+    // (0 = none). Infinity assigns container windows from 2 upwards
+    // (Player::addWindow: max(2, ++windowCnt % 99)) because the client
+    // owns id 0 (its own inventory) and 0x78/0x79/0x7a (armor,
+    // creative, hotbar) — id 1 is never used by the server, and a
+    // client that gets it can refuse to open the UI. Every packet of an
+    // open container (open, content, per-slot, progress, close) carries
+    // THIS id, and ContainerSetSlot is routed back by it.
+    uint8_t containerWindowId() const { return container_window_id_; }
 
-    // Ventana del horno abierto. Mismo esquema de id fijo que
-    // CHEST_WINDOW_ID: un jugador solo tiene UN contenedor abierto a la
-    // vez, y el cliente MCPE 0.15.x distingue "horno" de "cofre" por
-    // el TYPE byte de ContainerOpenPacket (TYPE_FURNACE), no por el id.
-    static constexpr uint8_t FURNACE_WINDOW_ID = 2;
+    // Next container window id for this player: 2..98, cycling, the
+    // same range Infinity hands out. Returns the id it just handed out.
+    uint8_t openContainerWindow();
 
     // --- Batch packets (Nukkit: batchDataPacket/dataPacket/directDataPacket) ---
     bool batchDataPacket(const std::vector<uint8_t>& data);
@@ -426,12 +422,16 @@ private:
     network::AdvancedSourceInterface* adv_iface_ = nullptr;
     std::shared_ptr<inventory::PlayerInventory> inv_;
     std::shared_ptr<Level> level_;
-    // El contenedor abierto ahora mismo (cofre o horno), tipado por
-    // tipo de tile. Solo hay UNO a la vez (ver CHEST_WINDOW_ID /
-    // FURNACE_WINDOW_ID). Set por openChestAt()/openFurnaceAt(),
+    // El contenedor abierto ahora mismo (cofre u horno), tipado por
+    // tipo de tile. Solo hay UNO a la vez (ver container_window_id_ /
+    // openContainerWindow()). Set por openChestAt()/openFurnaceAt(),
     // limpiado por closeOpenChest().
     std::shared_ptr<tile::TileChest> open_chest_;
     std::shared_ptr<tile::TileFurnace> open_furnace_;
+    // Window id currently in use by open_chest_/open_furnace_, and the
+    // counter that hands out the next one (see containerWindowId()).
+    uint8_t container_window_id_ = 0;
+    uint8_t next_container_window_id_ = 2;
     NbtPtr named_tag_;                       // player.dat contents (lazy load)
     std::atomic<bool> connected_{false};
     std::atomic<bool> logged_in_{false};

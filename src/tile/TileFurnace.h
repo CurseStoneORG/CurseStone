@@ -18,11 +18,18 @@
 #include "Spawnable.h"
 #include "item/ItemStack.h"   // required for std::vector<ItemStack> member below
 #include <vector>
-namespace cursestone::inventory { class FurnaceInventory; }
+namespace cursestone::inventory {
+class FurnaceInventory;
+class CraftingManager;
+}
 namespace cursestone::tile {
 class TileFurnace : public Tile, public Container, public Nameable, public Spawnable {
 public:
-    TileFurnace(cursestone::level::Position pos);
+    // `recipes` defaults to the server's CraftingManager; passing one
+    // explicitly is only used by the verification harness, which has no
+    // booted server to ask.
+    explicit TileFurnace(cursestone::level::Position pos,
+                         const cursestone::inventory::CraftingManager* recipes = nullptr);
     ~TileFurnace() override;
     int size() const override { return 3; }
     void setItem(int slot, const cursestone::item::ItemStack& it) override;
@@ -52,6 +59,12 @@ public:
     // para InventoryOpenEvent.
     const std::unique_ptr<cursestone::inventory::FurnaceInventory>& inventory() const { return inv_; }
 private:
+    // Where the smelting recipes come from; null = ask the server.
+    const cursestone::inventory::CraftingManager* recipes_;
+    // Swaps the block between FURNACE and BURNING_FURNACE when the fire
+    // lights or goes out, and tells the players looking at it.
+    void setFlame(bool lit);
+
     // Ticks totales que rinde ese item como fuel (0 = no es fuel).
     static int fuelBurnTicks(uint16_t id);
     // Resultado de fundir `in` (receta de horno del CraftingManager).
@@ -65,6 +78,7 @@ private:
     int max_burn_time_ = 0;   // total ticks del último fuel encendido (escala UI)
     int cook_time_ = 0;       // progreso de la fundición actual (0..200)
     bool dirty_inventory_ = false;  // el tick debe reenviar contenido
+    bool lit_ = false;              // el bloque ya está en BURNING_FURNACE
     std::vector<void*> viewers_;    // Player* crudos, NO desreferenciar (solo comparar)
 };
 } // namespace
