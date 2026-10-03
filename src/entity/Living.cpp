@@ -40,6 +40,15 @@ bool Living::damageByEntity(float amount, Entity* damager) {
 }
 
 void Living::heal(float amount) {
+    // Un ente muerto NO se cura: sin este guard, la regeneracion natural
+    // (Player::tickHungerAndDamage, seccion 4c) volvia a subir la vida de
+    // 0 a 1 en el MISMO tick en que el golpe fatal disparaba onDeath().
+    // Resultado: el chat decia "died" pero el jugador seguia vivo con un
+    // trozo de corazon, y al tocar Respawn respawn() no hacia nada porque
+    // isDead() ya era false. Genisys/Infinity solo procesan la
+    // regeneracion mientras el ente esta vivo (Player::onUpdate hace
+    // `if(!$this->isAlive() ...) return;`).
+    if (isDead()) return;
     health_ += amount;
     if (health_ > max_health_) health_ = max_health_;
 }
