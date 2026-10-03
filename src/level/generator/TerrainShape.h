@@ -52,6 +52,13 @@ int columnHeight(const TerrainNoise& n, double wx, double wz);
 // connected network that cuts through hills and mountains.
 double riverMask(const TerrainNoise& n, double wx, double wz);
 
+// Distance in BLOCKS from the river's centre line, estimated as
+// |field| / |gradient|. This is the coordinate the whole river shape is
+// built on: the terrain carve, the biome choice, the shoreline test and
+// the bank all read it, so they can never disagree about where the river
+// is or how wide it is.
+double riverDistance(const TerrainNoise& n, double wx, double wz);
+
 // Wide, gentle mask in [0,1] shaping the VALLEY the river runs through.
 // This is deliberately much broader than riverMask(): the water sits in a
 // thin channel at the bottom of a wide, softly sloping valley, which is

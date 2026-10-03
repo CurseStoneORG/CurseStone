@@ -19,6 +19,44 @@ inline double smoothstep(double e0, double e1, double x) {
 // Land mask: 0 over deep ocean, 1 on the continent.
 inline double landMask(double cont) { return smoothstep(-0.28, 0.02, cont); }
 
+// ---- River cross-section -----------------------------------------------
+// Ground height of a river as a function of the BLOCK distance `d` to the
+// centre line of the channel. Four tiers, and together they are what gives
+// a river its read from the bank:
+//   * a flat bed, well under the water surface,
+//   * a short lip climbing to the water line,
+//   * a flat grass bank AT the water line, 2-3 blocks wide,
+//   * then a steady climb that terraces into the surrounding land.
+//
+// The river used to be cut with a mask that dropped straight from untouched
+// ground to a fixed bed, which is why every reach ended in a sheer vertical
+// wall ("tan caido") with no bank and no steps. A smooth distance profile
+// cannot produce that: the ground only ever descends 1.1 blocks per block
+// outwards, so the smoothing kernel turns it into the stepped dirt/stone
+// banks the reference rivers have.
+constexpr double kRiverBed   = 2.4;   // half width carved to full depth
+constexpr double kRiverEdge  = 3.2;   // where the bed reaches sea level
+constexpr double kRiverShore = 3.0;   // flat grass bank at water level
+constexpr double kRiverClimb = 1.2;   // blocks of rise per block outwards
+
+inline double riverProfile(double d) {
+    const double bed = (double)kSeaLevel - 4.0;
+    if (d <= kRiverBed) return bed;
+    if (d <= kRiverEdge) {
+        const double t = (d - kRiverBed) / (kRiverEdge - kRiverBed);
+        return bed + ((double)kSeaLevel - bed) * t;
+    }
+    // Flat bank at the water line, then the climb. The flat tier has to be an
+    // explicit clamp, not just the start of the climb: without it the
+    // profile keeps rising straight through sea level and the "bank" ends
+    // up under the water instead of being a flat shelf beside it.
+    if (d <= kRiverEdge + kRiverShore) return (double)kSeaLevel;
+    // Capped so a mountain cannot be cut into a bottomless trench; past the
+    // cap the broad valley terms take over.
+    const double dc = std::min(d, kRiverEdge + kRiverShore + 24.0);
+    return (double)kSeaLevel + (dc - kRiverEdge - kRiverShore) * kRiverClimb;
+}
+
 } // namespace
 
 double continentField(const TerrainNoise& n, double wx, double wz) {
@@ -328,14 +366,15 @@ double rawColumnHeight(const TerrainNoise& n, double wx, double wz) {
         h -= rs * rs * (3.0 - 2.0 * rs) * depth;
     }
 
-    const double rm = riverMask(n, wx, wz) * land;
-    if (rm > 0.0) {
-        // Bed a few blocks under the water surface so the channel always
-        // holds water at exactly kSeaLevel. min() guarantees the cut only
-        // ever lowers the ground — blending to a fixed bed used to RAISE
-        // low ground back up and leave the river dry.
-        const double bed = (double)kSeaLevel - 4.0;
-        h += (std::min(h, bed) - h) * rm;
+    // ---- River channel ---------------------------------------------------
+    // A smooth cross-section of the distance to the centre line (see
+    // riverProfile) instead of a mask. min() guarantees the cut only ever
+    // LOWERS the ground — blending to a fixed bed used to RAISE low ground
+    // back up and leave the river dry — and because the profile descends
+    // gently the banks come out as steps rather than as a sheer drop.
+    if (land > 0.02) {
+        const double fade = std::min(1.0, land / 0.30);
+        h -= std::max(0.0, h - riverProfile(riverDistance(n, wx, wz))) * fade;
     }
 
     return std::clamp(h, 10.0, 122.0);
@@ -416,7 +455,9 @@ inline double riverField(const TerrainNoise& n, double wx, double wz) {
 // into a lake. Dividing by the gradient turns the threshold into a real
 // distance, so the water keeps the same width whether the field is steep or
 // almost flat and a flat spot can no longer inflate the river.
-inline double riverDistance(const TerrainNoise& n, double wx, double wz) {
+} // namespace
+
+double riverDistance(const TerrainNoise& n, double wx, double wz) {
     const double v  = riverField(n, wx, wz);
     const double gx = riverField(n, wx + 1.0, wz) - riverField(n, wx - 1.0, wz);
     const double gz = riverField(n, wx, wz + 1.0) - riverField(n, wx, wz - 1.0);
@@ -425,21 +466,17 @@ inline double riverDistance(const TerrainNoise& n, double wx, double wz) {
     return std::fabs(v) / g;
 }
 
-} // namespace
-
 double riverMask(const TerrainNoise& n, double wx, double wz) {
     // Rivers are the zero contour of the low-frequency field, so the water
     // is the set of columns within a couple of blocks of that contour.
     const double d = riverDistance(n, wx, wz);
-    // Measured in BLOCKS now (see riverDistance). The player asked for a
-    // real river between 6 and 8 blocks across, not a ditch. kCore is the
-    // radius that is carved at FULL depth (so 2*kCore + 1 columns are
-    // guaranteed to hold water), and kEdge is where the bank ends. With
-    // kCore ~2.8 the guaranteed channel is ~6-7 blocks, and the softer
-    // partial-carve fringe pushes the measured run to ~7-8 — right in the
-    // requested range.
-    constexpr double kCore = 2.9;   // fully carved channel floor
-    constexpr double kEdge = 3.2;   // river bank
+    // Kept in step with the channel profile (kRiverBed / kRiverEdge) so
+    // that "is there a river here" and "what does the river carve here"
+    // can never disagree. The water itself is carved by riverProfile();
+    // this mask is the cheap 0..1 weight the biome choice and the gravel
+    // and clearing masks read.
+    constexpr double kCore = 2.4;   // fully carved channel floor
+    constexpr double kEdge = 3.2;   // water's edge
     if (d >= kEdge) return 0.0;
     if (d <= kCore) return 1.0;
     const double t = (d - kCore) / (kEdge - kCore);
@@ -509,11 +546,14 @@ bool isOceanShore(const TerrainNoise& n, double wx, double wz, int h, int radius
             if (dx == 0 && dz == 0) continue;
             if (rawColumnHeight(n, wx + dx, wz + dz) >= (double)kSeaLevel - 0.5)
                 continue;   // that neighbour is not water
-            // The water we touch has to be OCEAN. A river channel is also
+            // The water we touch has to be OCEAN, not a river channel. Both are
             // water at the same level, but a sandy bank is the NORM along
-            // the sea and only an occasional accident along a river — and
-            // this test is what tells the two apart.
-            if (riverMask(n, wx + dx, wz + dz) < 0.15) return true;
+            // the sea and only an occasional accident along a river, so
+            // this test is what tells the two apart — and getting it wrong
+            // is what painted every river bank as a sand beach. The water
+            // has to be a good way clear of the channel profile before it
+            // counts as sea.
+            if (riverDistance(n, wx + dx, wz + dz) > 8.0) return true;
         }
     }
     return false;
@@ -595,10 +635,12 @@ uint8_t columnBiome(const TerrainNoise& n, double wx, double wz, int h) {
     // River channel FIRST: a carved channel drops to kSeaLevel - 4, which is
     // below the ocean cut, so testing the ocean first would label the whole
     // river as OCEAN (the channel used to be mislabelled that way, which is
-    // why the river looked like an ocean trench). The height band keeps the
-    // river tag on the shallow channel bed only: deeper water is real ocean.
-    const double rm = riverMask(n, wx, wz);
-    if (rm > 0.25 && h < kSeaLevel && h >= kSeaLevel - 6)
+    // why the river looked like an ocean trench). The test asks the same
+    // channel profile the terrain carve uses, so the biome, the water and
+    // the bank all agree on where the river ends. The height band keeps the
+    // river tag on the channel bed only: deeper water is real ocean.
+    const double rd = riverDistance(n, wx, wz);
+    if (rd <= kRiverEdge + 1.6 && h < kSeaLevel && h >= kSeaLevel - 6)
         return (t < -0.25) ? BIOME_FROZEN_RIVER : BIOME_RIVER;
 
     // Below sea level minus a shallow margin: open ocean.
