@@ -37,9 +37,15 @@ inline double landMask(double cont) { return smoothstep(-0.28, 0.02, cont); }
 constexpr double kRiverBed   = 2.4;   // half width carved to full depth
 constexpr double kRiverEdge  = 3.2;   // where the bed reaches sea level
 constexpr double kRiverShore = 3.0;   // flat grass bank at water level
-constexpr double kRiverClimb = 1.2;   // blocks of rise per block outwards
+constexpr double kRiverClimb = 1.2;   // lowland: gentle terraced banks
+constexpr double kCliffClimb = 17.0;  // eroded gorge wall, ~80 deg once smoothed
+// How hard the river network is pulled towards the jungle belt, as a
+// fraction of the river field's own range. Roughly this many blocks of
+// sideways deflection across the gradient — big enough to visibly steer the
+// network, small enough that no reach is ever torn in two.
+constexpr double kRiverJungleBias = 0.24;
 
-inline double riverProfile(double d) {
+inline double riverProfile(double d, double climb) {
     const double bed = (double)kSeaLevel - 4.0;
     if (d <= kRiverBed) return bed;
     if (d <= kRiverEdge) {
@@ -53,8 +59,27 @@ inline double riverProfile(double d) {
     if (d <= kRiverEdge + kRiverShore) return (double)kSeaLevel;
     // Capped so a mountain cannot be cut into a bottomless trench; past the
     // cap the broad valley terms take over.
-    const double dc = std::min(d, kRiverEdge + kRiverShore + 24.0);
-    return (double)kSeaLevel + (dc - kRiverEdge - kRiverShore) * kRiverClimb;
+    const double dc = std::min(d, kRiverEdge + kRiverShore + 40.0);
+    return (double)kSeaLevel + (dc - kRiverEdge - kRiverShore) * climb;
+}
+
+// How steeply a river bank climbs. `cliff` is the erosion regime of the
+// reach, in [0,1] — see where it is computed in rawColumnHeight.
+//
+// This is what separates a lowland river from a high-country one. Down in
+// the plains a river meanders across a gentle slope, so its banks stay
+// softly terraced. High up — a savanna plateau, a mountain — the same water
+// has to fall the same height over a much shorter run, and it cuts a CLIFF:
+// the gradient steepens towards 80 degrees, which is what an eroded gorge
+// through high ground actually looks like.
+//
+// kCliffClimb sits well above the raw tan(80) = 5.67 on purpose. The
+// (1,4,1) smoothing kernel averages every column with its eight neighbours,
+// so a raw wall rising R blocks per column comes out as roughly R/3 — there
+// is a factor of about three between this constant and the slope you
+// actually walk up.
+inline double riverClimbRate(double cliff) {
+    return kRiverClimb + cliff * (kCliffClimb - kRiverClimb);
 }
 
 } // namespace
@@ -311,6 +336,21 @@ double rawColumnHeight(const TerrainNoise& n, double wx, double wz) {
     // coastal shelf under water and flooding the land into ocean.
     const double offshore = smoothstep(-0.20, -0.45, cont) * (1.0 - land);
     h -= offshore * 20.0;
+    // A smooth depth ramp on its own reads as one giant bowl — a smooth
+    // hill under the water — which is not how a sea floor looks. Vanilla
+    // floors are procedural: seamounts and ridges rising out of the deep,
+    // saddles and trenches between them, and a general roughness at every
+    // scale. Both terms below are weighted by `offshore`, so the coast keeps
+    // its smooth shelf and only the genuinely deep water gets relief.
+    if (offshore > 0.0) {
+        const double floorN = mcp_simplex_fbm2d(n.height, wx * 0.0048 + 2200.0,
+                                                wz * 0.0048 - 6100.0, 3, 0.5, 2.0);
+        const double ridgeIn = mcp_simplex_fbm2d(n.height, wx * 0.0021 - 4400.0,
+                                                wz * 0.0021 + 1700.0, 2, 0.5, 2.0);
+        double seamount = 1.0 - std::fabs(ridgeIn);
+        seamount = seamount * seamount;
+        h += offshore * (floorN * 7.0 + (seamount - 0.28) * 13.0);
+    }
 
     // ---- Plains variant: a raised table ---------------------------------
     // A few blocks above the ordinary plain and flat on top. It is applied
@@ -328,6 +368,19 @@ double rawColumnHeight(const TerrainNoise& n, double wx, double wz) {
     h += 24.0 * savannaCanyon(n, wx, wz);
 
     // ---- Rivers ---------------------------------------------------------
+    // The height the land stands at before ANY river term runs. The gorge
+    // steepness below is read from this, not from the height the valley has
+    // already dug, so the whole gorge shares one cliff angle.
+    const double hLand = h;
+    // Erosion regime of this reach, in [0,1]: 0 where a river meanders across
+    // a gentle lowland slope, 1 where it has to cut through high ground.
+    // Read from the height the land stands at BEFORE any river term runs, so
+    // a whole gorge agrees on its regime — deriving it from the post-valley
+    // height instead made the cliff rate depend on how much the valley had
+    // already eaten, which varies from column to column and tore the gorge
+    // into steps.
+    const double cliff = smoothstep((double)kSeaLevel + 8.0,
+                                    (double)kSeaLevel + 28.0, hLand);
     // Three stages, on purpose. A WIDE valley lowers the land into a gentle
     // bowl, a still wider SKIRT eases the approach, and only then does the
     // NARROW river mask cut a thin channel into the bottom of that bowl.
@@ -348,7 +401,14 @@ double rawColumnHeight(const TerrainNoise& n, double wx, double wz) {
         const double above = std::max(0.0, h - (double)kSeaLevel);
         const double depth = std::min(std::min(5.0 + above * 0.40, 13.0),
                                       std::max(0.0, h - (double)(kSeaLevel + 1)));
-        h -= rv * rv * (3.0 - 2.0 * rv) * depth;
+        // EROSION: in high country the same water cuts a narrow GORGE
+        // rather than laying out a broad valley, so the valley is damped out
+        // as `cliff` rises. This is what actually makes the cliff appear —
+        // with the valley left at full strength it pre-lowered the ground
+        // across the whole width of the gorge, and the cliff profile below
+        // then had almost nothing left to cut, which measured as a gentle
+        // slope no matter how steep the profile constant was.
+        h -= rv * rv * (3.0 - 2.0 * rv) * depth * (1.0 - 0.85 * cliff);
     }
 
     // The wide, shallow skirt: same idea, spread much further out so the
@@ -363,7 +423,7 @@ double rawColumnHeight(const TerrainNoise& n, double wx, double wz) {
         const double above = std::max(0.0, h - (double)kSeaLevel);
         const double depth = std::min(std::min(0.8 + above * 0.38, 9.0),
                                       std::max(0.0, h - (double)(kSeaLevel + 1)));
-        h -= rs * rs * (3.0 - 2.0 * rs) * depth;
+        h -= rs * rs * (3.0 - 2.0 * rs) * depth * (1.0 - 0.85 * cliff);
     }
 
     // ---- River channel ---------------------------------------------------
@@ -374,7 +434,9 @@ double rawColumnHeight(const TerrainNoise& n, double wx, double wz) {
     // gently the banks come out as steps rather than as a sheer drop.
     if (land > 0.02) {
         const double fade = std::min(1.0, land / 0.30);
-        h -= std::max(0.0, h - riverProfile(riverDistance(n, wx, wz))) * fade;
+        const double target =
+            riverProfile(riverDistance(n, wx, wz), riverClimbRate(cliff));
+        h -= std::max(0.0, h - target) * fade;
     }
 
     return std::clamp(h, 10.0, 122.0);
@@ -428,22 +490,42 @@ namespace {
 // field could have right at zero. On a flat spot the zero contour is
 // ill-defined, the block distance blows up or collapses and the river used
 // to vanish or flood the whole flat.
-inline double riverField(const TerrainNoise& n, double wx, double wz) {
-    // Vanilla-Java meandering: the warp that bends the reach is a SINGLE
-    // very low-frequency octave. Two octaves (what this used to be) add a
-    // shorter wavelength on top, which shows up as small back-and-forth
-    // wiggles instead of the long, lazy S-curves a Java river makes. One
-    // broad octave (~1700-block wavelength) bends each reach smoothly and
-    // keeps the network connected.
-    constexpr double kWarpFreq = 0.00060;   // ~1700-block wavelength
+inline double riverField(const TerrainNoise& n, double wx, double wz, double bias) {
+    // Irregular meandering. One very broad octave (~1700-block wavelength)
+    // gives the reach its long lazy S-curves, and a second octave at only
+    // 30% amplitude and a 2.4x shorter wavelength breaks the curve up, so
+    // the river still snakes continuously but changes direction sharply
+    // and unevenly instead of reading as a smooth drawn arc.
+    constexpr double kWarpFreq = 0.00060;
     constexpr double kAmp      = 30.0;      // blocks of sideways displacement
     const double ox = mcp_simplex_fbm2d(n.surface, wx * kWarpFreq + 12000.0,
-                                        wz * kWarpFreq - 3100.0, 1, 0.5, 2.0);
+                                        wz * kWarpFreq - 3100.0, 2, 0.30, 2.4);
     const double oz = mcp_simplex_fbm2d(n.surface, wx * kWarpFreq - 7300.0,
-                                        wz * kWarpFreq + 9100.0, 1, 0.5, 2.0);
-    return mcp_simplex_fbm2d(n.river,
-                             (wx + ox * kAmp) * 0.0014,
-                             (wz + oz * kAmp) * 0.0014, 4, 0.5, 2.0);
+                                        wz * kWarpFreq + 9100.0, 2, 0.30, 2.4);
+    const double f = mcp_simplex_fbm2d(n.river,
+                                       (wx + ox * kAmp) * 0.0014,
+                                       (wz + oz * kAmp) * 0.0014, 4, 0.5, 2.0);
+    // Subtracting the bias moves the zero contour towards the jungle belt.
+    return f - bias;
+}
+
+// How strongly this column is pulled towards the jungle belt, as a fraction
+// of the river field's own range. Rivers are wanted to run mostly through
+// jungle, and the way to do that without wrecking the network is to DEFLECT
+// the existing contour rather than to draw new rivers: the climate fields
+// change over thousands of blocks, far more slowly than the river field
+// itself, so adding a small smooth term shifts each reach towards the wet
+// hot country while leaving every reach connected. The contour sits where
+// field == bias, so subtracting the bias walks it into the jungle.
+inline double riverJungleBias(const TerrainNoise& n, double wx, double wz) {
+    // One octave each: this is a very slow field, so the extra octave the
+    // public tempAt()/humidAt() use buys nothing here and this runs for
+    // every column of the world.
+    const double t  = mcp_simplex_fbm2d(n.temp,   wx * 0.0004, wz * 0.0004, 1, 0.5, 2.0);
+    const double hu = mcp_simplex_fbm2d(n.humid,  wx * 0.0005, wz * 0.0005, 1, 0.5, 2.0);
+    // The jungle band of BiomeRegistry::select(): hot AND genuinely wet.
+    const double lush = smoothstep(0.34, 0.60, t) * smoothstep(0.18, 0.45, hu);
+    return kRiverJungleBias * lush;
 }
 
 // Distance in BLOCKS from the river's zero contour, estimated as
@@ -458,9 +540,10 @@ inline double riverField(const TerrainNoise& n, double wx, double wz) {
 } // namespace
 
 double riverDistance(const TerrainNoise& n, double wx, double wz) {
-    const double v  = riverField(n, wx, wz);
-    const double gx = riverField(n, wx + 1.0, wz) - riverField(n, wx - 1.0, wz);
-    const double gz = riverField(n, wx, wz + 1.0) - riverField(n, wx, wz - 1.0);
+    const double bias = riverJungleBias(n, wx, wz);
+    const double v  = riverField(n, wx, wz, bias);
+    const double gx = riverField(n, wx + 1.0, wz, bias) - riverField(n, wx - 1.0, wz, bias);
+    const double gz = riverField(n, wx, wz + 1.0, bias) - riverField(n, wx, wz - 1.0, bias);
     const double g  = 0.5 * std::sqrt(gx * gx + gz * gz);   // field per block
     if (g < 1e-9) return 1e9;                               // no contour here
     return std::fabs(v) / g;
@@ -484,7 +567,7 @@ double riverMask(const TerrainNoise& n, double wx, double wz) {
 }
 
 double riverValley(const TerrainNoise& n, double wx, double wz) {
-    const double d = std::fabs(riverField(n, wx, wz));
+    const double d = std::fabs(riverField(n, wx, wz, riverJungleBias(n, wx, wz)));
     // Much wider than riverMask(): this is the valley the river runs along,
     // and its edges fade out over a long distance so the banks slope
     // instead of dropping off a cliff. Note this is still the raw FIELD
@@ -497,13 +580,14 @@ double riverValley(const TerrainNoise& n, double wx, double wz) {
 }
 
 double riverShoulder(const TerrainNoise& n, double wx, double wz) {
+    const double bias = riverJungleBias(n, wx, wz);
     // A very wide, shallow skirt around the valley. One wide valley on its
     // own was measured to make the banks STEEPER, not gentler: widening the
     // mask just moved the same drop further out, so the step from valley
     // floor to untouched ground stayed abrupt. Adding this second, much
     // broader and shallower tier on top spreads the remaining drop over a
     // long distance, which is what actually flattens the transition.
-    const double d = std::fabs(riverField(n, wx, wz));
+    const double d = std::fabs(riverField(n, wx, wz, bias));
     constexpr double kShoulder = 0.78;
     if (d >= kShoulder) return 0.0;
     return 1.0 - smoothstep(0.0, kShoulder, d);
