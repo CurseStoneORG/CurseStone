@@ -142,7 +142,7 @@ bool ItemFlintSteel::onActivate(level::Level* level, Player* player,
 
         int32_t cx = bx >> 4, cz = bz >> 4;
         for (auto& other : srv->playersSnapshot()) {
-            if (other && other->isTrackingChunk(cx, cz))
+            if (other && other->canSeeBlock(cx, cz))
                 other->sendPacket(ubp);
         }
     }

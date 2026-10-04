@@ -73,7 +73,17 @@ public:
     void setBanned(bool v) override;
     bool isWhitelisted() const override;
     void setWhitelisted(bool v) override;
-    bool hasPermission(const std::string& name) const override { return PermissibleBase::hasPermission(name); }
+    // Permisos: los nodos explicitos (attachments/plugins) mandan; si no hay
+    // ninguno, un op tiene por defecto todo el sub-arbol "cursestone.*"
+    // y un jugador normal no tiene nada. Es lo que describe
+    // permission/DefaultPermissions ("Sub-tree cursestone.* — given to
+    // ops only by default"), que todavia no esta cableado al login.
+    bool hasPermission(const std::string& name) const override {
+        if (PermissibleBase::hasPermission(name)) return true;
+        if (!isOp()) return false;
+        static const std::string kRoot = "cursestone.";
+        return name.size() > kRoot.size() && name.compare(0, kRoot.size(), kRoot) == 0;
+    }
     void recalculatePermissions() override {}
 
     // --- Player session lifecycle ---
@@ -233,6 +243,29 @@ public:
     // Returns true if this player is currently tracking the given chunk.
     // Used to broadcast particles + sounds only to nearby players.
     bool isTrackingChunk(int32_t cx, int32_t cz) const;
+
+    // ¿Este cliente puede ver el bloque del chunk (cx, cz)?
+    //
+    // DISTINTO de isTrackingChunk(), que consulta used_chunks_ — el
+    // registro de chunks "ya enviados". Ese registro se vacia y se vuelve
+    // a poblar por caminos administrativos (teleport(), el ACK de spawn
+    // del cliente, handleClientSpawnAck(), sendChunksAroundSpawn) y
+    // durante esas ventanas used_chunks_ puede estar VACIO mientras el
+    // cliente sigue mostrando el mundo que ya tiene en pantalla.
+    //
+    // Usar ese registro como filtro de la difusión de cambios de bloque
+    // es la causa del bug reportado: "cuando alguien rompe un bloque los
+    // demas aun ven el bloque y se puede atravesar como fantasma" —
+    // el receptor queda con el bloque dibujado y su malla de colisión
+    // intacta porque nunca le llega el UpdateBlockPacket.
+    //
+    // Este metodo responde la pregunta REAL ("¿el chunk esta dentro de
+    // la distancia de vision de este jugador?") con la misma criterio que
+    // usa buildChunkSpiral(view_distance) para decidir que chunks
+    // streamed. Mandarle un UpdateBlockPacket a un cliente que todavia no
+    // tiene ese chunk no hace daño: el cambio llega igual dentro del
+    // FullChunkDataPacket cuando el chunk se descarga.
+    bool canSeeBlock(int32_t cx, int32_t cz) const;
 
     // --- Server → Player packets ---
     // ordered=true guarantees this packet is delivered to the client

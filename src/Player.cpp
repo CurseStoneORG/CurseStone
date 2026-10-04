@@ -358,6 +358,19 @@ bool Player::isTrackingChunk(int32_t cx, int32_t cz) const {
     return used_chunks_.count(hash) > 0;
 }
 
+// Ver la nota larga en Player.h. Criterio de DISTANCIA, no de bookkeeping:
+// "¿esta el chunk dentro de mi distancia de vision?".
+bool Player::canSeeBlock(int32_t cx, int32_t cz) const {
+    int32_t pcx = (int32_t)std::floor(pos_.x) >> 4;
+    int32_t pcz = (int32_t)std::floor(pos_.z) >> 4;
+    int32_t vd  = cfg_.view_distance;
+    if (vd < 1) vd = 1;
+    int32_t dx = cx - pcx, dz = cz - pcz;
+    if (dx < 0) dx = -dx;
+    if (dz < 0) dz = -dz;
+    return dx <= vd && dz <= vd;
+}
+
 void Player::sendPacket(std::shared_ptr<network::protocol::DataPacket> p,
                          bool ordered) {
     if (!p) return;
@@ -1610,6 +1623,15 @@ void Player::sendChunksAroundSpawn() {
 // Phase 6 — doFirstSpawn
 // ============================================================
 
+// Helper: "0x%02X" de un byte, para los logs de diagnóstico.
+static std::string hex8(uint8_t v) {
+    static const char* d = "0123456789ABCDEF";
+    std::string s = "0x";
+    s += d[v >> 4];
+    s += d[v & 0x0F];
+    return s;
+}
+
 // Helper: transmite un cambio de bloque puntual a todos los jugadores
 // que estén viendo ese chunk. Se usa para componentes de redstone que
 // cambian más de un bloque (por ejemplo, puertas).
@@ -1626,7 +1648,7 @@ static void broadcastBlockChange(cursestone::Server* server, int32_t x, int32_t 
     int32_t cx = x >> 4, cz = z >> 4;
     for (auto& player : server->playersSnapshot()) {
         if (!player) continue;
-        if (!player->isTrackingChunk(cx, cz)) continue;
+        if (!player->canSeeBlock(cx, cz)) continue;
         player->sendPacket(ubp);
     }
 }
@@ -2264,15 +2286,24 @@ void Player::handleBlockBreak(int x, int y, int z) {
     partEv->z = (float)z + 0.5f;
     partEv->data = ((int32_t)blockId & 0xFF) | ((int32_t)blockData << 12);
 
-    // Broadcast only to players tracking this chunk (PMMP `addChunkPacket`).
+    // Broadcast only to players who can SEE this chunk — PMMP
+    // `Level::getChunkPlayers()`. Deliberately NOT isTrackingChunk():
+    // see the note on canSeeBlock() — used_chunks_ is send bookkeeping
+    // that gets cleared by teleport/spawn-ACK and goes empty while the
+    // client is still rendering, which silently dropped every block
+    // change for those players (the "ghost block" bug).
     int32_t pk_cx = x >> 4;
     int32_t pk_cz = z >> 4;
+    int broadcastTo = 0, broadcastOk = 0;
     if (srv_) {
         for (auto& other : srv_->playersSnapshot()) {
             if (!other) continue;
-            if (!other->isTrackingChunk(pk_cx, pk_cz)) continue;
+            if (!other->canSeeBlock(pk_cx, pk_cz)) continue;
+            ++broadcastTo;
+            if (!other->spawned()) continue;
             other->sendPacket(ubp);
             other->sendPacket(partEv);
+            ++broadcastOk;
         }
     }
 
@@ -2290,6 +2321,16 @@ void Player::handleBlockBreak(int x, int y, int z) {
         utils::MainLogger::get().info("[BLOCK] " + cfg_.username + " broke block at " +
             std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(z) +
             " (was id=" + std::to_string(blockId) + " data=" + std::to_string(blockData) + ")");
+        // DIAGNOSTICO del bug "los demas no ven el bloque roto":
+        // cuantos jugadores quedaron dentro del area de vision del chunk
+        // y a cuantos realmente se les mando el UpdateBlockPacket. Si
+        // esto dice sent=0 con area>0, el paquete se perdio en el camino;
+        // si area=0, el filtro de distancia todavia no cubre al receptor.
+        utils::MainLogger::get().info("[BLOCK-SYNC] break at chunk " +
+            std::to_string(pk_cx) + "," + std::to_string(pk_cz) +
+            " flags=" + hex8(network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY) +
+            " -> in_view=" + std::to_string(broadcastTo) +
+            " sent=" + std::to_string(broadcastOk));
     }
 }
 
@@ -2550,7 +2591,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
                 if (srv_) {
                     for (auto& other : srv_->playersSnapshot()) {
                         if (!other) continue;
-                        if (!other->isTrackingChunk(tcx, tcz)) continue;
+                        if (!other->canSeeBlock(tcx, tcz)) continue;
                         other->sendPacket(ubp);
                     }
                 }
@@ -2891,16 +2932,21 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     sndEv->z = (float)placeZ;
     sndEv->data = (int32_t)placedBlockId;
 
-    // Same chunk-filter as for block break (PMMP `Level::addSound`).
+    // Same visibility filter as for block break (PMMP `Level::addSound` /
+    // `getChunkPlayers`) — distance based, see canSeeBlock().
     int32_t pk_cx = placeX >> 4;
     int32_t pk_cz = placeZ >> 4;
+    int placeInView = 0, placeSent = 0;
     if (srv_) {
         for (auto& other : srv_->playersSnapshot()) {
             if (!other) continue;
-            if (!other->isTrackingChunk(pk_cx, pk_cz)) continue;
+            if (!other->canSeeBlock(pk_cx, pk_cz)) continue;
+            ++placeInView;
+            if (!other->spawned()) continue;
             other->sendPacket(ubp);
             // Skip the place sound for fire/water/lava (PMMP behaviour).
             if (!skipPlaceSound) other->sendPacket(sndEv);
+            ++placeSent;
         }
     }
 
@@ -2917,6 +2963,12 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
             std::to_string(placeX) + "," + std::to_string(placeY) + "," + std::to_string(placeZ) +
             " (id=" + std::to_string(placedBlockId) + " data=" + std::to_string(placedBlockData) +
             " fromItem=" + std::to_string(heldItemId) + ")");
+        // DIAGNOSTICO del bug "colocar/quitar bloques no se ve en
+        // multiplayer" — ver el comentario equivalente en handleBlockBreak.
+        utils::MainLogger::get().info("[BLOCK-SYNC] place at chunk " +
+            std::to_string(pk_cx) + "," + std::to_string(pk_cz) +
+            " -> in_view=" + std::to_string(placeInView) +
+            " sent=" + std::to_string(placeSent));
     }
 }
 
@@ -3722,7 +3774,7 @@ int64_t Player::dropItem(double x, double y, double z, uint16_t itemId,
         if (!other) continue;
         if (other.get() == this) {
             // Always send to the dropper too so they see their own drop.
-        } else if (!other->isTrackingChunk(pk_cx, pk_cz)) {
+        } else if (!other->canSeeBlock(pk_cx, pk_cz)) {
             continue;
         }
         other->sendPacket(pk);
@@ -3988,7 +4040,7 @@ void Player::sendBlockEntityData(int32_t x, int32_t y, int32_t z,
     int32_t cz = z >> 4;
     for (auto& other : srv_->playersSnapshot()) {
         if (!other) continue;
-        if (other.get() == this || other->isTrackingChunk(cx, cz)) {
+        if (other.get() == this || other->canSeeBlock(cx, cz)) {
             other->sendPacket(pk);
         }
     }
@@ -4520,7 +4572,7 @@ void Player::onUpdate(uint64_t current_tick) {
                     if (other.get() == this) continue;
                     if (other->isPendingRemoval()) continue;
                     if (!other->spawned()) continue;
-                    if (!other->isTrackingChunk(pk_cx, pk_cz)) continue;
+                    if (!other->canSeeBlock(pk_cx, pk_cz)) continue;
                     other->sendPacket(pk_viewer);
                 }
                 auto pk_picker = std::make_shared<network::protocol::TakeItemEntityPacket>();

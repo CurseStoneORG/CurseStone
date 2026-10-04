@@ -21,6 +21,24 @@ bool SimpleCommandMap::dispatch(CommandSender* sender, const std::string& cmd_li
         sender->sendMessage("Unknown command: " + name);
         return false;
     }
+    // --- CONTROL DE PERMISOS ---
+    //
+    // Este era el agujero: dispatch() llamaba a execute() directo, sin
+    // mirar nada. De los 15 comandos registrados, solo WorkbenchCommand
+    // chequeaba isOp() en su propio cuerpo — los otros 14 (/stop, /op,
+    // /deop, /give, /kick, /tp, /gamemode, /time, /weather, /save,
+    // /say) los podía ejecutar CUALQUIER jugador sin ser op.
+    //
+    // Ahora el chequeo vive AQUÍ, en el punto único por el que pasan
+    // todos los comandos, en vez de repartido en el cuerpo de cada uno
+    // (donde es facil olvidar uno — que es exactamente lo que pasaba).
+    // Un comando sin nodo declarado (permission_ vacio) sigue siendo
+    // público: help, list, version.
+    Command& cmd = *it->second;
+    if (!cmd.isPublic() && !sender->hasPermission(cmd.permission())) {
+        sender->sendMessage("You do not have permission to use this command.");
+        return false;
+    }
     try {
         return it->second->execute(sender, name, args);
     } catch (const std::exception& e) {

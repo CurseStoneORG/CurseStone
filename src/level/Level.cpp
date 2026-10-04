@@ -651,7 +651,7 @@ void Level::tickDroppedItems(uint64_t current_tick) {
         int32_t pk_cz = (int32_t)std::floor(di->z) >> 4;
         for (auto& p : Server::getInstance().playersSnapshot()) {
             if (!p || !p->spawned()) continue;
-            if (!p->isTrackingChunk(pk_cx, pk_cz)) continue;
+            if (!p->canSeeBlock(pk_cx, pk_cz)) continue;
             p->sendPacket(pk);
         }
     }
