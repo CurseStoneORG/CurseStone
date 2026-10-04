@@ -353,11 +353,22 @@ bool mcp_rak_session_send_payload(mcp_rak_session_t* s,
                                    uint8_t reliability, uint8_t order_channel) {
     if (!s || !sm || !payload || plen == 0) return false;
 
+    // s->mtu is the max IP PACKET size, so the UDP payload budget has to
+    // give up one IPv4 header and one UDP header first. See the long note
+    // on MCP_IPV4_HEADER_BYTES in Session.h — without this every fragment
+    // went out 16 bytes past the 1500-byte MTU and Linux dropped it.
+    if ((size_t)(s->mtu) <= (size_t)(MCP_IPV4_HEADER_BYTES + MCP_UDP_HEADER_BYTES))
+        return false;
+    size_t udp_budget = (size_t)(s->mtu)
+                        - MCP_IPV4_HEADER_BYTES
+                        - MCP_UDP_HEADER_BYTES;
+
     // Max payload in a single datagram (no split header):
-    // mtu - datagram_header(4) - encap_base(10) = mtu - 14
-    size_t max_single = (size_t)(s->mtu)
+    // udp_budget - datagram_header(4) - encap_base(10)
+    size_t max_single = udp_budget
                         - MCP_DATAGRAM_HEADER_BYTES
                         - MCP_ENCAP_BASE_BYTES;
+    if (max_single == 0) return false;
 
     if (plen <= max_single) {
         // Fast path — no splitting.
@@ -371,8 +382,8 @@ bool mcp_rak_session_send_payload(mcp_rak_session_t* s,
     }
 
     // Split path.
-    // Per-fragment payload (with split header): mtu - 14 - 10 = mtu - 24
-    size_t frag_size = (size_t)(s->mtu)
+    // Per-fragment payload (with split header): udp_budget - 4 - 10 - 10
+    size_t frag_size = udp_budget
                        - MCP_DATAGRAM_HEADER_BYTES
                        - MCP_ENCAP_BASE_BYTES
                        - MCP_ENCAP_SPLIT_BYTES;

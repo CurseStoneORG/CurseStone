@@ -57,7 +57,17 @@ void RakLibInterface::start() {
         max_players = server_->maxPlayers();
         online      = (int)server_->playersSnapshot().size();
     }
-    uint16_t mtu  = 1492;
+    // FIX ("stuck on Sincronizando paquetes" on a hosted Linux box): 1492
+    // only fits a path whose MTU is the full 1500 of plain Ethernet. A
+    // VPS/VM/container/WSL2/tunnel typically has 1400 (VXLAN/overlay),
+    // 1392 (some cloud fabrics) or 1350 (WSL2) — and the datagrams are
+    // sent with the don't-fragment bit, so they are dropped, not split.
+    // 1400 is the IPv6 minimum MTU and the conservative value RakNet
+    // itself falls back to; it costs one extra datagram per ~20 fragments
+    // (an 83KB chunk goes 57 -> 60 fragments) and works on every path.
+    // This value is the max IP PACKET size; Session.c subtracts the IPv4
+    // and UDP headers before sizing any payload.
+    const uint16_t mtu = 1400;
 
     mcp_raklib_server_init(&raklib_, serverId_, mtu, &instance_);
 
@@ -108,8 +118,9 @@ void RakLibInterface::shutdown() {
 // ============================================================================
 void RakLibInterface::raklibThreadLoop() {
     // FIX #4 (quantified per audit priority 7 — not an arbitrary number):
-    // MTU here is 1492 bytes (RAKLIB_MAX_MTU), giving ~1460 usable bytes
-    // per fragment after RakNet datagram + encapsulation header overhead.
+    // MTU is 1400 bytes (see the comment on the `mtu` constant below),
+    // giving ~1360 usable bytes per fragment after the IPv4 + UDP +
+    // RakNet datagram + encapsulation header overhead.
     // A serialized 0.15-format chunk (16 sections of block+data+skylight+
     // blocklight) is roughly 80-90KB raw; after the zlib compression this
     // codebase applies to every BatchPacket, NOTE this is an ESTIMATE, not
