@@ -1,6 +1,6 @@
 #include "TimeCommand.h"
 #include "Server.h"
-#include "level/Level.h"
+#include "world/World.h"
 #include "network/protocol/SetTimePacket.h"
 #include "Player.h"
 namespace cursestone {

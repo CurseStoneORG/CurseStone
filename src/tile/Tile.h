@@ -19,7 +19,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>           // required for std::string id_ and Tile(std::string, ...)
-#include "level/Position.h"
+#include "world/Position.h"
 #include "nbt/tag/Tag.h"    // mcp_tag_t
 namespace cursestone::tile {
 class Tile {

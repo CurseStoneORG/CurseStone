@@ -1,6 +1,6 @@
 #include "Player.h"
-#include "level/Level.h"
-#include "level/Position.h"
+#include "world/World.h"
+#include "world/Position.h"
 #include "network/protocol/BlockEntityDataPacket.h"
 #include "network/protocol/ContainerOpenPacket.h"
 #include "network/protocol/ContainerClosePacket.h"

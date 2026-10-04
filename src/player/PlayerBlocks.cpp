@@ -1,6 +1,6 @@
 #include "Player.h"
-#include "level/Level.h"
-#include "level/format/Chunk.h"
+#include "world/World.h"
+#include "world/format/Chunk.h"
 #include "network/protocol/UpdateBlockPacket.h"
 #include "network/protocol/LevelEventPacket.h"
 #include "redstone/RedstoneManager.h"

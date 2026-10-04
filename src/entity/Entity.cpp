@@ -1,5 +1,5 @@
 #include "Entity.h"
-#include "level/Level.h"
+#include "world/World.h"
 namespace cursestone::entity {
 Entity::Entity(int64_t runtime_id, std::shared_ptr<Level> lvl)
     : runtime_id_(runtime_id), level_(std::move(lvl)) {}

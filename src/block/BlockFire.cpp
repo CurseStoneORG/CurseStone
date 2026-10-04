@@ -24,8 +24,8 @@
 //   critically DOES NOT schedule any tick task. Zero stall risk.
 #include "BlockFire.h"
 #include "BlockIds.h"
-#include "level/Level.h"
-#include "level/format/Chunk.h"
+#include "world/World.h"
+#include "world/format/Chunk.h"
 #include "Server.h"
 #include "scheduler/ServerScheduler.h"
 #include "scheduler/Task.h"

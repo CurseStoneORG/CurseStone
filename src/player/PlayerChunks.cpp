@@ -1,6 +1,6 @@
 #include "Player.h"
-#include "level/Level.h"
-#include "level/format/Chunk.h"
+#include "world/World.h"
+#include "world/format/Chunk.h"
 #include "network/protocol/FullChunkDataPacket.h"
 #include "tile/Tile.h"
 #include <cstdlib>

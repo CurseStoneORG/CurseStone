@@ -1,6 +1,6 @@
 #include "SaveCommand.h"
 #include "Server.h"
-#include "level/Level.h"
+#include "world/World.h"
 namespace cursestone {
 bool SaveCommand::execute(CommandSender* sender, const std::string&,
                     const std::vector<std::string>&) {

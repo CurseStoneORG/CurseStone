@@ -7,7 +7,7 @@
 #include <memory>
 #include "math/Vector3.h"
 #include "math/AxisAlignedBB.h"
-#include "level/Position.h"
+#include "world/Position.h"
 namespace cursestone {
 namespace entity {
 class Entity {
