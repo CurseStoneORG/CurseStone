@@ -2,7 +2,7 @@
 // ChunkEvent.h — ported from cn.nukkit.event.level.ChunkEvent
 //
 // Base class for all chunk-related events. Holds a reference to the
-// owning level and an opaque chunk pointer.
+// owning world and an opaque chunk pointer.
 #pragma once
 #include "WorldEvent.h"
 #include <string>
@@ -10,12 +10,12 @@ namespace cursestone { namespace world { class World; } }
 
 namespace cursestone::event::world {
 
-class ChunkEvent : public LevelEvent {
+class ChunkEvent : public WorldEvent {
 public:
     void* chunk;
 
     ChunkEvent(cursestone::world::World* l, void* c)
-        : LevelEvent(l), chunk(c) {}
+        : WorldEvent(l), chunk(c) {}
 
     const std::string& eventName() const override {
         static std::string n = "ChunkEvent"; return n;

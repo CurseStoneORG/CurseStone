@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // ThunderChangeEvent.h — ported from cn.nukkit.event.weather.ThunderChangeEvent
 //
-// Fired when the thunder state of a level changes. Cancellable.
+// Fired when the thunder state of a world changes. Cancellable.
 #pragma once
 #include "WeatherEvent.h"
 #include "../Cancellable.h"

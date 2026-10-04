@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// LevelInitEvent.h — ported from cn.nukkit.event.level.LevelInitEvent
+// WorldInitEvent.h — ported from cn.nukkit.event.level.LevelInitEvent
 //
-// Fired when a level is being initialized (before entities and tiles
+// Fired when a world is being initialized (before entities and tiles
 // are loaded).
 #pragma once
 #include "WorldEvent.h"
@@ -10,13 +10,13 @@ namespace cursestone { namespace world { class World; } }
 
 namespace cursestone::event::world {
 
-class LevelInitEvent : public LevelEvent {
+class WorldInitEvent : public WorldEvent {
 public:
-    explicit LevelInitEvent(cursestone::world::World* l)
-        : LevelEvent(l) {}
+    explicit WorldInitEvent(cursestone::world::World* l)
+        : WorldEvent(l) {}
 
     const std::string& eventName() const override {
-        static std::string n = "LevelInitEvent"; return n;
+        static std::string n = "WorldInitEvent"; return n;
     }
 };
 

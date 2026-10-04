@@ -1,4 +1,4 @@
-// ChunkLoadEvent — level event.
+// ChunkLoadEvent — world event.
 #pragma once
 #include "event/Event.h"
 #include <string>

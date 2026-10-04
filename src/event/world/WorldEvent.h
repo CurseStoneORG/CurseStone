@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// LevelEvent.h — ported from cn.nukkit.event.level.LevelEvent
+// WorldEvent.h — ported from cn.nukkit.event.level.LevelEvent
 //
-// Base class for all level-related events. Holds a reference to the
-// level the event occurred in.
+// Base class for all world-related events. Holds a reference to the
+// world the event occurred in.
 #pragma once
 #include "../Event.h"
 #include <string>
@@ -10,15 +10,15 @@ namespace cursestone { namespace world { class World; } }
 
 namespace cursestone::event::world {
 
-class LevelEvent : public Event {
+class WorldEvent : public Event {
 public:
     cursestone::world::World* world;
 
-    explicit LevelEvent(cursestone::world::World* l)
+    explicit WorldEvent(cursestone::world::World* l)
         : world(l) {}
 
     const std::string& eventName() const override {
-        static std::string n = "LevelEvent"; return n;
+        static std::string n = "WorldEvent"; return n;
     }
 };
 

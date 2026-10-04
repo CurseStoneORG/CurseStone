@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // WeatherEvent.h — ported from cn.nukkit.event.level.WeatherEvent
 //
-// Base class for all weather-related level events (rain / thunder
-// state changes). Holds a reference to the affected level.
+// Base class for all weather-related world events (rain / thunder
+// state changes). Holds a reference to the affected world.
 #pragma once
 #include "../Event.h"
 #include <string>
