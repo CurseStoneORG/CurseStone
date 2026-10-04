@@ -3097,7 +3097,7 @@ void Player::handleCraftingEvent(
     auto leftover = inv_->addItem({result});
     for (const auto& extra : leftover) {
         if (!extra.isEmpty()) {
-            dropItem((int)pos_.x, (int)pos_.y, (int)pos_.z,
+            dropItem(pos_.x, pos_.y, pos_.z,
                      extra.id, (uint8_t)extra.count, extra.meta);
         }
     }
@@ -3294,6 +3294,31 @@ void Player::onDeath() {
             sendPacket(rp);
         }
     }
+    // Genisys Player::kill():
+    //     foreach($ev->getDrops() as $item) $this->level->dropItem($this, $item);
+    //     $this->inventory->clearAll();
+    // Player::getDrops() returns the whole inventory in survival and an
+    // empty array in creative, so this is "everything I was carrying is now
+    // on the ground where I fell" — not just the hotbar.
+    if (inv_ && !isCreative()) {
+        for (int i = 0; i < inv_->getSize(); ++i) {
+            item::ItemStack it = inv_->getItem(i);
+            if (it.isEmpty() || it.id == 0 || it.count <= 0) continue;
+            // $this->level->dropItem($this, $item) -> default motion
+            // (lcg_value()*0.2-0.1, 0.2, lcg_value()*0.2-0.1), delay 10.
+            dropItem(pos_.x, pos_.y, pos_.z,
+                     it.id, (uint8_t)it.count, it.meta);
+        }
+        // Armor too (slots 36..39 live past getSize()).
+        for (int i = inv_->getSize(); i < inv_->getSize() + 4; ++i) {
+            item::ItemStack it = inv_->getItem(i);
+            if (it.isEmpty() || it.id == 0 || it.count <= 0) continue;
+            dropItem(pos_.x, pos_.y, pos_.z,
+                     it.id, (uint8_t)it.count, it.meta);
+        }
+        inv_->clearAll();
+    }
+
     // Cleanup at death: fire goes out, food resets for the next life.
     was_on_fire_ = false;
     was_in_lava_ = false;
@@ -3340,42 +3365,60 @@ static std::pair<uint16_t, uint16_t> lookupBlockDrop(uint8_t blockId, uint8_t bl
 }
 
 // ============================================================
-// Drop an item entity at a position (PMMP `Level::dropItem`)
+// Drop an item entity at a position — pocketmine\level\Level::dropItem()
+// (Genisys 0.15), via Item::spawnTo():
+//
+//     $pk = new AddItemEntityPacket();
+//     $pk->eid = $this->getId();  $pk->x/y/z = <exact entity position>
+//     $pk->speedX/Y/Z = $this->motionX/Y/Z;
+//     $pk->item = $this->getItem();
+//     $player->dataPacket($pk);
+//
+// The default motion is the `(lcg_value()*0.2 - 0.1, 0.2,
+// lcg_value()*0.2 - 0.1)` used for block/death drops; a Q drop passes
+// getDirectionVector()->multiply(0.4) instead (see handleDropItem).
 // ============================================================
-int64_t Player::dropItem(int x, int y, int z, uint16_t itemId, uint8_t count, uint16_t damage) {
+int64_t Player::dropItem(double x, double y, double z, uint16_t itemId,
+                         uint8_t count, uint16_t damage,
+                         double motionX, double motionY, double motionZ,
+                         uint32_t pickup_delay) {
+    // Level::dropItem() bails on an empty stack.
     if (itemId == 0 || count == 0) return 0;
     if (!srv_) return 0;
+    if (motionX == 0.0 && motionY == 0.0 && motionZ == 0.0) {
+        // Level::dropItem()'s default: `$motion = new Vector3(
+        // lcg_value() * 0.2 - 0.1, 0.2, lcg_value() * 0.2 - 0.1)`. The
+        // upward nudge is what makes a broken block's drop pop out of the
+        // block it came from instead of sinking into it.
+        auto lcg = []() {
+            return (double)std::rand() / (double)RAND_MAX;
+        };
+        motionX = lcg() * 0.2 - 0.1;
+        motionY = 0.2;
+        motionZ = lcg() * 0.2 - 0.1;
+    }
 
     // Allocate a runtime entity ID (PMMP `Level::$entityIdCounter`).
     int64_t eid = srv_->allocateEid();
-
-    // CRITICAL: Set speed to 0 so the item stays exactly where it drops.
-    // If we give it random motion (like PMMP does), the CLIENT applies
-    // the motion visually, but the SERVER's DroppedItem position never
-    // updates. This causes a desync: the player walks to where the item
-    // VISUALLY is, but the server checks against the ORIGINAL position
-    // and says "too far away" → the item can't be picked up.
-    // Setting speed=0 ensures the visual position matches the server
-    // position, so pickup always works.
-    float mx = 0.0f;
-    float my = 0.0f;
-    float mz = 0.0f;
 
     auto pk = std::make_shared<network::protocol::AddItemEntityPacket>();
     pk->eid        = eid;
     pk->itemId     = static_cast<int16_t>(itemId);
     pk->itemCount  = count;
     pk->itemDamage = static_cast<int16_t>(damage);
-    pk->x = (float)x + 0.5f;
-    pk->y = (float)y + 0.5f;
-    pk->z = (float)z + 0.5f;
-    pk->speedX = mx;
-    pk->speedY = my;
-    pk->speedZ = mz;
+    // Genisys uses the raw entity position — NOT floor(x)+0.5. Rounding to
+    // the block centre is what used to make a dropped stack appear half a
+    // block off from where the client thought it was.
+    pk->x = (float)x;
+    pk->y = (float)y;
+    pk->z = (float)z;
+    pk->speedX = (float)motionX;
+    pk->speedY = (float)motionY;
+    pk->speedZ = (float)motionZ;
 
     // Broadcast only to players tracking this chunk (PMMP `addChunkPacket`).
-    int32_t pk_cx = x >> 4;
-    int32_t pk_cz = z >> 4;
+    int32_t pk_cx = (int)std::floor(x) >> 4;
+    int32_t pk_cz = (int)std::floor(z) >> 4;
     for (auto& other : srv_->playersSnapshot()) {
         if (!other) continue;
         if (other.get() == this) {
@@ -3386,23 +3429,27 @@ int64_t Player::dropItem(int x, int y, int z, uint16_t itemId, uint8_t count, ui
         other->sendPacket(pk);
     }
 
-    // Register the dropped item in the Level's registry so other players
-    // (and the dropper themselves, after the pickup delay) can pick it up.
+    // Register the dropped item in the Level's registry so it can be
+    // picked up, and so Level::tickDroppedItems() can integrate the very
+    // same motion the client is integrating.
     if (srv_->getDefaultLevel()) {
         level::DroppedItem di;
         di.eid        = eid;
         di.itemId     = itemId;
         di.count      = count;
         di.damage     = damage;
-        di.x          = (double)x + 0.5;
-        di.y          = (double)y + 0.5;
-        di.z          = (double)z + 0.5;
+        di.x          = x;
+        di.y          = y;
+        di.z          = z;
         di.spawn_tick = srv_->getCurrentTick();
-        // 5-tick pickup delay (~0.25s) — just enough to prevent the
-        // dropper from instantly re-absorbing it, but short enough that
-        // the player can pick it up quickly after breaking a block.
-        di.pickup_delay_ticks = 5;
+        di.pickup_delay_ticks = pickup_delay;
         di.taken     = false;
+        di.vx        = motionX;
+        di.vy        = motionY;
+        di.vz        = motionZ;
+        // $lastX/$lastY/$lastZ — start at the spawn point so the very
+        // first updateMovement() only fires once the item has really moved.
+        di.lx = x; di.ly = y; di.lz = z;
         srv_->getDefaultLevel()->addDroppedItem(di);
     }
 
@@ -3410,22 +3457,61 @@ int64_t Player::dropItem(int x, int y, int z, uint16_t itemId, uint8_t count, ui
         utils::MainLogger::get().info("[DROP] eid=" + std::to_string(eid) +
             " item=" + std::to_string(itemId) + " x" + std::to_string(count) +
             " dmg=" + std::to_string(damage) + " at " +
-            std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(z));
+            std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(z) +
+            " motion=" + std::to_string(motionX) + "," +
+            std::to_string(motionY) + "," + std::to_string(motionZ) +
+            " delay=" + std::to_string(pickup_delay));
     }
     return eid;
 }
 
 // ============================================================
+// Entity::getDirectionVector() (Genisys 0.15):
+//     $y  = -sin(deg2rad($this->pitch));
+//     $xz = cos(deg2rad($this->pitch));
+//     $x  = -$xz * sin(deg2rad($this->yaw));
+//     $z  =  $xz * cos(deg2rad($this->yaw));
+//     return ...->normalize();
+// ============================================================
+math::Vector3 Player::getDirectionVector() const {
+    const double kDegToRad = M_PI / 180.0;
+    double y  = -std::sin((double)yaw_ * kDegToRad);
+    double xz =  std::cos((double)pitch_ * kDegToRad);
+    double x  = -xz * std::sin((double)yaw_ * kDegToRad);
+    double z  =  xz * std::cos((double)yaw_ * kDegToRad);
+    double len = std::sqrt(x * x + y * y + z * z);
+    if (len > 0) { x /= len; y /= len; z /= len; }
+    return math::Vector3{x, y, z};
+}
+
+// ============================================================
 // handleDropItem — portado 1:1 de Genisys Player::handleDataPacket
 // case DROP_ITEM_PACKET (protocolo 84):
-//   1. Verifica que el jugador esté spawned/vivo.
-//   2. Confirma que el item esté realmente en el inventario (confianza
-//      cero en el paquete).
-//   3. PlayerDropItemEvent (cancelable); si se cancela, reenvía el slot.
-//   4. Quita el stack del inventario y suelta la entidad item.
+//
+//   if($this->spawned === false or $this->blocked or !$this->isAlive()) break;
+//   if(!$this->inventory->contains($packet->item) ...) { sendContents; break; }
+//   $slot = $this->inventory->first($packet->item);
+//   if($slot == -1) { sendContents; break; }
+//   $dropItem = $this->inventory->getItem($slot);
+//   $ev = new PlayerDropItemEvent($this, $dropItem);
+//   if($ev->isCancelled()) { sendSlot($slot); break; }
+//   $this->inventory->remove($dropItem);
+//   $motion = $this->getDirectionVector()->multiply(0.4);
+//   $this->level->dropItem($this->add(0, 1.3, 0), $dropItem, $motion, 40);
+//
+// Two deviations on purpose:
+//   * Genisys' BaseInventory::remove() wipes EVERY slot holding the same
+//     id+meta, so a hotbar with two stacks of cobble loses both while only
+//     one entity is spawned. We remove exactly `count` from the slot
+//     `first()` found, which is what `removeItem()` is for.
+//   * Genisys ignores DropItemPacket::$type and always throws the whole
+//     stack. $type is the Q / Ctrl+Q distinction (0 = one, 1 = the stack),
+//     so honouring it is what keeps the client's optimistic animation and
+//     the server's inventory in agreement.
 // ============================================================
 void Player::handleDropItem(network::protocol::DropItemPacket& pk) {
     if (!spawned() || !inv_) return;
+    if (isDead()) return;   // Genisys: `if(... or !$this->isAlive()) break;`
 
     item::ItemStack want{};
     want.id    = (uint16_t)pk.itemId;
@@ -3438,17 +3524,37 @@ void Player::handleDropItem(network::protocol::DropItemPacket& pk) {
     if (slot < 0) { sendInventory(); return; }
 
     item::ItemStack dropped = inv_->getItem(slot);
+    if (dropped.isEmpty() || dropped.count <= 0) { sendInventory(); return; }
     auto ev = event::EventManager::get().fire<event::player::PlayerDropItemEvent>(this, dropped);
     if (ev.isCancelled()) { sendSlot(slot); return; }
 
-    inv_->remove(dropped);
-    dropItem((int)std::floor(pos_.x),
-             (int)std::floor(pos_.y + 1.3),
-             (int)std::floor(pos_.z),
-             dropped.id, (uint8_t)dropped.count, dropped.meta);
-    // El cliente hace el drop de forma optimista; re-sincronizamos el
-    // inventario para que el slot quede consistente server-side.
-    sendInventory();
+    // type 1 = "drop the stack" (Ctrl+Q); type 0 = "drop what the packet
+    // asked for". Clamp to what the slot actually holds so a spoofed
+    // count can never clone or void items.
+    int drop_count = (pk.type != 0) ? dropped.count : want.count;
+    if (drop_count > dropped.count) drop_count = dropped.count;
+    if (drop_count <= 0) { sendInventory(); return; }
+
+    // Take it out of the slot it came from — decrement and only clear the
+    // slot when it runs out. BaseInventory::remove() used to erase the map
+    // entry while iterating it (SIGSEGV on every Q press); this is the
+    // safe single-indexed form. clear()/setItem() each fire onSlotChange,
+    // which sends the ContainerSetSlot ack the client needs.
+    item::ItemStack left = dropped;
+    left.count -= drop_count;
+    if (left.count <= 0) {
+        inv_->clear(slot);
+    } else {
+        inv_->setItem(slot, left);
+    }
+
+    // $this->level->dropItem($this->add(0, 1.3, 0), $dropItem, $motion, 40)
+    const double kMUL = 0.4;
+    math::Vector3 dir = getDirectionVector();
+    dropItem(pos_.x, pos_.y + 1.3, pos_.z,
+             dropped.id, (uint8_t)drop_count, dropped.meta,
+             dir.x * kMUL, dir.y * kMUL, dir.z * kMUL,
+             40 /* PickupDelay: 2 s, Genisys' manual-drop value */);
 }
 
 // ============================================================
@@ -3998,23 +4104,55 @@ void Player::onUpdate(uint64_t current_tick) {
     tickHungerAndDamage(current_tick);
     moved_this_tick_ = false;   // consumed for this tick
 
-    // 2.5. Pickup nearby dropped items. Mirrors Nukkit Player.checkNearEntities():
-    // for each EntityItem within the player's bounding box grown by (1, 0.5, 1),
-    // if pickupDelay has elapsed AND the inventory can hold the item, send
-    // TakeItemEntityPacket to all viewers + the picking player, addItem to
-    // the inventory, and mark the entity for removal.
+    // 2.5. Pickup nearby dropped items. Mirrors Genisys
+    // Player::checkNearEntities(), which is an AABB test and NOT a sphere:
+    //
+    //     foreach($this->level->getNearbyEntities($this->boundingBox->grow(0.5, 0.5, 0.5), $this) as $entity){
+    //         ... elseif($entity instanceof DroppedItem){ if($entity->getPickupDelay() <= 0){ ... } }
+    //     }
+    //
+    // Level::getNearbyEntities() keeps an entity when
+    // $ent->boundingBox->intersectsWith($bb), so the reachable volume is:
+    //
+    //   player  (Human: width 0.6, height 1.8, feet at pos_)
+    //     AABB = [x-0.3, y,   z-0.3] .. [x+0.3, y+1.8, z+0.3]
+    //     grown by 0.5 on every axis  (pickup reach)
+    //     = [x-0.8, y-0.5, z-0.8] .. [x+0.8, y+2.3, z+0.8]
+    //   item    (Item: width 0.25, height 0.25)
+    //     AABB = [ix-0.125, iy, iz-0.125] .. [ix+0.125, iy+0.25, iz+0.125]
+    //
+    // AxisAlignedBB::intersectsWith() is a strict overlap on each axis, so
+    // the horizontal reach works out to 0.925 blocks from the player centre
+    // and the vertical band to (pos.y - 0.75, pos.y + 2.3). The old code
+    // used a 2.5-block sphere, which was 2.7x too generous horizontally.
     if (spawned_.load(std::memory_order_relaxed) && srv_ && srv_->getDefaultLevel() && inv_) {
         auto* lvl = srv_->getDefaultLevel();
         auto dropped = lvl->droppedItems();
         bool any_picked_up = false;
+
+        // Item AABB half-extents (Item::width / Item::height = 0.25).
+        const double kItemHalf   = 0.125;
+        const double kItemHeight = 0.25;
+
         for (level::DroppedItem* di : dropped) {
             if (!di || di->taken) continue;
-            if (current_tick - di->spawn_tick < di->pickup_delay_ticks) continue;
-            double dx = di->x - pos_.x;
-            double dy = di->y - pos_.y;
-            double dz = di->z - pos_.z;
-            double dist_sq = dx*dx + dy*dy + dz*dz;
-            if (dist_sq > 6.25) continue;
+            if (di->pickup_delay_ticks > 0) continue;
+
+            // AxisAlignedBB::intersectsWith(playerBB->grow(0.5), itemBB)
+            const double itemMaxX = di->x + kItemHalf;
+            const double itemMinX = di->x - kItemHalf;
+            const double itemMinY = di->y;
+            const double itemMaxY = di->y + kItemHeight;
+            const double itemMaxZ = di->z + kItemHalf;
+            const double itemMinZ = di->z - kItemHalf;
+
+            const double pxMinX = pos_.x - 0.8, pxMaxX = pos_.x + 0.8;
+            const double pyMinY = pos_.y - 0.5, pyMaxY = pos_.y + 2.3;
+            const double pzMinZ = pos_.z - 0.8, pzMaxZ = pos_.z + 0.8;
+
+            if (!(itemMaxX > pxMinX && itemMinX < pxMaxX)) continue;
+            if (!(itemMaxY > pyMinY && itemMinY < pyMaxY)) continue;
+            if (!(itemMaxZ > pzMinZ && itemMinZ < pzMaxZ)) continue;
 
             cursestone::item::ItemStack pickup;
             pickup.id    = di->itemId;
