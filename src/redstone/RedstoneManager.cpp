@@ -26,7 +26,7 @@ static void broadcastBlock(cursestone::Server* server, int32_t x, int32_t y, int
     ubp->y = (uint8_t)y;
     ubp->blockId = blockId;
     ubp->blockData = blockData;
-    ubp->flags = 0xFF;
+    ubp->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
 
     int32_t cx = x >> 4;
     int32_t cz = z >> 4;

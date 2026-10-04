@@ -98,6 +98,30 @@ public:
                           float fx = 0.5f, float fy = 0.5f, float fz = 0.5f);
     void handlePlayerAction(int action, int x, int y, int z, int face);
 
+    // Difunde la pose (agachado / sprintando) de ESTE jugador a todos los
+    // clientes con los que comparte vista. Es la razon por la que el
+    // agachado antes era invisible para los demas: Genisys 0.15.0 solo
+    // cambia la propiedad local en Player::setSneaking()
+    // (Player.php:3017-3034) y nunca manda SetEntityDataPacket, asi que
+    // los otros clientes se quedan con la pose anterior para siempre.
+    //
+    // Los bits de agachado y sprint comparten la MISMA propiedad de
+    // metadata (Entity::DATA_FLAGS = 0), asi que se manda el byte entero
+    // con los dos bits, nunca uno solo.
+    void broadcastPoseFlags();
+
+    // Anuncia a ESTE jugador (entrada de lista de jugadores +
+    // AddPlayerPacket) a cada otro jugador ya spawneado. Se usa en
+    // doFirstSpawn() y en respawn(): Genisys Player::respawn() vuelve a
+    // llamar spawnToAll() porque el cliente del 0.15.x tira su lista de
+    // entidades al reaparecer y sin esto los demas no lo ven mas.
+    void announceSelfToOthers();
+
+    // Re-spawna a ESTE jugador los OTROS jugadores que tenga alrededor
+    // (entrada de lista + AddPlayerPacket). El otro extremo de
+    // announceSelfToOthers() y, igual que en Genisys, parte de
+    // Player::respawn().
+
     // Ataque cuerpo a cuerpo (INTERACT_PACKET, ACTION_LEFT_CLICK contra
     // otra entidad). `targetEid` es el runtime id reportado por el
     // cliente; se resuelve contra srv_->playersSnapshot() (unicos
@@ -365,6 +389,17 @@ public:
     void hidePlayer(Player* /*other*/) {}
     void showPlayer(Player* /*other*/) {}
     void spawnTo(Player* player);
+    void announceTo(Player* viewer);
+
+    // --- Sneak (crouch) ---
+    // Estado de agachado, reportado por el cliente via
+    // PlayerActionPacket ACTION_START_SNEAK=11 / ACTION_STOP_SNEAK=12
+    // (protocol 84, Genisys 0.15.0 PlayerActionPacket.php). Mientras es
+    // true el vanilla bloquea toda interaccion con tiles y bloques
+    // (cofres, hornos, mesas, palancas, botones, chispa, cubos) y solo
+    // permite colocar bloques y atacar — ver handleBlockPlace().
+    bool isSneaking() const { return sneaking_; }
+    void setSneaking(bool v);
 
     // --- Sleep (Nukkit: isSleeping/stopSleep) ---
     bool isSleeping() const { return false; }
@@ -514,7 +549,8 @@ private:
     int   air_ticks_ = 300;          // remaining air underwater (vanilla 300 ticks)
     int   fire_ticks_ = 0;           // remaining burn ticks (8s after fire/lava)
     bool  moved_this_tick_ = false;  // set by handleMovePlayer, read by tickHungerAndDamage
-    bool  sprinting_ = false;        // client reports sprint (PlayerAction 5/6)
+    bool  sprinting_ = false;        // client reports sprint (PlayerAction 9/10)
+    bool  sneaking_  = false;        // client reports crouch (PlayerAction 11/12)
     bool  on_ground_fall_check_ = true; // last client-reported onGround
     float fall_distance_ = 0.0f;     // accumulated fall distance in blocks
 

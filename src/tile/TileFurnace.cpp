@@ -100,7 +100,7 @@ void TileFurnace::setFlame(bool lit) {
     pk->blockId = lit ? (uint16_t)cursestone::block::BURNING_FURNACE
                       : (uint16_t)cursestone::block::FURNACE;
     pk->blockData = lvl->getBlockData(x, y, z);
-    pk->flags = 0xFF;
+    pk->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
     for (auto& p : cursestone::Server::getInstance().playersSnapshot())
         if (p && p->isTrackingChunk(x >> 4, z >> 4)) p->sendPacket(pk);
 }

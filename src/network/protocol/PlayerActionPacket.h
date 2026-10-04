@@ -36,6 +36,13 @@ public:
     // the server misread those actions and never see real sprints).
     static constexpr int32_t ACTION_START_SPRINT = 9;
     static constexpr int32_t ACTION_STOP_SPRINT  = 10;
+    // Crouch toggle (protocol 84 — Genisys 0.15.0 PlayerActionPacket.php:
+    // ACTION_START_SNEAK = 11, ACTION_STOP_SNEAK = 12). This is what the
+    // 0.15.10 client sends when the player taps the sneak button or holds
+    // shift on a touch device; the server has to mirror the pose to every
+    // other client or the crouch is invisible to everyone else.
+    static constexpr int32_t ACTION_START_SNEAK = 11;
+    static constexpr int32_t ACTION_STOP_SNEAK  = 12;
 
     int64_t eid = 0;
     int32_t action = 0;
