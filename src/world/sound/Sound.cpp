@@ -1,2 +1,2 @@
 #include "Sound.h"
-namespace cursestone::level::sound {}
+namespace cursestone::world::sound {}

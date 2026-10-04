@@ -4,7 +4,7 @@
 #include <cmath>
 #include <cstdlib>
 
-namespace cursestone::level::generator::object::trees {
+namespace cursestone::world::generator::object::trees {
 
 using cursestone::block::BlockId;
 
@@ -98,4 +98,4 @@ bool DarkOakTree::generate(mcp_chunk_t* c, int sourceX, int sourceY,
     return true;
 }
 
-} // namespace cursestone::level::generator::object::trees
+} // namespace cursestone::world::generator::object::trees

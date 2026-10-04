@@ -4,7 +4,7 @@
 #pragma once
 #include "world/Position.h"
 #include <cstdint>
-namespace cursestone::level::sound {
+namespace cursestone::world::sound {
 enum SoundId : uint32_t {
     SOUND_CLICK       = 1000,
     SOUND_DOOR        = 1004,

@@ -4,7 +4,7 @@
 // biome configs, so none of them need to include each other's headers.
 #pragma once
 
-namespace cursestone::level::generator::object {
+namespace cursestone::world::generator::object {
 
 enum TreeType {
     TREE_OAK = 0,
@@ -20,4 +20,4 @@ enum TreeType {
     TREE_BIG_JUNGLE = 8,
 };
 
-} // namespace cursestone::level::generator::object
+} // namespace cursestone::world::generator::object

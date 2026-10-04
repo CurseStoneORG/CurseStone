@@ -10,7 +10,7 @@
 // it can turn a door to still face its opening, a torch its wall.
 #include "Structure.h"
 
-namespace cursestone::level::generator::structure {
+namespace cursestone::world::generator::structure {
 
 // rotateFacing() lives in the header: the per-biome resolvers turn the
 // very same facings, so both sides must share one table.
@@ -80,4 +80,4 @@ size_t Structure::placeRotated(mcp_chunk_t* chunk, int chunkX, int chunkZ,
     return 0;
 }
 
-} // namespace cursestone::level::generator::structure
+} // namespace cursestone::world::generator::structure

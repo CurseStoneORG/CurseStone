@@ -3,7 +3,7 @@
 #include "block/BlockIds.h"
 #include <cstdlib>
 
-namespace cursestone::level::generator::object::trees {
+namespace cursestone::world::generator::object::trees {
 
 using cursestone::block::BlockId;
 
@@ -54,4 +54,4 @@ void SpruceTree::placeTrunk(mcp_chunk_t* c, int sourceX, int sourceY,
         setLog(c, sourceX, sourceY + i, sourceZ, logId_, logData_);
 }
 
-} // namespace cursestone::level::generator::object::trees
+} // namespace cursestone::world::generator::object::trees

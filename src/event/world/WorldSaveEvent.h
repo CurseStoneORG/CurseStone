@@ -5,13 +5,13 @@
 #pragma once
 #include "WorldEvent.h"
 #include <string>
-namespace cursestone { namespace level { class Level; } }
+namespace cursestone { namespace world { class World; } }
 
-namespace cursestone::event::level {
+namespace cursestone::event::world {
 
 class LevelSaveEvent : public LevelEvent {
 public:
-    explicit LevelSaveEvent(cursestone::level::Level* l)
+    explicit LevelSaveEvent(cursestone::world::World* l)
         : LevelEvent(l) {}
 
     const std::string& eventName() const override {
@@ -19,4 +19,4 @@ public:
     }
 };
 
-} // namespace cursestone::event::level
+} // namespace cursestone::event::world

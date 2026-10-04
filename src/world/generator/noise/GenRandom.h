@@ -9,7 +9,7 @@
 #pragma once
 #include <cstdint>
 
-namespace cursestone::level::generator {
+namespace cursestone::world::generator {
 
 class GenRandom {
 public:
@@ -34,4 +34,4 @@ private:
     int64_t seed_ = 0;
 };
 
-} // namespace cursestone::level::generator
+} // namespace cursestone::world::generator

@@ -2,20 +2,20 @@
 // LevelDB — stub implementation.
 //
 // Compiles cleanly without leveldb linked. Every chunk operation
-// returns "not on disk" so Level::load() can fall back to the
+// returns "not on disk" so World::load() can fall back to the
 // anvil provider when no leveldb is found.
 #include "LevelDB.h"
-#include "../LevelProviderManager.h"
+#include "../WorldProviderManager.h"
 
 #include <cstdint>
 #include <cstring>
 
-namespace cursestone::level::format::leveldb {
+namespace cursestone::world::format::leveldb {
 
 LevelDBRegistrar g_leveldb_registrar_;
 LevelDBRegistrar::LevelDBRegistrar() {
-    LevelProviderManager::getInstance().registerProvider(
-        "leveldb", [](){ return std::unique_ptr<LevelProvider>(new LevelDB()); });
+    WorldProviderManager::getInstance().registerProvider(
+        "leveldb", [](){ return std::unique_ptr<WorldProvider>(new LevelDB()); });
 }
 
 LevelDB::LevelDB() = default;
@@ -60,7 +60,7 @@ bool LevelDB::hasLevelDB() {
 
 std::optional<std::shared_ptr<FullChunk>>
 LevelDB::loadChunk(int32_t /*x*/, int32_t /*z*/) {
-    // Stub: pretend the chunk isn't on disk so Level falls
+    // Stub: pretend the chunk isn't on disk so World falls
     // back to chunk generation.
     return std::nullopt;
 }
@@ -78,4 +78,4 @@ LevelDB::listChunks() const {
     return {};
 }
 
-} // namespace cursestone::level::format::leveldb
+} // namespace cursestone::world::format::leveldb

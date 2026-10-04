@@ -17,7 +17,7 @@
 #include "world/generator/structure/Structure.h"
 #include "world/generator/structure/village/VillagePalette.h"
 
-namespace cursestone::level::generator::structure::village {
+namespace cursestone::world::generator::structure::village {
 
 // One concrete structure carrying a BlockSpec palette. The per-biome
 // material choice happens in VillagePalette::resolve at placement time;
@@ -72,4 +72,4 @@ int pieceFrontFacing(PieceKind k);
 
 inline int pieceCount() { return PIECE_COUNT; }
 
-} // namespace cursestone::level::generator::structure::village
+} // namespace cursestone::world::generator::structure::village

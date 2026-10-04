@@ -27,7 +27,7 @@
 #include "world/generator/structure/Structure.h"
 #include <cstdint>
 
-namespace cursestone::level::generator::structure::village {
+namespace cursestone::world::generator::structure::village {
 
 using cursestone::block::BlockId;
 
@@ -70,7 +70,7 @@ enum SpecKind : uint8_t {
 // data 1 / 125 data 1 — close enough to oak to not be worth splitting
 // the palette for, while the shapes and layout stay vanilla.
 inline bool isDesertVillageBiome(uint8_t biomeId) {
-    return biomeId == (uint8_t)cursestone::level::generator::biome::BIOME_DESERT;
+    return biomeId == (uint8_t)cursestone::world::generator::biome::BIOME_DESERT;
 }
 
 // Legacy data for the JAVA compass values (1 east, 2 west, 3 south,
@@ -167,4 +167,4 @@ inline BlockState resolve(const BlockSpec& s, int rot, void* user) {
     }
 }
 
-} // namespace cursestone::level::generator::structure::village
+} // namespace cursestone::world::generator::structure::village

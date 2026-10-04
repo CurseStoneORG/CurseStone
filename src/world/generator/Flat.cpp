@@ -1,7 +1,7 @@
 #include "Flat.h"
 #include "world/format/Chunk.h"
 #include <string.h>
-namespace cursestone::level::generator {
+namespace cursestone::world::generator {
 void Flat::generate(GenerationContext& ctx) {
     mcp_chunk_t* c = ctx.chunk;
     int y = 0;

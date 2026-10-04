@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// LevelProvider — abstract on-disk world format. C++.
+// WorldProvider — abstract on-disk world format. C++.
 //
-// A `LevelProvider` owns the I/O of a world: reading chunks from
+// A `WorldProvider` owns the I/O of a world: reading chunks from
 // disk, writing them back, generating missing ones via a Generator,
 // and exposing metadata (spawn point, seed, time). PocketMine splits
-// this into `LevelProvider` + `LevelProviderManager` (the registry);
+// this into `WorldProvider` + `WorldProviderManager` (the registry);
 // we mirror that here.
 //
 // Concrete implementers:
@@ -20,15 +20,15 @@
 #include "../../main.h"
 #include "FullChunk.h"
 
-namespace cursestone::level::generator { class Generator; }
+namespace cursestone::world::generator { class Generator; }
 
-namespace cursestone::level::format {
+namespace cursestone::world::format {
 
-class LevelProvider {
+class WorldProvider {
 public:
-    virtual ~LevelProvider() = default;
+    virtual ~WorldProvider() = default;
 
-    // Lifecycle — called by Level on load/unload. `path` is the
+    // Lifecycle — called by World on load/unload. `path` is the
     // absolute path to the world directory (e.g. `worlds/world/`).
     virtual void    init(const std::string& path) = 0;
     virtual void    shutdown() = 0;
@@ -57,18 +57,18 @@ public:
     virtual math::Vector3 getSpawn() const = 0;
     virtual void    setSpawn(const math::Vector3& v) = 0;
 
-    // Generator plumbing — set by Level::load() based on
+    // Generator plumbing — set by World::load() based on
     // cursestone.yml `level.generator`. The provider doesn't
     // generate by itself; it delegates to the generator when a chunk
     // is requested that isn't on disk.
     virtual void    setGenerator(generator::Generator* g) = 0;
     virtual generator::Generator* getGenerator() const = 0;
 
-    // Persist world metadata (level.dat) — called by Level::save() so
+    // Persist world metadata (level.dat) — called by World::save() so
     // that periodic auto-saves flush metadata to disk, not just chunks.
     // The provider may choose to no-op if it has no metadata (e.g.
     // a stub LevelDB provider).
     virtual void    saveLevelData() = 0;
 };
 
-} // namespace cursestone::level::format
+} // namespace cursestone::world::format

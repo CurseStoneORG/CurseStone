@@ -2,12 +2,12 @@
 #pragma once
 #include "Position.h"
 
-namespace cursestone::level {
+namespace cursestone::world {
 
 class Location : public Position {
 public:
     Location() = default;
-    Location(double x, double y, double z, std::shared_ptr<Level> l = nullptr,
+    Location(double x, double y, double z, std::shared_ptr<World> l = nullptr,
              double yaw = 0.0, double pitch = 0.0)
         : Position(x, y, z, std::move(l)), yaw_(yaw), pitch_(pitch) {}
 
@@ -20,4 +20,4 @@ protected:
     double yaw_{0}, pitch_{0};
 };
 
-} // namespace cursestone::level
+} // namespace cursestone::world

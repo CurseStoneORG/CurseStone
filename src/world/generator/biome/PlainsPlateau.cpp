@@ -6,7 +6,7 @@
 // trees for the grove pass to make sparse copses.
 #include "BiomeConfig.h"
 
-namespace cursestone::level::generator::biome {
+namespace cursestone::world::generator::biome {
 const BiomeConfig& plainsPlateauBiome() {
     static const BiomeConfig c{
         .id = 129,
@@ -36,4 +36,4 @@ const BiomeConfig& plainsPlateauBiome() {
     };
     return c;
 }
-} // namespace cursestone::level::generator::biome
+} // namespace cursestone::world::generator::biome

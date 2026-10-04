@@ -43,7 +43,7 @@ typedef struct mcp_chunk {
 
     // Tile-entity and entity payload lists. Each entry is an opaque
     // NBT blob (CompoundTag) — we store raw bytes for the C storage
-    // layer; the C++ Level takes ownership of decoded entities.
+    // layer; the C++ World takes ownership of decoded entities.
     uint8_t** tile_entities;     // array of malloc'd NBT blobs
     size_t*  tile_entity_lens;  // matching lengths
     size_t   tile_entity_count;

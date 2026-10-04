@@ -7,7 +7,7 @@
 #include "world/generator/object/TreeType.h"
 #include <cstdint>
 
-namespace cursestone::level::generator::object {
+namespace cursestone::world::generator::object {
 
 class TreeGenerator {
 public:
@@ -21,4 +21,4 @@ public:
                       uint8_t soilId, GenRandom& rng);
 };
 
-} // namespace cursestone::level::generator::object
+} // namespace cursestone::world::generator::object

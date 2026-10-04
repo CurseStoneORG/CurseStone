@@ -1,7 +1,7 @@
 // BiomeMountains — bioma de montaña (extreme hills).
 #pragma once
 #include "Biome.h"
-namespace cursestone::level::generator::biome {
+namespace cursestone::world::generator::biome {
 class BiomeMountains : public Biome {
 public:
     uint8_t id() const override;

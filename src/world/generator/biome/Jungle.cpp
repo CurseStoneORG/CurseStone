@@ -2,7 +2,7 @@
 // Jungle — biome 21. Hot and wet: thick canopy, melons, dense grass.
 #include "BiomeConfig.h"
 
-namespace cursestone::level::generator::biome {
+namespace cursestone::world::generator::biome {
 const BiomeConfig& jungleBiome() {
     static const BiomeConfig c{
         .id = 21,
@@ -35,4 +35,4 @@ const BiomeConfig& jungleBiome() {
     };
     return c;
 }
-} // namespace cursestone::level::generator::biome
+} // namespace cursestone::world::generator::biome

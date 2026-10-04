@@ -6,13 +6,13 @@
 #include "WorldEvent.h"
 #include "../Cancellable.h"
 #include <string>
-namespace cursestone { namespace level { class Level; } }
+namespace cursestone { namespace world { class World; } }
 
-namespace cursestone::event::level {
+namespace cursestone::event::world {
 
 class LevelUnloadEvent : public LevelEvent, public Cancellable {
 public:
-    explicit LevelUnloadEvent(cursestone::level::Level* l)
+    explicit LevelUnloadEvent(cursestone::world::World* l)
         : LevelEvent(l) {}
 
     const std::string& eventName() const override {
@@ -20,4 +20,4 @@ public:
     }
 };
 
-} // namespace cursestone::event::level
+} // namespace cursestone::event::world

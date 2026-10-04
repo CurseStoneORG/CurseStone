@@ -3,7 +3,7 @@
 //
 // All storage formats (anvil / leveldb) use the same in-memory chunk
 // struct (`mcp_chunk_t` from Chunk.h). This adapter exposes that struct
-// through the C++ `FullChunk` interface so the Level / chunk-send
+// through the C++ `FullChunk` interface so the World / chunk-send
 // pipeline / network serializer can treat chunks polymorphically
 // without knowing which on-disk format produced them.
 //
@@ -19,7 +19,7 @@
 #include "FullChunk.h"
 #include "Chunk.h"
 
-namespace cursestone::level::format {
+namespace cursestone::world::format {
 
 class ChunkAdapter : public FullChunk {
 public:
@@ -86,4 +86,4 @@ private:
     bool          owns_chunk_ = true;  // false when created via borrow()
 };
 
-} // namespace cursestone::level::format
+} // namespace cursestone::world::format

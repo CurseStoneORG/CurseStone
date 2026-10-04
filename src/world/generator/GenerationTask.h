@@ -1,7 +1,7 @@
 // GenerationTask — wraps a single chunk generation request for the
 // AsyncPool. Worker thread picks up the GenerationTask, runs
 // generator->generate + populate, and posts the chunk back to the
-// Level thread via a thread-safe queue.
+// World thread via a thread-safe queue.
 #pragma once
 #include "world/generator/Generator.h"
 #include "world/format/Chunk.h"
@@ -9,7 +9,7 @@
 #include <functional>
 #include <memory>
 #include <string.h>
-namespace cursestone::level::generator {
+namespace cursestone::world::generator {
 class GenerationTask {
 public:
     using DoneCallback = std::function<void(mcp_chunk_t*)>;

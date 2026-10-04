@@ -6,15 +6,15 @@
 #pragma once
 #include "WorldEvent.h"
 #include <string>
-namespace cursestone { namespace level { class Level; } }
+namespace cursestone { namespace world { class World; } }
 
-namespace cursestone::event::level {
+namespace cursestone::event::world {
 
 class ChunkEvent : public LevelEvent {
 public:
     void* chunk;
 
-    ChunkEvent(cursestone::level::Level* l, void* c)
+    ChunkEvent(cursestone::world::World* l, void* c)
         : LevelEvent(l), chunk(c) {}
 
     const std::string& eventName() const override {
@@ -22,4 +22,4 @@ public:
     }
 };
 
-} // namespace cursestone::event::level
+} // namespace cursestone::event::world

@@ -1,2 +1,2 @@
 #include "GenericParticle.h"
-namespace cursestone::level::particle {}
+namespace cursestone::world::particle {}

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Level.cpp — implementation. The constructor instantiates a
-// LevelProvider via LevelProviderManager and connects it to the
+// World.cpp — implementation. The constructor instantiates a
+// WorldProvider via WorldProviderManager and connects it to the
 // ChunkManager so flushDirty() writes real bytes to disk.
 #include "World.h"
 #include "world/format/Chunk.h"
-#include "world/format/LevelProvider.h"
-#include "world/format/LevelProviderManager.h"
+#include "world/format/WorldProvider.h"
+#include "world/format/WorldProviderManager.h"
 #include "world/format/ChunkAdapter.h"
 #include "world/generator/Generator.h"
 #include "world/generator/Normal.h"
@@ -46,7 +46,7 @@
 #include <sstream>
 #include <string>
 
-namespace cursestone::level {
+namespace cursestone::world {
 
 // Creates `path` and every missing parent directory (mkdir -p
 // semantics). The previous version of this function was a single
@@ -54,9 +54,9 @@ namespace cursestone::level {
 // whenever `path`'s parent didn't already exist (e.g. a brand-new
 // dataPath on a fresh deploy, or any multi-level path that hadn't
 // been created by something else first), and the error was discarded,
-// so a Level would silently end up "in-memory only" with no world
+// so a World would silently end up "in-memory only" with no world
 // files ever touching disk and no warning printed. Found while
-// verifying tile persistence end-to-end (see Level::save() /
+// verifying tile persistence end-to-end (see World::save() /
 // ensureTilesLoaded()): a save() reported success and correctly
 // populated the in-memory chunk's tile_entities, but no file ever
 // appeared on disk because ensureDir() had failed upstream on the
@@ -83,7 +83,7 @@ static void ensureDir(const std::string& path) {
     }
 }
 
-Level::Level(LevelConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
+World::World(WorldConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
     // Spawn is NOT hardcoded here — it comes from the generator's
     // getSpawn() method, mirroring Nukkit where each generator type
     // defines its own spawn (Normal, Flat, Nether all differ).
@@ -121,15 +121,15 @@ Level::Level(LevelConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
     mcp_vector3_t gen_spawn = generator_->getSpawn();
     spawn_ = mcp_v3(gen_spawn.x, gen_spawn.y, gen_spawn.z);
 
-    // Create a LevelProvider via the registry.
-    auto& mgr = format::LevelProviderManager::getInstance();
+    // Create a WorldProvider via the registry.
+    auto& mgr = format::WorldProviderManager::getInstance();
     auto provider_unique = mgr.create(cfg_.format);
     if (!provider_unique) {
         utils::MainLogger::get().warn("Unknown level format '" + cfg_.format +
             "'; falling back to default '" + mgr.defaultFormatName() + "'");
         provider_unique = mgr.create(mgr.defaultFormatName());
     }
-    std::shared_ptr<format::LevelProvider> provider = std::move(provider_unique);
+    std::shared_ptr<format::WorldProvider> provider = std::move(provider_unique);
     if (provider) {
         provider->init(worldDir);
         // Apply the generator's spawn to the provider.
@@ -152,7 +152,7 @@ Level::Level(LevelConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
                               provider->getSpawn().y,
                               provider->getSpawn().z + 0.5);
         }
-        utils::MainLogger::get().info("Level '" + cfg_.name + "' loaded from " +
+        utils::MainLogger::get().info("World '" + cfg_.name + "' loaded from " +
             worldDir + " (format=" + provider->getName() +
             ", seed=" + std::to_string(cfg_.seed) +
             ", generator=" + cfg_.generator + ")");
@@ -209,18 +209,18 @@ Level::Level(LevelConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
     }
 }
 
-Level::~Level() {
+World::~World() {
     if (provider_) provider_->shutdown();
 }
 
-uint8_t Level::getBlockId(int32_t x, int32_t y, int32_t z) {
+uint8_t World::getBlockId(int32_t x, int32_t y, int32_t z) {
     int32_t cx = x >> 4, cz = z >> 4;
     mcp_chunk_t* c = chunks_.getChunkIfLoaded(cx, cz);
     if (!c) return 0;
     return mcp_chunk_get_block_id(c, x & 15, y, z & 15);
 }
 
-uint8_t Level::getBlockData(int32_t x, int32_t y, int32_t z) {
+uint8_t World::getBlockData(int32_t x, int32_t y, int32_t z) {
     int32_t cx = x >> 4, cz = z >> 4;
     mcp_chunk_t* c = chunks_.getChunkIfLoaded(cx, cz);
     if (!c) return 0;
@@ -232,7 +232,7 @@ uint8_t Level::getBlockData(int32_t x, int32_t y, int32_t z) {
 // FURNACE (61) when it goes out. Only the id changes, the facing data
 // is kept, and true is returned when the block actually changed so the
 // caller knows whether a client update is worth sending.
-bool Level::setFurnaceFlame(int32_t x, int32_t y, int32_t z, bool lit) {
+bool World::setFurnaceFlame(int32_t x, int32_t y, int32_t z, bool lit) {
     int32_t cx = x >> 4, cz = z >> 4;
     mcp_chunk_t* c = chunks_.getChunkIfLoaded(cx, cz);
     if (!c) return false;
@@ -246,7 +246,7 @@ bool Level::setFurnaceFlame(int32_t x, int32_t y, int32_t z, bool lit) {
     return true;
 }
 
-void Level::setBlock(int32_t x, int32_t y, int32_t z, uint8_t id, uint8_t data) {
+void World::setBlock(int32_t x, int32_t y, int32_t z, uint8_t id, uint8_t data) {
     // CRITICAL FIX: previously this called chunks_.getChunk(cx, cz) which
     // triggers SYNCHRONOUS chunk generation on the main thread if the chunk
     // is not loaded. BlockFire::onScheduledUpdate and ItemFlintSteel call
@@ -276,14 +276,14 @@ void Level::setBlock(int32_t x, int32_t y, int32_t z, uint8_t id, uint8_t data) 
     }
 }
 
-void Level::onChunkAdded(int32_t cx, int32_t cz) {
+void World::onChunkAdded(int32_t cx, int32_t cz) {
     // Solo encola: esta funcion se llama desde el hilo del generador
     // (dentro de ChunkManager::setChunk) y recorrer el mundo ahi
     // bloquearia la generacion.
     light_.onChunkAdded(cx, cz);
 }
 
-int Level::save() {
+int World::save() {
     // Write every dirty tile's NBT back into its chunk's tile_entities
     // array BEFORE flushing — flushDirty() is what actually serializes
     // each dirty chunk (tile_entities included) to the .mca region file,
@@ -305,7 +305,7 @@ int Level::save() {
     return saved;
 }
 
-void Level::tick(uint64_t current_tick) {
+void World::tick(uint64_t current_tick) {
     advanceTime(1);
     doWeatherTick(current_tick);
     // Luz pendiente de los chunks recien generados/cargados. Con un
@@ -343,7 +343,7 @@ void Level::tick(uint64_t current_tick) {
 //     if($currentTick % 5 == 0) $this->updateMovement();
 //
 // and Entity::move() resolves the delta one axis at a time against the
-// Level's collision cubes (Y, then X, then Z), zeroing each motion component
+// World's collision cubes (Y, then X, then Z), zeroing each motion component
 // that got clipped.
 namespace {
 
@@ -351,7 +351,7 @@ constexpr double kItemGravity  = 0.04;   // pocketmine\entity\Item::$gravity
 constexpr double kItemDrag     = 0.02;   // pocketmine\entity\Item::$drag
 constexpr double kBlockFriction = 0.6;   // Block::getFrictionFactor()
 // The item box (kItemHalfW / kItemHeight) and the whole pickup volume live
-// in Level.h so the attraction gate below and the pickup scan in
+// in World.h so the attraction gate below and the pickup scan in
 // Player::onUpdate() share ONE definition of "is this item in reach".
 
 // pocketmine\block\Block::$solid. Everything an item can rest on is solid
@@ -385,11 +385,11 @@ struct Aabb {
 
 } // namespace
 
-void Level::tickDroppedItems(uint64_t current_tick) {
+void World::tickDroppedItems(uint64_t current_tick) {
     // Snapshot the raw pointers like droppedItems() does — the physics
     // pass never removes records (that is collectDroppedItems' job), it
     // only rewrites the fields in place, and it holds no lock while it
-    // sends packets (lock-ordering rule used by every other Level method).
+    // sends packets (lock-ordering rule used by every other World method).
     std::vector<DroppedItem*> snapshot;
     {
         std::lock_guard<std::mutex> lk(dropped_items_mtx_);
@@ -479,7 +479,7 @@ void Level::tickDroppedItems(uint64_t current_tick) {
         // block in processMovement). So in that fork the pickup volume
         // lives at the world origin and a player can never match an item at
         // all. The gate below therefore uses the vanilla Bedrock volume
-        // (itemWithinPickupVolume, Level.h) anchored to the real position —
+        // (itemWithinPickupVolume, World.h) anchored to the real position —
         // the SAME one Player::onUpdate() collects with.
         if (di->on_ground) {
             constexpr double kAttractRadius = 2.0;
@@ -528,7 +528,7 @@ void Level::tickDroppedItems(uint64_t current_tick) {
 
             double dx = movX, dy = movY, dz = movZ;
 
-            // Level::getCollisionCubes($this, $bb->addCoord($dx, $dy, $dz))
+            // World::getCollisionCubes($this, $bb->addCoord($dx, $dy, $dz))
             Aabb sw{ bb.minX + dx, bb.minY + dy, bb.minZ + dz,
                      bb.maxX + dx, bb.maxY + dy, bb.maxZ + dz };
             int x0 = (int)std::floor(sw.minX), x1 = (int)std::ceil(sw.maxX);
@@ -657,12 +657,12 @@ void Level::tickDroppedItems(uint64_t current_tick) {
     }
 }
 
-size_t Level::collectDroppedItems(uint64_t current_tick) {
+size_t World::collectDroppedItems(uint64_t current_tick) {
     constexpr uint64_t DESPAWN_TICKS = 6000;  // 5 min at 20 TPS — vanilla EntityItem lifetime
 
     // Phase 1: despawn expired items. Snapshot FIRST, then broadcast with
     // no registry lock held (lock-ordering rule used by every other
-    // Level method that sends packets). This pass only ever runs on the
+    // World method that sends packets). This pass only ever runs on the
     // main thread between player updates (it is driven by the global GC in
     // Server::tick), so it can never interleave with a pickup handler that
     // holds a DroppedItem* snapshot. Additionally, if a pickup transaction
@@ -715,7 +715,7 @@ size_t Level::collectDroppedItems(uint64_t current_tick) {
     return removed;
 }
 
-size_t Level::tickTiles(uint64_t current_tick) {
+size_t World::tickTiles(uint64_t current_tick) {
     std::vector<std::shared_ptr<cursestone::tile::Tile>> snapshot;
     {
         std::lock_guard<std::mutex> lk(tiles_mtx_);
@@ -731,25 +731,25 @@ size_t Level::tickTiles(uint64_t current_tick) {
     return n;
 }
 
-void Level::registerLoader(uint64_t id, class ChunkLoader* loader) {
+void World::registerLoader(uint64_t id, class ChunkLoader* loader) {
     loaders_[id] = loader;
 }
 
-void Level::unregisterLoader(uint64_t id) {
+void World::unregisterLoader(uint64_t id) {
     loaders_.erase(id);
 }
 
 // ============================================================
 // Dropped-item registry
 // ============================================================
-DroppedItem* Level::droppedItem(int64_t eid) {
+DroppedItem* World::droppedItem(int64_t eid) {
     std::lock_guard<std::mutex> lk(dropped_items_mtx_);
     auto it = dropped_items_.find(eid);
     if (it == dropped_items_.end()) return nullptr;
     return it->second.get();
 }
 
-std::vector<DroppedItem*> Level::droppedItems() {
+std::vector<DroppedItem*> World::droppedItems() {
     std::lock_guard<std::mutex> lk(dropped_items_mtx_);
     std::vector<DroppedItem*> out;
     out.reserve(dropped_items_.size());
@@ -759,13 +759,13 @@ std::vector<DroppedItem*> Level::droppedItems() {
     return out;
 }
 
-void Level::addDroppedItem(const DroppedItem& di) {
+void World::addDroppedItem(const DroppedItem& di) {
     std::lock_guard<std::mutex> lk(dropped_items_mtx_);
     auto copy = std::make_unique<DroppedItem>(di);
     dropped_items_[di.eid] = std::move(copy);
 }
 
-void Level::removeDroppedItem(int64_t eid) {
+void World::removeDroppedItem(int64_t eid) {
     std::lock_guard<std::mutex> lk(dropped_items_mtx_);
     auto it = dropped_items_.find(eid);
     if (it != dropped_items_.end()) {
@@ -773,7 +773,7 @@ void Level::removeDroppedItem(int64_t eid) {
     }
 }
 
-bool Level::tryClaimDroppedItem(int64_t eid) {
+bool World::tryClaimDroppedItem(int64_t eid) {
     std::lock_guard<std::mutex> lk(dropped_items_mtx_);
     auto it = dropped_items_.find(eid);
     if (it == dropped_items_.end()) return false;
@@ -788,7 +788,7 @@ bool Level::tryClaimDroppedItem(int64_t eid) {
 // ============================================================
 // Tile-entity registry
 // ============================================================
-std::shared_ptr<cursestone::tile::Tile> Level::getTile(int32_t x, int32_t y, int32_t z) {
+std::shared_ptr<cursestone::tile::Tile> World::getTile(int32_t x, int32_t y, int32_t z) {
     ensureTilesLoaded(x >> 4, z >> 4);
     std::lock_guard<std::mutex> lk(tiles_mtx_);
     auto it = tiles_.find(packTilePos(x, y, z));
@@ -796,12 +796,12 @@ std::shared_ptr<cursestone::tile::Tile> Level::getTile(int32_t x, int32_t y, int
     return it->second;
 }
 
-void Level::setTile(int32_t x, int32_t y, int32_t z, std::shared_ptr<cursestone::tile::Tile> t) {
+void World::setTile(int32_t x, int32_t y, int32_t z, std::shared_ptr<cursestone::tile::Tile> t) {
     std::lock_guard<std::mutex> lk(tiles_mtx_);
     tiles_[packTilePos(x, y, z)] = std::move(t);
 }
 
-void Level::removeTile(int32_t x, int32_t y, int32_t z) {
+void World::removeTile(int32_t x, int32_t y, int32_t z) {
     std::lock_guard<std::mutex> lk(tiles_mtx_);
     auto it = tiles_.find(packTilePos(x, y, z));
     if (it == tiles_.end()) return;
@@ -816,7 +816,7 @@ void Level::removeTile(int32_t x, int32_t y, int32_t z) {
     tiles_dirty_chunks_.insert(packChunkPos(x >> 4, z >> 4));
 }
 
-std::vector<std::shared_ptr<cursestone::tile::Tile>> Level::getTilesInChunk(int32_t cx, int32_t cz) {
+std::vector<std::shared_ptr<cursestone::tile::Tile>> World::getTilesInChunk(int32_t cx, int32_t cz) {
     ensureTilesLoaded(cx, cz);
     std::vector<std::shared_ptr<cursestone::tile::Tile>> out;
     std::lock_guard<std::mutex> lk(tiles_mtx_);
@@ -834,7 +834,7 @@ std::vector<std::shared_ptr<cursestone::tile::Tile>> Level::getTilesInChunk(int3
 // ============================================================
 // Tile-entity persistence (NBT <-> mcp_chunk_t::tile_entities)
 // ============================================================
-void Level::ensureTilesLoaded(int32_t cx, int32_t cz) {
+void World::ensureTilesLoaded(int32_t cx, int32_t cz) {
     uint64_t ckey = packChunkPos(cx, cz);
     {
         std::lock_guard<std::mutex> lk(tiles_mtx_);
@@ -871,7 +871,7 @@ void Level::ensureTilesLoaded(int32_t cx, int32_t cz) {
             int32_t tz = mcp_compound_tag_get_int(tag, "z", 0);
 
             std::shared_ptr<cursestone::tile::Tile> tile;
-            cursestone::level::Position pos(tx, ty, tz);
+            cursestone::world::Position pos(tx, ty, tz);
             if (std::strcmp(id, "Chest") == 0) {
                 tile = std::make_shared<cursestone::tile::TileChest>(pos);
             } else if (std::strcmp(id, "Sign") == 0) {
@@ -909,7 +909,7 @@ void Level::ensureTilesLoaded(int32_t cx, int32_t cz) {
 //
 // Only positions without a tile are filled, so this never overwrites a
 // chest the player filled or a furnace that is burning.
-void Level::hydrateTilesFromBlocks(int32_t cx, int32_t cz, mcp_chunk_t* c) {
+void World::hydrateTilesFromBlocks(int32_t cx, int32_t cz, mcp_chunk_t* c) {
     using cursestone::tile::createTileForBlock;
     using cursestone::tile::isTileBlock;
 
@@ -928,7 +928,7 @@ void Level::hydrateTilesFromBlocks(int32_t cx, int32_t cz, mcp_chunk_t* c) {
                     if (tiles_.count(packTilePos(wx, y, wz))) continue;
                 }
                 fresh.push_back(createTileForBlock(
-                    id, cursestone::level::Position((double)wx, (double)y,
+                    id, cursestone::world::Position((double)wx, (double)y,
                                                     (double)wz)));
             }
     if (fresh.empty()) return;
@@ -940,7 +940,7 @@ void Level::hydrateTilesFromBlocks(int32_t cx, int32_t cz, mcp_chunk_t* c) {
                                (int32_t)t->position().z)] = std::move(t);
 }
 
-void Level::syncTilesToChunks() {
+void World::syncTilesToChunks() {
     // Snapshot ALL live tiles (not just dirty ones) grouped by owning
     // chunk, released from the lock before touching chunks_ (which has
     // its own internal locking) to avoid a lock-order dependency between
@@ -1016,7 +1016,7 @@ void Level::syncTilesToChunks() {
 // ============================================================
 // Chunk memory eviction
 // ============================================================
-void Level::evictTilesForChunk(int32_t cx, int32_t cz) {
+void World::evictTilesForChunk(int32_t cx, int32_t cz) {
     uint64_t ckey = packChunkPos(cx, cz);
 
     // Snapshot this chunk's tiles, then release tiles_mtx_ before doing
@@ -1062,7 +1062,7 @@ void Level::evictTilesForChunk(int32_t cx, int32_t cz) {
     c->dirty = true;  // so ChunkManager::unloadChunk()'s save-if-dirty picks it up
 }
 
-int Level::unloadDistantChunks(const std::vector<ChunkViewer>& viewers, int32_t margin) {
+int World::unloadDistantChunks(const std::vector<ChunkViewer>& viewers, int32_t margin) {
     auto coords = chunks_.loadedChunkCoords();
     int unloaded = 0;
     for (auto& [cx, cz] : coords) {
@@ -1094,7 +1094,7 @@ int Level::unloadDistantChunks(const std::vector<ChunkViewer>& viewers, int32_t 
 //     STOP_THUNDER always first, then the START events for the new
 //     state. Re-sending the full pair is idempotent on the client and
 //     guarantees a clean transition between any two states.
-void Level::sendWeatherTo(Player* p) {
+void World::sendWeatherTo(Player* p) {
     if (!p) return;
     auto stop_rain = std::make_shared<network::protocol::LevelEventPacket>();
     stop_rain->evid = network::protocol::LevelEventPacket::EVENT_STOP_RAIN;
@@ -1120,7 +1120,7 @@ void Level::sendWeatherTo(Player* p) {
     }
 }
 
-void Level::setWeather(int state, int32_t durationTicks) {
+void World::setWeather(int state, int32_t durationTicks) {
     if (state < WEATHER_CLEAR || state > WEATHER_THUNDER) state = WEATHER_CLEAR;
     bool changed = (weather_state_ != state);
     weather_state_ = state;
@@ -1134,7 +1134,7 @@ void Level::setWeather(int state, int32_t durationTicks) {
     }
     if (changed) {
         static const char* kNames[4] = { "clear", "rain", "rain+thunder", "thunder" };
-        utils::MainLogger::get().info(std::string("[Weather] Level '") + cfg_.name +
+        utils::MainLogger::get().info(std::string("[Weather] World '") + cfg_.name +
             "' -> " + kNames[state] +
             (weather_ticks_left_ > 0
                 ? " (" + std::to_string(weather_ticks_left_ / 20) + "s)"
@@ -1166,7 +1166,7 @@ private:
 
 } // namespace
 
-void Level::spawnLightning(double x, double y, double z, bool withFire) {
+void World::spawnLightning(double x, double y, double z, bool withFire) {
     int64_t eid = Server::getInstance().allocateEid();
 
     // Bolt + shockwave to every online player (Infinity spawnTo:
@@ -1230,7 +1230,7 @@ void Level::spawnLightning(double x, double y, double z, bool withFire) {
     }
 }
 
-void Level::strikeRandomPlayerLightning() {
+void World::strikeRandomPlayerLightning() {
     // Infinity Weather::calcWeather: pick a random player, strike at
     // (p.x + mt_rand(-64, 64), highestBlock, p.z + mt_rand(-64, 64)).
     auto players = Server::getInstance().playersSnapshot();
@@ -1253,7 +1253,7 @@ void Level::strikeRandomPlayerLightning() {
 }
 
 // ---------------------------------------------------------------
-// doWeatherTick — called from Level::tick() every server tick.
+// doWeatherTick — called from World::tick() every server tick.
 //
 //  1. Counts down rain/thunder durations (when bounded).
 //  2. While raining, extinguishes exposed fire: walks a rotating
@@ -1271,7 +1271,7 @@ void Level::strikeRandomPlayerLightning() {
 //     changed, so clients see the fire die instead of finding out on
 //     the next chunk resync.
 // ---------------------------------------------------------------
-void Level::doWeatherTick(uint64_t current_tick) {
+void World::doWeatherTick(uint64_t current_tick) {
     // 1. Duration countdown.
     if (weather_ticks_left_ > 0) {
         if (--weather_ticks_left_ <= 0) setWeather(WEATHER_CLEAR);
@@ -1330,7 +1330,7 @@ void Level::doWeatherTick(uint64_t current_tick) {
                 if (y < h) continue;
                 int32_t wx = (cx << 4) | lx;
                 int32_t wz = (cz << 4) | lz;
-                // Route through Level::setBlock so the chunk dirty
+                // Route through World::setBlock so the chunk dirty
                 // flag is set (and stays on the same write path as
                 // the rest of the server).
                 setBlock(wx, y, wz, block::AIR, 0);
@@ -1359,4 +1359,4 @@ void Level::doWeatherTick(uint64_t current_tick) {
     }
 }
 
-} // namespace cursestone::level
+} // namespace cursestone::world

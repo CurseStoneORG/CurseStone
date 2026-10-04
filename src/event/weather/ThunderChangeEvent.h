@@ -6,7 +6,7 @@
 #include "WeatherEvent.h"
 #include "../Cancellable.h"
 #include <string>
-namespace cursestone { namespace level { class Level; } }
+namespace cursestone { namespace world { class World; } }
 
 namespace cursestone::event::weather {
 
@@ -14,7 +14,7 @@ class ThunderChangeEvent : public WeatherEvent, public Cancellable {
 public:
     bool to;
 
-    ThunderChangeEvent(cursestone::level::Level* l, bool t)
+    ThunderChangeEvent(cursestone::world::World* l, bool t)
         : WeatherEvent(l), to(t) {}
 
     const std::string& eventName() const override {

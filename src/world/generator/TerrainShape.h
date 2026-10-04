@@ -14,7 +14,7 @@
 #include <cstdint>
 #include <cmath>
 
-namespace cursestone::level::generator {
+namespace cursestone::world::generator {
 
 // World sea level. Rivers and the ocean surface both sit here, so a river
 // always merges into the sea at exactly the same height.
@@ -142,4 +142,4 @@ double treeFreeMask(const TerrainNoise& n, double wx, double wz, int h);
 // world coordinates, matching what Normal::generate stores.
 uint8_t columnBiome(const TerrainNoise& n, double wx, double wz, int h);
 
-} // namespace cursestone::level::generator
+} // namespace cursestone::world::generator

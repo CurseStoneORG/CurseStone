@@ -2,7 +2,7 @@
 // Beach — biome 16. Sand strip between land and ocean. No trees.
 #include "BiomeConfig.h"
 
-namespace cursestone::level::generator::biome {
+namespace cursestone::world::generator::biome {
 const BiomeConfig& beachBiome() {
     static const BiomeConfig c{
         .id = 16,
@@ -28,4 +28,4 @@ const BiomeConfig& beachBiome() {
     };
     return c;
 }
-} // namespace cursestone::level::generator::biome
+} // namespace cursestone::world::generator::biome

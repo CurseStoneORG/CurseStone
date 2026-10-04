@@ -2,7 +2,7 @@
 #include "world/generator/object/ObjectDecorators.h"
 #include "block/BlockIds.h"
 
-namespace cursestone::level::generator::object {
+namespace cursestone::world::generator::object {
 
 using cursestone::block::BlockId;
 
@@ -121,4 +121,4 @@ void ObjectDecorators::sapling(mcp_chunk_t* c, int x, int y, int z, uint8_t data
         put(c, x, y + 1, z, (uint8_t)BlockId::SAPLING, data);
 }
 
-} // namespace cursestone::level::generator::object
+} // namespace cursestone::world::generator::object

@@ -1,4 +1,4 @@
-// Position — a level-relative location with x,y,z + Level reference.
+// Position — a level-relative location with x,y,z + World reference.
 // Mirrors pocketmine/level/Position.php. Used by blocks, entities,
 // tile-entities and players to know "where am I, in which world?".
 // Uses composition with mcp_vector3_t instead of C struct inheritance.
@@ -7,23 +7,23 @@
 #include <memory>
 #include <cmath>
 
-namespace cursestone::level {
-class Level;
+namespace cursestone::world {
+class World;
 
 class Position {
 public:
     double x{0}, y{0}, z{0};
 
     Position() = default;
-    Position(double x, double y, double z, std::shared_ptr<Level> lvl = nullptr)
+    Position(double x, double y, double z, std::shared_ptr<World> lvl = nullptr)
         : x(x), y(y), z(z), level_(std::move(lvl)) {}
 
     // Convert to/from the raw C type used by generators and chunk code.
     explicit Position(mcp_vector3_t v) : x(v.x), y(v.y), z(v.z) {}
     mcp_vector3_t toV3() const { return mcp_v3(x, y, z); }
 
-    std::shared_ptr<Level> level() const { return level_; }
-    void setLevel(std::shared_ptr<Level> l) { level_ = std::move(l); }
+    std::shared_ptr<World> level() const { return level_; }
+    void setLevel(std::shared_ptr<World> l) { level_ = std::move(l); }
 
     double distance(const Position& o) const {
         double dx = x - o.x, dy = y - o.y, dz = z - o.z;
@@ -35,7 +35,7 @@ public:
     }
 
 protected:
-    std::shared_ptr<Level> level_;
+    std::shared_ptr<World> level_;
 };
 
-} // namespace cursestone::level
+} // namespace cursestone::world

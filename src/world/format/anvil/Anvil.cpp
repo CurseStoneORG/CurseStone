@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Anvil.cpp — Nukkit Anvil LevelProvider ported to CurseStone C++.
+// Anvil.cpp — Nukkit Anvil WorldProvider ported to CurseStone C++.
 //
 // Wires together AnvilRegionLoader (the .mca file codec) and
 // AnvilChunkCodec (the per-chunk NBT codec) behind CurseStone's
-// LevelProvider interface. level.dat is GZIP-compressed big-endian NBT
+// WorldProvider interface. level.dat is GZIP-compressed big-endian NBT
 // matching Nukkit's Anvil.generate() output.
 #include "Anvil.h"
 #include "AnvilChunkCodec.h"
-#include "../LevelProviderManager.h"
+#include "../WorldProviderManager.h"
 #include "../ChunkAdapter.h"
 #include "../Chunk.h"
 #include "../../../nbt/NBT.h"
@@ -32,21 +32,21 @@
 #include <sys/types.h>
 #include <zlib.h>
 
-namespace cursestone::level::format::anvil {
+namespace cursestone::world::format::anvil {
 
 // ============================================================================
-// Registrar — installs "anvil" into LevelProviderManager at process start.
+// Registrar — installs "anvil" into WorldProviderManager at process start.
 // Also registers the friendly alias "mcanvil" and "mca" for legacy configs.
 // ============================================================================
 AnvilRegistrar g_anvil_registrar_;
 AnvilRegistrar::AnvilRegistrar() {
-    auto& mgr = LevelProviderManager::getInstance();
+    auto& mgr = WorldProviderManager::getInstance();
     mgr.registerProvider("anvil",
-        []() { return std::unique_ptr<LevelProvider>(new Anvil()); });
+        []() { return std::unique_ptr<WorldProvider>(new Anvil()); });
     mgr.registerProvider("mcanvil",
-        []() { return std::unique_ptr<LevelProvider>(new Anvil()); });
+        []() { return std::unique_ptr<WorldProvider>(new Anvil()); });
     mgr.registerProvider("mca",
-        []() { return std::unique_ptr<LevelProvider>(new Anvil()); });
+        []() { return std::unique_ptr<WorldProvider>(new Anvil()); });
 }
 
 // ============================================================================
@@ -203,7 +203,7 @@ void Anvil::init(const std::string& path) {
     FILE* fp = std::fopen(level_dat.c_str(), "rb");
     if (!fp) {
         // No level.dat → generate defaults. Seed/spawn come from
-        // LevelConfig via setSpawn/setCurrentTime (called by Level ctor).
+        // WorldConfig via setSpawn/setCurrentTime (called by World ctor).
         // We'll write level.dat on shutdown/saveMetadata().
         utils::MainLogger::get().info("[Anvil] No level.dat found at " +
             level_dat + "; will create on save.");
@@ -572,4 +572,4 @@ bool Anvil::generate(const std::string& path, const std::string& name,
     return write_file(level_dat, gz.data(), gz.size());
 }
 
-} // namespace cursestone::level::format::anvil
+} // namespace cursestone::world::format::anvil

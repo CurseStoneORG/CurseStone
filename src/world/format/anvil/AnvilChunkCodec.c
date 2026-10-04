@@ -60,7 +60,7 @@ uint8_t* anvil_chunk_encode(const mcp_chunk_t* chunk, size_t* out_len) {
     mcp_tag_t* root = mcp_compound_tag_new_named("");
     if (!root) return NULL;
 
-    // Level: CompoundTag
+    // World: CompoundTag
     mcp_tag_t* level = mcp_compound_tag_new_named("Level");
     if (!level) { mcp_tag_destroy(root); return NULL; }
 

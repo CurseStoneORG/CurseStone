@@ -3,7 +3,7 @@
 //
 // A simple in-memory chunk manager used by generators and tests.
 // Stores chunks in an unordered_map keyed by (chunkX, chunkZ) hash.
-// Unlike the full ChunkManager (which connects to a LevelProvider),
+// Unlike the full ChunkManager (which connects to a WorldProvider),
 // SimpleChunkManager has no disk I/O — it's pure in-memory.
 #pragma once
 #include "ChunkManager.h"
@@ -12,7 +12,7 @@
 #include <cstdint>
 #include <functional>
 
-namespace cursestone::level {
+namespace cursestone::world {
 
 class SimpleChunkManager : public ChunkManager {
 public:
@@ -41,10 +41,10 @@ public:
     void markDirty(int32_t /*x*/, int32_t /*z*/) override {}
     int flushDirty() override { return 0; }
 
-    void setProvider(std::shared_ptr<format::LevelProvider> p) override {
+    void setProvider(std::shared_ptr<format::WorldProvider> p) override {
         provider_ = std::move(p);
     }
-    std::shared_ptr<format::LevelProvider> provider() const override {
+    std::shared_ptr<format::WorldProvider> provider() const override {
         return provider_;
     }
     size_t count() const override { return chunks_.size(); }
@@ -57,7 +57,7 @@ private:
     }
     int64_t seed_;
     std::unordered_map<int64_t, mcp_chunk_t*> chunks_;
-    std::shared_ptr<format::LevelProvider> provider_;
+    std::shared_ptr<format::WorldProvider> provider_;
 };
 
-} // namespace cursestone::level
+} // namespace cursestone::world

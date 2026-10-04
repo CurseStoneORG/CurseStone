@@ -2,7 +2,7 @@
 // Taiga — biome 5. Cold conifer forest: spruce trees and ferns.
 #include "BiomeConfig.h"
 
-namespace cursestone::level::generator::biome {
+namespace cursestone::world::generator::biome {
 const BiomeConfig& taigaBiome() {
     static const BiomeConfig c{
         .id = 5,
@@ -31,4 +31,4 @@ const BiomeConfig& taigaBiome() {
     };
     return c;
 }
-} // namespace cursestone::level::generator::biome
+} // namespace cursestone::world::generator::biome

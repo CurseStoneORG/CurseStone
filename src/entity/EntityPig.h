@@ -5,7 +5,7 @@ namespace cursestone::entity {
 class EntityPig : public Animal {
 public:
     using Animal::Animal;
-    EntityPig(int64_t rid, std::shared_ptr<Level> l) : Animal(rid, std::move(l)) { setNetworkId(12); }
+    EntityPig(int64_t rid, std::shared_ptr<World> l) : Animal(rid, std::move(l)) { setNetworkId(12); }
     std::string name() const { return "Pig"; }
 };
 } // namespace

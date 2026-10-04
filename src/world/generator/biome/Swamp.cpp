@@ -2,7 +2,7 @@
 // Swamp — biome 6. Low and wet: swamp oaks, lily pads, mushrooms.
 #include "BiomeConfig.h"
 
-namespace cursestone::level::generator::biome {
+namespace cursestone::world::generator::biome {
 const BiomeConfig& swampBiome() {
     static const BiomeConfig c{
         .id = 6,
@@ -30,4 +30,4 @@ const BiomeConfig& swampBiome() {
     };
     return c;
 }
-} // namespace cursestone::level::generator::biome
+} // namespace cursestone::world::generator::biome

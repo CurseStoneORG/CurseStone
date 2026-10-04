@@ -65,10 +65,10 @@ class CommandMap;
 class ServerScheduler;
 class MainLogger;
 
-namespace level       { class Level; class Position; class Location; }
-// Alias so legacy code referencing `cursestone::Level` (without the level::
-// qualifier) still works. Both refer to cursestone::level::Level.
-using Level = level::Level;
+namespace world       { class World; class Position; class Location; }
+// Alias so legacy code referencing `cursestone::World` (without the world::
+// qualifier) still works. Both refer to cursestone::world::World.
+using World = world::World;
 namespace block       { class Block; }
 namespace item        { class Item; }
 namespace entity      { class Entity; }

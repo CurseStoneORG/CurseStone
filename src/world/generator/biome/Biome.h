@@ -18,7 +18,7 @@
 #include <cstdint>
 #include <string>
 
-namespace cursestone::level::generator::biome {
+namespace cursestone::world::generator::biome {
 
 enum BiomeId : uint8_t {
     BIOME_OCEAN        = 0,

@@ -7,7 +7,7 @@
 #include "world/Position.h"
 #include <vector>
 #include <cstdint>
-namespace cursestone::level {
+namespace cursestone::world {
 class Explosion {
 public:
     Explosion(Position pos, float power)

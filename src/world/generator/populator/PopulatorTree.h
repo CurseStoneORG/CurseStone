@@ -1,7 +1,7 @@
 #pragma once
 #include "Populator.h"
 #include "world/generator/object/TreeGenerator.h"
-namespace cursestone::level::generator::populator {
+namespace cursestone::world::generator::populator {
 // Scatters trees, choosing the vanilla species for the biome under each
 // candidate column (oak/birch in forests, spruce in taiga/hills, jungle in
 // jungle, acacia in savanna, swamp oak in swampland...).

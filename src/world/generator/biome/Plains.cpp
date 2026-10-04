@@ -2,7 +2,7 @@
 // Plains — biome 1. Open grassland with a few scattered oak trees.
 #include "BiomeConfig.h"
 
-namespace cursestone::level::generator::biome {
+namespace cursestone::world::generator::biome {
 const BiomeConfig& plainsBiome() {
     static const BiomeConfig c{
         .id = 1,
@@ -31,4 +31,4 @@ const BiomeConfig& plainsBiome() {
     };
     return c;
 }
-} // namespace cursestone::level::generator::biome
+} // namespace cursestone::world::generator::biome

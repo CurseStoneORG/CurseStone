@@ -3,9 +3,9 @@
 #include "BiomeConfigs.h"
 #include "world/generator/biome/Biome.h"
 
-namespace cursestone::level::generator::biome {
+namespace cursestone::world::generator::biome {
 
-using namespace cursestone::level::generator::biome; // (Biome.h ids)
+using namespace cursestone::world::generator::biome; // (Biome.h ids)
 
 const BiomeConfig& BiomeRegistry::forId(uint8_t id) {
     switch (id) {
@@ -63,4 +63,4 @@ uint8_t BiomeRegistry::select(double temp, double humid, int height, int seaLeve
     return BIOME_PLAINS;
 }
 
-} // namespace cursestone::level::generator::biome
+} // namespace cursestone::world::generator::biome

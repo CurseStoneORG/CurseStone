@@ -5,7 +5,7 @@
 #pragma once
 #include "GenericTree.h"
 
-namespace cursestone::level::generator::object::trees {
+namespace cursestone::world::generator::object::trees {
 
 class DarkOakTree : public GenericTree {
 public:
@@ -19,4 +19,4 @@ protected:
                 GenRandom& rng);
 };
 
-} // namespace cursestone::level::generator::object::trees
+} // namespace cursestone::world::generator::object::trees

@@ -10,7 +10,7 @@ void Tile::writeNBT(mcp_tag_t* tag) const {
 }
 void Tile::readNBT(const mcp_tag_t* /*tag*/) {
     // x/y/z/id are already known by the time a subclass's readNBT runs
-    // (Level::ensureTilesLoaded reads them from the tag itself to decide
+    // (World::ensureTilesLoaded reads them from the tag itself to decide
     // where to construct the Tile, before construction happens) — nothing
     // left to do at the base-class level.
 }

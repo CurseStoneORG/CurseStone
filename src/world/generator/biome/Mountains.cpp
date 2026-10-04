@@ -3,7 +3,7 @@
 // sparse grass and a few high spruce.
 #include "BiomeConfig.h"
 
-namespace cursestone::level::generator::biome {
+namespace cursestone::world::generator::biome {
 const BiomeConfig& mountainsBiome() {
     static const BiomeConfig c{
         .id = 4,
@@ -32,4 +32,4 @@ const BiomeConfig& mountainsBiome() {
     };
     return c;
 }
-} // namespace cursestone::level::generator::biome
+} // namespace cursestone::world::generator::biome

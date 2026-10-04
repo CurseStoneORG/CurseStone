@@ -11,8 +11,8 @@
 // Diferencias con el PHP original (adaptadas a la arquitectura C++ de CurseStone):
 //   - scheduleUpdate() usa ServerScheduler::scheduleSync() en vez de
 //     la cola interna de PMMP.
-//   - Level no expone getBlockData() todavía; se accede via chunks() directamente.
-//     Agrega `uint8_t getBlockData(int32_t x, int32_t y, int32_t z)` a Level.h
+//   - World no expone getBlockData() todavía; se accede via chunks() directamente.
+//     Agrega `uint8_t getBlockData(int32_t x, int32_t y, int32_t z)` a World.h
 //     (ver parche incluido abajo en Level_patch.h).
 //   - fireSpreadEnabled() y netherEnabled() son métodos nuevos en Server.h
 //     (ver parche Server_patch.h).
@@ -24,7 +24,7 @@
 #include <string>
 
 namespace cursestone {
-    namespace level { class Level; }
+    namespace world { class World; }
     namespace entity { class Entity; }
 }
 
@@ -47,19 +47,19 @@ public:
     // ---- Interacción con entidades ----
     // Llama el entity-tick loop por cada entidad que se superpone con este bloque.
     // Mirrors PMMP Fire::onEntityCollide($entity)
-    static void onEntityCollide(level::Level* level,
+    static void onEntityCollide(world::World* level,
                                 int32_t bx, int32_t by, int32_t bz,
                                 entity::Entity* entity);
 
     // ---- Tick programado ----
     // Encola el siguiente update de propagación/extinción para (x,y,z).
     // delay = TICK_RATE + rand(0..10)  — idéntico a PMMP scheduleUpdate.
-    static void scheduleUpdate(level::Level* level,
+    static void scheduleUpdate(world::World* level,
                                int32_t x, int32_t y, int32_t z);
 
     // Lógica de propagación + extinción, llamada por FireUpdateTask::onRun().
     // Mirrors PMMP Fire::onUpdate(BLOCK_UPDATE_SCHEDULED)
-    static void onScheduledUpdate(level::Level* level,
+    static void onScheduledUpdate(world::World* level,
                                   int32_t x, int32_t y, int32_t z);
 
     static constexpr int TICK_RATE = 30;  // ticks (= 1.5 s a 20 TPS)
@@ -70,17 +70,17 @@ public:
     static int getBurnChance(uint8_t blockId);   // probabilidad de propagarse
 
     // ---- Helpers de geometría ----
-    static bool isTopFacingSurfaceSolid(level::Level* level,
+    static bool isTopFacingSurfaceSolid(world::World* level,
                                         int32_t x, int32_t y, int32_t z);
-    static bool canNeighborBurn(level::Level* level,
+    static bool canNeighborBurn(world::World* level,
                                 int32_t x, int32_t y, int32_t z);
 
 private:
-    static void tryToCatchBlockOnFire(level::Level* level,
+    static void tryToCatchBlockOnFire(world::World* level,
                                       int32_t tx, int32_t ty, int32_t tz,
                                       int bound, int damage);
 
-    static int getChanceOfNeighborsEncouragingFire(level::Level* level,
+    static int getChanceOfNeighborsEncouragingFire(world::World* level,
                                                    int32_t x, int32_t y, int32_t z);
 };
 

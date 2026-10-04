@@ -51,7 +51,7 @@
 #include <utility>
 #include <vector>
 
-namespace cursestone::level::generator::populator {
+namespace cursestone::world::generator::populator {
 
 // One placed piece of a village layout, in WORLD coordinates: the
 // top-left corner of the rotated footprint plus its extent.
@@ -113,4 +113,4 @@ public:
     static uint64_t& nanosAccumulator();
 };
 
-} // namespace cursestone::level::generator::populator
+} // namespace cursestone::world::generator::populator

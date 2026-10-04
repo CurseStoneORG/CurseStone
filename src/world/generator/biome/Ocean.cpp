@@ -2,7 +2,7 @@
 // Ocean — biome 0. Deep water, gravel/sand floor, no sky vegetation.
 #include "BiomeConfig.h"
 
-namespace cursestone::level::generator::biome {
+namespace cursestone::world::generator::biome {
 const BiomeConfig& oceanBiome() {
     static const BiomeConfig c{
         .id = 0,
@@ -28,4 +28,4 @@ const BiomeConfig& oceanBiome() {
     };
     return c;
 }
-} // namespace cursestone::level::generator::biome
+} // namespace cursestone::world::generator::biome

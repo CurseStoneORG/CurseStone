@@ -2,7 +2,7 @@
 #include "world/format/Chunk.h"
 #include "world/World.h"
 #include <cmath>
-namespace cursestone::level {
+namespace cursestone::world {
 int Explosion::explode() {
     int destroyed = 0;
     int r = (int)(power_ + 0.5f);

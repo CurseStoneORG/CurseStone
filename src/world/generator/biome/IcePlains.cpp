@@ -2,7 +2,7 @@
 // Ice Plains — biome 12. Frozen tundra: snow cover, a few spruce.
 #include "BiomeConfig.h"
 
-namespace cursestone::level::generator::biome {
+namespace cursestone::world::generator::biome {
 const BiomeConfig& icePlainsBiome() {
     static const BiomeConfig c{
         .id = 12,
@@ -30,4 +30,4 @@ const BiomeConfig& icePlainsBiome() {
     };
     return c;
 }
-} // namespace cursestone::level::generator::biome
+} // namespace cursestone::world::generator::biome

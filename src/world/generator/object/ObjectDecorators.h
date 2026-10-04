@@ -11,7 +11,7 @@
 #include "world/generator/noise/GenRandom.h"
 #include <cstdint>
 
-namespace cursestone::level::generator::object {
+namespace cursestone::world::generator::object {
 
 class ObjectDecorators {
 public:
@@ -28,4 +28,4 @@ public:
     static void sapling(mcp_chunk_t* c, int x, int y, int z, uint8_t data);
 };
 
-} // namespace cursestone::level::generator::object
+} // namespace cursestone::world::generator::object

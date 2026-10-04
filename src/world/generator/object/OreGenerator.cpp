@@ -4,9 +4,9 @@
 
 #include <cmath>
 
-namespace cursestone::level::generator::object {
+namespace cursestone::world::generator::object {
 
-using cursestone::level::generator::GenRandom;
+using cursestone::world::generator::GenRandom;
 
 namespace {
 constexpr int kMaxY = 127;
@@ -79,4 +79,4 @@ int OreGenerator::place(mcp_chunk_t* c, int64_t seed, const OreVein& v) {
     return placed;
 }
 
-} // namespace cursestone::level::generator::object
+} // namespace cursestone::world::generator::object

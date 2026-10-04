@@ -4,7 +4,7 @@
 #pragma once
 #include "GenericTree.h"
 
-namespace cursestone::level::generator::object::trees {
+namespace cursestone::world::generator::object::trees {
 
 class SwampTree : public GenericTree {
 protected:
@@ -16,4 +16,4 @@ protected:
                     int sourceZ, GenRandom& rng) override;
 };
 
-} // namespace cursestone::level::generator::object::trees
+} // namespace cursestone::world::generator::object::trees

@@ -1,2 +1,2 @@
 #include "Particle.h"
-namespace cursestone::level::particle {}
+namespace cursestone::world::particle {}

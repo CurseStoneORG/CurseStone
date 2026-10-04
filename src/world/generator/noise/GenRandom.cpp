@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include "world/generator/noise/GenRandom.h"
 
-namespace cursestone::level::generator {
+namespace cursestone::world::generator {
 
 void GenRandom::setSeed(int64_t s) {
     seed_ = s;
@@ -56,4 +56,4 @@ int64_t GenRandom::nextLong() {
     return (nextSignedInt() << 32) | nextSignedInt();
 }
 
-} // namespace cursestone::level::generator
+} // namespace cursestone::world::generator

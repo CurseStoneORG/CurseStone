@@ -5,7 +5,7 @@
 #include "Populator.h"
 #include <cstdint>
 
-namespace cursestone::level::generator::populator {
+namespace cursestone::world::generator::populator {
 
 class PopulatorCactus : public Populator {
 public:
@@ -103,4 +103,4 @@ private:
     int attempts_;
 };
 
-} // namespace cursestone::level::generator::populator
+} // namespace cursestone::world::generator::populator
