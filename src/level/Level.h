@@ -38,11 +38,25 @@ struct DroppedItem {
     uint16_t damage = 0;
     double   x = 0.0, y = 0.0, z = 0.0;
     uint64_t spawn_tick = 0;     // when it was dropped (server tick)
-    // 5-tick (~0.25s) default — matches the value Player::dropItem() uses
-    // when it registers drops; both MUST be the same or the pickup gate in
-    // Player::onUpdate() and the intent of the registry disagree.
-    uint32_t pickup_delay_ticks = 5;
+    // Pickup delay, in ticks. Genisys Player::DROP_ITEM_PACKET drops with
+    // 40 ticks (2 s) and Level::dropItem() defaults to 10, so the default
+    // here matches that (0.5 s) and a manual drop passes 40 explicitly.
+    uint32_t pickup_delay_ticks = 10;
     bool     taken = false;      // marked for removal after pickup
+
+    // --- Genisys entity\Item state (pocketmine\entity\Item) ---
+    // $motionX / $motionY / $motionZ, applied and integrated every tick by
+    // Level::tickDroppedItems(). The client runs the SAME integrator on
+    // the speedX/Y/Z we shipped in AddItemEntityPacket, so this has to
+    // exist server-side too or the pickup check tests a position the
+    // entity has long since left.
+    double vx = 0.0, vy = 0.0, vz = 0.0;
+    // $onGround — true when the last vertical move was clipped downwards.
+    bool   on_ground = false;
+    // $lastX / $lastY / $lastZ — the position the client was last told
+    // about, so updateMovement() can apply Genisys' 0.2-block dead-zone
+    // (diffPosition > 0.04) instead of broadcasting on every 5th tick.
+    double lx = 0.0, ly = 0.0, lz = 0.0;
 };
 
 struct LevelConfig {
@@ -165,6 +179,16 @@ public:
     // handlers were still holding, which is one of the scattered GCs that
     // desynchronized player actions from server state.
     void tick(uint64_t current_tick);
+    // Runs one physics step for every dropped item still on the ground —
+    // a port of pocketmine\entity\Item::onUpdate() (Genisys 0.15) plus the
+    // Entity::checkObstruction() / Entity::move() / Entity::checkGroundState()
+    // pair it calls, so the server's idea of where an item lies matches the
+    // one the client integrated from the speedX/Y/Z we shipped in
+    // AddItemEntityPacket. Without this the item visibly flies away from
+    // the server's record and can never be picked up.
+    // Every 5th tick it also broadcasts MoveEntityPacket, mirroring
+    // Genisys' `if($currentTick % 5 == 0) $this->updateMovement();`.
+    void tickDroppedItems(uint64_t current_tick);
     // Tick de block entities (hornos: fundido + fuel + progreso de UI).
     // Llamado UNA VEZ por tick desde Server::tick (fuera de
     // Level::tick para no bloquear la fase de tiempo/clima con I/O de

@@ -30,6 +30,7 @@
 #include "network/protocol/ExplodePacket.h"
 #include <cmath>
 #include "network/protocol/RemoveEntityPacket.h"
+#include "network/protocol/MoveEntityPacket.h"
 #include "scheduler/ServerScheduler.h"
 #include "scheduler/Task.h"
 #include <cmath>
@@ -311,12 +312,271 @@ void Level::tick(uint64_t current_tick) {
     // presupuesto por tick para no congelar el hilo principal cuando
     // entra una vista llena de chunks a la vez.
     light_.processPending(LightEngine::kPendingBudget);
-    // NOTE: the dropped-items sweep used to run here every tick. It was
-    // moved to collectDroppedItems(), driven by the single global GC in
-    // MemoryManager — running an independent reclaimer inside tick() freed
-    // records out from under player pickup handlers (taken-flag race →
-    // phantom pickups) and was one of the scattered GCs this codebase had.
-    (void)current_tick;
+    // NOTE: the dropped-items *reclamation* sweep used to run here every
+    // tick. It was moved to collectDroppedItems(), driven by the single
+    // global GC in MemoryManager — running an independent reclaimer inside
+    // tick() freed records out from under player pickup handlers
+    // (taken-flag race → phantom pickups) and was one of the scattered GCs
+    // this codebase had. The per-tick *physics* stays here: the client
+    // integrates the motion we shipped in AddItemEntityPacket every tick,
+    // so the server has to do the same or the two drift apart.
+    tickDroppedItems(current_tick);
+}
+
+// ============================================================
+// Dropped-item physics — pocketmine\entity\Item::onUpdate() (Genisys 0.15)
+// ============================================================
+//
+// Genisys Item constants: $gravity = 0.04, $drag = 0.02, width/length/height
+// = 0.25. One tick is:
+//
+//     $this->age++;
+//     $this->pickupDelay -= $tickDiff;
+//     $this->motionY -= $this->gravity;
+//     if($this->checkObstruction($this->x, $this->y, $this->z)) ...
+//     $this->move($this->motionX, $this->motionY, $this->motionZ);
+//     $friction = 1 - $this->drag;
+//     if($this->onGround and (|mx| > 0.00001 or |mz| > 0.00001))
+//         $friction = blockBelow->getFrictionFactor() * $friction;   // 0.6
+//     $this->motionX *= $friction; $this->motionY *= 1 - $drag; $this->motionZ *= $friction;
+//     if($this->onGround) $this->motionY *= -0.5;
+//     if($currentTick % 5 == 0) $this->updateMovement();
+//
+// and Entity::move() resolves the delta one axis at a time against the
+// Level's collision cubes (Y, then X, then Z), zeroing each motion component
+// that got clipped.
+namespace {
+
+constexpr double kItemGravity  = 0.04;   // pocketmine\entity\Item::$gravity
+constexpr double kItemDrag     = 0.02;   // pocketmine\entity\Item::$drag
+constexpr double kItemHalfW    = 0.125;  // width 0.25 / 2
+constexpr double kItemHeight   = 0.25;   // pocketmine\entity\Item::$height
+constexpr double kBlockFriction = 0.6;   // Block::getFrictionFactor()
+
+// pocketmine\block\Block::$solid. Everything an item can rest on is solid
+// except air, the liquids, fire, cobweb and the decoration blocks.
+bool dropBlockSolid(uint8_t id) {
+    switch (id) {
+        case block::AIR:
+        case block::FLOWING_WATER: case block::WATER:
+        case block::FLOWING_LAVA:  case block::LAVA:
+        case block::FIRE:
+        case block::COBWEB:
+        case block::SAPLING:      case block::TALL_GRASS:
+        case block::DEAD_BUSH:     case block::FLOWER_YELLOW:
+        case block::FLOWER_RED:   case block::BROWN_MUSHROOM:
+        case block::RED_MUSHROOM: case block::TORCH:
+        case block::REDSTONE_TORCH_ON: case block::REDSTONE_WIRE:
+        case block::LEVER:        case block::RAIL:
+        case block::POWERED_RAIL: case block::DETECTOR_RAIL:
+        case block::WHITE_CARPET: case block::SNOW_LAYER:
+        case block::LILY_PAD:     case block::VINE:
+        case block::SUGARCANE:
+            return false;
+        default:
+            return true;
+    }
+}
+
+struct Aabb {
+    double minX, minY, minZ, maxX, maxY, maxZ;
+};
+
+} // namespace
+
+void Level::tickDroppedItems(uint64_t current_tick) {
+    // Snapshot the raw pointers like droppedItems() does — the physics
+    // pass never removes records (that is collectDroppedItems' job), it
+    // only rewrites the fields in place, and it holds no lock while it
+    // sends packets (lock-ordering rule used by every other Level method).
+    std::vector<DroppedItem*> snapshot;
+    {
+        std::lock_guard<std::mutex> lk(dropped_items_mtx_);
+        snapshot.reserve(dropped_items_.size());
+        for (auto& [_, di] : dropped_items_) {
+            if (di && !di->taken) snapshot.push_back(di.get());
+        }
+    }
+    if (snapshot.empty()) return;
+
+    for (DroppedItem* di : snapshot) {
+        // No physics for an item whose chunk is not loaded (getBlockId
+        // answers AIR for those, which would let the item sink through an
+        // unloaded world forever). It resumes as soon as the chunk is back.
+        int item_cx = (int)std::floor(di->x) >> 4;
+        int item_cz = (int)std::floor(di->z) >> 4;
+        if (chunks_.getChunkIfLoaded(item_cx, item_cz) == nullptr) continue;
+        if (di->y < 0.0 || di->y > 255.0) continue;
+
+        // $this->pickupDelay -= $tickDiff (never above 32767 = infinite).
+        if (di->pickup_delay_ticks > 0 && di->pickup_delay_ticks < 32767) {
+            --di->pickup_delay_ticks;
+        }
+
+        // $this->motionY -= $this->gravity;  (BEFORE the move, as in
+        // Genisys Item::onUpdate — otherwise the item lands one tick late).
+        di->vy -= kItemGravity;
+
+        // Entity::checkObstruction() — if the item ended up embedded in a
+        // solid block, kick it out along the nearest face.
+        {
+            int i = (int)std::floor(di->x);
+            int j = (int)std::floor(di->y);
+            int k = (int)std::floor(di->z);
+            double diffX = di->x - i, diffY = di->y - j, diffZ = di->z - k;
+            if (dropBlockSolid(getBlockId(i, j, k))) {
+                bool f0 = !dropBlockSolid(getBlockId(i - 1, j, k));
+                bool f1 = !dropBlockSolid(getBlockId(i + 1, j, k));
+                bool f2 = !dropBlockSolid(getBlockId(i, j - 1, k));
+                bool f3 = !dropBlockSolid(getBlockId(i, j + 1, k));
+                bool f4 = !dropBlockSolid(getBlockId(i, j, k - 1));
+                bool f5 = !dropBlockSolid(getBlockId(i, j, k + 1));
+
+                int direction = -1;
+                double limit = 9999;
+                if (f0)                       { limit = diffX;        direction = 0; }
+                if (f1 && 1 - diffX < limit)  { limit = 1 - diffX;    direction = 1; }
+                if (f2 && diffY < limit)      { limit = diffY;        direction = 2; }
+                if (f3 && 1 - diffY < limit)  { limit = 1 - diffY;    direction = 3; }
+                if (f4 && diffZ < limit)      { limit = diffZ;        direction = 4; }
+                if (f5 && 1 - diffZ < limit)  {                      direction = 5; }
+
+                double force = (double)std::rand() / (double)RAND_MAX * 0.2 + 0.1;
+                switch (direction) {
+                    case 0: di->vx = -force; break;
+                    case 1: di->vx =  force; break;
+                    case 2: di->vy = -force; break;
+                    case 3: di->vy =  force; break;
+                    case 4: di->vz = -force; break;
+                    case 5: di->vz =  force; break;
+                    default: break;
+                }
+            }
+        }
+
+        // Entity::move() — per-axis clip against the collision cubes of the
+        // swept box, then Entity::checkGroundState() + motion cancellation.
+        const double movX = di->vx, movY = di->vy, movZ = di->vz;
+        {
+            Aabb bb{ di->x - kItemHalfW, di->y,            di->z - kItemHalfW,
+                     di->x + kItemHalfW, di->y + kItemHeight, di->z + kItemHalfW };
+
+            double dx = movX, dy = movY, dz = movZ;
+
+            // Level::getCollisionCubes($this, $bb->addCoord($dx, $dy, $dz))
+            Aabb sw{ bb.minX + dx, bb.minY + dy, bb.minZ + dz,
+                     bb.maxX + dx, bb.maxY + dy, bb.maxZ + dz };
+            int x0 = (int)std::floor(sw.minX), x1 = (int)std::ceil(sw.maxX);
+            int y0 = (int)std::floor(sw.minY), y1 = (int)std::ceil(sw.maxY);
+            int z0 = (int)std::floor(sw.minZ), z1 = (int)std::ceil(sw.maxZ);
+
+            // Y first, then X, then Z — the order Entity::move() uses.
+            for (int bx = x0; bx <= x1; ++bx) {
+                for (int by = y0; by <= y1; ++by) {
+                    for (int bz = z0; bz <= z1; ++bz) {
+                        if (!dropBlockSolid(getBlockId(bx, by, bz))) continue;
+                        Aabb c{ (double)bx, (double)by, (double)bz,
+                                (double)bx + 1, (double)by + 1, (double)bz + 1 };
+                        // AxisAlignedBB::calculateYOffset
+                        if (bb.maxX <= c.minX || bb.minX >= c.maxX) continue;
+                        if (bb.maxZ <= c.minZ || bb.minZ >= c.maxZ) continue;
+                        if (dy > 0 && bb.maxY <= c.minY) {
+                            double y1s = c.minY - bb.maxY;
+                            if (y1s < dy) dy = y1s;
+                        }
+                        if (dy < 0 && bb.minY >= c.maxY) {
+                            double y2s = c.maxY - bb.minY;
+                            if (y2s > dy) dy = y2s;
+                        }
+                    }
+                }
+            }
+            di->y += dy;
+
+            for (int bx = x0; bx <= x1; ++bx) {
+                for (int by = y0; by <= y1; ++by) {
+                    for (int bz = z0; bz <= z1; ++bz) {
+                        if (!dropBlockSolid(getBlockId(bx, by, bz))) continue;
+                        Aabb c{ (double)bx, (double)by, (double)bz,
+                                (double)bx + 1, (double)by + 1, (double)bz + 1 };
+                        // AxisAlignedBB::calculateXOffset
+                        if (bb.maxY <= c.minY || bb.minY >= c.maxY) continue;
+                        if (bb.maxZ <= c.minZ || bb.minZ >= c.maxZ) continue;
+                        if (dx > 0 && bb.maxX <= c.minX) {
+                            double x1s = c.minX - bb.maxX;
+                            if (x1s < dx) dx = x1s;
+                        }
+                        if (dx < 0 && bb.minX >= c.maxX) {
+                            double x2s = c.maxX - bb.minX;
+                            if (x2s > dx) dx = x2s;
+                        }
+                    }
+                }
+            }
+            di->x += dx;
+
+            for (int bx = x0; bx <= x1; ++bx) {
+                for (int by = y0; by <= y1; ++by) {
+                    for (int bz = z0; bz <= z1; ++bz) {
+                        if (!dropBlockSolid(getBlockId(bx, by, bz))) continue;
+                        Aabb c{ (double)bx, (double)by, (double)bz,
+                                (double)bx + 1, (double)by + 1, (double)bz + 1 };
+                        // AxisAlignedBB::calculateZOffset
+                        if (bb.maxX <= c.minX || bb.minX >= c.maxX) continue;
+                        if (bb.maxY <= c.minY || bb.minY >= c.maxY) continue;
+                        if (dz > 0 && bb.maxZ <= c.minZ) {
+                            double z1s = c.minZ - bb.maxZ;
+                            if (z1s < dz) dz = z1s;
+                        }
+                        if (dz < 0 && bb.minZ >= c.maxZ) {
+                            double z2s = c.maxZ - bb.minZ;
+                            if (z2s > dz) dz = z2s;
+                        }
+                    }
+                }
+            }
+            di->z += dz;
+
+            // Entity::checkGroundState(): on the floor only when the
+            // downward motion was clipped.
+            di->on_ground = (movY != dy && movY < 0);
+            if (movX != dx) di->vx = 0;
+            if (movY != dy) di->vy = 0;
+            if (movZ != dz) di->vz = 0;
+        }
+
+        double friction = 1.0 - kItemDrag;
+        if (di->on_ground && (std::fabs(di->vx) > 0.00001 ||
+                             std::fabs(di->vz) > 0.00001)) {
+            friction = kBlockFriction * friction;
+        }
+        di->vx *= friction;
+        di->vy *= 1.0 - kItemDrag;
+        di->vz *= friction;
+        if (di->on_ground) di->vy *= -0.5;
+    }
+
+    // Entity::updateMovement() — every 5th tick, and only when the entity
+    // actually travelled more than 0.2 blocks (Genisys' 0.04 dead-zone).
+    if (current_tick % 5 != 0) return;
+    for (DroppedItem* di : snapshot) {
+        double dx = di->x - di->lx, dy = di->y - di->ly, dz = di->z - di->lz;
+        if (!(dx * dx + dy * dy + dz * dz > 0.04)) continue;
+        di->lx = di->x; di->ly = di->y; di->lz = di->z;
+
+        auto pk = std::make_shared<network::protocol::MoveEntityPacket>();
+        pk->eid = di->eid;
+        pk->x   = (float)di->x;
+        pk->y   = (float)di->y;
+        pk->z   = (float)di->z;
+        int32_t pk_cx = (int32_t)std::floor(di->x) >> 4;
+        int32_t pk_cz = (int32_t)std::floor(di->z) >> 4;
+        for (auto& p : Server::getInstance().playersSnapshot()) {
+            if (!p || !p->spawned()) continue;
+            if (!p->isTrackingChunk(pk_cx, pk_cz)) continue;
+            p->sendPacket(pk);
+        }
+    }
 }
 
 size_t Level::collectDroppedItems(uint64_t current_tick) {

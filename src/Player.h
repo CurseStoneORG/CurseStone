@@ -128,10 +128,22 @@ public:
     // contenedor y manda el volcado completo de los 3 slots.
     void openFurnaceAt(int x, int y, int z);
 
-    // Spawn a dropped item entity at the given position with a small random
-    // outward motion. Mirrors PMMP `Level::dropItem`. Returns the allocated
-    // runtime entity ID (or 0 if the item id was 0).
-    int64_t dropItem(int x, int y, int z, uint16_t itemId, uint8_t count, uint16_t damage);
+    // Spawn a dropped item entity — pocketmine\level\Level::dropItem()
+    // (Genisys 0.15). `motion*` is the $motion Vector3 the entity is created
+    // with and the one we ship as speedX/Y/Z in AddItemEntityPacket; the
+    // server then integrates it every tick in Level::tickDroppedItems().
+    // `pickup_delay` is Genisys' PickupDelay NBT short (10 by default,
+    // 40 for a Q drop). Returns the allocated runtime entity ID, or 0 when
+    // the stack was empty.
+    int64_t dropItem(double x, double y, double z,
+                     uint16_t itemId, uint8_t count, uint16_t damage,
+                     double motionX = 0.0, double motionY = 0.2, double motionZ = 0.0,
+                     uint32_t pickup_delay = 10);
+
+    // Entity::getDirectionVector() (Genisys 0.15) — the unit vector the
+    // player is looking along. Player::DROP_ITEM_PACKET multiplies it by
+    // 0.4 to throw the stack.
+    math::Vector3 getDirectionVector() const;
 
     // Portado de Genisys Player::handleDataPacket case DROP_ITEM_PACKET:
     // valida que el item esté en el inventario, dispara PlayerDropItemEvent
