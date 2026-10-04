@@ -1,16 +1,16 @@
-// LevelLoadEvent — level event.
+// WorldLoadEvent — world event.
 #pragma once
 #include "event/Event.h"
 #include <string>
 namespace cursestone::world { class World; }
 namespace cursestone::event::world {
-class LevelLoadEvent : public Event {
+class WorldLoadEvent : public Event {
 public:
-    cursestone::world::World* level;
+    cursestone::world::World* world;
     int chunk_x = 0, chunk_z = 0;
-    LevelLoadEvent(cursestone::world::World* l = nullptr, int x=0, int z=0) : level(l), chunk_x(x), chunk_z(z) {}
+    WorldLoadEvent(cursestone::world::World* l = nullptr, int x=0, int z=0) : world(l), chunk_x(x), chunk_z(z) {}
     const std::string& eventName() const override {
-        static std::string n = "LevelLoadEvent"; return n;
+        static std::string n = "WorldLoadEvent"; return n;
     }
 };
 } // namespace

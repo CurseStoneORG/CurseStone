@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // LightningStrikeEvent.h — ported from cn.nukkit.event.weather.LightningStrikeEvent
 //
-// Fired when a lightning bolt is about to strike a level. Cancellable.
+// Fired when a lightning bolt is about to strike a world. Cancellable.
 #pragma once
 #include "WeatherEvent.h"
 #include "../Cancellable.h"

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // WeatherChangeEvent.h — ported from cn.nukkit.event.level.WeatherChangeEvent
 //
-// Fired when the rain / weather state of a level changes. Cancellable.
+// Fired when the rain / weather state of a world changes. Cancellable.
 #pragma once
 #include "WeatherEvent.h"
 #include "../Cancellable.h"

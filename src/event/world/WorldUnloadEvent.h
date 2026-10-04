@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// LevelUnloadEvent.h — ported from cn.nukkit.event.level.LevelUnloadEvent
+// WorldUnloadEvent.h — ported from cn.nukkit.event.level.LevelUnloadEvent
 //
-// Fired before a level is unloaded from the server. Cancellable.
+// Fired before a world is unloaded from the server. Cancellable.
 #pragma once
 #include "WorldEvent.h"
 #include "../Cancellable.h"
@@ -10,13 +10,13 @@ namespace cursestone { namespace world { class World; } }
 
 namespace cursestone::event::world {
 
-class LevelUnloadEvent : public LevelEvent, public Cancellable {
+class WorldUnloadEvent : public WorldEvent, public Cancellable {
 public:
-    explicit LevelUnloadEvent(cursestone::world::World* l)
-        : LevelEvent(l) {}
+    explicit WorldUnloadEvent(cursestone::world::World* l)
+        : WorldEvent(l) {}
 
     const std::string& eventName() const override {
-        static std::string n = "LevelUnloadEvent"; return n;
+        static std::string n = "WorldUnloadEvent"; return n;
     }
 };
 
