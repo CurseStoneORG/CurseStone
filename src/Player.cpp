@@ -32,6 +32,7 @@
 #include "network/protocol/RemoveBlockPacket.h"
 #include "network/protocol/UpdateBlockPacket.h"
 #include "network/protocol/SetEntityDataPacket.h"
+#include "network/protocol/SetEntityMotionPacket.h"
 #include "network/protocol/LevelEventPacket.h"
 #include "network/protocol/AnimatePacket.h"
 #include "network/protocol/MobEquipmentPacket.h"
@@ -2974,10 +2975,69 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
 
 void Player::handlePlayerAction(int action, int x, int y, int z, int /*face*/) {
     // PMMP: ACTION_START_BREAK=0, ACTION_ABORT_BREAK=1, ACTION_STOP_BREAK=2.
-    // We don't model break progress yet — just log START for diagnostics.
-    if (srv_ && srv_->advancedLog() && action == 0) {
-        utils::MainLogger::get().info("[ACTION] " + cfg_.username + " started breaking at " +
-            std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(z));
+    //
+    // BUG ARREGLADO: "que se vea la animacion cuando el bloque se va
+    // rompiendo".
+    //
+    // El crack de rotura solo se lo renderiza a quien INICIO el roto:
+    // cada cliente dibuja la animacion localmente cuando su propia
+    // EntityAction le llega desde el cliente. Los demas no se enteraban
+    // de nada hasta que el bloque desaparecia de golpe.
+    //
+    // PlayerActionPacket es BIDIRECCIONAL: lleva un campo `eid` que en
+    // la direccion servidor->cliente identifica a QUE jugador esta
+    // ejecutando la accion. Reenviandole el paquete al resto de
+    // jugadores con el eid del que rompe, cada cliente remoto sabe que
+    // entidad empieza a romper en (x,y,z) y dibuja el crack.
+    //
+    // Genisys 0.15 no hace esto (su Player.php:2819 solo usa
+    // ACTION_START_BREAK para el fix de fuego en creativo y para firing
+    // PlayerInteractEvent), asi que aqui va un paso por delante de la
+    // referencia. El paquete en si SI es el de Genisys, byte a byte.
+    //
+    // Los tres estados se re-difunden: START empieza el crack, ABORT
+    // (el jugador dejo el boton) y STOP (termino el anim) lo quitan.
+    // Nota: al romperse de verdad el bloque, el UpdateBlockPacket de
+    // handleBlockBreak ya lo borra, asi que STOP es sobre todo para el
+    // caso de cancelar.
+    if (action == network::protocol::PlayerActionPacket::ACTION_START_BREAK ||
+        action == network::protocol::PlayerActionPacket::ACTION_ABORT_BREAK ||
+        action == network::protocol::PlayerActionPacket::ACTION_STOP_BREAK) {
+        if (srv_ && srv_->advancedLog()) {
+            utils::MainLogger::get().info("[ACTION] " + cfg_.username + " break action=" +
+                std::to_string(action) + " at " + std::to_string(x) + "," +
+                std::to_string(y) + "," + std::to_string(z));
+        }
+
+        // Chequeo de distancia de Genisys
+        // (`$pos->distanceSquared($this) > 10000` -> ignora): evita que
+        // un cliente modificado mande cracks en bloques a 100+ bloques.
+        double dx = pos_.x - (x + 0.5);
+        double dy = pos_.y - (y + 0.5);
+        double dz = pos_.z - (z + 0.5);
+        double d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 > 10000.0 || y < 0 || y >= 256) return;
+
+        auto pa = std::make_shared<network::protocol::PlayerActionPacket>();
+        pa->eid    = runtimeId();
+        pa->action = action;
+        pa->x = x; pa->y = y; pa->z = z;
+        int32_t bcx = x >> 4, bcz = z >> 4;
+        int32_t sent = 0;
+        for (auto& other : srv_->playersSnapshot()) {
+            if (!other || other.get() == this) continue;
+            if (other->isPendingRemoval()) continue;
+            if (!other->spawned()) continue;
+            if (!other->canSeeBlock(bcx, bcz)) continue;
+            other->sendPacket(pa);
+            ++sent;
+        }
+        if (srv_ && srv_->advancedLog() && action == network::protocol::PlayerActionPacket::ACTION_START_BREAK) {
+            utils::MainLogger::get().info("[BREAK-ANIM] " + cfg_.username +
+                " started crack at " + std::to_string(x) + "," + std::to_string(y) + "," +
+                std::to_string(z) + " -> viewers=" + std::to_string(sent));
+        }
+        return;
     }
     // Sprint toggle (protocol 84, Infinity PlayerActionPacket):
     // START_SPRINT=9 / STOP_SPRINT=10 — drives the higher exhaustion
@@ -3579,11 +3639,77 @@ void Player::handleInteract(int action, int64_t targetEid) {
     sh->health = (int32_t)target->health();
     target->sendPacket(sh);
 
+    // ---- Knockback (Genisys 0.15.0 Living::knockBack) ----
+    //
+    // Sin esto, un golpe solo baja la vida: el cliente que recibe el
+    // golpe se queda clavado en el sitio y el resto de jugadores ni se
+    // enteran. El empujon se calcula sobre la VICTIMA con
+    // (deltaX, deltaZ) = (victima - atacante):
+    //
+    //     $f = sqrt($x*$x + $z*$z);      if($f <= 0) return;
+    //     $f = 1 / $f;
+    //     $motion->x /= 2;  $motion->y /= 2;  $motion->z /= 2;   // amortigua
+    //     $motion->x += $x * $f * $base;
+    //     $motion->y += $base;
+    //     $motion->z += $z * $f * $base;
+    //     if($motion->y > $base) $motion->y = $base;            // tope vertical
+    //     $this->setMotion($motion);
+    //
+    // $base = 0.4 en Genisys Living::attack(), mas 0.15 por nivel de
+    // el encantamiento Knockback (Player.php:3144). No hay sistema de
+    // encantamientos en este proyecto, asi que va 0.4 fijo, que es
+    // exactamente el valor por defecto de Genisys.
+    //
+    // El motion viaja en SetEntityMotionPacket (Genisys Level::tick()
+    // -> motionToSend -> addChunkPacket). Estaba sin implementar (stub),
+    // asi que sin esto el empujon no podia existir.
+    // Genisys Living::attack() llama a knockBack() SIEMPRE, incluso en el
+    // golpe mortal (la animacion de muerte va despues). Se replica.
+    {
+        const double dx = target->position().x - pos_.x;
+        const double dz = target->position().z - pos_.z;
+        double f = std::sqrt(dx * dx + dz * dz);
+        if (f > 1e-6) {
+            f = 1.0 / f;
+            constexpr double kBase = 0.4;   // Genisys Living::knockBack default
+            // motion actual de la victima, mitigado a la mitad.
+            double mx = target->motion().x * 0.5;
+            double my = target->motion().y * 0.5;
+            double mz = target->motion().z * 0.5;
+            mx += dx * f * kBase;
+            my += kBase;
+            mz += dz * f * kBase;
+            if (my > kBase) my = kBase;     // tope vertical de Genisys
+
+            target->setMotion(math::Vector3{mx, my, mz});
+
+            // SetEntityMotionPacket a todos los que ven a la victima
+            // (mismo filtro de visibilidad que el resto de difusiones).
+            auto motion = std::make_shared<network::protocol::SetEntityMotionPacket>();
+            motion->entities.push_back({target->runtimeId(),
+                                        (float)mx, (float)my, (float)mz});
+            int32_t tcx = (int32_t)std::floor(target->position().x) >> 4;
+            int32_t tcz = (int32_t)std::floor(target->position().z) >> 4;
+            for (auto& other : srv_->playersSnapshot()) {
+                if (!other) continue;
+                if (other->isPendingRemoval()) continue;
+                if (!other->spawned()) continue;
+                if (!other->canSeeBlock(tcx, tcz)) continue;
+                other->sendPacket(motion);
+            }
+            // El atacante tambien necesita el empujon si es otra
+            // entidad controlada por el cliente (no el caso del
+            // jugador local, que ya lo simula), pero la victima herself
+            // SI lo necesita: su cliente no simula un golpe recibido.
+        }
+    }
+
     if (srv_->advancedLog()) {
         utils::MainLogger::get().info("[COMBAT] " + cfg_.username + " hit " +
             target->getName() + " for " + std::to_string(BASE_ATTACK_DAMAGE) +
             " (health now " + std::to_string((int)target->health()) + ")" +
-            (died ? " — killed" : ""));
+            (died ? " — killed" : "") +
+            " knockback=0.4");
     }
 }
 
@@ -4565,8 +4691,11 @@ void Player::onUpdate(uint64_t current_tick) {
                 auto pk_viewer = std::make_shared<network::protocol::TakeItemEntityPacket>();
                 pk_viewer->target   = di->eid;
                 pk_viewer->entityId = runtimeId();
+                auto rm_pk = std::make_shared<network::protocol::RemoveEntityPacket>();
+                rm_pk->eid = di->eid;
                 int32_t pk_cx = (int32_t)std::floor(di->x) >> 4;
                 int32_t pk_cz = (int32_t)std::floor(di->z) >> 4;
+                int viewers = 0;
                 for (auto& other : srv_->playersSnapshot()) {
                     if (!other) continue;
                     if (other.get() == this) continue;
@@ -4574,15 +4703,36 @@ void Player::onUpdate(uint64_t current_tick) {
                     if (!other->spawned()) continue;
                     if (!other->canSeeBlock(pk_cx, pk_cz)) continue;
                     other->sendPacket(pk_viewer);
+                    // *** BUG ARREGLADO: "los items flotantes no se limpian
+                    // en broadcast" ***
+                    //
+                    // RemoveEntityPacket se mandaba SOLO al que recogió el
+                    // item. Los demas recibian TakeItemEntityPacket (que
+                    // solo reproduce la animacion de "el item vuela hacia
+                    // el jugador") pero NUNCA recibian la orden de borrar
+                    // la entidad, asi que su cliente se quedaba con el
+                    // item flotando para siempre, ya que el servidor si
+                    // lo habia borrado del mundo (removeDroppedItem).
+                    //
+                    // Genisys: Entity::close() -> Level::removeEntity()
+                    // -> RemoveEntityPacket a TODOS los hasSpawned, sin
+                    // excluir a quien lo recogio. Por eso el item desaparece
+                    // para todos y no solo para el que lo agarro.
+                    other->sendPacket(rm_pk);
+                    ++viewers;
                 }
                 auto pk_picker = std::make_shared<network::protocol::TakeItemEntityPacket>();
                 pk_picker->target   = di->eid;
                 pk_picker->entityId = 0;
                 sendPacket(pk_picker);
                 lvl->removeDroppedItem(di->eid);
-                auto rm_pk = std::make_shared<network::protocol::RemoveEntityPacket>();
-                rm_pk->eid = di->eid;
                 sendPacket(rm_pk);
+                if (srv_ && srv_->advancedLog()) {
+                    utils::MainLogger::get().info("[PICKUP] " + cfg_.username +
+                        " picked up eid=" + std::to_string(di->eid) +
+                        " at chunk " + std::to_string(pk_cx) + "," + std::to_string(pk_cz) +
+                        " -> viewers_notified=" + std::to_string(viewers));
+                }
             } else {
                 // Partial pickup — update the dropped item's count.
                 // Reset taken=false so it can be picked up again.
