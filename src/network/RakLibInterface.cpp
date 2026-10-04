@@ -141,10 +141,28 @@ void RakLibInterface::raklibThreadLoop() {
     // processing — the actual failure mode this guards against.
     static constexpr size_t MAX_SENDS_PER_LOOP = 64;
 
+    // --- Core debug: this loop is the heart of every player's connection,
+    // so when two players are online and things go wrong we need to see
+    // the loop's own health live, not 30 seconds later in a disconnect
+    // dump. Three probes, all rate-limited to one line every 5s:
+    //   * a tick that overruns badly (the thread is not keeping up, so
+    //     datagrams pile up in the kernel and other players' packets get
+    //     dropped -> they "stop responding" for no visible reason),
+    //   * the outbound queue growing (the main thread is producing faster
+    //     than RakLib can send — usually one client that cannot keep up),
+    //   * how long the drain itself takes.
+    uint64_t last_probe_ms = 0;
+    constexpr uint64_t kProbeIntervalMs = 5000;
+    constexpr uint64_t kSlowTickMs = 50;
+
     while (!stop_flag_.load(std::memory_order_relaxed)) {
+        const auto tick_start = std::chrono::steady_clock::now();
+
         // 1. Drain up to MAX_SENDS_PER_LOOP outbound actions (main → RakLib)
+        size_t queueDepth = 0, drainedTotal = 0;
         {
             std::lock_guard<std::mutex> lk(outbound_mtx_);
+            queueDepth = outbound_queue_.size();
             size_t drained = 0;
             while (!outbound_queue_.empty() && drained < MAX_SENDS_PER_LOOP) {
                 auto& action = outbound_queue_.front();
@@ -202,6 +220,7 @@ void RakLibInterface::raklibThreadLoop() {
                 outbound_queue_.pop();
                 ++drained;
             }
+            drainedTotal = drained;
         }
 
         // 2. Check for MOTD update
@@ -218,6 +237,27 @@ void RakLibInterface::raklibThreadLoop() {
         //    only a partial drain of outbound_queue_ — is exactly the
         //    point of the cap above.
         mcp_raklib_server_tick(&raklib_);
+
+        // 5. Core health probe (see the comment above the loop).
+        const uint64_t now_ms = mcp_utils_time_ms();
+        if (now_ms - last_probe_ms >= kProbeIntervalMs) {
+            const auto tick_ms = (uint64_t)std::chrono::duration_cast<
+                std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - tick_start).count();
+            if (tick_ms >= kSlowTickMs || queueDepth >= MAX_SENDS_PER_LOOP) {
+                char buf[256];
+                snprintf(buf, sizeof buf,
+                    "[RakLib][debug] tick=%llums outbound_queue=%zu "
+                    "drained=%zu peak=%zu — %s",
+                    (unsigned long long)tick_ms, queueDepth, drainedTotal,
+                    outbound_queue_peak_.load(std::memory_order_relaxed),
+                    queueDepth >= MAX_SENDS_PER_LOOP
+                        ? "main thread is producing faster than RakLib sends"
+                        : "network thread is behind, datagrams may be dropped");
+                utils::MainLogger::get().warn(buf);
+                last_probe_ms = now_ms;
+            }
+        }
 
         // 4. Sleep 10ms (~100Hz) — independent of main tick loop
         std::this_thread::sleep_for(std::chrono::milliseconds(10));

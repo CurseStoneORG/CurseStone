@@ -28,6 +28,10 @@ void mcp_rak_session_init(mcp_rak_session_t* s, const uint8_t ip[4],
     s->window_end   = MCP_SESSION_WINDOW_SIZE;
     s->last_activity_ms = mcp_utils_time_ms();
     s->last_packet_received_ms      = s->last_activity_ms;
+    // Same for the ACK clock: a session that has not received an ACK yet
+    // is not "stale", it is new. Without this the very first health line
+    // of a fresh session reported a huge since_last_ack_ms.
+    s->last_ack_received_ms          = s->last_activity_ms;
     s->last_game_packet_received_ms = s->last_activity_ms;
     s->last_ping_received_ms        = 0;
     s->last_packet_sent_ms          = s->last_activity_ms;
@@ -332,6 +336,10 @@ size_t mcp_rak_session_build_datagram(mcp_rak_session_t* s,
             s->recovery[slot].len          = i;
             s->recovery[slot].seq          = seq & MCP_SEQ24_MASK;
             s->recovery[slot].send_time_ms = mcp_utils_time_ms();
+            s->recovery[slot].retries      = 0;
+            s->diag_bytes_sent += i;
+            if (s->diag_recovery_occupied > s->diag_inflight_peak)
+                s->diag_inflight_peak = s->diag_recovery_occupied;
         }
     }
     return i;

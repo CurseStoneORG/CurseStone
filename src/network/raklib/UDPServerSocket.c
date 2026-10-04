@@ -43,6 +43,26 @@ int mcp_udp_socket_open(mcp_udp_socket_t* s, const char* host, uint16_t port) {
     int yes = 1;
     setsockopt(s->fd, SOL_SOCKET, SO_REUSEADDR, (const char*)&yes, sizeof(yes));
 
+    // Big kernel buffers, both ways. The default SO_RCVBUF (~200KB) is
+    // easy to overrun when one player's chunk stream (dozens of 1400-byte
+    // datagrams per tick, per player) lands in the same tick as the OTHER
+    // player's keepalives: the kernel then DROPS the datagrams it has no
+    // room for, and the player whose ping got dropped is the one who
+    // "suddenly stopped answering" and gets reaped by the timeout sweep
+    // even though their link was fine the whole time — which is exactly
+    // the "the second player joins and then everybody drops" report.
+    // Asking for 4MB costs nothing (it is not allocated up front) and
+    // only matters when several players stream chunks at once.
+    int bufSize = 4 * 1024 * 1024;
+    setsockopt(s->fd, SOL_SOCKET, SO_RCVBUF, (const char*)&bufSize, sizeof(bufSize));
+    setsockopt(s->fd, SOL_SOCKET, SO_SNDBUF, (const char*)&bufSize, sizeof(bufSize));
+#ifdef SO_RCVBUFFORCE
+    // Linux caps SO_RCVBUF at net.core.rmem_max unless the socket asks
+    // for more than a privileged process may set; ignore the failure
+    // (the value above is still applied) so this stays portable.
+    setsockopt(s->fd, SOL_SOCKET, SO_RCVBUFFORCE, (const char*)&bufSize, sizeof(bufSize));
+#endif
+
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
