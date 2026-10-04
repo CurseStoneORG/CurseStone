@@ -5,7 +5,7 @@ namespace cursestone::entity {
 class EntityXPOrb : public Projectile {
 public:
     using Projectile::Projectile;
-    EntityXPOrb(int64_t rid, std::shared_ptr<Level> l) : Projectile(rid, std::move(l)) { setNetworkId(2); }
+    EntityXPOrb(int64_t rid, std::shared_ptr<World> l) : Projectile(rid, std::move(l)) { setNetworkId(2); }
     std::string name() const { return "Experience Orb"; }
 };
 } // namespace

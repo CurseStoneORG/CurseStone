@@ -1,6 +1,6 @@
 #include "Player.h"
 #include "player/PlayerInternal.h"
-#include "level/Level.h"
+#include "world/World.h"
 #include "block/BlockIds.h"
 #include "network/protocol/UpdateAttributesPacket.h"
 #include "network/protocol/EntityEventPacket.h"
@@ -88,7 +88,7 @@ void Player::onHealthChanged() {
 void Player::tickHungerAndDamage(uint64_t current_tick) {
     if (!spawned_.load(std::memory_order_relaxed)) return;
     if (isDead()) return;
-    auto* lvl = srv_ ? srv_->getDefaultLevel() : nullptr;
+    auto* lvl = srv_ ? srv_->getDefaultWorld() : nullptr;
     if (!lvl) return;
 
     bool creative = isCreative();

@@ -5,7 +5,7 @@ namespace cursestone::entity {
 class EntityFallingSand : public Projectile {
 public:
     using Projectile::Projectile;
-    EntityFallingSand(int64_t rid, std::shared_ptr<Level> l) : Projectile(rid, std::move(l)) { setNetworkId(10); }
+    EntityFallingSand(int64_t rid, std::shared_ptr<World> l) : Projectile(rid, std::move(l)) { setNetworkId(10); }
     std::string name() const { return "Falling Sand"; }
 };
 } // namespace

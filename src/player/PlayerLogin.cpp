@@ -1,6 +1,6 @@
 #include "Player.h"
 #include "player/PlayerInternal.h"
-#include "level/Level.h"
+#include "world/World.h"
 #include "network/protocol/Info.h"
 #include "network/protocol/LoginPacket.h"
 #include "network/protocol/PlayStatusPacket.h"
@@ -216,7 +216,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
                 // position is used for StartGame/chunk streaming. Returning
                 // players keep their saved PosX/PosY/PosZ — only the
                 // first-join path snaps to terrain.
-                if (srv_ && srv_->getDefaultLevel()) {
+                if (srv_ && srv_->getDefaultWorld()) {
                     pos_ = getServerSpawnSafe();
                 }
             }
@@ -322,8 +322,8 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
 
     // Send StartGamePacket so the client can render the loading screen.
     auto sg = std::make_shared<network::protocol::StartGamePacket>();
-    if (srv_ && srv_->getDefaultLevel()) {
-        auto* lvl = srv_->getDefaultLevel();
+    if (srv_ && srv_->getDefaultWorld()) {
+        auto* lvl = srv_->getDefaultWorld();
         sg->seed      = (int32_t)lvl->seed();
         sg->dimension = 0;
         sg->generator = 1;
@@ -344,9 +344,9 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
     sendPacket(sg, true);
 
     // SetTimePacket.
-    if (srv_ && srv_->getDefaultLevel()) {
+    if (srv_ && srv_->getDefaultWorld()) {
         auto st = std::make_shared<network::protocol::SetTimePacket>();
-        st->time = srv_->getDefaultLevel()->time();
+        st->time = srv_->getDefaultWorld()->time();
         st->started = true;
         sendPacket(st, true);
     }
@@ -354,13 +354,13 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
     // Weather sync — players joining mid-weather get the full reset+set
     // pair (same packets Infinity's sendWeather sends on join), with the
     // strength carried in `data` so the 0.15.10 client actually renders it.
-    if (srv_ && srv_->getDefaultLevel()) {
-        srv_->getDefaultLevel()->sendWeatherTo(this);
+    if (srv_ && srv_->getDefaultWorld()) {
+        srv_->getDefaultWorld()->sendWeatherTo(this);
     }
 
     // SetSpawnPosition.
-    if (srv_ && srv_->getDefaultLevel()) {
-        auto sp = srv_->getDefaultLevel()->spawn();
+    if (srv_ && srv_->getDefaultWorld()) {
+        auto sp = srv_->getDefaultWorld()->spawn();
         auto ssp = std::make_shared<network::protocol::SetSpawnPositionPacket>();
         ssp->x = (int32_t)sp.x; ssp->y = (int32_t)sp.y; ssp->z = (int32_t)sp.z;
         sendPacket(ssp, true);
@@ -762,7 +762,7 @@ void Player::respawn() {
     // Respawn always lands at the server spawn, snapped to the surface of
     // the terrain (same rule as first-join: getServerSpawnSafe()), with a
     // fresh food bar (Infinity/Genisys respawn behaviour).
-    if (srv_ && srv_->getDefaultLevel()) {
+    if (srv_ && srv_->getDefaultWorld()) {
         math::Vector3 safe = getServerSpawnSafe();
         ev.respawnX = safe.x;
         ev.respawnY = safe.y;

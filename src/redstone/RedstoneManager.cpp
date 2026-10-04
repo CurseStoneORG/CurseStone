@@ -1,6 +1,6 @@
 #include "RedstoneManager.h"
 #include "block/BlockIds.h"
-#include "level/Level.h"
+#include "world/World.h"
 #include "Server.h"
 #include "Player.h"
 #include "network/protocol/UpdateBlockPacket.h"
@@ -8,7 +8,7 @@
 
 namespace cursestone::redstone {
 
-using cursestone::level::Level;
+using cursestone::world::World;
 
 // ============================================================
 // broadcastBlock — avisa a todos los jugadores que estén viendo el
@@ -40,18 +40,18 @@ static void broadcastBlock(cursestone::Server* server, int32_t x, int32_t y, int
 // ============================================================
 // getEmittedPower — cuánta señal aporta este bloque hacia afuera.
 // ============================================================
-int getEmittedPower(Level* level, int32_t x, int32_t y, int32_t z) {
-    if (!level) return 0;
+int getEmittedPower(World* world, int32_t x, int32_t y, int32_t z) {
+    if (!world) return 0;
     if (y < 0 || y >= 256) return 0;
-    // CRÍTICO: no leer bloques en chunks no cargados. Level::getBlockId
+    // CRÍTICO: no leer bloques en chunks no cargados. World::getBlockId
     // puede disparar generación síncrona de chunk si el chunk no está
     // en memoria — exactamente el patrón que causó el freeze de 88s en
     // BlockFire v5 (propagación tocando vecinos sin este chequeo). Un
     // vecino en un chunk no cargado se trata simplemente como "sin
     // señal", nunca se fuerza su carga.
-    if (!level->isChunkLoaded(x, z)) return 0;
-    uint8_t id = level->getBlockId(x, y, z);
-    uint8_t data = level->getBlockData(x, y, z);
+    if (!world->isChunkLoaded(x, z)) return 0;
+    uint8_t id = world->getBlockId(x, y, z);
+    uint8_t data = world->getBlockData(x, y, z);
 
     switch (id) {
         case block::REDSTONE_TORCH_ON:
@@ -83,8 +83,8 @@ int getEmittedPower(Level* level, int32_t x, int32_t y, int32_t z) {
 // (No es lo mismo que getEmittedPower: una palanca apagada no emite
 // nada, pero un bloque JUNTO a una palanca encendida sí está powered.)
 // ============================================================
-bool isPowered(Level* level, int32_t x, int32_t y, int32_t z) {
-    if (!level) return false;
+bool isPowered(World* world, int32_t x, int32_t y, int32_t z) {
+    if (!world) return false;
     // Los 6 vecinos directos.
     static const int32_t dx[6] = {1, -1, 0, 0, 0, 0};
     static const int32_t dy[6] = {0, 0, 1, -1, 0, 0};
@@ -92,15 +92,15 @@ bool isPowered(Level* level, int32_t x, int32_t y, int32_t z) {
     for (int i = 0; i < 6; ++i) {
         int32_t nx = x + dx[i], ny = y + dy[i], nz = z + dz[i];
         if (ny < 0 || ny >= 256) continue;
-        if (!level->isChunkLoaded(nx, nz)) continue;
-        if (getEmittedPower(level, nx, ny, nz) > 0) return true;
+        if (!world->isChunkLoaded(nx, nz)) continue;
+        if (getEmittedPower(world, nx, ny, nz) > 0) return true;
     }
     // El propio bloque, si es wire con potencia > 0, cuenta como
     // "powered" para sí mismo (lo consultan cosas colocadas sobre él).
-    if (!level->isChunkLoaded(x, z)) return false;
-    uint8_t id = level->getBlockId(x, y, z);
+    if (!world->isChunkLoaded(x, z)) return false;
+    uint8_t id = world->getBlockId(x, y, z);
     if (id == block::REDSTONE_WIRE) {
-        return (level->getBlockData(x, y, z) & 0x0F) > 0;
+        return (world->getBlockData(x, y, z) & 0x0F) > 0;
     }
     return false;
 }
@@ -112,12 +112,12 @@ bool isPowered(Level* level, int32_t x, int32_t y, int32_t z) {
 // estado preserva los demás bits intactos, así la orientación visual
 // del bloque no cambia al accionarlo.
 // ============================================================
-bool tryInteract(Level* level, cursestone::Server* server, int32_t x, int32_t y, int32_t z) {
-    if (!level) return false;
+bool tryInteract(World* world, cursestone::Server* server, int32_t x, int32_t y, int32_t z) {
+    if (!world) return false;
     if (y < 0 || y >= 256) return false;
-    if (!level->isChunkLoaded(x, z)) return false;
-    uint8_t id = level->getBlockId(x, y, z);
-    uint8_t data = level->getBlockData(x, y, z);
+    if (!world->isChunkLoaded(x, z)) return false;
+    uint8_t id = world->getBlockId(x, y, z);
+    uint8_t data = world->getBlockData(x, y, z);
 
     if (id == block::LEVER || id == block::STONE_BUTTON) {
         // El botón "ideal" se auto-apaga solo tras un tiempo (vanilla
@@ -125,9 +125,9 @@ bool tryInteract(Level* level, cursestone::Server* server, int32_t x, int32_t y,
         // futura documentada — por ahora ambos funcionan como toggle
         // manual, simple y sin riesgo de tareas recurrentes.
         uint8_t newData = data ^ 0x08;
-        level->setBlock(x, y, z, id, newData);
+        world->setBlock(x, y, z, id, newData);
         broadcastBlock(server, x, y, z, id, newData); // FIX: se veía solo al reconectar
-        notifyNeighbors(level, server, x, y, z);
+        notifyNeighbors(world, server, x, y, z);
         return true;
     }
 
@@ -146,14 +146,14 @@ bool tryInteract(Level* level, cursestone::Server* server, int32_t x, int32_t y,
         bool isTopHalf = (data & 0x08) != 0;
         int32_t lowerY = isTopHalf ? (y - 1) : y;
         if (lowerY < 0 || lowerY >= 256) return false;
-        if (!level->isChunkLoaded(x, z)) return false;
-        uint8_t lowerId = level->getBlockId(x, lowerY, z);
+        if (!world->isChunkLoaded(x, z)) return false;
+        uint8_t lowerId = world->getBlockId(x, lowerY, z);
         if (lowerId != block::WOODEN_DOOR) return false; // desincronizada — no tocar
-        uint8_t lowerData = level->getBlockData(x, lowerY, z);
+        uint8_t lowerData = world->getBlockData(x, lowerY, z);
         if ((lowerData & 0x08) != 0) return false; // salvaguarda de datos corruptos, igual que updateDoorAt
 
         uint8_t newLowerData = lowerData ^ 0x04;
-        level->setBlock(x, lowerY, z, block::WOODEN_DOOR, newLowerData);
+        world->setBlock(x, lowerY, z, block::WOODEN_DOOR, newLowerData);
         broadcastBlock(server, x, lowerY, z, block::WOODEN_DOOR, newLowerData);
         // No se llama a notifyNeighbors aquí: abrir/cerrar la puerta a
         // mano no debería re-disparar su propia reevaluación por
@@ -176,16 +176,16 @@ bool tryInteract(Level* level, cursestone::Server* server, int32_t x, int32_t y,
 // máximo de 15 bloques de wire consecutivos antes de que la potencia
 // llegue a 0 y la recursión se detenga por sí sola.
 // ============================================================
-static void updateWireInternal(Level* level, cursestone::Server* server,
+static void updateWireInternal(World* world, cursestone::Server* server,
                                  int32_t x, int32_t y, int32_t z, int depth) {
-    if (!level) return;
+    if (!world) return;
     if (depth > 16) return; // guarda de seguridad extra (nunca debería alcanzarse)
     if (y < 0 || y >= 256) return;
-    if (!level->isChunkLoaded(x, z)) return;
-    uint8_t id = level->getBlockId(x, y, z);
+    if (!world->isChunkLoaded(x, z)) return;
+    uint8_t id = world->getBlockId(x, y, z);
     if (id != block::REDSTONE_WIRE) return;
 
-    uint8_t oldData = level->getBlockData(x, y, z);
+    uint8_t oldData = world->getBlockData(x, y, z);
     int oldPower = oldData & 0x0F;
 
     // La potencia de este wire es el máximo entre:
@@ -199,13 +199,13 @@ static void updateWireInternal(Level* level, cursestone::Server* server,
     for (int i = 0; i < 6; ++i) {
         int32_t nx = x + dx[i], ny = y + dy[i], nz = z + dz[i];
         if (ny < 0 || ny >= 256) continue;
-        if (!level->isChunkLoaded(nx, nz)) continue;
-        uint8_t nid = level->getBlockId(nx, ny, nz);
+        if (!world->isChunkLoaded(nx, nz)) continue;
+        uint8_t nid = world->getBlockId(nx, ny, nz);
         if (nid == block::REDSTONE_WIRE) {
-            int npower = level->getBlockData(nx, ny, nz) & 0x0F;
+            int npower = world->getBlockData(nx, ny, nz) & 0x0F;
             best = std::max(best, npower - 1);
         } else {
-            int emitted = getEmittedPower(level, nx, ny, nz);
+            int emitted = getEmittedPower(world, nx, ny, nz);
             best = std::max(best, emitted);
         }
     }
@@ -213,7 +213,7 @@ static void updateWireInternal(Level* level, cursestone::Server* server,
 
     if (best == oldPower) return; // sin cambio, no propagar más
 
-    level->setBlock(x, y, z, block::REDSTONE_WIRE, (uint8_t)best);
+    world->setBlock(x, y, z, block::REDSTONE_WIRE, (uint8_t)best);
     // FIX (reportado por el usuario): sin esto, el cambio de potencia
     // del wire solo se veía al reconectar, porque nunca se avisaba a
     // los jugadores ya conectados de que este bloque específico cambió.
@@ -234,27 +234,27 @@ static void updateWireInternal(Level* level, cursestone::Server* server,
     for (int i = 0; i < 6; ++i) {
         int32_t nx = x + dx[i], ny = y + dy[i], nz = z + dz[i];
         if (ny < 0 || ny >= 256) continue;
-        if (!level->isChunkLoaded(nx, nz)) continue;
-        uint8_t nid = level->getBlockId(nx, ny, nz);
+        if (!world->isChunkLoaded(nx, nz)) continue;
+        uint8_t nid = world->getBlockId(nx, ny, nz);
         if (nid == block::REDSTONE_WIRE) {
-            updateWireInternal(level, server, nx, ny, nz, depth + 1);
+            updateWireInternal(world, server, nx, ny, nz, depth + 1);
         } else if (nid == block::REDSTONE_LAMP || nid == block::LIT_REDSTONE_LAMP) {
-            updateLampAt(level, server, nx, ny, nz);
+            updateLampAt(world, server, nx, ny, nz);
         } else if (nid == block::WOODEN_DOOR || nid == block::IRON_DOOR) {
-            updateDoorAt(level, server, nx, ny, nz);
+            updateDoorAt(world, server, nx, ny, nz);
         } else if (nid == block::PISTON_ID || nid == block::STICKY_PISTON) {
-            updatePistonAt(level, server, nx, ny, nz);
+            updatePistonAt(world, server, nx, ny, nz);
         } else if ((nid == block::REDSTONE_TORCH_ON || nid == block::REDSTONE_TORCH_OFF)
                    && nx == x && nz == z && ny == y + 1) {
             // Misma restricción que en notifyNeighbors: sólo si el
             // wire ES el soporte de esa antorcha (está justo debajo).
-            updateRedstoneTorchAt(level, server, nx, ny, nz);
+            updateRedstoneTorchAt(world, server, nx, ny, nz);
         }
     }
 }
 
-void updateWireAt(Level* level, cursestone::Server* server, int32_t x, int32_t y, int32_t z) {
-    updateWireInternal(level, server, x, y, z, 0);
+void updateWireAt(World* world, cursestone::Server* server, int32_t x, int32_t y, int32_t z) {
+    updateWireInternal(world, server, x, y, z, 0);
 }
 
 // ============================================================
@@ -264,18 +264,18 @@ void updateWireAt(Level* level, cursestone::Server* server, int32_t x, int32_t y
 // consumidor de señal, no un conductor — así que no hay riesgo de
 // cascada aquí en absoluto.
 // ============================================================
-void updateLampAt(Level* level, cursestone::Server* server, int32_t x, int32_t y, int32_t z) {
-    if (!level) return;
+void updateLampAt(World* world, cursestone::Server* server, int32_t x, int32_t y, int32_t z) {
+    if (!world) return;
     if (y < 0 || y >= 256) return;
-    if (!level->isChunkLoaded(x, z)) return;
-    uint8_t id = level->getBlockId(x, y, z);
+    if (!world->isChunkLoaded(x, z)) return;
+    uint8_t id = world->getBlockId(x, y, z);
     if (id != block::REDSTONE_LAMP && id != block::LIT_REDSTONE_LAMP) return;
 
-    bool powered = isPowered(level, x, y, z);
+    bool powered = isPowered(world, x, y, z);
     uint8_t wantId = powered ? block::LIT_REDSTONE_LAMP : block::REDSTONE_LAMP;
     if (wantId == id) return; // ya está en el estado correcto
 
-    level->setBlock(x, y, z, wantId, 0);
+    world->setBlock(x, y, z, wantId, 0);
     broadcastBlock(server, x, y, z, wantId, 0);
 }
 
@@ -294,11 +294,11 @@ void updateLampAt(Level* level, cursestone::Server* server, int32_t x, int32_t y
 // esta función (notifyNeighbors) también notifica al resto de vecinos
 // del bloque que originó el cambio.
 // ============================================================
-void updateRedstoneTorchAt(Level* level, cursestone::Server* server, int32_t x, int32_t y, int32_t z) {
-    if (!level) return;
+void updateRedstoneTorchAt(World* world, cursestone::Server* server, int32_t x, int32_t y, int32_t z) {
+    if (!world) return;
     if (y < 1 || y >= 256) return; // necesita soporte debajo; y=0 no tiene bloque debajo
-    if (!level->isChunkLoaded(x, z)) return;
-    uint8_t id = level->getBlockId(x, y, z);
+    if (!world->isChunkLoaded(x, z)) return;
+    uint8_t id = world->getBlockId(x, y, z);
     if (id != block::REDSTONE_TORCH_ON && id != block::REDSTONE_TORCH_OFF) return;
 
     // NOTA DE ALCANCE: esta función sólo decide ON vs OFF por señal.
@@ -322,7 +322,7 @@ void updateRedstoneTorchAt(Level* level, cursestone::Server* server, int32_t x, 
     // de más abajo), exactamente igual que isPowered pero excluyendo
     // el vecino de arriba.
     int32_t sx = x, sy = y - 1, sz = z;
-    if (!level->isChunkLoaded(sx, sz)) return;
+    if (!world->isChunkLoaded(sx, sz)) return;
     static const int32_t dx[5] = {1, -1, 0, 0, 0};
     static const int32_t dz[5] = {0, 0, 1, -1, 0};
     static const int32_t dy[5] = {0, 0, 0, 0, -1};
@@ -330,14 +330,14 @@ void updateRedstoneTorchAt(Level* level, cursestone::Server* server, int32_t x, 
     for (int i = 0; i < 5; ++i) {
         int32_t nx = sx + dx[i], ny = sy + dy[i], nz = sz + dz[i];
         if (ny < 0 || ny >= 256) continue;
-        if (!level->isChunkLoaded(nx, nz)) continue;
-        if (getEmittedPower(level, nx, ny, nz) > 0) { supportPowered = true; break; }
+        if (!world->isChunkLoaded(nx, nz)) continue;
+        if (getEmittedPower(world, nx, ny, nz) > 0) { supportPowered = true; break; }
     }
     // El soporte también puede ser él mismo un wire con potencia
     // (mismo caso que contempla isPowered para wire).
     if (!supportPowered) {
-        uint8_t supportId = level->getBlockId(sx, sy, sz);
-        if (supportId == block::REDSTONE_WIRE && (level->getBlockData(sx, sy, sz) & 0x0F) > 0) {
+        uint8_t supportId = world->getBlockId(sx, sy, sz);
+        if (supportId == block::REDSTONE_WIRE && (world->getBlockData(sx, sy, sz) & 0x0F) > 0) {
             supportPowered = true;
         }
     }
@@ -345,7 +345,7 @@ void updateRedstoneTorchAt(Level* level, cursestone::Server* server, int32_t x, 
     uint8_t wantId = supportPowered ? block::REDSTONE_TORCH_OFF : block::REDSTONE_TORCH_ON;
     if (wantId == id) return;
 
-    level->setBlock(x, y, z, wantId, 0);
+    world->setBlock(x, y, z, wantId, 0);
     broadcastBlock(server, x, y, z, wantId, 0);
 }
 
@@ -374,30 +374,30 @@ void updateRedstoneTorchAt(Level* level, cursestone::Server* server, int32_t x, 
 //   - Bits 0x01-0x02: orientación/bisagra, fijados al colocar
 //     (Player.cpp) y nunca tocados por este motor.
 // ============================================================
-void updateDoorAt(Level* level, cursestone::Server* server, int32_t x, int32_t y, int32_t z) {
-    if (!level) return;
+void updateDoorAt(World* world, cursestone::Server* server, int32_t x, int32_t y, int32_t z) {
+    if (!world) return;
     if (y < 0 || y >= 256) return;
-    if (!level->isChunkLoaded(x, z)) return;
-    uint8_t id = level->getBlockId(x, y, z);
+    if (!world->isChunkLoaded(x, z)) return;
+    uint8_t id = world->getBlockId(x, y, z);
     if (id != block::WOODEN_DOOR && id != block::IRON_DOOR) return;
 
-    uint8_t data = level->getBlockData(x, y, z);
+    uint8_t data = world->getBlockData(x, y, z);
     bool isTopHalf = (data & 0x08) != 0;
     int32_t lowerY = isTopHalf ? (y - 1) : y;
     if (lowerY < 0 || lowerY >= 256) return;
-    if (!level->isChunkLoaded(x, z)) return;
-    uint8_t lowerId = level->getBlockId(x, lowerY, z);
+    if (!world->isChunkLoaded(x, z)) return;
+    uint8_t lowerId = world->getBlockId(x, lowerY, z);
     if (lowerId != id) return; // la mitad inferior no coincide (puerta rota a medias / desincronizada) — no tocar nada
 
-    uint8_t lowerData = level->getBlockData(x, lowerY, z);
+    uint8_t lowerData = world->getBlockData(x, lowerY, z);
     if ((lowerData & 0x08) != 0) return; // salvaguarda: lo que creíamos "inferior" también trae el bit de superior — datos corruptos, no tocar
 
     bool currentlyOpen = (lowerData & 0x04) != 0;
-    bool shouldBeOpen = isPowered(level, x, lowerY, z);
+    bool shouldBeOpen = isPowered(world, x, lowerY, z);
     if (shouldBeOpen == currentlyOpen) return; // sin cambio
 
     uint8_t newLowerData = lowerData ^ 0x04;
-    level->setBlock(x, lowerY, z, id, newLowerData);
+    world->setBlock(x, lowerY, z, id, newLowerData);
     broadcastBlock(server, x, lowerY, z, id, newLowerData);
 
     // La mitad superior de este motor solo guarda el bit 0x08 (es
@@ -428,23 +428,23 @@ static void pistonDirOffset(uint8_t dirBits, int32_t& ox, int32_t& oy, int32_t& 
     }
 }
 
-void updatePistonAt(Level* level, cursestone::Server* server, int32_t x, int32_t y, int32_t z) {
-    if (!level) return;
+void updatePistonAt(World* world, cursestone::Server* server, int32_t x, int32_t y, int32_t z) {
+    if (!world) return;
     if (y < 0 || y >= 256) return;
-    if (!level->isChunkLoaded(x, z)) return;
-    uint8_t id = level->getBlockId(x, y, z);
+    if (!world->isChunkLoaded(x, z)) return;
+    uint8_t id = world->getBlockId(x, y, z);
     if (id != block::PISTON_ID && id != block::STICKY_PISTON) return;
 
-    uint8_t data = level->getBlockData(x, y, z);
+    uint8_t data = world->getBlockData(x, y, z);
     bool currentlyExtended = (data & 0x08) != 0;
-    bool shouldExtend = isPowered(level, x, y, z);
+    bool shouldExtend = isPowered(world, x, y, z);
     if (shouldExtend == currentlyExtended) return; // sin cambio
 
     int32_t ox, oy, oz;
     pistonDirOffset(data, ox, oy, oz);
     int32_t headX = x + ox, headY = y + oy, headZ = z + oz;
     if (headY < 0 || headY >= 256) return; // el cabezal caería fuera del mundo — no-op seguro
-    if (!level->isChunkLoaded(headX, headZ)) return;
+    if (!world->isChunkLoaded(headX, headZ)) return;
 
     if (shouldExtend) {
         // Sólo empuja si el destino es aire puro. Empujar fluidos u
@@ -453,7 +453,7 @@ void updatePistonAt(Level* level, cursestone::Server* server, int32_t x, int32_t
         // deja documentado como extensión futura en vez de arriesgar
         // un comportamiento incorrecto (dropear algo que en vanilla no
         // dropea, o mover un fluido como si fuera sólido).
-        uint8_t destId = level->getBlockId(headX, headY, headZ);
+        uint8_t destId = world->getBlockId(headX, headY, headZ);
         // Bloqueado — el pistón no se extiende, igual que en vanilla. No
         // hace falta recordar "señal pendiente": si luego alguien rompe
         // el bloque que bloquea, esa rotura llama a notifyNeighbors en
@@ -463,10 +463,10 @@ void updatePistonAt(Level* level, cursestone::Server* server, int32_t x, int32_t
         if (destId != 0) return;
 
         uint8_t newData = data | 0x08;
-        level->setBlock(x, y, z, id, newData);
+        world->setBlock(x, y, z, id, newData);
         broadcastBlock(server, x, y, z, id, newData);
 
-        level->setBlock(headX, headY, headZ, block::PISTON_HEAD, data & 0x07);
+        world->setBlock(headX, headY, headZ, block::PISTON_HEAD, data & 0x07);
         broadcastBlock(server, headX, headY, headZ, block::PISTON_HEAD, data & 0x07);
         // No se llama a notifyNeighbors sobre el cabezal: en vanilla
         // real el piston head es un bloque técnico que no interactúa
@@ -477,7 +477,7 @@ void updatePistonAt(Level* level, cursestone::Server* server, int32_t x, int32_t
         // alcance de esta función sin necesidad.
     } else {
         uint8_t newData = data & ~0x08;
-        level->setBlock(x, y, z, id, newData);
+        world->setBlock(x, y, z, id, newData);
         broadcastBlock(server, x, y, z, id, newData);
 
         // Retraer: el cabezal vuelve a aire. Un pistón pegajoso en
@@ -485,9 +485,9 @@ void updatePistonAt(Level* level, cursestone::Server* server, int32_t x, int32_t
         // había empujado — no implementado aquí (requiere recordar qué
         // se empujó, no solo dónde quedó el cabezal); queda como
         // extensión futura documentada.
-        uint8_t headId = level->getBlockId(headX, headY, headZ);
+        uint8_t headId = world->getBlockId(headX, headY, headZ);
         if (headId == block::PISTON_HEAD) {
-            level->setBlock(headX, headY, headZ, 0, 0);
+            world->setBlock(headX, headY, headZ, 0, 0);
             broadcastBlock(server, headX, headY, headZ, 0, 0);
         }
     }
@@ -498,8 +498,8 @@ void updatePistonAt(Level* level, cursestone::Server* server, int32_t x, int32_t
 // colocar un bloque en (x,y,z); revisa los 6 vecinos y dispara su
 // actualización si son componentes de redstone.
 // ============================================================
-void notifyNeighbors(Level* level, cursestone::Server* server, int32_t x, int32_t y, int32_t z) {
-    if (!level) return;
+void notifyNeighbors(World* world, cursestone::Server* server, int32_t x, int32_t y, int32_t z) {
+    if (!world) return;
     static const int32_t dx[6] = {1, -1, 0, 0, 0, 0};
     static const int32_t dy[6] = {0, 0, 1, -1, 0, 0};
     static const int32_t dz[6] = {0, 0, 0, 0, 1, -1};
@@ -507,30 +507,30 @@ void notifyNeighbors(Level* level, cursestone::Server* server, int32_t x, int32_
     // El propio bloque, si es wire (por ejemplo se acaba de colocar
     // sobre una fuente), lámpara, antorcha, puerta o pistón, también
     // necesita recalcularse.
-    if (y >= 0 && y < 256 && level->isChunkLoaded(x, z)) {
-        uint8_t selfId = level->getBlockId(x, y, z);
+    if (y >= 0 && y < 256 && world->isChunkLoaded(x, z)) {
+        uint8_t selfId = world->getBlockId(x, y, z);
         if (selfId == block::REDSTONE_WIRE) {
-            updateWireAt(level, server, x, y, z);
+            updateWireAt(world, server, x, y, z);
         } else if (selfId == block::REDSTONE_LAMP || selfId == block::LIT_REDSTONE_LAMP) {
-            updateLampAt(level, server, x, y, z);
+            updateLampAt(world, server, x, y, z);
         } else if (selfId == block::REDSTONE_TORCH_ON || selfId == block::REDSTONE_TORCH_OFF) {
-            updateRedstoneTorchAt(level, server, x, y, z);
+            updateRedstoneTorchAt(world, server, x, y, z);
         } else if (selfId == block::WOODEN_DOOR || selfId == block::IRON_DOOR) {
-            updateDoorAt(level, server, x, y, z);
+            updateDoorAt(world, server, x, y, z);
         } else if (selfId == block::PISTON_ID || selfId == block::STICKY_PISTON) {
-            updatePistonAt(level, server, x, y, z);
+            updatePistonAt(world, server, x, y, z);
         }
     }
 
     for (int i = 0; i < 6; ++i) {
         int32_t nx = x + dx[i], ny = y + dy[i], nz = z + dz[i];
         if (ny < 0 || ny >= 256) continue;
-        if (!level->isChunkLoaded(nx, nz)) continue;
-        uint8_t nid = level->getBlockId(nx, ny, nz);
+        if (!world->isChunkLoaded(nx, nz)) continue;
+        uint8_t nid = world->getBlockId(nx, ny, nz);
         if (nid == block::REDSTONE_WIRE) {
-            updateWireAt(level, server, nx, ny, nz);
+            updateWireAt(world, server, nx, ny, nz);
         } else if (nid == block::REDSTONE_LAMP || nid == block::LIT_REDSTONE_LAMP) {
-            updateLampAt(level, server, nx, ny, nz);
+            updateLampAt(world, server, nx, ny, nz);
         } else if (nid == block::REDSTONE_TORCH_ON || nid == block::REDSTONE_TORCH_OFF) {
             // La antorcha reacciona a cambios en su SOPORTE (el bloque
             // de abajo), no a cualquier vecino lateral — en vanilla
@@ -539,12 +539,12 @@ void notifyNeighbors(Level* level, cursestone::Server* server, int32_t x, int32_
             // es decir, si estamos mirando "hacia arriba" desde (x,y,z)
             // hacia la antorcha (nx,ny,nz) = (x,y+1,z).
             if (nx == x && nz == z && ny == y + 1) {
-                updateRedstoneTorchAt(level, server, nx, ny, nz);
+                updateRedstoneTorchAt(world, server, nx, ny, nz);
             }
         } else if (nid == block::WOODEN_DOOR || nid == block::IRON_DOOR) {
-            updateDoorAt(level, server, nx, ny, nz);
+            updateDoorAt(world, server, nx, ny, nz);
         } else if (nid == block::PISTON_ID || nid == block::STICKY_PISTON) {
-            updatePistonAt(level, server, nx, ny, nz);
+            updatePistonAt(world, server, nx, ny, nz);
         }
         // Palancas, botones, placas de presión no necesitan
         // recalcularse a sí mismas por un cambio de vecino — su estado

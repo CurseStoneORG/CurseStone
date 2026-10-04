@@ -7,9 +7,9 @@
 //   - Detección de dirección del portal (eje X o eje Z)
 //
 // Diferencias con el PHP original:
-//   - onActivate() recibe Level* + Player* + coordenadas enteras en vez de
+//   - onActivate() recibe World* + Player* + coordenadas enteras en vez de
 //     objetos Block con posición embebida.
-//   - La inserción de bloques Portal usa Level::setBlock(x,y,z, PORTAL, 0).
+//   - La inserción de bloques Portal usa World::setBlock(x,y,z, PORTAL, 0).
 //     BlockPortal (id=90 en MCPE 0.15.x) debe estar registrado en Block::registry().
 //   - La durabilidad se guarda en el campo `meta` del ItemStack (mirrors PMMP
 //     Tool::useOn($block, $damage=2)).
@@ -20,7 +20,7 @@
 
 namespace cursestone {
     class Player;
-    namespace level { class Level; }
+    namespace world { class World; }
 }
 
 namespace cursestone::item {
@@ -50,7 +50,7 @@ public:
     //   face          — cara del target (0=abajo, 1=arriba, 2-5=laterales)
     //
     // Retorna true si se realizó alguna acción (propagando la respuesta al cliente).
-    static bool onActivate(level::Level* level, Player* player,
+    static bool onActivate(world::World* world, Player* player,
                            int32_t bx, int32_t by, int32_t bz,   // bloque AIR
                            int32_t tx, int32_t ty, int32_t tz,   // bloque target
                            uint8_t face);
@@ -64,30 +64,30 @@ private:
     // Verifica el rectángulo en el eje X primero, luego en Z.
     // Retorna true si el portal fue creado.
     // mirrors: la lógica de detección x-direction / z-direction de FlintSteel.php
-    static bool tryCreateNetherPortal(level::Level* level, Player* player,
+    static bool tryCreateNetherPortal(world::World* world, Player* player,
                                       int32_t tx, int32_t ty, int32_t tz);
 
     // Verifica si hay un marco de obsidiana válido en el plano XY a Z=tz fijo.
     // `xMin/xMax/yMax` son los límites calculados del rectángulo.
     // Retorna true si el techo está completo.
-    static bool checkPortalFrameX(level::Level* level,
+    static bool checkPortalFrameX(world::World* world,
                                   int32_t xMin, int32_t xMax,
                                   int32_t yBase, int32_t yMax,
                                   int32_t tz);
 
     // Ídem para el plano ZY a X=tx fijo.
-    static bool checkPortalFrameZ(level::Level* level,
+    static bool checkPortalFrameZ(world::World* world,
                                   int32_t tx,
                                   int32_t zMin, int32_t zMax,
                                   int32_t yBase, int32_t yMax);
 
     // Rellena el interior del portal con bloques PORTAL.
-    static void fillPortalX(level::Level* level,
+    static void fillPortalX(world::World* world,
                             int32_t xMin, int32_t xMax,
                             int32_t yBase, int32_t yMax,
                             int32_t tz);
 
-    static void fillPortalZ(level::Level* level,
+    static void fillPortalZ(world::World* world,
                             int32_t tx,
                             int32_t zMin, int32_t zMax,
                             int32_t yBase, int32_t yMax);

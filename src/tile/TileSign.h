@@ -8,7 +8,7 @@
 namespace cursestone::tile {
 class TileSign : public Tile, public Spawnable {
 public:
-    TileSign(cursestone::level::Position pos) : Tile("Sign", pos) {}
+    TileSign(cursestone::world::Position pos) : Tile("Sign", pos) {}
     const std::array<std::string, 4>& lines() const { return lines_; }
     const std::string& line(int idx) const {
         static const std::string kEmpty;

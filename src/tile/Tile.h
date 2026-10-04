@@ -19,27 +19,27 @@
 #include <cstdint>
 #include <memory>
 #include <string>           // required for std::string id_ and Tile(std::string, ...)
-#include "level/Position.h"
+#include "world/Position.h"
 #include "nbt/tag/Tag.h"    // mcp_tag_t
 namespace cursestone::tile {
 class Tile {
 public:
-    Tile(std::string id, cursestone::level::Position pos)
+    Tile(std::string id, cursestone::world::Position pos)
         : id_(std::move(id)), pos_(pos) {}
     virtual ~Tile() = default;
     const std::string& getId() const { return id_; }
-    const cursestone::level::Position& position() const { return pos_; }
+    const cursestone::world::Position& position() const { return pos_; }
     void markDirty() { dirty_ = true; }
     bool isDirty() const { return dirty_; }
     // Clears the dirty flag after a successful write to the chunk's
-    // tile_entities array (Level::syncTilesToChunks calls this once a
+    // tile_entities array (World::syncTilesToChunks calls this once a
     // tile's NBT has actually been handed to mcp_chunk_add_tile_entity —
     // NOT before, so a tile whose owning chunk isn't loaded stays dirty
     // and gets retried on the next save()).
     void clearDirty() { dirty_ = false; }
     virtual void tick(uint64_t /*current_tick*/) {}
     // Serialise tile state into `tag` (a fresh MCP_TAG_COMPOUND owned by
-    // the caller — Level::syncTilesToChunks() creates it, hands it here,
+    // the caller — World::syncTilesToChunks() creates it, hands it here,
     // then hands it to mcp_chunk_add_tile_entity()). Base implementation
     // writes the fields every tile needs regardless of subclass: block
     // position (x/y/z) and the "id" string PMMP/Nukkit-style loaders key
@@ -48,12 +48,12 @@ public:
     virtual void writeNBT(mcp_tag_t* tag) const;
     // Read tile state back from `tag`. Base implementation is a no-op
     // (x/y/z/id are already known from how the tile was constructed —
-    // Level::ensureTilesLoaded() reads x/y/z itself to decide which
+    // World::ensureTilesLoaded() reads x/y/z itself to decide which
     // position to construct the Tile at, before readNBT ever runs).
     virtual void readNBT(const mcp_tag_t* tag);
 protected:
     std::string id_;                  // "Chest", "Furnace", "Sign", ...
-    cursestone::level::Position pos_;
+    cursestone::world::Position pos_;
     bool dirty_ = true;
 };
 } // namespace

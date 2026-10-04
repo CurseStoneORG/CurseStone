@@ -19,7 +19,7 @@ server:
   view-distance: 8
   autosave-ticks: 6000 # Auto-save interval (6000 ticks = 5 min at 20 TPS)
 
-level:
+world:
   name: "world"
   format: "anvil"     # anvil (Nukkit Anvil, default) | leveldb
   generator: "normal"  # normal | flat | nether | void

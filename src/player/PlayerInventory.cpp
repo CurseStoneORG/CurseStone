@@ -1,5 +1,5 @@
 #include "Player.h"
-#include "level/Level.h"
+#include "world/World.h"
 #include "network/protocol/ContainerSetContentPacket.h"
 #include "network/protocol/ContainerSetSlotPacket.h"
 #include "network/protocol/ContainerClosePacket.h"
@@ -216,11 +216,11 @@ int64_t Player::dropItem(double x, double y, double z, uint16_t itemId,
                          uint8_t count, uint16_t damage,
                          double motionX, double motionY, double motionZ,
                          uint32_t pickup_delay) {
-    // Level::dropItem() bails on an empty stack.
+    // World::dropItem() bails on an empty stack.
     if (itemId == 0 || count == 0) return 0;
     if (!srv_) return 0;
     if (motionX == 0.0 && motionY == 0.0 && motionZ == 0.0) {
-        // Level::dropItem()'s default: `$motion = new Vector3(
+        // World::dropItem()'s default: `$motion = new Vector3(
         // lcg_value() * 0.2 - 0.1, 0.2, lcg_value() * 0.2 - 0.1)`. The
         // upward nudge is what makes a broken block's drop pop out of the
         // block it came from instead of sinking into it.
@@ -263,11 +263,11 @@ int64_t Player::dropItem(double x, double y, double z, uint16_t itemId,
         other->sendPacket(pk);
     }
 
-    // Register the dropped item in the Level's registry so it can be
-    // picked up, and so Level::tickDroppedItems() can integrate the very
+    // Register the dropped item in the World's registry so it can be
+    // picked up, and so World::tickDroppedItems() can integrate the very
     // same motion the client is integrating.
-    if (srv_->getDefaultLevel()) {
-        level::DroppedItem di;
+    if (srv_->getDefaultWorld()) {
+        world::DroppedItem di;
         di.eid        = eid;
         di.itemId     = itemId;
         di.count      = count;
@@ -284,7 +284,7 @@ int64_t Player::dropItem(double x, double y, double z, uint16_t itemId,
         // $lastX/$lastY/$lastZ — start at the spawn point so the very
         // first updateMovement() only fires once the item has really moved.
         di.lx = x; di.ly = y; di.lz = z;
-        srv_->getDefaultLevel()->addDroppedItem(di);
+        srv_->getDefaultWorld()->addDroppedItem(di);
     }
 
     if (srv_->advancedLog()) {
@@ -373,7 +373,7 @@ void Player::handleDropItem(network::protocol::DropItemPacket& pk) {
     // outside the box the server tests, which is the whole of "a veces
     // puedo y a veces no": you drop it, walk to where you dropped it, and
     // there is nothing there. At 0.15 it comes to rest ~1.3 blocks out and
-    // the ground magnet in Level::tickDroppedItems() closes the rest, so
+    // the ground magnet in World::tickDroppedItems() closes the rest, so
     // the item is always where you dropped it and always collectable.
     const double kMUL = 0.15;
     math::Vector3 dir = getDirectionVector();

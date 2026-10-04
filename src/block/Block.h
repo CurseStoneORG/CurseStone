@@ -8,7 +8,7 @@
 #include <vector>
 #include <memory>
 #include "math/AxisAlignedBB.h"
-#include "level/Position.h"
+#include "world/Position.h"
 namespace cursestone::block {
 class Block {
 public:

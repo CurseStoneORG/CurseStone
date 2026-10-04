@@ -13,7 +13,7 @@
 //
 // No count field, no terminator — just the flat run of records. PMMP
 // accumulates per-entity motion into this packet each tick
-// (Level::tick() -> `$this->motionToSend`), which is how knockback
+// (World::tick() -> `$this->motionToSend`), which is how knockback
 // (Living::knockBack() -> setMotion()) reaches other clients: without
 // it a hit only ever moved the victim's own client and everyone else
 // watched them stand still.

@@ -1,6 +1,6 @@
 #include "Player.h"
-#include "level/Level.h"
-#include "level/format/Chunk.h"
+#include "world/World.h"
+#include "world/format/Chunk.h"
 #include "network/protocol/FullChunkDataPacket.h"
 #include "tile/Tile.h"
 #include <cstdlib>
@@ -59,7 +59,7 @@ Player::buildChunkSpiral(int radius) {
 }
 
 void Player::sendChunksAroundSpawn() {
-    if (!srv_ || !srv_->getDefaultLevel()) {
+    if (!srv_ || !srv_->getDefaultWorld()) {
         doFirstSpawn();
         return;
     }
@@ -120,8 +120,8 @@ void Player::sendChunksAroundSpawn() {
 // NBT, así que el texto no se renderiza hasta que alguien lo re-edite.
 // ============================================================
 void Player::sendChunkTiles(int32_t cx, int32_t cz) {
-    if (!srv_ || !srv_->getDefaultLevel()) return;
-    auto tiles = srv_->getDefaultLevel()->getTilesInChunk(cx, cz);
+    if (!srv_ || !srv_->getDefaultWorld()) return;
+    auto tiles = srv_->getDefaultWorld()->getTilesInChunk(cx, cz);
     for (auto& t : tiles) {
         if (!t) continue;
         const auto& p = t->position();
@@ -144,8 +144,8 @@ void Player::unloadChunk(int cx, int cz) {
     used_chunks_.erase(hash);
 }
 void Player::sendChunk(int cx, int cz) {
-    if (!srv_ || !srv_->getDefaultLevel()) return;
-    auto& chunks = srv_->getDefaultLevel()->chunks();
+    if (!srv_ || !srv_->getDefaultWorld()) return;
+    auto& chunks = srv_->getDefaultWorld()->chunks();
     mcp_chunk_t* ch = chunks.getChunk(cx, cz);
     if (!ch) return;
     size_t outLen = 0;
