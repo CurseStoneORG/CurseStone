@@ -1221,7 +1221,7 @@ void Level::spawnLightning(double x, double y, double z, bool withFire) {
                 up->x = bx; up->z = bz;
                 up->y = (uint8_t)by;
                 up->blockId = block::FIRE;
-                up->flags = network::protocol::UpdateBlockPacket::FLAG_ALL;
+                up->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
                 for (auto& p : Server::getInstance().playersSnapshot()) {
                     if (p && p->spawned()) p->sendPacket(up);
                 }
@@ -1339,7 +1339,7 @@ void Level::doWeatherTick(uint64_t current_tick) {
                 up->y = (uint8_t)y;
                 up->blockId = block::AIR;
                 up->blockData = 0;
-                up->flags = network::protocol::UpdateBlockPacket::FLAG_ALL;
+                up->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
                 for (auto& p : Server::getInstance().playersSnapshot()) {
                     if (p && p->spawned()) p->sendPacket(up);
                 }

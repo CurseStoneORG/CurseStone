@@ -31,6 +31,7 @@
 #include "network/protocol/UseItemPacket.h"
 #include "network/protocol/RemoveBlockPacket.h"
 #include "network/protocol/UpdateBlockPacket.h"
+#include "network/protocol/SetEntityDataPacket.h"
 #include "network/protocol/LevelEventPacket.h"
 #include "network/protocol/AnimatePacket.h"
 #include "network/protocol/MobEquipmentPacket.h"
@@ -1621,7 +1622,7 @@ static void broadcastBlockChange(cursestone::Server* server, int32_t x, int32_t 
     ubp->y = (uint8_t)y;
     ubp->blockId = blockId;
     ubp->blockData = blockData;
-    ubp->flags = 0xFF;
+    ubp->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
     int32_t cx = x >> 4, cz = z >> 4;
     for (auto& player : server->playersSnapshot()) {
         if (!player) continue;
@@ -1856,37 +1857,7 @@ void Player::doFirstSpawn() {
     // the player-list entry and the AddPlayerPacket) to every other
     // already-spawned player, symmetric to close()'s RemoveEntityPacket
     // broadcast.
-    if (srv_) {
-        auto plp_add = std::make_shared<network::protocol::PlayerListPacket>();
-        plp_add->type = network::protocol::PlayerListPacket::TYPE_ADD;
-        {
-            network::protocol::PlayerListPacket::Entry e;
-            parseUuidBytes(cfg_.uuid, e.uuid);
-            e.eid    = runtimeId();
-            e.name   = getName();
-            e.skinId   = skinId();
-            e.skinData = skinData();
-            plp_add->entries.push_back(std::move(e));
-        }
-
-        auto ap_self = std::make_shared<network::protocol::AddPlayerPacket>();
-        parseUuidBytes(cfg_.uuid, ap_self->uuid);
-        ap_self->username = getName();
-        ap_self->eid = runtimeId();
-        ap_self->x = (float)pos_.x;
-        ap_self->y = (float)pos_.y;
-        ap_self->z = (float)pos_.z;
-        ap_self->yaw = yaw_;
-        ap_self->headYaw = yaw_;
-        ap_self->pitch = pitch_;
-
-        for (auto& other : srv_->playersSnapshot()) {
-            if (!other || other.get() == this) continue;
-            if (!other->spawned()) continue;
-            other->sendPacket(plp_add);
-            other->sendPacket(ap_self);
-        }
-    }
+    announceSelfToOthers();
 
     // Broadcast join message. Se dispara PlayerJoinEvent antes: un
     // listener puede reescribir el mensaje, vaciarlo (silencia el
@@ -1902,6 +1873,172 @@ void Player::doFirstSpawn() {
     }
 
     utils::MainLogger::get().info("First spawn for " + cfg_.username);
+}
+
+// Construye la entrada de metadata que describe la pose de un jugador:
+// Entity::DATA_FLAGS = 0 (byte), bit 1 = SNEAKING, bit 3 = SPRINTING
+// (Genisys Entity.php:87-105). Se mandan los dos bits juntos porque
+// comparten la misma propiedad.
+static network::protocol::SetEntityDataPacket::Entry makePoseFlagEntry(bool sneaking,
+                                                                      bool sprinting) {
+    network::protocol::SetEntityDataPacket::Entry e;
+    e.index = network::protocol::SetEntityDataPacket::PROP_FLAGS;
+    e.type  = network::protocol::SetEntityDataPacket::TYPE_BYTE;
+    uint8_t flags = 0;
+    if (sneaking)  flags |= (1 << network::protocol::SetEntityDataPacket::FLAG_BIT_SNEAKING);
+    if (sprinting) flags |= (1 << network::protocol::SetEntityDataPacket::FLAG_BIT_SPRINTING);
+    e.ival = flags;
+    return e;
+}
+
+// ============================================================
+// Visibility helpers — player-list entry + AddPlayerPacket
+//
+// Genisys 0.15.0 splits "make another player exist for this client"
+// into two halves that we mirror here:
+//
+//   Human::spawnTo($player)              -> AddPlayerPacket
+//   Server::updatePlayerListData(...)    -> PlayerListPacket TYPE_ADD
+//
+// The respawn path calls BOTH in both directions
+// (Genisys Player::respawn(), Player.php):
+//
+//     foreach($this->usedChunks as $index => $c){
+//         foreach($this->level->getChunkEntities(...) as $entity){
+//             if($entity !== $this and !$entity->closed and $entity->isAlive()){
+//                 $entity->spawnTo($this);          // <- re-spawn TO me
+//             }
+//         }
+//     }
+//     $this->teleport($pos);
+//     $this->spawnToAll();                            // <- re-announce ME
+//
+// Neither half existed in respawn() here, which is precisely the bug
+// reported: "cuando un jugador muere y reaparece los demas no pueden
+// verlo, se vuelve invisible". The 0.15.x client rebuilds its entity
+// set when RespawnPacket is processed and the server never re-announces
+// the body, so the others keep an empty slot where the player used to
+// be.
+// ============================================================
+
+// Anuncia a ESTE jugador (lista de jugadores + AddPlayerPacket) a cada
+// otro jugador ya spawneado.
+void Player::announceSelfToOthers() {
+    if (!srv_) return;
+    auto plp_add = std::make_shared<network::protocol::PlayerListPacket>();
+    plp_add->type = network::protocol::PlayerListPacket::TYPE_ADD;
+    {
+        network::protocol::PlayerListPacket::Entry e;
+        parseUuidBytes(cfg_.uuid, e.uuid);
+        e.eid      = runtimeId();
+        e.name     = getName();
+        e.skinId   = skinId();
+        e.skinData = skinData();
+        plp_add->entries.push_back(std::move(e));
+    }
+
+    auto ap_self = std::make_shared<network::protocol::AddPlayerPacket>();
+    parseUuidBytes(cfg_.uuid, ap_self->uuid);
+    ap_self->username = getName();
+    ap_self->eid = runtimeId();
+    ap_self->x = (float)pos_.x;
+    ap_self->y = (float)pos_.y;
+    ap_self->z = (float)pos_.z;
+    ap_self->yaw = yaw_;
+    ap_self->headYaw = yaw_;
+    ap_self->pitch = pitch_;
+
+    for (auto& other : srv_->playersSnapshot()) {
+        if (!other || other.get() == this) continue;
+        if (other->isPendingRemoval()) continue;
+        if (!other->spawned()) continue;
+        other->sendPacket(plp_add);
+        other->sendPacket(ap_self);
+    }
+}
+
+// Re-spawna a ESTE jugador en la vista de `viewer`.
+void Player::announceTo(Player* viewer) {
+    if (!viewer || viewer == this) return;
+    if (!viewer->spawned()) return;
+
+    auto plp = std::make_shared<network::protocol::PlayerListPacket>();
+    plp->type = network::protocol::PlayerListPacket::TYPE_ADD;
+    {
+        network::protocol::PlayerListPacket::Entry e;
+        parseUuidBytes(cfg_.uuid, e.uuid);
+        e.eid      = runtimeId();
+        e.name     = getName();
+        e.skinId   = skinId();
+        e.skinData = skinData();
+        plp->entries.push_back(std::move(e));
+    }
+    viewer->sendPacket(plp);
+
+    auto ap = std::make_shared<network::protocol::AddPlayerPacket>();
+    parseUuidBytes(cfg_.uuid, ap->uuid);
+    ap->username = getName();
+    ap->eid = runtimeId();
+    ap->x = (float)pos_.x;
+    ap->y = (float)pos_.y;
+    ap->z = (float)pos_.z;
+    ap->yaw = yaw_;
+    ap->headYaw = yaw_;
+    ap->pitch = pitch_;
+    viewer->sendPacket(ap);
+
+    // Reenvia la pose actual, asi un viewer que acaba de reaparecer
+    // mientras nosotros ya estabamos agachados no nos muestra de pie.
+    auto pose = std::make_shared<network::protocol::SetEntityDataPacket>();
+    pose->eid = runtimeId();
+    pose->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_));
+    viewer->sendPacket(pose);
+}
+
+// Difunde la pose (agachado + sprint) a todos los clientes.
+//
+// Genisys 0.15.0 no hace esto: Player::setSneaking() (Player.php:3017)
+// solo cambia una propiedad local del Player en el servidor y nunca
+// emite SetEntityDataPacket, asi que en un server Genisys el agachado
+// tampoco seria visible para los demas. El formato del paquete si
+// viene de ahi (SetEntityDataPacket + Binary::writeMetadata), asi que
+// lo que falta es la llamada.
+//
+// La pose va en Entity::DATA_FLAGS = 0 (byte), donde el bit 1 es
+// SNEAKING y el bit 3 es SPRINTING (Genisys Entity.php:87-105). Como
+// los dos bits viven en la misma propiedad hay que mandar SIEMPRE el
+// byte completo; mandar solo un bit pisaria el otro en el cliente que
+// lo recibe.
+//
+// Genisys Entity::sendData() usa eid = 0 cuando el destino es la propia
+// entidad (sendData($this)); para el resto, el runtime id real.
+void Player::broadcastPoseFlags() {
+    if (!srv_) return;
+    auto pk = std::make_shared<network::protocol::SetEntityDataPacket>();
+    pk->eid = runtimeId();
+    pk->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_));
+
+    // Nos lo mandamos a nosotros con eid = 0, igual que Genisys, para
+    // que el cliente own no se quede con una pose contradicha.
+    {
+        auto self = std::make_shared<network::protocol::SetEntityDataPacket>();
+        self->eid = 0;
+        self->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_));
+        sendPacket(self);
+    }
+
+    for (auto& other : srv_->playersSnapshot()) {
+        if (!other || other.get() == this) continue;
+        if (other->isPendingRemoval()) continue;
+        if (!other->spawned()) continue;
+        other->sendPacket(pk);
+    }
+}
+
+void Player::setSneaking(bool v) {
+    if (sneaking_ == v) return;
+    sneaking_ = v;
+    broadcastPoseFlags();
 }
 
 // Helper: parse a "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" UUID string into
@@ -2110,7 +2247,7 @@ void Player::handleBlockBreak(int x, int y, int z) {
     ubp->y = (uint8_t)y;
     ubp->blockId = 0;
     ubp->blockData = 0;
-    ubp->flags = 0xFF;
+    ubp->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
 
     // PMMP (protocol 84) sends a SINGLE LevelEventPacket with
     // evid = EVENT_PARTICLE_DESTROY (2001) which acts as BOTH the break
@@ -2284,9 +2421,30 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
 
     // Redstone components such as levers and buttons react to a click
     // before normal item/block placement is considered.
-    if (cursestone::redstone::tryInteract(lvl, srv_, x, y, z)) {
+    // Agachado no se puede accionar una palanca ni un boton (vanilla).
+    if (!sneaking_ && cursestone::redstone::tryInteract(lvl, srv_, x, y, z)) {
         return;
     }
+
+    // ---- REGLA VANILLA DE AGACHADO -------------------------------
+    //
+    // Mientras el jugador esta agachado (PlayerActionPacket
+    // ACTION_START_SNEAK=11, ver handlePlayerAction) NO se puede
+    // interactuar con tiles ni con bloques: nada de abrir cofres, hornos
+    // ni mesas, ni accionar palancas/botones, ni chispa, ni cubos, ni
+    // apagar fuego con la mano. Lo unico permitido es COLOCAR bloques y
+    // ATACAR (el ataque va por handleInteract/INTERACT_PACKET, que no
+    // pasa por esta funcion, asi que sigue funcionando igual).
+    //
+    // Es la regla estandar de vanilla, que ni Genisys 0.15.0 ni esta
+    // base de codigo implementaban: antes el agachado era puramente
+    // cosmético en el cliente de quien se agachaba.
+    //
+    // `sneakLocked` se captura UNA vez al principio y se consulta en cada
+    // rama de interaccion de abajo; la colocacion de bloques NO se toca
+    // (una puerta, un piston, un cartel o cualquier bloque 1..255 se
+    // siguen colocando normalmente mientras se esta agachado).
+    const bool sneakLocked = sneaking_;
 
     // PlayerInteractEvent (RIGHT_CLICK_BLOCK) — se dispara ANTES de
     // cualquier rama de logica (flint&steel, extincion de fuego,
@@ -2296,7 +2454,10 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     // `item` refleja lo que el cliente reporta tener en mano; ids
     // fuera de rango uint16_t (no deberia pasar, heldItemId es
     // int16_t) se truncan de forma segura via el cast explicito.
-    {
+    //
+    // Agachado el evento NO se dispara: la interaccion no llega a
+    // ocurrir, asi que anunciarla seria mentirle a los plugins.
+    if (!sneakLocked) {
         item::ItemStack heldStack;
         heldStack.id    = (uint16_t)heldItemId;
         heldStack.meta  = (uint8_t)(heldDamage & 0xFF);
@@ -2314,15 +2475,15 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     // placement logic below (a chest should open even if the player is
     // holding a block item — you don't accidentally place a block on
     // top of the chest you're trying to open).
-    if (lvl->getBlockId(x, y, z) == block::CHEST) {
+    if (!sneakLocked && lvl->getBlockId(x, y, z) == block::CHEST) {
         openChestAt(x, y, z);
         return;
     }
 
     // Horno — mismo patrón que el cofre: click derecho abre su UI
     // (su propia ventana de contenedor) en vez de colocar un bloque encima.
-    if (lvl->getBlockId(x, y, z) == block::FURNACE ||
-        lvl->getBlockId(x, y, z) == block::BURNING_FURNACE) {
+    if (!sneakLocked && (lvl->getBlockId(x, y, z) == block::FURNACE ||
+                         lvl->getBlockId(x, y, z) == block::BURNING_FURNACE)) {
         openFurnaceAt(x, y, z);
         return;
     }
@@ -2334,7 +2495,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     // ninguna ventana server-side: las recetas viajan TODAS en un solo
     // packet global y el cliente filtra big/small según dónde esté
     // crafteando.
-    if (lvl->getBlockId(x, y, z) == block::WORKBENCH &&
+    if (!sneakLocked && lvl->getBlockId(x, y, z) == block::WORKBENCH &&
         srv_ && srv_->advancedLog()) {
         utils::MainLogger::get().info("[CRAFT] " + cfg_.username +
             " opened crafting table at " +
@@ -2369,7 +2530,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         // needing to break the block underneath it.
         constexpr uint8_t FIRE_ID = 51;
         uint8_t targetId = lvl->getBlockId(x, y, z);
-        if (targetId == FIRE_ID) {
+        if (!sneakLocked && targetId == FIRE_ID) {
             // Get the chunk for (x, y, z) to set the block.
             int32_t tcx = x >> 4, tcz = z >> 4;
             if (mcp_chunk_t* tch = lvl->chunks().getChunkIfLoaded(tcx, tcz)) {
@@ -2385,7 +2546,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
                 ubp->y = (uint8_t)y;
                 ubp->blockId = 0;
                 ubp->blockData = 0;
-                ubp->flags = 0xFF;
+                ubp->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
                 if (srv_) {
                     for (auto& other : srv_->playersSnapshot()) {
                         if (!other) continue;
@@ -2584,6 +2745,19 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     } else if (heldItemId == 325) {
         // Bucket (empty) — no placement.
         return;
+    } else if (sneakLocked && heldItemId > 255) {
+        // REGLA VANILLA DE AGACHADO: cualquier item de id > 255
+        // (chispa y ferro = 259, cubo = 325, cubo de agua = 326, cubo de
+        // lava = 327) es un USO de item, no una colocacion de bloque, y
+        // agachado esta prohibido. Si no lo sacamos aqui caeria en la
+        // rama final de "otro item — no placement", que es el mismo
+        // resultado pero con un log mucho menos util.
+        if (srv_ && srv_->advancedLog()) {
+            utils::MainLogger::get().info("[SNEAK] " + cfg_.username +
+                " tried to use item id=" + std::to_string(heldItemId) +
+                " while crouching — blocked (vanilla)");
+        }
+        return;
     } else if (heldItemId == 326) {
         // Water bucket → place FLOWING_WATER (id=8) so the client renders
         // it as water that spreads. Using WATER (id=9) causes the client
@@ -2599,8 +2773,10 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         placedBlockData = 0;
         consumeItem     = !(cfg_.gamemode & 1);
         skipPlaceSound  = true;
-    } else if (heldItemId == 259) {
+    } else if (heldItemId == 259 && !sneakLocked) {
         // Flint and steel — delegar toda la lógica a ItemFlintSteel::onActivate().
+        // Agachado no se puede usar (lo captura la rama sneakLocked de
+        // arriba, que devuelve antes de llegar aca).
         // Maneja: verificación de bloque sólido, portal del Nether,
         // colocación de fuego, primer tick de propagación y durabilidad.
         item::ItemFlintSteel::onActivate(lvl, this,
@@ -2702,7 +2878,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     ubp->y = (uint8_t)placeY;
     ubp->blockId = placedBlockId;
     ubp->blockData = placedBlockData;
-    ubp->flags = 0xFF;
+    ubp->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
 
     // PMMP sends a place sound via LevelEventPacket with
     // evid = EVENT_SOUND_BLOCK_PLACE (1052).
@@ -2754,10 +2930,29 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int /*face*/) {
     // Sprint toggle (protocol 84, Infinity PlayerActionPacket):
     // START_SPRINT=9 / STOP_SPRINT=10 — drives the higher exhaustion
     // rate in tickHungerAndDamage().
+    //
+    // BUG ARREGLADO (era invisible para los demas): sprint y agachado
+    // viven en la MISMA propiedad de metadata de la entidad
+    // (Entity::DATA_FLAGS = 0: bit 3 = SPRINTING, bit 1 = SNEAKING).
+    // Antes solo se guardaba el bool local y jamas se mandaba nada, asi
+    // que el otro cliente se quedaba con la pose previa para siempre.
+    // Ahora cada cambio reenvia el byte de flags completo a todos.
     if (action == network::protocol::PlayerActionPacket::ACTION_START_SPRINT) {
-        sprinting_ = true;
+        if (!sprinting_) { sprinting_ = true;  broadcastPoseFlags(); }
     } else if (action == network::protocol::PlayerActionPacket::ACTION_STOP_SPRINT) {
-        sprinting_ = false;
+        if (sprinting_)  { sprinting_ = false; broadcastPoseFlags(); }
+    }
+    // Crouch / sneak toggle (protocol 84, Genisys 0.15.0
+    // PlayerActionPacket.php: ACTION_START_SNEAK = 11,
+    // ACTION_STOP_SNEAK = 12).
+    //
+    // setSneaking() ademas actualiza el estado que usa la regla
+    // vanilla de handleBlockPlace(): agachado = no se puede interactuar
+    // con tiles ni bloques, solo colocar bloques y atacar.
+    if (action == network::protocol::PlayerActionPacket::ACTION_START_SNEAK) {
+        setSneaking(true);
+    } else if (action == network::protocol::PlayerActionPacket::ACTION_STOP_SNEAK) {
+        setSneaking(false);
     }
     if (action == network::protocol::PlayerActionPacket::ACTION_SPAWN_SAME_DIMENSION) {
         respawn();
@@ -2817,6 +3012,9 @@ void Player::respawn() {
     starve_ticks_ = 0;
     food_tick_timer_ = 0;
     food_depletion_ = 0;
+    // El agachado y el sprint no sobreviven a la muerte.
+    sneaking_ = false;
+    sprinting_ = false;
 
     if (spawned_.load(std::memory_order_relaxed)) {
         auto rp = std::make_shared<network::protocol::RespawnPacket>();
@@ -2836,6 +3034,46 @@ void Player::respawn() {
         mp->yaw = yaw_; mp->bodyYaw = yaw_; mp->pitch = pitch_;
         mp->mode = network::protocol::MovePlayerPacket::MODE_RESET;
         sendPacket(mp);
+
+        // BUG ARREGLADO: "cuando un jugador muere y reaparece los
+        // demas no pueden verlo, se vuelve invisible".
+        //
+        // Al procesar el RespawnPacket, el cliente 0.15.x tira su
+        // conjunto de entidades y reconstruye el mundo desde los
+        // chunks que le mandemos. El servidor nunca volvia a anunciar
+        // al jugador que reapareció, asi que los demas se quedaban con
+        // un hueco vacio donde antes estaba su entidad: solo se veian
+        // sus drops y su nombre en la lista de jugadores, nunca el
+        // cuerpo — y ademas no habia colisiones.
+        //
+        // Genisys 0.15.0 Player::respawn() hace exactamente esto al
+        // final: `$this->spawnToAll();` mas, antes, un bucle que
+        // re-spawna hacia si mismo cada entidad viva de los chunks que
+        // tiene cargados. Replicamos las dos mitades:
+        announceSelfToOthers();
+
+        // Y la inversa: el cliente que acaba de reaparecer tampoco
+        // vuelve a conocer a los demas si el servidor no se los
+        // re-presenta (mismo bucle `getChunkEntities() ->
+        // spawnTo($this)` de Genisys).
+        if (srv_) {
+            for (auto& other : srv_->playersSnapshot()) {
+                if (!other || other.get() == this) continue;
+                if (other->isPendingRemoval()) continue;
+                if (!other->spawned()) continue;
+                if (other->isDead()) continue;   // Genisys: !$entity->isAlive()
+                other->announceTo(this);
+            }
+        }
+
+        // PlayStatusPacket PLAYER_SPAWN: Genisys lo manda en
+        // Player::respawn() justo despues del teleport para re-armar el
+        // cliente 0.15.x fuera de la pantalla de muerte. Sin el, el
+        // cliente puede quedarse esperando y nunca re-enviar su
+        // posicion — o sea, nadie lo veria moverse nunca.
+        auto ps = std::make_shared<network::protocol::PlayStatusPacket>();
+        ps->status = network::protocol::PlayStatusPacket::PLAYER_SPAWN;
+        sendPacket(ps);
     }
 
     if (srv_ && srv_->advancedLog()) {
