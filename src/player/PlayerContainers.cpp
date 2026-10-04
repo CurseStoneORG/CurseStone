@@ -1,6 +1,6 @@
 #include "Player.h"
-#include "level/Level.h"
-#include "level/Position.h"
+#include "world/World.h"
+#include "world/Position.h"
 #include "network/protocol/BlockEntityDataPacket.h"
 #include "network/protocol/ContainerOpenPacket.h"
 #include "network/protocol/ContainerClosePacket.h"
@@ -27,15 +27,15 @@ namespace cursestone {
 // openChestAt / closeOpenChest — the real chest flow.
 //
 // TileChest is the single source of truth for a chest's contents
-// (see TileChest.h). Level::getTile/setTile is what makes the SAME
+// (see TileChest.h). World::getTile/setTile is what makes the SAME
 // TileChest instance come back every time this position is opened,
 // instead of a fresh empty one — so items survive a close+reopen for
 // as long as the process keeps running (no disk persistence yet, see
-// the comment on Level::getTile in Level.h).
+// the comment on World::getTile in World.h).
 // ============================================================
 void Player::openChestAt(int x, int y, int z) {
-    if (!srv_ || !srv_->getDefaultLevel()) return;
-    auto* lvl = srv_->getDefaultLevel();
+    if (!srv_ || !srv_->getDefaultWorld()) return;
+    auto* lvl = srv_->getDefaultWorld();
 
     // Only one container open at a time per player (see openContainerWindow).
     if (open_chest_) {
@@ -43,7 +43,7 @@ void Player::openChestAt(int x, int y, int z) {
     }
 
     // Reuse the existing TileChest at this position, or create one the
-    // first time this chest is opened. Level::getTile returns a
+    // first time this chest is opened. World::getTile returns a
     // shared_ptr<tile::Tile> (the base type — the registry can hold any
     // tile kind), so it needs a dynamic_cast back down to TileChest.
     // A null result after a non-null getTile() would mean a different
@@ -57,7 +57,7 @@ void Player::openChestAt(int x, int y, int z) {
         if (!chest) return;
     } else {
         chest = std::make_shared<tile::TileChest>(
-            cursestone::level::Position((double)x, (double)y, (double)z));
+            cursestone::world::Position((double)x, (double)y, (double)z));
         lvl->setTile(x, y, z, chest);
     }
 
@@ -87,7 +87,7 @@ void Player::openChestAt(int x, int y, int z) {
     // asks for it), the client has no block entity at these
     // coordinates, shows an unknown-but-solid block and refuses to
     // open the UI. Send it now — to everyone looking at the chunk, not
-    // just the opener. Level::ensureTilesLoaded covers the normal
+    // just the opener. World::ensureTilesLoaded covers the normal
     // path (tiles exist before the chunk is sent); this covers the
     // ones created after the fact.
     sendBlockEntityData(x, y, z, *chest, nullptr);
@@ -134,12 +134,12 @@ void Player::closeOpenChest() {
 }
 
 // openFurnaceAt — espejo exacto de openChestAt para el horno:
-// TileFurnace persistente via Level::getTile/setTile, viewers para el
+// TileFurnace persistente via World::getTile/setTile, viewers para el
 // progreso del tick, ContainerOpenPacket tipo FURNACE y volcado de
 // los 3 slots (input / fuel / output).
 void Player::openFurnaceAt(int x, int y, int z) {
-    if (!srv_ || !srv_->getDefaultLevel()) return;
-    auto* lvl = srv_->getDefaultLevel();
+    if (!srv_ || !srv_->getDefaultWorld()) return;
+    auto* lvl = srv_->getDefaultWorld();
 
     // Solo un contenedor abierto por jugador.
     if (open_chest_ || open_furnace_) {
@@ -153,7 +153,7 @@ void Player::openFurnaceAt(int x, int y, int z) {
         if (!furnace) return;   // otro tipo de tile en esa posición
     } else {
         furnace = std::make_shared<tile::TileFurnace>(
-            cursestone::level::Position((double)x, (double)y, (double)z));
+            cursestone::world::Position((double)x, (double)y, (double)z));
         lvl->setTile(x, y, z, furnace);
     }
 
@@ -230,7 +230,7 @@ uint8_t Player::openContainerWindow() {
 // ============================================================
 void Player::handleSignEdit(network::protocol::BlockEntityDataPacket& pk) {
     if (!spawned() || !srv_) return;
-    level::Level* lvl = srv_->getDefaultLevel();
+    world::World* lvl = srv_->getDefaultWorld();
     if (!lvl) return;
 
     double dx = (double)pk.x - pos_.x;

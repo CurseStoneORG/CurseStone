@@ -4,10 +4,10 @@
 // Responsibilities:
 //   1. Boot: load cursestone.yml, init logger, register blocks/items,
 //      create CommandMap + register default commands, create the
-//      default Level (overworld), open the RakLibInterface.
-//   2. Tick (every 50ms): advance scheduler, tick level(s), tick
+//      default World (overworld), open the RakLibInterface.
+//   2. Tick (every 50ms): advance scheduler, tick world(s), tick
 //      players, drain RakLib→main FIFO, advance time.
-//   3. Shutdown: disconnect all players, save level(s), close network.
+//   3. Shutdown: disconnect all players, save world(s), close network.
 //
 // Player roster + broadcasting:
 //   - players() returns the list of online Players (read-only).
@@ -34,7 +34,7 @@ namespace cursestone {
 class Player;
 class CommandMap;
 class CommandReader;
-namespace level { class Level; }   // resolved via `using Level = level::Level;` in main.h
+namespace world { class World; }   // resolved via `using World = world::World;` in main.h
 namespace network { class Network; }
 namespace inventory { class CraftingManager; }
 namespace scheduler { class AsyncPool; }
@@ -60,10 +60,10 @@ public:
     // Run the main tick loop (blocks until shutdown()).
     void runTickLoop();
 
-    // Advance one tick. Dispatches to scheduler, network, level, players.
+    // Advance one tick. Dispatches to scheduler, network, world, players.
     void tick();
 
-    // Cleanly shut down: disconnect players, save level, close sockets.
+    // Cleanly shut down: disconnect players, save world, close sockets.
     void shutdown();
 
     // Registers an external "stop requested" flag for runTickLoop() to
@@ -106,7 +106,7 @@ public:
     // drops and other world entities (mirrors PMMP Entity::$entityCount).
     int64_t allocateEid();
 
-    // Save ALL players + the default level. Called periodically from the
+    // Save ALL players + the default world. Called periodically from the
     // tick loop (auto-save) and on shutdown.
     void saveAll();
 
@@ -114,8 +114,8 @@ public:
     void broadcastMessage(const std::string& msg);
     void broadcastPacket(/* DataPacket */ void* p);
 
-    // Level + scheduler + network accessors.
-    Level* getDefaultLevel() const { return level_.get(); }
+    // World + scheduler + network accessors.
+    World* getDefaultWorld() const { return world_.get(); }
     scheduler::AsyncPool* getAsyncPool() const { return async_pool_.get(); }
     CommandMap* getCommandMap() const { return command_map_.get(); }
     network::Network* getNetwork() const { return network_.get(); }
@@ -154,10 +154,10 @@ public:
     NbtPtr getOfflinePlayerData(const std::string& name);
     void saveOfflinePlayerData(const std::string& name, NbtPtr nbt);
 
-    // --- Nukkit-compat: Level management ---
-    Level* getLevel(int levelId) const { return (levelId == 1 && level_) ? level_.get() : nullptr; }
-    Level* getLevelByName(const std::string& name) const;
-    void setDefaultLevel(std::shared_ptr<Level> l) { level_ = std::move(l); }
+    // --- Nukkit-compat: World management ---
+    World* getWorld(int worldId) const { return (worldId == 1 && world_) ? world_.get() : nullptr; }
+    World* getWorldByName(const std::string& name) const;
+    void setDefaultWorld(std::shared_ptr<World> l) { world_ = std::move(l); }
 
     // --- Nukkit-compat: Player management ---
     Player* getPlayerExact(const std::string& name) const;
@@ -221,7 +221,7 @@ private:
     void initLogger();
     void registerBlocksAndItems();
     void openNetwork();
-    void loadDefaultLevel();
+    void loadDefaultWorld();
     void startCommandReader();
     void loadOps();
     void saveOps();
@@ -256,7 +256,7 @@ private:
 
     // Subsystems (lazily populated in start()).
     std::shared_ptr<network::Network> network_;
-    std::shared_ptr<Level> level_;
+    std::shared_ptr<World> world_;
     std::shared_ptr<CommandMap> command_map_;
     std::shared_ptr<inventory::CraftingManager> crafting_;
     std::shared_ptr<scheduler::AsyncPool> async_pool_;

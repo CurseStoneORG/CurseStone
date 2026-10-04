@@ -6,7 +6,7 @@
 // NOT a private std::vector<ItemStack> — ChestInventory is the single
 // source of truth for slot contents. Container::setItem/getItem/removeItem
 // below just delegate to it. This keeps TileChest as the one object
-// stored in Level's tile registry (see Level::getTile/setTile) instead
+// stored in World's tile registry (see World::getTile/setTile) instead
 // of having two parallel places (a raw vector here + an Inventory
 // elsewhere) that could drift out of sync.
 #pragma once
@@ -20,7 +20,7 @@
 namespace cursestone::tile {
 class TileChest : public Tile, public Container, public Nameable, public Spawnable {
 public:
-    TileChest(cursestone::level::Position pos)
+    TileChest(cursestone::world::Position pos)
         : Tile("Chest", pos),
           inventory_(std::make_shared<cursestone::inventory::ChestInventory>()) {}
     int size() const override { return SIZE; }

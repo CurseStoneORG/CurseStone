@@ -2,7 +2,7 @@
 // view distance, current chunk, gamemode, position, and a per-player
 // tick. The Player class is the most complex class in CurseStone;
 // it's the bridge between the protocol layer (LoginPacket → MovePlayerPacket)
-// and the world layer (Level, Chunk, Entity).
+// and the world layer (World, Chunk, Entity).
 //
 // Mirrors pocketmine/Player.php but in C++. Lifecycle:
 //   1. RakLibInterface receives CLIENT_HANDSHAKE → Server::openSession()
@@ -14,7 +14,7 @@
 #include "main.h"                          // defines math::Vector3 alias
 #include "IPlayer.h"
 #include "entity/Human.h"
-#include "level/Location.h"
+#include "world/Location.h"
 #include "permission/PermissibleBase.h"
 #include "network/AdvancedSourceInterface.h"
 #include "Server.h"                        // NbtPtr = shared_ptr<mcp_tag>
@@ -30,7 +30,7 @@ namespace cursestone {
 class Server;
 class Network;
 class SourceInterface;
-namespace level { class Level; }
+namespace world { class World; }
 namespace network::protocol { class DataPacket; class LoginPacket; class DropItemPacket; class BlockEntityDataPacket; }
 namespace inventory { class PlayerInventory; }
 namespace tile { class Tile; class TileChest; class TileFurnace; }
@@ -150,8 +150,8 @@ public:
     // handleBlockPlace, DESPUES del chequeo de PlayerInteractEvent (asi
     // cancelar la interaccion tambien bloquea abrir el cofre), cuando el
     // bloque clickeado es block::CHEST. Reutiliza el TileChest existente
-    // en esa posicion via Level::getTile (o crea uno nuevo la primera
-    // vez, via Level::setTile) para que el contenido persista mientras
+    // en esa posicion via World::getTile (o crea uno nuevo la primera
+    // vez, via World::setTile) para que el contenido persista mientras
     // el proceso siga corriendo. Dispara InventoryOpenEvent; no hace
     // nada si se cancela. Si el jugador ya tenia otro cofre abierto, lo
     // cierra primero (closeOpenChest()) — un jugador solo puede tener
@@ -166,7 +166,7 @@ public:
     void closeOpenChest();
 
     // Abre el horno en (x,y,z). Espejo exacto de openChestAt():
-    // reutiliza (o crea) el TileFurnace via Level::getTile/setTile,
+    // reutiliza (o crea) el TileFurnace via World::getTile/setTile,
     // dispara InventoryOpenEvent (cancelable), registra al jugador en
     // los viewers del tile (para que TileFurnace::tick le mande el
     // progreso via ContainerSetDataPacket), abre su ventana de
@@ -176,7 +176,7 @@ public:
     // Spawn a dropped item entity — pocketmine\level\Level::dropItem()
     // (Genisys 0.15). `motion*` is the $motion Vector3 the entity is created
     // with and the one we ship as speedX/Y/Z in AddItemEntityPacket; the
-    // server then integrates it every tick in Level::tickDroppedItems().
+    // server then integrates it every tick in World::tickDroppedItems().
     // `pickup_delay` is Genisys' PickupDelay NBT short (10 by default,
     // 40 for a Q drop). Returns the allocated runtime entity ID, or 0 when
     // the stack was empty.
@@ -314,7 +314,7 @@ public:
     // ignored by it as duplicates; the ones it lost now arrive. The actual
     // sending stays inside the usual MAX_CHUNKS_PER_TICK throttle.
     void handleClientSpawnAck() {
-        if (!srv_ || !srv_->getDefaultLevel()) return;
+        if (!srv_ || !srv_->getDefaultWorld()) return;
         {
             std::lock_guard<std::mutex> lk(chunks_mtx_);
             used_chunks_.clear();
@@ -531,7 +531,7 @@ private:
     PlayerConfig cfg_;
     network::AdvancedSourceInterface* adv_iface_ = nullptr;
     std::shared_ptr<inventory::PlayerInventory> inv_;
-    std::shared_ptr<Level> level_;
+    std::shared_ptr<World> world_;
     // El contenedor abierto ahora mismo (cofre u horno), tipado por
     // tipo de tile. Solo hay UNO a la vez (ver container_window_id_ /
     // openContainerWindow()). Set por openChestAt()/openFurnaceAt(),

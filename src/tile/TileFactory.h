@@ -11,7 +11,7 @@
 // (invisible) block that still collides, and tapping it either does
 // nothing or, for a furnace, kicks the client.
 //
-// Level::ensureTilesLoaded() uses this to build the missing tiles the
+// World::ensureTilesLoaded() uses this to build the missing tiles the
 // moment a chunk is first touched, so they travel with the chunk in the
 // BlockEntityDataPacket the player already receives.
 #pragma once
@@ -25,7 +25,7 @@ namespace cursestone::tile {
 // block entity (air, a plain block, a block kind we have no tile for).
 // `pos` is the world position of the block.
 std::shared_ptr<Tile> createTileForBlock(uint8_t blockId,
-                                         const cursestone::level::Position& pos);
+                                         const cursestone::world::Position& pos);
 
 // True for the block ids createTileForBlock() can build. Used by the
 // chunk scan to skip the switch for every block in the world.

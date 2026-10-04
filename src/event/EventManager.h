@@ -33,7 +33,7 @@
 // hilo — cada HandlerList protege sus propios registros con un mutex.
 // Dicho esto, por convención (igual que el resto del tick loop) los
 // eventos de juego deben dispararse desde el hilo principal: nada acá
-// lo impide, pero Level/Player no son thread-safe por sí mismos, así
+// lo impide, pero World/Player no son thread-safe por sí mismos, así
 // que un callback que los toque debe seguir corriendo en el hilo
 // principal.
 #pragma once

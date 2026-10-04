@@ -1,8 +1,8 @@
 #include "Player.h"
 #include "player/PlayerInternal.h"
 #include "workbench/WorkbenchManager.h"
-#include "level/Level.h"
-#include "level/format/Chunk.h"
+#include "world/World.h"
+#include "world/format/Chunk.h"
 #include "block/BlockIds.h"
 #include "network/protocol/DisconnectPacket.h"
 #include "network/protocol/MovePlayerPacket.h"
@@ -41,8 +41,8 @@ Player::Player(Server* srv, PlayerConfig cfg)
     was_in_lava_ = false;
     was_on_fire_ = false;
     // Position defaults to world spawn; overridden by processLogin if NBT had Pos.
-    if (srv_ && srv_->getDefaultLevel()) {
-        auto sp = srv_->getDefaultLevel()->spawn();
+    if (srv_ && srv_->getDefaultWorld()) {
+        auto sp = srv_->getDefaultWorld()->spawn();
         pos_.x = sp.x + 0.5;
         pos_.y = sp.y;
         pos_.z = sp.z + 0.5;
@@ -443,7 +443,7 @@ void Player::saveData() {
 
 // --- Nukkit-compat: getSpawn ---
 math::Vector3 Player::getSpawn() const {
-    if (srv_ && srv_->getDefaultLevel()) return srv_->getDefaultLevel()->spawn();
+    if (srv_ && srv_->getDefaultWorld()) return srv_->getDefaultWorld()->spawn();
     return math::Vector3{0, 64, 0};
 }
 
@@ -464,7 +464,7 @@ math::Vector3 Player::getSpawn() const {
 // them, so the spawn is deterministic across restarts.
 math::Vector3 Player::getServerSpawnSafe() const {
     math::Vector3 sp = getSpawn();
-    auto* lvl = srv_ ? srv_->getDefaultLevel() : nullptr;
+    auto* lvl = srv_ ? srv_->getDefaultWorld() : nullptr;
     if (!lvl) return sp;
     int32_t bx = (int32_t)std::floor(sp.x);
     int32_t bz = (int32_t)std::floor(sp.z);

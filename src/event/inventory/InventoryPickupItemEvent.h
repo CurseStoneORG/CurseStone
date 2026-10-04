@@ -3,16 +3,16 @@
 #pragma once
 #include "InventoryEvent.h"
 #include "../Cancellable.h"
-#include "../../level/Level.h"
+#include "../../world/World.h"
 namespace cursestone::event::inventory {
 
 class InventoryPickupItemEvent : public InventoryEvent, public Cancellable {
 public:
-    cursestone::level::DroppedItem* item;
+    cursestone::world::DroppedItem* item;
     InventoryPickupItemEvent(std::shared_ptr<cursestone::inventory::Inventory> inv,
-                               cursestone::level::DroppedItem* di)
+                               cursestone::world::DroppedItem* di)
         : InventoryEvent(std::move(inv)), item(di) {}
-    cursestone::level::DroppedItem* getItem() { return item; }
+    cursestone::world::DroppedItem* getItem() { return item; }
     const std::string& eventName() const override {
         static std::string n = "InventoryPickupItemEvent"; return n;
     }

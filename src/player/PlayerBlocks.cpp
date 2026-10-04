@@ -1,6 +1,6 @@
 #include "Player.h"
-#include "level/Level.h"
-#include "level/format/Chunk.h"
+#include "world/World.h"
+#include "world/format/Chunk.h"
 #include "network/protocol/UpdateBlockPacket.h"
 #include "network/protocol/LevelEventPacket.h"
 #include "redstone/RedstoneManager.h"
@@ -68,9 +68,9 @@ static std::pair<uint16_t, uint16_t> lookupBlockDrop(uint8_t blockId, uint8_t bl
 
 void Player::handleBlockBreak(int x, int y, int z) {
     if (!spawned_.load(std::memory_order_relaxed)) return;
-    if (!srv_ || !srv_->getDefaultLevel()) return;
+    if (!srv_ || !srv_->getDefaultWorld()) return;
 
-    auto* lvl = srv_->getDefaultLevel();
+    auto* lvl = srv_->getDefaultWorld();
 
     // Reject out-of-world Y values.
     if (y < 0 || y >= 256) return;
@@ -108,7 +108,7 @@ void Player::handleBlockBreak(int x, int y, int z) {
     // cartel) hay que sacarlo del registro. Si no se hace, al re-colocar
     // algo en esa misma posición el tile viejo "revive" con su contenido/
     // estado anterior — el mismo tipo de bug de persistencia que el del
-    // cartel. PMMP lo resuelve en Tile::onBreak / Level::useBreakOn.
+    // cartel. PMMP lo resuelve en Tile::onBreak / World::useBreakOn.
     if (blockId == block::CHEST || blockId == block::FURNACE ||
         blockId == block::BURNING_FURNACE ||
         blockId == block::SIGN_POST || blockId == block::WALL_SIGN) {
@@ -143,7 +143,7 @@ void Player::handleBlockBreak(int x, int y, int z) {
     partEv->data = ((int32_t)blockId & 0xFF) | ((int32_t)blockData << 12);
 
     // Broadcast only to players who can SEE this chunk — PMMP
-    // `Level::getChunkPlayers()`. Deliberately NOT isTrackingChunk():
+    // `World::getChunkPlayers()`. Deliberately NOT isTrackingChunk():
     // see the note on canSeeBlock() — used_chunks_ is send bookkeeping
     // that gets cleared by teleport/spawn-ACK and goes empty while the
     // client is still rendering, which silently dropped every block
@@ -294,7 +294,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
                               int16_t heldItemId, uint8_t heldCount, uint16_t heldDamage,
                               float fx, float fy, float fz) {
     if (!spawned_.load(std::memory_order_relaxed)) return;
-    if (!srv_ || !srv_->getDefaultLevel()) return;
+    if (!srv_ || !srv_->getDefaultWorld()) return;
 
     // ---- Compute placed block position based on face ----
     // This is computed UP FRONT because the flint-and-steel branch below
@@ -314,7 +314,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     }
     if (placeY < 0 || placeY >= 256) return;
 
-    auto* lvl = srv_->getDefaultLevel();
+    auto* lvl = srv_->getDefaultWorld();
 
     // Redstone components such as levers and buttons react to a click
     // before normal item/block placement is considered.
@@ -419,7 +419,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         // Empty hand — no placement. BUT, in MCPE 0.15.x the client also
         // sends USE_ITEM_PACKET with an empty hand when the player
         // right-clicks on a FIRE block to extinguish it (PMMP handles this
-        // in Level::useItemOn → Fire::onUpdate(BLOCK_UPDATE_NORMAL)).
+        // in World::useItemOn → Fire::onUpdate(BLOCK_UPDATE_NORMAL)).
         //
         // We replicate that behaviour here: if the clicked target (x,y,z)
         // is a FIRE block, we set it to AIR and broadcast the update.
@@ -469,7 +469,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         // madera genérica; 330 = puerta de hierro), el bloque colocado
         // en el mundo colapsa siempre a WOODEN_DOOR (64) o IRON_DOOR
         // (71) — ver nota extensa en RedstoneManager.cpp sobre por qué
-        // BlockIds.h (que gobierna el Level real) no distingue especies
+        // BlockIds.h (que gobierna el World real) no distingue especies
         // de madera para puertas, a diferencia de ItemConstants.h que sí
         // las distingue como item. Consecuencia visual conocida y
         // documentada: toda puerta de madera se ve como la textura de
@@ -740,13 +740,13 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     ch->dirty = true;
 
     // Block-entity: los carteles necesitan un TileSign en el registro del
-    // Level para que el texto (y el propio tile) sobreviva al save/reload.
+    // World para que el texto (y el propio tile) sobreviva al save/reload.
     // PMMP crea el Tile al colocar el bloque; acá se hace explícito. Esto
     // es lo que arregla el "cartel que desaparece al re-ingresar": antes
     // el ítem 323 no colocaba NADA server-side (ni bloque ni tile).
     if (placedBlockId == block::SIGN_POST || placedBlockId == block::WALL_SIGN) {
         auto sign = std::make_shared<tile::TileSign>(
-            cursestone::level::Position((double)placeX, (double)placeY, (double)placeZ));
+            cursestone::world::Position((double)placeX, (double)placeY, (double)placeZ));
         sign->setCreator(cfg_.uuid);
         lvl->setTile(placeX, placeY, placeZ, sign);
     }

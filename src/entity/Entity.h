@@ -2,17 +2,17 @@
 // projectile). Holds the unique runtime id, position, motion, AABB
 // and the level reference. Mirrors pocketmine/entity/Entity.php.
 #pragma once
-#include "main.h"   // brings in the `using Level = level::Level;` alias
+#include "main.h"   // brings in the `using World = world::World;` alias
 #include <cstdint>
 #include <memory>
 #include "math/Vector3.h"
 #include "math/AxisAlignedBB.h"
-#include "level/Position.h"
+#include "world/Position.h"
 namespace cursestone {
 namespace entity {
 class Entity {
 public:
-    Entity(int64_t runtime_id, std::shared_ptr<Level> lvl);
+    Entity(int64_t runtime_id, std::shared_ptr<World> lvl);
     virtual ~Entity() = default;
     int64_t runtimeId() const { return runtime_id_; }
     int32_t networkId() const { return network_id_; }
@@ -52,7 +52,7 @@ protected:
     float yaw_ = 0.0f, pitch_ = 0.0f;
     bool on_ground_ = false;
     bool closed_ = false;
-    std::shared_ptr<Level> level_;
+    std::shared_ptr<World> world_;
 };
 } // namespace
 } // namespace
