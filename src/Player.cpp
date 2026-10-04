@@ -3697,10 +3697,11 @@ void Player::handleInteract(int action, int64_t targetEid) {
                 if (!other->canSeeBlock(tcx, tcz)) continue;
                 other->sendPacket(motion);
             }
-            // El atacante tambien necesita el empujon si es otra
-            // entidad controlada por el cliente (no el caso del
-            // jugador local, que ya lo simula), pero la victima herself
-            // SI lo necesita: su cliente no simula un golpe recibido.
+            // Se incluye a la propia victima en el bucle a proposito:
+            // su cliente NO simula un golpe recibido (no es una accion
+            // que el jugador haya ejecutado localmente), asi que sin
+            // este SetEntityMotionPacket se quedaria clavada en el sitio
+            // mientras los demas si la ven moverse.
         }
     }
 
