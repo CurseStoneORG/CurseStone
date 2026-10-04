@@ -102,7 +102,7 @@ void TileFurnace::setFlame(bool lit) {
     pk->blockData = lvl->getBlockData(x, y, z);
     pk->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
     for (auto& p : cursestone::Server::getInstance().playersSnapshot())
-        if (p && p->isTrackingChunk(x >> 4, z >> 4)) p->sendPacket(pk);
+        if (p && p->canSeeBlock(x >> 4, z >> 4)) p->sendPacket(pk);
 }
 // ============================================================
 // tick — el corazón del horno.

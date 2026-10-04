@@ -4,7 +4,7 @@
 namespace cursestone {
 class GamemodeCommand : public Command {
 public:
-    GamemodeCommand(const std::string& name = "gamemode") : Command(name, "Set gamemode") {}
+    GamemodeCommand(const std::string& name = "gamemode") : Command(name, "Set gamemode", "", "cursestone.command.gamemode") {}
     bool execute(CommandSender* sender, const std::string& label,
                  const std::vector<std::string>& args) override;
 };

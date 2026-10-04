@@ -32,7 +32,7 @@ static void broadcastBlock(cursestone::Server* server, int32_t x, int32_t y, int
     int32_t cz = z >> 4;
     for (auto& player : server->playersSnapshot()) {
         if (!player) continue;
-        if (!player->isTrackingChunk(cx, cz)) continue;
+        if (!player->canSeeBlock(cx, cz)) continue;
         player->sendPacket(ubp);
     }
 }

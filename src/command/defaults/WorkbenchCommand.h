@@ -6,7 +6,7 @@
 namespace cursestone {
 class WorkbenchCommand : public Command {
 public:
-    WorkbenchCommand() : Command("workbench", "Server diagnostics: start/stop/status/report") {}
+    WorkbenchCommand() : Command("workbench", "Server diagnostics: start/stop/status/report", "", "cursestone.command.workbench") {}
     bool execute(CommandSender* sender, const std::string& label,
                  const std::vector<std::string>& args) override;
 };
