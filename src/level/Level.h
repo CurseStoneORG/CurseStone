@@ -59,6 +59,58 @@ struct DroppedItem {
     double lx = 0.0, ly = 0.0, lz = 0.0;
 };
 
+// ---------------------------------------------------------------------
+// Vanilla dropped-item pickup volume (MCPE 0.15.10 / Bedrock)
+// ---------------------------------------------------------------------
+// Bedrock collects an item as soon as the item's AABB overlaps the
+// player's AABB grown by ONE block on every axis:
+//
+//   player (Human: width 0.6, height 1.8, feet at pos)
+//     [x-0.3, y,     z-0.3] .. [x+0.3, y+1.8, z+0.3]
+//   grow(1, 1, 1)
+//     [x-1.3, y-1.0, z-1.3] .. [x+1.3, y+2.8, z+1.3]
+//   item   (Item: width 0.25, height 0.25; minY IS the entity position)
+//     [ix-0.125, iy,     iz-0.125] .. [ix+0.125, iy+0.25, iz+0.125]
+//
+// AxisAlignedBB::intersectsWith() is a strict per-axis overlap, so an item
+// lying at the player's feet, one block below them, or at chest height all
+// count.
+//
+// This is what the port had WRONG, and it is exactly the bug reported:
+// Genisys grows by 0.5 (checkNearEntities() -> grow(0.5, 0.5, 0.5)), so
+// its volume only reaches 0.5 below the feet and 0.8 sideways. Every drop
+// that ends up on the surface where a block was broken rests one block
+// lower than the player standing next to the hole, was therefore OUT of
+// reach, and could only be collected after digging a second hole and
+// stepping down into it. One shared definition lives here so the
+// attraction gate in Level::tickDroppedItems() and the pickup scan in
+// Player::onUpdate() can never drift apart again (a dead ring where an
+// item is neither attracted nor collected is the same bug wearing a
+// different hat).
+constexpr double kItemHalfW         = 0.125;   // Item width 0.25 / 2
+constexpr double kItemHeight        = 0.25;    // Item height 0.25
+constexpr double kPickupHalfExtent  = 1.3;     // player half-width 0.3 + grow 1.0
+constexpr double kPickupBelowFeet   = 1.0;     // grow 1.0 below the feet
+constexpr double kPickupAboveFeet   = 2.8;     // height 1.8 + grow 1.0
+
+// Strict per-axis AABB overlap of the item box against the player's
+// grown pickup box.
+inline bool itemWithinPickupVolume(double ix, double iy, double iz,
+                                   double px, double py, double pz) {
+    if (!(ix + kItemHalfW > px - kPickupHalfExtent &&
+          ix - kItemHalfW < px + kPickupHalfExtent)) return false;
+    if (!(iy + kItemHeight > py - kPickupBelowFeet &&
+          iy             < py + kPickupAboveFeet)) return false;
+    if (!(iz + kItemHalfW > pz - kPickupHalfExtent &&
+          iz - kItemHalfW < pz + kPickupHalfExtent)) return false;
+    return true;
+}
+
+inline bool itemWithinPickupVolume(const DroppedItem& di,
+                                   double px, double py, double pz) {
+    return itemWithinPickupVolume(di.x, di.y, di.z, px, py, pz);
+}
+
 struct LevelConfig {
     std::string name;
     std::string format   = "anvil";   // anvil (Nukkit Anvil, default) | leveldb
