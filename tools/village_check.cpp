@@ -9,9 +9,14 @@
 // desert floor can never make a check pass or fail by accident.
 //
 //   1. Density: how many region anchors produce a standing village, split
-//      by the village's material family (plains/savanna vs desert).
+//      by the village's material family (plains/savanna vs desert), plus a
+//      sweep of the ROAD GRAPH of every standing village: one connected
+//      network hanging off the well, at least one fork and at least one
+//      bend (the streets are a graph with curves and ramifications, not
+//      four straight stripes).
 //   2. For real villages (one plains + one desert sample):
 //        - the roads the plan asked for are actually stamped;
+//        - the road graph of THIS village: connected, forked, curvy;
 //        - the biome material rule: a DESERT village has no planks and
 //          no cobblestone anywhere in its pieces, a plains village has no
 //          sandstone (materials come from the well's biome);
@@ -38,13 +43,16 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <tuple>
+#include <unordered_map>
 #include <vector>
 
 using namespace cursestone::level::generator;
 using cursestone::level::generator::populator::VillagePlan;
+using cursestone::level::generator::populator::VillagePathCell;
 using cursestone::level::generator::populator::VillagePopulator;
 namespace blk = cursestone::block;
 namespace biome = cursestone::level::generator::biome;
@@ -183,9 +191,9 @@ Measured measure(const Window& w, const VillagePlan& plan,
     // Roads: exactly the cells the plan asked for, read at the natural
     // top layer (buildings sit at or above that).
     for (const auto& c : plan.pathCells) {
-        const int h = columnHeight(n, c.first, c.second);
+        const int h = columnHeight(n, c.x, c.z);
         ++m.pathTotal;
-        if (h >= 1 && w.at(c.first, h - 1, c.second) == pathId) ++m.pathCells;
+        if (h >= 1 && w.at(c.x, h - 1, c.z) == pathId) ++m.pathCells;
     }
 
     // Materials + doors: only inside the village's own pieces, and only
@@ -270,6 +278,77 @@ void asciiCut(const Window& w, int groundY, const char* title) {
     printf("\n");
 }
 
+// Shape of the road graph the plan asked for — pure layout, no terrain
+// needed. The renewd streets are a graph that hangs off the well, so
+// what is worth proving is that it really is ONE graph (no cell left
+// stranded after a building ate the cells around it), that every parent
+// link is a legal step of the walk, and that it actually bends and
+// branches instead of drawing four straight stripes.
+struct PathStats {
+    int cells = 0, roots = 0, junctions = 0, turns = 0, detached = 0;
+    bool badParent = false;
+};
+
+PathStats pathStats(const VillagePlan& plan) {
+    PathStats s;
+    const std::vector<VillagePathCell>& cells = plan.pathCells;
+    s.cells = (int)cells.size();
+
+    std::unordered_map<int64_t, int> at;
+    at.reserve(cells.size() * 2);
+    for (int i = 0; i < (int)cells.size(); ++i)
+        at[((int64_t)cells[i].x << 32) ^ (uint32_t)cells[i].z] = i;
+
+    auto nbrs = [&](const VillagePathCell& c, int out[4], int& count) {
+        count = 0;
+        const int d[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+        for (const auto& dd : d) {
+            const int64_t k = ((int64_t)(c.x + dd[0]) << 32) ^
+                              (uint32_t)(c.z + dd[1]);
+            const auto it = at.find(k);
+            if (it != at.end()) out[count++] = it->second;
+        }
+    };
+
+    std::vector<int> n4(4, 0);
+    int cnt = 0;
+    for (int i = 0; i < (int)cells.size(); ++i) {
+        const int p = cells[i].parent;
+        if (p < 0) ++s.roots;
+        else if (p >= i) s.badParent = true;          // must point backwards
+        else {
+            int q = p, steps = 0;                      // chains must terminate
+            while (q >= 0 && steps <= s.cells) { q = cells[q].parent; ++steps; }
+            if (q != -1) s.badParent = true;
+        }
+
+        nbrs(cells[i], n4.data(), cnt);
+        if (cnt >= 3) ++s.junctions;
+        else if (cnt == 2) {
+            // A turn: its two neighbours are not neighbours of each
+            // other, so the street bends instead of running straight.
+            const VillagePathCell& a = cells[n4[0]];
+            const VillagePathCell& b = cells[n4[1]];
+            if (std::abs(a.x - b.x) + std::abs(a.z - b.z) > 1) ++s.turns;
+        }
+    }
+
+    // Flood from the roots (the cells that leave the well).
+    std::vector<char> seen(cells.size(), 0);
+    std::vector<int> stack;
+    for (int i = 0; i < (int)cells.size(); ++i)
+        if (cells[i].parent < 0) { seen[i] = 1; stack.push_back(i); }
+    while (!stack.empty()) {
+        const int i = stack.back();
+        stack.pop_back();
+        nbrs(cells[i], n4.data(), cnt);
+        for (int k = 0; k < cnt; ++k)
+            if (!seen[n4[k]]) { seen[n4[k]] = 1; stack.push_back(n4[k]); }
+    }
+    for (char v : seen) if (!v) ++s.detached;
+    return s;
+}
+
 // One village candidate: the plan plus what the terrain says about it.
 struct Candidate {
     int rx, rz;
@@ -318,6 +397,21 @@ void runSample(const char* family, int64_t seed, const TerrainNoise& probe,
     snprintf(buf, sizeof buf, "%s: caminos presentes (>=20 y >=60%% de los planeados)",
              family);
     check(m.pathCells >= 20 && m.pathCells * 10 >= m.pathTotal * 6, buf);
+
+    // The shape of the road graph itself: one network hanging off the
+    // well (no stranded cell), with real bends and real forks.
+    const PathStats ps = pathStats(c.plan);
+    printf("  road graph: cells=%d roots=%d junctions=%d turns=%d "
+           "detached=%d\n",
+           ps.cells, ps.roots, ps.junctions, ps.turns, ps.detached);
+    snprintf(buf, sizeof buf, "%s: una sola red unida al pozo (0 aisladas)",
+             family);
+    check(!ps.badParent && ps.roots > 0 && ps.detached == 0, buf);
+    snprintf(buf, sizeof buf, "%s: los caminos se ramifican (>=1 bifurcacion)",
+             family);
+    check(ps.junctions >= 1, buf);
+    snprintf(buf, sizeof buf, "%s: los caminos curvean (>=6 giros)", family);
+    check(ps.turns >= 6, buf);
     snprintf(buf, sizeof buf, "%s: casas con puerta presentes (doors>=1)", family);
     check(m.doors >= 1, buf);
 
@@ -414,6 +508,35 @@ int main() {
     check(standing >= 50, "suficientes aldeas generate en la ventana de regiones");
     check(desert >= 1 && oak >= 1, "hay aldeas de desierto y de llanura/sabana");
 
+    // The shape of the road graph in EVERY standing village — pure
+    // layout, so it is cheap to sweep: one connected network hanging off
+    // the well in all of them, and bends + forks in almost all of them
+    // (a village is allowed to come out with a short, simple street).
+    {
+        int badGraph = 0, noFork = 0, noTurn = 0, checkedVillages = 0;
+        int cellsTotal = 0;
+        for (const Candidate& c : all) {
+            if (!c.stands) continue;
+            ++checkedVillages;
+            const PathStats ps = pathStats(c.plan);
+            cellsTotal += ps.cells;
+            if (ps.badParent || ps.roots <= 0 || ps.detached != 0) ++badGraph;
+            if (ps.junctions == 0) ++noFork;
+            if (ps.turns == 0) ++noTurn;
+        }
+        printf("  road graphs: %d villages, %.0f cells/village, "
+               "%d broken, %d without a fork, %d without a bend\n",
+               checkedVillages,
+               checkedVillages ? (double)cellsTotal / checkedVillages : 0.0,
+               badGraph, noFork, noTurn);
+        check(badGraph == 0,
+              "cada aldea tiene una red de caminos unida y colgada del pozo");
+        check(noFork * 10 <= checkedVillages,  // >=90% have a fork
+              ">=90% de las aldeas tienen al menos una bifurcacion");
+        check(noTurn * 10 <= checkedVillages,  // >=90% bend
+              ">=90% de las aldeas tienen caminos curvos (giros)");
+    }
+
     // ---- 2. sample a real village of each material family ---------------
     // A candidate is only worth checking as a sample once a house with a
     // door actually reached the road: the piece gates drop buildings on
@@ -436,8 +559,13 @@ int main() {
             Window w;
             fillWindow(seed, cx0, cx1, cz0, cz1, w, false);
             const Measured m = measure(w, c.plan, probe, c.wellBiome);
-            if (m.doors < 1 || m.doorsOnRoad != m.doors) continue;
-            if (m.pathCells < 20) continue;
+            if (m.doors < 1 || m.doorsOnRoad != m.doors || m.pathCells < 20) {
+                printf("  (skip %s candidate region(%d,%d): doors=%d "
+                       "onRoad=%d roads=%d/%d)\n",
+                       name, c.rx, c.rz, m.doors, m.doorsOnRoad,
+                       m.pathCells, m.pathTotal);
+                continue;
+            }
             printf("  (candidate %d/%zu of the %s list accepted after scanning %d)\n",
                    accepted + 1, idx.size(), name, scanned);
             ++accepted;
@@ -464,9 +592,9 @@ int main() {
             ++tested;
             bool anyRoad = false;
             for (const auto& cell : c.plan.pathCells) {
-                const int h = columnHeight(probe, cell.first, cell.second);
-                if (h >= 1 && w.at(cell.first, h - 1, cell.second) != 0) {
-                    const uint8_t i2 = w.at(cell.first, h - 1, cell.second);
+                const int h = columnHeight(probe, cell.x, cell.z);
+                if (h >= 1 && w.at(cell.x, h - 1, cell.z) != 0) {
+                    const uint8_t i2 = w.at(cell.x, h - 1, cell.z);
                     if (i2 == (uint8_t)blk::GRASS_PATH ||
                         i2 == (uint8_t)blk::SANDSTONE) { anyRoad = true; break; }
                 }

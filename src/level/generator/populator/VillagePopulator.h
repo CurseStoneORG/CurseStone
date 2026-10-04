@@ -12,11 +12,24 @@
 // generation order, and nothing can be half a village.
 //
 // The layout itself mirrors StructureVillagePieces.Start: the well at
-// the center, four roads leaving it on the cardinal axes (gravel/path
-// blocks the way vanilla draws streets), houses and farms branching off
-// each road on one side only (so pieces of different arms can never
-// collide), and a street lamp near each well face. Every piece rotates
-// so its door faces the road, exactly like vanilla turns its templates.
+// the center, four streets leaving it on the cardinal axes, houses and
+// farms branching off each street on one side only (so pieces of
+// different arms can never collide), and a street lamp near each well
+// face. Every piece rotates so its door faces the road, exactly like
+// vanilla turns its templates.
+//
+// The streets themselves are a small GRAPH, not stripes: everything
+// starts at the well (the village's centre) and walks outward. Each arm
+// gets a lane that leaves the well face, runs right along the door wall
+// of every structure on that arm (so houses, farms and the street lamp
+// all stay connected to the network) and weaves gently across its own
+// corridor (a sine wave, so no street is a ruler-straight line); a
+// couple of branches fork off the open side of an arm and wander away
+// with their own curve, ending in a widened head — the little dead-end
+// alleys that make a village look lived in. Every cell remembers the
+// cell it walked from, which is what lets the terrain gate follow the
+// ground step by step instead of judging every column against the well
+// alone.
 //
 // Materials are chosen from the WELL's biome (vanilla picks the
 // village's material set from its start piece): a desert village comes
@@ -53,9 +66,21 @@ struct VillagePiecePlacement {
 // (seed, regionX, regionZ). populate() stamps exactly this, and the
 // verification tools rebuild it through buildPlan() so they always test
 // the real layout instead of a copy of it.
+// One planned road column: its world position plus the index of the
+// cell the road WALKED from (in pathCells; -1 = the cell leaves the
+// well itself, so it is judged against the well's own ground). Parent
+// indexes always point backwards, and after the layout drops the cells
+// that fall inside a building every surviving cell still reaches a root
+// through a chain of physically adjacent cells — the roads form one
+// connected network hanging off the well.
+struct VillagePathCell {
+    int x = 0, z = 0;
+    int parent = -1;
+};
+
 struct VillagePlan {
     std::vector<VillagePiecePlacement> pieces;     // well first
-    std::vector<std::pair<int, int>> pathCells;    // world road columns
+    std::vector<VillagePathCell> pathCells;        // world road columns
     int minX = 0, minZ = 0, maxX = 0, maxZ = 0;    // world bounding box (half-open)
     int wellCx = 0, wellCz = 0;                    // well centre (biome gate)
 };

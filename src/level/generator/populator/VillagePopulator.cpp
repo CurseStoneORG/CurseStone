@@ -12,6 +12,7 @@
 #include <cmath>
 #include <iterator>
 #include <optional>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -37,11 +38,16 @@ constexpr int64_t kSalt = 10387312;
 constexpr int kVillageRadius = 64;
 
 // How uneven the ground may be under a piece's footprint (same gate the
-// desert temple uses), and how far a road column may sit from the well's
-// own ground level before the road stops (vanilla roads give up on a
-// cliff too).
+// desert temple uses).
 constexpr int kMaxGroundStep = 2;
-constexpr int kMaxPathStep = 5;
+
+// How far a road column may climb against the column it WALKED from —
+// one step of the path, so a street follows the ground up and down a
+// slope instead of stopping on the first rolling hill — and against the
+// well itself, which keeps the whole village on one hillside (vanilla
+// roads give up on a cliff too).
+constexpr int kMaxPathStepLocal = 3;
+constexpr int kMaxPathStep = 8;
 
 // Positive modulo so region offsets stay correct west of the origin.
 int wrapRegion(int value) {
@@ -142,6 +148,26 @@ inline int alongStart(int dir, int t, int ext) {
 // side -1 ends at row 0 (just north/west of it).
 inline int perpStart(int side, int ext) { return side > 0 ? 3 : 1 - ext; }
 
+// The weave of one arm's lane: a sine wave across the road's own
+// corridor, so streets bend gently instead of running ruler-straight.
+// The corridor shifts ONE block with the wave but only toward the
+// buildings' side, because the row the doors open onto has to stay
+// covered: a door block sits one cell INSIDE the wall in these
+// templates, so the road must never be more than two cells from the
+// wall — row 2 for a side +1 arm ({1,2}/{2,3}), row 1 for side -1
+// ({0,1}/{1,2}). The cells that meet a footprint are dropped later
+// anyway, so the lane hugs the wall either way.
+struct LaneWeave {
+    double phase;
+    double wave;     // wavelength in cells (short = more curvature)
+
+    int base(int t, int side) const {
+        const double s = std::sin(6.283185307179586 * (double)t / wave + phase);
+        const int up = s > 0.25 ? 1 : 0;
+        return side > 0 ? 1 + up : up;
+    }
+};
+
 // ---- The layout ------------------------------------------------------------
 //
 // Pure function of (seed, regionX, regionZ): no terrain, no biome, no
@@ -239,10 +265,25 @@ void buildLayout(int64_t seed, int regionX, int regionZ,
         out.pieces.push_back(
             VillagePiecePlacement{kind, (pieceRot + villageRot) & 3, wx, wz, w, h});
     };
-    auto cell = [&](int vx, int vz) {
-        int x = vx, z = vz, w = 1, h = 1;
-        rotateRect(x, z, w, h, villageRot);
-        out.pathCells.emplace_back(x + wellWx, z + wellWz);
+    // Roads are built in the VILLAGE frame as a graph of cells that
+    // each remember the cell they walked from, then rotated to the world
+    // with the very transform the pieces use — so a road can never
+    // disagree with a building about where anything is.
+    struct VCell { int x, z, parent; };
+    std::vector<VCell> road;
+    auto roadFind = [&](int vx, int vz) -> int {
+        for (int i = (int)road.size() - 1; i >= 0; --i)
+            if (road[i].x == vx && road[i].z == vz) return i;
+        return -1;
+    };
+    // Adds a road cell, or returns the one already there (the pad, the
+    // lanes and the branches overlap on purpose). `parent` only applies
+    // to a NEW cell: the cell the road came from.
+    auto roadAdd = [&](int vx, int vz, int parent) -> int {
+        const int at = roadFind(vx, vz);
+        if (at >= 0) return at;
+        road.push_back({vx, vz, parent});
+        return (int)road.size() - 1;
     };
 
     // The well itself, unrotated in the village frame.
@@ -250,6 +291,13 @@ void buildLayout(int64_t seed, int regionX, int regionZ,
 
     for (int armIdx = 0; armIdx < 4; ++armIdx) {
         const ArmSpec& arm = kArms[armIdx];
+
+        // How this arm's lane weaves: a sine across the road's own
+        // corridor, drawn from the layout rng so every chunk rebuilds
+        // the identical bend.
+        const LaneWeave lane{
+            (double)rng.nextFloat() * 6.283185307179586,
+            (double)(8.0f + rng.nextFloat() * 8.0f)};
 
         // Street lamp beside the first stretch of road: 3x3 footprint
         // hugging the road lanes, drawn before the buildings so its slot
@@ -294,27 +342,133 @@ void buildLayout(int64_t seed, int regionX, int regionZ,
             lineEnd = t - 2;   // far edge of this building
         }
 
-        // The road: a 3-wide pad spilling out of the well face, then two
-        // lanes running past the last building.
-        for (int tt = 0; tt <= 1; ++tt)
-            for (int p = 1; p <= 3; ++p)
-                cell(arm.alongX ? alongCoord(arm.dir, tt) : p,
-                     arm.alongX ? p : alongCoord(arm.dir, tt));
-        for (int tt = 2; tt <= lineEnd; ++tt)
-            for (int p = 1; p <= 2; ++p)
-                cell(arm.alongX ? alongCoord(arm.dir, tt) : p,
-                     arm.alongX ? p : alongCoord(arm.dir, tt));
+        // The lane: a 3-wide pad spilling out of the well face, then
+        // two lanes weaving past the last building, running right along
+        // every door wall (the corridor always covers the row the doors
+        // open onto, so every structure stays connected to the street).
+        // Every cell hangs off the cell one step back, so the street is
+        // literally a walk that starts at the well — the root cells
+        // (parent -1) are the only ones the terrain gate judges against
+        // the well itself.
+        const int laneEnd = std::max(lineEnd, 6);
+        int prev[2] = {-1, -1};
+        for (int tt = 0; tt <= laneEnd; ++tt) {
+            const int b = lane.base(tt, arm.perpSide);
+            const int rows = tt <= 1 ? 3 : 2;
+            for (int r = 0; r < rows; ++r) {
+                const int p = b + r;
+                const int a = alongCoord(arm.dir, tt);
+                const int parent = tt == 0 ? -1 : prev[std::min(r, 1)];
+                const int idx = roadAdd(arm.alongX ? a : p,
+                                        arm.alongX ? p : a, parent);
+                if (r < 2) prev[r] = idx;
+            }
+        }
+
+        // Ramifications: a couple of branches per street, forking off
+        // the OPEN side (the one without buildings) and wandering away
+        // with their own curve, each ending in a widened head — the
+        // dead-end alleys and little turn-arounds of a lived-in village.
+        const int nBranch = rng.nextInt(10) < 7 ? 1 + (int)rng.nextInt(2) : 0;
+        for (int bi = 0; bi < nBranch && laneEnd >= 5; ++bi) {
+            const int tf = 3 + (int)rng.nextInt(laneEnd - 3);
+            const int out = -arm.perpSide;   // outward = away from buildings
+            const int prow = lane.base(tf, arm.perpSide) + (out > 0 ? 1 : 0);
+            const int acol = alongCoord(arm.dir, tf);
+            const int fork = roadFind(arm.alongX ? acol : prow,
+                                      arm.alongX ? prow : acol);
+            if (fork < 0) continue;
+
+            const double wAmp = (double)(0.4f + rng.nextFloat() * 0.7f);
+            const double wPh  = (double)rng.nextFloat() * 6.283185307179586;
+            const double wLen = (double)(4.0f + rng.nextFloat() * 5.0f);
+            const int len = 4 + (int)rng.nextInt(7);   // 4..10 cells out
+
+            int parent = fork, lx = 0, lz = 0;
+            for (int s = 1; s <= len; ++s) {
+                const int p = prow + out * s;
+                const int off = (int)std::lround(
+                    wAmp * std::sin(6.283185307179586 * (double)s / wLen + wPh));
+                const int a = acol + off;
+                lx = arm.alongX ? a : p;
+                lz = arm.alongX ? p : a;
+                parent = roadAdd(lx, lz, parent);
+            }
+            // Widened head: the path ends in a small turn-around
+            // instead of just stopping on a cell.
+            roadAdd(lx - (arm.alongX ? 1 : 0), lz - (arm.alongX ? 0 : 1), parent);
+            roadAdd(lx + (arm.alongX ? 1 : 0), lz + (arm.alongX ? 0 : 1), parent);
+        }
+    }
+
+    // Village-frame road -> world, with the same rigid transform the
+    // pieces went through.
+    std::vector<VillagePathCell> worldCells;
+    worldCells.reserve(road.size());
+    for (const VCell& c : road) {
+        int x = c.x, z = c.z, w = 1, h = 1;
+        rotateRect(x, z, w, h, villageRot);
+        worldCells.push_back({x + wellWx, z + wellWz, c.parent});
     }
 
     // A road never runs through a building: drop every cell that lands
     // inside any piece's footprint (the lamp overlaps the pad corners).
-    std::erase_if(out.pathCells, [&](const std::pair<int, int>& c) {
+    std::vector<char> alive(worldCells.size(), 1);
+    for (size_t i = 0; i < worldCells.size(); ++i) {
+        const VillagePathCell& c = worldCells[i];
         for (const VillagePiecePlacement& p : out.pieces)
-            if (c.first >= p.x && c.first < p.x + p.w &&
-                c.second >= p.z && c.second < p.z + p.h)
-                return true;
-        return false;
-    });
+            if (c.x >= p.x && c.x < p.x + p.w && c.z >= p.z && c.z < p.z + p.h) {
+                alive[i] = 0;
+                break;
+            }
+    }
+
+    // ...and no surviving cell may be stranded. Flood the survivors
+    // 4-neighbourly from the cells that leave the well and drop whatever
+    // the flood cannot reach (a branch that walked through a building,
+    // for instance). What stays is ONE connected network hanging off the
+    // well, so the parent chain below is a real walk and not fragments —
+    // which is also what makes the terrain gate's step-by-step heights
+    // meaningful.
+    std::unordered_map<int64_t, int> at;
+    at.reserve(worldCells.size() * 2);
+    for (size_t i = 0; i < worldCells.size(); ++i)
+        if (alive[i])
+            at[((int64_t)worldCells[i].x << 32) ^ (uint32_t)worldCells[i].z] = (int)i;
+    std::vector<char> reach(worldCells.size(), 0);
+    std::vector<int> stack;
+    for (size_t i = 0; i < worldCells.size(); ++i)
+        if (alive[i] && worldCells[i].parent < 0) {
+            reach[i] = 1;
+            stack.push_back((int)i);
+        }
+    while (!stack.empty()) {
+        const int i = stack.back();
+        stack.pop_back();
+        const int nb[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+        for (const auto& d : nb) {
+            const int64_t key = ((int64_t)(worldCells[i].x + d[0]) << 32) ^
+                                (uint32_t)(worldCells[i].z + d[1]);
+            const auto it = at.find(key);
+            if (it == at.end() || reach[it->second]) continue;
+            reach[it->second] = 1;
+            stack.push_back(it->second);
+        }
+    }
+
+    // Emit, re-hanging every surviving cell on the nearest surviving
+    // ancestor (parents always point backwards, so one pass is enough).
+    out.pathCells.clear();
+    out.pathCells.reserve(worldCells.size());
+    std::vector<int> newIdx(worldCells.size(), -1);
+    for (size_t i = 0; i < worldCells.size(); ++i) {
+        if (!alive[i] || !reach[i]) continue;
+        int p = worldCells[i].parent;
+        while (p >= 0 && newIdx[p] < 0) p = worldCells[p].parent;
+        newIdx[i] = (int)out.pathCells.size();
+        out.pathCells.push_back({worldCells[i].x, worldCells[i].z,
+                                 p < 0 ? -1 : newIdx[p]});
+    }
 
     // World bounding box over everything.
     if (!out.pieces.empty()) {
@@ -328,10 +482,10 @@ void buildLayout(int64_t seed, int regionX, int regionZ,
         out.maxZ = std::max(out.maxZ, p.z + p.h);
     }
     for (const auto& c : out.pathCells) {
-        out.minX = std::min(out.minX, c.first);
-        out.maxX = std::max(out.maxX, c.first + 1);
-        out.minZ = std::min(out.minZ, c.second);
-        out.maxZ = std::max(out.maxZ, c.second + 1);
+        out.minX = std::min(out.minX, c.x);
+        out.maxX = std::max(out.maxX, c.x + 1);
+        out.minZ = std::min(out.minZ, c.z);
+        out.maxZ = std::max(out.maxZ, c.z + 1);
     }
     // Well center for the biome gate.
     const VillagePiecePlacement& well = out.pieces[0];
@@ -505,19 +659,38 @@ void buildSite(int64_t seed, int rx, int rz, const TerrainNoise& n,
     }
     s.columnStart[s.plan.pieces.size()] = s.columns.size();
 
-    for (const auto& cell : s.plan.pathCells) {
+    // Roads chain their heights: every cell is judged against the cell
+    // it WALKED from (root cells, which leave the well, against the well
+    // itself), so a street follows the ground up and down a slope one
+    // step at a time instead of dying on the first rolling hill — while
+    // a cliff, a river, water or a foreign biome still stops it dead.
+    // The chain is walked in index order because a parent always comes
+    // before its child.
+    const size_t nCells = s.plan.pathCells.size();
+    std::vector<int> hOf(nCells, 0);
+    std::vector<uint8_t> okOf(nCells, 0);
+    s.pathColumns.reserve(nCells);
+    for (size_t i = 0; i < nCells; ++i) {
+        const VillagePathCell& cell = s.plan.pathCells[i];
         SiteColumn c{};
-        c.x = (int16_t)cell.first;
-        c.z = (int16_t)cell.second;
-        c.h = (int16_t)columnHeight(n, cell.first, cell.second);
-        const uint8_t b = columnBiome(n, cell.first, cell.second, c.h);
+        c.x = (int16_t)cell.x;
+        c.z = (int16_t)cell.z;
+        c.h = (int16_t)columnHeight(n, cell.x, cell.z);
+        const uint8_t b = columnBiome(n, cell.x, cell.z, c.h);
         c.ground = biome::BiomeRegistry::forId(b).topBlock;
-        // The road gives up on a cliff rather than climbing it, and like
-        // the pieces it refuses water, rivers and other biomes.
-        c.stamp = (c.h >= kSeaLevel + 1 && c.h <= 126 &&
-                   c.h - s.wellH <= kMaxPathStep && s.wellH - c.h <= kMaxPathStep &&
-                   riverMask(n, cell.first, cell.second) <= 0.05 &&
-                   isVillageBiome(b)) ? 1 : 0;
+        bool ok = c.h >= kSeaLevel + 1 && c.h <= 126 &&
+                  riverMask(n, cell.x, cell.z) <= 0.05 && isVillageBiome(b);
+        if (ok) {
+            if (cell.parent >= 0) {
+                if (!okOf[cell.parent]) ok = false;
+                else if (std::abs((int)c.h - hOf[cell.parent]) > kMaxPathStepLocal)
+                    ok = false;
+            }
+            if (ok && std::abs((int)c.h - s.wellH) > kMaxPathStep) ok = false;
+        }
+        c.stamp = ok ? 1 : 0;
+        hOf[i] = c.h;
+        okOf[i] = c.stamp;
         s.pathColumns.push_back(c);
     }
 }
