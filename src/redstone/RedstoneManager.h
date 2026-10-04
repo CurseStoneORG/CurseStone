@@ -15,7 +15,7 @@
 //     propagación acotada del wire.
 //
 // FIX (reportado por el usuario tras probar la primera versión): el
-// motor cambiaba el `data`/id del bloque en el Level correctamente,
+// motor cambiaba el `data`/id del bloque en el World correctamente,
 // pero nunca avisaba a los jugadores conectados — por eso el circuito
 // solo se veía "prendido" al reconectar (momento en que el cliente
 // vuelve a pedir los chunks desde cero), y nada que dependiera de la
@@ -27,7 +27,7 @@
 #pragma once
 #include <cstdint>
 
-namespace cursestone::level { class Level; }
+namespace cursestone::world { class World; }
 namespace cursestone { class Server; }
 
 namespace cursestone::redstone {
@@ -40,7 +40,7 @@ namespace cursestone::redstone {
 //
 // Esta es la función principal que el resto del proyecto necesita
 // llamar — todo lo demás en este módulo es implementación interna.
-void notifyNeighbors(cursestone::level::Level* level, cursestone::Server* server,
+void notifyNeighbors(cursestone::world::World* level, cursestone::Server* server,
                       int32_t x, int32_t y, int32_t z);
 
 // Recalcula la potencia (0-15) que debería tener un bloque de redstone
@@ -48,7 +48,7 @@ void notifyNeighbors(cursestone::level::Level* level, cursestone::Server* server
 // mundo si cambió — propagando en cascada ACOTADA (máx. 15 pasos) a los
 // wires vecinos si el cambio de potencia los afecta a ellos también.
 // Transmite cada wire que cambie a los jugadores cercanos.
-void updateWireAt(cursestone::level::Level* level, cursestone::Server* server,
+void updateWireAt(cursestone::world::World* level, cursestone::Server* server,
                    int32_t x, int32_t y, int32_t z);
 
 // Recalcula si una lámpara de redstone en (x,y,z) debe estar encendida
@@ -56,7 +56,7 @@ void updateWireAt(cursestone::level::Level* level, cursestone::Server* server,
 // señal actualmente, y transmite el cambio si corresponde. A diferencia
 // del wire, la lámpara solo consume señal, nunca la propaga — no hay
 // riesgo de cascada al llamar esto.
-void updateLampAt(cursestone::level::Level* level, cursestone::Server* server,
+void updateLampAt(cursestone::world::World* level, cursestone::Server* server,
                    int32_t x, int32_t y, int32_t z);
 
 // Devuelve la potencia de señal (0-15) que el bloque en (x,y,z) aporta
@@ -64,13 +64,13 @@ void updateLampAt(cursestone::level::Level* level, cursestone::Server* server,
 // wire ya calculado, y palancas/botones activados. Devuelve 0 si el
 // bloque no es una fuente de señal o está apagado. No cambia nada en
 // el mundo, así que no necesita Server*.
-int getEmittedPower(cursestone::level::Level* level, int32_t x, int32_t y, int32_t z);
+int getEmittedPower(cursestone::world::World* level, int32_t x, int32_t y, int32_t z);
 
 // True si el bloque en (x,y,z) está actualmente recibiendo señal de
 // redstone (potencia > 0) desde cualquiera de sus vecinos o desde sí
 // mismo (para wire). Es lo que consultan puertas/pistones/lámparas para
 // decidir si deben activarse.
-bool isPowered(cursestone::level::Level* level, int32_t x, int32_t y, int32_t z);
+bool isPowered(cursestone::world::World* level, int32_t x, int32_t y, int32_t z);
 
 // Intenta interactuar con un componente de redstone accionable por el
 // jugador (palanca, botón, puerta de madera — la de hierro NO
@@ -83,7 +83,7 @@ bool isPowered(cursestone::level::Level* level, int32_t x, int32_t y, int32_t z)
 // componente accionable, no hace nada y devuelve false — así el
 // llamador (Player) sabe si debe seguir con su propia lógica de
 // colocación de item.
-bool tryInteract(cursestone::level::Level* level, cursestone::Server* server,
+bool tryInteract(cursestone::world::World* level, cursestone::Server* server,
                   int32_t x, int32_t y, int32_t z);
 
 // Recalcula si una antorcha de redstone en (x,y,z) debe estar
@@ -96,7 +96,7 @@ bool tryInteract(cursestone::level::Level* level, cursestone::Server* server,
 // antorchas orientadas hacia abajo (colocadas sobre un bloque) — es el
 // caso que cubre notifyNeighbors hoy; antorchas en pared quedan como
 // extensión futura documentada (ver comentario en el .cpp).
-void updateRedstoneTorchAt(cursestone::level::Level* level, cursestone::Server* server,
+void updateRedstoneTorchAt(cursestone::world::World* level, cursestone::Server* server,
                              int32_t x, int32_t y, int32_t z);
 
 // Recalcula si una puerta (madera o hierro) debe estar abierta o
@@ -108,7 +108,7 @@ void updateRedstoneTorchAt(cursestone::level::Level* level, cursestone::Server* 
 // que notifyNeighbors pueda llamarla con cualquiera de las dos mitades
 // sin distinguir cuál es cuál. Sincroniza el bit 0x04 en ambas mitades
 // y transmite el cambio de las que hayan cambiado.
-void updateDoorAt(cursestone::level::Level* level, cursestone::Server* server,
+void updateDoorAt(cursestone::world::World* level, cursestone::Server* server,
                    int32_t x, int32_t y, int32_t z);
 
 // Recalcula si un pistón (normal o pegajoso) en (x,y,z) debe estar
@@ -125,7 +125,7 @@ void updateDoorAt(cursestone::level::Level* level, cursestone::Server* server,
 // sin límite. Al retraer: quita el PISTON_HEAD (vuelve a aire); un
 // pistón pegajoso además intentaría traer de vuelta el bloque
 // empujado, lo cual también queda documentado como extensión futura.
-void updatePistonAt(cursestone::level::Level* level, cursestone::Server* server,
+void updatePistonAt(cursestone::world::World* level, cursestone::Server* server,
                      int32_t x, int32_t y, int32_t z);
 
 } // namespace cursestone::redstone

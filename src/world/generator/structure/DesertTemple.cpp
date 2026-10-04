@@ -3,7 +3,7 @@
 #include "world/generator/biome/Biome.h"
 #include "block/BlockIds.h"
 
-namespace cursestone::level::generator::structure {
+namespace cursestone::world::generator::structure {
 
 namespace {
 
@@ -167,4 +167,4 @@ bool DesertTemple::allowsBiome(uint8_t biome) const {
     return biome == biome::BIOME_DESERT;
 }
 
-} // namespace cursestone::level::generator::structure
+} // namespace cursestone::world::generator::structure

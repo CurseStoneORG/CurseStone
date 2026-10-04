@@ -19,7 +19,7 @@ bool isTileBlock(uint8_t blockId) {
 }
 
 std::shared_ptr<Tile> createTileForBlock(
-        uint8_t blockId, const cursestone::level::Position& pos) {
+        uint8_t blockId, const cursestone::world::Position& pos) {
     using cursestone::block::BlockId;
     switch (blockId) {
         case (uint8_t)BlockId::CHEST:

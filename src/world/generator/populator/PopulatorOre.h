@@ -3,7 +3,7 @@
 #include "Populator.h"
 #include "world/generator/object/OreGenerator.h"
 #include <vector>
-namespace cursestone::level::generator::populator {
+namespace cursestone::world::generator::populator {
 class PopulatorOre : public Populator {
 public:
     explicit PopulatorOre(std::vector<object::OreVein> veins) : veins_(std::move(veins)) {}

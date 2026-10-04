@@ -3,7 +3,7 @@
 #include "block/BlockIds.h"
 #include <cstdlib>
 
-namespace cursestone::level::generator::object::trees {
+namespace cursestone::world::generator::object::trees {
 
 using cursestone::block::BlockId;
 
@@ -49,4 +49,4 @@ void SwampTree::placeTrunk(mcp_chunk_t* c, int sourceX, int sourceY,
     }
 }
 
-} // namespace cursestone::level::generator::object::trees
+} // namespace cursestone::world::generator::object::trees

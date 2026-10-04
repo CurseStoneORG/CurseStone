@@ -28,7 +28,7 @@ public:
     // `recipes` defaults to the server's CraftingManager; passing one
     // explicitly is only used by the verification harness, which has no
     // booted server to ask.
-    explicit TileFurnace(cursestone::level::Position pos,
+    explicit TileFurnace(cursestone::world::Position pos,
                          const cursestone::inventory::CraftingManager* recipes = nullptr);
     ~TileFurnace() override;
     int size() const override { return 3; }

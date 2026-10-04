@@ -1,45 +1,45 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// LevelProviderManager — implementation.
+// WorldProviderManager — implementation.
 //
-// PocketMine's LevelProviderManager is essentially a static map; we
+// PocketMine's WorldProviderManager is essentially a static map; we
 // mirror that with a singleton + a std::unordered_map. The actual
 // registration happens in each provider's .cpp file via a static
 // initializer (e.g. anvil/Anvil.cpp has a `static bool
-// registered_anvil = LevelProviderManager::getInstance()
+// registered_anvil = WorldProviderManager::getInstance()
 //     .registerProvider("anvil", [](){...});`).
-#include "LevelProviderManager.h"
+#include "WorldProviderManager.h"
 
 #include <algorithm>
 
-namespace cursestone::level::format {
+namespace cursestone::world::format {
 
-LevelProviderManager& LevelProviderManager::getInstance() {
+WorldProviderManager& WorldProviderManager::getInstance() {
     // Meyers singleton — thread-safe in C++11+.
-    static LevelProviderManager instance;
+    static WorldProviderManager instance;
     return instance;
 }
 
-bool LevelProviderManager::registerProvider(const std::string& name,
+bool WorldProviderManager::registerProvider(const std::string& name,
                                               ProviderFactory factory) {
     if (!factory) return false;
     return registry_.emplace(name, std::move(factory)).second;
 }
 
 ProviderFactory
-LevelProviderManager::getFactory(const std::string& name) const {
+WorldProviderManager::getFactory(const std::string& name) const {
     auto it = registry_.find(name);
     if (it == registry_.end()) return nullptr;
     return it->second;
 }
 
-std::unique_ptr<LevelProvider>
-LevelProviderManager::create(const std::string& name) const {
+std::unique_ptr<WorldProvider>
+WorldProviderManager::create(const std::string& name) const {
     auto factory = getFactory(name);
     if (!factory) return nullptr;
     return factory();
 }
 
-std::vector<std::string> LevelProviderManager::listFormats() const {
+std::vector<std::string> WorldProviderManager::listFormats() const {
     std::vector<std::string> out;
     out.reserve(registry_.size());
     for (const auto& [name, _] : registry_) {
@@ -49,8 +49,8 @@ std::vector<std::string> LevelProviderManager::listFormats() const {
     return out;
 }
 
-const char* LevelProviderManager::defaultFormatName() {
+const char* WorldProviderManager::defaultFormatName() {
     return "anvil";
 }
 
-} // namespace cursestone::level::format
+} // namespace cursestone::world::format

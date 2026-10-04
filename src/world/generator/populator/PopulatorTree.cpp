@@ -8,7 +8,7 @@
 #include <utility>
 #include <vector>
 
-namespace cursestone::level::generator::populator {
+namespace cursestone::world::generator::populator {
 
 namespace {
 
@@ -269,4 +269,4 @@ void PopulatorTree::populate(GenerationContext& ctx) {
     ctx.chunk->dirty = true;
 }
 
-} // namespace cursestone::level::generator::populator
+} // namespace cursestone::world::generator::populator

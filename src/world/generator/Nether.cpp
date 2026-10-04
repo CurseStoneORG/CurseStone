@@ -1,6 +1,6 @@
 #include "Nether.h"
 #include <cmath>
-namespace cursestone::level::generator {
+namespace cursestone::world::generator {
 Nether::Nether(int64_t seed) : seed_(seed) {
     terrain_ = mcp_simplex_new(seed);
     cave_ = mcp_simplex_new(seed ^ 0xDEADBEEF);

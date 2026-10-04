@@ -10,7 +10,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace cursestone::level::generator::biome {
+namespace cursestone::world::generator::biome {
 
 // A tree species with a relative weight inside one biome.
 struct TreeSpawn {
@@ -48,4 +48,4 @@ struct BiomeConfig {
     int waterLilyAmount = 0;
 };
 
-} // namespace cursestone::level::generator::biome
+} // namespace cursestone::world::generator::biome

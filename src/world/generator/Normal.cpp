@@ -16,7 +16,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace cursestone::level::generator {
+namespace cursestone::world::generator {
 
 using namespace biome;
 using object::OreVein;
@@ -340,4 +340,4 @@ void Normal::populate(GenerationContext& ctx) {
     for (auto& p : populators_) p->populate(ctx);
 }
 
-} // namespace cursestone::level::generator
+} // namespace cursestone::world::generator

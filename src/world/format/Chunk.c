@@ -392,7 +392,7 @@ void mcp_chunk_recompute_section_flags(mcp_chunk_t* c) {
 // initial state until a block changes near it.
 //
 // Both layers now flood in the six vanilla directions and both are
-// seeded properly. Cross-chunk continuity is still Level's job (see
+// seeded properly. Cross-chunk continuity is still World's job (see
 // LightEngine); this pass has to be right on its own so the first packet
 // a player receives is already sane.
 
@@ -447,7 +447,7 @@ static void propagate_layer(mcp_chunk_t* c, int maxTop, int isSky) {
             const int ny = (int)n.y + dy[d];
             const int nz = (int)n.z + dz[d];
             if (ny < 0 || ny > maxTop) continue;
-            // single-chunk pass: no cruzamos a chunks vecinos (Level's
+            // single-chunk pass: no cruzamos a chunks vecinos (World's
             // LightEngine se encarga del cruce de fronteras).
             if (nx < 0 || nx > 15 || nz < 0 || nz > 15) continue;
             const int cand = (int)cur - light_cost(mcp_chunk_get_block_id(c, nx, ny, nz));
@@ -760,7 +760,7 @@ uint8_t* mcp_chunk_network_serialize(const mcp_chunk_t* c, size_t* out_len) {
     // Fix: además del ID de bioma en el byte alto (se mantiene, no hace
     // daño y sirve para IO/leveldb), escribir el RGB real de "grasscolor"
     // de cada bioma en los 3 bytes bajos — igual que hacía PMMP antes de
-    // API 3.0.0-ALPHA1 (ver Level::setBiomeColor(), que sí llegaba a
+    // API 3.0.0-ALPHA1 (ver World::setBiomeColor(), que sí llegaba a
     // pintar la textura). Tabla aproximada de colores clásicos de
     // Minecraft por bioma; se puede afinar más adelante por temperatura/
     // humedad si hace falta más variedad.

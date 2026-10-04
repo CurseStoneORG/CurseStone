@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // ChunkManager.cpp — caches chunks in memory and routes load/save
-// requests to the active LevelProvider. Mirrors pocketmine's
+// requests to the active WorldProvider. Mirrors pocketmine's
 // ChunkManager role.
 //
 // CRITICAL: When a chunk is not on disk, ChunkManager asks the
-// Level's generator (Normal/Flat/Nether) to generate it. This
+// World's generator (Normal/Flat/Nether) to generate it. This
 // replaces the old hardcoded generateFlatChunk() that always
 // produced flat terrain regardless of the configured generator.
-#include "world/format/LevelProvider.h"
+#include "world/format/WorldProvider.h"
 #include "world/format/FullChunk.h"
 #include "world/format/Chunk.h"
 #include "world/format/ChunkAdapter.h"
@@ -18,7 +18,7 @@
 #include "ChunkManager.h"
 #include <string.h>
 
-namespace cursestone::level {
+namespace cursestone::world {
 
 ChunkManager::ChunkManager() {}
 ChunkManager::~ChunkManager() {
@@ -51,7 +51,7 @@ mcp_chunk_t* ChunkManager::getChunk(int32_t x, int32_t z) {
         }
     }
 
-    // Not on disk — use the Level's generator to create it.
+    // Not on disk — use the World's generator to create it.
     // This replaces the old hardcoded generateFlatChunk(). The
     // generator (Normal/Flat/Nether) is set via setGenerator().
     if (generator_) {
@@ -96,7 +96,7 @@ mcp_chunk_t* ChunkManager::getChunk(int32_t x, int32_t z) {
     }
 
     // Fallback: generate a basic flat chunk if no generator is set.
-    // This should never happen in normal operation — the Level always
+    // This should never happen in normal operation — the World always
     // sets a generator. But it prevents a crash if something goes wrong.
     mcp_chunk_t* c = mcp_chunk_new(x, z);
     if (c) {
@@ -267,7 +267,7 @@ void ChunkManager::setChunk(int32_t x, int32_t z, mcp_chunk_t* chunk) {
             mcp_chunk_destroy(it->second);
         chunks_[key] = chunk;
     }
-    // Fuera del lock: el callback (Level) solo encola el chunk para un
+    // Fuera del lock: el callback (World) solo encola el chunk para un
     // barrido de luz posterior. Llamarlo con mtx_ cogido lo dejaria
     // esperando justo el mutex que ChunkManager necesita.
     if (on_chunk_added_) on_chunk_added_(x, z);

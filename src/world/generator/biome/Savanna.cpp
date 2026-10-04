@@ -2,7 +2,7 @@
 // Savanna — biome 35. Hot and moderately dry: acacia trees, tall grass.
 #include "BiomeConfig.h"
 
-namespace cursestone::level::generator::biome {
+namespace cursestone::world::generator::biome {
 const BiomeConfig& savannaBiome() {
     static const BiomeConfig c{
         .id = 35,
@@ -30,4 +30,4 @@ const BiomeConfig& savannaBiome() {
     };
     return c;
 }
-} // namespace cursestone::level::generator::biome
+} // namespace cursestone::world::generator::biome

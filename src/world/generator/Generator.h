@@ -8,13 +8,13 @@
 // CRITICAL: each generator defines its OWN spawn point via getSpawn().
 // This mirrors Nukkit where Normal returns (127.5, 128, 127.5), Flat
 // returns (128, floorLevel, 128), and Nether returns (128, 64, 128).
-// The Level no longer hardcodes a spawn position — it asks the generator.
+// The World no longer hardcodes a spawn position — it asks the generator.
 #pragma once
 #include "world/format/Chunk.h"
 #include "math/Vector3.h"
 #include <stdint.h>
 
-namespace cursestone::level::generator {
+namespace cursestone::world::generator {
 
 struct GenerationContext {
     int64_t seed;          // world seed
@@ -39,7 +39,7 @@ public:
     // Returns the world spawn position for this generator type.
     // Mirrors Nukkit's Generator.getSpawn() — each generator type
     // defines its own spawn (Normal, Flat, Nether all differ).
-    // The Level calls this on first load to set the spawn point.
+    // The World calls this on first load to set the spawn point.
     virtual mcp_vector3_t getSpawn() const = 0;
 };
 

@@ -2,14 +2,14 @@
 // FullChunk — abstract "chunk ready to be sent" interface. C++.
 //
 // PocketMine's `FullChunk` interface sits between the storage layer
-// (LevelProvider) and the runtime Level. A FullChunk has enough state
+// (WorldProvider) and the runtime World. A FullChunk has enough state
 // to be serialized into a `FullChunkDataPacket` (protocol 0x34) and
 // broadcast to players.
 //
 // Concrete implementers: Chunk (level/format/Chunk.h, pure C struct
 // wrapped by ChunkManager), and any future custom chunk type. The
 // interface itself is pure-virtual C++ so the rest of the engine
-// (Level, Player chunk-sender) can hold a `FullChunk*` without
+// (World, Player chunk-sender) can hold a `FullChunk*` without
 // caring which on-disk format produced it.
 #pragma once
 
@@ -17,7 +17,7 @@
 #include <cstddef>
 #include "../../main.h"
 
-namespace cursestone::level::format {
+namespace cursestone::world::format {
 
 class FullChunk {
 public:
@@ -54,7 +54,7 @@ public:
     virtual void     setHeightMap(int x, int z, int32_t height) = 0;
 
     // Dirty flag — set whenever a block/light/biome write occurs, so
-    // LevelProvider::saveChunk() knows whether to skip the chunk.
+    // WorldProvider::saveChunk() knows whether to skip the chunk.
     virtual bool     isPopulated() const = 0;
     virtual bool     isGenerated()  const = 0;
     virtual bool     isDirty()     const = 0;
@@ -67,4 +67,4 @@ public:
     virtual std::vector<uint8_t> networkSerialize() const = 0;
 };
 
-} // namespace cursestone::level::format
+} // namespace cursestone::world::format

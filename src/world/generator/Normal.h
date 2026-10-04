@@ -4,7 +4,7 @@
 #include "world/generator/populator/Populator.h"
 #include <vector>
 #include <memory>
-namespace cursestone::level::generator {
+namespace cursestone::world::generator {
 class Normal : public Generator {
 public:
     explicit Normal(int64_t seed);

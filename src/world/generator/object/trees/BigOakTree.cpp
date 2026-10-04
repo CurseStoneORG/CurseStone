@@ -2,7 +2,7 @@
 #include "BigOakTree.h"
 #include <cstdlib>
 
-namespace cursestone::level::generator::object::trees {
+namespace cursestone::world::generator::object::trees {
 
 void BigOakTree::init(GenRandom& rng) {
     height_ = 5 + (int)rng.nextInt(12);            // 5..16 (reference BigOakTree)
@@ -59,4 +59,4 @@ void BigOakTree::placeCanopy(mcp_chunk_t* c, int sourceX, int sourceY,
     }
 }
 
-} // namespace cursestone::level::generator::object::trees
+} // namespace cursestone::world::generator::object::trees

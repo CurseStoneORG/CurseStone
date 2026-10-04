@@ -6,15 +6,15 @@
 #pragma once
 #include "WorldEvent.h"
 #include <string>
-namespace cursestone { namespace level { class Level; } }
+namespace cursestone { namespace world { class World; } }
 
-namespace cursestone::event::level {
+namespace cursestone::event::world {
 
 class SpawnChangeEvent : public LevelEvent {
 public:
     double prevX, prevY, prevZ;
 
-    SpawnChangeEvent(cursestone::level::Level* l, double px, double py, double pz)
+    SpawnChangeEvent(cursestone::world::World* l, double px, double py, double pz)
         : LevelEvent(l), prevX(px), prevY(py), prevZ(pz) {}
 
     const std::string& eventName() const override {
@@ -22,4 +22,4 @@ public:
     }
 };
 
-} // namespace cursestone::event::level
+} // namespace cursestone::event::world

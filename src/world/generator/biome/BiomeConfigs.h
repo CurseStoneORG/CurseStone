@@ -4,7 +4,7 @@
 #pragma once
 #include "BiomeConfig.h"
 
-namespace cursestone::level::generator::biome {
+namespace cursestone::world::generator::biome {
 
 const BiomeConfig& oceanBiome();
 const BiomeConfig& beachBiome();
@@ -19,4 +19,4 @@ const BiomeConfig& swampBiome();
 const BiomeConfig& icePlainsBiome();
 const BiomeConfig& mountainsBiome();
 
-} // namespace cursestone::level::generator::biome
+} // namespace cursestone::world::generator::biome

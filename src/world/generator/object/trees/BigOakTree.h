@@ -5,7 +5,7 @@
 #pragma once
 #include "GenericTree.h"
 
-namespace cursestone::level::generator::object::trees {
+namespace cursestone::world::generator::object::trees {
 
 class BigOakTree : public GenericTree {
 protected:
@@ -19,4 +19,4 @@ private:
     int trunkHeight_ = 5;
 };
 
-} // namespace cursestone::level::generator::object::trees
+} // namespace cursestone::world::generator::object::trees

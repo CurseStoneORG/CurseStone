@@ -4,7 +4,7 @@
 #pragma once
 #include "GenericTree.h"
 
-namespace cursestone::level::generator::object::trees {
+namespace cursestone::world::generator::object::trees {
 
 class JungleTree : public GenericTree {
 protected:
@@ -15,4 +15,4 @@ protected:
     }
 };
 
-} // namespace cursestone::level::generator::object::trees
+} // namespace cursestone::world::generator::object::trees

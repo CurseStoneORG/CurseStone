@@ -16,7 +16,7 @@
 #include "world/generator/object/TreeType.h"
 #include <cstdint>
 
-namespace cursestone::level::generator::object::trees {
+namespace cursestone::world::generator::object::trees {
 
 class GenericTree {
 public:
@@ -70,4 +70,4 @@ protected:
     static void setForced(mcp_chunk_t* c, int x, int y, int z, uint8_t id, uint8_t data);
 };
 
-} // namespace cursestone::level::generator::object::trees
+} // namespace cursestone::world::generator::object::trees

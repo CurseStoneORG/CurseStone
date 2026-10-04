@@ -3,7 +3,7 @@
 // may decide whether to run on a chunk based on a seeded PRNG.
 #pragma once
 #include "world/generator/Generator.h"
-namespace cursestone::level::generator::populator {
+namespace cursestone::world::generator::populator {
 class Populator {
 public:
     virtual ~Populator() = default;

@@ -4,7 +4,7 @@
 // Responsibilities:
 //   1. Boot: load cursestone.yml, init logger, register blocks/items,
 //      create CommandMap + register default commands, create the
-//      default Level (overworld), open the RakLibInterface.
+//      default World (overworld), open the RakLibInterface.
 //   2. Tick (every 50ms): advance scheduler, tick level(s), tick
 //      players, drain RakLib→main FIFO, advance time.
 //   3. Shutdown: disconnect all players, save level(s), close network.
@@ -34,7 +34,7 @@ namespace cursestone {
 class Player;
 class CommandMap;
 class CommandReader;
-namespace level { class Level; }   // resolved via `using Level = level::Level;` in main.h
+namespace world { class World; }   // resolved via `using World = world::World;` in main.h
 namespace network { class Network; }
 namespace inventory { class CraftingManager; }
 namespace scheduler { class AsyncPool; }
@@ -114,8 +114,8 @@ public:
     void broadcastMessage(const std::string& msg);
     void broadcastPacket(/* DataPacket */ void* p);
 
-    // Level + scheduler + network accessors.
-    Level* getDefaultLevel() const { return level_.get(); }
+    // World + scheduler + network accessors.
+    World* getDefaultLevel() const { return level_.get(); }
     scheduler::AsyncPool* getAsyncPool() const { return async_pool_.get(); }
     CommandMap* getCommandMap() const { return command_map_.get(); }
     network::Network* getNetwork() const { return network_.get(); }
@@ -154,10 +154,10 @@ public:
     NbtPtr getOfflinePlayerData(const std::string& name);
     void saveOfflinePlayerData(const std::string& name, NbtPtr nbt);
 
-    // --- Nukkit-compat: Level management ---
-    Level* getLevel(int levelId) const { return (levelId == 1 && level_) ? level_.get() : nullptr; }
-    Level* getLevelByName(const std::string& name) const;
-    void setDefaultLevel(std::shared_ptr<Level> l) { level_ = std::move(l); }
+    // --- Nukkit-compat: World management ---
+    World* getLevel(int levelId) const { return (levelId == 1 && level_) ? level_.get() : nullptr; }
+    World* getLevelByName(const std::string& name) const;
+    void setDefaultLevel(std::shared_ptr<World> l) { level_ = std::move(l); }
 
     // --- Nukkit-compat: Player management ---
     Player* getPlayerExact(const std::string& name) const;
@@ -256,7 +256,7 @@ private:
 
     // Subsystems (lazily populated in start()).
     std::shared_ptr<network::Network> network_;
-    std::shared_ptr<Level> level_;
+    std::shared_ptr<World> level_;
     std::shared_ptr<CommandMap> command_map_;
     std::shared_ptr<inventory::CraftingManager> crafting_;
     std::shared_ptr<scheduler::AsyncPool> async_pool_;

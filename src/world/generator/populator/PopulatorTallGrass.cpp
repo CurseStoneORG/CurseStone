@@ -3,9 +3,9 @@
 #include "world/generator/object/ObjectDecorators.h"
 #include "world/generator/biome/BiomeRegistry.h"
 #include "world/generator/biome/Biome.h"
-using namespace cursestone::level::generator::biome;
+using namespace cursestone::world::generator::biome;
 
-namespace cursestone::level::generator::populator {
+namespace cursestone::world::generator::populator {
 
 namespace {
 // Taiga/ice/hills grow ferns, everything else tall grass.
@@ -30,4 +30,4 @@ void PopulatorTallGrass::populate(GenerationContext& ctx) {
     }
     ctx.chunk->dirty = true;
 }
-} // namespace cursestone::level::generator::populator
+} // namespace cursestone::world::generator::populator

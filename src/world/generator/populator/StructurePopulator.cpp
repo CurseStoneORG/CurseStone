@@ -9,11 +9,11 @@
 #include <cmath>
 #include <vector>
 
-namespace cursestone::level::generator::populator {
+namespace cursestone::world::generator::populator {
 
 namespace {
 
-using namespace cursestone::level::generator::structure;
+using namespace cursestone::world::generator::structure;
 
 // ---- Vanilla placement constants ----------------------------------------
 //
@@ -169,4 +169,4 @@ void StructurePopulator::populate(GenerationContext& ctx) {
     }
 }
 
-} // namespace cursestone::level::generator::populator
+} // namespace cursestone::world::generator::populator

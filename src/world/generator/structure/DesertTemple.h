@@ -6,7 +6,7 @@
 #pragma once
 #include "Structure.h"
 
-namespace cursestone::level::generator::structure {
+namespace cursestone::world::generator::structure {
 
 // Vanilla dimensions of the export: 11 wide, 7 tall, 10 deep.
 inline constexpr int kDesertTempleSizeX = 11;
@@ -23,4 +23,4 @@ public:
     bool allowsBiome(uint8_t biome) const override;
 };
 
-} // namespace cursestone::level::generator::structure
+} // namespace cursestone::world::generator::structure

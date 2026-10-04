@@ -6,7 +6,7 @@
 #include "world/generator/noise/GenRandom.h"
 #include <cstdint>
 
-namespace cursestone::level::generator::object {
+namespace cursestone::world::generator::object {
 
 class LakeGenerator {
 public:
@@ -16,4 +16,4 @@ public:
                       uint8_t liquidId, GenRandom& rng);
 };
 
-} // namespace cursestone::level::generator::object
+} // namespace cursestone::world::generator::object

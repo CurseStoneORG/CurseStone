@@ -3,7 +3,7 @@
 // is the only place that decides when memory is reclaimed.
 //
 // Why one global GC: the codebase used to have several scattered
-// reclaimers (Server::tick's chunk-unload sweep, Level::tick's
+// reclaimers (Server::tick's chunk-unload sweep, World::tick's
 // dropped-item sweep, Player::onUpdate's used_chunks_ cleanup, tile
 // eviction) running on their own schedules. Independent schedules mean
 // the world state players interact with (dropped items, open chests,

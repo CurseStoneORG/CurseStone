@@ -4,7 +4,7 @@
 #pragma once
 #include "Generator.h"
 #include "world/generator/noise/SimplexNoise.h"
-namespace cursestone::level::generator {
+namespace cursestone::world::generator {
 class Nether : public Generator {
 public:
     explicit Nether(int64_t seed);

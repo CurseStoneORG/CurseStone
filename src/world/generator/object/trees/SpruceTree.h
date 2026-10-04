@@ -4,7 +4,7 @@
 #pragma once
 #include "GenericTree.h"
 
-namespace cursestone::level::generator::object::trees {
+namespace cursestone::world::generator::object::trees {
 
 class SpruceTree : public GenericTree {
 protected:
@@ -20,4 +20,4 @@ private:
     int maxRadius_ = 2;
 };
 
-} // namespace cursestone::level::generator::object::trees
+} // namespace cursestone::world::generator::object::trees

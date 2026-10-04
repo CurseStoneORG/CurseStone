@@ -16,14 +16,14 @@
 #include <utility>
 #include <vector>
 
-namespace cursestone::level::generator::populator {
+namespace cursestone::world::generator::populator {
 
 namespace {
 
 using cursestone::block::BlockId;
-using cursestone::level::generator::structure::Structure;
-namespace village = cursestone::level::generator::structure::village;
-namespace biome = cursestone::level::generator::biome;
+using cursestone::world::generator::structure::Structure;
+namespace village = cursestone::world::generator::structure::village;
+namespace biome = cursestone::world::generator::biome;
 
 // ---- Vanilla placement constants -----------------------------------------
 // Vanilla village placement: a candidate chunk every kSpacing x kSpacing
@@ -809,7 +809,7 @@ void VillagePopulator::populate(GenerationContext& ctx) {
                 const Structure* s = village::piece((village::PieceKind)p.kind);
                 const size_t wrote = s->placeInto(
                     chunk, ctx.chunk_x, ctx.chunk_z, p.x, baseY, p.z,
-                    (cursestone::level::generator::structure::Rotation)p.rot,
+                    (cursestone::world::generator::structure::Rotation)p.rot,
                     village::resolve, &wellBiome);
                 if (wrote > 0) dirty = true;
             }
@@ -823,4 +823,4 @@ void VillagePopulator::populate(GenerationContext& ctx) {
         .count();
 }
 
-} // namespace cursestone::level::generator::populator
+} // namespace cursestone::world::generator::populator

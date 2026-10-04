@@ -2,7 +2,7 @@
 #include "world/generator/object/LakeGenerator.h"
 #include "block/BlockIds.h"
 
-namespace cursestone::level::generator::object {
+namespace cursestone::world::generator::object {
 
 using cursestone::block::BlockId;
 
@@ -60,4 +60,4 @@ bool LakeGenerator::place(mcp_chunk_t* c, int cx, int cy, int cz,
     return changed;
 }
 
-} // namespace cursestone::level::generator::object
+} // namespace cursestone::world::generator::object

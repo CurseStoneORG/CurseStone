@@ -10,7 +10,7 @@
 #include "trees/SwampTree.h"
 #include "trees/BigJungleTree.h"
 
-namespace cursestone::level::generator::object {
+namespace cursestone::world::generator::object {
 
 bool TreeGenerator::place(mcp_chunk_t* c, int x, int y, int z, TreeType t,
                           uint8_t soilId, GenRandom& rng) {
@@ -48,4 +48,4 @@ bool TreeGenerator::place(mcp_chunk_t* c, int x, int y, int z, TreeType t,
     }
 }
 
-} // namespace cursestone::level::generator::object
+} // namespace cursestone::world::generator::object

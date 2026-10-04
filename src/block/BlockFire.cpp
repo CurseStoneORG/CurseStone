@@ -42,7 +42,7 @@ namespace cursestone::block {
 // schedule more fires, producing the cascade that froze the server.
 // Now it does nothing — fires are static visual blocks.
 // ============================================================
-void BlockFire::scheduleUpdate(level::Level* /*level*/,
+void BlockFire::scheduleUpdate(world::World* /*level*/,
                                int32_t /*x*/, int32_t /*y*/, int32_t /*z*/) {
     // Intentionally empty.
     // Fire does not tick. Fire does not spread. Fire does not age.
@@ -95,7 +95,7 @@ int BlockFire::getBurnChance(uint8_t id) {
 // Used by ItemFlintSteel::onActivate to decide whether the fire
 // has solid ground below it (and therefore should be placed).
 // ============================================================
-bool BlockFire::isTopFacingSurfaceSolid(level::Level* level,
+bool BlockFire::isTopFacingSurfaceSolid(world::World* level,
                                         int32_t x, int32_t y, int32_t z) {
     if (y < 0 || y >= 256) return false;
     if (!level->isChunkLoaded(x, z)) return false;
@@ -116,7 +116,7 @@ bool BlockFire::isTopFacingSurfaceSolid(level::Level* level,
 // Used by ItemFlintSteel::onActivate to decide whether to place
 // fire even without solid ground (e.g. next to a plank wall).
 // ============================================================
-bool BlockFire::canNeighborBurn(level::Level* level,
+bool BlockFire::canNeighborBurn(world::World* level,
                                 int32_t x, int32_t y, int32_t z) {
     static const int dx[6] = { 0, 0, 0, 0,-1, 1};
     static const int dy[6] = {-1, 1, 0, 0, 0, 0};
@@ -136,7 +136,7 @@ bool BlockFire::canNeighborBurn(level::Level* level,
 // getChanceOfNeighborsEncouragingFire — DEAD in v6.
 // Retained as a stub so the header signature stays valid. Never called.
 // ============================================================
-int BlockFire::getChanceOfNeighborsEncouragingFire(level::Level* /*level*/,
+int BlockFire::getChanceOfNeighborsEncouragingFire(world::World* /*level*/,
                                                    int32_t /*x*/, int32_t /*y*/, int32_t /*z*/) {
     return 0;
 }
@@ -145,7 +145,7 @@ int BlockFire::getChanceOfNeighborsEncouragingFire(level::Level* /*level*/,
 // tryToCatchBlockOnFire — DEAD in v6.
 // Retained as a stub. Never called.
 // ============================================================
-void BlockFire::tryToCatchBlockOnFire(level::Level* /*level*/,
+void BlockFire::tryToCatchBlockOnFire(world::World* /*level*/,
                                       int32_t /*tx*/, int32_t /*ty*/, int32_t /*tz*/,
                                       int /*bound*/, int /*damage*/) {
     // No-op.
@@ -158,7 +158,7 @@ void BlockFire::tryToCatchBlockOnFire(level::Level* /*level*/,
 // invoked by the entity-tick loop directly), so it doesn't contribute
 // to the cascade.
 // ============================================================
-void BlockFire::onEntityCollide(level::Level* /*level*/,
+void BlockFire::onEntityCollide(world::World* /*level*/,
                                 int32_t /*bx*/, int32_t /*by*/, int32_t /*bz*/,
                                 entity::Entity* entity) {
     if (!entity) return;
@@ -173,7 +173,7 @@ void BlockFire::onEntityCollide(level::Level* /*level*/,
 // as a defensive stub in case something else queues a fire task
 // (e.g. legacy saved chunks referencing BLOCK_UPDATE_SCHEDULED).
 // ============================================================
-void BlockFire::onScheduledUpdate(level::Level* /*level*/,
+void BlockFire::onScheduledUpdate(world::World* /*level*/,
                                   int32_t /*x*/, int32_t /*y*/, int32_t /*z*/) {
     // Intentionally empty — fire is a static visual block in v6.
 }

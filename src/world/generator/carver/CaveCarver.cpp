@@ -5,7 +5,7 @@
 #include <cmath>
 #include <cstdlib>
 
-namespace cursestone::level::generator::carver {
+namespace cursestone::world::generator::carver {
 
 using cursestone::block::BlockId;
 
@@ -283,4 +283,4 @@ bool CaveCarver::canReplaceBlock(const mcp_chunk_t* chunk, int8_t x, int16_t y, 
     return (block == (uint8_t)BlockId::SAND || block == (uint8_t)BlockId::GRAVEL) && !isLiquid(above);
 }
 
-} // namespace cursestone::level::generator::carver
+} // namespace cursestone::world::generator::carver

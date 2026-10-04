@@ -1,20 +1,20 @@
 // ChunkManager — caches chunks in memory and routes load/save
-// requests to the active LevelProvider. Mirrors pocketmine's
-// ChunkManager role. The Level owns one of these. Generators run
+// requests to the active WorldProvider. Mirrors pocketmine's
+// ChunkManager role. The World owns one of these. Generators run
 // on the AsyncPool and post completed chunks back via setChunk().
 #pragma once
 #include "world/format/Chunk.h"
-#include "world/format/LevelProvider.h"
+#include "world/format/WorldProvider.h"
 #include <unordered_map>
 #include <unordered_set>
 #include <memory>
 #include <mutex>
 #include <vector>
 #include <utility>
-namespace cursestone::level::generator { class Generator; }
+namespace cursestone::world::generator { class Generator; }
 namespace cursestone::scheduler { class AsyncPool; }
 
-namespace cursestone::level {
+namespace cursestone::world {
 
 class ChunkManager {
 public:
@@ -38,7 +38,7 @@ public:
 
     void setChunk(int32_t x, int32_t z, mcp_chunk_t* chunk);
     // Called every time a chunk enters the manager (generated, loaded
-    // from disk, or replaced). Level installs a callback here so a chunk
+    // from disk, or replaced). World installs a callback here so a chunk
     // that appears later than its neighbours still gets its lighting
     // swept together with them — without it a chunk keeps the lighting it
     // was generated with in isolation and shows a dark border where the
@@ -55,25 +55,25 @@ public:
     // being evicted). Returns false if the chunk wasn't loaded.
     //
     // NOTE: this does NOT touch tile-entities living in that chunk —
-    // Level::unloadDistantChunks() calls Level::evictTilesForChunk()
+    // World::unloadDistantChunks() calls World::evictTilesForChunk()
     // first to flush/drop them, because ChunkManager has no visibility
-    // into Level::tiles_ (tile-entity registry lives one layer up).
+    // into World::tiles_ (tile-entity registry lives one layer up).
     // Calling this directly without doing that first would still work
     // (the chunk's mcp_chunk_t::tile_entities blob only gets rewritten
-    // by Level::syncTilesToChunks()/evictTilesForChunk() in the first
+    // by World::syncTilesToChunks()/evictTilesForChunk() in the first
     // place), but any tile whose dirty NBT was never flushed into the
-    // chunk stays unsaved, and Level::tiles_ would go on holding a Tile
+    // chunk stays unsaved, and World::tiles_ would go on holding a Tile
     // object for a chunk that's no longer in memory.
     bool unloadChunk(int32_t x, int32_t z, bool save = true);
     // Coordinates of every chunk currently held in memory. The caller
-    // (Level::unloadDistantChunks()) uses this to decide what's
+    // (World::unloadDistantChunks()) uses this to decide what's
     // eligible for eviction. Returns a snapshot copy rather than a
     // reference so the caller can iterate it without holding mtx_ for
     // the whole sweep (each unloadChunk() call above takes the lock
     // itself, per-chunk).
     std::vector<std::pair<int32_t,int32_t>> loadedChunkCoords() const;
-    void setProvider(std::shared_ptr<format::LevelProvider> p) { provider_ = std::move(p); }
-    std::shared_ptr<format::LevelProvider> provider() const { return provider_; }
+    void setProvider(std::shared_ptr<format::WorldProvider> p) { provider_ = std::move(p); }
+    std::shared_ptr<format::WorldProvider> provider() const { return provider_; }
     // Set the world generator used to create new chunks when they're
     // not on disk. Mirrors Nukkit where the generator is queried
     // for terrain + population.
@@ -92,7 +92,7 @@ private:
     mutable std::mutex mtx_;
     std::function<void(int32_t, int32_t)> on_chunk_added_;
     std::unordered_map<ChunkKey, mcp_chunk_t*, ChunkKeyHash> chunks_;
-    std::shared_ptr<format::LevelProvider> provider_;
+    std::shared_ptr<format::WorldProvider> provider_;
     std::shared_ptr<generator::Generator> generator_;
 
     // Coordinates currently being generated on an AsyncPool worker,

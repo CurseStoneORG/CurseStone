@@ -20,7 +20,7 @@
 #include <sys/types.h>
 #include <zlib.h>
 
-namespace cursestone::level::format::anvil {
+namespace cursestone::world::format::anvil {
 
 static void write_be32(uint8_t* p, uint32_t v) {
     p[0] = (uint8_t)(v >> 24); p[1] = (uint8_t)(v >> 16);
@@ -280,4 +280,4 @@ bool AnvilRegionLoader::hasChunk(int32_t lx, int32_t lz) const {
     return table_[idx].offset != 0 && table_[idx].count != 0;
 }
 
-} // namespace cursestone::level::format::anvil
+} // namespace cursestone::world::format::anvil

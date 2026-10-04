@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// LevelProviderManager — registry of on-disk world formats. C++.
+// WorldProviderManager — registry of on-disk world formats. C++.
 //
-// PocketMine's LevelProviderManager is a static registry that maps a
+// PocketMine's WorldProviderManager is a static registry that maps a
 // format identifier string (e.g. "anvil", "leveldb") to a concrete
-// LevelProvider class. We mirror that pattern, but the C++ version is
+// WorldProvider class. We mirror that pattern, but the C++ version is
 // a non-static class so test code can inject a fresh registry per
 // test.
 //
 // Concrete providers register themselves with the manager at process
-// startup (see anvil/Anvil.cpp's static initializer). The Level loader
+// startup (see anvil/Anvil.cpp's static initializer). The World loader
 // then asks the manager for a provider by format name; if absent it
 // falls back to the default ("anvil").
 #pragma once
@@ -19,16 +19,16 @@
 #include <unordered_map>
 #include <vector>
 #include "../../main.h"
-#include "LevelProvider.h"
+#include "WorldProvider.h"
 
-namespace cursestone::level::format {
+namespace cursestone::world::format {
 
 // Factory callback. Creates a fresh provider instance.
-using ProviderFactory = std::function<std::unique_ptr<LevelProvider>()>;
+using ProviderFactory = std::function<std::unique_ptr<WorldProvider>()>;
 
-class LevelProviderManager {
+class WorldProviderManager {
 public:
-    static LevelProviderManager& getInstance();
+    static WorldProviderManager& getInstance();
 
     // Register a provider by canonical name. Names are lower-case
     // ASCII; the manager stores them as-is and matches case-sensitively.
@@ -40,7 +40,7 @@ public:
 
     // Convenience: instantiate a provider by name, returning nullptr
     // on unknown name. The returned pointer is owned by the caller.
-    std::unique_ptr<LevelProvider> create(const std::string& name) const;
+    std::unique_ptr<WorldProvider> create(const std::string& name) const;
 
     // List every registered format name (sorted for stable output).
     std::vector<std::string> listFormats() const;
@@ -49,8 +49,8 @@ public:
     static const char* defaultFormatName();
 
 private:
-    LevelProviderManager() = default;
+    WorldProviderManager() = default;
     std::unordered_map<std::string, ProviderFactory> registry_;
 };
 
-} // namespace cursestone::level::format
+} // namespace cursestone::world::format

@@ -2,7 +2,7 @@
 // Forest — biome 3. Dense oak/birch canopy, flowers and mushrooms.
 #include "BiomeConfig.h"
 
-namespace cursestone::level::generator::biome {
+namespace cursestone::world::generator::biome {
 const BiomeConfig& forestBiome() {
     static const BiomeConfig c{
         .id = 3,
@@ -32,4 +32,4 @@ const BiomeConfig& forestBiome() {
     };
     return c;
 }
-} // namespace cursestone::level::generator::biome
+} // namespace cursestone::world::generator::biome

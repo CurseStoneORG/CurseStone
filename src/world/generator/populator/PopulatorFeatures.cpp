@@ -7,7 +7,7 @@
 #include "world/generator/biome/Biome.h"
 #include <algorithm>
 
-namespace cursestone::level::generator::populator {
+namespace cursestone::world::generator::populator {
 
 namespace {
 // Config of the biome under a column (variant ids alias their base).
@@ -252,4 +252,4 @@ void PopulatorWaterLily::populate(GenerationContext& ctx) {
     ctx.chunk->dirty = true;
 }
 
-} // namespace cursestone::level::generator::populator
+} // namespace cursestone::world::generator::populator

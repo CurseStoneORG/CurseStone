@@ -9,7 +9,7 @@
 #include "world/format/Chunk.h"
 #include <cstdint>
 
-namespace cursestone::level::generator::object {
+namespace cursestone::world::generator::object {
 
 struct OreVein {
     uint8_t block_id;       // ore block id (e.g. 16 = coal ore)
@@ -28,4 +28,4 @@ public:
     static int place(mcp_chunk_t* c, int64_t seed, const OreVein& v);
 };
 
-} // namespace cursestone::level::generator::object
+} // namespace cursestone::world::generator::object

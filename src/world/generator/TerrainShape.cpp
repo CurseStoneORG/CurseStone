@@ -5,7 +5,7 @@
 
 #include <algorithm>
 
-namespace cursestone::level::generator {
+namespace cursestone::world::generator {
 
 namespace {
 
@@ -793,4 +793,4 @@ uint8_t columnBiome(const TerrainNoise& n, double wx, double wz, int h) {
     return b;
 }
 
-} // namespace cursestone::level::generator
+} // namespace cursestone::world::generator

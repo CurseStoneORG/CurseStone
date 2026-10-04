@@ -8,7 +8,7 @@
 #include "BiomeConfig.h"
 #include <cstdint>
 
-namespace cursestone::level::generator::biome {
+namespace cursestone::world::generator::biome {
 
 class BiomeRegistry {
 public:
@@ -21,4 +21,4 @@ public:
     static uint8_t select(double temp, double humid, int height, int seaLevel);
 };
 
-} // namespace cursestone::level::generator::biome
+} // namespace cursestone::world::generator::biome

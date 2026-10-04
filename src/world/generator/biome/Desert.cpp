@@ -2,7 +2,7 @@
 // Desert — biome 2. Hot and dry: sand, cactus, dead bushes, no grass.
 #include "BiomeConfig.h"
 
-namespace cursestone::level::generator::biome {
+namespace cursestone::world::generator::biome {
 const BiomeConfig& desertBiome() {
     static const BiomeConfig c{
         .id = 2,
@@ -28,4 +28,4 @@ const BiomeConfig& desertBiome() {
     };
     return c;
 }
-} // namespace cursestone::level::generator::biome
+} // namespace cursestone::world::generator::biome

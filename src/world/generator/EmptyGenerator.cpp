@@ -1,6 +1,6 @@
 #include "EmptyGenerator.h"
 #include "world/format/Chunk.h"
-namespace cursestone::level::generator {
+namespace cursestone::world::generator {
 void EmptyGenerator::generate(GenerationContext& ctx) {
     mcp_chunk_t* c = ctx.chunk;
     mcp_chunk_section_t* s = mcp_chunk_get_or_alloc_section(c, 0);

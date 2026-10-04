@@ -14,7 +14,7 @@
 #include "world/generator/noise/GenRandom.h"
 #include <cstdint>
 
-namespace cursestone::level::generator::carver {
+namespace cursestone::world::generator::carver {
 
 class CaveCarver {
 public:
@@ -46,4 +46,4 @@ private:
     GenRandom rand_{0};
 };
 
-} // namespace cursestone::level::generator::carver
+} // namespace cursestone::world::generator::carver

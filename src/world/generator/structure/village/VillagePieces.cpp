@@ -11,7 +11,7 @@
 // (z, y) with x fastest, 'a' + n = spec n.
 #include "world/generator/structure/village/VillagePieces.h"
 
-namespace cursestone::level::generator::structure::village {
+namespace cursestone::world::generator::structure::village {
 
 namespace {
 // ---- blacksmith (8x6x10, 16 specs) ----
@@ -817,4 +817,4 @@ int pieceFrontFacing(PieceKind k) {
     return static_cast<const VillagePiece*>(kPieces[k])->frontFacing();
 }
 
-} // namespace cursestone::level::generator::structure::village
+} // namespace cursestone::world::generator::structure::village

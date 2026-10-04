@@ -18,7 +18,7 @@
 #include <memory>
 #include <vector>
 
-namespace cursestone::level::generator::populator {
+namespace cursestone::world::generator::populator {
 
 class StructurePopulator final : public Populator {
 public:
@@ -37,4 +37,4 @@ private:
     std::vector<std::shared_ptr<structure::Structure>> structures_;
 };
 
-} // namespace cursestone::level::generator::populator
+} // namespace cursestone::world::generator::populator

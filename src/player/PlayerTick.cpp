@@ -675,8 +675,8 @@ void Player::onUpdate(uint64_t current_tick) {
     //   grow 1  [x-1.3, y-1.0, z-1.3] .. [x+1.3, y+2.8, z+1.3]
     //   item    [ix-0.125, iy, iz-0.125] .. [ix+0.125, iy+0.25, iz+0.125]
     //
-    // The geometry lives in one place — level::itemWithinPickupVolume()
-    // in Level.h — because Level::tickDroppedItems()'s attraction gate
+    // The geometry lives in one place — world::itemWithinPickupVolume()
+    // in World.h — because World::tickDroppedItems()'s attraction gate
     // uses the very same test; when the two disagreed an item could sit
     // in a dead ring where it was neither attracted nor collected.
     //
@@ -706,12 +706,12 @@ void Player::onUpdate(uint64_t current_tick) {
         auto dropped = lvl->droppedItems();
         bool picked_this_pass = false;
 
-        for (level::DroppedItem* di : dropped) {
+        for (world::DroppedItem* di : dropped) {
             if (!di || di->taken) continue;
             if (di->pickup_delay_ticks > 0) continue;
 
             // AxisAlignedBB::intersectsWith(playerBB->grow(1, 1, 1), itemBB)
-            if (!level::itemWithinPickupVolume(*di, pos_.x, pos_.y, pos_.z)) continue;
+            if (!world::itemWithinPickupVolume(*di, pos_.x, pos_.y, pos_.z)) continue;
 
             cursestone::item::ItemStack pickup;
             pickup.id    = di->itemId;

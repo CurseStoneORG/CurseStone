@@ -17,7 +17,7 @@
 //      torches was black.
 //
 //   3. Nothing ever updated the light after a block changed.
-//      Level::setBlock() wrote the block and stopped, so building a roof
+//      World::setBlock() wrote the block and stopped, so building a roof
 //      left the room under it at full daylight, and breaking it left the
 //      room in the dark.
 //
@@ -39,9 +39,9 @@
 #include <unordered_map>
 #include <utility>
 
-namespace cursestone::level {
+namespace cursestone::world {
 
-class Level;
+class World;
 
 class LightEngine {
 public:
@@ -57,7 +57,7 @@ public:
     // never stalls the main loop in one giant burst.
     static constexpr int32_t kPendingBudget = 2;
 
-    explicit LightEngine(Level& lvl) : lvl_(lvl) {}
+    explicit LightEngine(World& lvl) : lvl_(lvl) {}
 
     // Recompute both layers in a cube around a block change.
     void relightAround(int32_t x, int32_t y, int32_t z, int32_t radius);
@@ -81,7 +81,7 @@ private:
         int32_t x, y, z;
     };
 
-    Level& lvl_;
+    World& lvl_;
     mutable std::mutex mtx_;
     std::deque<std::pair<int32_t, int32_t>> pending_;
 
@@ -90,4 +90,4 @@ private:
                  int32_t x1, int32_t y1, int32_t z1);
 };
 
-} // namespace cursestone::level
+} // namespace cursestone::world

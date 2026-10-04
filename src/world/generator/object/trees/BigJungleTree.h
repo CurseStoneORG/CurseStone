@@ -4,7 +4,7 @@
 // layered crown, and vines hanging off the wood.
 //
 // Ported 1:1 from Aquamarine-Team/Aquamarine
-// (src/level/generator/normal/object/BigJungleTree.php, by MaruselPlay),
+// (src/world/generator/normal/object/BigJungleTree.php, by MaruselPlay),
 // which is itself the PocketMine-MP HugeTree algorithm. The PHP hierarchy is
 // flattened into this one class because CurseStone's tree base
 // (GenericTree) is not a HugeTree:
@@ -32,7 +32,7 @@
 #pragma once
 #include "GenericTree.h"
 
-namespace cursestone::level::generator::object::trees {
+namespace cursestone::world::generator::object::trees {
 
 class BigJungleTree : public GenericTree {
 public:
@@ -55,4 +55,4 @@ private:
     static bool canOverrideAt(mcp_chunk_t* c, int x, int y, int z);
 };
 
-} // namespace cursestone::level::generator::object::trees
+} // namespace cursestone::world::generator::object::trees

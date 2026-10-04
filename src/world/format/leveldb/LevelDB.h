@@ -18,7 +18,7 @@
 // and CURSESTONE_LEVELDB=1), a real backend lands in Phase 12+.
 //
 // Design rationale: keeping the API identical to anvil/Anvil means
-// Level::load() can pick a provider by name without format-specific
+// World::load() can pick a provider by name without format-specific
 // special cases; the stub is the no-op implementation of that API.
 #pragma once
 
@@ -28,11 +28,11 @@
 #include <string>
 #include <vector>
 #include "../../../main.h"
-#include "../LevelProvider.h"
+#include "../WorldProvider.h"
 
-namespace cursestone::level::format::leveldb {
+namespace cursestone::world::format::leveldb {
 
-class LevelDB : public LevelProvider {
+class LevelDB : public WorldProvider {
 public:
     LevelDB();
     ~LevelDB() override;
@@ -86,4 +86,4 @@ struct LevelDBRegistrar {
 };
 extern LevelDBRegistrar g_leveldb_registrar_;
 
-} // namespace cursestone::level::format::leveldb
+} // namespace cursestone::world::format::leveldb

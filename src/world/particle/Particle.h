@@ -4,7 +4,7 @@
 #pragma once
 #include "world/Position.h"
 #include <cstdint>
-namespace cursestone::level::particle {
+namespace cursestone::world::particle {
 enum ParticleId : int32_t {
     PARTICLE_UNKNOWN      = 0,
     PARTICLE_BUBBLE        = 1,

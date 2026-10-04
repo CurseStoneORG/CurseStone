@@ -5,7 +5,7 @@
 #include "world/generator/noise/GenRandom.h"
 #include "block/BlockIds.h"
 
-namespace cursestone::level::generator::populator {
+namespace cursestone::world::generator::populator {
 
 // Deterministic per (chunk, salt) RNG so populators are order-independent.
 inline GenRandom chunkRandom(int64_t seed, int32_t chunkX, int32_t chunkZ, uint64_t salt) {
@@ -80,4 +80,4 @@ inline int surfaceY(const mcp_chunk_t* c, int x, int z) {
     return -1;
 }
 
-} // namespace cursestone::level::generator::populator
+} // namespace cursestone::world::generator::populator

@@ -1,6 +1,6 @@
 #pragma once
 #include "Populator.h"
-namespace cursestone::level::generator::populator {
+namespace cursestone::world::generator::populator {
 class PopulatorTallGrass : public Populator {
 public:
     explicit PopulatorTallGrass(int attempts_per_chunk) : attempts_(attempts_per_chunk) {}

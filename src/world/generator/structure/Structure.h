@@ -35,7 +35,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace cursestone::level::generator::structure {
+namespace cursestone::world::generator::structure {
 
 // One palette entry: the MCPE 0.15.x legacy block id and its metadata
 // byte, which is what the chunk actually stores.
@@ -233,4 +233,4 @@ private:
                         SpecResolver resolve, void* user) const;
 };
 
-} // namespace cursestone::level::generator::structure
+} // namespace cursestone::world::generator::structure

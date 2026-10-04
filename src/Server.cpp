@@ -30,7 +30,7 @@
 #include "scheduler/ServerScheduler.h"
 #include "world/World.h"
 #include "world/ChunkManager.h"
-#include "world/format/LevelProviderManager.h"
+#include "world/format/WorldProviderManager.h"
 #include "network/Network.h"
 #include "network/RakLibInterface.h"
 #include "nbt/NBT.h"
@@ -210,7 +210,7 @@ void Server::loadDefaultLevel() {
         return cfg.getInt(yaml_key, def);
     };
 
-    level::LevelConfig lc;
+    world::WorldConfig lc;
     lc.name      = get_str("level.name", "level-name", "world");
     lc.format    = get_str("level.format", "level-format", "anvil");
     lc.generator = get_str("level.generator", "generator", "normal");
@@ -218,10 +218,10 @@ void Server::loadDefaultLevel() {
     lc.seed = (seed != 0) ? (int64_t)seed : (int64_t)mcp_utils_time_ms();
     lc.spawn_x = 0; lc.spawn_y = 64; lc.spawn_z = 0;
     lc.view_distance = view_distance_;
-    lc.dataPath = dataPath_;   // so Level can compute absolute world paths
+    lc.dataPath = dataPath_;   // so World can compute absolute world paths
 
-    // Create the world directory structure BEFORE constructing the Level,
-    // so the LevelProvider can open the region/ subdirectory on init().
+    // Create the world directory structure BEFORE constructing the World,
+    // so the WorldProvider can open the region/ subdirectory on init().
     // Mirrors Nukkit's Anvil.generate(): worlds/<name>/ + worlds/<name>/region/
     std::string worldsDir = dataPath_ + "/worlds";
     std::string worldDir  = worldsDir + "/" + lc.name;
@@ -230,10 +230,10 @@ void Server::loadDefaultLevel() {
     ::mkdir(worldDir.c_str(), 0755);
     ::mkdir(regionDir.c_str(), 0755);
 
-    // Construct the Level — this instantiates the LevelProvider (Anvil by
+    // Construct the World — this instantiates the WorldProvider (Anvil by
     // default) and calls provider->init(worldDir). The provider creates the
     // region/ subdir if missing and reads level.dat if it exists.
-    level_ = std::make_shared<level::Level>(std::move(lc));
+    level_ = std::make_shared<world::World>(std::move(lc));
 
     utils::MainLogger::get().info("World directory: " + worldDir);
     utils::MainLogger::get().info("Region directory: " + regionDir);
@@ -429,7 +429,7 @@ void Server::tick() {
         (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
 
     // --- Phase: block entities (furnaces) ---
-    // Fuera de Level::tick para mantener esa fase libre de envíos de
+    // Fuera de World::tick para mantener esa fase libre de envíos de
     // packets (el horno manda progreso/contenido a viewers aquí).
     t0 = std::chrono::steady_clock::now();
     if (level_) level_->tickTiles(currentTick_);
@@ -442,7 +442,7 @@ void Server::tick() {
     // that reclaims shared world memory funnels through here:
     // chunk unload sweep (was a separate 100-tick schedule in this very
     // function) + dropped-item despawn/taken sweep (was a per-tick sweep
-    // inside Level::tick) + heap trim. Centralizing matters: independent
+    // inside World::tick) + heap trim. Centralizing matters: independent
     // reclaimer schedules were freeing world state (dropped items, tiles,
     // chunks) in the middle of player actions — the "player actions
     // desyncing from the server" symptom. Rate limiting inside
@@ -634,7 +634,7 @@ void Server::saveAll() {
     //    AND writes level.dat (seed/spawn/time) via the provider.
     if (level_) {
         int saved = level_->save();
-        utils::MainLogger::get().info("[SAVE] Level saved (" +
+        utils::MainLogger::get().info("[SAVE] World saved (" +
             std::to_string(saved) + " chunks flushed).");
     }
 }
@@ -871,8 +871,8 @@ std::vector<Player*> Server::matchPlayer(const std::string& partialName) const {
     return result;
 }
 
-// --- Nukkit-compat: Level management ---
-Level* Server::getLevelByName(const std::string& name) const {
+// --- Nukkit-compat: World management ---
+World* Server::getLevelByName(const std::string& name) const {
     if (level_ && level_->name() == name) return level_.get();
     return nullptr;
 }

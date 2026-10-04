@@ -16,7 +16,7 @@
 #include "nbt/tag/ListTag.h"
 #include <algorithm>
 namespace cursestone::tile {
-TileFurnace::TileFurnace(cursestone::level::Position pos,
+TileFurnace::TileFurnace(cursestone::world::Position pos,
                          const cursestone::inventory::CraftingManager* recipes)
     : Tile("Furnace", pos), recipes_(recipes),
       inv_(std::make_unique<cursestone::inventory::FurnaceInventory>()) {}
@@ -84,7 +84,7 @@ bool TileFurnace::smeltResult(const cursestone::item::ItemStack& in,
 
 // setFlame — el fuego se ve cambiando el bloque (vanilla: 61 apagado /
 // 62 encendido), no solo la barra de la UI. El cambio de id se hace en
-// el Level (sin broadcast) y el UpdateBlock solo se manda si el bloque
+// el World (sin broadcast) y el UpdateBlock solo se manda si el bloque
 // cambió de verdad.
 void TileFurnace::setFlame(bool lit) {
     if (lit == lit_) return;

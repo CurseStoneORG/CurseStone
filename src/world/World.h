@@ -1,9 +1,9 @@
-// Level — a single world (overworld, nether, end). Holds the
+// World — a single world (overworld, nether, end). Holds the
 // ChunkManager, generator, players, entities, tile-entities and
 // per-world settings (time, weather, spawn position).
 //
-// IMPORTANT: on construction, the Level instantiates a LevelProvider
-// (via LevelProviderManager) for the configured format and connects
+// IMPORTANT: on construction, the World instantiates a WorldProvider
+// (via WorldProviderManager) for the configured format and connects
 // it to the ChunkManager so that flushDirty() actually writes to disk.
 // Without this, the world is "in-memory only" and changes are lost
 // when the server shuts down.
@@ -19,13 +19,13 @@
 #include "math/Vector3.h"
 #include "world/ChunkManager.h"
 #include "world/LightEngine.h"
-#include "world/format/LevelProvider.h"
+#include "world/format/WorldProvider.h"
 namespace cursestone {
 class Player; class Entity;
 namespace tile { class Tile; }
-namespace level::generator { class Generator; }
+namespace world::generator { class Generator; }
 }
-namespace cursestone::level {
+namespace cursestone::world {
 
 // DroppedItem — a lightweight record of an item entity lying on the ground.
 // Mirrors Nukkit's EntityItem (sans the full entity-tick machinery): we
@@ -39,14 +39,14 @@ struct DroppedItem {
     double   x = 0.0, y = 0.0, z = 0.0;
     uint64_t spawn_tick = 0;     // when it was dropped (server tick)
     // Pickup delay, in ticks. Genisys Player::DROP_ITEM_PACKET drops with
-    // 40 ticks (2 s) and Level::dropItem() defaults to 10, so the default
+    // 40 ticks (2 s) and World::dropItem() defaults to 10, so the default
     // here matches that (0.5 s) and a manual drop passes 40 explicitly.
     uint32_t pickup_delay_ticks = 10;
     bool     taken = false;      // marked for removal after pickup
 
     // --- Genisys entity\Item state (pocketmine\entity\Item) ---
     // $motionX / $motionY / $motionZ, applied and integrated every tick by
-    // Level::tickDroppedItems(). The client runs the SAME integrator on
+    // World::tickDroppedItems(). The client runs the SAME integrator on
     // the speedX/Y/Z we shipped in AddItemEntityPacket, so this has to
     // exist server-side too or the pickup check tests a position the
     // entity has long since left.
@@ -83,7 +83,7 @@ struct DroppedItem {
 // lower than the player standing next to the hole, was therefore OUT of
 // reach, and could only be collected after digging a second hole and
 // stepping down into it. One shared definition lives here so the
-// attraction gate in Level::tickDroppedItems() and the pickup scan in
+// attraction gate in World::tickDroppedItems() and the pickup scan in
 // Player::onUpdate() can never drift apart again (a dead ring where an
 // item is neither attracted nor collected is the same bug wearing a
 // different hat).
@@ -111,7 +111,7 @@ inline bool itemWithinPickupVolume(const DroppedItem& di,
     return itemWithinPickupVolume(di.x, di.y, di.z, px, py, pz);
 }
 
-struct LevelConfig {
+struct WorldConfig {
     std::string name;
     std::string format   = "anvil";   // anvil (Nukkit Anvil, default) | leveldb
     std::string generator = "normal"; // normal | flat | nether | void
@@ -121,13 +121,13 @@ struct LevelConfig {
     int32_t view_distance = 8;
     std::string dataPath;   // absolute path to the server's data dir
 };
-class Level {
+class World {
 public:
-    explicit Level(LevelConfig cfg);
-    ~Level();
+    explicit World(WorldConfig cfg);
+    ~World();
     const std::string& name() const { return cfg_.name; }
     int64_t seed() const { return cfg_.seed; }
-    const LevelConfig& config() const { return cfg_; }
+    const WorldConfig& config() const { return cfg_; }
     ChunkManager& chunks() { return chunks_; }
     // Returns the block id at world coords. Loads chunk if needed.
     uint8_t getBlockId(int32_t x, int32_t y, int32_t z);
@@ -197,7 +197,7 @@ public:
     void sendWeatherTo(class Player* p);
     // Processed from tick(): weather duration countdown + fire sweep.
     //
-    // Tuning constants for the rain fire-sweep (defined in Level.cpp):
+    // Tuning constants for the rain fire-sweep (defined in World.cpp):
     //   WEATHER_CHUNKS_PER_TICK — chunks scanned per tick while raining
     //   (256 loaded chunks = full pass every 6.4s at 20 TPS).
     //   MAX_EXTINGUISH_PER_TICK — hard cap of block updates per tick so a
@@ -223,7 +223,7 @@ public:
     // Spawn point.
     mcp_vector3_t spawn() const { return spawn_; }
     void setSpawn(mcp_vector3_t v) { spawn_ = v; }
-    // Save all dirty chunks (routes to the LevelProvider).
+    // Save all dirty chunks (routes to the WorldProvider).
     int save();
     // Tick this level — time + weather ONLY. Item-entity reclamation used
     // to live here but now belongs to the global GC (see collectDroppedItems): a
@@ -242,7 +242,7 @@ public:
     void tickDroppedItems(uint64_t current_tick);
     // Tick de block entities (hornos: fundido + fuel + progreso de UI).
     // Llamado UNA VEZ por tick desde Server::tick (fuera de
-    // Level::tick para no bloquear la fase de tiempo/clima con I/O de
+    // World::tick para no bloquear la fase de tiempo/clima con I/O de
     // packets de contenedores). Devuelve cuántos tiles se tiquearon.
     size_t tickTiles(uint64_t current_tick);
     // THE dropped-item GC pass. Called ONLY by the global MemoryManager
@@ -259,8 +259,8 @@ public:
     size_t collectDroppedItems(uint64_t current_tick);
     // Generator accessor for AsyncPool workers.
     std::shared_ptr<generator::Generator> generator() const { return generator_; }
-    // The active LevelProvider (Anvil by default).
-    std::shared_ptr<format::LevelProvider> provider() const { return provider_; }
+    // The active WorldProvider (Anvil by default).
+    std::shared_ptr<format::WorldProvider> provider() const { return provider_; }
     // ChunkLoaders (players) registered to receive chunk updates.
     void registerLoader(uint64_t loader_id, class ChunkLoader* loader);
     void unregisterLoader(uint64_t loader_id);
@@ -272,7 +272,7 @@ public:
     DroppedItem* droppedItem(int64_t eid);
     // Snapshot of all dropped items (for pickup scans).
     std::vector<DroppedItem*> droppedItems();
-    // Register a freshly-dropped item. The Level takes ownership of the
+    // Register a freshly-dropped item. The World takes ownership of the
     // record's lifetime (it removes itself when `taken` is true).
     void addDroppedItem(const DroppedItem& di);
     // Mark an item as taken (will be erased on next tick).
@@ -290,14 +290,14 @@ public:
     // repeated opens instead of a fresh (empty) one being constructed
     // every time — this is what lets ChestInventory contents survive
     // a player closing and reopening the chest. Mirrors PMMP's
-    // Level::tiles map (keyed by packed Vector3 hash there too).
+    // World::tiles map (keyed by packed Vector3 hash there too).
     //
     // Persisted to disk: getTile() lazily hydrates a chunk's tiles from
     // its mcp_chunk_t::tile_entities blobs the first time that chunk is
     // touched (see ensureTilesLoaded()), and save() calls
     // syncTilesToChunks() to write every dirty tile's current NBT back
     // into its chunk's tile_entities array before ChunkManager::flushDirty()
-    // hands the chunk to the LevelProvider. Chest contents now survive a
+    // hands the chunk to the WorldProvider. Chest contents now survive a
     // server restart, not just a close/reopen in the same session.
     std::shared_ptr<cursestone::tile::Tile> getTile(int32_t x, int32_t y, int32_t z);
     void setTile(int32_t x, int32_t y, int32_t z, std::shared_ptr<cursestone::tile::Tile> t);
@@ -386,9 +386,9 @@ private:
     // chunk with only a dirty chest and no other change still gets saved.
     void syncTilesToChunks();
 
-    LevelConfig cfg_;
+    WorldConfig cfg_;
     ChunkManager chunks_;
-    std::shared_ptr<format::LevelProvider> provider_;
+    std::shared_ptr<format::WorldProvider> provider_;
     std::shared_ptr<generator::Generator> generator_;
     mcp_vector3_t spawn_;
     std::unordered_map<uint64_t, class ChunkLoader*> loaders_;

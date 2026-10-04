@@ -10,7 +10,7 @@
 #include <deque>
 #include <vector>
 
-namespace cursestone::level {
+namespace cursestone::world {
 
 namespace {
 
@@ -47,7 +47,7 @@ inline int costThrough(uint8_t blockId) {
 // turns those lookups into one subtraction and a bounds check.
 class Region {
 public:
-    Region(Level& lvl, int32_t x0, int32_t y0, int32_t z0,
+    Region(World& lvl, int32_t x0, int32_t y0, int32_t z0,
            int32_t x1, int32_t y1, int32_t z1)
         : lvl_(lvl),
           x0_(x0), y0_(y0), z0_(z0),
@@ -132,7 +132,7 @@ public:
     }
 
 private:
-    Level& lvl_;
+    World& lvl_;
     int32_t x0_, y0_, z0_, x1_, y1_, z1_;
     int32_t spanX_ = 1, spanZ_ = 1;
     int32_t spanCx0_ = 0, spanCz0_ = 0;
@@ -289,4 +289,4 @@ size_t LightEngine::processPending(int32_t budget) {
     return work.size();
 }
 
-} // namespace cursestone::level
+} // namespace cursestone::world

@@ -8,7 +8,7 @@
 #include <cstdint>
 namespace cursestone { class Entity; }
 
-namespace cursestone::level {
+namespace cursestone::world {
 
 class MovingObjectPosition {
 public:
@@ -46,4 +46,4 @@ public:
     }
 };
 
-} // namespace cursestone::level
+} // namespace cursestone::world

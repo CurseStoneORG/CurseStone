@@ -1,7 +1,7 @@
 // BiomeDesert — bioma de desierto.
 #pragma once
 #include "Biome.h"
-namespace cursestone::level::generator::biome {
+namespace cursestone::world::generator::biome {
 class BiomeDesert : public Biome {
 public:
     uint8_t id() const override;

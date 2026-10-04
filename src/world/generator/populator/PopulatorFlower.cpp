@@ -3,7 +3,7 @@
 #include "world/generator/object/ObjectDecorators.h"
 #include "world/generator/biome/BiomeRegistry.h"
 
-namespace cursestone::level::generator::populator {
+namespace cursestone::world::generator::populator {
 
 void PopulatorFlower::populate(GenerationContext& ctx) {
     GenRandom rng = chunkRandom(ctx.seed, ctx.chunk_x, ctx.chunk_z,
@@ -20,4 +20,4 @@ void PopulatorFlower::populate(GenerationContext& ctx) {
     }
     ctx.chunk->dirty = true;
 }
-} // namespace cursestone::level::generator::populator
+} // namespace cursestone::world::generator::populator
