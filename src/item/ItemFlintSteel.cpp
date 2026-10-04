@@ -14,7 +14,7 @@
 #include "ItemStack.h"
 #include "block/BlockFire.h"
 #include "block/BlockIds.h"
-#include "level/Level.h"
+#include "world/World.h"
 #include "Player.h"
 #include "inventory/PlayerInventory.h"
 #include "network/protocol/UpdateBlockPacket.h"

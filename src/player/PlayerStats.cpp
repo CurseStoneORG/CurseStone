@@ -1,6 +1,6 @@
 #include "Player.h"
 #include "player/PlayerInternal.h"
-#include "level/Level.h"
+#include "world/World.h"
 #include "block/BlockIds.h"
 #include "network/protocol/UpdateAttributesPacket.h"
 #include "network/protocol/EntityEventPacket.h"

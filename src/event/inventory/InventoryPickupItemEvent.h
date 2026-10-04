@@ -3,7 +3,7 @@
 #pragma once
 #include "InventoryEvent.h"
 #include "../Cancellable.h"
-#include "../../level/Level.h"
+#include "../../world/World.h"
 namespace cursestone::event::inventory {
 
 class InventoryPickupItemEvent : public InventoryEvent, public Cancellable {

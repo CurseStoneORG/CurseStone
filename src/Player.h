@@ -14,7 +14,7 @@
 #include "main.h"                          // defines math::Vector3 alias
 #include "IPlayer.h"
 #include "entity/Human.h"
-#include "level/Location.h"
+#include "world/Location.h"
 #include "permission/PermissibleBase.h"
 #include "network/AdvancedSourceInterface.h"
 #include "Server.h"                        // NbtPtr = shared_ptr<mcp_tag>

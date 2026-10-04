@@ -1,5 +1,5 @@
 #include "Player.h"
-#include "level/Level.h"
+#include "world/World.h"
 #include "network/protocol/ContainerSetContentPacket.h"
 #include "network/protocol/ContainerSetSlotPacket.h"
 #include "network/protocol/ContainerClosePacket.h"

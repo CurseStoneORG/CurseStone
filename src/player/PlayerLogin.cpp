@@ -1,6 +1,6 @@
 #include "Player.h"
 #include "player/PlayerInternal.h"
-#include "level/Level.h"
+#include "world/World.h"
 #include "network/protocol/Info.h"
 #include "network/protocol/LoginPacket.h"
 #include "network/protocol/PlayStatusPacket.h"

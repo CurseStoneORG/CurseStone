@@ -1,6 +1,6 @@
 #include "RedstoneManager.h"
 #include "block/BlockIds.h"
-#include "level/Level.h"
+#include "world/World.h"
 #include "Server.h"
 #include "Player.h"
 #include "network/protocol/UpdateBlockPacket.h"
