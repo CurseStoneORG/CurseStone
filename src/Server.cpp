@@ -155,7 +155,10 @@ void Server::loadConfig() {
         utils::MainLogger::get().info("World generator: " +
             cfg.getString("generator", "normal"));
         utils::MainLogger::get().info("World format: " +
-            cfg.getString("level-format", "anvil"));
+            [&]{
+                std::string f = cfg.getString("world-format", std::string());
+                return f.empty() ? cfg.getString("level-format", "anvil") : f;
+            }());
     }
 }
 
@@ -191,30 +194,79 @@ void Server::openNetwork() {
 }
 
 void Server::loadDefaultWorld() {
-    // Load level name/format/generator from server.properties or cursestone.yml.
+    // Load world name/format/generator from server.properties or cursestone.yml.
     using utils::Config;
     Config cfg;
     cfg.loadIni(dataPath_ + "/server.properties");
     cfg.loadYaml(dataPath_ + "/cursestone.yml");
 
-    auto get_str = [&](const char* yaml_key, const char* ini_key,
-                       const char* def) -> std::string {
-        std::string v = cfg.getString(ini_key, std::string());
-        if (!v.empty()) return v;
-        return cfg.getString(yaml_key, def);
+    // The world settings moved from `level-*` to `world-*` when the API was
+    // renamed. Both spellings keep working so an existing server.properties
+    // or cursestone.yml is not invalidated: for each setting the new key wins
+    // when it is present, the old one is still honoured, and detecting the old
+    // one only logs a deprecation warning.
+    bool warned_legacy = false;
+    auto legacy_note = [&](const char* old_key, const char* new_key) {
+        if (warned_legacy) return;
+        warned_legacy = true;
+        utils::MainLogger::get().warn(
+            std::string("Config key '") + old_key +
+            "' is deprecated, rename it to '" + new_key +
+            "' (the new key takes priority when both are set)");
     };
-    auto get_int = [&](const char* yaml_key, const char* ini_key,
+
+    // Reads a string setting in the order new_ini, old_ini, new_yaml, old_yaml,
+    // then def - i.e. server.properties still overrides cursestone.yml exactly
+    // as before, only with the new key names taking precedence.
+    auto get_str = [&](const char* new_ini, const char* old_ini,
+                       const char* new_yaml, const char* old_yaml,
+                       const char* def) -> std::string {
+        std::string v = cfg.getString(new_ini, std::string());
+        if (!v.empty()) return v;
+        v = cfg.getString(old_ini, std::string());
+        if (!v.empty()) { legacy_note(old_ini, new_ini); return v; }
+        v = cfg.getString(new_yaml, std::string());
+        if (!v.empty()) return v;
+        v = cfg.getString(old_yaml, std::string());
+        if (!v.empty()) { legacy_note(old_yaml, new_yaml); return v; }
+        return def;
+    };
+    auto get_int = [&](const char* new_ini, const char* old_ini,
+                       const char* new_yaml, const char* old_yaml,
                        int64_t def) -> int64_t {
-        int64_t v = cfg.getInt(ini_key, INT64_MIN);
+        int64_t v = cfg.getInt(new_ini, INT64_MIN);
         if (v != INT64_MIN) return v;
-        return cfg.getInt(yaml_key, def);
+        v = cfg.getInt(old_ini, INT64_MIN);
+        if (v != INT64_MIN) { legacy_note(old_ini, new_ini); return v; }
+        v = cfg.getInt(new_yaml, INT64_MIN);
+        if (v != INT64_MIN) return v;
+        v = cfg.getInt(old_yaml, INT64_MIN);
+        if (v != INT64_MIN) { legacy_note(old_yaml, new_yaml); return v; }
+        return def;
     };
 
     world::WorldConfig lc;
-    lc.name      = get_str("level.name", "level-name", "world");
-    lc.format    = get_str("level.format", "level-format", "anvil");
-    lc.generator = get_str("level.generator", "generator", "normal");
-    int64_t seed = get_int("level.seed", "level-seed", 0);
+    lc.name      = get_str("world-name", "level-name",
+                           "world.name", "level.name", "world");
+    lc.format    = get_str("world-format", "level-format",
+                           "world.format", "level.format", "anvil");
+    // The generator keeps the precedence it always had: the plain INI
+    // `generator` first, then cursestone.yml. `level-type` / `world-type` are
+    // deliberately NOT read: the shipped server.properties sets
+    // `level-type=DEFAULT`, and wiring that key to the generator would change
+    // the world that existing servers load.
+    lc.generator = cfg.getString("generator", std::string());
+    if (lc.generator.empty()) {
+        lc.generator = cfg.getString("world.generator", std::string());
+        if (lc.generator.empty()) {
+            lc.generator = cfg.getString("level.generator", std::string());
+            if (!lc.generator.empty())
+                legacy_note("level.generator", "world.generator");
+        }
+        if (lc.generator.empty()) lc.generator = "normal";
+    }
+    int64_t seed = get_int("world-seed", "level-seed",
+                           "world.seed", "level.seed", 0);
     lc.seed = (seed != 0) ? (int64_t)seed : (int64_t)mcp_utils_time_ms();
     lc.spawn_x = 0; lc.spawn_y = 64; lc.spawn_z = 0;
     lc.view_distance = view_distance_;
@@ -312,7 +364,7 @@ void Server::start(const std::string& dataPath) {
     async_pool_ = std::make_shared<scheduler::AsyncPool>(async_workers_);
     utils::MainLogger::get().info("Opening network interface...");
     openNetwork();
-    utils::MainLogger::get().info("Loading default level...");
+    utils::MainLogger::get().info("Loading default world...");
     loadDefaultWorld();
     utils::MainLogger::get().info("Starting console command reader...");
     startCommandReader();
@@ -421,7 +473,7 @@ void Server::tick() {
     WorkbenchManager::get().onTickPhase("scheduler",
         (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
 
-    // --- Phase: level ---
+    // --- Phase: world ---
     t0 = std::chrono::steady_clock::now();
     if (world_) world_->tick(currentTick_);
     t1 = std::chrono::steady_clock::now();
@@ -527,7 +579,7 @@ void Server::tick() {
         for (auto& p : psnap) {
             if (p) p->saveData();
         }
-        // Save level metadata (fast — just level.dat)
+        // Save world metadata (fast — just level.dat)
         if (world_) world_->save();  // This calls flushDirty() which now
                                       // saves chunks through the provider
         auto as1 = std::chrono::steady_clock::now();
@@ -622,7 +674,7 @@ int64_t Server::allocateEid() {
 void Server::saveAll() {
     // 1. Save every online player's NBT + inventory FIRST, so any
     //    chunk-modifications they triggered (block place/break) get
-    //    marked dirty on the chunks before the level save runs.
+    //    marked dirty on the chunks before the world save runs.
     auto snap = playersSnapshot();
     for (auto& p : snap) {
         if (p) p->saveData();
@@ -630,7 +682,7 @@ void Server::saveAll() {
     utils::MainLogger::get().info("[SAVE] " + std::to_string(snap.size()) +
         " player(s) saved.");
 
-    // 2. Save the default level — flushes dirty chunks to .mca files
+    // 2. Save the default world — flushes dirty chunks to .mca files
     //    AND writes level.dat (seed/spawn/time) via the provider.
     if (world_) {
         int saved = world_->save();

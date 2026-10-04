@@ -14,8 +14,8 @@
 // we only do that for the auto-clear below, not for manual use.
 //
 // NOTE: we accept this command from BOTH the console and players. The
-// console variant ignores the optional level-name argument Infinity
-// supports because CurseStone currently has exactly one level.
+// console variant ignores the optional world-name argument Infinity
+// supports because CurseStone currently has exactly one world.
 namespace cursestone {
 
 bool WeatherCommand::execute(CommandSender* sender, const std::string& label,
@@ -23,7 +23,7 @@ bool WeatherCommand::execute(CommandSender* sender, const std::string& label,
     (void)label;
     auto* lvl = Server::getInstance().getDefaultWorld();
     if (!lvl) {
-        sender->sendMessage("No default level loaded");
+        sender->sendMessage("No default world loaded");
         return true;
     }
 
