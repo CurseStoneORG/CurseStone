@@ -353,6 +353,25 @@ size_t mcp_rak_session_drain_nack_queue(mcp_rak_session_t* s,
 #define MCP_DATAGRAM_HEADER_BYTES  4
 #define MCP_ENCAP_BASE_BYTES      10   // flags+bitlen+msgIdx+ordIdx+ordChan
 #define MCP_ENCAP_SPLIT_BYTES     10   // splitID+splitIndex+splitCount
+// Per-datagram transport overhead that is NOT part of s->mtu.
+// s->mtu is the maximum IP PACKET size (that is what SessionManager.c
+// advertises in UnconnectedPing: `mtu = len + 28`, i.e. the bytes we sent
+// plus exactly one IPv4 + one UDP header). The send path has to subtract
+// both headers before it fits any RakNet payload into it.
+//
+// BUG THIS FIXES ("stuck on Sincronizando paquetes", Linux host only):
+// the send path treated s->mtu as if it were the UDP payload budget, so a
+// full-size fragment was emitted as 1488 bytes of UDP payload = 1516 bytes
+// on the wire (1488 + 8 UDP + 20 IPv4). That is 16 bytes OVER the 1500-byte
+// Ethernet/IPv4 MTU. Linux sets the don't-fragment bit on UDP datagrams by
+// default (net.ipv4.ip_no_pmtu_disc=0) and DROPS an oversized datagram
+// silently instead of fragmenting it, so every split fragment was lost and
+// no chunk ever arrived — the client sat on the loading screen forever
+// while small packets (chat, keepalive, container updates) kept working.
+// Android survived because its UDP/PMTUD path copes differently on a plain
+// 1500-MTU Wi-Fi link.
+#define MCP_IPV4_HEADER_BYTES     20
+#define MCP_UDP_HEADER_BYTES       8
 
 // Encapsulation: wrap a MCPE payload inside a RakNet encapsulated record
 // inside a DataPacket_4 (0x84) datagram. Returns bytes written, or 0 on error.

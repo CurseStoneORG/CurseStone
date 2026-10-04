@@ -1788,6 +1788,16 @@ static void handle_unconnected(mcp_rak_session_manager_t* sm,
                 return;
             }
         }
+        // Cap by the SERVER's configured MTU as well as the global max.
+        // The client probes with whatever it is willing to accept (usually
+        // the full 1492), but the server may be sitting behind a path with a
+        // smaller MTU — a VPS bridge, a VXLAN/overlay tunnel, WSL2 (1350).
+        // Those send with the don't-fragment bit set, so a 1492-byte IP
+        // packet is DROPPED rather than fragmented and no split ever
+        // completes. Taking min(client, sm->mtu) is what makes the server
+        // work on both a plain LAN and a hosted Linux box.
+        if (sm->mtu && mtu > sm->mtu) mtu = sm->mtu;
+
         s->mtu   = mtu;
         s->state = MCP_SESSION_STATE_CONNECTING_1;
         s->last_activity_ms = mcp_utils_time_ms();
@@ -1818,8 +1828,11 @@ static void handle_unconnected(mcp_rak_session_manager_t* sm,
             return;
         }
 
-        // Clamp MTU like PMMP
+        // Clamp MTU like PMMP, then cap it by the server's own configured
+        // MTU (see the OCR1 handler for why): the client asking for 1492
+        // does not make 1492 safe on every path.
         if (mtu > RAKLIB_MAX_MTU) mtu = RAKLIB_MAX_MTU;
+        if (sm->mtu && mtu > sm->mtu) mtu = sm->mtu;
         if (mtu < RAKLIB_MIN_MTU) mtu = RAKLIB_MIN_MTU;
 
         // FIX (state downgrade): same guard as the OCR1 handler — a
