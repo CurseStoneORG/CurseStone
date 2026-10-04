@@ -117,6 +117,22 @@
 
 namespace cursestone {
 
+// Vanilla MCPE 0.15.10 player eye height (Human::getEyeHeight() == 1.62).
+//
+// RakNet's MovePlayerPacket and MoveEntityPacket carry the EYE altitude on
+// the wire; EVERY other position-carrying packet (StartGame, AddPlayerPacket,
+// SetSpawnPosition, Respawn) and the whole entity/physics model use the FEET.
+// pos_ holds the FEET, exactly like Genisys' Entity::$y — so handleMovePlayer()
+// subtracts this on receive and the two movement packets add it on send.
+//
+// Before this constant existed pos_ stored the raw wire value, i.e. the EYE,
+// which left every feet-based computation 1.62 too high. The item-pickup
+// volume (anchored on the feet) was the visible casualty: its 1.0-below-the-
+// feet reach actually pointed 0.62 ABOVE the real feet, so items resting on
+// the ground could never be collected while items floating at chest height
+// could — the "only my upper half can pick things up" report.
+constexpr double kEyeHeight = 1.62;
+
 // ============================================================
 // Phase 0 — Player construction / destruction
 // ============================================================
@@ -472,7 +488,7 @@ void Player::teleport(double x, double y, double z) {
         auto pk = std::make_shared<network::protocol::MovePlayerPacket>();
         pk->eid = runtimeId();
         pk->x   = (float)pos_.x;
-        pk->y   = (float)pos_.y;
+        pk->y   = (float)(pos_.y + kEyeHeight);   // wire Y is the eye
         pk->z   = (float)pos_.z;
         pk->yaw = yaw_; pk->bodyYaw = yaw_; pk->pitch = pitch_;
         pk->mode = network::protocol::MovePlayerPacket::MODE_RESET;
@@ -1864,14 +1880,18 @@ void Player::handleMovePlayer(double x, double y, double z, float yaw, float pit
     if (!std::isfinite(yaw) || !std::isfinite(pitch)) return;
     // Reject obviously out-of-world Y values.
     if (y < -64.0 || y > 320.0) return;
+    // The wire Y is the EYE altitude (vanilla); pos_ is the FEET. Convert
+    // once and use the feet value everywhere below so the speed check, the
+    // stored position and the fall-distance delta all agree.
+    double ny = y - kEyeHeight;
     // Anti-cheat: rough speed cap (~20 blocks/tick = 400 b/s — very generous).
-    double dx = x - pos_.x, dy = y - pos_.y, dz = z - pos_.z;
+    double dx = x - pos_.x, dy = ny - pos_.y, dz = z - pos_.z;
     double d2 = dx*dx + dy*dy + dz*dz;
     if (d2 > 400.0) {
         // Snap the player back to last known position.
         auto mp = std::make_shared<network::protocol::MovePlayerPacket>();
         mp->eid = runtimeId();
-        mp->x = (float)pos_.x; mp->y = (float)pos_.y; mp->z = (float)pos_.z;
+        mp->x = (float)pos_.x; mp->y = (float)(pos_.y + kEyeHeight); mp->z = (float)pos_.z;
         mp->yaw = yaw_; mp->bodyYaw = yaw_; mp->pitch = pitch_;
         mp->mode = network::protocol::MovePlayerPacket::MODE_RESET;
         sendPacket(mp);
@@ -1890,13 +1910,13 @@ void Player::handleMovePlayer(double x, double y, double z, float yaw, float pit
     // que un jugador entre a una zona protegida.
     {
         auto ev = event::EventManager::get().fire<event::player::PlayerMoveEvent>(
-            this, pos_.x, pos_.y, pos_.z, x, y, z);
+            this, pos_.x, pos_.y, pos_.z, x, ny, z);
         if (ev.isCancelled()) {
             // Revertir: reenviar la posicion ANTERIOR al cliente,
             // igual que la rama de anti-cheat de mas arriba.
             auto mp = std::make_shared<network::protocol::MovePlayerPacket>();
             mp->eid = runtimeId();
-            mp->x = (float)pos_.x; mp->y = (float)pos_.y; mp->z = (float)pos_.z;
+            mp->x = (float)pos_.x; mp->y = (float)(pos_.y + kEyeHeight); mp->z = (float)pos_.z;
             mp->yaw = yaw_; mp->bodyYaw = yaw_; mp->pitch = pitch_;
             mp->mode = network::protocol::MovePlayerPacket::MODE_RESET;
             sendPacket(mp);
@@ -1904,7 +1924,7 @@ void Player::handleMovePlayer(double x, double y, double z, float yaw, float pit
         }
     }
 
-    pos_.x = x; pos_.y = y; pos_.z = z;
+    pos_.x = x; pos_.y = ny; pos_.z = z;
     yaw_ = yaw; pitch_ = pitch;
 
     // ---- Fall-distance tracking (Infinity processMovement) ----
@@ -1941,7 +1961,7 @@ void Player::handleMovePlayer(double x, double y, double z, float yaw, float pit
     if (srv_) {
         auto me = std::make_shared<network::protocol::MoveEntityPacket>();
         me->eid = runtimeId();
-        me->x = (float)pos_.x; me->y = (float)pos_.y; me->z = (float)pos_.z;
+        me->x = (float)pos_.x; me->y = (float)(pos_.y + kEyeHeight); me->z = (float)pos_.z;
         me->yaw = yaw_; me->headYaw = yaw_; me->pitch = pitch_;
         for (auto& other : srv_->playersSnapshot()) {
             if (other.get() == this) continue;
@@ -2771,7 +2791,7 @@ void Player::respawn() {
 
         auto mp = std::make_shared<network::protocol::MovePlayerPacket>();
         mp->eid = runtimeId();
-        mp->x = (float)pos_.x; mp->y = (float)pos_.y; mp->z = (float)pos_.z;
+        mp->x = (float)pos_.x; mp->y = (float)(pos_.y + kEyeHeight); mp->z = (float)pos_.z;
         mp->yaw = yaw_; mp->bodyYaw = yaw_; mp->pitch = pitch_;
         mp->mode = network::protocol::MovePlayerPacket::MODE_RESET;
         sendPacket(mp);
@@ -4278,9 +4298,12 @@ void Player::onUpdate(uint64_t current_tick) {
 // Stub implementations for Nukkit-compat methods
 // ============================================================
 void Player::sendPosition(double x, double y, double z, double yaw, double pitch, uint8_t mode) {
+    // `y` is a FEET coordinate (same convention as teleport()/Genisys'
+    // Player::sendPosition(Vector3 $pos)); the wire MovePlayerPacket needs
+    // the eye altitude.
     auto pk = std::make_shared<network::protocol::MovePlayerPacket>();
     pk->eid = runtimeId();
-    pk->x = (float)x; pk->y = (float)y; pk->z = (float)z;
+    pk->x = (float)x; pk->y = (float)(y + kEyeHeight); pk->z = (float)z;
     pk->yaw = (float)yaw; pk->bodyYaw = (float)yaw; pk->pitch = (float)pitch;
     pk->mode = mode;
     pk->onGround = onGround();
@@ -4453,7 +4476,7 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
     // client (which shows bubbles by camera height) still had full ones,
     // and kept drowning the player in the surface — so diving again
     // hurt as if the air was already spent.
-    int eye_y = (int)std::floor(pos_.y + 1.62f);   // player eye height (0.15)
+    int eye_y = (int)std::floor(pos_.y + kEyeHeight);   // player eye height (0.15)
     uint8_t eye = lvl->getBlockId(bx, eye_y, bz);
     bool in_water = (eye == block::WATER || eye == block::FLOWING_WATER);
     if (in_water) {

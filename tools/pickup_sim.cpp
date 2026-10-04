@@ -217,6 +217,38 @@ printf("\n-- thrown item (Q) and pile behaviour --\n");
     scenario("item 1.5 away, no magnet (out of reach)", {11.5, 67.3, 9.5, 0, 0, 0},
              13.0, 66.0, 9.5, 400, false, false);
 
+    // ---- wire convention --------------------------------------------
+    // MCPE 0.15.10's MovePlayerPacket carries the EYE altitude, not the
+    // feet: Genisys' Player::handleMovePlayer does
+    //     $newPos = new Vector3($packet->x, $packet->y - getEyeHeight(), ...)
+    // and getEyeHeight() is 1.62. Storing the raw wire value in pos_ left
+    // the whole feet-based model 1.62 too high, and the pickup volume
+    // (1.0 below the feet .. 2.8 above) actually reached 0.62 ABOVE the
+    // real feet: an item resting on the ground was out of reach while one
+    // floating at chest height was not — exactly "only the upper half of
+    // my body can pick things up".
+    printf("\n-- wire Y is the eye: pos_ must be the feet --\n");
+    {
+        const double kEyeHeight = 1.62;
+        const double feet = 66.0;
+        const double wireY = feet + kEyeHeight;          // what the client sends
+        Item ground{ 10.5, feet,       9.5, 0, 0, 0, true, 0 };  // on the ground at your feet
+        Item chest { 10.5, feet + 1.4, 9.5, 0, 0, 0, true, 0 };  // at chest height
+        bool old_ground = inPickup(ground, 10.5, wireY, 9.5);      // pos_ = raw wire (old bug)
+        bool new_ground = inPickup(ground, 10.5, wireY - kEyeHeight, 9.5);
+        bool old_chest  = inPickup(chest,  10.5, wireY, 9.5);
+        bool new_chest  = inPickup(chest,  10.5, wireY - kEyeHeight, 9.5);
+        printf("  [%s] ground item: old(pos_=wire)=%-5s new(pos_=feet)=%s\n",
+               (!old_ground && new_ground) ? " OK " : "FAIL",
+               old_ground ? "reach" : "OUT", new_ground ? "reach" : "OUT");
+        printf("  [%s] chest  item: old(pos_=wire)=%-5s new(pos_=feet)=%s\n",
+               (old_chest && new_chest) ? " OK " : "FAIL",
+               old_chest ? "reach" : "OUT", new_chest ? "reach" : "OUT");
+        if (old_ground) ++failures;      // the bug: ground item was reachable with the eye as pos_
+        if (!new_ground) ++failures;     // the fix: ground item must be reachable
+        if (!old_chest || !new_chest) ++failures;
+    }
+
     printf("\n%s (%d failure(s))\n", failures ? "PICKUP SIM: FAIL" : "PICKUP SIM: OK", failures);
     return failures ? 1 : 0;
 }
