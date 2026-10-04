@@ -352,6 +352,12 @@ constexpr double kItemDrag     = 0.02;   // pocketmine\entity\Item::$drag
 constexpr double kItemHalfW    = 0.125;  // width 0.25 / 2
 constexpr double kItemHeight   = 0.25;   // pocketmine\entity\Item::$height
 constexpr double kBlockFriction = 0.6;   // Block::getFrictionFactor()
+// Horizontal pickup reach: player half-width 0.3 (Human $width 0.6) + the
+// 0.5 that checkNearEntities() grows the box by + item half-width 0.125.
+// Shared by Level::tickDroppedItems()'s attraction gate and by the pickup
+// test in Player::onUpdate() — they MUST stay equal or an item can end up
+// neither attracted nor collected.
+constexpr double kPickupReach = 0.925;
 
 // pocketmine\block\Block::$solid. Everything an item can rest on is solid
 // except air, the liquids, fire, cobweb and the decoration blocks.
@@ -398,6 +404,11 @@ void Level::tickDroppedItems(uint64_t current_tick) {
         }
     }
     if (snapshot.empty()) return;
+
+    // The per-item step below no longer needs the tick number: the sync at
+    // the end is driven by "did it move", not by a modulo schedule, so the
+    // client is corrected on the very tick the position changes.
+    (void)current_tick;
 
     for (DroppedItem* di : snapshot) {
         // No physics for an item whose chunk is not loaded (getBlockId
@@ -454,6 +465,59 @@ void Level::tickDroppedItems(uint64_t current_tick) {
             }
         }
 
+        // ---- Vanilla item attraction --------------------------------------
+        // An item LYING ON THE GROUND that is outside a player's pickup
+        // volume but within kAttractRadius is pulled in. This is
+        // Minecraft's own behaviour (items slide to you when you walk up to
+        // them) and it is what makes a PILE collect as a pile: the items
+        // land spread over more than the 1.85-block pickup diameter, so
+        // standing in the middle of them only ever reached one.
+        //
+        // Gated on on_ground on purpose: without it the magnet grabs the
+        // item mid-flight and it never visibly leaves your hand, so you
+        // would never see the toss at all.
+        //
+        // Genisys 0.15 has no attraction, and its checkNearEntities()
+        // tests the player's CACHED boundingBox, which Player::__construct
+        // initialises to the degenerate AxisAlignedBB(0,0,0,0,0,0) and
+        // nothing ever updates (the only writer sits inside a commented-out
+        // block in processMovement). So in that fork the pickup volume
+        // lives at the world origin and a player can never match an item at
+        // all. The gate below is therefore the *intended* Genisys volume
+        // (Human 0.6x1.8 grown by 0.5) anchored to the real position.
+        if (di->on_ground) {
+            constexpr double kAttractRadius = 2.0;
+            constexpr double kAttractSpeed  = 0.35;
+            for (auto& p : Server::getInstance().playersSnapshot()) {
+                if (!p || !p->spawned() || p->isDead()) continue;
+                math::Vector3 pp = p->getNextPosition();
+                // Already collectable from here -> don't drag it through the
+                // floor, the pickup pass this same tick will take it.
+                // The threshold is EXACTLY the one Player::onUpdate()
+                // uses (0.8 player half-width + 0.5 grow + 0.125 item
+                // half-width); anything looser leaves a dead ring where an
+                // item is neither attracted nor picked up.
+                if (std::fabs(di->x - pp.x) < kPickupReach &&
+                    std::fabs(di->z - pp.z) < kPickupReach &&
+                    di->y > pp.y - 0.75 && di->y < pp.y + 2.3) continue;
+                double adx = pp.x - di->x;
+                double ady = (pp.y + 0.9) - di->y;   // converge at the chest
+                double adz = pp.z - di->z;
+                double dist = std::sqrt(adx * adx + ady * ady + adz * adz);
+                if (dist <= 0.0001 || dist > kAttractRadius) continue;
+                double pull = 0.12 * (1.0 - dist / kAttractRadius) + 0.03;
+                di->vx += adx / dist * pull;
+                di->vy += ady / dist * pull;
+                di->vz += adz / dist * pull;
+                double sp = std::sqrt(di->vx * di->vx + di->vy * di->vy + di->vz * di->vz);
+                if (sp > kAttractSpeed) {
+                    double k = kAttractSpeed / sp;
+                    di->vx *= k; di->vy *= k; di->vz *= k;
+                }
+                break;   // one attractor per tick, the closest one
+            }
+        }
+
         // Entity::move() — per-axis clip against the collision cubes of the
         // swept box, then Entity::checkGroundState() + motion cancellation.
         const double movX = di->vx, movY = di->vy, movZ = di->vz;
@@ -492,6 +556,13 @@ void Level::tickDroppedItems(uint64_t current_tick) {
                 }
             }
             di->y += dy;
+            // AxisAlignedBB::offset() mutates the box IN PLACE in PHP, so the
+            // X pass below already sees the Y we just applied (and the Z pass
+            // sees both). Without this the port kept a stale box for the last
+            // two passes and clipped against coordinates the entity no longer
+            // had — items sank into floors and stopped short of walls.
+            bb.minY += dy;
+            bb.maxY += dy;
 
             for (int bx = x0; bx <= x1; ++bx) {
                 for (int by = y0; by <= y1; ++by) {
@@ -514,6 +585,8 @@ void Level::tickDroppedItems(uint64_t current_tick) {
                 }
             }
             di->x += dx;
+            bb.minX += dx;
+            bb.maxX += dx;
 
             for (int bx = x0; bx <= x1; ++bx) {
                 for (int by = y0; by <= y1; ++by) {
@@ -556,12 +629,16 @@ void Level::tickDroppedItems(uint64_t current_tick) {
         if (di->on_ground) di->vy *= -0.5;
     }
 
-    // Entity::updateMovement() — every 5th tick, and only when the entity
-    // actually travelled more than 0.2 blocks (Genisys' 0.04 dead-zone).
-    if (current_tick % 5 != 0) return;
+    // Server-authoritative sync. Genisys only re-broadcasts every 5th tick
+    // and only past a 0.2-block dead-zone, which lets the client keep
+    // rendering an item up to 0.2 blocks away from where the pickup test
+    // actually runs — that gap is the "I am standing right on it and it
+    // does not get picked up" report. The item has to land where the server
+    // says it is, so the correction goes out on every tick it moves.
     for (DroppedItem* di : snapshot) {
         double dx = di->x - di->lx, dy = di->y - di->ly, dz = di->z - di->lz;
-        if (!(dx * dx + dy * dy + dz * dz > 0.04)) continue;
+        if (std::fabs(dx) < 0.0005 && std::fabs(dy) < 0.0005 &&
+            std::fabs(dz) < 0.0005) continue;
         di->lx = di->x; di->ly = di->y; di->lz = di->z;
 
         auto pk = std::make_shared<network::protocol::MoveEntityPacket>();

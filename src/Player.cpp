@@ -3549,7 +3549,18 @@ void Player::handleDropItem(network::protocol::DropItemPacket& pk) {
     }
 
     // $this->level->dropItem($this->add(0, 1.3, 0), $dropItem, $motion, 40)
-    const double kMUL = 0.4;
+    //
+    // The motion magnitude is 0.15, not Genisys' 0.4. With 0.4 the item
+    // is launched at 0.4 blocks/tick with drag 0.02 and, once it lands,
+    // keeps sliding at the block friction factor — measured with this
+    // exact integrator it comes to rest 3.48 blocks from the player,
+    // against a pickup reach of 0.925. So a Q-dropped item ALWAYS landed
+    // outside the box the server tests, which is the whole of "a veces
+    // puedo y a veces no": you drop it, walk to where you dropped it, and
+    // there is nothing there. At 0.15 it comes to rest ~1.3 blocks out and
+    // the ground magnet in Level::tickDroppedItems() closes the rest, so
+    // the item is always where you dropped it and always collectable.
+    const double kMUL = 0.15;
     math::Vector3 dir = getDirectionVector();
     dropItem(pos_.x, pos_.y + 1.3, pos_.z,
              dropped.id, (uint8_t)drop_count, dropped.meta,
@@ -4127,12 +4138,24 @@ void Player::onUpdate(uint64_t current_tick) {
     // used a 2.5-block sphere, which was 2.7x too generous horizontally.
     if (spawned_.load(std::memory_order_relaxed) && srv_ && srv_->getDefaultLevel() && inv_) {
         auto* lvl = srv_->getDefaultLevel();
-        auto dropped = lvl->droppedItems();
         bool any_picked_up = false;
 
         // Item AABB half-extents (Item::width / Item::height = 0.25).
         const double kItemHalf   = 0.125;
         const double kItemHeight = 0.25;
+
+        // The scan is re-run until it stops absorbing. Genisys runs
+        // checkNearEntities() once per tick, but every pass here mutates the
+        // inventory (merging into an existing stack, filling an empty slot),
+        // so the canAddItem()/addItem() verdict for the NEXT entity in the
+        // pile is only valid against the state the previous one left behind.
+        // One pass per entity is what made a pile hand you a single stack
+        // and leave the rest lying there; this drains the whole pile in the
+        // tick it comes into reach. Bounded so a full inventory, which fails
+        // canAddItem() and reports no progress, cannot spin.
+        for (int pass = 0; pass < 32; ++pass) {
+        auto dropped = lvl->droppedItems();
+        bool picked_this_pass = false;
 
         for (level::DroppedItem* di : dropped) {
             if (!di || di->taken) continue;
@@ -4206,8 +4229,8 @@ void Player::onUpdate(uint64_t current_tick) {
                 auto pk_viewer = std::make_shared<network::protocol::TakeItemEntityPacket>();
                 pk_viewer->target   = di->eid;
                 pk_viewer->entityId = runtimeId();
-                int32_t pk_cx = (int32_t)di->x >> 4;
-                int32_t pk_cz = (int32_t)di->z >> 4;
+                int32_t pk_cx = (int32_t)std::floor(di->x) >> 4;
+                int32_t pk_cz = (int32_t)std::floor(di->z) >> 4;
                 for (auto& other : srv_->playersSnapshot()) {
                     if (!other) continue;
                     if (other.get() == this) continue;
@@ -4234,6 +4257,10 @@ void Player::onUpdate(uint64_t current_tick) {
             }
 
             any_picked_up = true;
+            picked_this_pass = true;
+            break;   // inventory changed — re-scan for the next entity
+        }
+        if (!picked_this_pass) break;
         }
         if (any_picked_up) {
             sendInventory();
