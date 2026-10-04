@@ -7,7 +7,7 @@ namespace cursestone {
 bool TimeCommand::execute(CommandSender* sender, const std::string&,
                     const std::vector<std::string>& args) {
     if (args.empty()) {
-        auto* lvl = Server::getInstance().getDefaultLevel();
+        auto* lvl = Server::getInstance().getDefaultWorld();
         if (lvl) sender->sendMessage("Current time: " + std::to_string(lvl->time()));
         return true;
     }
@@ -16,7 +16,7 @@ bool TimeCommand::execute(CommandSender* sender, const std::string&,
         if (args[1] == "day") t = 1000;
         else if (args[1] == "night") t = 13000;
         else { try { t = std::stoi(args[1]); } catch (...) { sender->sendMessage("Invalid time"); return true; } }
-        auto* lvl = Server::getInstance().getDefaultLevel();
+        auto* lvl = Server::getInstance().getDefaultWorld();
         if (lvl) {
             lvl->setTime(t);
             auto pk = std::make_shared<network::protocol::SetTimePacket>();
@@ -28,7 +28,7 @@ bool TimeCommand::execute(CommandSender* sender, const std::string&,
     }
     if (args[0] == "add" && args.size() >= 2) {
         int32_t t; try { t = std::stoi(args[1]); } catch (...) { sender->sendMessage("Invalid value"); return true; }
-        auto* lvl = Server::getInstance().getDefaultLevel();
+        auto* lvl = Server::getInstance().getDefaultWorld();
         if (lvl) { lvl->advanceTime(t); sender->sendMessage("Added " + std::to_string(t) + " to time"); }
         return true;
     }

@@ -14,13 +14,13 @@ int Explosion::explode() {
         // simple attrition — every block reduces remaining power.
         double px = pos_.x + dx, py = pos_.y + dy, pz = pos_.z + dz;
         if (py < 0 || py >= 256) continue;
-        auto lvl = pos_.level();
-        if (!lvl) continue;
-        uint8_t id = lvl->getBlockId((int32_t)px, (int32_t)py, (int32_t)pz);
+        auto world = pos_.world();
+        if (!world) continue;
+        uint8_t id = world->getBlockId((int32_t)px, (int32_t)py, (int32_t)pz);
         if (id == 0 || id == 7) continue; // air/bedrock
         // 30% of blast-resistance randomly skips (matches MCPE feel).
         if ((dx + dy + dz) & 1) continue;
-        lvl->setBlock((int32_t)px, (int32_t)py, (int32_t)pz, 0, 0);
+        world->setBlock((int32_t)px, (int32_t)py, (int32_t)pz, 0, 0);
         ++destroyed;
     }
     return destroyed;

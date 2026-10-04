@@ -190,7 +190,7 @@ void Server::openNetwork() {
     utils::MainLogger::get().info("Network bound to " + ip_ + ":" + std::to_string(port_));
 }
 
-void Server::loadDefaultLevel() {
+void Server::loadDefaultWorld() {
     // Load level name/format/generator from server.properties or cursestone.yml.
     using utils::Config;
     Config cfg;
@@ -233,7 +233,7 @@ void Server::loadDefaultLevel() {
     // Construct the World — this instantiates the WorldProvider (Anvil by
     // default) and calls provider->init(worldDir). The provider creates the
     // region/ subdir if missing and reads level.dat if it exists.
-    level_ = std::make_shared<world::World>(std::move(lc));
+    world_ = std::make_shared<world::World>(std::move(lc));
 
     utils::MainLogger::get().info("World directory: " + worldDir);
     utils::MainLogger::get().info("Region directory: " + regionDir);
@@ -313,7 +313,7 @@ void Server::start(const std::string& dataPath) {
     utils::MainLogger::get().info("Opening network interface...");
     openNetwork();
     utils::MainLogger::get().info("Loading default level...");
-    loadDefaultLevel();
+    loadDefaultWorld();
     utils::MainLogger::get().info("Starting console command reader...");
     startCommandReader();
 
@@ -369,7 +369,7 @@ void Server::runTickLoop() {
     // Cleanup — runs on the MAIN thread, AFTER the tick loop exits.
     // This is critical: /stop is dispatched from the CommandReader
     // thread, so doing saveAll() inside Server::shutdown() would race
-    // with the main thread destroying Server members (mutexes, level_,
+    // with the main thread destroying Server members (mutexes, world_,
     // players_). By deferring all cleanup to here, we guarantee that
     // saveAll() runs single-threaded before any destructor fires.
     // ====================================================================
@@ -423,7 +423,7 @@ void Server::tick() {
 
     // --- Phase: level ---
     t0 = std::chrono::steady_clock::now();
-    if (level_) level_->tick(currentTick_);
+    if (world_) world_->tick(currentTick_);
     t1 = std::chrono::steady_clock::now();
     WorkbenchManager::get().onTickPhase("level",
         (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
@@ -432,7 +432,7 @@ void Server::tick() {
     // Fuera de World::tick para mantener esa fase libre de envíos de
     // packets (el horno manda progreso/contenido a viewers aquí).
     t0 = std::chrono::steady_clock::now();
-    if (level_) level_->tickTiles(currentTick_);
+    if (world_) world_->tickTiles(currentTick_);
     t1 = std::chrono::steady_clock::now();
     WorkbenchManager::get().onTickPhase("tiles",
         (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
@@ -528,7 +528,7 @@ void Server::tick() {
             if (p) p->saveData();
         }
         // Save level metadata (fast — just level.dat)
-        if (level_) level_->save();  // This calls flushDirty() which now
+        if (world_) world_->save();  // This calls flushDirty() which now
                                       // saves chunks through the provider
         auto as1 = std::chrono::steady_clock::now();
         uint64_t as_ms = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(as1 - as0).count();
@@ -551,7 +551,7 @@ void Server::shutdown() {
     // console_reader stop) is deferred to AFTER the tick loop exits
     // in runTickLoop(), because /stop may be dispatched from the
     // CommandReader thread. Doing saveAll() here would race with the
-    // main thread's destructors (mutexes, level_, players_) — causing
+    // main thread's destructors (mutexes, world_, players_) — causing
     // "pthread_mutex_lock called on a destroyed mutex" and lost chunks.
     //
     // EMERGENCY WATCHDOG: if the main tick loop is frozen (e.g. by a
@@ -632,8 +632,8 @@ void Server::saveAll() {
 
     // 2. Save the default level — flushes dirty chunks to .mca files
     //    AND writes level.dat (seed/spawn/time) via the provider.
-    if (level_) {
-        int saved = level_->save();
+    if (world_) {
+        int saved = world_->save();
         utils::MainLogger::get().info("[SAVE] World saved (" +
             std::to_string(saved) + " chunks flushed).");
     }
@@ -730,8 +730,8 @@ static NbtPtr buildDefaultPlayerNbt(Server* srv, const std::string& name) {
     mcp_compound_tag_set_int (root, "playerGameType", srv->gamemode());
     mcp_compound_tag_set_string(root, "NameTag", name.c_str());
     mcp_compound_tag_set_string(root, "Level", "world");
-    if (srv->getDefaultLevel()) {
-        auto sp = srv->getDefaultLevel()->spawn();
+    if (srv->getDefaultWorld()) {
+        auto sp = srv->getDefaultWorld()->spawn();
         mcp_compound_tag_set_int(root, "SpawnX", (int32_t)sp.x);
         mcp_compound_tag_set_int(root, "SpawnY", (int32_t)sp.y);
         mcp_compound_tag_set_int(root, "SpawnZ", (int32_t)sp.z);
@@ -872,8 +872,8 @@ std::vector<Player*> Server::matchPlayer(const std::string& partialName) const {
 }
 
 // --- Nukkit-compat: World management ---
-World* Server::getLevelByName(const std::string& name) const {
-    if (level_ && level_->name() == name) return level_.get();
+World* Server::getWorldByName(const std::string& name) const {
+    if (world_ && world_->name() == name) return world_.get();
     return nullptr;
 }
 

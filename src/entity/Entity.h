@@ -52,7 +52,7 @@ protected:
     float yaw_ = 0.0f, pitch_ = 0.0f;
     bool on_ground_ = false;
     bool closed_ = false;
-    std::shared_ptr<World> level_;
+    std::shared_ptr<World> world_;
 };
 } // namespace
 } // namespace

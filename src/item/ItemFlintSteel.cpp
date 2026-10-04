@@ -61,28 +61,28 @@ void ItemFlintSteel::applyDurability(Player* player) {
 // checkPortalFrameX/Z, fillPortalX/Z — DEAD in v6.
 // Retained as stubs so ItemFlintSteel.h's declaration compiles.
 // ============================================================
-bool ItemFlintSteel::checkPortalFrameX(world::World* /*level*/,
+bool ItemFlintSteel::checkPortalFrameX(world::World* /*world*/,
                                        int32_t /*xMin*/, int32_t /*xMax*/,
                                        int32_t /*yBase*/, int32_t /*yMax*/,
                                        int32_t /*tz*/) {
     return false;  // portal creation disabled in v6
 }
 
-void ItemFlintSteel::fillPortalX(world::World* /*level*/,
+void ItemFlintSteel::fillPortalX(world::World* /*world*/,
                                  int32_t /*xMin*/, int32_t /*xMax*/,
                                  int32_t /*yBase*/, int32_t /*yMax*/,
                                  int32_t /*tz*/) {
     // No-op.
 }
 
-bool ItemFlintSteel::checkPortalFrameZ(world::World* /*level*/,
+bool ItemFlintSteel::checkPortalFrameZ(world::World* /*world*/,
                                        int32_t /*tx*/,
                                        int32_t /*zMin*/, int32_t /*zMax*/,
                                        int32_t /*yBase*/, int32_t /*yMax*/) {
     return false;
 }
 
-void ItemFlintSteel::fillPortalZ(world::World* /*level*/,
+void ItemFlintSteel::fillPortalZ(world::World* /*world*/,
                                  int32_t /*tx*/,
                                  int32_t /*zMin*/, int32_t /*zMax*/,
                                  int32_t /*yBase*/, int32_t /*yMax*/) {
@@ -92,7 +92,7 @@ void ItemFlintSteel::fillPortalZ(world::World* /*level*/,
 // ============================================================
 // tryCreateNetherPortal — DISABLED in v6.
 // ============================================================
-bool ItemFlintSteel::tryCreateNetherPortal(world::World* /*level*/, Player* /*player*/,
+bool ItemFlintSteel::tryCreateNetherPortal(world::World* /*world*/, Player* /*player*/,
                                            int32_t /*tx*/, int32_t /*ty*/, int32_t /*tz*/) {
     return false;  // nether portal creation disabled in v6
 }
@@ -111,14 +111,14 @@ bool ItemFlintSteel::tryCreateNetherPortal(world::World* /*level*/, Player* /*pl
 // NO se llama a scheduleUpdate() — el fuego es un bloque visual
 // estático. No se propaga, no envejece, no se apaga solo.
 // ============================================================
-bool ItemFlintSteel::onActivate(world::World* level, Player* player,
+bool ItemFlintSteel::onActivate(world::World* world, Player* player,
                                 int32_t bx, int32_t by, int32_t bz,
                                 int32_t tx, int32_t ty, int32_t tz,
                                 uint8_t /*face*/) {
-    if (!level || !player) return false;
+    if (!world || !player) return false;
 
-    uint8_t targetId = level->getBlockId(tx, ty, tz);
-    uint8_t airId    = level->getBlockId(bx, by, bz);
+    uint8_t targetId = world->getBlockId(tx, ty, tz);
+    uint8_t airId    = world->getBlockId(bx, by, bz);
 
     // Solo colocar fuego si el destino es AIR y el target es sólido.
     // mirrors PMMP line 145: if($block->getId() === self::AIR && ($target instanceof Solid))
@@ -128,7 +128,7 @@ bool ItemFlintSteel::onActivate(world::World* level, Player* player,
     if (targetId == FLOWING_LAVA  || targetId == LAVA)  return false;
 
     // Colocar el bloque FIRE con meta=0.
-    level->setBlock(bx, by, bz, FIRE, 0);
+    world->setBlock(bx, by, bz, FIRE, 0);
 
     // Broadcast UpdateBlockPacket a los jugadores cercanos.
     if (auto* srv = player->server()) {

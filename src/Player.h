@@ -314,7 +314,7 @@ public:
     // ignored by it as duplicates; the ones it lost now arrive. The actual
     // sending stays inside the usual MAX_CHUNKS_PER_TICK throttle.
     void handleClientSpawnAck() {
-        if (!srv_ || !srv_->getDefaultLevel()) return;
+        if (!srv_ || !srv_->getDefaultWorld()) return;
         {
             std::lock_guard<std::mutex> lk(chunks_mtx_);
             used_chunks_.clear();
@@ -531,7 +531,7 @@ private:
     PlayerConfig cfg_;
     network::AdvancedSourceInterface* adv_iface_ = nullptr;
     std::shared_ptr<inventory::PlayerInventory> inv_;
-    std::shared_ptr<World> level_;
+    std::shared_ptr<World> world_;
     // El contenedor abierto ahora mismo (cofre u horno), tipado por
     // tipo de tile. Solo hay UNO a la vez (ver container_window_id_ /
     // openContainerWindow()). Set por openChestAt()/openFurnaceAt(),

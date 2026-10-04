@@ -2,7 +2,7 @@
 #include "world/World.h"
 namespace cursestone::entity {
 Entity::Entity(int64_t runtime_id, std::shared_ptr<World> lvl)
-    : runtime_id_(runtime_id), level_(std::move(lvl)) {}
+    : runtime_id_(runtime_id), world_(std::move(lvl)) {}
 cursestone::math::AxisAlignedBB Entity::getBoundingBox() const {
     return {pos_.x - 0.3, pos_.y, pos_.z - 0.3,
             pos_.x + 0.3, pos_.y + 1.8, pos_.z + 0.3};

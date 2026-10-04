@@ -90,7 +90,7 @@ void TileFurnace::setFlame(bool lit) {
     if (lit == lit_) return;
     lit_ = lit;
     const int x = (int)pos_.x, y = (int)pos_.y, z = (int)pos_.z;
-    auto* lvl = cursestone::Server::getInstance().getDefaultLevel();
+    auto* lvl = cursestone::Server::getInstance().getDefaultWorld();
     if (!lvl) return;
     if (!lvl->setFurnaceFlame(x, y, z, lit)) return;
     auto pk = std::make_shared<network::protocol::UpdateBlockPacket>();

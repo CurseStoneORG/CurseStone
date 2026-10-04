@@ -6,9 +6,9 @@ namespace cursestone::world { class World; }
 namespace cursestone::event::world {
 class ChunkLoadEvent : public Event {
 public:
-    cursestone::world::World* level;
+    cursestone::world::World* world;
     int chunk_x = 0, chunk_z = 0;
-    ChunkLoadEvent(cursestone::world::World* l = nullptr, int x=0, int z=0) : level(l), chunk_x(x), chunk_z(z) {}
+    ChunkLoadEvent(cursestone::world::World* l = nullptr, int x=0, int z=0) : world(l), chunk_x(x), chunk_z(z) {}
     const std::string& eventName() const override {
         static std::string n = "ChunkLoadEvent"; return n;
     }

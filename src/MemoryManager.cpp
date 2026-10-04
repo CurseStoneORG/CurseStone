@@ -66,7 +66,7 @@ void MemoryManager::collect(bool force) {
     // 1) Chunk GC — free chunks no viewer can see, flushed + saved.
     //    Runs here INSTEAD of Server::tick's own 100-tick sweep: same
     //    amount of work, but on the single coordinated GC schedule.
-    if (world::World* lvl = Server::getInstance().getDefaultLevel()) {
+    if (world::World* lvl = Server::getInstance().getDefaultWorld()) {
         std::vector<world::World::ChunkViewer> viewers;
         {
             auto snap = Server::getInstance().playersSnapshot();
@@ -89,7 +89,7 @@ void MemoryManager::collect(bool force) {
     //    then drop taken entries. The removal happens on the GC's own
     //    schedule, never mid-pickup inside a player's update handler:
     //    this is what fixes the pickup/rollback desync.
-    if (world::World* lvl = Server::getInstance().getDefaultLevel()) {
+    if (world::World* lvl = Server::getInstance().getDefaultWorld()) {
         lvl->collectDroppedItems(tick);
     }
 
