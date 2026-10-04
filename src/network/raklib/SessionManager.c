@@ -678,12 +678,14 @@ static uint32_t reliable_payload_hash(const uint8_t* p, size_t n) {
 
 static void reliable_remember(mcp_rak_session_t* s, uint32_t message_index,
                               const uint8_t* payload, size_t plen) {
-    uint32_t i = s->reliable_seen_next % MCP_RELIABLE_SEEN_SLOTS;
-    s->reliable_seen[i].index = message_index;
-    s->reliable_seen[i].hash  = reliable_payload_hash(payload, plen);
-    s->reliable_seen[i].len   = (uint32_t)plen;
-    s->reliable_seen[i].used  = true;
-    s->reliable_seen_next = i + 1;
+    // Direct-mapped by the SAME modulus reliable_recv_window uses, so the
+    // two structures describe exactly the same index space and can never
+    // disagree about whether a given index is still "in the window".
+    uint32_t slot = message_index % MCP_RELIABLE_WINDOW_SIZE;
+    s->reliable_seen[slot].index = message_index;
+    s->reliable_seen[slot].hash  = reliable_payload_hash(payload, plen);
+    s->reliable_seen[slot].len   = (uint32_t)plen;
+    s->reliable_seen[slot].used  = true;
 }
 
 // True when this exact (index, bytes) pair was already delivered.
@@ -691,14 +693,14 @@ static bool reliable_already_delivered(mcp_rak_session_t* s,
                                        uint32_t message_index,
                                        const uint8_t* payload, size_t plen) {
     if (!payload) return false;
-    uint32_t h = reliable_payload_hash(payload, plen);
-    for (uint32_t i = 0; i < MCP_RELIABLE_SEEN_SLOTS; ++i) {
-        if (!s->reliable_seen[i].used) continue;
-        if (s->reliable_seen[i].index != message_index) continue;
-        if (s->reliable_seen[i].hash == h && s->reliable_seen[i].len == plen)
-            return true;
-    }
-    return false;
+    // O(1) direct lookup — the entry for this index can only ever live at
+    // message_index % MCP_RELIABLE_WINDOW_SIZE, so there is no ring to scan
+    // and no 256-entry blind spot (see the struct's comment in Session.h).
+    uint32_t slot = message_index % MCP_RELIABLE_WINDOW_SIZE;
+    if (!s->reliable_seen[slot].used) return false;
+    if (s->reliable_seen[slot].index != message_index) return false;
+    if (s->reliable_seen[slot].len != (uint32_t)plen) return false;
+    return s->reliable_seen[slot].hash == reliable_payload_hash(payload, plen);
 }
 
 static bool reliable_index_accept(mcp_rak_session_t* s, uint32_t message_index,
@@ -733,11 +735,22 @@ static bool reliable_index_accept(mcp_rak_session_t* s, uint32_t message_index,
             // dropping its traffic silently strands the session before it
             // ever logs in, so let it through instead.
             if (reliable_already_delivered(s, message_index, payload, plen)) {
-                fprintf(stderr,
-                    "[NET] Duplicate reliable message dropped "
-                    "(index=%u, %zu bytes) from %u.%u.%u.%u:%u\n",
-                    message_index, plen,
-                    s->ip[0], s->ip[1], s->ip[2], s->ip[3], s->port);
+                // A genuine retransmit (same index AND same bytes) — the
+                // game layer already saw this message, so dropping it is
+                // correct. Log the FIRST one only; a lossy link can
+                // retransmit constantly and one stderr line per duplicate
+                // would drown the console. The running total is surfaced in
+                // the disconnect dump instead.
+                s->diag_duplicate_dropped++;
+                if (!s->diag_duplicate_logged) {
+                    s->diag_duplicate_logged = true;
+                    fprintf(stderr,
+                        "[NET] Duplicate reliable message dropped "
+                        "(index=%u, %zu bytes) from %u.%u.%u.%u:%u "
+                        "(suppressing further such lines this session)\n",
+                        message_index, plen,
+                        s->ip[0], s->ip[1], s->ip[2], s->ip[3], s->port);
+                }
                 return false;
             }
             reliable_remember(s, message_index, payload, plen);
@@ -1539,34 +1552,49 @@ static void handle_data_packet(mcp_rak_session_manager_t* sm,
                 // dropped — the duplicate check isn't lost, just moved to
                 // where the message it actually describes exists as a
                 // whole.
-                bool duplicate = slot->is_reliable &&
-                                  !reliable_index_accept(s, slot->message_index,
-                                                         NULL, 0);
-                if (!duplicate) {
-                    // Calculate total size
-                    size_t total = 0;
-                    for (uint32_t k = 0; k < slot->count; ++k) {
-                        total += slot->seg_sizes[k];
-                    }
+                // Calculate total size
+                size_t total = 0;
+                for (uint32_t k = 0; k < slot->count; ++k) {
+                    total += slot->seg_sizes[k];
+                }
 
-                    // Concatenate all fragments
-                    uint8_t* reassembled = (uint8_t*)malloc(total);
-                    if (reassembled) {
-                        size_t off = 0;
-                        for (uint32_t k = 0; k < slot->count; ++k) {
-                            if (slot->segments[k]) {
-                                memcpy(reassembled + off, slot->segments[k], slot->seg_sizes[k]);
-                                off += slot->seg_sizes[k];
-                            }
+                // Concatenate all fragments FIRST, so the duplicate check
+                // below can compare real bytes. It used to run BEFORE
+                // reassembly with a NULL payload, and
+                // reliable_already_delivered() bails out on NULL — so the
+                // check was effectively disabled and a retransmitted split
+                // message was handed to the game layer twice.
+                uint8_t* reassembled = (total > 0) ? (uint8_t*)malloc(total) : NULL;
+                if (total == 0) {
+                    // Nothing to deliver (every segment empty) — just retire
+                    // the slot below.
+                } else if (reassembled) {
+                    size_t off = 0;
+                    for (uint32_t k = 0; k < slot->count; ++k) {
+                        if (slot->segments[k]) {
+                            memcpy(reassembled + off, slot->segments[k], slot->seg_sizes[k]);
+                            off += slot->seg_sizes[k];
                         }
-                        // Process the complete reassembled packet — through the
-                        // same ordering gate as non-fragmented packets, using
-                        // the ordering info captured from the first fragment.
+                    }
+                    // The reliable-message duplicate/staleness check belongs
+                    // here and only here for a fragmented message: see the
+                    // long comment in reliable_index_accept(). Now that the
+                    // whole message exists, the real bytes are available and
+                    // a genuine retransmit of an already-delivered split is
+                    // correctly recognized and dropped.
+                    bool duplicate = slot->is_reliable &&
+                                      !reliable_index_accept(s, slot->message_index,
+                                                             reassembled, total);
+                    if (!duplicate) {
+                        // Process the complete reassembled packet — through
+                        // the same ordering gate as non-fragmented packets,
+                        // using the ordering info captured from the first
+                        // fragment.
                         deliver_ordered(sm, s, slot->is_ordered,
                                          slot->order_index, slot->order_channel,
                                          reassembled, total);
-                        free(reassembled);
                     }
+                    free(reassembled);
                 }
                 s->diag_split_completed++;
 
@@ -1622,7 +1650,7 @@ static void log_session_diagnostics(const mcp_rak_session_t* s, const char* reas
         "  recovery_occupied=%u recovery_peak=%u recovery_overwrites=%u (cap=%u)\n"
         "  split_active_now=%u split_completed=%llu split_expired=%u split_evicted=%u\n"
         "  order_hold_active_now=%u order_hold_peak=%u order_hold_full=%u order_duplicate=%u order_forced_skip=%u\n"
-        "  order_index_reuse=%u\n",
+        "  order_index_reuse=%u duplicate_reliable_dropped=%u\n",
         s->ip[0], s->ip[1], s->ip[2], s->ip[3], s->port,
         reason,
         (unsigned long long)(now - s->start_time_ms),
@@ -1639,7 +1667,7 @@ static void log_session_diagnostics(const mcp_rak_session_t* s, const char* reas
         s->diag_split_expired, s->diag_split_evicted,
         order_hold_active_now, s->diag_order_hold_peak,
         s->diag_order_hold_full, s->diag_order_duplicate, s->diag_order_forced_skip,
-        s->diag_order_index_reuse);
+        s->diag_order_index_reuse, s->diag_duplicate_dropped);
 }
 
 // =========================================================================

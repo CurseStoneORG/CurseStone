@@ -240,16 +240,27 @@ typedef struct mcp_rak_session {
     // and silently discarded the rest as "duplicates" — the
     // CLIENT_HANDSHAKE and the LoginPacket never reached the game layer,
     // no session was ever opened, and the log stayed completely empty.
-    // This ring remembers the (index, payload-hash) of recently accepted
+    // This table remembers the (index, payload-hash) of recently accepted
     // messages so a repeat is only dropped when the bytes match too.
-#define MCP_RELIABLE_SEEN_SLOTS 256
+    //
+    // It is DIRECT-MAPPED by `message_index % MCP_RELIABLE_WINDOW_SIZE`
+    // and MUST cover exactly the same index space as reliable_recv_window
+    // above. It used to be a 256-slot ring while the window was 2048:
+    // a retransmit older than 256 messages but still inside the window
+    // found its window bit set yet its payload long since evicted, so
+    // reliable_already_delivered() returned false and the message was
+    // DELIVERED TO THE GAME LAYER A SECOND TIME. That needs real packet
+    // loss to trigger — i.e. it is invisible on a lossless LAN/loopback
+    // and only shows up on a hosted server over the Internet, exactly
+    // where duplicated actions/state hurt most. With one entry per window
+    // slot the lookup is also O(1) instead of a 256-entry scan per
+    // message.
     struct {
         uint32_t index;
         uint32_t hash;
         uint32_t len;
         bool     used;
-    } reliable_seen[MCP_RELIABLE_SEEN_SLOTS];
-    uint32_t  reliable_seen_next;
+    } reliable_seen[MCP_RELIABLE_WINDOW_SIZE];
 
     // Same idea for RELIABLE_ORDERED channels. A stale order_index is
     // normally a retransmit of something already delivered and is dropped;
@@ -301,6 +312,13 @@ typedef struct mcp_rak_session {
     // Packets accepted despite arriving on an already-used order index,
     // i.e. a client that reuses one order index for the whole session.
     uint32_t  diag_order_index_reuse;
+    // Reliable messages dropped as genuine retransmits (same message index
+    // AND same bytes). Surfaced in the disconnect dump so a network that
+    // keeps retransmitting is visible, while only the FIRST one per session
+    // is printed to the console — otherwise a retransmit-happy link floods
+    // stderr with one line per duplicate and buries the real log.
+    uint32_t  diag_duplicate_dropped;
+    bool      diag_duplicate_logged;
 
     // MTU negotiated during handshake
     uint16_t  mtu;
