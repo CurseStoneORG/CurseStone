@@ -21,7 +21,7 @@ namespace cursestone {
 bool WeatherCommand::execute(CommandSender* sender, const std::string& label,
                     const std::vector<std::string>& args) {
     (void)label;
-    auto* lvl = Server::getInstance().getDefaultLevel();
+    auto* lvl = Server::getInstance().getDefaultWorld();
     if (!lvl) {
         sender->sendMessage("No default level loaded");
         return true;

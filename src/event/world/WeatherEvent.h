@@ -12,10 +12,10 @@ namespace cursestone::event::world {
 
 class WeatherEvent : public Event {
 public:
-    cursestone::world::World* level;
+    cursestone::world::World* world;
 
     explicit WeatherEvent(cursestone::world::World* l)
-        : level(l) {}
+        : world(l) {}
 
     const std::string& eventName() const override {
         static std::string n = "WeatherEvent"; return n;

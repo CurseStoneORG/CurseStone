@@ -15,15 +15,15 @@ public:
     double x{0}, y{0}, z{0};
 
     Position() = default;
-    Position(double x, double y, double z, std::shared_ptr<World> lvl = nullptr)
-        : x(x), y(y), z(z), level_(std::move(lvl)) {}
+    Position(double x, double y, double z, std::shared_ptr<World> world = nullptr)
+        : x(x), y(y), z(z), world_(std::move(world)) {}
 
     // Convert to/from the raw C type used by generators and chunk code.
     explicit Position(mcp_vector3_t v) : x(v.x), y(v.y), z(v.z) {}
     mcp_vector3_t toV3() const { return mcp_v3(x, y, z); }
 
-    std::shared_ptr<World> level() const { return level_; }
-    void setLevel(std::shared_ptr<World> l) { level_ = std::move(l); }
+    std::shared_ptr<World> world() const { return world_; }
+    void setWorld(std::shared_ptr<World> l) { world_ = std::move(l); }
 
     double distance(const Position& o) const {
         double dx = x - o.x, dy = y - o.y, dz = z - o.z;
@@ -35,7 +35,7 @@ public:
     }
 
 protected:
-    std::shared_ptr<World> level_;
+    std::shared_ptr<World> world_;
 };
 
 } // namespace cursestone::world

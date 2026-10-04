@@ -50,7 +50,7 @@ public:
     //   face          — cara del target (0=abajo, 1=arriba, 2-5=laterales)
     //
     // Retorna true si se realizó alguna acción (propagando la respuesta al cliente).
-    static bool onActivate(world::World* level, Player* player,
+    static bool onActivate(world::World* world, Player* player,
                            int32_t bx, int32_t by, int32_t bz,   // bloque AIR
                            int32_t tx, int32_t ty, int32_t tz,   // bloque target
                            uint8_t face);
@@ -64,30 +64,30 @@ private:
     // Verifica el rectángulo en el eje X primero, luego en Z.
     // Retorna true si el portal fue creado.
     // mirrors: la lógica de detección x-direction / z-direction de FlintSteel.php
-    static bool tryCreateNetherPortal(world::World* level, Player* player,
+    static bool tryCreateNetherPortal(world::World* world, Player* player,
                                       int32_t tx, int32_t ty, int32_t tz);
 
     // Verifica si hay un marco de obsidiana válido en el plano XY a Z=tz fijo.
     // `xMin/xMax/yMax` son los límites calculados del rectángulo.
     // Retorna true si el techo está completo.
-    static bool checkPortalFrameX(world::World* level,
+    static bool checkPortalFrameX(world::World* world,
                                   int32_t xMin, int32_t xMax,
                                   int32_t yBase, int32_t yMax,
                                   int32_t tz);
 
     // Ídem para el plano ZY a X=tx fijo.
-    static bool checkPortalFrameZ(world::World* level,
+    static bool checkPortalFrameZ(world::World* world,
                                   int32_t tx,
                                   int32_t zMin, int32_t zMax,
                                   int32_t yBase, int32_t yMax);
 
     // Rellena el interior del portal con bloques PORTAL.
-    static void fillPortalX(world::World* level,
+    static void fillPortalX(world::World* world,
                             int32_t xMin, int32_t xMax,
                             int32_t yBase, int32_t yMax,
                             int32_t tz);
 
-    static void fillPortalZ(world::World* level,
+    static void fillPortalZ(world::World* world,
                             int32_t tx,
                             int32_t zMin, int32_t zMax,
                             int32_t yBase, int32_t yMax);

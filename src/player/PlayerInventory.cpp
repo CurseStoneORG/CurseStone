@@ -266,7 +266,7 @@ int64_t Player::dropItem(double x, double y, double z, uint16_t itemId,
     // Register the dropped item in the World's registry so it can be
     // picked up, and so World::tickDroppedItems() can integrate the very
     // same motion the client is integrating.
-    if (srv_->getDefaultLevel()) {
+    if (srv_->getDefaultWorld()) {
         world::DroppedItem di;
         di.eid        = eid;
         di.itemId     = itemId;
@@ -284,7 +284,7 @@ int64_t Player::dropItem(double x, double y, double z, uint16_t itemId,
         // $lastX/$lastY/$lastZ — start at the spawn point so the very
         // first updateMovement() only fires once the item has really moved.
         di.lx = x; di.ly = y; di.lz = z;
-        srv_->getDefaultLevel()->addDroppedItem(di);
+        srv_->getDefaultWorld()->addDroppedItem(di);
     }
 
     if (srv_->advancedLog()) {

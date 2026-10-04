@@ -88,7 +88,7 @@ void Player::onHealthChanged() {
 void Player::tickHungerAndDamage(uint64_t current_tick) {
     if (!spawned_.load(std::memory_order_relaxed)) return;
     if (isDead()) return;
-    auto* lvl = srv_ ? srv_->getDefaultLevel() : nullptr;
+    auto* lvl = srv_ ? srv_->getDefaultWorld() : nullptr;
     if (!lvl) return;
 
     bool creative = isCreative();

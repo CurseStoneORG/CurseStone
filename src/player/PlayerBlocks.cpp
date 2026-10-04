@@ -68,9 +68,9 @@ static std::pair<uint16_t, uint16_t> lookupBlockDrop(uint8_t blockId, uint8_t bl
 
 void Player::handleBlockBreak(int x, int y, int z) {
     if (!spawned_.load(std::memory_order_relaxed)) return;
-    if (!srv_ || !srv_->getDefaultLevel()) return;
+    if (!srv_ || !srv_->getDefaultWorld()) return;
 
-    auto* lvl = srv_->getDefaultLevel();
+    auto* lvl = srv_->getDefaultWorld();
 
     // Reject out-of-world Y values.
     if (y < 0 || y >= 256) return;
@@ -294,7 +294,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
                               int16_t heldItemId, uint8_t heldCount, uint16_t heldDamage,
                               float fx, float fy, float fz) {
     if (!spawned_.load(std::memory_order_relaxed)) return;
-    if (!srv_ || !srv_->getDefaultLevel()) return;
+    if (!srv_ || !srv_->getDefaultWorld()) return;
 
     // ---- Compute placed block position based on face ----
     // This is computed UP FRONT because the flint-and-steel branch below
@@ -314,7 +314,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     }
     if (placeY < 0 || placeY >= 256) return;
 
-    auto* lvl = srv_->getDefaultLevel();
+    auto* lvl = srv_->getDefaultWorld();
 
     // Redstone components such as levers and buttons react to a click
     // before normal item/block placement is considered.

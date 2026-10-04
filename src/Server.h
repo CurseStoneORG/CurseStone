@@ -115,7 +115,7 @@ public:
     void broadcastPacket(/* DataPacket */ void* p);
 
     // World + scheduler + network accessors.
-    World* getDefaultLevel() const { return level_.get(); }
+    World* getDefaultWorld() const { return world_.get(); }
     scheduler::AsyncPool* getAsyncPool() const { return async_pool_.get(); }
     CommandMap* getCommandMap() const { return command_map_.get(); }
     network::Network* getNetwork() const { return network_.get(); }
@@ -155,9 +155,9 @@ public:
     void saveOfflinePlayerData(const std::string& name, NbtPtr nbt);
 
     // --- Nukkit-compat: World management ---
-    World* getLevel(int levelId) const { return (levelId == 1 && level_) ? level_.get() : nullptr; }
-    World* getLevelByName(const std::string& name) const;
-    void setDefaultLevel(std::shared_ptr<World> l) { level_ = std::move(l); }
+    World* getWorld(int worldId) const { return (worldId == 1 && world_) ? world_.get() : nullptr; }
+    World* getWorldByName(const std::string& name) const;
+    void setDefaultWorld(std::shared_ptr<World> l) { world_ = std::move(l); }
 
     // --- Nukkit-compat: Player management ---
     Player* getPlayerExact(const std::string& name) const;
@@ -221,7 +221,7 @@ private:
     void initLogger();
     void registerBlocksAndItems();
     void openNetwork();
-    void loadDefaultLevel();
+    void loadDefaultWorld();
     void startCommandReader();
     void loadOps();
     void saveOps();
@@ -256,7 +256,7 @@ private:
 
     // Subsystems (lazily populated in start()).
     std::shared_ptr<network::Network> network_;
-    std::shared_ptr<World> level_;
+    std::shared_ptr<World> world_;
     std::shared_ptr<CommandMap> command_map_;
     std::shared_ptr<inventory::CraftingManager> crafting_;
     std::shared_ptr<scheduler::AsyncPool> async_pool_;

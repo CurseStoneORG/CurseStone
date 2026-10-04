@@ -321,7 +321,7 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int /*face*/) {
     // server-side que mantener (las 336 recetas ya se mandaron en
     // doFirstSpawn), pero lo logueamos para diagnóstico.
     if (srv_ && srv_->advancedLog() && x != 0 && y != 0 && z != 0) {
-        auto* lvl = srv_->getDefaultLevel();
+        auto* lvl = srv_->getDefaultWorld();
         if (lvl && lvl->getBlockId(x, y, z) == block::WORKBENCH) {
             utils::MainLogger::get().info("[CRAFT] " + cfg_.username +
                 " used crafting table at " +
@@ -514,7 +514,7 @@ void Player::onUpdate(uint64_t current_tick) {
     // FIRST_SPAWN_CHUNK_THRESHOLD actually having been sent — see the
     // comment in sendChunksAroundSpawn().
     bool awaiting_spawn = awaiting_first_spawn_.load(std::memory_order_relaxed);
-    if ((spawned_.load(std::memory_order_relaxed) || awaiting_spawn) && srv_ && srv_->getDefaultLevel()) {
+    if ((spawned_.load(std::memory_order_relaxed) || awaiting_spawn) && srv_ && srv_->getDefaultWorld()) {
         int cx = (int)pos_.x >> 4;
         int cz = (int)pos_.z >> 4;
 
@@ -541,7 +541,7 @@ void Player::onUpdate(uint64_t current_tick) {
         // Compute spiral order for current position (cheap — just coords).
         int vd = cfg_.view_distance;
         auto order = buildChunkSpiral(vd);
-        auto& chunks = srv_->getDefaultLevel()->chunks();
+        auto& chunks = srv_->getDefaultWorld()->chunks();
         std::unordered_set<int64_t> still_in_view;
 
         // Send up to MAX_CHUNKS_PER_TICK unsent chunks. This runs EVERY
@@ -689,8 +689,8 @@ void Player::onUpdate(uint64_t current_tick) {
     // and step down into it. Vanilla reaches a full block below the feet
     // and 1.3 sideways, which collects items anywhere you can stand next
     // to them (or drop them at your feet).
-    if (spawned_.load(std::memory_order_relaxed) && srv_ && srv_->getDefaultLevel() && inv_) {
-        auto* lvl = srv_->getDefaultLevel();
+    if (spawned_.load(std::memory_order_relaxed) && srv_ && srv_->getDefaultWorld() && inv_) {
+        auto* lvl = srv_->getDefaultWorld();
         bool any_picked_up = false;
 
         // The scan is re-run until it stops absorbing. Genisys runs

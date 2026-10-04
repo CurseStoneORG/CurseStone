@@ -34,8 +34,8 @@ namespace cursestone {
 // the comment on World::getTile in World.h).
 // ============================================================
 void Player::openChestAt(int x, int y, int z) {
-    if (!srv_ || !srv_->getDefaultLevel()) return;
-    auto* lvl = srv_->getDefaultLevel();
+    if (!srv_ || !srv_->getDefaultWorld()) return;
+    auto* lvl = srv_->getDefaultWorld();
 
     // Only one container open at a time per player (see openContainerWindow).
     if (open_chest_) {
@@ -138,8 +138,8 @@ void Player::closeOpenChest() {
 // progreso del tick, ContainerOpenPacket tipo FURNACE y volcado de
 // los 3 slots (input / fuel / output).
 void Player::openFurnaceAt(int x, int y, int z) {
-    if (!srv_ || !srv_->getDefaultLevel()) return;
-    auto* lvl = srv_->getDefaultLevel();
+    if (!srv_ || !srv_->getDefaultWorld()) return;
+    auto* lvl = srv_->getDefaultWorld();
 
     // Solo un contenedor abierto por jugador.
     if (open_chest_ || open_furnace_) {
@@ -230,7 +230,7 @@ uint8_t Player::openContainerWindow() {
 // ============================================================
 void Player::handleSignEdit(network::protocol::BlockEntityDataPacket& pk) {
     if (!spawned() || !srv_) return;
-    world::World* lvl = srv_->getDefaultLevel();
+    world::World* lvl = srv_->getDefaultWorld();
     if (!lvl) return;
 
     double dx = (double)pk.x - pos_.x;

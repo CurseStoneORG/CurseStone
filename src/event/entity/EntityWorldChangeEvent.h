@@ -8,12 +8,12 @@ namespace cursestone { namespace world { class World; } }
 namespace cursestone::event::entity {
 class EntityLevelChangeEvent : public EntityEvent, public Cancellable {
 public:
-    cursestone::world::World* level = nullptr;
-    int oldLevelId = 0;
-    int newLevelId = 0;
+    cursestone::world::World* world = nullptr;
+    int oldWorldId = 0;
+    int newWorldId = 0;
 
-    EntityLevelChangeEvent(cursestone::entity::Entity* e, cursestone::world::World* lvl, int oldId, int newId)
-        : EntityEvent(e), level(lvl), oldLevelId(oldId), newLevelId(newId) {}
+    EntityLevelChangeEvent(cursestone::entity::Entity* e, cursestone::world::World* w, int oldId, int newId)
+        : EntityEvent(e), world(w), oldWorldId(oldId), newWorldId(newId) {}
 
     const std::string& eventName() const override {
         static std::string n = "EntityLevelChangeEvent"; return n;
