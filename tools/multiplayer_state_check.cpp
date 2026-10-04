@@ -26,13 +26,19 @@
 //    is local-only), so the fix here is to send it, in the exact layout
 //    Genisys would have used.
 //
+// Build recipe (verified working, exit 0):
+//
 //   g++ -std=c++20 -Wall -Wextra -O1 -Isrc -I/tmp/zstub
-//       (see the build recipe at the bottom of this file)
-//       tools/multiplayer_state_check.cpp \
-//       src/network/protocol/UpdateBlockPacket.cpp \
-//       src/network/protocol/SetEntityDataPacket.cpp \
-//       src/network/protocol/PlayerActionPacket.cpp \
-//       src/utils/Binary.cpp -o /tmp/tools/multiplayer_state_check
+//       tools/multiplayer_state_check.cpp
+//       src/network/protocol/UpdateBlockPacket.cpp
+//       src/network/protocol/SetEntityDataPacket.cpp
+//       src/network/protocol/PlayerActionPacket.cpp
+//       src/network/protocol/DataPacket.cpp
+//       src/utils/Binary.c
+//       -o /tmp/tools/multiplayer_state_check
+//
+//   DataPacket.cpp is required at link time (PacketReader/PacketWriter live
+//   there); Binary.c supplies the varint helpers it calls.
 #include "network/protocol/UpdateBlockPacket.h"
 #include "network/protocol/SetEntityDataPacket.h"
 #include "network/protocol/PlayerActionPacket.h"
