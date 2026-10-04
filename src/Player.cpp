@@ -4115,34 +4115,32 @@ void Player::onUpdate(uint64_t current_tick) {
     tickHungerAndDamage(current_tick);
     moved_this_tick_ = false;   // consumed for this tick
 
-    // 2.5. Pickup nearby dropped items. Mirrors Genisys
-    // Player::checkNearEntities(), which is an AABB test and NOT a sphere:
+    // 2.5. Pickup nearby dropped items — vanilla MCPE 0.15.10 volume.
     //
-    //     foreach($this->level->getNearbyEntities($this->boundingBox->grow(0.5, 0.5, 0.5), $this) as $entity){
-    //         ... elseif($entity instanceof DroppedItem){ if($entity->getPickupDelay() <= 0){ ... } }
-    //     }
+    // Bedrock collects an item as soon as the item's AABB overlaps the
+    // player's AABB grown by ONE block on every axis:
     //
-    // Level::getNearbyEntities() keeps an entity when
-    // $ent->boundingBox->intersectsWith($bb), so the reachable volume is:
+    //   player  [x-0.3, y,     z-0.3] .. [x+0.3, y+1.8, z+0.3]
+    //   grow 1  [x-1.3, y-1.0, z-1.3] .. [x+1.3, y+2.8, z+1.3]
+    //   item    [ix-0.125, iy, iz-0.125] .. [ix+0.125, iy+0.25, iz+0.125]
     //
-    //   player  (Human: width 0.6, height 1.8, feet at pos_)
-    //     AABB = [x-0.3, y,   z-0.3] .. [x+0.3, y+1.8, z+0.3]
-    //     grown by 0.5 on every axis  (pickup reach)
-    //     = [x-0.8, y-0.5, z-0.8] .. [x+0.8, y+2.3, z+0.8]
-    //   item    (Item: width 0.25, height 0.25)
-    //     AABB = [ix-0.125, iy, iz-0.125] .. [ix+0.125, iy+0.25, iz+0.125]
+    // The geometry lives in one place — level::itemWithinPickupVolume()
+    // in Level.h — because Level::tickDroppedItems()'s attraction gate
+    // uses the very same test; when the two disagreed an item could sit
+    // in a dead ring where it was neither attracted nor collected.
     //
-    // AxisAlignedBB::intersectsWith() is a strict overlap on each axis, so
-    // the horizontal reach works out to 0.925 blocks from the player centre
-    // and the vertical band to (pos.y - 0.75, pos.y + 2.3). The old code
-    // used a 2.5-block sphere, which was 2.7x too generous horizontally.
+    // WHY THIS CHANGED (the "only pickable inside the hole" report):
+    // the volume used to be Genisys' checkNearEntities() one, which grows
+    // the box by 0.5 — only 0.8 sideways and 0.5 below the feet. A block
+    // broken on the surface drops its item one block BELOW the feet of
+    // the player standing next to the hole, so it sat just outside that
+    // band and could not be collected; the player had to dig a second hole
+    // and step down into it. Vanilla reaches a full block below the feet
+    // and 1.3 sideways, which collects items anywhere you can stand next
+    // to them (or drop them at your feet).
     if (spawned_.load(std::memory_order_relaxed) && srv_ && srv_->getDefaultLevel() && inv_) {
         auto* lvl = srv_->getDefaultLevel();
         bool any_picked_up = false;
-
-        // Item AABB half-extents (Item::width / Item::height = 0.25).
-        const double kItemHalf   = 0.125;
-        const double kItemHeight = 0.25;
 
         // The scan is re-run until it stops absorbing. Genisys runs
         // checkNearEntities() once per tick, but every pass here mutates the
@@ -4161,21 +4159,8 @@ void Player::onUpdate(uint64_t current_tick) {
             if (!di || di->taken) continue;
             if (di->pickup_delay_ticks > 0) continue;
 
-            // AxisAlignedBB::intersectsWith(playerBB->grow(0.5), itemBB)
-            const double itemMaxX = di->x + kItemHalf;
-            const double itemMinX = di->x - kItemHalf;
-            const double itemMinY = di->y;
-            const double itemMaxY = di->y + kItemHeight;
-            const double itemMaxZ = di->z + kItemHalf;
-            const double itemMinZ = di->z - kItemHalf;
-
-            const double pxMinX = pos_.x - 0.8, pxMaxX = pos_.x + 0.8;
-            const double pyMinY = pos_.y - 0.5, pyMaxY = pos_.y + 2.3;
-            const double pzMinZ = pos_.z - 0.8, pzMaxZ = pos_.z + 0.8;
-
-            if (!(itemMaxX > pxMinX && itemMinX < pxMaxX)) continue;
-            if (!(itemMaxY > pyMinY && itemMinY < pyMaxY)) continue;
-            if (!(itemMaxZ > pzMinZ && itemMinZ < pzMaxZ)) continue;
+            // AxisAlignedBB::intersectsWith(playerBB->grow(1, 1, 1), itemBB)
+            if (!level::itemWithinPickupVolume(*di, pos_.x, pos_.y, pos_.z)) continue;
 
             cursestone::item::ItemStack pickup;
             pickup.id    = di->itemId;

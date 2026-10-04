@@ -349,15 +349,10 @@ namespace {
 
 constexpr double kItemGravity  = 0.04;   // pocketmine\entity\Item::$gravity
 constexpr double kItemDrag     = 0.02;   // pocketmine\entity\Item::$drag
-constexpr double kItemHalfW    = 0.125;  // width 0.25 / 2
-constexpr double kItemHeight   = 0.25;   // pocketmine\entity\Item::$height
 constexpr double kBlockFriction = 0.6;   // Block::getFrictionFactor()
-// Horizontal pickup reach: player half-width 0.3 (Human $width 0.6) + the
-// 0.5 that checkNearEntities() grows the box by + item half-width 0.125.
-// Shared by Level::tickDroppedItems()'s attraction gate and by the pickup
-// test in Player::onUpdate() — they MUST stay equal or an item can end up
-// neither attracted nor collected.
-constexpr double kPickupReach = 0.925;
+// The item box (kItemHalfW / kItemHeight) and the whole pickup volume live
+// in Level.h so the attraction gate below and the pickup scan in
+// Player::onUpdate() share ONE definition of "is this item in reach".
 
 // pocketmine\block\Block::$solid. Everything an item can rest on is solid
 // except air, the liquids, fire, cobweb and the decoration blocks.
@@ -470,7 +465,7 @@ void Level::tickDroppedItems(uint64_t current_tick) {
         // volume but within kAttractRadius is pulled in. This is
         // Minecraft's own behaviour (items slide to you when you walk up to
         // them) and it is what makes a PILE collect as a pile: the items
-        // land spread over more than the 1.85-block pickup diameter, so
+        // land spread over more than the 2-block pickup diameter, so
         // standing in the middle of them only ever reached one.
         //
         // Gated on on_ground on purpose: without it the magnet grabs the
@@ -483,38 +478,44 @@ void Level::tickDroppedItems(uint64_t current_tick) {
         // nothing ever updates (the only writer sits inside a commented-out
         // block in processMovement). So in that fork the pickup volume
         // lives at the world origin and a player can never match an item at
-        // all. The gate below is therefore the *intended* Genisys volume
-        // (Human 0.6x1.8 grown by 0.5) anchored to the real position.
+        // all. The gate below therefore uses the vanilla Bedrock volume
+        // (itemWithinPickupVolume, Level.h) anchored to the real position —
+        // the SAME one Player::onUpdate() collects with.
         if (di->on_ground) {
             constexpr double kAttractRadius = 2.0;
             constexpr double kAttractSpeed  = 0.35;
+            // One attractor per tick: the CLOSEST player. Taking the first
+            // one in the player list instead meant a bystander standing
+            // further away could steal the item while the player walking
+            // up to it watched it slide the wrong way.
+            double best_dist = kAttractRadius;
+            double bdx = 0.0, bdy = 0.0, bdz = 0.0;
+            bool attracted = false;
             for (auto& p : Server::getInstance().playersSnapshot()) {
                 if (!p || !p->spawned() || p->isDead()) continue;
                 math::Vector3 pp = p->getNextPosition();
                 // Already collectable from here -> don't drag it through the
                 // floor, the pickup pass this same tick will take it.
-                // The threshold is EXACTLY the one Player::onUpdate()
-                // uses (0.8 player half-width + 0.5 grow + 0.125 item
-                // half-width); anything looser leaves a dead ring where an
-                // item is neither attracted nor picked up.
-                if (std::fabs(di->x - pp.x) < kPickupReach &&
-                    std::fabs(di->z - pp.z) < kPickupReach &&
-                    di->y > pp.y - 0.75 && di->y < pp.y + 2.3) continue;
+                if (itemWithinPickupVolume(*di, pp.x, pp.y, pp.z)) continue;
                 double adx = pp.x - di->x;
                 double ady = (pp.y + 0.9) - di->y;   // converge at the chest
                 double adz = pp.z - di->z;
                 double dist = std::sqrt(adx * adx + ady * ady + adz * adz);
-                if (dist <= 0.0001 || dist > kAttractRadius) continue;
-                double pull = 0.12 * (1.0 - dist / kAttractRadius) + 0.03;
-                di->vx += adx / dist * pull;
-                di->vy += ady / dist * pull;
-                di->vz += adz / dist * pull;
+                if (dist <= 0.0001 || dist >= best_dist) continue;
+                best_dist = dist;
+                bdx = adx; bdy = ady; bdz = adz;
+                attracted = true;
+            }
+            if (attracted) {
+                double pull = 0.12 * (1.0 - best_dist / kAttractRadius) + 0.03;
+                di->vx += bdx / best_dist * pull;
+                di->vy += bdy / best_dist * pull;
+                di->vz += bdz / best_dist * pull;
                 double sp = std::sqrt(di->vx * di->vx + di->vy * di->vy + di->vz * di->vz);
                 if (sp > kAttractSpeed) {
                     double k = kAttractSpeed / sp;
                     di->vx *= k; di->vy *= k; di->vz *= k;
                 }
-                break;   // one attractor per tick, the closest one
             }
         }
 
