@@ -182,12 +182,11 @@ public:
     // Runs one physics step for every dropped item still on the ground —
     // a port of pocketmine\entity\Item::onUpdate() (Genisys 0.15) plus the
     // Entity::checkObstruction() / Entity::move() / Entity::checkGroundState()
-    // pair it calls, so the server's idea of where an item lies matches the
-    // one the client integrated from the speedX/Y/Z we shipped in
-    // AddItemEntityPacket. Without this the item visibly flies away from
-    // the server's record and can never be picked up.
-    // Every 5th tick it also broadcasts MoveEntityPacket, mirroring
-    // Genisys' `if($currentTick % 5 == 0) $this->updateMovement();`.
+    // pair it calls, plus Minecraft's item-to-player attraction so a pile
+    // collapses onto the player. Every tick an item moves it also emits
+    // MoveEntityPacket, so the server stays authoritative over where an
+    // item is: without that the client renders it a fraction of a block
+    // away from the position Player::onUpdate() tests for pickup.
     void tickDroppedItems(uint64_t current_tick);
     // Tick de block entities (hornos: fundido + fuel + progreso de UI).
     // Llamado UNA VEZ por tick desde Server::tick (fuera de
