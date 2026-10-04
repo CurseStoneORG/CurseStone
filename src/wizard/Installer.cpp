@@ -50,8 +50,8 @@ bool Installer::runWizard() {
     std::string name     = ask(lang.get("installer.name_question"), "CurseStone");
     int max_players      = askInt(lang.get("installer.max_players_question"), 20);
     int port              = askInt(lang.get("installer.port_question"), 19132);
-    std::string level_name = ask(lang.get("installer.level_name_question"), "world");
-    std::string level_type = ask(lang.get("installer.level_type_question"), "normal");
+    std::string world_name = ask(lang.get("installer.world_name_question"), "world");
+    std::string world_type = ask(lang.get("installer.world_type_question"), "normal");
     int gamemode          = askInt(lang.get("installer.gamemode_question"), 0);
     int difficulty        = askInt(lang.get("installer.difficulty_question"), 1);
     bool whitelist        = askYesNo(lang.get("installer.whitelist_question"), false);
@@ -69,10 +69,10 @@ bool Installer::runWizard() {
     cfg.setBool("server.whitelist", whitelist);
     cfg.setBool("server.online-mode", false);
     cfg.setInt("server.view-distance", 8);
-    cfg.setString("level.name", level_name);
-    cfg.setString("level.format", "anvil");
-    cfg.setString("level.generator", level_type);
-    cfg.setInt("level.seed", 0);
+    cfg.setString("world.name", world_name);
+    cfg.setString("world.format", "anvil");
+    cfg.setString("world.generator", world_type);
+    cfg.setInt("world.seed", 0);
 
     fs::create_directories(data_path_);
     bool ok = cfg.saveYaml(data_path_ + "/cursestone.yml");
@@ -101,7 +101,7 @@ server:
   online-mode: false
   view-distance: 8
 
-level:
+world:
   name: "world"
   format: "anvil"
   generator: "normal"

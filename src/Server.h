@@ -5,9 +5,9 @@
 //   1. Boot: load cursestone.yml, init logger, register blocks/items,
 //      create CommandMap + register default commands, create the
 //      default World (overworld), open the RakLibInterface.
-//   2. Tick (every 50ms): advance scheduler, tick level(s), tick
+//   2. Tick (every 50ms): advance scheduler, tick world(s), tick
 //      players, drain RakLib→main FIFO, advance time.
-//   3. Shutdown: disconnect all players, save level(s), close network.
+//   3. Shutdown: disconnect all players, save world(s), close network.
 //
 // Player roster + broadcasting:
 //   - players() returns the list of online Players (read-only).
@@ -60,10 +60,10 @@ public:
     // Run the main tick loop (blocks until shutdown()).
     void runTickLoop();
 
-    // Advance one tick. Dispatches to scheduler, network, level, players.
+    // Advance one tick. Dispatches to scheduler, network, world, players.
     void tick();
 
-    // Cleanly shut down: disconnect players, save level, close sockets.
+    // Cleanly shut down: disconnect players, save world, close sockets.
     void shutdown();
 
     // Registers an external "stop requested" flag for runTickLoop() to
@@ -106,7 +106,7 @@ public:
     // drops and other world entities (mirrors PMMP Entity::$entityCount).
     int64_t allocateEid();
 
-    // Save ALL players + the default level. Called periodically from the
+    // Save ALL players + the default world. Called periodically from the
     // tick loop (auto-save) and on shutdown.
     void saveAll();
 
