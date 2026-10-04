@@ -147,6 +147,30 @@ bool mcp_rak_session_manager_send_encapsulated(mcp_rak_session_manager_t* sm,
     if (!sm || !ip || !payload || plen == 0) return false;
     mcp_rak_session_t* s = mcp_rak_session_manager_find(sm, ip, port);
     if (!s || s->state < MCP_SESSION_STATE_CONNECTING_2) return false;
+    // ---- Flow control: never let one stalled session grow without end.
+    // A client that has stopped acknowledging (crashed, saturated phone,
+    // proxy that stopped forwarding) used to keep the server queueing
+    // MORE reliable data and resending everything it had, at a fixed 5s
+    // cadence, until the 30s timeout: the field dump showed
+    // recovery_occupied=468 with retransmits=5136 for one such client.
+    // Past the ceiling this session is already lost, so refusing the new
+    // data keeps memory, CPU and the shared network thread free for the
+    // players that are actually still there (a healthy client sits in the
+    // tens, so this never fires in normal play).
+    if (s->diag_recovery_occupied >= MCP_MAX_INFLIGHT_RELIABLE) {
+        s->diag_backpressure_drops++;
+        if (!s->diag_backpressure_logged) {
+            s->diag_backpressure_logged = true;
+            fprintf(stderr,
+                "[NET] %u.%u.%u.%u:%u is not acknowledging: %u reliable "
+                "datagrams still un-ACKed (cap %u) — refusing new reliable "
+                "data for this session (drops=%u)\n",
+                s->ip[0], s->ip[1], s->ip[2], s->ip[3], s->port,
+                s->diag_recovery_occupied, (unsigned)MCP_MAX_INFLIGHT_RELIABLE,
+                s->diag_backpressure_drops);
+        }
+        return false;
+    }
     // BUG FIX: Update last_activity_ms when we SEND data to the client.
     // The timeout check uses last_activity_ms to decide if the player is
     // still active. Without this, if the client stops sending game packets
@@ -1223,6 +1247,7 @@ static void handle_encapsulated(mcp_rak_session_manager_t* sm,
         bool is_ping = (pid == 0x00);
 
         s->last_activity_ms = mcp_utils_time_ms();
+        s->diag_datagrams_received++;
         s->is_active = true;
         if (!is_ping) {
             s->last_game_packet_received_ms = s->last_activity_ms;
@@ -1261,6 +1286,23 @@ static void handle_encapsulated(mcp_rak_session_manager_t* sm,
                                                  ipStr, s->port, "client disconnect");
             }
             s->is_disconnecting = true;  // Bug 2 fix: cleanup next tick
+            return;
+        }
+
+        // ---- PONG (0x03): reply to OUR keepalive ping ----
+        // Only the RTT matters. Previously this fell through to the game
+        // layer as if it were a game packet, so a server keepalive reply
+        // was handed to the packet decoder on every single idle ping.
+        if (pid == 0x03 && plen >= 9) {
+            size_t pi = 1;
+            const int64_t id = (int64_t)rb_u64_be(payload, plen, &pi);
+            const uint64_t pong_now = mcp_utils_time_ms();
+            if (s->keepalive_ping_id != 0 && id == s->keepalive_ping_id &&
+                pong_now >= s->keepalive_ping_sent_ms) {
+                s->rtt_ms = (uint32_t)(pong_now - s->keepalive_ping_sent_ms);
+                s->diag_keepalive_pongs++;
+                s->keepalive_ping_id = 0;
+            }
             return;
         }
 
@@ -1647,7 +1689,10 @@ static void log_session_diagnostics(const mcp_rak_session_t* s, const char* reas
         "  since_last_packet_sent_ms=%llu\n"
         "  recv_packets=%llu sent_packets=%llu\n"
         "  ack_received=%llu nack_received=%llu retransmits=%llu\n"
+        "  datagrams_received=%llu since_last_ack_ms=%llu bytes_sent=%llu\n"
         "  recovery_occupied=%u recovery_peak=%u recovery_overwrites=%u (cap=%u)\n"
+        "  inflight_peak=%u backpressure_drops=%u (cap=%u)\n"
+        "  keepalive_pings=%u keepalive_pongs=%u rtt_ms=%u\n"
         "  split_active_now=%u split_completed=%llu split_expired=%u split_evicted=%u\n"
         "  order_hold_active_now=%u order_hold_peak=%u order_hold_full=%u order_duplicate=%u order_forced_skip=%u\n"
         "  order_index_reuse=%u duplicate_reliable_dropped=%u\n",
@@ -1661,8 +1706,14 @@ static void log_session_diagnostics(const mcp_rak_session_t* s, const char* reas
         (unsigned long long)s->diag_recv_packets, (unsigned long long)s->diag_sent_packets,
         (unsigned long long)s->diag_ack_received, (unsigned long long)s->diag_nack_received,
         (unsigned long long)s->diag_retransmits,
+        (unsigned long long)s->diag_datagrams_received,
+        (unsigned long long)(now - s->last_ack_received_ms),
+        (unsigned long long)s->diag_bytes_sent,
         s->diag_recovery_occupied, s->diag_recovery_peak, s->diag_recovery_overwrites,
         (unsigned)MCP_RECOVERY_CAP,
+        s->diag_inflight_peak, s->diag_backpressure_drops,
+        (unsigned)MCP_MAX_INFLIGHT_RELIABLE,
+        s->diag_keepalive_pings, s->diag_keepalive_pongs, s->rtt_ms,
         split_active_now, (unsigned long long)s->diag_split_completed,
         s->diag_split_expired, s->diag_split_evicted,
         order_hold_active_now, s->diag_order_hold_peak,
@@ -1677,6 +1728,18 @@ static void handle_ack(mcp_rak_session_t* s,
                          const uint8_t* data, size_t len) {
     if (len < 3) return;
     s->diag_ack_received++;
+    // An ACK is proof of life: the client is still receiving and
+    // answering. The rest of this file documents last_activity_ms as
+    // "touched by EVERY received datagram — game packets, keepalive PINGs
+    // and ACK/NACKs alike", but ACK/NACK datagrams never touched it, so a
+    // client that was busy acking chunk data and not sending game packets
+    // could still be reaped by the timeout sweep. Make the code match the
+    // contract.
+    const uint64_t now_ack = mcp_utils_time_ms();
+    s->diag_datagrams_received++;
+    s->last_packet_received_ms = now_ack;
+    s->last_activity_ms = now_ack;
+    s->last_ack_received_ms = now_ack;
     size_t i = 1;
     uint16_t count = rb_u16_be(data, len, &i);
     for (uint16_t k = 0; k < count && i < len; ++k) {
@@ -1717,6 +1780,7 @@ static void handle_nack(mcp_rak_session_manager_t* sm, mcp_rak_session_t* s,
                           const uint8_t* data, size_t len) {
     if (len < 3) return;
     s->diag_nack_received++;
+    s->diag_datagrams_received++;
     size_t i = 1;
     uint16_t count = rb_u16_be(data, len, &i);
     for (uint16_t k = 0; k < count && i < len; ++k) {
@@ -1740,6 +1804,7 @@ static void handle_nack(mcp_rak_session_manager_t* sm, mcp_rak_session_t* s,
         }
     }
     // NACKs refresh the alive clock too — same rule as ACKs (AFK-kick fix).
+    s->last_packet_received_ms = mcp_utils_time_ms();
     s->last_activity_ms = mcp_utils_time_ms();
 }
 
@@ -1926,32 +1991,46 @@ static void flush_ack_nack(mcp_rak_session_manager_t* sm,
 }
 
 // =========================================================================
-// Retransmit recovery queue entries older than 5 seconds
+// Retransmit recovery entries that have been silent for too long
+//
+// Three changes over the previous fixed 5s / 32-per-session-per-tick
+// behaviour, all aimed at the same failure: ONE stalled client soaking
+// the single network thread that every player shares.
+//
+//  * a session with nothing in flight skips the 4096-slot scan entirely
+//    (with 20 idle players this used to be 82k useless iterations/tick);
+//  * each entry backs off exponentially (5s, 10s, 20s, 40s) instead of
+//    being retried at the same rate forever;
+//  * the budget is GLOBAL for the whole tick (MCP_RETRANSMIT_MAX_PER_TICK)
+//    and per session on top of that (MCP_RETRANSMIT_MAX_PER_SESSION), so a
+//    session that never acknowledges can never starve the others.
 // =========================================================================
 static void retransmit_stale(mcp_rak_session_manager_t* sm,
-                               mcp_rak_session_t* s) {
+                               mcp_rak_session_t* s,
+                               size_t* global_budget) {
+    if (s->diag_recovery_occupied == 0) return;
+    if (!global_budget || *global_budget == 0) return;
+
     uint64_t now = mcp_utils_time_ms();
-    // FIX #7: cap retransmissions per tick. Recovery now holds up to
-    // MCP_RECOVERY_CAP (4096) slots per session; if a real network drop
-    // leaves a large fraction of them past the 5s staleness threshold at
-    // the same moment, retransmitting all of them in one 10ms tick would
-    // dump a burst of traffic back onto a connection that just
-    // demonstrated it couldn't keep up — making the underlying loss
-    // worse instead of recovering from it. Spreading a large backlog
-    // across several ticks keeps retransmit traffic proportional instead
-    // of bursty.
-#define MAX_RETRANSMITS_PER_TICK 32
-    size_t sent_this_tick = 0;
-    for (size_t k = 0; k < MCP_RECOVERY_CAP && sent_this_tick < MAX_RETRANSMITS_PER_TICK; ++k) {
-        if (!s->recovery[k].data) continue;
-        if ((now - s->recovery[k].send_time_ms) > 5000) {
-            mcp_rak_session_manager_send(sm,
-                s->recovery[k].data, s->recovery[k].len,
-                s->ip, s->port);
-            s->recovery[k].send_time_ms = now;
-            s->diag_retransmits++;
-            ++sent_this_tick;
-        }
+    size_t sent_this_session = 0;
+    for (size_t k = 0; k < MCP_RECOVERY_CAP; ++k) {
+        if (*global_budget == 0) break;
+        if (sent_this_session >= MCP_RETRANSMIT_MAX_PER_SESSION) break;
+        mcp_send_slot_t* slot = &s->recovery[k];
+        if (!slot->data) continue;
+
+        uint64_t interval = MCP_RETRANSMIT_BASE_MS;
+        for (uint8_t i = 0; i < slot->retries && interval < MCP_RETRANSMIT_MAX_MS; ++i)
+            interval *= 2;
+        if (interval > MCP_RETRANSMIT_MAX_MS) interval = MCP_RETRANSMIT_MAX_MS;
+        if ((now - slot->send_time_ms) <= interval) continue;
+
+        mcp_rak_session_manager_send(sm, slot->data, slot->len, s->ip, s->port);
+        slot->send_time_ms = now;
+        if (slot->retries < 255) slot->retries++;
+        s->diag_retransmits++;
+        ++sent_this_session;
+        --(*global_budget);
     }
 }
 
@@ -2001,11 +2080,13 @@ void mcp_rak_session_manager_tick(mcp_rak_session_manager_t* sm) {
 
     // Per-session post-tick: ACK/NACK flush + retransmit + timeout sweep
     uint64_t now = mcp_utils_time_ms();
+    // ONE retransmit budget for the whole tick, shared by every session.
+    size_t retransmit_budget = MCP_RETRANSMIT_MAX_PER_TICK;
     for (size_t i = 0; i < sm->session_count; ) {
         mcp_rak_session_t* s = sm->sessions[i];
 
         flush_ack_nack(sm, s);
-        retransmit_stale(sm, s);
+        retransmit_stale(sm, s, &retransmit_budget);
 
         // FIX: evict an incomplete split-packet reassembly buffer that's
         // been waiting more than 10s for a missing fragment. Without this,
@@ -2053,6 +2134,60 @@ void mcp_rak_session_manager_tick(mcp_rak_session_manager_t* sm) {
         // the AFK kick that players kept reporting.)
         bool should_remove = s->is_disconnecting ||
                              mcp_rak_session_is_timed_out(s, now, MCP_SESSION_TIMEOUT_MS);
+
+        // ---- Server keepalive + liveness instrumentation ---------------
+        // A session that has had nothing to say for MCP_KEEPALIVE_PING_MS
+        // gets a PING and, when the PONG comes back, a real RTT. That is
+        // the only thing that separates "the client died" from "the client
+        // is alive but its uplink is drowning in our chunk data" — the
+        // ambiguity behind every "the second player joins and then the
+        // game closes for everybody" report. The health line prints while
+        // it is happening, not 30 seconds later in a disconnect dump.
+        if (!should_remove && s->state == MCP_SESSION_STATE_CONNECTED &&
+            (now - s->last_packet_sent_ms) >= MCP_KEEPALIVE_PING_MS &&
+            s->diag_recovery_occupied == 0) {
+            const int64_t ping_id = (int64_t)now ^
+                                   ((int64_t)s->port << 32) ^
+                                   (int64_t)MCP_KEEPALIVE_PING_ID_BASE;
+            uint8_t dgram[32];
+            size_t oi = 0;
+            dgram[oi++] = 0x00;          // PING
+            write_i64_be(dgram, &oi, ping_id);
+            uint8_t dp[64];
+            size_t dp_len = mcp_rak_session_build_datagram(s, dp, sizeof(dp),
+                                dgram, oi, MCP_RELIABILITY_UNRELIABLE, 0,
+                                false, 0, 0, 0);
+            if (dp_len > 0) {
+                s->diag_keepalive_pings++;
+                s->keepalive_ping_sent_ms = now;
+                s->keepalive_ping_id = ping_id;
+                sm_send_reply(sm, s, dp, dp_len, s->ip, s->port);
+            }
+        }
+        if (!should_remove &&
+            (now - s->last_health_log_ms) >= MCP_KEEPALIVE_PING_MS) {
+            s->last_health_log_ms = now;
+            // Only flag what is actually wrong: data we sent is still not
+            // acknowledged, or the client has gone completely silent.
+            // "No ACK for 5s" on its own is normal for an idle player
+            // (it has nothing reliable in flight to acknowledge), so it
+            // is printed, not treated as a fault.
+            if (s->diag_recovery_occupied > 0 ||
+                (now - s->last_activity_ms) > MCP_KEEPALIVE_PING_MS) {
+                fprintf(stderr,
+                    "[NET] health %u.%u.%u.%u:%u inflight=%u/%u "
+                    "backpressure_drops=%u since_last_datagram=%llums "
+                    "since_last_ack=%llums rtt=%ums retransmits=%llu "
+                    "keepalive=%u/%u\n",
+                    s->ip[0], s->ip[1], s->ip[2], s->ip[3], s->port,
+                    s->diag_recovery_occupied, (unsigned)MCP_MAX_INFLIGHT_RELIABLE,
+                    s->diag_backpressure_drops,
+                    (unsigned long long)(now - s->last_packet_received_ms),
+                    (unsigned long long)(now - s->last_ack_received_ms),
+                    s->rtt_ms, (unsigned long long)s->diag_retransmits,
+                    s->diag_keepalive_pongs, s->diag_keepalive_pings);
+            }
+        }
         if (should_remove) {
             // Only call on_close_session for timeout — NOT for disconnect
             // (the disconnect handler already called it when 0x15 arrived).

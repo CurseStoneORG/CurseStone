@@ -126,12 +126,53 @@ typedef struct mcp_split_store {
 // even under real-world latency before wraparound can occur.
 #define MCP_RECOVERY_CAP     4096
 
+// ---------------------------------------------------------------------------
+// Flow control + liveness instrumentation (multiplayer hardening).
+//
+// The reliability layer had no ceiling on what it would keep in flight for
+// ONE session: a client that stops acknowledging (crashed client, saturated
+// phone, NAT/proxy that stopped forwarding) made the server keep queueing
+// chunk fragments and then resend every single one of them on a fixed 5s
+// cadence until the 30s timeout finally reaped the session. In the field
+// dump that produced was: recovery_occupied=468, retransmits=5136 for a
+// single stalled client — and because the RakLib thread is ONE thread for
+// every player, that traffic also delays the ACK/PING processing of the
+// OTHER sessions, which is how "one player joins and then everybody gets
+// dropped" happens.
+//
+// The three knobs below bound that:
+//   * MCP_MAX_INFLIGHT_RELIABLE — per-session ceiling on un-ACKed reliable
+//     datagrams. Past it the session is considered stalled: new reliable
+//     data is refused (and counted) instead of queued forever. Chunk
+//     streaming is unaffected for a healthy client (its window stays in
+//     the tens), so this only ever fires on a session that is already lost.
+//   * MCP_RETRANSMIT_MAX_PER_TICK — GLOBAL per-tick retransmit budget
+//     shared by ALL sessions (was: 32 per session per tick, i.e. 6400
+//     datagrams/s with 20 players). One stalled client can no longer
+//     monopolise the network thread.
+//   * MCP_RETRANSMIT_BASE_MS/_MAX_MS — exponential backoff per recovery
+//     entry: a datagram that has already been resent is retried less and
+//     less often instead of every 5s forever.
+// ---------------------------------------------------------------------------
+#define MCP_MAX_INFLIGHT_RELIABLE   512
+#define MCP_RETRANSMIT_BASE_MS      5000
+#define MCP_RETRANSMIT_MAX_MS      40000
+#define MCP_RETRANSMIT_MAX_PER_SESSION  8
+#define MCP_RETRANSMIT_MAX_PER_TICK     24
+// Server-side keepalive: if the server has had nothing to send to a
+// session for this long it pings it and measures the round trip. That
+// RTT is what tells "the client is gone" apart from "the client is alive
+// but its uplink is drowning in our chunk data".
+#define MCP_KEEPALIVE_PING_MS        5000
+#define MCP_KEEPALIVE_PING_ID_BASE   0x4353000000000000LL
+
 // Per-session send queue slot.
 typedef struct mcp_send_slot {
     uint8_t* data;
     size_t   len;
     uint64_t send_time_ms;
     uint32_t seq;
+    uint8_t  retries;   // consecutive resends; drives the backoff above
 } mcp_send_slot_t;
 
 typedef struct mcp_rak_session {
@@ -312,6 +353,28 @@ typedef struct mcp_rak_session {
     // Packets accepted despite arriving on an already-used order index,
     // i.e. a client that reuses one order index for the whole session.
     uint32_t  diag_order_index_reuse;
+
+    // ---- Flow control + liveness (see the constants above) ----
+    // Every datagram of ANY kind received (the old diag_recv_packets only
+    // counted encapsulated game packets, which made a session that was
+    // quietly answering ACK/NACK/PING look like it had stopped talking —
+    // exactly the confusion this block exists to remove).
+    uint64_t  diag_datagrams_received;
+    uint64_t  last_ack_received_ms;
+    uint64_t  diag_bytes_sent;
+    uint32_t  diag_inflight_peak;
+    // Reliable datagrams REFUSED because the session already had
+    // MCP_MAX_INFLIGHT_RELIABLE un-ACKed ones (stalled client).
+    uint32_t  diag_backpressure_drops;
+    bool      diag_backpressure_logged;
+    // Server keepalive: last ping we sent, its id, the RTT it got back
+    // (0 = never answered) and how many were sent/answered.
+    uint64_t  keepalive_ping_sent_ms;
+    int64_t   keepalive_ping_id;
+    uint32_t  rtt_ms;
+    uint32_t  diag_keepalive_pings;
+    uint32_t  diag_keepalive_pongs;
+    uint64_t  last_health_log_ms;
     // Reliable messages dropped as genuine retransmits (same message index
     // AND same bytes). Surfaced in the disconnect dump so a network that
     // keeps retransmitting is visible, while only the FIRST one per session
