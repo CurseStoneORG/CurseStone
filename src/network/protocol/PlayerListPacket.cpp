@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // PlayerListPacket.cpp — encode/decode.
-// PMMP: putByte(type) + putInt(count) + per-entry fields (BE).
+// Genisys 0.15.0: putByte(type) + putInt(count) + per-entry fields (BE),
+// where an ADD entry is uuid, entityId, name, skinId, skinData.
 #include "PlayerListPacket.h"
 
 namespace cursestone::network::protocol {
@@ -14,8 +15,8 @@ void PlayerListPacket::encode(std::vector<uint8_t>& out) const {
         if (type == TYPE_ADD) {
             w.writeI64BE(e.eid);
             w.writeBEString(e.name);
-            w.writeBEString(e.isSlim);
-            w.writeBEString(e.skin);
+            w.writeBEString(e.skinId);
+            w.writeBEString(e.skinData);
         }
     }
 }
@@ -35,8 +36,8 @@ bool PlayerListPacket::decode(const uint8_t* data, size_t len) {
         if (type == TYPE_ADD) {
             if (!r.readI64BE(e.eid))   return false;
             if (!r.readBEString(e.name))  return false;
-            if (!r.readBEString(e.isSlim)) return false;
-            if (!r.readBEString(e.skin))  return false;
+            if (!r.readBEString(e.skinId))   return false;
+            if (!r.readBEString(e.skinData)) return false;
         }
         entries.push_back(std::move(e));
     }

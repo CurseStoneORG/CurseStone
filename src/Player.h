@@ -40,6 +40,12 @@ struct PlayerConfig {
     std::string uuid;
     std::string xuid;             // Xbox Live id (online-mode)
     std::string client_id;        // RakNet GUID string
+    // Skin as the client sent it in its login JWT (Genisys LoginPacket
+    // does base64_decode("SkinData") and keeps "SkinId" verbatim; the
+    // PlayerListPacket entry carries BOTH). Empty only when the client
+    // sent none — Player normalises that to a valid default skin.
+    std::string skin_id;
+    std::string skin_data;
     std::string ip;
     uint16_t port = 0;
     int gamemode = 0;
@@ -55,6 +61,11 @@ public:
 
     // --- IPlayer ---
     std::string getName() const override { return cfg_.username; }
+    // Skin forwarded to the other players' PlayerListPacket entries.
+    // Never empty: a client that sent none gets the default skin built in
+    // handleLoginPacket().
+    const std::string& skinId() const { return cfg_.skin_id; }
+    const std::string& skinData() const { return cfg_.skin_data; }
     bool isOnline() const override { return connected_.load(std::memory_order_relaxed); }
     bool isOp() const override;
     void setOp(bool v) override;

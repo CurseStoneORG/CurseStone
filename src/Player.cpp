@@ -1161,6 +1161,13 @@ void Player::handlePacketError(uint8_t pid, const std::string& what) {
 // ============================================================
 // Phase 3 — handleLogin: validate the LoginPacket
 // ============================================================
+
+// Defined further down next to parseUuidBytes (they belong with the
+// PlayerListPacket/AddPlayerPacket helpers); declared here because the
+// login path is what fills them in.
+static const char* defaultSkinData();
+static const char* defaultSkinId();
+
 void Player::handleLogin(network::protocol::LoginPacket& pk) {
     if (logged_in_.load(std::memory_order_relaxed)) return;
 
@@ -1182,6 +1189,19 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
     cfg_.username = pk.username;
     cfg_.uuid     = pk.clientUUID;
     cfg_.client_id = std::to_string(pk.clientId);
+    // Skin for the PlayerListPacket entries the other players get when
+    // this one joins. The 0.15.10 client ALWAYS ships a skin in its
+    // login JWT; forward it verbatim (that is exactly what Genisys
+    // does), and never let the field go out empty.
+    cfg_.skin_id   = pk.skinId;
+    cfg_.skin_data.assign(pk.skinData.begin(), pk.skinData.end());
+    if (cfg_.skin_data.empty()) {
+        cfg_.skin_id   = defaultSkinId();
+        cfg_.skin_data = defaultSkinData();
+        utils::MainLogger::get().warn(
+            cfg_.username + " sent no skin in its login packet — using the "
+            "default one (an empty skin blob crashes the 0.15.10 client)");
+    }
 
     // 3. Username validation: [a-zA-Z0-9_]{3,16}, disallow "rcon"/"console".
     if (cfg_.username.size() < 3 || cfg_.username.size() > 16) {
@@ -1610,6 +1630,27 @@ static void broadcastBlockChange(cursestone::Server* server, int32_t x, int32_t 
     }
 }
 
+// A valid skin blob for a client that did not send one.
+//
+// The PlayerListPacket entry carries the player's own skin (Genisys
+// LoginPacket: skin = base64_decode("SkinData"), plus "SkinId"), and
+// Human::spawnTo() in the reference implementation REFUSES to spawn an
+// entity whose skin is shorter than 64*32*4 bytes — the 0.15.10 client
+// likewise does not survive an EMPTY skin blob, it crashes. So when the
+// login carried no skin we synthesise a minimal VALID one: a 64x64 RGBA
+// PNG (solid colour), base64'd, wrapped in the skin JSON the 0.15 client
+// expects. 158-byte PNG -> 212 chars of base64 -> 301-byte skin string.
+static const char* defaultSkinData() {
+    static const std::string kData =
+        "{\"skinId\":\"Standard_Custom\",\"data\":\""
+        "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAZUlEQVR42u3QQREAAAQAMHnFkUkv"
+        "cjh7rMCiK+ezECBAgAABAgQIECBAgAABAgQIECBAgAABAgQIECBAgAABAgQIECBAgAABAgQIECBA"
+        "gAABAgQIECBAgAABAgQIECBAgAABAgQIECBAgAABAu5bsTTyhgtuRSIAAAAASUVORK5CYII="
+        "\",\"geometryName\":\"geometry.humanoid.customGeometry1\"}";
+    return kData.c_str();
+}
+static const char* defaultSkinId() { return "Standard_Custom"; }
+
 // Helper: parse a "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" UUID string into
 // 16 raw bytes. Empty input yields zeros. Used by AddPlayerPacket / PlayerListPacket.
 static void parseUuidBytes(const std::string& s, std::array<uint8_t,16>& out) {
@@ -1769,8 +1810,8 @@ void Player::doFirstSpawn() {
             parseUuidBytes(other->config().uuid, e.uuid);
             e.eid    = other->runtimeId();
             e.name   = other->getName();
-            e.isSlim = "false";
-            e.skin   = "";
+            e.skinId   = other->skinId();
+            e.skinData = other->skinData();
             plp->entries.push_back(std::move(e));
         }
         sendPacket(plp);
@@ -1823,8 +1864,8 @@ void Player::doFirstSpawn() {
             parseUuidBytes(cfg_.uuid, e.uuid);
             e.eid    = runtimeId();
             e.name   = getName();
-            e.isSlim = "false";
-            e.skin   = "";
+            e.skinId   = skinId();
+            e.skinData = skinData();
             plp_add->entries.push_back(std::move(e));
         }
 
