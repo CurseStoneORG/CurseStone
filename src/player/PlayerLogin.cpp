@@ -784,6 +784,18 @@ void Player::respawn() {
     sprinting_ = false;
 
     if (spawned_.load(std::memory_order_relaxed)) {
+        // El cliente 0.15.x tira su conjunto de entidades y RECONSTRUYE el
+        // mundo desde los chunks que le mandemos al procesar el
+        // RespawnPacket (ver el comentario de announceSelfToOthers mas
+        // abajo). El mundo que ya tiene cargado no sirve: el ACK de spawn
+        // que viene ahora es informacion nueva ("ya arme el mundo de
+        // nuevo"), asi que hay que rearar el latch de una sola vez para
+        // que handleClientSpawnAck() vuelva a vaciar used_chunks_ y a
+        // re-strear la vista. Sin esto, el latch que se puso para que los
+        // ACKs repetidos no congelaran el horizonte dejaria al jugador
+        // reapareciendo sobre un mundo vacio.
+        spawn_ack_done_.store(false, std::memory_order_relaxed);
+
         auto rp = std::make_shared<network::protocol::RespawnPacket>();
         rp->x = (float)pos_.x; rp->y = (float)pos_.y; rp->z = (float)pos_.z;
         sendPacket(rp);
