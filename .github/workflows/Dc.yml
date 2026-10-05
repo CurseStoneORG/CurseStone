@@ -1,0 +1,70 @@
+name: Discord Commits
+
+on:
+  push:
+    branches:
+      - stable
+
+jobs:
+  discord:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Send commits to Discord
+        env:
+          WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK }}
+          COMMITS_JSON: ${{ toJson(github.event.commits) }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          commits = json.loads(os.environ["COMMITS_JSON"])
+
+          sections = []
+
+          for commit in commits:
+              author = commit.get("author") or {}
+
+              name = author.get("name") or "Unknown"
+              avatar = author.get("avatar_url")
+              message = commit.get("message", "").splitlines()[0]
+              url = commit.get("url", "")
+
+              section = (
+                  f":Libro: **Commit**\n"
+                  f"```text\n"
+                  f"{message}\n"
+                  f"```\n"
+                  f":emoji_24: **Autor:** `{name}`\n"
+                  f"[Ver commit]({url})"
+              )
+
+              sections.append(section)
+
+          embed = {
+              "title": "CurseStone",
+              "description": "\n\n".join(sections),
+              "color": int("252429", 16),
+              "footer": {
+                  "text": "CST - 2026",
+                  "icon_url": "https://github.com/CurseStoneTeam.png"
+              }
+          }
+
+          payload = {
+              "embeds": [embed]
+          }
+
+          request = urllib.request.Request(
+              os.environ["WEBHOOK_URL"],
+              data=json.dumps(payload).encode("utf-8"),
+              headers={
+                  "Content-Type": "application/json"
+              },
+              method="POST"
+          )
+
+          urllib.request.urlopen(request)
+          PY
