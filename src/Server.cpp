@@ -388,6 +388,22 @@ void Server::start(const std::string& dataPath) {
 void Server::runTickLoop() {
     uint64_t last_tick_count = 0;
     auto last_tps_time = std::chrono::steady_clock::now();
+    //
+    // BUG ARREGLADO ("en Linux hay lag y las particulas/items no se
+    // sincronizan; en Android todo va bien"): el bucle dormia
+    // sleep_for(50 - trunc(elapsed_ms)). El truncado a milisegundos
+    // enteros PERDIA la fraccion de cada tick (elapsed=30.9ms dormia
+    // 20ms -> tick de 50.9ms) y el overshoot del scheduler de Linux
+    // sumaba 1-3ms mas: la deriva se ACUMULABA y el servidor caia por
+    // debajo de 20 TPS. Con TPS bajo la simulacion de items del server
+    // va mas lenta que la del cliente (que integra a su propio 20fps):
+    // un item que cae queda en un sitio en el server y en otro en el
+    // cliente, los paquetes de particulas salen tarde y todo "arrastra".
+    //
+    // FIX: calendario ABSOLUTO (sleep_until). next_tick avanza 50ms por
+    // tick SIEMPRE — el overshoot se recupera en el siguiente tick en vez
+    // de acumularse, exactamente como hace PMMP/Genisys con su checkTick.
+    auto next_tick = std::chrono::steady_clock::now();
     while (running_.load(std::memory_order_relaxed)) {
         // Poll the external stop flag (set by main.cpp's SIGINT/SIGTERM
         // handler) on the MAIN thread, in normal — not signal — context.
@@ -402,9 +418,16 @@ void Server::runTickLoop() {
         tick();
         auto elapsed = std::chrono::steady_clock::now() - start_ts;
         auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
-        if (elapsed_ms < CURSESTONE_TICK_MS) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(CURSESTONE_TICK_MS - elapsed_ms));
+        next_tick += std::chrono::milliseconds(CURSESTONE_TICK_MS);
+        if (std::chrono::steady_clock::now() < next_tick) {
+            std::this_thread::sleep_until(next_tick);
+        } else {
+            // Tick sobrepasado (frame lento): reanclar el calendario al
+            // presente para no encadenar una racha de ticks atrasados
+            // (catch-up en rabia) — igual que hace un servidor PMMP.
+            next_tick = std::chrono::steady_clock::now();
         }
+        (void)elapsed_ms;
         // Compute TPS once per second.
         if (currentTick_ - last_tick_count >= 20) {
             auto now = std::chrono::steady_clock::now();
@@ -562,6 +585,23 @@ void Server::tick() {
             ps.push_back(std::move(s));
         }
         diagnostics::Diagnostics::get().updatePlayers(std::move(ps));
+    }
+
+    // --- Phase: batched packet flush ---
+    // ANTI-LAG: vuelca el buffer por tick de cada jugador como UN
+    // BatchPacket comprimido por canal. Todo lo que este tick produjeron
+    // los handlers de red, el world tick y las actualizaciones de jugador
+    // sale aqui agrupado (ver la nota en Player::sendPacket).
+    {
+        auto bpf0 = std::chrono::steady_clock::now();
+        for (auto& p : snap) {
+            if (!p) continue;
+            if (p->isPendingRemoval()) continue;
+            p->flushPendingPackets();
+        }
+        auto bpf1 = std::chrono::steady_clock::now();
+        WorkbenchManager::get().onTickPhase("batch-flush",
+            (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(bpf1 - bpf0).count());
     }
 
     // --- Phase: network (second pass — flush outbound) ---

@@ -39,7 +39,59 @@ namespace cursestone {
 
 // ============================================================
 // Phase 1 — sendPacket: encode a DataPacket and feed it through RakLib
+//
+// ANTI-LAG ("en Linux hay lag y las particulas no se sincronizan; en
+// Android va bien", "que el software vaya veloz en servidores de
+// bajos recursos"): los paquetes YA NO salen de uno en uno. Cada
+// sendPacket() solo CODIFICA el paquete y lo encola en el buffer por
+// tick (batch_unordered_ / batch_ordered_); flushPendingPackets() —
+// llamado una vez por tick desde Server::tick, al cruzar 32 KB
+// pendientes, o en kick() — comprime TODO el lote en UN BatchPacket y
+// lo manda como UN datagrama fiable. Antes cada paquete pagaba su
+// propio zlib (nivel 7) + cabecera de batch + datagrama + ACK: romper
+// un bloque generaba UpdateBlock + LevelEvent(2001) + MoveEntity por
+// cada item, es decir 4-8 datagramas donde con el lote viaja 1. En un
+// servidor publico (RTT real + perdidas) eso multiplicaba el trafico de
+// retransmisiones y retrasaba TODO el trafico del jugador; en hardware
+// modesto el zlib por paquete se comia la CPU. PMMP/Genisys hacen
+// exactamente este agrupado por tick (BatchPacket::addSubPacket).
+// El orden FIFO dentro de cada canal se conserva y los paquetes
+// ordered=true (handshake de login) siguen viajando en su canal
+// RELIABLE_ORDERED propio.
 // ============================================================
+
+namespace {
+
+// Envia `subs` como un UNICO BatchPacket comprimido por el canal
+// indicado. La forma del wire es identica a la del envio individual
+// historico (un batch con un solo subpaquete es byte a byte lo que
+// mandaba el sendPacket antiguo), asi que el cliente no distingue.
+void sendBatchWire(cursestone::network::AdvancedSourceInterface* iface,
+                   const std::string& ip, uint16_t port,
+                   std::vector<std::vector<uint8_t>>& subs, bool ordered) {
+    if (!iface || subs.empty()) return;
+
+    network::protocol::BatchPacket batch;
+    for (auto& sub : subs) batch.addSubPacket(sub);
+
+    std::vector<uint8_t> batchBody;
+    batch.encode(batchBody);
+    if (batchBody.empty()) return;
+
+    // CRITICAL: MCPE clients expect ALL game packets to start with 0xFE.
+    // PMMP RakLibInterface.php: chr(0xfe) . $packet->buffer.
+    // Without this byte the client silently drops every packet from the
+    // server (PlayStatus, StartGame, chunks, etc.) — the player sees
+    // "Connecting..." forever and eventually times out.
+    std::vector<uint8_t> wire;
+    wire.push_back(0xFE);                            // game-packet indicator
+    wire.push_back(cursestone::network::protocol::BATCH_PACKET); // 0x06
+    wire.insert(wire.end(), batchBody.begin(), batchBody.end());
+
+    iface->sendRawPacket(ip, port, wire, ordered);
+}
+
+} // namespace
 
 void Player::sendPacket(std::shared_ptr<network::protocol::DataPacket> p,
                          bool ordered) {
@@ -63,25 +115,37 @@ void Player::sendPacket(std::shared_ptr<network::protocol::DataPacket> p,
     diagnostics::Diagnostics::get().recordPacket(
         /*out=*/true, cfg_.username, p->pid(), body.size());
 
-    // Wrap in a BatchPacket for compression (PMMP semantics). The wire
-    // shape is [0x06][BE int32 compressedLen][zlib([BE int32 subLen][sub])].
-    network::protocol::BatchPacket batch;
-    batch.addSubPacket(body);
-    std::vector<uint8_t> batchBody;
-    batch.encode(batchBody);
-    if (batchBody.empty()) return;
+    bool flush_now = false;
+    {
+        std::lock_guard<std::mutex> lk(batch_mtx_);
+        auto& queue = ordered ? batch_ordered_ : batch_unordered_;
+        batch_bytes_ += body.size();
+        queue.push_back(std::move(body));
+        flush_now = batch_bytes_ >= BATCH_FLUSH_BYTES;
+    }
+    // Un lote que ya cruza el umbral (p.ej. rafaga de chunks) sale ya —
+    // fuera del lock del buffer para no encadenar mutexes.
+    if (flush_now) flushPendingPackets();
+}
 
-    // CRITICAL: MCPE clients expect ALL game packets to start with 0xFE.
-    // PMMP RakLibInterface.php: chr(0xfe) . $packet->buffer.
-    // Without this byte the client silently drops every packet from the
-    // server (PlayStatus, StartGame, chunks, etc.) — the player sees
-    // "Connecting..." forever and eventually times out.
-    std::vector<uint8_t> wire;
-    wire.push_back(0xFE);                          // game-packet indicator
-    wire.push_back(network::protocol::BATCH_PACKET); // 0x06
-    wire.insert(wire.end(), batchBody.begin(), batchBody.end());
+void Player::flushPendingPackets() {
+    if (!connected_.load(std::memory_order_relaxed)) return;
+    if (!adv_iface_) return;
 
-    adv_iface_->sendRawPacket(cfg_.ip, cfg_.port, wire, ordered);
+    std::vector<std::vector<uint8_t>> take_unordered;
+    std::vector<std::vector<uint8_t>> take_ordered;
+    {
+        std::lock_guard<std::mutex> lk(batch_mtx_);
+        if (batch_unordered_.empty() && batch_ordered_.empty()) return;
+        take_unordered.swap(batch_unordered_);
+        take_ordered.swap(batch_ordered_);
+        batch_bytes_ = 0;
+    }
+    // Canal unordered (chunks, entidades, particulas, bloques...) primero:
+    // es el que mas trafico lleva. El ordered (login/spawn) va por su
+    // canal RELIABLE_ORDERED y no comparte orden con el otro canal.
+    sendBatchWire(adv_iface_, cfg_.ip, cfg_.port, take_unordered, /*ordered=*/false);
+    sendBatchWire(adv_iface_, cfg_.ip, cfg_.port, take_ordered,   /*ordered=*/true);
 }
 
 void Player::sendMessage(const std::string& msg) {

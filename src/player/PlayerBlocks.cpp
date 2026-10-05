@@ -165,11 +165,27 @@ void Player::handleBlockBreak(int x, int y, int z) {
 
     // ---- Drops (PMMP `Level::useBreakOn` -> `Level::dropItem`) ----
     // PMMP: only survival players get drops. Creative players skip.
+    //
+    // BUG ARREGLADO ("rompo un bloque de parte superior mia y el item
+    // que cae de arriba no lo puedo recoger"): el drop se generaba en la
+    // ESQUINA del bloque (x, y, z) — la referencia de Genisys/PMMP 0.15
+    // (Level::useBreakOn -> $this->dropItem($vector->add(0.5, 0.5, 0.5),
+    // $drop)) es el CENTRO del bloque. La esquina es la celda compartida
+    // por los 8 bloques vecinos: la AABB del item (half-width 0.125)
+    // nace RODEADA de bloques solidos (la pared del bloque roto, el suelo
+    // vecino...), y al caer un item desde arriba el server lo patea con
+    // checkObstruction() usando std::rand() — el cliente lo patea con SU
+    // propia logica/semilla, asi que ambos terminan simulando caidas
+    // DISTINTAS: tu caminas hacia el item que VES y el server lo tiene en
+    // otro lado, fuera del volumen de recoleccion. Naciendo en el centro
+    // del bloque (celda 100% de aire tras la rotura) no hay obstruccion
+    // ni divergencia: el item cae al mismo sitio en el server y en el
+    // cliente, y el pickup funciona al 100%.
     bool creative = (cfg_.gamemode & 1) != 0;
     if (!creative) {
         auto drop = lookupBlockDrop(blockId, blockData);
         if (drop.first != 0) {
-            dropItem(x, y, z, drop.first, 1, drop.second);
+            dropItem(x + 0.5, y + 0.5, z + 0.5, drop.first, 1, drop.second);
         }
     }
 
