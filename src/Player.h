@@ -302,10 +302,6 @@ public:
     // --- Tick ---
     void onUpdate(uint64_t current_tick);
     // Client spawn ACK (PlayStatus PLAYER_SPAWN). Marks this client as
-    // actually rendering the world; clears used_chunks_ and re-streams
-    // everything in view so any chunk lost during the client's loading
-    // screen gets delivered. See handleDataPacket(PLAY_STATUS_PACKET).
-    // Client spawn ACK (PlayStatus PLAYER_SPAWN). Marks this client as
     // actually rendering the world; clears used_chunks_ and re-centers the
     // streaming queue so any chunk lost during the client's loading screen
     // gets delivered. See handleDataPacket(PLAY_STATUS_PACKET).
@@ -319,8 +315,24 @@ public:
     // onUpdate() re-stream in view is safe: chunks the client DID keep are
     // ignored by it as duplicates; the ones it lost now arrive. The actual
     // sending stays inside the usual MAX_CHUNKS_PER_TICK throttle.
+    //
+    // SOLO EL PRIMER ACK CUENTA (bug de "no puedo ver el terreno al
+    // entrar"). El re-stream arranca DE NUEVO por el centro de la
+    // espiral, asi que vaciar used_chunks_ tira tambien el anillo
+    // exterior ya streamed. Si el cliente vuelve a mandar
+    // PlayStatus(PLAYER_SPAWN) antes de que la espiral termine, el
+    // progreso se reinicia una y otra vez y el horizonte NUNCA crece.
+    // Medido con tools/terrain_check.py mandando un ACK cada 2 s:
+    // distinct se clavaba en 138 de 289 chunks con 750 reenvios, mientras
+    // cada ACK siguiente volvia a tirar todo. El primer ACK es el que
+    // aporta informacion ("ya arme el mundo"); los siguientes no dicen
+    // nada nuevo, asi que se ignoran.
     void handleClientSpawnAck() {
         if (!srv_ || !srv_->getDefaultWorld()) return;
+        // compare_exchange: solo entra el PRIMER ACK; el resto sale aca.
+        bool expected = false;
+        if (!spawn_ack_done_.compare_exchange_strong(expected, true))
+            return;
         {
             std::lock_guard<std::mutex> lk(chunks_mtx_);
             used_chunks_.clear();
@@ -601,6 +613,11 @@ private:
     // Guarded by chunks_mtx_.
     std::unordered_set<int64_t> used_chunks_;
     mutable std::mutex chunks_mtx_;
+    // Ya llego el ACK de spawn del cliente (PlayStatus PLAYER_SPAWN). El
+    // re-stream pre-ACK de handleClientSpawnAck() es de una sola vez: sin
+    // este flag, cada ACK repetido reiniciaba la espiral desde el centro y
+    // el horizonte nunca crecia. Ver el comentario de handleClientSpawnAck().
+    std::atomic<bool> spawn_ack_done_{false};
 
     // Pending chunk request queue (spiral order, set by sendChunksAroundSpawn).
     std::vector<std::pair<int32_t,int32_t>> chunk_queue_;
