@@ -135,6 +135,13 @@ void Player::close(const std::string& reason) {
     }
 
     std::call_once(close_once_, [this, &reason]() {
+        // Vuelca cualquier paquete pendiente del buffer por tick ANTES de
+        // marcar connected_=false: el jugador se va, pero todo lo que el
+        // servidor ya le envió este tick (p.ej. su propio
+        // RemoveEntityPacket broadcast) debe salir de verdad — después del
+        // flip sendPacket()/flushPendingPackets() ya no enviarían nada.
+        flushPendingPackets();
+
         bool expected = true;
         if (!connected_.compare_exchange_strong(expected, false)) {
             // Already closed — just flag for removal (defensive).
@@ -258,6 +265,10 @@ void Player::kick(const std::string& reason, const std::string& detail) {
         auto dp = std::make_shared<network::protocol::DisconnectPacket>();
         dp->message = message;
         sendPacket(dp);
+        // El DisconnectPacket va en el buffer por tick: hay que volcarlo
+        // AHORA, antes de cerrar la sesion RakNet, o el cliente nunca lo
+        // veria (con el envio individual historico salia al instante).
+        flushPendingPackets();
     }
     // Force-close the RakLib session so the client disconnects promptly.
     // This must happen BEFORE close() because close() no longer calls

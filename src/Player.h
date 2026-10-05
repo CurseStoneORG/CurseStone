@@ -277,6 +277,12 @@ public:
     // anything where inter-packet order doesn't matter).
     void sendPacket(std::shared_ptr<network::protocol::DataPacket> p,
                      bool ordered = false);
+    // Vuelca los paquetes pendientes del buffer por tick como UN
+    // BatchPacket por clase de canal (unordered/ordered). Se llama al
+    // final de Server::tick (una vez por tick por jugador), cuando el
+    // buffer cruza BATCH_FLUSH_BYTES, y en kick() para que el
+    // DisconnectPacket salga antes de cerrar la sesion RakNet.
+    void flushPendingPackets();
     void sendMessage(const std::string& msg) override;
     void kick(const std::string& reason = "disconnect.kick");
     // Nukkit-style kick: the DisconnectPacket the client shows on screen
@@ -599,6 +605,33 @@ private:
     // Pending chunk request queue (spiral order, set by sendChunksAroundSpawn).
     std::vector<std::pair<int32_t,int32_t>> chunk_queue_;
     mutable std::mutex queue_mtx_;
+
+    // --- Per-tick outbound packet batching (anti-lag en servidores
+    // publicos de bajos recursos) ---
+    //
+    // BUG ARREGLADO ("en Linux hay lag / las particulas no se
+    // sincronizan; en Android va bien"): antes CADA paquete se
+    // comprimia en SU PROPIO BatchPacket (zlib nivel 7) y viajaba como
+    // SU PROPIO datagrama fiable. Un romper-bloques emite UpdateBlock +
+    // LevelEvent(2001) + MoveEntity por item + ...: en un servidor
+    // publico con RTT real eso multiplica x4-8 el numero de datagramas,
+    // de compresiones zlib y de ACKs — el backlog de retransmisiones
+    // retrasa TODO (particulas, bloques, entidades) y en maquinas de
+    // bajos recursos el zlib por paquete se come la CPU. PMMP/Genisys
+    // agrupan TODOS los paquetes de un tick a un jugador en UN solo
+    // BatchPacket comprimido (BatchPacket::addSubPacket). Este buffer
+    // replica eso: sendPacket() encola el cuerpo ya codificado y el
+    // flush (fin de Server::tick, o umbral de tamaño, o kick) lo envia
+    // como un unico BatchPacket. El orden dentro de cada clase (ordered
+    // channel 0 / unordered channel 1) se conserva FIFO, y los paquetes
+    // ordered (handshake de login) mantienen su canal propio.
+    mutable std::mutex batch_mtx_;
+    std::vector<std::vector<uint8_t>> batch_unordered_;
+    std::vector<std::vector<uint8_t>> batch_ordered_;
+    size_t batch_bytes_ = 0;
+    // Umbral de vuelco inmediato: con 32 KB pendientes ya vale la pena
+    // mandar (equivale a ~un chunk) y acota la memoria de una rafaga.
+    static constexpr size_t BATCH_FLUSH_BYTES = 32 * 1024;
 
     // --- Thread-safe close ---
     // close() may be called from the RakLib network thread (timeout,
