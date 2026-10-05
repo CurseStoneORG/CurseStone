@@ -4,6 +4,7 @@
 #include "block/BlockIds.h"
 #include "network/protocol/UpdateAttributesPacket.h"
 #include "network/protocol/EntityEventPacket.h"
+#include "network/protocol/SetHealthPacket.h"
 #include "event/entity/EntityDamageEvent.h"
 #include <algorithm>
 #include <chrono>
@@ -16,10 +17,26 @@ namespace cursestone {
 // instant this packet arrives. Infinity syncs the HEALTH attribute on
 // EVERY setHealth() call — without this the hearts only moved on regen
 // or food changes and felt stuck for seconds after taking damage.
+//
+// BUG ARREGLADO ("animacion de dano pero no se quitan corazones", dano
+// de caida): en protocolo 84 (MCPE 0.15.10) TODO paquete que apunta al
+// jugador LOCAL viaja con eid = 0 — es exactamente la convencion que ya
+// usa este proyecto para el EntityEventPacket::HURT_ANIMATION (eid=0,
+// la animacion que SI se ve) y para el SetEntityDataPacket de pose
+// propia ("eid = 0, igual que Genisys"). Genisys/PMMP 1.6.2 mandan el
+// UpdateAttributesPacket del jugador local con $pk->eid = 0
+// (Player::sendAttributes). Con eid = runtimeId() el cliente 0.15.10
+// IGNORA el paquete: la vida bajaba en el servidor (por eso la
+// animacion saltaba) pero los corazones se quedaban en 20/20.
+//
+// Junto al atributo se manda tambien un SetHealthPacket con la vida
+// entera — mismo cinturon-y-tirantes que ya usa el pipeline de combate
+// (handleInteract -> SetHealthPacket a la victima), cubriendo clientes
+// que mueven el HUD de corazones por cualquiera de los dos caminos.
 void Player::sendHealthAttribute() {
     if (!connected_.load(std::memory_order_relaxed)) return;
     auto pk = std::make_shared<network::protocol::UpdateAttributesPacket>();
-    pk->eid = runtimeId();
+    pk->eid = 0;   // protocolo 84: eid 0 = el jugador local (Genisys sendAttributes)
     network::protocol::UpdateAttributesPacket::Entry h;
     h.name = "generic.health";
     h.min = 0.0f; h.max = maxHealth();
@@ -27,13 +44,19 @@ void Player::sendHealthAttribute() {
     h.defaultValue = 20.0f;
     pk->entries.push_back(h);
     sendPacket(pk);
+
+    auto sh = std::make_shared<network::protocol::SetHealthPacket>();
+    sh->health = (int32_t)health();
+    sendPacket(sh);
 }
 
 // --- Attribute sync (protocol 84 UpdateAttributesPacket) ---
+// eid = 0: jugador local (ver la nota larga en sendHealthAttribute —
+// el cliente 0.15.10 ignora los atributos que llegan con el runtimeId).
 void Player::sendFoodLevel() {
     if (!connected_.load(std::memory_order_relaxed)) return;
     auto pk = std::make_shared<network::protocol::UpdateAttributesPacket>();
-    pk->eid = runtimeId();
+    pk->eid = 0;   // protocolo 84: eid 0 = el jugador local
     network::protocol::UpdateAttributesPacket::Entry e;
     // EXACT name strings from Infinity's Attribute::init (Genisys/PMMP
     // lineage): the client maps the HUD bars by these identifiers —
@@ -46,10 +69,12 @@ void Player::sendFoodLevel() {
     sendPacket(pk);
 }
 
+// --- Attribute sync (protocol 84 UpdateAttributesPacket) ---
+// eid = 0 + SetHealthPacket de acompanamiento (ver sendHealthAttribute).
 void Player::sendAllAttributes() {
     if (!connected_.load(std::memory_order_relaxed)) return;
     auto pk = std::make_shared<network::protocol::UpdateAttributesPacket>();
-    pk->eid = runtimeId();
+    pk->eid = 0;   // protocolo 84: eid 0 = el jugador local
     network::protocol::UpdateAttributesPacket::Entry h;
     h.name = "generic.health";
     h.min = 0.0f; h.max = maxHealth();
@@ -63,6 +88,10 @@ void Player::sendAllAttributes() {
     f.defaultValue = 20.0f;
     pk->entries.push_back(f);
     sendPacket(pk);
+
+    auto sh = std::make_shared<network::protocol::SetHealthPacket>();
+    sh->health = (int32_t)health();
+    sendPacket(sh);
 }
 
 // Living hook (Living::applyDamage): runs after every non-fatal damage
