@@ -14,6 +14,7 @@ jobs:
         env:
           WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK }}
           COMMITS_JSON: ${{ toJson(github.event.commits) }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python3 - <<'PY'
           import json
@@ -21,6 +22,7 @@ jobs:
           import urllib.request
 
           commits = json.loads(os.environ["COMMITS_JSON"])
+          token = os.environ["GITHUB_TOKEN"]
 
           sections = []
 
@@ -28,9 +30,32 @@ jobs:
               author = commit.get("author") or {}
 
               name = author.get("name") or "Unknown"
-              avatar = author.get("avatar_url")
+              username = author.get("username")
               message = commit.get("message", "").splitlines()[0]
               url = commit.get("url", "")
+
+              avatar = None
+
+              # Obtener avatar real del usuario de GitHub
+              if username:
+                  try:
+                      api_url = f"https://api.github.com/users/{username}"
+
+                      request = urllib.request.Request(
+                          api_url,
+                          headers={
+                              "Authorization": f"Bearer {token}",
+                              "Accept": "application/vnd.github+json"
+                          }
+                      )
+
+                      with urllib.request.urlopen(request) as response:
+                          user_data = json.loads(response.read().decode())
+
+                      avatar = user_data.get("avatar_url")
+
+                  except Exception:
+                      avatar = None
 
               section = (
                   f":Libro: **Commit**\n"
@@ -54,6 +79,7 @@ jobs:
           }
 
           payload = {
+              "username": "CurseStone",
               "embeds": [embed]
           }
 
@@ -66,5 +92,5 @@ jobs:
               method="POST"
           )
 
-          urllib.request.urlopen(request)
-          PY
+          with urllib.request.urlopen(request) as response:
+              print(f"Discord response: {response.status}")
