@@ -196,6 +196,29 @@ int main() {
              {10.5, 65.0, 9.5, 0.0, 0.0, 0.0}, 12.5, 66.0, 9.5, 200, false, false,
              10, 11, 9, 10);
 
+    // ---- THE NEW REPORTED CASE: item FALLS FROM ABOVE ----------------
+    // "rompo un bloque de parte superior mia y el item que cae de arriba
+    // no lo puedo recoger". With the Genisys center-spawn fix the drop
+    // is born at the CENTER of the broken block (x+0.5, y+0.5, z+0.5)
+    // with the default Level::dropItem motion (lcg()*0.2-0.1, 0.2,
+    // lcg()*0.2-0.1), falls past the player and must land inside the
+    // pickup volume. Three variants: straight down onto the player's
+    // feet, one block to the side, and 1.7 blocks to the side (out of
+    // the 1.3+0.125 reach -> the vanilla ground magnet must drag it in).
+    printf("\n-- falling items: broken block ABOVE the player --\n");
+    scenario("ceiling block falls straight onto the player",
+             {11.0, 69.5, 9.5, 0.05, 0.2, -0.03}, 11.0, 66.0, 9.5, 200, true, true);
+    scenario("block above falls 1 block to the side",
+             {11.0, 69.5, 9.5, -0.09, 0.2, 0.0},  10.0, 66.0, 9.5, 200, true, true);
+    scenario("falls 1.7 sideways, magnet drags it in",
+             {11.0, 69.5, 9.5, 0.09, 0.2, 0.0},   12.7, 66.0, 9.5, 300, true, true);
+    scenario("falls 3.0 sideways, out of reach",
+             {11.0, 69.5, 9.5, 0.10, 0.2, 0.0},   15.2, 66.0, 9.5, 300, true, false);
+    // Same geometry WITHOUT the magnet: straight-down and 1-block-away
+    // rests must still be inside the bare pickup volume.
+    scenario("falls onto feet, no magnet needed",
+             {11.0, 69.5, 9.5, 0.0, 0.2, 0.0},    11.0, 66.0, 9.5, 200, false, true);
+
     printf("\n-- reach geometry (pure volume test) --\n");
     volume("item at the feet",                   11.0, 66.0,  9.5, 11.0, 66.0, 9.5, true);
     volume("item 1.0 below the feet (edge)",      11.0, 65.0,  9.5, 11.0, 66.0, 9.5, true);
