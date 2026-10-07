@@ -441,6 +441,12 @@ static void parseUuidBytes(const std::string& s, std::array<uint8_t,16>& out) {
 void Player::doFirstSpawn() {
     if (spawned_.exchange(true)) return;   // idempotent
 
+    // Genisys Player::handleDataPacket (login/spawn): noDamageTicks = 60 —
+    // 3 s de invulnerabilidad al entrar, para que un mob (o un jugador que
+    // ya estaba golpeando) no te mate mientras el cliente todavia esta
+    // armando el mundo.
+    setNoDamageTicks(60);
+
     // Record join time for workbench disconnect diagnostics.
     start_time_ms_ = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
@@ -773,9 +779,14 @@ void Player::respawn() {
     pos_.x = ev.respawnX; pos_.y = ev.respawnY; pos_.z = ev.respawnZ;
     // Reset per-life state.
     air_ticks_ = 300;
-    fall_distance_ = 0.0f;
+    resetFallDistance();
+    extinguish();
     was_on_fire_ = false;
     was_in_lava_ = false;
+    // Genisys Player::respawn(): noDamageTicks = 60 — 3 s de gracia tras
+    // reaparecer (el cliente acaba de re-armar el mundo y no debe comerse
+    // el primer golpe que llegue).
+    setNoDamageTicks(60);
     starve_ticks_ = 0;
     food_tick_timer_ = 0;
     food_depletion_ = 0;
@@ -946,9 +957,10 @@ void Player::onDeath() {
     }
 
     // Cleanup at death: fire goes out, food resets for the next life.
+    extinguish();
     was_on_fire_ = false;
     was_in_lava_ = false;
-    fall_distance_ = 0.0f;
+    resetFallDistance();
     food_saturation_ = 5.0f;
     food_depletion_ = 0;
     food_tick_timer_ = 0;

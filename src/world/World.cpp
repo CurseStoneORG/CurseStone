@@ -24,6 +24,7 @@
 #include "Server.h"
 #include "block/BlockIds.h"
 #include "block/BlockFire.h"
+#include "event/entity/EntityDamageByEntityEvent.h"
 #include "network/protocol/LevelEventPacket.h"
 #include "network/protocol/UpdateBlockPacket.h"
 #include "network/protocol/AddEntityPacket.h"
@@ -1197,7 +1198,16 @@ void World::spawnLightning(double x, double y, double z, bool withFire) {
             const auto& pos = p->getNextPosition();
             if (std::fabs(pos.x - x) > 4.0 || std::fabs(pos.y - y) > 3.0 ||
                 std::fabs(pos.z - z) > 4.0) continue;
-            p->attack(8.0f + (float)(std::rand() % 13));
+            // Genisys Lightning::attack(): EntityDamageByEntityEvent con la
+            // entidad del rayo como atacante y mt_rand(8,20) de dano, que
+            // pasa por el pipeline de armadura del golpeado. Aca el rayo no
+            // se modela como Entity (solo tiene eid), asi que el damager va
+            // nulo: causa, dano y armadura son los mismos, pero sin
+            // modificadores de atacante ni knockback direccional.
+            const float lightning_damage = 8.0f + (float)(std::rand() % 13);  // 8..20
+            event::entity::EntityDamageByEntityEvent ev(
+                nullptr, p.get(), event::entity::DamageCause::LIGHTNING, lightning_damage);
+            p->attack(ev.getFinalDamage(), ev);
             p->setOnFire(3 + std::rand() % 6);
         }
     }
