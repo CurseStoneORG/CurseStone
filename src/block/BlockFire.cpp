@@ -30,6 +30,7 @@
 #include "scheduler/ServerScheduler.h"
 #include "scheduler/Task.h"
 #include "entity/Entity.h"
+#include "event/entity/EntityDamageByBlockEvent.h"
 #include <cstdlib>
 #include <algorithm>
 
@@ -159,11 +160,15 @@ void BlockFire::tryToCatchBlockOnFire(world::World* /*world*/,
 // to the cascade.
 // ============================================================
 void BlockFire::onEntityCollide(world::World* /*world*/,
-                                int32_t /*bx*/, int32_t /*by*/, int32_t /*bz*/,
+                                int32_t bx, int32_t by, int32_t bz,
                                 entity::Entity* entity) {
     if (!entity) return;
-    // TODO: ignorar si entity tiene efecto FIRE_RESISTANCE
-    entity->attack(1);
+    // Genisys/PMMP Fire::onEntityCollide: 1 de dano con CAUSE_FIRE. Entra al
+    // pipeline de dano completo, que es donde el efecto FIRE_RESISTANCE
+    // cancela el golpe (ver Entity::attack).
+    event::entity::EntityDamageByBlockEvent ev(
+        entity, event::entity::DamageCause::FIRE, 1.0f, bx, by, bz);
+    entity->attack(ev.getFinalDamage(), ev);
     entity->setOnFire(8);
 }
 
