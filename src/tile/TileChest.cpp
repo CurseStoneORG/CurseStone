@@ -1,5 +1,6 @@
 #include "TileChest.h"
 #include "item/ItemStack.h"
+#include "item/ItemNbt.h"
 #include "nbt/tag/CompoundTag.h"
 #include "nbt/tag/ListTag.h"
 namespace cursestone::tile {
@@ -18,9 +19,11 @@ void TileChest::removeItem(int slot) {
     dirty_ = true;
 }
 
-// Items serialize as PMMP/Nukkit legacy do: a "Items" ListTag of
+// Items serialize as PMMP/Nukkit legacy do: an "Items" ListTag of
 // per-slot compounds {Slot (byte), id (short), Damage (short),
-// Count (byte)}. Empty slots are skipped entirely (not written as
+// Count (byte), ench (list)} — the item fields themselves come from
+// item::itemStackToNbt()/itemStackFromNbt(), see src/item/ItemNbt.h.
+// Empty slots are skipped entirely (not written as
 // zeroed entries) — that's what PMMP legacy does, and it keeps the
 // list from growing to 27 entries for a chest that only has 2 items
 // in it. On read, any slot not present in the list is left empty,
@@ -35,9 +38,7 @@ void TileChest::writeNBT(mcp_tag_t* tag) const {
         if (slot < 0 || slot >= SIZE) continue;
         mcp_tag_t* entry = mcp_compound_tag_new();
         mcp_compound_tag_set_byte(entry, "Slot", static_cast<int8_t>(slot));
-        mcp_compound_tag_set_short(entry, "id", static_cast<int16_t>(stack.id));
-        mcp_compound_tag_set_short(entry, "Damage", static_cast<int16_t>(stack.meta));
-        mcp_compound_tag_set_byte(entry, "Count", static_cast<int8_t>(stack.count));
+        item::itemStackToNbt(stack, entry);
         mcp_list_tag_append(items, entry);
     }
     mcp_compound_tag_set(tag, "Items", items);
@@ -54,11 +55,10 @@ void TileChest::readNBT(const mcp_tag_t* tag) {
         if (!entry || mcp_tag_get_type(entry) != MCP_TAG_COMPOUND) continue;
         int slot = mcp_compound_tag_get_byte(entry, "Slot", -1);
         if (slot < 0 || slot >= SIZE) continue;
-        cursestone::item::ItemStack stack;
-        stack.id = static_cast<uint16_t>(mcp_compound_tag_get_short(entry, "id", 0));
-        stack.meta = static_cast<uint8_t>(mcp_compound_tag_get_short(entry, "Damage", 0));
-        stack.count = mcp_compound_tag_get_byte(entry, "Count", 0);
-        if (stack.isEmpty()) continue;
+        // id / Count / Damage + enchantments, shared with every other
+        // container (src/item/ItemNbt.h).
+        item::ItemStack stack;
+        if (!item::itemStackFromNbt(entry, stack)) continue;
         inventory_->setItem(slot, stack);
     }
     dirty_ = false;  // just loaded from disk, nothing unsaved yet

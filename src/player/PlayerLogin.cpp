@@ -28,6 +28,7 @@
 #include "nbt/tag/CompoundTag.h"
 #include "nbt/tag/ListTag.h"
 #include "nbt/tag/Tag.h"
+#include "item/ItemNbt.h"
 #include "utils/MainLogger.hpp"
 #include <algorithm>
 #include <array>
@@ -233,15 +234,13 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
                     const mcp_tag_t* entry = mcp_list_tag_get(inv_tag, i);
                     if (!entry ||
                         mcp_tag_get_type(entry) != MCP_TAG_COMPOUND) continue;
-                    int8_t  nbt_slot = mcp_compound_tag_get_byte(
+                    int8_t nbt_slot = mcp_compound_tag_get_byte(
                         entry, "Slot", -1);
-                    int16_t id       = mcp_compound_tag_get_short(
-                        entry, "id", 0);
-                    int8_t  count    = mcp_compound_tag_get_byte(
-                        entry, "Count", 1);
-                    int16_t damage   = mcp_compound_tag_get_short(
-                        entry, "Damage", 0);
-                    if (id == 0 || count <= 0) continue;
+                    // id / Count / Damage + the "ench" list in one shared
+                    // reader (src/item/ItemNbt.h). `false` is the old
+                    // "id == 0 || count <= 0" empty-entry guard.
+                    item::ItemStack it;
+                    if (!item::itemStackFromNbt(entry, it)) continue;
 
                     int dest_slot = -1;
                     if (nbt_slot >= 0 && nbt_slot < 36) {
@@ -284,10 +283,6 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
                     // públicos).
                     if (dest_slot >= 0 &&
                         dest_slot < inventory::PLAYER_INV_TOTAL) {
-                        item::ItemStack it;
-                        it.id    = (uint16_t)id;
-                        it.meta  = (uint8_t)damage;
-                        it.count = count;
                         inv_->setItem(dest_slot, it);
                         ++loaded;
                     }
