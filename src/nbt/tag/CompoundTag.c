@@ -179,3 +179,20 @@ bool mcp_compound_tag_contains(const mcp_tag_t* self, const char* name) {
     if (!self || self->type != MCP_TAG_COMPOUND || !name) return false;
     return find_entry((const mcp_compound_tag_t*)self, name) >= 0;
 }
+
+bool mcp_compound_tag_remove(mcp_tag_t* self, const char* name) {
+    if (!self || self->type != MCP_TAG_COMPOUND || !name) return false;
+    mcp_compound_tag_t* t = (mcp_compound_tag_t*)self;
+    int idx = find_entry(t, name);
+    if (idx < 0) return false;
+    free(t->entries[idx].name);
+    mcp_tag_destroy(t->entries[idx].tag);
+    // Shift the tail down so the insertion order of the survivors is kept
+    // (the writer emits entries in array order, so a hole would reorder the
+    // serialized tag).
+    for (size_t i = (size_t)idx + 1; i < t->count; ++i) {
+        t->entries[i - 1] = t->entries[i];
+    }
+    t->count--;
+    return true;
+}
