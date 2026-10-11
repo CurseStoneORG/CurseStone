@@ -283,15 +283,21 @@ int main() {
     }
 
     // ---------------------------------------------------------------
-    // 9. Dano de caida (Genisys Entity::fall).
+    // 9. Dano de caida.
+    //
+    // Formula PORTADA DE SSMG64/PocketEdition
+    // (handheld/src/world/entity/Mob.cpp::causeFallDamage):
+    //     int dmg = (int) ceil(distance - 3); if (dmg > 0) hurt(NULL, dmg);
+    // ceil() y dano entero, umbral de 3 bloques. El descuento de Jump Boost
+    // (1 bloque por nivel) y el slime block son extras vanilla de esta base.
     // ---------------------------------------------------------------
     std::printf("\n-- dano de caida --\n");
     {
-        check("caida de 10 bloques -> floor(10-3) = 7", dmg::fallDamage(10.0, 0, false), 7.0);
+        check("caida de 10 bloques -> ceil(10-3) = 7", dmg::fallDamage(10.0, 0, false), 7.0);
         check("caida de 3 bloques -> 0", dmg::fallDamage(3.0, 0, false), 0.0);
-        check("caida de 3.9 -> floor(0.9) = 0", dmg::fallDamage(3.9, 0, false), 0.0);
-        check("caida de 14.5 -> floor(11.5) = 11", dmg::fallDamage(14.5, 0, false), 11.0);
-        check("Jump Boost II (nivel 2) -> floor(10-3-2) = 5",
+        check("caida de 3.9 -> ceil(0.9) = 1", dmg::fallDamage(3.9, 0, false), 1.0);
+        check("caida de 14.5 -> ceil(11.5) = 12", dmg::fallDamage(14.5, 0, false), 12.0);
+        check("Jump Boost II (nivel 2) -> ceil(10-3-2) = 5",
               dmg::fallDamage(10.0, 2, false), 5.0);
         check("bloque de slime debajo -> 0", dmg::fallDamage(30.0, 0, true), 0.0);
     }

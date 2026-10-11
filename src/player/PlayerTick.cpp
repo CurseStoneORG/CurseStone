@@ -314,7 +314,18 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int /*face*/) {
         setSneaking(false);
     }
     if (action == network::protocol::PlayerActionPacket::ACTION_SPAWN_SAME_DIMENSION) {
-        respawn();
+        // ROOT CAUSE FIX ("no deja spawnear"): el boton "Respawn" de la
+        // pantalla de muerte no puede ser un no-op cuando el servidor cree
+        // que el jugador esta vivo. Si el cliente se quedo con la salud en
+        // 0 (una pantalla de muerte que el servidor nunca desmintio) y el
+        // servidor ya lo tiene vivo, `respawn()` hacia `return` al instante
+        // y el cliente quedaba encerrado para siempre: la unica forma de
+        // salir del death screen es que su vida deje de valer 0.
+        //
+        // Ahora la accion SIEMPRE responde: si esta muerto, reaparece
+        // (flujo completo de respawn()); si no, se le re-sincroniza la vida
+        // al jugador real para que su pantalla de muerte se desarme.
+        handleRespawnRequest();
     }
     // Mesa de crafteo (bloque WORKBENCH=58): el 0.15.x manda
     // ACTION_SET_SLOTS (?6) al abrir la UI de la mesa. No hay estado

@@ -26,19 +26,49 @@ float Living::maxHealth() const {
 // ============================================================
 // Genisys Entity::setHealth + Living::setHealth
 //   * mismo valor            -> no hace nada
-//   * <= 0                   -> 0 y kill() si estaba vivo
+//   * <= 0                   -> kill() si estaba vivo (kill pone el 0)
 //   * <= max (o bajando)     -> se aplica tal cual
 //   * > max                  -> se recorta al maximo
 //   * volver de la muerte    -> onRevive() (re-anuncio de RESPAWN)
+//
+// ROOT CAUSE FIX ("cuando el jugador se hace dano se manda la pantalla de
+// muerte y no deja spawnear"): esta funcion ponia `health_ = 0.0f` ANTES de
+// llamar a kill(), y kill() empieza con `if (health_ <= 0.0f) return;` para
+// no re-entrar. Resultado: la salud ya valia 0 cuando kill() corria, el
+// guard lo devolvia de inmediato y **onDeath() NO SE EJECUTABA NUNCA**
+// (ni para jugadores ni para ningun Living). El jugador moria de verdad
+// (`isDead()` true: el cliente recibia SetHealth 0 -> pantalla de muerte)
+// pero se perdia todo el flujo de muerte:
+//
+//   * EntityEventPacket DEATH_ANIMATION (la animacion de morir),
+//   * el RespawnPacket que arma el boton "Respawn" en el cliente 0.15.x
+//     (sin el el boton no hace nada => "no deja spawnear"),
+//   * PlayerDeathEvent => el mensaje "<jugador> died" en el chat,
+//   * el drop del inventario y el reset de hambre/aire/fuego.
+//
+// PMMP `Entity::setHealth()` no toca la salud en la rama de muerte: llama a
+// `$this->kill()`, y es `kill()` quien pone el 0 y llama a `onDeath()`.
+// Ahora hacemos lo mismo (el 0 lo pone kill()) y el guard de re-entrada
+// vuelve a servir para lo que fue escrito.
+//
+// `amount` se trunca a entero como en PMMP (`$amount = (int) $amount`) y en
+// el cliente (`LocalPlayer::hurtTo(int)`, `Mob::actuallyHurt(int)`): la
+// salud es entera, asi que un valor fraccionario no puede convertirse en un
+// 0 enviado al cliente (que es lo que dispara la pantalla de muerte).
 // ============================================================
 void Living::setHealth(float amount) {
-    if (amount == health_) return;
+    const int wanted = (int)amount;          // PMMP: $amount = (int) $amount;
+    if (wanted == (int)health_) return;      // mismo valor -> no hace nada
+
     bool was_alive = health_ > 0.0f;
-    if (amount <= 0.0f) {
-        health_ = 0.0f;
-        if (was_alive) kill();          // -> onDeath()
-    } else if (amount <= maxHealth() || amount < health_) {
-        health_ = amount;
+    if (wanted <= 0) {
+        if (was_alive) {
+            kill();                          // kill() pone el 0 -> onDeath()
+        } else {
+            health_ = 0.0f;                  // ya estaba muerto: solo se fija
+        }
+    } else if ((float)wanted <= maxHealth() || (float)wanted < health_) {
+        health_ = (float)wanted;
     } else {
         health_ = maxHealth();
     }
@@ -52,7 +82,7 @@ void Living::setHealth(float amount) {
 // kill() de adentro dispararia onDeath() una segunda vez.
 // ============================================================
 void Living::kill() {
-    if (health_ <= 0.0f) return;
+    if (health_ <= 0.0f) return;   // guard de re-entrada (ver setHealth)
     health_ = 0.0f;
     removeAllEffects();
     onDeath();

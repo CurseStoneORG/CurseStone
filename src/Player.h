@@ -146,6 +146,16 @@ public:
     // No-op si el jugador no esta muerto.
     void respawn();
 
+    // Respuesta al boton "Respawn" del cliente (ACTION_SPAWN_SAME_DIMENSION).
+    // A diferencia de respawn(), NUNCA es un no-op:
+    //   * si el jugador esta muerto -> respawn() completo;
+    //   * si no lo esta (el cliente se quedo con la salud en 0 por un
+    //     desajuste) -> le re-manda SetHealth + generic.health con la vida
+    //     real del servidor, que es lo unico que le permite salir de la
+    //     pantalla de muerte (el cliente la abre/la mantiene mientras su
+    //     `health <= 0`). Devuelve true si reaparecio de verdad.
+    bool handleRespawnRequest();
+
     // Abre el cofre en (x,y,z) para este jugador. Se llama desde
     // handleBlockPlace, DESPUES del chequeo de PlayerInteractEvent (asi
     // cancelar la interaccion tambien bloquea abrir el cofre), cuando el
@@ -563,10 +573,12 @@ public:
     bool directDataPacket(std::shared_ptr<network::protocol::DataPacket> pk) { sendPacket(pk); return true; }
 
 protected:
-    // entity::Living hook — dispara PlayerDeathEvent + broadcast del
-    // mensaje de muerte. Ver Living::applyDamage(). No implementa
-    // reaparicion (RespawnPacket es un stub sin encode() real en esta
-    // base de codigo todavia — ver TODO junto a la definicion).
+    // entity::Living hook — se llama UNA VEZ cuando la salud cruza a 0
+    // (Living::kill desde Living::setHealth). Ver PlayerLogin.cpp: dispara
+    // PlayerDeathEvent, tira el inventario y manda el flujo de muerte
+    // (DEATH_ANIMATION + SetHealth 0 + atributo 0 + RespawnPacket, que es
+    // lo que arma el boton "Respawn" del cliente 0.15.x). La reaparicion
+    // en si ocurre en respawn(), al recibir el boton.
     void onDeath() override;
     // Living hook tras cada dano no mortal: manda la animación de golpe
     // (HURT_ANIMATION con eid=0 = "yo" en protocolo 84, Infinity

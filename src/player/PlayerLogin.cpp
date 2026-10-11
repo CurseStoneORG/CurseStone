@@ -184,8 +184,19 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
             setGamemode(gm);
             int16_t hp = mcp_compound_tag_get_short(named_tag_.get(), "Health", 20);
             int16_t mh = mcp_compound_tag_get_short(named_tag_.get(), "MaxHealth", 20);
-            setMaxHealth(mh > 0 ? mh : 20);
-            setHealth(hp <= 0 ? 20 : hp);
+            // La vida del HUD del 0.15.x sale del atributo generic.health
+            // (min/max/value) que manda sendHealthAttribute(): el MAXIMO
+            // tiene que ser 20 o la barra de corazones queda mal (es lo que
+            // pide "que la vida sea 20/20"). Un player.dat externo puede
+            // traer MaxHealth = 30000 (short) y el cliente dibujaria
+            // 20/30000; se recorta al rango vanilla. Igual la salud: nunca
+            // por debajo de 1 (morir no se guarda) y nunca por encima del
+            // maximo. Vanilla solo supera 20 con HEALTH_BOOST, que se suma
+            // aparte en Living::maxHealth().
+            const int16_t kVanillaMaxHealth = 20;
+            int16_t mh_clamped = (mh > 0 && mh <= kVanillaMaxHealth) ? mh : kVanillaMaxHealth;
+            setMaxHealth(mh_clamped);
+            setHealth((hp <= 0 || hp > mh_clamped) ? mh_clamped : hp);
             int16_t hunger = mcp_compound_tag_get_short(named_tag_.get(), "Hunger", 20);
             setFoodLevel(hunger);
 
@@ -747,10 +758,14 @@ void Player::announceTo(Player* viewer) {
 //
 // Secuencia: dispara PlayerRespawnEvent (no cancelable — solo puede
 // cambiar DONDE reaparece), restaura salud al maximo, teletransporta,
-// y sincroniza al cliente con RespawnPacket + SetHealthPacket. No
-// reenvia inventario/experiencia todavia porque este proyecto no
-// vacia el inventario al morir (no hay drop-on-death implementado),
-// asi que no hay nada que restaurar ahi.
+// y sincroniza al cliente con RespawnPacket + SetHealthPacket.
+//
+// El inventario SI hay que darlo por perdido: Player::onDeath() tira todo
+// y hace inv_->clearAll() (port de Genisys Player::kill() -> getDrops() +
+// inventory->clearAll()). Antes ese camino no corria nunca por el bug de
+// Living::setHealth descrito arriba, asi que el inventario sobrevivia a la
+// muerte; ahora que onDeath() se ejecuta de verdad, al reaparecer el
+// inventario esta vacio (como en vanilla) y no hay nada que reenviar.
 // ============================================================
 void Player::respawn() {
     if (!isDead()) return;
@@ -869,9 +884,39 @@ void Player::respawn() {
 }
 
 // ============================================================
+// handleRespawnRequest — respuesta al boton "Respawn" (action 7).
+//
+// El cliente 0.15.x solo sale de la pantalla de muerte cuando su propia
+// salud deja de valer 0 (DeathScreen) y el boton ademas cierra la pantalla.
+// Su salud la fija exclusivamente SetHealthPacket / el atributo
+// generic.health (LocalPlayer::hurtTo()), asi que si el servidor se cree
+// vivo y no manda nada, el cliente queda encerrado en "You died!" sin
+// forma de salir: eso es exactamente "no deja spawnear".
+//
+// Por eso aca nunca se hace `return` mudo: muerto -> respawn() completo;
+// vivo -> re-sync de la vida real del servidor.
+// ============================================================
+bool Player::handleRespawnRequest() {
+    if (isDead()) {
+        respawn();
+        return true;
+    }
+    // Vivo: resincronizar lo que el cliente necesita para desarmar su
+    // pantalla de muerte. No tocamos la posicion (el jugador puede estar
+    // jugando normalmente; un teleport aca seria un rubber-band).
+    sendHealthAttribute();
+    if (srv_ && srv_->advancedLog()) {
+        utils::MainLogger::get().info("[RESPAWN] " + cfg_.username +
+            " pidio respawn pero sigue vivo (health " +
+            std::to_string((int)health()) + ") - vida re-sincronizada");
+    }
+    return false;
+}
+
+// ============================================================
 // onDeath — Living hook, se llama UNA VEZ cuando health_ cruza a 0
-// (ver Living::applyDamage). Dispara PlayerDeathEvent y difunde el
-// mensaje de muerte.
+// (ver Living::kill desde Living::setHealth). Dispara PlayerDeathEvent y
+// difunde el mensaje de muerte.
 //
 // No reaparece al jugador aca mismo — eso pasa en Player::respawn(),
 // disparado cuando el cliente manda ACTION_SPAWN_SAME_DIMENSION
