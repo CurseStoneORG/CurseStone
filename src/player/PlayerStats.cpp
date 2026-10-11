@@ -178,13 +178,22 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
     // >= 3 blocks of accumulated fall (vanilla: damage = fall - 3), and
     // the accumulator resets so it can start over on the next fall.
     if (on_ground_fall_check_ && !in_water) {
-        // Genisys Entity::fall(): floor(fallDistance - 3 - (salto ? nivel+1 : 0)).
-        // Un bloque de slime debajo anula el dano — CurseStone todavia no
-        // distingue el bloque de aterrizaje, asi que ese chequeo queda
-        // pendiente (ver limitaciones).
+        // PORTADO DE LA REFERENCIA (SSMG64/PocketEdition
+        // handheld/src/world/entity/Mob.cpp::causeFallDamage):
+        //
+        //     int dmg = (int) ceil(distance - 3);
+        //     if (dmg > 0) hurt(NULL, dmg);
+        //
+        // ceil() + dano entero, con el mismo umbral de 3 bloques. Ademas se
+        // chequea el bloque de aterrizaje (antes se pasaba `false` fijo y
+        // `feet` quedaba sin usar): un slime block debajo anula el dano,
+        // como en vanilla. Se conserva el descuento del efecto Jump Boost
+        // (1 bloque por nivel), que es vanilla del 0.15 y la referencia no
+        // modela. Los numeros exactos los fija tools/damage_test.cpp.
         const int jump_boost = hasEffectId(entity::EFF_JUMP)
                                    ? effectAmplifier(entity::EFF_JUMP) + 1 : 0;
-        const double dmg = entity::damage::fallDamage(fallDistance(), jump_boost, false);
+        const bool slime_below = (feet == block::SLIME_BLOCK);
+        const double dmg = entity::damage::fallDamage(fallDistance(), jump_boost, slime_below);
         resetFallDistance();     // aterrizar siempre reinicia el acumulador
         if (!creative && difficulty > 0 && dmg > 0.0) {
             damage((float)dmg, event::entity::DamageCause::FALL);
@@ -302,7 +311,6 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
     if (attackTime() > 0) setAttackTime(attackTime() - 1);
 
     (void)current_tick;
-    (void)feet;
     (void)last_pos_y_;
     (void)last_pos_set_;
     (void)was_in_lava_;
