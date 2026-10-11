@@ -1,5 +1,6 @@
 #include "Player.h"
 #include "player/PlayerInternal.h"
+#include "entity/Living.h"
 #include "world/World.h"
 #include "network/protocol/Info.h"
 #include "network/protocol/LoginPacket.h"
@@ -774,7 +775,10 @@ void Player::respawn() {
     auto ev = event::EventManager::get().fire<event::player::PlayerRespawnEvent>(
         this, sp.x, sp.y, sp.z);
 
-    setHealth((int)maxHealth());
+    // Genisys 1:1: la vida muerta solo se sale por aca, via revive()
+    // (player/PlayerLogin.cpp). Un Living·muerto no puede recibir vida de
+    // otra jeta: setHealth() no sienta nada al estar en 0.
+    entity::Living::revive((float)maxHealth());
     // Respawn always lands at the server spawn, snapped to the surface of
     // the terrain (same rule as first-join: getServerSpawnSafe()), with a
     // fresh food bar (Infinity/Genisys respawn behaviour).
