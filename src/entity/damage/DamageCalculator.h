@@ -207,13 +207,31 @@ inline void knockBackMotion(double& mx, double& my, double& mz,
 
 // ============================================================
 // Entity::fall($fallDistance) + Entity::updateFallState()
-//   damage = floor(fallDistance - 3 - (jump boost ? nivel + 1 : 0))
-//   un bloque de slime debajo anula el dano por completo.
+//
+// PORTADO DE LA REFERENCIA (SSMG64/PocketEdition, que es el codigo del
+// propio cliente/servidor de MCPE),
+// handheld/src/world/entity/Mob.cpp::causeFallDamage():
+//
+//     void Mob::causeFallDamage(float distance) {
+//         int dmg = (int) ceil((distance - 3));
+//         if (dmg > 0) { ...; hurt(NULL, dmg); }
+//     }
+//
+// O sea: umbral de 3 bloques, ceil() y dano ENTERO (Mob::actuallyHurt(int)
+// le resta a una salud entera). Antes esta base usaba floor(), que es de la
+// familia PMMP/Genisys; con ceil() una caida de 3.05 bloques hace 1 de dano
+// y una de 3.0 no hace nada, que es exactamente lo que hace la referencia.
+//
+// Se conservan dos cosas de la version de servidor porque la referencia no
+// las modela y son vanilla en el 0.15: el descuento del efecto Jump Boost
+// (1 bloque por nivel) y el bloque de slime debajo, que anula el dano por
+// completo. Con las dos en cero esto es identico a la referencia.
+// Fijado por tools/damage_test.cpp (seccion "dano de caida").
 // ============================================================
 inline double fallDamage(double fall_distance, int jump_boost_amplifier, bool slime_block_below) {
+    if (slime_block_below) return 0.0;   // slime: anula el dano (vanilla)
     if (jump_boost_amplifier < 0) jump_boost_amplifier = 0;
-    double damage = std::floor(fall_distance - 3.0 - (double)jump_boost_amplifier);
-    if (slime_block_below) damage = 0.0;
+    double damage = std::ceil(fall_distance - 3.0 - (double)jump_boost_amplifier);
     return damage > 0.0 ? damage : 0.0;
 }
 
