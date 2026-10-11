@@ -32,8 +32,14 @@ public:
     float maxHealth() const;
     void  setMaxHealth(float m) { max_health_ = m; }
     // Genisys Entity::setHealth + Living::setHealth. Recorta al maximo,
-    // mata si baja a 0 y re-anuncia el RESPAWN si vuelve de la muerte.
+    // mata si baja a 0. Un Living muerto ya NO se re-anima al recibir
+    // vida: el unico camino de vuelta es revive() via respawn().
     void setHealth(float amount) override;
+    // Devuelve la vida al maximo (o al valor dado) SOLO si esta muerto,
+    // y dispara onRevive() (re-anuncia RESPAWN a los viewers). Es el
+    // unico camino de regreso del estado muerto — lo llama
+    // Player::respawn(), equivalente del setValue(max) de Genisys.
+    void revive(float amount);
     // Nukkit-style integer overload used across the repo (setHealth(20)).
     void setHealth(int amount) { setHealth((float)amount); }
     bool isDead() const { return health_ <= 0.0f; }

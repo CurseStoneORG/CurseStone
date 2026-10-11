@@ -56,6 +56,9 @@ float Living::maxHealth() const {
 // salud es entera, asi que un valor fraccionario no puede convertirse en un
 // 0 enviado al cliente (que es lo que dispara la pantalla de muerte).
 // ============================================================
+// El guard de `was_alive` es lo que frena el bug de "revivir con 1 vida":
+// una vez muerto, setHealth() NO vuelve a sentar nada. En Genisys esto se
+// resuelve con setValue(max) solo en Player::respawn(); aqui, con revive().
 void Living::setHealth(float amount) {
     const int wanted = (int)amount;          // PMMP: $amount = (int) $amount;
     if (wanted == (int)health_) return;      // mismo valor -> no hace nada
@@ -67,12 +70,35 @@ void Living::setHealth(float amount) {
         } else {
             health_ = 0.0f;                  // ya estaba muerto: solo se fija
         }
+    } else if (!was_alive) {
+        // Muerto no recibe vida: el estado muerto solo se sale por
+        // revive() (Player::respawn). Sin este guard, cualquier otra
+        // jeta que mande vida post-muerte (regen, cinturon de
+        // onHealthChanged/report-graph) hace "revivir" con 1 en el MISMO
+        // tick del golpe fatal -> pantalla de muerte pegada + corazon
+        // perdido + cuerpo invisible para los demas.
+        return;
     } else if ((float)wanted <= maxHealth() || (float)wanted < health_) {
         health_ = (float)wanted;
     } else {
         health_ = maxHealth();
     }
     if (health_ > 0.0f && !was_alive) onRevive();
+}
+
+// ============================================================
+// revive
+// Unico camino de regreso del estado muerto. Pone la vida al valor
+// pedido (recortado al maximo, minimo 1) y dispara onRevive() — que es
+// lo que Player::respawn() necesita para re-anunciar el RESPAWN al
+// cliente (protocolo 84: tamano de UpdateAttributes + set de flags).
+// ============================================================
+void Living::revive(float amount) {
+    if (health_ > 0.0f) return;              // solo se revive a un muerto
+    if (amount <= 0.0f) return;
+    if (amount > maxHealth()) health_ = maxHealth();
+    else health_ = amount;
+    onRevive();
 }
 
 // ============================================================

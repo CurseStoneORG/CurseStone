@@ -29,9 +29,7 @@ namespace cursestone {
 
 using event::entity::DamageCause;
 using event::entity::DamageModifier;
-using event::entity::EntityDamageEvent;
-
-// ============================================================
+using event::entity::EntityDamageEvent;// ============================================================
 // Genisys Player::setHealth($amount):
 //     parent::setHealth($amount);
 //     if($this->spawned === true){
@@ -40,7 +38,14 @@ using event::entity::EntityDamageEvent;
 //              ->setMaxValue($this->getMaxHealth())->setValue($amount, true);
 //     }
 // El setValue(..., true) es lo que mueve los corazones EN EL ACTO; el
-// 0.15.x lee el atributo generic.health, no el SetHealthPacket.
+// 0.15.x lee el atributo generic.health, no el SetHealthPacket.//
+// BUG FIX ("pantalla de muerte pegada tras caida"): el cinturon de abajo
+// mandaba generic.health cada vez que se tocaba la vida, incluso cuando
+// el golpe fatal ya habia cruzado a 0. Ese belt mandaba vida a 1 mitad
+// del flujo fatal: pantalla de muerte + corazon perdido + cuerpo
+// invisible para los demas. Genisys 1:1 no lo necesita: un Living muerto
+// NO puede recibir vida (setHealth() no sienta nada en 0 en Living), y
+// solo revive() lo saca del estado muerto (Player::respawn).
 // ============================================================
 void Player::setHealth(float amount) {
     entity::Living::setHealth(amount);
