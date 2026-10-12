@@ -194,10 +194,24 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
             // por debajo de 1 (morir no se guarda) y nunca por encima del
             // maximo. Vanilla solo supera 20 con HEALTH_BOOST, que se suma
             // aparte en Living::maxHealth().
+            // Nukkit 1:1 (cn.nukkit.Player.loadNBT):
+            //     int health = namedtag.getShort("Health", 20);
+            //     ... if (health < 0 || health > 20) health = 20;
+            // Un spawn con 2 corazones de menos era hp 17/18 guardados por
+            // saveData() mientras el jugador ya se marchaba con 19/20 reales
+            // (o un hp viejo de la sesion anterior). Nukkit no respeta nada
+            // menos de 20 al volver: la barra arranca SIEMPRE llena, y el
+            // valor guardado es solo "no se murio". Los 20 salen del
+            // maxHealth(), y tambien fijan el MaxHealth del player.dat por
+            // si venia raro (malos 30000, etc.).
             const int16_t kVanillaMaxHealth = 20;
             int16_t mh_clamped = (mh > 0 && mh <= kVanillaMaxHealth) ? mh : kVanillaMaxHealth;
             setMaxHealth(mh_clamped);
-            setHealth((hp <= 0 || hp > mh_clamped) ? mh_clamped : hp);
+            setHealth(maxHealth());
+            if (mh != (int16_t)maxHealth()) {
+                mcp_compound_tag_set_short(named_tag_.get(), "MaxHealth", (int16_t)maxHealth());
+            }
+            mcp_compound_tag_set_short(named_tag_.get(), "Health", (int16_t)maxHealth());
             int16_t hunger = mcp_compound_tag_get_short(named_tag_.get(), "Hunger", 20);
             setFoodLevel(hunger);
 
