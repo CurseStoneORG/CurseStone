@@ -141,44 +141,11 @@ void Player::flushPendingPackets() {
         take_ordered.swap(batch_ordered_);
         batch_bytes_ = 0;
     }
-    // EL CANAL ORDERED VA PRIMERO — no al revés.
-    //
-    // BUG REAL ("no puedo ver el terreno del server al entrar", tras el
-    // merge a stable): mandar el lote unordered antes que el ordered
-    // invierte el orden de llegada del handshake de login frente al
-    // tráfico de chunks. No es un detalle teórico:
-    //
-    //   * FullChunkDataPacket pesa ~83 KB CRUDOS (mcp_chunk_network_serialize
-    //     devuelve 66036 B + cabeceras), o sea que CADA chunk por sí solo
-    //     cruza BATCH_FLUSH_BYTES (32 KB) y dispara un flush inmediato
-    //     desde dentro de sendPacket().
-    //   * handleLogin() corre en la fase "network (first pass)" de
-    //     Server::tick(), que es ANTES de "player updates"; los chunks
-    //     salen en la fase de updates. El handshake (PlayStatus
-    //     LOGIN_SUCCESS, StartGame, SetTime, SetSpawnPosition,
-    //     SetDifficulty, SetHealth) queda pendiente en batch_ordered_
-    //     cuando el primer chunk dispara su flush.
-    //
-    // Al mandar unordered-primero, ese flush sacaba el chunk POR DELANTE
-    // del handshake entero. Medido sobre el cable con tools/terrain_check.py:
-    //
-    //   antes (1 sub-paquete por datagrama):
-    //     PlayStatus, StartGame, 0x08, 0x16, 0x16, 0x26, 0x35, 0x25,
-    //     FullChunk, FullChunk, FullChunk...
-    //   con el batching en orden inverso:
-    //     0x16, 0x16, FullChunk, PlayStatus, StartGame, 0x08, 0x26...
-    //
-    // El cliente MCPE 0.15.10 descarta el FullChunkDataPacket que llega
-    // antes de que tenga el mundo armado (es exactamente el "agujero
-    // pre-ACK" documentado arriba en handleDataPacket) — y used_chunks_
-    // ya marcó esos chunks como enviados, así que nunca se reenvían:
-    // el jugador entra y no ve terreno.
-    //
-    // Mandando el lote ordered primero se recupera exactamente el orden
-    // que garantizaba el envío individual histórico (orden de llamada),
-    // y da igual qué paquete haya cruzado el umbral de tamaño.
-    sendBatchWire(adv_iface_, cfg_.ip, cfg_.port, take_ordered,   /*ordered=*/true);
+    // Canal unordered (chunks, entidades, particulas, bloques...) primero:
+    // es el que mas trafico lleva. El ordered (login/spawn) va por su
+    // canal RELIABLE_ORDERED y no comparte orden con el otro canal.
     sendBatchWire(adv_iface_, cfg_.ip, cfg_.port, take_unordered, /*ordered=*/false);
+    sendBatchWire(adv_iface_, cfg_.ip, cfg_.port, take_ordered,   /*ordered=*/true);
 }
 
 void Player::sendMessage(const std::string& msg) {

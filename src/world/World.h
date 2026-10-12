@@ -17,7 +17,6 @@
 #include <functional>
 #include <mutex>
 #include "math/Vector3.h"
-#include "physics/Physics.h"
 #include "world/ChunkManager.h"
 #include "world/LightEngine.h"
 #include "world/format/WorldProvider.h"
@@ -137,20 +136,6 @@ public:
     // BlockFire propagation needs this to read the fire's "age" meta.
     uint8_t getBlockData(int32_t x, int32_t y, int32_t z);
     void setBlock(int32_t x, int32_t y, int32_t z, uint8_t id, uint8_t data);
-
-    // Every collision box inside `region`, in world coordinates. This is
-    // the level's half of the physics contract: physics::sweep() and
-    // physics::clipRay() (src/physics/Physics.h) take these boxes and
-    // answer the movement/ray questions, world-free and testable on
-    // their own.
-    //
-    // A block contributes only when dropBlockSolid() accepts it, and the
-    // box is the block's own getBoundingBox() translated by its
-    // coordinates — so stone/dirt give exactly the unit cube they always
-    // did, while a genuine half-block collides as a half-block instead of
-    // as a full cube. An unregistered/empty box falls back to the unit
-    // cube so a block can never become walk-through by accident.
-    std::vector<physics::BlockBox> collisionBoxes(mcp_aabb_t region);
 
     // Queued from ChunkManager::setChunk() (which runs on the generation
     // worker thread) so the new chunk gets its lighting redone together

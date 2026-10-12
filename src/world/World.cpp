@@ -23,9 +23,7 @@
 #include "Player.h"
 #include "Server.h"
 #include "block/BlockIds.h"
-#include "block/Block.h"
 #include "block/BlockFire.h"
-#include "event/entity/EntityDamageByEntityEvent.h"
 #include "network/protocol/LevelEventPacket.h"
 #include "network/protocol/UpdateBlockPacket.h"
 #include "network/protocol/AddEntityPacket.h"
@@ -215,66 +213,11 @@ World::~World() {
     if (provider_) provider_->shutdown();
 }
 
-namespace {
-// pocketmine\block\Block::$solid. Everything an item can rest on is solid
-// except air, the liquids, fire, cobweb and the decoration blocks.
-// Declared here (it is used by collisionBoxes() below): the item constants
-// next to tickDroppedItems() live in a second anonymous namespace, which is
-// the same namespace.
-bool dropBlockSolid(uint8_t id);
-} // namespace
-
 uint8_t World::getBlockId(int32_t x, int32_t y, int32_t z) {
     int32_t cx = x >> 4, cz = z >> 4;
     mcp_chunk_t* c = chunks_.getChunkIfLoaded(cx, cz);
     if (!c) return 0;
     return mcp_chunk_get_block_id(c, x & 15, y, z & 15);
-}
-
-std::vector<physics::BlockBox> World::collisionBoxes(mcp_aabb_t region) {
-    std::vector<physics::BlockBox> out;
-    // The swept region of one entity is a handful of cells, so this keeps
-    // the per-tick cost to a single allocation instead of a realloc chain.
-    out.reserve(16);
-
-    // floor(min) .. ceil(max), inclusive on both ends — the same cell
-    // range the item integrator used to build inline. An unloaded chunk
-    // answers AIR from getBlockId(), so a region reaching outside the
-    // loaded world contributes nothing rather than a phantom floor.
-    int x0 = (int)std::floor(region.minX), x1 = (int)std::ceil(region.maxX);
-    int y0 = (int)std::floor(region.minY), y1 = (int)std::ceil(region.maxY);
-    int z0 = (int)std::floor(region.minZ), z1 = (int)std::ceil(region.maxZ);
-
-    for (int bx = x0; bx <= x1; ++bx) {
-        for (int by = y0; by <= y1; ++by) {
-            for (int bz = z0; bz <= z1; ++bz) {
-                uint8_t id = getBlockId(bx, by, bz);
-                // Block::$solid (dropBlockSolid): air, liquids, fire,
-                // cobweb and the decorations are walk-through.
-                if (!dropBlockSolid(id)) continue;
-
-                mcp_aabb_t local = mcp_aabb_make(0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
-                block::Block* b = block::Block::get(id);
-                if (b) {
-                    mcp_aabb_t bb = b->getBoundingBox();
-                    // Only accept a real, non-degenerate box. Air/Liquid
-                    // return an empty one; an unknown id yields no Block
-                    // at all. Both keep the unit cube, so no solid block
-                    // ever silently stops colliding.
-                    if (bb.maxX > bb.minX && bb.maxY > bb.minY && bb.maxZ > bb.minZ) {
-                        local = bb;
-                    }
-                }
-
-                physics::BlockBox box;
-                box.x = bx; box.y = by; box.z = bz;
-                box.box = mcp_aabb_make(local.minX + bx, local.minY + by, local.minZ + bz,
-                                        local.maxX + bx, local.maxY + by, local.maxZ + bz);
-                out.push_back(box);
-            }
-        }
-    }
-    return out;
 }
 
 uint8_t World::getBlockData(int32_t x, int32_t y, int32_t z) {
@@ -411,7 +354,8 @@ constexpr double kBlockFriction = 0.6;   // Block::getFrictionFactor()
 // in World.h so the attraction gate below and the pickup scan in
 // Player::onUpdate() share ONE definition of "is this item in reach".
 
-// pocketmine\block\Block::$solid — see the forward declaration above.
+// pocketmine\block\Block::$solid. Everything an item can rest on is solid
+// except air, the liquids, fire, cobweb and the decoration blocks.
 bool dropBlockSolid(uint8_t id) {
     switch (id) {
         case block::AIR:
@@ -434,6 +378,10 @@ bool dropBlockSolid(uint8_t id) {
             return true;
     }
 }
+
+struct Aabb {
+    double minX, minY, minZ, maxX, maxY, maxZ;
+};
 
 } // namespace
 
@@ -571,35 +519,104 @@ void World::tickDroppedItems(uint64_t current_tick) {
             }
         }
 
-        // Entity::move() + Entity::checkGroundState(), now resolved by the
-        // shared collision engine (src/physics/Physics.h) instead of by
-        // three hand-copied clip loops: the level hands over the collision
-        // boxes of the lookup region and physics::sweep() resolves the
-        // motion Y, then X, then Z, exactly as the client does.
+        // Entity::move() — per-axis clip against the collision cubes of the
+        // swept box, then Entity::checkGroundState() + motion cancellation.
         const double movX = di->vx, movY = di->vy, movZ = di->vz;
         {
-            mcp_aabb_t bb = mcp_aabb_make(di->x - kItemHalfW, di->y,              di->z - kItemHalfW,
-                                          di->x + kItemHalfW, di->y + kItemHeight, di->z + kItemHalfW);
+            Aabb bb{ di->x - kItemHalfW, di->y,            di->z - kItemHalfW,
+                     di->x + kItemHalfW, di->y + kItemHeight, di->z + kItemHalfW };
 
-            // World::getCollisionCubes($this, $bb->offset($dx, $dy, $dz)) —
-            // the lookup region is the TRANSLATED box, which is what this
-            // integrator has always used (see mcp_aabb_expand() for the
-            // swept-volume variant).
-            mcp_aabb_t lookup = mcp_aabb_clone_move(bb, movX, movY, movZ);
-            const std::vector<physics::BlockBox> boxes = collisionBoxes(lookup);
+            double dx = movX, dy = movY, dz = movZ;
 
-            physics::MotionResult res = physics::sweep(bb, mcp_v3(movX, movY, movZ), boxes);
-            di->x += res.motion.x;
-            di->y += res.motion.y;
-            di->z += res.motion.z;
+            // World::getCollisionCubes($this, $bb->addCoord($dx, $dy, $dz))
+            Aabb sw{ bb.minX + dx, bb.minY + dy, bb.minZ + dz,
+                     bb.maxX + dx, bb.maxY + dy, bb.maxZ + dz };
+            int x0 = (int)std::floor(sw.minX), x1 = (int)std::ceil(sw.maxX);
+            int y0 = (int)std::floor(sw.minY), y1 = (int)std::ceil(sw.maxY);
+            int z0 = (int)std::floor(sw.minZ), z1 = (int)std::ceil(sw.maxZ);
+
+            // Y first, then X, then Z — the order Entity::move() uses.
+            for (int bx = x0; bx <= x1; ++bx) {
+                for (int by = y0; by <= y1; ++by) {
+                    for (int bz = z0; bz <= z1; ++bz) {
+                        if (!dropBlockSolid(getBlockId(bx, by, bz))) continue;
+                        Aabb c{ (double)bx, (double)by, (double)bz,
+                                (double)bx + 1, (double)by + 1, (double)bz + 1 };
+                        // AxisAlignedBB::calculateYOffset
+                        if (bb.maxX <= c.minX || bb.minX >= c.maxX) continue;
+                        if (bb.maxZ <= c.minZ || bb.minZ >= c.maxZ) continue;
+                        if (dy > 0 && bb.maxY <= c.minY) {
+                            double y1s = c.minY - bb.maxY;
+                            if (y1s < dy) dy = y1s;
+                        }
+                        if (dy < 0 && bb.minY >= c.maxY) {
+                            double y2s = c.maxY - bb.minY;
+                            if (y2s > dy) dy = y2s;
+                        }
+                    }
+                }
+            }
+            di->y += dy;
+            // AxisAlignedBB::offset() mutates the box IN PLACE in PHP, so the
+            // X pass below already sees the Y we just applied (and the Z pass
+            // sees both). Without this the port kept a stale box for the last
+            // two passes and clipped against coordinates the entity no longer
+            // had — items sank into floors and stopped short of walls.
+            bb.minY += dy;
+            bb.maxY += dy;
+
+            for (int bx = x0; bx <= x1; ++bx) {
+                for (int by = y0; by <= y1; ++by) {
+                    for (int bz = z0; bz <= z1; ++bz) {
+                        if (!dropBlockSolid(getBlockId(bx, by, bz))) continue;
+                        Aabb c{ (double)bx, (double)by, (double)bz,
+                                (double)bx + 1, (double)by + 1, (double)bz + 1 };
+                        // AxisAlignedBB::calculateXOffset
+                        if (bb.maxY <= c.minY || bb.minY >= c.maxY) continue;
+                        if (bb.maxZ <= c.minZ || bb.minZ >= c.maxZ) continue;
+                        if (dx > 0 && bb.maxX <= c.minX) {
+                            double x1s = c.minX - bb.maxX;
+                            if (x1s < dx) dx = x1s;
+                        }
+                        if (dx < 0 && bb.minX >= c.maxX) {
+                            double x2s = c.maxX - bb.minX;
+                            if (x2s > dx) dx = x2s;
+                        }
+                    }
+                }
+            }
+            di->x += dx;
+            bb.minX += dx;
+            bb.maxX += dx;
+
+            for (int bx = x0; bx <= x1; ++bx) {
+                for (int by = y0; by <= y1; ++by) {
+                    for (int bz = z0; bz <= z1; ++bz) {
+                        if (!dropBlockSolid(getBlockId(bx, by, bz))) continue;
+                        Aabb c{ (double)bx, (double)by, (double)bz,
+                                (double)bx + 1, (double)by + 1, (double)bz + 1 };
+                        // AxisAlignedBB::calculateZOffset
+                        if (bb.maxX <= c.minX || bb.minX >= c.maxX) continue;
+                        if (bb.maxY <= c.minY || bb.minY >= c.maxY) continue;
+                        if (dz > 0 && bb.maxZ <= c.minZ) {
+                            double z1s = c.minZ - bb.maxZ;
+                            if (z1s < dz) dz = z1s;
+                        }
+                        if (dz < 0 && bb.minZ >= c.maxZ) {
+                            double z2s = c.maxZ - bb.minZ;
+                            if (z2s > dz) dz = z2s;
+                        }
+                    }
+                }
+            }
+            di->z += dz;
 
             // Entity::checkGroundState(): on the floor only when the
-            // downward motion was clipped — the same rule sweep() applies
-            // (clipped_y && movY < 0).
-            di->on_ground = res.on_ground;
-            if (res.clipped_x) di->vx = 0;
-            if (res.clipped_y) di->vy = 0;
-            if (res.clipped_z) di->vz = 0;
+            // downward motion was clipped.
+            di->on_ground = (movY != dy && movY < 0);
+            if (movX != dx) di->vx = 0;
+            if (movY != dy) di->vy = 0;
+            if (movZ != dz) di->vz = 0;
         }
 
         double friction = 1.0 - kItemDrag;
@@ -1180,16 +1197,7 @@ void World::spawnLightning(double x, double y, double z, bool withFire) {
             const auto& pos = p->getNextPosition();
             if (std::fabs(pos.x - x) > 4.0 || std::fabs(pos.y - y) > 3.0 ||
                 std::fabs(pos.z - z) > 4.0) continue;
-            // Genisys Lightning::attack(): EntityDamageByEntityEvent con la
-            // entidad del rayo como atacante y mt_rand(8,20) de dano, que
-            // pasa por el pipeline de armadura del golpeado. Aca el rayo no
-            // se modela como Entity (solo tiene eid), asi que el damager va
-            // nulo: causa, dano y armadura son los mismos, pero sin
-            // modificadores de atacante ni knockback direccional.
-            const float lightning_damage = 8.0f + (float)(std::rand() % 13);  // 8..20
-            event::entity::EntityDamageByEntityEvent ev(
-                nullptr, p.get(), event::entity::DamageCause::LIGHTNING, lightning_damage);
-            p->attack(ev.getFinalDamage(), ev);
+            p->attack(8.0f + (float)(std::rand() % 13));
             p->setOnFire(3 + std::rand() % 6);
         }
     }

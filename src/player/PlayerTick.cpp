@@ -314,18 +314,7 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int /*face*/) {
         setSneaking(false);
     }
     if (action == network::protocol::PlayerActionPacket::ACTION_SPAWN_SAME_DIMENSION) {
-        // ROOT CAUSE FIX ("no deja spawnear"): el boton "Respawn" de la
-        // pantalla de muerte no puede ser un no-op cuando el servidor cree
-        // que el jugador esta vivo. Si el cliente se quedo con la salud en
-        // 0 (una pantalla de muerte que el servidor nunca desmintio) y el
-        // servidor ya lo tiene vivo, `respawn()` hacia `return` al instante
-        // y el cliente quedaba encerrado para siempre: la unica forma de
-        // salir del death screen es que su vida deje de valer 0.
-        //
-        // Ahora la accion SIEMPRE responde: si esta muerto, reaparece
-        // (flujo completo de respawn()); si no, se le re-sincroniza la vida
-        // al jugador real para que su pantalla de muerte se desarme.
-        handleRespawnRequest();
+        respawn();
     }
     // Mesa de crafteo (bloque WORKBENCH=58): el 0.15.x manda
     // ACTION_SET_SLOTS (?6) al abrir la UI de la mesa. No hay estado
@@ -342,23 +331,24 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int /*face*/) {
 }
 
 // ============================================================
-// handleInteract — entrada del combate cuerpo a cuerpo.
+// handleInteract — melee combat entry point.
 //
-// MCPE 0.15.x manda InteractPacket con ACTION_LEFT_CLICK cuando el
-// jugador ataca a una entidad (el right-click usa ACTION_RIGHT_CLICK
-// para alimentar/domar, que CurseStone todavia no implementa).
+// MCPE 0.15.x sends InteractPacket with ACTION_LEFT_CLICK when the
+// player attacks an entity (right-click uses ACTION_RIGHT_CLICK for
+// things like feeding/taming, which CurseStone doesn't implement yet —
+// only the attack path is wired here).
 //
-// Este es el port de Genisys Player::handleDataPacket (INTERACT_PACKET,
-// ACTION_LEFT_CLICK): el dano en si lo aplica Player::meleeAttack()
-// (player/PlayerDamage.cpp) entrando al pipeline completo del sistema de
-// dano — dano del item en la mano, Sharpness, Knockback, Fire Aspect,
-// armadura/EPF/Resistencia de la victima, espinas y agotamiento.
-//
-// Aca quedan los chequeos que Genisys hace ANTES de construir el evento:
-// alcance (canInteract 8 bloques), objetivo en creativo y PvP/dificultad.
-//
-// Alcance todavia limitado a otros jugadores (srv_->playersSnapshot()):
-// no hay mobs con runtime id ni AI (README: "No mob AI").
+// Scope, deliberately minimal:
+//   - Only Player targets (srv_->playersSnapshot()) — there are no
+//     AI mobs to hit yet (README: "No mob AI (entities exist as data
+//     structs only, no pathfinding)").
+//   - Flat BASE_ATTACK_DAMAGE for every hit — no per-item damage
+//     table (swords/axes) exists in CurseStone yet.
+//   - No knockback, no invulnerability-ticks beyond the plain
+//     cooldown below, no reach/distance check. This is a foundation
+//     for EntityDamageByEntityEvent/PlayerDeathEvent to have
+//     something real to fire from, not a feature-complete combat
+//     system.
 // ============================================================
 void Player::handleInteract(int action, int64_t targetEid) {
     if (!spawned_.load(std::memory_order_relaxed)) return;
@@ -385,76 +375,106 @@ void Player::handleInteract(int action, int64_t targetEid) {
 
     last_attack_ms_ = now_ms;
 
-    // ---- Chequeos previos de Genisys Player::handleDataPacket ----
-    //   * canInteract($target, 8): el alcance maximo de un golpe es de 8
-    //     bloques.
-    //   * un objetivo en CREATIVO ni siquiera genera evento (Genisys hace
-    //     `break`): el golpe no se manda.
-    //   * PvP desactivado en la config, o dificultad 0 (peaceful), cancelan
-    //     el evento: el golpe igual se procesa para que el atacante vea la
-    //     animacion, pero no hace dano (el evento llega cancelado a la
-    //     victima, que lo respeta en Living::attack).
-    bool cancelled = false;
-    if (!canInteract(target->position(), 8.0)) {
-        cancelled = true;
-    } else if (target->isCreative()) {
-        return;
-    } else if (!srv_->getConfigBool("pvp", true) || srv_->difficulty() == 0) {
-        cancelled = true;
-    }
+    // damageByEntity() dispara EntityDamageByEntityEvent internamente
+    // (ver Living::damageByEntity) — un listener puede cancelarlo o
+    // reescribir la cantidad antes de que se aplique a health().
+    bool died = target->damageByEntity(BASE_ATTACK_DAMAGE, this);
 
-    // El golpe entra al pipeline completo del sistema de dano de Genisys
-    // (ver Player::meleeAttack): dano base del item en la mano + Sharpness,
-    // knockBack 0.4 + 0.15 por nivel de Knockback, armadura/EPF del que
-    // recibe, espinas y Fire Aspect.
-    const bool applied = meleeAttack(*target, cancelled);
-    const bool died = applied && target->isDead();
-
-    // ---- Sincronizacion de la victima ----
-    // La animacion de golpe/muerte y el atributo de salud ya salieron por
-    // los hooks del pipeline (Player::onHealthChanged / Player::onDeath) y
-    // el empujon lo aplico Living::knockBack() con el `knockBack` del
-    // evento (0.4 + 0.15 por nivel de Knockback). Falta avisarle a TODOS
-    // los clientes el motion nuevo de la victima.
+    // Sincronizar salud + animacion de golpe al objetivo y a los
+    // demas jugadores que lo esten trackeando. No filtramos por
+    // distancia/chunk aqui por simplicidad (mismo criterio MVP que
+    // el resto de los broadcasts de Player.cpp).
     //
     // BUG FIX (mismo mecanismo que el de MoveEntityPacket en
-    // handleMovePlayer): este paquete referencia el eid de la victima —
-    // mandarlo a un jugador que todavia esta en su ventana de streaming de
-    // chunks le llega como un paquete de una entidad que su cliente nunca
-    // conocio.
+    // handleMovePlayer): hurtEv->eid referencia la entidad del que
+    // recibió el golpe — mandarlo a un jugador que todavía está en su
+    // ventana de streaming de chunks (sin spawned() todavía) le llega
+    // como un paquete de una entidad que su cliente nunca conoció.
+    auto hurtEv = std::make_shared<network::protocol::EntityEventPacket>();
+    hurtEv->eid = target->runtimeId();
+    hurtEv->event = died ? network::protocol::EntityEventPacket::DEATH_ANIMATION
+                         : network::protocol::EntityEventPacket::HURT_ANIMATION;
+    for (auto& other : srv_->playersSnapshot()) {
+        if (!other) continue;
+        if (!other->spawned()) continue;
+        other->sendPacket(hurtEv);
+    }
+    auto sh = std::make_shared<network::protocol::SetHealthPacket>();
+    sh->health = (int32_t)target->health();
+    target->sendPacket(sh);
+
+    // ---- Knockback (Genisys 0.15.0 Living::knockBack) ----
     //
-    // La propia victima se incluye a proposito: su cliente NO simula un
-    // golpe recibido (no es una accion que el jugador haya ejecutado
-    // localmente), asi que sin este SetEntityMotionPacket se quedaria
-    // clavada en el sitio mientras los demas la ven moverse.
-    if (applied) {
-        const math::Vector3 mv = target->motion();
-        auto motion = std::make_shared<network::protocol::SetEntityMotionPacket>();
-        motion->entities.push_back({target->runtimeId(),
-                                    (float)mv.x, (float)mv.y, (float)mv.z});
-        int32_t tcx = (int32_t)std::floor(target->position().x) >> 4;
-        int32_t tcz = (int32_t)std::floor(target->position().z) >> 4;
-        for (auto& other : srv_->playersSnapshot()) {
-            if (!other) continue;
-            if (other->isPendingRemoval()) continue;
-            if (!other->spawned()) continue;
-            if (!other->canSeeBlock(tcx, tcz)) continue;
-            other->sendPacket(motion);
+    // Sin esto, un golpe solo baja la vida: el cliente que recibe el
+    // golpe se queda clavado en el sitio y el resto de jugadores ni se
+    // enteran. El empujon se calcula sobre la VICTIMA con
+    // (deltaX, deltaZ) = (victima - atacante):
+    //
+    //     $f = sqrt($x*$x + $z*$z);      if($f <= 0) return;
+    //     $f = 1 / $f;
+    //     $motion->x /= 2;  $motion->y /= 2;  $motion->z /= 2;   // amortigua
+    //     $motion->x += $x * $f * $base;
+    //     $motion->y += $base;
+    //     $motion->z += $z * $f * $base;
+    //     if($motion->y > $base) $motion->y = $base;            // tope vertical
+    //     $this->setMotion($motion);
+    //
+    // $base = 0.4 en Genisys Living::attack(), mas 0.15 por nivel de
+    // el encantamiento Knockback (Player.php:3144). No hay sistema de
+    // encantamientos en este proyecto, asi que va 0.4 fijo, que es
+    // exactamente el valor por defecto de Genisys.
+    //
+    // El motion viaja en SetEntityMotionPacket (Genisys Level::tick()
+    // -> motionToSend -> addChunkPacket). Estaba sin implementar (stub),
+    // asi que sin esto el empujon no podia existir.
+    // Genisys Living::attack() llama a knockBack() SIEMPRE, incluso en el
+    // golpe mortal (la animacion de muerte va despues). Se replica.
+    {
+        const double dx = target->position().x - pos_.x;
+        const double dz = target->position().z - pos_.z;
+        double f = std::sqrt(dx * dx + dz * dz);
+        if (f > 1e-6) {
+            f = 1.0 / f;
+            constexpr double kBase = 0.4;   // Genisys Living::knockBack default
+            // motion actual de la victima, mitigado a la mitad.
+            double mx = target->motion().x * 0.5;
+            double my = target->motion().y * 0.5;
+            double mz = target->motion().z * 0.5;
+            mx += dx * f * kBase;
+            my += kBase;
+            mz += dz * f * kBase;
+            if (my > kBase) my = kBase;     // tope vertical de Genisys
+
+            target->setMotion(math::Vector3{mx, my, mz});
+
+            // SetEntityMotionPacket a todos los que ven a la victima
+            // (mismo filtro de visibilidad que el resto de difusiones).
+            auto motion = std::make_shared<network::protocol::SetEntityMotionPacket>();
+            motion->entities.push_back({target->runtimeId(),
+                                        (float)mx, (float)my, (float)mz});
+            int32_t tcx = (int32_t)std::floor(target->position().x) >> 4;
+            int32_t tcz = (int32_t)std::floor(target->position().z) >> 4;
+            for (auto& other : srv_->playersSnapshot()) {
+                if (!other) continue;
+                if (other->isPendingRemoval()) continue;
+                if (!other->spawned()) continue;
+                if (!other->canSeeBlock(tcx, tcz)) continue;
+                other->sendPacket(motion);
+            }
+            // Se incluye a la propia victima en el bucle a proposito:
+            // su cliente NO simula un golpe recibido (no es una accion
+            // que el jugador haya ejecutado localmente), asi que sin
+            // este SetEntityMotionPacket se quedaria clavada en el sitio
+            // mientras los demas si la ven moverse.
         }
-        // Salud de la victima a su propio cliente (cinturon de seguridad
-        // ademas del atributo generic.health que manda el hook).
-        auto sh = std::make_shared<network::protocol::SetHealthPacket>();
-        sh->health = (int32_t)target->health();
-        target->sendPacket(sh);
     }
 
     if (srv_->advancedLog()) {
         utils::MainLogger::get().info("[COMBAT] " + cfg_.username + " hit " +
-            target->getName() + " (health now " +
-            std::to_string((int)target->health()) + ")" +
-            (applied ? "" : " [cancelled]") +
+            target->getName() + " for " + std::to_string(BASE_ATTACK_DAMAGE) +
+            " (health now " + std::to_string((int)target->health()) + ")" +
             (died ? " — killed" : "") +
-            " knockback=" + std::to_string(target->motion().x));
+            " knockback=0.4");
     }
 }
 

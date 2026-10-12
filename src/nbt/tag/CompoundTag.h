@@ -59,12 +59,6 @@ const mcp_tag_t* mcp_compound_tag_get_compound(const mcp_tag_t* self, const char
 size_t mcp_compound_tag_size(const mcp_tag_t* self);
 bool mcp_compound_tag_contains(const mcp_tag_t* self, const char* name);
 
-// Remove `name` and destroy its tag. Returns true when something was
-// actually removed (so a caller can use it as a conditional rewrite
-// without knowing whether the key was there). The order of the remaining
-// entries is preserved.
-bool mcp_compound_tag_remove(mcp_tag_t* self, const char* name);
-
 #ifdef __cplusplus
 } // extern "C"
 #endif
