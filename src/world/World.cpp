@@ -361,6 +361,24 @@ int World::save() {
     return saved;
 }
 
+int World::saveBudget(size_t max_chunks, uint64_t max_ms, bool write_level_data) {
+    // Mismo orden que save(): los tiles a sus chunks ANTES de serializar,
+    // o los chunks se escriben con blobs viejos/vacios.
+    syncTilesToChunks();
+    int saved = chunks_.flushDirtyBudget(max_chunks, max_ms);
+    if (write_level_data && provider_) {
+        provider_->setSpawn(math::Vector3{
+            (double)spawn_.x, (double)spawn_.y, (double)spawn_.z});
+        provider_->setCurrentTime(cfg_.time);
+        provider_->saveLevelData();
+    }
+    return saved;
+}
+
+size_t World::unsavedChunkCount() const {
+    return chunks_.dirtyCount();
+}
+
 void World::tick(uint64_t current_tick) {
     advanceTime(1);
     doWeatherTick(current_tick);

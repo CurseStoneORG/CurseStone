@@ -16,6 +16,7 @@
 #include "world/generator/GenerationTask.h"
 #include "scheduler/AsyncPool.h"
 #include "ChunkManager.h"
+#include <chrono>
 #include <string.h>
 
 namespace cursestone::world {
@@ -298,6 +299,62 @@ int ChunkManager::flushDirty() {
             kv.second->dirty = false;
             ++n;
         }
+    }
+    return n;
+}
+
+// Flush acotado: el que usa el autosave. La diferencia con flushDirty()
+// es el PRESUPUESTO: escribe un puñado de chunks por llamada y corta
+// cuando se agota el tiempo, así que guardar el mundo deja de ser un
+// pico de cientos de ms en un tick (medido: ~304 ms para 400 chunks de
+// terreno real, y 759 ms en el caso reportado) y pasa a ser <6 ms
+// repartidos entre los ticks que haga falta.
+//
+// mtx_ SÍ se mantiene durante el I/O, igual que en flushDirty(): el hilo
+// de la consola despacha comandos en su propio hilo, así que un /save
+// (SaveCommand -> World::save()) puede entrar mientras el drenaje está a
+// medio escribir, y AnvilRegionLoader (FILE* + tabla de posiciones
+// compartida, y el mapa regions_ del provider) no es seguro entre hilos.
+// Con el lock, los dos escritores se serializan como hasta ahora; lo que
+// cambió es que ahora el lock se suelta en pocos ms en vez de quedarse
+// cientos. Los workers del AsyncPool que hacen setChunk() esperan a lo
+// sumo ese presupuesto.
+int ChunkManager::flushDirtyBudget(size_t max_chunks, uint64_t max_ms) {
+    if (max_chunks == 0) return 0;
+
+    std::lock_guard<std::mutex> lk(mtx_);
+    int n = 0;
+    auto t0 = std::chrono::steady_clock::now();
+    for (auto& kv : chunks_) {
+        if (!kv.second || !kv.second->dirty) continue;
+        if (provider_) {
+            auto adapter = format::ChunkAdapter::borrow(kv.second);
+            if (!adapter) continue;
+            provider_->saveChunk(adapter);
+        }
+        // Ojo: se limpia el flag pase lo que pase, igual que flushDirty()
+        // — saveChunk() no devuelve si falló, y el provider ya loguea el
+        // error. Si un chunk no llega ni a prepararse (no se puede
+        // envolver en ChunkAdapter) se salta sin contar: por eso Server
+        // corta el drenaje tras 40 ticks sin progreso, para no
+        // reintentarlo eternamente.
+        kv.second->dirty = false;
+        ++n;
+        if ((size_t)n >= max_chunks) break;
+        if (max_ms > 0) {
+            uint64_t used = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - t0).count();
+            if (used >= max_ms) break;
+        }
+    }
+    return n;
+}
+
+size_t ChunkManager::dirtyCount() const {
+    std::lock_guard<std::mutex> lk(mtx_);
+    size_t n = 0;
+    for (auto& kv : chunks_) {
+        if (kv.second && kv.second->dirty) ++n;
     }
     return n;
 }

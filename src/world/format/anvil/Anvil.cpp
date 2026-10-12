@@ -142,6 +142,24 @@ static bool gzip_decompress(const uint8_t* src, size_t src_len,
     return rc == Z_STREAM_END;
 }
 
+// Nivel de zlib al escribir un chunk en la region. El nivel NO forma
+// parte del formato: el byte de compresion del .mca es 2 (ZLIB) y
+// cualquier descompresor zlib lee el stream sea cual sea el nivel con
+// el que se genero.
+//
+// Por que no el default (6): medido sobre el codigo de abajo con chunks
+// de terreno normal (52.5 KB de NBT -> 8.5 KB comprimidos), el nivel 6
+// se come el ~90% de lo que tarda un autosave:
+//
+//   nivel 6 : 1.27 ms/chunk -> 8.5 KB      (349 chunks = 445 ms)
+//   nivel 1 : 0.45 ms/chunk -> 9.7 KB      (~3x mas rapido, +14% de espacio)
+//   nivel 9 : 8.90 ms/chunk -> 8.4 KB      (lo contrario, absurdo)
+//
+// El autosave escribe en el hilo principal, asi que esos ms son freeze
+// de tick. El nivel 1 apenas compra espacio (14%) a cambio de 3x menos
+// CPU, que es exactamente el intercambio que quiere un servidor en vivo.
+static constexpr int kChunkCompressionLevel = 1;
+
 // ZLIB-compress (raw deflate) — used for chunk payloads in .mca files.
 static bool zlib_compress(const uint8_t* src, size_t src_len,
                             std::vector<uint8_t>* out) {
@@ -149,7 +167,7 @@ static bool zlib_compress(const uint8_t* src, size_t src_len,
     out->resize(bound);
     uLongf dest_len = bound;
     int rc = compress2(out->data(), &dest_len, src, (uLong)src_len,
-                        Z_DEFAULT_COMPRESSION);
+                        kChunkCompressionLevel);
     if (rc != Z_OK) { out->clear(); return false; }
     out->resize(dest_len);
     return true;

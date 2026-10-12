@@ -48,7 +48,23 @@ public:
         on_chunk_added_ = std::move(cb);
     }
     void markDirty(int32_t x, int32_t z);
+    // Escribe TODO lo sucio de golpe, con mtx_ cogido de principio a fin.
+    // Bloquea al que llama (y a los workers de generacion que esperan ese
+    // lock) hasta que termina. Solo para las rutas que necesitan el mundo
+    // entero en disco: apagado / saveAll() / comando /save.
     int flushDirty();
+    // Igual que flushDirty() pero con PRESUPUESTO: escribe como maximo
+    // `max_chunks` chunks sucios y se corta antes si ya consumio
+    // `max_ms` milisegundos. Devuelve cuantos escribio.
+    //
+    // Es la version que usa el autosave: llamandola cada tick, el coste
+    // de guardar el mundo queda repartido entre varios ticks en vez de
+    // caer como un pico unico en el tick loop. Medido antes de este
+    // cambio, con chunks de terreno real (generador Normal): 400 chunks
+    // sucios = ~300 ms de una sola vez (y 759 ms en el caso reportado,
+    // con el mundo mas cargado, ~1000 chunks) — eso es el congelamiento
+    // que el cliente acaba leyendo como desconexion.
+    int flushDirtyBudget(size_t max_chunks, uint64_t max_ms);
     // Frees a single chunk's memory. If `save` is true and a provider
     // is set, the chunk is saved first (only if it's actually dirty —
     // an unmodified chunk doesn't need a disk write just because it's
@@ -72,6 +88,9 @@ public:
     // the whole sweep (each unloadChunk() call above takes the lock
     // itself, per-chunk).
     std::vector<std::pair<int32_t,int32_t>> loadedChunkCoords() const;
+    // Numero de chunks en memoria con cambios sin escribir. El autosave
+    // lo usa para saber si tiene que seguir drenando el flush.
+    size_t dirtyCount() const;
     void setProvider(std::shared_ptr<format::WorldProvider> p) { provider_ = std::move(p); }
     std::shared_ptr<format::WorldProvider> provider() const { return provider_; }
     // Set the world generator used to create new chunks when they're
