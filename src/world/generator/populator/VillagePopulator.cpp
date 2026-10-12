@@ -3,7 +3,7 @@
 #include "world/generator/TerrainShape.h"
 #include "world/generator/biome/Biome.h"
 #include "world/generator/biome/BiomeRegistry.h"
-#include "world/generator/noise/GenRandom.h"
+#include "world/generator/noise/MersenneRandom.h"
 #include "world/generator/structure/village/VillagePalette.h"
 #include "world/generator/structure/village/VillagePieces.h"
 #include "block/BlockIds.h"
@@ -60,7 +60,7 @@ int wrapRegion(int value) {
 // structure types share the exact same rigid placement math.
 void regionCandidate(int64_t seed, int regionX, int regionZ, int salt,
                      int& chunkX, int& chunkZ) {
-    GenRandom rng(seed * 341873128712LL +
+    MersenneRandom rng(seed * 341873128712LL +
                   (int64_t)regionX * 341873128712LL +
                   (int64_t)regionZ * 132897987541LL +
                   (int64_t)salt);
@@ -216,7 +216,7 @@ int cwFacingSteps(uint8_t front, uint8_t target) {
 // Weighted pick honouring the one-copy caps. Re-rolls on a capped pick,
 // giving up (and skipping the slot) after a few tries — deterministic,
 // because the rng stream and the counts are identical in every chunk.
-int pickBuilding(GenRandom& rng, int counts[village::PIECE_COUNT]) {
+int pickBuilding(MersenneRandom& rng, int counts[village::PIECE_COUNT]) {
     using namespace village;
     for (int attempt = 0; attempt < 6; ++attempt) {
         int r = (int)rng.nextInt(kPoolTotal);
@@ -242,7 +242,7 @@ void buildLayout(int64_t seed, int regionX, int regionZ,
 
     // The layout rng is mixed differently from regionCandidate's so the
     // well offset and the anchor chunk cannot correlate.
-    GenRandom rng(seed * 341873128712LL +
+    MersenneRandom rng(seed * 341873128712LL +
                   (int64_t)regionX * 132897987541LL +
                   (int64_t)regionZ * 341873128712LL +
                   kSalt * 2 + 0x5F3759DFLL);

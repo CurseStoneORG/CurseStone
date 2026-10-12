@@ -18,7 +18,7 @@ void CaveCarver::generate(int64_t seed, int32_t chunkX, int32_t chunkZ,
     // Per-chunk deterministic seed: independent of generation order.
     uint64_t mix = (uint64_t)(uint32_t)chunkX * 341873128712ULL ^
                    (uint64_t)(uint32_t)chunkZ * 132897987541ULL;
-    GenRandom random((int64_t)((uint64_t)seed ^ mix));
+    MersenneRandom random((int64_t)((uint64_t)seed ^ mix));
 
     rand_.setSeed(random.getSeed());
     int64_t j = rand_.nextLong();
@@ -79,7 +79,7 @@ void CaveCarver::addTunnel(int64_t seed, int32_t originChunkX, int32_t originChu
                            mcp_chunk_t* chunk, double startX, double startY, double startZ,
                            float width, float yaw, float pitch,
                            int32_t startCounter, int32_t endCounter, double heightModifier) {
-    GenRandom random(seed);
+    MersenneRandom random(seed);
 
     double originBlockX = (originChunkX * 16 + 8);
     double originBlockZ = (originChunkZ * 16 + 8);

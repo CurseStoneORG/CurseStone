@@ -16,7 +16,7 @@ bool wantsFern(uint8_t b) {
 } // namespace
 
 void PopulatorTallGrass::populate(GenerationContext& ctx) {
-    GenRandom rng = chunkRandom(ctx.seed, ctx.chunk_x, ctx.chunk_z, 0x67726173);
+    MersenneRandom rng = chunkRandom(ctx.seed, ctx.chunk_x, ctx.chunk_z, 0x67726173);
     for (int i = 0; i < 16; ++i) {
         int x = (int)rng.nextInt(16);
         int z = (int)rng.nextInt(16);

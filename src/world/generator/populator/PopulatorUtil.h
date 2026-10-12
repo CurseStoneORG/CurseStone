@@ -2,18 +2,18 @@
 // PopulatorUtil — shared helpers for the terrain feature populators.
 #pragma once
 #include "world/format/Chunk.h"
-#include "world/generator/noise/GenRandom.h"
+#include "world/generator/noise/MersenneRandom.h"
 #include "block/BlockIds.h"
 
 namespace cursestone::world::generator::populator {
 
 // Deterministic per (chunk, salt) RNG so populators are order-independent.
-inline GenRandom chunkRandom(int64_t seed, int32_t chunkX, int32_t chunkZ, uint64_t salt) {
+inline MersenneRandom chunkRandom(int64_t seed, int32_t chunkX, int32_t chunkZ, uint64_t salt) {
     uint64_t mix = (uint64_t)seed
                  ^ ((uint64_t)(uint32_t)chunkX * 341873128712ULL)
                  ^ ((uint64_t)(uint32_t)chunkZ * 132897987541ULL)
                  ^ (salt * 0x9E3779B97F4A7C15ULL);
-    return GenRandom((int64_t)mix);
+    return MersenneRandom((int64_t)mix);
 }
 
 // Biome ids that never grow flowers/tall grass (sand/ice/water).

@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include "world/generator/object/OreGenerator.h"
-#include "world/generator/noise/GenRandom.h"
+#include "world/generator/noise/MersenneRandom.h"
 
 #include <cmath>
 
 namespace cursestone::world::generator::object {
 
-using cursestone::world::generator::GenRandom;
+using cursestone::world::generator::MersenneRandom;
 
 namespace {
 constexpr int kMaxY = 127;
@@ -24,7 +24,7 @@ int OreGenerator::place(mcp_chunk_t* c, int64_t seed, const OreVein& v) {
     // the order chunks/veins are generated in.
     int64_t mixed = seed ^ ((int64_t)v.block_id << 40) ^
                     ((int64_t)c->x * 73856093LL) ^ ((int64_t)c->z * 19349663LL);
-    GenRandom rng(mixed);
+    MersenneRandom rng(mixed);
 
     int placed = 0;
     int span = (v.max_y > v.min_y) ? (v.max_y - v.min_y) : 0;

@@ -8,7 +8,7 @@ namespace cursestone::world::generator::object::trees {
 
 using cursestone::block::BlockId;
 
-void AcaciaTree::init(GenRandom& rng) {
+void AcaciaTree::init(MersenneRandom& rng) {
     height_ = (int)(rng.nextInt(3) + rng.nextInt(3)) + 5;   // reference
     logId_ = 162; logData_ = 0;    // WOOD_2, acacia
     leafId_ = 161; leafData_ = 0;  // LEAVES_2, acacia
@@ -19,7 +19,7 @@ bool AcaciaTree::canPlaceOn(uint8_t soil) const {
 }
 
 void AcaciaTree::canopy(mcp_chunk_t* c, int cx, int trunkTopY, int cz,
-                        GenRandom&, int /*spread*/) {
+                        MersenneRandom&, int /*spread*/) {
     // Reference AcaciaTree::Generate leaf block:
     //   at trunkTopY    : square minus corners (abs(x)<3 || abs(z)<3)
     //   at trunkTopY+1  : inner 3x3 plus the 4 edge middles
@@ -37,7 +37,7 @@ void AcaciaTree::canopy(mcp_chunk_t* c, int cx, int trunkTopY, int cz,
 }
 
 bool AcaciaTree::generate(mcp_chunk_t* c, int sourceX, int sourceY,
-                          int sourceZ, uint8_t soilId, GenRandom& rng) {
+                          int sourceZ, uint8_t soilId, MersenneRandom& rng) {
     init(rng);
     if (sourceY < 2 || sourceY > 124) return false;
     if (!canPlaceOn(soilId)) return false;

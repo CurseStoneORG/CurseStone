@@ -8,7 +8,7 @@ namespace cursestone::world::generator::object::trees {
 
 class BirchTree : public GenericTree {
 protected:
-    void init(GenRandom& rng) override {
+    void init(MersenneRandom& rng) override {
         height_ = 5 + (int)rng.nextInt(3);
         logId_ = 17;  logData_ = 2;   // LOG, birch
         leafId_ = 18; leafData_ = 2;  // LEAVES, birch

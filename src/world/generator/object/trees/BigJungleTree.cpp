@@ -21,7 +21,7 @@ constexpr int kExtraRandom = 10;
 
 } // namespace
 
-void BigJungleTree::init(GenRandom& rng) {
+void BigJungleTree::init(MersenneRandom& rng) {
     height_ = kBaseHeight + (int)rng.nextInt(kExtraRandom);   // 15..24
     logId_  = (uint8_t)BlockId::LOG;
     logData_  = 3;      // jungle wood
@@ -53,7 +53,7 @@ bool BigJungleTree::canOverrideAt(mcp_chunk_t* c, int x, int y, int z) {
 }
 
 void BigJungleTree::growLeavesLayer(mcp_chunk_t* c, int x, int y, int z,
-                                    int radius, GenRandom& rng) {
+                                    int radius, MersenneRandom& rng) {
     for (int dx = radius; dx >= -radius; --dx) {
         for (int dz = radius; dz >= -radius; --dz) {
             if (dx != 0 && dz != 0 && rng.nextBoolean()) continue;  // cull corner
@@ -69,7 +69,7 @@ void BigJungleTree::growLeavesLayerStrict(mcp_chunk_t* c, int x, int y, int z,
             setForced(c, x + dx, y, z + dz, leafId_, leafData_);
 }
 
-void BigJungleTree::placeVine(mcp_chunk_t* c, GenRandom& rng, int x, int y,
+void BigJungleTree::placeVine(mcp_chunk_t* c, MersenneRandom& rng, int x, int y,
                               int z, uint8_t faceMask) {
     // The reference draws the random number BEFORE testing the block, and
     // that order matters: it is what makes the vine pattern reproducible.
@@ -80,7 +80,7 @@ void BigJungleTree::placeVine(mcp_chunk_t* c, GenRandom& rng, int x, int y,
 }
 
 bool BigJungleTree::generate(mcp_chunk_t* c, int sourceX, int sourceY,
-                             int sourceZ, uint8_t soilId, GenRandom& rng) {
+                             int sourceZ, uint8_t soilId, MersenneRandom& rng) {
     init(rng);
 
     // ensureGrowable(): room for the whole tree plus the crown above it,

@@ -44,7 +44,7 @@ void GenericTree::setForced(mcp_chunk_t* c, int x, int y, int z, uint8_t id, uin
     mcp_chunk_set_block_full(c, x, y, z, id, data);
 }
 
-void GenericTree::init(GenRandom& rng) {
+void GenericTree::init(MersenneRandom& rng) {
     // Vanilla oak: 4..6 blocks tall.
     height_ = 4 + (int)rng.nextInt(3);
     logId_ = 17; logData_ = 0;
@@ -56,7 +56,7 @@ bool GenericTree::canPlaceOn(uint8_t soil) const {
 }
 
 void GenericTree::placeCanopy(mcp_chunk_t* c, int sourceX, int sourceY,
-                              int sourceZ, GenRandom& rng) {
+                              int sourceZ, MersenneRandom& rng) {
     // Reference GenericTree::Generate: layers from sourceY+height-3 up to
     // sourceY+height, radius = 1 - n/2 (so 2 at the bottom, 1 at the top),
     // corner blocks randomly culled unless it is the very top layer.
@@ -75,13 +75,13 @@ void GenericTree::placeCanopy(mcp_chunk_t* c, int sourceX, int sourceY,
 }
 
 void GenericTree::placeTrunk(mcp_chunk_t* c, int sourceX, int sourceY,
-                             int sourceZ, GenRandom& /*rng*/) {
+                             int sourceZ, MersenneRandom& /*rng*/) {
     for (int i = 0; i < height_; ++i)
         setLog(c, sourceX, sourceY + i, sourceZ, logId_, logData_);
 }
 
 bool GenericTree::generate(mcp_chunk_t* c, int sourceX, int sourceY,
-                           int sourceZ, uint8_t soilId, GenRandom& rng) {
+                           int sourceZ, uint8_t soilId, MersenneRandom& rng) {
     init(rng);
 
     if (sourceY < 2 || sourceY > 124) return false;

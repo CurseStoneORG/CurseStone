@@ -34,7 +34,7 @@
 #include "level/generator/Normal.h"
 #include "level/generator/TerrainShape.h"
 #include "level/generator/biome/Biome.h"
-#include "level/generator/noise/GenRandom.h"
+#include "world/generator/noise/MersenneRandom.h"
 #include "level/generator/populator/VillagePopulator.h"
 #include "level/generator/structure/DesertTemple.h"
 #include "level/format/Chunk.h"
@@ -80,7 +80,7 @@ int wrapRegion(int v) {
 // populator itself.
 void regionCandidate(int64_t seed, int rx, int rz, int64_t salt,
                      int& cx, int& cz) {
-    GenRandom rng(seed * 341873128712LL + (int64_t)rx * 341873128712LL +
+    MersenneRandom rng(seed * 341873128712LL + (int64_t)rx * 341873128712LL +
                   (int64_t)rz * 132897987541LL + salt);
     const int span = kSpacing - kSep;
     cx = rx * kSpacing +

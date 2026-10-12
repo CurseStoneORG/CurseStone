@@ -1,26 +1,51 @@
-// PerlinNoise — classic 3D Perlin noise (Ken Perlin's improved
-// noise). Used as a fallback generator and as the secondary
-// octave layer for biome edge blending in Normal.
+// SPDX-License-Identifier: LGPL-3.0-or-later
+//
+// PerlinNoise — la suma de octavas del vanilla: `levels` capas de
+// ImprovedNoise, cada una al doble de frecuencia y a la mitad de amplitud
+// (value += noise(x*pow, y*pow)/pow; pow /= 2).
+//
+// Copiado 1:1 de `handheld/src/world/level/levelgen/synth/PerlinNoise.h`
+// (SSMGAlt/PocketEdition).
 #pragma once
-#include <stdint.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include "world/generator/noise/MersenneRandom.h"
+#include "world/generator/noise/Synth.h"
 
-typedef struct mcp_perlin {
-    int64_t seed;
-    int32_t perm[512];
-} mcp_perlin_t;
+namespace cursestone::world::generator {
 
-mcp_perlin_t* mcp_perlin_new(int64_t seed);
-void          mcp_perlin_destroy(mcp_perlin_t* p);
+class ImprovedNoise;
 
-double mcp_perlin_noise2d(const mcp_perlin_t* p, double x, double y);
-double mcp_perlin_noise3d(const mcp_perlin_t* p, double x, double y, double z);
-double mcp_perlin_fbm2d(const mcp_perlin_t* p, double x, double y,
-                        int octaves, double persistence, double lacunarity);
+class PerlinNoise : public Synth {
+public:
+    explicit PerlinNoise(int levels);
+    PerlinNoise(MersenneRandom* random, int levels);
+    ~PerlinNoise() override;
 
-#ifdef __cplusplus
-}
-#endif
+    float getValue(float x, float y) override;
+    float getValue(float x, float y, float z);
+
+    float* getRegion(float* buffer, float x, float y, float z, int xSize,
+                     int ySize, int zSize, float xScale, float yScale,
+                     float zScale);
+    float* getRegion(float* sr, int x, int z, int xSize, int zSize, float xScale,
+                     float zScale, float pow);
+
+    int hashCode();
+
+    // Anadido (no esta en el original): cuantas octavas tiene esta capa. El
+    // vanilla suma las octavas SIN dividir por la amplitud total, asi que su
+    // salida crece con `levels`; nuestro generador espera campos en [-1, 1] y
+    // usa esto para normalizar.
+    int levelCount() const { return levels; }
+
+private:
+    ImprovedNoise** noiseLevels;
+    int levels;
+
+    MersenneRandom _random;
+    MersenneRandom* _rndPtr;
+
+    void init(int levels);
+};
+
+} // namespace cursestone::world::generator

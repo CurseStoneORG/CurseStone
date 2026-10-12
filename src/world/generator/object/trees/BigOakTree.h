@@ -9,11 +9,11 @@ namespace cursestone::world::generator::object::trees {
 
 class BigOakTree : public GenericTree {
 protected:
-    void init(GenRandom& rng) override;
+    void init(MersenneRandom& rng) override;
     void placeCanopy(mcp_chunk_t* c, int sourceX, int sourceY,
-                     int sourceZ, GenRandom& rng) override;
+                     int sourceZ, MersenneRandom& rng) override;
     void placeTrunk(mcp_chunk_t* c, int sourceX, int sourceY,
-                    int sourceZ, GenRandom& rng) override;
+                    int sourceZ, MersenneRandom& rng) override;
 
 private:
     int trunkHeight_ = 5;

@@ -12,7 +12,7 @@
 // outside the 16x16 column is clipped.
 #pragma once
 #include "world/format/Chunk.h"
-#include "world/generator/noise/GenRandom.h"
+#include "world/generator/noise/MersenneRandom.h"
 #include "world/generator/object/TreeType.h"
 #include <cstdint>
 
@@ -32,21 +32,21 @@ public:
     // Virtual: some species (acacia, dark oak, big oak) replace the whole
     // layout with their own algorithm.
     virtual bool generate(mcp_chunk_t* c, int sourceX, int sourceY, int sourceZ,
-                          uint8_t soilId, GenRandom& rng);
+                          uint8_t soilId, MersenneRandom& rng);
 
 protected:
     // Species parameters (height, log/leaf ids + data). Subclasses set
     // these in their own init() override.
-    virtual void init(GenRandom& rng);
+    virtual void init(MersenneRandom& rng);
 
     // Leaf placement. Default = vanilla oak blob (radius 1..2, rounded
     // corners culled randomly). Subclasses may replace it.
     virtual void placeCanopy(mcp_chunk_t* c, int sourceX, int sourceY,
-                             int sourceZ, GenRandom& rng);
+                             int sourceZ, MersenneRandom& rng);
 
     // Trunk placement. Default = straight vertical column.
     virtual void placeTrunk(mcp_chunk_t* c, int sourceX, int sourceY,
-                            int sourceZ, GenRandom& rng);
+                            int sourceZ, MersenneRandom& rng);
 
     // Soil the species accepts (default: grass or dirt).
     virtual bool canPlaceOn(uint8_t soil) const;

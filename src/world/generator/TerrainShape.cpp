@@ -9,6 +9,94 @@ namespace cursestone::world::generator {
 
 namespace {
 
+// ---- Puente entre el ruido vanilla y nuestro generador -------------------
+//
+// El generador pedia un fbm 2D normalizado a [-1, 1], con la octava BASE en
+// la coordenada que le pasan:
+//
+//     fbm(x, y, octaves) = sum(noise(x*2^i, y*2^i) * 0.5^i) / sum(0.5^i)
+//
+// El PerlinNoise vanilla suma las octavas AL REVES — la frecuencia se divide y
+// la amplitud se multiplica:
+//
+//     vanilla(x, y) = sum(noise(x/2^i, y/2^i) * 2^i)          (pow /= 2)
+//
+// asi que su salida NO es comparable: sin escalar, la octava dominante (la
+// ultima) tiene periodo 2^(levels-1) veces mas largo que la base, y a la
+// escala de bloque del generador el campo sale casi constante (mundo plano).
+//
+// El puente hace las dos cosas que hacen falta para que el campo signifique lo
+// mismo que el fbm de antes:
+//
+//   1. escala la entrada por 2^(levels-1), de modo que la octava dominante
+//      vuelve a caer exactamente en la frecuencia base que el generador venia
+//      usando (y las demas quedan como detalle cada vez mas fino, cada vez mas
+//      debil, como en un fbm);
+//   2. divide por la amplitud total sum(2^i) = 2^levels - 1, que deja el
+//      resultado acotado en [-1, 1].
+//
+// El parametro `octaves` del sitio que llama ya no decide el numero de octavas
+// — eso lo fija la capa vanilla — pero se conserva en la firma para que cada
+// punto de uso se siga leyendo igual (y porque cada capa SI tiene su propia
+// cuenta de octavas, ver TerrainNoise).
+// El valor CRUDO del campo: ya escalado y normalizado a [-1, 1] por la
+// amplitud total, pero SIN la calibracion por mundo (offset/gain). El puente
+// vive en noise/VanillaNoise.h porque el generador del Nether usa el mismo.
+inline double rawField2d(const FieldNoise& f, double x, double y) {
+    return noiseValue2d(f.layer, x, y);
+}
+
+inline double noiseFbm2d(const FieldNoise& f, double x, double y,
+                         int /*octaves*/, double /*persistence*/,
+                         double /*lacunarity*/) {
+    return (rawField2d(f, x, y) - f.offset) * f.gain;
+}
+
+// ---- Calibracion por mundo ----------------------------------------------
+// El campo vanilla, a la escala de bloque del generador, sale en buena parte
+// constante en su banda baja (ver el comentario largo mas arriba): la media
+// del trozo del ruido donde cae el mundo no es 0 y su relieve no es el del
+// fbm anterior. `calibrate` mide las dos cosas en una zona de referencia y
+// deja el campo con la MISMA media (0) y la MISMA desviacion que tenia el
+// ruido al que reemplaza, de modo que cada umbral y cada mascara del
+// generador siguen significando lo que significaban.
+//
+// Se hace una vez por mundo (y por campo), en el constructor de TerrainNoise.
+constexpr double kCalibHalfSize = 512.0;  // zona de referencia: +/-512 bloques
+constexpr double kCalibStep = 16.0;       //  64x64 muestras
+constexpr double kMinGain = 0.25;
+constexpr double kMaxGain = 24.0;
+
+// `debias`: quitar la media medida. Solo vale para un campo que se evalua
+// SIEMPRE a la misma escala (el clima y la red de rios). Un campo que se lee
+// a escalas muy distintas (el relieve, la superficie) tiene una media
+// distinta en cada una — a escala fina el trozo de ruido ya cubre varias
+// octavas y su media es ~0 — asi que restar la media de una escala estropea
+// las otras. Para esos campos se deja la media quieta (es pequena) y solo se
+// ajusta la amplitud.
+void calibrate(FieldNoise& f, double scale, double targetRms, bool debias) {
+    double sum = 0.0, sumSq = 0.0;
+    long n = 0;
+    for (double x = -kCalibHalfSize; x < kCalibHalfSize; x += kCalibStep) {
+        for (double z = -kCalibHalfSize; z < kCalibHalfSize; z += kCalibStep) {
+            const double v = rawField2d(f, x * scale, z * scale);
+            sum += v;
+            sumSq += v * v;
+            ++n;
+        }
+    }
+    if (n == 0) return;
+    const double mean = sum / (double)n;
+    double var = sumSq / (double)n - mean * mean;
+    if (var < 0.0) var = 0.0;
+    const double rms = std::sqrt(var);
+    f.offset = debias ? mean : 0.0;
+    const double centred = debias ? std::sqrt(std::max(0.0, var)) : rms;
+    f.gain = (centred > 1e-9) ? (targetRms / centred) : 1.0;
+    if (f.gain < kMinGain) f.gain = kMinGain;
+    if (f.gain > kMaxGain) f.gain = kMaxGain;
+}
+
 inline double smoothstep(double e0, double e1, double x) {
     double t = (x - e0) / (e1 - e0);
     if (t < 0.0) t = 0.0;
@@ -100,7 +188,7 @@ inline double riverClimbRate(double cliff) {
 // wavelength) restores that variation without reintroducing the ponds,
 // because it scales a distance threshold rather than a field threshold.
 inline double riverWidthScale(const TerrainNoise& n, double wx, double wz) {
-    const double w = mcp_simplex_fbm2d(n.surface, wx * 0.0011 + 61000.0,
+    const double w = noiseFbm2d(n.surface, wx * 0.0011 + 61000.0,
                                        wz * 0.0011 - 27000.0, 2, 0.5, 2.0);
     return 0.70 + 0.60 * (w * 0.5 + 0.5);   // 0.70 .. 1.30
 }
@@ -115,7 +203,7 @@ inline double riverHalfWidth(const TerrainNoise& n, double wx, double wz) {
 } // namespace
 
 double continentField(const TerrainNoise& n, double wx, double wz) {
-    return mcp_simplex_fbm2d(n.height, wx * 0.0010, wz * 0.0010, 3, 0.5, 2.0);
+    return noiseFbm2d(n.height, wx * 0.0010, wz * 0.0010, 3, 0.5, 2.0);
 }
 
 double plainsFactor(const TerrainNoise& n, double wx, double wz) {
@@ -125,7 +213,7 @@ double plainsFactor(const TerrainNoise& n, double wx, double wz) {
     // above the ocean is almost always plains. The coastal term is what
     // puts the wide open grassland right against the sea, with hills and
     // forest further back — the shape the reference generator produces.
-    const double p = mcp_simplex_fbm2d(n.surface, wx * 0.0017 + 3300.0,
+    const double p = noiseFbm2d(n.surface, wx * 0.0017 + 3300.0,
                                        wz * 0.0017 - 1700.0, 2, 0.5, 2.0);
     const double inland = smoothstep(0.02, 0.40, p);
     const double coast = smoothstep(-0.12, 0.10, cont) *
@@ -134,11 +222,11 @@ double plainsFactor(const TerrainNoise& n, double wx, double wz) {
 }
 
 double tempAt(const TerrainNoise& n, double wx, double wz) {
-    return mcp_simplex_fbm2d(n.temp, wx * 0.0004, wz * 0.0004, 2, 0.5, 2.0);
+    return noiseFbm2d(n.temp, wx * 0.0004, wz * 0.0004, 2, 0.5, 2.0);
 }
 
 double humidAt(const TerrainNoise& n, double wx, double wz) {
-    return mcp_simplex_fbm2d(n.humid, wx * 0.0005 + 512.0,
+    return noiseFbm2d(n.humid, wx * 0.0005 + 512.0,
                              wz * 0.0005 - 256.0, 2, 0.5, 2.0);
 }
 
@@ -151,7 +239,7 @@ double plainsPlateau(const TerrainNoise& n, double wx, double wz) {
     // biome choice read, so the raised table, the flat ground and the
     // plains biome always agree on where a plain is.
     const double patch = smoothstep(0.02, 0.40,
-        mcp_simplex_fbm2d(n.surface, wx * 0.0060 + 9100.0,
+        noiseFbm2d(n.surface, wx * 0.0060 + 9100.0,
                           wz * 0.0060 - 2700.0, 2, 0.5, 2.0));
     if (patch <= 0.0) return 0.0;
     return patch * smoothstep(0.45, 0.72, plainsFactor(n, wx, wz));
@@ -162,7 +250,7 @@ double plainsForest(const TerrainNoise& n, double wx, double wz) {
     // plateau: the biome selection turns this into BIOME_FOREST, so the
     // patch gets real forest density instead of a handful of stray oaks.
     const double patch = smoothstep(0.20, 0.48,
-        mcp_simplex_fbm2d(n.surface, wx * 0.0062 - 6100.0,
+        noiseFbm2d(n.surface, wx * 0.0062 - 6100.0,
                           wz * 0.0062 + 2450.0, 2, 0.5, 2.0));
     if (patch <= 0.0) return 0.0;
     return patch * smoothstep(0.45, 0.70, plainsFactor(n, wx, wz));
@@ -187,7 +275,7 @@ double savannaFactor(const TerrainNoise& n, double wx, double wz) {
     // 0.0024) and the ramp widened so the savanna — and the table cut out
     // of it — read as broad country instead of ribbons.
     return smoothstep(-0.24, 0.20,
-        mcp_simplex_fbm2d(n.surface, wx * 0.0024 + 4200.0,
+        noiseFbm2d(n.surface, wx * 0.0024 + 4200.0,
                           wz * 0.0024 - 8800.0, 2, 0.5, 2.0));
 }
 
@@ -257,7 +345,7 @@ double savannaCanyon(const TerrainNoise& n, double wx, double wz) {
     // Broad, low-frequency table mask: the tables come out as big blobs
     // hundreds of blocks across rather than as small mounds or ribbons.
     double patch = smoothstep(-0.22, 0.14,
-        mcp_simplex_fbm2d(n.surface, wx * 0.0016 + 15500.0,
+        noiseFbm2d(n.surface, wx * 0.0016 + 15500.0,
                           wz * 0.0016 + 7300.0, 2, 0.5, 2.0));
     // Near the desert the table is wanted on essentially every savanna
     // column, so the patch mask is lifted towards 1 there.
@@ -265,44 +353,52 @@ double savannaCanyon(const TerrainNoise& n, double wx, double wz) {
     return core * interior * notPlains * patch;
 }
 
-TerrainNoise::TerrainNoise(int64_t seed) {
-    height  = mcp_simplex_new(seed);
-    temp    = mcp_simplex_new(seed ^ 0xBA5EBA11);
-    humid   = mcp_simplex_new(seed ^ 0x0FF1CE);
-    river   = mcp_simplex_new(seed ^ 0x517E12);
-    surface = mcp_simplex_new(seed ^ 0x9E3779B9);
+TerrainNoise::TerrainNoise(int64_t seed)
+    : vanilla(seed),
+      // Cada campo del generador sobre una capa del juego completo vanilla.
+      // El reparto es fijo: la capa "baja" A para el relieve principal, las
+      // de 4 octavas para el clima (temperatura/humedad), la "baja" B para la
+      // red de rios y forestNoise para la superficie sin arboles.
+      height{vanilla.lperlinNoise1, 1.0, 0.0},
+      temp{vanilla.perlinNoise2, 1.0, 0.0},
+      humid{vanilla.perlinNoise3, 1.0, 0.0},
+      river{vanilla.lperlinNoise2, 1.0, 0.0},
+      surface{vanilla.forestNoise, 1.0, 0.0} {
+    // Zona de referencia y desviacion objetivo por campo: son las que medía
+    // el ruido anterior (simplex) sobre +/-512 bloques, que es el patron con
+    // el que se ajustaron los umbrales del generador.
+    calibrate(height, 0.0022, 0.3191, /*debias=*/false);
+    calibrate(temp, 0.0004, 0.5456, /*debias=*/true);
+    calibrate(humid, 0.0005, 0.3974, /*debias=*/true);
+    calibrate(river, 0.0011, 0.2958, /*debias=*/true);
+    calibrate(surface, 0.0017, 0.3443, /*debias=*/false);
 }
 
-TerrainNoise::~TerrainNoise() {
-    mcp_simplex_destroy(height);
-    mcp_simplex_destroy(temp);
-    mcp_simplex_destroy(humid);
-    mcp_simplex_destroy(river);
-    mcp_simplex_destroy(surface);
-}
+// Las capas viven dentro de `vanilla`; no hay nada que liberar a mano.
+TerrainNoise::~TerrainNoise() = default;
 
 double rawColumnHeight(const TerrainNoise& n, double wx, double wz) {
     // Continent shape (oceans vs. land). Long wavelength.
     const double cont = continentField(n, wx, wz);
     // Broad rolling swells — the large-scale swell that makes hills read as
     // hills instead of as one uniform bump field.
-    const double broad = mcp_simplex_fbm2d(n.height, wx * 0.0022 + 313.0,
+    const double broad = noiseFbm2d(n.height, wx * 0.0022 + 313.0,
                                            wz * 0.0022 + 727.0, 3, 0.5, 2.0);
     // Rolled hills.
-    const double hill = mcp_simplex_fbm2d(n.height, wx * 0.0055 + 77.3,
+    const double hill = noiseFbm2d(n.height, wx * 0.0055 + 77.3,
                                           wz * 0.0055 - 41.7, 4, 0.5, 2.0);
     // Small surface detail — this is what keeps the terrain from looking
     // like a smooth ramp.
-    const double det = mcp_simplex_fbm2d(n.height, wx * 0.0140 + 900.0,
+    const double det = noiseFbm2d(n.height, wx * 0.0140 + 900.0,
                                          wz * 0.0140 + 300.0, 3, 0.5, 2.0);
     // Fine crags. The long-wavelength layers barely move between two
     // neighbouring columns, so without a short-wavelength layer the ground
     // reads as glassy smooth no matter how big the hills are. This is what
     // actually gives the surface its local roughness.
-    const double crag = mcp_simplex_fbm2d(n.height, wx * 0.0320 - 555.0,
+    const double crag = noiseFbm2d(n.height, wx * 0.0320 - 555.0,
                                           wz * 0.0320 + 111.0, 2, 0.5, 2.0);
     // Ridged mountains: a value that folds at 0 into sharp crests.
-    const double ridgeN = mcp_simplex_fbm2d(n.height, wx * 0.0032 + 1234.5,
+    const double ridgeN = noiseFbm2d(n.height, wx * 0.0032 + 1234.5,
                                             wz * 0.0032 - 987.6, 3, 0.5, 2.0);
     double ridge = 1.0 - std::fabs(ridgeN);
     ridge *= ridge;
@@ -313,7 +409,7 @@ double rawColumnHeight(const TerrainNoise& n, double wx, double wz) {
     // what finally produces real 3-block steps and bare rock faces on the
     // hills without touching the lowland. Keeping it out of the lowlands is
     // also what stops it from making the river banks harsher.
-    const double outN = mcp_simplex_fbm2d(n.height, wx * 0.0210 + 88.0,
+    const double outN = noiseFbm2d(n.height, wx * 0.0210 + 88.0,
                                           wz * 0.0210 - 55.0, 2, 0.5, 2.0);
     double outcrop = 1.0 - std::fabs(outN);
     outcrop = outcrop * outcrop * outcrop;
@@ -373,9 +469,9 @@ double rawColumnHeight(const TerrainNoise& n, double wx, double wz) {
     // scale. Both terms below are weighted by `offshore`, so the coast keeps
     // its smooth shelf and only the genuinely deep water gets relief.
     if (offshore > 0.0) {
-        const double floorN = mcp_simplex_fbm2d(n.height, wx * 0.0048 + 2200.0,
+        const double floorN = noiseFbm2d(n.height, wx * 0.0048 + 2200.0,
                                                 wz * 0.0048 - 6100.0, 3, 0.5, 2.0);
-        const double ridgeIn = mcp_simplex_fbm2d(n.height, wx * 0.0021 - 4400.0,
+        const double ridgeIn = noiseFbm2d(n.height, wx * 0.0021 - 4400.0,
                                                 wz * 0.0021 + 1700.0, 2, 0.5, 2.0);
         double seamount = 1.0 - std::fabs(ridgeIn);
         seamount = seamount * seamount;
@@ -529,11 +625,11 @@ inline double riverField(const TerrainNoise& n, double wx, double wz, double bia
     // length instead of one long smooth drawn arc.
     constexpr double kWarpFreq = 0.00060;
     constexpr double kAmp      = 30.0;      // blocks of sideways displacement
-    const double ox = mcp_simplex_fbm2d(n.surface, wx * kWarpFreq + 12000.0,
+    const double ox = noiseFbm2d(n.surface, wx * kWarpFreq + 12000.0,
                                         wz * kWarpFreq - 3100.0, 2, 0.45, 2.8);
-    const double oz = mcp_simplex_fbm2d(n.surface, wx * kWarpFreq - 7300.0,
+    const double oz = noiseFbm2d(n.surface, wx * kWarpFreq - 7300.0,
                                         wz * kWarpFreq + 9100.0, 2, 0.45, 2.8);
-    const double f = mcp_simplex_fbm2d(n.river,
+    const double f = noiseFbm2d(n.river,
                                        (wx + ox * kAmp) * 0.0014,
                                        (wz + oz * kAmp) * 0.0014, 4, 0.5, 2.0);
     // Subtracting the bias moves the zero contour towards the jungle belt.
@@ -552,8 +648,8 @@ inline double riverJungleBias(const TerrainNoise& n, double wx, double wz) {
     // One octave each: this is a very slow field, so the extra octave the
     // public tempAt()/humidAt() use buys nothing here and this runs for
     // every column of the world.
-    const double t  = mcp_simplex_fbm2d(n.temp,   wx * 0.0004, wz * 0.0004, 1, 0.5, 2.0);
-    const double hu = mcp_simplex_fbm2d(n.humid,  wx * 0.0005, wz * 0.0005, 1, 0.5, 2.0);
+    const double t  = noiseFbm2d(n.temp,   wx * 0.0004, wz * 0.0004, 1, 0.5, 2.0);
+    const double hu = noiseFbm2d(n.humid,  wx * 0.0005, wz * 0.0005, 1, 0.5, 2.0);
     // The jungle band of BiomeRegistry::select(): hot AND genuinely wet.
     const double lush = smoothstep(0.34, 0.60, t) * smoothstep(0.18, 0.45, hu);
     return kRiverJungleBias * lush;
@@ -693,7 +789,7 @@ double riverSandBank(const TerrainNoise& n, double wx, double wz) {
     if (v <= 0.06) return 0.0;
     const double nearRiver = smoothstep(0.06, 0.20, v);
 
-    const double s = mcp_simplex_fbm2d(n.surface, wx * 0.0028 + 8080.0,
+    const double s = noiseFbm2d(n.surface, wx * 0.0028 + 8080.0,
                                        wz * 0.0028 + 4040.0, 2, 0.5, 2.0);
     constexpr double kStart = 0.34;
     constexpr double kEdge  = 0.66;
@@ -707,7 +803,7 @@ double gravelPatch(const TerrainNoise& n, double wx, double wz, int h) {
     // coastlines and on the odd inland patch; the water-proximity term
     // keeps most of them where you would actually expect gravel. `h` is
     // passed in rather than recomputed, since this runs per land column.
-    const double g = mcp_simplex_fbm2d(n.surface, wx * 0.035 + 61.0,
+    const double g = noiseFbm2d(n.surface, wx * 0.035 + 61.0,
                                        wz * 0.035 - 17.0, 2, 0.5, 2.0);
     const double nearWater = 1.0 - smoothstep(0.0, 7.0,
                                               std::fabs((double)h - (double)kSeaLevel));
@@ -725,7 +821,7 @@ double treeFreeMask(const TerrainNoise& n, double wx, double wz, int h) {
     // Rare open ground: a low-frequency field thresholded hard, so most of
     // the world keeps its full tree cover and only occasional pockets come
     // out bare.
-    const double f = mcp_simplex_fbm2d(n.surface, wx * 0.012 - 421.0,
+    const double f = noiseFbm2d(n.surface, wx * 0.012 - 421.0,
                                        wz * 0.012 + 88.0, 2, 0.5, 2.0);
     if (f <= 0.58) return 0.0;
     const double t = std::clamp((f - 0.58) / 0.16, 0.0, 1.0);

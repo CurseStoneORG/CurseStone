@@ -10,13 +10,13 @@ namespace cursestone::world::generator::object::trees {
 class DarkOakTree : public GenericTree {
 public:
     bool generate(mcp_chunk_t* c, int sourceX, int sourceY, int sourceZ,
-                  uint8_t soilId, GenRandom& rng) override;
+                  uint8_t soilId, MersenneRandom& rng) override;
 
 protected:
-    void init(GenRandom& rng) override;
+    void init(MersenneRandom& rng) override;
     bool canPlaceOn(uint8_t soil) const override;
     void canopy(mcp_chunk_t* c, int centerX, int trunkTopY, int centerZ,
-                GenRandom& rng);
+                MersenneRandom& rng);
 };
 
 } // namespace cursestone::world::generator::object::trees

@@ -1,21 +1,18 @@
 #include "Nether.h"
 #include <cmath>
 namespace cursestone::world::generator {
-Nether::Nether(int64_t seed) : seed_(seed) {
-    terrain_ = mcp_simplex_new(seed);
-    cave_ = mcp_simplex_new(seed ^ 0xDEADBEEF);
-}
-Nether::~Nether() {
-    mcp_simplex_destroy(terrain_);
-    mcp_simplex_destroy(cave_);
-}
+Nether::Nether(int64_t seed)
+    : random_((long)seed), terrain_(&random_, 4), cave_(&random_, 4), seed_(seed) {}
+
+Nether::~Nether() = default;
+
 void Nether::generate(GenerationContext& ctx) {
     mcp_chunk_t* c = ctx.chunk;
     for (int x = 0; x < 16; ++x)
     for (int z = 0; z < 16; ++z) {
         double wx = (ctx.chunk_x * 16 + x) * 0.03;
         double wz = (ctx.chunk_z * 16 + z) * 0.03;
-        double n = mcp_simplex_noise2d(terrain_, wx, wz);
+        double n = noiseValue2d(terrain_, wx, wz);
         int h = (int)(64 + n * 24);  // 40..88
         for (int y = 0; y < h && y < 128; ++y) {
             int sy = y >> 4;
@@ -37,7 +34,8 @@ void Nether::generate(GenerationContext& ctx) {
     for (int y = 0; y < 128; ++y)
     for (int x = 0; x < 16; ++x)
     for (int z = 0; z < 16; ++z) {
-        double c_n = mcp_simplex_noise3d(cave_, (ctx.chunk_x * 16 + x) * 0.05, y * 0.05, (ctx.chunk_z * 16 + z) * 0.05);
+        double c_n = noiseValue3d(cave_, (ctx.chunk_x * 16 + x) * 0.05, y * 0.05,
+                                  (ctx.chunk_z * 16 + z) * 0.05);
         if (c_n > 0.6) {
             int sy = y >> 4;
             if (!c->sections[sy]) continue;

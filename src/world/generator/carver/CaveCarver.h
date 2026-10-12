@@ -11,7 +11,7 @@
 //     order async workers happen to generate chunks in.
 #pragma once
 #include "world/format/Chunk.h"
-#include "world/generator/noise/GenRandom.h"
+#include "world/generator/noise/MersenneRandom.h"
 #include <cstdint>
 
 namespace cursestone::world::generator::carver {
@@ -43,7 +43,7 @@ private:
     static const int32_t kBottomY = 8;
     static const int32_t kLiquidAltitude = 10;
 
-    GenRandom rand_{0};
+    MersenneRandom rand_{0};
 };
 
 } // namespace cursestone::world::generator::carver

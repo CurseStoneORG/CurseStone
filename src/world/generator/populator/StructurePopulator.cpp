@@ -3,7 +3,7 @@
 #include "world/generator/TerrainShape.h"
 #include "world/generator/biome/Biome.h"
 #include "world/generator/biome/BiomeRegistry.h"
-#include "world/generator/noise/GenRandom.h"
+#include "world/generator/noise/MersenneRandom.h"
 #include "block/BlockIds.h"
 #include <algorithm>
 #include <cmath>
@@ -44,7 +44,7 @@ int wrapRegion(int value) {
 // chunk belongs to. Pure function of (seed, regionX, regionZ).
 void regionCandidate(int64_t seed, int regionX, int regionZ, int salt,
                      int& chunkX, int& chunkZ) {
-    GenRandom rng(seed * 341873128712LL +
+    MersenneRandom rng(seed * 341873128712LL +
                   (int64_t)regionX * 341873128712LL +
                   (int64_t)regionZ * 132897987541LL +
                   (int64_t)salt);
