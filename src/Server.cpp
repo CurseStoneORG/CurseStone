@@ -715,21 +715,60 @@ permission::BanList& Server::getIPBans() {
 // ============================================================
 void Server::loadOps() {
     ops_.clear();
-    std::ifstream in(dataPath_ + "/ops.txt");
+    // Lectura binaria: en modo texto un BOM UTF-8 llegaria igual, pero asi el
+    // archivo se lee byte a byte y podemos quitarlo nosotros.
+    std::ifstream in(dataPath_ + "/ops.txt", std::ios::binary);
     if (!in.is_open()) return;
-    std::string line;
-    while (std::getline(in, line)) {
-        // Trim trailing whitespace/CR.
-        while (!line.empty() && (line.back() == '\r' || line.back() == '\n' ||
-               line.back() == ' ' || line.back() == '\t')) line.pop_back();
+    std::string content((std::istreambuf_iterator<char>(in)),
+                         std::istreambuf_iterator<char>());
+
+    // Un editor que guarda en "UTF-8 con BOM" (Notepad en Windows, varios
+    // editores de Android) deja los 3 bytes 0xEF 0xBB 0xBF al principio. Sin
+    // quitarlos, la PRIMERA entrada guardada es "\xEF\xBB\xBFdr1xy" y NUNCA
+    // coincide con el nombre del jugador: el archivo se ve perfecto, el log
+    // dice "Loaded 1 operator(s)" y aun asi ese op no puede usar comandos.
+    if (content.size() >= 3 &&
+        (unsigned char)content[0] == 0xEF &&
+        (unsigned char)content[1] == 0xBB &&
+        (unsigned char)content[2] == 0xBF) {
+        content.erase(0, 3);
+    }
+
+    // Recorta espacios (incluidos tabs) de AMBOS extremos de cada linea. Antes
+    // solo se recortaba la cola, asi que una linea " Dr1xy" tampoco coincidia.
+    auto trim = [](std::string& s) {
+        auto is_ws = [](char c) {
+            return c == ' ' || c == '\t' || c == '\r' || c == '\n' ||
+                   c == '\v' || c == '\f';
+        };
+        size_t b = 0, e = s.size();
+        while (b < e && is_ws(s[b])) ++b;
+        while (e > b && is_ws(s[e - 1])) --e;
+        s = s.substr(b, e - b);
+    };
+
+    size_t pos = 0;
+    while (pos <= content.size()) {
+        size_t nl = content.find('\n', pos);
+        std::string line = (nl == std::string::npos)
+            ? content.substr(pos) : content.substr(pos, nl - pos);
+        pos = (nl == std::string::npos) ? content.size() + 1 : nl + 1;
+        trim(line);
         if (line.empty()) continue;
-        std::string lower = line;
-        std::transform(lower.begin(), lower.end(), lower.begin(),
-                       [](unsigned char c){ return std::tolower(c); });
-        ops_.insert(lower);
+        for (char& c : line) c = (char)std::tolower((unsigned char)c);
+        ops_.insert(std::move(line));
+    }
+
+    // El log lista los nombres reconocidos: es la forma de distinguir "mi
+    // nombre esta en ops.txt pero el servidor no lo leyo" de "el servidor si
+    // me tiene como op y el problema es otro".
+    std::string names;
+    for (const auto& n : ops_) {
+        if (!names.empty()) names += ", ";
+        names += n;
     }
     utils::MainLogger::get().info("Loaded " + std::to_string(ops_.size()) +
-        " operator(s) from ops.txt");
+        " operator(s) from ops.txt" + (names.empty() ? std::string() : ": " + names));
 }
 
 void Server::saveOps() {
