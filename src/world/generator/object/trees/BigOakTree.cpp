@@ -4,7 +4,7 @@
 
 namespace cursestone::world::generator::object::trees {
 
-void BigOakTree::init(GenRandom& rng) {
+void BigOakTree::init(MersenneRandom& rng) {
     height_ = 5 + (int)rng.nextInt(12);            // 5..16 (reference BigOakTree)
     trunkHeight_ = (int)(height_ * 0.618);
     if (trunkHeight_ >= height_) trunkHeight_ = height_ - 1;
@@ -14,13 +14,13 @@ void BigOakTree::init(GenRandom& rng) {
 }
 
 void BigOakTree::placeTrunk(mcp_chunk_t* c, int sourceX, int sourceY,
-                            int sourceZ, GenRandom&) {
+                            int sourceZ, MersenneRandom&) {
     for (int i = 0; i < trunkHeight_; ++i)
         setLog(c, sourceX, sourceY + i, sourceZ, logId_, logData_);
 }
 
 void BigOakTree::placeCanopy(mcp_chunk_t* c, int sourceX, int sourceY,
-                             int sourceZ, GenRandom& rng) {
+                             int sourceZ, MersenneRandom& rng) {
     const int top = sourceY + height_;
 
     // Main canopy blob (rounded, 3 layers + a small cap).

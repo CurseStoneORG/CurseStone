@@ -38,7 +38,7 @@ inline void put(mcp_chunk_t* c, int x, int y, int z, uint8_t id, uint8_t data) {
 
 } // namespace
 
-void ObjectDecorators::cactus(mcp_chunk_t* c, int x, int y, int z, GenRandom& rng) {
+void ObjectDecorators::cactus(mcp_chunk_t* c, int x, int y, int z, MersenneRandom& rng) {
     if (!inXZ(x) || !inXZ(z)) return;
     if (mcp_chunk_get_block_id(c, x, y, z) != (uint8_t)BlockId::SAND) return;
     int h = 1 + (int)rng.nextInt(3);
@@ -55,7 +55,7 @@ void ObjectDecorators::cactus(mcp_chunk_t* c, int x, int y, int z, GenRandom& rn
     for (int i = 1; i <= h; ++i) put(c, x, y + i, z, (uint8_t)BlockId::CACTUS_BIG, 0);
 }
 
-void ObjectDecorators::sugarCane(mcp_chunk_t* c, int x, int y, int z, GenRandom& rng) {
+void ObjectDecorators::sugarCane(mcp_chunk_t* c, int x, int y, int z, MersenneRandom& rng) {
     if (!inXZ(x) || !inXZ(z)) return;
     uint8_t ground = mcp_chunk_get_block_id(c, x, y, z);
     if (!isSoil(ground) && ground != (uint8_t)BlockId::SAND) return;
@@ -101,7 +101,7 @@ void ObjectDecorators::mushroom(mcp_chunk_t* c, int x, int y, int z, uint8_t id)
         put(c, x, y + 1, z, id, 0);
 }
 
-void ObjectDecorators::pumpkin(mcp_chunk_t* c, int x, int y, int z, GenRandom& rng) {
+void ObjectDecorators::pumpkin(mcp_chunk_t* c, int x, int y, int z, MersenneRandom& rng) {
     if (isSoil(mcp_chunk_get_block_id(c, x, y, z)) && isAir(c, x, y + 1, z))
         put(c, x, y + 1, z, (uint8_t)BlockId::PUMPKIN, (uint8_t)rng.nextInt(4));
 }

@@ -7,7 +7,7 @@ namespace cursestone::world::generator::object::trees {
 
 using cursestone::block::BlockId;
 
-void SpruceTree::init(GenRandom& rng) {
+void SpruceTree::init(MersenneRandom& rng) {
     height_ = 6 + (int)rng.nextInt(4);        // 6..9 (reference RedwoodTree)
     leavesHeight_ = 1 + (int)rng.nextInt(2);  // 1..2
     maxRadius_ = 2 + (int)rng.nextInt(2);     // 2..3
@@ -23,7 +23,7 @@ bool SpruceTree::canPlaceOn(uint8_t soil) const {
 // radius that widens step by step and whose minimum/peak grow as we go,
 // producing the classic tapering conifer silhouette.
 void SpruceTree::placeCanopy(mcp_chunk_t* c, int sourceX, int sourceY,
-                             int sourceZ, GenRandom& rng) {
+                             int sourceZ, MersenneRandom& rng) {
     int radius = (int)rng.nextInt(2);   // 0..1
     int peakRadius = 1;
     int minRadius = 0;
@@ -48,7 +48,7 @@ void SpruceTree::placeCanopy(mcp_chunk_t* c, int sourceX, int sourceY,
 }
 
 void SpruceTree::placeTrunk(mcp_chunk_t* c, int sourceX, int sourceY,
-                            int sourceZ, GenRandom& rng) {
+                            int sourceZ, MersenneRandom& rng) {
     int h = height_ - (int)rng.nextInt(3);
     for (int i = 0; i < h; ++i)
         setLog(c, sourceX, sourceY + i, sourceZ, logId_, logData_);

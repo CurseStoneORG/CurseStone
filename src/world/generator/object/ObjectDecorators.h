@@ -8,21 +8,21 @@
 // MCPE 0.15.x 128-block height.
 #pragma once
 #include "world/format/Chunk.h"
-#include "world/generator/noise/GenRandom.h"
+#include "world/generator/noise/MersenneRandom.h"
 #include <cstdint>
 
 namespace cursestone::world::generator::object {
 
 class ObjectDecorators {
 public:
-    static void cactus(mcp_chunk_t* c, int x, int y, int z, GenRandom& rng);
-    static void sugarCane(mcp_chunk_t* c, int x, int y, int z, GenRandom& rng);
+    static void cactus(mcp_chunk_t* c, int x, int y, int z, MersenneRandom& rng);
+    static void sugarCane(mcp_chunk_t* c, int x, int y, int z, MersenneRandom& rng);
     static void deadBush(mcp_chunk_t* c, int x, int y, int z);
     static void tallGrass(mcp_chunk_t* c, int x, int y, int z, uint8_t data);
     static void flower(mcp_chunk_t* c, int x, int y, int z, uint8_t id);
     static void doublePlant(mcp_chunk_t* c, int x, int y, int z, uint8_t data);
     static void mushroom(mcp_chunk_t* c, int x, int y, int z, uint8_t id);
-    static void pumpkin(mcp_chunk_t* c, int x, int y, int z, GenRandom& rng);
+    static void pumpkin(mcp_chunk_t* c, int x, int y, int z, MersenneRandom& rng);
     static void melon(mcp_chunk_t* c, int x, int y, int z);
     static void waterLily(mcp_chunk_t* c, int x, int y, int z);
     static void sapling(mcp_chunk_t* c, int x, int y, int z, uint8_t data);

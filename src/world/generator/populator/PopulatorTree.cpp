@@ -13,7 +13,7 @@ namespace cursestone::world::generator::populator {
 namespace {
 
 // Weighted species pick from a biome's tree list.
-object::TreeType pickSpecies(const std::vector<biome::TreeSpawn>& trees, GenRandom& rng) {
+object::TreeType pickSpecies(const std::vector<biome::TreeSpawn>& trees, MersenneRandom& rng) {
     int total = 0;
     for (const auto& t : trees) total += t.weight;
     if (total <= 0) return object::TREE_OAK;
@@ -57,7 +57,7 @@ bool columnCanHoldTree(const TerrainNoise& noise, int wx, int wz, int h,
 
 // Plant one tree of an explicit species. Callers must have already cleared
 // the column with columnCanHoldTree().
-void plantSpecies(GenerationContext& ctx, GenRandom& rng, int h,
+void plantSpecies(GenerationContext& ctx, MersenneRandom& rng, int h,
                   int wx, int wz, int cbx, int cbz, object::TreeType type,
                   uint8_t ground) {
     object::TreeGenerator::place(ctx.chunk, wx - cbx, h, wz - cbz,
@@ -66,7 +66,7 @@ void plantSpecies(GenerationContext& ctx, GenRandom& rng, int h,
 
 // Plant one tree, species taken from the biome's weighted list. Callers
 // must have already cleared the column with columnCanHoldTree().
-void plantAt(const TerrainNoise& noise, GenerationContext& ctx, GenRandom& rng,
+void plantAt(const TerrainNoise& noise, GenerationContext& ctx, MersenneRandom& rng,
              int wx, int wz, int cbx, int cbz, uint8_t biome, uint8_t ground) {
     const int h = columnHeight(noise, wx, wz);
     plantSpecies(ctx, rng, h, wx, wz, cbx, cbz,
@@ -117,7 +117,7 @@ bool tooCloseToPlanted(const PlantedList& planted, int wx, int wz, int minDist) 
 // crosses a border from being cut in half.
 void plantChunkTrees(const TerrainNoise& noise, GenerationContext& ctx, int attempts,
                      int nx, int nz, int cbx, int cbz) {
-    GenRandom rng = chunkRandom(ctx.seed, nx, nz, 0x5EEDCAFE);
+    MersenneRandom rng = chunkRandom(ctx.seed, nx, nz, 0x5EEDCAFE);
     // Trunks placed by THIS source chunk only (see PlantedList).
     PlantedList planted;
     planted.reserve(64);

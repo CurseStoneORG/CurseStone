@@ -6,7 +6,7 @@
 namespace cursestone::world::generator::populator {
 
 void PopulatorFlower::populate(GenerationContext& ctx) {
-    GenRandom rng = chunkRandom(ctx.seed, ctx.chunk_x, ctx.chunk_z,
+    MersenneRandom rng = chunkRandom(ctx.seed, ctx.chunk_x, ctx.chunk_z,
                                 0xF10C0FFEE ^ (uint64_t)flower_);
     for (int i = 0; i < 16; ++i) {
         int x = (int)rng.nextInt(16);

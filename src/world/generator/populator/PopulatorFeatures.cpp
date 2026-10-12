@@ -34,7 +34,7 @@ bool lavaPoolSiteFlat(const TerrainNoise& noise, int wx, int wz) {
 
 // A shallow elliptical puddle of lava sunk into the ground, held in a ring
 // of stone. Everything above the pool is cleared so the surface is open.
-void carveLavaPool(mcp_chunk_t* c, int cx, int cz, GenRandom& rng) {
+void carveLavaPool(mcp_chunk_t* c, int cx, int cz, MersenneRandom& rng) {
     const int rx = 2 + (int)rng.nextInt(2);   // 2..3
     const int rz = 2 + (int)rng.nextInt(2);
     const double invx = 1.0 / (double)rx;
@@ -72,7 +72,7 @@ void carveLavaPool(mcp_chunk_t* c, int cx, int cz, GenRandom& rng) {
 // fully data-driven from biome/<Biome>.cpp.
 
 void PopulatorCactus::populate(GenerationContext& ctx) {
-    GenRandom rng = chunkRandom(ctx.seed, ctx.chunk_x, ctx.chunk_z, 0xCA07ACE);
+    MersenneRandom rng = chunkRandom(ctx.seed, ctx.chunk_x, ctx.chunk_z, 0xCA07ACE);
     for (int i = 0; i < attempts_; ++i) {
         int x = (int)rng.nextInt(16);
         int z = (int)rng.nextInt(16);
@@ -86,7 +86,7 @@ void PopulatorCactus::populate(GenerationContext& ctx) {
 }
 
 void PopulatorSugarCane::populate(GenerationContext& ctx) {
-    GenRandom rng = chunkRandom(ctx.seed, ctx.chunk_x, ctx.chunk_z, 0x5A6A1CE);
+    MersenneRandom rng = chunkRandom(ctx.seed, ctx.chunk_x, ctx.chunk_z, 0x5A6A1CE);
     for (int i = 0; i < attempts_; ++i) {
         int x = (int)rng.nextInt(16);
         int z = (int)rng.nextInt(16);
@@ -100,7 +100,7 @@ void PopulatorSugarCane::populate(GenerationContext& ctx) {
 }
 
 void PopulatorDeadBush::populate(GenerationContext& ctx) {
-    GenRandom rng = chunkRandom(ctx.seed, ctx.chunk_x, ctx.chunk_z, 0xDEADB055);
+    MersenneRandom rng = chunkRandom(ctx.seed, ctx.chunk_x, ctx.chunk_z, 0xDEADB055);
     for (int i = 0; i < attempts_; ++i) {
         int x = (int)rng.nextInt(16);
         int z = (int)rng.nextInt(16);
@@ -114,7 +114,7 @@ void PopulatorDeadBush::populate(GenerationContext& ctx) {
 }
 
 void PopulatorMushroom::populate(GenerationContext& ctx) {
-    GenRandom rng = chunkRandom(ctx.seed, ctx.chunk_x, ctx.chunk_z, 0x5A00 ^ (uint64_t)id_);
+    MersenneRandom rng = chunkRandom(ctx.seed, ctx.chunk_x, ctx.chunk_z, 0x5A00 ^ (uint64_t)id_);
     for (int i = 0; i < attempts_; ++i) {
         int x = (int)rng.nextInt(16);
         int z = (int)rng.nextInt(16);
@@ -132,7 +132,7 @@ void PopulatorMushroom::populate(GenerationContext& ctx) {
 }
 
 void PopulatorPumpkin::populate(GenerationContext& ctx) {
-    GenRandom rng = chunkRandom(ctx.seed, ctx.chunk_x, ctx.chunk_z, 0x9011);
+    MersenneRandom rng = chunkRandom(ctx.seed, ctx.chunk_x, ctx.chunk_z, 0x9011);
     for (int i = 0; i < attempts_; ++i) {
         int x = (int)rng.nextInt(16);
         int z = (int)rng.nextInt(16);
@@ -146,7 +146,7 @@ void PopulatorPumpkin::populate(GenerationContext& ctx) {
 }
 
 void PopulatorMelon::populate(GenerationContext& ctx) {
-    GenRandom rng = chunkRandom(ctx.seed, ctx.chunk_x, ctx.chunk_z, 0x3E10);
+    MersenneRandom rng = chunkRandom(ctx.seed, ctx.chunk_x, ctx.chunk_z, 0x3E10);
     for (int i = 0; i < attempts_; ++i) {
         int x = (int)rng.nextInt(16);
         int z = (int)rng.nextInt(16);
@@ -160,7 +160,7 @@ void PopulatorMelon::populate(GenerationContext& ctx) {
 }
 
 void PopulatorDoublePlant::populate(GenerationContext& ctx) {
-    GenRandom rng = chunkRandom(ctx.seed, ctx.chunk_x, ctx.chunk_z, 0xD0B1E ^ (uint64_t)data_);
+    MersenneRandom rng = chunkRandom(ctx.seed, ctx.chunk_x, ctx.chunk_z, 0xD0B1E ^ (uint64_t)data_);
     for (int i = 0; i < attempts_; ++i) {
         int x = (int)rng.nextInt(16);
         int z = (int)rng.nextInt(16);
@@ -176,7 +176,7 @@ void PopulatorDoublePlant::populate(GenerationContext& ctx) {
 void PopulatorLake::populate(GenerationContext& ctx) {
     // Lakes are terrain-scale features, not biome decoration: vanilla
     // rolls them per chunk regardless of the biome underneath.
-    GenRandom rng = chunkRandom(ctx.seed, ctx.chunk_x, ctx.chunk_z,
+    MersenneRandom rng = chunkRandom(ctx.seed, ctx.chunk_x, ctx.chunk_z,
                                 0x1AEE ^ (uint64_t)liquid_);
     for (int i = 0; i < attempts_; ++i) {
         int x = (int)rng.nextInt(16);
@@ -193,7 +193,7 @@ void PopulatorLavaPool::populate(GenerationContext& ctx) {
     // once per chunk and bails out almost every time. The TerrainNoise is
     // only built after the roll, so the rare path is the only one that pays
     // for it.
-    GenRandom rng = chunkRandom(ctx.seed, ctx.chunk_x, ctx.chunk_z, 0x1A7A9007);
+    MersenneRandom rng = chunkRandom(ctx.seed, ctx.chunk_x, ctx.chunk_z, 0x1A7A9007);
     constexpr int kOneIn = 320;
     if (rng.nextInt(kOneIn) != 0) return;
 
@@ -231,7 +231,7 @@ void PopulatorLavaPool::populate(GenerationContext& ctx) {
 }
 
 void PopulatorWaterLily::populate(GenerationContext& ctx) {
-    GenRandom rng = chunkRandom(ctx.seed, ctx.chunk_x, ctx.chunk_z, 0x1117);
+    MersenneRandom rng = chunkRandom(ctx.seed, ctx.chunk_x, ctx.chunk_z, 0x1117);
     for (int i = 0; i < attempts_; ++i) {
         int x = (int)rng.nextInt(16);
         int z = (int)rng.nextInt(16);

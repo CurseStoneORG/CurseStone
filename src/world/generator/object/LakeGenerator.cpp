@@ -19,7 +19,7 @@ inline bool solid(uint8_t id) {
 } // namespace
 
 bool LakeGenerator::place(mcp_chunk_t* c, int cx, int cy, int cz,
-                          uint8_t liquidId, GenRandom& rng) {
+                          uint8_t liquidId, MersenneRandom& rng) {
     if (!inXZ(cx) || !inXZ(cz) || !inY(cy)) return false;
 
     int rx = 2 + (int)rng.nextInt(4);

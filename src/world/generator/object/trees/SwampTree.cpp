@@ -7,7 +7,7 @@ namespace cursestone::world::generator::object::trees {
 
 using cursestone::block::BlockId;
 
-void SwampTree::init(GenRandom& rng) {
+void SwampTree::init(MersenneRandom& rng) {
     height_ = 5 + (int)rng.nextInt(4);   // 5..8 (reference SwampTree)
     logId_ = 17;  logData_ = 0;   // LOG, oak
     leafId_ = 18; leafData_ = 0;  // LEAVES, oak
@@ -20,7 +20,7 @@ bool SwampTree::canPlaceOn(uint8_t soil) const {
 // Reference SwampTree: same layer loop as the oak but with radius
 // 2 - n/2 (so a flatter, wider, drooping canopy).
 void SwampTree::placeCanopy(mcp_chunk_t* c, int sourceX, int sourceY,
-                            int sourceZ, GenRandom& rng) {
+                            int sourceZ, MersenneRandom& rng) {
     for (int y = sourceY + height_ - 3; y <= sourceY + height_; ++y) {
         int n = y - (sourceY + height_);
         int radius = 2 - n / 2;
@@ -38,7 +38,7 @@ void SwampTree::placeCanopy(mcp_chunk_t* c, int sourceX, int sourceY,
 // The swamp trunk may be immersed one block in water, so it replaces
 // water as well as air/leaves.
 void SwampTree::placeTrunk(mcp_chunk_t* c, int sourceX, int sourceY,
-                           int sourceZ, GenRandom&) {
+                           int sourceZ, MersenneRandom&) {
     for (int i = 0; i < height_; ++i) {
         int y = sourceY + i;
         if (!inXZ(sourceX) || !inXZ(sourceZ) || !inY(y)) continue;

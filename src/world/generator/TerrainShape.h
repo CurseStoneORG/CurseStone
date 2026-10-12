@@ -10,7 +10,7 @@
 // around it, and because the shape is deterministic the pieces line up
 // exactly.
 #pragma once
-#include "world/generator/noise/SimplexNoise.h"
+#include "world/generator/noise/VanillaNoise.h"
 #include <cstdint>
 #include <cmath>
 
@@ -21,12 +21,44 @@ namespace cursestone::world::generator {
 inline constexpr int kSeaLevel = 64;
 
 // Owns the noise layers: terrain shape, climate and rivers.
+//
+// El ruido ya NO es propio: son las capas del PerlinNoise vanilla
+// (noise/vanilla, copiado 1:1 de SSMGAlt/PocketEdition). Cada campo del
+// generador se apoya en una de las ocho capas del juego completo vanilla, y
+// el paquete entero se construye con la semilla del mundo, una sola vez.
+// Un campo del generador: una capa del ruido vanilla + su calibracion.
+//
+// La calibracion no es capricho. El PerlinNoise vanilla suma las octavas al
+// reves que el fbm que usaba el generador (la frecuencia se divide y la
+// amplitud se multiplica) y ademas tiene offsets xo/yo/zo de hasta 256, asi
+// que un campo de baja frecuencia muestreado sobre un continente sale
+// practicamente constante: un desplazamiento (offset) de valor arbitrario
+// mas un gradiente suave. Sin corregirlo, el clima queda sesgado (toda la
+// humedad corrida hacia un lado) y el relieve se aplana.
+//
+// `offset` y `gain` se miden UNA vez por mundo y por campo, en el constructor
+// (ver TerrainNoise): el offset es la media del campo en una zona de
+// referencia y el gain lo devuelve a la desviacion que tenia el ruido
+// anterior. Asi cada campo conserva la estadistica con la que estan pensados
+// los umbrales y las mascaras del generador.
+struct FieldNoise {
+    PerlinNoise& layer;
+    double gain = 1.0;
+    double offset = 0.0;
+
+    int levelCount() const { return layer.levelCount(); }
+};
+
 struct TerrainNoise {
-    mcp_simplex_t* height  = nullptr;  // continents + hills + ridges + detail
-    mcp_simplex_t* temp    = nullptr;  // climate: temperature
-    mcp_simplex_t* humid   = nullptr;  // climate: humidity
-    mcp_simplex_t* river   = nullptr;  // river network (value crosses 0)
-    mcp_simplex_t* surface = nullptr;  // gravel patches + bare (tree-less) ground
+    VanillaNoise vanilla;  // las 8 capas, semilla y orden vanilla
+
+    // Cada campo se apoya en una de esas capas (el paquete completo sigue
+    // disponible en `vanilla`, que es quien las construye y las posee).
+    FieldNoise height;   // continentes + colinas + crestas + detalle
+    FieldNoise temp;     // clima: temperatura
+    FieldNoise humid;    // clima: humedad
+    FieldNoise river;    // red de rios (el valor cruza el 0)
+    FieldNoise surface;  // grava + suelo sin arboles
 
     explicit TerrainNoise(int64_t seed);
     ~TerrainNoise();

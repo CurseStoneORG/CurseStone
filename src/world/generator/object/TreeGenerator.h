@@ -3,7 +3,7 @@
 // and generates it. Each species lives in object/trees/<Type>Tree.{h,cpp}.
 #pragma once
 #include "world/format/Chunk.h"
-#include "world/generator/noise/GenRandom.h"
+#include "world/generator/noise/MersenneRandom.h"
 #include "world/generator/object/TreeType.h"
 #include <cstdint>
 
@@ -18,7 +18,7 @@ public:
     // `soilId` the block directly below it. Returns true if a tree was
     // placed.
     static bool place(mcp_chunk_t* c, int x, int y, int z, TreeType t,
-                      uint8_t soilId, GenRandom& rng);
+                      uint8_t soilId, MersenneRandom& rng);
 };
 
 } // namespace cursestone::world::generator::object

@@ -13,7 +13,7 @@
 namespace cursestone::world::generator::object {
 
 bool TreeGenerator::place(mcp_chunk_t* c, int x, int y, int z, TreeType t,
-                          uint8_t soilId, GenRandom& rng) {
+                          uint8_t soilId, MersenneRandom& rng) {
     switch (t) {
         case TREE_OAK: {
             trees::OakTree tr;     return tr.generate(c, x, y, z, soilId, rng);

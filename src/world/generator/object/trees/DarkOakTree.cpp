@@ -8,7 +8,7 @@ namespace cursestone::world::generator::object::trees {
 
 using cursestone::block::BlockId;
 
-void DarkOakTree::init(GenRandom& rng) {
+void DarkOakTree::init(MersenneRandom& rng) {
     height_ = (int)(rng.nextInt(2) + rng.nextInt(3)) + 6;   // 6..10 (reference)
     logId_ = 162;  logData_ = 1;   // WOOD_2, dark oak
     leafId_ = 161; leafData_ = 1;  // LEAVES_2, dark oak
@@ -18,7 +18,7 @@ bool DarkOakTree::canPlaceOn(uint8_t soil) const {
     return soil == (uint8_t)BlockId::GRASS || soil == (uint8_t)BlockId::DIRT;
 }
 
-void DarkOakTree::canopy(mcp_chunk_t* c, int cx, int trunkTopY, int cz, GenRandom& rng) {
+void DarkOakTree::canopy(mcp_chunk_t* c, int cx, int trunkTopY, int cz, MersenneRandom& rng) {
     // Reference DarkOakTree::Generate leaf block (symmetric in x/z).
     for (int x = -2; x <= 0; ++x) {
         for (int z = -2; z <= 0; ++z) {
@@ -51,7 +51,7 @@ void DarkOakTree::canopy(mcp_chunk_t* c, int cx, int trunkTopY, int cz, GenRando
 }
 
 bool DarkOakTree::generate(mcp_chunk_t* c, int sourceX, int sourceY,
-                           int sourceZ, uint8_t soilId, GenRandom& rng) {
+                           int sourceZ, uint8_t soilId, MersenneRandom& rng) {
     init(rng);
     if (sourceY < 2 || sourceY > 124) return false;
     if (!canPlaceOn(soilId)) return false;
