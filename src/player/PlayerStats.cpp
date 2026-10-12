@@ -4,10 +4,7 @@
 #include "block/BlockIds.h"
 #include "network/protocol/UpdateAttributesPacket.h"
 #include "network/protocol/EntityEventPacket.h"
-#include "network/protocol/SetHealthPacket.h"
 #include "event/entity/EntityDamageEvent.h"
-#include "entity/damage/DamageCalculator.h"
-#include "block/Block.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -19,26 +16,10 @@ namespace cursestone {
 // instant this packet arrives. Infinity syncs the HEALTH attribute on
 // EVERY setHealth() call — without this the hearts only moved on regen
 // or food changes and felt stuck for seconds after taking damage.
-//
-// BUG ARREGLADO ("animacion de dano pero no se quitan corazones", dano
-// de caida): en protocolo 84 (MCPE 0.15.10) TODO paquete que apunta al
-// jugador LOCAL viaja con eid = 0 — es exactamente la convencion que ya
-// usa este proyecto para el EntityEventPacket::HURT_ANIMATION (eid=0,
-// la animacion que SI se ve) y para el SetEntityDataPacket de pose
-// propia ("eid = 0, igual que Genisys"). Genisys/PMMP 1.6.2 mandan el
-// UpdateAttributesPacket del jugador local con $pk->eid = 0
-// (Player::sendAttributes). Con eid = runtimeId() el cliente 0.15.10
-// IGNORA el paquete: la vida bajaba en el servidor (por eso la
-// animacion saltaba) pero los corazones se quedaban en 20/20.
-//
-// Junto al atributo se manda tambien un SetHealthPacket con la vida
-// entera — mismo cinturon-y-tirantes que ya usa el pipeline de combate
-// (handleInteract -> SetHealthPacket a la victima), cubriendo clientes
-// que mueven el HUD de corazones por cualquiera de los dos caminos.
 void Player::sendHealthAttribute() {
     if (!connected_.load(std::memory_order_relaxed)) return;
     auto pk = std::make_shared<network::protocol::UpdateAttributesPacket>();
-    pk->eid = 0;   // protocolo 84: eid 0 = el jugador local (Genisys sendAttributes)
+    pk->eid = runtimeId();
     network::protocol::UpdateAttributesPacket::Entry h;
     h.name = "generic.health";
     h.min = 0.0f; h.max = maxHealth();
@@ -46,19 +27,13 @@ void Player::sendHealthAttribute() {
     h.defaultValue = 20.0f;
     pk->entries.push_back(h);
     sendPacket(pk);
-
-    auto sh = std::make_shared<network::protocol::SetHealthPacket>();
-    sh->health = (int32_t)health();
-    sendPacket(sh);
 }
 
 // --- Attribute sync (protocol 84 UpdateAttributesPacket) ---
-// eid = 0: jugador local (ver la nota larga en sendHealthAttribute —
-// el cliente 0.15.10 ignora los atributos que llegan con el runtimeId).
 void Player::sendFoodLevel() {
     if (!connected_.load(std::memory_order_relaxed)) return;
     auto pk = std::make_shared<network::protocol::UpdateAttributesPacket>();
-    pk->eid = 0;   // protocolo 84: eid 0 = el jugador local
+    pk->eid = runtimeId();
     network::protocol::UpdateAttributesPacket::Entry e;
     // EXACT name strings from Infinity's Attribute::init (Genisys/PMMP
     // lineage): the client maps the HUD bars by these identifiers —
@@ -71,12 +46,10 @@ void Player::sendFoodLevel() {
     sendPacket(pk);
 }
 
-// --- Attribute sync (protocol 84 UpdateAttributesPacket) ---
-// eid = 0 + SetHealthPacket de acompanamiento (ver sendHealthAttribute).
 void Player::sendAllAttributes() {
     if (!connected_.load(std::memory_order_relaxed)) return;
     auto pk = std::make_shared<network::protocol::UpdateAttributesPacket>();
-    pk->eid = 0;   // protocolo 84: eid 0 = el jugador local
+    pk->eid = runtimeId();
     network::protocol::UpdateAttributesPacket::Entry h;
     h.name = "generic.health";
     h.min = 0.0f; h.max = maxHealth();
@@ -90,10 +63,6 @@ void Player::sendAllAttributes() {
     f.defaultValue = 20.0f;
     pk->entries.push_back(f);
     sendPacket(pk);
-
-    auto sh = std::make_shared<network::protocol::SetHealthPacket>();
-    sh->health = (int32_t)health();
-    sendPacket(sh);
 }
 
 // Living hook (Living::applyDamage): runs after every non-fatal damage
@@ -152,9 +121,9 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
             damage(2.0f, event::entity::DamageCause::DROWNING); // 1 heart/s
         }
         // Water extinguishes fire (vanilla) and cancels pending fall damage.
-        extinguish();
+        fire_ticks_ = 0;
         was_on_fire_ = false;
-        resetFallDistance();
+        fall_distance_ = 0.0f;
     } else {
         air_ticks_ = 300;   // 15s of air (vanilla)
     }
@@ -163,41 +132,19 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
     // salta TODO el bloque cuando !isAlive(). Sin esto, la regeneracion
     // de la seccion 4c volvia a curar a un muerto en el mismo tick.
     if (isDead()) return;
-    // Burn timer: Entity::setOnFire(8) deja 160 ticks (8 s) de quemadura;
-    // cuando llega a 0 el jugador deja de arder (semantica vanilla). El
-    // contador vive ahora en Entity (fireTicks()), compartido con el
-    // pipeline de dano de Genisys.
-    if (fireTicks() > 0) {
-        setFireTicks(fireTicks() - 1);
-        if (!isOnFire()) was_on_fire_ = false;
-    }
+    // Burn timer: set to 160 ticks (8s) on fire/lava contact; when it
+    // reaches 0 the player stops burning (vanilla setOnFire semantics).
+    if (fire_ticks_ > 0 && --fire_ticks_ == 0) was_on_fire_ = false;
 
     // ---------- 2. Fall damage (Infinity processMovement) ----------
     // Distance is accumulated in handleMovePlayer(); here the damage is
     // applied exactly once when the client reports ground contact with
     // >= 3 blocks of accumulated fall (vanilla: damage = fall - 3), and
     // the accumulator resets so it can start over on the next fall.
-    if (on_ground_fall_check_ && !in_water) {
-        // PORTADO DE LA REFERENCIA (SSMG64/PocketEdition
-        // handheld/src/world/entity/Mob.cpp::causeFallDamage):
-        //
-        //     int dmg = (int) ceil(distance - 3);
-        //     if (dmg > 0) hurt(NULL, dmg);
-        //
-        // ceil() + dano entero, con el mismo umbral de 3 bloques. Ademas se
-        // chequea el bloque de aterrizaje (antes se pasaba `false` fijo y
-        // `feet` quedaba sin usar): un slime block debajo anula el dano,
-        // como en vanilla. Se conserva el descuento del efecto Jump Boost
-        // (1 bloque por nivel), que es vanilla del 0.15 y la referencia no
-        // modela. Los numeros exactos los fija tools/damage_test.cpp.
-        const int jump_boost = hasEffectId(entity::EFF_JUMP)
-                                   ? effectAmplifier(entity::EFF_JUMP) + 1 : 0;
-        const bool slime_below = (feet == block::SLIME_BLOCK);
-        const double dmg = entity::damage::fallDamage(fallDistance(), jump_boost, slime_below);
-        resetFallDistance();     // aterrizar siempre reinicia el acumulador
-        if (!creative && difficulty > 0 && dmg > 0.0) {
-            damage((float)dmg, event::entity::DamageCause::FALL);
-        }
+    if (!creative && difficulty > 0 && fall_distance_ >= 3.0 &&
+        on_ground_fall_check_ && !in_water) {
+        damage((float)(fall_distance_ - 3.0), event::entity::DamageCause::FALL);
+        fall_distance_ = 0.0f;   // landing resets the fall
     }
     // Si el golpe de caida mato, terminar el tick aca: nada de lo que
     // sigue (fuego/lava/hambre/regen) debe tocar a un jugador muerto.
@@ -211,7 +158,8 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
         }
         was_in_lava_ = true;
         was_on_fire_ = true;
-        setOnFire(8);        // 8 s = 160 ticks de quemadura
+        setOnFire(8);
+        fire_ticks_ = 160;   // 8s of burning (vanilla)
     } else {
         was_in_lava_ = false;
         if (was_on_fire_ && !creative) {
@@ -228,14 +176,13 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
             if (!creative) damage(1.0f, event::entity::DamageCause::FIRE);
         }
         was_on_fire_ = true;
-        setOnFire(8);        // 8 s = 160 ticks de quemadura
+        setOnFire(8);
+        fire_ticks_ = 160;   // 8s of burning (vanilla)
     }
     if (at == block::CACTUS) {
         if (now_ms - last_cactus_dmg_ms_ >= 500) {
             last_cactus_dmg_ms_ = now_ms;
-            // Genisys no tiene una causa CACTUS: el dano de cactus sale del
-            // onEntityCollide del bloque, que construye CAUSE_CONTACT.
-            if (!creative) damage(1.0f, event::entity::DamageCause::CONTACT);
+            if (!creative) damage(1.0f, event::entity::DamageCause::CACTUS); // half heart
         }
     }
     // Lava/fuego/cactus pueden haber matado: no seguir con hambre/regen.
@@ -287,30 +234,9 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
         starve_ticks_ = 0;
     }
 
-    // ---------- 5. Void / suffocation + timers (Genisys Entity::entityBaseTick) ----------
-    // Caer fuera del mundo: Genisys aplica VOID con $this->y <= -16, y es
-    // una de las tres causas que ni el creativo ni la Resistencia al Dano
-    // pueden evitar.
-    if (pos_.y <= -16.0) {
-        damage(10.0f, event::entity::DamageCause::VOID);
-        if (isDead()) return;
-    }
-    // Asfixia: el bloque a la altura de los ojos es solido y opaco -> 1 de
-    // dano por tick (Genisys Living::entityBaseTick -> CAUSE_SUFFOCATION).
-    {
-        block::Block* eye_block = block::Block::get(eye);
-        if (eye != 0 && eye_block != nullptr && eye_block->isSolid() &&
-            !eye_block->isTransparent()) {
-            damage(1.0f, event::entity::DamageCause::SUFFOCATION);
-            if (isDead()) return;
-        }
-    }
-    // Ventanas de invulnerabilidad: Genisys las baja un tick por vuelta
-    // (Entity::entityBaseTick / Living::entityBaseTick).
-    if (noDamageTicks() > 0) setNoDamageTicks(noDamageTicks() - 1);
-    if (attackTime() > 0) setAttackTime(attackTime() - 1);
-
     (void)current_tick;
+    (void)difficulty;
+    (void)feet;
     (void)last_pos_y_;
     (void)last_pos_set_;
     (void)was_in_lava_;
@@ -320,6 +246,7 @@ void Player::setExperience(int exp, int level) {
 }
 void Player::sendExperience(int exp) { (void)exp; }
 void Player::sendExperienceLevel(int level) { (void)level; }
+void Player::setHealth(int h) { entity::Living::setHealth((uint16_t)h); }
 
 void Player::setMovementSpeed(float speed) { (void)speed; }
 void Player::setAttribute(int attrId, float value) { (void)attrId; (void)value; }} // namespace cursestone

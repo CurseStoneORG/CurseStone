@@ -146,16 +146,6 @@ public:
     // No-op si el jugador no esta muerto.
     void respawn();
 
-    // Respuesta al boton "Respawn" del cliente (ACTION_SPAWN_SAME_DIMENSION).
-    // A diferencia de respawn(), NUNCA es un no-op:
-    //   * si el jugador esta muerto -> respawn() completo;
-    //   * si no lo esta (el cliente se quedo con la salud en 0 por un
-    //     desajuste) -> le re-manda SetHealth + generic.health con la vida
-    //     real del servidor, que es lo unico que le permite salir de la
-    //     pantalla de muerte (el cliente la abre/la mantiene mientras su
-    //     `health <= 0`). Devuelve true si reaparecio de verdad.
-    bool handleRespawnRequest();
-
     // Abre el cofre en (x,y,z) para este jugador. Se llama desde
     // handleBlockPlace, DESPUES del chequeo de PlayerInteractEvent (asi
     // cancelar la interaccion tambien bloquea abrir el cofre), cuando el
@@ -428,36 +418,7 @@ public:
     void sendExperienceLevel(int level);
 
     // --- Health/food (Nukkit: setHealth/getFoodData/isFoodEnabled) ---
-    // Genisys Player::setHealth(): ademas de la salud, deja el contador de
-    // comida listo y sincroniza el atributo HEALTH del cliente (el 0.15.x
-    // mueve los corazones por el atributo, no por SetHealthPacket).
-    void setHealth(float amount) override;
-    // Overload estilo Nukkit que usa el resto del repo (setHealth(20)).
-    void setHealth(int h) { setHealth((float)h); }
-
-    // --- Combate / dano (Genisys Player, ver player/PlayerDamage.cpp) ---
-    // Player::attack($damage, EntityDamageEvent $source): un creativo no
-    // recibe dano (salvo MAGIC / SUICIDE / VOID) y con vuelo permitido el
-    // dano de CAIDA se cancela. Antes de despachar el evento aplica el
-    // bloque de armadura / EPF del propio Genisys.
-    bool attack(float damage, event::entity::EntityDamageEvent& source) override;
-    bool isPlayerEntity() const override { return true; }
-    // Genisys getLevel()->getServer()->getDifficulty() (un atacante en
-    // llamas prende fuego a su victima 2 * dificultad segundos).
-    int worldDifficulty() const override;
-
-    // Golpe cuerpo a cuerpo de ESTE jugador contra `target`, portado de
-    // Genisys Player::handleDataPacket (INTERACT_PACKET, ACTION_LEFT_CLICK):
-    // dano base del item en la mano (+ Sharpness), knockBack 0.4 + 0.15 por
-    // nivel de Knockback, Fire Aspect, espinas de la victima y desgaste de
-    // armadura. `cancelled` es el resultado de los chequeos de alcance y
-    // PvP que hace el llamador. Devuelve true si el golpe se aplico.
-    bool meleeAttack(Player& target, bool cancelled);
-
-    // Genisys Player::exhaust($amount, $cause): acumula agotamiento de
-    // hambre. food_depletion_ se lleva x100 (0.1 de Genisys = 10 aca;
-    // 400 unidades = 1 punto de comida, ver tickHungerAndDamage).
-    void exhaust(float amount) { food_depletion_ += (int)(amount * 100.0f + 0.5f); }
+    void setHealth(int h);
     // Hunger HUD sync (protocol 84 UpdateAttributesPacket): shows the
     // server-side food value on the client's hunger bar.
     void sendFoodLevel();
@@ -498,8 +459,7 @@ public:
     // --- Interaction (Nukkit: canInteract/canCollideWith/resetFallDistance) ---
     bool canInteract(math::Vector3 pos, double maxDistance) const;
     bool canCollideWith(Entity* /*e*/) const { return false; }
-    // resetFallDistance() / fallDistance() vienen de entity::Entity (el
-    // acumulador de caida vive ahi desde el port del sistema de dano).
+    void resetFallDistance() {}
 
     // --- Flight (Nukkit: getAllowFlight/setAllowFlight/hasAutoJump/setAutoJump) ---
     bool getAllowFlight() const { return (cfg_.gamemode & 1) != 0; }
@@ -573,12 +533,10 @@ public:
     bool directDataPacket(std::shared_ptr<network::protocol::DataPacket> pk) { sendPacket(pk); return true; }
 
 protected:
-    // entity::Living hook — se llama UNA VEZ cuando la salud cruza a 0
-    // (Living::kill desde Living::setHealth). Ver PlayerLogin.cpp: dispara
-    // PlayerDeathEvent, tira el inventario y manda el flujo de muerte
-    // (DEATH_ANIMATION + SetHealth 0 + atributo 0 + RespawnPacket, que es
-    // lo que arma el boton "Respawn" del cliente 0.15.x). La reaparicion
-    // en si ocurre en respawn(), al recibir el boton.
+    // entity::Living hook — dispara PlayerDeathEvent + broadcast del
+    // mensaje de muerte. Ver Living::applyDamage(). No implementa
+    // reaparicion (RespawnPacket es un stub sin encode() real en esta
+    // base de codigo todavia — ver TODO junto a la definicion).
     void onDeath() override;
     // Living hook tras cada dano no mortal: manda la animación de golpe
     // (HURT_ANIMATION con eid=0 = "yo" en protocolo 84, Infinity
@@ -640,15 +598,12 @@ private:
     uint64_t last_regen_ms_ = 0;     // natural-regen gate (4s at food>=17)
     int   starve_ticks_ = 0;         // starve damage accumulator (80 ticks @1 dmg)
     int   air_ticks_ = 300;          // remaining air underwater (vanilla 300 ticks)
+    int   fire_ticks_ = 0;           // remaining burn ticks (8s after fire/lava)
     bool  moved_this_tick_ = false;  // set by handleMovePlayer, read by tickHungerAndDamage
     bool  sprinting_ = false;        // client reports sprint (PlayerAction 9/10)
     bool  sneaking_  = false;        // client reports crouch (PlayerAction 11/12)
     bool  on_ground_fall_check_ = true; // last client-reported onGround
-    // Los contadores de fuego (Entity::fire_ticks_) y el acumulador de
-    // caida (Entity::fall_distance_) viven en entity::Entity desde el port
-    // del sistema de dano de Genisys: usá setFireTicks()/fireTicks() y
-    // fallDistance()/setFallDistance().
-    // Exhaustion acumulada de hambre (0.3 por golpe, etc. — ver exhaust()).
+    float fall_distance_ = 0.0f;     // accumulated fall distance in blocks
 
     // Fix #3: shared spiral algorithm — single source of truth.
     static std::vector<std::pair<int32_t,int32_t>>
