@@ -191,6 +191,19 @@ public:
     void setAutoSave(bool enabled) { autosave_ticks_ = enabled ? 6000 : 0; }
     void doAutoSave() { saveAll(); }
 
+    // --- Autosave incremental ---
+    // El autosave NO escribe el mundo de golpe. El tick de autosave (cada
+    // autosave_ticks_) guarda lo barato (datos de jugador + level.dat) y
+    // abre el drenaje; a partir de ahí cada tick escribe unos pocos chunks
+    // sucios hasta vaciar la cola. Antes se hacía world_->save() completo
+    // en un único tick: con el mundo cargado son cientos de chunks y el
+    // hilo principal quedaba bloqueado ~500-760 ms (medido) — el aviso
+    // "[SAVE] Autosave took 759ms — this may cause disconnects!", que es
+    // justo el freeze que el cliente acaba leyendo como desconexión.
+    // Coste por tick acotado por kAutosaveChunksPerTick / kAutosaveMsPerTick.
+    void beginAutosaveDrain();
+    void tickAutosaveDrain();
+
     // --- Nukkit-compat: Offline player ---
     void saveOfflinePlayerData(const std::string& name, NbtPtr nbt, bool async);
 
@@ -253,6 +266,14 @@ private:
     bool nether_enabled_ = true;
     int async_workers_ = 4;
     int autosave_ticks_ = 6000;   // 5 minutes at 20 TPS (PMMP default)
+
+    // Estado del autosave incremental (ver beginAutosaveDrain).
+    bool     autosave_draining_ = false;
+    uint64_t autosave_drain_start_ms_ = 0;
+    size_t   autosave_drain_written_ = 0;
+    uint64_t autosave_drain_ticks_ = 0;
+    uint64_t autosave_drain_max_tick_ms_ = 0;
+    int      autosave_drain_idle_ticks_ = 0;
 
     // Subsystems (lazily populated in start()).
     std::shared_ptr<network::Network> network_;

@@ -568,29 +568,26 @@ void Server::tick() {
     // --- Phase: network (second pass — flush outbound) ---
     if (network_) network_->tick();
 
-    // --- Phase: auto-save ---
-    // BUG FIX: Instead of saving ALL dirty chunks in one synchronous call
-    // (which blocks the main thread for seconds), we save only a FEW chunks
-    // per tick. This spreads the I/O load across many ticks and prevents
-    // the "Disconnected from server" bug caused by autosave blocking.
+    // --- Phase: auto-save (incremental) ---
+    // ANTES: este bloque llamaba a world_->save(), que serializa TODOS los
+    // chunks sucios en el mismo tick. Con el mundo en marcha son cientos
+    // (todo lo generado desde el autosave anterior), y eso son varios
+    // cientos de ms de hilo principal bloqueado: medido ~495 ms para 350
+    // chunks y ~759 ms en el caso reportado, de los que ~90% es la
+    // compresion zlib de los chunks (ver kChunkCompressionLevel en Anvil).
+    // El cliente vivo lo lee como congelamiento/desconexion.
+    // AHORA: el tick de autosave guarda lo barato (datos de jugador +
+    // level.dat) y ABRE el drenaje; en los ticks siguientes se escribe la
+    // cola a pocos chunks por tick con presupuesto de tiempo, asi el
+    // coste por tick queda acotado y el mundo acaba entero en disco igual.
     if (autosave_ticks_ > 0 && currentTick_ % autosave_ticks_ == 0) {
-        auto as0 = std::chrono::steady_clock::now();
-        // Save player data (fast — just NBT write, not chunk I/O)
         auto psnap = playersSnapshot();
         for (auto& p : psnap) {
-            if (p) p->saveData();
+            if (p) p->saveData();   // NBT de jugador: barato, no es I/O de chunks
         }
-        // Save world metadata (fast — just level.dat)
-        if (world_) world_->save();  // This calls flushDirty() which now
-                                      // saves chunks through the provider
-        auto as1 = std::chrono::steady_clock::now();
-        uint64_t as_ms = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(as1 - as0).count();
-        WorkbenchManager::get().onAutosave(as_ms);
-        if (as_ms > 100) {
-            utils::MainLogger::get().warn("[SAVE] Autosave took " +
-                std::to_string(as_ms) + "ms — this may cause disconnects!");
-        }
+        beginAutosaveDrain();
     }
+    if (autosave_draining_) tickAutosaveDrain();
 
     // --- Workbench: tick end hook ---
     auto wb_end = std::chrono::steady_clock::now();
@@ -689,6 +686,105 @@ void Server::saveAll() {
         int saved = world_->save();
         utils::MainLogger::get().info("[SAVE] World saved (" +
             std::to_string(saved) + " chunks flushed).");
+    }
+}
+
+// ============================================================
+// Autosave incremental
+// ============================================================
+//
+// Presupuesto por tick del drenaje. Medido con el codigo real —
+// ChunkManager + Anvil (encode NBT + zlib + escritura en la region)
+// sobre 400 chunks generados por el Normal de verdad (53 KB de NBT por
+// chunk):
+//   * nivel 6 de zlib: 0.72 ms/chunk  (el default viejo)
+//   * nivel 1 de zlib: 0.23 ms/chunk  (kChunkCompressionLevel)
+//   * escritura en la region: 0.008 ms/chunk
+// Asi que 8 chunks ~ 1.9 ms de hilo principal por tick, y el tope de
+// 6 ms recorta la lista si algun chunk sale mas caro (muchos tiles,
+// chunks enormes). Los 400 chunks se drenaron en 50 ticks con un maximo
+// de 3.4 ms en un solo tick, contra ~304 ms de golpe con el codigo
+// viejo (el caso reportado de 759 ms es la misma cuenta con el mundo
+// mas cargado).
+static constexpr size_t   kAutosaveChunksPerTick = 8;
+static constexpr uint64_t kAutosaveMsPerTick     = 6;
+// Si el flush no consigue escribir nada durante este numero de ticks
+// seguidos (p. ej. un provider que falla siempre), se cierra el drenaje
+// en vez de quedarse reintentando el mismo chunk sucio para siempre.
+static constexpr int      kAutosaveIdleTicksMax  = 40;
+
+static uint64_t nowSteadyMs() {
+    return (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+void Server::beginAutosaveDrain() {
+    autosave_draining_ = false;
+    if (!world_) return;
+
+    autosave_drain_start_ms_     = nowSteadyMs();
+    autosave_drain_written_      = 0;
+    autosave_drain_ticks_        = 0;
+    autosave_drain_max_tick_ms_  = 0;
+    autosave_drain_idle_ticks_   = 0;
+
+    // level.dat (hora del mundo + spawn) se escribe AQUI, una vez, con
+    // presupuesto 0 chunks: es un archivo diminuto y no queremos
+    // reescribirlo en cada tick del drenaje.
+    auto t0 = std::chrono::steady_clock::now();
+    world_->saveBudget(/*max_chunks=*/0, /*max_ms=*/0,
+                       /*write_level_data=*/true);
+    WorkbenchManager::get().onAutosave((uint64_t)std::chrono::duration_cast<
+        std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count());
+
+    size_t pending = world_->unsavedChunkCount();
+    if (pending == 0) return;   // nada sucio: ni abrimos el drenaje
+
+    autosave_draining_ = true;
+    if (advanced_log_) {
+        utils::MainLogger::get().info("[SAVE] Autosave: " +
+            std::to_string(pending) + " chunk(s) en cola -> drenando " +
+            std::to_string(kAutosaveChunksPerTick) + "/tick (max " +
+            std::to_string(kAutosaveMsPerTick) + "ms/tick).");
+    }
+}
+
+void Server::tickAutosaveDrain() {
+    if (!world_) { autosave_draining_ = false; return; }
+
+    auto t0 = std::chrono::steady_clock::now();
+    int saved = world_->saveBudget(kAutosaveChunksPerTick, kAutosaveMsPerTick,
+                                   /*write_level_data=*/false);
+    uint64_t tick_ms = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - t0).count();
+
+    autosave_drain_written_ += (size_t)saved;
+    ++autosave_drain_ticks_;
+    if (tick_ms > autosave_drain_max_tick_ms_) autosave_drain_max_tick_ms_ = tick_ms;
+    WorkbenchManager::get().onAutosave(tick_ms);
+    if (tick_ms > 50) {
+        utils::MainLogger::get().warn("[SAVE] Autosave flush took " +
+            std::to_string(tick_ms) + "ms on one tick — this may cause "
+            "client lag spikes!");
+    }
+
+    autosave_drain_idle_ticks_ = (saved == 0) ? (autosave_drain_idle_ticks_ + 1) : 0;
+    size_t pending = world_->unsavedChunkCount();
+    bool stuck = (pending > 0 && autosave_drain_idle_ticks_ >= kAutosaveIdleTicksMax);
+    if (pending == 0 || stuck) {
+        autosave_draining_ = false;
+        uint64_t total_ms = nowSteadyMs() - autosave_drain_start_ms_;
+        if (stuck) {
+            utils::MainLogger::get().warn("[SAVE] Autosave drain stopped with " +
+                std::to_string(pending) + " chunk(s) still dirty (provider "
+                "not accepting writes?) — will retry on the next autosave.");
+        } else if (autosave_drain_written_ > 0) {
+            utils::MainLogger::get().info("[SAVE] Autosave done: " +
+                std::to_string(autosave_drain_written_) + " chunk(s) en " +
+                std::to_string(total_ms) + "ms (" +
+                std::to_string(autosave_drain_ticks_) + " tick(s), max " +
+                std::to_string(autosave_drain_max_tick_ms_) + "ms en un tick).");
+        }
     }
 }
 

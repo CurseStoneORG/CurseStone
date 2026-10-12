@@ -239,7 +239,18 @@ public:
     mcp_vector3_t spawn() const { return spawn_; }
     void setSpawn(mcp_vector3_t v) { spawn_ = v; }
     // Save all dirty chunks (routes to the WorldProvider).
+    // Bloquea hasta que TODO esta en disco: apagado / saveAll().
     int save();
+    // Igual que save() pero con presupuesto de trabajo (ver
+    // ChunkManager::flushDirtyBudget). El autosave lo llama cada tick
+    // mientras queden chunks sucios, para que guardar el mundo no sea un
+    // pico de cientos de ms dentro del tick loop. `write_level_data`
+    // escribe el level.dat (seed/spawn/hora) en esa llamada; el drenaje
+    // por tick lo deja a false para no reescribirlo cientos de veces.
+    int saveBudget(size_t max_chunks, uint64_t max_ms, bool write_level_data);
+    // Numero de chunks con cambios sin escribir. 0 = el mundo esta
+    // entero en disco y el autosave puede cerrar el drenaje.
+    size_t unsavedChunkCount() const;
     // Tick this level — time + weather ONLY. Item-entity reclamation used
     // to live here but now belongs to the global GC (see collectDroppedItems): a
     // per-tick sweep inside the level freed records that player pickup
