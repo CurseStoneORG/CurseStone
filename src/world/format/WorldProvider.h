@@ -58,7 +58,7 @@ public:
     virtual void    setSpawn(const math::Vector3& v) = 0;
 
     // Generator plumbing — set by World::load() based on
-    // cursestone.yml `level.generator`. The provider doesn't
+    // cursestone.yml `world.generator`. The provider doesn't
     // generate by itself; it delegates to the generator when a chunk
     // is requested that isn't on disk.
     virtual void    setGenerator(generator::Generator* g) = 0;

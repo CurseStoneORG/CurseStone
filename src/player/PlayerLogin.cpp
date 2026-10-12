@@ -1,6 +1,5 @@
 #include "Player.h"
 #include "player/PlayerInternal.h"
-#include "entity/Living.h"
 #include "world/World.h"
 #include "network/protocol/Info.h"
 #include "network/protocol/LoginPacket.h"
@@ -185,33 +184,8 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
             setGamemode(gm);
             int16_t hp = mcp_compound_tag_get_short(named_tag_.get(), "Health", 20);
             int16_t mh = mcp_compound_tag_get_short(named_tag_.get(), "MaxHealth", 20);
-            // La vida del HUD del 0.15.x sale del atributo generic.health
-            // (min/max/value) que manda sendHealthAttribute(): el MAXIMO
-            // tiene que ser 20 o la barra de corazones queda mal (es lo que
-            // pide "que la vida sea 20/20"). Un player.dat externo puede
-            // traer MaxHealth = 30000 (short) y el cliente dibujaria
-            // 20/30000; se recorta al rango vanilla. Igual la salud: nunca
-            // por debajo de 1 (morir no se guarda) y nunca por encima del
-            // maximo. Vanilla solo supera 20 con HEALTH_BOOST, que se suma
-            // aparte en Living::maxHealth().
-            // Nukkit 1:1 (cn.nukkit.Player.loadNBT):
-            //     int health = namedtag.getShort("Health", 20);
-            //     ... if (health < 0 || health > 20) health = 20;
-            // Un spawn con 2 corazones de menos era hp 17/18 guardados por
-            // saveData() mientras el jugador ya se marchaba con 19/20 reales
-            // (o un hp viejo de la sesion anterior). Nukkit no respeta nada
-            // menos de 20 al volver: la barra arranca SIEMPRE llena, y el
-            // valor guardado es solo "no se murio". Los 20 salen del
-            // maxHealth(), y tambien fijan el MaxHealth del player.dat por
-            // si venia raro (malos 30000, etc.).
-            const int16_t kVanillaMaxHealth = 20;
-            int16_t mh_clamped = (mh > 0 && mh <= kVanillaMaxHealth) ? mh : kVanillaMaxHealth;
-            setMaxHealth(mh_clamped);
-            setHealth(maxHealth());
-            if (mh != (int16_t)maxHealth()) {
-                mcp_compound_tag_set_short(named_tag_.get(), "MaxHealth", (int16_t)maxHealth());
-            }
-            mcp_compound_tag_set_short(named_tag_.get(), "Health", (int16_t)maxHealth());
+            setMaxHealth(mh > 0 ? mh : 20);
+            setHealth(hp <= 0 ? 20 : hp);
             int16_t hunger = mcp_compound_tag_get_short(named_tag_.get(), "Hunger", 20);
             setFoodLevel(hunger);
 
@@ -461,12 +435,6 @@ static void parseUuidBytes(const std::string& s, std::array<uint8_t,16>& out) {
 }
 void Player::doFirstSpawn() {
     if (spawned_.exchange(true)) return;   // idempotent
-
-    // Genisys Player::handleDataPacket (login/spawn): noDamageTicks = 60 —
-    // 3 s de invulnerabilidad al entrar, para que un mob (o un jugador que
-    // ya estaba golpeando) no te mate mientras el cliente todavia esta
-    // armando el mundo.
-    setNoDamageTicks(60);
 
     // Record join time for workbench disconnect diagnostics.
     start_time_ms_ = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -773,14 +741,10 @@ void Player::announceTo(Player* viewer) {
 //
 // Secuencia: dispara PlayerRespawnEvent (no cancelable — solo puede
 // cambiar DONDE reaparece), restaura salud al maximo, teletransporta,
-// y sincroniza al cliente con RespawnPacket + SetHealthPacket.
-//
-// El inventario SI hay que darlo por perdido: Player::onDeath() tira todo
-// y hace inv_->clearAll() (port de Genisys Player::kill() -> getDrops() +
-// inventory->clearAll()). Antes ese camino no corria nunca por el bug de
-// Living::setHealth descrito arriba, asi que el inventario sobrevivia a la
-// muerte; ahora que onDeath() se ejecuta de verdad, al reaparecer el
-// inventario esta vacio (como en vanilla) y no hay nada que reenviar.
+// y sincroniza al cliente con RespawnPacket + SetHealthPacket. No
+// reenvia inventario/experiencia todavia porque este proyecto no
+// vacia el inventario al morir (no hay drop-on-death implementado),
+// asi que no hay nada que restaurar ahi.
 // ============================================================
 void Player::respawn() {
     if (!isDead()) return;
@@ -789,10 +753,7 @@ void Player::respawn() {
     auto ev = event::EventManager::get().fire<event::player::PlayerRespawnEvent>(
         this, sp.x, sp.y, sp.z);
 
-    // Genisys 1:1: la vida muerta solo se sale por aca, via revive()
-    // (player/PlayerLogin.cpp). Un Living·muerto no puede recibir vida de
-    // otra jeta: setHealth() no sienta nada al estar en 0.
-    entity::Living::revive((float)maxHealth());
+    setHealth((int)maxHealth());
     // Respawn always lands at the server spawn, snapped to the surface of
     // the terrain (same rule as first-join: getServerSpawnSafe()), with a
     // fresh food bar (Infinity/Genisys respawn behaviour).
@@ -807,14 +768,9 @@ void Player::respawn() {
     pos_.x = ev.respawnX; pos_.y = ev.respawnY; pos_.z = ev.respawnZ;
     // Reset per-life state.
     air_ticks_ = 300;
-    resetFallDistance();
-    extinguish();
+    fall_distance_ = 0.0f;
     was_on_fire_ = false;
     was_in_lava_ = false;
-    // Genisys Player::respawn(): noDamageTicks = 60 — 3 s de gracia tras
-    // reaparecer (el cliente acaba de re-armar el mundo y no debe comerse
-    // el primer golpe que llegue).
-    setNoDamageTicks(60);
     starve_ticks_ = 0;
     food_tick_timer_ = 0;
     food_depletion_ = 0;
@@ -902,39 +858,9 @@ void Player::respawn() {
 }
 
 // ============================================================
-// handleRespawnRequest — respuesta al boton "Respawn" (action 7).
-//
-// El cliente 0.15.x solo sale de la pantalla de muerte cuando su propia
-// salud deja de valer 0 (DeathScreen) y el boton ademas cierra la pantalla.
-// Su salud la fija exclusivamente SetHealthPacket / el atributo
-// generic.health (LocalPlayer::hurtTo()), asi que si el servidor se cree
-// vivo y no manda nada, el cliente queda encerrado en "You died!" sin
-// forma de salir: eso es exactamente "no deja spawnear".
-//
-// Por eso aca nunca se hace `return` mudo: muerto -> respawn() completo;
-// vivo -> re-sync de la vida real del servidor.
-// ============================================================
-bool Player::handleRespawnRequest() {
-    if (isDead()) {
-        respawn();
-        return true;
-    }
-    // Vivo: resincronizar lo que el cliente necesita para desarmar su
-    // pantalla de muerte. No tocamos la posicion (el jugador puede estar
-    // jugando normalmente; un teleport aca seria un rubber-band).
-    sendHealthAttribute();
-    if (srv_ && srv_->advancedLog()) {
-        utils::MainLogger::get().info("[RESPAWN] " + cfg_.username +
-            " pidio respawn pero sigue vivo (health " +
-            std::to_string((int)health()) + ") - vida re-sincronizada");
-    }
-    return false;
-}
-
-// ============================================================
 // onDeath — Living hook, se llama UNA VEZ cuando health_ cruza a 0
-// (ver Living::kill desde Living::setHealth). Dispara PlayerDeathEvent y
-// difunde el mensaje de muerte.
+// (ver Living::applyDamage). Dispara PlayerDeathEvent y difunde el
+// mensaje de muerte.
 //
 // No reaparece al jugador aca mismo — eso pasa en Player::respawn(),
 // disparado cuando el cliente manda ACTION_SPAWN_SAME_DIMENSION
@@ -1015,10 +941,9 @@ void Player::onDeath() {
     }
 
     // Cleanup at death: fire goes out, food resets for the next life.
-    extinguish();
     was_on_fire_ = false;
     was_in_lava_ = false;
-    resetFallDistance();
+    fall_distance_ = 0.0f;
     food_saturation_ = 5.0f;
     food_depletion_ = 0;
     food_tick_timer_ = 0;

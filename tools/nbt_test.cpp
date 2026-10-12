@@ -14,10 +14,8 @@
 //     buffer.
 //
 // The item half then takes the hand-written item entry (a used diamond
-// sword with Sharpness III and Knockback II) and follows it all the way to
-// the damage pipeline: NBT bytes -> ItemStack -> ArmorPiece -> the real
-// computeArmorProfile() from src/entity/damage/DamageCalculator.h, where the
-// enchantment levels finally stop being zero.
+// sword with Sharpness III and Knockback II) and follows it NBT bytes ->
+// ItemStack, where the enchantment levels finally stop being zero.
 //
 //   tools/run_nbt_test.sh
 #include "nbt/NBT.h"
@@ -28,7 +26,6 @@
 #include "nbt/tag/IntTag.h"
 #include "nbt/tag/ListTag.h"
 #include "item/ItemNbt.h"
-#include "entity/damage/DamageCalculator.h"
 
 #include <array>
 #include <cmath>
@@ -411,57 +408,6 @@ int main() {
               junkStack.ench.entries().empty(),
               "a non-compound 'ench' list yields no enchantments");
         mcp_tag_destroy(junk);
-    }
-
-    // ================================================================
-    // 9. The payoff: NBT bytes -> ItemStack -> the real armor maths
-    // ================================================================
-    printf("\n-- NBT -> ItemStack -> DamageCalculator (EPF) --\n");
-    {
-        // Same entry shape, but a diamond chestplate with Protection II:
-        // id = 311, Damage 0, ench {id 0, lvl 2}.
-        static const uint8_t kChest[] = {
-            0x0A, 0x00, 0x00,
-            0x02, 0x02, 0x00, 'i','d',  0x37, 0x01,            // 0x0137 = 311
-            0x01, 0x05, 0x00, 'C','o','u','n','t', 0x01,
-            0x02, 0x06, 0x00, 'D','a','m','a','g','e', 0x00, 0x00,
-            0x09, 0x04, 0x00, 'e','n','c','h',
-                  0x0A, 0x01, 0x00, 0x00, 0x00,               // count = 1
-                  0x02, 0x02, 0x00, 'i','d',  0x00, 0x00,     // id  = 0 (Protection)
-                  0x02, 0x03, 0x00, 'l','v','l', 0x02, 0x00,  // lvl = 2
-                  0x00,
-            0x00,
-        };
-
-        mcp_tag_t* entry = mcp_nbt_read_bytes(kChest, sizeof(kChest), true);
-        ItemStack chest;
-        check(entry && cursestone::item::itemStackFromNbt(entry, chest),
-              "the chestplate entry reads");
-        if (entry) mcp_tag_destroy(entry);
-
-        // Exactly how PlayerDamage.cpp builds a piece from an ItemStack.
-        using cursestone::event::entity::DamageCause;
-        using cursestone::event::entity::EntityDamageEvent;
-        using cursestone::entity::damage::ArmorPiece;
-        std::array<ArmorPiece, cursestone::event::entity::kArmorSlotCount> pieces{};
-        ArmorPiece p;
-        p.defense = 8;   // diamond chestplate defense, fixed so the check is exact
-        p.protection = chest.enchantmentLevel(EnchantmentId::ENCH_PROTECTION);
-        pieces[1] = p;
-        check(p.protection == 2, "the enchantment level reaches the armor piece");
-
-        // A fixed EPF roll of 100 removes the RNG: rolled == raw.
-        auto profile = cursestone::entity::damage::computeArmorProfile(
-            pieces, DamageCause::ENTITY_ATTACK, 100);
-        check(profile.points == 8, "armor points = 8");
-        check(profile.epf == 2, "EPF = Protection II = 2 (was 0 before this existed)");
-        check(near(profile.protectionRate(), 1.0 - 0.04 * 2.0), "protection rate = 1 - 0.04*EPF");
-
-        EntityDamageEvent ev(nullptr, DamageCause::ENTITY_ATTACK, 10.0f);
-        cursestone::entity::damage::applyArmorModifiers(ev, profile);
-        // 10 * (1 - 0.04*8) * (1 - 0.04*2)
-        check(near(ev.getFinalDamage(), 10.0f * 0.68f * 0.92f),
-              "final damage = 10 * armorRate * protectionRate = 6.256");
     }
 
     // ================================================================

@@ -66,7 +66,7 @@ src/
 
 ## World storage
 
-Worlds are stored in either format, selected via `level-format` / `level.format`:
+Worlds are stored in either format, selected via `world-format` / `world.format`:
 
 - `anvil` — default. Region-file format based on Minecraft Java's `.mca`, adapted for MCPE chunks.
 - `leveldb` — Bedrock's native format ( beta )
