@@ -75,55 +75,6 @@ static inline double mcp_v3_get_pitch(mcp_vector3_t dir) {
     return deg;
 }
 
-// ---- Segment/plane clipping (net.minecraft.world.phys.Vec3) --------
-// clipX/clipY/clipZ: where does the segment a->b cross the plane
-// `axis == target`? Writes the crossing point to *out and returns true
-// only when the plane really lies between a and b — parallel segments
-// (|delta|^2 < 1e-7, the client's own epsilon) and crossings outside
-// the [0,1] parameter range are rejected. These three are the only
-// primitive the client's AABB::clip() ray test is built from.
-static inline bool mcp_v3_clip_x(mcp_vector3_t a, mcp_vector3_t b, double xt,
-                                 mcp_vector3_t* out) {
-    double xd = b.x - a.x, yd = b.y - a.y, zd = b.z - a.z;
-    if (xd * xd < 0.0000001) return false;
-    double d = (xt - a.x) / xd;
-    if (d < 0.0 || d > 1.0) return false;
-    *out = mcp_v3(a.x + xd * d, a.y + yd * d, a.z + zd * d);
-    return true;
-}
-static inline bool mcp_v3_clip_y(mcp_vector3_t a, mcp_vector3_t b, double yt,
-                                 mcp_vector3_t* out) {
-    double xd = b.x - a.x, yd = b.y - a.y, zd = b.z - a.z;
-    if (yd * yd < 0.0000001) return false;
-    double d = (yt - a.y) / yd;
-    if (d < 0.0 || d > 1.0) return false;
-    *out = mcp_v3(a.x + xd * d, a.y + yd * d, a.z + zd * d);
-    return true;
-}
-static inline bool mcp_v3_clip_z(mcp_vector3_t a, mcp_vector3_t b, double zt,
-                                 mcp_vector3_t* out) {
-    double xd = b.x - a.x, yd = b.y - a.y, zd = b.z - a.z;
-    if (zd * zd < 0.0000001) return false;
-    double d = (zt - a.z) / zd;
-    if (d < 0.0 || d > 1.0) return false;
-    *out = mcp_v3(a.x + xd * d, a.y + yd * d, a.z + zd * d);
-    return true;
-}
-
-// Squared distance — the sqrt-free twin of mcp_v3_dist(), used by the
-// ray clip to pick the NEAREST of the six candidate crossings without
-// paying for a square root per candidate.
-static inline double mcp_v3_dist_sq(mcp_vector3_t a, mcp_vector3_t b) {
-    return mcp_v3_lensq(mcp_v3_sub(a, b));
-}
-
-// a + (b - a) * t.
-static inline mcp_vector3_t mcp_v3_lerp(mcp_vector3_t a, mcp_vector3_t b, double t) {
-    return mcp_v3(a.x + (b.x - a.x) * t,
-                  a.y + (b.y - a.y) * t,
-                  a.z + (b.z - a.z) * t);
-}
-
 #ifdef __cplusplus
 } // extern "C"
 #endif

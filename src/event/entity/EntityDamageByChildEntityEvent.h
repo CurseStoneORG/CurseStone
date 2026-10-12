@@ -1,25 +1,19 @@
-// EntityDamageByChildEntityEvent — dano por una entidad "hija" (la flecha
-// de un esqueleto, la perla de un jugador...). Portado de
-// pocketmine\event\entity\EntityDamageByChildEntityEvent (Genisys 0.15).
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// EntityDamageByChildEntityEvent.h — ported from cn.nukkit.event.entity.EntityDamageByChildEntityEvent
 #pragma once
 #include "EntityDamageByEntityEvent.h"
+namespace cursestone { namespace entity { class Entity; } }
 namespace cursestone::event::entity {
-
 class EntityDamageByChildEntityEvent : public EntityDamageByEntityEvent {
 public:
     cursestone::entity::Entity* child = nullptr;
 
-    EntityDamageByChildEntityEvent(cursestone::entity::Entity* damager_,
-                                   cursestone::entity::Entity* e,
-                                   cursestone::entity::Entity* child_,
-                                   DamageCause cause,
-                                   float damage,
-                                   float knockBack = 0.4f)
-        : EntityDamageByEntityEvent(damager_, e, cause, damage, knockBack), child(child_) {}
+    EntityDamageByChildEntityEvent(cursestone::entity::Entity* e, float amount,
+                                   cursestone::entity::Entity* d, cursestone::entity::Entity* c)
+        : EntityDamageByEntityEvent(e, amount, d), child(c) {}
 
     const std::string& eventName() const override {
         static std::string n = "EntityDamageByChildEntityEvent"; return n;
     }
 };
-
-} // namespace cursestone::event::entity
+} // namespace

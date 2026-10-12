@@ -16,7 +16,6 @@
 #include "nbt/tag/CompoundTag.h"
 #include "nbt/tag/ListTag.h"
 #include "nbt/tag/Tag.h"
-#include "item/ItemNbt.h"
 #include "utils/MainLogger.hpp"
 #include "utils/Utils.h"
 #include <chrono>
@@ -436,13 +435,10 @@ void Player::saveData() {
                 nbt_slot = 100 + (slot - inventory::PlayerInventory::ARMOR_OFFSET);
             }
             mcp_tag_t* entry = mcp_compound_tag_new_named("");
-            mcp_compound_tag_set_byte(entry, "Slot", (int8_t)nbt_slot);
-            // id / Count / Damage + the "ench" enchantment list, from the
-            // shared definition in src/item/ItemNbt.h — the three
-            // hand-copied setters that used to sit here never wrote
-            // enchantments, which is why a sharpness sword came back
-            // unenchanted after every reconnect.
-            item::itemStackToNbt(it, entry);
+            mcp_compound_tag_set_byte (entry, "Slot",   (int8_t)nbt_slot);
+            mcp_compound_tag_set_short(entry, "id",     (int16_t)it.id);
+            mcp_compound_tag_set_byte (entry, "Count",  (int8_t)it.count);
+            mcp_compound_tag_set_short(entry, "Damage", (int16_t)it.meta);
             mcp_list_tag_append(inv_list, entry);
         }
         mcp_compound_tag_set_int(root, "SelectedItemSlot",
