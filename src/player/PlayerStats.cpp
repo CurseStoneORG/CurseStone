@@ -6,6 +6,8 @@
 #include "network/protocol/EntityEventPacket.h"
 #include "network/protocol/SetHealthPacket.h"
 #include "event/entity/EntityDamageEvent.h"
+#include "entity/damage/DamageCalculator.h"
+#include "block/Block.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -150,9 +152,9 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
             damage(2.0f, event::entity::DamageCause::DROWNING); // 1 heart/s
         }
         // Water extinguishes fire (vanilla) and cancels pending fall damage.
-        fire_ticks_ = 0;
+        extinguish();
         was_on_fire_ = false;
-        fall_distance_ = 0.0f;
+        resetFallDistance();
     } else {
         air_ticks_ = 300;   // 15s of air (vanilla)
     }
@@ -161,19 +163,41 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
     // salta TODO el bloque cuando !isAlive(). Sin esto, la regeneracion
     // de la seccion 4c volvia a curar a un muerto en el mismo tick.
     if (isDead()) return;
-    // Burn timer: set to 160 ticks (8s) on fire/lava contact; when it
-    // reaches 0 the player stops burning (vanilla setOnFire semantics).
-    if (fire_ticks_ > 0 && --fire_ticks_ == 0) was_on_fire_ = false;
+    // Burn timer: Entity::setOnFire(8) deja 160 ticks (8 s) de quemadura;
+    // cuando llega a 0 el jugador deja de arder (semantica vanilla). El
+    // contador vive ahora en Entity (fireTicks()), compartido con el
+    // pipeline de dano de Genisys.
+    if (fireTicks() > 0) {
+        setFireTicks(fireTicks() - 1);
+        if (!isOnFire()) was_on_fire_ = false;
+    }
 
     // ---------- 2. Fall damage (Infinity processMovement) ----------
     // Distance is accumulated in handleMovePlayer(); here the damage is
     // applied exactly once when the client reports ground contact with
     // >= 3 blocks of accumulated fall (vanilla: damage = fall - 3), and
     // the accumulator resets so it can start over on the next fall.
-    if (!creative && difficulty > 0 && fall_distance_ >= 3.0 &&
-        on_ground_fall_check_ && !in_water) {
-        damage((float)(fall_distance_ - 3.0), event::entity::DamageCause::FALL);
-        fall_distance_ = 0.0f;   // landing resets the fall
+    if (on_ground_fall_check_ && !in_water) {
+        // PORTADO DE LA REFERENCIA (SSMG64/PocketEdition
+        // handheld/src/world/entity/Mob.cpp::causeFallDamage):
+        //
+        //     int dmg = (int) ceil(distance - 3);
+        //     if (dmg > 0) hurt(NULL, dmg);
+        //
+        // ceil() + dano entero, con el mismo umbral de 3 bloques. Ademas se
+        // chequea el bloque de aterrizaje (antes se pasaba `false` fijo y
+        // `feet` quedaba sin usar): un slime block debajo anula el dano,
+        // como en vanilla. Se conserva el descuento del efecto Jump Boost
+        // (1 bloque por nivel), que es vanilla del 0.15 y la referencia no
+        // modela. Los numeros exactos los fija tools/damage_test.cpp.
+        const int jump_boost = hasEffectId(entity::EFF_JUMP)
+                                   ? effectAmplifier(entity::EFF_JUMP) + 1 : 0;
+        const bool slime_below = (feet == block::SLIME_BLOCK);
+        const double dmg = entity::damage::fallDamage(fallDistance(), jump_boost, slime_below);
+        resetFallDistance();     // aterrizar siempre reinicia el acumulador
+        if (!creative && difficulty > 0 && dmg > 0.0) {
+            damage((float)dmg, event::entity::DamageCause::FALL);
+        }
     }
     // Si el golpe de caida mato, terminar el tick aca: nada de lo que
     // sigue (fuego/lava/hambre/regen) debe tocar a un jugador muerto.
@@ -187,8 +211,7 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
         }
         was_in_lava_ = true;
         was_on_fire_ = true;
-        setOnFire(8);
-        fire_ticks_ = 160;   // 8s of burning (vanilla)
+        setOnFire(8);        // 8 s = 160 ticks de quemadura
     } else {
         was_in_lava_ = false;
         if (was_on_fire_ && !creative) {
@@ -205,13 +228,14 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
             if (!creative) damage(1.0f, event::entity::DamageCause::FIRE);
         }
         was_on_fire_ = true;
-        setOnFire(8);
-        fire_ticks_ = 160;   // 8s of burning (vanilla)
+        setOnFire(8);        // 8 s = 160 ticks de quemadura
     }
     if (at == block::CACTUS) {
         if (now_ms - last_cactus_dmg_ms_ >= 500) {
             last_cactus_dmg_ms_ = now_ms;
-            if (!creative) damage(1.0f, event::entity::DamageCause::CACTUS); // half heart
+            // Genisys no tiene una causa CACTUS: el dano de cactus sale del
+            // onEntityCollide del bloque, que construye CAUSE_CONTACT.
+            if (!creative) damage(1.0f, event::entity::DamageCause::CONTACT);
         }
     }
     // Lava/fuego/cactus pueden haber matado: no seguir con hambre/regen.
@@ -263,9 +287,30 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
         starve_ticks_ = 0;
     }
 
+    // ---------- 5. Void / suffocation + timers (Genisys Entity::entityBaseTick) ----------
+    // Caer fuera del mundo: Genisys aplica VOID con $this->y <= -16, y es
+    // una de las tres causas que ni el creativo ni la Resistencia al Dano
+    // pueden evitar.
+    if (pos_.y <= -16.0) {
+        damage(10.0f, event::entity::DamageCause::VOID);
+        if (isDead()) return;
+    }
+    // Asfixia: el bloque a la altura de los ojos es solido y opaco -> 1 de
+    // dano por tick (Genisys Living::entityBaseTick -> CAUSE_SUFFOCATION).
+    {
+        block::Block* eye_block = block::Block::get(eye);
+        if (eye != 0 && eye_block != nullptr && eye_block->isSolid() &&
+            !eye_block->isTransparent()) {
+            damage(1.0f, event::entity::DamageCause::SUFFOCATION);
+            if (isDead()) return;
+        }
+    }
+    // Ventanas de invulnerabilidad: Genisys las baja un tick por vuelta
+    // (Entity::entityBaseTick / Living::entityBaseTick).
+    if (noDamageTicks() > 0) setNoDamageTicks(noDamageTicks() - 1);
+    if (attackTime() > 0) setAttackTime(attackTime() - 1);
+
     (void)current_tick;
-    (void)difficulty;
-    (void)feet;
     (void)last_pos_y_;
     (void)last_pos_set_;
     (void)was_in_lava_;
@@ -275,7 +320,6 @@ void Player::setExperience(int exp, int level) {
 }
 void Player::sendExperience(int exp) { (void)exp; }
 void Player::sendExperienceLevel(int level) { (void)level; }
-void Player::setHealth(int h) { entity::Living::setHealth((uint16_t)h); }
 
 void Player::setMovementSpeed(float speed) { (void)speed; }
 void Player::setAttribute(int attrId, float value) { (void)attrId; (void)value; }} // namespace cursestone
