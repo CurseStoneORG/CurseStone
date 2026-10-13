@@ -448,6 +448,19 @@ void Server::runTickLoop() {
     MemoryManager::get().collect(/*force=*/true);
     saveAll();
     if (console_reader_) console_reader_->stop();
+
+    // Stop and JOIN the chunk-generation pool here, on the main thread,
+    // while the process is still fully alive. The pool is owned by this
+    // Server singleton, and the order in which static destructors run is
+    // not guaranteed: if a worker is still inside GenerationTask::run()
+    // when the global block registry / chunk tables are destroyed, it dies
+    // in mcp_block_light_opacity() reading a table that no longer exists —
+    // a SIGSEGV logged right AFTER "Shutdown complete." (reproducible
+    // whenever a player had chunks in flight at stop time). stop() joins
+    // every worker and is idempotent, so the pool's own destructor stays a
+    // no-op and nothing can be generating once we return.
+    if (async_pool_) async_pool_->stop();
+
     utils::MainLogger::get().info("Shutdown complete.");
 }
 

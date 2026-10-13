@@ -139,12 +139,24 @@ void Normal::generate(GenerationContext& ctx) {
     // alguien llama a generate() con una semilla distinta a la del ctor se
     // construye uno provisional (no ocurre en el servidor: World pasa el
     // seed del provider, que es el mismo con el que se construyó el
-    // generador).
+    // generador). Con el ctor y el ctx ya alineados (ver World::World()),
+    // esta rama no se toma en el servidor.
     if (ctx.seed == seed_) {
         ctx.noise_cache = &noise_;
     } else {
-        noiseOwned_ = std::make_unique<TerrainNoise>(ctx.seed);
-        ctx.noise_cache = noiseOwned_.get();
+        // TerrainNoise provisional para una semilla que el ctor no vio.
+        // Tiene que vivir hasta que termina populate() (los populators leen
+        // ctx.noise_cache), asi que no puede ser una local de generate().
+        // Tampoco puede ser un MIEMBRO: generate()/populate() corren a la vez
+        // en varios workers del AsyncPool sobre este MISMO Generator, y un
+        // miembro compartido se reconstruye (libera) debajo de los pies del
+        // otro worker — ese era justamente el SIGSEGV en
+        // PerlinNoise::getValue (el worker A liberaba las capas que el
+        // worker B estaba evaluando). Una instancia POR HILO no se comparte
+        // nunca, y se reusa entre los chunks que ese hilo genera.
+        static thread_local std::unique_ptr<TerrainNoise> tlsNoise;
+        tlsNoise = std::make_unique<TerrainNoise>(ctx.seed);
+        ctx.noise_cache = tlsNoise.get();
     }
     const TerrainNoise& noise = *static_cast<TerrainNoise*>(ctx.noise_cache);
 
