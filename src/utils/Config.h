@@ -21,10 +21,13 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Config — YAML / INI / JSON loader for the server config file.
-// Implements a minimal subset of YAML (nested maps, lists, scalars, comments)
-// sufficient to parse `resources/cursestone.yml`. For full YAML support,
-// future phases may vendor yaml-cpp.
+/**
+ * @brief Loads the server config file (YAML / INI / JSON).
+ *
+ * Implements a minimal subset of YAML (nested maps, lists, scalars,
+ * comments) sufficient to parse `resources/cursestone.yml`. For full
+ * YAML support, future phases may vendor yaml-cpp.
+ */
 #pragma once
 
 #include <string>

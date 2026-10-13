@@ -20,17 +20,29 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// ThreadManager — owns the RakLib thread, AsyncPool worker threads,
-// and CommandReader stdin thread. Provides join + clean-shutdown.
+/**
+ * @brief Registry of server threads that are joined at shutdown.
+ *
+ * Stores shared thread handles and joins every joinable one in
+ * joinAll(), clearing the registry afterwards.
+ */
 #pragma once
 #include <thread>
 #include <vector>
 #include <memory>
 namespace cursestone {
+/**
+ * @brief Holds the thread handles the server must join before exiting.
+ */
 class ThreadManager {
 public:
+    /// Returns the process-wide instance.
     static ThreadManager& get();
+
+    /// Hands a thread handle to the registry so joinAll() can join it later.
     void registerThread(std::shared_ptr<std::thread> t) { threads_.push_back(std::move(t)); }
+
+    /// Joins every registered, joinable thread and clears the registry.
     void joinAll();
 private:
     std::vector<std::shared_ptr<std::thread>> threads_;

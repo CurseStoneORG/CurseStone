@@ -21,9 +21,13 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// MainLogger — concrete logger that writes to stdout (with ANSI colors)
-// and optionally to a log file. Pure C, but exposes a mcp_logger_t
-// vtable so C++ callers can use it polymorphically.
+/**
+ * @brief Writes log records to stdout (with ANSI colors) and
+ * optionally to a log file.
+ *
+ * Pure C, but exposes a mcp_logger_t vtable so C++ callers can use it
+ * polymorphically.
+ */
 #pragma once
 
 #include "Logger.h"

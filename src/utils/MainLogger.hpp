@@ -20,9 +20,13 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// MainLogger.hpp — C++ singleton wrapper over the C mcp_main_logger_t.
-// Exposes utils::MainLogger::get().info/warn/error/debug(string).
-// All C++ files that log should include this; C files include MainLogger.h.
+/**
+ * @brief Wraps the C mcp_main_logger_t as a C++ singleton.
+ *
+ * Exposes utils::MainLogger::get().info/warn/error/debug(string).
+ * All C++ files that log should include this; C files include
+ * MainLogger.h.
+ */
 #pragma once
 #include "MainLogger.h"
 #include <string>

@@ -69,6 +69,13 @@ namespace item     { class Item; }
 // mcp_tag_destroy when the refcount drops to zero. Defined in Server.cpp.
 using NbtPtr = std::shared_ptr<::mcp_tag>;
 
+/**
+ * @brief Server singleton: boot, tick loop, and coordinated shutdown.
+ *
+ * Mirrors pocketmine/Server.php. The file comment above lists the full
+ * responsibilities (boot sequence, tick phases, shutdown, roster and
+ * broadcast handling, command processing).
+ */
 class Server {
 public:
     static Server& getInstance() {
@@ -76,34 +83,39 @@ public:
         return instance;
     }
 
-    // Boot the server. Called from CurseStone.cpp.
+    /** @brief Boots the server. Called from CurseStone.cpp. */
     void start(const std::string& dataPath);
 
-    // Run the main tick loop (blocks until shutdown()).
+    /** @brief Runs the main tick loop (blocks until shutdown()). */
     void runTickLoop();
 
-    // Advance one tick. Dispatches to scheduler, network, world, players.
+    /** @brief Advances one tick. Dispatches to scheduler, network, world, players. */
     void tick();
 
-    // Cleanly shut down: disconnect players, save world, close sockets.
+    /** @brief Shuts down cleanly: disconnects players, saves world, closes sockets. */
     void shutdown();
 
-    // Registers an external "stop requested" flag for runTickLoop() to
-    // poll once per iteration on the MAIN thread. CurseStone.cpp points this
-    // at a volatile sig_atomic_t that its SIGINT/SIGTERM handler sets.
-    //
-    // This indirection exists because the signal handler itself must
-    // never call shutdown() directly — shutdown() logs (malloc + mutex
-    // via the async logger) and spawns a watchdog std::thread
-    // (pthread_create), neither of which is async-signal-safe. Doing
-    // that inside the handler can deadlock the process if the signal
-    // interrupts a thread already holding an internal libc lock (e.g.
-    // mid-malloc) — deterministic on Linux/glibc, which is why this
-    // only ever showed up there: the server would appear to never
-    // finish starting, or /stop would hang forever with the process
-    // still alive. Polling a plain flag from ordinary (non-signal)
-    // code on the main thread keeps shutdown() itself unchanged and
-    // safe to call from here.
+    /**
+     * Registers an external "stop requested" flag for runTickLoop() to
+     * poll once per iteration on the MAIN thread. CurseStone.cpp points this
+     * at a volatile sig_atomic_t that its SIGINT/SIGTERM handler sets.
+     *
+     * This indirection exists because the signal handler itself must
+     * never call shutdown() directly - shutdown() logs (malloc + mutex
+     * via the async logger) and spawns a watchdog std::thread
+     * (pthread_create), neither of which is async-signal-safe. Doing
+     * that inside the handler can deadlock the process if the signal
+     * interrupts a thread already holding an internal libc lock (e.g.
+     * mid-malloc) - deterministic on Linux/glibc, which is why this
+     * only ever showed up there: the server would appear to never
+     * finish starting, or /stop would hang forever with the process
+     * still alive. Polling a plain flag from ordinary (non-signal)
+     * code on the main thread keeps shutdown() itself unchanged and
+     * safe to call from here.
+     *
+     * @param flag  address of a volatile sig_atomic_t owned by the caller;
+     *               must outlive runTickLoop().
+     */
     void setExternalStopFlag(const volatile std::sig_atomic_t* flag) {
         external_stop_flag_ = flag;
     }
@@ -116,20 +128,31 @@ public:
     // Player roster.
     std::vector<std::shared_ptr<Player>>& players() { return players_; }
     const std::vector<std::shared_ptr<Player>>& players() const { return players_; }
-    // Thread-safe snapshot of the player list. Callers iterate this copy
-    // WITHOUT holding the mutex, so add/remove from other threads does not
-    // invalidate iterators (fixes the segfault on concurrent broadcasts).
+    /**
+     * @brief Returns a thread-safe copy of the player list.
+     *
+     * Callers iterate this copy WITHOUT holding the mutex, so add/remove
+     * from other threads does not invalidate iterators (fixes the
+     * segfault on concurrent broadcasts).
+     */
     std::vector<std::shared_ptr<Player>> playersSnapshot() const;
     Player* getPlayer(const std::string& name) const;
     void addPlayer(std::shared_ptr<Player> p);
     void removePlayer(Player* p);
 
-    // Allocate a fresh unique runtime entity ID. Used for spawning item
-    // drops and other world entities (mirrors PMMP Entity::$entityCount).
+    /**
+     * @brief Allocates a fresh unique runtime entity ID.
+     *
+     * Used for spawning item drops and other world entities (mirrors
+     * PMMP Entity::$entityCount).
+     */
     int64_t allocateEid();
 
-    // Save ALL players + the default world. Called periodically from the
-    // tick loop (auto-save) and on shutdown.
+    /**
+     * @brief Saves ALL players plus the default world.
+     *
+     * Called periodically from the tick loop (auto-save) and on shutdown.
+     */
     void saveAll();
 
     // Broadcast helpers.
@@ -214,15 +237,16 @@ public:
     void doAutoSave() { saveAll(); }
 
     // --- Autosave incremental ---
-    // El autosave NO escribe el mundo de golpe. El tick de autosave (cada
-    // autosave_ticks_) guarda lo barato (datos de jugador + level.dat) y
-    // abre el drenaje; a partir de ahí cada tick escribe unos pocos chunks
-    // sucios hasta vaciar la cola. Antes se hacía world_->save() completo
-    // en un único tick: con el mundo cargado son cientos de chunks y el
-    // hilo principal quedaba bloqueado ~500-760 ms (medido) — el aviso
-    // "[SAVE] Autosave took 759ms — this may cause disconnects!", que es
-    // justo el freeze que el cliente acaba leyendo como desconexión.
-    // Coste por tick acotado por kAutosaveChunksPerTick / kAutosaveMsPerTick.
+    // The autosave does NOT write the world in one go. The autosave tick
+    // (every autosave_ticks_) saves the cheap data (player data +
+    // level.dat) and opens the drain; from then on each tick writes a few
+    // dirty chunks until the queue is empty. A full world_->save() in a
+    // single tick used to block the main thread for ~500-760 ms
+    // (measured) with a loaded world - the same freeze a live client
+    // ends up reading as a disconnect, the one behind the warning
+    // "[SAVE] Autosave took 759ms — this may cause disconnects!".
+    // Per-tick cost is bounded by kAutosaveChunksPerTick /
+    // kAutosaveMsPerTick.
     void beginAutosaveDrain();
     void tickAutosaveDrain();
 
@@ -235,9 +259,9 @@ public:
     // --- Nukkit-compat: Recipe list ---
     void sendRecipeList(Player* player);
 
-    // CraftingManager global (recetas registradas en codigo al
-    // arranque). Consumido por Player::handleCraftingEvent y
-    // TileFurnace::tick. Puede ser nullptr antes de start().
+    // Global CraftingManager (recipes registered in code at startup).
+    // Consumed by Player::handleCraftingEvent and TileFurnace::tick.
+    // May be nullptr before start().
     inventory::CraftingManager* craftingManager() const { return crafting_.get(); }
 
     // --- Nukkit-compat: Player list data (PlayerListPacket broadcast) ---

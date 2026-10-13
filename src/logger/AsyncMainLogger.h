@@ -21,23 +21,25 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// AsyncMainLogger.h — async logger with background pthread worker.
-//
-// Mirrors Nukkit's MainLogger pattern:
-//   - info()/warn()/error() only push to a ring buffer + signal condvar
-//   - A background pthread does the actual I/O (format, color, fputs)
-//   - Batch writes in 4KB blocks, force-flush every 25 seconds
-//
-// The struct has `mcp_logger_t vtable` as its first field, so it's
-// layout-compatible with `mcp_main_logger_t*` — the C++ wrapper
-// `utils::MainLogger::get()` works without changes.
-//
-// Thread model:
-//   Producer (tick thread):  lock → push entry → signal → unlock
-//   Consumer (worker thread): lock → wait(cond, 25s) → drain → unlock → I/O
-//
-// When the ring is full, the entry is dropped and `dropped_count` is
-// incremented. On the next drain, "[LOG DROPPED xN]" is emitted first.
+/**
+ * @brief Logs asynchronously through a background pthread worker.
+ *
+ * Mirrors Nukkit's MainLogger pattern:
+ *   - info()/warn()/error() only push to a ring buffer + signal condvar
+ *   - A background pthread does the actual I/O (format, color, fputs)
+ *   - Batch writes in 4KB blocks, force-flush every 25 seconds
+ *
+ * The struct has `mcp_logger_t vtable` as its first field, so it's
+ * layout-compatible with `mcp_main_logger_t*` - the C++ wrapper
+ * `utils::MainLogger::get()` works without changes.
+ *
+ * Thread model:
+ *   Producer (tick thread):  lock -> push entry -> signal -> unlock
+ *   Consumer (worker thread): lock -> wait(cond, 25s) -> drain -> unlock -> I/O
+ *
+ * When the ring is full, the entry is dropped and `dropped_count` is
+ * incremented. On the next drain, "[LOG DROPPED xN]" is emitted first.
+ */
 #pragma once
 
 #include "../utils/Logger.h"

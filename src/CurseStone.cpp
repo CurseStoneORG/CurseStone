@@ -116,9 +116,7 @@ cursestone::CrashDump* g_crashDump = nullptr;
 // and spawning the watchdog thread are all safe again.
 volatile std::sig_atomic_t g_stopRequested = 0;
 
-// ----------------------------------------------------------------------
 // portable backtrace
-// ----------------------------------------------------------------------
 //
 // Returns a newline-separated stack trace string. If neither <execinfo.h>
 // nor <unwind.h> is available, returns a one-line marker so callers
@@ -279,11 +277,12 @@ int main(int argc, char* argv[]) {
     // Install signal handlers for clean shutdown
     std::signal(SIGINT,  handleSignal);
     std::signal(SIGTERM, handleSignal);
-    // Core dumps: sin esto, un SIGSEGV en una maquina con
-    // `ulimit -c 0` (default en varias distros/systemd) se pierde sin
-    // dejar nada. Subimos el limite a "ilimitado" para que el kernel
-    // escriba el core y se pueda abrir con gdb despues. Es best-effort:
-    // si el sistema lo prohibe, seguimos igual con el crashdump JSON.
+    // Core dumps: without this, a SIGSEGV on a machine with
+    // `ulimit -c 0` (the default on several distros/systemd) leaves
+    // nothing behind. We raise the limit to "unlimited" so the kernel
+    // writes the core and it can be opened in gdb afterwards. This is
+    // best-effort: if the system forbids it, we continue with the JSON
+    // crashdump anyway.
 #if defined(__linux__) || defined(__APPLE__)
     {
         struct rlimit rl;

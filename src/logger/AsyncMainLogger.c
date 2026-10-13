@@ -51,15 +51,11 @@
 #include <time.h>
 #include <errno.h>
 
-// ============================================================================
 // Singleton
-// ============================================================================
 static mcp_async_logger_t g_async;
 static bool g_async_initialized = false;
 
-// ============================================================================
 // Helpers — format timestamp, level name, ANSI color
-// ============================================================================
 static void format_timestamp(char* buf, size_t bufsz) {
     time_t t = time(NULL);
     struct tm tm;
@@ -80,9 +76,7 @@ static const char* level_color(mcp_log_level_t lvl) {
     }
 }
 
-// ============================================================================
 // Ring buffer push (called by tick thread via vtable functions)
-// ============================================================================
 static void async_push(mcp_async_logger_t* self, mcp_log_level_t lvl,
                          const char* msg) {
     if (!self || !self->running) return;
@@ -118,9 +112,7 @@ static void async_push(mcp_async_logger_t* self, mcp_log_level_t lvl,
     pthread_mutex_unlock(&self->mtx);
 }
 
-// ============================================================================
 // Vtable trampoline functions
-// ============================================================================
 static void async_log_fn(void* self, mcp_log_level_t lvl, const char* msg) {
     async_push((mcp_async_logger_t*)self, lvl, msg);
 }
@@ -157,9 +149,7 @@ static void async_shutdown_fn(void* self) {
     (void)self;
 }
 
-// ============================================================================
 // Worker thread — drains the ring buffer and writes to stdout + file
-// ============================================================================
 static void format_and_write(mcp_async_logger_t* self,
                                const async_log_entry_t* entry,
                                char* batch, size_t* batch_len,
@@ -369,9 +359,7 @@ static void* async_worker_fn(void* arg) {
     return NULL;
 }
 
-// ============================================================================
 // Public API
-// ============================================================================
 void mcp_main_logger_async_init(const char* log_path, bool colored) {
     if (g_async_initialized) return;
 

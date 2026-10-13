@@ -21,8 +21,12 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Logger — abstract logger interface. Pure C function-pointer vtable.
-// Concrete implementations: MainLogger (stdout+file), NullLogger.
+/**
+ * @brief Declares the abstract logger interface.
+ *
+ * Pure C function-pointer vtable. Concrete implementations:
+ * MainLogger (stdout+file), NullLogger.
+ */
 #pragma once
 
 #include <stdint.h>
