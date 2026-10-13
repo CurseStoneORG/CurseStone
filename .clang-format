@@ -1,0 +1,47 @@
+# clang-format configuration for CurseStone.
+#
+# Derived from the existing style of the tree (4-space indent, attached
+# pointers/references, ~100-column lines, Allman-free braces), not from a
+# stock preset. Formatting-only changes must be committed separately from
+# documentation changes (see CONTRIBUTING.md, "Naming and style").
+#
+# Never run a whole-tree reformat in the same commit as comment edits:
+# keep formatting commits isolated and list them in .git-blame-ignore-revs.
+
+Language: Cpp
+BasedOnStyle: LLVM
+
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 100
+
+AccessModifierOffset: -2
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+AlignTrailingComments: true
+AllowAllParametersOfDeclarationOnNextLine: true
+AllowShortBlocksOnASingleLine: true
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AlwaysBreakAfterReturnType: None
+AlwaysBreakTemplateDeclarations: true
+BinPackArguments: true
+BinPackParameters: true
+BreakBeforeBraces: Attach
+BreakConstructorInitializers: BeforeColon
+ConstructorInitializerAllOnOneLineOrOnePerLine: false
+DerivePointerAlignment: false
+PointerAlignment: Left
+ReferenceAlignment: Pointer
+SpaceAfterCStyleCast: false
+SpaceBeforeParens: ControlStatements
+SpacesInParentheses: false
+SortIncludes: false
+IncludeBlocks: Preserve
+FixNamespaceComments: true
+
+# Keep existing license banners and file headers intact.
+CommentPragmas: '^ (SPDX|License|Copyright|KEEP)'
