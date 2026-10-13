@@ -21,10 +21,11 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// AsyncMainLogger.c — async logger implementation with pthread.
+// AsyncMainLogger.c — async logger implementation on the portable thread
+// layer (src/utils/ThreadPort: pthreads on POSIX, Win32 on Windows).
 //
 // The tick thread only does: lock → memcpy entry → signal → unlock.
-// A background pthread does all the expensive I/O: timestamp formatting,
+// A worker thread does all the expensive I/O: timestamp formatting,
 // ANSI color conversion, fputs to stdout + file, fflush.
 //
 // Batch strategy: the worker drains ALL pending entries into a local
@@ -34,7 +35,7 @@
 // If the ring buffer is full, the entry is dropped and dropped_count is
 // incremented. On the next drain, "[LOG DROPPED xN]" is emitted.
 
-// Need _GNU_SOURCE for clock_gettime + CLOCK_REALTIME in C23 mode.
+// Need POSIX visibility (localtime_r) in strict C23 mode.
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
@@ -49,7 +50,10 @@
 #include <string.h>
 #include <stdarg.h>
 #include <time.h>
-#include <errno.h>
+
+// Worker poll interval: a short wait keeps startup logs visible instead of
+// delaying them until the 25 s force-flush window.
+#define ASYNC_LOG_POLL_MS 500
 
 // Singleton
 static mcp_async_logger_t g_async;
@@ -59,7 +63,15 @@ static bool g_async_initialized = false;
 static void format_timestamp(char* buf, size_t bufsz) {
     time_t t = time(NULL);
     struct tm tm;
+#ifdef _WIN32
+    // MSVC has no localtime_r(); the C11 localtime_s() plays the same role.
+    if (localtime_s(&tm, &t) != 0) {
+        buf[0] = '\0';
+        return;
+    }
+#else
     localtime_r(&t, &tm);
+#endif
     strftime(buf, bufsz, "%H:%M:%S", &tm);
 }
 
@@ -87,12 +99,12 @@ static void async_push(mcp_async_logger_t* self, mcp_log_level_t lvl,
         if (len >= ASYNC_LOG_LINE_MAX) len = ASYNC_LOG_LINE_MAX - 1;
     }
 
-    pthread_mutex_lock(&self->mtx);
+    mcp_mutex_lock(&self->mtx);
 
     if (self->count >= ASYNC_LOG_RING_SIZE) {
         // Ring full — drop this entry.
         self->dropped_count++;
-        pthread_mutex_unlock(&self->mtx);
+        mcp_mutex_unlock(&self->mtx);
         return;
     }
 
@@ -108,8 +120,8 @@ static void async_push(mcp_async_logger_t* self, mcp_log_level_t lvl,
     self->head = (idx + 1) % ASYNC_LOG_RING_SIZE;
     self->count++;
 
-    pthread_cond_signal(&self->cond);
-    pthread_mutex_unlock(&self->mtx);
+    mcp_cond_signal(&self->cond);
+    mcp_mutex_unlock(&self->mtx);
 }
 
 // Vtable trampoline functions
@@ -233,32 +245,22 @@ static void* async_worker_fn(void* arg) {
     size_t batch_len = 0;
     batch[0] = '\0';
 
-    // Timeout for cond_wait: 25 seconds.
-    struct timespec ts;
-
     while (1) {
-        // Wait for signal or timeout.
-        // Use a SHORT timeout (500ms) instead of 25s so logs appear
-        // quickly on startup. The 25s flush interval was causing
-        // logs to not appear for up to 25 seconds.
-        clock_gettime(CLOCK_REALTIME, &ts);
-        ts.tv_sec += 0;
-        ts.tv_nsec += 500 * 1000000;  // 500ms
-        if (ts.tv_nsec >= 1000000000) {
-            ts.tv_sec += 1;
-            ts.tv_nsec -= 1000000000;
-        }
-
-        pthread_mutex_lock(&self->mtx);
+        // Wait for a signal or 500 ms of silence. The short wait is
+        // deliberate: the original 25 s flush interval delayed startup
+        // logs by up to 25 seconds.
+        mcp_mutex_lock(&self->mtx);
 
         while (self->count == 0 && !self->shutdown_requested) {
-            int rc = pthread_cond_timedwait(&self->cond, &self->mtx, &ts);
-            if (rc == ETIMEDOUT) break;
+            // Relative timeout, so a wall-clock step cannot stall the wait.
+            if (!mcp_cond_wait(&self->cond, &self->mtx, ASYNC_LOG_POLL_MS)) {
+                break;  // timed out
+            }
         }
 
         if (self->count == 0 && self->shutdown_requested) {
             // Ring is empty and shutdown requested — exit.
-            pthread_mutex_unlock(&self->mtx);
+            mcp_mutex_unlock(&self->mtx);
             break;
         }
 
@@ -267,7 +269,7 @@ static void* async_worker_fn(void* arg) {
         // flush to catch any partial batch).
         if (self->count == 0) {
             // Timeout with no new logs — flush partial batch if any.
-            pthread_mutex_unlock(&self->mtx);
+            mcp_mutex_unlock(&self->mtx);
             if (batch_len > 0) {
                 fputs(batch, stdout);
                 if (self->log_file) {
@@ -301,7 +303,7 @@ static void* async_worker_fn(void* arg) {
         }
 
         bool do_shutdown = self->shutdown_requested;
-        pthread_mutex_unlock(&self->mtx);
+        mcp_mutex_unlock(&self->mtx);
 
         // Emit "[LOG DROPPED xN]" if any were dropped.
         if (dropped > 0) {
@@ -392,12 +394,12 @@ void mcp_main_logger_async_init(const char* log_path, bool colored) {
     g_async.vtable.impl          = &g_async;
 
     // Initialize sync primitives.
-    pthread_mutex_init(&g_async.mtx, NULL);
-    pthread_cond_init(&g_async.cond, NULL);
+    mcp_mutex_init(&g_async.mtx);
+    mcp_cond_init(&g_async.cond);
 
     // Spawn worker thread.
-    pthread_create(&g_async.worker, NULL, async_worker_fn, &g_async);
-    g_async.worker_started = true;
+    g_async.worker_started =
+        mcp_thread_start(&g_async.worker, async_worker_fn, &g_async);
 
     g_async_initialized = true;
 }
@@ -406,15 +408,15 @@ void mcp_main_logger_async_destroy(void) {
     if (!g_async_initialized) return;
 
     // Signal shutdown.
-    pthread_mutex_lock(&g_async.mtx);
+    mcp_mutex_lock(&g_async.mtx);
     g_async.shutdown_requested = true;
     g_async.running = false;
-    pthread_cond_signal(&g_async.cond);
-    pthread_mutex_unlock(&g_async.mtx);
+    mcp_cond_signal(&g_async.cond);
+    mcp_mutex_unlock(&g_async.mtx);
 
     // Wait for worker to drain + exit.
     if (g_async.worker_started) {
-        pthread_join(g_async.worker, NULL);
+        mcp_thread_join(&g_async.worker);
         g_async.worker_started = false;
     }
 
@@ -426,8 +428,8 @@ void mcp_main_logger_async_destroy(void) {
     }
 
     // Cleanup sync.
-    pthread_mutex_destroy(&g_async.mtx);
-    pthread_cond_destroy(&g_async.cond);
+    mcp_mutex_destroy(&g_async.mtx);
+    mcp_cond_destroy(&g_async.cond);
 
     g_async_initialized = false;
 }
