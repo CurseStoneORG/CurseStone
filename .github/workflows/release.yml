@@ -2,7 +2,7 @@ name: Release personalizado
 
 # Crea un release de GitHub con la versión y descripción que tú elijas
 # (ej. versión: "CurseStone-alpha-v1.0") y adjunta los binarios de
-# Linux x86_64 y Android ARM64 ya compilados.
+# Linux x86_64, Android ARM64 y Windows x86_64 ya compilados.
 #
 # Cómo usarlo:
 #   GitHub → Actions → "Release personalizado" → Run workflow
@@ -29,7 +29,7 @@ permissions:
   contents: write
 
 jobs:
-  # Reutiliza los builds de Build.yml (Linux x86_64 + Android ARM64).
+  # Reutiliza los builds de Build.yml (Linux x86_64 + Android ARM64 + Windows x86_64).
   build:
     name: Compilar binarios
     uses: ./.github/workflows/Build.yml
@@ -53,8 +53,9 @@ jobs:
       - name: Renombrar binarios con la versión
         run: |
           VERSION='${{ inputs.version }}'
-          mv dist/CurseStone-linux-x86_64/CurseStone   "dist/CurseStone-${VERSION}-linux-x86_64"
-          mv dist/CurseStone-android-arm64/CurseStone  "dist/CurseStone-${VERSION}-android-arm64"
+          mv dist/CurseStone-linux-x86_64/CurseStone        "dist/CurseStone-${VERSION}-linux-x86_64"
+          mv dist/CurseStone-android-arm64/CurseStone      "dist/CurseStone-${VERSION}-android-arm64"
+          mv dist/CurseStone-windows-x86_64/CurseStone.exe "dist/CurseStone-${VERSION}-windows-x86_64.exe"
           ls -la dist/
 
       - name: Publicar release en GitHub
@@ -67,4 +68,5 @@ jobs:
           files: |
             dist/CurseStone-${{ inputs.version }}-linux-x86_64
             dist/CurseStone-${{ inputs.version }}-android-arm64
+            dist/CurseStone-${{ inputs.version }}-windows-x86_64.exe
           fail_on_unmatched_files: true

@@ -162,12 +162,52 @@ jobs:
           retention-days: 14
 
   # ─────────────────────────────────────────────
-  # Job 3: Release automático cuando pushas un tag vX.X.X
+  # Job 3: Windows x86_64 (MSVC)
+  # ─────────────────────────────────────────────
+  build-windows:
+    name: Windows x86_64
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Instalar Ninja
+        run: choco install ninja -y
+
+      - name: Configurar MSVC
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Instalar dependencias con vcpkg
+        run: |
+          vcpkg install zlib:x64-windows leveldb:x64-windows
+
+      - name: Configure (Release)
+        run: |
+          cmake -B build/windows-release \
+            -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_STANDARD=23 \
+            -DCMAKE_CXX_STANDARD=20
+
+      - name: Build
+        run: cmake --build build/windows-release --parallel
+
+      - name: Subir binario Windows
+        uses: actions/upload-artifact@v4
+        with:
+          name: CurseStone-windows-x86_64
+          path: build/windows-release/CurseStone.exe
+          retention-days: 7
+
+  # ─────────────────────────────────────────────
+  # Job 4: Release automático cuando pushas un tag vX.X.X
   # ─────────────────────────────────────────────
   release:
     name: Crear Release
     runs-on: ubuntu-22.04
-    needs: [ build-linux, build-android-arm64 ]
+    needs: [ build-linux, build-android-arm64, build-windows ]
     if: startsWith(github.ref, 'refs/tags/v')
 
     permissions:
@@ -181,8 +221,9 @@ jobs:
 
       - name: Renombrar binarios
         run: |
-          mv dist/CurseStone-linux-x86_64/CurseStone   dist/CurseStone-linux-x86_64
-          mv dist/CurseStone-android-arm64/CurseStone  dist/CurseStone-android-arm64
+          mv dist/CurseStone-linux-x86_64/CurseStone     dist/CurseStone-linux-x86_64
+          mv dist/CurseStone-android-arm64/CurseStone   dist/CurseStone-android-arm64
+          mv dist/CurseStone-windows-x86_64/CurseStone.exe dist/CurseStone-windows-x86_64.exe
 
       - name: Publicar Release en GitHub
         uses: softprops/action-gh-release@v2
@@ -190,4 +231,5 @@ jobs:
           files: |
             dist/CurseStone-linux-x86_64
             dist/CurseStone-android-arm64
+            dist/CurseStone-windows-x86_64.exe
           generate_release_notes: true
