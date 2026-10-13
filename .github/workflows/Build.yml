@@ -162,11 +162,19 @@ jobs:
           retention-days: 14
 
   # ─────────────────────────────────────────────
-  # Job 3: Windows x86_64 (MSVC)
+  # Job 3: Windows x86_64 (MSVC + Ninja)
   # ─────────────────────────────────────────────
   build-windows:
     name: Windows x86_64
     runs-on: windows-latest
+
+    # CAMBIO: shell bash para TODO el job. El shell por defecto en
+    # windows-latest es PowerShell, donde la barra invertida \ NO continua
+    # lineas (eso causaba "The term '-G' is not recognized"). Con bash,
+    # la sintaxis es identica a los jobs de Linux y \ vuelve a funcionar.
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: Checkout
@@ -175,20 +183,32 @@ jobs:
       - name: Instalar Ninja
         run: choco install ninja -y
 
-      - name: Configurar MSVC
-        uses: microsoft/setup-msbuild@v2
+      # CAMBIO: setup-msbuild@v2 solo ponia MSBuild en el PATH; no exponia
+      # cl.exe ni las variables INCLUDE/LIB, por lo que CMake con el
+      # generador Ninja no encontraba un compilador de MSVC.
+      # msvc-dev-cmd si configura el entorno completo de desarrollador.
+      - name: Configurar entorno MSVC (cl.exe, INCLUDE, LIB)
+        uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Instalar dependencias con vcpkg
-        run: |
-          vcpkg install zlib:x64-windows leveldb:x64-windows
+      # CAMBIO: paso comentado como referencia. El toolchain de vcpkg
+      # resuelve las dependencias en modo clasico solo. Si tu repo tiene
+      # un vcpkg.json (modo manifest), este paso FALLA y hay que quitarlo.
+      - name: Instalar dependencias con vcpkg (modo clasico)
+        run: vcpkg install zlib:x64-windows leveldb:x64-windows
 
+      # CAMBIO: la ruta del toolchain ya no usa $env:VCPKG_INSTALLATION_ROOT
+      # pegado dentro del argumento de CMake (sintaxis PowerShell dentro de
+      # un comando que ahora corre en bash). VCPKG_INSTALLATION_ROOT es una
+      # variable predefinida del runner, asi que bash la expande directamente.
+      # CAMBIO: C_STANDARD 23 -> 17 solo en Windows. MSVC no implementa C23
+      # de forma completa (features faltan incluso con /std:clatest).
       - name: Configure (Release)
         run: |
           cmake -B build/windows-release \
             -G Ninja \
-            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_STANDARD=23 \
+            -DCMAKE_C_STANDARD=17 \
             -DCMAKE_CXX_STANDARD=20
 
       - name: Build
@@ -202,7 +222,7 @@ jobs:
           retention-days: 7
 
   # ─────────────────────────────────────────────
-  # Job 4: Release automático cuando pushas un tag vX.X.X
+  # Job 4: Release automatico cuando pushas un tag vX.X.X
   # ─────────────────────────────────────────────
   release:
     name: Crear Release
@@ -219,17 +239,24 @@ jobs:
         with:
           path: dist/
 
+      # CAMBIO: antes los mv movian los binarios DENTRO de los directorios
+      # que download-artifact crea con el nombre del artefacto (no-ops en
+      # Linux/Android). Ahora se aplanan a dist/out/ con nombres finales.
       - name: Renombrar binarios
         run: |
-          mv dist/CurseStone-linux-x86_64/CurseStone     dist/CurseStone-linux-x86_64
-          mv dist/CurseStone-android-arm64/CurseStone   dist/CurseStone-android-arm64
-          mv dist/CurseStone-windows-x86_64/CurseStone.exe dist/CurseStone-windows-x86_64.exe
+          mkdir -p dist/out
+          mv dist/CurseStone-linux-x86_64/CurseStone       dist/out/CurseStone-linux-x86_64
+          mv dist/CurseStone-android-arm64/CurseStone     dist/out/CurseStone-android-arm64
+          mv dist/CurseStone-windows-x86_64/CurseStone.exe dist/out/CurseStone-windows-x86_64.exe
 
       - name: Publicar Release en GitHub
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/CurseStone-linux-x86_64
-            dist/CurseStone-android-arm64
-            dist/CurseStone-windows-x86_64.exe
+            dist/out/CurseStone-linux-x86_64
+            dist/out/CurseStone-android-arm64
+            dist/out/CurseStone-windows-x86_64.exe
           generate_release_notes: true
+          # CAMBIO: se usan los inputs del workflow_call si estan definidos.
+          body: ${{ inputs.body || '' }}
+          prerelease: ${{ inputs.prerelease || false }}
