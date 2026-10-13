@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include "StructurePopulator.h"
 #include "world/generator/TerrainShape.h"
+#include <optional>
 #include "world/generator/biome/Biome.h"
 #include "world/generator/biome/BiomeRegistry.h"
 #include "world/generator/noise/MersenneRandom.h"
@@ -158,7 +159,11 @@ void StructurePopulator::populate(GenerationContext& ctx) {
     }
     if (candidates.empty()) return;
 
-    TerrainNoise noise(ctx.seed);
+    // OPT: ruido compartido del chunk (ver PopulatorTree::populate).
+    const TerrainNoise* sharedNoise = static_cast<const TerrainNoise*>(ctx.noise_cache);
+    std::optional<TerrainNoise> ownNoise;
+    if (!sharedNoise) { ownNoise.emplace(ctx.seed); sharedNoise = &*ownNoise; }
+    const TerrainNoise& noise = *sharedNoise;
     for (const Candidate& c : candidates) {
         const int baseY = structureBaseY(noise, *c.structure, c.wx, c.wz);
         if (baseY < 0) continue;

@@ -52,6 +52,12 @@ struct FieldNoise {
 struct TerrainNoise {
     VanillaNoise vanilla;  // las 8 capas, semilla y orden vanilla
 
+    // Id unico de INSTANCIA. Los caches por hilo de TerrainShape.cpp lo
+    // usan para invalidarse solos: si una TerrainNoise se destruye y
+    // otra nace en la MISMA direccion (paso normal con los optionales de
+    // los populators), el uid es distinto y ningun hit viejo se sirve.
+    uint64_t uid = 0;
+
     // Cada campo se apoya en una de esas capas (el paquete completo sigue
     // disponible en `vanilla`, que es quien las construye y las posee).
     FieldNoise height;   // continentes + colinas + crestas + detalle

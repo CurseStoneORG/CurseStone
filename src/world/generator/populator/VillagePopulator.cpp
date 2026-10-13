@@ -758,10 +758,12 @@ void VillagePopulator::populate(GenerationContext& ctx) {
     const int regionX = (int)std::floor((double)ctx.chunk_x / kSpacing);
     const int regionZ = (int)std::floor((double)ctx.chunk_z / kSpacing);
 
-    // Terrain is built lazily: the overwhelming majority of chunks are
-    // not near any village anchor, and constructing the five simplex
-    // layers for them would be wasted work on every chunk of the world.
-    std::optional<TerrainNoise> noise;
+    // Terrain ruido: perezoso como antes (la gran mayoria de chunks no
+    // esta cerca de un anchor de pueblo), pero ahora parte del cache del
+    // chunk cuando existe: el std::optional queda vacio y no se construye
+    // nada.
+    std::optional<TerrainNoise> ownNoise;
+    const TerrainNoise* noisePtr = static_cast<const TerrainNoise*>(ctx.noise_cache);
     bool dirty = false;
 
     for (int rx = regionX - 1; rx <= regionX + 1; ++rx) {
@@ -777,8 +779,12 @@ void VillagePopulator::populate(GenerationContext& ctx) {
                 bz > awz + kVillageRadius || bz + 16 < awz - kVillageRadius)
                 continue;
 
-            if (!noise.has_value()) noise.emplace(ctx.seed);
-            const VillageSite& site = cachedSite(ctx.seed, rx, rz, *noise);
+            if (!noisePtr) {
+                if (!ownNoise.has_value()) ownNoise.emplace(ctx.seed);
+                noisePtr = &*ownNoise;
+            }
+            const TerrainNoise& noise = *noisePtr;   // alias para el resto del bucle
+            const VillageSite& site = cachedSite(ctx.seed, rx, rz, noise);
             const VillagePlan& plan = site.plan;
 
             if (bx >= plan.maxX || bx + 16 <= plan.minX ||

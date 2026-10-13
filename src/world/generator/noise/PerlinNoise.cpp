@@ -10,6 +10,15 @@ void PerlinNoise::init(int levels) {
     for (int i = 0; i < levels; i++) {
         noiseLevels[i] = new ImprovedNoise(_rndPtr);
     }
+    // Constantes del puente vanilla, precalculadas una vez (ver
+    // PerlinNoise.h). Se replican AQUI los mismos bucles de
+    // layerAmplitudeSum()/layerDominantScale() de VanillaNoise.h para que
+    // los valores sean bit identicos a los que antes se calculaban en
+    // cada evaluacion de campo.
+    double s = 0.0, amp = 1.0;
+    for (int i = 0; i < levels; ++i) { s += amp; amp *= 2.0; }
+    amp_sum_ = s;
+    dom_scale_ = (levels <= 0) ? 1.0 : (double)(1u << (levels - 1));
 }
 
 PerlinNoise::~PerlinNoise() {

@@ -6,6 +6,7 @@
 #include "world/generator/biome/BiomeRegistry.h"
 #include "world/generator/biome/Biome.h"
 #include <algorithm>
+#include <optional>
 
 namespace cursestone::world::generator::populator {
 
@@ -197,12 +198,16 @@ void PopulatorLavaPool::populate(GenerationContext& ctx) {
     constexpr int kOneIn = 320;
     if (rng.nextInt(kOneIn) != 0) return;
 
-    TerrainNoise noise(ctx.seed);
+    // El roll que decide SI este chunk lleva pool está arriba. El ruido
+    // viene del cache del chunk si existe (Normal::generate lo publica):
+    // si existe, la construccion perezosa ya no cuesta nada aunque el
+    // roll tenga exito.
+    const TerrainNoise* shared = static_cast<const TerrainNoise*>(ctx.noise_cache);
+    std::optional<TerrainNoise> own;
+    if (!shared) { own.emplace(ctx.seed); shared = &*own; }
+    const TerrainNoise& noise = *shared;
     const int baseX = ctx.chunk_x * 16;
     const int baseZ = ctx.chunk_z * 16;
-
-    // The roll above decides WHETHER this chunk gets a pool; these candidate
-    // columns decide WHERE — the first flat, dry spot in the grassland.
     for (int t = 0; t < 48; ++t) {
         // Keep the pool clear of the chunk border so it is not clipped.
         const int x = 4 + (int)rng.nextInt(8);

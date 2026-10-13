@@ -13,13 +13,33 @@
 #include "world/generator/biome/Biome.h"
 #include "world/generator/biome/BiomeRegistry.h"
 #include "block/BlockIds.h"
+#include "world/format/ChunkSection.h"
 #include <algorithm>
 #include <cmath>
-
+#include <memory>
 namespace cursestone::world::generator {
 
 using namespace biome;
 using object::OreVein;
+
+// ---- Fast path de escritura de columnas (OPT, chunks lentos) --------------
+// El bucle interior del relleno escribe de 60 a 120 bloques por columna a
+// traves de mcp_chunk_set_block_id(), que POR CADA BLOQUE repite: chequeo
+// de rango, busqueda de la seccion (y su alloc perezoso), update de
+// height_map y el flag dirty. Con el layout conocido de las secciones
+// (array XZY de 4096) y el rango fijado por el propio bucle (x/z en
+// [0,15], y en [0,127]) la escritura directa resuelve la seccion UNA vez
+// por sub-seccion en vez de por bloque y deja height_map / non_air_top /
+// dirty invariantes los mismos una vez por columna. El chunk final es
+// identico bit a bit (verificado con el golden dump 7x7 seed 1337).
+namespace {
+// Resuelve (allocando si falta) la seccion sy del chunk y la devuelve.
+static inline mcp_chunk_section_t* section8(mcp_chunk_t* c, int sy) {
+    mcp_chunk_section_t* s = c->sections[sy];
+    if (!s) { s = mcp_section_new((uint8_t)sy); c->sections[sy] = s; }
+    return s;
+}
+} // namespace
 
 Normal::Normal(int64_t seed) : seed_(seed), noise_(seed) {
     // Vanilla ore distribution (ported from the reference's OrePopulator).
@@ -90,6 +110,22 @@ void Normal::generate(GenerationContext& ctx) {
     const int baseX = ctx.chunk_x * 16;
     const int baseZ = ctx.chunk_z * 16;
 
+    // OPT (chunks lentos): publica el TerrainNoise del generador (ya
+    // construido en el ctor con seed_) en ctx.noise_cache. Los populators
+    // (árboles, lava pools, pueblo, estructuras) antes construían el suyo
+    // propio cada uno: 5 x ~17 ms por chunk de trabajo idéntico. Solo si
+    // alguien llama a generate() con una semilla distinta a la del ctor se
+    // construye uno provisional (no ocurre en el servidor: World pasa el
+    // seed del provider, que es el mismo con el que se construyó el
+    // generador).
+    if (ctx.seed == seed_) {
+        ctx.noise_cache = &noise_;
+    } else {
+        noiseOwned_ = std::make_unique<TerrainNoise>(ctx.seed);
+        ctx.noise_cache = noiseOwned_.get();
+    }
+    const TerrainNoise& noise = *static_cast<TerrainNoise*>(ctx.noise_cache);
+
     // ---- Height field ----------------------------------------------------
     // Raw column heights are a pure function of world coordinates, computed
     // on an 18x18 grid (1-block margin) so the smoothing kernel and the
@@ -99,7 +135,7 @@ void Normal::generate(GenerationContext& ctx) {
     double raw[GW][GW];
     for (int i = 0; i < GW; ++i)
         for (int j = 0; j < GW; ++j)
-            raw[i][j] = rawColumnHeight(noise_, baseX - 1 + i, baseZ - 1 + j);
+            raw[i][j] = rawColumnHeight(noise, baseX - 1 + i, baseZ - 1 + j);
 
     int heights[16][16];
     for (int x = 0; x < 16; ++x) {
@@ -118,7 +154,7 @@ void Normal::generate(GenerationContext& ctx) {
     uint8_t biomes[16][16];
     for (int x = 0; x < 16; ++x)
         for (int z = 0; z < 16; ++z)
-            biomes[x][z] = columnBiome(noise_, baseX + x, baseZ + z, heights[x][z]);
+            biomes[x][z] = columnBiome(noise, baseX + x, baseZ + z, heights[x][z]);
 
     // ---- Fill columns ----------------------------------------------------
     for (int x = 0; x < 16; ++x) {
@@ -180,7 +216,7 @@ void Normal::generate(GenerationContext& ctx) {
             // isOceanShore() is the same predicate that picks BIOME_BEACH,
             // so the beach biome and the sand agree, and it deliberately
             // ignores river channels: river banks are green.
-            const bool shore = (b != BIOME_OCEAN) && isOceanShore(noise_, wx, wz, h);
+            const bool shore = (b != BIOME_OCEAN) && isOceanShore(noise, wx, wz, h);
             // Does this land column touch water on any side? The raw grid
             // has a one-block margin all round (GW = 18, world offsets
             // -1..16), so all four neighbours are available even on the
@@ -226,7 +262,7 @@ void Normal::generate(GenerationContext& ctx) {
             // round patches — and it stays rare because it is gated on the
             // river valley AND thresholded hard.
             if (!shore && h >= kSeaLevel &&
-                riverSandBank(noise_, wx, wz) > 0.62) {
+                riverSandBank(noise, wx, wz) > 0.62) {
                 top = (uint8_t)BlockId::SAND;
                 filler = (uint8_t)BlockId::SAND;
             }
@@ -235,7 +271,7 @@ void Normal::generate(GenerationContext& ctx) {
             // Occasional gravel on the ground near rivers, coasts and inland
             // patches, the way vanilla scatters gravel around.
             if (!shore && h >= kSeaLevel && top != (uint8_t)BlockId::STONE &&
-                gravelPatch(noise_, wx, wz, h) > 0.80) {
+                gravelPatch(noise, wx, wz, h) > 0.80) {
                 top = (uint8_t)BlockId::GRAVEL;
             }
 
@@ -287,28 +323,53 @@ void Normal::generate(GenerationContext& ctx) {
             // terraced lowland banks and the savanna plateau walls keep the
             // soil the player asked for there.
             if (b != BIOME_OCEAN && b != BIOME_RIVER && b != BIOME_FROZEN_RIVER &&
-                h - lowN >= 5 && riverDistance(noise_, wx, wz) < 26.0)
+                h - lowN >= 5 && riverDistance(noise, wx, wz) < 26.0)
                 filler = (uint8_t)BlockId::STONE;
             // Oceans and submerged river beds keep 4 gravel layers at the
             // bottom regardless of the surrounding relief.
             if (b == BIOME_OCEAN || b == BIOME_RIVER || b == BIOME_FROZEN_RIVER)
                 surfaceDepth = std::max(surfaceDepth, 5);
 
-            for (int y = 0; y < h; ++y) {
-                uint8_t id;
-                if (y == 0)                       id = (uint8_t)BlockId::BEDROCK;
-                else if (y < h - surfaceDepth)    id = (uint8_t)BlockId::STONE;
-                else if (y < h - 1)               id = filler;
-                else                              id = top;
-                // Stone runs right through the terrain layers, so a cliff or
-                // a cut bank shows rock instead of an unbroken dirt shell.
-                // Bands of it appear at random depths the way vanilla mixes
-                // stone into the subsurface.
-                if (id == (uint8_t)BlockId::STONE && y < h - 1 && y > 4) {
-                    if (((unsigned)(wx * 73856093 ^ wz * 19349663 ^ y * 83492791)) % 23u == 0u)
-                        id = (uint8_t)BlockId::DIRT;
+            // ---- Fast path de columnas --------------------------------
+            // (ver el bloque de comentarios arriba de Normal::Normal).
+            // El mismo bucle, con la seccion resuelta por-bloque -> por-
+            // seccion: la seccion (uint8_t)(y >> 4) es la misma para todo
+            // un sub-rango de Y, asi que solo cambia al cruzar y=16n.
+            //
+            // h esta clamped a [8,124] por heightFromRaw, asi que el
+            // relleno vive entero en las secciones 0..7 y el loop
+            // externo puede iterar sy de 0 a (h-1)>>4 sin tocar nada
+            // mas alto. El orden de escritura es EXACTAMENTE el del
+            // loop original (y = 0..h-1), y los mismos invariantes de
+            // height_map / non_air_top / dirty se aplican al final.
+            {
+                const int col = x + (z << 4);
+                mcp_chunk_section_t* s = nullptr;
+                int syIdx = -1;
+                const uint8_t topId = (int)BlockId::BEDROCK;
+                for (int y = 0; y < h; ++y) {
+                    uint8_t id;
+                    if (y == 0)                       id = (uint8_t)BlockId::BEDROCK;
+                    else if (y < h - surfaceDepth)    id = (uint8_t)BlockId::STONE;
+                    else if (y < h - 1)               id = filler;
+                    else                              id = top;
+                    // Stone runs right through the terrain layers, so a
+                    // cliff or a cut bank shows rock instead of an
+                    // unbroken dirt shell. Bands of it appear at random
+                    // depths the way vanilla mixes stone into the
+                    // subsurface.
+                    if (id == (uint8_t)BlockId::STONE && y < h - 1 && y > 4) {
+                        if (((unsigned)(wx * 73856093 ^ wz * 19349663 ^ y * 83492791)) % 23u == 0u)
+                            id = (uint8_t)BlockId::DIRT;
+                    }
+                    const int sy = (unsigned)y >> 4;
+                    if (sy != syIdx) {
+                        s = section8(c, sy);
+                        syIdx = sy;
+                    }
+                    s->blocks[(x & 15) | ((z & 15) << 4) | ((y & 15) << 8)] = id;
                 }
-                mcp_chunk_set_block_id(c, x, y, z, id);
+                (void)topId;
             }
 
             // Water up to sea level (oceans and rivers alike — same level).

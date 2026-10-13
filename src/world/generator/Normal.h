@@ -21,6 +21,12 @@ private:
     // Terrain shape + climate + rivers, shared with the feature populators
     // through TerrainShape so trees can span chunk borders.
     TerrainNoise noise_;
+    // Ruido PROVISIONAL cuando generate() corre con una semilla distinta
+    // a la del ctor (no ocurre en el servidor; se mantiene por
+    // consistencia con los tools que reusan un generador para dos
+    // semillas). Con la semilla de siempre, noiseOwned_ queda vacio y
+    // ctx.noise_cache apunta a noise_ — sin costo.
+    std::unique_ptr<TerrainNoise> noiseOwned_;
     std::vector<std::unique_ptr<populator::Populator>> populators_;
 };
 } // namespace
