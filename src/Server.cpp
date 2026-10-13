@@ -1,3 +1,25 @@
+/*
+ _____                     _____ _
+/  __ \                   /  ___| |
+| /  \/_   _ _ __ ___  ___\ `--.| |_ ___  _ __   ___
+| |   | | | | '__/ __|/ _ \`--. \ __/ _ \| '_ \ / _ \
+| \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
+ \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
+
+ * CurseStone | Open Source Server Software
+ *
+ * Copyright (C) 2026 CurseStoneTeam
+ *
+ * Developed by CurseStoneTeam.
+ * Built for an open and extensible Minecraft server ecosystem.
+ *
+ * Licensed under the GNU Lesser General Public License v3.0 or later.
+ * You may study, modify, and redistribute this software under its license.
+ *
+ * License: https://www.gnu.org/licenses/lgpl-3.0.html
+ * Repository: https://github.com/CurseStoneTeam/CurseStone
+ *
+ */
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // Server singleton implementation (Phase 21 completion).
 #include "Server.h"
@@ -46,6 +68,7 @@
 #include "nbt/tag/ListTag.h"
 #include "utils/BinaryStream.h"
 #include "permission/BanList.h"
+#include "plugin/PluginManager.h"   // plugins Lua (fase 3)
 
 #include <iostream>
 #include <fstream>
@@ -327,6 +350,11 @@ void Server::start(const std::string& dataPath) {
     openNetwork();
     utils::MainLogger::get().info("Loading default world...");
     loadDefaultWorld();
+    // Plugins Lua: entre el mundo y el lector de consola. El mundo ya
+    // existe (los plugins pueden tocarlo) y la consola todavía no recibe
+    // comandos (ningún comando llega mientras los plugins se registran).
+    utils::MainLogger::get().info("Loading plugins...");
+    plugin::PluginManager::get().loadAll(dataPath_ + "/plugins");
     utils::MainLogger::get().info("Starting console command reader...");
     startCommandReader();
 
@@ -366,7 +394,7 @@ void Server::runTickLoop() {
     // de acumularse, exactamente como hace PMMP/Genisys con su checkTick.
     auto next_tick = std::chrono::steady_clock::now();
     while (running_.load(std::memory_order_relaxed)) {
-        // Poll the external stop flag (set by main.cpp's SIGINT/SIGTERM
+        // Poll the external stop flag (set by CurseStone.cpp's SIGINT/SIGTERM
         // handler) on the MAIN thread, in normal — not signal — context.
         // This is the only place that flag is ever acted on; see
         // setExternalStopFlag()'s comment for why the handler itself
@@ -400,6 +428,9 @@ void Server::runTickLoop() {
     }
     utils::MainLogger::get().info("Tick loop exited.");
     tick_loop_exited_.store(true, std::memory_order_relaxed);
+    // Plugins Lua: ya salimos del loop (nadie dispara eventos) y todavía
+    // se puede guardar el mundo — deshabilitar todos los plugins aquí.
+    plugin::PluginManager::get().disableAll();
 
     // ====================================================================
     // Cleanup — runs on the MAIN thread, AFTER the tick loop exits.

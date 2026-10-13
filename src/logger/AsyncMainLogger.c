@@ -1,3 +1,25 @@
+/*
+ _____                     _____ _
+/  __ \                   /  ___| |
+| /  \/_   _ _ __ ___  ___\ `--.| |_ ___  _ __   ___
+| |   | | | | '__/ __|/ _ \`--. \ __/ _ \| '_ \ / _ \
+| \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
+ \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
+
+ * CurseStone | Open Source Server Software
+ *
+ * Copyright (C) 2026 CurseStoneTeam
+ *
+ * Developed by CurseStoneTeam.
+ * Built for an open and extensible Minecraft server ecosystem.
+ *
+ * Licensed under the GNU Lesser General Public License v3.0 or later.
+ * You may study, modify, and redistribute this software under its license.
+ *
+ * License: https://www.gnu.org/licenses/lgpl-3.0.html
+ * Repository: https://github.com/CurseStoneTeam/CurseStone
+ *
+ */
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // AsyncMainLogger.c — async logger implementation with pthread.
 //
@@ -130,7 +152,7 @@ static void async_log_exception_fn(void* self, const char* what, const char* whe
     async_push((mcp_async_logger_t*)self, MCP_LOG_ERROR, buf);
 }
 static void async_shutdown_fn(void* self) {
-    // Defer to mcp_main_logger_async_destroy — the caller (main.cpp)
+    // Defer to mcp_main_logger_async_destroy — the caller (CurseStone.cpp)
     // handles the actual join. This is a no-op so the vtable is valid.
     (void)self;
 }

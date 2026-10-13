@@ -1,3 +1,25 @@
+/*
+ _____                     _____ _
+/  __ \                   /  ___| |
+| /  \/_   _ _ __ ___  ___\ `--.| |_ ___  _ __   ___
+| |   | | | | '__/ __|/ _ \`--. \ __/ _ \| '_ \ / _ \
+| \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
+ \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
+
+ * CurseStone | Open Source Server Software
+ *
+ * Copyright (C) 2026 CurseStoneTeam
+ *
+ * Developed by CurseStoneTeam.
+ * Built for an open and extensible Minecraft server ecosystem.
+ *
+ * Licensed under the GNU Lesser General Public License v3.0 or later.
+ * You may study, modify, and redistribute this software under its license.
+ *
+ * License: https://www.gnu.org/licenses/lgpl-3.0.html
+ * Repository: https://github.com/CurseStoneTeam/CurseStone
+ *
+ */
 // Command — base class for any registered command. Mirrors pocketmine
 // /command/Command. Subclasses define execute() which is invoked by
 // SimpleCommandMap when a player or the console types /<name>.
@@ -27,6 +49,18 @@ public:
     // Nodo requerido, o "" si es público.
     const std::string& permission() const { return permission_; }
     bool isPublic() const { return permission_.empty(); }
+    // ¿Puede este emisor usar el comando? SimpleCommandMap::dispatch() lo
+    // consulta ANTES de execute() y /help lo usa para filtrar la lista.
+    // Por defecto: público, o el emisor tiene el nodo de permiso pedido.
+    // (LuaCommand lo sobreescribe: op / nodo custom con fallback a op.)
+    virtual bool canUse(CommandSender* sender) const {
+        return isPublic() || sender->hasPermission(permission_);
+    }
+    // Owner tag for commands registered at RUNTIME by plugins: LuaCommand
+    // returns its LuaPlugin*, core commands return nullptr. Used by
+    // /plugins reload to unregister a plugin's commands BEFORE its
+    // lua_State is destroyed (the command holds Lua refs).
+    virtual void* owner() const { return nullptr; }
 private:
     std::string name_, description_, usage_, permission_;
 };

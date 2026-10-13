@@ -1,3 +1,25 @@
+/*
+ _____                     _____ _
+/  __ \                   /  ___| |
+| /  \/_   _ _ __ ___  ___\ `--.| |_ ___  _ __   ___
+| |   | | | | '__/ __|/ _ \`--. \ __/ _ \| '_ \ / _ \
+| \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
+ \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
+
+ * CurseStone | Open Source Server Software
+ *
+ * Copyright (C) 2026 CurseStoneTeam
+ *
+ * Developed by CurseStoneTeam.
+ * Built for an open and extensible Minecraft server ecosystem.
+ *
+ * Licensed under the GNU Lesser General Public License v3.0 or later.
+ * You may study, modify, and redistribute this software under its license.
+ *
+ * License: https://www.gnu.org/licenses/lgpl-3.0.html
+ * Repository: https://github.com/CurseStoneTeam/CurseStone
+ *
+ */
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // Server — singleton. Mirrors pocketmine/Server.php.
 //
@@ -18,7 +40,7 @@
 //   - console input via CommandReader thread → SimpleCommandMap::dispatch.
 //   - player chat /slash via Player::handleChat → SimpleCommandMap::dispatch.
 #pragma once
-#include "main.h"
+#include "CurseStone.h"
 #include "nbt/tag/Tag.h"               // mcp_tag_t / ::mcp_tag
 #include <string>
 #include <vector>
@@ -34,12 +56,12 @@ namespace cursestone {
 class Player;
 class CommandMap;
 class CommandReader;
-namespace world { class World; }   // resolved via `using World = world::World;` in main.h
+namespace world { class World; }   // resolved via `using World = world::World;` in CurseStone.h
 namespace network { class Network; }
 namespace inventory { class CraftingManager; }
 namespace scheduler { class AsyncPool; }
 namespace permission { class BanList; }
-namespace nbt        { namespace tag { class CompoundTag; } }   // C++ class (matches main.h declaration)
+namespace nbt        { namespace tag { class CompoundTag; } }   // C++ class (matches CurseStone.h declaration)
 namespace block    { void register_all_blocks(); }
 namespace item     { class Item; }
 
@@ -54,7 +76,7 @@ public:
         return instance;
     }
 
-    // Boot the server. Called from main.cpp.
+    // Boot the server. Called from CurseStone.cpp.
     void start(const std::string& dataPath);
 
     // Run the main tick loop (blocks until shutdown()).
@@ -67,7 +89,7 @@ public:
     void shutdown();
 
     // Registers an external "stop requested" flag for runTickLoop() to
-    // poll once per iteration on the MAIN thread. main.cpp points this
+    // poll once per iteration on the MAIN thread. CurseStone.cpp points this
     // at a volatile sig_atomic_t that its SIGINT/SIGTERM handler sets.
     //
     // This indirection exists because the signal handler itself must
