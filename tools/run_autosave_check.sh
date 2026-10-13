@@ -35,6 +35,7 @@ for c in src/world/format/Chunk.c \
          src/nbt/NBT.c src/nbt/tag/*.c \
          src/utils/Binary.c src/utils/BinaryStream.c src/utils/Logger.c \
          src/utils/MainLogger.c src/utils/Terminal.c src/utils/TextFormat.c \
+         src/utils/ThreadPort.c \
          src/logger/AsyncMainLogger.c; do
     "$CC" -std=c2x -O2 -w -Isrc $EXTRA -c "$c" -o "$OBJDIR/$(basename "$c" .c).o"
 done

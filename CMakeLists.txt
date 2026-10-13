@@ -102,6 +102,9 @@ target_compile_options(lua PRIVATE
 )
 
 # ---- Threading ----
+# POSIX builds need pthreads via Threads::Threads. The Windows/MSVC build
+# uses the Win32 backend of src/utils/ThreadPort.c (kernel32, linked by
+# default), so no extra thread library is required there.
 find_package(Threads REQUIRED)
 
 target_link_libraries(CurseStone PRIVATE

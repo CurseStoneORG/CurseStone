@@ -22,12 +22,12 @@
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
 /**
- * @brief Logs asynchronously through a background pthread worker.
+ * @brief Logs asynchronously through a background worker thread.
  *
  * Mirrors Nukkit's MainLogger pattern:
  *   - info()/warn()/error() only push to a ring buffer + signal condvar
- *   - A background pthread does the actual I/O (format, color, fputs)
- *   - Batch writes in 4KB blocks, force-flush every 25 seconds
+ *   - The worker thread does the actual I/O (format, color, fputs)
+ *   - Batch writes in 4KB blocks, flushed on a 500 ms poll
  *
  * The struct has `mcp_logger_t vtable` as its first field, so it's
  * layout-compatible with `mcp_main_logger_t*` - the C++ wrapper
@@ -35,7 +35,7 @@
  *
  * Thread model:
  *   Producer (tick thread):  lock -> push entry -> signal -> unlock
- *   Consumer (worker thread): lock -> wait(cond, 25s) -> drain -> unlock -> I/O
+ *   Consumer (worker thread): lock -> wait(cond, 500ms) -> drain -> unlock -> I/O
  *
  * When the ring is full, the entry is dropped and `dropped_count` is
  * incremented. On the next drain, "[LOG DROPPED xN]" is emitted first.
@@ -43,9 +43,9 @@
 #pragma once
 
 #include "../utils/Logger.h"
+#include "../utils/ThreadPort.h"
 #include <stdbool.h>
 #include <stdio.h>
-#include <pthread.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -77,11 +77,12 @@ typedef struct mcp_async_logger {
     volatile uint32_t tail;                     // next read slot
     volatile uint32_t count;                    // entries in ring
 
-    // Synchronization.
-    pthread_mutex_t mtx;
-    pthread_cond_t  cond;
-    pthread_t       worker;
-    bool            worker_started;
+    // Synchronization (portable layer: pthreads on POSIX, Win32 on
+    // Windows — see src/utils/ThreadPort.h).
+    mcp_mutex_t  mtx;
+    mcp_cond_t   cond;
+    mcp_thread_t worker;
+    bool         worker_started;
 
     // I/O targets.
     FILE*           log_file;
