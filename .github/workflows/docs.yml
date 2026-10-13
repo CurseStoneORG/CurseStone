@@ -1,0 +1,132 @@
+# Generates the CurseStone Doxygen HTML and publishes it to the
+# documentation repository on every push to the source branch.
+#
+# Destination (confirmed by the docs-repo preparation):
+#   repository: CurseStoneTeam/cursestone-docs
+#   branch:     main
+#   directory:  api/   <- exclusive directory for generated docs
+#
+# Manual files on main (README.md, index.html, .nojekyll, installation/,
+# plugins/, ...) MUST be preserved. Three settings guarantee that:
+#   - destination_dir: api/  limits the publish to that subdirectory
+#     (per peaceiris/actions-gh-pages v4, cleanup runs inside
+#     destination_dir only),
+#   - keep_files: true       never removes existing files anywhere on the
+#     branch, and
+#   - force_orphan: false    never replaces the branch history.
+#
+# Authentication: the repository secret DOCS_REPO_TOKEN must have write
+# access to CurseStoneTeam/cursestone-docs (classic token with `repo`
+# scope, or a fine-grained token with Contents: write on that repository).
+# The token value is only ever referenced as ${{ secrets.DOCS_REPO_TOKEN }}
+# and is passed through the environment; it is never echoed or logged.
+#
+# Safety:
+#   - pull requests only validate (generate HTML); they never see secrets
+#     and never publish,
+#   - publish runs only after the generate job succeeded, i.e. after
+#     Doxygen exited 0 and build/docs/html/index.html was verified,
+#   - the published HTML is exactly the artifact produced by the generate
+#     job (no regeneration, no drift),
+#   - only build/docs/html (the Doxygen output) is uploaded.
+#
+# Pages: enable GitHub Pages on the docs repo via
+#   Settings -> Pages -> Deploy a branch -> main / (root).
+
+name: Docs
+
+on:
+  push:
+    branches: [ stable ]
+  pull_request:
+    branches: [ stable ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    name: Generate Doxygen HTML
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Doxygen
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y doxygen
+
+      - name: Show Doxygen version
+        run: doxygen --version
+
+      - name: Generate documentation
+        run: |
+          mkdir -p build/docs
+          doxygen Doxyfile
+          test -f build/docs/html/index.html
+
+      - name: Report warnings (non-fatal during migration)
+        if: always()
+        run: |
+          if [ -f build/docs/doxygen-warnings.log ]; then
+            echo "Doxygen warnings: $(wc -l < build/docs/doxygen-warnings.log)"
+            head -50 build/docs/doxygen-warnings.log
+          fi
+
+      - name: Upload HTML artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cursestone-docs-html
+          path: build/docs/html
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish to cursestone-docs api/
+    runs-on: ubuntu-22.04
+    # `needs: generate` means this job only runs after Doxygen finished
+    # successfully; pull requests and failed generations never publish.
+    needs: generate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/stable'
+
+    steps:
+      - name: Download generated HTML
+        uses: actions/download-artifact@v4
+        with:
+          name: cursestone-docs-html
+          path: html
+
+      - name: Verify the generated output
+        run: test -f html/index.html
+
+      - name: Require the DOCS_REPO_TOKEN secret
+        env:
+          # Passed through the environment, never interpolated into the
+          # script, so the token value can never appear in the shell text.
+          DOCS_REPO_TOKEN: ${{ secrets.DOCS_REPO_TOKEN }}
+        run: |
+          if [ -z "$DOCS_REPO_TOKEN" ]; then
+            echo "::error::Secret DOCS_REPO_TOKEN is missing or empty."
+            exit 1
+          fi
+          echo "Publishing CurseStoneTeam/cursestone-docs @ main -> api/"
+
+      - name: Publish HTML to api/ (non-destructive)
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          personal_token: ${{ secrets.DOCS_REPO_TOKEN }}
+          external_repository: CurseStoneTeam/cursestone-docs
+          publish_branch: main
+          publish_dir: html
+          destination_dir: api
+          # Preserve every existing file on main (README.md, index.html,
+          # .nojekyll, installation/, plugins/, manual guides) and the
+          # branch history.
+          keep_files: true
+          force_orphan: false
+          user_name: CurseStoneTeam
+          user_email: docs@cursestone.example
+          commit_message: "docs: update generated Doxygen HTML from ${{ github.sha }}"

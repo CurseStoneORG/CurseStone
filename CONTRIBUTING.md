@@ -127,6 +127,21 @@ When a C header needs C++ conveniences (operators, RAII, namespaced helpers), ad
 - Code must build on Linux, macOS, Windows and Android. Keep platform-specific code in `cmake/` or inside clearly guarded blocks.
 - Do not leave debugging output, commented-out code or unrelated changes in your pull request.
 
+### Comments and documentation
+
+- Comments and Doxygen documentation follow [docs/STYLE_COMMENTS.md](docs/STYLE_COMMENTS.md): American English, concise and technically accurate, Doxygen for public/protected declarations, no debugging diaries or decorative separators, and no invented behavior.
+- Public and protected classes, functions, enumerations, macros, and API members get Doxygen comments (`@brief`, `@param`, `@return`, `@note`, `@warning`); trivial overrides reuse inherited documentation.
+- Preserve invariants, protocol details, threading/ownership requirements, and compatibility notes when editing comments.
+- Two read-only helpers support review:
+
+  ```bash
+  python3 tools/comment_inventory.py src/<dir> --csv build/inventory.csv
+  python3 tools/lint_comments.py src/<dir>
+  ```
+
+- API documentation is generated with `doxygen Doxyfile` (output in `build/docs/html/`, git-ignored). Missing-doc warnings are non-fatal while the migration is in progress.
+- When touching formatting, keep formatting-only commits separate from comment/documentation commits.
+
 ---
 
 ## 5. Protocol 84 notes
