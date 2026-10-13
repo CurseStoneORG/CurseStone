@@ -1,3 +1,25 @@
+/*
+ _____                     _____ _
+/  __ \                   /  ___| |
+| /  \/_   _ _ __ ___  ___\ `--.| |_ ___  _ __   ___
+| |   | | | | '__/ __|/ _ \`--. \ __/ _ \| '_ \ / _ \
+| \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
+ \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
+
+ * CurseStone | Open Source Server Software
+ *
+ * Copyright (C) 2026 CurseStoneTeam
+ *
+ * Developed by CurseStoneTeam.
+ * Built for an open and extensible Minecraft server ecosystem.
+ *
+ * Licensed under the GNU Lesser General Public License v3.0 or later.
+ * You may study, modify, and redistribute this software under its license.
+ *
+ * License: https://www.gnu.org/licenses/lgpl-3.0.html
+ * Repository: https://github.com/CurseStoneTeam/CurseStone
+ *
+ */
 // Player — full player session. Owns the network session, inventory,
 // view distance, current chunk, gamemode, position, and a per-player
 // tick. The Player class is the most complex class in CurseStone;
@@ -11,7 +33,7 @@
 //   4. Each tick: Player::onUpdate() sends chunk updates, processes input
 //   5. Disconnect: Player::close() saves inventory, sends DisconnectPacket
 #pragma once
-#include "main.h"                          // defines math::Vector3 alias
+#include "CurseStone.h"                          // defines math::Vector3 alias
 #include "IPlayer.h"
 #include "entity/Human.h"
 #include "world/Location.h"

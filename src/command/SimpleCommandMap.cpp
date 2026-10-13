@@ -1,3 +1,25 @@
+/*
+ _____                     _____ _
+/  __ \                   /  ___| |
+| /  \/_   _ _ __ ___  ___\ `--.| |_ ___  _ __   ___
+| |   | | | | '__/ __|/ _ \`--. \ __/ _ \| '_ \ / _ \
+| \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
+ \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
+
+ * CurseStone | Open Source Server Software
+ *
+ * Copyright (C) 2026 CurseStoneTeam
+ *
+ * Developed by CurseStoneTeam.
+ * Built for an open and extensible Minecraft server ecosystem.
+ *
+ * Licensed under the GNU Lesser General Public License v3.0 or later.
+ * You may study, modify, and redistribute this software under its license.
+ *
+ * License: https://www.gnu.org/licenses/lgpl-3.0.html
+ * Repository: https://github.com/CurseStoneTeam/CurseStone
+ *
+ */
 #include "SimpleCommandMap.h"
 #include "utils/Utils.hpp"
 namespace cursestone {
@@ -23,19 +45,14 @@ bool SimpleCommandMap::dispatch(CommandSender* sender, const std::string& cmd_li
     }
     // --- CONTROL DE PERMISOS ---
     //
-    // Este era el agujero: dispatch() llamaba a execute() directo, sin
-    // mirar nada. De los 15 comandos registrados, solo WorkbenchCommand
-    // chequeaba isOp() en su propio cuerpo — los otros 14 (/stop, /op,
-    // /deop, /give, /kick, /tp, /gamemode, /time, /weather, /save,
-    // /say) los podía ejecutar CUALQUIER jugador sin ser op.
-    //
-    // Ahora el chequeo vive AQUÍ, en el punto único por el que pasan
-    // todos los comandos, en vez de repartido en el cuerpo de cada uno
-    // (donde es facil olvidar uno — que es exactamente lo que pasaba).
-    // Un comando sin nodo declarado (permission_ vacio) sigue siendo
-    // público: help, list, version.
+    // Punto único por el que pasan todos los comandos. El chequeo vive en
+    // Command::canUse() (virtual): los comandos normales usan el nodo de
+    // permiso declarado, y los comandos de plugins (LuaCommand) pueden
+    // definir su propio criterio (op / nodo custom / público). Un comando
+    // sin nodo declarado (permission_ vacío) sigue siendo público:
+    // help, list, version.
     Command& cmd = *it->second;
-    if (!cmd.isPublic() && !sender->hasPermission(cmd.permission())) {
+    if (!cmd.canUse(sender)) {
         sender->sendMessage("You do not have permission to use this command.");
         return false;
     }
@@ -49,5 +66,23 @@ bool SimpleCommandMap::dispatch(CommandSender* sender, const std::string& cmd_li
 Command* SimpleCommandMap::getCommand(const std::string& name) const {
     auto it = commands_.find(name);
     return it == commands_.end() ? nullptr : it->second.get();
+}
+std::vector<Command*> SimpleCommandMap::allCommands() const {
+    std::vector<Command*> out;
+    out.reserve(commands_.size());
+    for (const auto& [n, cmd] : commands_) out.push_back(cmd.get());
+    return out;
+}
+size_t SimpleCommandMap::unregisterByOwner(void* owner) {
+    size_t removed = 0;
+    for (auto it = commands_.begin(); it != commands_.end();) {
+        if (it->second->owner() == owner) {
+            it = commands_.erase(it);
+            ++removed;
+        } else {
+            ++it;
+        }
+    }
+    return removed;
 }
 } // namespace
