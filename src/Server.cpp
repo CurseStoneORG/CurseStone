@@ -35,6 +35,7 @@
 
 #include <climits>
 #include <cstring>
+#include <cerrno>
 #include <thread>
 #include <chrono>
 #include <cstdlib>   // std::_Exit
@@ -853,12 +854,72 @@ permission::BanList& Server::getIPBans() {
 // ============================================================
 // Operator list — backed by <dataPath>/ops.txt (one name per line)
 // ============================================================
+namespace {
+// Normaliza un nombre de jugador a la forma canonica de comparacion:
+//   - descarta los 3 bytes de un BOM UTF-8 y CUALQUIER byte no-ASCII
+//     (NBSP, cero ancho, un UTF-16 mal interpretado...),
+//   - borra NULs y caracteres de control (\r, \n, \t, DEL),
+//   - recorta los espacios de los extremos,
+//   - lo pasa a minusculas.
+//
+// La MISMA funcion se usa para CARGAR ops.txt y para CONSULTAR desde
+// isOp()/setOp(). Asi, basura venga de donde venga — un editor de
+// Android que deja BOM/NBSP, un archivo con CRLF o guardado en UTF-16,
+// o un nombre que llega con un byte de mas pegado — los dos lados
+// acaban en la misma forma y coinciden. Antes solo se limpiaba lo que
+// venia del archivo y el nombre consultado se pasaba a minusculas a
+// secas: si el que consultaba traia cualquier byte invisible de mas,
+// isOp() no lo encontraba y el op se quedaba sin permisos.
+std::string normalizeOpName(std::string s) {
+    std::string out;
+    out.reserve(s.size());
+    for (unsigned char c : s) {
+        if (c == 0) continue;            // NUL (UTF-16 leido como texto)
+        if (c >= 0x80) continue;         // BOM, NBSP, cero ancho, acentos
+        if (c < 0x20 || c == 0x7F) continue;  // \r \n \t y demas control
+        out.push_back((char)c);
+    }
+    size_t b = 0, e = out.size();
+    while (b < e && (out[b] == ' ' || out[b] == '\t')) ++b;
+    while (e > b && (out[e - 1] == ' ' || out[e - 1] == '\t')) --e;
+    out = out.substr(b, e - b);
+    std::transform(out.begin(), out.end(), out.begin(),
+                   [](unsigned char c) { return (char)std::tolower(c); });
+    return out;
+}
+// Mismo criterio que PlayerLogin.cpp acepta para entrar: [a-zA-Z0-9_]{3,16}.
+// Un nombre fuera de esa regla NUNCA puede coincidir con el de un jugador
+// conectado, asi que avisamos (no lo callamos) para que se vea en el log.
+bool looksLikeValidOpName(const std::string& s) {
+    if (s.size() < 3 || s.size() > 16) return false;
+    for (char c : s) {
+        bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                  (c >= '0' && c <= '9') || c == '_';
+        if (!ok) return false;
+    }
+    return true;
+}
+} // namespace
 void Server::loadOps() {
     ops_.clear();
     // Lectura binaria: en modo texto un BOM UTF-8 llegaria igual, pero asi el
     // archivo se lee byte a byte y podemos quitarlo nosotros.
-    std::ifstream in(dataPath_ + "/ops.txt", std::ios::binary);
-    if (!in.is_open()) return;
+    const std::string ops_path = dataPath_ + "/ops.txt";
+    std::ifstream in(ops_path, std::ios::binary);
+    if (!in.is_open()) {
+        // Diagnostico explicito: el sintoma "lo pongo en ops.txt / hago /op
+        // y el servidor no me hace op" casi siempre es que NO se esta leyendo
+        // ESTE archivo (otra ruta en Android, sin permisos, o no existe aun).
+        // Antes se volvia sin decir nada y el servidor arrancaba con cero ops.
+        const int e = errno;
+        const std::string why = (e == ENOENT || e == 0)
+            ? std::string("file not found")
+            : std::string("cannot open (") + std::strerror(e) + ")";
+        utils::MainLogger::get().info(
+            "No operators loaded from " + ops_path + ": " + why +
+            ". Nobody is op until you /op <player> (written back to that path). ");
+        return;
+    }
     std::string content((std::istreambuf_iterator<char>(in)),
                          std::istreambuf_iterator<char>());
 
@@ -867,6 +928,34 @@ void Server::loadOps() {
     // quitarlos, la PRIMERA entrada guardada es "\xEF\xBB\xBFdr1xy" y NUNCA
     // coincide con el nombre del jugador: el archivo se ve perfecto, el log
     // dice "Loaded 1 operator(s)" y aun asi ese op no puede usar comandos.
+    // UTF-16: varios editores de Android guardan el texto como UTF-16
+    // (BOM FF FE / FE FF, o sin BOM pero con un NUL en cada byte impar).
+    // Sin decodificarlo "Dr1xy" se lee como "D\0r\0..." y NUNCA coincide
+    // con el nombre del jugador, aunque el archivo se vea perfecto.
+    auto utf16_to_8 = [](const std::string& raw, bool big_endian) {
+        std::string s;
+        s.reserve(raw.size() / 2);
+        for (size_t i = 0; i + 1 < raw.size(); i += 2) {
+            // LE: byte par = bajo, impar = alto. BE: al revés.
+            unsigned lo = (unsigned char)raw[big_endian ? i + 1 : i];
+            unsigned hi = (unsigned char)raw[big_endian ? i : i + 1];
+            if (hi == 0 && lo != 0) s.push_back((char)lo);
+        }
+        return s;
+    };
+    if (content.size() >= 2 &&
+        (unsigned char)content[0] == 0xFF &&
+        (unsigned char)content[1] == 0xFE) {
+        content = utf16_to_8(content.substr(2), false);
+    } else if (content.size() >= 2 &&
+        (unsigned char)content[0] == 0xFE &&
+        (unsigned char)content[1] == 0xFF) {
+        content = utf16_to_8(content.substr(2), true);
+    } else if (content.size() >= 4 && content[0] != '\0' &&
+               content[1] == '\0' && content[3] == '\0') {
+        content = utf16_to_8(content, false);
+    }
+    // BOM UTF-8 (Notepad en Windows, varios editores de Android).
     if (content.size() >= 3 &&
         (unsigned char)content[0] == 0xEF &&
         (unsigned char)content[1] == 0xBB &&
@@ -876,26 +965,23 @@ void Server::loadOps() {
 
     // Recorta espacios (incluidos tabs) de AMBOS extremos de cada linea. Antes
     // solo se recortaba la cola, asi que una linea " Dr1xy" tampoco coincidia.
-    auto trim = [](std::string& s) {
-        auto is_ws = [](char c) {
-            return c == ' ' || c == '\t' || c == '\r' || c == '\n' ||
-                   c == '\v' || c == '\f';
-        };
-        size_t b = 0, e = s.size();
-        while (b < e && is_ws(s[b])) ++b;
-        while (e > b && is_ws(s[e - 1])) --e;
-        s = s.substr(b, e - b);
-    };
-
     size_t pos = 0;
+    size_t weird = 0;
     while (pos <= content.size()) {
         size_t nl = content.find('\n', pos);
-        std::string line = (nl == std::string::npos)
+        std::string raw = (nl == std::string::npos)
             ? content.substr(pos) : content.substr(pos, nl - pos);
         pos = (nl == std::string::npos) ? content.size() + 1 : nl + 1;
-        trim(line);
-        if (line.empty()) continue;
-        for (char& c : line) c = (char)std::tolower((unsigned char)c);
+        std::string line = normalizeOpName(raw);
+        if (line.empty()) continue;   // lineas en blanco / solo basura
+        if (!looksLikeValidOpName(line)) {
+            ++weird;
+            // Se carga igual (nunca se pierde una entrada del usuario) pero
+            // se avisa: un nombre que PlayerLogin rechazaria no puede coincidir
+            // nunca con nadie que entre al servidor.
+            utils::MainLogger::get().warn("ops.txt entry cannot match any "
+                "player name (kept anyway): '" + line + "' in " + ops_path);
+        }
         ops_.insert(std::move(line));
     }
 
@@ -908,37 +994,56 @@ void Server::loadOps() {
         names += n;
     }
     utils::MainLogger::get().info("Loaded " + std::to_string(ops_.size()) +
-        " operator(s) from ops.txt" + (names.empty() ? std::string() : ": " + names));
+        " operator(s) from " + ops_path +
+        (names.empty() ? std::string() : ": " + names) +
+        (weird ? " (" + std::to_string(weird) + " suspicious entry/entries, see warnings above)"
+               : std::string()));
 }
 
 void Server::saveOps() {
-    std::ofstream out(dataPath_ + "/ops.txt", std::ios::trunc);
+    const std::string ops_path = dataPath_ + "/ops.txt";
+    std::ofstream out(ops_path, std::ios::trunc);
     if (!out.is_open()) {
-        utils::MainLogger::get().warn("Failed to write ops.txt");
+        utils::MainLogger::get().warn("Failed to write " + ops_path +
+            " (" + std::strerror(errno) + ") — operator changes stay in memory "
+            "ONLY and will be lost on restart.");
         return;
     }
     for (const auto& name : ops_) out << name << "\n";
+    out.flush();
+    if (!out.good()) {
+        utils::MainLogger::get().warn("Failed to write " + ops_path +
+            " — operator changes stay in memory ONLY and will be lost on restart.");
+        return;
+    }
     out.close();
 }
 
 bool Server::isOp(const std::string& name) const {
-    if (name.empty()) return false;
-    std::string lower = name;
-    std::transform(lower.begin(), lower.end(), lower.begin(),
-                   [](unsigned char c){ return std::tolower(c); });
-    return ops_.find(lower) != ops_.end();
+    // Misma normalizacion que al cargar el archivo: cualquier byte de mas
+    // en el nombre consultado (\r, NBSP, NUL, mayusculas) se descarta antes
+    // de comparar, en lugar de dejar que rompa el lookup.
+    const std::string key = normalizeOpName(name);
+    if (key.empty()) return false;
+    return ops_.find(key) != ops_.end();
 }
 
 void Server::setOp(const std::string& name, bool op) {
-    if (name.empty()) return;
-    std::string lower = name;
-    std::transform(lower.begin(), lower.end(), lower.begin(),
-                   [](unsigned char c){ return std::tolower(c); });
+    const std::string key = normalizeOpName(name);
+    if (key.empty()) return;
+    bool changed = false;
     if (op) {
-        if (ops_.insert(lower).second) saveOps();
+        changed = ops_.insert(key).second;
     } else {
-        if (ops_.erase(lower) > 0) saveOps();
+        changed = ops_.erase(key) > 0;
     }
+    if (changed) saveOps();
+    // Deja constancia en el log de QUE se guardo y DONDE: si el jugador
+    // sigue sin poder usar comandos, el siguiente renglon del log dice si
+    // el nombre se guardo distinto al que despues se consulta.
+    utils::MainLogger::get().info(std::string("/") + (op ? "op " : "deop ") +
+        key + (op ? " -> operator" : " -> not operator") +
+        " (" + std::to_string(ops_.size()) + " in " + dataPath_ + "/ops.txt)");
 }
 
 // Helper: ensure "<dataPath>/players/" exists.
