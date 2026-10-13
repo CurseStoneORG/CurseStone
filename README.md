@@ -1,6 +1,10 @@
-# CurseStone
+<p align="center">
+  <img src="logo.svg" alt="CurseStone" width="140">
+</p>
 
-<p align="left">
+<h1 align="center">CurseStone</h1>
+
+<p align="center">
   <img alt="License" src="https://img.shields.io/badge/license-LGPL--3.0--or--later-blue">
   <img alt="C++" src="https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&logoColor=white">
   <img alt="C" src="https://img.shields.io/badge/C-C2X-A8B9CC?logo=c&logoColor=black">
@@ -9,7 +13,11 @@
   <img alt="CMake" src="https://img.shields.io/badge/CMake-%E2%89%A53.20-064F8C?logo=cmake&logoColor=white">
 </p>
 
-Server software for **Minecraft: Pocket Edition 0.15.x** (protocol 84), written in C and C++.
+<p align="center">
+  Server software for <b>Minecraft: Pocket Edition 0.15.x</b> (protocol 84), written in C and C++.
+</p>
+
+<div align="center">
 
 | | |
 |---|---|
@@ -18,6 +26,8 @@ Server software for **Minecraft: Pocket Edition 0.15.x** (protocol 84), written 
 | **Languages** | C23 core · C++20 game layer |
 | **Platforms** | Linux, macOS, Windows (MSVC and MinGW), Android (NDK r26+ / Termux) |
 | **License** | LGPL-3.0-or-later |
+
+</div>
 
 ## Table of contents
 
@@ -207,6 +217,7 @@ third_party/lua/          bundled Lua 5.4
 resources/                default config files and language file
 tools/                    standalone checks, smoke tests and benchmarks
 cmake/                    platform and dependency modules
+logo.svg                  project logo (used in this README)
 ```
 
 ## Contributing
