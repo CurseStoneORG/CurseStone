@@ -22,9 +22,13 @@
  */
 // PluginsCommand — /plugins: lista los plugins Lua cargados con su
 // versión y estado. Sigue el mismo patrón que /version o /list.
-// Es un comando público (permission vacío): cualquier jugador puede VER
-// la lista. El subcomando /plugins reload (recarga todos los plugins en
-// caliente) queda reservado a ops y consola.
+//
+// Solo para OPs y consola: el nodo "cursestone.command.plugins" lo
+// comprueba SimpleCommandMap::dispatch() ANTES de llamar a execute(),
+// así que un jugador sin op ni siquiera llega a la lista (y /help se la
+// oculta, porque filtra con canUse()). Los ops cubren el nodo por el
+// subárbol "cursestone.*" que Player::hasPermission() les da por defecto.
+// El subcomando /plugins reload sigue además con su propio chequeo isOp().
 #pragma once
 #include "command/Command.h"
 
@@ -33,8 +37,8 @@ namespace cursestone {
 class PluginsCommand : public Command {
 public:
     PluginsCommand()
-        : Command("plugins", "List loaded plugins (reload: op only)",
-                  "/plugins [reload]", "") {}  // "" = público
+        : Command("plugins", "List loaded plugins (op only)",
+                  "/plugins [reload]", "cursestone.command.plugins") {}
     bool execute(CommandSender* sender, const std::string& label,
                  const std::vector<std::string>& args) override;
 };

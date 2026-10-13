@@ -22,7 +22,7 @@
  */
 // PluginsCommand — implementación.
 //
-//   /plugins            -> lista los plugins (público)
+//   /plugins            -> lista los plugins (solo op/consola)
 //   /plugins reload     -> recarga TODOS los plugins (solo op/consola)
 //
 // HILOS: los comandos de consola corren en el hilo del CommandReader y

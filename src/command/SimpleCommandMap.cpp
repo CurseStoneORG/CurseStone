@@ -29,7 +29,20 @@ bool SimpleCommandMap::registerCommand(std::unique_ptr<Command> cmd) {
     auto [it, ok] = commands_.try_emplace(std::move(n), std::move(cmd));
     return ok;
 }
-bool SimpleCommandMap::dispatch(CommandSender* sender, const std::string& cmd_line) {
+bool SimpleCommandMap::dispatch(CommandSender* sender, const std::string& cmd_line_arg) {
+    // La consola entrega la linea TAL CUAL ("/op Dr1xy"), mientras que
+    // Player::handleChat() ya se quita la barra a los jugadores. Sin este
+    // recorte, un "/op" escrito en la consola caia en "Unknown command: /op"
+    // y NUNCA se aplicaba: el admin lo escribia, el log decia que la linea
+    // era desconocida, y el jugador seguia sin ser op — exactamente el
+    // sintoma de "le pongo /op y aun asi no tengo permisos".
+    // Se normaliza AQUI (y no en cada caller) para que valga igual para
+    // consola, jugadores, RCON y cualquier comando que llame a dispatch().
+    std::string cmd_line = cmd_line_arg;
+    size_t start = cmd_line.find_first_not_of(" \t/");
+    if (start == std::string::npos) return false;  // linea vacia o solo "///"
+    cmd_line.erase(0, start);
+
     // Split on first space: name + args
     auto sp = cmd_line.find(' ');
     std::string name = (sp == std::string::npos) ? cmd_line : cmd_line.substr(0, sp);
