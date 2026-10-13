@@ -121,8 +121,49 @@ World::World(WorldConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
     ensureDir(worldsRoot);
     ensureDir(worldDir);
 
-    // Create the world generator based on cfg_.generator name.
-    // Mirrors Nukkit's Generator.getGenerator(name) + newInstance().
+    // Create the WorldProvider FIRST (it does not need the generator, so
+    // nothing depends on it being created after one).
+    //
+    // CRASH FIX (SIGSEGV in PerlinNoise::getValue): the provider is the
+    // owner of the world's PERSISTED seed (level.dat "RandomSeed") and only
+    // knows it after init(). The generator bakes the seed into its noise at
+    // CONSTRUCTION time (Normal builds its TerrainNoise in its ctor), so it
+    // has to be built from the seed the provider actually ended up with and
+    // not from the boot-time cfg_.seed. The old order built the generator
+    // first and corrected cfg_.seed afterwards, so on any EXISTING world the
+    // generator's own seed_ and the seed later handed to it in
+    // GenerationContext.seed disagreed for every single chunk — cfg_.seed at
+    // boot is a fresh mcp_utils_time_ms() whenever world-seed is unset, so a
+    // restart can never match the seed stored in level.dat.
+    // Normal::generate() reads that disagreement as "the caller is using a
+    // different seed, I need a provisional TerrainNoise" and rebuilt (freed +
+    // reallocated) it on EVERY call, while several AsyncPool workers run
+    // generate() on the SAME Normal instance concurrently. One worker freed
+    // the noise the other was still evaluating → the freed ImprovedNoise
+    // pointer from PerlinNoise::noiseLevels → SIGSEGV on a worker thread.
+    auto& mgr = format::WorldProviderManager::getInstance();
+    auto provider_unique = mgr.create(cfg_.format);
+    if (!provider_unique) {
+        utils::MainLogger::get().warn("Unknown level format '" + cfg_.format +
+            "'; falling back to default '" + mgr.defaultFormatName() + "'");
+        provider_unique = mgr.create(mgr.defaultFormatName());
+    }
+    std::shared_ptr<format::WorldProvider> provider = std::move(provider_unique);
+    if (provider) {
+        provider->init(worldDir);
+        // Settle the FINAL seed of this world BEFORE the generator exists.
+        if (provider->getSeed() != 0) {
+            // Existing world: level.dat is the authority.
+            cfg_.seed = provider->getSeed();
+        } else {
+            // World is brand-new: push the runtime-generated seed down
+            // to the provider so it gets persisted in level.dat.
+            provider->setSeed(cfg_.seed);
+        }
+    }
+
+    // Create the world generator based on cfg_.generator name, now with the
+    // final seed. Mirrors Nukkit's Generator.getGenerator(name) + newInstance().
     if (cfg_.generator == "flat") {
         // Default flat preset: bedrock / 2x dirt / grass.
         std::vector<generator::FlatLayer> layers = {
@@ -144,29 +185,11 @@ World::World(WorldConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
     mcp_vector3_t gen_spawn = generator_->getSpawn();
     spawn_ = mcp_v3(gen_spawn.x, gen_spawn.y, gen_spawn.z);
 
-    // Create a WorldProvider via the registry.
-    auto& mgr = format::WorldProviderManager::getInstance();
-    auto provider_unique = mgr.create(cfg_.format);
-    if (!provider_unique) {
-        utils::MainLogger::get().warn("Unknown level format '" + cfg_.format +
-            "'; falling back to default '" + mgr.defaultFormatName() + "'");
-        provider_unique = mgr.create(mgr.defaultFormatName());
-    }
-    std::shared_ptr<format::WorldProvider> provider = std::move(provider_unique);
     if (provider) {
-        provider->init(worldDir);
         // Apply the generator's spawn to the provider.
         provider->setSpawn(math::Vector3{
             gen_spawn.x, gen_spawn.y, gen_spawn.z});
         provider->setCurrentTime(cfg_.time);
-        // Read metadata that the provider may have loaded (seed, spawn).
-        if (provider->getSeed() != 0) {
-            cfg_.seed = provider->getSeed();
-        } else {
-            // World is brand-new: push the runtime-generated seed down
-            // to the provider so it gets persisted in level.dat.
-            provider->setSeed(cfg_.seed);
-        }
         // If the provider loaded a spawn from level.dat (existing world),
         // use that instead of the generator default. This way the spawn
         // is preserved across restarts.
