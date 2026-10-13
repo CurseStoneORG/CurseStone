@@ -71,18 +71,20 @@ inline double layerDominantScale(int levels) {
 }
 
 inline double noiseValue2d(PerlinNoise& p, double x, double y) {
-    const int levels = p.levelCount();
-    const double sum = layerAmplitudeSum(levels);
+    // Las dos constantes ya vienen precalculadas en la capa (init());
+    // antes se recalculaban con un bucle en CADA evaluacion de campo, y
+    // cada columna de terreno pide decenas de estas. Mismos valores,
+    // mismos bits, sin el bucle.
+    const double sum = p.amplitudeSum();
     if (sum <= 0.0) return 0.0;
-    const double k = layerDominantScale(levels);
+    const double k = p.dominantScale();
     return (double)p.getValue((float)(x * k), (float)(y * k)) / sum;
 }
 
 inline double noiseValue3d(PerlinNoise& p, double x, double y, double z) {
-    const int levels = p.levelCount();
-    const double sum = layerAmplitudeSum(levels);
+    const double sum = p.amplitudeSum();
     if (sum <= 0.0) return 0.0;
-    const double k = layerDominantScale(levels);
+    const double k = p.dominantScale();
     return (double)p.getValue((float)(x * k), (float)(y * k), (float)(z * k)) / sum;
 }
 

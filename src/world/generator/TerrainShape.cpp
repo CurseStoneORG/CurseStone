@@ -4,10 +4,94 @@
 #include "world/generator/biome/Biome.h"
 
 #include <algorithm>
+#include <atomic>
+#include <cstring>
+#include <cstdio>
 
 namespace cursestone::world::generator {
 
 namespace {
+
+// ---- Memo de funciones puras por hilo (OPT, generacion lenta) -----------
+//
+// Generar un chunk pide las MISMAS columnas muchas veces: la rejilla
+// 18x18 del relieve, luego isOceanShore() vuelve a evaluar hasta 24
+// vecinos por columna (y el propio generate() lo hace otra vez para la
+// arena de playa), columnHeight() evalua 9 celdas por candidato de arbol,
+// riverDistance() son 5 evaluaciones del campo de rio con sus warps… y el
+// rescan 3x3 del poblador de arboles repite todo el vecindario otra vez.
+//
+// Todas estas funciones son PURAS: mismo TerrainNoise + mismas
+// coordenadas = mismos bits de salida. Memoizarlas por tanto NO puede
+// cambiar el mundo: se guarda exactamente el doble que devolvio el
+// calculo y se devuelve tal cual. thread_local porque cada worker del
+// AsyncPool genera chunks en paralelo sobre el MISMO TerrainNoise (solo
+// lectura) — sin candados y sin carreras. Direct-mapped: una colision
+// solo pisa una entrada y cuesta recalcular, nunca da un valor viejo
+// (la clave incluye el uid de la instancia, que cambia si el
+// TerrainNoise se destruye y otro nace en su direccion).
+struct MemoEntry {
+    uint64_t uid = 0;
+    uint64_t kx = 0, kz = 0, kw = 0;
+    bool     valid = false;
+    double   dv = 0.0;   // valor para funciones double
+    int64_t  iv = 0;     // valor para funciones int/uint8
+};
+
+template <size_t N>
+struct MemoTable { MemoEntry e[N]; };
+
+inline uint64_t memoBits(double d) {
+    uint64_t u;
+    std::memcpy(&u, &d, sizeof u);
+    return u;
+}
+
+// Mezcla tipo splitmix64. La version ingenua (multiply+xor-shift) daba el
+// MISMO indice para todas las claves: los doubles enteros pequenos tienen
+// los 32 bits bajos a cero (el entero vive en la parte ALTA de la
+// mantisa), asi que kx*const y kz*const eran 0 en los bits que formaban
+// el indice y TODAS las columnas mapeaban al mismo slot — la memo daba 0
+// hits. Los finalizers multiplico-desplazamiento si suben los bits
+// altos al bajo, que es exactamente lo que hace falta aqui.
+inline uint64_t memoMix(uint64_t z) {
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+    return z ^ (z >> 31);
+}
+
+inline uint64_t memoHash(uint64_t uid, uint64_t kx, uint64_t kz, uint64_t kw) {
+    return memoMix(kx ^ memoMix(kz + 0x9E3779B97F4A7C15ULL)
+                       ^ memoMix(uid + kw * 0xC2B2AE3D27D4EB4FULL));
+}
+
+template <size_t N>
+inline MemoEntry* memoFind(MemoTable<N>& t, uint64_t uid,
+                           uint64_t kx, uint64_t kz, uint64_t kw) {
+    MemoEntry& e = t.e[memoHash(uid, kx, kz, kw) & (N - 1)];
+    return (e.valid && e.uid == uid && e.kx == kx && e.kz == kz && e.kw == kw)
+               ? &e : nullptr;
+}
+
+template <size_t N>
+inline MemoEntry& memoSlot(MemoTable<N>& t, uint64_t uid,
+                           uint64_t kx, uint64_t kz, uint64_t kw) {
+    MemoEntry& e = t.e[memoHash(uid, kx, kz, kw) & (N - 1)];
+    e.uid = uid; e.kx = kx; e.kz = kz; e.kw = kw; e.valid = true;
+    return e;
+}
+
+// Tablas por funcion y por hilo (cada una ~64-128 KB).
+inline thread_local MemoTable<4096> t_rawMemo;      // rawColumnHeight
+inline thread_local MemoTable<4096> t_colHMemo;     // columnHeight
+inline thread_local MemoTable<4096> t_riverDMemo;   // riverDistance
+inline thread_local MemoTable<4096> t_biomeMemo;    // columnBiome
+
+// Contador de instancias de TerrainNoise (invalidacion de las tablas).
+inline uint64_t nextTerrainNoiseUid() {
+    static std::atomic<uint64_t> c{1};
+    return c.fetch_add(1, std::memory_order_relaxed);
+}
 
 // ---- Puente entre el ruido vanilla y nuestro generador -------------------
 //
@@ -364,6 +448,8 @@ TerrainNoise::TerrainNoise(int64_t seed)
       humid{vanilla.perlinNoise3, 1.0, 0.0},
       river{vanilla.lperlinNoise2, 1.0, 0.0},
       surface{vanilla.forestNoise, 1.0, 0.0} {
+    // Identidad para invalidar las memo-tablas por hilo (ver arriba).
+    uid = nextTerrainNoiseUid();
     // Zona de referencia y desviacion objetivo por campo: son las que medía
     // el ruido anterior (simplex) sobre +/-512 bloques, que es el patron con
     // el que se ajustaron los umbrales del generador.
@@ -377,7 +463,9 @@ TerrainNoise::TerrainNoise(int64_t seed)
 // Las capas viven dentro de `vanilla`; no hay nada que liberar a mano.
 TerrainNoise::~TerrainNoise() = default;
 
-double rawColumnHeight(const TerrainNoise& n, double wx, double wz) {
+// Implementacion SIN memo (ver rawColumnHeight abajo, que es la que
+// llama todo el codigo). No tocar la firma: la memo solo envuelve.
+static double rawColumnHeightUncached(const TerrainNoise& n, double wx, double wz) {
     // Continent shape (oceans vs. land). Long wavelength.
     const double cont = continentField(n, wx, wz);
     // Broad rolling swells — the large-scale swell that makes hills read as
@@ -589,12 +677,38 @@ int heightFromRaw(const double raw[3][3]) {
     return std::clamp(h, 8, 124);
 }
 
-int columnHeight(const TerrainNoise& n, double wx, double wz) {
+static int columnHeightUncached(const TerrainNoise& n, double wx, double wz) {
     double raw[3][3];
     for (int a = 0; a < 3; ++a)
         for (int b = 0; b < 3; ++b)
             raw[a][b] = rawColumnHeight(n, wx + a - 1.0, wz + b - 1.0);
     return heightFromRaw(raw);
+}
+
+// ---- Wrappers memoizados (OPT) -------------------------------------------
+// Devuelven EXACTAMENTE lo que devolverian las *Uncached: la memo solo
+// recuerda el resultado de la misma entrada (misma instancia + mismas
+// coordenadas enteras). Con coordenadas no enteras (nadie lo hace hoy,
+// pero por robustez) se calcula directo sin tocar la tabla.
+
+double rawColumnHeight(const TerrainNoise& n, double wx, double wz) {
+    if (wx != std::floor(wx) || wz != std::floor(wz))
+        return rawColumnHeightUncached(n, wx, wz);
+    const uint64_t kx = memoBits(wx), kz = memoBits(wz);
+    if (const MemoEntry* e = memoFind(t_rawMemo, n.uid, kx, kz, 0)) return e->dv;
+    const double v = rawColumnHeightUncached(n, wx, wz);
+    memoSlot(t_rawMemo, n.uid, kx, kz, 0).dv = v;
+    return v;
+}
+
+int columnHeight(const TerrainNoise& n, double wx, double wz) {
+    if (wx != std::floor(wx) || wz != std::floor(wz))
+        return columnHeightUncached(n, wx, wz);
+    const uint64_t kx = memoBits(wx), kz = memoBits(wz);
+    if (const MemoEntry* e = memoFind(t_colHMemo, n.uid, kx, kz, 0)) return (int)e->iv;
+    const int v = columnHeightUncached(n, wx, wz);
+    memoSlot(t_colHMemo, n.uid, kx, kz, 0).iv = v;
+    return v;
 }
 
 namespace {
@@ -666,7 +780,7 @@ inline double riverJungleBias(const TerrainNoise& n, double wx, double wz) {
 // almost flat and a flat spot can no longer inflate the river.
 } // namespace
 
-double riverDistance(const TerrainNoise& n, double wx, double wz) {
+static double riverDistanceUncached(const TerrainNoise& n, double wx, double wz) {
     const double bias = riverJungleBias(n, wx, wz);
     const double v  = riverField(n, wx, wz, bias);
     const double gx = riverField(n, wx + 1.0, wz, bias) - riverField(n, wx - 1.0, wz, bias);
@@ -674,6 +788,19 @@ double riverDistance(const TerrainNoise& n, double wx, double wz) {
     const double g  = 0.5 * std::sqrt(gx * gx + gz * gz);   // field per block
     if (g < 1e-9) return 1e9;                               // no contour here
     return std::fabs(v) / g;
+}
+
+double riverDistance(const TerrainNoise& n, double wx, double wz) {
+    // Memo (OPT): cada columna pide la distancia al rio varias veces
+    // (mascara, bioma, orilla…), y cada evaluacion son 5 campos de rio
+    // con sus warps — de las cosas mas caras por columna.
+    if (wx != std::floor(wx) || wz != std::floor(wz))
+        return riverDistanceUncached(n, wx, wz);
+    const uint64_t kx = memoBits(wx), kz = memoBits(wz);
+    if (const MemoEntry* e = memoFind(t_riverDMemo, n.uid, kx, kz, 0)) return e->dv;
+    const double v = riverDistanceUncached(n, wx, wz);
+    memoSlot(t_riverDMemo, n.uid, kx, kz, 0).dv = v;
+    return v;
 }
 
 double riverMask(const TerrainNoise& n, double wx, double wz) {
@@ -836,7 +963,7 @@ double treeFreeMask(const TerrainNoise& n, double wx, double wz, int h) {
     return t * t * (3.0 - 2.0 * t) * bias;
 }
 
-uint8_t columnBiome(const TerrainNoise& n, double wx, double wz, int h) {
+static uint8_t columnBiomeUncached(const TerrainNoise& n, double wx, double wz, int h) {
     using namespace biome;
 
     const double t  = tempAt(n, wx, wz);
@@ -887,6 +1014,24 @@ uint8_t columnBiome(const TerrainNoise& n, double wx, double wz, int h) {
     uint8_t b = BiomeRegistry::select(t, hu, h, kSeaLevel);
     if (b == BIOME_OCEAN) b = BIOME_PLAINS;
     return b;
+}
+
+uint8_t columnBiome(const TerrainNoise& n, double wx, double wz, int h) {
+    // Memo (OPT): el bioma de una columna se pregunta muchas veces con el
+    // MISMO h (Normal::generate, el poblador de arboles con su h del
+    // chunk, el de estructuras…), y calcularlo repite temperatura,
+    // humedad, distancia al rio y los tests de orilla/sabana. La clave
+    // incluye h: si alguien pregunta el mismo punto con otra altura, no
+    // puede recibir el bioma cacheado de la otra.
+    if (wx != std::floor(wx) || wz != std::floor(wz))
+        return columnBiomeUncached(n, wx, wz, h);
+    const uint64_t kx = memoBits(wx), kz = memoBits(wz);
+    const uint64_t kh = (uint64_t)(uint32_t)h;
+    if (const MemoEntry* e = memoFind(t_biomeMemo, n.uid, kx, kz, kh))
+        return (uint8_t)e->iv;
+    const uint8_t v = columnBiomeUncached(n, wx, wz, h);
+    memoSlot(t_biomeMemo, n.uid, kx, kz, kh).iv = v;
+    return v;
 }
 
 } // namespace cursestone::world::generator

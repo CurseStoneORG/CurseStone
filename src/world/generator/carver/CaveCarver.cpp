@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include "world/generator/carver/CaveCarver.h"
 #include "block/BlockIds.h"
+#include "world/format/ChunkSection.h"
 
 #include <cmath>
 #include <cstdlib>
@@ -9,8 +10,23 @@ namespace cursestone::world::generator::carver {
 
 using cursestone::block::BlockId;
 
+// Acceso directo al array de secciones. El carver pregunta bloque por
+// bloque miles de veces por chunk (los bucles de xs/zs/ys de
+// addTunnel() y los chequeos de vecinos en canReplaceBlock()), y el
+// getter publico paga el chequeo de rango + buscar la seccion en cada
+// llamada. Los limites ya estan fijados aca mismo ( minX/maxX y
+// minY/maxY son recortados a [0,15] y [1,127] antes del bucle), asi
+// que este fast path es seguro: devuelve AIR en las mismas condiciones
+// en que mcp_chunk_get_block_id() devuelve 0.
+static inline const mcp_chunk_section_t* fast_section(const mcp_chunk_t* c, int y) {
+    return c->sections[(unsigned)y >> 4];
+}
+
 static inline uint8_t bid(const mcp_chunk_t* c, int x, int y, int z) {
-    return mcp_chunk_get_block_id(c, x, y, z);
+    if ((unsigned)y > 255u) return 0;
+    const mcp_chunk_section_t* s = fast_section(c, y);
+    if (!s || !s->blocks) return 0;
+    return s->blocks[mcp_section_block_index(x, y, z)];
 }
 
 void CaveCarver::generate(int64_t seed, int32_t chunkX, int32_t chunkZ,
@@ -206,6 +222,10 @@ void CaveCarver::digBlock(mcp_chunk_t* chunk, int8_t x, int16_t y, int8_t z) con
     const int top = mcp_chunk_get_height_map(chunk, x, z);
     if (top > 1 && y >= top - 1) return;
 
+    // Chequeo de "puedo reemplazar" con un solo acceso al bloque (el
+    // resto de canReplaceBlock() son comparaciones sobre ese mismo id,
+    // que ya pidio el caller en la mayoria de los flujos). canReplace()
+    // pide `block` y `above`, así que duplicar aqui no aporta.
     if (!canReplaceBlock(chunk, x, y, z)) return;
 
     if ((y - 1) < kLiquidAltitude) {

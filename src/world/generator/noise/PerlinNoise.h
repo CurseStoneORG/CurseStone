@@ -38,9 +38,24 @@ public:
     // usa esto para normalizar.
     int levelCount() const { return levels; }
 
+    // Optimizacion (NO cambia ni un bit): el puente del ruido vanilla
+    // (noise/VanillaNoise.h) necesita estas dos constantes en CADA
+    // evaluacion de campo, y antes las recalculeaba con un bucle por
+    // llamada. Son puros valores de la capa, asi que se guardan una vez
+    // en init() y se leen aqui. Mismos numeros, mismo orden de
+    // sumatoria: la salida de getValue() no se toca.
+    double amplitudeSum() const { return amp_sum_; }
+    double dominantScale() const { return dom_scale_; }
+
 private:
     ImprovedNoise** noiseLevels;
     int levels;
+
+    // Constantes precalculadas (ver accessors arriba). Identicas a las
+    // que calculaba el bucle de layerAmplitudeSum()/layerDominantScale()
+    // en VanillaNoise.h, solo que sin repetirlas por muestra.
+    double amp_sum_ = 1.0;
+    double dom_scale_ = 1.0;
 
     MersenneRandom _random;
     MersenneRandom* _rndPtr;

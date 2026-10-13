@@ -16,12 +16,30 @@
 
 namespace cursestone::world::generator {
 
+class TerrainNoise;   // definido en TerrainShape.h
+
+// NOTE: la generacion corre 1 chunk por tarea en el worker del AsyncPool,
+// asi que el ctx vive y muere en un solo hilo: un puntero plano sin
+// ownership es seguro.
 struct GenerationContext {
     int64_t seed;          // world seed
     int32_t chunk_x;
     int32_t chunk_z;
     const uint8_t* biomes_in;   // optional input biome map (256 bytes), NULL = generate
     mcp_chunk_t* chunk;        // target chunk — generator fills sections + biomes + heightmap
+
+    // OPT (generacion lenta): ruido compartido entre Normal::generate y
+    // los populators del MISMO chunk. Es un TerrainNoise construido con
+    // ctx.seed y poseido por el que lo crea (Normal::generate, en el
+    // mismo scope que ctx). NULL = el populator construye el suyo
+    // (comportamiento por defecto; los tools viejos con ctx{} ni se
+    // enteran).
+    //
+    // Por que IMPORTA: construir TerrainNoise cuesta ~17 ms (8 capas de
+    // PerlinNoise + la calibracion de 5 campos, 5 x 4096 muestras) y
+    // antes CINCO populators lo construian cada uno por chunk: ~85 ms de
+    // trabajo identico tirado por chunk.
+    void* noise_cache = nullptr;  // TerrainNoise* opaco, evita depender del header
 };
 
 class Generator {

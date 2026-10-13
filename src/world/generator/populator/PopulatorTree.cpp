@@ -5,6 +5,7 @@
 #include "world/generator/biome/Biome.h"
 #include "block/BlockIds.h"
 #include <algorithm>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -254,7 +255,14 @@ void plantChunkTrees(const TerrainNoise& noise, GenerationContext& ctx, int atte
 } // namespace
 
 void PopulatorTree::populate(GenerationContext& ctx) {
-    TerrainNoise noise(ctx.seed);
+    // OPT: usa el ruido compartido del chunk (lo publica Normal::generate
+    // en ctx.noise_cache); construirlo aquí de nuevo cuesta ~17 ms. Si un
+    // tool antiguo llama populate() sin generate(), ctx.noise_cache es
+    // null y se construye el propio, como antes.
+    const TerrainNoise* shared = static_cast<const TerrainNoise*>(ctx.noise_cache);
+    std::optional<TerrainNoise> own;
+    if (!shared) { own.emplace(ctx.seed); shared = &*own; }
+    const TerrainNoise& noise = *shared;
     const int cbx = ctx.chunk_x * 16;
     const int cbz = ctx.chunk_z * 16;
 
