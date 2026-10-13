@@ -63,11 +63,9 @@ bool MemoryManager::shouldGc() const {
     return currentUsageKB() > (int64_t)limit_mb_ * 1024;
 }
 
-// ---------------------------------------------------------------
 // The global collection pass. Called from Server::tick() every
-// gc_interval_ticks_, on the main thread, once — replacing the old
+// gc_interval_ticks_, on the main thread, once - replacing the old
 // scattered independent schedules.
-// ---------------------------------------------------------------
 void MemoryManager::collect(bool force) {
     const uint64_t tick = Server::getInstance().getCurrentTick();
 

@@ -21,7 +21,8 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// CurseStone — Minecraft Bedrock server software in C/C++.
+// CurseStone — umbrella header for the server core: version constants,
+// tick tuning, build flags, and common forward declarations.
 // Inspired by PocketMine-MP 4.0.0; mirrors its module layout.
 #pragma once
 
@@ -45,7 +46,7 @@
 #include "math/AxisAlignedBB.h"
 
 // ---- Project version constants ----
-#define CURSESTONE_VERSION    "1.0.1" // the same api version lol xd
+#define CURSESTONE_VERSION    "1.0.1" // server version; same value as CURSESTONE_API_VERSION for this release
 #define CURSESTONE_NAME      "CurseStone"
 #define CURSESTONE_CODENAME  "Obsidian"
 

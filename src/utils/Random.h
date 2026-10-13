@@ -21,8 +21,11 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Random — Mersenne Twister RNG. Pure C.
-// Used by world generation (noise seed) and gameplay randomness.
+/**
+ * @brief Provides a Mersenne Twister RNG. Pure C.
+ *
+ * Used by world generation (noise seed) and gameplay randomness.
+ */
 #pragma once
 
 #include <stdint.h>

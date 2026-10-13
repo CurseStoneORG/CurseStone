@@ -21,8 +21,11 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// TextColor.h — Minecraft §-color/format codes + ANSI terminal colors.
-// Mirrors PMMP TextFormat + Terminal in a single C++ header.
+/**
+ * @brief Defines Minecraft §-color/format codes and ANSI terminal colors.
+ *
+ * Mirrors PMMP TextFormat + Terminal in a single C++ header.
+ */
 //
 // IMPORTANT: § in MCPE 0.15.x TextPacket is encoded as UTF-8 = 0xC2 0xA7
 // (two bytes). PMMP uses this encoding throughout. Using the Latin-1

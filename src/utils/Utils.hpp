@@ -20,8 +20,11 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// Utils.hpp — C++ helpers on top of the C Utils interface.
-// Include this in C++ files; C files include utils/Utils.h.
+/**
+ * @brief Provides the C++ helpers on top of the C Utils interface.
+ *
+ * Include this in C++ files; C files include utils/Utils.h.
+ */
 #pragma once
 #include "Utils.h"
 #include <string>

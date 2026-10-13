@@ -339,10 +339,10 @@ void Server::start(const std::string& dataPath) {
     command_map_ = std::make_shared<SimpleCommandMap>();
     registerDefaultCommands(*command_map_);
     crafting_ = std::make_shared<inventory::CraftingManager>();
-    // Las recetas van EN CODIGO (CraftingManager::registerBuiltinRecipes):
-    // no hay ningun archivo de recetas que cargar. Antes se leia uno
-    // externo que no se empaqueta con el binario, asi que una release
-    // limpia se quedaba sin ninguna receta.
+    // Recipes live IN CODE (CraftingManager::registerBuiltinRecipes):
+    // there is no recipe file to load. An older build read an external
+    // file that was not packaged with the binary, so a clean release
+    // ended up with no recipes at all.
     int recipeCount = crafting_->registerBuiltinRecipes();
     utils::MainLogger::get().info("Loaded " + std::to_string(recipeCount) +
         " crafting recipes");
@@ -351,9 +351,10 @@ void Server::start(const std::string& dataPath) {
     openNetwork();
     utils::MainLogger::get().info("Loading default world...");
     loadDefaultWorld();
-    // Plugins Lua: entre el mundo y el lector de consola. El mundo ya
-    // existe (los plugins pueden tocarlo) y la consola todavía no recibe
-    // comandos (ningún comando llega mientras los plugins se registran).
+    // Lua plugins: loaded between the world and the console reader. The
+    // world already exists (plugins can touch it) and the console does
+    // not receive commands yet (no command arrives while plugins
+    // register).
     utils::MainLogger::get().info("Loading plugins...");
     plugin::PluginManager::get().loadAll(dataPath_ + "/plugins");
     utils::MainLogger::get().info("Starting console command reader...");
@@ -379,20 +380,19 @@ void Server::runTickLoop() {
     uint64_t last_tick_count = 0;
     auto last_tps_time = std::chrono::steady_clock::now();
     //
-    // BUG ARREGLADO ("en Linux hay lag y las particulas/items no se
-    // sincronizan; en Android todo va bien"): el bucle dormia
-    // sleep_for(50 - trunc(elapsed_ms)). El truncado a milisegundos
-    // enteros PERDIA la fraccion de cada tick (elapsed=30.9ms dormia
-    // 20ms -> tick de 50.9ms) y el overshoot del scheduler de Linux
-    // sumaba 1-3ms mas: la deriva se ACUMULABA y el servidor caia por
-    // debajo de 20 TPS. Con TPS bajo la simulacion de items del server
-    // va mas lenta que la del cliente (que integra a su propio 20fps):
-    // un item que cae queda en un sitio en el server y en otro en el
-    // cliente, los paquetes de particulas salen tarde y todo "arrastra".
+    // Tick pacing uses an ABSOLUTE calendar (sleep_until) so drift
+    // cannot accumulate. The old relative sleep (50 - trunc(elapsed_ms))
+    // dropped the fraction of every tick (30.9ms elapsed slept 20ms ->
+    // a 50.9ms tick) and added 1-3ms of Linux scheduler overshoot on
+    // top: the error compounded until the server fell below 20 TPS.
+    // Below 20 TPS the server's item simulation runs slower than the
+    // client's (which integrates at its own 20fps): a dropped item rests
+    // in one place on the server and another on the client, particle
+    // packets go out late, and everything visibly drags behind.
     //
-    // FIX: calendario ABSOLUTO (sleep_until). next_tick avanza 50ms por
-    // tick SIEMPRE — el overshoot se recupera en el siguiente tick en vez
-    // de acumularse, exactamente como hace PMMP/Genisys con su checkTick.
+    // next_tick advances by exactly 50ms every tick - overshoot is paid
+    // back on the next tick instead of accumulating, exactly like
+    // PMMP/Genisys do with their checkTick.
     auto next_tick = std::chrono::steady_clock::now();
     while (running_.load(std::memory_order_relaxed)) {
         // Poll the external stop flag (set by CurseStone.cpp's SIGINT/SIGTERM
@@ -412,9 +412,9 @@ void Server::runTickLoop() {
         if (std::chrono::steady_clock::now() < next_tick) {
             std::this_thread::sleep_until(next_tick);
         } else {
-            // Tick sobrepasado (frame lento): reanclar el calendario al
-            // presente para no encadenar una racha de ticks atrasados
-            // (catch-up en rabia) — igual que hace un servidor PMMP.
+            // Overrun tick (slow frame): re-anchor the calendar to the
+            // present so a run of late ticks does not chain (rage
+            // catch-up) - a PMMP server does the same.
             next_tick = std::chrono::steady_clock::now();
         }
         (void)elapsed_ms;
@@ -429,18 +429,16 @@ void Server::runTickLoop() {
     }
     utils::MainLogger::get().info("Tick loop exited.");
     tick_loop_exited_.store(true, std::memory_order_relaxed);
-    // Plugins Lua: ya salimos del loop (nadie dispara eventos) y todavía
-    // se puede guardar el mundo — deshabilitar todos los plugins aquí.
+    // Lua plugins: the tick loop has exited (nothing fires events)
+    // and the world can still be saved - disable all plugins here.
     plugin::PluginManager::get().disableAll();
 
-    // ====================================================================
     // Cleanup — runs on the MAIN thread, AFTER the tick loop exits.
     // This is critical: /stop is dispatched from the CommandReader
     // thread, so doing saveAll() inside Server::shutdown() would race
     // with the main thread destroying Server members (mutexes, world_,
     // players_). By deferring all cleanup to here, we guarantee that
     // saveAll() runs single-threaded before any destructor fires.
-    // ====================================================================
     if (network_) network_->tick();   // graceful RakLib close
     // Final global GC pass BEFORE saveAll(): flushes tile/entities, saves
     // out-of-view chunks as part of the chunk sweep, and drops picked-up
@@ -510,8 +508,8 @@ void Server::tick() {
         (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
 
     // --- Phase: block entities (furnaces) ---
-    // Fuera de World::tick para mantener esa fase libre de envíos de
-    // packets (el horno manda progreso/contenido a viewers aquí).
+    // Runs outside World::tick to keep that phase free of packet
+    // sends (furnaces send progress/content to viewers here).
     t0 = std::chrono::steady_clock::now();
     if (world_) world_->tickTiles(currentTick_);
     t1 = std::chrono::steady_clock::now();
@@ -594,10 +592,10 @@ void Server::tick() {
     }
 
     // --- Phase: batched packet flush ---
-    // ANTI-LAG: vuelca el buffer por tick de cada jugador como UN
-    // BatchPacket comprimido por canal. Todo lo que este tick produjeron
-    // los handlers de red, el world tick y las actualizaciones de jugador
-    // sale aqui agrupado (ver la nota en Player::sendPacket).
+    // Flushes each player's per-tick buffer as ONE compressed
+    // BatchPacket per channel. Everything this tick produced - the
+    // network handlers, the world tick, and the player updates - goes
+    // out here, grouped (see the note in Player::sendPacket).
     {
         auto bpf0 = std::chrono::steady_clock::now();
         for (auto& p : snap) {
@@ -614,17 +612,18 @@ void Server::tick() {
     if (network_) network_->tick();
 
     // --- Phase: auto-save (incremental) ---
-    // ANTES: este bloque llamaba a world_->save(), que serializa TODOS los
-    // chunks sucios en el mismo tick. Con el mundo en marcha son cientos
-    // (todo lo generado desde el autosave anterior), y eso son varios
-    // cientos de ms de hilo principal bloqueado: medido ~495 ms para 350
-    // chunks y ~759 ms en el caso reportado, de los que ~90% es la
-    // compresion zlib de los chunks (ver kChunkCompressionLevel en Anvil).
-    // El cliente vivo lo lee como congelamiento/desconexion.
-    // AHORA: el tick de autosave guarda lo barato (datos de jugador +
-    // level.dat) y ABRE el drenaje; en los ticks siguientes se escribe la
-    // cola a pocos chunks por tick con presupuesto de tiempo, asi el
-    // coste por tick queda acotado y el mundo acaba entero en disco igual.
+    // Previously this block called world_->save(), which serializes ALL
+    // dirty chunks in the same tick. With the world running that is
+    // hundreds of chunks (everything generated since the last autosave),
+    // i.e. several hundred ms of blocked main thread: measured ~495 ms
+    // for 350 chunks and ~759 ms in the reported case, ~90% of it zlib
+    // compression of the chunks (see kChunkCompressionLevel in Anvil).
+    // A live client experiences that as a freeze/disconnect.
+    // Now the autosave tick saves the cheap data (player data +
+    // level.dat) and OPENS the drain; on the following ticks the queue
+    // is written a few chunks per tick under a time budget, so the
+    // per-tick cost stays bounded and the world still ends up fully
+    // flushed to disk.
     if (autosave_ticks_ > 0 && currentTick_ % autosave_ticks_ == 0) {
         auto psnap = playersSnapshot();
         for (auto& p : psnap) {
@@ -701,11 +700,11 @@ std::vector<std::shared_ptr<Player>> Server::playersSnapshot() const {
 void Server::broadcastMessage(const std::string& msg) {
     auto snap = playersSnapshot();
     for (auto& p : snap) if (p) p->sendMessage(msg);
-    // FIX ("los mensajes del chat nunca llegan a la consola"): every
-    // broadcast (player chat, join/quit/death messages, server say) is
-    // mirrored to the server console with the §-codes stripped — exactly
-    // like PMMP's Server::broadcastMessage logging behaviour, so an admin
-    // watching the console sees the same chat the players see in-game.
+    // Every broadcast (player chat, join/quit/death messages, server
+    // say) is mirrored to the server console with the §-codes stripped -
+    // exactly like PMMP's Server::broadcastMessage logging behaviour, so
+    // an admin watching the console sees the same chat the players see
+    // in-game.
     utils::MainLogger::get().info("[CHAT] " + TC::clean(msg));
 }
 void Server::broadcastPacket(void* /*p*/) {
@@ -734,28 +733,25 @@ void Server::saveAll() {
     }
 }
 
-// ============================================================
 // Autosave incremental
-// ============================================================
 //
-// Presupuesto por tick del drenaje. Medido con el codigo real —
-// ChunkManager + Anvil (encode NBT + zlib + escritura en la region)
-// sobre 400 chunks generados por el Normal de verdad (53 KB de NBT por
-// chunk):
-//   * nivel 6 de zlib: 0.72 ms/chunk  (el default viejo)
-//   * nivel 1 de zlib: 0.23 ms/chunk  (kChunkCompressionLevel)
-//   * escritura en la region: 0.008 ms/chunk
-// Asi que 8 chunks ~ 1.9 ms de hilo principal por tick, y el tope de
-// 6 ms recorta la lista si algun chunk sale mas caro (muchos tiles,
-// chunks enormes). Los 400 chunks se drenaron en 50 ticks con un maximo
-// de 3.4 ms en un solo tick, contra ~304 ms de golpe con el codigo
-// viejo (el caso reportado de 759 ms es la misma cuenta con el mundo
-// mas cargado).
+// Per-tick drain budget. Measured with the real code - ChunkManager +
+// Anvil (NBT encode + zlib + region write) over 400 chunks actually
+// generated by the Normal generator (53 KB of NBT per chunk):
+//   * zlib level 6: 0.72 ms/chunk  (the old default)
+//   * zlib level 1: 0.23 ms/chunk  (kChunkCompressionLevel)
+//   * region write: 0.008 ms/chunk
+// So 8 chunks ~ 1.9 ms of main thread per tick, and the 6 ms cap
+// trims the list if a chunk turns out more expensive (many tiles,
+// huge chunks). The 400 chunks drained in 50 ticks with a max of
+// 3.4 ms in a single tick, versus ~304 ms in one hit with the old
+// code (the reported 759 ms case is the same math with a busier
+// world).
 static constexpr size_t   kAutosaveChunksPerTick = 8;
 static constexpr uint64_t kAutosaveMsPerTick     = 6;
-// Si el flush no consigue escribir nada durante este numero de ticks
-// seguidos (p. ej. un provider que falla siempre), se cierra el drenaje
-// en vez de quedarse reintentando el mismo chunk sucio para siempre.
+// If the flush writes nothing for this many ticks in a row (e.g. a
+// provider that always fails), the drain is closed instead of
+// retrying the same dirty chunk forever.
 static constexpr int      kAutosaveIdleTicksMax  = 40;
 
 static uint64_t nowSteadyMs() {
@@ -773,9 +769,9 @@ void Server::beginAutosaveDrain() {
     autosave_drain_max_tick_ms_  = 0;
     autosave_drain_idle_ticks_   = 0;
 
-    // level.dat (hora del mundo + spawn) se escribe AQUI, una vez, con
-    // presupuesto 0 chunks: es un archivo diminuto y no queremos
-    // reescribirlo en cada tick del drenaje.
+    // level.dat (world time + spawn) is written HERE, once, with a
+    // zero-chunk budget: it is a tiny file and we do not want to
+    // rewrite it on every drain tick.
     auto t0 = std::chrono::steady_clock::now();
     world_->saveBudget(/*max_chunks=*/0, /*max_ms=*/0,
                        /*write_level_data=*/true);
@@ -851,25 +847,23 @@ permission::BanList& Server::getIPBans() {
     return *ip_bans_;
 }
 
-// ============================================================
 // Operator list — backed by <dataPath>/ops.txt (one name per line)
-// ============================================================
 namespace {
-// Normaliza un nombre de jugador a la forma canonica de comparacion:
-//   - descarta los 3 bytes de un BOM UTF-8 y CUALQUIER byte no-ASCII
-//     (NBSP, cero ancho, un UTF-16 mal interpretado...),
-//   - borra NULs y caracteres de control (\r, \n, \t, DEL),
-//   - recorta los espacios de los extremos,
-//   - lo pasa a minusculas.
+// Normalizes a player name to the canonical comparison form:
+//   - drops the 3 bytes of a UTF-8 BOM and ANY non-ASCII byte
+//     (NBSP, zero-width, a misinterpreted UTF-16 sequence, ...),
+//   - removes NULs and control characters (\r, \n, \t, DEL),
+//   - trims whitespace from both ends,
+//   - lowercases the result.
 //
-// La MISMA funcion se usa para CARGAR ops.txt y para CONSULTAR desde
-// isOp()/setOp(). Asi, basura venga de donde venga — un editor de
-// Android que deja BOM/NBSP, un archivo con CRLF o guardado en UTF-16,
-// o un nombre que llega con un byte de mas pegado — los dos lados
-// acaban en la misma forma y coinciden. Antes solo se limpiaba lo que
-// venia del archivo y el nombre consultado se pasaba a minusculas a
-// secas: si el que consultaba traia cualquier byte invisible de mas,
-// isOp() no lo encontraba y el op se quedaba sin permisos.
+// The SAME function is used to LOAD ops.txt and to LOOK UP from
+// isOp()/setOp(). That way garbage from wherever it comes - an
+// Android editor that leaves BOM/NBSP, a CRLF or UTF-16 file, or a
+// name with one stray byte glued on - ends up in the same shape on
+// both sides and matches. Previously only the data coming from the
+// file was cleaned while the queried name was merely lowercased: if
+// the query carried any invisible extra byte, isOp() failed to find
+// it and the op silently kept no permissions.
 std::string normalizeOpName(std::string s) {
     std::string out;
     out.reserve(s.size());
@@ -887,9 +881,9 @@ std::string normalizeOpName(std::string s) {
                    [](unsigned char c) { return (char)std::tolower(c); });
     return out;
 }
-// Mismo criterio que PlayerLogin.cpp acepta para entrar: [a-zA-Z0-9_]{3,16}.
-// Un nombre fuera de esa regla NUNCA puede coincidir con el de un jugador
-// conectado, asi que avisamos (no lo callamos) para que se vea en el log.
+// Same rule PlayerLogin.cpp accepts for joining: [a-zA-Z0-9_]{3,16}.
+// A name outside that rule can NEVER match a connected player, so we
+// warn (instead of staying silent) to make it visible in the log.
 bool looksLikeValidOpName(const std::string& s) {
     if (s.size() < 3 || s.size() > 16) return false;
     for (char c : s) {
@@ -902,15 +896,16 @@ bool looksLikeValidOpName(const std::string& s) {
 } // namespace
 void Server::loadOps() {
     ops_.clear();
-    // Lectura binaria: en modo texto un BOM UTF-8 llegaria igual, pero asi el
-    // archivo se lee byte a byte y podemos quitarlo nosotros.
+    // Binary read: a UTF-8 BOM would arrive in text mode too, but this
+    // way the file is read byte by byte and we can strip it ourselves.
     const std::string ops_path = dataPath_ + "/ops.txt";
     std::ifstream in(ops_path, std::ios::binary);
     if (!in.is_open()) {
-        // Diagnostico explicito: el sintoma "lo pongo en ops.txt / hago /op
-        // y el servidor no me hace op" casi siempre es que NO se esta leyendo
-        // ESTE archivo (otra ruta en Android, sin permisos, o no existe aun).
-        // Antes se volvia sin decir nada y el servidor arrancaba con cero ops.
+        // Explicit diagnostic: the symptom "I add myself to ops.txt / run
+        // /op and the server does not make me an op" almost always means
+        // THIS file is not being read (a different path on Android, no
+        // permissions, or it does not exist yet). Previously the code
+        // returned silently and the server started with zero ops.
         const int e = errno;
         const std::string why = (e == ENOENT || e == 0)
             ? std::string("file not found")
@@ -923,20 +918,21 @@ void Server::loadOps() {
     std::string content((std::istreambuf_iterator<char>(in)),
                          std::istreambuf_iterator<char>());
 
-    // Un editor que guarda en "UTF-8 con BOM" (Notepad en Windows, varios
-    // editores de Android) deja los 3 bytes 0xEF 0xBB 0xBF al principio. Sin
-    // quitarlos, la PRIMERA entrada guardada es "\xEF\xBB\xBFdr1xy" y NUNCA
-    // coincide con el nombre del jugador: el archivo se ve perfecto, el log
-    // dice "Loaded 1 operator(s)" y aun asi ese op no puede usar comandos.
-    // UTF-16: varios editores de Android guardan el texto como UTF-16
-    // (BOM FF FE / FE FF, o sin BOM pero con un NUL en cada byte impar).
-    // Sin decodificarlo "Dr1xy" se lee como "D\0r\0..." y NUNCA coincide
-    // con el nombre del jugador, aunque el archivo se vea perfecto.
+    // An editor that saves as "UTF-8 with BOM" (Notepad on Windows,
+    // several Android editors) leaves the 3 bytes 0xEF 0xBB 0xBF at the
+    // start. Without stripping them the FIRST stored entry is
+    // "\xEF\xBB\xBFdr1xy" and it NEVER matches the player's name: the
+    // file looks perfect, the log says "Loaded 1 operator(s)" and still
+    // that op cannot use commands.
+    // UTF-16: several Android editors store text as UTF-16 (BOM FF FE /
+    // FE FF, or no BOM but a NUL in every odd byte). Without decoding,
+    // "Dr1xy" reads as "D\0r\0..." and NEVER matches the player's name
+    // even though the file looks perfect.
     auto utf16_to_8 = [](const std::string& raw, bool big_endian) {
         std::string s;
         s.reserve(raw.size() / 2);
         for (size_t i = 0; i + 1 < raw.size(); i += 2) {
-            // LE: byte par = bajo, impar = alto. BE: al revés.
+            // LE: even byte = low, odd byte = high. BE: the other way around.
             unsigned lo = (unsigned char)raw[big_endian ? i + 1 : i];
             unsigned hi = (unsigned char)raw[big_endian ? i : i + 1];
             if (hi == 0 && lo != 0) s.push_back((char)lo);
@@ -963,8 +959,9 @@ void Server::loadOps() {
         content.erase(0, 3);
     }
 
-    // Recorta espacios (incluidos tabs) de AMBOS extremos de cada linea. Antes
-    // solo se recortaba la cola, asi que una linea " Dr1xy" tampoco coincidia.
+    // Trims whitespace (including tabs) from BOTH ends of every line.
+    // Previously only the tail was trimmed, so a line " Dr1xy" did not
+    // match either.
     size_t pos = 0;
     size_t weird = 0;
     while (pos <= content.size()) {
@@ -976,18 +973,18 @@ void Server::loadOps() {
         if (line.empty()) continue;   // lineas en blanco / solo basura
         if (!looksLikeValidOpName(line)) {
             ++weird;
-            // Se carga igual (nunca se pierde una entrada del usuario) pero
-            // se avisa: un nombre que PlayerLogin rechazaria no puede coincidir
-            // nunca con nadie que entre al servidor.
+            // Loaded anyway (a user entry is never dropped) but warned
+            // about: a name PlayerLogin would reject can never match
+            // anyone joining the server.
             utils::MainLogger::get().warn("ops.txt entry cannot match any "
                 "player name (kept anyway): '" + line + "' in " + ops_path);
         }
         ops_.insert(std::move(line));
     }
 
-    // El log lista los nombres reconocidos: es la forma de distinguir "mi
-    // nombre esta en ops.txt pero el servidor no lo leyo" de "el servidor si
-    // me tiene como op y el problema es otro".
+    // The log lists the recognized names: this is how you tell "my name
+    // is in ops.txt but the server did not read it" apart from "the
+    // server does have me as op and the problem is elsewhere".
     std::string names;
     for (const auto& n : ops_) {
         if (!names.empty()) names += ", ";
@@ -1020,9 +1017,9 @@ void Server::saveOps() {
 }
 
 bool Server::isOp(const std::string& name) const {
-    // Misma normalizacion que al cargar el archivo: cualquier byte de mas
-    // en el nombre consultado (\r, NBSP, NUL, mayusculas) se descarta antes
-    // de comparar, en lugar de dejar que rompa el lookup.
+    // Same normalization as when loading the file: any stray byte in the
+    // queried name (\r, NBSP, NUL, uppercase) is discarded before
+    // comparing instead of being allowed to break the lookup.
     const std::string key = normalizeOpName(name);
     if (key.empty()) return false;
     return ops_.find(key) != ops_.end();
@@ -1038,9 +1035,9 @@ void Server::setOp(const std::string& name, bool op) {
         changed = ops_.erase(key) > 0;
     }
     if (changed) saveOps();
-    // Deja constancia en el log de QUE se guardo y DONDE: si el jugador
-    // sigue sin poder usar comandos, el siguiente renglon del log dice si
-    // el nombre se guardo distinto al que despues se consulta.
+    // Records in the log WHAT was saved and WHERE: if the player still
+    // cannot use commands, the next log line shows whether the stored
+    // name differs from the one queried later.
     utils::MainLogger::get().info(std::string("/") + (op ? "op " : "deop ") +
         key + (op ? " -> operator" : " -> not operator") +
         " (" + std::to_string(ops_.size()) + " in " + dataPath_ + "/ops.txt)");
@@ -1172,9 +1169,7 @@ void Server::saveOfflinePlayerData(const std::string& name, NbtPtr nbt) {
     out.close();
 }
 
-// ============================================================
 // Nukkit-compat method implementations
-// ============================================================
 Player* Server::getPlayerExact(const std::string& name) const {
     auto snap = playersSnapshot();
     for (const auto& p : snap) {
@@ -1290,10 +1285,10 @@ void Server::titleTick() {
 
 void Server::sendRecipeList(Player* player) {
     // Nukkit: sends the full crafting recipe list to a player.
-    // Implementación real: arma un CraftingDataPacket con TODAS las
-    // recetas cargadas y lo manda a este jugador (doFirstSpawn ya lo
-    // manda por su cuenta; este método queda para re-syncs manuales,
-    // igual que el sendRecipeList() de Nukkit).
+    // Actual implementation: builds a CraftingDataPacket with ALL
+    // loaded recipes and sends it to this player (doFirstSpawn already
+    // sends it on its own; this method remains for manual re-syncs,
+    // just like Nukkit's sendRecipeList()).
     if (!player || !crafting_) return;
     auto cd = std::make_shared<network::protocol::CraftingDataPacket>();
     cd->addAllRecipes(*crafting_);

@@ -21,7 +21,11 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// VersionString — semantic version wrapper used by Server/Plugin manifests.
+/**
+ * @brief Wraps a semantic version string.
+ *
+ * Used by the Server and by plugin manifests.
+ */
 #pragma once
 
 #include <string>

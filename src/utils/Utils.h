@@ -21,8 +21,10 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Utils — miscellaneous helpers: timing, sleep, string split/trim, file slurp.
-// Pure C.
+/**
+ * @brief Provides miscellaneous helpers: timing, sleep, string
+ * split/trim, file slurp. Pure C.
+ */
 #pragma once
 
 #include <stdint.h>

@@ -20,20 +20,24 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// MemoryManager — THE single global GarbageCollector for the whole
-// server. There must be exactly ONE instance (Meyers singleton) and it
-// is the only place that decides when memory is reclaimed.
-//
-// Why one global GC: the codebase used to have several scattered
-// reclaimers (Server::tick's chunk-unload sweep, World::tick's
-// dropped-item sweep, Player::onUpdate's used_chunks_ cleanup, tile
-// eviction) running on their own schedules. Independent schedules mean
-// the world state players interact with (dropped items, open chests,
-// loaded chunks) can disappear in the middle of a player action — the
-// classic cause of pickup/inventory desyncs. Everything now funnels
-// through collect(): the per-subsystem sweeps keep their cheap local
-// bookkeeping, but any SWEEP THAT TOUCHES SHARED WORLD STATE only runs
-// when the global GC authorizes it, on a single coordinated schedule.
+/**
+ * @brief Coordinates every memory-reclamation sweep in the server.
+ *
+ * THE single global GarbageCollector for the whole server. There must
+ * be exactly ONE instance (Meyers singleton) and it is the only place
+ * that decides when memory is reclaimed.
+ *
+ * Why one global GC: the codebase used to have several scattered
+ * reclaimers (Server::tick's chunk-unload sweep, World::tick's
+ * dropped-item sweep, Player::onUpdate's used_chunks_ cleanup, tile
+ * eviction) running on their own schedules. Independent schedules mean
+ * the world state players interact with (dropped items, open chests,
+ * loaded chunks) can disappear in the middle of a player action - the
+ * classic cause of pickup/inventory desyncs. Everything now funnels
+ * through collect(): the per-subsystem sweeps keep their cheap local
+ * bookkeeping, but any SWEEP THAT TOUCHES SHARED WORLD STATE only runs
+ * when the global GC authorizes it, on a single coordinated schedule.
+ */
 #pragma once
 #include <cstdint>
 #include <atomic>
@@ -49,22 +53,46 @@ public:
     void setGcIntervalTicks(uint64_t t) { gc_interval_ticks_ = t; }
     uint64_t gcIntervalTicks() const { return gc_interval_ticks_; }
 
-    // Process RSS, as reported by /proc (0 when unavailable).
+    /**
+     * @brief Reads the process resident set size (RSS).
+     *
+     * Reads VmRSS from /proc/self/status on Linux; returns 0 when the
+     * value is unavailable (other platforms).
+     *
+     * @return RSS in kB, or 0 when unavailable.
+     */
     int64_t currentUsageKB() const;
 
-    // True when RSS exceeds the configured budget. Cheap enough to be
-    // polled; the decision to actually collect is made in collect().
+    /**
+     * @brief Reports whether RSS exceeds the configured budget.
+     *
+     * Cheap enough to be polled; the decision to actually collect is
+     * made by collect(). A non-positive limit disables the check.
+     *
+     * @return true when the budget is exceeded and collection may run.
+     */
     bool shouldGc() const;
 
-    // THE GC entry point — everything else must call this.
-    // "force" runs the full sweep immediately (shutdown, /save, tests);
-    // otherwise the pass is rate-limited by gc_interval_ticks_ so the
-    // world can never be swept mid-tick by several unrelated callers.
-    // Runs on the main thread only (all world registries are main-thread
-    // or guarded there).
+    /**
+     * @brief Runs one coordinated global collection pass.
+     *
+     * Everything else must call this. "force" runs the full sweep
+     * immediately (shutdown, /save, tests); otherwise the pass is
+     * rate-limited by gc_interval_ticks_ so the world can never be
+     * swept mid-tick by several unrelated callers. Runs on the main
+     * thread only (all world registries are main-thread or guarded
+     * there).
+     *
+     * @param force  bypass the interval gate but never the
+     *               single-entry exclusivity of a pass.
+     */
     void collect(bool force = false);
 
-    // Legacy name kept for compatibility with existing call sites.
+    /**
+     * @brief Runs a forced collection pass (legacy alias for collect(true)).
+     *
+     * Name kept for compatibility with existing call sites.
+     */
     void runGc() { collect(true); }
 
     // Diagnostics.

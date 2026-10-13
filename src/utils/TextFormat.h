@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// TextFormat — Minecraft §-color codes and conversion helpers. Pure C.
+/** @brief Provides Minecraft §-color code conversion helpers. Pure C. */
 #pragma once
 
 #include <stdbool.h>
