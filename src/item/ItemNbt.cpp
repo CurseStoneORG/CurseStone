@@ -25,6 +25,7 @@
 
 #include "nbt/tag/CompoundTag.h"
 #include "nbt/tag/ListTag.h"
+#include "nbt/NBT.h"
 
 namespace cursestone::item {
 
@@ -69,6 +70,33 @@ void itemStackToNbt(const ItemStack& stack, mcp_tag_t* entry) {
     mcp_compound_tag_set_byte (entry, kNbtCount,  static_cast<int8_t>(stack.count));
     mcp_compound_tag_set_short(entry, kNbtDamage, static_cast<int16_t>(stack.meta));
 
+    // ---- Persist the stack's raw network NBT under the vanilla "tag"
+    // compound ----
+    // ItemStack::nbt holds the little-endian network compound the 0.15
+    // client puts on the wire ({display:{Name}}, plugin custom data, ...).
+    // Parsing it into a real sub-compound (instead of, say, an opaque
+    // string tag) keeps the on-disk layout vanilla-compatible AND
+    // endian-proof: the tag tree stores parsed values, so re-serializing
+    // it little-endian on load rebuilds the exact wire format regardless
+    // of how the player.dat itself is encoded.
+    if (!stack.nbt.empty()) {
+        mcp_tag_t* tag = mcp_nbt_read_bytes(
+            reinterpret_cast<const uint8_t*>(stack.nbt.data()),
+            stack.nbt.size(), /*little_endian=*/true);
+        if (tag && mcp_tag_get_type(tag) == MCP_TAG_COMPOUND) {
+            // Ownership transfers to `entry` (mcp_compound_tag_set stores
+            // the pointer and destroys it together with the parent).
+            mcp_compound_tag_set(entry, kNbtTag, tag);
+        } else {
+            // Malformed blob — drop it rather than persist garbage.
+            mcp_tag_destroy(tag);
+        }
+    } else {
+        // An unnamed item must not drag a stale "tag" from a previous
+        // incarnation of this entry along.
+        mcp_compound_tag_remove(entry, kNbtTag);
+    }
+
     const auto& entries = stack.ench.entries();
     if (entries.empty()) {
         // Keep a plain item's layout identical to the pre-enchantment one:
@@ -104,6 +132,42 @@ bool itemStackFromNbt(const mcp_tag_t* entry, ItemStack& out) {
     out.count = count;
     out.meta  = meta;
     enchantmentsFromNbt(entry, out.ench);
+
+    // ---- Restore the vanilla "tag" compound as the raw network blob ----
+    // Re-serializing the parsed tag tree little-endian rebuilds the wire
+    // format ItemStack::nbt carries ({display:{Name}} and anything else a
+    // plugin or the client stored), so custom names survive a relog
+    // instead of coming back nameless.
+    //
+    // Header fix-up: after a save/load cycle the parsed "tag" child
+    // carries its own key name ("tag"), and mcp_nbt_write_bytes() writes
+    // the root's name field. The network format always has an EMPTY root
+    // name, so strip the emitted name header (type byte + u16 LE length
+    // + name) and re-emit just type + zero length + payload. Avoids
+    // mutating the caller's tree through a const pointer.
+    const mcp_tag_t* tag = mcp_compound_tag_get(entry, kNbtTag);
+    if (tag && mcp_tag_get_type(tag) == MCP_TAG_COMPOUND) {
+        size_t raw_len = 0;
+        uint8_t* raw = mcp_nbt_write_bytes(tag, /*little_endian=*/true, &raw_len);
+        if (raw && raw_len >= 3) {
+            const uint16_t name_len =
+                (uint16_t)raw[1] | ((uint16_t)raw[2] << 8);
+            const size_t payload_off = 3u + name_len;   // type + len + name
+            if (payload_off <= raw_len) {
+                out.nbt.reserve(3 + (raw_len - payload_off));
+                out.nbt.push_back((char)0x0A);           // TAG_Compound root
+                out.nbt.push_back('\0');                 // empty root name
+                out.nbt.push_back('\0');
+                out.nbt.append(reinterpret_cast<const char*>(raw) + payload_off,
+                               raw_len - payload_off);
+            }
+        }
+        free(raw);
+        // Vanilla-authored data keeps "ench" INSIDE the tag compound; if
+        // the entry-level list (CurseStone's own layout) was absent, read
+        // it from there too so external player files keep their enchants.
+        if (out.ench.entries().empty()) enchantmentsFromNbt(tag, out.ench);
+    }
     return true;
 }
 

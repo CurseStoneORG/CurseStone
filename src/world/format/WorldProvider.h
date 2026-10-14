@@ -91,6 +91,15 @@ public:
     // The provider may choose to no-op if it has no metadata (e.g.
     // a stub LevelDB provider).
     virtual void    saveLevelData() = 0;
+
+    // Block until every chunk write accepted by saveChunk() has actually
+    // reached disk. Providers that write synchronously (or don't write
+    // at all) can keep the default no-op; async providers — like Anvil
+    // with its background writer thread — must drain their queue here.
+    // Called on the save-all / shutdown path (World::save) so a /save or
+    // a graceful stop never returns before the data is durable, while
+    // the per-tick autosave drain keeps running fully asynchronous.
+    virtual void    flushPendingSaves() {}
 };
 
 } // namespace cursestone::world::format

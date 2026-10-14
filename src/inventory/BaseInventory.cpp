@@ -318,6 +318,10 @@ void BaseInventory::sendSlot(int index, Player* player) {
     pk->itemId     = static_cast<int16_t>(item.id);
     pk->itemCount  = item.count;
     pk->itemDamage = static_cast<int16_t>(item.meta);
+    // Same rule as PlayerInventory::sendSlot: the ack must echo the
+    // stack's NBT ({display:{Name}}) or a custom-named item renders
+    // nameless on the client after any slot update.
+    pk->itemNbt    = item.nbt;
     player->sendPacket(pk);
 }
 

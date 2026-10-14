@@ -169,6 +169,14 @@ void PlayerInventory::sendSlot(int index, Player* player) {
     pk->itemId     = static_cast<int16_t>(item.id);
     pk->itemCount  = item.count;
     pk->itemDamage = static_cast<int16_t>(item.meta);
+    // The confirmation slot MUST carry the stack's NBT blob. This packet
+    // is what the client uses to re-render the slot after every change;
+    // without the {display:{Name}} compound a custom-named stack was
+    // re-drawn with its default name (the "sword without its custom
+    // name" bug — the inventory data was correct, only this ack was
+    // lossy). Genisys' ContainerSetSlotPacket encodes the full
+    // putSlot() payload exactly like this.
+    pk->itemNbt    = item.nbt;
 
     // Determine windowid.
     if (player == owner_) {

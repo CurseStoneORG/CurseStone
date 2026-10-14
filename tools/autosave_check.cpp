@@ -106,6 +106,11 @@ int main() {
 
     bool same = false;
     {
+        // The flush is now ASYNC: flushDirty() only hands encoded
+        // snapshots to the background writer, so wait for the queue to
+        // hit the disk before reading the .mca back — exactly what the
+        // server's save-all / shutdown path does via World::save().
+        provider->flushPendingSaves();
         auto back = provider->loadChunk(1, 1);
         if (back.has_value() && back.value()) {
             auto* adapter = dynamic_cast<cursestone::world::format::ChunkAdapter*>(

@@ -456,6 +456,75 @@ int main() {
         }
     }
 
+    // ================================================================
+    // 11. Custom display-name NBT survives persistence (the "sword
+    //     came back nameless after a relog" regression)
+    // ================================================================
+    // ItemStack::nbt (the {display:{Name}} wire blob a plugin gave the
+    // stack) must round-trip through itemStackToNbt/itemStackFromNbt —
+    // the path Player::saveData / TileChest / TileFurnace share —
+    // byte-identically, riding the vanilla "tag" compound.
+    printf("\n-- custom item name persistence --\n");
+    {
+        ItemStack named;
+        named.id = 276; named.count = 1; named.meta = 0;
+        named.nbt = cursestone::item::buildDisplayNbt("\xc2\xa7 6Espada VIP");
+        check(!named.nbt.empty(), "buildDisplayNbt produces a blob");
+
+        mcp_tag_t* root = mcp_compound_tag_new_named("Player");
+        mcp_tag_t* items = mcp_list_tag_new_named("Inventory", MCP_TAG_COMPOUND);
+        mcp_tag_t* entry = mcp_compound_tag_new();
+        mcp_compound_tag_set_byte(entry, "Slot", (int8_t)0);
+        cursestone::item::itemStackToNbt(named, entry);
+        mcp_list_tag_append(items, entry);
+        mcp_compound_tag_set(root, "Inventory", items);
+
+        // The blob landed as a real "tag" compound child of the entry.
+        const mcp_tag_t* tag = mcp_compound_tag_get(entry, "tag");
+        check(tag && mcp_tag_get_type(tag) == MCP_TAG_COMPOUND,
+              "the network NBT is stored as the vanilla \"tag\" compound");
+        const mcp_tag_t* display = tag ? mcp_compound_tag_get(tag, "display") : nullptr;
+        check(display && mcp_tag_get_type(display) == MCP_TAG_COMPOUND,
+              "\"tag\" holds the \"display\" compound");
+        check(display && std::string(mcp_compound_tag_get_string(display, "Name", "")) ==
+                            "\xc2\xa7 6Espada VIP",
+              "\"display.Name\" carries the custom name");
+
+        // Full save/load cycle: serialize the root the way the storage
+        // does, parse it back, read the stack.
+        size_t n = 0;
+        uint8_t* bytes = mcp_nbt_write_bytes(root, true, &n);
+        mcp_tag_destroy(root);
+        check(bytes && n > 0, "the player root serializes");
+        mcp_tag_t* back = mcp_nbt_read_bytes(bytes, n, true);
+        free(bytes);
+        check(back != nullptr, "the player root parses back");
+        if (back) {
+            const mcp_tag_t* list = mcp_compound_tag_get(back, "Inventory");
+            const mcp_tag_t* e = (list && mcp_list_tag_size(list) > 0)
+                                     ? mcp_list_tag_get(list, 0) : nullptr;
+            check(e != nullptr, "the inventory entry is present after reload");
+            ItemStack read;
+            check(cursestone::item::itemStackFromNbt(e, read), "the named stack reads back");
+            check(read.id == 276, "the item fields survive");
+            check(read.nbt == named.nbt,
+                  "the display-name blob survives a real save/load cycle byte-identically");
+            mcp_tag_destroy(back);
+        }
+
+        // Rewriting the entry with a plain stack must clear the stale
+        // "tag" (otherwise a renamed-over item would keep the old name).
+        mcp_tag_t* entry2 = mcp_compound_tag_new();
+        cursestone::item::itemStackToNbt(named, entry2);
+        check(mcp_compound_tag_contains(entry2, "tag"), "the entry now has a tag");
+        ItemStack plain;
+        plain.id = 1; plain.count = 64;
+        cursestone::item::itemStackToNbt(plain, entry2);
+        check(!mcp_compound_tag_contains(entry2, "tag"),
+              "a plain stack clears a stale \"tag\" from the entry");
+        mcp_tag_destroy(entry2);
+    }
+
     printf("\n%s (%d failure(s))\n",
            failures ? "NBT TEST: FAIL" : "NBT TEST: OK", failures);
     return failures ? 1 : 0;

@@ -40,10 +40,14 @@
 //     Data.{LevelName, RandomSeed, SpawnX/Y/Z, generatorName, version=19133, ...}
 #pragma once
 
+#include <condition_variable>
 #include <cstdint>
+#include <deque>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -84,6 +88,12 @@ public:
     // Flushes level.dat to disk (GZIP + big-endian NBT).
     void             saveLevelData() override { saveMetadata(); }
 
+    // Blocks the caller until every chunk write accepted by saveChunk()
+    // has been written to its region file. Used by the save-all and
+    // shutdown paths (World::save) — the live autosave never calls this,
+    // that's the whole point of the background writer.
+    void             flushPendingSaves() override;
+
     // ----- Anvil-specific surface
 
     // Path to the .mca region file for chunk (cx, cz):
@@ -114,7 +124,52 @@ private:
     // Save level.dat with current metadata.
     void             saveMetadata();
     // Evict the least-recently-used region file from `regions_`.
+    // Caller must already hold io_mtx_.
     void             evictOldestRegion();
+
+    // ------------------------------------------------------------------
+    // Async chunk writer — the PocketMine-style autosave pipeline.
+    //
+    // saveChunk() runs on the MAIN thread but only does the part that
+    // must be there: anvil_chunk_encode() reads the live mcp_chunk_t
+    // while the world is quiesced on that thread. The expensive part —
+    // ZLIB compression and the region-file I/O — is handed to a single
+    // background worker so a big autosave (hundreds of dirty chunks
+    // after players explore new land) can never stall a tick.
+    //
+    // One worker, FIFO queue ⇒ two snapshots of the same chunk are
+    // always written in enqueue order (older first), so a re-dirty
+    // during a pending write can never end up overwritten by stale data.
+    //
+    // io_mtx_ serializes the region map (regions_/region_lru_ + the
+    // FILE* handles inside AnvilRegionLoader) between the worker's
+    // writes and the main thread's loadChunk()/eviction. Compression
+    // happens OUTSIDE io_mtx_ — it never touches shared state.
+    // ------------------------------------------------------------------
+    struct SaveJob {
+        int32_t                x = 0;
+        int32_t                z = 0;
+        std::vector<uint8_t>   nbt;      // big-endian NBT of the snapshot
+    };
+
+    void             startWorker();
+    void             stopWorker();   // drains the queue, joins the thread
+    void             workerLoop();
+    // Push one encoded chunk into the queue. Blocks (bounded) when the
+    // queue is over capacity so a slow disk cannot balloon memory.
+    void             enqueueSave(SaveJob&& job);
+
+    std::thread                worker_;
+    std::mutex                 job_mtx_;
+    std::condition_variable    job_cv_;     // wakes the worker
+    std::condition_variable    done_cv_;    // wakes flushPendingSaves()
+    std::deque<SaveJob>        job_queue_;
+    bool                       job_busy_    = false; // worker writing a job
+    bool                       worker_stop_ = false;
+    // Backpressure cap: raw NBT is ~53 KB/chunk, so 512 in flight is a
+    // ~27 MB ceiling — never hit in practice (the worker drains far
+    // faster than the main thread encodes), it only guards a wedged disk.
+    static constexpr size_t    kMaxQueuedSaves = 512;
 
     std::string                     path_;
     int64_t                         seed_ = 0;
@@ -124,6 +179,9 @@ private:
     generator::Generator*           generator_ = nullptr;
 
     static constexpr size_t kMaxOpenRegions = 8;
+    // io_mtx_ guards regions_ / region_lru_ and every FILE* operation in
+    // the loaders — the worker thread writes while the main thread reads.
+    mutable std::mutex              io_mtx_;
     std::unordered_map<std::string, std::unique_ptr<AnvilRegionLoader>> regions_;
     std::vector<std::string> region_lru_;
 };

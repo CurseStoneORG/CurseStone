@@ -464,6 +464,15 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                     it.id    = static_cast<uint16_t>(cs->itemId);
                     it.count = cs->itemCount;
                     it.meta  = static_cast<uint8_t>(cs->itemDamage & 0xFF);
+                    // Keep the client's NBT echo. The 0.15.x client sends the
+                    // FULL slot back (custom display-name compound included)
+                    // on every inventory move; dropping the blob here stored
+                    // the stack nameless server-side and the next resync
+                    // wiped the name off the client too (the "sword without
+                    // its custom name" bug). The blob is the exact
+                    // little-endian compound the client already parsed, so
+                    // storing it verbatim is safe and lossless.
+                    it.nbt   = cs->itemNbt;
 
                     // MCPE 0.15.x sometimes sends count=0 for creative items
                     // on the first tap. Nukkit's getSlot() defaults count to
@@ -517,6 +526,9 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                             confirm->itemId     = (int16_t)cur.id;
                             confirm->itemCount  = cur.count;
                             confirm->itemDamage = (int16_t)cur.meta;
+                            // Named stacks must confirm WITH their NBT or the
+                            // client re-renders the slot with the default name.
+                            confirm->itemNbt    = cur.nbt;
                             sendPacket(confirm);
                         }
                         break;
@@ -548,6 +560,9 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                             confirm->itemId     = (int16_t)cur.id;
                             confirm->itemCount  = cur.count;
                             confirm->itemDamage = (int16_t)cur.meta;
+                            // Named stacks must confirm WITH their NBT or the
+                            // client re-renders the slot with the default name.
+                            confirm->itemNbt    = cur.nbt;
                             sendPacket(confirm);
                         }
                         break;

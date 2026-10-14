@@ -403,8 +403,13 @@ int World::save() {
     // tile_entities blobs it already had (stale or empty).
     syncTilesToChunks();
     // Delegate to ChunkManager which calls provider_->saveChunk() for each
-    // dirty chunk. The provider writes the current .mca region files.
+    // dirty chunk. With the async Anvil writer that call only encodes +
+    // enqueues, so flush the writer queue here: save-all and shutdown must
+    // not return before every accepted chunk is really on disk. The live
+    // autosave (saveBudget) never blocks like this — that's what keeps its
+    // per-tick cost in the sub-millisecond range.
     int saved = chunks_.flushDirty();
+    if (provider_) provider_->flushPendingSaves();
     // Persist world metadata (level.dat) so seed/spawn/time survive
     // the next restart — mirroring Nukkit's Level.save() which calls
     // provider.saveLevelData() after flushing chunks.
