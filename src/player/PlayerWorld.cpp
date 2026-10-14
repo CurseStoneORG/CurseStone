@@ -20,19 +20,23 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// PlayerWorld — change of world and travel by portales of the Nether.
+// PlayerWorld — world switching and Nether portal travel.
 //
-//   switchWorld()          moves to the player in other world (sends
-//                          ChangeDimensionPacket if changes the dimension)
-//   checkPortal()          detecta that the player is inside of a
-//                          block of portal and dispara the travel
-//   teleportToNether()     surface -> Nether (coordinates 1:8)
-//   teleportToOverworld()  Nether -> surface (coordinates 8:1)
+//   switchWorld()          moves the player to another world (sends
+//                          ChangeDimensionPacket when the dimension changes)
+//   finishDimensionSwitch() closes the cross-dimension switch once the new
+//                          chunks are on the wire (PlayStatus + position)
+//   checkPortal()          detects the player standing inside a portal
+//                          block and starts the travel
+//   teleportToNether()     Overworld -> Nether (coordinates scaled 1:8)
+//   teleportToOverworld()  Nether -> Overworld (coordinates scaled 8:1)
 //
-// in MCPE 0.15.10 the client shows its screen of load when receiving
-// ChangeDimensionPacket and the closes when arrive the chunks new and
-// PlayStatus(PLAYER_SPAWN); the flujo of this file replica that
-// secuencia in order.
+// On MCPE 0.15.10 the client shows its loading screen when it receives
+// ChangeDimensionPacket and closes it only when the new chunks AND
+// PlayStatus(PLAYER_SPAWN) arrive — in that order. This file replicates
+// the sequence PMMP/Genisys 0.15 used: SetTime, ChangeDimension,
+// weather, then the chunk stream, then PlayStatus(PLAYER_SPAWN) and the
+// position reset once the whole view has been sent.
 #include "Player.h"
 #include "Server.h"
 #include "world/World.h"
@@ -59,12 +63,14 @@ World* Player::getWorld() const {
 }
 
 // ---------------------------------------------------------------------
-// switchWorld — the change actual of world.
+// switchWorld — the actual world change.
 // ---------------------------------------------------------------------
-// same contrato that teleport() (evento cancelable + re-stream of
-// chunks) more the part dimensional: if the world target vive in other
-// dimension, ChangeDimensionPacket leaves before that the chunks and
-// PlayStatus(PLAYER_SPAWN) closes the screen of load of the client.
+// Same contract as teleport() (cancelable event + chunk re-stream) plus
+// the dimensional part: if the target world lives in another dimension,
+// ChangeDimensionPacket goes out BEFORE the chunks and
+// PlayStatus(PLAYER_SPAWN) is deferred (see finishDimensionSwitch())
+// until the whole new view has been streamed — sending it earlier
+// leaves the 0.15.10 client frozen on the loading screen.
 bool Player::switchWorld(World* target, double x, double y, double z,
                          bool throughPortal) {
     (void)throughPortal;
@@ -78,7 +84,7 @@ bool Player::switchWorld(World* target, double x, double y, double z,
         x = ev.toX; y = ev.toY; z = ev.toZ;
     }
 
-    // the contenedor abierto pertenece to the world anterior.
+    // The open container belongs to the previous world.
     closeOpenChest();
 
     bool dimension_change = !from || target->dimension() != from->dimension();
@@ -88,8 +94,8 @@ bool Player::switchWorld(World* target, double x, double y, double z,
     fall_distance_ = 0.0f;
     last_pos_set_ = false;
 
-    // Re-stream estilo teleport(): the client reconstruye its vista
-    // around of the target with the chunks of the world new.
+    // teleport()-style re-stream: the client rebuilds its view around the
+    // destination with the chunks of the new world.
     {
         std::lock_guard<std::mutex> lk(chunks_mtx_);
         used_chunks_.clear();
@@ -103,40 +109,70 @@ bool Player::switchWorld(World* target, double x, double y, double z,
     }
 
     if (!spawned_.load(std::memory_order_relaxed)) {
-        return true;   // pre-spawn: doFirstSpawn() llevará the packets iniciales
+        return true;   // pre-spawn: doFirstSpawn() sends the initial packets
     }
 
     if (dimension_change) {
+        // PMMP 0.15 switchLevel() order: SetTime first, then
+        // ChangeDimensionPacket (dimension as one BYTE — an Int32 here
+        // shifts the whole body and the client drops the packet, which
+        // kept the overworld sky/fog over nether terrain), then the
+        // per-world weather. PlayStatus(PLAYER_SPAWN) and the position
+        // reset wait for the chunk stream (dimension_spawn_pending_).
+        auto st = std::make_shared<network::protocol::SetTimePacket>();
+        st->time = target->time();
+        sendPacket(st);
+
         auto cd = std::make_shared<network::protocol::ChangeDimensionPacket>();
         cd->dimension = target->dimension();
         cd->x = (float)x;
         cd->y = (float)y;
         cd->z = (float)z;
         sendPacket(cd);
+
+        target->sendWeatherTo(this);
+
+        dimension_spawn_pending_ = true;
+        dimension_switch_ms_ = mcp_utils_time_ms();
+    } else {
+        // Same dimension, different world: no loading screen involved,
+        // sync the position right away.
+        auto mp = std::make_shared<network::protocol::MovePlayerPacket>();
+        mp->eid = runtimeId();
+        mp->x = (float)x;
+        mp->y = (float)(y + kEyeHeight);   // on the wire Y is the eye height
+        mp->z = (float)z;
+        mp->yaw = yaw_; mp->bodyYaw = yaw_; mp->pitch = pitch_;
+        mp->mode = network::protocol::MovePlayerPacket::MODE_RESET;
+        mp->onGround = onGround();
+        sendPacket(mp);
     }
+    return true;
+}
+
+// ---------------------------------------------------------------------
+// finishDimensionSwitch — closes a cross-dimension switch.
+// ---------------------------------------------------------------------
+// The 0.15.10 client leaves its dimension loading screen only when
+// PlayStatus(PLAYER_SPAWN) arrives AFTER the new chunks; the position
+// reset right after it gives the client its final coordinates, exactly
+// like PMMP's checkTeleportPosition() flow.
+void Player::finishDimensionSwitch() {
+    dimension_spawn_pending_ = false;
+
+    auto ps = std::make_shared<network::protocol::PlayStatusPacket>();
+    ps->status = network::protocol::PlayStatusPacket::PLAYER_SPAWN;
+    sendPacket(ps);
 
     auto mp = std::make_shared<network::protocol::MovePlayerPacket>();
     mp->eid = runtimeId();
-    mp->x = (float)x;
-    mp->y = (float)(y + kEyeHeight);   // in the cable the and is of the ojo
-    mp->z = (float)z;
+    mp->x = (float)pos_.x;
+    mp->y = (float)(pos_.y + kEyeHeight);
+    mp->z = (float)pos_.z;
     mp->yaw = yaw_; mp->bodyYaw = yaw_; mp->pitch = pitch_;
     mp->mode = network::protocol::MovePlayerPacket::MODE_RESET;
     mp->onGround = onGround();
     sendPacket(mp);
-
-    if (dimension_change) {
-        auto ps = std::make_shared<network::protocol::PlayStatusPacket>();
-        ps->status = network::protocol::PlayStatusPacket::PLAYER_SPAWN;
-        sendPacket(ps);
-
-        // time and weather are per world: re-sincronizar in the target.
-        auto st = std::make_shared<network::protocol::SetTimePacket>();
-        st->time = target->time();
-        sendPacket(st);
-        target->sendWeatherTo(this);
-    }
-    return true;
 }
 
 // ---------------------------------------------------------------------
