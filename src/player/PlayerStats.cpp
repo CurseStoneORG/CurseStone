@@ -268,7 +268,31 @@ void Player::setExperience(int exp, int level) {
 }
 void Player::sendExperience(int exp) { (void)exp; }
 void Player::sendExperienceLevel(int level) { (void)level; }
-void Player::setHealth(int h) { entity::Living::setHealth((uint16_t)h); }
+void Player::setHealth(int h) {
+    // PMMP Player::setHealth semantics (used by the Lua binding
+    // player.setHealth too):
+    //   * clamped to [0, maxHealth] — no negative/wrapped values can
+    //     ever reach the wire (a negative generic.health attribute is
+    //     exactly the kind of packet that hard-crashes 0.15 clients),
+    //   * the hearts attribute syncs on EVERY call (Infinity
+    //     Player::setHealth does the attribute sync here),
+    //   * setHealth(0) on a live player kills through the regular
+    //     pipeline (onDeath → PlayerDeathEvent, drops, death screen)
+    //     so it behaves exactly like /kill.
+    if (h < 0) h = 0;
+    if (h > (int)maxHealth()) h = (int)maxHealth();
+    if (h <= 0) {
+        if (!isDead()) {
+            // Subtract everything that is left: applyDamage runs the
+            // death transition once (and skips onHealthChanged).
+            applyDamage(health_ > 0.0f ? health_ : 0.0f);
+        }
+        return;
+    }
+    if (isDead()) return;   // dead players only come back via respawn()
+    entity::Living::setHealth((float)h);
+    if (spawned_.load(std::memory_order_relaxed)) sendHealthAttribute();
+}
 
 void Player::setMovementSpeed(float speed) { (void)speed; }
 void Player::setAttribute(int attrId, float value) { (void)attrId; (void)value; }} // namespace cursestone

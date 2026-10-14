@@ -188,6 +188,27 @@ int l_player_isOp(lua_State* L) {
     lua_pushboolean(L, p ? p->isOp() : 0);
     return 1;
 }
+
+// player.getHealth(name) -> hearts (0..20). Dead players report 0.
+int l_player_getHealth(lua_State* L) {
+    Player* p = findPlayer(L, 1);
+    lua_pushnumber(L, p ? p->health() : 0);
+    return 1;
+}
+
+// player.setHealth(name, hp): PMMP Player::setHealth semantics — clamped
+// to [0, max], the hearts bar syncs to the client in the same tick and
+// setHealth(0) kills through the regular damage pipeline (death screen,
+// drops, PlayerDeathEvent) exactly like /kill. On a dead player it is a
+// no-op (only respawn can bring someone back).
+int l_player_setHealth(lua_State* L) {
+    Player* p = findPlayer(L, 1);
+    if (p) {
+        lua_Number hp = luaL_checknumber(L, 2);
+        p->setHealth((int)hp);
+    }
+    return 0;
+}
 int l_player_setPermission(lua_State* L) {
     Player* p = findPlayer(L, 1);
     const char* node = luaL_checkstring(L, 2);
@@ -320,7 +341,7 @@ void bindPluginTable(lua_State* L) {
     LuaPlugin* pl = LuaPlugin::from(L);
     lua_newtable(L);
 
-    lua_pushstring(L, PLUGIN_API_VERSION);          // plugin.api
+    lua_pushstring(L, CURSESTONE_API);          // plugin.api
     lua_setfield(L, -2, "api");
     lua_pushstring(L, pl->name().c_str());          // plugin.name
     lua_setfield(L, -2, "name");
@@ -351,6 +372,7 @@ void bindCore(lua_State* L) {
         {"popup", l_player_popup}, {"kick", l_player_kick},
         {"teleport", l_player_teleport}, {"teleportWorld", l_player_teleportWorld},
         {"getWorld", l_player_getWorld}, {"isOp", l_player_isOp},
+        {"getHealth", l_player_getHealth}, {"setHealth", l_player_setHealth},
         {"setPermission", l_player_setPermission},
         {"hasPermission", l_player_hasPermission},
         {"giveItem", l_player_giveItem},

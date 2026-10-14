@@ -33,7 +33,7 @@
 // próximo tick, en el hilo principal. El resultado se reporta en el log.
 #include "PluginsCommand.h"
 #include "plugin/PluginManager.h"
-#include "plugin/LuaBindings.h"        // PLUGIN_API_VERSION
+#include "plugin/LuaBindings.h"        // CURSESTONE_API
 #include "Server.h"
 #include "Player.h"
 #include "scheduler/ServerScheduler.h"
@@ -81,10 +81,10 @@ bool PluginsCommand::execute(CommandSender* sender, const std::string&,
     auto list = plugin::PluginManager::get().list();
     if (list.empty()) {
         sender->sendMessage("No plugins loaded. (API " +
-                            std::string(plugin::PLUGIN_API_VERSION) + ")");
+                            std::string(CURSESTONE_API) + ")");
         return true;
     }
-    std::string out = "Plugins (API " + std::string(plugin::PLUGIN_API_VERSION) + ") (" +
+    std::string out = "Plugins (API " + std::string(CURSESTONE_API) + ") (" +
                       std::to_string(list.size()) + "): ";
     for (size_t i = 0; i < list.size(); ++i) {
         if (i) out += ", ";

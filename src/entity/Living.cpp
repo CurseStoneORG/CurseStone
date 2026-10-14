@@ -37,28 +37,29 @@ bool Living::applyDamage(float amount) {
     return just_died;
 }
 
-bool Living::damage(float amount) {
-    if (isDead()) return false; // ya muerto — no re-disparar onDeath()
+DamageApply Living::damage(float amount) {
+    if (isDead()) return DamageApply::CANCELLED; // ya muerto — no re-disparar onDeath()
     auto ev = event::EventManager::get().fire<event::entity::EntityDamageEvent>(
         this, amount, event::entity::DamageCause::CUSTOM);
-    if (ev.isCancelled()) return false;
-    return applyDamage(ev.amount);
+    if (ev.isCancelled()) return DamageApply::CANCELLED;
+    return applyDamage(ev.amount) ? DamageApply::KILLED : DamageApply::HURT;
 }
 
-bool Living::damage(float amount, event::entity::DamageCause cause) {
-    if (isDead()) return false;
+DamageApply Living::damage(float amount, event::entity::DamageCause cause) {
+    if (isDead()) return DamageApply::CANCELLED;
     auto ev = event::EventManager::get().fire<event::entity::EntityDamageEvent>(
         this, amount, cause);
-    if (ev.isCancelled()) return false;
-    return applyDamage(ev.amount);
+    if (ev.isCancelled()) return DamageApply::CANCELLED;
+    return applyDamage(ev.amount) ? DamageApply::KILLED : DamageApply::HURT;
 }
 
-bool Living::damageByEntity(float amount, Entity* damager) {
-    if (isDead()) return false;
+DamageApply Living::damageByEntity(float amount, Entity* damager,
+                                           event::entity::DamageCause cause) {
+    if (isDead()) return DamageApply::CANCELLED;
     auto ev = event::EventManager::get().fire<event::entity::EntityDamageByEntityEvent>(
-        this, amount, damager);
-    if (ev.isCancelled()) return false;
-    return applyDamage(ev.amount);
+        this, amount, damager, cause);
+    if (ev.isCancelled()) return DamageApply::CANCELLED;
+    return applyDamage(ev.amount) ? DamageApply::KILLED : DamageApply::HURT;
 }
 
 void Living::heal(float amount) {

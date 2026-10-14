@@ -927,26 +927,40 @@ void World::tickArrows(uint64_t current_tick) {
             for (auto& p : Server::getInstance().playersSnapshot()) {
                 if (p && p->runtimeId() == a->shooter_eid) { shooter = p.get(); break; }
             }
-            bool died = false;
-            if (shooter) died = hit->damageByEntity(dmg, shooter);
-            else         died = hit->damage(dmg,
-                              event::entity::DamageCause::PROJECTILE);
+            // PROJECTILE cause so Lua listeners can tell bow hits from
+            // melee (EntityDamageByEntityEvent carries the cause now).
+            auto applied = shooter
+                ? hit->damageByEntity(dmg, shooter,
+                                      event::entity::DamageCause::PROJECTILE)
+                : hit->damage(dmg, event::entity::DamageCause::PROJECTILE);
 
-            // Hurt/death animation + health sync — same broadcast shape as
-            // Player::handleInteract.
-            auto hurtEv = std::make_shared<network::protocol::EntityEventPacket>();
-            hurtEv->eid = hit->runtimeId();
-            hurtEv->event = died
-                ? network::protocol::EntityEventPacket::DEATH_ANIMATION
-                : network::protocol::EntityEventPacket::HURT_ANIMATION;
-            for (auto& other : Server::getInstance().playersSnapshot()) {
-                if (other && other->spawned()) other->sendPacket(hurtEv);
+            if (applied != cursestone::entity::DamageApply::CANCELLED) {
+                // Hurt animation to the VIEWERS ONLY — same rule as
+                // Player::handleInteract (Infinity Living::attack): the
+                // packet references the victim's eid and the victim's own
+                // client gets its self-referenced eid=0 variant from
+                // Player::onHealthChanged instead. Sending the real-eid
+                // packet to the victim crashed creative clients. On
+                // KILLED, Player::onDeath() already broadcast the full
+                // death sequence, so nothing is sent here either.
+                if (applied == cursestone::entity::DamageApply::HURT) {
+                    auto hurtEv = std::make_shared<network::protocol::EntityEventPacket>();
+                    hurtEv->eid = hit->runtimeId();
+                    hurtEv->event = network::protocol::EntityEventPacket::HURT_ANIMATION;
+                    for (auto& other : Server::getInstance().playersSnapshot()) {
+                        if (!other || other.get() == hit) continue;
+                        if (!other->spawned()) continue;
+                        other->sendPacket(hurtEv);
+                    }
+                    auto sh = std::make_shared<network::protocol::SetHealthPacket>();
+                    sh->health = std::max(0, (int32_t)hit->health());
+                    hit->sendPacket(sh);
+                }
             }
-            auto sh = std::make_shared<network::protocol::SetHealthPacket>();
-            sh->health = (int32_t)hit->health();
-            hit->sendPacket(sh);
 
-            // PMMP kills the projectile when it hits an entity.
+            // PMMP kills the projectile when it hits an entity. Even a
+            // cancelled (creative-immune) hit despawns the arrow: it did
+            // physically reach the player.
             a->taken = true;
             auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
             rm->eid = a->eid;

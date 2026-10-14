@@ -30,16 +30,27 @@ namespace cursestone {
 class SimpleCommandMap : public CommandMap {
 public:
     bool registerCommand(std::unique_ptr<Command> cmd) override;
+    // Reemplaza un comando existente por este (o lo registra normal si
+    // el nombre no existia). El comando desplazado queda guardado como
+    // fallback en overridden_ y unregisterByOwner() lo restaura cuando
+    // el plugin que lo piso se descarga — un /plugins reload deja el
+    // nucleo siempre con sus comandos originales. Devuelve false solo
+    // si cmd es null.
+    bool overrideCommand(std::unique_ptr<Command> cmd) override;
     bool dispatch(CommandSender* sender, const std::string& cmd_line) override;
     Command* getCommand(const std::string& name) const override;
     std::vector<Command*> allCommands() const override;
     // Borra todos los comandos cuyo Command::owner() == owner (los
     // LuaCommand de un plugin, antes de que /plugins reload destruya su
-    // lua_State). Devuelve cuántos borró.
+    // lua_State). Si un comando borrado habia pisado a otro (override),
+    // el desplazado se restaura en su lugar. Devuelve cuántos borró.
     size_t unregisterByOwner(void* owner) override;
     size_t size() const { return commands_.size(); }
 private:
     std::unordered_map<std::string, std::unique_ptr<Command>> commands_;
+    // comandos desplazados por override: nombre -> el comando original
+    // (nucleo o de otro plugin) que vuelve cuando el que lo piso se va.
+    std::unordered_map<std::string, std::unique_ptr<Command>> overridden_;
     std::vector<std::string> aliases_;
 };
 } // namespace

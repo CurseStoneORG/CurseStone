@@ -29,6 +29,15 @@ class CommandMap {
 public:
     virtual ~CommandMap() = default;
     virtual bool registerCommand(std::unique_ptr<Command> cmd) = 0;
+    // Plugin override of an EXISTING command (core or another plugin's):
+    // the new command takes over the name and the displaced one is kept
+    // as a fallback — when the overriding plugin is unloaded
+    // (unregisterByOwner) the original comes back automatically, so a
+    // /plugins reload never leaves the core without /kick etc. Returns
+    // false when the map does not support overrides.
+    virtual bool overrideCommand(std::unique_ptr<Command> /*cmd*/) {
+        return false;
+    }
     virtual bool dispatch(CommandSender* sender, const std::string& cmd_line) = 0;
     virtual Command* getCommand(const std::string& name) const = 0;
     // Todos los comandos registrados (para /help dinámico). Los alias

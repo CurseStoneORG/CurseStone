@@ -26,7 +26,7 @@
 
 #include "utils/MainLogger.hpp"
 #include "network/protocol/Info.h"
-#include "CurseStone.h"   // CURSESTONE_VERSION / MINECRAFT_VERSION / PROTOCOL_VERSION
+#include "CurseStone.h"   // CURSESTONE_API / MINECRAFT_VERSION / PROTOCOL_VERSION
 
 #include <chrono>
 #include <cstdio>
@@ -236,7 +236,7 @@ std::string Diagnostics::renderContextLocked() const {
     uint64_t uptime_s = (start_ms_ > 0 && now > start_ms_) ? (now - start_ms_) / 1000 : 0;
 
     std::ostringstream os;
-    os << "CurseStone " << CURSESTONE_VERSION << " \"" << CURSESTONE_CODENAME << "\"\n";
+    os << "CurseStone " << CURSESTONE_API << " \"" << CURSESTONE_CODENAME << "\"\n";
     os << "Minecraft:   " << MINECRAFT_VERSION << " (protocol " << PROTOCOL_VERSION << ")\n";
     os << "Time (UTC):  " << wallToUtc(now) << "\n";
     os << "Uptime:      " << uptime_s << "s\n";

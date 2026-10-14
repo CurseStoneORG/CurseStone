@@ -22,7 +22,7 @@
  */
 // PluginManager — implementación.
 #include "PluginManager.h"
-#include "LuaBindings.h"              // PLUGIN_API_VERSION
+#include "LuaBindings.h"              // CURSESTONE_API
 #include "MiniYaml.h"                 // leer the field `name` of plugin.yml
 #include "Server.h"                   // getCommandMap() for /plugins reload
 #include "command/CommandMap.h"
@@ -84,7 +84,7 @@ void PluginManager::loadAll(const std::string& pluginsDir,
 
     pluginsDir_ = pluginsDir;           // for /plugins reload
     dataRoot_ = dataRoot;
-    log().info("Plugin API: " + std::string(PLUGIN_API_VERSION));
+    log().info("Plugin API: " + std::string(CURSESTONE_API));
 
     // create the folder plugins/ if not exists (first execution).
     fs::create_directories(pluginsDir, ec);

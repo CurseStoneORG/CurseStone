@@ -27,19 +27,22 @@
 //   events.on("PlayerChat", function(e) ... end)
 //   events.on("BlockBreak", function(e) ... end)
 //   events.on("BlockPlace", function(e) ... end)
+//   events.on("EntityDamage", function(e) ... end)          -- dano (cualquier causa)
+//   events.on("EntityDamageByEntity", function(e) ... end)  -- PvP: golpe/flecha
+//   events.on("PlayerDeath", function(e) ... end)
+//   events.on("PlayerRespawn", function(e) ... end)
 //
 // `e` es una tabla simple por invocación:
 //   - eventos de jugador: e.player (NOMBRE, string), e.message
 //   - eventos de bloque:  e.player, e.x, e.y, e.z, e.block_id
-//   - e.cancel() cancela el evento (suprime mensaje / bloquea la acción)
+//   - eventos de dano:    e.entity (víctima), e.amount (ESCRIBIBLE — la
+//     cantidad leída de vuelta se aplica), e.cause (string: "entity_attack",
+//     "projectile", "fall", ...), y en ByEntity además e.damager (el
+//     atacante). e.cancel() anula el dano por completo.
 //
-// Prioridad fija NORMAL, ignoreCancelled=false. El owner del listener es
-// el propio LuaPlugin, así que disable() -> unlistenAll(this) los quita
-// todos sin dejar callbacks colgantes.
-//
-// TODO corre en el hilo principal: los eventos de juego se disparan desde
-// el tick loop y el patrón respeta la pila exactamente (base = gettop al
-// entrar, settop(base) al salir, pase lo que pase).
+// Prioridad fija NORMAL. El owner del listener es el propio LuaPlugin,
+// así que disable() -> unlistenAll(this) los quita todos sin dejar
+// callbacks colgantes.
 #include "LuaBindings.h"
 #include "LuaPlugin.h"
 #include "Player.h"                     // definición completa de Player (getName)
@@ -47,10 +50,15 @@
 #include "event/player/PlayerJoinEvent.h"
 #include "event/player/PlayerQuitEvent.h"
 #include "event/player/PlayerChatEvent.h"
+#include "event/player/PlayerDeathEvent.h"
+#include "event/player/PlayerRespawnEvent.h"
 #include "event/block/BlockBreakEvent.h"
 #include "event/block/BlockPlaceEvent.h"
+#include "event/entity/EntityDamageEvent.h"
+#include "event/entity/EntityDamageByEntityEvent.h"
 #include <functional>
 #include <string>
+#include <type_traits>
 
 namespace cursestone::plugin {
 
@@ -94,9 +102,15 @@ void hook(LuaPlugin* pl, int fnRef,
             lua_rawgeti(L, LUA_REGISTRYINDEX, fnRef);
             lua_pushvalue(L, eIdx);
             if (pl->pcall(1, 0)) {
-                // Leer de vuelta: ¿cancelaron el evento?
+                // Leer de vuelta: ¿cancelaron el evento? Solo los eventos
+                // Cancellable (if constexpr: PlayerRespawnEvent, p.ej.,
+                // NO es cancelable a propósito y no tiene setCancelled).
                 lua_getfield(L, eIdx, "cancelled");
-                if (lua_toboolean(L, -1)) ev.setCancelled(true);
+                if (lua_toboolean(L, -1)) {
+                    if constexpr (std::is_base_of_v<event::Cancellable, EventT>) {
+                        ev.setCancelled(true);
+                    }
+                }
                 lua_pop(L, 1);
                 readBack(L, eIdx, ev);
             }
@@ -135,6 +149,72 @@ void fillBlock(lua_State* L, int eIdx, EventT& ev) {
     lua_setfield(L, eIdx, "block_id");
 }
 
+// ---- helpers de los eventos de daño ----
+
+// Nombre legible de una entidad para los plugins: los jugadores (el único
+// tipo de entidad dañable hoy) por su nombre; cualquier otra cosa como
+// "eid:<n>". Nunca nil, para que el handler pueda comparar sin tocarse.
+void fillEntityField(lua_State* L, int eIdx, const char* field,
+                     cursestone::entity::Entity* e) {
+    if (!e) { lua_pushstring(L, "unknown"); lua_setfield(L, eIdx, field); return; }
+    if (auto* pl = dynamic_cast<Player*>(e)) {
+        lua_pushstring(L, pl->getName().c_str());
+    } else {
+        lua_pushfstring(L, "eid:%lld", (long long)e->runtimeId());
+    }
+    lua_setfield(L, eIdx, field);
+}
+
+// DamageCause -> string PMMP-style (misma familia de nombres que los
+// eventos de PocketMine/Nukkit, minúsculas con guion bajo).
+const char* damageCauseName(event::entity::DamageCause c) {
+    using event::entity::DamageCause;
+    switch (c) {
+        case DamageCause::ENTITY_ATTACK: return "entity_attack";
+        case DamageCause::CONTACT:       return "contact";
+        case DamageCause::FALL:          return "fall";
+        case DamageCause::LAVA:          return "lava";
+        case DamageCause::FIRE:          return "fire";
+        case DamageCause::FIRE_TICK:     return "fire_tick";
+        case DamageCause::DROWNING:      return "drowning";
+        case DamageCause::CACTUS:        return "cactus";
+        case DamageCause::STARVATION:    return "starvation";
+        case DamageCause::VOID:          return "void";
+        case DamageCause::PROJECTILE:    return "projectile";
+        case DamageCause::CUSTOM:        return "custom";
+    }
+    return "custom";
+}
+
+// e.entity (víctima) + e.amount (escribible) + e.cause.
+void fillDamage(lua_State* L, int eIdx, event::entity::EntityDamageEvent& ev) {
+    fillEntityField(L, eIdx, "entity", ev.entity);
+    lua_pushnumber(L, (lua_Number)ev.amount);
+    lua_setfield(L, eIdx, "amount");
+    lua_pushstring(L, damageCauseName(ev.cause));
+    lua_setfield(L, eIdx, "cause");
+}
+
+// Leer de vuelta e.amount: el plugin puede reescribir la cantidad (para
+// armadura, multiplicadores de PvP, zonas sin dano, etc.). Se satura a
+// >= 0 — el pipeline ya satura la salud a 0, así que números negativos
+// no tienen sentido y jamás deben llegar al cable.
+void readBackAmount(lua_State* L, int eIdx, event::entity::EntityDamageEvent& ev) {
+    lua_getfield(L, eIdx, "amount");
+    if (lua_isnumber(L, -1)) {
+        lua_Number a = lua_tonumber(L, -1);
+        ev.amount = (float)(a > 0 ? a : 0);
+    }
+    lua_pop(L, 1);
+}
+
+// EntityDamageByEntity: igual + e.damager (atacante).
+void fillDamageByEntity(lua_State* L, int eIdx,
+                        event::entity::EntityDamageByEntityEvent& ev) {
+    fillDamage(L, eIdx, ev);
+    fillEntityField(L, eIdx, "damager", ev.damager);
+}
+
 // events.on(nombre, fn)
 int l_events_on(lua_State* L) {
     LuaPlugin* pl = LuaPlugin::from(L);
@@ -163,6 +243,47 @@ int l_events_on(lua_State* L) {
         auto f = [](lua_State* L, int eIdx, event::block::BlockPlaceEvent& ev) { fillBlock(L, eIdx, ev); };
         hook<event::block::BlockPlaceEvent>(pl, ref, f, {});
     }
+    else if (name == "EntityDamage") {
+        auto f = [](lua_State* L, int eIdx, event::entity::EntityDamageEvent& ev) {
+            fillDamage(L, eIdx, ev);
+        };
+        hook<event::entity::EntityDamageEvent>(pl, ref, f, readBackAmount);
+    }
+    else if (name == "EntityDamageByEntity") {
+        auto f = [](lua_State* L, int eIdx, event::entity::EntityDamageByEntityEvent& ev) {
+            fillDamageByEntity(L, eIdx, ev);
+        };
+        // Same read-back: e.amount is writable, e.cancel() voids the hit.
+        hook<event::entity::EntityDamageByEntityEvent>(
+            pl, ref, f,
+            std::function<void(lua_State*, int, event::entity::EntityDamageByEntityEvent&)>(
+                [](lua_State* L, int eIdx, event::entity::EntityDamageByEntityEvent& ev) {
+                    readBackAmount(L, eIdx, ev);
+                }));
+    }
+    else if (name == "PlayerDeath") {
+        auto f = [](lua_State* L, int eIdx, event::player::PlayerDeathEvent& ev) {
+            fillPlayer<event::player::PlayerDeathEvent>(L, eIdx, ev);
+            lua_pushstring(L, ev.message.c_str());
+            lua_setfield(L, eIdx, "message");
+        };
+        hook<event::player::PlayerDeathEvent>(pl, ref, f,
+                                              readBackMessage<event::player::PlayerDeathEvent>);
+    }
+    else if (name == "PlayerRespawn") {
+        auto f = [](lua_State* L, int eIdx, event::player::PlayerRespawnEvent& ev) {
+            fillPlayer<event::player::PlayerRespawnEvent>(L, eIdx, ev);
+            lua_pushnumber(L, (lua_Number)ev.respawnX);
+            lua_setfield(L, eIdx, "x");
+            lua_pushnumber(L, (lua_Number)ev.respawnY);
+            lua_setfield(L, eIdx, "y");
+            lua_pushnumber(L, (lua_Number)ev.respawnZ);
+            lua_setfield(L, eIdx, "z");
+        };
+        // Not cancellable on purpose (a cancelled respawn would strand the
+        // player dead): listeners may only observe.
+        hook<event::player::PlayerRespawnEvent>(pl, ref, f, {});
+    }
     else {
         luaL_unref(L, LUA_REGISTRYINDEX, ref);
         return luaL_error(L, "unknown event: %s", name.c_str());
@@ -178,6 +299,29 @@ void bindEvents(lua_State* L) {
         {nullptr, nullptr}};
     lua_newtable(L);
     luaL_setfuncs(L, evF, 0);
+
+    // events.CAUSE: constants of damage cause (same values as the
+    // server enum; the strings of e.cause are the lowercase versions).
+    lua_createtable(L, 0, 12);
+    int ci = lua_gettop(L);
+    auto setCause = [L, ci](const char* n, event::entity::DamageCause c) {
+        lua_pushinteger(L, (lua_Integer)c);
+        lua_setfield(L, ci, n);
+    };
+    setCause("CUSTOM", event::entity::DamageCause::CUSTOM);
+    setCause("ENTITY_ATTACK", event::entity::DamageCause::ENTITY_ATTACK);
+    setCause("CONTACT", event::entity::DamageCause::CONTACT);
+    setCause("FALL", event::entity::DamageCause::FALL);
+    setCause("LAVA", event::entity::DamageCause::LAVA);
+    setCause("FIRE", event::entity::DamageCause::FIRE);
+    setCause("FIRE_TICK", event::entity::DamageCause::FIRE_TICK);
+    setCause("DROWNING", event::entity::DamageCause::DROWNING);
+    setCause("CACTUS", event::entity::DamageCause::CACTUS);
+    setCause("STARVATION", event::entity::DamageCause::STARVATION);
+    setCause("VOID", event::entity::DamageCause::VOID);
+    setCause("PROJECTILE", event::entity::DamageCause::PROJECTILE);
+    lua_setfield(L, -2, "CAUSE");
+
     lua_setglobal(L, "events");
 }
 

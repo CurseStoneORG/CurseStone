@@ -31,6 +31,22 @@
 #include <vector>
 #include <memory>
 namespace cursestone::entity {
+
+// Result of a damage()/damageByEntity() call:
+//   CANCELLED — no damage happened (already dead, a plugin cancelled the
+//               event, or the victim is immune — e.g. creative players).
+//   HURT      — damage applied, the entity is still alive.
+//   KILLED    — damage applied and this was the lethal blow (onDeath ran).
+// Callers use this to decide whether the hit must be synced to clients:
+// on CANCELLED not a single packet goes out (Infinity: a cancelled
+// EntityDamageEvent produces no EntityEventPacket, no health sync and no
+// knockback).
+enum class DamageApply {
+    CANCELLED = 0,
+    HURT      = 1,
+    KILLED    = 2,
+};
+
 class Living : public Entity {
 public:
     using Entity::Entity;
@@ -39,30 +55,30 @@ public:
     float maxHealth() const { return max_health_; }
     void setMaxHealth(float m) { max_health_ = m; }
 
-    // Damage the entity with a generic/no-attacker cause. Dispara
-    // EntityDamageEvent (cause=CUSTOM) antes de aplicar el dano; un
-    // listener puede reescribir la cantidad o cancelar el evento.
-    // Devuelve true si murio como resultado de ESTA llamada (health
-    // cruzo de >0 a <=0).
-    virtual bool damage(float amount);
+    // Damage the entity with a generic/no-attacker cause (CUSTOM). Dispara
+    // EntityDamageEvent antes de aplicar el dano; un listener puede
+    // reescribir la cantidad o cancelar el evento.
+    virtual DamageApply damage(float amount);
 
     // Igual que damage(), pero con un atacante conocido — dispara
     // EntityDamageByEntityEvent en vez de EntityDamageEvent. Usado
     // por el pipeline de combate cuerpo a cuerpo (ver
-    // Player::handleInteract / INTERACT_PACKET).
-    virtual bool damageByEntity(float amount, Entity* damager);
+    // Player::handleInteract / INTERACT_PACKET) y por las flechas
+    // (World::tickArrows, cause=PROJECTILE).
+    virtual DamageApply damageByEntity(float amount, Entity* damager,
+                                       event::entity::DamageCause cause =
+                                           event::entity::DamageCause::ENTITY_ATTACK);
 
     // mirrors PMMP Entity::attack(EntityDamageEvent) — punto de
     // entrada generico sin atacante conocido (p.ej.
     // BlockFire::onEntityCollide). Delega en damage().
     void attack(float amount) override { damage(amount); }
-
     // Damage with an explicit cause (Infinity-style): fires
     // EntityDamageEvent with that cause so listeners can cancel/reduce
     // per-cause (armor on FALL, fire resistance on LAVA, etc.). Used by
     // the ambient damage pipeline: fall damage, lava, fire, cactus,
     // drowning, starvation.
-    virtual bool damage(float amount, event::entity::DamageCause cause);
+    virtual DamageApply damage(float amount, event::entity::DamageCause cause);
 
     // Heal the entity by amount (capped at maxHealth).
     virtual void heal(float amount);

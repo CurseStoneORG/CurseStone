@@ -278,7 +278,7 @@ int main(int argc, char* argv[]) {
     // C++ I/O streams (the async logger uses fputs on stdout).
     {
         std::string banner = std::string(CURSESTONE_NAME) + " v" +
-            CURSESTONE_VERSION + " \"" + CURSESTONE_CODENAME + "\"\n" +
+            CURSESTONE_API + " \"" + CURSESTONE_CODENAME + "\"\n" +
             "Targeting Minecraft " + MINECRAFT_VERSION +
             " (protocol " + std::to_string(PROTOCOL_VERSION) + ")\n\n";
         fputs(banner.c_str(), stdout);

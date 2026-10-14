@@ -30,17 +30,18 @@
 // registerApi() the flame all in order.
 #pragma once
 #include <lua.hpp>
-#include "CurseStone.h"   // CURSESTONE_API_VERSION (only source of truth)
+#include "CurseStone.h"   // CURSESTONE_API — the ONLY version constant (unified:
+                          // server version == plugin API version)
 #include <string>
 
 namespace cursestone::plugin {
 
 // ---- version of the API of plugins of the server ----
-// mirror of CURSESTONE_API_VERSION (CurseStone.h): a only place for
-// cambiarla. the plugins declaran the API with that which fueron escritos in its
-// plugin.yml (field `api`). Regla of compatibilidad (ver apiCompatible):
+// UNIFIED: there is no mirror here anymore. The single constant is the
+// macro CURSESTONE_API in CurseStone.h (server version == plugin API
+// version). Plugins declare it in their plugin.yml (field `api`).
+// Regla of compatibilidad (ver apiCompatible):
 // same major required; minor of the server >= minor of the plugin.
-inline constexpr const char* PLUGIN_API_VERSION = CURSESTONE_API_VERSION;
 
 // compares "X.and.Z" of a plugin contra the API of the server.
 //   - true  : compatible (is can load; can emit warn if not is exact)

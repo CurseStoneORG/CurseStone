@@ -113,7 +113,7 @@ bool LuaPlugin::loadManifest() {
 
     // api (requerido por convención; si falta se asume la del servidor).
     lua_getfield(L_, -1, "api");
-    api_ = lua_isstring(L_, -1) ? lua_tostring(L_, -1) : PLUGIN_API_VERSION;
+    api_ = lua_isstring(L_, -1) ? lua_tostring(L_, -1) : CURSESTONE_API;
     lua_pop(L_, 1);
 
     // name (si falta se usa el nombre de la carpeta, más abajo).
@@ -131,13 +131,28 @@ bool LuaPlugin::loadManifest() {
     if (lua_isstring(L_, -1)) version_ = lua_tostring(L_, -1);
     lua_pop(L_, 1);
 
-    // main: entrada del plugin. Si falta: src/main.lua, luego main.lua.
+    // main: entrada del plugin. SIEMPRE dentro de src/ — la estructura
+    // canónica de un plugin CurseStone es:
+    //
+    //     MiPlugin/
+    //     ├── plugin.yml        (manifiesto, raíz del plugin)
+    //     └── src/
+    //         └── main.lua      (punto de entrada; módulos al lado)
+    //
+    // plugin.yml y main.lua JUNTOS en la raíz NO se acepta (estructura
+    // vieja/fea): se rechaza con un mensaje que dice cómo arreglarlo.
     lua_getfield(L_, -1, "main");
     if (lua_isstring(L_, -1)) {
         std::string rel;
         if (!sanitizeRelPath(lua_tostring(L_, -1), rel)) {
             utils::MainLogger::get().error("[" + dir_ +
                 "] plugin.yml: invalid 'main' field (absolute paths and '..' are not allowed)");
+            lua_pop(L_, 2);
+            return false;
+        }
+        if (rel.compare(0, 4, "src/") != 0) {
+            utils::MainLogger::get().error("[" + dir_ +
+                "] plugin.yml: 'main' must live inside src/ (e.g. src/main.lua) — got '" + rel + "'");
             lua_pop(L_, 2);
             return false;
         }
@@ -151,23 +166,35 @@ bool LuaPlugin::loadManifest() {
     if (!apiCompatible(api_, &exact)) {
         utils::MainLogger::get().error("[" + (name_.empty() ? dir_ : name_) +
             "] requires API " + api_ + ", but this server provides API " +
-            PLUGIN_API_VERSION + " — plugin discarded");
+            CURSESTONE_API + " — plugin discarded");
         return false;
     }
     if (!exact) {
         utils::MainLogger::get().warn("[" + dir_ + "] declares API " + api_ +
-            " while the server provides " + PLUGIN_API_VERSION +
+            " while the server provides " + CURSESTONE_API +
             " (compatible, but not exact)");
     }
 
     // ---- Resolver la entrada si el manifiesto no decía `main`. ----
+    // Sin `main:` la entrada es SIEMPRE src/main.lua (no hay fallback a
+    // main.lua en la raíz: plugin.yml y main.lua nunca conviven juntos).
     if (entry_.empty()) {
         std::error_code e3;
-        if (fs::exists(dir_ + "/src/main.lua", e3))      entry_ = "src/main.lua";
-        else if (fs::exists(dir_ + "/main.lua", e3))     entry_ = "main.lua";
-        else {
+        std::error_code e5;
+        if (fs::exists(dir_ + "/src/main.lua", e3)) {
+            entry_ = "src/main.lua";
+        } else if (fs::exists(dir_ + "/main.lua", e5)) {
+            // Estructura vieja: el main suelto junto a plugin.yml. Error
+            // claro y accionable en vez de cargarlo a medias.
             utils::MainLogger::get().error("[" + dir_ +
-                "] plugin.yml has no 'main' and there is no src/main.lua or main.lua");
+                "] has main.lua next to plugin.yml — that layout is not "
+                "accepted anymore. Create a src/ folder and move the "
+                "entry inside: " + dir_ + "/src/main.lua");
+            return false;
+        } else {
+            utils::MainLogger::get().error("[" + dir_ +
+                "] plugin.yml has no 'main' and there is no src/main.lua "
+                "(the entry script must be at src/main.lua)");
             return false;
         }
     }

@@ -61,7 +61,7 @@ bool apiCompatible(const std::string& pluginApi, bool* exact) {
     if (exact) *exact = false;
     int pl[3] = {0, 0, 0}, sv[3] = {0, 0, 0};
     if (!parseSemver(pluginApi, pl)) return false;
-    if (!parseSemver(PLUGIN_API_VERSION, sv)) return false;
+    if (!parseSemver(CURSESTONE_API, sv)) return false;
     if (pl[0] != sv[0]) return false;      // major different: breaks
     if (pl[1] > sv[1])  return false;      // plugin requires minor more new
     if (exact) *exact = (pl[0] == sv[0] && pl[1] == sv[1] && pl[2] == sv[2]);
