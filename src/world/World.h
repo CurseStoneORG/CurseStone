@@ -52,6 +52,30 @@ namespace world::generator { class Generator; }
 }
 namespace cursestone::world {
 
+// ArrowEntity — lightweight record of a flying/stuck arrow (protocol 84
+// entity type 80). Follows the DroppedItem pattern: the client integrates
+// the motion we shipped in AddEntityPacket, and tickArrows() integrates
+// the SAME physics server-side (gravity 0.05 — Infinity Arrow) while
+// correcting the client with MoveEntityPacket, testing entity hits and
+// sticking the arrow when it collides with a block.
+struct ArrowEntity {
+    int64_t  eid = 0;
+    int64_t  shooter_eid = -1;      // shooter player runtime id (-1 = none)
+    double   x = 0.0, y = 0.0, z = 0.0;
+    double   vx = 0.0, vy = 0.0, vz = 0.0;
+    float    yaw = 0.0f, pitch = 0.0f;
+    // Last values broadcast in MoveEntityPacket — only re-broadcast when
+    // the entity actually moved/rotated (PMMP Entity::updateMovement).
+    double   lx = 0.0, ly = 0.0, lz = 0.0;
+    float    lyaw = 0.0f, lpitch = 0.0f;
+    uint64_t spawn_tick = 0;
+    uint64_t flight_ticks = 0;      // ticksLived — gates self-hit ignore
+    float    damage = 2.0f;         // Infinity Arrow: $damage = 2
+    bool     critical = false;      // fully-charged shot (f == 2)
+    bool     stuck = false;         // hit a block: motion zeroed, pickable
+    bool     taken = false;         // claimed by a pickup (atomic claim)
+};
+
 // DroppedItem — to lightweight record of an item entity lying on the ground.
 // Mirrors Nukkit's EntityItem (sans the full entity-tick machinery): we
 // track position + the item + to pickup-delay so the player who just threw
@@ -61,6 +85,9 @@ struct DroppedItem {
     uint16_t itemId = 0;
     uint8_t  count  = 1;
     uint16_t damage = 0;
+    // Raw little-endian NBT compound of the dropped stack (custom item
+    // names survive the drop→pickup round trip through this field).
+    std::string nbt;
     double   x = 0.0, y = 0.0, z = 0.0;
     uint64_t spawn_tick = 0;     // when it was dropped (server tick)
     // Pickup delay, in ticks. Genisys player::DROP_ITEM_PACKET drops with
@@ -297,6 +324,16 @@ public:
     // item is: without that the client renders it to fraction of to block
     // away from the position player::onUpdate() tests for pickup.
     void tickDroppedItems(uint64_t current_tick);
+
+    // Arrow projectile physics (protocol 84 / Infinity Arrow::onUpdate):
+    // integrates gravity, corrects viewers with MoveEntityPacket, damages
+    // the first player the flight segment crosses, sticks on blocks and
+    // despawns after 1200 ticks. Stuck arrows stay pickable.
+    void tickArrows(uint64_t current_tick);
+    void addArrow(ArrowEntity a);
+    std::vector<ArrowEntity*> arrows();
+    // Atomic pickup claim — same semantics as tryClaimDroppedItem.
+    bool tryClaimArrow(int64_t eid);
     // tick of block entities (hornos: fundido + fuel + progress of UI).
     // Llamado a time per tick from server::tick (outside of
     // World::tick for not bloquear the fase of time/weather with I/or of
@@ -470,6 +507,8 @@ private:
     // tick sweep removes items with taken==true.
     std::unordered_map<int64_t, std::unique_ptr<DroppedItem>> dropped_items_;
     mutable std::mutex dropped_items_mtx_;
+    std::unordered_map<int64_t, std::unique_ptr<ArrowEntity>> arrows_;
+    mutable std::mutex arrows_mtx_;
 
     // All tile-entities in this level, keyed by to packed (x,and,z) block
     // position. See getTile/setTile/removeTile above.

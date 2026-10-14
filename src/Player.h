@@ -83,6 +83,21 @@ public:
 
     // --- IPlayer ---
     std::string getName() const override { return cfg_.username; }
+    // --- Nametag / display name (PMMP Player::setNameTag / setDisplayName) ---
+    // The NAMETAG is what other clients render above the head and in the
+    // server list tab: on protocol 84 both come from the PlayerListPacket
+    // ADD entry name (and from AddPlayerPacket's username), so changing it
+    // re-broadcasts REMOVE + ADD for this player's uuid to everyone.
+    // Accepts §-color codes, which is how rank prefixes work on 0.15.
+    // The DISPLAY NAME only replaces the username in chat.
+    // Both fall back to the real username while unset.
+    const std::string& getNameTag() const {
+        return nametag_.empty() ? cfg_.username : nametag_;
+    }
+    void setNameTag(const std::string& tag);        // broadcast REMOVE+ADD
+    // getDisplayName() lives in the Nukkit-style "player info" block
+    // below — it reads display_name_ with username fallback.
+    void setDisplayName(const std::string& name) { display_name_ = name; }
     // Skin forwarded to the other players' PlayerListPacket entries.
     // Never empty: to client that sent none gets the default skin built in
     // handleLoginPacket().
@@ -129,6 +144,18 @@ public:
                           int16_t heldItemId, uint8_t heldCount, uint16_t heldDamage,
                           float fx = 0.5f, float fy = 0.5f, float fz = 0.5f);
     void handlePlayerAction(int action, int x, int y, int z, int face);
+
+    // --- Bow (protocol 84 / Infinity Player.php) ---
+    // handleUseItemAir: UseItemPacket with face == 0xFF (right-click in the
+    // AIR). With a bow in hand it starts the draw: records the start tick
+    // and broadcasts the ACTION pose flag to the other clients (the
+    // shooter's own client animates locally).
+    void handleUseItemAir(int16_t heldItemId);
+    // releaseBow: PlayerActionPacket ACTION_RELEASE_ITEM. Ports Infinity's
+    // bow release — charge force from the tick diff, arrow consumption,
+    // bow durability, AddEntityPacket (type 80) with the shot motion and
+    // the server-side ArrowEntity physics record in the World.
+    void releaseBow();
 
     // broadcasts the pose (sneaking / sprintando) of this player to all the
     // clients with those that shares vista. is the razon by that which the
@@ -200,12 +227,14 @@ public:
     // with and the one we ship as speedX/and/Z in AddItemEntityPacket; the
     // server then integrates it every tick in World::tickDroppedItems().
     // `pickup_delay` is Genisys' PickupDelay NBT short (10 by default,
-    // 40 for to Q drop). Returns the allocated runtime entity id, or 0 when
-    // the stack was empty.
+    // 40 for to Q drop). `nbt` is the raw little-endian NBT compound of
+    // the stack (custom item name) — it rides along so the name survives
+    // the drop→pickup round trip. Returns the allocated runtime entity
+    // id, or 0 when the stack was empty.
     int64_t dropItem(double x, double y, double z,
                      uint16_t itemId, uint8_t count, uint16_t damage,
                      double motionX = 0.0, double motionY = 0.2, double motionZ = 0.0,
-                     uint32_t pickup_delay = 10);
+                     uint32_t pickup_delay = 10, const std::string& nbt = "");
 
     // Entity::getDirectionVector() (Genisys 0.15) — the unit vector the
     // player is looking along. player::DROP_ITEM_PACKET multiplies it by
@@ -416,7 +445,12 @@ public:
     bool isSpectator() const { return cfg_.gamemode == 3; }
 
     // --- player info (Nukkit: getDisplayName/getAddress/getClientId) ---
-    std::string getDisplayName() const { return cfg_.username; }
+    // Chat name (PMMP Player::getDisplayName): display_name_ when a rank
+    // plugin set it, the raw username otherwise. setNameTag() is the
+    // overhead/tab surface; this one only restyles chat lines.
+    const std::string& getDisplayName() const {
+        return display_name_.empty() ? cfg_.username : display_name_;
+    }
     std::string getAddress() const { return cfg_.ip; }
     int64_t getClientId() const { return std::stoll(cfg_.client_id.empty() ? "0" : cfg_.client_id); }
     bool hasPlayedBefore() const { return named_tag_ != nullptr; }
@@ -630,6 +664,14 @@ private:
     uint64_t start_time_ms_ = 0;       // Wall-clock when player joined (for workbench)
     uint64_t last_activity_ms_ = 0;    // Wall-clock of last received packet
     uint64_t last_attack_ms_ = 0;      // Wall-clock of last accepted melee attack (cooldown)
+    // --- Nametag / display name storage (see the public accessors) ---
+    std::string nametag_;       // empty = show cfg_.username
+    std::string display_name_;  // empty = show cfg_.username
+    // --- Bow draw state (Infinity Player::$startAction) ---
+    // Server tick when the current bow draw started; -1 = not drawing.
+    // Set by handleUseItemAir (UseItemPacket face 0xFF), consumed by
+    // releaseBow (PlayerActionPacket ACTION_RELEASE_ITEM).
+    int64_t bow_start_action_ = -1;
 
     // --- Hunger + ambient damage state (Infinity player.php foodData) ---
     float food_saturation_ = 5.0f;   // hidden saturation, drains before food

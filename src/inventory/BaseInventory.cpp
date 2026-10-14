@@ -94,7 +94,9 @@ bool BaseInventory::canAddItem(const item::ItemStack& item) {
     int limit = getSize();
     for (int i = 0; i < limit && remaining > 0; ++i) {
         item::ItemStack slot = getItem(i);
-        if (slot.id == item.id && slot.meta == item.meta && slot.count > 0) {
+        // sameItem (not bare id+meta): a custom-named stack must never
+        // merge with an unnamed one, otherwise the name would disappear.
+        if (slot.sameItem(item) && slot.count > 0) {
             int diff = max_stack - slot.count;
             if (diff > 0) remaining -= diff;
         } else if (slot.id == 0) {
@@ -126,7 +128,8 @@ std::vector<item::ItemStack> BaseInventory::addItem(std::vector<item::ItemStack>
 
         for (auto it = itemSlots.begin(); it != itemSlots.end(); ) {
             auto& slot = *it;
-            if (slot.id == item.id && slot.meta == item.meta &&
+            // sameItem: merge only id+meta+NBT-equal stacks (see canAddItem).
+            if (slot.sameItem(item) &&
                 item.count < max_stack) {
                 int amount = std::min(max_stack - item.count, slot.count);
                 amount = std::min(amount, max_stack);

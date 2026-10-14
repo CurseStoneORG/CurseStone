@@ -48,6 +48,7 @@ public:
 
     // Entity type network ids (Infinity Entity.php).
     static constexpr int32_t TYPE_LIGHTNING = 93;
+    static constexpr int32_t TYPE_ARROW     = 80;   // Infinity Arrow::NETWORK_ID
 
     int64_t eid = 0;
     int32_t type = 0;

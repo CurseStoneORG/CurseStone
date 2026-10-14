@@ -335,6 +335,15 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     if (!spawned_.load(std::memory_order_relaxed)) return;
     if (!getWorld()) return;
 
+    // UseItemPacket with face == 0xFF is an "item use in the AIR" (Infinity:
+    // `$packet->face === 0xff` branch of USE_ITEM_PACKET) — no block is
+    // clicked, so the placement switch below must not swallow it. This is
+    // how the bow draw starts (Player::handleUseItemAir).
+    if (face == 0xFF) {
+        handleUseItemAir(heldItemId);
+        return;
+    }
+
     // ---- Compute placed block position based on face ----
     // This is computed UP FRONT because the flint-and-steel branch below
     // needs placeX/and/Z to call ItemFlintSteel::onActivate(). Previously this

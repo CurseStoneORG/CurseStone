@@ -63,6 +63,7 @@ public:
 
     // ---- Sound event ids (PMMP LevelEventPacket::EVENT_SOUND_*) ----
     static constexpr int16_t EVENT_SOUND_BLOCK_PLACE      = 1052;
+    static constexpr int16_t EVENT_SOUND_SHOOT            = 1002;  // bow release (Infinity LaunchSound)
     // ---- Particle event ids (PMMP LevelEventPacket::EVENT_PARTICLE_*) ----
     static constexpr int16_t EVENT_PARTICLE_DESTROY      = 2001;  // break particle + sound
     // ---- Weather event ids (Dr1xyDev/Infinity LevelEventPacket, MCPE 0.15.10) ----

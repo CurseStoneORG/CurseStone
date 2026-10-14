@@ -84,4 +84,11 @@ bool itemStackFromNbt(const mcp_tag_t* entry, ItemStack& out);
 // the regression test.
 void enchantmentsFromNbt(const mcp_tag_t* entry, enchantment::EnchantmentList& out);
 
+// Builds the little-endian network NBT compound that gives an item a
+// custom visible name on 0.15.10 clients: {display:{Name:"..."}}. The
+// returned blob goes verbatim into ItemStack::nbt; every slot writer
+// prefixes it with its u16 LE length (Genisys putSlot). An empty name
+// yields an empty blob (an unnamed item has no NBT at all).
+std::string buildDisplayNbt(const std::string& name);
+
 } // namespace cursestone::item

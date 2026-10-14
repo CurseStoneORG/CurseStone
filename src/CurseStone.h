@@ -46,15 +46,19 @@
 #include "math/AxisAlignedBB.h"
 
 // ---- Project version constants ----
-#define CURSESTONE_VERSION    "1.0.1" // server version; same value as CURSESTONE_API_VERSION for this release
+#define CURSESTONE_VERSION    "1.0.1" // server version (plugin API is independently versioned below)
 #define CURSESTONE_NAME      "CurseStone"
 #define CURSESTONE_CODENAME  "Obsidian"
 
 // ---- plugin API version ----
 // API exposed to Lua plugins (plugin.yml `api` field). Mirrored by
 // plugin::PLUGIN_API_VERSION in plugin/LuaBindings.h.
-// 1.1.0: adds the API of worlds (server.worlds/getWorld/loadWorld/
-// defaultWorld, object world and player.getWorld/teleportWorld).
+// 1.0.1: adds the API of worlds (server.worlds/getWorld/loadWorld/
+//        defaultWorld, object world and player.getWorld/teleportWorld)
+//        and the items/names surface: player.giveItem (custom item
+//        names via NBT), player.setNameTag/getNameTag (nametag above
+//        the head + server list tab, § codes — the rank surface) and
+//        player.setDisplayName/getDisplayName (chat alias).
 #define CURSESTONE_API_VERSION "1.0.1"
 
 // ---- Target Minecraft version ----

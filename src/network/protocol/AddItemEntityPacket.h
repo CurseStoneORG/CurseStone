@@ -49,6 +49,9 @@ public:
     int16_t  itemId = 0;
     uint8_t  itemCount = 1;
     int16_t  itemDamage = 0;
+    // Raw little-endian NBT compound of the dropped stack (custom item
+    // names survive being dropped thanks to this).
+    std::string itemNbt;
     float    x = 0, y = 0, z = 0;
     float    speedX = 0, speedY = 0, speedZ = 0;
 

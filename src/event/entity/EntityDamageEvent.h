@@ -50,6 +50,9 @@ enum class DamageCause {
     CACTUS = 8,      // tocar cactus
     STARVATION = 9,  // hambre en 0 (mata salvo en dificultades bajas)
     VOID = 10,       // caer al vacio
+    PROJECTILE = 11, // golpeado por un proyectil (flecha del arco) —
+                     // Infinity EntityDamageEvent::CAUSE_PROJECTILE. Se usa
+                     // como fallback cuando el tirador ya no está online.
 };
 
 class EntityDamageEvent : public Event, public Cancellable {
