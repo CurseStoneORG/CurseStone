@@ -69,8 +69,17 @@
     #include <execinfo.h>
 #endif
 
-// write() lives in <unistd.h>, which is POSIX and available everywhere.
-#include <unistd.h>
+#ifdef _WIN32
+#  include <io.h>
+#  ifndef STDERR_FILENO
+#    define STDERR_FILENO 2
+#  endif
+// The CRT exposes write() as _write().
+#  define write _write
+#else
+// write() lives in <unistd.h> on POSIX platforms.
+#  include <unistd.h>
+#endif
 
 namespace {
 
@@ -234,7 +243,9 @@ void handleSignal(int sig) {
         case SIGABRT: reason = "SIGABRT (abort)"; break;
         case SIGFPE:  reason = "SIGFPE (floating-point exception)"; break;
         case SIGILL:  reason = "SIGILL (illegal instruction)"; break;
+#ifdef SIGBUS
         case SIGBUS:  reason = "SIGBUS (bus error)"; break;
+#endif
     }
 
     std::string trace = capture_backtrace(32);
@@ -303,7 +314,9 @@ int main(int argc, char* argv[]) {
     std::signal(SIGABRT, handleSignal);
     std::signal(SIGFPE,  handleSignal);
     std::signal(SIGILL,  handleSignal);
+#ifdef SIGBUS
     std::signal(SIGBUS,  handleSignal);
+#endif
 
     // Resolve data path (default: current working directory)
     std::string dataPath = ".";

@@ -27,6 +27,19 @@
 
 #include <time.h>
 
+#if defined(_MSC_VER) && !defined(__clang__)
+#  include <intrin.h>
+// MSVC has no __builtin_clz; v must be nonzero.
+static int mcp_clz32(uint32_t v) {
+    unsigned long idx;
+    _BitScanReverse(&idx, v);
+    return 31 - (int)idx;
+}
+#else
+#  define mcp_clz32(v) __builtin_clz(v)
+#endif
+
+
 static void mt_generate(mcp_random_t* r) {
     static const uint32_t MATRIX_A = 0x9908B0DFu;
     static const uint32_t UPPER    = 0x80000000u;
@@ -77,7 +90,7 @@ int mcp_random_next_int_range(mcp_random_t* r, int range) {
     uint32_t mask = ~0u;
     uint32_t lim = (uint32_t)range;
     --lim;
-    mask >>= __builtin_clz(lim | 1);
+    mask >>= mcp_clz32(lim | 1);
     uint32_t v;
     do {
         v = mcp_random_next_u32(r) & mask;

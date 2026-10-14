@@ -32,6 +32,7 @@
 #include <fstream>
 #include <sstream>
 #include <sys/stat.h>
+#include "utils/PlatformCompat.h"
 #include <iomanip>
 
 namespace cursestone {
