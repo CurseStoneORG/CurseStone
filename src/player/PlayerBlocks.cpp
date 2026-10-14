@@ -711,16 +711,17 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         consumeItem     = !(cfg_.gamemode & 1);
         skipPlaceSound  = true;
     } else if (heldItemId == 259 && !sneakLocked) {
-        // Flint and steel — delegar all the lógica to ItemFlintSteel::onActivate().
-        // sneaking not is can use (it captures the rama sneakLocked of
-        // above, that returns before arrive aca).
-        // Maneja: verificación of block solid, portal of the Nether,
-        // colocación of fire, primer tick of propagación and durability.
+        // Flint and steel — delegate all the logic to ItemFlintSteel::onActivate().
+        // Sneaking is handled by the sneakLocked branch above, which returns
+        // before reaching this point.
+        // Handles: solid-block check, Nether portal frame detection and
+        // lighting (Infinity/PMMP algorithm), fire placement, first fire
+        // tick scheduling and durability.
         item::ItemFlintSteel::onActivate(lvl, this,
-            placeX, placeY, placeZ,  // block AIR target (cara clicked)
-            x, y, z,                 // block target (that which recibió the click)
+            placeX, placeY, placeZ,  // air cell in front of the clicked face
+            x, y, z,                 // clicked block (the actual target)
             face);
-        return;  // onActivate() already does the setBlock + broadcast, not continuar
+        return;  // onActivate() already did the setBlock + broadcast
     } else {
         // Other item (food, tool, etc.) — PMMP would call onItemUse; we not-op.
         if (srv_ && srv_->advancedLog()) {

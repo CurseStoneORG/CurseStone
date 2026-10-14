@@ -22,14 +22,22 @@
  */
 // ItemFlintSteel — flint and steel: places fire and lights nether portals.
 //
-// onActivate() follows the two paths of PMMP 0.15 (Genisys/Infinity
+// onActivate() ports the frame measurement of PMMP 0.15 (Infinity
 // FlintSteel::onActivate), the reference real 0.15.10 clients work with:
-//   - Obsidian target: measure the obsidian frame around the clicked
-//     block (X axis first, then Z axis) and, if it is a valid portal
-//     frame (4..23 wide, 5..23 tall, full top row), fill the interior
-//     with portal blocks (id 90, meta = axis). Every filled cell is
-//     broadcast to the viewers, otherwise the client only renders the
-//     single cell the click landed on.
+//   - Measure the obsidian runs anchored on the clicked obsidian block,
+//     X axis first, then Z axis. The side-column walk STARTS ON the base
+//     row and counts every obsidian cell, so it ends one block ABOVE the
+//     highest obsidian; "- 1" then lands exactly on the top frame row
+//     (4..23 wide, 5..23 tall). The top row must be a continuous
+//     obsidian run as wide as the base. On success the interior is
+//     filled with portal blocks (id 90, meta = axis: 0 X / 1 Z) and
+//     every filled cell is broadcast to the viewers, otherwise the
+//     client only renders the single cell the click landed on.
+//   - Extra over Infinity: if the click lands on a SIDE column (mid
+//     height), the frame measurement from the clicked row cannot work
+//     (the row run is only one block), so the detection walks DOWN the
+//     column to the lowest obsidian and retries. This makes lighting
+//     work from any frame block, closer to vanilla.
 //   - Any other solid target: place a fire block (classic PMMP behavior;
 //     also reached when the obsidian frame is incomplete, like PMMP).
 // In survival each use costs 2 durability points.
@@ -57,6 +65,10 @@ using namespace cursestone::block;
 static constexpr int kPortalOuterMin = 4;
 static constexpr int kPortalOuterMax = 23;
 
+/// @brief A portal cell that was filled by the detection: position plus
+///        the axis metadata the client must render it with.
+using FilledCell = std::tuple<int32_t, int32_t, int32_t, uint8_t>;
+
 /// @brief Can this cell be part of a portal interior? Vanilla interiors
 ///        are air; accepting already-lit portal blocks makes relighting
 ///        a partially broken portal possible.
@@ -67,14 +79,16 @@ static bool isPortalInterior(world::World* w, int32_t x, int32_t y, int32_t z) {
 
 /// @brief Detects and lights a portal on the XY plane (opening running
 ///        along the X axis, Z fixed). (tx, ty, tz) is the clicked
-///        obsidian block — the detection measures the obsidian frame,
-///        never the clicked air cell, so lighting works no matter which
-///        side of the frame the player clicks. On success every interior
-///        cell is filled and appended to `filled` (x, y) for the client
-///        update. Ported from PMMP 0.15 (Genisys/Infinity).
+///        obsidian block. The frame measurement follows Infinity/PMMP:
+///        the side-column walk starts ON the base row and counts every
+///        obsidian cell (so it ends one block ABOVE the highest
+///        obsidian), and "- 1" lands on the top frame row. On success
+///        every interior cell is filled and appended to `filled` with
+///        its axis metadata. Returns false BEFORE touching any block
+///        when the frame is invalid, so callers can safely retry.
 static bool tryPortalPlaneX(world::World* w, int32_t tx, int32_t ty, int32_t tz,
-                            std::vector<std::tuple<int32_t, int32_t, int32_t>>& filled) {
-    // Obsidian run of the clicked row along X.
+                            std::vector<FilledCell>& filled) {
+    // Obsidian run of the clicked row along X (the base row candidate).
     int32_t xMax = tx;
     while (xMax - tx < kPortalOuterMax &&
            w->getBlockId(xMax + 1, ty, tz) == OBSIDIAN) ++xMax;
@@ -84,13 +98,21 @@ static bool tryPortalPlaneX(world::World* w, int32_t tx, int32_t ty, int32_t tz,
     int32_t countX = xMax - xMin + 1;
     if (countX < kPortalOuterMin || countX > kPortalOuterMax) return false;
 
-    // First air row above the clicked one at both ends of the run; the
-    // top frame row is the lower of the two.
+    // Side-column heights, counted from the base row (base included) —
+    // exactly how the Infinity/PMMP for-loop counts them, so topL/topR
+    // end one block ABOVE the highest obsidian and yMax lands on the top
+    // frame row. Using the topmost obsidian directly and then subtracting
+    // one (the previous port) skipped the top row and made the top-row
+    // check below always fail: the portal never lit.
     int32_t topL = ty, topR = ty;
-    while (topL - ty <= kPortalOuterMax &&
-           w->getBlockId(xMin, topL + 1, tz) == OBSIDIAN) ++topL;
-    while (topR - ty <= kPortalOuterMax &&
-           w->getBlockId(xMax, topR + 1, tz) == OBSIDIAN) ++topR;
+    for (int32_t y = ty;
+         y - ty <= kPortalOuterMax && w->getBlockId(xMin, y, tz) == OBSIDIAN; ++y) {
+        topL = y + 1;
+    }
+    for (int32_t y = ty;
+         y - ty <= kPortalOuterMax && w->getBlockId(xMax, y, tz) == OBSIDIAN; ++y) {
+        topR = y + 1;
+    }
     int32_t yMax = std::min(topL, topR) - 1;
     int32_t countY = yMax - ty + 2;   // outer height: base row + top row
     if (countY < kPortalOuterMin + 1 || countY > kPortalOuterMax) return false;
@@ -108,16 +130,16 @@ static bool tryPortalPlaneX(world::World* w, int32_t tx, int32_t ty, int32_t tz,
         for (int32_t yy = ty + 1; yy < yMax; ++yy) {
             if (!isPortalInterior(w, xx, yy, tz)) continue;
             w->setBlock(xx, yy, tz, NETHER_PORTAL, 0);
-            filled.emplace_back(xx, yy, tz);
+            filled.emplace_back(xx, yy, tz, 0);
         }
     }
     return true;
 }
 
 /// @brief Same detection for the ZY plane (opening along the Z axis,
-///        X fixed).
+///        X fixed). Meta 1 = Z axis.
 static bool tryPortalPlaneZ(world::World* w, int32_t tx, int32_t ty, int32_t tz,
-                            std::vector<std::tuple<int32_t, int32_t, int32_t>>& filled) {
+                            std::vector<FilledCell>& filled) {
     int32_t zMax = tz;
     while (zMax - tz < kPortalOuterMax &&
            w->getBlockId(tx, ty, zMax + 1) == OBSIDIAN) ++zMax;
@@ -127,11 +149,16 @@ static bool tryPortalPlaneZ(world::World* w, int32_t tx, int32_t ty, int32_t tz,
     int32_t countZ = zMax - zMin + 1;
     if (countZ < kPortalOuterMin || countZ > kPortalOuterMax) return false;
 
+    // Side-column heights counted from the base row (see tryPortalPlaneX).
     int32_t topL = ty, topR = ty;
-    while (topL - ty <= kPortalOuterMax &&
-           w->getBlockId(tx, topL + 1, zMin) == OBSIDIAN) ++topL;
-    while (topR - ty <= kPortalOuterMax &&
-           w->getBlockId(tx, topR + 1, zMax) == OBSIDIAN) ++topR;
+    for (int32_t y = ty;
+         y - ty <= kPortalOuterMax && w->getBlockId(tx, y, zMin) == OBSIDIAN; ++y) {
+        topL = y + 1;
+    }
+    for (int32_t y = ty;
+         y - ty <= kPortalOuterMax && w->getBlockId(tx, y, zMax) == OBSIDIAN; ++y) {
+        topR = y + 1;
+    }
     int32_t yMax = std::min(topL, topR) - 1;
     int32_t countY = yMax - ty + 2;
     if (countY < kPortalOuterMin + 1 || countY > kPortalOuterMax) return false;
@@ -148,14 +175,14 @@ static bool tryPortalPlaneZ(world::World* w, int32_t tx, int32_t ty, int32_t tz,
         for (int32_t yy = ty + 1; yy < yMax; ++yy) {
             if (!isPortalInterior(w, tx, yy, zz)) continue;
             w->setBlock(tx, yy, zz, NETHER_PORTAL, 1);
-            filled.emplace_back(tx, yy, zz);
+            filled.emplace_back(tx, yy, zz, 1);
         }
     }
     return true;
 }
 
-/// @brief broadcasts the change of block to the players of the same world
-///        that puedan ver that chunk.
+/// @brief Broadcasts a block change to every player of the same world
+///        that can see that chunk.
 static void broadcastBlockUpdate(Player* player, world::World* world,
                                  int32_t x, int32_t y, int32_t z,
                                  uint8_t id, uint8_t data) {
@@ -175,6 +202,17 @@ static void broadcastBlockUpdate(Player* player, world::World* world,
     }
 }
 
+/// @brief Broadcasts every portal cell the detection filled, each one
+///        with its own axis metadata (0 = X plane, 1 = Z plane). Sending
+///        a fixed meta here made Z-plane portals render with the wrong
+///        orientation on the client.
+static void broadcastFilledCells(Player* player, world::World* world,
+                                 const std::vector<FilledCell>& filled) {
+    for (const auto& [fx, fy, fz, fmeta] : filled) {
+        broadcastBlockUpdate(player, world, fx, fy, fz, NETHER_PORTAL, fmeta);
+    }
+}
+
 void ItemFlintSteel::applyDurability(Player* player) {
     if (!player || !player->isSurvival()) return;
 
@@ -190,9 +228,9 @@ void ItemFlintSteel::applyDurability(Player* player) {
     } else {
         inv->setItemInHand(held);
     }
-    // so much clear() as setItemInHand() already disparan
-    // PlayerInventory::onSlotChange(), that sends the confirmación
-    // ContainerSetSlotPacket by its cuenta.
+    // Both clear() and setItemInHand() already fire
+    // PlayerInventory::onSlotChange(), which sends the
+    // ContainerSetSlotPacket confirmations on its own.
 }
 
 bool ItemFlintSteel::onActivate(world::World* world, Player* player,
@@ -210,21 +248,45 @@ bool ItemFlintSteel::onActivate(world::World* world, Player* player,
     // plane; every filled cell is broadcast so the client renders the
     // whole portal, not just the cell next to the click.
     if (targetId == OBSIDIAN) {
-        std::vector<std::tuple<int32_t, int32_t, int32_t>> filled;
+        std::vector<FilledCell> filled;
+
+        // 1) Infinity-faithful pass: measure the frame using the clicked
+        //    row as the base row. This lights the portal when the player
+        //    clicks the bottom row of the frame.
         if (tryPortalPlaneX(world, tx, ty, tz, filled) ||
             tryPortalPlaneZ(world, tx, ty, tz, filled)) {
-            for (auto& [fx, fy, fz] : filled) {
-                broadcastBlockUpdate(player, world, fx, fy, fz,
-                                     NETHER_PORTAL, 0);
-            }
+            broadcastFilledCells(player, world, filled);
             applyDurability(player);
             return true;
         }
+
+        // 2) Side-column clicks: on a mid-height frame block the row run
+        //    is a single block, so pass 1 can never measure a frame from
+        //    it. Walk DOWN this obsidian column to its lowest cell (the
+        //    real base row) and retry both planes — lighting then works
+        //    from any frame block, closer to vanilla. The plane helpers
+        //    validate fully before touching the world, so retrying is
+        //    side-effect free.
+        int32_t by = ty;
+        int steps = 0;
+        while (by > 0 && steps < kPortalOuterMax &&
+               world->getBlockId(tx, by - 1, tz) == OBSIDIAN) {
+            --by;
+            ++steps;
+        }
+        if (by != ty &&
+            (tryPortalPlaneX(world, tx, by, tz, filled) ||
+             tryPortalPlaneZ(world, tx, by, tz, filled))) {
+            broadcastFilledCells(player, world, filled);
+            applyDurability(player);
+            return true;
+        }
+
         // Incomplete frame: fall through and place fire, like PMMP does.
     }
 
-    // fire: only if the target is AIR and the target is a solid
-    // (not air ni líquidos).
+    // Fire: the placement cell must be air and the clicked target must
+    // be a non-air, non-liquid block.
     if (airId != AIR) return false;
     if (targetId == AIR) return false;
     if (targetId == FLOWING_WATER || targetId == WATER) return false;
