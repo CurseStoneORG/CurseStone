@@ -65,6 +65,12 @@ constexpr const char* kNbtEnch   = "ench";
 // always emits "lvl".
 constexpr const char* kNbtEnchLvl      = "lvl";
 constexpr const char* kNbtEnchLvlAlt   = "level";
+// Vanilla item-extra-data key. Java saves the client's {display:{Name}},
+// {ench}, etc. compound under "tag"; CurseStone persists the stack's raw
+// little-endian network NBT blob (ItemStack::nbt) the same way so a
+// custom-named item survives player/chest/furnace save + load round
+// trips. See itemStackToNbt()/itemStackFromNbt().
+constexpr const char* kNbtTag          = "tag";
 
 // Serialize `stack` into the compound `entry`, replacing any previous
 // id/Count/Damage/ench it held. A stack with no enchantments has its
