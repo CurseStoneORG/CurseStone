@@ -60,6 +60,7 @@
 
 #include <sys/stat.h>
 #include <sys/types.h>
+#include "utils/PlatformCompat.h"
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>

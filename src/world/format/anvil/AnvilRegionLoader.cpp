@@ -37,9 +37,7 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
-#include <unistd.h>     // ftruncate / fileno
-#include <sys/stat.h>
-#include <sys/types.h>
+#include "../../../utils/PlatformCompat.h"   // ftruncate / fileno
 #include <zlib.h>
 
 namespace cursestone::world::format::anvil {

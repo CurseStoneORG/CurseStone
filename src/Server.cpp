@@ -78,6 +78,7 @@
 #include <algorithm>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include "utils/PlatformCompat.h"
 #include <cctype>
 
 namespace cursestone {
