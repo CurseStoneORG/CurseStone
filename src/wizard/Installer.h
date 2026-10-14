@@ -23,7 +23,7 @@
 // Installer — first-run config seeding. As of the "no-setup" change,
 // the server NEVER asks questions on first boot: CurseStone.cpp only calls
 // shouldRun() + generateDefaultConfig(), which silently writes the
-// default cursestone.yml (same content as resources/cursestone.yml) and
+// default cursestone.yml and server.properties (built-in defaults) and
 // logs one informational line. The interactive runWizard() is kept for
 // manual/opt-in use (e.g. a future `--setup` flag) but is no longer on
 // any startup path. Mirrors pocketmine/wizard/Installer.php minus the

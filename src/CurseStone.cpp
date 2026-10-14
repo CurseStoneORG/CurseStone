@@ -342,12 +342,11 @@ int main(int argc, char* argv[]) {
 
     // First-run setup: NO interactive wizard anymore. The server is
     // fully playable straight out of the box — if there is no config
-    // yet, the default cursestone.yml is written SILENTLY (no stdin
+    // yet, the default config files are written SILENTLY (no stdin
     // prompts, which also broke headless/systemd/Android runs where
     // stdin is closed and fgets returned EOF for every question).
     // Operators customize settings by editing the generated files
-    // afterwards. Server::start() additionally seeds
-    // server.properties from resources/ on first boot.
+    // afterwards. Server::start() also seeds any missing config file.
     {
         wizard::Installer installer(dataPath);
         if (installer.shouldRun()) {

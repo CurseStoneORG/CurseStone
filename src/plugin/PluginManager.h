@@ -29,8 +29,8 @@
 // (o usan el mismo nombre de carpeta), TODAS quedan desactivadas y se
 // suelta un warning indicando que hay plugins duplicados.
 //
-// Además garantiza las carpetas de datos: <pluginsDir>/data_pl/ (raíz) y
-// <pluginsDir>/data_pl/<carpetaDelPlugin>/ por cada plugin cargado. Los
+// It also ensures the data folders: <dataPath>/data_pl/ (server root, outside
+// plugins/) and data_pl/<pluginFolder>/ for every loaded plugin. Los
 // plugins SOLO pueden tocar su carpeta a través de la API data.*.
 // Singleton: Server::start llama loadAll() y Server::runTickLoop llama
 // disableAll() tras salir del tick loop.
@@ -46,11 +46,16 @@ class PluginManager {
 public:
     static PluginManager& get();
 
-    // Escanea <pluginsDir>/*/plugin.yml (único manifiesto aceptado). Crea
-    // plugins/, plugins/data_pl/ y la carpeta de datos de cada plugin.
-    // Carga y habilita cada plugin (en orden alfabético). Los duplicados
-    // (mismo name o misma carpeta) se apagan todos con un warning.
-    void loadAll(const std::string& pluginsDir);
+    /**
+     * @brief Scans pluginsDir, then loads and enables every plugin.
+     *
+     * Creates pluginsDir and dataRoot, and moves a legacy
+     * <pluginsDir>/data_pl into dataRoot when dataRoot does not exist yet.
+     *
+     * @param pluginsDir  folder holding one subfolder per plugin.
+     * @param dataRoot    root of the per-plugin data folders (data_pl).
+     */
+    void loadAll(const std::string& pluginsDir, const std::string& dataRoot);
 
     // /plugins reload: SOLO hilo principal (toca Lua). Deshabilita todos
     // (onDisable + listeners + tareas), borra los comandos de los plugins
@@ -67,6 +72,7 @@ public:
 private:
     PluginManager() = default;
     std::string pluginsDir_;            // recordado por loadAll() para reloadAll()
+    std::string dataRoot_;              // data_pl root, remembered for reloadAll()
     std::vector<std::unique_ptr<LuaPlugin>> plugins_;
 
     // Sin onDisable (ya lo hizo disableAll()): quita los comandos de los

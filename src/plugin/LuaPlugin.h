@@ -28,7 +28,7 @@
 //     plugin.yml        <- manifiesto: api, name, author, version, main
 //     src/main.lua      <- script de entrada (lo que diga `main`)
 //     src/...           <- subcarpetas con más archivos Lua del plugin
-//     (datos propios)   <- en plugins/data_pl/<nombre>/ (NO en su carpeta)
+//     (datos propios)   <- en data_pl/<nombre>/ (NO en su carpeta)
 //
 //   El manifiesto plugin.yml se ve así:
 //
@@ -44,7 +44,7 @@
 //   sin manifiesto no carga como plugin.
 //
 // Datos y configs:
-//   Cada plugin recibe plugins/data_pl/<carpetaDelPlugin>/ para guardar
+//   Cada plugin recibe data_pl/<carpetaDelPlugin>/ para guardar
 //   lo que quiera (configs .yml/.json, datos .dat binarios, lo que sea),
 //   SOLO a través de la API `data.*` (que sanitiza rutas: sin ".." ni
 //   rutas absolutas). La carpeta se crea al cargar el plugin.
@@ -74,7 +74,7 @@ namespace cursestone::plugin {
 class LuaPlugin {
 public:
     // dir: carpeta del plugin. dataRoot: carpeta RAÍZ de datos de plugins
-    // (normalmente <plugins>/data_pl); dentro se crea <dataRoot>/<carpeta>.
+    // (normalmente <dataPath>/data_pl); dentro se crea <dataRoot>/<carpeta>.
     LuaPlugin(std::string dir, std::string dataRoot);
     ~LuaPlugin();                       // lua_close si hay state
 
@@ -123,7 +123,7 @@ public:
 private:
     std::string dir_;                   // carpeta del plugin
     std::string folderName_;            // nombre de la carpeta (clave en data_pl)
-    std::string dataRoot_;              // raíz de datos (plugins/data_pl)
+    std::string dataRoot_;              // raíz de datos (data_pl)
     std::string dataDir_;               // dataRoot_ + "/" + folderName_
     std::string name_;
     std::string version_ = "?";

@@ -40,7 +40,7 @@ On first run, a setup wizard creates the configuration and a fresh world. The se
 - [Plugin documentation](https://github.com/CurseStoneTeam/cursestone-docs) - API reference and a ready-to-run example
 
 ## Configuration
-CurseStone reads `server.properties` and `cursestone.yml` from the working directory. Both are created from `resources/` on first run.
+CurseStone reads `server.properties` and `cursestone.yml` from the working directory. Both are created with built-in defaults on first run. `server.properties` holds the basic settings; `cursestone.yml` holds the advanced ones. Plugin data is stored in `data_pl/` at the server root.
 
 The most common settings are `server-port`, `max-players`, `view-distance`, `gamemode`, `difficulty`, `world-format` and `autosave-ticks`. The auto-generated files document every option.
 
