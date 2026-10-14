@@ -28,7 +28,13 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
-#include <sys/types.h>   // for ssize_t on POSIX
+#if defined(_MSC_VER)
+#  include <BaseTsd.h>
+// MSVC does not provide ssize_t; map it to the signed pointer-sized SSIZE_T.
+typedef SSIZE_T ssize_t;
+#else
+#  include <sys/types.h>   // ssize_t on POSIX and MinGW
+#endif
 
 #ifdef __cplusplus
 extern "C" {
