@@ -34,6 +34,8 @@ if(MSVC)
     # included, so target_* commands here would fail with "target not found"
     # (and they referenced a stale software name).
     add_compile_definitions(WIN32_LEAN_AND_MEAN _WINSOCKAPI_=0)
+    # MSVC only declares M_PI and the other <cmath> constants when this is defined.
+    add_compile_definitions(_USE_MATH_DEFINES)
 else()
     # MinGW: enable posix threads, win32 mutexes are flaky
     add_compile_options(-mthreads)
