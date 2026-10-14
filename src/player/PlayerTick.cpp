@@ -6,7 +6,7 @@
 | \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
  \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
 
- * CurseStone | Open Source Server Software
+ * CurseStone | Open Source server Software
  *
  * Copyright (C) 2026 CurseStoneTeam
  *
@@ -52,31 +52,31 @@
 
 namespace cursestone {
 
-// Difunde la pose (agachado + sprint) a todos los clientes.
+// broadcasts the pose (sneaking + sprint) to all the clients.
 //
-// Genisys 0.15.0 no hace esto: Player::setSneaking() (Player.php:3017)
-// solo cambia una propiedad local del Player en el servidor y nunca
-// emite SetEntityDataPacket, asi que en un server Genisys el agachado
-// tampoco seria visible para los demas. El formato del paquete si
-// viene de ahi (SetEntityDataPacket + Binary::writeMetadata), asi que
-// lo que falta es la llamada.
+// Genisys 0.15.0 not does esto: player::setSneaking() (player.php:3017)
+// only changes a property local of the player in the server and never
+// emite SetEntityDataPacket, this way that in a server Genisys the sneaking
+// tampoco seria visible for the other. the format of the packet if
+// comes from there (SetEntityDataPacket + Binary::writeMetadata), this way that
+// what missing is the call.
 //
-// La pose va en Entity::DATA_FLAGS = 0 (byte), donde el bit 1 es
-// SNEAKING y el bit 3 es SPRINTING (Genisys Entity.php:87-105). Como
-// los dos bits viven en la misma propiedad hay que mandar SIEMPRE el
-// byte completo; mandar solo un bit pisaria el otro en el cliente que
-// lo recibe.
+// the pose va in Entity::DATA_FLAGS = 0 (byte), where the bit 1 is
+// SNEAKING and the bit 3 is SPRINTING (Genisys Entity.php:87-105). as
+// the two bits live in the same property there is that send always the
+// byte complete; send only a bit would overwrite the other in the client that
+// it receives.
 //
-// Genisys Entity::sendData() usa eid = 0 cuando el destino es la propia
-// entidad (sendData($this)); para el resto, el runtime id real.
+// Genisys Entity::sendData() uses eid = 0 when the target is the own
+// entity (sendData($this)); for the rest, the runtime id actual.
 void Player::broadcastPoseFlags() {
     if (!srv_) return;
     auto pk = std::make_shared<network::protocol::SetEntityDataPacket>();
     pk->eid = runtimeId();
     pk->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_));
 
-    // Nos lo mandamos a nosotros con eid = 0, igual que Genisys, para
-    // que el cliente own no se quede con una pose contradicha.
+    // Nos it mandamos to nosotros with eid = 0, just like Genisys, for
+    // that the client own not is quede with a pose contradicha.
     {
         auto self = std::make_shared<network::protocol::SetEntityDataPacket>();
         self->eid = 0;
@@ -98,7 +98,7 @@ void Player::setSneaking(bool v) {
     broadcastPoseFlags();
 }
 
-// Helper: parse a "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" UUID string into
+// Helper: parse to "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" UUID string into
 // 16 raw bytes. Empty input yields zeros. Used by AddPlayerPacket / PlayerListPacket.
 // (Moved above doFirstSpawn; see earlier definition.)
 
@@ -108,14 +108,14 @@ void Player::setSneaking(bool v) {
 void Player::handleMovePlayer(double x, double y, double z, float yaw, float pitch,
                               bool mp_onGround) {
     if (!spawned_.load(std::memory_order_relaxed)) return;
-    if (isDead()) return; // congelado hasta ACTION_SPAWN_SAME_DIMENSION (ver Player::respawn)
+    if (isDead()) return; // congelado until ACTION_SPAWN_SAME_DIMENSION (ver player::respawn)
 
     // Reject NaN / inf / clearly bogus coordinates.
     if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) return;
     if (!std::isfinite(yaw) || !std::isfinite(pitch)) return;
-    // Reject obviously out-of-world Y values.
+    // Reject obviously out-of-world and values.
     if (y < -64.0 || y > 320.0) return;
-    // The wire Y is the EYE altitude (vanilla); pos_ is the FEET. Convert
+    // The wire and is the EYE altitude (vanilla); pos_ is the FEET. Convert
     // once and use the feet value everywhere below so the speed check, the
     // stored position and the fall-distance delta all agree.
     double ny = y - kEyeHeight;
@@ -135,20 +135,20 @@ void Player::handleMovePlayer(double x, double y, double z, float yaw, float pit
 
     // Last client-reported ground flag (used by the fall-damage check).
     on_ground_fall_check_ = mp_onGround;
-    // PlayerMoveEvent — se dispara en CADA movimiento aceptado (alta
-    // frecuencia: hasta ~20/s por jugador). No throttleamos el propio
-    // chequeo de cancelacion porque EventManager::call() ya es
-    // practicamente gratis cuando nadie escucha ese tipo de evento
-    // (solo un lookup de mapa + snapshot vacio); lo que si evitamos es
-    // pagar el costo de "revertir" salvo que alguien cancele de
-    // verdad. Un listener puede usar esto para, por ejemplo, impedir
-    // que un jugador entre a una zona protegida.
+    // PlayerMoveEvent — is dispara in each movement accepted (alta
+    // frecuencia: until ~20/s per player). not throttleamos the own
+    // chequeo of cancelacion because EventManager::call() already is
+    // practicamente gratis when nadie escucha that tipo of evento
+    // (only a lookup of mapa + snapshot empty); what if evitamos is
+    // pagar the costo of "revertir" salvo that someone cancele of
+    // truth. a listener can use esto for, for example, impedir
+    // that a player between to a zona protegida.
     {
         auto ev = event::EventManager::get().fire<event::player::PlayerMoveEvent>(
             this, pos_.x, pos_.y, pos_.z, x, ny, z);
         if (ev.isCancelled()) {
-            // Revertir: reenviar la posicion ANTERIOR al cliente,
-            // igual que la rama de anti-cheat de mas arriba.
+            // Revertir: forward the position ANTERIOR to the client,
+            // just like the rama of anti-cheat of but above.
             auto mp = std::make_shared<network::protocol::MovePlayerPacket>();
             mp->eid = runtimeId();
             mp->x = (float)pos_.x; mp->y = (float)(pos_.y + kEyeHeight); mp->z = (float)pos_.z;
@@ -176,22 +176,22 @@ void Player::handleMovePlayer(double x, double y, double z, float yaw, float pit
     // Broadcast MoveEntityPacket to other nearby players (so they see this
     // player move). We don't filter by distance for the MVP.
     //
-    // BUG FIX (root cause de "el segundo jugador se cuelga/crashea al
-    // conectarse"): el fix anterior en doFirstSpawn() (buscar "root cause
-    // of the multiplayer crash/kick") solo anuncia entidades EN el momento
-    // del spawn de cada jugador — pero deja una ventana abierta: mientras
-    // un jugador está en su fase de streaming de chunks (awaiting_first_
-    // spawn_ == true, ANTES de que su propio doFirstSpawn() corra), este
-    // bloque seguía mandándole MoveEntityPacket de CUALQUIER otro jugador
-    // que se moviera durante esa ventana, sin chequear `other->spawned()`.
-    // El cliente de ese jugador recién conectado recibe así un paquete que
-    // referencia un eid del que nunca oyó hablar (todavía no le llegó el
-    // AddPlayerPacket correspondiente, que recién se manda dentro de SU
-    // doFirstSpawn()) — el mismo mecanismo de "entidad desconocida" que ya
-    // se documentó como causa de crash del cliente MCPE 0.15.x en el fix
-    // de arriba, solo que en un punto distinto del código. Con un segundo
-    // jugador ya moviéndose activamente en el mundo (el caso normal), esto
-    // se dispara casi con certeza durante la ventana de streaming del que
+    // bug FIX (root cause of "the second player is cuelga/crashea to the
+    // conectarse"): the fix anterior in doFirstSpawn() (look for "root cause
+    // of the multiplayer crash/kick") only anuncia entities in the momento
+    // of the spawn of each player — but deja a window abierta: while
+    // a player is in its fase of streaming of chunks (awaiting_first_
+    // spawn_ == true, before that its own doFirstSpawn() corra), this
+    // block seguía mandándole MoveEntityPacket of any other player
+    // that is moviera during that window, without chequear `other->spawned()`.
+    // the client of that player recién connected receives this way a packet that
+    // reference a eid of the that never oyó hablar (not yet it arrived the
+    // AddPlayerPacket correspondiente, that recién is takes precedence inside of its
+    // doFirstSpawn()) — the same mechanism of "entity unknown" that already
+    // is documentó as cause of crash of the client MCPE 0.15.x in the fix
+    // of above, only that in a point different of the code. with a second
+    // player already moviéndose activamente in the world (the case normal), esto
+    // is dispara almost with certeza during the window of streaming of the that
     // recién entra.
     if (srv_) {
         auto me = std::make_shared<network::protocol::MoveEntityPacket>();
@@ -201,6 +201,7 @@ void Player::handleMovePlayer(double x, double y, double z, float yaw, float pit
         for (auto& other : srv_->playersSnapshot()) {
             if (other.get() == this) continue;
             if (!other->spawned()) continue;
+            if (other->getWorld() != getWorld()) continue;   // same world
             other->sendPacket(me);
         }
     }
@@ -230,9 +231,9 @@ void Player::handleChat(const std::string& message) {
     }
 
     // Broadcast: <username> message — keep color codes intact.
-    // PlayerChatEvent se dispara con el mensaje ORIGINAL (con códigos
-    // de color) para que un listener pueda reescribirlo antes del
-    // broadcast; cancelar el evento evita el broadcast por completo.
+    // PlayerChatEvent is dispara with the message ORIGINAL (with códigos
+    // of color) so that a listener can reescribirlo before of the
+    // broadcast; cancelar the evento prevents the broadcast completely.
     if (srv_) {
         auto ev = event::EventManager::get().fire<event::player::PlayerChatEvent>(
             this, message);
@@ -245,30 +246,30 @@ void Player::handleChat(const std::string& message) {
 void Player::handlePlayerAction(int action, int x, int y, int z, int /*face*/) {
     // PMMP: ACTION_START_BREAK=0, ACTION_ABORT_BREAK=1, ACTION_STOP_BREAK=2.
     //
-    // BUG ARREGLADO: "que se vea la animacion cuando el bloque se va
+    // bug fixed: "that is vea the animation when the block is va
     // rompiendo".
     //
-    // El crack de rotura solo se lo renderiza a quien INICIO el roto:
-    // cada cliente dibuja la animacion localmente cuando su propia
-    // EntityAction le llega desde el cliente. Los demas no se enteraban
-    // de nada hasta que el bloque desaparecia de golpe.
+    // the crack of breakage only it renders to who start the broken:
+    // each client draws the animation localmente when its own
+    // EntityAction it arrives from the client. the other not is enteraban
+    // of nothing until the block desaparecia of hit.
     //
-    // PlayerActionPacket es BIDIRECCIONAL: lleva un campo `eid` que en
-    // la direccion servidor->cliente identifica a QUE jugador esta
-    // ejecutando la accion. Reenviandole el paquete al resto de
-    // jugadores con el eid del que rompe, cada cliente remoto sabe que
-    // entidad empieza a romper en (x,y,z) y dibuja el crack.
+    // PlayerActionPacket is BIDIRECCIONAL: carries a field `eid` that in
+    // the direccion server->client identifica to that player this
+    // performing the action. forwarding it to the packet to the rest of
+    // players with the eid of the that breaks, each client remoto sabe that
+    // entity starts to break in (x,and,z) and draws the crack.
     //
-    // Genisys 0.15 no hace esto (su Player.php:2819 solo usa
-    // ACTION_START_BREAK para el fix de fuego en creativo y para firing
-    // PlayerInteractEvent), asi que aqui va un paso por delante de la
-    // referencia. El paquete en si SI es el de Genisys, byte a byte.
+    // Genisys 0.15 not does esto (its player.php:2819 only uses
+    // ACTION_START_BREAK for the fix of fire in creativo and for firing
+    // PlayerInteractEvent), this way that aqui va a paso by in front of the
+    // reference. the packet in if if is the of Genisys, byte to byte.
     //
-    // Los tres estados se re-difunden: START empieza el crack, ABORT
-    // (el jugador dejo el boton) y STOP (termino el anim) lo quitan.
-    // Nota: al romperse de verdad el bloque, el UpdateBlockPacket de
-    // handleBlockBreak ya lo borra, asi que STOP es sobre todo para el
-    // caso de cancelar.
+    // the tres states is re-difunden: START starts the crack, ABORT
+    // (the player released the button) and STOP (finished the animation) it remove.
+    // Nota: to the romperse of truth the block, the UpdateBlockPacket of
+    // handleBlockBreak already it removes, this way that STOP is mainly for the
+    // case of cancelar.
     if (action == network::protocol::PlayerActionPacket::ACTION_START_BREAK ||
         action == network::protocol::PlayerActionPacket::ACTION_ABORT_BREAK ||
         action == network::protocol::PlayerActionPacket::ACTION_STOP_BREAK) {
@@ -278,9 +279,9 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int /*face*/) {
                 std::to_string(y) + "," + std::to_string(z));
         }
 
-        // Chequeo de distancia de Genisys
-        // (`$pos->distanceSquared($this) > 10000` -> ignora): evita que
-        // un cliente modificado mande cracks en bloques a 100+ bloques.
+        // Chequeo of distancia of Genisys
+        // (`$pos->distanceSquared($this) > 10000` -> ignora): prevents that
+        // a client modificado mande cracks in blocks to 100+ blocks.
         double dx = pos_.x - (x + 0.5);
         double dy = pos_.y - (y + 0.5);
         double dz = pos_.z - (z + 0.5);
@@ -312,12 +313,12 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int /*face*/) {
     // START_SPRINT=9 / STOP_SPRINT=10 — drives the higher exhaustion
     // rate in tickHungerAndDamage().
     //
-    // BUG ARREGLADO (era invisible para los demas): sprint y agachado
-    // viven en la MISMA propiedad de metadata de la entidad
+    // bug fixed (era invisible for the other): sprint and sneaking
+    // live in the same property of metadata of the entity
     // (Entity::DATA_FLAGS = 0: bit 3 = SPRINTING, bit 1 = SNEAKING).
-    // Antes solo se guardaba el bool local y jamas se mandaba nada, asi
-    // que el otro cliente se quedaba con la pose previa para siempre.
-    // Ahora cada cambio reenvia el byte de flags completo a todos.
+    // before only is guardaba the bool local and jamas is sent nothing, this way
+    // that the other client is quedaba with the pose previa forever.
+    // now each change forwards the byte of flags complete to all.
     if (action == network::protocol::PlayerActionPacket::ACTION_START_SPRINT) {
         if (!sprinting_) { sprinting_ = true;  broadcastPoseFlags(); }
     } else if (action == network::protocol::PlayerActionPacket::ACTION_STOP_SPRINT) {
@@ -327,9 +328,9 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int /*face*/) {
     // PlayerActionPacket.php: ACTION_START_SNEAK = 11,
     // ACTION_STOP_SNEAK = 12).
     //
-    // setSneaking() ademas actualiza el estado que usa la regla
-    // vanilla de handleBlockPlace(): agachado = no se puede interactuar
-    // con tiles ni bloques, solo colocar bloques y atacar.
+    // setSneaking() also updates the state that uses the regla
+    // vanilla of handleBlockPlace(): sneaking = not is can interactuar
+    // with tiles ni blocks, only place blocks and atacar.
     if (action == network::protocol::PlayerActionPacket::ACTION_START_SNEAK) {
         setSneaking(true);
     } else if (action == network::protocol::PlayerActionPacket::ACTION_STOP_SNEAK) {
@@ -338,12 +339,12 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int /*face*/) {
     if (action == network::protocol::PlayerActionPacket::ACTION_SPAWN_SAME_DIMENSION) {
         respawn();
     }
-    // Mesa de crafteo (bloque WORKBENCH=58): el 0.15.x manda
-    // ACTION_SET_SLOTS (?6) al abrir la UI de la mesa. No hay estado
-    // server-side que mantener (las 336 recetas ya se mandaron en
-    // doFirstSpawn), pero lo logueamos para diagnóstico.
+    // Mesa of crafting (block WORKBENCH=58): the 0.15.x takes precedence
+    // ACTION_SET_SLOTS (?6) when opening the UI of the mesa. not there is state
+    // server-side that keep (the 336 recetas already is mandaron in
+    // doFirstSpawn), but it logueamos for diagnostic.
     if (srv_ && srv_->advancedLog() && x != 0 && y != 0 && z != 0) {
-        auto* lvl = srv_->getDefaultWorld();
+        auto* lvl = getWorld();
         if (lvl && lvl->getBlockId(x, y, z) == block::WORKBENCH) {
             utils::MainLogger::get().info("[CRAFT] " + cfg_.username +
                 " used crafting table at " +
@@ -361,33 +362,33 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int /*face*/) {
 // only the attack path is wired here).
 //
 // Scope, deliberately minimal:
-//   - Only Player targets (srv_->playersSnapshot()) — there are no
-//     AI mobs to hit yet (README: "No mob AI (entities exist as data
-//     structs only, no pathfinding)").
-//   - Flat BASE_ATTACK_DAMAGE for every hit — no per-item damage
+//   - Only player targets (srv_->playersSnapshot()) — there are not
+//     AI mobs to hit yet (README: "not mob AI (entities exist as data
+//     structs only, not pathfinding)").
+//   - Flat BASE_ATTACK_DAMAGE for every hit — not per-item damage
 //     table (swords/axes) exists in CurseStone yet.
-//   - No knockback, no invulnerability-ticks beyond the plain
-//     cooldown below, no reach/distance check. This is a foundation
+//   - not knockback, not invulnerability-ticks beyond the plain
+//     cooldown below, not reach/distance check. This is to foundation
 //     for EntityDamageByEntityEvent/PlayerDeathEvent to have
-//     something real to fire from, not a feature-complete combat
+//     something actual to fire from, not to feature-complete combat
 //     system.
 // ============================================================
 void Player::handleInteract(int action, int64_t targetEid) {
     if (!spawned_.load(std::memory_order_relaxed)) return;
     if (action != network::protocol::InteractPacket::ACTION_LEFT_CLICK) return;
     if (!srv_) return;
-    if (isDead()) return; // un jugador muerto no puede golpear
+    if (isDead()) return; // a player dead not can golpear
 
-    // Cooldown server-side anti-spam (no es "attack cooldown" de
-    // gameplay como en versiones modernas — ver comentario junto a
-    // ATTACK_COOLDOWN_MS en Player.h).
+    // Cooldown server-side anti-spam (not is "attack cooldown" of
+    // gameplay as in versions modernas — ver comment next to to
+    // ATTACK_COOLDOWN_MS in player.h).
     uint64_t now_ms = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
     if (now_ms - last_attack_ms_ < ATTACK_COOLDOWN_MS) return;
 
-    // Resolver el eid objetivo contra los jugadores conectados. No
-    // hay mobs con runtime id todavia, asi que este es el unico
-    // universo de objetivos posible.
+    // Resolver the eid objetivo contra the players connected. not
+    // there is mobs with runtime id still, this way that this is the unico
+    // universo of objetivos possible.
     std::shared_ptr<Player> target;
     for (auto& other : srv_->playersSnapshot()) {
         if (!other || other.get() == this) continue;
@@ -398,20 +399,20 @@ void Player::handleInteract(int action, int64_t targetEid) {
     last_attack_ms_ = now_ms;
 
     // damageByEntity() dispara EntityDamageByEntityEvent internamente
-    // (ver Living::damageByEntity) — un listener puede cancelarlo o
-    // reescribir la cantidad antes de que se aplique a health().
+    // (ver Living::damageByEntity) — a listener can cancelarlo or
+    // reescribir the amount before that is aplique to health().
     bool died = target->damageByEntity(BASE_ATTACK_DAMAGE, this);
 
-    // Sincronizar salud + animacion de golpe al objetivo y a los
-    // demas jugadores que lo esten trackeando. No filtramos por
-    // distancia/chunk aqui por simplicidad (mismo criterio MVP que
-    // el resto de los broadcasts de Player.cpp).
+    // Sincronizar salud + animation of hit to the objetivo and to the
+    // other players that it are tracking. not filtramos by
+    // distancia/chunk aqui by simplicidad (same criterio MVP that
+    // the rest of the broadcasts of player.cpp).
     //
-    // BUG FIX (mismo mecanismo que el de MoveEntityPacket en
-    // handleMovePlayer): hurtEv->eid referencia la entidad del que
-    // recibió el golpe — mandarlo a un jugador que todavía está en su
-    // ventana de streaming de chunks (sin spawned() todavía) le llega
-    // como un paquete de una entidad que su cliente nunca conoció.
+    // bug FIX (same mechanism that the of MoveEntityPacket in
+    // handleMovePlayer): hurtEv->eid reference the entity of the that
+    // recibió the hit — mandarlo to a player that still is in its
+    // window of streaming of chunks (without spawned() still) it arrives
+    // as a packet of a entity that its client never knew.
     auto hurtEv = std::make_shared<network::protocol::EntityEventPacket>();
     hurtEv->eid = target->runtimeId();
     hurtEv->event = died ? network::protocol::EntityEventPacket::DEATH_ANIMATION
@@ -427,30 +428,30 @@ void Player::handleInteract(int action, int64_t targetEid) {
 
     // ---- Knockback (Genisys 0.15.0 Living::knockBack) ----
     //
-    // Sin esto, un golpe solo baja la vida: el cliente que recibe el
-    // golpe se queda clavado en el sitio y el resto de jugadores ni se
-    // enteran. El empujon se calcula sobre la VICTIMA con
-    // (deltaX, deltaZ) = (victima - atacante):
+    // without this, a hit only baja the health: the client that receives the
+    // hit is remains stuck in the place and the rest of players ni is
+    // enteran. the knockback is calcula about the victim with
+    // (deltaX, deltaZ) = (victim - atacante):
     //
     //     $f = sqrt($x*$x + $z*$z);      if($f <= 0) return;
     //     $f = 1 / $f;
-    //     $motion->x /= 2;  $motion->y /= 2;  $motion->z /= 2;   // amortigua
+    //     $motion->x /= 2;  $motion->and /= 2;  $motion->z /= 2;   // amortigua
     //     $motion->x += $x * $f * $base;
-    //     $motion->y += $base;
+    //     $motion->and += $base;
     //     $motion->z += $z * $f * $base;
-    //     if($motion->y > $base) $motion->y = $base;            // tope vertical
+    //     if($motion->and > $base) $motion->and = $base;            // tope vertical
     //     $this->setMotion($motion);
     //
-    // $base = 0.4 en Genisys Living::attack(), mas 0.15 por nivel de
-    // el encantamiento Knockback (Player.php:3144). No hay sistema de
-    // encantamientos en este proyecto, asi que va 0.4 fijo, que es
-    // exactamente el valor por defecto de Genisys.
+    // $base = 0.4 in Genisys Living::attack(), but 0.15 by nivel of
+    // the enchantment Knockback (player.php:3144). not there is sistema of
+    // enchantments in this proyecto, this way that va 0.4 fixed, that is
+    // exactly the valor by default of Genisys.
     //
-    // El motion viaja en SetEntityMotionPacket (Genisys Level::tick()
-    // -> motionToSend -> addChunkPacket). Estaba sin implementar (stub),
-    // asi que sin esto el empujon no podia existir.
-    // Genisys Living::attack() llama a knockBack() SIEMPRE, incluso en el
-    // golpe mortal (la animacion de muerte va despues). Se replica.
+    // the motion travels in SetEntityMotionPacket (Genisys Level::tick()
+    // -> motionToSend -> addChunkPacket). Estaba without implementar (stub),
+    // this way that without this the knockback not podia exist.
+    // Genisys Living::attack() flame to knockBack() always, even in the
+    // hit mortal (the animation of death va despues). is replica.
     {
         const double dx = target->position().x - pos_.x;
         const double dz = target->position().z - pos_.z;
@@ -458,19 +459,19 @@ void Player::handleInteract(int action, int64_t targetEid) {
         if (f > 1e-6) {
             f = 1.0 / f;
             constexpr double kBase = 0.4;   // Genisys Living::knockBack default
-            // motion actual de la victima, mitigado a la mitad.
+            // motion current of the victim, reduced to the half.
             double mx = target->motion().x * 0.5;
             double my = target->motion().y * 0.5;
             double mz = target->motion().z * 0.5;
             mx += dx * f * kBase;
             my += kBase;
             mz += dz * f * kBase;
-            if (my > kBase) my = kBase;     // tope vertical de Genisys
+            if (my > kBase) my = kBase;     // tope vertical of Genisys
 
             target->setMotion(math::Vector3{mx, my, mz});
 
-            // SetEntityMotionPacket a todos los que ven a la victima
-            // (mismo filtro de visibilidad que el resto de difusiones).
+            // SetEntityMotionPacket to all those that ven to the victim
+            // (same filtro of visibilidad that the rest of difusiones).
             auto motion = std::make_shared<network::protocol::SetEntityMotionPacket>();
             motion->entities.push_back({target->runtimeId(),
                                         (float)mx, (float)my, (float)mz});
@@ -483,11 +484,11 @@ void Player::handleInteract(int action, int64_t targetEid) {
                 if (!other->canSeeBlock(tcx, tcz)) continue;
                 other->sendPacket(motion);
             }
-            // Se incluye a la propia victima en el bucle a proposito:
-            // su cliente NO simula un golpe recibido (no es una accion
-            // que el jugador haya ejecutado localmente), asi que sin
-            // este SetEntityMotionPacket se quedaria clavada en el sitio
-            // mientras los demas si la ven moverse.
+            // is includes to the own victim in the bucle intentionally:
+            // its client not simula a hit received (not is a action
+            // that the player haya ejecutado localmente), this way that without
+            // this SetEntityMotionPacket is quedaria clavada in the place
+            // while the other if the ven moverse.
         }
     }
 
@@ -502,9 +503,9 @@ void Player::handleInteract(int action, int64_t targetEid) {
 
 // ============================================================
 // Entity::getDirectionVector() (Genisys 0.15):
-//     $y  = -sin(deg2rad($this->pitch));
+//     $and  = -without(deg2rad($this->pitch));
 //     $xz = cos(deg2rad($this->pitch));
-//     $x  = -$xz * sin(deg2rad($this->yaw));
+//     $x  = -$xz * without(deg2rad($this->yaw));
 //     $z  =  $xz * cos(deg2rad($this->yaw));
 //     return ...->normalize();
 // ============================================================
@@ -530,17 +531,17 @@ void Player::onUpdate(uint64_t current_tick) {
     // every tick, regardless of whether the player moved. The `moved`
     // check only controls cleanup of out-of-view chunks.
     //
-    // BUG FIX: also run this while awaiting_first_spawn_ (i.e. BEFORE
-    // spawned_ becomes true), not just after. Chunks need to stream
+    // bug FIX: also run this while awaiting_first_spawn_ (i.e. BEFORE
+    // spawned_ becomes true), not just after. chunks need to stream
     // during that window so doFirstSpawn() can be gated on
     // FIRST_SPAWN_CHUNK_THRESHOLD actually having been sent — see the
     // comment in sendChunksAroundSpawn().
     bool awaiting_spawn = awaiting_first_spawn_.load(std::memory_order_relaxed);
-    if ((spawned_.load(std::memory_order_relaxed) || awaiting_spawn) && srv_ && srv_->getDefaultWorld()) {
+    if ((spawned_.load(std::memory_order_relaxed) || awaiting_spawn) && getWorld()) {
         int cx = (int)pos_.x >> 4;
         int cz = (int)pos_.z >> 4;
 
-        // BUG FIX: Only detect "moved" when the player crosses a CHUNK
+        // bug FIX: Only detect "moved" when the player crosses to CHUNK
         // BOUNDARY (cx/cz changes), not every tick. The old code compared
         // pos with chunk_queue_.front() which triggered "moved=true" on
         // every single tick because the player's exact position floats.
@@ -563,47 +564,47 @@ void Player::onUpdate(uint64_t current_tick) {
         // Compute spiral order for current position (cheap — just coords).
         int vd = cfg_.view_distance;
         auto order = buildChunkSpiral(vd);
-        auto& chunks = srv_->getDefaultWorld()->chunks();
+        auto& chunks = getWorld()->chunks();
         std::unordered_set<int64_t> still_in_view;
 
         // Send up to MAX_CHUNKS_PER_TICK unsent chunks. This runs EVERY
         // tick, not just when moved — so chunks from sendChunksAroundSpawn()
         // get streamed even though the player hasn't moved yet.
         //
-        // BUG FIX (reporte de usuario: "el mundo/terreno no se renderiza y
-        // está vacío"): el throttle se había bajado a 1 chunk/tick para
-        // arreglar un flood de red, pero nadie ajustó esto en conjunto con
-        // view_distance=8 (Player.h) — eso son (2*8+1)^2 = 289 chunks en el
-        // área visible. A 1 chunk/tick (50ms) eso son ~14.4 SEGUNDOS para
-        // terminar de llenar el área completa. El umbral de primer spawn
-        // (FIRST_SPAWN_CHUNK_THRESHOLD=9, un 3x3) sí se cumple rápido y
-        // dispara doFirstSpawn() casi al instante — el jugador entra a un
-        // mundo donde solo hay un cuadrado de 48x48 bloques cargado
-        // alrededor suyo, y el resto del horizonte (hasta donde el cliente
-        // MCPE intenta renderizar) se ve vacío/negro durante los
-        // siguientes ~14 segundos mientras el resto llega de a 1 por tick.
-        // Esto coincide exactamente con lo reportado: no es que el chunk
-        // nunca llegue, es que tarda demasiado en llegar comparado con el
-        // área que el cliente ya intenta mostrar desde el primer instante.
+        // bug FIX (report of user: "the world/terrain not is renders and
+        // is empty"): the throttle is había bajado to 1 chunk/tick for
+        // fix a flood of red, but nadie ajustó esto together with
+        // view_distance=8 (player.h) — that are (2*8+1)^2 = 289 chunks in the
+        // area visible. to 1 chunk/tick (50ms) that are ~14.4 SEGUNDOS for
+        // terminar of llenar the area complete. the umbral of primer spawn
+        // (FIRST_SPAWN_CHUNK_THRESHOLD=9, a 3x3) yes is cumple fast and
+        // dispara doFirstSpawn() almost to the instante — the player entra to a
+        // world where only there is a cuadrado of 48x48 blocks loaded
+        // around their, and the rest of the horizon (until where the client
+        // MCPE intenta render) is ve empty/negro during the
+        // siguientes ~14 segundos while the rest arrives of to 1 per tick.
+        // Esto matches exactly with it reported: not is that the chunk
+        // never arrives, is that takes too long in arrive comparado with the
+        // area that the client already intenta mostrar from the primer instante.
         //
-        // Fix: subir el throttle a un punto medio más razonable. El propio
-        // comentario histórico de este bloque decía "usamos 2 como
-        // balance" pero el valor real había quedado en 1 — inconsistencia
-        // que sugiere que se bajó de más al perseguir el bug del flood.
-        // 3 chunks/tick sigue siendo conservador (30-45 fragmentos RakNet
-        // por tick de 50ms, dentro de lo que el cliente MCPE 0.15 tolera
-        // según el propio análisis de flood de más arriba, que marcó el
-        // límite real en 60+ fragmentos en 3ms — un caso muy distinto,
-        // ráfaga sin throttle ninguno) y reduce el tiempo de llenado total
-        // de ~14.4s a ~4.8s, con margen de sobra para no repetir el
-        // desconecte por timeout.
+        // Fix: subir the throttle to a point medio more razonable. the own
+        // comment histórico of this block decía "usamos 2 as
+        // balance" but the valor actual había quedado in 1 — inconsistencia
+        // that sugiere that is bajó of more to the perseguir the bug of the flood.
+        // 3 chunks/tick sigue being conservative (30-45 fragmentos RakNet
+        // per tick of 50ms, inside of what the client MCPE 0.15 tolera
+        // according to the own análisis of flood of more above, that marcó the
+        // limit actual in 60+ fragmentos in 3ms — a case very different,
+        // burst without throttle none) and reduce the time of filling total
+        // of ~14.4s to ~4.8s, with margin of plenty for not repeat the
+        // desconecte by timeout.
         constexpr int MAX_CHUNKS_PER_TICK = 3;
         int chunks_sent_this_tick = 0;
 
-        // FIX (chunk generation was the real bottleneck, not just the
+        // FIX (chunk generation was the actual bottleneck, not just the
         // send throttle above): previously this called the BLOCKING
         // chunks.getChunk(chX, chZ), which ran the generator synchronously
-        // on the main tick thread — so even discovering that a distant
+        // on the main tick thread — so even discovering that to distant
         // chunk needed generating stalled every player on the server for
         // that tick, and combined with MAX_CHUNKS_PER_TICK=1 it made the
         // world only ever seem to "fill in" wherever the player currently
@@ -648,12 +649,12 @@ void Player::onUpdate(uint64_t current_tick) {
             chunks_sent_this_tick++;
         }
 
-        // BUG FIX: once enough chunks have actually reached the client,
+        // bug FIX: once enough chunks have actually reached the client,
         // fire the deferred doFirstSpawn() — this is the
         // FIRST_SPAWN_CHUNK_THRESHOLD gate described in
         // sendChunksAroundSpawn(). Checked every tick while awaiting;
         // doFirstSpawn() itself is idempotent (spawned_.exchange(true)
-        // guard) so there's no risk of double-firing.
+        // guard) so there's not risk of double-firing.
         if (awaiting_spawn) {
             size_t sent_count;
             { std::lock_guard<std::mutex> lk(chunks_mtx_); sent_count = used_chunks_.size(); }
@@ -664,7 +665,7 @@ void Player::onUpdate(uint64_t current_tick) {
         }
 
         // Only clean up out-of-view chunks when the player actually
-        // crossed a chunk boundary.
+        // crossed to chunk boundary.
         if (moved) {
             {
                 std::lock_guard<std::mutex> lk(chunks_mtx_);
@@ -688,31 +689,35 @@ void Player::onUpdate(uint64_t current_tick) {
     tickHungerAndDamage(current_tick);
     moved_this_tick_ = false;   // consumed for this tick
 
+    // 2.2. portal of the Nether: with the player already spawned is checks
+    // if is inside of a block of portal and touches travel of dimension.
+    checkPortal();
+
     // 2.5. Pickup nearby dropped items — vanilla MCPE 0.15.10 volume.
     //
     // Bedrock collects an item as soon as the item's AABB overlaps the
     // player's AABB grown by ONE block on every axis:
     //
-    //   player  [x-0.3, y,     z-0.3] .. [x+0.3, y+1.8, z+0.3]
-    //   grow 1  [x-1.3, y-1.0, z-1.3] .. [x+1.3, y+2.8, z+1.3]
+    //   player  [x-0.3, and,     z-0.3] .. [x+0.3, and+1.8, z+0.3]
+    //   grow 1  [x-1.3, and-1.0, z-1.3] .. [x+1.3, and+2.8, z+1.3]
     //   item    [ix-0.125, iy, iz-0.125] .. [ix+0.125, iy+0.25, iz+0.125]
     //
     // The geometry lives in one place — world::itemWithinPickupVolume()
     // in World.h — because World::tickDroppedItems()'s attraction gate
     // uses the very same test; when the two disagreed an item could sit
-    // in a dead ring where it was neither attracted nor collected.
+    // in to dead ring where it was neither attracted nor collected.
     //
     // WHY THIS CHANGED (the "only pickable inside the hole" report):
     // the volume used to be Genisys' checkNearEntities() one, which grows
-    // the box by 0.5 — only 0.8 sideways and 0.5 below the feet. A block
+    // the box by 0.5 — only 0.8 sideways and 0.5 below the feet. to block
     // broken on the surface drops its item one block BELOW the feet of
     // the player standing next to the hole, so it sat just outside that
-    // band and could not be collected; the player had to dig a second hole
-    // and step down into it. Vanilla reaches a full block below the feet
+    // band and could not be collected; the player had to dig to second hole
+    // and step down into it. Vanilla reaches to full block below the feet
     // and 1.3 sideways, which collects items anywhere you can stand next
     // to them (or drop them at your feet).
-    if (spawned_.load(std::memory_order_relaxed) && srv_ && srv_->getDefaultWorld() && inv_) {
-        auto* lvl = srv_->getDefaultWorld();
+    if (spawned_.load(std::memory_order_relaxed) && getWorld() && inv_) {
+        auto* lvl = getWorld();
         bool any_picked_up = false;
 
         // The scan is re-run until it stops absorbing. Genisys runs
@@ -720,10 +725,10 @@ void Player::onUpdate(uint64_t current_tick) {
         // inventory (merging into an existing stack, filling an empty slot),
         // so the canAddItem()/addItem() verdict for the NEXT entity in the
         // pile is only valid against the state the previous one left behind.
-        // One pass per entity is what made a pile hand you a single stack
+        // One pass per entity is what made to pile hand you to single stack
         // and leave the rest lying there; this drains the whole pile in the
-        // tick it comes into reach. Bounded so a full inventory, which fails
-        // canAddItem() and reports no progress, cannot spin.
+        // tick it comes into reach. Bounded so to full inventory, which fails
+        // canAddItem() and reports not progress, cannot spin.
         for (int pass = 0; pass < 32; ++pass) {
         auto dropped = lvl->droppedItems();
         bool picked_this_pass = false;
@@ -777,13 +782,13 @@ void Player::onUpdate(uint64_t current_tick) {
                 // Full pickup — send TakeItemEntityPacket to viewers
                 // + RemoveEntityPacket to picker.
                 //
-                // BUG FIX (mismo mecanismo que MoveEntityPacket/
-                // EntityEventPacket más arriba): entityId referencia AL
-                // JUGADOR que recogió el item — un viewer que todavía
-                // esté en su ventana de streaming de chunks (sin
-                // spawned() todavía) puede ya estar "trackeando" este
-                // chunk (el tracking arranca antes del spawn) sin
-                // conocer todavía la entidad de quien recogió el item.
+                // bug FIX (same mechanism that MoveEntityPacket/
+                // EntityEventPacket more above): entityId reference to the
+                // player that picked up the item — a viewer that still
+                // is in its window of streaming of chunks (without
+                // spawned() still) can already estar "tracking" this
+                // chunk (the tracking arranca before of the spawn) without
+                // know still the entity of who picked up the item.
                 auto pk_viewer = std::make_shared<network::protocol::TakeItemEntityPacket>();
                 pk_viewer->target   = di->eid;
                 pk_viewer->entityId = runtimeId();
@@ -799,21 +804,21 @@ void Player::onUpdate(uint64_t current_tick) {
                     if (!other->spawned()) continue;
                     if (!other->canSeeBlock(pk_cx, pk_cz)) continue;
                     other->sendPacket(pk_viewer);
-                    // *** BUG ARREGLADO: "los items flotantes no se limpian
-                    // en broadcast" ***
+                    // *** bug fixed: "the items flotantes not is limpian
+                    // in broadcast" ***
                     //
-                    // RemoveEntityPacket se mandaba SOLO al que recogió el
-                    // item. Los demas recibian TakeItemEntityPacket (que
-                    // solo reproduce la animacion de "el item vuela hacia
-                    // el jugador") pero NUNCA recibian la orden de borrar
-                    // la entidad, asi que su cliente se quedaba con el
-                    // item flotando para siempre, ya que el servidor si
-                    // lo habia borrado del mundo (removeDroppedItem).
+                    // RemoveEntityPacket is sent only to the that picked up the
+                    // item. the other recibian TakeItemEntityPacket (that
+                    // only reproduce the animation of "the item vuela hacia
+                    // the player") but never recibian the order of remove
+                    // the entity, this way that its client is quedaba with the
+                    // item flotando forever, since the server if
+                    // it habia removed of the world (removeDroppedItem).
                     //
                     // Genisys: Entity::close() -> Level::removeEntity()
-                    // -> RemoveEntityPacket a TODOS los hasSpawned, sin
-                    // excluir a quien lo recogio. Por eso el item desaparece
-                    // para todos y no solo para el que lo agarro.
+                    // -> RemoveEntityPacket to all the hasSpawned, without
+                    // exclude to who it picked up. therefore the item disappears
+                    // for all and not only for that which it picked up.
                     other->sendPacket(rm_pk);
                     ++viewers;
                 }
@@ -855,7 +860,7 @@ void Player::onUpdate(uint64_t current_tick) {
         last_save_tick_ = current_tick;
         if (named_tag_) {
             // Update position+rotation in NBT before saving (mirrors
-            // PMMP Player::saveNBT — must include Yaw/Pitch).
+            // PMMP player::saveNBT — must include Yaw/Pitch).
             mcp_compound_tag_set_double(named_tag_.get(), "PosX", pos_.x);
             mcp_compound_tag_set_double(named_tag_.get(), "PosY", pos_.y);
             mcp_compound_tag_set_double(named_tag_.get(), "PosZ", pos_.z);
@@ -875,8 +880,8 @@ void Player::onUpdate(uint64_t current_tick) {
 // Stub implementations for Nukkit-compat methods
 // ============================================================
 void Player::sendPosition(double x, double y, double z, double yaw, double pitch, uint8_t mode) {
-    // `y` is a FEET coordinate (same convention as teleport()/Genisys'
-    // Player::sendPosition(Vector3 $pos)); the wire MovePlayerPacket needs
+    // `and` is to FEET coordinate (same convention as teleport()/Genisys'
+    // player::sendPosition(Vector3 $pos)); the wire MovePlayerPacket needs
     // the eye altitude.
     auto pk = std::make_shared<network::protocol::MovePlayerPacket>();
     pk->eid = runtimeId();

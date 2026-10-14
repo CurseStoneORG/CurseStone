@@ -6,7 +6,7 @@
 | \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
  \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
 
- * CurseStone | Open Source Server Software
+ * CurseStone | Open Source server Software
  *
  * Copyright (C) 2026 CurseStoneTeam
  *
@@ -21,21 +21,26 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// ChangeDimensionPacket implementation (stub).
 #include "ChangeDimensionPacket.h"
 
 namespace cursestone::network::protocol {
 
 void ChangeDimensionPacket::encode(std::vector<uint8_t>& out) const {
-    (void)out;
-    // TODO: Phase 6 stub — implement when packets are wired into Player handlers.
+    PacketWriter w(out);
+    w.writeI32BE(dimension);
+    w.writeF32BE(x);
+    w.writeF32BE(y);
+    w.writeF32BE(z);
+    w.writeU8(unknown);
 }
 
 bool ChangeDimensionPacket::decode(const uint8_t* data, size_t len) {
-    (void)data;
-    (void)len;
-    // TODO: Phase 6 stub.
-    return true;
+    PacketReader r(data, len);
+    if (!r.readI32BE(dimension)) return false;
+    if (!r.readF32BE(x))         return false;
+    if (!r.readF32BE(y))         return false;
+    if (!r.readF32BE(z))         return false;
+    return r.readU8(unknown);
 }
 
 } // namespace cursestone::network::protocol

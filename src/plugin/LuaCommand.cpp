@@ -6,7 +6,7 @@
 | \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
  \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
 
- * CurseStone | Open Source Server Software
+ * CurseStone | Open Source server Software
  *
  * Copyright (C) 2026 CurseStoneTeam
  *
@@ -20,8 +20,9 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// LuaCommand — implementación del puente hilo-consola → hilo principal.
+// LuaCommand — implementación of the puente thread-consola → thread main.
 #include "LuaCommand.h"
+#include "PluginManager.h"
 #include "scheduler/ServerScheduler.h"
 #include "scheduler/CallbackTask.h"
 #include <memory>
@@ -30,19 +31,19 @@
 
 namespace cursestone::plugin {
 
-// Criterio de permiso (lo llama dispatch() y /help). Mismo hilo que
-// dispatch: para jugadores es el hilo principal, igual que los comandos
-// normales que ya usan hasPermission ahí.
+// Criterio of permiso (it flame dispatch() and /help). same thread that
+// dispatch: for players is the thread main, just like the commands
+// normales that already use hasPermission there.
 bool LuaCommand::canUse(CommandSender* sender) const {
     switch (mode_) {
         case PermMode::PUBLIC: return true;
         case PermMode::OP:
-            // Ops y consola pasan; un jugador normal con el nodo del
-            // comando concedido explícitamente también.
+            // ops and consola pass; a player normal with the node of the
+            // command granted explicitly also.
             return sender->isOp() ||
                    sender->hasPermission("cursestone.command." + name());
         case PermMode::NODE:
-            // El nodo custom manda; los ops son admin y pasan siempre.
+            // the node custom takes precedence; the ops are admin and pass always.
             return sender->hasPermission(node_) || sender->isOp();
     }
     return false;
@@ -50,29 +51,43 @@ bool LuaCommand::canUse(CommandSender* sender) const {
 
 bool LuaCommand::execute(CommandSender* sender, const std::string&,
                          const std::vector<std::string>& args) {
-    // 1. Copiar AHORA MISMO los datos del sender. El puntero `sender` NO
-    //    se puede usar después de encolar: cuando el comando viene de la
-    //    consola es una variable local del hilo CommandReader.
-    //    (El chequeo de permisos ya lo hizo canUse() en dispatch().)
+    // 1. Copiar now same the data of the sender. the pointer `sender` not
+    //    is can use after enqueue: when the command comes of the
+    //    consola is a variable local of the thread CommandReader.
+    //    (the chequeo of permisos already it hizo canUse() in dispatch().)
     std::string senderName = sender->getName();
     bool isConsole = (senderName == "CONSOLE");
     bool isOp = sender->isOp();
 
-    // 2. Plugin deshabilitado: responder y no llamar a Lua.
+    // 2. plugin deshabilitado: responder and not call to Lua.
     if (!plugin_->isEnabled()) {
         sender->sendMessage("That plugin is disabled.");
         return true;
     }
 
-    // 3. Encolar la ejecución de Lua para el próximo tick (hilo principal).
-    LuaPlugin* plugin = plugin_;
+    // 3. enqueue the execution of Lua for the next tick (thread main).
+    //    not is captures the pointer LuaPlugin*: between this tick and the
+    //    next a /plugins reload can destroy the object (and its
+    //    lua_State) — keeping it here era a use-after-free. is captures
+    //    the name and the ref of the function; in the next tick is
+    //    resolves contra PluginManager::find() and is checks that the
+    //    ref siga being a function of the state VIVO of the plugin.
+    std::string pluginName = plugin_->name();
     int fnRef = fnRef_;
     auto task = std::make_shared<scheduler::CallbackTask>(
-        [plugin, fnRef, senderName, isConsole, isOp, args]() {
-            if (!plugin->isEnabled()) return;
+        [pluginName, fnRef, senderName, isConsole, isOp, args]() {
+            LuaPlugin* plugin = PluginManager::get().find(pluginName);
+            if (!plugin || !plugin->isEnabled()) return;
             lua_State* L = plugin->L();
 
-            lua_rawgeti(L, LUA_REGISTRYINDEX, fnRef);   // función
+            lua_pushvalue(L, LUA_REGISTRYINDEX);
+            lua_rawgeti(L, -1, fnRef);
+            bool haveFn = lua_isfunction(L, -1);
+            lua_remove(L, -2);   // quita the tabla registry, deja fn/nil
+            if (!haveFn) {       // ref of a state anterior (tras reload)
+                lua_pop(L, 1);
+                return;
+            }
 
             // Tabla sender: { name, isConsole, isOp }
             lua_createtable(L, 0, 3);
@@ -83,7 +98,7 @@ bool LuaCommand::execute(CommandSender* sender, const std::string&,
             lua_pushboolean(L, isOp ? 1 : 0);
             lua_setfield(L, -2, "isOp");
 
-            // Tabla args: lista de strings (sin el nombre del comando).
+            // Tabla args: list of strings (without the name of the command).
             lua_createtable(L, (int)args.size(), 0);
             for (size_t i = 0; i < args.size(); ++i) {
                 lua_pushstring(L, args[i].c_str());
@@ -93,8 +108,8 @@ bool LuaCommand::execute(CommandSender* sender, const std::string&,
             plugin->pcall(2, 0);                        // consume fn + 2 args
         });
 
-    // 4. Programar con delay 0 (corre en el próximo tick) y devolver true:
-    //    el comando "se aceptó", aunque el efecto sea asíncrono.
+    // 4. schedule with delay 0 (runs in the next tick) and return true:
+    //    the command "is aceptó", although the efecto is asíncrono.
     scheduler::ServerScheduler::get().scheduleSync(task, 0, 0);
     return true;
 }

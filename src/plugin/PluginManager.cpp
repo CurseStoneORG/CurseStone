@@ -6,7 +6,7 @@
 | \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
  \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
 
- * CurseStone | Open Source Server Software
+ * CurseStone | Open Source server Software
  *
  * Copyright (C) 2026 CurseStoneTeam
  *
@@ -23,8 +23,8 @@
 // PluginManager — implementación.
 #include "PluginManager.h"
 #include "LuaBindings.h"              // PLUGIN_API_VERSION
-#include "MiniYaml.h"                 // leer el campo `name` de plugin.yml
-#include "Server.h"                   // getCommandMap() para /plugins reload
+#include "MiniYaml.h"                 // leer the field `name` of plugin.yml
+#include "Server.h"                   // getCommandMap() for /plugins reload
 #include "command/CommandMap.h"
 #include "utils/MainLogger.hpp"
 #include <algorithm>
@@ -45,9 +45,9 @@ std::string toLowerAscii(std::string s) {
     return s;
 }
 
-// Lee SOLO el campo `name` del plugin.yml de una carpeta usando un
-// lua_State temporal: parsea el YAML (parser interno del binario) pero NO
-// ejecuta nada del plugin. Devuelve "" si no se pudo leer.
+// reads only the field `name` of the plugin.yml of a folder using a
+// lua_State temporal: parsea the YAML (parser interno of the binario) but not
+// executes nothing of the plugin. returns "" if not is pudo leer.
 std::string manifestName(const std::string& dir) {
     namespace fs = std::filesystem;
     std::error_code ec;
@@ -65,7 +65,7 @@ std::string manifestName(const std::string& dir) {
         if (lua_isstring(L, -1)) out = lua_tostring(L, -1);
         lua_pop(L, 1);
     }
-    lua_pop(L, lua_gettop(L));          // pila limpia antes de cerrar el state temporal
+    lua_pop(L, lua_gettop(L));          // stack clean before close the state temporal
     lua_close(L);
     return out;
 }
@@ -82,11 +82,11 @@ void PluginManager::loadAll(const std::string& pluginsDir,
     namespace fs = std::filesystem;
     std::error_code ec;
 
-    pluginsDir_ = pluginsDir;           // para /plugins reload
+    pluginsDir_ = pluginsDir;           // for /plugins reload
     dataRoot_ = dataRoot;
     log().info("Plugin API: " + std::string(PLUGIN_API_VERSION));
 
-    // Crear la carpeta plugins/ si no existe (primera ejecución).
+    // create the folder plugins/ if not exists (first execution).
     fs::create_directories(pluginsDir, ec);
     ec.clear();
 
@@ -106,11 +106,11 @@ void PluginManager::loadAll(const std::string& pluginsDir,
     fs::create_directories(dataRoot, ec);
     ec.clear();
 
-    // ---- 1. Escaneo. SOLO se acepta plugin.yml como manifiesto: un
-    //         main.lua suelto (formato antiguo) no carga ya como plugin.
-    //         Por eso, si dos carpetas traen "el mismo" plugin, el válido
-    //         es directamente el que tiene plugin.yml — las demás ni
-    //         entran a la lista.
+    // ---- 1. scan. only is accepts plugin.yml as manifest: a
+    //         main.lua loose (format old) not load already as plugin.
+    //         therefore, if two folders traen "the same" plugin, the válido
+    //         is directamente that which has plugin.yml — the other ni
+    //         entran to the list.
     struct Cand { std::string dir; std::string folder; std::string name; };
     std::vector<Cand> cands;
 
@@ -119,7 +119,7 @@ void PluginManager::loadAll(const std::string& pluginsDir,
         for (const auto& entry : it) {
             std::error_code e2;
             if (!entry.is_directory(e2)) continue;
-            if (entry.path().filename() == "data_pl") continue;   // datos, no plugin
+            if (entry.path().filename() == "data_pl") continue;   // data, not plugin
             std::string dir = entry.path().string();
             std::string folder = entry.path().filename().string();
 
@@ -127,8 +127,8 @@ void PluginManager::loadAll(const std::string& pluginsDir,
                 cands.push_back(Cand{dir, folder, manifestName(dir)});
                 continue;
             }
-            // Sin plugin.yml NO es un plugin. Warn only when it LOOKS like
-            // a plugin attempt (a loose main.lua) to keep the log clean of
+            // without plugin.yml not is a plugin. warn only when it LOOKS like
+            // to plugin attempt (to loose main.lua) to keep the log clean of
             // random user folders.
             std::error_code e3;
             if (fs::exists(entry.path() / "main.lua", e3)) {
@@ -142,12 +142,12 @@ void PluginManager::loadAll(const std::string& pluginsDir,
     std::sort(cands.begin(), cands.end(),
               [](const Cand& a, const Cand& b) { return a.dir < b.dir; });
 
-    // ---- 2. Duplicados. Se marca para APAGAR (no cargar) todos los
-    //         implicados, con warning claro. Dos claves:
-    //         a) mismo nombre de plugin en plugin.yml (insensible a
+    // ---- 2. duplicates. is marks for disable (not load) all the
+    //         implicados, with warning claro. two claves:
+    //         to) same name of plugin in plugin.yml (case-insensitive to
     //            mayúsculas/minúsculas),
-    //         b) mismo nombre de carpeta (también insensible), porque
-    //            chocarían sus carpetas de datos en data_pl/.
+    //         b) same name of folder (also case-insensitive), because
+    //            chocarían its folders of data in data_pl/.
     std::map<std::string, std::vector<size_t>> byName;
     std::map<std::string, std::vector<size_t>> byFolder;
     for (size_t i = 0; i < cands.size(); ++i) {
@@ -174,7 +174,7 @@ void PluginManager::loadAll(const std::string& pluginsDir,
         if (idxs.size() < 2) continue;
         bool anyAlive = false;
         for (size_t i : idxs) if (!killed[i]) anyAlive = true;
-        if (!anyAlive) continue;        // ya avisado por el nombre de plugin
+        if (!anyAlive) continue;        // already avisado by the name of plugin
         std::string paths;
         for (size_t k = 0; k < idxs.size(); ++k) {
             paths += cands[idxs[k]].folder;
@@ -186,8 +186,8 @@ void PluginManager::loadAll(const std::string& pluginsDir,
         for (size_t i : idxs) killed[i] = true;
     }
 
-    // ---- 3. Cargar + habilitar los que quedan. Los que fallen se
-    //         descartan (el log ya dijo por qué).
+    // ---- 3. load + enable those that remain. those that fallen is
+    //         descartan (the log already dijo by what).
     for (size_t i = 0; i < cands.size(); ++i) {
         if (killed[i]) continue;
         auto p = std::make_unique<LuaPlugin>(cands[i].dir, dataRoot);
@@ -201,29 +201,29 @@ void PluginManager::loadAll(const std::string& pluginsDir,
 }
 
 size_t PluginManager::reloadAll() {
-    // SOLO hilo principal (toca lua_States): /plugins reload llega aquí a
-    // través de ServerScheduler::scheduleSync desde PluginsCommand.
+    // only thread main (touches lua_States): /plugins reload arrives here to
+    // through of ServerScheduler::scheduleSync from PluginsCommand.
     if (pluginsDir_.empty()) {
         log().error("[Plugins] Reload failed: no plugins folder has been scanned yet.");
         return plugins_.size();
     }
     log().info("[Plugins] Reloading all plugins...");
     disableAll();                       // onDisable + unlisten + cancelar tareas
-    unloadAll();                        // comandos fuera del mapa + lua_close
-    loadAll(pluginsDir_, dataRoot_);    // re-escaneo + carga fresca
+    unloadAll();                        // commands outside of the mapa + lua_close
+    loadAll(pluginsDir_, dataRoot_);    // rescan + load fresca
     return plugins_.size();
 }
 
 void PluginManager::unloadAll() {
-    // Los LuaCommand guardan refs al registry del lua_State que estamos a
-    // punto de cerrar: salirlos del CommandMap PRIMERO, o un /<cmd> tras
-    // el reload tocaría un state muerto.
+    // the LuaCommand are stored refs to the registry of the lua_State that estamos to
+    // point of close: salirlos of the CommandMap first, or a /<cmd> tras
+    // the reload tocaría a state dead.
     if (CommandMap* map = Server::getInstance().getCommandMap()) {
         for (auto& p : plugins_) map->unregisterByOwner(p.get());
     }
-    // Destruir cada plugin (~LuaPlugin cierra el state). El disable ya se
-    // hizo (reloadAll -> disableAll); si alguien llama unloadAll a pelo,
-    // ~LuaPlugin igualmente deshabilita los que sigan activos.
+    // destroy each plugin (~LuaPlugin closes the state). the disable already is
+    // hizo (reloadAll -> disableAll); if someone flame unloadAll to pelo,
+    // ~LuaPlugin igualmente disables those that sigan activos.
     plugins_.clear();
 }
 
@@ -238,6 +238,13 @@ std::vector<PluginManager::Info> PluginManager::list() const {
         out.push_back(Info{p->name(), p->author(), p->version(), p->isEnabled()});
     }
     return out;
+}
+
+LuaPlugin* PluginManager::find(const std::string& name) const {
+    for (const auto& p : plugins_) {
+        if (p && p->name() == name) return p.get();
+    }
+    return nullptr;
 }
 
 }

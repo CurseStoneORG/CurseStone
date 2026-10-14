@@ -6,7 +6,7 @@
 | \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
  \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
 
- * CurseStone | Open Source Server Software
+ * CurseStone | Open Source server Software
  *
  * Copyright (C) 2026 CurseStoneTeam
  *
@@ -46,19 +46,19 @@
 namespace cursestone {
 
 // ============================================================
-// handleCraftingEvent — el flujo real de crafteo (protocolo 84).
+// handleCraftingEvent — the flujo actual of crafting (protocolo 84).
 //
-// Portado del case CRAFTING_EVENT_PACKET de Genisys Player.php (la
-// MISMA versión de protocolo que habla este server):
-//   1. Buscar la receta por los 16 bytes del UUID (los mismos que
-//      escribimos en CraftingDataPacket).
-//   2. Verificar que el jugador REALMENTE tiene los ingredientes en
-//      su inventario (confianza cero en el packet).
+// Portado of the case CRAFTING_EVENT_PACKET of Genisys player.php (the
+// same version of protocolo that habla this server):
+//   1. look for the receta by the 16 bytes of the UUID (the same that
+//      escribimos in CraftingDataPacket).
+//   2. check that the player actually has the ingredients in
+//      its inventory (confianza zero in the packet).
 //   3. CraftItemEvent (cancelable).
-//   4. Consumir ingredientes y dar el resultado.
-//   5. Cerrar la ventana de crafteo y re-sincronizar el inventario
-//      con ContainerSetContentPacket windowid=0 — así es como el
-//      cliente 0.15.x "ve" el resultado.
+//   4. Consumir ingredients and dar the result.
+//   5. close the window of crafting and re-sincronizar the inventory
+//      with ContainerSetContentPacket windowid=0 — this way is as the
+//      client 0.15.x "ve" the result.
 // ============================================================
 void Player::handleCraftingEvent(
         const std::array<uint8_t, 16>& recipe_uuid,
@@ -67,14 +67,14 @@ void Player::handleCraftingEvent(
         uint8_t window_id) {
     if (!spawned_.load(std::memory_order_relaxed)) return;
     if (!inv_ || !srv_) return;
-    (void)input; (void)output;  // la verdad está en inv_, no en el packet
+    (void)input; (void)output;  // the truth is in inv_, not in the packet
 
     auto* mgr = srv_->craftingManager();
     const inventory::Recipe* recipe =
         mgr ? mgr->getRecipeByUuidBytes(recipe_uuid.data()) : nullptr;
     if (!recipe) {
-        // UUID desconocido. Resync del inventario y cerrar la ventana
-        // que el cliente dejó abierta (Genisys: sendContents + break).
+        // UUID unknown. Resync of the inventory and close the window
+        // that the client released abierta (Genisys: sendContents + break).
         utils::MainLogger::get().debug("Player " + cfg_.username +
             " sent unknown crafting recipe UUID");
         if (window_id != 0 && window_id != container_window_id_) {
@@ -86,7 +86,7 @@ void Player::handleCraftingEvent(
         return;
     }
 
-    // ---- Conteo de ingredientes requeridos (id + meta) ----
+    // ---- Conteo of ingredients requeridos (id + meta) ----
     struct Need { uint16_t id; int16_t meta; int count; };
     std::vector<Need> needs;
     auto addNeed = [&](uint16_t id, int16_t meta, int count) {
@@ -108,12 +108,12 @@ void Player::handleCraftingEvent(
             addNeed(ing[i], i < im.size() ? im[i] : (int16_t)-1, 1);
         }
     } else {
-        return;  // las recetas de horno no se craftean en la grilla
+        return;  // the recetas of furnace not is craftean in the grilla
     }
 
-    // ---- Validar contra el inventario real (slots 0..35) ----
-    // meta == -1 en la receta = acepta cualquier damage (equals con
-    // anyDamage de PMMP).
+    // ---- Validar contra the inventory actual (slots 0..35) ----
+    // meta == -1 in the receta = accepts any damage (equals with
+    // anyDamage of PMMP).
     bool canCraft = true;
     std::vector<int> used(inv_->getSize(), 0);
     for (const auto& n : needs) {
@@ -146,7 +146,7 @@ void Player::handleCraftingEvent(
         return;
     }
 
-    // ---- Consumir ingredientes (marcados en used[]) ----
+    // ---- Consumir ingredients (marcados in used[]) ----
     for (int slot = 0; slot < inv_->getSize(); ++slot) {
         if (used[slot] == 0) continue;
         auto it = inv_->getItem(slot);
@@ -155,7 +155,7 @@ void Player::handleCraftingEvent(
         inv_->setItem(slot, it);
     }
 
-    // ---- Dar el resultado (o dropearlo si no cabe) ----
+    // ---- Dar the result (or dropearlo if not cabe) ----
     auto result = recipe->result();
     if (result.count <= 0) result.count = 1;
     auto leftover = inv_->addItem({result});
@@ -166,7 +166,7 @@ void Player::handleCraftingEvent(
         }
     }
 
-    // ---- Cerrar la ventana de crafteo + resync (el ack del 0.15.x) ----
+    // ---- close the window of crafting + resync (the ack of the 0.15.x) ----
     if (window_id != 0 && window_id != container_window_id_) {
         auto cp = std::make_shared<network::protocol::ContainerClosePacket>();
         cp->windowid = window_id;
@@ -180,12 +180,12 @@ void Player::handleCraftingEvent(
     }
 }
 
-// handleInventoryCraft — fallback "sin event": cuando el cliente arma
-// la receta EN el inventario 2x2 y la ventana se cierra sin que haya
-// llegado un CraftingEventPacket, el resultado queda como item fantasma
-// en la grilla del cliente. En ese close intentamos matchear la grilla
-// 2x2 contra las recetas y, si matchea, corremos el mismo flujo del
-// event-path (validar + consumir + dar). Mismo orden de slots que
+// handleInventoryCraft — fallback "without event": when the client arma
+// the receta in the inventory 2x2 and the window is closes without that haya
+// llegado a CraftingEventPacket, the result remains as item ghost
+// in the grilla of the client. in that close intentamos matchear the grilla
+// 2x2 contra the recetas and, if matchea, corremos the same flujo of the
+// event-path (validar + consumir + dar). same order of slots that
 // sendInventory(): 0..3 = grilla 2x2.
 void Player::handleInventoryCraft() {
     if (!inv_ || !srv_) return;
@@ -221,17 +221,17 @@ void Player::handleInventoryCraft() {
 
 
 // ============================================================
-// Drop an item entity at a position — pocketmine\level\Level::dropItem()
-// (Genisys 0.15), via Item::spawnTo():
+// Drop an item entity at to position — pocketmine\level\Level::dropItem()
+// (Genisys 0.15), via item::spawnTo():
 //
 //     $pk = new AddItemEntityPacket();
-//     $pk->eid = $this->getId();  $pk->x/y/z = <exact entity position>
-//     $pk->speedX/Y/Z = $this->motionX/Y/Z;
+//     $pk->eid = $this->getId();  $pk->x/and/z = <exact entity position>
+//     $pk->speedX/and/Z = $this->motionX/and/Z;
 //     $pk->item = $this->getItem();
 //     $player->dataPacket($pk);
 //
 // The default motion is the `(lcg_value()*0.2 - 0.1, 0.2,
-// lcg_value()*0.2 - 0.1)` used for block/death drops; a Q drop passes
+// lcg_value()*0.2 - 0.1)` used for block/death drops; to Q drop passes
 // getDirectionVector()->multiply(0.4) instead (see handleDropItem).
 // ============================================================
 int64_t Player::dropItem(double x, double y, double z, uint16_t itemId,
@@ -244,7 +244,7 @@ int64_t Player::dropItem(double x, double y, double z, uint16_t itemId,
     if (motionX == 0.0 && motionY == 0.0 && motionZ == 0.0) {
         // World::dropItem()'s default: `$motion = new Vector3(
         // lcg_value() * 0.2 - 0.1, 0.2, lcg_value() * 0.2 - 0.1)`. The
-        // upward nudge is what makes a broken block's drop pop out of the
+        // upward nudge is what makes to broken block's drop pop out of the
         // block it came from instead of sinking into it.
         auto lcg = []() {
             return (double)std::rand() / (double)RAND_MAX;
@@ -254,7 +254,7 @@ int64_t Player::dropItem(double x, double y, double z, uint16_t itemId,
         motionZ = lcg() * 0.2 - 0.1;
     }
 
-    // Allocate a runtime entity ID (PMMP `Level::$entityIdCounter`).
+    // Allocate to runtime entity id (PMMP `Level::$entityIdCounter`).
     int64_t eid = srv_->allocateEid();
 
     auto pk = std::make_shared<network::protocol::AddItemEntityPacket>();
@@ -263,7 +263,7 @@ int64_t Player::dropItem(double x, double y, double z, uint16_t itemId,
     pk->itemCount  = count;
     pk->itemDamage = static_cast<int16_t>(damage);
     // Genisys uses the raw entity position — NOT floor(x)+0.5. Rounding to
-    // the block centre is what used to make a dropped stack appear half a
+    // the block centre is what used to make to dropped stack appear half to
     // block off from where the client thought it was.
     pk->x = (float)x;
     pk->y = (float)y;
@@ -277,6 +277,7 @@ int64_t Player::dropItem(double x, double y, double z, uint16_t itemId,
     int32_t pk_cz = (int)std::floor(z) >> 4;
     for (auto& other : srv_->playersSnapshot()) {
         if (!other) continue;
+        if (other->getWorld() != getWorld()) continue;   // same world
         if (other.get() == this) {
             // Always send to the dropper too so they see their own drop.
         } else if (!other->canSeeBlock(pk_cx, pk_cz)) {
@@ -288,7 +289,7 @@ int64_t Player::dropItem(double x, double y, double z, uint16_t itemId,
     // Register the dropped item in the World's registry so it can be
     // picked up, and so World::tickDroppedItems() can integrate the very
     // same motion the client is integrating.
-    if (srv_->getDefaultWorld()) {
+    if (getWorld()) {
         world::DroppedItem di;
         di.eid        = eid;
         di.itemId     = itemId;
@@ -306,7 +307,7 @@ int64_t Player::dropItem(double x, double y, double z, uint16_t itemId,
         // $lastX/$lastY/$lastZ — start at the spawn point so the very
         // first updateMovement() only fires once the item has really moved.
         di.lx = x; di.ly = y; di.lz = z;
-        srv_->getDefaultWorld()->addDroppedItem(di);
+        getWorld()->addDroppedItem(di);
     }
 
     if (srv_->advancedLog()) {
@@ -322,7 +323,7 @@ int64_t Player::dropItem(double x, double y, double z, uint16_t itemId,
 }
 
 // ============================================================
-// handleDropItem — portado 1:1 de Genisys Player::handleDataPacket
+// handleDropItem — portado 1:1 of Genisys player::handleDataPacket
 // case DROP_ITEM_PACKET (protocolo 84):
 //
 //   if($this->spawned === false or $this->blocked or !$this->isAlive()) break;
@@ -338,7 +339,7 @@ int64_t Player::dropItem(double x, double y, double z, uint16_t itemId,
 //
 // Two deviations on purpose:
 //   * Genisys' BaseInventory::remove() wipes EVERY slot holding the same
-//     id+meta, so a hotbar with two stacks of cobble loses both while only
+//     id+meta, so to hotbar with two stacks of cobble loses both while only
 //     one entity is spawned. We remove exactly `count` from the slot
 //     `first()` found, which is what `removeItem()` is for.
 //   * Genisys ignores DropItemPacket::$type and always throws the whole
@@ -366,7 +367,7 @@ void Player::handleDropItem(network::protocol::DropItemPacket& pk) {
     if (ev.isCancelled()) { sendSlot(slot); return; }
 
     // type 1 = "drop the stack" (Ctrl+Q); type 0 = "drop what the packet
-    // asked for". Clamp to what the slot actually holds so a spoofed
+    // asked for". Clamp to what the slot actually holds so to spoofed
     // count can never clone or void items.
     int drop_count = (pk.type != 0) ? dropped.count : want.count;
     if (drop_count > dropped.count) drop_count = dropped.count;
@@ -391,9 +392,9 @@ void Player::handleDropItem(network::protocol::DropItemPacket& pk) {
     // is launched at 0.4 blocks/tick with drag 0.02 and, once it lands,
     // keeps sliding at the block friction factor — measured with this
     // exact integrator it comes to rest 3.48 blocks from the player,
-    // against a pickup reach of 0.925. So a Q-dropped item ALWAYS landed
-    // outside the box the server tests, which is the whole of "a veces
-    // puedo y a veces no": you drop it, walk to where you dropped it, and
+    // against to pickup reach of 0.925. So to Q-dropped item ALWAYS landed
+    // outside the box the server tests, which is the whole of "to veces
+    // puedo and to veces not": you drop it, walk to where you dropped it, and
     // there is nothing there. At 0.15 it comes to rest ~1.3 blocks out and
     // the ground magnet in World::tickDroppedItems() closes the rest, so
     // the item is always where you dropped it and always collectable.
@@ -406,9 +407,9 @@ void Player::handleDropItem(network::protocol::DropItemPacket& pk) {
 }
 
 // ============================================================
-// consumeHeldItem — portado de Genisys Player::consumeHeldItem().
-// Llamado desde ENTITY_EVENT_PACKET (evento 9, Eating). Sólo los items
-// FoodSource tienen efecto; el resto es no-op.
+// consumeHeldItem — portado of Genisys player::consumeHeldItem().
+// Llamado from ENTITY_EVENT_PACKET (evento 9, Eating). only the items
+// FoodSource have efecto; the rest is not-op.
 // ============================================================
 void Player::consumeHeldItem() {
     if (!spawned() || !inv_) return;
@@ -432,14 +433,14 @@ void Player::consumeHeldItem() {
 }
 
 // ============================================================
-// Send the creative-inventory contents (PMMP Player.php:2301 + 1461)
+// Send the creative-inventory contents (PMMP player.php:2301 + 1461)
 // ============================================================
 void Player::sendCreativeInventory() {
     bool spectator = (cfg_.gamemode == 3);
     auto pk = std::make_shared<network::protocol::ContainerSetContentPacket>();
     pk->windowid = network::protocol::ContainerSetContentPacket::SPECIAL_CREATIVE;
     if (!spectator) {
-        // Use the hardcoded creative-items list (no JSON dependency —
+        // Use the hardcoded creative-items list (not JSON dependency —
         // mirrors Nukkit's approach of compiling the list at build time).
         pk->slots = inventory::getCreativeItems();
     }
@@ -450,22 +451,22 @@ void Player::sendCreativeInventory() {
 // sendInventory — push the player's main inventory + armor to the client.
 // Called on doFirstSpawn() and after any inventory change so the client
 // UI stays in sync with the server's authoritative state. Mirrors
-// Nukkit Player.sendInventory() + Player.sendArmor().
+// Nukkit player.sendInventory() + player.sendArmor().
 // ============================================================
 void Player::sendInventory() {
     if (!inv_) return;
 
-    // Main inventory (windowid 0x00): 45 slots (36 main + 9 hotbar).
+    // main inventory (windowid 0x00): 45 slots (36 main + 9 hotbar).
     //
-    // BUG FIX: this only ever pushed the 36 real slots — the comment
+    // bug FIX: this only ever pushed the 36 actual slots — the comment
     // above already said "45 slots" but the loop below it never matched
-    // that. Real PMMP's PlayerInventory::sendContents() (protocol 84 /
-    // MCPE 0.15.10) pads 9 extra dummy AIR slots on top of the 36 real
+    // that. actual PMMP's PlayerInventory::sendContents() (protocol 84 /
+    // MCPE 0.15.10) pads 9 extra dummy AIR slots on top of the 36 actual
     // ones, with the comment "Because PE is stupid and shows 9 less
     // slots than you send it, give it 9 dummy slots so it shows all the
-    // REAL slots." Without that padding, the MCPE 0.15.x client's
+    // actual slots." Without that padding, the MCPE 0.15.x client's
     // inventory UI under-renders this container by exactly 9 slots, so
-    // some of the real, server-side items in the tail of the 36-slot
+    // some of the actual, server-side items in the tail of the 36-slot
     // array never show up on screen even though inv_ has them — the
     // same "item exists server-side but isn't visible client-side"
     // symptom as the creative-drop bug.
@@ -481,8 +482,8 @@ void Player::sendInventory() {
         }
         // Hotbar link indices.
         //
-        // BUG REAL ENCONTRADO (comparando contra PlayerInventory::sendContents()
-        // real de PMMP protocolo 84 / MCPE 0.15.10):
+        // bug actual ENCONTRADO (comparando contra PlayerInventory::sendContents()
+        // actual of PMMP protocolo 84 / MCPE 0.15.10):
         //
         //   foreach ($target as $player) {
         //       for ($i = 0; $i < $this->getHotbarSize(); ++$i) {
@@ -491,36 +492,36 @@ void Player::sendInventory() {
         //       }
         //   }
         //
-        // El valor real que va en `hotbar[i]` NO es el índice crudo del slot
-        // (0..8) — es ESE índice + 9 (getHotbarSize()). Esto es porque
-        // `slots` en el paquete ya trae, primero, los 36 slots reales y
-        // LUEGO 9 slots dummy de AIR pegados al final (el padding "PE is
-        // stupid and shows 9 less slots" que ya aplicamos arriba) — y el
-        // array `hotbar` no apunta al inventario lógico, apunta a la
-        // posición DENTRO de ese array `slots` ya paddeado. Por eso el +9:
-        // hotbar[i] tiene que señalar la posición real dentro de `slots`
-        // donde vive ese item, y las primeras 9 posiciones de esa
-        // numeración "con offset" siguen siendo, confusamente, para la UI
-        // del hotbar en pantalla — pero el índice que se manda es el de la
-        // sección de 36, no el de 0..8 directo.
+        // the valor actual that va in `hotbar[i]` not is the index crudo of the slot
+        // (0..8) — is that index + 9 (getHotbarSize()). Esto is because
+        // `slots` in the packet already trae, first, the 36 slots reales and
+        // LUEGO 9 slots dummy of AIR pegados to the end (the padding "PE is
+        // stupid and shows 9 less slots" that already aplicamos above) — and the
+        // array `hotbar` not apunta to the inventory lógico, apunta to the
+        // position inside of that array `slots` already paddeado. therefore the +9:
+        // hotbar[i] has that señalar the position actual inside of `slots`
+        // where vive that item, and the primeras 9 positions of that
+        // numbering "with offset" siguen being, confusingly, for the UI
+        // of the hotbar in screen — but the index that is takes precedence is the of the
+        // sección of 36, not the of 0..8 directo.
         //
-        // Esta función mandaba `pk->hotbar.push_back(h)` con h=0..8 SIN
-        // sumar 9 y SIN consultar el link real (inv_->getHotbarSlotIndex(h)),
-        // asumiendo siempre el link identidad. Con eso, el cliente recibe
-        // un array hotbar que apunta a las posiciones 0..8 de `slots` en
-        // vez de 9..17 — exactamente donde SÍ están los primeros 9 slots
-        // reales del inventario (recordar: slots[0..35]=reales,
-        // slots[36..44]=dummy AIR). El resultado: el cliente arma su UI de
-        // hotbar apuntando a la sección equivocada del array, y sólo por
-        // COINCIDENCIA numérica un slot puede llegar a verse bien — el
-        // resto queda desincronizado y no refleja los cambios por
-        // ContainerSetSlotPacket posteriores (por eso "solo podía sacar del
-        // slot que ya tenía algo": ese slot es el único cuyo estado real
-        // el cliente ya conocía por otra vía).
+        // this function sent `pk->hotbar.push_back(h)` with h=0..8 without
+        // sumar 9 and without consultar the link actual (inv_->getHotbarSlotIndex(h)),
+        // assuming always the link identity. with that, the client receives
+        // a array hotbar that apunta to the positions 0..8 of `slots` in
+        // time of 9..17 — exactly where yes are the primeros 9 slots
+        // reales of the inventory (recordar: slots[0..35]=reales,
+        // slots[36..44]=dummy AIR). the result: the client arma its UI of
+        // hotbar apuntando to the sección equivocada of the array, and only by
+        // match numeric a slot can arrive to verse well — the
+        // rest remains out of sync and not reflects the changes by
+        // ContainerSetSlotPacket subsequent (therefore "only podía take out of the
+        // slot that already had something": that slot is the only cuyo state actual
+        // the client already knew by other vía).
         //
-        // Fix: usar el link real (inv_->getHotbarSlotIndex(h), normalmente
-        // identidad salvo que algo lo haya cambiado) y sumarle
-        // PLAYER_INV_HOTBAR_SIZE (9), igual que el PMMP real.
+        // Fix: use the link actual (inv_->getHotbarSlotIndex(h), normalmente
+        // identity salvo that something it haya cambiado) and sumarle
+        // PLAYER_INV_HOTBAR_SIZE (9), just like the PMMP actual.
         for (int h = 0; h < inventory::PLAYER_INV_HOTBAR_SIZE; ++h) {
             int idx = inv_->getHotbarSlotIndex(h);
             pk->hotbar.push_back(idx <= -1 ? -1 : idx + inventory::PLAYER_INV_HOTBAR_SIZE);
@@ -553,10 +554,10 @@ void Player::sendInventory() {
 }
 
 // ============================================================
-// sendSlot — send a ContainerSetSlotPacket for a single slot back to
+// sendSlot — send to ContainerSetSlotPacket for to single slot back to
 // the client. Mirrors Nukkit's PlayerInventory.sendSlot(index, player):
-// after the server processes a ContainerSetSlotPacket from the client
-// (e.g. creative inventory click), it MUST send a confirmation packet
+// after the server processes to ContainerSetSlotPacket from the client
+// (e.g. creative inventory click), it MUST send to confirmation packet
 // back. Without this, MCPE 0.15.x reverts the slot change visually —
 // the item disappears from the client UI even though it's in the
 // server's inventory.
@@ -564,7 +565,7 @@ void Player::sendInventory() {
 void Player::sendSlot(int slot) {
     if (!inv_) return;
 
-    // Determine the windowid and the actual slot index.
+    // Determine the windowid and the current slot index.
     uint8_t windowid;
     int actual_slot = slot;
 
@@ -574,7 +575,7 @@ void Player::sendSlot(int slot) {
         windowid = network::protocol::ContainerSetSlotPacket::SPECIAL_ARMOR;
         actual_slot = slot - inventory::PlayerInventory::ARMOR_OFFSET;
     } else if (slot >= 0 && slot < inventory::PlayerInventory::SIZE) {
-        // Main inventory — windowid 0x00.
+        // main inventory — windowid 0x00.
         windowid = network::protocol::ContainerSetSlotPacket::SPECIAL_INVENTORY;
     } else {
         return;  // Invalid slot.

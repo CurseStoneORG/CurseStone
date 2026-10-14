@@ -6,7 +6,7 @@
 | \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
  \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
 
- * CurseStone | Open Source Server Software
+ * CurseStone | Open Source server Software
  *
  * Copyright (C) 2026 CurseStoneTeam
  *
@@ -21,7 +21,7 @@
  *
  */
 // BlockRegistry — registers every concrete Block subclass into the
-// Block::get() flyweight map. Called once at Server startup (phase 21).
+// Block::get() flyweight map. Called once at server startup (phase 21).
 #include "Block.h"
 #include "BlockAir.h"
 #include "BlockBedrock.h"
@@ -53,6 +53,7 @@
 #include "BlockNetherrack.h"
 #include "BlockObsidian.h"
 #include "BlockPlanks.h"
+#include "BlockPortal.h"
 #include "BlockRedstoneOre.h"
 #include "BlockSapling.h"
 #include "BlockSand.h"
@@ -98,6 +99,7 @@ void register_all_blocks() {
     Block::registerBlock(std::make_unique<BlockNetherrack>());
     Block::registerBlock(std::make_unique<BlockSoulSand>());
     Block::registerBlock(std::make_unique<BlockObsidian>());
+    Block::registerBlock(std::make_unique<BlockPortal>());
     Block::registerBlock(std::make_unique<BlockDiamond>());
     Block::registerBlock(std::make_unique<BlockDiamondOre>());
     Block::registerBlock(std::make_unique<BlockGold>());

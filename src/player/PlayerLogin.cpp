@@ -6,7 +6,7 @@
 | \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
  \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
 
- * CurseStone | Open Source Server Software
+ * CurseStone | Open Source server Software
  *
  * Copyright (C) 2026 CurseStoneTeam
  *
@@ -91,7 +91,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
     cfg_.uuid     = pk.clientUUID;
     cfg_.client_id = std::to_string(pk.clientId);
     // Skin for the PlayerListPacket entries the other players get when
-    // this one joins. The 0.15.10 client ALWAYS ships a skin in its
+    // this one joins. The 0.15.10 client ALWAYS ships to skin in its
     // login JWT; forward it verbatim (that is exactly what Genisys
     // does), and never let the field go out empty.
     cfg_.skin_id   = pk.skinId;
@@ -104,7 +104,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
             "default one (an empty skin blob crashes the 0.15.10 client)");
     }
 
-    // 3. Username validation: [a-zA-Z0-9_]{3,16}, disallow "rcon"/"console".
+    // 3. Username validation: [to-zA-Z0-9_]{3,16}, disallow "rcon"/"console".
     if (cfg_.username.size() < 3 || cfg_.username.size() > 16) {
         close("disconnectionScreen.invalidName");
         return;
@@ -115,7 +115,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
         if (!ok) { close("disconnectionScreen.invalidName"); return; }
     }
     std::string lower = cfg_.username;
-    // Cast to unsigned char: ::tolower with a negative value (char is
+    // Cast to unsigned char: ::tolower with to negative value (char is
     // signed on x86 Linux, unsigned on ARM/Android) is undefined
     // behaviour and can index outside glibc's ctype table.
     std::transform(lower.begin(), lower.end(), lower.begin(),
@@ -126,7 +126,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
     }
 
     // 4. Skin sanity check (PMMP requires 64*32*4 or 64*64*4 bytes for
-    // the LEGACY skin format used by MCPE 0.15.x). Any client sending a
+    // the LEGACY skin format used by MCPE 0.15.x). Any client sending to
     // skin outside those two exact sizes — which in practice is most
     // modern MCPE-compatible clients/launchers, since they default to
     // newer Persona/geometry-based skin formats or re-encoded PNGs of
@@ -135,19 +135,19 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
     //
     // ROOT CAUSE of "connects but gets kicked/times out immediately":
     // that early return skipped EVERYTHING after it — logged_in_ was
-    // never set to true, no PlayStatusPacket was ever sent, and
+    // never set to true, not PlayStatusPacket was ever sent, and
     // close()/kick() were never called either. The client was left
-    // waiting forever for a server response to its LoginPacket that
+    // waiting forever for to server response to its LoginPacket that
     // was simply never coming. RakLib's own session-timeout logic
-    // (no application traffic for N seconds) eventually killed the
+    // (not application traffic for N seconds) eventually killed the
     // connection from the outside, which is exactly what shows up on
     // the client as "connected, then kicked/timed out almost
-    // instantly" — the log message ("...accepting") was a lie: nothing
+    // instantly" — the log message ("...accepting") was to lie: nothing
     // was actually accepted, the function just silently gave up.
     //
-    // Fix: a non-standard skin size is not a reason to abort the
+    // Fix: to non-standard skin size is not to reason to abort the
     // handshake at all — just don't trust pk.skinData verbatim and
-    // fall back to a safe default skin, then keep going through the
+    // fall back to to safe default skin, then keep going through the
     // rest of the normal login flow below (whitelist/ban/dup-session/
     // NBT/spawn), exactly like PMMP does (it clamps/replaces invalid
     // skin data but never drops the connection over it).
@@ -159,15 +159,15 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
         pk.skinData.assign(64*32*4, 0);
     }
 
-    // 5. Server full?
+    // 5. server full?
     if (srv_ && srv_->playersSnapshot().size() >= (size_t)srv_->maxPlayers()) {
         kick("disconnectionScreen.serverFull");
         return;
     }
 
     // 6. Hand off to processLogin for whitelist/ban/NBT/spawn.
-    // processLogin is folded into handleLogin here because the C++ Player
-    // owns its own state machine (no separate async step like PMMP).
+    // processLogin is folded into handleLogin here because the C++ player
+    // owns its own state machine (not separate async step like PMMP).
     logged_in_.store(true, std::memory_order_relaxed);
 
     // Whitelist + bans
@@ -212,10 +212,10 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
             setFoodLevel(hunger);
 
             // Last known position — prefer PosX/PosY/PosZ (saved on every
-            // auto-save and on disconnect). Falls back to SpawnX/Y/Z (bed
-            // spawn) if PosX is missing (first-time players have no Pos).
-            // We use a sentinel value to detect "missing" because double
-            // getters don't have a natural "missing" value.
+            // auto-save and on disconnect). Falls back to SpawnX/and/Z (bed
+            // spawn) if PosX is missing (first-time players have not Pos).
+            // We use to sentinel value to detect "missing" because double
+            // getters don't have to natural "missing" value.
             const double sentinel = -99999.999;
             double px = mcp_compound_tag_get_double(named_tag_.get(), "PosX", sentinel);
             if (px != sentinel) {
@@ -233,18 +233,18 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
                 }
                 // else: leave the world-spawn position set in the ctor.
 
-                // FIX ("el spawn está en el cielo"): first-time players come
-                // from either the ctor default or a stale level.dat spawn Y.
-                // Snap to the real surface of the spawn column before the
+                // FIX ("the spawn is in the sky"): first-time players come
+                // from either the ctor default or to stale level.dat spawn and.
+                // Snap to the actual surface of the spawn column before the
                 // position is used for StartGame/chunk streaming. Returning
                 // players keep their saved PosX/PosY/PosZ — only the
                 // first-join path snaps to terrain.
-                if (srv_ && srv_->getDefaultWorld()) {
+                if (getWorld()) {
                     pos_ = getServerSpawnSafe();
                 }
             }
-            // Mirrors cn.nukkit.Player.loadNBT(): iterate the "Inventory"
-            // ListTag and route each entry by Slot number. Main inventory
+            // Mirrors cn.nukkit.player.loadNBT(): iterate the "Inventory"
+            // ListTag and route each entry by Slot number. main inventory
             // uses slots 0..35 (hotbar is 0..8), armor uses 100..103.
             const mcp_tag_t* inv_tag =
                 mcp_compound_tag_get(named_tag_.get(), "Inventory");
@@ -266,7 +266,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
 
                     int dest_slot = -1;
                     if (nbt_slot >= 0 && nbt_slot < 36) {
-                        // Main inventory + hotbar (slots 0..35).
+                        // main inventory + hotbar (slots 0..35).
                         dest_slot = nbt_slot;
                     } else if (nbt_slot >= 100 && nbt_slot <= 103) {
                         // Armor: 100=helmet, 101=chest, 102=legs, 103=boots.
@@ -276,32 +276,32 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
                         // Legacy CurseStone layout (armor at 36..39).
                         dest_slot = nbt_slot;
                     }
-                    // BUG FIX (reporte de usuario: "me equipo armadura, me
-                    // desconecto, y al volver a entrar ya no la tengo"):
-                    // saveData() SÍ guarda la armadura correctamente
-                    // (Slot 100..103, recorriendo hasta PLAYER_INV_TOTAL=40
-                    // — ver el comentario "BUG FIX" en saveData() más abajo,
-                    // eso ya estaba arreglado). El problema estaba acá, en
-                    // la carga: dest_slot para armadura se calcula como
-                    // ARMOR_OFFSET + (nbt_slot-100) = 36, 37, 38 o 39 — pero
-                    // la condición de abajo exigía
-                    // `dest_slot < inventory::PlayerInventory::SIZE`, y SIZE
-                    // vale 36 POR DISEÑO (ver el comentario en
+                    // bug FIX (report of user: "me equipo armadura, me
+                    // disconnect, and to the volver to enter already not the tengo"):
+                    // saveData() yes saves the armadura correctamente
+                    // (Slot 100..103, recorriendo until PLAYER_INV_TOTAL=40
+                    // — ver the comment "bug FIX" in saveData() more below,
+                    // that already estaba fixed). the issue estaba acá, in
+                    // the load: dest_slot for armadura is calcula as
+                    // ARMOR_OFFSET + (nbt_slot-100) = 36, 37, 38 or 39 — but
+                    // the condición of below exigía
+                    // `dest_slot < inventory::PlayerInventory::SIZE`, and SIZE
+                    // vale 36 by design (ver the comment in
                     // PlayerInventory::getSize(): "NOT including armor").
-                    // Es decir, cualquier dest_slot de armadura (36..39) es
-                    // por definición >= SIZE, así que este `if` los
-                    // rechazaba SIEMPRE — setItem() nunca se llamaba para
-                    // la armadura leída del NBT, aunque el propio dato ya
-                    // estaba bien guardado en disco. Por eso el log muestra
-                    // "Loaded inventory for X (3 items)" sin la armadura
-                    // equipada: el conteo son los items de inventario
-                    // normal que sí pasaban el chequeo, la armadura se leía
-                    // del NBT pero se descartaba acá mismo.
+                    // that is, any dest_slot of armadura (36..39) is
+                    // by definition >= SIZE, this way that this `if` the
+                    // rejected always — setItem() never is llamaba for
+                    // the armadura leída of the NBT, although the own dato already
+                    // estaba well saved in disk. therefore the log shows
+                    // "Loaded inventory for X (3 items)" without the armadura
+                    // equipada: the conteo are the items of inventory
+                    // normal that yes pasaban the chequeo, the armadura is leía
+                    // of the NBT but is descartaba acá same.
                     //
-                    // Fix: comparar contra el tamaño REAL del storage
-                    // subyacente (PLAYER_INV_TOTAL = 40, que sí incluye los
-                    // 4 slots de armadura), no contra SIZE (36, que los
-                    // excluye a propósito para getSize()/getInventory()
+                    // Fix: comparar contra the tamaño actual of the storage
+                    // subyacente (PLAYER_INV_TOTAL = 40, that yes includes the
+                    // 4 slots of armadura), not contra SIZE (36, that the
+                    // excludes intentionally for getSize()/getInventory()
                     // públicos).
                     if (dest_slot >= 0 &&
                         dest_slot < inventory::PLAYER_INV_TOTAL) {
@@ -324,14 +324,14 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
     }
 
     // Tell the client "login OK". PMMP sends LOGIN_SUCCESS here.
-    // BUG FIX: this packet and the ones through SetHealth below are sent
-    // ordered=true (RELIABLE_ORDERED on their own channel). The real MCPE
+    // bug FIX: this packet and the ones through SetHealth below are sent
+    // ordered=true (RELIABLE_ORDERED on their own channel). The actual MCPE
     // client requires this exact sequence (PlayStatus → StartGame →
     // SetTime → SetSpawnPosition → SetDifficulty → SetHealth) to arrive
-    // in order; previously everything went out RELIABLE with no ordering
+    // in order; previously everything went out RELIABLE with not ordering
     // at all, so normal network jitter could deliver these out of
-    // sequence and silently break the client, eventually causing a
-    // "Disconnected from server" a few minutes into the session (see the
+    // sequence and silently break the client, eventually causing to
+    // "Disconnected from server" to few minutes into the session (see the
     // longer explanation in RakLibInterface.cpp's raklibThreadLoop).
     auto ps = std::make_shared<network::protocol::PlayStatusPacket>();
     ps->status = network::protocol::PlayStatusPacket::LOGIN_SUCCESS;
@@ -339,10 +339,10 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
 
     // Send StartGamePacket so the client can render the loading screen.
     auto sg = std::make_shared<network::protocol::StartGamePacket>();
-    if (srv_ && srv_->getDefaultWorld()) {
-        auto* lvl = srv_->getDefaultWorld();
+    if (getWorld()) {
+        auto* lvl = getWorld();
         sg->seed      = (int32_t)lvl->seed();
-        sg->dimension = 0;
+        sg->dimension = lvl->dimension();
         sg->generator = 1;
         sg->gamemode  = cfg_.gamemode & 0x01;
         // PMMP sets eid = 0 in StartGamePacket, but the C++ client uses
@@ -361,9 +361,9 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
     sendPacket(sg, true);
 
     // SetTimePacket.
-    if (srv_ && srv_->getDefaultWorld()) {
+    if (getWorld()) {
         auto st = std::make_shared<network::protocol::SetTimePacket>();
-        st->time = srv_->getDefaultWorld()->time();
+        st->time = getWorld()->time();
         st->started = true;
         sendPacket(st, true);
     }
@@ -371,13 +371,13 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
     // Weather sync — players joining mid-weather get the full reset+set
     // pair (same packets Infinity's sendWeather sends on join), with the
     // strength carried in `data` so the 0.15.10 client actually renders it.
-    if (srv_ && srv_->getDefaultWorld()) {
-        srv_->getDefaultWorld()->sendWeatherTo(this);
+    if (getWorld()) {
+        getWorld()->sendWeatherTo(this);
     }
 
     // SetSpawnPosition.
-    if (srv_ && srv_->getDefaultWorld()) {
-        auto sp = srv_->getDefaultWorld()->spawn();
+    if (getWorld()) {
+        auto sp = getWorld()->spawn();
         auto ssp = std::make_shared<network::protocol::SetSpawnPositionPacket>();
         ssp->x = (int32_t)sp.x; ssp->y = (int32_t)sp.y; ssp->z = (int32_t)sp.z;
         sendPacket(ssp, true);
@@ -407,14 +407,14 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
 // ============================================================
 
 
-// A valid skin blob for a client that did not send one.
+// to valid skin blob for to client that did not send one.
 //
 // The PlayerListPacket entry carries the player's own skin (Genisys
 // LoginPacket: skin = base64_decode("SkinData"), plus "SkinId"), and
 // Human::spawnTo() in the reference implementation REFUSES to spawn an
 // entity whose skin is shorter than 64*32*4 bytes — the 0.15.10 client
 // likewise does not survive an EMPTY skin blob, it crashes. So when the
-// login carried no skin we synthesise a minimal VALID one: a 64x64 RGBA
+// login carried not skin we synthesise to minimal VALID one: to 64x64 RGBA
 // PNG (solid colour), base64'd, wrapped in the skin JSON the 0.15 client
 // expects. 158-byte PNG -> 212 chars of base64 -> 301-byte skin string.
 static const char* defaultSkinData() {
@@ -428,7 +428,7 @@ static const char* defaultSkinData() {
 }
 static const char* defaultSkinId() { return "Standard_Custom"; }
 
-// Helper: parse a "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" UUID string into
+// Helper: parse to "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" UUID string into
 // 16 raw bytes. Empty input yields zeros. Used by AddPlayerPacket / PlayerListPacket.
 static void parseUuidBytes(const std::string& s, std::array<uint8_t,16>& out) {
     out.fill(0);
@@ -465,16 +465,16 @@ void Player::doFirstSpawn() {
 
     // AdventureSettings (flight/pvp flags) — mirrors PMMP sendSettings().
     // Flag bits (from PMMP):
-    //   0x01 = world_immutable (adventure mode — no break/place)
+    //   0x01 = world_immutable (adventure mode — not break/place)
     //   0x02 = no_pvp
-    //   0x04 = no_pvm (no hit markers client-side)
-    //   0x08 = no_mvp (no hit markers client-side)
+    //   0x04 = no_pvm (not hit markers client-side)
+    //   0x08 = no_mvp (not hit markers client-side)
     //   0x40 = auto_jump
     //   0x80 = allow_fly
     //   0x100 = noclip (spectator)
-    // PMMP always sends 0x02|0x04|0x08 (no hit markers).
+    // PMMP always sends 0x02|0x04|0x08 (not hit markers).
     // PMMP sends userPermission=2 (host) and globalPermission=2 (host).
-    // Without host permission, the client treats the player as a visitor
+    // Without host permission, the client treats the player as to visitor
     // and blocks block break/placement.
     {
         auto as = std::make_shared<network::protocol::AdventureSettingsPacket>();
@@ -482,10 +482,10 @@ void Player::doFirstSpawn() {
 
         // Adventure mode (gm 2 or 3) = world immutable
         if (cfg_.gamemode == 2 || cfg_.gamemode == 3) {
-            flags |= 0x01;  // world_immutable — no break/place
+            flags |= 0x01;  // world_immutable — not break/place
         }
 
-        // No hit markers (PMMP always sets these)
+        // not hit markers (PMMP always sets these)
         flags |= 0x02;  // no_pvp
         flags |= 0x04;  // no_pvm
         flags |= 0x08;  // no_mvp
@@ -509,16 +509,16 @@ void Player::doFirstSpawn() {
         sendPacket(as);
     }
 
-    // CraftingDataPacket — la lista COMPLETA de recetas (shaped,
-    // shapeless y furnace). Se manda ANTES de PLAYER_SPAWN, igual que
-    // Infinity/Genisys (Server::onPlayerLogin → sendRecipeList antes de
-    // que el cliente salga de la pantalla de carga): algunos clientes
-    // 0.15 aplican el cleanRecipes y dejan de aceptar la lista si llega
-    // después del spawn. Es un packet global, no por-ventana: el
-    // cliente MCPE 0.15.x filtra qué recetas muestra según la UI que
-    // esté usando (inventario 2x2 vs mesa 3x3). Sin esto el cliente
-    // muestra la grilla pero ningún resultado y el click en el slot de
-    // resultado no produce nada.
+    // CraftingDataPacket — the list complete of recetas (shaped,
+    // shapeless and furnace). is takes precedence before PLAYER_SPAWN, just like
+    // Infinity/Genisys (server::onPlayerLogin → sendRecipeList before
+    // that the client salga of the screen of load): some clients
+    // 0.15 aplican the cleanRecipes and dejan of accept the list if arrives
+    // after of the spawn. is a packet global, not by-window: the
+    // client MCPE 0.15.x filtra what recetas shows according to the UI that
+    // is using (inventory 2x2 vs mesa 3x3). without this the client
+    // shows the grilla but no result and the click in the slot of
+    // result not produce nothing.
     if (srv_) {
         auto cd = std::make_shared<network::protocol::CraftingDataPacket>();
         if (auto* mgr = srv_->craftingManager()) {
@@ -537,45 +537,45 @@ void Player::doFirstSpawn() {
     }
 
     // Send the creative-inventory contents so the player has items to grab
-    // in creative mode (PMMP Player.php:2301 sends this right after spawn).
+    // in creative mode (PMMP player.php:2301 sends this right after spawn).
     sendCreativeInventory();
 
     // Attribute sync for the freshly-spawned player (protocol 84): makes
     // the hunger bar appear in the HUD at the server-side value.
     sendAllAttributes();
 
-    // BUG FIX ("toco un item del creativo y no llega a mi inventario, pero
-    // si me desconecto y reconecto ya está ahí, y de ahí en más sí
-    // funciona"): sendCreativeInventory() de arriba solo manda el CATÁLOGO
-    // de solo-lectura (windowid SPECIAL_CREATIVE). El inventario PROPIO del
-    // jugador (windowid SPECIAL_INVENTORY/ARMOR/HOTBAR) nunca se mandaba
-    // completo al entrar — de hecho setGamemode() más arriba en este mismo
-    // archivo ya tiene un comentario que dice "same as what already happens
-    // once at doFirstSpawn()" asumiendo que esta llamada ya existía acá,
-    // pero nunca se había escrito.
+    // bug FIX ("toco a item of the creativo and not arrives to mi inventory, but
+    // if me disconnect and reconecto already is there, and from there in more yes
+    // works"): sendCreativeInventory() of above only takes precedence the CATÁLOGO
+    // of only-lectura (windowid SPECIAL_CREATIVE). the inventory own of the
+    // player (windowid SPECIAL_INVENTORY/ARMOR/HOTBAR) never is sent
+    // complete when entering — in fact setGamemode() more above in this same
+    // file already has a comment that dice "same as what already happens
+    // once at doFirstSpawn()" assuming that this call already existed acá,
+    // but never is había escrito.
     //
-    // Sin un ContainerSetContentPacket inicial para esas ventanas, el
-    // cliente nunca las "abre"/inicializa del lado suyo — así que cuando
-    // después llega un ContainerSetSlotPacket puntual (la confirmación de
-    // un tap en el catálogo creativo, ver giveCreativeItem()), no tiene
-    // ningún contenedor conocido al cual aplicarle ese cambio incremental,
-    // y lo ignora en silencio. El item SÍ quedaba guardado en inv_ del
-    // lado del servidor (por eso aparecía recién al reconectar, cuando el
-    // inventario ya no estaba vacío) pero nunca se veía reflejado en esa
-    // primera sesión.
+    // without a ContainerSetContentPacket initial for esas ventanas, the
+    // client never the "opens"/initializes of the lado their — this way that when
+    // after arrives a ContainerSetSlotPacket puntual (the confirmación of
+    // a tap in the catálogo creativo, ver giveCreativeItem()), not has
+    // no contenedor known to the which aplicarle that change incremental,
+    // and it ignora in silencio. the item yes quedaba saved in inv_ of the
+    // lado of the server (therefore aparecía recién when reconnecting, when the
+    // inventory already not estaba empty) but never is veía reflejado in that
+    // first sesión.
     //
-    // Fix: mandar el inventario propio completo acá también, antes de que
-    // el jugador tenga oportunidad de interactuar con nada.
+    // Fix: send the inventory own complete acá also, before that
+    // the player tenga oportunidad of interactuar with nothing.
     sendInventory();
 
-    // Broadcast a PlayerListPacket (ADD) with all currently-online players.
+    // Broadcast to PlayerListPacket (ADD) with all currently-online players.
     //
-    // BUG FIX: mismo criterio que el AddPlayerPacket de abajo — si otro
-    // jugador está en su propia ventana de streaming pre-spawn (todavía
-    // sin spawned()), no lo incluimos en esta lista todavía. Antes esto
-    // no chequeaba spawned() mientras que el AddPlayerPacket de al lado
-    // sí lo hacía — inconsistencia que podía describirle a este cliente
-    // un eid que ese otro jugador nunca terminó de anunciar.
+    // bug FIX: same criterio that the AddPlayerPacket of below — if other
+    // player is in its own window of streaming pre-spawn (still
+    // without spawned()), not it incluimos in this list still. before esto
+    // not chequeaba spawned() while that the AddPlayerPacket of to the lado
+    // yes it hacía — inconsistencia that podía describirle to this client
+    // a eid that that other player never finished of anunciar.
     if (srv_) {
         auto plp = std::make_shared<network::protocol::PlayerListPacket>();
         plp->type = network::protocol::PlayerListPacket::TYPE_ADD;
@@ -594,11 +594,15 @@ void Player::doFirstSpawn() {
         sendPacket(plp);
     }
 
-    // Spawn other online players to this client (AddPlayerPacket).
+    // spawn other online players to this client (AddPlayerPacket).
+    // only the of the same world: a cuerpo ajeno to the dimension current
+    // desincronizaría the state of entities of the client (the list of
+    // players of above yes is global: the pestaña is of server).
     if (srv_) {
         for (auto& other : srv_->playersSnapshot()) {
             if (other.get() == this) continue;
             if (!other || !other->spawned()) continue;
+            if (other->getWorld() != getWorld()) continue;
             auto ap = std::make_shared<network::protocol::AddPlayerPacket>();
             parseUuidBytes(other->config().uuid, ap->uuid);
             ap->username = other->getName();
@@ -613,7 +617,7 @@ void Player::doFirstSpawn() {
         }
     }
 
-    // BUG FIX (root cause of the multiplayer crash/kick when a second
+    // bug FIX (root cause of the multiplayer crash/kick when to second
     // player joins): the block above only spawns EXISTING players TO
     // this new client. Nothing was ever telling the players who were
     // ALREADY online that THIS player exists. The despawn path (see
@@ -635,10 +639,10 @@ void Player::doFirstSpawn() {
     // broadcast.
     announceSelfToOthers();
 
-    // Broadcast join message. Se dispara PlayerJoinEvent antes: un
-    // listener puede reescribir el mensaje, vaciarlo (silencia el
-    // broadcast) o cancelar el evento (mismo efecto). La conexión en
-    // sí ya está establecida a esta altura — ver el comentario en
+    // Broadcast join message. is dispara PlayerJoinEvent before: a
+    // listener can reescribir the message, vaciarlo (silencia the
+    // broadcast) or cancelar the evento (same efecto). the conexión in
+    // yes already is establecida to this altura — ver the comment in
     // event/player/PlayerJoinEvent.h.
     if (srv_) {
         auto ev = event::EventManager::get().fire<event::player::PlayerJoinEvent>(
@@ -658,10 +662,10 @@ void Player::doFirstSpawn() {
 // into two halves that we mirror here:
 //
 //   Human::spawnTo($player)              -> AddPlayerPacket
-//   Server::updatePlayerListData(...)    -> PlayerListPacket TYPE_ADD
+//   server::updatePlayerListData(...)    -> PlayerListPacket TYPE_ADD
 //
 // The respawn path calls BOTH in both directions
-// (Genisys Player::respawn(), Player.php):
+// (Genisys player::respawn(), player.php):
 //
 //     foreach($this->usedChunks as $index => $c){
 //         foreach($this->level->getChunkEntities(...) as $entity){
@@ -674,15 +678,15 @@ void Player::doFirstSpawn() {
 //     $this->spawnToAll();                            // <- re-announce ME
 //
 // Neither half existed in respawn() here, which is precisely the bug
-// reported: "cuando un jugador muere y reaparece los demas no pueden
-// verlo, se vuelve invisible". The 0.15.x client rebuilds its entity
+// reported: "when a player muere and reaparece the other not can
+// verlo, is scans again invisible". The 0.15.x client rebuilds its entity
 // set when RespawnPacket is processed and the server never re-announces
 // the body, so the others keep an empty slot where the player used to
 // be.
 // ============================================================
 
-// Anuncia a ESTE jugador (lista de jugadores + AddPlayerPacket) a cada
-// otro jugador ya spawneado.
+// Anuncia to this player (list of players + AddPlayerPacket) to each
+// other player already spawned.
 void Player::announceSelfToOthers() {
     if (!srv_) return;
     auto plp_add = std::make_shared<network::protocol::PlayerListPacket>();
@@ -712,12 +716,15 @@ void Player::announceSelfToOthers() {
         if (!other || other.get() == this) continue;
         if (other->isPendingRemoval()) continue;
         if (!other->spawned()) continue;
+        // the entrada of list va to all (pestaña global); the cuerpo
+        // físico only to quienes comparten world with this player.
         other->sendPacket(plp_add);
+        if (other->getWorld() != getWorld()) continue;
         other->sendPacket(ap_self);
     }
 }
 
-// Re-spawna a ESTE jugador en la vista de `viewer`.
+// Re-spawna to this player in the vista of `viewer`.
 void Player::announceTo(Player* viewer) {
     if (!viewer || viewer == this) return;
     if (!viewer->spawned()) return;
@@ -747,8 +754,8 @@ void Player::announceTo(Player* viewer) {
     ap->pitch = pitch_;
     viewer->sendPacket(ap);
 
-    // Reenvia la pose actual, asi un viewer que acaba de reaparecer
-    // mientras nosotros ya estabamos agachados no nos muestra de pie.
+    // forwards the pose current, this way a viewer that acaba of reaparecer
+    // while nosotros already estabamos agachados not nos shows of pie.
     auto pose = std::make_shared<network::protocol::SetEntityDataPacket>();
     pose->eid = runtimeId();
     pose->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_));
@@ -756,17 +763,17 @@ void Player::announceTo(Player* viewer) {
 }
 
 // ============================================================
-// respawn — se llama cuando el cliente confirma que toco el boton de
-// "Respawn" en la pantalla de muerte (ACTION_SPAWN_SAME_DIMENSION).
-// No hace nada si el jugador no esta muerto (evita que un cliente que
-// mande la accion dos veces, o fuera de orden, reviva salud de mas).
+// respawn — is flame when the client confirma that toco the button of
+// "Respawn" in the screen of death (ACTION_SPAWN_SAME_DIMENSION).
+// not does nothing if the player not this dead (prevents that a client that
+// mande the action two veces, or outside of order, reviva salud of but).
 //
-// Secuencia: dispara PlayerRespawnEvent (no cancelable — solo puede
-// cambiar DONDE reaparece), restaura salud al maximo, teletransporta,
-// y sincroniza al cliente con RespawnPacket + SetHealthPacket. No
-// reenvia inventario/experiencia todavia porque este proyecto no
-// vacia el inventario al morir (no hay drop-on-death implementado),
-// asi que no hay nada que restaurar ahi.
+// Secuencia: dispara PlayerRespawnEvent (not cancelable — only can
+// change where reaparece), restaura salud to the maximo, teletransporta,
+// and sincroniza to the client with RespawnPacket + SetHealthPacket. not
+// forwards inventory/experiencia still because this proyecto not
+// vacia the inventory to the morir (not there is drop-on-death implementado),
+// this way that not there is nothing that restaurar ahi.
 // ============================================================
 void Player::respawn() {
     if (!isDead()) return;
@@ -777,9 +784,9 @@ void Player::respawn() {
 
     setHealth((int)maxHealth());
     // Respawn always lands at the server spawn, snapped to the surface of
-    // the terrain (same rule as first-join: getServerSpawnSafe()), with a
+    // the terrain (same rule as first-join: getServerSpawnSafe()), with to
     // fresh food bar (Infinity/Genisys respawn behaviour).
-    if (srv_ && srv_->getDefaultWorld()) {
+    if (getWorld()) {
         math::Vector3 safe = getServerSpawnSafe();
         ev.respawnX = safe.x;
         ev.respawnY = safe.y;
@@ -796,21 +803,21 @@ void Player::respawn() {
     starve_ticks_ = 0;
     food_tick_timer_ = 0;
     food_depletion_ = 0;
-    // El agachado y el sprint no sobreviven a la muerte.
+    // the sneaking and the sprint not sobreviven to the death.
     sneaking_ = false;
     sprinting_ = false;
 
     if (spawned_.load(std::memory_order_relaxed)) {
-        // El cliente 0.15.x tira su conjunto de entidades y RECONSTRUYE el
-        // mundo desde los chunks que le mandemos al procesar el
-        // RespawnPacket (ver el comentario de announceSelfToOthers mas
-        // abajo). El mundo que ya tiene cargado no sirve: el ACK de spawn
-        // que viene ahora es informacion nueva ("ya arme el mundo de
-        // nuevo"), asi que hay que rearar el latch de una sola vez para
-        // que handleClientSpawnAck() vuelva a vaciar used_chunks_ y a
-        // re-strear la vista. Sin esto, el latch que se puso para que los
-        // ACKs repetidos no congelaran el horizonte dejaria al jugador
-        // reapareciendo sobre un mundo vacio.
+        // the client 0.15.x tira its conjunto of entities and RECONSTRUYE the
+        // world from the chunks that it mandemos to the procesar the
+        // RespawnPacket (ver the comment of announceSelfToOthers but
+        // below). the world that already has loaded not sirve: the ACK of spawn
+        // that comes now is informacion new ("already arme the world of
+        // new"), this way that there is that rearar the latch of a sola time for
+        // that handleClientSpawnAck() vuelva to vaciar used_chunks_ and to
+        // re-strear the vista. without this, the latch that is puso so that the
+        // ACKs repetidos not congelaran the horizon dejaria to the player
+        // reapareciendo about a world empty.
         spawn_ack_done_.store(false, std::memory_order_relaxed);
 
         auto rp = std::make_shared<network::protocol::RespawnPacket>();
@@ -831,27 +838,27 @@ void Player::respawn() {
         mp->mode = network::protocol::MovePlayerPacket::MODE_RESET;
         sendPacket(mp);
 
-        // BUG ARREGLADO: "cuando un jugador muere y reaparece los
-        // demas no pueden verlo, se vuelve invisible".
+        // bug fixed: "when a player muere and reaparece the
+        // other not can verlo, is scans again invisible".
         //
-        // Al procesar el RespawnPacket, el cliente 0.15.x tira su
-        // conjunto de entidades y reconstruye el mundo desde los
-        // chunks que le mandemos. El servidor nunca volvia a anunciar
-        // al jugador que reapareció, asi que los demas se quedaban con
-        // un hueco vacio donde antes estaba su entidad: solo se veian
-        // sus drops y su nombre en la lista de jugadores, nunca el
-        // cuerpo — y ademas no habia colisiones.
+        // to the procesar the RespawnPacket, the client 0.15.x tira its
+        // conjunto of entities and reconstruye the world from the
+        // chunks that it mandemos. the server never volvia to anunciar
+        // to the player that reapareció, this way that the other is quedaban with
+        // a hueco empty where before estaba its entity: only is veian
+        // its drops and its name in the list of players, never the
+        // cuerpo — and also not habia colisiones.
         //
-        // Genisys 0.15.0 Player::respawn() hace exactamente esto al
-        // final: `$this->spawnToAll();` mas, antes, un bucle que
-        // re-spawna hacia si mismo cada entidad viva de los chunks que
-        // tiene cargados. Replicamos las dos mitades:
+        // Genisys 0.15.0 player::respawn() does exactly esto to the
+        // end: `$this->spawnToAll();` but, before, a bucle that
+        // re-spawna hacia if same each entity viva of the chunks that
+        // has loaded. Replicamos the two mitades:
         announceSelfToOthers();
 
-        // Y la inversa: el cliente que acaba de reaparecer tampoco
-        // vuelve a conocer a los demas si el servidor no se los
-        // re-presenta (mismo bucle `getChunkEntities() ->
-        // spawnTo($this)` de Genisys).
+        // and the inversa: the client that acaba of reaparecer tampoco
+        // scans again to know to the other if the server not is the
+        // re-presenta (same bucle `getChunkEntities() ->
+        // spawnTo($this)` of Genisys).
         if (srv_) {
             for (auto& other : srv_->playersSnapshot()) {
                 if (!other || other.get() == this) continue;
@@ -862,11 +869,11 @@ void Player::respawn() {
             }
         }
 
-        // PlayStatusPacket PLAYER_SPAWN: Genisys lo manda en
-        // Player::respawn() justo despues del teleport para re-armar el
-        // cliente 0.15.x fuera de la pantalla de muerte. Sin el, el
-        // cliente puede quedarse esperando y nunca re-enviar su
-        // posicion — o sea, nadie lo veria moverse nunca.
+        // PlayStatusPacket PLAYER_SPAWN: Genisys it takes precedence in
+        // player::respawn() justo despues of the teleport for re-armar the
+        // client 0.15.x outside of the screen of death. without the, the
+        // client can remain esperando and never re-send its
+        // position — that is, nadie it veria moverse never.
         auto ps = std::make_shared<network::protocol::PlayStatusPacket>();
         ps->status = network::protocol::PlayStatusPacket::PLAYER_SPAWN;
         sendPacket(ps);
@@ -880,15 +887,15 @@ void Player::respawn() {
 }
 
 // ============================================================
-// onDeath — Living hook, se llama UNA VEZ cuando health_ cruza a 0
-// (ver Living::applyDamage). Dispara PlayerDeathEvent y difunde el
-// mensaje de muerte.
+// onDeath — Living hook, is flame a time when health_ cruza to 0
+// (ver Living::applyDamage). Dispara PlayerDeathEvent and broadcasts the
+// message of death.
 //
-// No reaparece al jugador aca mismo — eso pasa en Player::respawn(),
-// disparado cuando el cliente manda ACTION_SPAWN_SAME_DIMENSION
-// (boton "Respawn" en la pantalla de muerte). Hasta que eso ocurra,
-// el jugador se queda con isDead()==true y handleMovePlayer/
-// handleInteract lo bloquean de seguir jugando.
+// not reaparece to the player aca same — that passes in player::respawn(),
+// disparado when the client takes precedence ACTION_SPAWN_SAME_DIMENSION
+// (button "Respawn" in the screen of death). until that ocurra,
+// the player is remains with isDead()==true and handleMovePlayer/
+// handleInteract it bloquean of seguir jugando.
 // ============================================================
 void Player::onDeath() {
     std::string msg = cfg_.username + " died";
@@ -896,7 +903,7 @@ void Player::onDeath() {
     if (!ev.isCancelled() && !ev.message.empty() && srv_) {
         srv_->broadcastMessage(ev.message);
     }
-    // Death sequence (protocol 84, mirrors PMMP Player.kill()):
+    // Death sequence (protocol 84, mirrors PMMP player.kill()):
     // EntityEventPacket DEATH_ANIMATION to EVERY spawned player (the dying
     // client first — without it the client never shows the "You died!"
     // screen and cannot click Respawn), then SetHealthPacket(0).
@@ -916,16 +923,16 @@ void Player::onDeath() {
         sh->health = 0;
         sendPacket(sh);
 
-        // La barra de corazones del 0.15 se maneja por el ATRIBUTO
-        // generic.health (Genisys Player::setHealth -> Attribute::HEALTH
-        // setValue(..., true)), NO por SetHealthPacket. Genisys llama
-        // setHealth(0) dentro de kill(), asi que el atributo queda en 0 y
-        // el cliente muestra la pantalla de muerte. Sin esto el atributo
-        // conservaba el ultimo valor vivo -> los corazones no bajaban a 0
-        // y el cliente no armaba bien la pantalla de muerte/respawn.
+        // the barra of corazones of the 0.15 is maneja by the ATRIBUTO
+        // generic.health (Genisys player::setHealth -> Attribute::HEALTH
+        // setValue(..., true)), not by SetHealthPacket. Genisys flame
+        // setHealth(0) inside of kill(), this way that the atributo remains in 0 and
+        // the client shows the screen of death. without this the atributo
+        // conservaba the ultimo valor vivo -> the corazones not bajaban to 0
+        // and the client not armaba well the screen of death/respawn.
         sendHealthAttribute();
 
-        // Infinity Player::kill(): right after setHealth(0) the server
+        // Infinity player::kill(): right after setHealth(0) the server
         // sends the RespawnPacket with the spawn position. The 0.15.10
         // client needs it to arm the death screen's Respawn flow —
         // without it the Respawn button does nothing and the player is
@@ -937,10 +944,10 @@ void Player::onDeath() {
             sendPacket(rp);
         }
     }
-    // Genisys Player::kill():
+    // Genisys player::kill():
     //     foreach($ev->getDrops() as $item) $this->level->dropItem($this, $item);
     //     $this->inventory->clearAll();
-    // Player::getDrops() returns the whole inventory in survival and an
+    // player::getDrops() returns the whole inventory in survival and an
     // empty array in creative, so this is "everything I was carrying is now
     // on the ground where I fell" — not just the hotbar.
     if (inv_ && !isCreative()) {

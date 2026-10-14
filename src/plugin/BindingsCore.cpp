@@ -6,7 +6,7 @@
 | \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
  \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
 
- * CurseStone | Open Source Server Software
+ * CurseStone | Open Source server Software
  *
  * Copyright (C) 2026 CurseStoneTeam
  *
@@ -20,36 +20,39 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// BindingsCore — API core expuesta a los plugins Lua.
+// BindingsCore — API core expuesta to the plugins Lua.
 //
 //   log.info/warn/error(msg)          antepone "[NombrePlugin] "
-//   server.broadcast(msg)             mensaje a todos los jugadores
-//   server.players()                  lista de nombres conectados
-//   player.message(name, msg)         mensaje a un jugador (false si no existe)
-//   player.tip(name, msg)             TIP flotante (false si no existe)
-//   player.popup(name, msg)           POPUP sobre el hotbar (false si no existe)
-//   player.kick(name, reason)         expulsa (false si no existe)
-//   player.teleport(name, x, y, z)    teletransporta (false si no existe)
-//   player.isOp(name)                 true si es op (false si no existe)
-//   player.setPermission(name, nodo, v) concede/niega un nodo de permiso
-//                                     EN MEMORIA (false si no existe el jugador)
-//   player.hasPermission(name, nodo)  ¿tiene ese nodo? (false si no existe)
-//   scheduler.later(ticks, fn)        corre fn una vez; devuelve id
-//   scheduler.every(ticks, fn)        corre fn cada ticks; devuelve id
-//   scheduler.cancel(id)              cancela una tarea
-//   plugin.api                        versión de la API del servidor ("1.0.0")
-//   plugin.name / .author / .version  metadatos de ESTE plugin
-//   import("core/Example")            FUNCIÓN GLOBAL: carga un módulo Lua
-//                                     del propio plugin (busca en src/,
-//                                     extensión opcional, con caché)
-//   plugin.include("src/x.lua")       variante explícita de import (ruta
-//                                     exacta relativa a su carpeta, con caché)
+//   server.broadcast(msg)             message to all the players
+//   server.players()                  list of names connected
+//   player.message(name, msg)         message to a player (false if not exists)
+//   player.tip(name, msg)             TIP flotante (false if not exists)
+//   player.popup(name, msg)           POPUP about the hotbar (false if not exists)
+//   player.kick(name, reason)         expulsa (false if not exists)
+//   player.teleport(name, x, and, z)    teletransporta (false if not exists)
+//   player.teleportWorld(name, world, // teletransporta to other world
+//                        x, and, z)     (false if not exist)
+//   player.getWorld(name)             handle world of the player (nil if not)
+//   player.isOp(name)                 true if is op (false if not exists)
+//   player.setPermission(name, node, v) concede/niega a node of permiso
+//                                     in memory (false if not exists the player)
+//   player.hasPermission(name, node)  ¿has that node? (false if not exists)
+//   scheduler.later(ticks, fn)        runs fn a time; returns id
+//   scheduler.every(ticks, fn)        runs fn each ticks; returns id
+//   scheduler.cancel(id)              cancela a tarea
+//   plugin.api                        version of the API of the server ("1.0.0")
+//   plugin.name / .author / .version  metadata of this plugin
+//   import("core/Example")            function global: load a module Lua
+//                                     of the own plugin (looks for in src/,
+//                                     extension optional, with cache)
+//   plugin.include("src/x.lua")       variante explicit of import (path
+//                                     exact relativa to its folder, with cache)
 //
 // REGLAS:
-//   - Todo por NOMBRE de jugador (string). Nunca se guarda un Player*:
-//     se busca con getPlayerExact en CADA llamada.
-//   - El scheduler corre en el hilo principal; las funciones Lua se
-//     guardan como refs en el registry del state del plugin.
+//   - everything by name of player (string). never is saves a player*:
+//     is looks for with getPlayerExact in each call.
+//   - the scheduler runs in the thread main; the functions Lua is
+//     are stored as refs in the registry of the state of the plugin.
 #include "LuaBindings.h"
 #include "LuaPlugin.h"
 #include "Server.h"
@@ -63,7 +66,7 @@ namespace cursestone::plugin {
 
 namespace {
 
-// Helper para registrar una tabla de funciones como global.
+// Helper for register a tabla of functions as global.
 void setTable(lua_State* L, const char* name, const luaL_Reg* funcs) {
     lua_newtable(L);
     luaL_setfuncs(L, funcs, 0);
@@ -100,7 +103,7 @@ int l_server_players(lua_State* L) {
     return 1;
 }
 
-// ---------- player (patrón: buscar por nombre en CADA llamada) ----------
+// ---------- player (pattern: look for by name in each call) ----------
 Player* findPlayer(lua_State* L, int idx) {
     return Server::getInstance().getPlayerExact(luaL_checkstring(L, idx));
 }
@@ -146,6 +149,29 @@ int l_player_teleport(lua_State* L) {
     lua_pushboolean(L, 1);
     return 1;
 }
+// teleportWorld(name, world, x, and, z): just like teleport() but about
+// other world; if the dimension changes the client receives
+// ChangeDimensionPacket and the chunks of the target.
+int l_player_teleportWorld(lua_State* L) {
+    Player* p = findPlayer(L, 1);
+    const char* worldName = luaL_checkstring(L, 2);
+    lua_Number x = luaL_checknumber(L, 3);
+    lua_Number y = luaL_checknumber(L, 4);
+    lua_Number z = luaL_checknumber(L, 5);
+    if (!p) { lua_pushboolean(L, 0); return 1; }
+    World* target = Server::getInstance().getWorldByName(worldName);
+    if (!target) { lua_pushboolean(L, 0); return 1; }
+    lua_pushboolean(L, p->switchWorld(target, (double)x, (double)y, (double)z,
+                                      false) ? 1 : 0);
+    return 1;
+}
+// getWorld(name): handle `world` of the world in that which is the player.
+int l_player_getWorld(lua_State* L) {
+    Player* p = findPlayer(L, 1);
+    if (!p) { lua_pushnil(L); return 1; }
+    pushWorldHandle(L, p->getWorld());
+    return 1;
+}
 int l_player_isOp(lua_State* L) {
     Player* p = findPlayer(L, 1);
     lua_pushboolean(L, p ? p->isOp() : 0);
@@ -156,7 +182,7 @@ int l_player_setPermission(lua_State* L) {
     const char* node = luaL_checkstring(L, 2);
     bool value = lua_toboolean(L, 3) != 0;
     if (!p) { lua_pushboolean(L, 0); return 1; }
-    p->setPermission(node, value);       // PermissibleBase (en memoria)
+    p->setPermission(node, value);       // PermissibleBase (in memory)
     lua_pushboolean(L, 1);
     return 1;
 }
@@ -168,8 +194,8 @@ int l_player_hasPermission(lua_State* L) {
 }
 
 // ---------- scheduler ----------
-// Común a later() y every(): guardar la función como ref, programar una
-// CallbackTask en el ServerScheduler y devolver el id de tarea a Lua.
+// common to later() and every(): save the function as ref, schedule a
+// CallbackTask in the ServerScheduler and return the id of tarea to Lua.
 int scheduleImpl(lua_State* L, bool repeat) {
     LuaPlugin* pl = LuaPlugin::from(L);
     int ticks = (int)luaL_checkinteger(L, 1);
@@ -177,15 +203,15 @@ int scheduleImpl(lua_State* L, bool repeat) {
     luaL_checktype(L, 2, LUA_TFUNCTION);
 
     lua_pushvalue(L, 2);
-    int ref = luaL_ref(L, LUA_REGISTRYINDEX);          // guardar la función
-    auto idHolder = std::make_shared<uint64_t>(0);     // el id se conoce después de programar
+    int ref = luaL_ref(L, LUA_REGISTRYINDEX);          // save the function
+    auto idHolder = std::make_shared<uint64_t>(0);     // the id is is known after schedule
 
     auto task = std::make_shared<scheduler::CallbackTask>(
         [pl, ref, repeat, idHolder]() {
-            if (!pl->isEnabled()) return;              // plugin ya deshabilitado
+            if (!pl->isEnabled()) return;              // plugin already deshabilitado
             lua_rawgeti(pl->L(), LUA_REGISTRYINDEX, ref);
             pl->pcall(0, 0);
-            if (!repeat) pl->releaseTask(*idHolder);   // one-shot: soltar la ref
+            if (!repeat) pl->releaseTask(*idHolder);   // one-shot: soltar the ref
         });
 
     uint64_t id = scheduler::ServerScheduler::get().scheduleSync(task, ticks, repeat ? ticks : 0);
@@ -201,14 +227,14 @@ int l_scheduler_cancel(lua_State* L) {
     return 0;
 }
 
-// ---------- plugin (metadatos + carga de archivos del plugin) ----------
-// plugin.include(ruta) -> delega en LuaPlugin::include (validación de ruta
-// segura relativa a la carpeta del plugin + caché tipo require).
+// ---------- plugin (metadata + load of files of the plugin) ----------
+// plugin.include(path) -> delegates in LuaPlugin::include (validation of path
+// safe relativa to the folder of the plugin + cache tipo require).
 int l_plugin_include(lua_State* L) {
     return LuaPlugin::from(L)->include(L);
 }
-// import(ruta) -> delega en LuaPlugin::import (busca en src/, extensión
-// opcional, misma caché). Se registra como FUNCIÓN GLOBAL `import`.
+// import(path) -> delegates in LuaPlugin::import (looks for in src/, extension
+// optional, same cache). is registers as function global `import`.
 int l_plugin_import(lua_State* L) {
     return LuaPlugin::from(L)->import(L);
 }
@@ -247,7 +273,8 @@ void bindCore(lua_State* L) {
     static const luaL_Reg plrF[] = {
         {"message", l_player_message}, {"tip", l_player_tip},
         {"popup", l_player_popup}, {"kick", l_player_kick},
-        {"teleport", l_player_teleport}, {"isOp", l_player_isOp},
+        {"teleport", l_player_teleport}, {"teleportWorld", l_player_teleportWorld},
+        {"getWorld", l_player_getWorld}, {"isOp", l_player_isOp},
         {"setPermission", l_player_setPermission},
         {"hasPermission", l_player_hasPermission},
         {nullptr, nullptr}};
@@ -261,9 +288,9 @@ void bindCore(lua_State* L) {
     setTable(L, "scheduler", schF);
     bindPluginTable(L);   // plugin.api / .name / .author / .version / .include
 
-    // import("modulo"): carga de módulos Lua del propio plugin (la forma
-    // recomendada; busca en src/ y no exige extensión). Global, como pide
-    // el flujo natural: local Example = import("core/Example").
+    // import("module"): load of módulos Lua of the own plugin (the way
+    // recommended; looks for in src/ and not requires extension). global, as requires
+    // the flujo natural: local Example = import("core/Example").
     lua_pushcfunction(L, l_plugin_import);
     lua_setglobal(L, "import");
 }

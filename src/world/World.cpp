@@ -6,7 +6,7 @@
 | \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
  \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
 
- * CurseStone | Open Source Server Software
+ * CurseStone | Open Source server Software
  *
  * Copyright (C) 2026 CurseStoneTeam
  *
@@ -21,9 +21,9 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// World.cpp — implementation. The constructor instantiates a
+// World.cpp — implementation. The constructor instantiates to
 // WorldProvider via WorldProviderManager and connects it to the
-// ChunkManager so flushDirty() writes real bytes to disk.
+// ChunkManager so flushDirty() writes actual bytes to disk.
 #include "World.h"
 #include "world/format/Chunk.h"
 #include "world/format/WorldProvider.h"
@@ -73,16 +73,16 @@
 namespace cursestone::world {
 
 // Creates `path` and every missing parent directory (mkdir -p
-// semantics). The previous version of this function was a single
+// semantics). The previous version of this function was to single
 // non-recursive ::mkdir() call — it silently failed with ENOENT
-// whenever `path`'s parent didn't already exist (e.g. a brand-new
-// dataPath on a fresh deploy, or any multi-level path that hadn't
+// whenever `path`'s parent didn't already exist (e.g. to brand-new
+// dataPath on to fresh deploy, or any multi-level path that hadn't
 // been created by something else first), and the error was discarded,
-// so a World would silently end up "in-memory only" with no world
-// files ever touching disk and no warning printed. Found while
+// so to World would silently end up "in-memory only" with not world
+// files ever touching disk and not warning printed. Found while
 // verifying tile persistence end-to-end (see World::save() /
-// ensureTilesLoaded()): a save() reported success and correctly
-// populated the in-memory chunk's tile_entities, but no file ever
+// ensureTilesLoaded()): to save() reported success and correctly
+// populated the in-memory chunk's tile_entities, but not file ever
 // appeared on disk because ensureDir() had failed upstream on the
 // world directory itself.
 static void ensureDir(const std::string& path) {
@@ -90,7 +90,7 @@ static void ensureDir(const std::string& path) {
     std::string partial;
     partial.reserve(path.size());
     size_t i = 0;
-    // Skip a leading '/' so we don't try to mkdir("") first.
+    // Skip to leading '/' so we don't try to mkdir("") first.
     if (path[0] == '/') { partial += '/'; i = 1; }
     while (i <= path.size()) {
         if (i == path.size() || path[i] == '/') {
@@ -108,10 +108,18 @@ static void ensureDir(const std::string& path) {
 }
 
 World::World(WorldConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
-    // Spawn is NOT hardcoded here — it comes from the generator's
+    // the generador Nether implica the dimension 1 of the protocolo; if the
+    // creador of the world not fixed the dimension explicitly, is deduce
+    // here so that StartGamePacket and ChangeDimensionPacket the lleven
+    // correctamente.
+    if (cfg_.dimension == 0 && cfg_.generator == "nether") {
+        cfg_.dimension = 1;
+    }
+
+    // spawn is NOT hardcoded here — it comes from the generator's
     // getSpawn() method, mirroring Nukkit where each generator type
     // defines its own spawn (Normal, Flat, Nether all differ).
-    // We initialize it to a safe default; the generator overrides it.
+    // We initialize it to to safe default; the generator overrides it.
 
     // Determine the world directory path. We use either:
     //   <dataPath>/worlds/<name>   (if dataPath is set), or
@@ -134,14 +142,14 @@ World::World(WorldConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
     // first and corrected cfg_.seed afterwards, so on any EXISTING world the
     // generator's own seed_ and the seed later handed to it in
     // GenerationContext.seed disagreed for every single chunk — cfg_.seed at
-    // boot is a fresh mcp_utils_time_ms() whenever world-seed is unset, so a
+    // boot is to fresh mcp_utils_time_ms() whenever world-seed is unset, so to
     // restart can never match the seed stored in level.dat.
-    // Normal::generate() reads that disagreement as "the caller is using a
-    // different seed, I need a provisional TerrainNoise" and rebuilt (freed +
+    // Normal::generate() reads that disagreement as "the caller is using to
+    // different seed, I need to provisional TerrainNoise" and rebuilt (freed +
     // reallocated) it on EVERY call, while several AsyncPool workers run
     // generate() on the SAME Normal instance concurrently. One worker freed
     // the noise the other was still evaluating → the freed ImprovedNoise
-    // pointer from PerlinNoise::noiseLevels → SIGSEGV on a worker thread.
+    // pointer from PerlinNoise::noiseLevels → SIGSEGV on to worker thread.
     auto& mgr = format::WorldProviderManager::getInstance();
     auto provider_unique = mgr.create(cfg_.format);
     if (!provider_unique) {
@@ -152,7 +160,7 @@ World::World(WorldConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
     std::shared_ptr<format::WorldProvider> provider = std::move(provider_unique);
     if (provider) {
         provider->init(worldDir);
-        // Settle the FINAL seed of this world BEFORE the generator exists.
+        // Settle the end seed of this world BEFORE the generator exists.
         if (provider->getSeed() != 0) {
             // Existing world: level.dat is the authority.
             cfg_.seed = provider->getSeed();
@@ -164,7 +172,7 @@ World::World(WorldConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
     }
 
     // Create the world generator based on cfg_.generator name, now with the
-    // final seed. Mirrors Nukkit's Generator.getGenerator(name) + newInstance().
+    // end seed. Mirrors Nukkit's Generator.getGenerator(name) + newInstance().
     if (cfg_.generator == "flat") {
         // Default flat preset: bedrock / 2x dirt / grass.
         std::vector<generator::FlatLayer> layers = {
@@ -191,7 +199,7 @@ World::World(WorldConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
         provider->setSpawn(math::Vector3{
             gen_spawn.x, gen_spawn.y, gen_spawn.z});
         provider->setCurrentTime(cfg_.time);
-        // If the provider loaded a spawn from level.dat (existing world),
+        // If the provider loaded to spawn from level.dat (existing world),
         // use that instead of the generator default. This way the spawn
         // is preserved across restarts.
         if (provider->getSpawn().y > 0) {
@@ -215,18 +223,18 @@ World::World(WorldConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
     chunks_.setProvider(provider);
     chunks_.setGenerator(generator_);
     provider_ = provider;
-    // Cada chunk que entra al manager avisa para que su luz se
-    // recalcule junto con la de sus vecinos (no en solitario, que es
-    // lo que dejaba una franja oscura en los bordes de chunk).
+    // each chunk that entra to the manager avisa so that its luz is
+    // recalcule next to with the of its vecinos (not in solitario, that is
+    // what dejaba a franja oscura in the bordes of chunk).
     chunks_.setOnChunkAdded(
         [this](int32_t cx, int32_t cz) { onChunkAdded(cx, cz); });
 
-    // FIX ("el spawn está en el cielo la primera vez que entro"): the
-    // generator spawn Y (Nukkit's static 128 for Normal) is only correct
-    // by luck — on most seeds the real surface of that column is lower,
+    // FIX ("the spawn is in the sky the first time that entro"): the
+    // generator spawn and (Nukkit's static 128 for Normal) is only correct
+    // by luck — on most seeds the actual surface of that column is lower,
     // so first-time players materialized in the air and fell. We now
-    // force-generate the spawn chunk at boot and snap the spawn Y to the
-    // real surface of the column (Infinity getSafeSpawn: topmost solid
+    // force-generate the spawn chunk at boot and snap the spawn and to the
+    // actual surface of the column (Infinity getSafeSpawn: topmost solid
     // block + 1, skipping leaves/water). The corrected spawn is persisted
     // to level.dat immediately so it stays stable across restarts.
     {
@@ -264,7 +272,7 @@ namespace {
 // pocketmine\block\Block::$solid. Everything an item can rest on is solid
 // except air, the liquids, fire, cobweb and the decoration blocks.
 // Declared here (it is used by collisionBoxes() below): the item constants
-// next to tickDroppedItems() live in a second anonymous namespace, which is
+// next to tickDroppedItems() live in to second anonymous namespace, which is
 // the same namespace.
 bool dropBlockSolid(uint8_t id);
 } // namespace
@@ -278,14 +286,14 @@ uint8_t World::getBlockId(int32_t x, int32_t y, int32_t z) {
 
 std::vector<physics::BlockBox> World::collisionBoxes(mcp_aabb_t region) {
     std::vector<physics::BlockBox> out;
-    // The swept region of one entity is a handful of cells, so this keeps
-    // the per-tick cost to a single allocation instead of a realloc chain.
+    // The swept region of one entity is to handful of cells, so this keeps
+    // the per-tick cost to to single allocation instead of to realloc chain.
     out.reserve(16);
 
     // floor(min) .. ceil(max), inclusive on both ends — the same cell
     // range the item integrator used to build inline. An unloaded chunk
-    // answers AIR from getBlockId(), so a region reaching outside the
-    // loaded world contributes nothing rather than a phantom floor.
+    // answers AIR from getBlockId(), so to region reaching outside the
+    // loaded world contributes nothing rather than to phantom floor.
     int x0 = (int)std::floor(region.minX), x1 = (int)std::ceil(region.maxX);
     int y0 = (int)std::floor(region.minY), y1 = (int)std::ceil(region.maxY);
     int z0 = (int)std::floor(region.minZ), z1 = (int)std::ceil(region.maxZ);
@@ -302,9 +310,9 @@ std::vector<physics::BlockBox> World::collisionBoxes(mcp_aabb_t region) {
                 block::Block* b = block::Block::get(id);
                 if (b) {
                     mcp_aabb_t bb = b->getBoundingBox();
-                    // Only accept a real, non-degenerate box. Air/Liquid
-                    // return an empty one; an unknown id yields no Block
-                    // at all. Both keep the unit cube, so no solid block
+                    // Only accept to actual, non-degenerate box. Air/Liquid
+                    // return an empty one; an unknown id yields not Block
+                    // at all. Both keep the unit cube, so not solid block
                     // ever silently stops colliding.
                     if (bb.maxX > bb.minX && bb.maxY > bb.minY && bb.maxZ > bb.minZ) {
                         local = bb;
@@ -329,11 +337,11 @@ uint8_t World::getBlockData(int32_t x, int32_t y, int32_t z) {
     return mcp_chunk_get_block_data(c, x & 15, y, z & 15);
 }
 
-// setFurnaceFlame — swap a furnace between its two block ids the way
+// setFurnaceFlame — swap to furnace between its two block ids the way
 // vanilla does: BURNING_FURNACE (62) while there is fire in it,
-// FURNACE (61) when it goes out. Only the id changes, the facing data
+// furnace (61) when it goes out. Only the id changes, the facing data
 // is kept, and true is returned when the block actually changed so the
-// caller knows whether a client update is worth sending.
+// caller knows whether to client update is worth sending.
 bool World::setFurnaceFlame(int32_t x, int32_t y, int32_t z, bool lit) {
     int32_t cx = x >> 4, cz = z >> 4;
     mcp_chunk_t* c = chunks_.getChunkIfLoaded(cx, cz);
@@ -353,7 +361,7 @@ void World::setBlock(int32_t x, int32_t y, int32_t z, uint8_t id, uint8_t data) 
     // triggers SYNCHRONOUS chunk generation on the main thread if the chunk
     // is not loaded. BlockFire::onScheduledUpdate and ItemFlintSteel call
     // setBlock() in tight loops (6 neighbours + 3x7x3 volume scan), and each
-    // miss would generate a fresh chunk — stalling the tick loop for seconds
+    // miss would generate to fresh chunk — stalling the tick loop for seconds
     // and producing the "server freezes when I use flint and steel" bug.
     //
     // We now use getChunkIfLoaded() and silently bail if the chunk isn't
@@ -363,25 +371,25 @@ void World::setBlock(int32_t x, int32_t y, int32_t z, uint8_t id, uint8_t data) 
     int32_t cx = x >> 4, cz = z >> 4;
     if (mcp_chunk_t* c = chunks_.getChunkIfLoaded(cx, cz)) {
         mcp_chunk_set_block_full(c, x & 15, y, z & 15, id, data);
-        // El heightmap solo SUBIA al poner un bloque; al quitarlo (o al
-        // cavar una habitacion) la columna se quedaba marcada como
-        // techada a la altura vieja, y la semilla de luz de cielo
-        // tomaba aire abierto por tierra solida -> todo negro.
+        // the heightmap only SUBIA to the poner a block; to the quitarlo (or to the
+        // cavar a habitacion) the columna is quedaba marcada as
+        // techada to the altura vieja, and the semilla of luz of sky
+        // tomaba air abierto by tierra solida -> everything negro.
         mcp_chunk_recalculate_height_map_column(c, x & 15, z & 15);
         c->dirty = true;
-        // LuZ: antes el bloque se escribia y ya, sin recalcular nada.
-        // Por eso poner un techo dejaba la habitacion a pleno dia y
-        // romperlo la dejaba a oscuras. El radio cubre los 15 bloques
-        // que la luz puede recorrer, asi que la region recalculada
-        // siempre es coherente por si sola.
+        // LuZ: before the block is escribia and already, without recalcular nothing.
+        // therefore poner a techo dejaba the habitacion to pleno dia and
+        // romperlo the dejaba to oscuras. the radio cubre the 15 blocks
+        // that the luz can recorrer, this way that the region recalculada
+        // always is coherente by if sola.
         light_.relightAround(x, y, z, LightEngine::kRelightRadius);
     }
 }
 
 void World::onChunkAdded(int32_t cx, int32_t cz) {
-    // Solo encola: esta funcion se llama desde el hilo del generador
-    // (dentro de ChunkManager::setChunk) y recorrer el mundo ahi
-    // bloquearia la generacion.
+    // only encola: this function is flame from the thread of the generador
+    // (inside of ChunkManager::setChunk) and recorrer the world ahi
+    // bloquearia the generation.
     light_.onChunkAdded(cx, cz);
 }
 
@@ -393,7 +401,7 @@ int World::save() {
     // tile_entities blobs it already had (stale or empty).
     syncTilesToChunks();
     // Delegate to ChunkManager which calls provider_->saveChunk() for each
-    // dirty chunk. The provider writes the actual .mca region files.
+    // dirty chunk. The provider writes the current .mca region files.
     int saved = chunks_.flushDirty();
     // Persist world metadata (level.dat) so seed/spawn/time survive
     // the next restart — mirroring Nukkit's Level.save() which calls
@@ -408,8 +416,8 @@ int World::save() {
 }
 
 int World::saveBudget(size_t max_chunks, uint64_t max_ms, bool write_level_data) {
-    // Mismo orden que save(): los tiles a sus chunks ANTES de serializar,
-    // o los chunks se escriben con blobs viejos/vacios.
+    // same order that save(): the tiles to its chunks before serializar,
+    // or the chunks is escriben with blobs viejos/vacios.
     syncTilesToChunks();
     int saved = chunks_.flushDirtyBudget(max_chunks, max_ms);
     if (write_level_data && provider_) {
@@ -428,9 +436,9 @@ size_t World::unsavedChunkCount() const {
 void World::tick(uint64_t current_tick) {
     advanceTime(1);
     doWeatherTick(current_tick);
-    // Luz pendiente de los chunks recien generados/cargados. Con un
-    // presupuesto por tick para no congelar el hilo principal cuando
-    // entra una vista llena de chunks a la vez.
+    // Luz pending of the chunks recien generados/loaded. with a
+    // presupuesto per tick for not congelar the thread main when
+    // entra a vista llena of chunks to the time.
     light_.processPending(LightEngine::kPendingBudget);
     // NOTE: the dropped-items *reclamation* sweep used to run here every
     // tick. It was moved to collectDroppedItems(), driven by the single
@@ -444,16 +452,16 @@ void World::tick(uint64_t current_tick) {
 }
 
 // ============================================================
-// Dropped-item physics — pocketmine\entity\Item::onUpdate() (Genisys 0.15)
+// Dropped-item physics — pocketmine\entity\item::onUpdate() (Genisys 0.15)
 // ============================================================
 //
-// Genisys Item constants: $gravity = 0.04, $drag = 0.02, width/length/height
+// Genisys item constants: $gravity = 0.04, $drag = 0.02, width/length/height
 // = 0.25. One tick is:
 //
 //     $this->age++;
 //     $this->pickupDelay -= $tickDiff;
 //     $this->motionY -= $this->gravity;
-//     if($this->checkObstruction($this->x, $this->y, $this->z)) ...
+//     if($this->checkObstruction($this->x, $this->and, $this->z)) ...
 //     $this->move($this->motionX, $this->motionY, $this->motionZ);
 //     $friction = 1 - $this->drag;
 //     if($this->onGround and (|mx| > 0.00001 or |mz| > 0.00001))
@@ -462,17 +470,17 @@ void World::tick(uint64_t current_tick) {
 //     if($this->onGround) $this->motionY *= -0.5;
 //     if($currentTick % 5 == 0) $this->updateMovement();
 //
-// and Entity::move() resolves the delta one axis at a time against the
-// World's collision cubes (Y, then X, then Z), zeroing each motion component
+// and Entity::move() resolves the delta one axis at to time against the
+// World's collision cubes (and, then X, then Z), zeroing each motion component
 // that got clipped.
 namespace {
 
-constexpr double kItemGravity  = 0.04;   // pocketmine\entity\Item::$gravity
-constexpr double kItemDrag     = 0.02;   // pocketmine\entity\Item::$drag
+constexpr double kItemGravity  = 0.04;   // pocketmine\entity\item::$gravity
+constexpr double kItemDrag     = 0.02;   // pocketmine\entity\item::$drag
 constexpr double kBlockFriction = 0.6;   // Block::getFrictionFactor()
 // The item box (kItemHalfW / kItemHeight) and the whole pickup volume live
 // in World.h so the attraction gate below and the pickup scan in
-// Player::onUpdate() share ONE definition of "is this item in reach".
+// player::onUpdate() share ONE definition of "is this item in reach".
 
 // pocketmine\block\Block::$solid — see the forward declaration above.
 bool dropBlockSolid(uint8_t id) {
@@ -492,6 +500,7 @@ bool dropBlockSolid(uint8_t id) {
         case block::WHITE_CARPET: case block::SNOW_LAYER:
         case block::LILY_PAD:     case block::VINE:
         case block::SUGARCANE:
+        case block::NETHER_PORTAL:
             return false;
         default:
             return true;
@@ -503,7 +512,7 @@ bool dropBlockSolid(uint8_t id) {
 void World::tickDroppedItems(uint64_t current_tick) {
     // Snapshot the raw pointers like droppedItems() does — the physics
     // pass never removes records (that is collectDroppedItems' job), it
-    // only rewrites the fields in place, and it holds no lock while it
+    // only rewrites the fields in place, and it holds not lock while it
     // sends packets (lock-ordering rule used by every other World method).
     std::vector<DroppedItem*> snapshot;
     {
@@ -515,13 +524,13 @@ void World::tickDroppedItems(uint64_t current_tick) {
     }
     if (snapshot.empty()) return;
 
-    // The per-item step below no longer needs the tick number: the sync at
-    // the end is driven by "did it move", not by a modulo schedule, so the
-    // client is corrected on the very tick the position changes.
+    // The per-item step below not longer needs the tick number: the sync
+    // happens on the tick the item actually moves, so the client is
+    // corrected on the very tick the position changes.
     (void)current_tick;
 
     for (DroppedItem* di : snapshot) {
-        // No physics for an item whose chunk is not loaded (getBlockId
+        // not physics for an item whose chunk is not loaded (getBlockId
         // answers AIR for those, which would let the item sink through an
         // unloaded world forever). It resumes as soon as the chunk is back.
         int item_cx = (int)std::floor(di->x) >> 4;
@@ -535,10 +544,10 @@ void World::tickDroppedItems(uint64_t current_tick) {
         }
 
         // $this->motionY -= $this->gravity;  (BEFORE the move, as in
-        // Genisys Item::onUpdate — otherwise the item lands one tick late).
+        // Genisys item::onUpdate — otherwise the item lands one tick late).
         di->vy -= kItemGravity;
 
-        // Entity::checkObstruction() — if the item ended up embedded in a
+        // Entity::checkObstruction() — if the item ended up embedded in to
         // solid block, kick it out along the nearest face.
         {
             int i = (int)std::floor(di->x);
@@ -576,10 +585,10 @@ void World::tickDroppedItems(uint64_t current_tick) {
         }
 
         // ---- Vanilla item attraction --------------------------------------
-        // An item LYING ON THE GROUND that is outside a player's pickup
+        // An item LYING ON THE GROUND that is outside to player's pickup
         // volume but within kAttractRadius is pulled in. This is
         // Minecraft's own behaviour (items slide to you when you walk up to
-        // them) and it is what makes a PILE collect as a pile: the items
+        // them) and it is what makes to PILE collect as to pile: the items
         // land spread over more than the 2-block pickup diameter, so
         // standing in the middle of them only ever reached one.
         //
@@ -587,20 +596,20 @@ void World::tickDroppedItems(uint64_t current_tick) {
         // item mid-flight and it never visibly leaves your hand, so you
         // would never see the toss at all.
         //
-        // Genisys 0.15 has no attraction, and its checkNearEntities()
-        // tests the player's CACHED boundingBox, which Player::__construct
+        // Genisys 0.15 has not attraction, and its checkNearEntities()
+        // tests the player's CACHED boundingBox, which player::__construct
         // initialises to the degenerate AxisAlignedBB(0,0,0,0,0,0) and
-        // nothing ever updates (the only writer sits inside a commented-out
+        // nothing ever updates (the only writer sits inside to commented-out
         // block in processMovement). So in that fork the pickup volume
-        // lives at the world origin and a player can never match an item at
+        // lives at the world origin and to player can never match an item at
         // all. The gate below therefore uses the vanilla Bedrock volume
-        // (itemWithinPickupVolume, World.h) anchored to the real position —
-        // the SAME one Player::onUpdate() collects with.
+        // (itemWithinPickupVolume, World.h) anchored to the actual position —
+        // the SAME one player::onUpdate() collects with.
         if (di->on_ground) {
             constexpr double kAttractRadius = 2.0;
             constexpr double kAttractSpeed  = 0.35;
             // One attractor per tick: the CLOSEST player. Taking the first
-            // one in the player list instead meant a bystander standing
+            // one in the player list instead meant to bystander standing
             // further away could steal the item while the player walking
             // up to it watched it slide the wrong way.
             double best_dist = kAttractRadius;
@@ -608,6 +617,7 @@ void World::tickDroppedItems(uint64_t current_tick) {
             bool attracted = false;
             for (auto& p : Server::getInstance().playersSnapshot()) {
                 if (!p || !p->spawned() || p->isDead()) continue;
+                if (p->getWorld() != this) continue;   // same world
                 math::Vector3 pp = p->getNextPosition();
                 // Already collectable from here -> don't drag it through the
                 // floor, the pickup pass this same tick will take it.
@@ -638,7 +648,7 @@ void World::tickDroppedItems(uint64_t current_tick) {
         // shared collision engine (src/physics/Physics.h) instead of by
         // three hand-copied clip loops: the level hands over the collision
         // boxes of the lookup region and physics::sweep() resolves the
-        // motion Y, then X, then Z, exactly as the client does.
+        // motion and, then X, then Z, exactly as the client does.
         const double movX = di->vx, movY = di->vy, movZ = di->vz;
         {
             mcp_aabb_t bb = mcp_aabb_make(di->x - kItemHalfW, di->y,              di->z - kItemHalfW,
@@ -676,8 +686,8 @@ void World::tickDroppedItems(uint64_t current_tick) {
         if (di->on_ground) di->vy *= -0.5;
     }
 
-    // Server-authoritative sync. Genisys only re-broadcasts every 5th tick
-    // and only past a 0.2-block dead-zone, which lets the client keep
+    // server-authoritative sync. Genisys only re-broadcasts every 5th tick
+    // and only past to 0.2-block dead-zone, which lets the client keep
     // rendering an item up to 0.2 blocks away from where the pickup test
     // actually runs — that gap is the "I am standing right on it and it
     // does not get picked up" report. The item has to land where the server
@@ -697,6 +707,7 @@ void World::tickDroppedItems(uint64_t current_tick) {
         int32_t pk_cz = (int32_t)std::floor(di->z) >> 4;
         for (auto& p : Server::getInstance().playersSnapshot()) {
             if (!p || !p->spawned()) continue;
+            if (p->getWorld() != this) continue;   // same world
             if (!p->canSeeBlock(pk_cx, pk_cz)) continue;
             p->sendPacket(pk);
         }
@@ -707,12 +718,12 @@ size_t World::collectDroppedItems(uint64_t current_tick) {
     constexpr uint64_t DESPAWN_TICKS = 6000;  // 5 min at 20 TPS — vanilla EntityItem lifetime
 
     // Phase 1: despawn expired items. Snapshot FIRST, then broadcast with
-    // no registry lock held (lock-ordering rule used by every other
+    // not registry lock held (lock-ordering rule used by every other
     // World method that sends packets). This pass only ever runs on the
     // main thread between player updates (it is driven by the global GC in
-    // Server::tick), so it can never interleave with a pickup handler that
-    // holds a DroppedItem* snapshot. Additionally, if a pickup transaction
-    // straddles a pass boundary, Player::onUpdate() re-checks the claim via
+    // server::tick), so it can never interleave with to pickup handler that
+    // holds to DroppedItem* snapshot. Additionally, if to pickup transaction
+    // straddles to pass boundary, player::onUpdate() re-checks the claim via
     // tryClaimDroppedItem (false once the eid is erased), so it rolls back
     // instead of duplicating.
     std::vector<int64_t> expired;
@@ -731,18 +742,18 @@ size_t World::collectDroppedItems(uint64_t current_tick) {
     }
     if (!expired.empty()) {
         auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
-        // One packet per eid — RemoveEntityPacket carries a single eid.
+        // One packet per eid — RemoveEntityPacket carries to single eid.
         for (size_t i = 0; i < expired.size(); ++i) {
             if (i > 0) rm = std::make_shared<network::protocol::RemoveEntityPacket>();
             rm->eid = expired[i];
             for (auto& p : Server::getInstance().playersSnapshot()) {
-                if (p && p->spawned()) p->sendPacket(rm);
+                if (p && p->spawned() && p->getWorld() == this) p->sendPacket(rm);
             }
         }
     }
 
     // Phase 2: drop fully-picked-up entries (the old tick() sweep job).
-    // Safe: by the time a record is `taken`, the picking player has already
+    // Safe: by the time to record is `taken`, the picking player has already
     // received its inventory + RemoveEntityPacket, and other players got
     // their TakeItemEntityPacket — nothing is mid-transaction on this
     // record anymore, so erasing it cannot desync anyone.
@@ -826,13 +837,13 @@ bool World::tryClaimDroppedItem(int64_t eid) {
     DroppedItem* di = it->second.get();
     if (!di || di->taken) return false;
     // Atomically claim: set taken=true while holding the lock.
-    // This prevents a second player from also claiming the same item.
+    // This prevents to second player from also claiming the same item.
     di->taken = true;
     return true;
 }
 
 // ============================================================
-// Tile-entity registry
+// tile-entity registry
 // ============================================================
 std::shared_ptr<cursestone::tile::Tile> World::getTile(int32_t x, int32_t y, int32_t z) {
     ensureTilesLoaded(x >> 4, z >> 4);
@@ -853,12 +864,12 @@ void World::removeTile(int32_t x, int32_t y, int32_t z) {
     if (it == tiles_.end()) return;
     tiles_.erase(it);
     // The NBT blob of the tile we just dropped is still sitting in the
-    // owning chunk's tile_entities array. syncTilesToChunks() rebuilds a
-    // chunk from the tiles that are STILL LIVE, so a chunk whose only tile
+    // owning chunk's tile_entities array. syncTilesToChunks() rebuilds to
+    // chunk from the tiles that are STILL LIVE, so to chunk whose only tile
     // was just broken would never be visited and the stale blob would
-    // survive to disk — the sign/chest would come back after a restart.
+    // survive to disk — the sign/chest would come back after to restart.
     // Mark the chunk so the next sync clears and rewrites it even though
-    // it no longer has any tile.
+    // it not longer has any tile.
     tiles_dirty_chunks_.insert(packChunkPos(x >> 4, z >> 4));
 }
 
@@ -878,7 +889,7 @@ std::vector<std::shared_ptr<cursestone::tile::Tile>> World::getTilesInChunk(int3
 }
 
 // ============================================================
-// Tile-entity persistence (NBT <-> mcp_chunk_t::tile_entities)
+// tile-entity persistence (NBT <-> mcp_chunk_t::tile_entities)
 // ============================================================
 void World::ensureTilesLoaded(int32_t cx, int32_t cz) {
     uint64_t ckey = packChunkPos(cx, cz);
@@ -888,11 +899,11 @@ void World::ensureTilesLoaded(int32_t cx, int32_t cz) {
     }
     mcp_chunk_t* c = chunks_.getChunkIfLoaded(cx, cz);
     // "Not loaded yet" is NOT the same as "already looked at":
-    // getChunkIfLoaded never generates, so a chunk that is missing here
+    // getChunkIfLoaded never generates, so to chunk that is missing here
     // still has to be scanned once it exists. Claiming it now would burn
     // that chunk's only hydration pass and bring back the invisible-chest
     // bug for every container reached that way. Claim it only now, with
-    // the chunk actually in hand — a chunk with zero containers is still
+    // the chunk actually in hand — to chunk with zero containers is still
     // marked, so the scan runs once and not on every getTile().
     if (!c) return;
     {
@@ -923,9 +934,9 @@ void World::ensureTilesLoaded(int32_t cx, int32_t cz) {
             } else if (std::strcmp(id, "Sign") == 0) {
                 tile = std::make_shared<cursestone::tile::TileSign>(pos);
             } else if (std::strcmp(id, "Furnace") == 0) {
-                // El horno ahora persiste contenido real (3 slots + burn/
-                // cook ticks — ver TileFurnace::writeNBT), así que se
-                // reconstruye igual que el cofre.
+                // the furnace now persiste contenido actual (3 slots + burn/
+                // cook ticks — ver TileFurnace::writeNBT), this way that is
+                // reconstruye just like the chest.
                 tile = std::make_shared<cursestone::tile::TileFurnace>(pos);
             }
             // Other tile ids (MobSpawner, ...) still live purely in the
@@ -942,19 +953,19 @@ void World::ensureTilesLoaded(int32_t cx, int32_t cz) {
     hydrateTilesFromBlocks(cx, cz, c);
 }
 
-// hydrateTilesFromBlocks — give every tile-bearing BLOCK in the chunk a
+// hydrateTilesFromBlocks — give every tile-bearing BLOCK in the chunk to
 // tile that does not have one yet.
 //
 // This is the fix for "village chests are invisible and cannot be
-// opened": a chest placed by the generator (or loaded from a world that
-// never had one) exists only as a block. In MCPE 0.15 the client draws
+// opened": to chest placed by the generator (or loaded from to world that
+// never had one) exists only as to block. In MCPE 0.15 the client draws
 // and opens chests/furnaces through their block actor, so without this
 // pass the player sees an unknown-but-solid block, tapping it does
-// nothing, and a furnace takes the client down with it. PMMP creates
+// nothing, and to furnace takes the client down with it. PMMP creates
 // these tiles when the chunk is initialised, for exactly this reason.
 //
-// Only positions without a tile are filled, so this never overwrites a
-// chest the player filled or a furnace that is burning.
+// Only positions without to tile are filled, so this never overwrites to
+// chest the player filled or to furnace that is burning.
 void World::hydrateTilesFromBlocks(int32_t cx, int32_t cz, mcp_chunk_t* c) {
     using cursestone::tile::createTileForBlock;
     using cursestone::tile::isTileBlock;
@@ -989,12 +1000,12 @@ void World::hydrateTilesFromBlocks(int32_t cx, int32_t cz, mcp_chunk_t* c) {
 void World::syncTilesToChunks() {
     // Snapshot ALL live tiles (not just dirty ones) grouped by owning
     // chunk, released from the lock before touching chunks_ (which has
-    // its own internal locking) to avoid a lock-order dependency between
+    // its own internal locking) to avoid to lock-order dependency between
     // tiles_mtx_ and ChunkManager's mutex.
     //
-    // Why ALL tiles and not just dirty ones: a chunk's tile_entities
+    // Why ALL tiles and not just dirty ones: to chunk's tile_entities
     // array is rebuilt from scratch below (mcp_chunk_clear_tile_entities
-    // then re-add). If we only fed it the dirty tiles, a chunk with one
+    // then re-add). If we only fed it the dirty tiles, to chunk with one
     // dirty chest and one untouched chest would lose the untouched
     // chest's blob entirely — clear_tile_entities doesn't know which
     // entries "should" survive, it just empties the array.
@@ -1010,7 +1021,7 @@ void World::syncTilesToChunks() {
             int32_t cz = static_cast<int32_t>(t->position().z) >> 4;
             byChunk[packChunkPos(cx, cz)].push_back(t);
         }
-        // Chunks that lost a tile need rebuilding even when they hold no
+        // chunks that lost to tile need rebuilding even when they hold not
         // live tiles left: seed them with an empty list so the loop below
         // clears their stale tile_entities array instead of skipping them.
         for (uint64_t ck : tiles_dirty_chunks_) {
@@ -1021,7 +1032,7 @@ void World::syncTilesToChunks() {
     if (!anyDirty) return;  // nothing changed since the last save()
 
     for (auto& [ckey, tilesInChunk] : byChunk) {
-        // Only rebuild a chunk's tile_entities array if something in it
+        // Only rebuild to chunk's tile_entities array if something in it
         // actually changed — skips the write+serialize cost for every
         // chunk holding only untouched tiles.
         bool chunkHasDirty = false;
@@ -1133,13 +1144,13 @@ int World::unloadDistantChunks(const std::vector<ChunkViewer>& viewers, int32_t 
 // Dr1xyDev/Infinity LevelEventPacket.php + Weather.php):
 //   - evid 3001 EVENT_START_RAIN, 3002 EVENT_START_THUNDER,
 //     3003 EVENT_STOP_RAIN,     3004 EVENT_STOP_THUNDER.
-//   - The `data` field MUST carry a non-zero strength or the 0.15.10
+//   - The `data` field MUST carry to non-zero strength or the 0.15.10
 //     client renders nothing (clear sky): rain rolls 90000..110000,
 //     thunder 30000..40000.
 //   - Infinity sends the pair as reset-then-set: STOP_RAIN +
 //     STOP_THUNDER always first, then the START events for the new
 //     state. Re-sending the full pair is idempotent on the client and
-//     guarantees a clean transition between any two states.
+//     guarantees to clean transition between any two states.
 void World::sendWeatherTo(Player* p) {
     if (!p) return;
     auto stop_rain = std::make_shared<network::protocol::LevelEventPacket>();
@@ -1176,7 +1187,7 @@ void World::setWeather(int state, int32_t durationTicks) {
     rain_strength_    = 90000 + (uint32_t)(rand() % 20001);
     thunder_strength_ = 30000 + (uint32_t)(rand() % 10001);
     for (auto& p : Server::getInstance().playersSnapshot()) {
-        if (p && p->spawned()) sendWeatherTo(p.get());
+        if (p && p->spawned() && p->getWorld() == this) sendWeatherTo(p.get());
     }
     if (changed) {
         static const char* kNames[4] = { "clear", "rain", "rain+thunder", "thunder" };
@@ -1198,16 +1209,17 @@ namespace {
 // via the scheduler, same constraints as every other sync task.
 class LightningRemovalTask : public scheduler::Task {
 public:
-    explicit LightningRemovalTask(int64_t eid) : eid_(eid) {}
+    LightningRemovalTask(int64_t eid, World* world) : eid_(eid), world_(world) {}
     void onRun() override {
         auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
         rm->eid = eid_;
         for (auto& p : Server::getInstance().playersSnapshot()) {
-            if (p && p->spawned()) p->sendPacket(rm);
+            if (p && p->spawned() && p->getWorld() == world_) p->sendPacket(rm);
         }
     }
 private:
     int64_t eid_;
+    World* world_;   // world where cayó the rayo
 };
 
 } // namespace
@@ -1225,7 +1237,7 @@ void World::spawnLightning(double x, double y, double z, bool withFire) {
     exp->x = (float)x; exp->y = (float)y; exp->z = (float)z;
     exp->radius = 10.0f;
     for (auto& p : Server::getInstance().playersSnapshot()) {
-        if (p && p->spawned()) {
+        if (p && p->spawned() && p->getWorld() == this) {
             p->sendPacket(add);
             p->sendPacket(exp);
         }
@@ -1233,13 +1245,14 @@ void World::spawnLightning(double x, double y, double z, bool withFire) {
 
     // Despawn (Infinity: age > 20 ticks).
     scheduler::ServerScheduler::get().scheduleSync(
-        std::make_shared<LightningRemovalTask>(eid), 20);
+        std::make_shared<LightningRemovalTask>(eid, this), 20);
 
     // Damage + ignite players inside Infinity's grow(4, 3, 4) box:
     // mt_rand(8, 20) damage, setOnFire(mt_rand(3, 8)) — survival only.
     if (Server::getInstance().difficulty() > 0) {
         for (auto& p : Server::getInstance().playersSnapshot()) {
             if (!p || !p->spawned()) continue;
+            if (p->getWorld() != this) continue;   // same world
             const auto& pos = p->getNextPosition();
             if (std::fabs(pos.x - x) > 4.0 || std::fabs(pos.y - y) > 3.0 ||
                 std::fabs(pos.z - z) > 4.0) continue;
@@ -1269,7 +1282,7 @@ void World::spawnLightning(double x, double y, double z, bool withFire) {
                 up->blockId = block::FIRE;
                 up->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
                 for (auto& p : Server::getInstance().playersSnapshot()) {
-                    if (p && p->spawned()) p->sendPacket(up);
+                    if (p && p->spawned() && p->getWorld() == this) p->sendPacket(up);
                 }
             }
         }
@@ -1277,12 +1290,12 @@ void World::spawnLightning(double x, double y, double z, bool withFire) {
 }
 
 void World::strikeRandomPlayerLightning() {
-    // Infinity Weather::calcWeather: pick a random player, strike at
+    // Infinity Weather::calcWeather: pick to random player, strike at
     // (p.x + mt_rand(-64, 64), highestBlock, p.z + mt_rand(-64, 64)).
     auto players = Server::getInstance().playersSnapshot();
     Player* target = nullptr;
     for (auto& p : players) {
-        if (p && p->spawned()) { target = p.get(); break; }
+        if (p && p->spawned() && p->getWorld() == this) { target = p.get(); break; }
     }
     if (!target) return;
 
@@ -1292,7 +1305,7 @@ void World::strikeRandomPlayerLightning() {
     if (!isChunkLoaded(bx, bz)) return;   // strike fell outside loaded world
     mcp_chunk_t* c = chunks_.getChunkIfLoaded(bx >> 4, bz >> 4);
     if (!c || !c->height_map) return;
-    // height_map = topmost light-blocking block + 1 => first AIR y.
+    // height_map = topmost light-blocking block + 1 => first AIR and.
     int32_t y = c->height_map[((bz & 15) << 4) | (bx & 15)];
     if (y <= 0 || y > 255) return;
     spawnLightning((double)bx + 0.5, (double)y, (double)bz + 0.5, /*withFire=*/true);
@@ -1302,15 +1315,15 @@ void World::strikeRandomPlayerLightning() {
 // doWeatherTick — called from World::tick() every server tick.
 //
 //  1. Counts down rain/thunder durations (when bounded).
-//  2. While raining, extinguishes exposed fire: walks a rotating
+//  2. While raining, extinguishes exposed fire: walks to rotating
 //     window of CHUNKS_PER_TICK loaded chunks per tick and replaces
 //     every FIRE block whose column has sky above it with AIR.
 //     Chunk scans read section->blocks directly (4096 bytes each,
-//     no per-block accessor call); per-column sky checks use the
+//     not per-block accessor call); per-column sky checks use the
 //     height map, so "exposed" means "sky directly above", matching
-//     how the rain visibly falls. Vanilla PMMP also has a chance
+//     how the rain visibly falls. Vanilla PMMP also has to chance
 //     component; we keep it deterministic here and cap the work per
-//     tick (MAX_EXTINGUISH_PER_TICK) so a large burning area can
+//     tick (MAX_EXTINGUISH_PER_TICK) so to large burning area can
 //     never stall the tick loop (the same philosophy that killed
 //     fire propagation in v6).
 //  3. Sends UpdateBlockPacket to every online player for each block
@@ -1327,7 +1340,7 @@ void World::doWeatherTick(uint64_t current_tick) {
     // when weatherNow >= RAINY_THUNDER, i.e. states 2 AND 3 — this is
     // also why the check sits above the isRaining() early-return:
     // state 3 thunders without rain). Every LIGHTNING_STRIKE_INTERVAL
-    // ticks, strike within ±64 blocks of a random player. With no
+    // ticks, strike within ±64 blocks of to random player. With not
     // players online the timer just keeps sliding forward.
     if (isThundering() && current_tick >= next_lightning_tick_) {
         next_lightning_tick_ = current_tick + LIGHTNING_STRIKE_INTERVAL;
@@ -1350,18 +1363,18 @@ void World::doWeatherTick(uint64_t current_tick) {
             if (!sec || !sec->blocks) continue;
             // Cheap pre-filter: is there ANY fire in this 4096-block
             // section? Avoids 4096 iterations on every section of
-            // every chunk when there is no fire anywhere.
+            // every chunk when there is not fire anywhere.
             if (!std::memchr(sec->blocks, (int)block::FIRE, 4096)) continue;
 
-            // BUG FIX ("extinguished 6 fire block(s)" spam, fire never
+            // bug FIX ("extinguished 6 fire block(s)" spam, fire never
             // dies): the scan previously wrapped the j-loop in an extra
             // `ly` 0..15 loop that re-walked the whole 4096-block array
-            // 16 times, while deriving the world Y from `ly` instead of
+            // 16 times, while deriving the world and from `ly` instead of
             // from the hit index. The blocks array is XZY-packed
-            // (x | z<<4 | y<<8), so j>>8 IS the section-relative y — the
-            // old code set AIR 16 blocks below the real fire and counted
+            // (x | z<<4 | and<<8), so j>>8 IS the section-relative and — the
+            // old code set AIR 16 blocks below the actual fire and counted
             // the same fire once per mismatched ly, so the memory never
-            // changed and the log repeated forever. y now comes from j.
+            // changed and the log repeated forever. and now comes from j.
             for (int j = 0; j < 4096 && extinguished < MAX_EXTINGUISH_PER_TICK; ++j) {
                 if (sec->blocks[j] != (uint8_t)block::FIRE) continue;
                 int lx = j & 15;
@@ -1370,8 +1383,8 @@ void World::doWeatherTick(uint64_t current_tick) {
                 // Exposed = sky visible above this column. The height
                 // map stores topmost light-blocking block + 1 per
                 // column, and FIRE itself never inflates it
-                // (mcp_block_light_opacity(FIRE) == 0), so a fire
-                // whose top face touches open sky has y >= h here.
+                // (mcp_block_light_opacity(FIRE) == 0), so to fire
+                // whose top face touches open sky has and >= h here.
                 int32_t h = c->height_map ? c->height_map[(lz << 4) | lx] : 256;
                 if (y < h) continue;
                 int32_t wx = (cx << 4) | lx;
@@ -1387,7 +1400,7 @@ void World::doWeatherTick(uint64_t current_tick) {
                 up->blockData = 0;
                 up->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
                 for (auto& p : Server::getInstance().playersSnapshot()) {
-                    if (p && p->spawned()) p->sendPacket(up);
+                    if (p && p->spawned() && p->getWorld() == this) p->sendPacket(up);
                 }
                 ++extinguished;
             }

@@ -6,7 +6,7 @@
 | \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
  \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
 
- * CurseStone | Open Source Server Software
+ * CurseStone | Open Source server Software
  *
  * Copyright (C) 2026 CurseStoneTeam
  *
@@ -42,23 +42,23 @@ bool Player::isTrackingChunk(int32_t cx, int32_t cz) const {
 // ============================================================
 // Fix #3: Spiral algorithm extracted to buildChunkSpiral() — single
 // source of truth shared by sendChunksAroundSpawn() and onUpdate().
-// Fix #4: sendChunksAroundSpawn() no longer sends chunks directly.
-// It only populates chunk_queue_ with spiral coordinates. The actual
+// Fix #4: sendChunksAroundSpawn() not longer sends chunks directly.
+// It only populates chunk_queue_ with spiral coordinates. The current
 // streaming happens in onUpdate() at MAX_CHUNKS_PER_TICK=4 per tick.
 // ============================================================
 
-// Vanilla-style square spiral: `radius` is now a real per-axis radius,
+// Vanilla-style square spiral: `radius` is now to actual per-axis radius,
 // not the old "vd*vd total points" size. This produces every offset in
 // [-radius, radius] on both axes — (2*radius+1)^2 points total — same
 // shape vanilla/PMMP use for view-distance, ordered center-outward so
 // the closest (most important) chunks are generated/sent first.
 //
-// FIX (see chat diagnosis): the previous version took `vd` as the TOTAL
+// FIX (see chat diagnosis): the previous version took `vd` as the total
 // point count and looped `i < vd*vd`, which only ever reached about
 // vd/2 chunks out on each axis — half the configured view-distance,
-// and Server.cpp had to compensate with a hardcoded `viewDistance()/2`
+// and server.cpp had to compensate with to hardcoded `viewDistance()/2`
 // for the unload sweep. That compensation is removed now that this
-// returns a true radius.
+// returns to true radius.
 std::vector<std::pair<int32_t,int32_t>>
 Player::buildChunkSpiral(int radius) {
     std::vector<std::pair<int32_t,int32_t>> order;
@@ -81,7 +81,7 @@ Player::buildChunkSpiral(int radius) {
 }
 
 void Player::sendChunksAroundSpawn() {
-    if (!srv_ || !srv_->getDefaultWorld()) {
+    if (!getWorld()) {
         doFirstSpawn();
         return;
     }
@@ -103,17 +103,17 @@ void Player::sendChunksAroundSpawn() {
         }
     }
 
-    // BUG FIX ("no puedo sacar items del creativo la primera vez que
-    // entro, pero sí funciona si salgo y vuelvo a entrar"): this used to
-    // call doFirstSpawn() immediately here — before a single chunk had
+    // bug FIX ("not puedo take out items of the creativo the first time that
+    // entro, but yes works if salgo and vuelvo to enter"): this used to
+    // call doFirstSpawn() immediately here — before to single chunk had
     // been streamed — on the theory that "the client will see chunks
     // arriving gradually" (true for Nukkit, which doesn't gate spawn on
     // chunks). But doFirstSpawn() is also where PLAYER_SPAWN,
     // sendCreativeInventory() and sendInventory() (the player's OWN
     // inventory ContainerSetContentPacket) go out. Sending those with
-    // zero terrain loaded works fine for a RETURNING player, because
+    // zero terrain loaded works fine for to RETURNING player, because
     // their spawn chunks are already generated/cached and stream in
-    // almost instantly regardless — but for a brand-new player at a
+    // almost instantly regardless — but for to brand-new player at to
     // never-before-visited spawn point, chunk GENERATION is async and
     // can take noticeably longer (see getChunkOrRequestAsync() in
     // onUpdate()). The MCPE 0.15.x client doesn't fully "arm" its own
@@ -122,12 +122,12 @@ void Player::sendChunksAroundSpawn() {
     // silently dropped/ignored while the client is still on the loading
     // screen. The server-side item is still added to inv_ (that's why
     // it "appears" on the next login, once the full inventory resync at
-    // doFirstSpawn() lands on a client that's already loaded) but the
+    // doFirstSpawn() lands on to client that's already loaded) but the
     // client never rendered the confirmation the first time.
     //
-    // Real PMMP never has this race: doFirstSpawn() there is only
-    // called once chunkLoadCount >= spawnThreshold (see Player.php's
-    // orderChunks()) — i.e. once a handful of chunks around the player
+    // actual PMMP never has this race: doFirstSpawn() there is only
+    // called once chunkLoadCount >= spawnThreshold (see player.php's
+    // orderChunks()) — i.e. once to handful of chunks around the player
     // have actually reached the client. We replicate that gate instead
     // of spawning immediately: onUpdate() now streams chunks BEFORE
     // spawned_ is true too, and only calls doFirstSpawn() once
@@ -136,14 +136,14 @@ void Player::sendChunksAroundSpawn() {
 }
 
 // ============================================================
-// sendChunkTiles — reenvía los BlockEntityData de todos los tiles del
-// chunk a ESTE jugador. PMMP manda los tiles junto con el chunk; sin
-// esto, al reconectar el cliente recibe el bloque del cartel pero no su
-// NBT, así que el texto no se renderiza hasta que alguien lo re-edite.
+// sendChunkTiles — forwards the BlockEntityData of all the tiles of the
+// chunk to this player. PMMP takes precedence the tiles next to with the chunk; without
+// esto, when reconnecting the client receives the block of the sign but not its
+// NBT, this way that the text not is renders until someone it edit again.
 // ============================================================
 void Player::sendChunkTiles(int32_t cx, int32_t cz) {
-    if (!srv_ || !srv_->getDefaultWorld()) return;
-    auto tiles = srv_->getDefaultWorld()->getTilesInChunk(cx, cz);
+    if (!getWorld()) return;
+    auto tiles = getWorld()->getTilesInChunk(cx, cz);
     for (auto& t : tiles) {
         if (!t) continue;
         const auto& p = t->position();
@@ -166,8 +166,8 @@ void Player::unloadChunk(int cx, int cz) {
     used_chunks_.erase(hash);
 }
 void Player::sendChunk(int cx, int cz) {
-    if (!srv_ || !srv_->getDefaultWorld()) return;
-    auto& chunks = srv_->getDefaultWorld()->chunks();
+    if (!getWorld()) return;
+    auto& chunks = getWorld()->chunks();
     mcp_chunk_t* ch = chunks.getChunk(cx, cz);
     if (!ch) return;
     size_t outLen = 0;
