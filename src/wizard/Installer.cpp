@@ -24,8 +24,8 @@
 #include "InstallerLang.h"
 #include "utils/MainLogger.hpp"
 #include "utils/Config.h"
+#include "utils/DefaultConfig.h"
 #include <iostream>
-#include <fstream>
 #include <filesystem>
 #include <cstdio>
 namespace cursestone::wizard {
@@ -78,69 +78,39 @@ bool Installer::runWizard() {
     int difficulty        = askInt(lang.get("installer.difficulty_question"), 1);
     bool whitelist        = askYesNo(lang.get("installer.whitelist_question"), false);
 
-    utils::Config cfg;
-    cfg.setString("settings.language", "eng");
-    cfg.setString("settings.shutdown-message", "Server closed");
-    cfg.setInt("settings.async-workers", 4);
-    cfg.setString("server.ip", "0.0.0.0");
-    cfg.setInt("server.port", port);
-    cfg.setString("server.motd", name);
-    cfg.setInt("server.max-players", max_players);
-    cfg.setInt("server.gamemode", gamemode);
-    cfg.setInt("server.difficulty", difficulty);
-    cfg.setBool("server.whitelist", whitelist);
-    cfg.setBool("server.online-mode", false);
-    cfg.setInt("server.view-distance", 8);
-    cfg.setString("world.name", world_name);
-    cfg.setString("world.format", "anvil");
-    cfg.setString("world.generator", world_type);
-    cfg.setInt("world.seed", 0);
+    // Basic answers go to server.properties; the generator is an advanced
+    // setting and goes to cursestone.yml.
+    utils::Config props;
+    props.setString("motd", name);
+    props.setString("server-ip", "0.0.0.0");
+    props.setInt("server-port", port);
+    props.setInt("max-players", max_players);
+    props.setInt("gamemode", gamemode);
+    props.setInt("difficulty", difficulty);
+    props.setBool("white-list", whitelist);
+    props.setBool("online-mode", false);
+    props.setInt("view-distance", 8);
+    props.setString("world-name", world_name);
+    props.setString("world-seed", "");
+
+    utils::Config adv;
+    adv.setInt("settings.async-workers", 4);
+    adv.setInt("settings.autosave-ticks", 6000);
+    adv.setBool("settings.advanced-log", true);
+    adv.setString("world.format", "anvil");
+    adv.setString("world.generator", world_type);
+    adv.setInt("memory.max-mb", 512);
+    adv.setInt("memory.gc-interval-ticks", 200);
 
     fs::create_directories(data_path_);
-    bool ok = cfg.saveYaml(data_path_ + "/cursestone.yml");
-    if (ok) utils::MainLogger::get().info("Saved cursestone.yml");
+    bool ok = props.saveIni(data_path_ + "/server.properties") &&
+              adv.saveYaml(data_path_ + "/cursestone.yml");
+    if (ok) utils::MainLogger::get().info(lang.get("installer.done"));
     else    utils::MainLogger::get().error("Failed to save config");
     return ok;
 }
 
 bool Installer::generateDefaultConfig() {
-    if (fs::exists(data_path_ + "/cursestone.yml")) return true;
-    fs::create_directories(data_path_);
-    std::ofstream f(data_path_ + "/cursestone.yml");
-    f << R"YAML(settings:
-  language: "eng"
-  shutdown-message: "Server closed"
-  async-workers: 4
-
-server:
-  ip: "0.0.0.0"
-  port: 19132
-  motd: "CurseStone"
-  max-players: 20
-  gamemode: 0
-  difficulty: 1
-  whitelist: false
-  online-mode: false
-  view-distance: 8
-
-world:
-  name: "world"
-  format: "anvil"
-  generator: "normal"
-  seed: 0
-
-memory:
-  max-mb: 512            # RSS budget (MB) for the global GarbageCollector
-  gc-interval-ticks: 200 # ticks between GC passes (200 = 10s at 20 TPS)
-
-network:
-  compression-level: 7
-  batch-threshold: 256
-
-logging:
-  level: "info"
-  colored: true
-)YAML";
-    return f.good();
+    return utils::writeDefaultConfigs(data_path_);
 }
 } // namespace

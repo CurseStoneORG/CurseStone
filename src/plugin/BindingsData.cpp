@@ -22,7 +22,7 @@
  */
 // BindingsData — API de datos y configs para los plugins Lua.
 //
-// Cada plugin tiene SU carpeta: plugins/data_pl/<carpetaDelPlugin>/ (se
+// Cada plugin tiene SU carpeta: data_pl/<carpetaDelPlugin>/ (se
 // crea al cargar el plugin). TODA esta API restringe las rutas a esa
 // carpeta con sanitizeRelPath(): sin "..", sin rutas absolutas, sin
 // backslashes — un plugin NO puede leer ni escribir fuera de su carpeta.

@@ -21,27 +21,24 @@
  *
  */
 #include "InstallerLang.h"
-#include "utils/Config.h"
-#include <fstream>
-#include <sstream>
 namespace cursestone::wizard {
 InstallerLang& InstallerLang::get() { static InstallerLang i; return i; }
 bool InstallerLang::load(const std::string& lang_code) {
-    utils::Config cfg;
-    std::string path = "resources/" + lang_code + ".ini";
-    if (!cfg.loadIni(path)) return false;
-    // Populate strings_ from cfg — Config doesn't expose a direct
-    // iterator, so we re-load and parse here.
-    std::ifstream f(path);
-    std::string line;
-    while (std::getline(f, line)) {
-        auto eq = line.find('=');
-        if (eq == std::string::npos) continue;
-        std::string k = line.substr(0, eq);
-        std::string v = line.substr(eq + 1);
-        strings_[k] = v;
-    }
-    return !strings_.empty();
+    // Only the English locale is built in.
+    if (lang_code != "eng") return false;
+    strings_ = {
+        {"installer.welcome", "Welcome to CurseStone! Let's set up your server."},
+        {"installer.name_question", "Server name (motd)"},
+        {"installer.max_players_question", "Max players"},
+        {"installer.port_question", "Server port"},
+        {"installer.world_name_question", "World name"},
+        {"installer.world_type_question", "World type (normal/flat/nether/void)"},
+        {"installer.gamemode_question", "Default gamemode (0=survival, 1=creative, 2=adventure)"},
+        {"installer.difficulty_question", "Difficulty (0-3)"},
+        {"installer.whitelist_question", "Enable whitelist"},
+        {"installer.done", "Setup complete! Saved cursestone.yml and server.properties."},
+    };
+    return true;
 }
 const std::string& InstallerLang::get(const std::string& key) const {
     auto it = strings_.find(key);

@@ -70,12 +70,15 @@
 #include "utils/BinaryStream.h"
 #include "permission/BanList.h"
 #include "plugin/PluginManager.h"   // plugins Lua (fase 3)
+#include "utils/Config.h"
+#include "utils/DefaultConfig.h"
 
 #include <iostream>
 #include <fstream>
 #include <chrono>
 #include <thread>
 #include <algorithm>
+#include <filesystem>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include "utils/PlatformCompat.h"
@@ -86,102 +89,70 @@ namespace cursestone {
 Server::Server() = default;
 Server::~Server() = default;
 
+namespace {
+
+// Reads a boolean accepting true/on/yes/y/1 (case-insensitive).
+bool readBool(const utils::Config& cfg, const char* key, bool def) {
+    std::string v = cfg.getString(key, std::string());
+    if (v.empty()) return def;
+    std::transform(v.begin(), v.end(), v.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    return v == "true" || v == "on" || v == "yes" || v == "y" || v == "1";
+}
+
+} // namespace
+
 void Server::loadConfig() {
     using utils::Config;
-    Config cfg;
+    Config props;  // server.properties: basic settings
+    Config adv;    // cursestone.yml: advanced settings
 
-    // First try PMMP-style server.properties (key=value INI file).
-    // If it doesn't exist, fall back to cursestone.yml.
-    std::string props_path = dataPath_ + "/server.properties";
-    std::string yaml_path  = dataPath_ + "/cursestone.yml";
-    bool loaded_props = false;
-    if (cfg.loadIni(props_path)) {
-        loaded_props = true;
+    const std::string props_path = dataPath_ + "/server.properties";
+    const std::string yaml_path  = dataPath_ + "/cursestone.yml";
+    if (props.loadIni(props_path)) {
         utils::MainLogger::get().info("Loaded config: " + props_path);
-    } else if (cfg.loadYaml(yaml_path)) {
+    } else {
+        utils::MainLogger::get().warn("Missing " + props_path + "; using defaults");
+    }
+    if (adv.loadYaml(yaml_path)) {
         utils::MainLogger::get().info("Loaded config: " + yaml_path);
     } else {
-        utils::MainLogger::get().info("No config found; using defaults. " +
-            std::string("Either create ") + props_path + " or " + yaml_path);
+        utils::MainLogger::get().warn("Missing " + yaml_path + "; using defaults");
     }
 
-    // Getters accept dotted or flat keys; for the INI form, the key is
-    // just the property name (e.g. "server-port"). For YAML, the key is
-    // the dotted path (e.g. "server.port"). Config::getString accepts both.
-    auto get_str = [&](const char* yaml_key, const char* ini_key,
-                       const char* def) -> std::string {
-        // Try INI form first, then YAML, then default.
-        std::string v = cfg.getString(ini_key, std::string());
-        if (!v.empty()) return v;
-        return cfg.getString(yaml_key, def);
-    };
-    auto get_int = [&](const char* yaml_key, const char* ini_key,
-                       int64_t def) -> int64_t {
-        int64_t v = cfg.getInt(ini_key, INT64_MIN);
-        if (v != INT64_MIN) return v;
-        return cfg.getInt(yaml_key, def);
-    };
-    auto get_bool = [&](const char* yaml_key, const char* ini_key,
-                        bool def) -> bool {
-        // Fix: check if the INI key EXISTS before checking its value.
-        // The old code did `if (v != def)` which meant that if the user
-        // set whitelist=false and the default was also false, the INI
-        // value was ignored and the YAML was read instead.
-        // New approach: try to get the INI key as a string. If it's
-        // non-empty, the key exists → parse it as bool.
-        std::string ini_val = cfg.getString(ini_key, std::string());
-        if (!ini_val.empty()) {
-            // Key exists in INI — use it.
-            std::string lower = ini_val;
-            std::transform(lower.begin(), lower.end(), lower.begin(),
-                          [](unsigned char c){ return std::tolower(c); });
-            return (lower == "true" || lower == "on" || lower == "1" ||
-                    lower == "yes" || lower == "y");
-        }
-        // Key not in INI — fall back to YAML.
-        return cfg.getBool(yaml_key, def);
-    };
+    // server.properties
+    ip_            = props.getString("server-ip", "0.0.0.0");
+    port_          = (uint16_t)props.getInt("server-port", 19132);
+    motd_          = props.getString("motd", "CurseStone");
+    max_players_   = (int)props.getInt("max-players", 20);
+    gamemode_      = (int)props.getInt("gamemode", 0);
+    difficulty_    = (int)props.getInt("difficulty", 1);
+    whitelist_     = readBool(props, "white-list", false);
+    online_mode_   = readBool(props, "online-mode", false);
+    view_distance_ = (int)props.getInt("view-distance", 8);
 
-    ip_            = get_str("server.ip", "server-ip", "0.0.0.0");
-    port_          = (uint16_t)get_int("server.port", "server-port", 19132);
-    motd_          = get_str("server.motd", "motd", "CurseStone");
-    max_players_   = (int)get_int("server.max-players", "max-players", 20);
-    gamemode_      = (int)get_int("server.gamemode", "gamemode", 0);
-    difficulty_    = (int)get_int("server.difficulty", "difficulty", 1);
-    whitelist_     = get_bool("server.whitelist", "white-list", false);
-    online_mode_   = get_bool("server.online-mode", "online-mode", false);
-    advanced_log_  = get_bool("server.advanced-log", "advanced-log", true);
-    view_distance_ = (int)get_int("server.view-distance", "view-distance", 8);
-    async_workers_ = (int)get_int("settings.async-workers", "async-workers", 4);
-    autosave_ticks_ = (int)get_int("server.autosave-ticks", "autosave-ticks", 6000);
+    // cursestone.yml
+    async_workers_  = (int)adv.getInt("settings.async-workers", 4);
+    autosave_ticks_ = (int)adv.getInt("settings.autosave-ticks", 6000);
+    advanced_log_   = readBool(adv, "settings.advanced-log", true);
 
-    // Memory budget for the global GarbageCollector. Previously this key
-    // existed in cursestone.yml but was never read — MemoryManager silently
-    // ran on its hardcoded 512 MB default. Also expose the GC pass
-    // interval (ticks between coordinated sweeps; 200 ticks = 10s at
-    // 20 TPS). Must be set BEFORE the tick loop starts so the very first
-    // collect() already honors the operator's budget.
-    MemoryManager::get().setLimitMB(
-        (int)get_int("memory.max-mb", "max-mb", 512));
+    // Both values must be set before the tick loop so the first GC pass
+    // already honors the configured budget.
+    MemoryManager::get().setLimitMB((int)adv.getInt("memory.max-mb", 512));
     MemoryManager::get().setGcIntervalTicks(
         (uint64_t)std::max<int64_t>(
-            20, get_int("memory.gc-interval-ticks", "gc-interval-ticks", 200)));
+            20, adv.getInt("memory.gc-interval-ticks", 200)));
 
-    // If we just loaded the .properties file (no YAML), create the
-    // server.properties in the data dir from the default resource so the
-    // user can edit it on next startup.
-    if (loaded_props) {
-        utils::MainLogger::get().info("Server port: " + std::to_string(port_));
-        utils::MainLogger::get().info("Server IP: " + ip_);
-        utils::MainLogger::get().info("MOTD: " + motd_);
-        utils::MainLogger::get().info("Max players: " + std::to_string(max_players_));
-        utils::MainLogger::get().info("Gamemode: " + std::to_string(gamemode_) +
-            " (0=survival, 1=creative, 2=adventure, 3=spectator)");
-        utils::MainLogger::get().info("World generator: " +
-            cfg.getString("generator", "normal"));
-        utils::MainLogger::get().info("World format: " +
-            cfg.getString("world-format", "anvil"));
-    }
+    utils::MainLogger::get().info("Server port: " + std::to_string(port_));
+    utils::MainLogger::get().info("Server IP: " + ip_);
+    utils::MainLogger::get().info("MOTD: " + motd_);
+    utils::MainLogger::get().info("Max players: " + std::to_string(max_players_));
+    utils::MainLogger::get().info("Gamemode: " + std::to_string(gamemode_) +
+        " (0=survival, 1=creative, 2=adventure, 3=spectator)");
+    utils::MainLogger::get().info("World generator: " +
+        adv.getString("world.generator", "normal"));
+    utils::MainLogger::get().info("World format: " +
+        adv.getString("world.format", "anvil"));
 }
 
 void Server::initLogger() {
@@ -216,44 +187,22 @@ void Server::openNetwork() {
 }
 
 void Server::loadDefaultWorld() {
-    // Load world name/format/generator from server.properties or cursestone.yml.
+    // World name and seed come from server.properties; format and generator
+    // from cursestone.yml.
     using utils::Config;
-    Config cfg;
-    cfg.loadIni(dataPath_ + "/server.properties");
-    cfg.loadYaml(dataPath_ + "/cursestone.yml");
-
-    // The world settings are the `world-*` keys (server.properties) and the
-    // `world.*` block (cursestone.yml). The old `level-*` spellings are gone:
-    // the last deprecated one, `level-name`, is now `world-name`.
-    // server.properties still overrides cursestone.yml exactly as before.
-    auto get_str = [&](const char* ini_key, const char* yaml_key,
-                       const char* def) -> std::string {
-        std::string v = cfg.getString(ini_key, std::string());
-        if (!v.empty()) return v;
-        return cfg.getString(yaml_key, def);
-    };
-    auto get_int = [&](const char* ini_key, const char* yaml_key,
-                       int64_t def) -> int64_t {
-        int64_t v = cfg.getInt(ini_key, INT64_MIN);
-        if (v != INT64_MIN) return v;
-        return cfg.getInt(yaml_key, def);
-    };
+    Config props;
+    Config adv;
+    props.loadIni(dataPath_ + "/server.properties");
+    adv.loadYaml(dataPath_ + "/cursestone.yml");
 
     world::WorldConfig lc;
-    lc.name      = get_str("world-name", "world.name", "world");
-    lc.format    = get_str("world-format", "world.format", "anvil");
-    // The generator keeps the precedence it always had: the plain INI
-    // `generator` first, then cursestone.yml. `level-type` / `world-type` are
-    // deliberately NOT read: the shipped server.properties sets
-    // `level-type=DEFAULT`, and wiring that key to the generator would change
-    // the world that existing servers load.
-    lc.generator = cfg.getString("generator", std::string());
-    if (lc.generator.empty()) {
-        lc.generator = cfg.getString("world.generator", std::string());
-        if (lc.generator.empty()) lc.generator = "normal";
-    }
-    int64_t seed = get_int("world-seed", "world.seed", 0);
-    lc.seed = (seed != 0) ? (int64_t)seed : (int64_t)mcp_utils_time_ms();
+    lc.name      = props.getString("world-name", "world");
+    if (lc.name.empty()) lc.name = "world";
+    lc.format    = adv.getString("world.format", "anvil");
+    lc.generator = adv.getString("world.generator", "normal");
+    if (lc.generator.empty()) lc.generator = "normal";
+    const int64_t seed = props.getInt("world-seed", 0);
+    lc.seed = (seed != 0) ? seed : (int64_t)mcp_utils_time_ms();
     lc.spawn_x = 0; lc.spawn_y = 64; lc.spawn_z = 0;
     lc.view_distance = view_distance_;
     lc.dataPath = dataPath_;   // so World can compute absolute world paths
@@ -299,37 +248,21 @@ void Server::start(const std::string& dataPath) {
         (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count());
 
-    // Ensure data dir exists.
-    ::mkdir(dataPath_.c_str(), 0755);
-    ::mkdir((dataPath_ + "/resources").c_str(), 0755);
+    // Ensure the data dir exists.
+    std::error_code ec;
+    std::filesystem::create_directories(dataPath_, ec);
 
     // Initialize logger first so we can see config-loading messages.
     initLogger();
 
-    // If server.properties doesn't exist in data dir, copy the default
-    // from <dataPath>/resources/server.properties so the user has a
-    // template they can edit.
-    std::string user_props = dataPath_ + "/server.properties";
-    FILE* fcheck = fopen(user_props.c_str(), "rb");
-    if (!fcheck) {
-        // Copy from resources/server.properties (bundled with the binary).
-        std::string src = dataPath_ + "/resources/server.properties";
-        FILE* src_fp = fopen(src.c_str(), "rb");
-        if (src_fp) {
-            FILE* dst_fp = fopen(user_props.c_str(), "wb");
-            if (dst_fp) {
-                char buf[4096];
-                size_t n;
-                while ((n = fread(buf, 1, sizeof(buf), src_fp)) > 0) {
-                    fwrite(buf, 1, n, dst_fp);
-                }
-                fclose(dst_fp);
-                utils::MainLogger::get().info("Created default server.properties at " + user_props);
-            }
-            fclose(src_fp);
-        }
-    } else {
-        fclose(fcheck);
+    // Seed any missing config file from the built-in defaults.
+    std::vector<std::string> created;
+    if (!utils::writeDefaultConfigs(dataPath_, &created)) {
+        utils::MainLogger::get().warn(
+            "Could not create default config files in " + dataPath_);
+    }
+    for (const auto& name : created) {
+        utils::MainLogger::get().info("Created default " + name);
     }
 
     utils::MainLogger::get().info("Loading configuration...");
@@ -357,7 +290,8 @@ void Server::start(const std::string& dataPath) {
     // not receive commands yet (no command arrives while plugins
     // register).
     utils::MainLogger::get().info("Loading plugins...");
-    plugin::PluginManager::get().loadAll(dataPath_ + "/plugins");
+    plugin::PluginManager::get().loadAll(dataPath_ + "/plugins",
+                                         dataPath_ + "/data_pl");
     utils::MainLogger::get().info("Starting console command reader...");
     startCommandReader();
 

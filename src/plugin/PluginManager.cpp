@@ -77,20 +77,32 @@ PluginManager& PluginManager::get() {
     return inst;
 }
 
-void PluginManager::loadAll(const std::string& pluginsDir) {
+void PluginManager::loadAll(const std::string& pluginsDir,
+                            const std::string& dataRoot) {
     namespace fs = std::filesystem;
     std::error_code ec;
 
     pluginsDir_ = pluginsDir;           // para /plugins reload
+    dataRoot_ = dataRoot;
     log().info("Plugin API: " + std::string(PLUGIN_API_VERSION));
 
     // Crear la carpeta plugins/ si no existe (primera ejecución).
     fs::create_directories(pluginsDir, ec);
     ec.clear();
 
-    // Carpeta raíz de datos de los plugins: <plugins>/data_pl/. Dentro se
-    // crea una subcarpeta por plugin (data_pl/<carpetaDelPlugin>).
-    std::string dataRoot = pluginsDir + "/data_pl";
+    // Data root lives outside plugins/. Move the legacy location once.
+    const std::string legacyRoot = pluginsDir + "/data_pl";
+    if (fs::exists(legacyRoot, ec) && !fs::exists(dataRoot, ec)) {
+        ec.clear();
+        fs::rename(legacyRoot, dataRoot, ec);
+        if (ec) {
+            log().warn("[Plugins] Could not move " + legacyRoot + " to " +
+                       dataRoot + ": " + ec.message());
+        } else {
+            log().info("[Plugins] Moved " + legacyRoot + " to " + dataRoot);
+        }
+    }
+    ec.clear();
     fs::create_directories(dataRoot, ec);
     ec.clear();
 
@@ -198,7 +210,7 @@ size_t PluginManager::reloadAll() {
     log().info("[Plugins] Reloading all plugins...");
     disableAll();                       // onDisable + unlisten + cancelar tareas
     unloadAll();                        // comandos fuera del mapa + lua_close
-    loadAll(pluginsDir_);               // re-escaneo + carga fresca
+    loadAll(pluginsDir_, dataRoot_);    // re-escaneo + carga fresca
     return plugins_.size();
 }
 

@@ -296,7 +296,7 @@ private:
     const volatile std::sig_atomic_t* external_stop_flag_ = nullptr;
     int tps_ = 20;
 
-    // Config (mirrors resources/cursestone.yml).
+    // Config (server.properties and cursestone.yml).
     std::string ip_ = "0.0.0.0";
     uint16_t port_ = 19132;
     std::string motd_ = "CurseStone";

@@ -25,7 +25,7 @@
  * @brief Loads the server config file (YAML / INI / JSON).
  *
  * Implements a minimal subset of YAML (nested maps, lists, scalars,
- * comments) sufficient to parse `resources/cursestone.yml`. For full
+ * comments) sufficient to parse `cursestone.yml`. For full
  * YAML support, future phases may vendor yaml-cpp.
  */
 #pragma once
