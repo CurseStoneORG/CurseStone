@@ -664,6 +664,27 @@ void Player::onUpdate(uint64_t current_tick) {
             }
         }
 
+        // Cross-dimension switch: PlayStatus(PLAYER_SPAWN) must wait until
+        // every chunk of the new view has been sent — the 0.15.10 client
+        // only leaves its dimension loading screen then, and firing it
+        // early froze the player in place. Same latch PMMP 0.15 used
+        // (shouldSendStatus checked when the load queue drains). The
+        // 10 s timeout covers chunks that never finish generating.
+        if (dimension_spawn_pending_) {
+            bool all_sent = true;
+            {
+                std::lock_guard<std::mutex> lk(chunks_mtx_);
+                for (auto& pr : order) {
+                    int64_t h = ((int64_t)(cx + pr.first) << 32) |
+                                ((uint32_t)(cz + pr.second));
+                    if (used_chunks_.count(h) == 0) { all_sent = false; break; }
+                }
+            }
+            bool timed_out =
+                mcp_utils_time_ms() - dimension_switch_ms_ > 10000;
+            if (all_sent || timed_out) finishDimensionSwitch();
+        }
+
         // Only clean up out-of-view chunks when the player actually
         // crossed to chunk boundary.
         if (moved) {

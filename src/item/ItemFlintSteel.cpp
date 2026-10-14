@@ -20,15 +20,19 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// ItemFlintSteel — encendedor: places fire and enciende portales of the Nether.
+// ItemFlintSteel — flint and steel: places fire and lights nether portals.
 //
-// onActivate() accepts two paths according to the block target:
-//   - obsidian: looks for the rectangle interior of the portal (axis X and luego
-//     axis Z) and, if the frame is complete, it fills with blocks of
-//     portal (id 90, meta = axis).
-//   - any other solid: places a block of fire (behavior
-//     clásico of PMMP FlintSteel::onActivate).
-// in survival each use wears down 2 points of durability.
+// onActivate() follows the two paths of PMMP 0.15 (Genisys/Infinity
+// FlintSteel::onActivate), the reference real 0.15.10 clients work with:
+//   - Obsidian target: measure the obsidian frame around the clicked
+//     block (X axis first, then Z axis) and, if it is a valid portal
+//     frame (4..23 wide, 5..23 tall, full top row), fill the interior
+//     with portal blocks (id 90, meta = axis). Every filled cell is
+//     broadcast to the viewers, otherwise the client only renders the
+//     single cell the click landed on.
+//   - Any other solid target: place a fire block (classic PMMP behavior;
+//     also reached when the obsidian frame is incomplete, like PMMP).
+// In survival each use costs 2 durability points.
 #include "ItemFlintSteel.h"
 #include "ItemStack.h"
 #include "block/BlockFire.h"
@@ -38,113 +42,113 @@
 #include "inventory/PlayerInventory.h"
 #include "network/protocol/UpdateBlockPacket.h"
 #include "Server.h"
+#include <algorithm>
 #include <memory>
+#include <tuple>
+#include <utility>
+#include <vector>
 
 namespace cursestone::item {
 
 using namespace cursestone::block;
 
-/// @brief limit vanilla of the interior of the portal in each axis.
-static constexpr int kPortalInteriorMax = 21;
+/// @brief Outer size limits of a portal frame, per axis (PMMP 0.15:
+///        4..23 wide, 5..23 tall, measured on the obsidian outline).
+static constexpr int kPortalOuterMin = 4;
+static constexpr int kPortalOuterMax = 23;
 
-/// @brief ¿the block can be part part of the interior of the portal?
-///        the interior vanilla is air; accept also portal already
-///        lit allows relight a portal partially broken.
+/// @brief Can this cell be part of a portal interior? Vanilla interiors
+///        are air; accepting already-lit portal blocks makes relighting
+///        a partially broken portal possible.
 static bool isPortalInterior(world::World* w, int32_t x, int32_t y, int32_t z) {
     uint8_t id = w->getBlockId(x, y, z);
     return id == AIR || id == NETHER_PORTAL;
 }
 
-/// @brief checks and fills a portal in the plane XY (portal to it along
-///        of the axis X, with Z fixed). (ix, iy) is a cell CANDIDATA of the
-///        interior (not necesariamente the esquina).
-static bool tryPortalPlaneX(world::World* w, int32_t ix, int32_t iy, int32_t z) {
-    // Extender the interior to the left and to the right.
-    int32_t xMin = ix;
-    while (ix - xMin < kPortalInteriorMax &&
-           isPortalInterior(w, xMin - 1, iy, z)) {
-        --xMin;
-    }
-    int32_t xMax = ix;
-    while (xMax - ix < kPortalInteriorMax &&
-           isPortalInterior(w, xMax + 1, iy, z)) {
-        ++xMax;
-    }
-    int32_t width = xMax - xMin + 1;
-    if (width < 2 || width > kPortalInteriorMax) return false;
+/// @brief Detects and lights a portal on the XY plane (opening running
+///        along the X axis, Z fixed). (tx, ty, tz) is the clicked
+///        obsidian block — the detection measures the obsidian frame,
+///        never the clicked air cell, so lighting works no matter which
+///        side of the frame the player clicks. On success every interior
+///        cell is filled and appended to `filled` (x, y) for the client
+///        update. Ported from PMMP 0.15 (Genisys/Infinity).
+static bool tryPortalPlaneX(world::World* w, int32_t tx, int32_t ty, int32_t tz,
+                            std::vector<std::tuple<int32_t, int32_t, int32_t>>& filled) {
+    // Obsidian run of the clicked row along X.
+    int32_t xMax = tx;
+    while (xMax - tx < kPortalOuterMax &&
+           w->getBlockId(xMax + 1, ty, tz) == OBSIDIAN) ++xMax;
+    int32_t xMin = tx;
+    while (tx - xMin < kPortalOuterMax &&
+           w->getBlockId(xMin - 1, ty, tz) == OBSIDIAN) --xMin;
+    int32_t countX = xMax - xMin + 1;
+    if (countX < kPortalOuterMin || countX > kPortalOuterMax) return false;
 
-    // Extender hacia above from the fila base.
-    int32_t yTop = iy;
-    while (yTop - iy < kPortalInteriorMax) {
-        bool rowAir = true;
-        for (int32_t xx = xMin; xx <= xMax; ++xx) {
-            if (!isPortalInterior(w, xx, yTop + 1, z)) { rowAir = false; break; }
-        }
-        if (!rowAir) break;
-        ++yTop;
-    }
-    int32_t height = yTop - iy + 1;
-    if (height < 3 || height > kPortalInteriorMax) return false;
+    // First air row above the clicked one at both ends of the run; the
+    // top frame row is the lower of the two.
+    int32_t topL = ty, topR = ty;
+    while (topL - ty <= kPortalOuterMax &&
+           w->getBlockId(xMin, topL + 1, tz) == OBSIDIAN) ++topL;
+    while (topR - ty <= kPortalOuterMax &&
+           w->getBlockId(xMax, topR + 1, tz) == OBSIDIAN) ++topR;
+    int32_t yMax = std::min(topL, topR) - 1;
+    int32_t countY = yMax - ty + 2;   // outer height: base row + top row
+    if (countY < kPortalOuterMin + 1 || countY > kPortalOuterMax) return false;
 
-    // frame: base, techo and laterales of obsidian around of the interior.
-    for (int32_t xx = xMin; xx <= xMax; ++xx) {
-        if (w->getBlockId(xx, iy - 1, z) != OBSIDIAN) return false;
-        if (w->getBlockId(xx, yTop + 1, z) != OBSIDIAN) return false;
+    // The top row must be a continuous obsidian run of the same width.
+    int32_t countTop = 0;
+    for (int32_t xx = xMin;
+         xx <= xMax && w->getBlockId(xx, yMax, tz) == OBSIDIAN; ++xx) {
+        ++countTop;
     }
-    for (int32_t yy = iy; yy <= yTop; ++yy) {
-        if (w->getBlockId(xMin - 1, yy, z) != OBSIDIAN) return false;
-        if (w->getBlockId(xMax + 1, yy, z) != OBSIDIAN) return false;
-    }
+    if (countTop != countX) return false;
 
-    // fill with portal (meta 0 = axis X).
-    for (int32_t xx = xMin; xx <= xMax; ++xx) {
-        for (int32_t yy = iy; yy <= yTop; ++yy) {
-            w->setBlock(xx, yy, z, NETHER_PORTAL, 0);
+    // Fill the interior with portal blocks (meta 0 = X axis).
+    for (int32_t xx = xMin + 1; xx < xMax; ++xx) {
+        for (int32_t yy = ty + 1; yy < yMax; ++yy) {
+            if (!isPortalInterior(w, xx, yy, tz)) continue;
+            w->setBlock(xx, yy, tz, NETHER_PORTAL, 0);
+            filled.emplace_back(xx, yy, tz);
         }
     }
     return true;
 }
 
-/// @brief Ídem tryPortalPlaneX for the plane ZY (portal to it along of the
-///        axis Z, with X fixed).
-static bool tryPortalPlaneZ(world::World* w, int32_t x, int32_t iy, int32_t iz) {
-    int32_t zMin = iz;
-    while (iz - zMin < kPortalInteriorMax &&
-           isPortalInterior(w, x, iy, zMin - 1)) {
-        --zMin;
-    }
-    int32_t zMax = iz;
-    while (zMax - iz < kPortalInteriorMax &&
-           isPortalInterior(w, x, iy, zMax + 1)) {
-        ++zMax;
-    }
-    int32_t width = zMax - zMin + 1;
-    if (width < 2 || width > kPortalInteriorMax) return false;
+/// @brief Same detection for the ZY plane (opening along the Z axis,
+///        X fixed).
+static bool tryPortalPlaneZ(world::World* w, int32_t tx, int32_t ty, int32_t tz,
+                            std::vector<std::tuple<int32_t, int32_t, int32_t>>& filled) {
+    int32_t zMax = tz;
+    while (zMax - tz < kPortalOuterMax &&
+           w->getBlockId(tx, ty, zMax + 1) == OBSIDIAN) ++zMax;
+    int32_t zMin = tz;
+    while (tz - zMin < kPortalOuterMax &&
+           w->getBlockId(tx, ty, zMin - 1) == OBSIDIAN) --zMin;
+    int32_t countZ = zMax - zMin + 1;
+    if (countZ < kPortalOuterMin || countZ > kPortalOuterMax) return false;
 
-    int32_t yTop = iy;
-    while (yTop - iy < kPortalInteriorMax) {
-        bool rowAir = true;
-        for (int32_t zz = zMin; zz <= zMax; ++zz) {
-            if (!isPortalInterior(w, x, yTop + 1, zz)) { rowAir = false; break; }
-        }
-        if (!rowAir) break;
-        ++yTop;
-    }
-    int32_t height = yTop - iy + 1;
-    if (height < 3 || height > kPortalInteriorMax) return false;
+    int32_t topL = ty, topR = ty;
+    while (topL - ty <= kPortalOuterMax &&
+           w->getBlockId(tx, topL + 1, zMin) == OBSIDIAN) ++topL;
+    while (topR - ty <= kPortalOuterMax &&
+           w->getBlockId(tx, topR + 1, zMax) == OBSIDIAN) ++topR;
+    int32_t yMax = std::min(topL, topR) - 1;
+    int32_t countY = yMax - ty + 2;
+    if (countY < kPortalOuterMin + 1 || countY > kPortalOuterMax) return false;
 
-    for (int32_t zz = zMin; zz <= zMax; ++zz) {
-        if (w->getBlockId(x, iy - 1, zz) != OBSIDIAN) return false;
-        if (w->getBlockId(x, yTop + 1, zz) != OBSIDIAN) return false;
+    int32_t countTop = 0;
+    for (int32_t zz = zMin;
+         zz <= zMax && w->getBlockId(tx, yMax, zz) == OBSIDIAN; ++zz) {
+        ++countTop;
     }
-    for (int32_t yy = iy; yy <= yTop; ++yy) {
-        if (w->getBlockId(x, yy, zMin - 1) != OBSIDIAN) return false;
-        if (w->getBlockId(x, yy, zMax + 1) != OBSIDIAN) return false;
-    }
+    if (countTop != countZ) return false;
 
-    for (int32_t zz = zMin; zz <= zMax; ++zz) {
-        for (int32_t yy = iy; yy <= yTop; ++yy) {
-            w->setBlock(x, yy, zz, NETHER_PORTAL, 1);
+    // Fill the interior with portal blocks (meta 1 = Z axis).
+    for (int32_t zz = zMin + 1; zz < zMax; ++zz) {
+        for (int32_t yy = ty + 1; yy < yMax; ++yy) {
+            if (!isPortalInterior(w, tx, yy, zz)) continue;
+            w->setBlock(tx, yy, zz, NETHER_PORTAL, 1);
+            filled.emplace_back(tx, yy, zz);
         }
     }
     return true;
@@ -201,18 +205,22 @@ bool ItemFlintSteel::onActivate(world::World* world, Player* player,
     uint8_t targetId = world->getBlockId(tx, ty, tz);
     uint8_t airId    = world->getBlockId(bx, by, bz);
 
-    // portal: the click cayó about obsidian. before place fire is
-    // intenta ignite the portal with the cell of air clicked as
-    // candidato of the interior (axis X first, luego axis Z).
-    if (targetId == OBSIDIAN && airId == AIR) {
-        if (tryPortalPlaneX(world, bx, by, bz) ||
-            tryPortalPlaneZ(world, bx, by, bz)) {
-            broadcastBlockUpdate(player, world, bx, by, bz,
-                                 NETHER_PORTAL, 0);
+    // Portal: the click landed on obsidian. The detection is anchored on
+    // the TARGET obsidian (PMMP 0.15 semantics), X plane first, then Z
+    // plane; every filled cell is broadcast so the client renders the
+    // whole portal, not just the cell next to the click.
+    if (targetId == OBSIDIAN) {
+        std::vector<std::tuple<int32_t, int32_t, int32_t>> filled;
+        if (tryPortalPlaneX(world, tx, ty, tz, filled) ||
+            tryPortalPlaneZ(world, tx, ty, tz, filled)) {
+            for (auto& [fx, fy, fz] : filled) {
+                broadcastBlockUpdate(player, world, fx, fy, fz,
+                                     NETHER_PORTAL, 0);
+            }
             applyDurability(player);
             return true;
         }
-        return false;   // obsidian without frame complete: not there is fire
+        // Incomplete frame: fall through and place fire, like PMMP does.
     }
 
     // fire: only if the target is AIR and the target is a solid

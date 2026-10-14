@@ -536,6 +536,11 @@ public:
     ///        and, with the cooldown cumplido, dispara the travel dimensional.
     ///        Llamado a time per tick from onUpdate().
     void checkPortal();
+    /// @brief closes a cross-dimension switch: PlayStatus(PLAYER_SPAWN) plus
+    ///        the position reset. Called from onUpdate() once every chunk of
+    ///        the new view has been streamed (never before — sending it
+    ///        earlier leaves the client stuck on the loading screen).
+    void finishDimensionSwitch();
 
     // --- Settings (Nukkit: setMovementSpeed/setAttribute/sendSettings) ---
     void setMovementSpeed(float speed);
@@ -650,6 +655,11 @@ private:
     // --- portal of the Nether (ver checkPortal in player/PlayerWorld.cpp) ---
     bool     in_portal_ = false;      // the player sigue inside of the block of portal
     uint64_t last_portal_ms_ = 0;     // ms of the last travel by portal (cooldown)
+    // Pending cross-dimension switch: PlayStatus(PLAYER_SPAWN) waits until
+    // the whole new view has been streamed to the client (see
+    // finishDimensionSwitch()); dimension_switch_ms_ bounds the wait.
+    bool     dimension_spawn_pending_ = false;
+    uint64_t dimension_switch_ms_ = 0;
     // world of surface of the that salió hacia the Nether, for volver
     // to the same (the plugins can create several worlds of surface).
     World*   portal_return_ = nullptr;

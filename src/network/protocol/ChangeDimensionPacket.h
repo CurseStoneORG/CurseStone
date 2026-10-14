@@ -29,27 +29,27 @@
 
 namespace cursestone::network::protocol {
 
-/// @brief change of dimension (protocolo 84).
+/// @brief Dimension change (protocol 84).
 ///
-/// the server it sends justo before move to a player to a world
-/// of other dimension (0 surface, 1 Nether). the client shows its
-/// screen of load of dimension and leaves of ella when receives the
-/// chunks new and the position end. format of the cuerpo:
+/// Sent right before moving a player into a world of another dimension
+/// (0 Overworld, 1 Nether). The client shows its dimension loading
+/// screen and leaves it once the new chunks and the final position
+/// arrive. Body layout (same bytes PMMP/Genisys send on protocol 84):
 ///
-///   [Int32 BE] dimension
+///   [Uint8   ] dimension
 ///   [Float BE] x
-///   [Float BE] and
+///   [Float BE] y
 ///   [Float BE] z
 ///   [Uint8   ] unknown (0)
 class ChangeDimensionPacket : public DataPacket {
 public:
     uint8_t pid() const override { return CHANGE_DIMENSION_PACKET; }
 
-    int32_t dimension = 0;  ///< 0 surface, 1 Nether
-    float x = 0.0f;         ///< X of target
-    float y = 0.0f;         ///< and of target
-    float z = 0.0f;         ///< Z of target
-    uint8_t unknown = 0;    ///< the client of 0.15.x it ignora
+    int32_t dimension = 0;  ///< 0 Overworld, 1 Nether
+    float x = 0.0f;         ///< destination X
+    float y = 0.0f;         ///< destination Y
+    float z = 0.0f;         ///< destination Z
+    uint8_t unknown = 0;    ///< ignored by the 0.15.x client
 
     void encode(std::vector<uint8_t>& out) const override;
     bool decode(const uint8_t* data, size_t len) override;

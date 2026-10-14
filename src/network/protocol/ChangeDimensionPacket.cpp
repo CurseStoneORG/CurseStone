@@ -25,9 +25,14 @@
 
 namespace cursestone::network::protocol {
 
+// Wire format must match what the MCPE 0.15.10 client expects (protocol
+// 84, same encoding PMMP/Genisys used): one BYTE for the dimension, three
+// big-endian floats and a trailing zero byte. Encoding the dimension as
+// an Int32 shifts every later field and the client silently drops the
+// packet, which keeps the overworld sky/fog over nether terrain.
 void ChangeDimensionPacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
-    w.writeI32BE(dimension);
+    w.writeU8((uint8_t)dimension);
     w.writeF32BE(x);
     w.writeF32BE(y);
     w.writeF32BE(z);
@@ -36,10 +41,12 @@ void ChangeDimensionPacket::encode(std::vector<uint8_t>& out) const {
 
 bool ChangeDimensionPacket::decode(const uint8_t* data, size_t len) {
     PacketReader r(data, len);
-    if (!r.readI32BE(dimension)) return false;
-    if (!r.readF32BE(x))         return false;
-    if (!r.readF32BE(y))         return false;
-    if (!r.readF32BE(z))         return false;
+    uint8_t dim = 0;
+    if (!r.readU8(dim)) return false;
+    dimension = dim;
+    if (!r.readF32BE(x)) return false;
+    if (!r.readF32BE(y)) return false;
+    if (!r.readF32BE(z)) return false;
     return r.readU8(unknown);
 }
 
