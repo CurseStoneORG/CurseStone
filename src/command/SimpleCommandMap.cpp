@@ -29,6 +29,30 @@ bool SimpleCommandMap::registerCommand(std::unique_ptr<Command> cmd) {
     auto [it, ok] = commands_.try_emplace(std::move(n), std::move(cmd));
     return ok;
 }
+bool SimpleCommandMap::overrideCommand(std::unique_ptr<Command> cmd) {
+    if (!cmd) return false;
+    std::string n = cmd->name();
+    auto it = commands_.find(n);
+    if (it == commands_.end()) {
+        // Nothing to displace: behaves like a plain register.
+        commands_.try_emplace(std::move(n), std::move(cmd));
+        return true;
+    }
+    // Keep the displaced command as the fallback and swap the active one.
+    // The old command object is destroyed here — its functions (execute,
+    // canUse) are gone from this instant, so a plugin override fully
+    // CANCELS the core behavior of /kick, /op, etc. If a fallback is
+    // already chained (core -> A -> B), the previous NON-original command
+    // is dropped and the ORIGINAL stays as the single fallback, so the
+    // unloads always restore the true core command.
+    if (overridden_.find(n) == overridden_.end()) {
+        overridden_[n] = std::move(it->second);
+    } else {
+        it->second.reset();
+    }
+    it->second = std::move(cmd);
+    return true;
+}
 bool SimpleCommandMap::dispatch(CommandSender* sender, const std::string& cmd_line_arg) {
     // La consola entrega la linea TAL CUAL ("/op Dr1xy"), mientras que
     // Player::handleChat() ya se quita la barra a los jugadores. Sin este
@@ -90,7 +114,17 @@ size_t SimpleCommandMap::unregisterByOwner(void* owner) {
     size_t removed = 0;
     for (auto it = commands_.begin(); it != commands_.end();) {
         if (it->second->owner() == owner) {
-            it = commands_.erase(it);
+            // If this command displaced an original (override), restore it
+            // so the core (or the other plugin) keeps working after the
+            // unload — the fallback takes the name back.
+            auto fb = overridden_.find(it->first);
+            if (fb != overridden_.end()) {
+                it->second = std::move(fb->second);
+                overridden_.erase(fb);
+                ++it;
+            } else {
+                it = commands_.erase(it);
+            }
             ++removed;
         } else {
             ++it;

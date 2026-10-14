@@ -30,8 +30,13 @@ class EntityDamageByEntityEvent : public EntityDamageEvent {
 public:
     cursestone::entity::Entity* damager = nullptr;
 
-    EntityDamageByEntityEvent(cursestone::entity::Entity* e, float amount, cursestone::entity::Entity* d)
-        : EntityDamageEvent(e, amount, DamageCause::ENTITY_ATTACK), damager(d) {
+    // `cause` defaults to ENTITY_ATTACK (melee). World::tickArrows passes
+    // DamageCause::PROJECTILE so Lua listeners can tell bow hits from
+    // punches (PMMP keeps the cause from the source event too).
+    EntityDamageByEntityEvent(cursestone::entity::Entity* e, float amount,
+                              cursestone::entity::Entity* d,
+                              DamageCause c = DamageCause::ENTITY_ATTACK)
+        : EntityDamageEvent(e, amount, c), damager(d) {
     }
 
     const std::string& eventName() const override {

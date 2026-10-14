@@ -73,7 +73,7 @@ void CrashDump::crash(const std::string& reason, const std::string& trace) {
     std::ofstream f(json_path);
     if (f) {
         f << "{\n"
-          << "  \"version\": \"" << CURSESTONE_VERSION << "\",\n"
+          << "  \"version\": \"" << CURSESTONE_API << "\",\n"
           << "  \"codename\": \"" << CURSESTONE_CODENAME << "\",\n"
           << "  \"minecraft\": \"" << MINECRAFT_VERSION << "\",\n"
           << "  \"protocol\": " << PROTOCOL_VERSION << ",\n"
@@ -93,7 +93,7 @@ void CrashDump::crash(const std::string& reason, const std::string& trace) {
     if (lf) {
         lf << "CurseStone crash dump\n"
            << "====================\n"
-           << "Version:    " << CURSESTONE_VERSION << " \"" << CURSESTONE_CODENAME << "\"\n"
+           << "Version:    " << CURSESTONE_API << " \"" << CURSESTONE_CODENAME << "\"\n"
            << "Minecraft:  " << MINECRAFT_VERSION << " (protocol " << PROTOCOL_VERSION << ")\n"
            << "Time (UTC): " << utcStamp(now_ms, "%Y-%m-%d %H:%M:%S") << "\n"
            << "Reason:     " << reason << "\n"

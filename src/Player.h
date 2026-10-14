@@ -624,6 +624,33 @@ protected:
     // (Infinity player::setHealth) so that the corazones bajen fluidos.
     void onHealthChanged() override;
 
+public:
+    // --- Damage pipeline (overrides of entity::Living) ---
+    //
+    // CREATIVE IMMUNITY — ported from Infinity/PMMP Player::attack():
+    //
+    //     if($this->isCreative()
+    //         and $source->getCause() !== CAUSE_MAGIC
+    //         and $source->getCause() !== CAUSE_SUICIDE
+    //         and $source->getCause() !== CAUSE_VOID){
+    //         $source->setCancelled();
+    //     }
+    //
+    // A creative player takes NO damage from melee, arrows, fall, fire,
+    // lava, drowning, cactus or starvation. Only server-initiated damage
+    // (cause CUSTOM — the "suicide/magic" slot: /kill-style flows and
+    // plugin/console calls) and the VOID still go through, exactly like
+    // the reference implementation. The check runs BEFORE the damage
+    // event fires, so an immune victim produces no EntityDamage event,
+    // no packets and no knockback — nothing the client could choke on.
+    entity::DamageApply damage(float amount) override;
+    entity::DamageApply damage(float amount,
+                               event::entity::DamageCause cause) override;
+    entity::DamageApply damageByEntity(
+        float amount, entity::Entity* damager,
+        event::entity::DamageCause cause =
+            event::entity::DamageCause::ENTITY_ATTACK) override;
+
 private:
     Server* srv_;
     PlayerConfig cfg_;

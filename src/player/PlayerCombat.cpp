@@ -61,6 +61,49 @@
 
 namespace cursestone {
 
+// ============================================================
+// Damage pipeline — entity::Living overrides.
+//
+// CREATIVE IMMUNITY, ported from Infinity/PMMP Player::attack():
+// the victim's gamemode is checked BEFORE the damage event fires, so an
+// immune hit never produces an EntityDamage event, never touches health
+// and never emits a single packet (no hurt animation, no health sync, no
+// knockback). This is the vanilla behavior AND the crash fix: the 0.15.10
+// client does not expect a creative player to receive damage sync at all
+// ("players can attack me in creative and my game closes" — the victim's
+// client died on the unexpected damage traffic; now that traffic simply
+// does not exist).
+// ============================================================
+entity::DamageApply Player::damage(float amount) {
+    // 1-arg damage() is cause CUSTOM — the server-initiated slot (the
+    // CAUSE_MAGIC/CAUSE_SUICIDE of Infinity: kill flows, console/plugin
+    // damage). Infinity lets those through creative, so do we.
+    return entity::Living::damage(amount);
+}
+
+entity::DamageApply Player::damage(float amount,
+                                   event::entity::DamageCause cause) {
+    // Creative: immune to every environmental cause. VOID still kills
+    // (falling out of the world is fatal in creative — vanilla), and
+    // CUSTOM (server-initiated) stays allowed, mirroring Infinity's
+    // MAGIC/SUICIDE exemption.
+    if (isCreative() && cause != event::entity::DamageCause::VOID &&
+        cause != event::entity::DamageCause::CUSTOM) {
+        return entity::DamageApply::CANCELLED;
+    }
+    return entity::Living::damage(amount, cause);
+}
+
+entity::DamageApply Player::damageByEntity(
+    float amount, entity::Entity* damager, event::entity::DamageCause cause) {
+    // Melee (ENTITY_ATTACK) and arrows (PROJECTILE): creative players are
+    // flat-out immune — no magic/projectile-with-potion cause exists on
+    // this server yet, so there is no exception (Infinity would only let
+    // MAGIC through, which this server cannot produce).
+    if (isCreative()) return entity::DamageApply::CANCELLED;
+    return entity::Living::damageByEntity(amount, damager, cause);
+}
+
 namespace {
 constexpr double kPi = 3.14159265358979323846;
 // Infinity Tool::DURABILITY ... Bow durability (PMMP Item::BOW uses the

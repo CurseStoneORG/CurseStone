@@ -164,7 +164,7 @@ void Server::initLogger() {
     std::string log_path = dataPath_ + "/server.log";
     mcp_main_logger_init(log_path.c_str(), /*colored=*/true);
     utils::MainLogger::get().info(std::string(CURSESTONE_NAME) +
-        " v" + CURSESTONE_VERSION + " (codename: " + CURSESTONE_CODENAME + ")");
+        " v" + CURSESTONE_API + " (codename: " + CURSESTONE_CODENAME + ")");
     utils::MainLogger::get().info(" Minecraft PE " + std::string(MINECRAFT_VERSION) +
         ", protocol " + std::to_string(PROTOCOL_VERSION));
     utils::MainLogger::get().info("Log file: " + log_path);

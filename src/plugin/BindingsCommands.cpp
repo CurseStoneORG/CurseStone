@@ -26,6 +26,12 @@
 //       opts (tabla opcional):
 //         description  texto que aparece en /help
 //         usage        uso ("/cmd <algo>")
+//         override     true -> PISA un comando existente (ej. /kick del
+//                      nucleo): el original se CANCELA al instante (deja
+//                      de ejecutarse para siempre mientras el plugin esté
+//                      habilitado) y la funcion del plugin lo reemplaza.
+//                      Cuando el plugin se descarga / /plugins reload, el
+//                      comando original del nucleo se RESTAURA solo.
 //         permission   QUIÉN puede ejecutarlo:
 //                        "default"/"all"/"public"/ausente -> todos
 //                        "op"/"admin"                     -> solo ops y consola
@@ -67,16 +73,20 @@ int l_commands_register(lua_State* L) {
     std::transform(name.begin(), name.end(), name.begin(),
                    [](unsigned char c) { return (char)std::tolower(c); });
 
-    // 2. opts: tabla opcional. Leer description / usage / permission.
+    // 2. opts: tabla opcional. Leer description / usage / permission / override.
     std::string description, usage;
     LuaCommand::PermMode mode = LuaCommand::PermMode::PUBLIC;
     std::string node;
+    bool overrideCmd = false;
     if (lua_istable(L, 2)) {
         lua_getfield(L, 2, "description");
         if (const char* s = lua_tostring(L, -1)) description = s;
         lua_pop(L, 1);
         lua_getfield(L, 2, "usage");
         if (const char* s = lua_tostring(L, -1)) usage = s;
+        lua_pop(L, 1);
+        lua_getfield(L, 2, "override");
+        overrideCmd = lua_toboolean(L, -1) != 0;
         lua_pop(L, 1);
         lua_getfield(L, 2, "permission");
         if (const char* s = lua_tostring(L, -1)) {
@@ -100,10 +110,24 @@ int l_commands_register(lua_State* L) {
     lua_pushvalue(L, 3);
     int fnRef = luaL_ref(L, LUA_REGISTRYINDEX);
 
-    // 4. Registrar el comando en el CommandMap del servidor.
+    // 4. Registrar el comando en el CommandMap del servidor. Con
+    //    override=true el comando PISA al existente (el original queda de
+    //    fallback y vuelve solo cuando este plugin se descargue).
     LuaPlugin* pl = LuaPlugin::from(L);
-    bool ok = Server::getInstance().getCommandMap()->registerCommand(
-        std::make_unique<LuaCommand>(pl, fnRef, name, description, usage, mode, node));
+    auto cmd = std::make_unique<LuaCommand>(pl, fnRef, name, description, usage, mode, node);
+    bool ok = false;
+    if (overrideCmd) {
+        auto* map = Server::getInstance().getCommandMap();
+        Command* displaced = map->getCommand(name);
+        ok = map->overrideCommand(std::move(cmd));
+        if (ok && displaced) {
+            utils::MainLogger::get().info(
+                "[" + pl->name() + "] overrode command /" + name +
+                " (original cancelled, restored on plugin unload)");
+        }
+    } else {
+        ok = Server::getInstance().getCommandMap()->registerCommand(std::move(cmd));
+    }
 
     // 5. Si el nombre ya estaba tomado: soltar la ref y avisar.
     if (!ok) {

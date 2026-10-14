@@ -32,7 +32,7 @@ bool VersionCommand::execute(CommandSender* sender, const std::string&,
                     const std::vector<std::string>&) {
     // Pmmp mirrored
     // Line 1: Software name + version + codename
-    sender->sendMessage(std::string(CURSESTONE_NAME) + " v" + CURSESTONE_VERSION +
+    sender->sendMessage(std::string(CURSESTONE_NAME) + " v" + CURSESTONE_API +
         " (codename: " + CURSESTONE_CODENAME + ")");
     // Line 2: Target MCPE version + protocol
     sender->sendMessage("For Minecraft PE " + std::string(MINECRAFT_VERSION) +

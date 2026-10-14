@@ -45,21 +45,16 @@
 #include "math/Vector3.h"
 #include "math/AxisAlignedBB.h"
 
-// ---- Project version constants ----
-#define CURSESTONE_VERSION    "1.0.1" // server version (plugin API is independently versioned below)
+// ---- CurseStone API (SINGLE version, unified) ----
+// There is exactly ONE version constant now: CURSESTONE_API. It is the
+// server version AND the plugin API version at the same time — plugins
+// declare THIS number in their plugin.yml (`api:` field). Previously there
+// were two constants (CURSESTONE_VERSION + CURSESTONE_API_VERSION) that
+// could drift apart; they were unified per the CurseStoneTeam request.
+// NOTE: value intentionally NOT bumped (still 1.0.1).
+#define CURSESTONE_API       "1.0.1"
 #define CURSESTONE_NAME      "CurseStone"
 #define CURSESTONE_CODENAME  "Obsidian"
-
-// ---- plugin API version ----
-// API exposed to Lua plugins (plugin.yml `api` field). Mirrored by
-// plugin::PLUGIN_API_VERSION in plugin/LuaBindings.h.
-// 1.0.1: adds the API of worlds (server.worlds/getWorld/loadWorld/
-//        defaultWorld, object world and player.getWorld/teleportWorld)
-//        and the items/names surface: player.giveItem (custom item
-//        names via NBT), player.setNameTag/getNameTag (nametag above
-//        the head + server list tab, § codes — the rank surface) and
-//        player.setDisplayName/getDisplayName (chat alias).
-#define CURSESTONE_API_VERSION "1.0.1"
 
 // ---- Target Minecraft version ----
 // CurseStone targets MCPE/Bedrock protocol version 84 (MCPE 0.15.x era).

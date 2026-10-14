@@ -412,30 +412,51 @@ void Player::handleInteract(int action, int64_t targetEid) {
     // damageByEntity() dispara EntityDamageByEntityEvent internamente
     // (ver Living::damageByEntity) — a listener can cancelarlo or
     // reescribir the amount before that is aplique to health().
-    bool died = target->damageByEntity(BASE_ATTACK_DAMAGE, this);
+    // Player overrides it with the CREATIVE IMMUNITY check (Infinity
+    // Player::attack): a creative target returns CANCELLED BEFORE any
+    // event fires, so the immune path below emits NOTHING at all —
+    // no EntityEventPacket, no health sync, no knockback. That is the
+    // fix for "attacking a creative player closes the victim's game":
+    // the 0.15.10 client never expected damage traffic for a creative
+    // self, and now it simply never receives any.
+    auto applied = target->damageByEntity(BASE_ATTACK_DAMAGE, this);
+    bool died  = (applied == entity::DamageApply::KILLED);
+    bool hurt  = (applied == entity::DamageApply::HURT);
 
-    // Sincronizar salud + animation of hit to the objetivo and to the
-    // other players that it are tracking. not filtramos by
-    // distancia/chunk aqui by simplicidad (same criterio MVP that
-    // the rest of the broadcasts of player.cpp).
-    //
-    // bug FIX (same mechanism that the of MoveEntityPacket in
-    // handleMovePlayer): hurtEv->eid reference the entity of the that
-    // recibió the hit — mandarlo to a player that still is in its
-    // window of streaming of chunks (without spawned() still) it arrives
-    // as a packet of a entity that its client never knew.
-    auto hurtEv = std::make_shared<network::protocol::EntityEventPacket>();
-    hurtEv->eid = target->runtimeId();
-    hurtEv->event = died ? network::protocol::EntityEventPacket::DEATH_ANIMATION
-                         : network::protocol::EntityEventPacket::HURT_ANIMATION;
-    for (auto& other : srv_->playersSnapshot()) {
-        if (!other) continue;
-        if (!other->spawned()) continue;
-        other->sendPacket(hurtEv);
+    if (hurt) {
+        // ---- Hurt animation to the VIEWERS ONLY (Infinity Living::
+        // ---- attack: $pk goes to Server::broadcastPacket($this->
+        // ---- hasSpawned) — the players that spawned the victim, which
+        // ---- NEVER includes the victim itself).
+        //
+        // The victim learns about its own hit through Player::
+        // onHealthChanged() (Living hook), which sends the HURT_ANIMATION
+        // with eid=0 — "me" in protocol 84 — plus the generic.health
+        // attribute. Broadcasting the packet with the victim's REAL eid
+        // to the victim was the old behavior and is what made the
+        // victim's client crash; now the victim gets exactly the two
+        // self-referenced packets the reference implementation sends.
+        auto hurtEv = std::make_shared<network::protocol::EntityEventPacket>();
+        hurtEv->eid = target->runtimeId();
+        hurtEv->event = network::protocol::EntityEventPacket::HURT_ANIMATION;
+        for (auto& other : srv_->playersSnapshot()) {
+            if (!other) continue;
+            if (other.get() == target.get()) continue;   // never the victim
+            if (!other->spawned()) continue;
+            other->sendPacket(hurtEv);
+        }
+        // Belt-and-suspenders SetHealthPacket to the victim (protocol 84
+        // accepts it; the attribute sync in onHealthChanged is what
+        // actually moves the hearts).
+        auto sh = std::make_shared<network::protocol::SetHealthPacket>();
+        sh->health = std::max(0, (int32_t)target->health());
+        target->sendPacket(sh);
     }
-    auto sh = std::make_shared<network::protocol::SetHealthPacket>();
-    sh->health = (int32_t)target->health();
-    target->sendPacket(sh);
+    // On KILLED: Player::onDeath() (fired inside applyDamage) already ran
+    // the full death sequence — DEATH_ANIMATION to the victim + viewers,
+    // SetHealthPacket(0), RespawnPacket, health attribute, drops. Sending
+    // another death packet here would double-broadcast it.
+    // On CANCELLED (plugin cancel or creative immunity): send nothing.
 
     // ---- Knockback (Genisys 0.15.0 Living::knockBack) ----
     //
@@ -463,7 +484,10 @@ void Player::handleInteract(int action, int64_t targetEid) {
     // this way that without this the knockback not podia exist.
     // Genisys Living::attack() flame to knockBack() always, even in the
     // hit mortal (the animation of death va despues). is replica.
-    {
+    // CANCELLED hits (creative immunity / plugin cancel) get NO knockback:
+    // motion packets for a hit that never happened are exactly the kind
+    // of unexpected traffic the 0.15.10 client crashes on.
+    if (applied != entity::DamageApply::CANCELLED) {
         const double dx = target->position().x - pos_.x;
         const double dz = target->position().z - pos_.z;
         double f = std::sqrt(dx * dx + dz * dz);
@@ -508,7 +532,9 @@ void Player::handleInteract(int action, int64_t targetEid) {
             target->getName() + " for " + std::to_string(BASE_ATTACK_DAMAGE) +
             " (health now " + std::to_string((int)target->health()) + ")" +
             (died ? " — killed" : "") +
-            " knockback=0.4");
+            (applied == entity::DamageApply::CANCELLED
+                 ? " — CANCELLED (plugin or creative immunity)"
+                 : " knockback=0.4"));
     }
 }
 
