@@ -52,6 +52,9 @@ public:
     int16_t  itemId = 0;
     uint8_t  itemCount = 0;
     int16_t  itemDamage = 0;
+    // Raw little-endian NBT compound of the item (custom names live
+    // here). Written after the slot's nbtLen short; empty = no NBT.
+    std::string itemNbt;
 
     void encode(std::vector<uint8_t>& out) const override;
     bool decode(const uint8_t* data, size_t len) override;

@@ -46,14 +46,18 @@ void ContainerSetContentPacket::encode(std::vector<uint8_t>& out) const {
     for (const auto& s : slots) {
         // PMMP putSlot:
         //   if id == 0: putShort(0) ONLY (2 bytes).
-        //   else: putShort(id) + putByte(count) + putShort(damage) + putLShort(0) for nbtLen
+        //   else: putShort(id) + putByte(count) + putShort(damage) +
+        //         putLShort(nbtLen) [+ nbt bytes]
         if (s.id == 0 || s.count <= 0) {
             w.writeI16BE(0);   // empty slot — 2 bytes only
         } else {
             w.writeI16BE(static_cast<int16_t>(s.id));
             w.writeU8(static_cast<uint8_t>(s.count & 0xFF));
             w.writeI16BE(static_cast<int16_t>(s.meta));
-            w.writeU16LE(0);    // nbtLen = 0 (no NBT for creative items)
+            w.writeU16LE(static_cast<uint16_t>(s.nbt.size()));
+            if (!s.nbt.empty()) {
+                w.writeBytes(reinterpret_cast<const uint8_t*>(s.nbt.data()), s.nbt.size());
+            }
         }
     }
     // Trailing hotbar count.

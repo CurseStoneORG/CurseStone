@@ -586,7 +586,10 @@ void Player::doFirstSpawn() {
             // Parse the UUID string ("xxxxxxxx-xxxx-...") into 16 raw bytes.
             parseUuidBytes(other->config().uuid, e.uuid);
             e.eid    = other->runtimeId();
-            e.name   = other->getName();
+            // getNameTag() (not getName()): a custom nametag (rank prefix)
+            // is part of the list entry — the tab and the overhead name
+            // both render from it.
+            e.name   = other->getNameTag();
             e.skinId   = other->skinId();
             e.skinData = other->skinData();
             plp->entries.push_back(std::move(e));
@@ -605,7 +608,7 @@ void Player::doFirstSpawn() {
             if (other->getWorld() != getWorld()) continue;
             auto ap = std::make_shared<network::protocol::AddPlayerPacket>();
             parseUuidBytes(other->config().uuid, ap->uuid);
-            ap->username = other->getName();
+            ap->username = other->getNameTag();   // custom nametag, like PMMP
             ap->eid = other->runtimeId();
             ap->x = (float)other->position().x;
             ap->y = (float)other->position().y;
@@ -695,7 +698,7 @@ void Player::announceSelfToOthers() {
         network::protocol::PlayerListPacket::Entry e;
         parseUuidBytes(cfg_.uuid, e.uuid);
         e.eid      = runtimeId();
-        e.name     = getName();
+        e.name     = getNameTag();   // custom nametag, like PMMP
         e.skinId   = skinId();
         e.skinData = skinData();
         plp_add->entries.push_back(std::move(e));
@@ -703,7 +706,7 @@ void Player::announceSelfToOthers() {
 
     auto ap_self = std::make_shared<network::protocol::AddPlayerPacket>();
     parseUuidBytes(cfg_.uuid, ap_self->uuid);
-    ap_self->username = getName();
+    ap_self->username = getNameTag();   // custom nametag, like PMMP
     ap_self->eid = runtimeId();
     ap_self->x = (float)pos_.x;
     ap_self->y = (float)pos_.y;
@@ -744,7 +747,7 @@ void Player::announceTo(Player* viewer) {
 
     auto ap = std::make_shared<network::protocol::AddPlayerPacket>();
     parseUuidBytes(cfg_.uuid, ap->uuid);
-    ap->username = getName();
+    ap->username = getNameTag();   // custom nametag, like PMMP
     ap->eid = runtimeId();
     ap->x = (float)pos_.x;
     ap->y = (float)pos_.y;

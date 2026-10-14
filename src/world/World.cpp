@@ -54,6 +54,8 @@
 #include <cmath>
 #include "network/protocol/RemoveEntityPacket.h"
 #include "network/protocol/MoveEntityPacket.h"
+#include "network/protocol/EntityEventPacket.h"
+#include "network/protocol/SetHealthPacket.h"
 #include "scheduler/ServerScheduler.h"
 #include "scheduler/Task.h"
 #include <cmath>
@@ -449,6 +451,11 @@ void World::tick(uint64_t current_tick) {
     // integrates the motion we shipped in AddItemEntityPacket every tick,
     // so the server has to do the same or the two drift apart.
     tickDroppedItems(current_tick);
+    // Arrow projectiles: same story as the dropped items — the client
+    // integrates the speed shipped in AddEntityPacket, so the server must
+    // integrate the identical physics (Infinity Arrow gravity) and correct
+    // the clients with MoveEntityPacket, or the two drift apart.
+    tickArrows(current_tick);
 }
 
 // ============================================================
@@ -770,6 +777,269 @@ size_t World::collectDroppedItems(uint64_t current_tick) {
         }
     }
     return removed;
+}
+
+// ============================================================
+// Arrow projectiles — pocketmine\entity\Projectile::onUpdate() +
+// Arrow::onUpdate() (Infinity, protocol 84). One tick of a flying arrow:
+//
+//     if (!$this->isCollided) $this->motionY -= $this->gravity;   // 0.05
+//     <entity raycast — first player the flight segment crosses>
+//     $this->move($motionX, $motionY, $motionZ);                  // blocks
+//     if (collided && !hadCollision) { hadCollision = true; motion = 0; }
+//     <yaw/pitch from motion>
+//     <updateMovement() — MoveEntityPacket when it really moved>
+//     if ($this->age > 1200) $this->kill();
+//
+// Entity hit damage (Projectile::onUpdate): $damage = ceil(speed * base),
+// + mt_rand(0, damage/2 + 1) for critical (fully charged) arrows.
+// ============================================================
+void World::addArrow(ArrowEntity a) {
+    std::lock_guard<std::mutex> lk(arrows_mtx_);
+    arrows_[a.eid] = std::make_unique<ArrowEntity>(std::move(a));
+}
+
+std::vector<ArrowEntity*> World::arrows() {
+    std::vector<ArrowEntity*> out;
+    std::lock_guard<std::mutex> lk(arrows_mtx_);
+    out.reserve(arrows_.size());
+    for (auto& [_, a] : arrows_) {
+        if (a && !a->taken) out.push_back(a.get());
+    }
+    return out;
+}
+
+bool World::tryClaimArrow(int64_t eid) {
+    std::lock_guard<std::mutex> lk(arrows_mtx_);
+    auto it = arrows_.find(eid);
+    if (it == arrows_.end() || !it->second) return false;
+    if (it->second->taken) return false;
+    it->second->taken = true;
+    return true;
+}
+
+void World::tickArrows(uint64_t current_tick) {
+    // Snapshot the raw pointers like tickDroppedItems does — the physics
+    // pass holds no lock while it sends packets (lock-ordering rule).
+    std::vector<ArrowEntity*> snapshot;
+    {
+        std::lock_guard<std::mutex> lk(arrows_mtx_);
+        snapshot.reserve(arrows_.size());
+        for (auto& [_, a] : arrows_) {
+            if (a && !a->taken) snapshot.push_back(a.get());
+        }
+    }
+    if (snapshot.empty()) return;
+
+    for (ArrowEntity* a : snapshot) {
+        // PMMP Arrow::onUpdate — despawn after 1200 ticks in flight OR
+        // stuck (60 s at 20 tps).
+        if (current_tick - a->spawn_tick > 1200) {
+            a->taken = true;
+            auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
+            rm->eid = a->eid;
+            for (auto& p : Server::getInstance().playersSnapshot()) {
+                if (p && p->spawned() && p->getWorld() == this) p->sendPacket(rm);
+            }
+            continue;
+        }
+
+        // Stuck arrows freeze (motion is already zero) — the pickup scan
+        // is player-side. Still counted so their age keeps running.
+        if (a->stuck) { ++a->flight_ticks; continue; }
+
+        // No physics while the chunk is not resident — getBlockId answers
+        // AIR for unloaded chunks and the arrow would fall through the
+        // world (same gate as tickDroppedItems).
+        int acx = (int)std::floor(a->x) >> 4;
+        int acz = (int)std::floor(a->z) >> 4;
+        if (chunks_.getChunkIfLoaded(acx, acz) == nullptr) continue;
+        ++a->flight_ticks;
+
+        // $this->motionY -= $this->gravity; (Infinity Arrow: 0.05)
+        a->vy -= 0.05;
+
+        double nx = a->x + a->vx;
+        double ny = a->y + a->vy;
+        double nz = a->z + a->vz;
+
+        // ---- Entity raycast: first player the flight segment crosses ----
+        // PMMP walks getCollidingEntities over the motion-expanded bounding
+        // box and keeps the closest intercept against each entity's bounding
+        // box grown by 0.3. Equivalent slab test per player, straight from
+        // the segment (old pos -> new pos) to the grown AABB.
+        Player* hit = nullptr;
+        double bestT = 2.0;   // t in [0,1] along the segment
+        for (auto& p : Server::getInstance().playersSnapshot()) {
+            if (!p || !p->spawned() || p->isDead()) continue;
+            if (p->isPendingRemoval()) continue;
+            if (p->getWorld() != this) continue;
+            // The shooter cannot be hit by its own arrow for the first
+            // 5 ticks (PMMP: $entity === $this->shootingEntity and
+            // $this->ticksLived < 5).
+            if (p->runtimeId() == a->shooter_eid && a->flight_ticks < 5) continue;
+            const auto& pp = p->getNextPosition();
+            // Player AABB [x-0.3, y, z-0.3]..[x+0.3, y+1.8, z+0.3], grown 0.3.
+            double minx = pp.x - 0.6, maxx = pp.x + 0.6;
+            double miny = pp.y - 0.3, maxy = pp.y + 2.1;
+            double minz = pp.z - 0.6, maxz = pp.z + 0.6;
+            if (nx < minx && a->x < minx) continue;
+            if (nx > maxx && a->x > maxx) continue;
+            if (ny < miny && a->y < miny) continue;
+            if (ny > maxy && a->y > maxy) continue;
+            if (nz < minz && a->z < minz) continue;
+            if (nz > maxz && a->z > maxz) continue;
+            // Slab method: t interval where the segment is inside the box.
+            double tmin = 0.0, tmax = 1.0;
+            bool miss = false;
+            const double so[3] = {a->x, a->y, a->z};
+            const double sd[3] = {nx - a->x, ny - a->y, nz - a->z};
+            const double blo[3] = {minx, miny, minz};
+            const double bhi[3] = {maxx, maxy, maxz};
+            for (int ax = 0; ax < 3; ++ax) {
+                if (std::fabs(sd[ax]) < 1e-12) {
+                    if (so[ax] < blo[ax] || so[ax] > bhi[ax]) { miss = true; break; }
+                    continue;
+                }
+                double t1 = (blo[ax] - so[ax]) / sd[ax];
+                double t2 = (bhi[ax] - so[ax]) / sd[ax];
+                if (t1 > t2) std::swap(t1, t2);
+                if (t1 > tmin) tmin = t1;
+                if (t2 < tmax) tmax = t2;
+                if (tmin > tmax) { miss = true; break; }
+            }
+            if (miss || tmin > bestT) continue;
+            bestT = tmin;
+            hit = p.get();
+        }
+        if (hit) {
+            // $motion = sqrt(motionX^2 + motionY^2 + motionZ^2);
+            // $damage = ceil($motion * $this->damage);
+            double speed = std::sqrt(a->vx * a->vx + a->vy * a->vy + a->vz * a->vz);
+            float dmg = std::ceil(speed * a->damage);
+            if (a->critical) {
+                // $damage += mt_rand(0, (int)($damage / 2) + 1);
+                dmg += (float)(std::rand() % ((int)(dmg / 2) + 2));
+            }
+            // Resolve the shooter for EntityDamageByEntityEvent; fall back
+            // to a plain PROJECTILE damage when it logged off.
+            Player* shooter = nullptr;
+            for (auto& p : Server::getInstance().playersSnapshot()) {
+                if (p && p->runtimeId() == a->shooter_eid) { shooter = p.get(); break; }
+            }
+            bool died = false;
+            if (shooter) died = hit->damageByEntity(dmg, shooter);
+            else         died = hit->damage(dmg,
+                              event::entity::DamageCause::PROJECTILE);
+
+            // Hurt/death animation + health sync — same broadcast shape as
+            // Player::handleInteract.
+            auto hurtEv = std::make_shared<network::protocol::EntityEventPacket>();
+            hurtEv->eid = hit->runtimeId();
+            hurtEv->event = died
+                ? network::protocol::EntityEventPacket::DEATH_ANIMATION
+                : network::protocol::EntityEventPacket::HURT_ANIMATION;
+            for (auto& other : Server::getInstance().playersSnapshot()) {
+                if (other && other->spawned()) other->sendPacket(hurtEv);
+            }
+            auto sh = std::make_shared<network::protocol::SetHealthPacket>();
+            sh->health = (int32_t)hit->health();
+            hit->sendPacket(sh);
+
+            // PMMP kills the projectile when it hits an entity.
+            a->taken = true;
+            auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
+            rm->eid = a->eid;
+            for (auto& p : Server::getInstance().playersSnapshot()) {
+                if (p && p->spawned() && p->getWorld() == this) p->sendPacket(rm);
+            }
+            continue;
+        }
+
+        // ---- Move with anti-tunneling substeps (block collision) ----
+        // PMMP's move() sweeps the bounding box; with the record model a
+        // stepped center-point probe is the equivalent that cannot tunnel
+        // through a thin wall at full charge (~3 blocks/tick).
+        double maxStep = std::max(std::fabs(a->vx),
+                        std::max(std::fabs(a->vy), std::fabs(a->vz)));
+        int steps = (int)std::ceil(maxStep / 0.5);
+        if (steps < 1) steps = 1;
+        if (steps > 8) steps = 8;
+        bool collided = false;
+        for (int i = 1; i <= steps; ++i) {
+            double sx = a->x + a->vx * ((double)i / steps);
+            double sy = a->y + a->vy * ((double)i / steps);
+            double sz = a->z + a->vz * ((double)i / steps);
+            if (dropBlockSolid(getBlockId((int)std::floor(sx),
+                                          (int)std::floor(sy),
+                                          (int)std::floor(sz)))) {
+                collided = true;
+                break;
+            }
+        }
+        if (collided) {
+            // PMMP: hadCollision = true; motion = 0. The arrow sticks at
+            // the last free position (we never committed the blocked step).
+            a->stuck = true;
+            a->vx = a->vy = a->vz = 0.0;
+        } else {
+            a->x = nx; a->y = ny; a->z = nz;
+        }
+
+        // Void / build-limit despawn.
+        if (a->y < 0.0 || a->y > 260.0) {
+            a->taken = true;
+            auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
+            rm->eid = a->eid;
+            for (auto& p : Server::getInstance().playersSnapshot()) {
+                if (p && p->spawned() && p->getWorld() == this) p->sendPacket(rm);
+            }
+            continue;
+        }
+
+        // ---- Yaw/pitch from motion (PMMP) ----
+        if (!a->stuck) {
+            double fh = std::sqrt(a->vx * a->vx + a->vz * a->vz);
+            a->yaw   = (float)(std::atan2(a->vx, a->vz) * 180.0 / 3.14159265358979323846);
+            a->pitch = (float)(std::atan2(a->vy, fh)     * 180.0 / 3.14159265358979323846);
+        }
+
+        // ---- updateMovement(): MoveEntityPacket when it really moved ----
+        bool moved = std::fabs(a->x - a->lx) > 0.0001 ||
+                     std::fabs(a->y - a->ly) > 0.0001 ||
+                     std::fabs(a->z - a->lz) > 0.0001 ||
+                     std::fabs(a->yaw - a->lyaw) > 0.1f ||
+                     std::fabs(a->pitch - a->lpitch) > 0.1f;
+        if (!moved) continue;
+        a->lx = a->x; a->ly = a->y; a->lz = a->z;
+        a->lyaw = a->yaw; a->lpitch = a->pitch;
+
+        auto mv = std::make_shared<network::protocol::MoveEntityPacket>();
+        mv->eid = a->eid;
+        mv->x = (float)a->x;
+        mv->y = (float)a->y;
+        mv->z = (float)a->z;
+        mv->yaw = a->yaw;
+        mv->headYaw = a->yaw;
+        mv->pitch = a->pitch;
+        int32_t vcx = (int32_t)std::floor(a->x) >> 4;
+        int32_t vcz = (int32_t)std::floor(a->z) >> 4;
+        for (auto& p : Server::getInstance().playersSnapshot()) {
+            if (!p || !p->spawned() || p->getWorld() != this) continue;
+            if (!p->canSeeBlock(vcx, vcz)) continue;
+            p->sendPacket(mv);
+        }
+    }
+
+    // Phase 2: drop claimed/expired records (same shape as the
+    // dropped-items sweep).
+    {
+        std::lock_guard<std::mutex> lk(arrows_mtx_);
+        for (auto it = arrows_.begin(); it != arrows_.end(); ) {
+            if (it->second && it->second->taken) it = arrows_.erase(it);
+            else ++it;
+        }
+    }
 }
 
 size_t World::tickTiles(uint64_t current_tick) {

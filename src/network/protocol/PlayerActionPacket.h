@@ -48,6 +48,12 @@ public:
     static constexpr int32_t ACTION_START_BREAK = 0;
     static constexpr int32_t ACTION_ABORT_BREAK = 1;
     static constexpr int32_t ACTION_STOP_BREAK  = 2;
+    // ACTION_RELEASE_ITEM = 5 — releasing a drawn bow (Infinity
+    // PlayerActionPacket.php:35 — protocol 84 value; the 22 that later
+    // protocol versions use is WRONG here and the client never sends it).
+    // Infinity Player.php maps this action to the bow release → Arrow
+    // spawn flow.
+    static constexpr int32_t ACTION_RELEASE_ITEM = 5;
     // El cliente manda esto cuando el jugador toca el boton de
     // "Respawn" en la pantalla de muerte (Infinity:
     // ACTION_SPAWN_SAME_DIMENSION = 7).

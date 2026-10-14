@@ -41,6 +41,7 @@
 #pragma once
 
 #include "DataPacket.h"
+#include <string>
 #include <vector>
 #include <cstdint>
 
@@ -55,6 +56,9 @@ public:
     int16_t  itemId = 0;
     uint8_t  itemCount = 0;
     int16_t  itemDamage = 0;
+    // Raw little-endian NBT compound the client sent with the slot
+    // (custom item names); re-broadcast verbatim.
+    std::string itemNbt;
     // Hotbar slot the player is now holding (0..8).
     uint8_t  hotbarSlot = 0;
     // Second byte sent by the client (selectedSlot in PMMP). Kept for

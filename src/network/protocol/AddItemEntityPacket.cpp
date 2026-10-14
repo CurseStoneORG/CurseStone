@@ -40,7 +40,8 @@ void AddItemEntityPacket::encode(std::vector<uint8_t>& out) const {
         w.writeI16BE(itemId);
         w.writeU8(itemCount);
         w.writeI16BE(itemDamage);
-        w.writeU16LE(0);    // nbtLen = 0 (no NBT)
+        w.writeU16LE((uint16_t)itemNbt.size());
+        if (!itemNbt.empty()) w.writeBytes((const uint8_t*)itemNbt.data(), itemNbt.size());
     }
     w.writeF32BE(x);
     w.writeF32BE(y);
@@ -62,7 +63,13 @@ bool AddItemEntityPacket::decode(const uint8_t* buf, size_t len) {
         uint16_t nbtLen;
         if (!r.readU16LE(nbtLen)) return false;
         if (nbtLen > 0) {
-            if (!r.skipBytes(nbtLen)) return false;
+            itemNbt.assign(nbtLen, '\0');
+            if (!r.readBytes(reinterpret_cast<uint8_t*>(&itemNbt[0]), nbtLen)) {
+                itemNbt.clear();
+                return false;
+            }
+        } else {
+            itemNbt.clear();
         }
     }
     if (!r.readF32BE(x))      return false;

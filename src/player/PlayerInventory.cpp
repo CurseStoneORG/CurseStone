@@ -162,7 +162,8 @@ void Player::handleCraftingEvent(
     for (const auto& extra : leftover) {
         if (!extra.isEmpty()) {
             dropItem(pos_.x, pos_.y, pos_.z,
-                     extra.id, (uint8_t)extra.count, extra.meta);
+                     extra.id, (uint8_t)extra.count, extra.meta,
+                     0.0, 0.2, 0.0, 10, extra.nbt);
         }
     }
 
@@ -237,7 +238,7 @@ void Player::handleInventoryCraft() {
 int64_t Player::dropItem(double x, double y, double z, uint16_t itemId,
                          uint8_t count, uint16_t damage,
                          double motionX, double motionY, double motionZ,
-                         uint32_t pickup_delay) {
+                         uint32_t pickup_delay, const std::string& nbt) {
     // World::dropItem() bails on an empty stack.
     if (itemId == 0 || count == 0) return 0;
     if (!srv_) return 0;
@@ -262,6 +263,7 @@ int64_t Player::dropItem(double x, double y, double z, uint16_t itemId,
     pk->itemId     = static_cast<int16_t>(itemId);
     pk->itemCount  = count;
     pk->itemDamage = static_cast<int16_t>(damage);
+    pk->itemNbt    = nbt;   // custom-named drops keep their name
     // Genisys uses the raw entity position — NOT floor(x)+0.5. Rounding to
     // the block centre is what used to make to dropped stack appear half to
     // block off from where the client thought it was.
@@ -295,6 +297,7 @@ int64_t Player::dropItem(double x, double y, double z, uint16_t itemId,
         di.itemId     = itemId;
         di.count      = count;
         di.damage     = damage;
+        di.nbt        = nbt;
         di.x          = x;
         di.y          = y;
         di.z          = z;
@@ -403,7 +406,8 @@ void Player::handleDropItem(network::protocol::DropItemPacket& pk) {
     dropItem(pos_.x, pos_.y + 1.3, pos_.z,
              dropped.id, (uint8_t)drop_count, dropped.meta,
              dir.x * kMUL, dir.y * kMUL, dir.z * kMUL,
-             40 /* PickupDelay: 2 s, Genisys' manual-drop value */);
+             40 /* PickupDelay: 2 s, Genisys' manual-drop value */,
+             dropped.nbt /* a named stack keeps its name when thrown */);
 }
 
 // ============================================================
@@ -589,5 +593,6 @@ void Player::sendSlot(int slot) {
     pk->itemId     = static_cast<int16_t>(item.id);
     pk->itemCount  = item.count;
     pk->itemDamage = static_cast<int16_t>(item.meta);
+    pk->itemNbt    = item.nbt;   // custom-named items keep their name
     sendPacket(pk);
 }} // namespace cursestone

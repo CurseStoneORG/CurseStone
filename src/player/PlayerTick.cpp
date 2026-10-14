@@ -23,6 +23,7 @@
 #include "Player.h"
 #include "player/PlayerInternal.h"
 #include "world/World.h"
+#include "item/ItemIds.h"
 #include "world/format/Chunk.h"
 #include "network/protocol/MovePlayerPacket.h"
 #include "network/protocol/MoveEntityPacket.h"
@@ -234,11 +235,15 @@ void Player::handleChat(const std::string& message) {
     // PlayerChatEvent is dispara with the message ORIGINAL (with códigos
     // of color) so that a listener can reescribirlo before of the
     // broadcast; cancelar the evento prevents the broadcast completely.
+    //
+    // Chat uses getDisplayName() (not the raw username), porting PMMP's
+    // chat line: rank plugins restyle the name with
+    // player.setDisplayName() while the nametag colors the overhead tag.
     if (srv_) {
         auto ev = event::EventManager::get().fire<event::player::PlayerChatEvent>(
             this, message);
         if (!ev.isCancelled()) {
-            srv_->broadcastMessage("<" + cfg_.username + "> " + ev.message);
+            srv_->broadcastMessage("<" + getDisplayName() + "> " + ev.message);
         }
     }
 }
@@ -338,6 +343,12 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int /*face*/) {
     }
     if (action == network::protocol::PlayerActionPacket::ACTION_SPAWN_SAME_DIMENSION) {
         respawn();
+    }
+    // Bow release (protocol 84: ACTION_RELEASE_ITEM = 5 — Infinity
+    // PlayerActionPacket.php:35). Fires the drawn arrow when the player
+    // lets go of the right-click; no-op when no draw was in progress.
+    if (action == network::protocol::PlayerActionPacket::ACTION_RELEASE_ITEM) {
+        releaseBow();
     }
     // Mesa of crafting (block WORKBENCH=58): the 0.15.x takes precedence
     // ACTION_SET_SLOTS (?6) when opening the UI of the mesa. not there is state
@@ -765,6 +776,7 @@ void Player::onUpdate(uint64_t current_tick) {
             pickup.id    = di->itemId;
             pickup.count = di->count;
             pickup.meta  = (uint8_t)(di->damage & 0xFF);
+            pickup.nbt   = di->nbt;   // custom-named drops keep their name
 
             bool can_pickup;
             if ((cfg_.gamemode & 1) != 0) {
@@ -792,6 +804,7 @@ void Player::onUpdate(uint64_t current_tick) {
                 rollback.id = pickup.id;
                 rollback.meta = pickup.meta;
                 rollback.count = absorbed;
+                rollback.nbt = pickup.nbt;
                 inv_->removeItem({rollback});
                 continue;
             }
@@ -872,6 +885,62 @@ void Player::onUpdate(uint64_t current_tick) {
         }
         if (any_picked_up) {
             sendInventory();
+        }
+
+        // 2.6. Pickup stuck arrows — Infinity Player.php:1565:
+        //   if($entity instanceof Arrow and $entity->hadCollision) { ... }
+        // A STUCK arrow (hit a block, hadCollision) within the player's
+        // pickup volume is collected as an Arrow item, with the same
+        // TakeItemEntityPacket + RemoveEntityPacket broadcast the dropped
+        // items use. Flying arrows are not pickable. Creative players
+        // collect without an inventory check (matches the item path).
+        auto stuckArrows = lvl->arrows();
+        for (world::ArrowEntity* a : stuckArrows) {
+            if (!a || a->taken || !a->stuck) continue;
+
+            // Same overlap test as the items (player AABB grown by 1).
+            if (a->x < pos_.x - 1.3 || a->x > pos_.x + 1.3) continue;
+            if (a->z < pos_.z - 1.3 || a->z > pos_.z + 1.3) continue;
+            if (a->y < pos_.y - 1.0 || a->y > pos_.y + 2.8) continue;
+
+            bool can_pickup;
+            if ((cfg_.gamemode & 1) != 0) {
+                can_pickup = true;   // creative: no inventory room needed
+            } else {
+                item::ItemStack arrowIt;
+                arrowIt.id = item::ITEM_ARROW;
+                arrowIt.count = 1;
+                can_pickup = inv_->canAddItem(arrowIt);
+            }
+            if (!can_pickup) continue;
+
+            // Atomic claim — another player may collect the same tick.
+            if (!lvl->tryClaimArrow(a->eid)) continue;
+
+            if ((cfg_.gamemode & 1) == 0) {
+                item::ItemStack arrowIt;
+                arrowIt.id = item::ITEM_ARROW;
+                arrowIt.count = 1;
+                inv_->addItem({arrowIt});
+            }
+
+            // TakeItemEntityPacket (fly-into-player animation) to viewers
+            // + RemoveEntityPacket to everyone — same reasoning as the
+            // item path above (stale floating entities otherwise).
+            auto tk = std::make_shared<network::protocol::TakeItemEntityPacket>();
+            tk->target   = a->eid;
+            tk->entityId = runtimeId();
+            auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
+            rm->eid = a->eid;
+            for (auto& other : srv_->playersSnapshot()) {
+                if (!other || !other->spawned()) continue;
+                if (other->getWorld() != lvl) continue;
+                if (other.get() != this) other->sendPacket(tk);
+                other->sendPacket(rm);
+            }
+            sendPacket(tk);   // the picker sees the animation too
+            sendInventory();
+            break;            // one arrow per tick is plenty
         }
     }
 

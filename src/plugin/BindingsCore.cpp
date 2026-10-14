@@ -34,6 +34,15 @@
 //                        x, and, z)     (false if not exist)
 //   player.getWorld(name)             handle world of the player (nil if not)
 //   player.isOp(name)                 true if is op (false if not exists)
+//   player.giveItem(name, id, count, meta, customName)
+//                                     añade un stack al inventario;
+//                                     customName (opcional) = nombre
+//                                     visible del item (§ soportado)
+//   player.setNameTag(name, tag)      nametag sobre la cabeza + pestaña
+//                                     del servidor (códigos § = rangos)
+//   player.getNameTag(name)           nametag actual (nil si no existe)
+//   player.setDisplayName(name, dn)   nombre SOLO para el chat
+//   player.getDisplayName(name)       display name actual (nil si no)
 //   player.setPermission(name, node, v) concede/niega a node of permiso
 //                                     in memory (false if not exists the player)
 //   player.hasPermission(name, node)  ¿has that node? (false if not exists)
@@ -57,6 +66,8 @@
 #include "LuaPlugin.h"
 #include "Server.h"
 #include "Player.h"
+#include "inventory/PlayerInventory.h"
+#include "item/ItemNbt.h"
 #include "utils/MainLogger.hpp"
 #include "scheduler/ServerScheduler.h"
 #include "scheduler/CallbackTask.h"
@@ -193,6 +204,71 @@ int l_player_hasPermission(lua_State* L) {
     return 1;
 }
 
+// ---------- items + names (API 1.0.1 — ranks / custom items) ----------
+// giveItem(name, id, count, meta, customName): adds an item stack to the
+// player's inventory. count defaults to 1, meta to 0. `customName` is the
+// VISIBLE item name the 0.15.10 client renders (anvil-style); it rides
+// as the {display:{Name}} NBT compound of the stack, so it survives
+// inventory moves, dropping and picking back up. Returns false when the
+// player does not exist or the stack did not fit.
+int l_player_giveItem(lua_State* L) {
+    Player* p = findPlayer(L, 1);
+    lua_Integer id    = luaL_checkinteger(L, 2);
+    lua_Integer count = luaL_optinteger(L, 3, 1);
+    lua_Integer meta  = luaL_optinteger(L, 4, 0);
+    const char* customName = luaL_optstring(L, 5, nullptr);
+    if (!p || !p->getInventory()) { lua_pushboolean(L, 0); return 1; }
+    if (id <= 0 || id > 65535 || count < 1) { lua_pushboolean(L, 0); return 1; }
+    if (count > 2304) count = 2304;   // 36 slots * 64 — keep it sane
+
+    item::ItemStack st;
+    st.id    = (uint16_t)id;
+    st.count = (int)count;
+    st.meta  = (uint8_t)(meta & 0xFF);
+    if (customName && *customName) st.nbt = item::buildDisplayNbt(customName);
+
+    auto leftovers = p->getInventory()->addItem({st});
+    bool fit = leftovers.empty() || leftovers[0].isEmpty() ||
+               leftovers[0].count < count;
+    p->sendInventory();   // full resync — the client renders the new stack
+    lua_pushboolean(L, fit ? 1 : 0);
+    return 1;
+}
+// setNameTag(name, tag): the name ABOVE THE HEAD and in the server list
+// tab (PMMP Player::setNameTag). Accepts §-color codes — this is the
+// rank-prefix surface. Re-broadcasts REMOVE+ADD PlayerListPacket to
+// everyone. resetNameTag == setNameTag(name, playerName).
+int l_player_setNameTag(lua_State* L) {
+    Player* p = findPlayer(L, 1);
+    const char* tag = luaL_checkstring(L, 2);
+    if (!p) { lua_pushboolean(L, 0); return 1; }
+    p->setNameTag(tag);
+    lua_pushboolean(L, 1);
+    return 1;
+}
+int l_player_getNameTag(lua_State* L) {
+    Player* p = findPlayer(L, 1);
+    if (!p) { lua_pushnil(L); return 1; }
+    lua_pushstring(L, p->getNameTag().c_str());
+    return 1;
+}
+// setDisplayName(name, dn): chat-only alias (PMMP Player::setDisplayName);
+// the chat line uses it, the tag above the head does not.
+int l_player_setDisplayName(lua_State* L) {
+    Player* p = findPlayer(L, 1);
+    const char* dn = luaL_checkstring(L, 2);
+    if (!p) { lua_pushboolean(L, 0); return 1; }
+    p->setDisplayName(dn);
+    lua_pushboolean(L, 1);
+    return 1;
+}
+int l_player_getDisplayName(lua_State* L) {
+    Player* p = findPlayer(L, 1);
+    if (!p) { lua_pushnil(L); return 1; }
+    lua_pushstring(L, p->getDisplayName().c_str());
+    return 1;
+}
+
 // ---------- scheduler ----------
 // common to later() and every(): save the function as ref, schedule a
 // CallbackTask in the ServerScheduler and return the id of tarea to Lua.
@@ -277,6 +353,10 @@ void bindCore(lua_State* L) {
         {"getWorld", l_player_getWorld}, {"isOp", l_player_isOp},
         {"setPermission", l_player_setPermission},
         {"hasPermission", l_player_hasPermission},
+        {"giveItem", l_player_giveItem},
+        {"setNameTag", l_player_setNameTag}, {"getNameTag", l_player_getNameTag},
+        {"setDisplayName", l_player_setDisplayName},
+        {"getDisplayName", l_player_getDisplayName},
         {nullptr, nullptr}};
     static const luaL_Reg schF[] = {
         {"later", l_scheduler_later}, {"every", l_scheduler_every},

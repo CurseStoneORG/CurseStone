@@ -21,17 +21,27 @@
  *
  */
 // ItemStack — lightweight value type used by Inventory / Tile
-// containers. Holds (item_id, meta, count) plus the enchantment list.
-// Conversion to/from the polymorphic Item* happens at the inventory
-// boundary.
+// containers. Holds (item_id, meta, count) plus the enchantment list and
+// the raw NBT compound blob. Conversion to/from the polymorphic Item*
+// happens at the inventory boundary.
 #pragma once
 #include <cstdint>
+#include <string>
 #include "item/enchantment/EnchantmentList.h"
 namespace cursestone::item {
 struct ItemStack {
     uint16_t id = 0;
     uint8_t  meta = 0;
     int      count = 0;
+    // Raw little-endian network NBT compound of this stack (the exact
+    // bytes the 0.15.10 client expects after the slot's nbtLen short —
+    // Genisys Item::$tags). Empty string = no NBT. A custom item name is
+    // stored as the compound {display:{Name:"..."}}; build it with
+    // item::buildDisplayNbt(). The blob travels verbatim in every packet
+    // that carries a slot (ContainerSetSlot / ContainerSetContent /
+    // MobEquipment / AddItemEntity), which is what makes named items
+    // survive inventory moves, being dropped and being picked up.
+    std::string nbt;
     // Encantamientos del stack (el tag "ench" del NBT del item). Genisys los
     // lee del NBT; CurseStone todavia no carga ese tag, asi que la lista
     // arranca vacia — pero el sistema de dano YA la consulta (EPF de la
@@ -40,8 +50,14 @@ struct ItemStack {
     // sin tocar el pipeline.
     enchantment::EnchantmentList ench;
     bool isEmpty() const { return count <= 0 || id == 0; }
-    static ItemStack EMPTY() { return {0, 0, 0, {}}; }
+    static ItemStack EMPTY() { return {0, 0, 0, {}, {}}; }
     // Nivel del encantamiento en este stack (0 = no lo tiene).
     int enchantmentLevel(enchantment::EnchantmentId e) const { return (int)ench.level(e); }
+    // Two stacks merge only when their NBT blobs are identical —
+    // otherwise a named item would silently lose its name by merging
+    // into an unnamed pile (PMMP Item::equals compares the compound tag).
+    bool sameItem(const ItemStack& o) const {
+        return id == o.id && meta == o.meta && nbt == o.nbt;
+    }
 };
 } // namespace cursestone::item

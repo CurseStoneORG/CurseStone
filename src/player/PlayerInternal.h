@@ -55,13 +55,15 @@ constexpr double kEyeHeight = 1.62;
 // (Genisys Entity.php:87-105). Se mandan los dos bits juntos porque
 // comparten la misma propiedad.
 inline network::protocol::SetEntityDataPacket::Entry makePoseFlagEntry(bool sneaking,
-                                                                      bool sprinting) {
+                                                                      bool sprinting,
+                                                                      bool action = false) {
     network::protocol::SetEntityDataPacket::Entry e;
     e.index = network::protocol::SetEntityDataPacket::PROP_FLAGS;
     e.type  = network::protocol::SetEntityDataPacket::TYPE_BYTE;
     uint8_t flags = 0;
     if (sneaking)  flags |= (1 << network::protocol::SetEntityDataPacket::FLAG_BIT_SNEAKING);
     if (sprinting) flags |= (1 << network::protocol::SetEntityDataPacket::FLAG_BIT_SPRINTING);
+    if (action)    flags |= (1 << network::protocol::SetEntityDataPacket::FLAG_BIT_ACTION);
     e.ival = flags;
     return e;
 }

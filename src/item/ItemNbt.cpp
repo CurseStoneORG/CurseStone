@@ -107,4 +107,45 @@ bool itemStackFromNbt(const mcp_tag_t* entry, ItemStack& out) {
     return true;
 }
 
+// ============================================================
+// buildDisplayNbt — the little-endian network NBT compound the
+// 0.15.10 client reads a custom item name from, byte-exact with what
+// Genisys Item::setCustomName() ends up putting on the wire:
+//
+//     0x0A <u16 len=0>                     root compound, empty name
+//       0x0A <u16 len> "display"           display compound
+//         0x08 <u16 len> "Name" <utf8>     the visible name
+//       0x00                               end display
+//     0x00                                 end root
+//
+// TAG_String is <u16 LE length> + bytes (old PE NBT). An empty name
+// yields an empty blob (no NBT at all), exactly like an unnamed item.
+// The slot writer prefixes this with the u16 LE blob length.
+// ============================================================
+std::string buildDisplayNbt(const std::string& name) {
+    if (name.empty()) return {};
+
+    auto u16le = [](uint16_t v) {
+        std::string s;
+        s.push_back((char)(v & 0xFF));
+        s.push_back((char)((v >> 8) & 0xFF));
+        return s;
+    };
+    auto tagString = [&u16le](const std::string& payload) {
+        return u16le((uint16_t)payload.size()) + payload;
+    };
+
+    std::string blob;
+    blob.push_back((char)0x0A);           // TAG_Compound (root)
+    blob += u16le(0);                     // root name ""
+    blob.push_back((char)0x0A);           // TAG_Compound "display"
+    blob += tagString("display");
+    blob.push_back((char)0x08);           // TAG_String "Name"
+    blob += tagString("Name");
+    blob += tagString(name);              // the custom name itself
+    blob.push_back((char)0x00);           // end of "display"
+    blob.push_back((char)0x00);           // end of root
+    return blob;
+}
+
 } // namespace cursestone::item
