@@ -6,7 +6,7 @@
 | \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
  \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
 
- * CurseStone | Open Source Server Software
+ * CurseStone | Open Source server Software
  *
  * Copyright (C) 2026 CurseStoneTeam
  *
@@ -87,7 +87,7 @@ enum BlockId : int {
     NETHERRACK       = 87,
     SOUL_SAND        = 88,
     GLOWSTONE        = 89,
-    PORTAL_FRAME     = 90,
+    NETHER_PORTAL    = 90,
     LIT_PUMPKIN      = 91,
     CAKE_BLOCK       = 92,
     UNPOWERED_REPEATER = 93,
@@ -137,8 +137,6 @@ enum BlockId : int {
     ENCHANTING_TABLE   = 116,
     BREWING_STAND      = 117,
     CAULDRON           = 118,
-    END_PORTAL         = 119,
-    END_PORTAL_FRAME   = 120,
     DRAGON_EGG         = 122,
     ITEM_FRAME         = 199,
 
@@ -177,7 +175,6 @@ enum BlockId : int {
     DAYLIGHT_DETECTOR  = 151,
     DOUBLE_SLAB_ID     = 43,
     DOUBLE_SLAB_WOOD   = 125,
-    END_STONE          = 121,
     FENCE_GATE_ID      = 107,
     FENCE_NETHER_BRICK = 113,
     FENCE_ID           = 85,

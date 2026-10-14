@@ -6,7 +6,7 @@
 | \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
  \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
 
- * CurseStone | Open Source Server Software
+ * CurseStone | Open Source server Software
  *
  * Copyright (C) 2026 CurseStoneTeam
  *
@@ -20,48 +20,57 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// LuaBindings — punto de registro de toda la API Lua expuesta a los
-// plugins. Cada bloque agrega su propia función bind*:
+// LuaBindings — point of registro of all the API Lua expuesta to the
+// plugins. each block adds its own function bind*:
 //   - bindCore      : log, server, player, scheduler + tabla `plugin`
 //   - bindData      : data.read/write/exists/delete/list + loadYml/saveYml/
-//                     loadJson/saveJson (restringido a data_pl/<plugin>)
+//                     loadJson/saveJson (restringido to data_pl/<plugin>)
 //   - bindCommands  : commands.register / commands.reply
 //   - bindEvents    : events.on
-// registerApi() las llama todas en orden.
+// registerApi() the flame all in order.
 #pragma once
 #include <lua.hpp>
-#include "CurseStone.h"   // CURSESTONE_API_VERSION (única fuente de verdad)
+#include "CurseStone.h"   // CURSESTONE_API_VERSION (only source of truth)
 #include <string>
 
 namespace cursestone::plugin {
 
-// ---- Versión de la API de plugins del servidor ----
-// Espejo de CURSESTONE_API_VERSION (CurseStone.h): un solo sitio para
-// cambiarla. Los plugins declaran la API con la que fueron escritos en su
-// plugin.yml (campo `api`). Regla de compatibilidad (ver apiCompatible):
-// mismo major obligatorio; minor del servidor >= minor del plugin.
+// ---- version of the API of plugins of the server ----
+// mirror of CURSESTONE_API_VERSION (CurseStone.h): a only place for
+// cambiarla. the plugins declaran the API with that which fueron escritos in its
+// plugin.yml (field `api`). Regla of compatibilidad (ver apiCompatible):
+// same major required; minor of the server >= minor of the plugin.
 inline constexpr const char* PLUGIN_API_VERSION = CURSESTONE_API_VERSION;
 
-// Compara "X.Y.Z" de un plugin contra la API del servidor.
-//   - true  : compatible (se puede cargar; puede emitir warn si no es exacta)
-//   - false : incompatible (el plugin se descarta)
-// Devuelve en `exact` si la versión coincide exactamente (para el warn).
-// Implementación en LuaBindings.cpp.
+// compares "X.and.Z" of a plugin contra the API of the server.
+//   - true  : compatible (is can load; can emit warn if not is exact)
+//   - false : incompatible (the plugin is descarta)
+// returns in `exact` if the version matches exactly (for the warn).
+// Implementación in LuaBindings.cpp.
 bool apiCompatible(const std::string& pluginApi, bool* exact);
 
-// Registra toda la API en el state. Los binds agregan sus llamadas aquí.
+// registers all the API in the state. the binds add its calls here.
 void registerApi(lua_State* L);
 
-// API core: log, server, player, scheduler y la tabla `plugin`.
+// API core: log, server, player, scheduler and the tabla `plugin`.
 void bindCore(lua_State* L);
 
-// API de datos/configs (carpeta data_pl/<plugin>).
+// API of data/configs (folder data_pl/<plugin>).
 void bindData(lua_State* L);
 
-// API de comandos.
+// API of commands.
 void bindCommands(lua_State* L);
 
-// API de eventos.
+// API of eventos.
 void bindEvents(lua_State* L);
+
+// API of worlds: server.worlds/getWorld/loadWorld/defaultWorld and the
+// methods of the object world (getBlock, setBlock, getPlayers, ...).
+void bindWorld(lua_State* L);
+
+// pushes in the stack a handle of world for Lua (userdata with the
+// name; nil if w == nullptr). the use bindWorld and bindCore for
+// player.getWorld.
+void pushWorldHandle(lua_State* L, World* w);
 
 } // namespace cursestone::plugin

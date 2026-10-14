@@ -6,7 +6,7 @@
 | \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
  \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
 
- * CurseStone | Open Source Server Software
+ * CurseStone | Open Source server Software
  *
  * Copyright (C) 2026 CurseStoneTeam
  *
@@ -20,18 +20,18 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// Player — full player session. Owns the network session, inventory,
-// view distance, current chunk, gamemode, position, and a per-player
-// tick. The Player class is the most complex class in CurseStone;
+// player — full player session. Owns the network session, inventory,
+// view distance, current chunk, gamemode, position, and to per-player
+// tick. The player class is the most complex class in CurseStone;
 // it's the bridge between the protocol layer (LoginPacket → MovePlayerPacket)
 // and the world layer (World, Chunk, Entity).
 //
-// Mirrors pocketmine/Player.php but in C++. Lifecycle:
-//   1. RakLibInterface receives CLIENT_HANDSHAKE → Server::openSession()
-//   2. LoginPacket validated → Player::handleLogin() sends PlayStatusPacket
-//   3. Player::doFirstSpawn() sends StartGamePacket + PlayerListPacket
-//   4. Each tick: Player::onUpdate() sends chunk updates, processes input
-//   5. Disconnect: Player::close() saves inventory, sends DisconnectPacket
+// Mirrors pocketmine/player.php but in C++. Lifecycle:
+//   1. RakLibInterface receives CLIENT_HANDSHAKE → server::openSession()
+//   2. LoginPacket validated → player::handleLogin() sends PlayStatusPacket
+//   3. player::doFirstSpawn() sends StartGamePacket + PlayerListPacket
+//   4. Each tick: player::onUpdate() sends chunk updates, processes input
+//   5. Disconnect: player::close() saves inventory, sends DisconnectPacket
 #pragma once
 #include "CurseStone.h"                          // defines math::Vector3 alias
 #include "IPlayer.h"
@@ -65,14 +65,14 @@ struct PlayerConfig {
     // Skin as the client sent it in its login JWT (Genisys LoginPacket
     // does base64_decode("SkinData") and keeps "SkinId" verbatim; the
     // PlayerListPacket entry carries BOTH). Empty only when the client
-    // sent none — Player normalises that to a valid default skin.
+    // sent none — player normalises that to to valid default skin.
     std::string skin_id;
     std::string skin_data;
     std::string ip;
     uint16_t port = 0;
     int gamemode = 0;
     int view_distance = 8;
-    int64_t runtime_eid = 1;       // unique runtime entity ID (allocated by Server)
+    int64_t runtime_eid = 1;       // unique runtime entity id (allocated by server)
 };
 
 class Player : public IPlayer, public entity::Human, public permission::PermissibleBase,
@@ -84,7 +84,7 @@ public:
     // --- IPlayer ---
     std::string getName() const override { return cfg_.username; }
     // Skin forwarded to the other players' PlayerListPacket entries.
-    // Never empty: a client that sent none gets the default skin built in
+    // Never empty: to client that sent none gets the default skin built in
     // handleLoginPacket().
     const std::string& skinId() const { return cfg_.skin_id; }
     const std::string& skinData() const { return cfg_.skin_data; }
@@ -95,11 +95,11 @@ public:
     void setBanned(bool v) override;
     bool isWhitelisted() const override;
     void setWhitelisted(bool v) override;
-    // Permisos: los nodos explicitos (attachments/plugins) mandan; si no hay
-    // ninguno, un op tiene por defecto todo el sub-arbol "cursestone.*"
-    // y un jugador normal no tiene nada. Es lo que describe
+    // Permisos: the nodos explicitos (attachments/plugins) mandan; if not there is
+    // none, a op has by default everything the sub-arbol "cursestone.*"
+    // and a player normal not has nothing. is what describe
     // permission/DefaultPermissions ("Sub-tree cursestone.* — given to
-    // ops only by default"), que todavia no esta cableado al login.
+    // ops only by default"), that not yet this cableado to the login.
     bool hasPermission(const std::string& name) const override {
         if (PermissibleBase::hasPermission(name)) return true;
         if (!isOp()) return false;
@@ -108,14 +108,14 @@ public:
     }
     void recalculatePermissions() override {}
 
-    // --- Player session lifecycle ---
+    // --- player session lifecycle ---
     bool isConnected() const { return connected_.load(std::memory_order_relaxed); }
     bool loggedIn() const { return logged_in_.load(std::memory_order_relaxed); }
     void close(const std::string& reason = "disconnect.quitting");
 
     // --- Network callbacks (called from Network::dispatchSingle) ---
     void handleDataPacket(network::protocol::DataPacket& p);
-    // Called when a packet handler throws. Writes a diagnostics report and
+    // Called when to packet handler throws. Writes to diagnostics report and
     // kicks this player with the error attached (Nukkit-style).
     void handlePacketError(uint8_t pid, const std::string& what);
     void handleLogin(network::protocol::LoginPacket& p);
@@ -130,77 +130,77 @@ public:
                           float fx = 0.5f, float fy = 0.5f, float fz = 0.5f);
     void handlePlayerAction(int action, int x, int y, int z, int face);
 
-    // Difunde la pose (agachado / sprintando) de ESTE jugador a todos los
-    // clientes con los que comparte vista. Es la razon por la que el
-    // agachado antes era invisible para los demas: Genisys 0.15.0 solo
-    // cambia la propiedad local en Player::setSneaking()
-    // (Player.php:3017-3034) y nunca manda SetEntityDataPacket, asi que
-    // los otros clientes se quedan con la pose anterior para siempre.
+    // broadcasts the pose (sneaking / sprintando) of this player to all the
+    // clients with those that shares vista. is the razon by that which the
+    // sneaking before era invisible for the other: Genisys 0.15.0 only
+    // changes the property local in player::setSneaking()
+    // (player.php:3017-3034) and never takes precedence SetEntityDataPacket, this way that
+    // the other clients is remain with the pose anterior forever.
     //
-    // Los bits de agachado y sprint comparten la MISMA propiedad de
-    // metadata (Entity::DATA_FLAGS = 0), asi que se manda el byte entero
-    // con los dos bits, nunca uno solo.
+    // the bits of sneaking and sprint comparten the same property of
+    // metadata (Entity::DATA_FLAGS = 0), this way that is takes precedence the byte entero
+    // with the two bits, never uno only.
     void broadcastPoseFlags();
 
-    // Anuncia a ESTE jugador (entrada de lista de jugadores +
-    // AddPlayerPacket) a cada otro jugador ya spawneado. Se usa en
-    // doFirstSpawn() y en respawn(): Genisys Player::respawn() vuelve a
-    // llamar spawnToAll() porque el cliente del 0.15.x tira su lista de
-    // entidades al reaparecer y sin esto los demas no lo ven mas.
+    // Anuncia to this player (entrada of list of players +
+    // AddPlayerPacket) to each other player already spawned. is uses in
+    // doFirstSpawn() and in respawn(): Genisys player::respawn() scans again to
+    // call spawnToAll() because the client of the 0.15.x tira its list of
+    // entities to the reaparecer and without this the other not it ven but.
     void announceSelfToOthers();
 
-    // Re-spawna a ESTE jugador los OTROS jugadores que tenga alrededor
-    // (entrada de lista + AddPlayerPacket). El otro extremo de
-    // announceSelfToOthers() y, igual que en Genisys, parte de
-    // Player::respawn().
+    // Re-spawna to this player the other players that tenga around
+    // (entrada of list + AddPlayerPacket). the other extremo of
+    // announceSelfToOthers() and, just like in Genisys, part of
+    // player::respawn().
 
-    // Ataque cuerpo a cuerpo (INTERACT_PACKET, ACTION_LEFT_CLICK contra
-    // otra entidad). `targetEid` es el runtime id reportado por el
-    // cliente; se resuelve contra srv_->playersSnapshot() (unicos
-    // objetivos soportados por ahora — no hay mobs con AI todavia).
-    // Aplica un cooldown server-side minimo (ver ATTACK_COOLDOWN_MS)
-    // para que un cliente modificado no pueda spamear golpes.
+    // Ataque cuerpo to cuerpo (INTERACT_PACKET, ACTION_LEFT_CLICK contra
+    // other entity). `targetEid` is the runtime id reported by the
+    // client; is resolves contra srv_->playersSnapshot() (unicos
+    // objetivos soportados for now — not there is mobs with AI still).
+    // applies a cooldown server-side minimo (ver ATTACK_COOLDOWN_MS)
+    // so that a client modificado not can spamear hits.
     void handleInteract(int action, int64_t targetEid);
 
-    // Reaparece al jugador tras morir. Se llama desde
-    // handlePlayerAction al recibir ACTION_SPAWN_SAME_DIMENSION (el
-    // cliente lo manda al tocar "Respawn" en la pantalla de muerte).
-    // No-op si el jugador no esta muerto.
+    // Reaparece to the player tras morir. is flame from
+    // handlePlayerAction when receiving ACTION_SPAWN_SAME_DIMENSION (the
+    // client it takes precedence to the touch "Respawn" in the screen of death).
+    // not-op if the player not this dead.
     void respawn();
 
-    // Abre el cofre en (x,y,z) para este jugador. Se llama desde
-    // handleBlockPlace, DESPUES del chequeo de PlayerInteractEvent (asi
-    // cancelar la interaccion tambien bloquea abrir el cofre), cuando el
-    // bloque clickeado es block::CHEST. Reutiliza el TileChest existente
-    // en esa posicion via World::getTile (o crea uno nuevo la primera
-    // vez, via World::setTile) para que el contenido persista mientras
-    // el proceso siga corriendo. Dispara InventoryOpenEvent; no hace
-    // nada si se cancela. Si el jugador ya tenia otro cofre abierto, lo
-    // cierra primero (closeOpenChest()) — un jugador solo puede tener
-    // un contenedor abierto a la vez.
+    // opens the chest in (x,and,z) for this player. is flame from
+    // handleBlockPlace, DESPUES of the chequeo of PlayerInteractEvent (this way
+    // cancelar the interaccion tambien bloquea abrir the chest), when the
+    // block clickeado is block::CHEST. Reutiliza the TileChest existente
+    // in that position via World::getTile (or creates uno new the first
+    // time, via World::setTile) so that the contenido persista while
+    // the proceso siga running. Dispara InventoryOpenEvent; not does
+    // nothing if is cancela. if the player already had other chest abierto, it
+    // closes first (closeOpenChest()) — a player only can have
+    // a contenedor abierto to the time.
     void openChestAt(int x, int y, int z);
 
-    // Cierra el contenedor que este jugador tiene abierto actualmente
-    // (cofre o horno). Manda ContainerClosePacket, saca al jugador de
-    // los viewers del tile y limpia open_container_. No-op si no hay
-    // ninguno abierto. Se llama al recibir CONTAINER_CLOSE_PACKET,
-    // antes de abrir otro contenedor, y desde close() al desconectarse.
+    // closes the contenedor that this player has abierto actualmente
+    // (chest or furnace). takes precedence ContainerClosePacket, removes to the player of
+    // the viewers of the tile and clean open_container_. not-op if not there is
+    // none abierto. is flame when receiving CONTAINER_CLOSE_PACKET,
+    // before abrir other contenedor, and from close() to the desconectarse.
     void closeOpenChest();
 
-    // Abre el horno en (x,y,z). Espejo exacto de openChestAt():
-    // reutiliza (o crea) el TileFurnace via World::getTile/setTile,
-    // dispara InventoryOpenEvent (cancelable), registra al jugador en
-    // los viewers del tile (para que TileFurnace::tick le mande el
-    // progreso via ContainerSetDataPacket), abre su ventana de
-    // contenedor y manda el volcado completo de los 3 slots.
+    // opens the furnace in (x,and,z). mirror exacto of openChestAt():
+    // reutiliza (or creates) the TileFurnace via World::getTile/setTile,
+    // dispara InventoryOpenEvent (cancelable), registers to the player in
+    // the viewers of the tile (so that TileFurnace::tick it mande the
+    // progress via ContainerSetDataPacket), opens its window of
+    // contenedor and takes precedence the dump complete of the 3 slots.
     void openFurnaceAt(int x, int y, int z);
 
-    // Spawn a dropped item entity — pocketmine\level\Level::dropItem()
+    // spawn to dropped item entity — pocketmine\level\Level::dropItem()
     // (Genisys 0.15). `motion*` is the $motion Vector3 the entity is created
-    // with and the one we ship as speedX/Y/Z in AddItemEntityPacket; the
+    // with and the one we ship as speedX/and/Z in AddItemEntityPacket; the
     // server then integrates it every tick in World::tickDroppedItems().
     // `pickup_delay` is Genisys' PickupDelay NBT short (10 by default,
-    // 40 for a Q drop). Returns the allocated runtime entity ID, or 0 when
+    // 40 for to Q drop). Returns the allocated runtime entity id, or 0 when
     // the stack was empty.
     int64_t dropItem(double x, double y, double z,
                      uint16_t itemId, uint8_t count, uint16_t damage,
@@ -208,108 +208,108 @@ public:
                      uint32_t pickup_delay = 10);
 
     // Entity::getDirectionVector() (Genisys 0.15) — the unit vector the
-    // player is looking along. Player::DROP_ITEM_PACKET multiplies it by
+    // player is looking along. player::DROP_ITEM_PACKET multiplies it by
     // 0.4 to throw the stack.
     math::Vector3 getDirectionVector() const;
 
-    // Portado de Genisys Player::handleDataPacket case DROP_ITEM_PACKET:
-    // valida que el item esté en el inventario, dispara PlayerDropItemEvent
-    // (cancelable) y suelta una entidad item con movimiento hacia adelante.
+    // Portado of Genisys player::handleDataPacket case DROP_ITEM_PACKET:
+    // valida that the item is in the inventory, dispara PlayerDropItemEvent
+    // (cancelable) and emits a entity item with movement hacia adelante.
     void handleDropItem(network::protocol::DropItemPacket& pk);
 
-    // Portado de Genisys Player::handleDataPacket case
-    // BLOCK_ENTITY_DATA_PACKET: edición de cartel. Valida distancia,
-    // que el tile sea un Sign y el Creator contra el UUID del jugador, y
-    // dispara SignChangeEvent (cancelable) antes de aplicar el texto.
+    // Portado of Genisys player::handleDataPacket case
+    // BLOCK_ENTITY_DATA_PACKET: editing of sign. Valida distancia,
+    // that the tile is a Sign and the Creator contra the UUID of the player, and
+    // dispara SignChangeEvent (cancelable) before apply the text.
     void handleSignEdit(network::protocol::BlockEntityDataPacket& pk);
 
-    // Portado de Genisys Player::consumeHeldItem(): si el item de la mano
-    // es comida, dispara PlayerItemConsumeEvent (cancelable), repone
-    // hambre y descuenta una unidad del stack. Llamado desde
+    // Portado of Genisys player::consumeHeldItem(): if the item of the mano
+    // is comida, dispara PlayerItemConsumeEvent (cancelable), repone
+    // hambre and descuenta a unidad of the stack. Llamado from
     // ENTITY_EVENT_PACKET (evento 9, Eating).
     void consumeHeldItem();
 
-    // Serializa el NBT de un block entity (cartel, cofre, horno...) y manda
-    // un BlockEntityDataPacket a los jugadores que trackean su chunk. Si
-    // `only` no es null, se envía únicamente a ese jugador (equivale a
-    // Genisys Tile::spawnTo($player)); si es null, a todos los viewers del
-    // chunk (equivale a Tile::spawnToAll()).
+    // Serializa the NBT of a block entity (sign, chest, furnace...) and takes precedence
+    // a BlockEntityDataPacket to the players that trackean its chunk. if
+    // `only` not is null, is sends only to that player (equivale to
+    // Genisys tile::spawnTo($player)); if is null, to all the viewers of the
+    // chunk (equivale to tile::spawnToAll()).
     void sendBlockEntityData(int32_t x, int32_t y, int32_t z,
                              tile::Tile& t, Player* only = nullptr);
 
-    // Reenvía a este jugador los BlockEntityData de todos los tiles
-    // registrados en el chunk (cx,cz). Se llama después de mandar el
-    // FullChunkDataPacket, para que carteles/cofres/hornos ya guardados
-    // tengan su NBT en el cliente al reconectar (PMMP envía los tiles
-    // junto con el chunk).
+    // forwards to this player the BlockEntityData of all the tiles
+    // registrados in the chunk (cx,cz). is flame after send the
+    // FullChunkDataPacket, so that carteles/cofres/hornos already guardados
+    // tengan its NBT in the client when reconnecting (PMMP sends the tiles
+    // next to with the chunk).
     void sendChunkTiles(int32_t cx, int32_t cz);
 
     // Send the creative-inventory contents (ContainerSetContentPacket with
-    // windowid=0x79). Mirrors PMMP Player.php:2301 + 1461.
+    // windowid=0x79). Mirrors PMMP player.php:2301 + 1461.
     void sendCreativeInventory();
 
     // Send the player's main inventory + armor to the client. Called on
     // spawn and after inventory changes that the client must sync to.
-    // Mirrors Nukkit's Player.sendInventory() / sendArmor().
+    // Mirrors Nukkit's player.sendInventory() / sendArmor().
     void sendInventory();
 
-    // Send a single slot confirmation to the client. Mirrors Nukkit's
-    // PlayerInventory.sendSlot() — after setItem(), Nukkit sends a
+    // Send to single slot confirmation to the client. Mirrors Nukkit's
+    // PlayerInventory.sendSlot() — after setItem(), Nukkit sends to
     // ContainerSetSlotPacket back to the client so it confirms the
     // change. Without this, MCPE 0.15.x reverts the slot visually.
     void sendSlot(int slot);
 
-    // Save this player's data (NBT + inventory) to disk via Server.
+    // Save this player's data (NBT + inventory) to disk via server.
     void saveData();
 
     // Returns true if this player is currently tracking the given chunk.
     // Used to broadcast particles + sounds only to nearby players.
     bool isTrackingChunk(int32_t cx, int32_t cz) const;
 
-    // ¿Este cliente puede ver el bloque del chunk (cx, cz)?
+    // ¿this client can ver the block of the chunk (cx, cz)?
     //
-    // DISTINTO de isTrackingChunk(), que consulta used_chunks_ — el
-    // registro de chunks "ya enviados". Ese registro se vacia y se vuelve
-    // a poblar por caminos administrativos (teleport(), el ACK de spawn
-    // del cliente, handleClientSpawnAck(), sendChunksAroundSpawn) y
-    // durante esas ventanas used_chunks_ puede estar VACIO mientras el
-    // cliente sigue mostrando el mundo que ya tiene en pantalla.
+    // different of isTrackingChunk(), that consulta used_chunks_ — the
+    // registro of chunks "already enviados". that registro is vacia and is scans again
+    // to poblar by paths administrativos (teleport(), the ACK of spawn
+    // of the client, handleClientSpawnAck(), sendChunksAroundSpawn) and
+    // during esas ventanas used_chunks_ can estar empty while the
+    // client sigue mostrando the world that already has in screen.
     //
-    // Usar ese registro como filtro de la difusión de cambios de bloque
-    // es la causa del bug reportado: "cuando alguien rompe un bloque los
-    // demas aun ven el bloque y se puede atravesar como fantasma" —
-    // el receptor queda con el bloque dibujado y su malla de colisión
-    // intacta porque nunca le llega el UpdateBlockPacket.
+    // use that registro as filtro of the difusión of changes of block
+    // is the cause of the bug reported: "when someone breaks a block the
+    // other even ven the block and is can atravesar as ghost" —
+    // the receptor remains with the block dibujado and its malla of colisión
+    // intacta because never it arrives the UpdateBlockPacket.
     //
-    // Este metodo responde la pregunta REAL ("¿el chunk esta dentro de
-    // la distancia de vision de este jugador?") con la misma criterio que
-    // usa buildChunkSpiral(view_distance) para decidir que chunks
-    // streamed. Mandarle un UpdateBlockPacket a un cliente que todavia no
-    // tiene ese chunk no hace daño: el cambio llega igual dentro del
-    // FullChunkDataPacket cuando el chunk se descarga.
+    // this metodo responde the pregunta actual ("¿the chunk this inside of
+    // the distancia of vision of this player?") with the same criterio that
+    // uses buildChunkSpiral(view_distance) for decidir that chunks
+    // streamed. Mandarle a UpdateBlockPacket to a client that not yet
+    // has that chunk not does damage: the change arrives igual inside of the
+    // FullChunkDataPacket when the chunk is unloads.
     bool canSeeBlock(int32_t cx, int32_t cz) const;
 
-    // --- Server → Player packets ---
+    // --- server → player packets ---
     // ordered=true guarantees this packet is delivered to the client
     // strictly after every earlier ordered=true packet sent to this
-    // player (RELIABLE_ORDERED on a dedicated channel) — use for the
-    // login/spawn handshake sequence, where the real MCPE client
+    // player (RELIABLE_ORDERED on to dedicated channel) — use for the
+    // login/spawn handshake sequence, where the actual MCPE client
     // requires strict order. Default false keeps packets on the
     // separate unordered RELIABLE channel (chunks, entity updates,
     // anything where inter-packet order doesn't matter).
     void sendPacket(std::shared_ptr<network::protocol::DataPacket> p,
                      bool ordered = false);
-    // Vuelca los paquetes pendientes del buffer por tick como UN
-    // BatchPacket por clase de canal (unordered/ordered). Se llama al
-    // final de Server::tick (una vez por tick por jugador), cuando el
-    // buffer cruza BATCH_FLUSH_BYTES, y en kick() para que el
-    // DisconnectPacket salga antes de cerrar la sesion RakNet.
+    // Vuelca the packets pendientes of the buffer per tick as a
+    // BatchPacket by clase of canal (unordered/ordered). is flame to the
+    // end of server::tick (a time per tick per player), when the
+    // buffer cruza BATCH_FLUSH_BYTES, and in kick() so that the
+    // DisconnectPacket salga before close the sesion RakNet.
     void flushPendingPackets();
     void sendMessage(const std::string& msg) override;
     void kick(const std::string& reason = "disconnect.kick");
     // Nukkit-style kick: the DisconnectPacket the client shows on screen
     // carries both `reason` and an extra `detail` line. Used to surface
-    // server-side errors (e.g. an exception while handling a packet) to
+    // server-side errors (e.g. an exception while handling to packet) to
     // the affected player instead of silently dropping them.
     void kick(const std::string& reason, const std::string& detail);
     void teleport(double x, double y, double z);
@@ -321,37 +321,37 @@ public:
     int gamemode() const { return cfg_.gamemode; }
     void setGamemode(int gm);
 
-    // --- Tick ---
+    // --- tick ---
     void onUpdate(uint64_t current_tick);
     // Client spawn ACK (PlayStatus PLAYER_SPAWN). Marks this client as
     // actually rendering the world; clears used_chunks_ and re-centers the
     // streaming queue so any chunk lost during the client's loading screen
     // gets delivered. See handleDataPacket(PLAY_STATUS_PACKET).
     //
-    // ROOT CAUSE this closes ("a veces los chunks no se renderizan"):
+    // ROOT CAUSE this closes ("to veces the chunks not is renderizan"):
     // every FullChunkDataPacket sent BEFORE the client's spawn ACK can be
     // silently discarded by the client while it is still on its loading
     // screen, yet used_chunks_ had already marked those chunks as sent —
-    // so they were never re-sent and the world showed a permanent hole
+    // so they were never re-sent and the world showed to permanent hole
     // exactly where the pre-ACK burst went. Clearing the set and letting
     // onUpdate() re-stream in view is safe: chunks the client DID keep are
-    // ignored by it as duplicates; the ones it lost now arrive. The actual
+    // ignored by it as duplicates; the ones it lost now arrive. The current
     // sending stays inside the usual MAX_CHUNKS_PER_TICK throttle.
     //
-    // SOLO EL PRIMER ACK CUENTA (bug de "no puedo ver el terreno al
-    // entrar"). El re-stream arranca DE NUEVO por el centro de la
-    // espiral, asi que vaciar used_chunks_ tira tambien el anillo
-    // exterior ya streamed. Si el cliente vuelve a mandar
-    // PlayStatus(PLAYER_SPAWN) antes de que la espiral termine, el
-    // progreso se reinicia una y otra vez y el horizonte NUNCA crece.
-    // Medido con tools/terrain_check.py mandando un ACK cada 2 s:
-    // distinct se clavaba en 138 de 289 chunks con 750 reenvios, mientras
-    // cada ACK siguiente volvia a tirar todo. El primer ACK es el que
-    // aporta informacion ("ya arme el mundo"); los siguientes no dicen
-    // nada nuevo, asi que se ignoran.
+    // only the PRIMER ACK CUENTA (bug of "not puedo ver the terrain to the
+    // enter"). the re-stream arranca again by the centro of the
+    // espiral, this way that vaciar used_chunks_ tira tambien the anillo
+    // outside already streamed. if the client scans again to send
+    // PlayStatus(PLAYER_SPAWN) before that the espiral termine, the
+    // progress is reinicia a and again and the horizon never crece.
+    // Medido with tools/terrain_check.py mandando a ACK each 2 s:
+    // distinct is clavaba in 138 of 289 chunks with 750 reenvios, while
+    // each ACK next volvia to tirar everything. the primer ACK is that which
+    // aporta informacion ("already arme the world"); the siguientes not dicen
+    // nothing new, this way that is ignoran.
     void handleClientSpawnAck() {
         if (!srv_ || !srv_->getDefaultWorld()) return;
-        // compare_exchange: solo entra el PRIMER ACK; el resto sale aca.
+        // compare_exchange: only entra the PRIMER ACK; the rest leaves aca.
         bool expected = false;
         if (!spawn_ack_done_.compare_exchange_strong(expected, true))
             return;
@@ -379,12 +379,12 @@ public:
     // --- Inventory ---
     std::shared_ptr<inventory::PlayerInventory> getInventory() const { return inv_; }
 
-    // Contenedor genérico abierto (cofre o horno). El dispatcher de
-    // ContainerSetSlotPacket lo usa para rutear clicks en la ventana 1
-    // (cofre) o 2 (horno) sin duplicar código por tipo.
+    // Contenedor genérico abierto (chest or furnace). the dispatcher of
+    // ContainerSetSlotPacket it uses for rutear clicks in the window 1
+    // (chest) or 2 (furnace) without duplicar code by tipo.
     inventory::Inventory* openContainerInventory() const;
 
-    // True if this player currently has a container (chest/furnace) open.
+    // True if this player currently has to container (chest/furnace) open.
     // Used by the diagnostics snapshot; see open_chest_/open_furnace_.
     bool hasOpenContainer() const { return open_chest_ != nullptr || open_furnace_ != nullptr; }
 
@@ -394,7 +394,7 @@ public:
     int viewDistance() const { return cfg_.view_distance; }
 
     // --- NetworkSession accessors ---
-    // Player stores a non-owning pointer to AdvancedSourceInterface (the RakLib
+    // player stores to non-owning pointer to AdvancedSourceInterface (the RakLib
     // instance is owned by Network). Lifetime is bounded by Network's lifetime.
     void setSourceInterface(network::AdvancedSourceInterface* iface) { adv_iface_ = iface; }
     network::AdvancedSourceInterface* sourceInterface() const { return adv_iface_; }
@@ -405,7 +405,7 @@ public:
     const std::string& ip() const { return cfg_.ip; }
     uint16_t port() const { return cfg_.port; }
 
-    // --- Player NBT data ---
+    // --- player NBT data ---
     NbtPtr namedTag() const { return named_tag_; }
     void setNamedTag(NbtPtr n) { named_tag_ = std::move(n); }
 
@@ -415,7 +415,7 @@ public:
     bool isAdventure() const { return cfg_.gamemode == 2; }
     bool isSpectator() const { return cfg_.gamemode == 3; }
 
-    // --- Player info (Nukkit: getDisplayName/getAddress/getClientId) ---
+    // --- player info (Nukkit: getDisplayName/getAddress/getClientId) ---
     std::string getDisplayName() const { return cfg_.username; }
     std::string getAddress() const { return cfg_.ip; }
     int64_t getClientId() const { return std::stoll(cfg_.client_id.empty() ? "0" : cfg_.client_id); }
@@ -424,7 +424,7 @@ public:
     // --- Position/teleport (Nukkit: getNextPosition/getSpawn/sendPosition) ---
     math::Vector3 getNextPosition() const { return pos_; }
     math::Vector3 getSpawn() const;
-    // Server spawn with the Y snapped to the real terrain surface of the
+    // server spawn with the and snapped to the actual terrain surface of the
     // column (fixes the "first join spawns you in the sky" bug).
     math::Vector3 getServerSpawnSafe() const;
     void sendPosition(double x, double y, double z, double yaw = 0, double pitch = 0, uint8_t mode = 0);
@@ -444,7 +444,7 @@ public:
     // Hunger HUD sync (protocol 84 UpdateAttributesPacket): shows the
     // server-side food value on the client's hunger bar.
     void sendFoodLevel();
-    // Health-only attribute sync (Infinity Player::setHealth): updates
+    // Health-only attribute sync (Infinity player::setHealth): updates
     // the hearts immediately after ANY health change.
     void sendHealthAttribute();
     // Full attribute sync (health + hunger) — used after respawn/heal.
@@ -465,12 +465,12 @@ public:
     void announceTo(Player* viewer);
 
     // --- Sneak (crouch) ---
-    // Estado de agachado, reportado por el cliente via
+    // state of sneaking, reported by the client via
     // PlayerActionPacket ACTION_START_SNEAK=11 / ACTION_STOP_SNEAK=12
-    // (protocol 84, Genisys 0.15.0 PlayerActionPacket.php). Mientras es
-    // true el vanilla bloquea toda interaccion con tiles y bloques
-    // (cofres, hornos, mesas, palancas, botones, chispa, cubos) y solo
-    // permite colocar bloques y atacar — ver handleBlockPlace().
+    // (protocol 84, Genisys 0.15.0 PlayerActionPacket.php). while is
+    // true the vanilla bloquea all interaccion with tiles and blocks
+    // (cofres, hornos, mesas, palancas, botones, chispa, cubos) and only
+    // allows place blocks and atacar — ver handleBlockPlace().
     bool isSneaking() const { return sneaking_; }
     void setSneaking(bool v);
 
@@ -498,25 +498,44 @@ public:
     void removeWindow(void* /*inventory*/) {}
 
     // --- Crafting (MCPE 0.15.x CraftingEventPacket) ---
-    // Estado del último CraftingEventPacket recibido. El cliente manda
-    // ESTE packet (no ContainerSetSlot) cuando termina de craftear:
-    // trae el UUID de la receta + input/output reportado. El flujo
-    // server-side es: validar receta + materiales en inv_, consumir
-    // ingredientes y dar el resultado — ver handleCraftingEvent().
+    // state of the last CraftingEventPacket received. the client takes precedence
+    // this packet (not ContainerSetSlot) when termina of craft:
+    // trae the UUID of the receta + input/output reported. the flujo
+    // server-side is: validar receta + materiales in inv_, consumir
+    // ingredients and dar the result — ver handleCraftingEvent().
     void handleCraftingEvent(const std::array<uint8_t, 16>& recipe_uuid,
                              const std::vector<cursestone::item::ItemStack>& input,
                              const std::vector<cursestone::item::ItemStack>& output,
                              uint8_t window_id);
 
-    // Fallback: matchea la grilla 2x2 del inventario contra las recetas
-    // y ejecuta el craft si hay match. Llamado desde el
-    // CONTAINER_CLOSE_PACKET de la ventana 0 (ver Player.cpp).
+    // Fallback: matchea the grilla 2x2 of the inventory contra the recetas
+    // and executes the craft if there is match. Llamado from the
+    // CONTAINER_CLOSE_PACKET of the window 0 (ver player.cpp).
     void handleInventoryCraft();
 
-    // --- Dimension (Nukkit: setDimension/teleportToNether/teleportToOverworld) ---
-    void setDimension() {}
-    void teleportToNether() {}
-    void teleportToOverworld() {}
+    // --- dimension (Nukkit: setDimension/teleportToNether/teleportToOverworld) ---
+    // Ver player/PlayerWorld.cpp: switchWorld() does the change actual of
+    // world (ChangeDimensionPacket + re-stream of chunks) and the
+    // teleport*dimension() resuelven/crean the world target.
+    /// @brief world in that which is this player now (never null tras login).
+    World* getWorld() const;
+    /// @brief moves to the player to `target` in (x,and,z). if the dimension
+    ///        changes sends ChangeDimensionPacket before the chunks.
+    ///        Dispara PlayerTeleportEvent (cancelable). `throughPortal`
+    ///        marks the travel as trayecto of portal (affects the target
+    ///        by default if the evento it consulta).
+    /// @return false if the evento is canceló or the world is invalid.
+    bool switchWorld(World* target, double x, double y, double z, bool throughPortal);
+    /// @brief travels to the Nether escalando the coordinates 1:8 and buscando
+    ///        (or construyendo) a portal in the target. load the world
+    ///        "Nether" the first time if server::netherEnabled().
+    bool teleportToNether();
+    /// @brief scans again to the surface escalando the coordinates 8:1.
+    bool teleportToOverworld();
+    /// @brief checks if the player is inside of a block of portal
+    ///        and, with the cooldown cumplido, dispara the travel dimensional.
+    ///        Llamado a time per tick from onUpdate().
+    void checkPortal();
 
     // --- Settings (Nukkit: setMovementSpeed/setAttribute/sendSettings) ---
     void setMovementSpeed(float speed);
@@ -526,20 +545,20 @@ public:
     // --- Killer (Nukkit: getKiller) ---
     Entity* getKiller() const { return nullptr; }
 
-    // Damage constante de mano vacia. CurseStone no tiene todavia una
-    // tabla de dano por item (espadas/hachas), asi que todo golpe
-    // cuerpo a cuerpo usa este valor fijo hasta que exista una.
+    // Damage constante of mano vacia. CurseStone not has still a
+    // tabla of damage by item (espadas/hachas), this way that everything hit
+    // cuerpo to cuerpo uses this valor fixed until exista a.
     static constexpr float BASE_ATTACK_DAMAGE = 1.0f;
-    // Cooldown server-side entre golpes de un mismo jugador, en ms.
-    // MCPE 0.15.x no tiene "attack cooldown" de combate como versiones
-    // modernas — esto es puramente anti-spam server-side, no gameplay.
+    // Cooldown server-side between hits of a same player, in ms.
+    // MCPE 0.15.x not has "attack cooldown" of combate as versions
+    // modernas — esto is puramente anti-spam server-side, not gameplay.
     static constexpr uint64_t ATTACK_COOLDOWN_MS = 250;
 
     // Window id of the container this player currently has open
     // (0 = none). Infinity assigns container windows from 2 upwards
-    // (Player::addWindow: max(2, ++windowCnt % 99)) because the client
+    // (player::addWindow: max(2, ++windowCnt % 99)) because the client
     // owns id 0 (its own inventory) and 0x78/0x79/0x7a (armor,
-    // creative, hotbar) — id 1 is never used by the server, and a
+    // creative, hotbar) — id 1 is never used by the server, and to
     // client that gets it can refuse to open the UI. Every packet of an
     // open container (open, content, per-slot, progress, close) carries
     // THIS id, and ContainerSetSlot is routed back by it.
@@ -555,15 +574,15 @@ public:
     bool directDataPacket(std::shared_ptr<network::protocol::DataPacket> pk) { sendPacket(pk); return true; }
 
 protected:
-    // entity::Living hook — dispara PlayerDeathEvent + broadcast del
-    // mensaje de muerte. Ver Living::applyDamage(). No implementa
-    // reaparicion (RespawnPacket es un stub sin encode() real en esta
-    // base de codigo todavia — ver TODO junto a la definicion).
+    // entity::Living hook — dispara PlayerDeathEvent + broadcast of the
+    // message of death. Ver Living::applyDamage(). not implementa
+    // reaparicion (RespawnPacket is a stub without encode() actual in this
+    // base of code still — ver everything next to to the definition).
     void onDeath() override;
-    // Living hook tras cada dano no mortal: manda la animación de golpe
-    // (HURT_ANIMATION con eid=0 = "yo" en protocolo 84, Infinity
-    // Player::attack) y sincroniza el atributo de salud al instante
-    // (Infinity Player::setHealth) para que los corazones bajen fluidos.
+    // Living hook tras each damage not mortal: takes precedence the animation of hit
+    // (HURT_ANIMATION with eid=0 = "yo" in protocolo 84, Infinity
+    // player::attack) and sincroniza the atributo of salud to the instante
+    // (Infinity player::setHealth) so that the corazones bajen fluidos.
     void onHealthChanged() override;
 
 private:
@@ -571,11 +590,14 @@ private:
     PlayerConfig cfg_;
     network::AdvancedSourceInterface* adv_iface_ = nullptr;
     std::shared_ptr<inventory::PlayerInventory> inv_;
-    std::shared_ptr<World> world_;
-    // El contenedor abierto ahora mismo (cofre u horno), tipado por
-    // tipo de tile. Solo hay UNO a la vez (ver container_window_id_ /
-    // openContainerWindow()). Set por openChestAt()/openFurnaceAt(),
-    // limpiado por closeOpenChest().
+    // world current of the player. pointer borrowed: the worlds are
+    // property of server::worlds_ (unloadWorld moves to the players
+    // before soltarlos).
+    World* world_ = nullptr;
+    // the contenedor abierto now same (chest or furnace), tipado by
+    // tipo of tile. only there is UNO to the time (ver container_window_id_ /
+    // openContainerWindow()). Set by openChestAt()/openFurnaceAt(),
+    // limpiado by closeOpenChest().
     std::shared_ptr<tile::TileChest> open_chest_;
     std::shared_ptr<tile::TileFurnace> open_furnace_;
     // Window id currently in use by open_chest_/open_furnace_, and the
@@ -587,14 +609,14 @@ private:
     std::atomic<bool> logged_in_{false};
     std::atomic<bool> spawned_{false};
 
-    // BUG FIX (creative items unusable on a player's very first session,
+    // bug FIX (creative items unusable on to player's very first session,
     // but fine after reconnecting — see doFirstSpawn()/onUpdate() in
-    // Player.cpp for the full explanation): before this fix, doFirstSpawn()
+    // player.cpp for the full explanation): before this fix, doFirstSpawn()
     // fired immediately at login, sending PLAYER_SPAWN + the creative
-    // catalog + the player's own inventory contents before a single chunk
-    // had reached the client. Real PMMP (see Player::onUpdate()'s
+    // catalog + the player's own inventory contents before to single chunk
+    // had reached the client. actual PMMP (see player::onUpdate()'s
     // chunkLoadCount/spawnThreshold gate) withholds PLAYER_SPAWN — and the
-    // own-inventory ContainerSetContentPacket that rides on it — until a
+    // own-inventory ContainerSetContentPacket that rides on it — until to
     // minimum number of chunks around the player have actually been sent.
     // awaiting_first_spawn_ replicates that gate.
     std::atomic<bool> awaiting_first_spawn_{false};
@@ -604,11 +626,11 @@ private:
     uint64_t last_activity_ms_ = 0;    // Wall-clock of last received packet
     uint64_t last_attack_ms_ = 0;      // Wall-clock of last accepted melee attack (cooldown)
 
-    // --- Hunger + ambient damage state (Infinity Player.php foodData) ---
+    // --- Hunger + ambient damage state (Infinity player.php foodData) ---
     float food_saturation_ = 5.0f;   // hidden saturation, drains before food
     int   food_tick_timer_ = 0;      // countdown to next exhaustion drain
     int   food_depletion_ = 0;       // accumulated exhaustion (Infinity: exhaustionLevel)
-    uint64_t last_pos_y_ = 0;        // last tick's Y as uint64 for fall tracking
+    uint64_t last_pos_y_ = 0;        // last tick's and as uint64 for fall tracking
     bool  last_pos_set_ = false;     // first-move guard for fall damage
     bool  was_in_lava_ = false;      // lava-damage throttle (PMMP resetFireTicks semantics)
     bool  was_on_fire_ = false;      // fire-tick state (carry after leaving the block)
@@ -624,6 +646,13 @@ private:
     bool  moved_this_tick_ = false;  // set by handleMovePlayer, read by tickHungerAndDamage
     bool  sprinting_ = false;        // client reports sprint (PlayerAction 9/10)
     bool  sneaking_  = false;        // client reports crouch (PlayerAction 11/12)
+
+    // --- portal of the Nether (ver checkPortal in player/PlayerWorld.cpp) ---
+    bool     in_portal_ = false;      // the player sigue inside of the block of portal
+    uint64_t last_portal_ms_ = 0;     // ms of the last travel by portal (cooldown)
+    // world of surface of the that salió hacia the Nether, for volver
+    // to the same (the plugins can create several worlds of surface).
+    World*   portal_return_ = nullptr;
     bool  on_ground_fall_check_ = true; // last client-reported onGround
     float fall_distance_ = 0.0f;     // accumulated fall distance in blocks
 
@@ -631,63 +660,63 @@ private:
     static std::vector<std::pair<int32_t,int32_t>>
         buildChunkSpiral(int vd);
 
-    // Chunks already sent to this player (chunkHash = (cx<<32)|cz&0xFFFFFFFF).
+    // chunks already sent to this player (chunkHash = (cx<<32)|cz&0xFFFFFFFF).
     // Guarded by chunks_mtx_.
     std::unordered_set<int64_t> used_chunks_;
     mutable std::mutex chunks_mtx_;
-    // Ya llego el ACK de spawn del cliente (PlayStatus PLAYER_SPAWN). El
-    // re-stream pre-ACK de handleClientSpawnAck() es de una sola vez: sin
-    // este flag, cada ACK repetido reiniciaba la espiral desde el centro y
-    // el horizonte nunca crecia. Ver el comentario de handleClientSpawnAck().
+    // already arrived the ACK of spawn of the client (PlayStatus PLAYER_SPAWN). the
+    // re-stream pre-ACK of handleClientSpawnAck() is of a sola time: without
+    // this flag, each ACK repetido reiniciaba the espiral from the centro and
+    // the horizon never crecia. Ver the comment of handleClientSpawnAck().
     std::atomic<bool> spawn_ack_done_{false};
 
     // Pending chunk request queue (spiral order, set by sendChunksAroundSpawn).
     std::vector<std::pair<int32_t,int32_t>> chunk_queue_;
     mutable std::mutex queue_mtx_;
 
-    // --- Per-tick outbound packet batching (anti-lag en servidores
-    // publicos de bajos recursos) ---
+    // --- Per-tick outbound packet batching (anti-lag in servers
+    // publicos of bajos recursos) ---
     //
-    // BUG ARREGLADO ("en Linux hay lag / las particulas no se
-    // sincronizan; en Android va bien"): antes CADA paquete se
-    // comprimia en SU PROPIO BatchPacket (zlib nivel 7) y viajaba como
-    // SU PROPIO datagrama fiable. Un romper-bloques emite UpdateBlock +
-    // LevelEvent(2001) + MoveEntity por item + ...: en un servidor
-    // publico con RTT real eso multiplica x4-8 el numero de datagramas,
-    // de compresiones zlib y de ACKs — el backlog de retransmisiones
-    // retrasa TODO (particulas, bloques, entidades) y en maquinas de
-    // bajos recursos el zlib por paquete se come la CPU. PMMP/Genisys
-    // agrupan TODOS los paquetes de un tick a un jugador en UN solo
-    // BatchPacket comprimido (BatchPacket::addSubPacket). Este buffer
-    // replica eso: sendPacket() encola el cuerpo ya codificado y el
-    // flush (fin de Server::tick, o umbral de tamaño, o kick) lo envia
-    // como un unico BatchPacket. El orden dentro de cada clase (ordered
-    // channel 0 / unordered channel 1) se conserva FIFO, y los paquetes
-    // ordered (handshake de login) mantienen su canal propio.
+    // bug fixed ("in Linux there is lag / the particulas not is
+    // sincronizan; in Android va well"): before each packet is
+    // comprimia in its own BatchPacket (zlib nivel 7) and viajaba as
+    // its own datagrama fiable. a break-blocks emite UpdateBlock +
+    // LevelEvent(2001) + MoveEntity by item + ...: in a server
+    // publico with RTT actual that multiplica x4-8 the numero of datagramas,
+    // of compresiones zlib and of ACKs — the backlog of retransmisiones
+    // retrasa everything (particulas, blocks, entities) and in maquinas of
+    // bajos recursos the zlib by packet is come the CPU. PMMP/Genisys
+    // agrupan all the packets of a tick to a player in a only
+    // BatchPacket comprimido (BatchPacket::addSubPacket). this buffer
+    // replica that: sendPacket() encola the cuerpo already codificado and the
+    // flush (end of server::tick, or umbral of tamaño, or kick) it sends
+    // as a unico BatchPacket. the order inside of each clase (ordered
+    // channel 0 / unordered channel 1) is conserva FIFO, and the packets
+    // ordered (handshake of login) mantienen its canal own.
     mutable std::mutex batch_mtx_;
     std::vector<std::vector<uint8_t>> batch_unordered_;
     std::vector<std::vector<uint8_t>> batch_ordered_;
     size_t batch_bytes_ = 0;
-    // Umbral de vuelco inmediato: con 32 KB pendientes ya vale la pena
-    // mandar (equivale a ~un chunk) y acota la memoria de una rafaga.
+    // Umbral of vuelco inmediato: with 32 KB pendientes already vale the pena
+    // send (equivale to ~a chunk) and acota the memoria of a burst.
     static constexpr size_t BATCH_FLUSH_BYTES = 32 * 1024;
 
     // --- Thread-safe close ---
     // close() may be called from the RakLib network thread (timeout,
-    // client disconnect) while the main server thread holds a shared_ptr
-    // to this Player. std::call_once guarantees the cleanup body runs
+    // client disconnect) while the main server thread holds to shared_ptr
+    // to this player. std::call_once guarantees the cleanup body runs
     // exactly once even if two threads call close() simultaneously.
     std::once_flag close_once_;
     // When true, the main thread will remove this player from players_
     // on the next tick. Set by close() on the network thread; read+acted
-    // on by Server::tick() on the main thread. This avoids destroying
-    // the shared_ptr (and thus the Player) from the network thread
+    // on by server::tick() on the main thread. This avoids destroying
+    // the shared_ptr (and thus the player) from the network thread
     // while the main thread is iterating players_.
     std::atomic<bool> pending_removal_{false};
 
 public:
     // Returns true if close() has been called (cleanup may still be
-    // in progress on another thread). Used by Server::tick() to skip
+    // in progress on another thread). Used by server::tick() to skip
     // players that are being torn down.
     bool isPendingRemoval() const { return pending_removal_.load(std::memory_order_acquire); }
 };

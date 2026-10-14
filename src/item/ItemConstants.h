@@ -6,7 +6,7 @@
 | \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
  \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
 
- * CurseStone | Open Source Server Software
+ * CurseStone | Open Source server Software
  *
  * Copyright (C) 2026 CurseStoneTeam
  *
@@ -21,10 +21,10 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// ItemConstants.h — Item ID constants.
+// ItemConstants.h — item id constants.
 //
-// Mirrors cn.nukkit.item.Item (the file the user uploaded) which itself
-// mirrors pocketmine/item/Item.php. All Block IDs are also here (since
+// Mirrors cn.nukkit.item.item (the file the user uploaded) which itself
+// mirrors pocketmine/item/item.php. All Block IDs are also here (since
 // MCPE 0.15 uses item IDs < 256 for block items).
 //
 // Usage:
@@ -173,9 +173,6 @@ constexpr int BREWING_STAND_BLOCK = 117;
 constexpr int BREWING_STAND_BLOCK_ITEM = 117;
 constexpr int CAULDRON_BLOCK     = 118;
 constexpr int CAULDRON_BLOCK_ITEM = 118;
-constexpr int END_PORTAL         = 119;
-constexpr int END_PORTAL_FRAME   = 120;
-constexpr int END_STONE          = 121;
 constexpr int DRAGON_EGG         = 122;
 constexpr int REDSTONE_LAMP      = 123;
 constexpr int COCOA_BLOCK        = 127;
@@ -248,18 +245,15 @@ constexpr int BIRCH_DOOR_BLOCK    = 194;
 constexpr int JUNGLE_DOOR_BLOCK   = 195;
 constexpr int ACACIA_DOOR_BLOCK   = 196;
 constexpr int DARK_OAK_DOOR_BLOCK = 197;
-constexpr int END_ROD             = 208;
 constexpr int CHORUS_PLANT        = 209;
 constexpr int CHORUS_FLOWER        = 210;
 constexpr int PURPUR_BLOCK        = 201;
 constexpr int PURPUR_PILLAR        = 202;
 constexpr int PURPUR_STAIRS        = 203;
-constexpr int END_BRICKS          = 206;
 constexpr int GRASS_PATH          = 198;
-constexpr int END_GATEWAY         = 209;
 
 // ============================================================
-// Item IDs (256+)
+// item IDs (256+)
 // ============================================================
 constexpr int IRON_SHOVEL          = 256;
 constexpr int IRON_PICKAXE         = 257;

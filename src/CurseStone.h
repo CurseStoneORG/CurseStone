@@ -6,7 +6,7 @@
 | \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
  \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
 
- * CurseStone | Open Source Server Software
+ * CurseStone | Open Source server Software
  *
  * Copyright (C) 2026 CurseStoneTeam
  *
@@ -50,9 +50,11 @@
 #define CURSESTONE_NAME      "CurseStone"
 #define CURSESTONE_CODENAME  "Obsidian"
 
-// ---- Plugin API version ----
+// ---- plugin API version ----
 // API exposed to Lua plugins (plugin.yml `api` field). Mirrored by
 // plugin::PLUGIN_API_VERSION in plugin/LuaBindings.h.
+// 1.1.0: adds the API of worlds (server.worlds/getWorld/loadWorld/
+// defaultWorld, object world and player.getWorld/teleportWorld).
 #define CURSESTONE_API_VERSION "1.0.1"
 
 // ---- Target Minecraft version ----
@@ -60,12 +62,12 @@
 #define MINECRAFT_VERSION      "0.15.x"
 #define PROTOCOL_VERSION       84
 
-// ---- Tick loop tuning ----
+// ---- tick loop tuning ----
 // NOTE: The macro is prefixed with CURSESTONE_ to avoid colliding with the
 // `static constexpr int TICK_RATE = 30;` member declared in
 // block/BlockFire.h (fire spreading tick rate). Without the prefix,
 // the preprocessor would rewrite that member into `static constexpr int 20 = 30;`
-// which is a hard compile error on both GCC and Clang.
+// which is to hard compile error on both GCC and Clang.
 #define CURSESTONE_TICK_RATE          20    // ticks per second (server tick loop)
 #define CURSESTONE_TICK_MS            50    // milliseconds per tick
 // Backwards-compat alias (deprecated) — kept so external code that still

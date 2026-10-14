@@ -6,7 +6,7 @@
 | \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
  \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
 
- * CurseStone | Open Source Server Software
+ * CurseStone | Open Source server Software
  *
  * Copyright (C) 2026 CurseStoneTeam
  *
@@ -20,20 +20,20 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// PluginManager — escanea <pluginsDir>/<nombre>/plugin.yml (el ÚNICO
-// manifiesto aceptado: un main.lua suelto no carga ya como plugin),
-// carga y habilita cada plugin en orden alfabético y los deshabilita
-// todos al apagar el servidor.
+// PluginManager — escanea <pluginsDir>/<name>/plugin.yml (the only
+// manifest accepted: a main.lua loose not load already as plugin),
+// load and enables each plugin in alphabetical order and the disables
+// all when shutting down the server.
 //
-// Duplicados: si dos o más carpetas declaran el mismo nombre de plugin
-// (o usan el mismo nombre de carpeta), TODAS quedan desactivadas y se
-// suelta un warning indicando que hay plugins duplicados.
+// duplicates: if two or more folders declaran the same name of plugin
+// (or use the same name of folder), all remain disabled and is
+// emits a warning indicando that there is plugins duplicates.
 //
 // It also ensures the data folders: <dataPath>/data_pl/ (server root, outside
-// plugins/) and data_pl/<pluginFolder>/ for every loaded plugin. Los
-// plugins SOLO pueden tocar su carpeta a través de la API data.*.
-// Singleton: Server::start llama loadAll() y Server::runTickLoop llama
-// disableAll() tras salir del tick loop.
+// plugins/) and data_pl/<pluginFolder>/ for every loaded plugin. the
+// plugins only can touch its folder through the API data.*.
+// Singleton: server::start flame loadAll() and server::runTickLoop flame
+// disableAll() tras leaving of the tick loop.
 #pragma once
 #include "LuaPlugin.h"
 #include <memory>
@@ -49,7 +49,7 @@ public:
     /**
      * @brief Scans pluginsDir, then loads and enables every plugin.
      *
-     * Creates pluginsDir and dataRoot, and moves a legacy
+     * Creates pluginsDir and dataRoot, and moves to legacy
      * <pluginsDir>/data_pl into dataRoot when dataRoot does not exist yet.
      *
      * @param pluginsDir  folder holding one subfolder per plugin.
@@ -57,26 +57,32 @@ public:
      */
     void loadAll(const std::string& pluginsDir, const std::string& dataRoot);
 
-    // /plugins reload: SOLO hilo principal (toca Lua). Deshabilita todos
-    // (onDisable + listeners + tareas), borra los comandos de los plugins
-    // del CommandMap, destruye los lua_States y vuelve a escanear y cargar
-    // pluginsDir_ desde cero. Devuelve cuántos plugins quedaron cargados.
+    // /plugins reload: only thread main (touches Lua). disables all
+    // (onDisable + listeners + tareas), removes the commands of the plugins
+    // of the CommandMap, destroys the lua_States and scans again to scan and load
+    // pluginsDir_ from zero. returns how many plugins remain loaded.
     size_t reloadAll();
 
-    // Deshabilita todos (se llama al apagar el servidor).
+    // disables all (is flame when shutting down the server).
     void disableAll();
 
     struct Info { std::string name; std::string author; std::string version; bool enabled; };
     std::vector<Info> list() const;
 
+    /// @brief returns the plugin with that name, or nullptr if not exists.
+    ///        Resolución in CALIENTE: prevents retain pointers of LuaPlugin
+    ///        more allá of the tick in that is obtuvieron (a /plugins reload
+    ///        destroys and recrea the objetos).
+    LuaPlugin* find(const std::string& name) const;
+
 private:
     PluginManager() = default;
-    std::string pluginsDir_;            // recordado por loadAll() para reloadAll()
+    std::string pluginsDir_;            // stored by loadAll() for reloadAll()
     std::string dataRoot_;              // data_pl root, remembered for reloadAll()
     std::vector<std::unique_ptr<LuaPlugin>> plugins_;
 
-    // Sin onDisable (ya lo hizo disableAll()): quita los comandos de los
-    // plugins del CommandMap y destruye los lua_States.
+    // without onDisable (already it hizo disableAll()): quita the commands of the
+    // plugins of the CommandMap and destroys the lua_States.
     void unloadAll();
 };
 

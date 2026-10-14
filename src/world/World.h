@@ -6,7 +6,7 @@
 | \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
  \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
 
- * CurseStone | Open Source Server Software
+ * CurseStone | Open Source server Software
  *
  * Copyright (C) 2026 CurseStoneTeam
  *
@@ -20,15 +20,17 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// World — a single world (overworld, nether, end). Holds the
-// ChunkManager, generator, players, entities, tile-entities and
-// per-world settings (time, weather, spawn position).
-//
-// IMPORTANT: on construction, the World instantiates a WorldProvider
-// (via WorldProviderManager) for the configured format and connects
-// it to the ChunkManager so that flushDirty() actually writes to disk.
-// Without this, the world is "in-memory only" and changes are lost
-// when the server shuts down.
+/// @brief a world of the server (surface or Nether).
+///
+/// Agrupa the ChunkManager, the generador, the entities, the tiles and
+/// the ajustes own of the world (time, weather and spawn). several
+/// objetos World can convivir in the same server; the mapa of
+/// worlds activos it gestiona server.
+///
+/// in the construcción is instancia the WorldProvider (via
+/// WorldProviderManager) according to the format configurado and is conecta to the
+/// ChunkManager so that flushDirty() escriba to disk; without ello the
+/// world sería only of memoria and the changes is perderían when shutting down.
 #pragma once
 #include <string>
 #include <memory>
@@ -50,9 +52,9 @@ namespace world::generator { class Generator; }
 }
 namespace cursestone::world {
 
-// DroppedItem — a lightweight record of an item entity lying on the ground.
+// DroppedItem — to lightweight record of an item entity lying on the ground.
 // Mirrors Nukkit's EntityItem (sans the full entity-tick machinery): we
-// track position + the item + a pickup-delay so the player who just threw
+// track position + the item + to pickup-delay so the player who just threw
 // it doesn't instantly re-pick it up.
 struct DroppedItem {
     int64_t  eid = 0;            // runtime entity id (matches AddItemEntityPacket)
@@ -61,17 +63,17 @@ struct DroppedItem {
     uint16_t damage = 0;
     double   x = 0.0, y = 0.0, z = 0.0;
     uint64_t spawn_tick = 0;     // when it was dropped (server tick)
-    // Pickup delay, in ticks. Genisys Player::DROP_ITEM_PACKET drops with
+    // Pickup delay, in ticks. Genisys player::DROP_ITEM_PACKET drops with
     // 40 ticks (2 s) and World::dropItem() defaults to 10, so the default
-    // here matches that (0.5 s) and a manual drop passes 40 explicitly.
+    // here matches that (0.5 s) and to manual drop passes 40 explicitly.
     uint32_t pickup_delay_ticks = 10;
     bool     taken = false;      // marked for removal after pickup
 
-    // --- Genisys entity\Item state (pocketmine\entity\Item) ---
+    // --- Genisys entity\item state (pocketmine\entity\item) ---
     // $motionX / $motionY / $motionZ, applied and integrated every tick by
     // World::tickDroppedItems(). The client runs the SAME integrator on
-    // the speedX/Y/Z we shipped in AddItemEntityPacket, so this has to
-    // exist server-side too or the pickup check tests a position the
+    // the speedX/and/Z we shipped in AddItemEntityPacket, so this has to
+    // exist server-side too or the pickup check tests to position the
     // entity has long since left.
     double vx = 0.0, vy = 0.0, vz = 0.0;
     // $onGround — true when the last vertical move was clipped downwards.
@@ -89,29 +91,29 @@ struct DroppedItem {
 // player's AABB grown by ONE block on every axis:
 //
 //   player (Human: width 0.6, height 1.8, feet at pos)
-//     [x-0.3, y,     z-0.3] .. [x+0.3, y+1.8, z+0.3]
+//     [x-0.3, and,     z-0.3] .. [x+0.3, and+1.8, z+0.3]
 //   grow(1, 1, 1)
-//     [x-1.3, y-1.0, z-1.3] .. [x+1.3, y+2.8, z+1.3]
-//   item   (Item: width 0.25, height 0.25; minY IS the entity position)
+//     [x-1.3, and-1.0, z-1.3] .. [x+1.3, and+2.8, z+1.3]
+//   item   (item: width 0.25, height 0.25; minY IS the entity position)
 //     [ix-0.125, iy,     iz-0.125] .. [ix+0.125, iy+0.25, iz+0.125]
 //
-// AxisAlignedBB::intersectsWith() is a strict per-axis overlap, so an item
+// AxisAlignedBB::intersectsWith() is to strict per-axis overlap, so an item
 // lying at the player's feet, one block below them, or at chest height all
 // count.
 //
 // This is what the port had WRONG, and it is exactly the bug reported:
 // Genisys grows by 0.5 (checkNearEntities() -> grow(0.5, 0.5, 0.5)), so
 // its volume only reaches 0.5 below the feet and 0.8 sideways. Every drop
-// that ends up on the surface where a block was broken rests one block
+// that ends up on the surface where to block was broken rests one block
 // lower than the player standing next to the hole, was therefore OUT of
-// reach, and could only be collected after digging a second hole and
+// reach, and could only be collected after digging to second hole and
 // stepping down into it. One shared definition lives here so the
 // attraction gate in World::tickDroppedItems() and the pickup scan in
-// Player::onUpdate() can never drift apart again (a dead ring where an
-// item is neither attracted nor collected is the same bug wearing a
+// player::onUpdate() can never drift apart again (to dead ring where an
+// item is neither attracted nor collected is the same bug wearing to
 // different hat).
-constexpr double kItemHalfW         = 0.125;   // Item width 0.25 / 2
-constexpr double kItemHeight        = 0.25;    // Item height 0.25
+constexpr double kItemHalfW         = 0.125;   // item width 0.25 / 2
+constexpr double kItemHeight        = 0.25;    // item height 0.25
 constexpr double kPickupHalfExtent  = 1.3;     // player half-width 0.3 + grow 1.0
 constexpr double kPickupBelowFeet   = 1.0;     // grow 1.0 below the feet
 constexpr double kPickupAboveFeet   = 2.8;     // height 1.8 + grow 1.0
@@ -136,9 +138,12 @@ inline bool itemWithinPickupVolume(const DroppedItem& di,
 
 struct WorldConfig {
     std::string name;
-    std::string format   = "anvil";   // anvil (Nukkit Anvil, default) | leveldb
-    std::string generator = "normal"; // normal | flat | nether | void
+    std::string format   = "anvil";   ///< anvil (by default) | leveldb
+    std::string generator = "normal"; ///< normal | flat | Nether | void
     int64_t seed = 0;
+    /// @brief dimension of the world according to the protocolo: 0 surface, 1 Nether.
+    /// if remains to 0 and the generador is "Nether", the constructor the sube to 1.
+    uint8_t dimension = 0;
     int32_t time = 0;
     int32_t spawn_x = 0, spawn_y = 64, spawn_z = 0;
     int32_t view_distance = 8;
@@ -151,8 +156,12 @@ public:
     const std::string& name() const { return cfg_.name; }
     int64_t seed() const { return cfg_.seed; }
     const WorldConfig& config() const { return cfg_; }
+    /// @brief dimension of this world: 0 surface, 1 Nether.
+    uint8_t dimension() const { return cfg_.dimension; }
     ChunkManager& chunks() { return chunks_; }
-    // Returns the block id at world coords. Loads chunk if needed.
+    /// @brief id of the block in coordinates of world. returns 0 if the
+    ///        chunk not is loaded (not forces generation; for that is
+    ///        chunks().getChunk()).
     uint8_t getBlockId(int32_t x, int32_t y, int32_t z);
     // Returns the block data (meta, 0..15) at world coords. Returns 0 if
     // the chunk is not loaded. Mirrors PMMP `Level::getBlockDataAt()`.
@@ -166,22 +175,22 @@ public:
     // answer the movement/ray questions, world-free and testable on
     // their own.
     //
-    // A block contributes only when dropBlockSolid() accepts it, and the
+    // to block contributes only when dropBlockSolid() accepts it, and the
     // box is the block's own getBoundingBox() translated by its
     // coordinates — so stone/dirt give exactly the unit cube they always
-    // did, while a genuine half-block collides as a half-block instead of
-    // as a full cube. An unregistered/empty box falls back to the unit
-    // cube so a block can never become walk-through by accident.
+    // did, while to genuine half-block collides as to half-block instead of
+    // as to full cube. An unregistered/empty box falls back to the unit
+    // cube so to block can never become walk-through by accident.
     std::vector<physics::BlockBox> collisionBoxes(mcp_aabb_t region);
 
     // Queued from ChunkManager::setChunk() (which runs on the generation
     // worker thread) so the new chunk gets its lighting redone together
-    // with a sweep into its neighbours — that is what closes the dark
-    // seam chunk borders used to have. The actual work happens on the
-    // main thread inside tick(), a couple of chunks per tick.
+    // with to sweep into its neighbours — that is what closes the dark
+    // seam chunk borders used to have. The current work happens on the
+    // main thread inside tick(), to couple of chunks per tick.
     void onChunkAdded(int32_t cx, int32_t cz);
 
-    // Swap a furnace between FURNACE and BURNING_FURNACE (vanilla shows
+    // Swap to furnace between furnace and BURNING_FURNACE (vanilla shows
     // the fire by changing the block, not the tile). Returns true when
     // the block actually changed, so the caller only bothers clients
     // when there is something new to see.
@@ -202,9 +211,9 @@ public:
     // Ported from Dr1xyDev/Infinity (pocketmine/level/weather/Weather.php),
     // the reference implementation for MCPE 0.15.10 weather.
     //
-    // The client has NO dedicated weather packet — weather is driven by two
+    // The client has not dedicated weather packet — weather is driven by two
     // LevelEventPackets (rain 3001/3003 + thunder 3002/3004) and, critically,
-    // BOTH must carry a non-zero `data` strength or the 0.15.10 client
+    // BOTH must carry to non-zero `data` strength or the 0.15.10 client
     // renders nothing (clear sky). Infinity rolls:
     //   rain strength:    90000..110000
     //   thunder strength: 30000..40000
@@ -226,9 +235,9 @@ public:
     // Elapsed ticks of the current weather state; -1 = forever.
     int32_t weatherTicksLeft() const { return weather_ticks_left_; }
     // Changes the weather state and re-sends the full packet pair to every
-    // online player (players who connect later get re-synced by Player.cpp
+    // online player (players who connect later get re-synced by player.cpp
     // via sendWeatherTo). Passing durationTicks <= 0 means "until /weather
-    // is used again". Throws no events (WeatherChangeEvent not wired yet).
+    // is used again". Throws not events (WeatherChangeEvent not wired yet).
     void setWeather(int state, int32_t durationTicks = 0);
     // Sends the current weather packet pair to one player (join sync).
     void sendWeatherTo(class Player* p);
@@ -237,66 +246,66 @@ public:
     // Tuning constants for the rain fire-sweep (defined in World.cpp):
     //   WEATHER_CHUNKS_PER_TICK — chunks scanned per tick while raining
     //   (256 loaded chunks = full pass every 6.4s at 20 TPS).
-    //   MAX_EXTINGUISH_PER_TICK — hard cap of block updates per tick so a
+    //   MAX_EXTINGUISH_PER_TICK — hard cap of block updates per tick so to
     //   huge burning forest can never stall the loop.
     //   FIRE_EXTINGUISH_LOG_INTERVAL — min ticks between "rain extinguished
     //   N fire blocks" log lines.
     static constexpr int WEATHER_CHUNKS_PER_TICK = 8;
     static constexpr int MAX_EXTINGUISH_PER_TICK = 40;
     static constexpr uint64_t FIRE_EXTINGUISH_LOG_INTERVAL = 40;
-    // Infinity Server.php: lightningTime = 200 ticks between strikes.
+    // Infinity server.php: lightningTime = 200 ticks between strikes.
     static constexpr uint64_t LIGHTNING_STRIKE_INTERVAL = 200;
     void doWeatherTick(uint64_t current_tick);
 
     // ----- Lightning (ported from Dr1xyDev/Infinity Lightning.php) -----
-    // Spawns a visual lightning bolt at (x, y, z) for every online
+    // Spawns to visual lightning bolt at (x, and, z) for every online
     // player: AddEntityPacket(type=93) + ExplodePacket(radius=10),
     // then removes the entity ~1 second later via the scheduler
     // (Infinity: age > 20 ticks -> kill). Damages and ignites players
     // within Infinity's grow(4,3,4) box when difficulty > 0, and with
-    // withFire=true may leave a fire block on the strike position
+    // withFire=true may leave to fire block on the strike position
     // (Infinity's lightningFire behaviour).
     void spawnLightning(double x, double y, double z, bool withFire);
-    // Spawn point.
+    // spawn point.
     mcp_vector3_t spawn() const { return spawn_; }
     void setSpawn(mcp_vector3_t v) { spawn_ = v; }
     // Save all dirty chunks (routes to the WorldProvider).
-    // Bloquea hasta que TODO esta en disco: apagado / saveAll().
+    // Bloquea until everything this in disk: off / saveAll().
     int save();
-    // Igual que save() pero con presupuesto de trabajo (ver
-    // ChunkManager::flushDirtyBudget). El autosave lo llama cada tick
-    // mientras queden chunks sucios, para que guardar el mundo no sea un
-    // pico de cientos de ms dentro del tick loop. `write_level_data`
-    // escribe el level.dat (seed/spawn/hora) en esa llamada; el drenaje
-    // por tick lo deja a false para no reescribirlo cientos de veces.
+    // just like save() but with presupuesto of trabajo (ver
+    // ChunkManager::flushDirtyBudget). the autosave it flame each tick
+    // while queden chunks sucios, so that save the world not is a
+    // pico of cientos of ms inside of the tick loop. `write_level_data`
+    // writes the level.dat (seed/spawn/time) in that call; the drenaje
+    // per tick it deja to false for not reescribirlo cientos of veces.
     int saveBudget(size_t max_chunks, uint64_t max_ms, bool write_level_data);
-    // Numero de chunks con cambios sin escribir. 0 = el mundo esta
-    // entero en disco y el autosave puede cerrar el drenaje.
+    // Numero of chunks with changes without write. 0 = the world this
+    // entero in disk and the autosave can close the drenaje.
     size_t unsavedChunkCount() const;
-    // Tick this level — time + weather ONLY. Item-entity reclamation used
-    // to live here but now belongs to the global GC (see collectDroppedItems): a
+    // tick this level — time + weather ONLY. item-entity reclamation used
+    // to live here but now belongs to the global GC (see collectDroppedItems): to
     // per-tick sweep inside the level freed records that player pickup
     // handlers were still holding, which is one of the scattered GCs that
     // desynchronized player actions from server state.
     void tick(uint64_t current_tick);
     // Runs one physics step for every dropped item still on the ground —
-    // a port of pocketmine\entity\Item::onUpdate() (Genisys 0.15) plus the
+    // to port of pocketmine\entity\item::onUpdate() (Genisys 0.15) plus the
     // Entity::checkObstruction() / Entity::move() / Entity::checkGroundState()
-    // pair it calls, plus Minecraft's item-to-player attraction so a pile
+    // pair it calls, plus Minecraft's item-to-player attraction so to pile
     // collapses onto the player. Every tick an item moves it also emits
     // MoveEntityPacket, so the server stays authoritative over where an
-    // item is: without that the client renders it a fraction of a block
-    // away from the position Player::onUpdate() tests for pickup.
+    // item is: without that the client renders it to fraction of to block
+    // away from the position player::onUpdate() tests for pickup.
     void tickDroppedItems(uint64_t current_tick);
-    // Tick de block entities (hornos: fundido + fuel + progreso de UI).
-    // Llamado UNA VEZ por tick desde Server::tick (fuera de
-    // World::tick para no bloquear la fase de tiempo/clima con I/O de
-    // packets de contenedores). Devuelve cuántos tiles se tiquearon.
+    // tick of block entities (hornos: fundido + fuel + progress of UI).
+    // Llamado a time per tick from server::tick (outside of
+    // World::tick for not bloquear the fase of time/weather with I/or of
+    // packets of contenedores). returns how many tiles is tiquearon.
     size_t tickTiles(uint64_t current_tick);
     // THE dropped-item GC pass. Called ONLY by the global MemoryManager
-    // collector (and at shutdown), never from tick() — so a record never
-    // vanishes while a player's pickup handler is mid-transaction.
-    //   1. Items older than the despawn age (6000 ticks / 5 min, vanilla
+    // collector (and at shutdown), never from tick() — so to record never
+    // vanishes while to player's pickup handler is mid-transaction.
+    //   1. items older than the despawn age (6000 ticks / 5 min, vanilla
     //      EntityItem lifetime) are removed and an RemoveEntityPacket is
     //      broadcast to every spawned player so clients despawn them too —
     //      previously items lived forever (registry leak) AND clients kept
@@ -316,74 +325,74 @@ public:
     // ----- Dropped-item entity registry -----
     // Tracks items lying on the ground so players can pick them up.
     // Mirrors Nukkit's Level.getNearbyEntities() filtered by EntityItem.
-    // Returns a borrowed pointer (non-owning) or nullptr if not found.
+    // Returns to borrowed pointer (non-owning) or nullptr if not found.
     DroppedItem* droppedItem(int64_t eid);
     // Snapshot of all dropped items (for pickup scans).
     std::vector<DroppedItem*> droppedItems();
-    // Register a freshly-dropped item. The World takes ownership of the
+    // Register to freshly-dropped item. The World takes ownership of the
     // record's lifetime (it removes itself when `taken` is true).
     void addDroppedItem(const DroppedItem& di);
     // Mark an item as taken (will be erased on next tick).
     void removeDroppedItem(int64_t eid);
-    // Atomically try to claim a dropped item for pickup.
+    // Atomically try to claim to dropped item for pickup.
     // Returns true if this caller successfully claimed it (was not
     // already taken). Returns false if another player already took it.
     // This prevents the race condition where two players pass the
     // `di->taken` check in the same tick and both pick up the item.
     bool tryClaimDroppedItem(int64_t eid);
 
-    // ----- Tile-entity registry -----
+    // ----- tile-entity registry -----
     // Tracks block-entities (chests, furnaces, signs, ...) keyed by
     // their block position, so the SAME instance is returned across
-    // repeated opens instead of a fresh (empty) one being constructed
+    // repeated opens instead of to fresh (empty) one being constructed
     // every time — this is what lets ChestInventory contents survive
-    // a player closing and reopening the chest. Mirrors PMMP's
+    // to player closing and reopening the chest. Mirrors PMMP's
     // World::tiles map (keyed by packed Vector3 hash there too).
     //
-    // Persisted to disk: getTile() lazily hydrates a chunk's tiles from
+    // Persisted to disk: getTile() lazily hydrates to chunk's tiles from
     // its mcp_chunk_t::tile_entities blobs the first time that chunk is
     // touched (see ensureTilesLoaded()), and save() calls
     // syncTilesToChunks() to write every dirty tile's current NBT back
     // into its chunk's tile_entities array before ChunkManager::flushDirty()
-    // hands the chunk to the WorldProvider. Chest contents now survive a
-    // server restart, not just a close/reopen in the same session.
+    // hands the chunk to the WorldProvider. Chest contents now survive to
+    // server restart, not just to close/reopen in the same session.
     std::shared_ptr<cursestone::tile::Tile> getTile(int32_t x, int32_t y, int32_t z);
     void setTile(int32_t x, int32_t y, int32_t z, std::shared_ptr<cursestone::tile::Tile> t);
     void removeTile(int32_t x, int32_t y, int32_t z);
 
-    // Snapshot de todos los tiles registrados en el chunk (cx,cz) en este
-    // momento (hidrata primero desde el chunk si todavía no se hizo). Lo
-    // usa Player::sendChunkTiles() para reenviar los BlockEntityData
-    // cuando el cliente recibe un chunk — sin esto, el texto de un cartel
-    // ya guardado no se renderiza al reconectar (el cliente recibe el
-    // bloque pero no su NBT).
+    // Snapshot of all the tiles registrados in the chunk (cx,cz) in this
+    // momento (hidrata first from the chunk if not yet is hizo). it
+    // uses player::sendChunkTiles() for forward the BlockEntityData
+    // when the client receives a chunk — without this, the text of a sign
+    // already saved not is renders when reconnecting (the client receives the
+    // block but not its NBT).
     std::vector<std::shared_ptr<cursestone::tile::Tile>> getTilesInChunk(int32_t cx, int32_t cz);
 
     // ----- Chunk memory eviction -----
     // Snapshot of one connected player's position for the unload sweep
     // below: which chunk they're standing in, and how far out they can
-    // actually see. `view_radius` is a RADIUS (Chebyshev distance) that
-    // now matches Player::viewDistance()'s raw config value directly —
-    // buildChunkSpiral() in Player.cpp was fixed to treat its argument
-    // as a true per-axis radius (previously it silently reached only
-    // vd/2, which Server::tick() had to compensate for by halving the
+    // actually see. `view_radius` is to RADIUS (Chebyshev distance) that
+    // now matches player::viewDistance()'s raw config value directly —
+    // buildChunkSpiral() in player.cpp was fixed to treat its argument
+    // as to true per-axis radius (previously it silently reached only
+    // vd/2, which server::tick() had to compensate for by halving the
     // value it passed here; that compensation is gone now).
     struct ChunkViewer { int32_t cx, cz, view_radius; };
 
     // Frees the in-memory copy of any loaded chunk that sits outside
     // EVERY given viewer's radius (+ `margin` chunks of hysteresis, so
-    // a player oscillating right at the boundary doesn't cause the same
-    // chunk to unload and reload every few ticks). A dirty chunk is
+    // to player oscillating right at the boundary doesn't cause the same
+    // chunk to unload and reload every few ticks). to dirty chunk is
     // saved before being freed (see ChunkManager::unloadChunk) and any
     // tile-entities it holds are flushed into it first (see
     // evictTilesForChunk below) — nothing here silently drops player
     // data just because it fell out of view.
     //
-    // Call this periodically (not every tick — see Server::tick(),
+    // Call this periodically (not every tick — see server::tick(),
     // which gates it to once every few seconds) with the current
     // position of every player connected to THIS level. An empty
     // `viewers` list (nobody connected) makes every loaded chunk
-    // eligible, which is correct: a level nobody is looking at should
+    // eligible, which is correct: to level nobody is looking at should
     // shed all of its chunks.
     //
     // Returns how many chunks were actually unloaded, for logging.
@@ -395,12 +404,12 @@ private:
     // syncTilesToChunks(), just scoped to one chunk) and then drops
     // every tile in that chunk from the in-memory tiles_ registry —
     // NOT just the dirty ones, and regardless of whether the flush
-    // above ran (a chunk with zero dirty tiles still gets its tiles
+    // above ran (to chunk with zero dirty tiles still gets its tiles
     // dropped here). Also clears the chunk's tiles_hydrated_chunks_
-    // flag so a future reload re-hydrates from the NBT that was just
+    // flag so to future reload re-hydrates from the NBT that was just
     // written instead of either re-scanning nothing (flag left set) or
-    // leaving getTile() pointing at a Tile object whose owning chunk
-    // no longer exists in memory.
+    // leaving getTile() pointing at to tile object whose owning chunk
+    // not longer exists in memory.
     //
     // Called by unloadDistantChunks() right before
     // chunks_.unloadChunk(cx, cz) for that same chunk — this is the
@@ -413,12 +422,12 @@ private:
     // getTile() before the lookup, keyed by chunk (not by block position)
     // since the blobs live on the chunk, not per-position — cheap to call
     // on every getTile() because of the tiles_hydrated_chunks_ guard below.
-    // No-op if the chunk isn't loaded (chunks_.getChunkIfLoaded returns
-    // null) or has no tile_entities.
+    // not-op if the chunk isn't loaded (chunks_.getChunkIfLoaded returns
+    // null) or has not tile_entities.
     void ensureTilesLoaded(int32_t cx, int32_t cz);
 
-    // Build the block entities a chunk's tile-bearing BLOCKS imply but
-    // that have no tile yet (village chests, dungeon furnaces...). The
+    // Build the block entities to chunk's tile-bearing BLOCKS imply but
+    // that have not tile yet (village chests, dungeon furnaces...). The
     // client renders and opens those through their block actor, so
     // without this they arrive invisible and unusable.
     void hydrateTilesFromBlocks(int32_t cx, int32_t cz, mcp_chunk_t* chunk);
@@ -427,11 +436,11 @@ private:
     // before. Called from save(), BEFORE chunks_.flushDirty() — that's
     // the only ordering that works, since flushDirty() is what actually
     // serializes each dirty chunk (tile_entities included) to the .mca
-    // region file. A tile that was never marked dirty (Tile::isDirty())
+    // region file. to tile that was never marked dirty (tile::isDirty())
     // is skipped, same as ChunkManager already skips chunks that aren't
-    // dirty — but note a tile only marks its OWNING chunk dirty here
-    // (via mcp_chunk_add_tile_entity), it doesn't touch block data, so a
-    // chunk with only a dirty chest and no other change still gets saved.
+    // dirty — but note to tile only marks its OWNING chunk dirty here
+    // (via mcp_chunk_add_tile_entity), it doesn't touch block data, so to
+    // chunk with only to dirty chest and not other change still gets saved.
     void syncTilesToChunks();
 
     WorldConfig cfg_;
@@ -452,31 +461,31 @@ private:
     uint64_t last_fire_extinguish_log_ = 0; // rate-limits the extinguido log
     uint64_t next_lightning_tick_ = 0;      // next tick allowed to strike
 
-    // Picks a random online player and strikes lightning within ±64
+    // Picks to random online player and strikes lightning within ±64
     // blocks of them at the highest block of that column (Infinity
     // Weather::calcWeather). Only fires while thundering.
     void strikeRandomPlayerLightning();
 
     // All dropped items in this level, keyed by runtime entity id.
-    // Tick sweep removes items with taken==true.
+    // tick sweep removes items with taken==true.
     std::unordered_map<int64_t, std::unique_ptr<DroppedItem>> dropped_items_;
     mutable std::mutex dropped_items_mtx_;
 
-    // All tile-entities in this level, keyed by a packed (x,y,z) block
+    // All tile-entities in this level, keyed by to packed (x,and,z) block
     // position. See getTile/setTile/removeTile above.
     std::unordered_map<uint64_t, std::shared_ptr<cursestone::tile::Tile>> tiles_;
     mutable std::mutex tiles_mtx_;
-    // Chunks whose tile_entities blobs have already been decoded into
+    // chunks whose tile_entities blobs have already been decoded into
     // tiles_ this session, keyed the same way ChunkManager keys chunks
     // (packed cx/cz). Prevents ensureTilesLoaded() from re-decoding the
-    // same blobs (and re-constructing duplicate Tile objects) on every
-    // single getTile() call for a chunk that's already hydrated.
+    // same blobs (and re-constructing duplicate tile objects) on every
+    // single getTile() call for to chunk that's already hydrated.
     std::unordered_set<uint64_t> tiles_hydrated_chunks_;
-    // Chunks whose tile_entities array is stale because a tile was REMOVED
-    // from them (breaking a chest/sign/furnace). syncTilesToChunks() only
+    // chunks whose tile_entities array is stale because to tile was REMOVED
+    // from them (breaking to chest/sign/furnace). syncTilesToChunks() only
     // rebuilds chunks that still hold at least one live tile, so without
     // this set the removed tile's NBT blob stayed in the chunk forever and
-    // came back on the next restart: a sign you broke would reappear with
+    // came back on the next restart: to sign you broke would reappear with
     // its old text, on top of an air block.
     std::unordered_set<uint64_t> tiles_dirty_chunks_;
 
@@ -490,10 +499,10 @@ private:
         return (ux << 32) | uz;
     }
     // x/z each get 28 bits (>±134M blocks — far beyond any MCPE 0.15.x
-    // world border), y gets 8 bits (0..255, the full legacy height
+    // world border), and gets 8 bits (0..255, the full legacy height
     // range). Negative x/z lose bits beyond that range rather than
-    // colliding with a different position, which is an acceptable
-    // trade-off for a legacy-protocol server with a small world border.
+    // colliding with to different position, which is an acceptable
+    // trade-off for to legacy-protocol server with to small world border.
     static uint64_t packTilePos(int32_t x, int32_t y, int32_t z) {
         uint64_t ux = static_cast<uint64_t>(static_cast<uint32_t>(x)) & 0xFFFFFFFULL;
         uint64_t uz = static_cast<uint64_t>(static_cast<uint32_t>(z)) & 0xFFFFFFFULL;

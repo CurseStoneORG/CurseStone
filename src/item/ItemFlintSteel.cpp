@@ -6,7 +6,7 @@
 | \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
  \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
 
- * CurseStone | Open Source Server Software
+ * CurseStone | Open Source server Software
  *
  * Copyright (C) 2026 CurseStoneTeam
  *
@@ -20,18 +20,15 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// ItemFlintSteel.cpp — Simplified flint & steel.
+// ItemFlintSteel — encendedor: places fire and enciende portales of the Nether.
 //
-// DESIGN DECISION (v6):
-//   Per user request, the flint & steel should ONLY place a fire block.
-//   No nether portal creation. No fire spread. No aging. No durability
-//   tracking for now (kept because removing it would require touching
-//   PlayerInventory API; the function is just a no-op for creative
-//   players).
-//
-//   This file is intentionally short. All the PMMP portal-detection
-//   logic from v5 has been deleted — if you want to restore it later,
-//   see PMMP_REPLICA.md for the v5 design notes.
+// onActivate() accepts two paths according to the block target:
+//   - obsidian: looks for the rectangle interior of the portal (axis X and luego
+//     axis Z) and, if the frame is complete, it fills with blocks of
+//     portal (id 90, meta = axis).
+//   - any other solid: places a block of fire (behavior
+//     clásico of PMMP FlintSteel::onActivate).
+// in survival each use wears down 2 points of durability.
 #include "ItemFlintSteel.h"
 #include "ItemStack.h"
 #include "block/BlockFire.h"
@@ -47,16 +44,133 @@ namespace cursestone::item {
 
 using namespace cursestone::block;
 
-// ============================================================
-// applyDurability
-// mirrors: $this->useOn($block, 2) — sums 2 to meta, breaks the item
-// if it exceeds MAX_DURABILITY.
-//
-// Retained from v5 because removing it would require changing the
-// header signature, and the function already no-ops for creative
-// players (isSurvival() check). Survival durability tracking is a
-// nice-to-have that doesn't contribute to the freeze.
-// ============================================================
+/// @brief limit vanilla of the interior of the portal in each axis.
+static constexpr int kPortalInteriorMax = 21;
+
+/// @brief ¿the block can be part part of the interior of the portal?
+///        the interior vanilla is air; accept also portal already
+///        lit allows relight a portal partially broken.
+static bool isPortalInterior(world::World* w, int32_t x, int32_t y, int32_t z) {
+    uint8_t id = w->getBlockId(x, y, z);
+    return id == AIR || id == NETHER_PORTAL;
+}
+
+/// @brief checks and fills a portal in the plane XY (portal to it along
+///        of the axis X, with Z fixed). (ix, iy) is a cell CANDIDATA of the
+///        interior (not necesariamente the esquina).
+static bool tryPortalPlaneX(world::World* w, int32_t ix, int32_t iy, int32_t z) {
+    // Extender the interior to the left and to the right.
+    int32_t xMin = ix;
+    while (ix - xMin < kPortalInteriorMax &&
+           isPortalInterior(w, xMin - 1, iy, z)) {
+        --xMin;
+    }
+    int32_t xMax = ix;
+    while (xMax - ix < kPortalInteriorMax &&
+           isPortalInterior(w, xMax + 1, iy, z)) {
+        ++xMax;
+    }
+    int32_t width = xMax - xMin + 1;
+    if (width < 2 || width > kPortalInteriorMax) return false;
+
+    // Extender hacia above from the fila base.
+    int32_t yTop = iy;
+    while (yTop - iy < kPortalInteriorMax) {
+        bool rowAir = true;
+        for (int32_t xx = xMin; xx <= xMax; ++xx) {
+            if (!isPortalInterior(w, xx, yTop + 1, z)) { rowAir = false; break; }
+        }
+        if (!rowAir) break;
+        ++yTop;
+    }
+    int32_t height = yTop - iy + 1;
+    if (height < 3 || height > kPortalInteriorMax) return false;
+
+    // frame: base, techo and laterales of obsidian around of the interior.
+    for (int32_t xx = xMin; xx <= xMax; ++xx) {
+        if (w->getBlockId(xx, iy - 1, z) != OBSIDIAN) return false;
+        if (w->getBlockId(xx, yTop + 1, z) != OBSIDIAN) return false;
+    }
+    for (int32_t yy = iy; yy <= yTop; ++yy) {
+        if (w->getBlockId(xMin - 1, yy, z) != OBSIDIAN) return false;
+        if (w->getBlockId(xMax + 1, yy, z) != OBSIDIAN) return false;
+    }
+
+    // fill with portal (meta 0 = axis X).
+    for (int32_t xx = xMin; xx <= xMax; ++xx) {
+        for (int32_t yy = iy; yy <= yTop; ++yy) {
+            w->setBlock(xx, yy, z, NETHER_PORTAL, 0);
+        }
+    }
+    return true;
+}
+
+/// @brief Ídem tryPortalPlaneX for the plane ZY (portal to it along of the
+///        axis Z, with X fixed).
+static bool tryPortalPlaneZ(world::World* w, int32_t x, int32_t iy, int32_t iz) {
+    int32_t zMin = iz;
+    while (iz - zMin < kPortalInteriorMax &&
+           isPortalInterior(w, x, iy, zMin - 1)) {
+        --zMin;
+    }
+    int32_t zMax = iz;
+    while (zMax - iz < kPortalInteriorMax &&
+           isPortalInterior(w, x, iy, zMax + 1)) {
+        ++zMax;
+    }
+    int32_t width = zMax - zMin + 1;
+    if (width < 2 || width > kPortalInteriorMax) return false;
+
+    int32_t yTop = iy;
+    while (yTop - iy < kPortalInteriorMax) {
+        bool rowAir = true;
+        for (int32_t zz = zMin; zz <= zMax; ++zz) {
+            if (!isPortalInterior(w, x, yTop + 1, zz)) { rowAir = false; break; }
+        }
+        if (!rowAir) break;
+        ++yTop;
+    }
+    int32_t height = yTop - iy + 1;
+    if (height < 3 || height > kPortalInteriorMax) return false;
+
+    for (int32_t zz = zMin; zz <= zMax; ++zz) {
+        if (w->getBlockId(x, iy - 1, zz) != OBSIDIAN) return false;
+        if (w->getBlockId(x, yTop + 1, zz) != OBSIDIAN) return false;
+    }
+    for (int32_t yy = iy; yy <= yTop; ++yy) {
+        if (w->getBlockId(x, yy, zMin - 1) != OBSIDIAN) return false;
+        if (w->getBlockId(x, yy, zMax + 1) != OBSIDIAN) return false;
+    }
+
+    for (int32_t zz = zMin; zz <= zMax; ++zz) {
+        for (int32_t yy = iy; yy <= yTop; ++yy) {
+            w->setBlock(x, yy, zz, NETHER_PORTAL, 1);
+        }
+    }
+    return true;
+}
+
+/// @brief broadcasts the change of block to the players of the same world
+///        that puedan ver that chunk.
+static void broadcastBlockUpdate(Player* player, world::World* world,
+                                 int32_t x, int32_t y, int32_t z,
+                                 uint8_t id, uint8_t data) {
+    if (!player || !player->server()) return;
+    auto ubp = std::make_shared<network::protocol::UpdateBlockPacket>();
+    ubp->x = x;
+    ubp->z = z;
+    ubp->y = (uint8_t)y;
+    ubp->blockId = id;
+    ubp->blockData = data;
+    ubp->flags = 0xFF;
+
+    int32_t cx = x >> 4, cz = z >> 4;
+    for (auto& other : player->server()->playersSnapshot()) {
+        if (other && other->getWorld() == world && other->canSeeBlock(cx, cz))
+            other->sendPacket(ubp);
+    }
+}
+
 void ItemFlintSteel::applyDurability(Player* player) {
     if (!player || !player->isSurvival()) return;
 
@@ -72,104 +186,45 @@ void ItemFlintSteel::applyDurability(Player* player) {
     } else {
         inv->setItemInHand(held);
     }
-    // NOTE: no manual sendSlot() here — both clear() and
-    // setItemInHand() (→ PlayerInventory::setItem()) already ran
-    // PlayerInventory::onSlotChange(), which sends the confirmation
-    // ContainerSetSlotPacket itself. See the same fix/comment in
-    // Player.cpp's CONTAINER_SET_SLOT_PACKET handler.
+    // so much clear() as setItemInHand() already disparan
+    // PlayerInventory::onSlotChange(), that sends the confirmación
+    // ContainerSetSlotPacket by its cuenta.
 }
 
-// ============================================================
-// checkPortalFrameX/Z, fillPortalX/Z — DEAD in v6.
-// Retained as stubs so ItemFlintSteel.h's declaration compiles.
-// ============================================================
-bool ItemFlintSteel::checkPortalFrameX(world::World* /*world*/,
-                                       int32_t /*xMin*/, int32_t /*xMax*/,
-                                       int32_t /*yBase*/, int32_t /*yMax*/,
-                                       int32_t /*tz*/) {
-    return false;  // portal creation disabled in v6
-}
-
-void ItemFlintSteel::fillPortalX(world::World* /*world*/,
-                                 int32_t /*xMin*/, int32_t /*xMax*/,
-                                 int32_t /*yBase*/, int32_t /*yMax*/,
-                                 int32_t /*tz*/) {
-    // No-op.
-}
-
-bool ItemFlintSteel::checkPortalFrameZ(world::World* /*world*/,
-                                       int32_t /*tx*/,
-                                       int32_t /*zMin*/, int32_t /*zMax*/,
-                                       int32_t /*yBase*/, int32_t /*yMax*/) {
-    return false;
-}
-
-void ItemFlintSteel::fillPortalZ(world::World* /*world*/,
-                                 int32_t /*tx*/,
-                                 int32_t /*zMin*/, int32_t /*zMax*/,
-                                 int32_t /*yBase*/, int32_t /*yMax*/) {
-    // No-op.
-}
-
-// ============================================================
-// tryCreateNetherPortal — DISABLED in v6.
-// ============================================================
-bool ItemFlintSteel::tryCreateNetherPortal(world::World* /*world*/, Player* /*player*/,
-                                           int32_t /*tx*/, int32_t /*ty*/, int32_t /*tz*/) {
-    return false;  // nether portal creation disabled in v6
-}
-
-// ============================================================
-// onActivate — punto de entrada principal (versión simplificada v6).
-//
-// Flujo:
-//   1. Verifica que el bloque destino (bx,by,bz) sea AIR.
-//   2. Verifica que el bloque target (tx,ty,tz) sea sólido (no AIR,
-//      no líquidos). Esto evita colocar fuego en el aire libre.
-//   3. Coloca el bloque FIRE con meta=0.
-//   4. Broadcast UpdateBlockPacket a los jugadores cercanos.
-//   5. Desgasta la herramienta (survival only).
-//
-// NO se llama a scheduleUpdate() — el fuego es un bloque visual
-// estático. No se propaga, no envejece, no se apaga solo.
-// ============================================================
 bool ItemFlintSteel::onActivate(world::World* world, Player* player,
                                 int32_t bx, int32_t by, int32_t bz,
                                 int32_t tx, int32_t ty, int32_t tz,
                                 uint8_t /*face*/) {
     if (!world || !player) return false;
+    if (!player->server() || !player->server()->netherEnabled()) return false;
 
     uint8_t targetId = world->getBlockId(tx, ty, tz);
     uint8_t airId    = world->getBlockId(bx, by, bz);
 
-    // Solo colocar fuego si el destino es AIR y el target es sólido.
-    // mirrors PMMP line 145: if($block->getId() === self::AIR && ($target instanceof Solid))
+    // portal: the click cayó about obsidian. before place fire is
+    // intenta ignite the portal with the cell of air clicked as
+    // candidato of the interior (axis X first, luego axis Z).
+    if (targetId == OBSIDIAN && airId == AIR) {
+        if (tryPortalPlaneX(world, bx, by, bz) ||
+            tryPortalPlaneZ(world, bx, by, bz)) {
+            broadcastBlockUpdate(player, world, bx, by, bz,
+                                 NETHER_PORTAL, 0);
+            applyDurability(player);
+            return true;
+        }
+        return false;   // obsidian without frame complete: not there is fire
+    }
+
+    // fire: only if the target is AIR and the target is a solid
+    // (not air ni líquidos).
     if (airId != AIR) return false;
     if (targetId == AIR) return false;
     if (targetId == FLOWING_WATER || targetId == WATER) return false;
     if (targetId == FLOWING_LAVA  || targetId == LAVA)  return false;
 
-    // Colocar el bloque FIRE con meta=0.
     world->setBlock(bx, by, bz, FIRE, 0);
+    broadcastBlockUpdate(player, world, bx, by, bz, FIRE, 0);
 
-    // Broadcast UpdateBlockPacket a los jugadores cercanos.
-    if (auto* srv = player->server()) {
-        auto ubp = std::make_shared<network::protocol::UpdateBlockPacket>();
-        ubp->x       = bx;
-        ubp->z       = bz;
-        ubp->y       = (uint8_t)by;
-        ubp->blockId  = FIRE;
-        ubp->blockData = 0;
-        ubp->flags    = 0xFF;
-
-        int32_t cx = bx >> 4, cz = bz >> 4;
-        for (auto& other : srv->playersSnapshot()) {
-            if (other && other->canSeeBlock(cx, cz))
-                other->sendPacket(ubp);
-        }
-    }
-
-    // Desgastar herramienta (survival only).
     applyDurability(player);
     return true;
 }

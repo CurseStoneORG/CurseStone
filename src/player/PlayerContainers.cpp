@@ -6,7 +6,7 @@
 | \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
  \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
 
- * CurseStone | Open Source Server Software
+ * CurseStone | Open Source server Software
  *
  * Copyright (C) 2026 CurseStoneTeam
  *
@@ -46,32 +46,32 @@
 namespace cursestone {
 
 // ============================================================
-// openChestAt / closeOpenChest — the real chest flow.
+// openChestAt / closeOpenChest — the actual chest flow.
 //
-// TileChest is the single source of truth for a chest's contents
+// TileChest is the single source of truth for to chest's contents
 // (see TileChest.h). World::getTile/setTile is what makes the SAME
 // TileChest instance come back every time this position is opened,
-// instead of a fresh empty one — so items survive a close+reopen for
-// as long as the process keeps running (no disk persistence yet, see
+// instead of to fresh empty one — so items survive to close+reopen for
+// as long as the process keeps running (not disk persistence yet, see
 // the comment on World::getTile in World.h).
 // ============================================================
 void Player::openChestAt(int x, int y, int z) {
-    if (!srv_ || !srv_->getDefaultWorld()) return;
-    auto* lvl = srv_->getDefaultWorld();
+    auto* lvl = getWorld();
+    if (!lvl) return;
 
-    // Only one container open at a time per player (see openContainerWindow).
+    // Only one container open at to time per player (see openContainerWindow).
     if (open_chest_) {
         closeOpenChest();
     }
 
     // Reuse the existing TileChest at this position, or create one the
-    // first time this chest is opened. World::getTile returns a
-    // shared_ptr<tile::Tile> (the base type — the registry can hold any
-    // tile kind), so it needs a dynamic_cast back down to TileChest.
-    // A null result after a non-null getTile() would mean a different
+    // first time this chest is opened. World::getTile returns to
+    // shared_ptr<tile::tile> (the base type — the registry can hold any
+    // tile kind), so it needs to dynamic_cast back down to TileChest.
+    // to null result after to non-null getTile() would mean to different
     // kind of tile-entity is registered at this position, which
-    // shouldn't happen for a block we've just confirmed is block::CHEST,
-    // but we guard it anyway rather than dereferencing a null pointer.
+    // shouldn't happen for to block we've just confirmed is block::CHEST,
+    // but we guard it anyway rather than dereferencing to null pointer.
     std::shared_ptr<tile::TileChest> chest;
     auto existing = lvl->getTile(x, y, z);
     if (existing) {
@@ -83,9 +83,9 @@ void Player::openChestAt(int x, int y, int z) {
         lvl->setTile(x, y, z, chest);
     }
 
-    // InventoryOpenEvent — a listener can cancel (e.g. zone protection,
-    // a chest mid-trade) to block opening even though PlayerInteractEvent
-    // already passed. Nothing is sent to the client and no viewer is
+    // InventoryOpenEvent — to listener can cancel (e.g. zone protection,
+    // to chest mid-trade) to block opening even though PlayerInteractEvent
+    // already passed. Nothing is sent to the client and not viewer is
     // registered if this is cancelled.
     auto ev = event::EventManager::get().fire<event::inventory::InventoryOpenEvent>(
         std::static_pointer_cast<inventory::Inventory>(chest->inventory()), this);
@@ -103,10 +103,10 @@ void Player::openChestAt(int x, int y, int z) {
     op->entityId = -1;  // block-based container, not entity-based
     sendPacket(op);
 
-    // The client can only draw and open a chest THROUGH its block
-    // actor: if the chunk went out before the tile existed (a chest
-    // from a village or a structure is just a block until somebody
-    // asks for it), the client has no block entity at these
+    // The client can only draw and open to chest THROUGH its block
+    // actor: if the chunk went out before the tile existed (to chest
+    // from to village or to structure is just to block until somebody
+    // asks for it), the client has not block entity at these
     // coordinates, shows an unknown-but-solid block and refuses to
     // open the UI. Send it now — to everyone looking at the chunk, not
     // just the opener. World::ensureTilesLoaded covers the normal
@@ -117,7 +117,7 @@ void Player::openChestAt(int x, int y, int z) {
     // Full slot dump so the client actually shows the contents. Can't
     // reuse BaseInventory::sendContents() — it hardcodes windowid=0
     // (correct for the player's own inventory, wrong here: it would
-    // collide with SPECIAL_INVENTORY and get treated as a hotbar/main
+    // collide with SPECIAL_INVENTORY and get treated as to hotbar/main
     // inventory update instead of the chest window).
     auto content = std::make_shared<network::protocol::ContainerSetContentPacket>();
     content->windowid = container_window_id_;
@@ -134,8 +134,8 @@ void Player::openChestAt(int x, int y, int z) {
 }
 
 void Player::closeOpenChest() {
-    // Cubre ambos contenedores (cofre o horno) — solo UNO puede estar
-    // abierto a la vez, así que basta con cerrar el que esté seteado.
+    // Cubre ambos contenedores (chest or furnace) — only UNO can estar
+    // abierto to the time, this way that basta with close that which is seteado.
     if (open_chest_) {
         auto cp = std::make_shared<network::protocol::ContainerClosePacket>();
         cp->windowid = container_window_id_;
@@ -155,15 +155,15 @@ void Player::closeOpenChest() {
     container_window_id_ = 0;
 }
 
-// openFurnaceAt — espejo exacto de openChestAt para el horno:
-// TileFurnace persistente via World::getTile/setTile, viewers para el
-// progreso del tick, ContainerOpenPacket tipo FURNACE y volcado de
-// los 3 slots (input / fuel / output).
+// openFurnaceAt — mirror exacto of openChestAt for the furnace:
+// TileFurnace persistente via World::getTile/setTile, viewers for the
+// progress of the tick, ContainerOpenPacket tipo furnace and dump of
+// the 3 slots (input / fuel / output).
 void Player::openFurnaceAt(int x, int y, int z) {
-    if (!srv_ || !srv_->getDefaultWorld()) return;
-    auto* lvl = srv_->getDefaultWorld();
+    auto* lvl = getWorld();
+    if (!lvl) return;
 
-    // Solo un contenedor abierto por jugador.
+    // only a contenedor abierto per player.
     if (open_chest_ || open_furnace_) {
         closeOpenChest();
     }
@@ -172,15 +172,15 @@ void Player::openFurnaceAt(int x, int y, int z) {
     auto existing = lvl->getTile(x, y, z);
     if (existing) {
         furnace = std::dynamic_pointer_cast<tile::TileFurnace>(existing);
-        if (!furnace) return;   // otro tipo de tile en esa posición
+        if (!furnace) return;   // other tipo of tile in that position
     } else {
         furnace = std::make_shared<tile::TileFurnace>(
             cursestone::world::Position((double)x, (double)y, (double)z));
         lvl->setTile(x, y, z, furnace);
     }
 
-    // InventoryOpenEvent — cancelable (protección de zona, etc.), igual
-    // que en openChestAt().
+    // InventoryOpenEvent — cancelable (protección of zona, etc.), igual
+    // that in openChestAt().
     inventory::Inventory* fInvRaw =
         static_cast<inventory::Inventory*>(furnace->inventory().get());
     auto ev = event::EventManager::get().fire<event::inventory::InventoryOpenEvent>(
@@ -199,13 +199,13 @@ void Player::openFurnaceAt(int x, int y, int z) {
     op->entityId = -1;
     sendPacket(op);
 
-    // Mismo motivo que en el cofre: sin block entity el cliente 0.15.x
-    // no tiene sobre qué montar la UI del horno (y abrirla sin él lo
-    // revienta), asi que se le manda antes de cualquier otro paquete
-    // de la ventana.
+    // same motivo that in the chest: without block entity the client 0.15.x
+    // not has about what montar the UI of the furnace (and abrirla without él it
+    // breaks), this way that to it takes precedence before any other packet
+    // of the window.
     sendBlockEntityData(x, y, z, *furnace, nullptr);
 
-    // Volcado completo de los 3 slots — mismo motivo que el cofre:
+    // dump complete of the 3 slots — same motivo that the chest:
     // BaseInventory::sendContents() hardcodea windowid=0.
     auto content = std::make_shared<network::protocol::ContainerSetContentPacket>();
     content->windowid = container_window_id_;
@@ -213,8 +213,8 @@ void Player::openFurnaceAt(int x, int y, int z) {
     for (int i = 0; i < 3; ++i) content->slots.push_back(furnace->getItem(i));
     sendPacket(content);
 
-    // Estado inicial de flecha/llama para que la UI no arranque en un
-    // estado fantasma (ContainerSetDataPacket property 0/1).
+    // state initial of arrow/flame so that the UI not startup in a
+    // state ghost (ContainerSetDataPacket property 0/1).
     furnace->sendProgressToViewers();
 
     if (srv_ && srv_->advancedLog()) {
@@ -227,11 +227,11 @@ void Player::openFurnaceAt(int x, int y, int z) {
 // openContainerWindow — assign the next window id to the container this
 // player just opened and return it.
 //
-// Infinity hands container ids out from 2 upward in a cycle
-// (Player::addWindow: max(2, ++windowCnt % 99)), because 0 is the
+// Infinity hands container ids out from 2 upward in to cycle
+// (player::addWindow: max(2, ++windowCnt % 99)), because 0 is the
 // client's own inventory and 0x78/0x79/0x7a are armor/creative/hotbar.
 // We copy that range exactly: the old fixed id 1 is never sent by the
-// reference server and the client can refuse to open a window it does
+// reference server and the client can refuse to open to window it does
 // not recognise.
 // ============================================================
 uint8_t Player::openContainerWindow() {
@@ -243,16 +243,16 @@ uint8_t Player::openContainerWindow() {
 }
 
 // ============================================================
-// handleSignEdit — portado de Genisys Player::handleDataPacket case
-// BLOCK_ENTITY_DATA_PACKET (protocolo 84): edición de cartel.
-//   - descarta ediciones a más de 100 bloques;
-//   - exige que el tile sea un Sign y que el NBT "id" sea "Sign";
-//   - sólo el Creator (UUID del jugador) puede editar;
-//   - dispara SignChangeEvent (cancelable) y aplica las líneas.
+// handleSignEdit — portado of Genisys player::handleDataPacket case
+// BLOCK_ENTITY_DATA_PACKET (protocolo 84): editing of sign.
+//   - descarta ediciones to more of 100 blocks;
+//   - requires that the tile is a Sign and that the NBT "id" is "Sign";
+//   - only the Creator (UUID of the player) can edit;
+//   - dispara SignChangeEvent (cancelable) and applies the líneas.
 // ============================================================
 void Player::handleSignEdit(network::protocol::BlockEntityDataPacket& pk) {
     if (!spawned() || !srv_) return;
-    world::World* lvl = srv_->getDefaultWorld();
+    world::World* lvl = getWorld();
     if (!lvl) return;
 
     double dx = (double)pk.x - pos_.x;
@@ -280,34 +280,34 @@ void Player::handleSignEdit(network::protocol::BlockEntityDataPacket& pk) {
     };
     mcp_tag_destroy(root);
 
-    // Genisys compara el Creator contra el NBT DEL TILE del servidor
-    // (`$t->namedtag["Creator"]`), no contra el paquete — el cliente NUNCA
-    // manda Creator en su BlockEntityData, así que leerlo del paquete haría
-    // que toda edición se cancelara (bug). El dueño es quien colocó el
-    // cartel (Player::handleBlockPlace setea el Creator del tile).
+    // Genisys compares the Creator contra the NBT of the tile of the server
+    // (`$t->namedtag["Creator"]`), not contra the packet — the client never
+    // takes precedence Creator in its BlockEntityData, this way that leerlo of the packet haría
+    // that all editing is cancelara (bug). the dueño is who colocó the
+    // sign (player::handleBlockPlace setea the Creator of the tile).
     auto ev = event::EventManager::get().fire<event::block::SignChangeEvent>(
         pk.x, pk.y, pk.z, this, lines);
     const std::string& creator = sign->creator();
     if (creator.empty() || creator != cfg_.uuid) ev.setCancelled(true);
     if (ev.isCancelled()) {
-        // Genisys: `$t->spawnTo($this)` — reenvía el NBT actual del cartel
-        // al editor para revertir el texto que el cliente ya mostró.
+        // Genisys: `$t->spawnTo($this)` — forwards the NBT current of the sign
+        // to the editor for revertir the text that the client already mostró.
         sendBlockEntityData(pk.x, pk.y, pk.z, *sign, this);
         return;
     }
 
     for (int i = 0; i < 4; ++i) sign->setLine(i, ev.getLine(i));
-    // Genisys: Sign::setText() termina en `$this->spawnToAll()` — el cartel
-    // se re-spawnea a todos sus viewers para que vean el texto nuevo sin
-    // recargar el chunk.
+    // Genisys: Sign::setText() termina in `$this->spawnToAll()` — the sign
+    // is respawns to all its viewers so that vean the text new without
+    // recargar the chunk.
     sendBlockEntityData(pk.x, pk.y, pk.z, *sign, nullptr);
 }
 
 // ============================================================
-// sendBlockEntityData — serializa el NBT de un tile y lo manda como
-// BlockEntityDataPacket. `only` selecciona un único destinatario
-// (Genisys Tile::spawnTo), o todos los que trackean el chunk
-// (Genisys Tile::spawnToAll). Reutilizable por cualquier block entity.
+// sendBlockEntityData — serializa the NBT of a tile and it takes precedence as
+// BlockEntityDataPacket. `only` selecciona a only destinatario
+// (Genisys tile::spawnTo), or all those that trackean the chunk
+// (Genisys tile::spawnToAll). Reutilizable by any block entity.
 // ============================================================
 void Player::sendBlockEntityData(int32_t x, int32_t y, int32_t z,
                                  tile::Tile& t, Player* only) {
@@ -337,6 +337,7 @@ void Player::sendBlockEntityData(int32_t x, int32_t y, int32_t z,
     int32_t cz = z >> 4;
     for (auto& other : srv_->playersSnapshot()) {
         if (!other) continue;
+        if (other->getWorld() != getWorld()) continue;   // same world
         if (other.get() == this || other->canSeeBlock(cx, cz)) {
             other->sendPacket(pk);
         }
