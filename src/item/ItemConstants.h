@@ -332,6 +332,7 @@ constexpr int RAW_PORKCHOP = 319;
 constexpr int COOKED_PORKCHOP = 320;
 constexpr int PAINTING = 321;
 constexpr int GOLDEN_APPLE = 322;
+constexpr int ENCHANTED_GOLDEN_APPLE = 466;
 constexpr int SIGN = 323;
 constexpr int WOODEN_DOOR = 324;
 constexpr int WOOD_DOOR = 324;

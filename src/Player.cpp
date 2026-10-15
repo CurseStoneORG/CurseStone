@@ -56,10 +56,10 @@ Player::Player(Server* srv, PlayerConfig cfg)
     connected_.store(true, std::memory_order_relaxed);
     setMaxHealth(20);
     setHealth(20);
-    // Hunger state — Infinity player.php: default saturation 5, food 20.
+    // Hunger state defaults: saturation 5, no exhaustion, full food.
     food_saturation_ = 5.0f;
-    food_tick_timer_ = 0;
-    food_depletion_ = 0;
+    food_exhaustion_ = 0.0f;
+    last_eat_ms_ = 0;
     last_pos_set_ = false;
     was_in_lava_ = false;
     was_on_fire_ = false;
@@ -465,6 +465,8 @@ void Player::saveData() {
     mcp_compound_tag_set_short(root, "Health", (int16_t)health());
     mcp_compound_tag_set_short(root, "MaxHealth", (int16_t)maxHealth());
     mcp_compound_tag_set_short(root, "Hunger", (int16_t)foodLevel());
+    mcp_compound_tag_set_float(root, "FoodSaturation", food_saturation_);
+    mcp_compound_tag_set_float(root, "FoodExhaustion", food_exhaustion_);
     mcp_compound_tag_set_short(root, "Air", 300);
     mcp_compound_tag_set_long(root, "RuntimeId", runtimeId());
     mcp_compound_tag_set_long(root, "lastPlayed", (int64_t)mcp_utils_time_ms());

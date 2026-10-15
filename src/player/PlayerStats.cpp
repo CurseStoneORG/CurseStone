@@ -54,21 +54,35 @@ void Player::sendHealthAttribute() {
 }
 
 // --- Attribute sync (protocol 84 UpdateAttributesPacket) ---
+// One packet with the full hunger state: hunger bar, hidden saturation
+// and exhaustion. The client maps the HUD bars by these identifier
+// strings, so they must match the reference attribute names exactly.
 void Player::sendFoodLevel() {
     if (!connected_.load(std::memory_order_relaxed))
         return;
     auto pk = std::make_shared<network::protocol::UpdateAttributesPacket>();
     pk->eid = runtimeId();
     network::protocol::UpdateAttributesPacket::Entry e;
-    // EXACT name strings from Infinity's Attribute::init (Genisys/PMMP
-    // lineage): the client maps the HUD bars by these identifiers —
-    // "player.hunger" for the food bar, "generic.health" for hearts.
     e.name = "player.hunger";
     e.min = 0.0f;
     e.max = 20.0f;
     e.value = (float)foodLevel();
     e.defaultValue = 20.0f;
     pk->entries.push_back(e);
+    network::protocol::UpdateAttributesPacket::Entry s;
+    s.name = "player.saturation";
+    s.min = 0.0f;
+    s.max = 20.0f;
+    s.value = food_saturation_;
+    s.defaultValue = 5.0f;
+    pk->entries.push_back(s);
+    network::protocol::UpdateAttributesPacket::Entry x;
+    x.name = "player.exhaustion";
+    x.min = 0.0f;
+    x.max = 5.0f;
+    x.value = food_exhaustion_;
+    x.defaultValue = 0.0f;
+    pk->entries.push_back(x);
     sendPacket(pk);
 }
 
@@ -91,6 +105,20 @@ void Player::sendAllAttributes() {
     f.value = (float)foodLevel();
     f.defaultValue = 20.0f;
     pk->entries.push_back(f);
+    network::protocol::UpdateAttributesPacket::Entry s;
+    s.name = "player.saturation";
+    s.min = 0.0f;
+    s.max = 20.0f;
+    s.value = food_saturation_;
+    s.defaultValue = 5.0f;
+    pk->entries.push_back(s);
+    network::protocol::UpdateAttributesPacket::Entry x;
+    x.name = "player.exhaustion";
+    x.min = 0.0f;
+    x.max = 5.0f;
+    x.value = food_exhaustion_;
+    x.defaultValue = 0.0f;
+    pk->entries.push_back(x);
     sendPacket(pk);
 }
 
@@ -129,8 +157,33 @@ void Player::setOnFire(int seconds) {
         broadcastPoseFlags();
 }
 
-// --- Hunger + ambient damage pipeline (Infinity Player.php foodData/
-// processMovement) — runs once per tick for every spawned player. ---
+// addExhaustion — hunger system core. Actions (sprinting, mining,
+// attacks, damage, natural regen) accumulate exhaustion; every 4.0
+// units drain 1 saturation first, then 1 food. Peaceful difficulty
+// never drains. Attributes sync on the next hunger tick.
+void Player::addExhaustion(float amount) {
+    if (amount <= 0.0f)
+        return;
+    food_exhaustion_ += amount;
+    if (srv_ && srv_->difficulty() >= 1) {
+        while (food_exhaustion_ >= 4.0f) {
+            food_exhaustion_ -= 4.0f;
+            if (food_saturation_ > 0.0f) {
+                food_saturation_ = std::max(0.0f, food_saturation_ - 1.0f);
+            } else {
+                int h = foodLevel();
+                setFoodLevel(h > 0 ? h - 1 : 0);
+            }
+        }
+    }
+    // Display clamp only (reference attribute max); the accumulator above
+    // must keep the full amount so per-tick overflow is not lost.
+    food_exhaustion_ = std::min(5.0f, food_exhaustion_);
+    food_attrs_dirty_ = true;
+}
+
+// --- Hunger + ambient damage pipeline — runs once per tick for every
+// spawned player. ---
 void Player::tickHungerAndDamage(uint64_t current_tick) {
     if (!spawned_.load(std::memory_order_relaxed))
         return;
@@ -252,35 +305,25 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
     if (isDead())
         return;
 
-    // ---------- 4. Hunger (Infinity foodData) ----------
+    // ---------- 4. Hunger (exhaustion model) ----------
     if (!creative) {
-        // 4a. Accumulate exhaustion from real actions (0.15 values).
-        if (moved_this_tick_) {
-            food_depletion_ += sprinting_ ? 6 : 1; // sprint 0.1, walk 0.01 (x100)
+        // Movement exhaustion: sprint 0.1 per meter, swimming 0.01.
+        if (moved_this_tick_ && tick_move_dist_ > 0.0f) {
+            if (sprinting_)
+                addExhaustion(0.1f * tick_move_dist_);
+            else if (in_water)
+                addExhaustion(0.01f * tick_move_dist_);
         }
-        if (in_water)
-            food_depletion_ += 1;
-        // 4b. Every 4.0 exhaustion (PMMP/Infinity threshold): drain 1
-        // saturation or 1 food, then wait 80 ticks before the next drain.
-        // Peaceful difficulty (0) has no food drain / starvation (vanilla).
-        if (difficulty >= 1 && food_depletion_ >= 400 && food_tick_timer_ <= 0) {
-            food_depletion_ -= 400;
-            if (food_saturation_ > 0.0f) {
-                food_saturation_ = std::max(0.0f, food_saturation_ - 1.0f);
-            } else {
-                int h = foodLevel();
-                setFoodLevel(h > 0 ? h - 1 : 0);
-            }
-            food_tick_timer_ = 80;
-            sendFoodLevel();
-        }
-        // 4c. Regen when full (17 food, every 4s) — Infinity handleOrder.
-        if (foodLevel() >= 17 && health() < maxHealth() && now_ms - last_regen_ms_ >= 4000) {
+        // 4b. Regen when well fed (>= 18 food): 1 HP every 4 s, costs
+        // 3.0 exhaustion (vanilla).
+        if (foodLevel() >= 18 && health() < maxHealth() && now_ms - last_regen_ms_ >= 4000) {
             last_regen_ms_ = now_ms;
             heal(1.0f);
+            addExhaustion(3.0f);
             sendAllAttributes();
+            food_attrs_dirty_ = false;
         }
-        // 4d. Starvation at 0 food (1 dmg every 4s). Vanilla floors:
+        // 4c. Starvation at 0 food (1 dmg every 4s). Vanilla floors:
         // easy stops at 10 HP, normal at 1 HP, hard can kill.
         if (difficulty >= 1 && foodLevel() <= 0 && ++starve_ticks_ >= 80) {
             starve_ticks_ = 0;
@@ -289,15 +332,28 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
                 damage(1.0f, event::entity::DamageCause::STARVATION);
             }
         }
+        // 4d. Sprinting needs more than 6 food (vanilla gate).
+        if (foodLevel() <= 6 && sprinting_) {
+            sprinting_ = false;
+            broadcastPoseFlags();
+        }
     } else {
         // Creative: food is pinned at max, no drain, no starvation.
         if (foodLevel() != 20) {
             setFoodLevel(20);
             sendFoodLevel();
+            food_attrs_dirty_ = false;
         }
         food_saturation_ = 5.0f;
-        food_depletion_ = 0;
+        food_exhaustion_ = 0.0f;
         starve_ticks_ = 0;
+    }
+    // Push the hunger/saturation/exhaustion attributes once per tick at
+    // most, only when something changed (mining/attack/damage hooks set
+    // the dirty flag from outside the tick loop).
+    if (food_attrs_dirty_) {
+        food_attrs_dirty_ = false;
+        sendFoodLevel();
     }
 
     (void)current_tick;

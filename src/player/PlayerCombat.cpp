@@ -66,7 +66,11 @@ entity::DamageApply Player::damage(float amount, event::entity::DamageCause caus
         cause != event::entity::DamageCause::CUSTOM) {
         return entity::DamageApply::CANCELLED;
     }
-    return entity::Living::damage(amount, cause);
+    auto applied = entity::Living::damage(amount, cause);
+    // Taking damage costs 0.3 exhaustion (vanilla).
+    if (applied != entity::DamageApply::CANCELLED)
+        addExhaustion(0.3f);
+    return applied;
 }
 
 entity::DamageApply Player::damageByEntity(float amount, entity::Entity* damager,
@@ -77,7 +81,11 @@ entity::DamageApply Player::damageByEntity(float amount, entity::Entity* damager
     // MAGIC through, which this server cannot produce).
     if (isCreative())
         return entity::DamageApply::CANCELLED;
-    return entity::Living::damageByEntity(amount, damager, cause);
+    auto applied = entity::Living::damageByEntity(amount, damager, cause);
+    // Taking damage costs 0.3 exhaustion (vanilla).
+    if (applied != entity::DamageApply::CANCELLED)
+        addExhaustion(0.3f);
+    return applied;
 }
 
 namespace {

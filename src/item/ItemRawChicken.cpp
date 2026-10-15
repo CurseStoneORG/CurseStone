@@ -21,4 +21,13 @@
  *
  */
 #include "ItemRawChicken.h"
-namespace cursestone::item {}
+#include "Player.h"
+#include "entity/Effect.h"
+#include <cstdlib>
+namespace cursestone::item {
+// 30% chance of Hunger for 30 s after eating.
+void ItemRawChicken::applyEatEffects(Player& eater) const {
+    if (std::rand() % 100 < 30)
+        eater.addEffect(std::make_shared<entity::Effect>(entity::EFF_HUNGER, "Hunger", 600, 0));
+}
+} // namespace cursestone::item

@@ -26,7 +26,7 @@
 namespace cursestone::item {
 class ItemCookedChicken : public ItemFood {
   public:
-    ItemCookedChicken() : ItemFood(366, 6) {
+    ItemCookedChicken() : ItemFood(366, 6, 7.2f) {
     }
     std::string name() const override {
         return "Cooked Chicken";

@@ -250,6 +250,10 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
             int16_t hunger = mcp_compound_tag_get_short(named_tag_.get(), "Hunger", 20);
 
             setFoodLevel(hunger);
+            // Restore the hidden saturation/exhaustion part of the hunger
+            // state (missing tag = fresh defaults).
+            food_saturation_ = mcp_compound_tag_get_float(named_tag_.get(), "FoodSaturation", 5.0f);
+            food_exhaustion_ = mcp_compound_tag_get_float(named_tag_.get(), "FoodExhaustion", 0.0f);
 
             // Last known position — prefer PosX/PosY/PosZ (saved on every
             // auto-save and on disconnect). Falls back to the bed spawn
@@ -818,6 +822,8 @@ void Player::respawn() {
 
     setFoodLevel(20);
     food_saturation_ = 5.0f;
+    food_exhaustion_ = 0.0f;
+    last_eat_ms_ = 0;
 
     pos_.x = ev.respawnX;
     pos_.y = ev.respawnY;
@@ -830,8 +836,6 @@ void Player::respawn() {
     fire_ticks_ = 0;
     was_in_lava_ = false;
     starve_ticks_ = 0;
-    food_tick_timer_ = 0;
-    food_depletion_ = 0;
 
     sneaking_ = false;
     sprinting_ = false;
@@ -994,8 +998,8 @@ void Player::onDeath() {
     was_in_lava_ = false;
     fall_distance_ = 0.0f;
     food_saturation_ = 5.0f;
-    food_depletion_ = 0;
-    food_tick_timer_ = 0;
+    food_exhaustion_ = 0.0f;
+    last_eat_ms_ = 0;
     starve_ticks_ = 0;
     air_ticks_ = 300;
 }

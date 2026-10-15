@@ -202,6 +202,9 @@ void Player::handleMovePlayer(double x, double y, double z, float yaw, float pit
         else
             fall_distance_ = 0.0f; // rising — baseline reset
     }
+    // Per-tick horizontal distance, consumed by the hunger tick for
+    // sprint/swim exhaustion (0.1 and 0.01 per meter, vanilla).
+    tick_move_dist_ += (float)std::sqrt(dx * dx + dz * dz);
     moved_this_tick_ = true;
 
     // Broadcast MoveEntityPacket to other nearby players (so they see this
@@ -428,9 +431,13 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int face) {
     // that the other client is quedaba with the pose previa forever.
     // now each change forwards the byte of flags complete to all.
     if (action == network::protocol::PlayerActionPacket::ACTION_START_SPRINT) {
-        if (!sprinting_) {
-            sprinting_ = true;
-            broadcastPoseFlags();
+        // Sprinting needs more than 6 food (vanilla gate): reject the
+        // toggle and keep the current pose.
+        if (foodLevel() > 6 || isCreative()) {
+            if (!sprinting_) {
+                sprinting_ = true;
+                broadcastPoseFlags();
+            }
         }
     } else if (action == network::protocol::PlayerActionPacket::ACTION_STOP_SPRINT) {
         if (sprinting_) {
@@ -549,6 +556,9 @@ void Player::handleInteract(int action, int64_t targetEid) {
     auto applied = target->damageByEntity(BASE_ATTACK_DAMAGE, this);
     bool died = (applied == entity::DamageApply::KILLED);
     bool hurt = (applied == entity::DamageApply::HURT);
+    // Attacking costs 0.3 exhaustion in survival (vanilla).
+    if (hurt && !isCreative())
+        addExhaustion(0.3f);
 
     if (hurt) {
         // ---- Hurt animation to the VIEWERS ONLY (Infinity Living::
@@ -904,6 +914,7 @@ void Player::onUpdate(uint64_t current_tick) {
     // consequences (Infinity foodData + processMovement/checkBlockCollision).
     tickHungerAndDamage(current_tick);
     moved_this_tick_ = false; // consumed for this tick
+    tick_move_dist_ = 0.0f;   // consumed for this tick
 
     // 2.2. portal of the Nether: with the player already spawned is checks
     // if is inside of a block of portal and touches travel of dimension.
@@ -1162,6 +1173,8 @@ void Player::onUpdate(uint64_t current_tick) {
             mcp_compound_tag_set_float(named_tag_.get(), "Pitch", pitch_);
             mcp_compound_tag_set_short(named_tag_.get(), "Health", (int16_t)health());
             mcp_compound_tag_set_short(named_tag_.get(), "Hunger", (int16_t)foodLevel());
+            mcp_compound_tag_set_float(named_tag_.get(), "FoodSaturation", food_saturation_);
+            mcp_compound_tag_set_float(named_tag_.get(), "FoodExhaustion", food_exhaustion_);
             mcp_compound_tag_set_int(named_tag_.get(), "playerGameType", cfg_.gamemode);
             mcp_compound_tag_set_long(named_tag_.get(), "lastPlayed", (int64_t)mcp_utils_time_ms());
             srv_->saveOfflinePlayerData(cfg_.username, named_tag_);

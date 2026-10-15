@@ -26,7 +26,7 @@
 namespace cursestone::item {
 class ItemApple : public ItemFood {
   public:
-    ItemApple() : ItemFood(260, 4) {
+    ItemApple() : ItemFood(260, 4, 2.4f) {
     }
     std::string name() const override {
         return "Apple";

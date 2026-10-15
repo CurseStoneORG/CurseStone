@@ -21,4 +21,12 @@
  *
  */
 #include "ItemGoldenApple.h"
-namespace cursestone::item {}
+#include "Player.h"
+#include "entity/Effect.h"
+namespace cursestone::item {
+// Regen II (5 s) + Absorption (2 min).
+void ItemGoldenApple::applyEatEffects(Player& eater) const {
+    eater.addEffect(std::make_shared<entity::Effect>(entity::EFF_REGENERATION, "Regeneration", 100, 1));
+    eater.addEffect(std::make_shared<entity::Effect>(entity::EFF_ABSORPTION, "Absorption", 2400, 0));
+}
+} // namespace cursestone::item

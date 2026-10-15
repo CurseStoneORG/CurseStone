@@ -26,10 +26,11 @@
 namespace cursestone::item {
 class ItemGoldenApple : public ItemFood {
   public:
-    ItemGoldenApple() : ItemFood(322, 8) {
+    ItemGoldenApple() : ItemFood(322, 4, 9.6f, true) {
     }
     std::string name() const override {
         return "Golden Apple";
     }
+    void applyEatEffects(Player& eater) const override;
 };
 } // namespace

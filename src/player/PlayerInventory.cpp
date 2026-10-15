@@ -35,9 +35,11 @@
 #include "event/inventory/CraftItemEvent.h"
 #include "event/player/PlayerDropItemEvent.h"
 #include "event/player/PlayerItemConsumeEvent.h"
+#include "network/protocol/EntityEventPacket.h"
 #include "utils/MainLogger.hpp"
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <utility>
@@ -464,9 +466,10 @@ void Player::handleDropItem(network::protocol::DropItemPacket& pk) {
 }
 
 // ============================================================
-// consumeHeldItem — portado of Genisys player::consumeHeldItem().
-// Llamado from ENTITY_EVENT_PACKET (evento 9, Eating). only the items
-// FoodSource have efecto; the rest is not-op.
+// consumeHeldItem — eating completion (ENTITY_EVENT_PACKET event 9).
+// Restores saturation + hunger of the held food, applies eat effects,
+// echoes the eat event (burp animation) and swaps in the residue (e.g.
+// bowl). Rate-limited to one finished eat per client animation (~1.6 s).
 // ============================================================
 void Player::consumeHeldItem() {
     if (!spawned() || !inv_)
@@ -479,20 +482,69 @@ void Player::consumeHeldItem() {
     if (!def || !def->isFood())
         return;
 
+    uint64_t now_ms = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+                          std::chrono::system_clock::now().time_since_epoch())
+                          .count();
+    // One finished eat per client eat animation (~1.6 s, vanilla) —
+    // rate-limits crafted event spam without touching legit eating.
+    if (last_eat_ms_ != 0 && now_ms - last_eat_ms_ < 1600)
+        return;
+    // Full hunger blocks eating unless the food ignores the cap.
+    if (foodLevel() >= 20 && !def->alwaysEdible()) {
+        sendInventory();
+        return;
+    }
+
     auto ev = event::EventManager::get().fire<event::player::PlayerItemConsumeEvent>(this, held);
     if (ev.isCancelled()) {
         sendInventory();
         return;
     }
+    last_eat_ms_ = now_ms;
 
-    int restored = def->foodPoints();
+    // Echo the eat event so clients play the finish animation: eid 0 =
+    // self (protocol 84 convention), real eid for everyone else.
+    {
+        auto self_pk = std::make_shared<network::protocol::EntityEventPacket>();
+        self_pk->eid = 0;
+        self_pk->event = network::protocol::EntityEventPacket::USE_ITEM;
+        sendPacket(self_pk);
+        if (srv_) {
+            auto other_pk = std::make_shared<network::protocol::EntityEventPacket>();
+            other_pk->eid = runtimeId();
+            other_pk->event = network::protocol::EntityEventPacket::USE_ITEM;
+            for (auto& other : srv_->playersSnapshot()) {
+                if (!other || other.get() == this)
+                    continue;
+                if (other->isPendingRemoval() || !other->spawned())
+                    continue;
+                other->sendPacket(other_pk);
+            }
+        }
+    }
+
+    // Saturation first, then hunger (reference Food::onConsume order).
+    food_saturation_ = std::min(20.0f, std::max(0.0f, food_saturation_ + def->foodSaturation(held.meta)));
+    int restored = def->foodPoints(held.meta);
     if (restored > 0) {
         int h = foodLevel() + restored;
         setFoodLevel(h > 20 ? 20 : h);
     }
-    held.count -= 1;
-    inv_->setItemInHand(held.count > 0 ? held : item::ItemStack::EMPTY());
+    def->applyEatEffects(*this);
+
+    // Consume one unit; residue (bowl) replaces an emptied stack or is
+    // added back when more units remain.
+    uint16_t residue = def->eatResidueId();
+    if (held.count > 1) {
+        held.count -= 1;
+        inv_->setItemInHand(held);
+        if (residue != 0)
+            inv_->addItem({item::ItemStack{residue, 0, 1, {}, {}}});
+    } else {
+        inv_->setItemInHand(residue != 0 ? item::ItemStack{residue, 0, 1, {}, {}} : item::ItemStack::EMPTY());
+    }
     sendInventory();
+    sendFoodLevel();
 }
 
 // ============================================================

@@ -40,12 +40,12 @@ class EntityEventPacket : public DataPacket {
         return ENTITY_EVENT_PACKET;
     }
 
-    // Solo se usan los eventos que el pipeline de combate actual
-    // dispara de verdad — el resto de la tabla de PMMP (tame,
-    // fish-hook, ambient sound, etc.) no aplica todavia porque esas
-    // mecanicas no existen en CurseStone.
+    // Events actually used by the current pipeline: combat animations
+    // and the eating completion (event 9 — the client sends it when its
+    // eat animation ends; the server answers with the same event).
     static constexpr uint8_t HURT_ANIMATION = 2;
     static constexpr uint8_t DEATH_ANIMATION = 3;
+    static constexpr uint8_t USE_ITEM = 9; // finished eating
 
     int64_t eid = 0;
     uint8_t event = 0;
