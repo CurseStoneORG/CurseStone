@@ -243,6 +243,20 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
                     pos_ = getServerSpawnSafe();
                 }
             }
+
+            // Personal spawn point (Infinity Human::saveNBT: SpawnX/Y/Z).
+            // Bed spawns survive relogs/restarts: respawn() routes through
+            // getSpawn(), which prefers the stored bed over the world
+            // spawn once has_spawn_override_ is set.
+            {
+                int32_t sx = mcp_compound_tag_get_int(named_tag_.get(), "SpawnX", INT32_MIN);
+                int32_t sy = mcp_compound_tag_get_int(named_tag_.get(), "SpawnY", INT32_MIN);
+                int32_t sz = mcp_compound_tag_get_int(named_tag_.get(), "SpawnZ", INT32_MIN);
+                if (sx != INT32_MIN && sy != INT32_MIN && sz != INT32_MIN) {
+                    has_spawn_override_ = true;
+                    spawn_x_ = sx; spawn_y_ = sy; spawn_z_ = sz;
+                }
+            }
             // Mirrors cn.nukkit.player.loadNBT(): iterate the "Inventory"
             // ListTag and route each entry by Slot number. main inventory
             // uses slots 0..35 (hotbar is 0..8), armor uses 100..103.

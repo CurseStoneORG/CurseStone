@@ -84,12 +84,21 @@ public:
     static constexpr uint8_t FLAG_BIT_ACTION      = 4;
     static constexpr uint8_t FLAG_BIT_INVISIBLE   = 5;
 
+    // Player-specific metadata (Infinity pocketmine/entity/Human.php:50-55,
+    // protocol 84 — note these indices DIFFER from the newer Genisys
+    // multi-protocol tables: on protocol 84 the sleeping flags live at
+    // 16/17, not 28/29).
+    static constexpr uint8_t PROP_PLAYER_FLAGS        = 16;  // byte, bit 0 = SLEEP
+    static constexpr uint8_t PROP_PLAYER_BED_POSITION = 17;  // pos (3 x int32 BE)
+    static constexpr uint8_t PLAYER_FLAG_SLEEP        = 1;  // bit inside PROP_PLAYER_FLAGS
+
     struct Entry {
         uint8_t index = 0;
         uint8_t type  = TYPE_BYTE;
         int64_t ival  = 0;      // BYTE / SHORT / INT / LONG
         float   fval  = 0.0f;   // FLOAT
         std::string sval;       // STRING
+        int32_t px = 0, py = 0, pz = 0;  // POS (block coordinates)
     };
 
     int64_t eid = 0;

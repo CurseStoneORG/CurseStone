@@ -54,6 +54,11 @@ public:
     // Infinity Player.php maps this action to the bow release → Arrow
     // spawn flow.
     static constexpr int32_t ACTION_RELEASE_ITEM = 5;
+    // ACTION_STOP_SLEEPING = 6 (Infinity PlayerActionPacket.php:36) — the
+    // 0.15.10 client sends this when the player taps "Leave bed" (or the
+    // screen/jump button) while sleeping in a bed. Maps to
+    // Player::stopSleep() exactly like Infinity Player.php:2839.
+    static constexpr int32_t ACTION_STOP_SLEEPING = 6;
     // El cliente manda esto cuando el jugador toca el boton de
     // "Respawn" en la pantalla de muerte (Infinity:
     // ACTION_SPAWN_SAME_DIMENSION = 7).
