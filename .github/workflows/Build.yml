@@ -2,23 +2,23 @@ name: Build CurseStone
 
 on:
   push:
-    branches: [ main, master, dev ]
+    branches: [main, master, dev]
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
   workflow_dispatch:
   # Permite que release.yml llame a estos builds reutilizando los binarios.
   workflow_call:
     inputs:
       version:
-        description: 'Versión del release (ej. CurseStone-alpha-v1.0)'
+        description: "Versión del release (ej. CurseStone-alpha-v1.0)"
         required: false
         type: string
       body:
-        description: 'Descripción / notas del release'
+        description: "Descripción / notas del release"
         required: false
         type: string
       prerelease:
-        description: 'Marcar como pre-release'
+        description: "Marcar como pre-release"
         required: false
         type: boolean
 
@@ -194,7 +194,7 @@ jobs:
       # resuelve las dependencias en modo clasico solo. Si tu repo tiene
       # un vcpkg.json (modo manifest), este paso FALLA y hay que quitarlo.
       - name: Instalar dependencias con vcpkg (modo clasico)
-        run: vcpkg install zlib:x64-windows leveldb:x64-windows
+        run: vcpkg install zlib:x64-windows-static-md leveldb:x64-windows-static-md
 
       # CAMBIO: la ruta del toolchain ya no usa $env:VCPKG_INSTALLATION_ROOT
       # pegado dentro del argumento de CMake (sintaxis PowerShell dentro de
@@ -207,6 +207,7 @@ jobs:
           cmake -B build/windows-release \
             -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_TARGET_TRIPLET=x64-windows-static-md \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_STANDARD=17 \
             -DCMAKE_CXX_STANDARD=20
@@ -227,7 +228,7 @@ jobs:
   release:
     name: Crear Release
     runs-on: ubuntu-22.04
-    needs: [ build-linux, build-android-arm64, build-windows ]
+    needs: [build-linux, build-android-arm64, build-windows]
     if: startsWith(github.ref, 'refs/tags/v')
 
     permissions:
