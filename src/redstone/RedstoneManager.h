@@ -50,7 +50,7 @@
 #include <cstdint>
 
 namespace cursestone::world { class World; }
-namespace cursestone { class Server; }
+namespace cursestone { class Server; class Player; }
 
 namespace cursestone::redstone {
 
@@ -105,8 +105,14 @@ bool isPowered(cursestone::world::World* world, int32_t x, int32_t y, int32_t z)
 // componente accionable, no hace nada y devuelve false — así el
 // llamador (Player) sabe si debe seguir con su propia lógica de
 // colocación de item.
+//
+// `player` identifica quién accionó el componente (para DoorToggleEvent;
+// nullable). La puerta además emite el sonido vanilla de abrir/cerrar
+// (LevelEventPacket evid=1003 — fix de "las puertas no emiten sonido")
+// y dispara DoorToggleEvent, cancelable.
 bool tryInteract(cursestone::world::World* world, cursestone::Server* server,
-                  int32_t x, int32_t y, int32_t z);
+                  int32_t x, int32_t y, int32_t z,
+                  cursestone::Player* player = nullptr);
 
 // Recalcula si una antorcha de redstone en (x,y,z) debe estar
 // encendida (id REDSTONE_TORCH_ON) o apagada (id REDSTONE_TORCH_OFF).

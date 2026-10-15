@@ -64,6 +64,12 @@ public:
     // ---- Sound event ids (PMMP LevelEventPacket::EVENT_SOUND_*) ----
     static constexpr int16_t EVENT_SOUND_BLOCK_PLACE      = 1052;
     static constexpr int16_t EVENT_SOUND_SHOOT            = 1002;  // bow release (Infinity LaunchSound)
+    // Door open/close (Infinity level/sound/DoorSound.php: EVENT_SOUND_DOOR).
+    // Sent as a LevelEventPacket at the door block position; data = pitch*1000
+    // (Infinity always passes pitch 0 for doors). This is the sound the
+    // wooden door makes when it is toggled open/closed — by hand or by
+    // redstone — and the only "door sound" of protocol 84.
+    static constexpr int16_t EVENT_SOUND_DOOR             = 1003;
     // ---- Particle event ids (PMMP LevelEventPacket::EVENT_PARTICLE_*) ----
     static constexpr int16_t EVENT_PARTICLE_DESTROY      = 2001;  // break particle + sound
     // ---- Weather event ids (Dr1xyDev/Infinity LevelEventPacket, MCPE 0.15.10) ----

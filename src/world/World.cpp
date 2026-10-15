@@ -56,6 +56,7 @@
 #include "network/protocol/MoveEntityPacket.h"
 #include "network/protocol/EntityEventPacket.h"
 #include "network/protocol/SetHealthPacket.h"
+#include "network/protocol/SetTimePacket.h"
 #include "scheduler/ServerScheduler.h"
 #include "scheduler/Task.h"
 #include <cmath>
@@ -443,6 +444,12 @@ size_t World::unsavedChunkCount() const {
 void World::tick(uint64_t current_tick) {
     advanceTime(1);
     doWeatherTick(current_tick);
+    // Sleep vote (Infinity Level.php:817 `if($this->sleepTicks > 0 and
+    // --$this->sleepTicks <= 0){ $this->checkSleep(); }`): after 60 ticks
+    // (3 s) with everyone in bed, the night is skipped.
+    if (sleep_ticks_ > 0 && --sleep_ticks_ <= 0) {
+        checkSleep();
+    }
     // Luz pending of the chunks recien generados/loaded. with a
     // presupuesto per tick for not congelar the thread main when
     // entra a vista llena of chunks to the time.
@@ -461,6 +468,65 @@ void World::tick(uint64_t current_tick) {
     // integrate the identical physics (Infinity Arrow gravity) and correct
     // the clients with MoveEntityPacket, or the two drift apart.
     tickArrows(current_tick);
+}
+
+// ============================================================
+// World::checkSleep — Infinity Level::checkSleep() (Level.php:861)
+// ============================================================
+// Runs from tick() when the sleep countdown reaches zero:
+//   - No players → nothing (Level.php:864 returns early).
+//   - ANY player of this level not sleeping → the night continues
+//     (resetTime=false; the "solo duermo si todos duermen" rule the user
+//     asked for — with a single player online it is trivially satisfied).
+//   - Everyone sleeping AND it is night (TIME_NIGHT 14000 .. TIME_SUNRISE
+//     23000) → time jumps to the next morning:
+//     Infinity: setTime($t + TIME_FULL - $time%TIME_FULL) — for any
+//     in-night $t this lands on the next multiple of 24000, which the
+//     0.15.10 client renders as sunrise. Everyone is woken up right
+//     after, and the new time is pushed to the clients of THIS world
+//     (Infinity syncs the clock via the next SetTimePacket; we send it
+//     explicitly like TimeCommand does).
+void World::checkSleep() {
+    auto& srv = cursestone::Server::getInstance();
+    auto players = srv.playersSnapshot();
+    if (players.empty()) return;
+
+    bool resetTime = true;
+    for (auto& p : players) {
+        if (!p || p->isPendingRemoval()) continue;      // quitting players don't count
+        if (p->getWorld() != this) continue;            // other levels don't vote here
+        if (!p->isSleeping()) { resetTime = false; break; }
+    }
+
+    if (!resetTime) return;
+
+    int32_t time = cfg_.time % TIME_FULL;
+    if (time >= TIME_NIGHT && time < TIME_SUNRISE) {
+        // Jump to the next morning (next multiple of TIME_FULL).
+        cfg_.time = cfg_.time + TIME_FULL - time;
+
+        // Wake everyone up (their stopSleep resets sleep_ticks_ to 0 and
+        // clears the sleeping metadata + sends the WAKE_UP animation).
+        for (auto& p : players) {
+            if (!p) continue;
+            if (p->getWorld() != this) continue;
+            if (p->isSleeping()) p->stopSleep();
+        }
+
+        // Push the new clock to every player of this world so the sky
+        // visibly turns to sunrise (same pattern TimeCommand uses).
+        auto pk = std::make_shared<network::protocol::SetTimePacket>();
+        pk->time = cfg_.time;
+        pk->started = true;
+        for (auto& p : players) {
+            if (!p || p->getWorld() != this) continue;
+            p->sendPacket(pk);
+        }
+
+        utils::MainLogger::get().info("[SLEEP] Everyone is asleep in \"" +
+            cfg_.name + "\" — time skipped to morning (" +
+            std::to_string(cfg_.time % TIME_FULL) + ")");
+    }
 }
 
 // ============================================================

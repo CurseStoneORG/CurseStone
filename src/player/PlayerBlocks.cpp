@@ -26,16 +26,19 @@
 #include "network/protocol/UpdateBlockPacket.h"
 #include "network/protocol/LevelEventPacket.h"
 #include "redstone/RedstoneManager.h"
+#include "world/Explosion.h"
 #include "item/ItemConstants.h"
 #include "item/ItemFlintSteel.h"
 #include "block/BlockIds.h"
 #include "block/BlockOrientation.h"
+#include "block/Block.h"
 #include "tile/TileSign.h"
 #include "inventory/PlayerInventory.h"
 #include "event/EventManager.h"
 #include "event/block/BlockBreakEvent.h"
 #include "event/block/BlockPlaceEvent.h"
 #include "event/player/PlayerInteractEvent.h"
+#include "utils/TextColor.h"
 #include "utils/MainLogger.hpp"
 #include <cmath>
 #include <utility>
@@ -122,6 +125,61 @@ void Player::handleBlockBreak(int x, int y, int z) {
         if (ev.isCancelled()) return;
     }
 
+    // ---- Two-half blocks (doors + beds) — Infinity Door::onBreak /
+    // Bed::onBreak: breaking EITHER half removes BOTH ----
+    //
+    // This is the fix for "cuando intento romper [la puerta/cama] solo
+    // se rompe la mitad": the generic path below cleared exactly the one
+    // block the client reported, leaving the partner half floating.
+    //
+    // Doors: the two halves stack vertically (upper half carries meta bit
+    // 0x08). Beds: the head half (bit 0x08) sits horizontally next to the
+    // foot — the direction bits of the foot point at the head, and the
+    // head points back at the foot with the same table mirrored.
+    //
+    // The partner half is cleared and broadcast right after the clicked
+    // one (below), and the DROP is forced to the item the whole block
+    // turns into (door item 324/330, bed item 355) — vanilla has no
+    // "half a bed" item, and dropping raw block ids 64/71/26 would give
+    // the client items it cannot use.
+    int pairX = 0, pairY = 0, pairZ = 0;
+    bool hasPair = false;
+    uint16_t forcedDropId = 0, forcedDropMeta = 0;
+    {
+        static const int8_t bedDirX[4] = {0, -1, 0, 1};  // 0=S(+Z) 1=W(-X) 2=N(-Z) 3=E(+X)
+        static const int8_t bedDirZ[4] = {1, 0, -1, 0};
+        switch (blockId) {
+            case block::WOODEN_DOOR:
+            case block::IRON_DOOR: {
+                forcedDropId   = (uint16_t)((blockId == block::WOODEN_DOOR)
+                                                ? item::WOODEN_DOOR    // 324 — the item
+                                                : item::IRON_DOOR);    // 330
+                forcedDropMeta = 0;
+                bool isTop = (blockData & 0x08) != 0;
+                pairX = x; pairZ = z;
+                pairY = isTop ? (y - 1) : (y + 1);
+                hasPair = (pairY >= 0 && pairY < 256);
+                break;
+            }
+            case block::BED_BLOCK: {
+                forcedDropId   = (uint16_t)item::BED;   // 355 — the item
+                forcedDropMeta = 0;
+                bool isHead = (blockData & 0x08) != 0;
+                uint8_t dir = blockData & 0x03;
+                pairX = x + (isHead ? -bedDirX[dir] : bedDirX[dir]);
+                pairZ = z + (isHead ? -bedDirZ[dir] : bedDirZ[dir]);
+                pairY = y;
+                hasPair = true;
+                // Vanilla nicety on top of Infinity: anyone sleeping in
+                // this bed is woken up instead of left floating on air.
+                Player::wakeSleepersOnBed(srv_, lvl, x, y, z);
+                break;
+            }
+            default:
+                break;
+        }
+    }
+
     // Set block to air (id=0, data=0).
     mcp_chunk_set_block_full(ch, localX, y, localZ, 0, 0);
     mcp_chunk_recalculate_height_map(ch);
@@ -186,6 +244,63 @@ void Player::handleBlockBreak(int x, int y, int z) {
         }
     }
 
+    // ---- Partner half removal (doors + beds) ----
+    // Only when the partner cell actually still holds the matching block
+    // (a stale/meta-mismatched neighbour is left alone — corrupt saves
+    // must not cascade). The partner gets the plain UpdateBlockPacket(air);
+    // no second destroy-particle: vanilla plays ONE break sound per block
+    // broken, and the clicked half's partEv above already carries it.
+    if (hasPair) {
+        uint8_t pairId = lvl->getBlockId(pairX, pairY, pairZ);
+        bool pairMatches = false;
+        switch (blockId) {
+            case block::WOODEN_DOOR:
+            case block::IRON_DOOR:
+                // The partner must be the same door AND the opposite half
+                // (the 0x08 bit flips) — otherwise a door stacked directly
+                // above another door would eat its lower neighbour too.
+                pairMatches = (pairId == blockId) &&
+                    ((lvl->getBlockData(pairX, pairY, pairZ) & 0x08) !=
+                     (blockData & 0x08));
+                break;
+            case block::BED_BLOCK:
+                pairMatches = (pairId == block::BED_BLOCK) &&
+                              // the partner must be the OPPOSITE half
+                              ((lvl->getBlockData(pairX, pairY, pairZ) & 0x08) !=
+                               (blockData & 0x08));
+                break;
+            default:
+                break;
+        }
+        if (pairMatches) {
+            mcp_chunk_t* pch = lvl->chunks().getChunkIfLoaded(pairX >> 4, pairZ >> 4);
+            if (pch) {
+                mcp_chunk_set_block_full(pch, pairX & 15, pairY, pairZ & 15, 0, 0);
+                mcp_chunk_recalculate_height_map(pch);
+                pch->dirty = true;
+
+                auto pubp = std::make_shared<network::protocol::UpdateBlockPacket>();
+                pubp->x = pairX;
+                pubp->z = pairZ;
+                pubp->y = (uint8_t)pairY;
+                pubp->blockId = 0;
+                pubp->blockData = 0;
+                pubp->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
+                int32_t pcx = pairX >> 4, pcz = pairZ >> 4;
+                for (auto& other : srv_->playersSnapshot()) {
+                    if (!other) continue;
+                    if (other->getWorld() != lvl) continue;
+                    if (!other->canSeeBlock(pcx, pcz)) continue;
+                    if (!other->spawned()) continue;
+                    other->sendPacket(pubp);
+                }
+                // The removed partner can disconnect a redstone circuit
+                // too (its neighbours just lost a block).
+                cursestone::redstone::notifyNeighbors(lvl, srv_, pairX, pairY, pairZ);
+            }
+        }
+    }
+
     // ---- Drops (PMMP `Level::useBreakOn` -> `Level::dropItem`) ----
     // PMMP: only survival players get drops. Creative players skip.
     //
@@ -206,7 +321,11 @@ void Player::handleBlockBreak(int x, int y, int z) {
     // client, and the pickup works to the 100%.
     bool creative = (cfg_.gamemode & 1) != 0;
     if (!creative) {
-        auto drop = lookupBlockDrop(blockId, blockData);
+        // Doors/beds drop their ITEM (324/330/355) instead of the raw
+        // block id — see the two-half block comment above.
+        auto drop = (forcedDropId != 0)
+                        ? std::make_pair(forcedDropId, forcedDropMeta)
+                        : lookupBlockDrop(blockId, blockData);
         if (drop.first != 0) {
             dropItem(x + 0.5, y + 0.5, z + 0.5, drop.first, 1, drop.second);
         }
@@ -367,7 +486,9 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     // Redstone components such as levers and buttons react to to click
     // before normal item/block placement is considered.
     // sneaking not is can accionar a palanca ni a button (vanilla).
-    if (!sneaking_ && cursestone::redstone::tryInteract(lvl, srv_, x, y, z)) {
+    // `this` rides along so the door path can fire DoorToggleEvent with
+    // the clicker (plugins get e.player instead of an empty name).
+    if (!sneaking_ && cursestone::redstone::tryInteract(lvl, srv_, x, y, z, this)) {
         return;
     }
 
@@ -430,6 +551,68 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     if (!sneakLocked && (lvl->getBlockId(x, y, z) == block::FURNACE ||
                          lvl->getBlockId(x, y, z) == block::BURNING_FURNACE)) {
         openFurnaceAt(x, y, z);
+        return;
+    }
+
+    // ---- BED (26) — sleep in it (Infinity block/Bed.php onActivate) ----
+    // Right-clicking a bed is a USE, not a placement: at night it starts
+    // the sleep (sleepOn), during the day it complains, in the Nether it
+    // explodes like vanilla. Must sit after the PlayerInteractEvent
+    // cancel-check (protection plugins) and with the sneak rule honoured
+    // (sneak + use = place a block against the bed, vanilla), exactly
+    // like the chest/furnace branches above.
+    if (!sneakLocked && lvl->getBlockId(x, y, z) == block::BED_BLOCK) {
+        // Dimension check — Infinity Bed.php:58 `if($this->getLevel()
+        // ->getDimension() == Level::DIMENSION_NETHER)` → Explosion(6).
+        // A bed used in the Nether detonates instead of sleeping.
+        if (lvl->dimension() == 1) {
+            world::Explosion boom(world::Position((double)x, (double)y, (double)z), 6.0f);
+            boom.explode();
+            return;
+        }
+
+        // Night check — Infinity Bed.php:62-67: only between TIME_NIGHT
+        // (14000) and TIME_SUNRISE (23000) a bed can be used. Vanilla
+        // gray chat line, same wording Infinity sends.
+        int32_t t = lvl->time() % world::World::TIME_FULL;
+        bool isNight = (t >= world::World::TIME_NIGHT && t < world::World::TIME_SUNRISE);
+        if (!isNight) {
+            sendMessage(TC::GRAY + "You can only sleep at night");
+            return;
+        }
+
+        // Locate the HEAD half (meta bit 0x08). Clicked the head → done;
+        // clicked the foot → scan the four horizontal neighbours for the
+        // matching head half (Infinity Bed.php:69-97). Nothing matches →
+        // "This bed is incomplete" (single half left by a partial break).
+        uint8_t meta = lvl->getBlockData(x, y, z);
+        int headX = x, headY = y, headZ = z;
+        if ((meta & 0x08) == 0) {
+            static const int dx4[4] = {0, 0, -1, 1};   // N(-Z), S(+Z), W(-X), E(+X)
+            static const int dz4[4] = {-1, 1, 0, 0};
+            bool found = false;
+            for (int i = 0; i < 4; ++i) {
+                int nx = x + dx4[i], nz = z + dz4[i];
+                if (lvl->getBlockId(nx, y, nz) == block::BED_BLOCK &&
+                    (lvl->getBlockData(nx, y, nz) & 0x08) == 0x08) {
+                    headX = nx; headY = y; headZ = nz;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                sendMessage(TC::GRAY + "This bed is incomplete");
+                return;
+            }
+        }
+
+        // sleepOn() fires PlayerBedEnterEvent (a plugin can refuse the
+        // sleep) and rejects already-occupied beds. Infinity answers
+        // both failures with the same "This bed is occupied" line
+        // (Bed.php:99-102).
+        if (!sleepOn(headX, headY, headZ)) {
+            sendMessage(TC::GRAY + "This bed is occupied");
+        }
         return;
     }
 
@@ -591,8 +774,135 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         broadcastBlockChange(srv_, lvl, placeX, placeY, placeZ, doorId, lowerData);
         broadcastBlockChange(srv_, lvl, placeX, placeY + 1, placeZ, doorId, upperData);
 
+        // FIX ("cuando coloco [la puerta] no emite sonido"): the door
+        // branch used to return BEFORE the generic place-sound broadcast
+        // at the bottom of handleBlockPlace, so placing a door was
+        // silent. Send the same EVENT_SOUND_BLOCK_PLACE (1052) the
+        // generic path sends (block-corner position, data = block id).
+        {
+            auto snd = std::make_shared<network::protocol::LevelEventPacket>();
+            snd->evid = network::protocol::LevelEventPacket::EVENT_SOUND_BLOCK_PLACE;
+            snd->x = (float)placeX;
+            snd->y = (float)placeY;
+            snd->z = (float)placeZ;
+            snd->data = (int32_t)doorId;
+            int32_t scx = placeX >> 4, scz = placeZ >> 4;
+            for (auto& other : srv_->playersSnapshot()) {
+                if (!other) continue;
+                if (other->getWorld() != lvl) continue;
+                if (!other->canSeeBlock(scx, scz)) continue;
+                other->sendPacket(snd);
+            }
+        }
+
         cursestone::redstone::notifyNeighbors(lvl, srv_, placeX, placeY, placeZ);
         cursestone::redstone::notifyNeighbors(lvl, srv_, placeX, placeY + 1, placeZ);
+
+        if (!(cfg_.gamemode & 1) && inv_) { // survival only
+            int held = inv_->heldSlot();
+            auto cur = inv_->getItem(held);
+            if (!cur.isEmpty()) {
+                if (cur.count > 1) { cur.count -= 1; inv_->setItem(held, cur); }
+                else { inv_->clear(held); }
+            }
+        }
+        return;
+    } else if (heldItemId == item::BED) {
+        // ---- Cama (item 355 → dos BED_BLOCK 26) — Infinity block/Bed.php place() ----
+        // The bed never went through the generic "1..255 block item"
+        // branch (item 355 > 255), so until now the server placed
+        // NOTHING: the client only drew a local prediction, the server
+        // world kept air, and "breaking" it removed one ghost half while
+        // the other stayed forever (the reported "la cama solo rompe
+        // mitad" bug). This branch does the real placement: foot at the
+        // clicked cell + head on the side the player faces, both with
+        // the vanilla meta scheme (bits 0-1 = direction, bit 0x08 =
+        // head).
+
+        int32_t cxB = placeX >> 4, czB = placeZ >> 4;
+        mcp_chunk_t* chB = lvl->chunks().getChunkIfLoaded(cxB, czB);
+        if (!chB) return;
+        int localXB = placeX & 15, localZB = placeZ & 15;
+
+        // Support check — Infinity Bed.php:53 `$down->isTransparent()
+        // === false` (the bed needs a solid/opaque block below the FOOT
+        // cell). Block::get() falls back to a solid default for unknown
+        // ids, mirroring how the rest of the codebase treats them.
+        {
+            if (placeY == 0) return;
+            uint8_t belowId = lvl->getBlockId(placeX, placeY - 1, placeZ);
+            if (block::Block::get(belowId)->isTransparent()) return;
+        }
+
+        // Direction — Infinity Bed.php:56-59 combines getDirection()
+        // with the faces table and the (d+3)%4 rotation; unwound for
+        // this project's quadrant() (same 0=S 1=W 2=N 3=E values), the
+        // result is: meta = quadrant(yaw), head on the side the player
+        // faces (q0→+Z, q1→−X, q2→−Z, q3→+X). Foot and head share the
+        // same 2 direction bits; the head adds 0x08.
+        uint8_t bedMeta = block::BlockOrientation::quadrant(yaw());
+        static const int8_t headDX[4] = {0, -1, 0, 1};   // S, W, N, E
+        static const int8_t headDZ[4] = {1, 0, -1, 0};
+        int headX = placeX + headDX[bedMeta & 0x03];
+        int headZ = placeZ + headDZ[bedMeta & 0x03];
+
+        // The head cell must be air (Infinity `$next->canBeReplaced()`)
+        // and must have solid ground too (same support rule; Infinity
+        // checks `$downNext->isTransparent() === false`).
+        if (headX < -1000000 || headZ < -1000000) return; // paranoia guard (int8 offsets can't overflow here)
+        int32_t headCx = headX >> 4, headCz = headZ >> 4;
+        mcp_chunk_t* chHead = (headCx == cxB && headCz == czB)
+                                  ? chB
+                                  : lvl->chunks().getChunkIfLoaded(headCx, headCz);
+        if (!chHead) return;
+        if (lvl->getBlockId(headX, placeY, headZ) != 0) return;
+        {
+            if (placeY == 0) return;
+            uint8_t belowHeadId = lvl->getBlockId(headX, placeY - 1, headZ);
+            if (block::Block::get(belowHeadId)->isTransparent()) return;
+        }
+
+        // BlockPlaceEvent — cancellable like every other placement
+        // (position = the FOOT cell, the "anchor" of the item).
+        {
+            auto ev = event::EventManager::get().fire<event::block::BlockPlaceEvent>(
+                this, math::Vector3{(double)placeX, (double)placeY, (double)placeZ},
+                (int)block::BED_BLOCK);
+            if (ev.isCancelled()) return;
+        }
+
+        mcp_chunk_set_block_full(chB, localXB, placeY, localZB,
+                                 block::BED_BLOCK, bedMeta & 0x07);            // foot
+        mcp_chunk_set_block_full(chHead, headX & 15, placeY, headZ & 15,
+                                 block::BED_BLOCK, (uint8_t)((bedMeta & 0x07) | 0x08)); // head
+        chB->dirty = true;
+        chHead->dirty = true;
+
+        broadcastBlockChange(srv_, lvl, placeX, placeY, placeZ,
+                             block::BED_BLOCK, bedMeta & 0x07);
+        broadcastBlockChange(srv_, lvl, headX, placeY, headZ,
+                             block::BED_BLOCK, (uint8_t)((bedMeta & 0x07) | 0x08));
+
+        // Place sound — same EVENT_SOUND_BLOCK_PLACE the generic path
+        // and the door branch send.
+        {
+            auto snd = std::make_shared<network::protocol::LevelEventPacket>();
+            snd->evid = network::protocol::LevelEventPacket::EVENT_SOUND_BLOCK_PLACE;
+            snd->x = (float)placeX;
+            snd->y = (float)placeY;
+            snd->z = (float)placeZ;
+            snd->data = (int32_t)block::BED_BLOCK;
+            int32_t scx = placeX >> 4, scz = placeZ >> 4;
+            for (auto& other : srv_->playersSnapshot()) {
+                if (!other) continue;
+                if (other->getWorld() != lvl) continue;
+                if (!other->canSeeBlock(scx, scz)) continue;
+                other->sendPacket(snd);
+            }
+        }
+
+        cursestone::redstone::notifyNeighbors(lvl, srv_, placeX, placeY, placeZ);
+        cursestone::redstone::notifyNeighbors(lvl, srv_, headX, placeY, headZ);
 
         if (!(cfg_.gamemode & 1) && inv_) { // survival only
             int held = inv_->heldSlot();
@@ -909,6 +1219,13 @@ static std::pair<uint16_t, uint16_t> lookupBlockDrop(uint8_t blockId, uint8_t bl
         case 62: return {61,  0};                   // Burning furnace -> furnace item
         case 63: return {323, 0};                   // Standing Sign -> sign item (Genisys SignPost::getDrops)
         case 68: return {323, 0};                   // Wall Sign -> sign item (Genisys WallSign::getDrops)
+        // Two-half blocks drop their ITEM, never the raw block id — the
+        // client cannot use "block 64/71/26" as an inventory item
+        // (handleBlockBreak routes doors/beds through forcedDropId first;
+        // these entries are the safety net for any other path).
+        case 64: return {324, 0};                   // Wooden Door block -> door item
+        case 71: return {330, 0};                   // Iron Door block -> iron door item
+        case 26: return {355, 0};                   // Bed block -> bed item
         default: return {blockId, blockData};       // Default: drop self
     }
 }

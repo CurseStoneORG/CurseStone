@@ -46,7 +46,16 @@ void SetEntityDataPacket::encode(std::vector<uint8_t>& out) const {
             case TYPE_LONG:   w.writeI64BE(e.ival);                     break;
             case TYPE_FLOAT:  w.writeF32BE(e.fval);                     break;
             case TYPE_STRING: w.writeBEString(e.sval);                  break;
-            default: break;   // TYPE_POS / unsupported: nothing on the wire
+            case TYPE_POS:
+                // Infinity/PMMP 1.6.2 Binary::writeMetadata, DATA_TYPE_POS:
+                // three packed signed 32-bit big-endian ints (x, y, z in
+                // block coordinates). Used by the sleeping metadata
+                // (PROP_PLAYER_BED_POSITION).
+                w.writeI32BE(e.px);
+                w.writeI32BE(e.py);
+                w.writeI32BE(e.pz);
+                break;
+            default: break;   // unsupported: nothing on the wire
         }
     }
     w.writeU8(TERMINATOR);
@@ -96,6 +105,13 @@ bool SetEntityDataPacket::decode(const uint8_t* data, size_t len) {
             }
             case TYPE_STRING: {
                 if (!r.readBEString(e.sval)) return false;
+                break;
+            }
+            case TYPE_POS: {
+                // Mirror of the encode() branch: three packed int32 BE.
+                int32_t vx = 0, vy = 0, vz = 0;
+                if (!r.readI32BE(vx) || !r.readI32BE(vy) || !r.readI32BE(vz)) return false;
+                e.px = vx; e.py = vy; e.pz = vz;
                 break;
             }
             default:

@@ -45,6 +45,10 @@ namespace cursestone::network::protocol {
 
 // PMMP AnimatePacket action constants.
 constexpr uint32_t ANIMATE_ACTION_SWING_ARM = 1;
+// WAKE_UP = 3 (Infinity event/player/PlayerAnimationEvent.php) — sent to
+// the player itself by Player::stopSleep() so the 0.15.10 client leaves
+// the bed view.
+constexpr uint32_t ANIMATE_ACTION_WAKE_UP   = 3;
 
 class AnimatePacket : public DataPacket {
 public:

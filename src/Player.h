@@ -457,7 +457,13 @@ public:
 
     // --- Position/teleport (Nukkit: getNextPosition/getSpawn/sendPosition) ---
     math::Vector3 getNextPosition() const { return pos_; }
+    // Personal spawn point (Infinity Player::$spawnPosition): the bed the
+    // player last slept in, or the world spawn when no bed was ever used.
+    // setSpawn() stores it (and pushes SetSpawnPositionPacket to the
+    // client); it round-trips through the player NBT as SpawnX/SpawnY/
+    // SpawnZ like Infinity Human::saveNBT does.
     math::Vector3 getSpawn() const;
+    void setSpawn(int x, int y, int z, bool save);
     // server spawn with the and snapped to the actual terrain surface of the
     // column (fixes the "first join spawns you in the sky" bug).
     math::Vector3 getServerSpawnSafe() const;
@@ -508,9 +514,35 @@ public:
     bool isSneaking() const { return sneaking_; }
     void setSneaking(bool v);
 
-    // --- Sleep (Nukkit: isSleeping/stopSleep) ---
-    bool isSleeping() const { return false; }
-    void stopSleep() {}
+    // --- Sleep (Infinity Player.php:1250-1318) ---
+    // sleepOn: ports Infinity Player::sleepOn(). Occupancy check against
+    // other sleeping players at the same bed, fires PlayerBedEnterEvent
+    // (cancellable), turns on the sleeping entity metadata
+    // (PROP_PLAYER_FLAGS bit 0 + PROP_PLAYER_BED_POSITION) for the other
+    // clients, sets this bed as the player's personal spawn point and
+    // arms the world sleep countdown (World::sleepTicks = 60). Returns
+    // false when the bed is occupied or a listener cancelled the event.
+    bool sleepOn(int bx, int by, int bz);
+    // True while the player is lying in a bed (drives World::checkSleep()
+    // and the "This bed is occupied" check).
+    bool isSleeping() const { return sleeping_; }
+    // stopSleep: ports Infinity Player::stopSleep(). Fires
+    // PlayerBedLeaveEvent, clears the sleeping metadata, resets the world
+    // sleep countdown and sends the WAKE_UP animation to the player.
+    // No-op when the player is not sleeping.
+    void stopSleep();
+    // Bed the player is currently sleeping in (block coords of the HEAD
+    // half); only meaningful while isSleeping() is true.
+    void sleepPos(int& bx, int& by, int& bz) const {
+        bx = sleep_x_; by = sleep_y_; bz = sleep_z_;
+    }
+    // Wakes every player currently sleeping in the bed whose head or foot
+    // half sits at (bx, by, bz) or on the paired half. Called when a bed
+    // half is broken (vanilla: breaking the bed under a sleeper wakes
+    // them instead of leaving them floating) — implemented in
+    // player/PlayerSleep.cpp.
+    static void wakeSleepersOnBed(Server* srv, world::World* lvl,
+                                  int bx, int by, int bz);
 
     // --- Interaction (Nukkit: canInteract/canCollideWith/resetFallDistance) ---
     bool canInteract(math::Vector3 pos, double maxDistance) const;
@@ -720,6 +752,21 @@ private:
     bool  moved_this_tick_ = false;  // set by handleMovePlayer, read by tickHungerAndDamage
     bool  sprinting_ = false;        // client reports sprint (PlayerAction 9/10)
     bool  sneaking_  = false;        // client reports crouch (PlayerAction 11/12)
+
+    // --- sleep state (Infinity Player::$sleeping) ---
+    // sleeping_ is true between sleepOn() and stopSleep(). sleep_x/y/z_
+    // holds the block coordinates of the bed HEAD half so the bed-break
+    // path (PlayerBlocks.cpp) can wake the sleeper and so "This bed is
+    // occupied" can compare positions between players.
+    bool    sleeping_ = false;
+    int32_t sleep_x_ = 0, sleep_y_ = 0, sleep_z_ = 0;
+
+    // --- personal spawn point (Infinity Player::$spawnPosition) ---
+    // has_spawn_override_ = false → getSpawn() returns the world spawn
+    // (pre-bed behaviour). After the first sleep it stays true and the
+    // stored bed coordinates win, round-tripping via player NBT.
+    bool    has_spawn_override_ = false;
+    int32_t spawn_x_ = 0, spawn_y_ = 64, spawn_z_ = 0;
 
     // --- portal of the Nether (ver checkPortal in player/PlayerWorld.cpp) ---
     bool     in_portal_ = false;      // the player sigue inside of the block of portal

@@ -26,6 +26,9 @@
 #include "Server.h"
 #include "Player.h"
 #include "network/protocol/UpdateBlockPacket.h"
+#include "network/protocol/LevelEventPacket.h"
+#include "event/EventManager.h"
+#include "event/block/DoorToggleEvent.h"
 #include <algorithm>
 
 namespace cursestone::redstone {
@@ -57,6 +60,42 @@ static void broadcastBlock(cursestone::Server* server, int32_t x, int32_t y, int
         if (!player->canSeeBlock(cx, cz)) continue;
         player->sendPacket(ubp);
     }
+}
+
+// broadcastLevelEvent — same audience as broadcastBlock() but for a
+// LevelEventPacket (sounds / particles / weather). Position semantics
+// follow Infinity Level::addSound(): the packet carries the coordinates
+// AS GIVEN (block corner for sounds; callers pass what the reference
+// passes). Used for the door open/close sound (EVENT_SOUND_DOOR) on both
+// the hand-toggle and the redstone-toggle paths.
+static void broadcastLevelEvent(cursestone::Server* server,
+                                int16_t evid, int32_t data,
+                                float x, float y, float z) {
+    if (!server) return;
+    auto pk = std::make_shared<network::protocol::LevelEventPacket>();
+    pk->evid = evid;
+    pk->data = data;
+    pk->x = x;
+    pk->y = y;
+    pk->z = z;
+    int32_t cx = (int32_t)std::floor(x) >> 4;
+    int32_t cz = (int32_t)std::floor(z) >> 4;
+    for (auto& player : server->playersSnapshot()) {
+        if (!player) continue;
+        if (!player->canSeeBlock(cx, cz)) continue;
+        player->sendPacket(pk);
+    }
+}
+
+// playDoorSound — the wooden/iron door creak (Infinity
+// level/sound/DoorSound.php → LevelEventPacket evid=1003 at the door
+// block position, data = pitch*1000 = 0). The 0.15.10 client needs this
+// or the door toggles silently (bug: "las puertas no emiten sonido").
+static void playDoorSound(cursestone::Server* server,
+                          int32_t x, int32_t y, int32_t z) {
+    broadcastLevelEvent(server,
+                        network::protocol::LevelEventPacket::EVENT_SOUND_DOOR,
+                        0, (float)x, (float)y, (float)z);
 }
 
 // ============================================================
@@ -134,7 +173,8 @@ bool isPowered(World* world, int32_t x, int32_t y, int32_t z) {
 // estado preserva los demás bits intactos, así la orientación visual
 // del bloque no cambia al accionarlo.
 // ============================================================
-bool tryInteract(World* world, cursestone::Server* server, int32_t x, int32_t y, int32_t z) {
+bool tryInteract(World* world, cursestone::Server* server, int32_t x, int32_t y, int32_t z,
+                 cursestone::Player* player) {
     if (!world) return false;
     if (y < 0 || y >= 256) return false;
     if (!world->isChunkLoaded(x, z)) return false;
@@ -174,9 +214,25 @@ bool tryInteract(World* world, cursestone::Server* server, int32_t x, int32_t y,
         uint8_t lowerData = world->getBlockData(x, lowerY, z);
         if ((lowerData & 0x08) != 0) return false; // salvaguarda de datos corruptos, igual que updateDoorAt
 
+        // DoorToggleEvent (Nukkit/PMMP block/Door.php onActivate fires
+        // DoorSound; the event type itself is this project's port of
+        // cn.nukkit.event.block.DoorToggleEvent). Cancellable: a
+        // protected-door plugin blocks the toggle and the click is
+        // consumed (no accidental block placement INTO the door cell).
+        {
+            auto ev = event::EventManager::get().fire<event::block::DoorToggleEvent>(
+                x, lowerY, z, player);
+            if (ev.isCancelled()) return true;
+        }
+
         uint8_t newLowerData = lowerData ^ 0x04;
         world->setBlock(x, lowerY, z, block::WOODEN_DOOR, newLowerData);
         broadcastBlock(server, x, lowerY, z, block::WOODEN_DOOR, newLowerData);
+        // FIX ("las puertas no emiten sonido"): the 0.15.10 client only
+        // animates the swing locally — the creak itself is a server-side
+        // LevelEventPacket (Infinity DoorSound), played for every viewer
+        // including the clicker.
+        playDoorSound(server, x, lowerY, z);
         // No se llama a notifyNeighbors aquí: abrir/cerrar la puerta a
         // mano no debería re-disparar su propia reevaluación por
         // redstone en el mismo instante (causaría que, si hay señal
@@ -421,6 +477,10 @@ void updateDoorAt(World* world, cursestone::Server* server, int32_t x, int32_t y
     uint8_t newLowerData = lowerData ^ 0x04;
     world->setBlock(x, lowerY, z, id, newLowerData);
     broadcastBlock(server, x, lowerY, z, id, newLowerData);
+    // FIX ("las puertas no emiten sonido"): redstone also toggles doors,
+    // and the creak is a server-side LevelEventPacket on protocol 84 —
+    // same call the hand-toggle path in tryInteract() makes.
+    playDoorSound(server, x, lowerY, z);
 
     // La mitad superior de este motor solo guarda el bit 0x08 (es
     // superior) + orientación/bisagra en 0x01-0x02 — nunca guarda el

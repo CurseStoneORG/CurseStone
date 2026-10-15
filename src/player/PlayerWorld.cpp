@@ -87,6 +87,12 @@ bool Player::switchWorld(World* target, double x, double y, double z,
     // The open container belongs to the previous world.
     closeOpenChest();
 
+    // Sleeping belongs to the previous world too (Infinity Player.php:4188
+    // calls stopSleep() inside teleport()): a player dragged out of their
+    // bed by a portal/plugin teleport stops sleeping, cancels their
+    // skip-the-night vote and drops the sleeping pose for the viewers.
+    stopSleep();
+
     bool dimension_change = !from || target->dimension() != from->dimension();
 
     world_ = target;

@@ -22,15 +22,14 @@
  */
 /// @brief a world of the server (surface or Nether).
 ///
-/// Agrupa the ChunkManager, the generador, the entities, the tiles and
-/// the ajustes own of the world (time, weather and spawn). several
-/// objetos World can convivir in the same server; the mapa of
-/// worlds activos it gestiona server.
+/// Owns the world's settings (time, weather, and spawn). Multiple
+/// World instances can coexist on the same server; the server manages
+/// the map of active worlds.
 ///
-/// in the construcción is instancia the WorldProvider (via
-/// WorldProviderManager) according to the format configurado and is conecta to the
-/// ChunkManager so that flushDirty() escriba to disk; without ello the
-/// world sería only of memoria and the changes is perderían when shutting down.
+/// The constructor instantiates the WorldProvider via WorldProviderManager
+/// according to the configured format and connects it to the ChunkManager
+/// so flushDirty() writes changes to disk; otherwise, the world would
+/// exist only in memory and changes would be lost on shutdown.
 #pragma once
 #include <string>
 #include <memory>
@@ -233,6 +232,29 @@ public:
     int32_t time() const { return cfg_.time; }
     void setTime(int32_t t) { cfg_.time = t; }
     void advanceTime(int dt_ticks) { cfg_.time = (cfg_.time + dt_ticks) % 24000; }
+
+    // ----- Sleep / skip-the-night (Infinity level/Level.php) -----
+    // Ported from Infinity Level::$sleepTicks + Level::checkSleep()
+    // (Level.php:861). sleepTicks counts down inside tick(); when it
+    // reaches zero, checkSleep() runs:
+    //   - every player of THIS level sleeping and it is night
+    //     (TIME_NIGHT 14000 .. TIME_SUNRISE 23000) → the time jumps to
+    //     the next morning (a vanilla morning is time 0 of the next day)
+    //     and everyone is woken up;
+    //   - anyone NOT sleeping → nothing happens (the night continues and
+    //     the countdown is not re-armed until another player uses a bed).
+    //
+    // Day-phase constants (Infinity level/Level.php:143-148).
+    static constexpr int32_t TIME_SUNSET  = 12000;
+    static constexpr int32_t TIME_NIGHT   = 14000;
+    static constexpr int32_t TIME_SUNRISE = 23000;
+    static constexpr int32_t TIME_FULL    = 24000;
+    // Arms (or cancels with <= 0) the skip-the-night countdown. Called
+    // from Player::sleepOn (60) and Player::stopSleep (0), exactly like
+    // Infinity sets Level::$sleepTicks.
+    void setSleepTicks(int32_t t) { sleep_ticks_ = t; }
+    // Runs at the end of every tick while a sleep vote is pending.
+    void checkSleep();
 
     // ----- Weather system -----
     // Ported from Dr1xyDev/Infinity (pocketmine/level/weather/Weather.php),
@@ -497,6 +519,11 @@ private:
     uint64_t rain_scan_offset_ = 0;         // rotating chunk scan cursor (round-robin)
     uint64_t last_fire_extinguish_log_ = 0; // rate-limits the extinguido log
     uint64_t next_lightning_tick_ = 0;      // next tick allowed to strike
+
+    // Skip-the-night countdown (Infinity Level::$sleepTicks). 0 = idle;
+    // armed to 60 ticks by Player::sleepOn, reset to 0 by Player::stopSleep.
+    // checkSleep() runs from tick() the moment it hits 0.
+    int32_t  sleep_ticks_ = 0;
 
     // Picks to random online player and strikes lightning within ±64
     // blocks of them at the highest block of that column (Infinity

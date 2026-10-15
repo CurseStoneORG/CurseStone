@@ -31,6 +31,11 @@
 //   events.on("EntityDamageByEntity", function(e) ... end)  -- PvP: golpe/flecha
 //   events.on("PlayerDeath", function(e) ... end)
 //   events.on("PlayerRespawn", function(e) ... end)
+//   events.on("PlayerBedEnter", function(e) ... end)        -- se acuesta
+//     ("PlayerSleepInBed" funciona como alias del mismo evento)
+//   events.on("PlayerBedLeave", function(e) ... end)        -- se levanta
+//   events.on("DoorToggle", function(e) ... end)            -- puerta abierta/cerrada
+//   events.on("PlayerInteract", function(e) ... end)        -- clic en bloque
 //
 // `e` es una tabla simple por invocación:
 //   - eventos de jugador: e.player (NOMBRE, string), e.message
@@ -52,8 +57,12 @@
 #include "event/player/PlayerChatEvent.h"
 #include "event/player/PlayerDeathEvent.h"
 #include "event/player/PlayerRespawnEvent.h"
+#include "event/player/PlayerBedEnterEvent.h"
+#include "event/player/PlayerBedLeaveEvent.h"
+#include "event/player/PlayerInteractEvent.h"
 #include "event/block/BlockBreakEvent.h"
 #include "event/block/BlockPlaceEvent.h"
+#include "event/block/DoorToggleEvent.h"
 #include "event/entity/EntityDamageEvent.h"
 #include "event/entity/EntityDamageByEntityEvent.h"
 #include <functional>
@@ -283,6 +292,76 @@ int l_events_on(lua_State* L) {
         // Not cancellable on purpose (a cancelled respawn would strand the
         // player dead): listeners may only observe.
         hook<event::player::PlayerRespawnEvent>(pl, ref, f, {});
+    }
+    else if (name == "PlayerBedEnter" || name == "PlayerSleepInBed") {
+        // The sleep-in-bed event (cursestone port of
+        // cn.nukkit.event.player.PlayerBedEnterEvent). "PlayerSleepInBed"
+        // is accepted as an alias because some plugins use that name for
+        // the same moment; both fire the identical C++ event.
+        //   e.player, e.x, e.y, e.z  (bed HEAD half), e.cancel() refuses
+        //   the sleep (Bed.php then reports the bed as occupied).
+        auto f = [](lua_State* L, int eIdx, event::player::PlayerBedEnterEvent& ev) {
+            fillPlayer<event::player::PlayerBedEnterEvent>(L, eIdx, ev);
+            lua_pushnumber(L, (lua_Number)ev.x);
+            lua_setfield(L, eIdx, "x");
+            lua_pushnumber(L, (lua_Number)ev.y);
+            lua_setfield(L, eIdx, "y");
+            lua_pushnumber(L, (lua_Number)ev.z);
+            lua_setfield(L, eIdx, "z");
+        };
+        hook<event::player::PlayerBedEnterEvent>(pl, ref, f, {});
+    }
+    else if (name == "PlayerBedLeave") {
+        // Woke up (naturally via stopSleep, morning skip, bed broken,
+        // quit or teleport). e.player, e.x, e.y, e.z of the bed head.
+        auto f = [](lua_State* L, int eIdx, event::player::PlayerBedLeaveEvent& ev) {
+            fillPlayer<event::player::PlayerBedLeaveEvent>(L, eIdx, ev);
+            lua_pushnumber(L, (lua_Number)ev.x);
+            lua_setfield(L, eIdx, "x");
+            lua_pushnumber(L, (lua_Number)ev.y);
+            lua_setfield(L, eIdx, "y");
+            lua_pushnumber(L, (lua_Number)ev.z);
+            lua_setfield(L, eIdx, "z");
+        };
+        hook<event::player::PlayerBedLeaveEvent>(pl, ref, f, {});
+    }
+    else if (name == "DoorToggle") {
+        // Wooden door opened/closed by hand (iron doors only react to
+        // redstone, vanilla). e.player (the clicker), e.x, e.y, e.z of
+        // the door's LOWER half, e.cancel() blocks the swing.
+        auto f = [](lua_State* L, int eIdx, event::block::DoorToggleEvent& ev) {
+            lua_pushstring(L, ev.player ? ev.player->getName().c_str() : "");
+            lua_setfield(L, eIdx, "player");
+            lua_pushnumber(L, (lua_Number)ev.x);
+            lua_setfield(L, eIdx, "x");
+            lua_pushnumber(L, (lua_Number)ev.y);
+            lua_setfield(L, eIdx, "y");
+            lua_pushnumber(L, (lua_Number)ev.z);
+            lua_setfield(L, eIdx, "z");
+        };
+        hook<event::block::DoorToggleEvent>(pl, ref, f, {});
+    }
+    else if (name == "PlayerInteract") {
+        // Right/left click against a block, fired for EVERY interaction
+        // attempt before any specific branch (chests, doors, beds,
+        // placement...) reacts. e.player, e.x, e.y, e.z, e.face
+        // (0=bottom..5=east, 255 = in-air), e.action ("right_click_block"
+        // today), e.cancel() blocks the whole interaction.
+        auto f = [](lua_State* L, int eIdx, event::player::PlayerInteractEvent& ev) {
+            fillPlayer<event::player::PlayerInteractEvent>(L, eIdx, ev);
+            lua_pushnumber(L, (lua_Number)ev.blockX);
+            lua_setfield(L, eIdx, "x");
+            lua_pushnumber(L, (lua_Number)ev.blockY);
+            lua_setfield(L, eIdx, "y");
+            lua_pushnumber(L, (lua_Number)ev.blockZ);
+            lua_setfield(L, eIdx, "z");
+            lua_pushnumber(L, (lua_Number)ev.face);
+            lua_setfield(L, eIdx, "face");
+            lua_pushstring(L, ev.action == event::player::PlayerInteractEvent::RIGHT_CLICK_BLOCK
+                                  ? "right_click_block" : "left_click_block");
+            lua_setfield(L, eIdx, "action");
+        };
+        hook<event::player::PlayerInteractEvent>(pl, ref, f, {});
     }
     else {
         luaL_unref(L, LUA_REGISTRYINDEX, ref);

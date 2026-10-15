@@ -184,6 +184,13 @@ void Player::close(const std::string& reason) {
         // player is still looking at it.
         closeOpenChest();
 
+        // Wake the player up if it quit while sleeping: the bed must not
+        // stay "occupied" for the next sleeper and the other clients must
+        // see the flag byte clear before the RemoveEntityPacket despawns
+        // the entity anyway. Infinity effectively does the same via
+        // close() → stopSleep() in its player close pipeline.
+        stopSleep();
+
         // Workbench: capture disconnect state for diagnostics.
         {
             uint64_t now_ms = (uint64_t)(std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -437,6 +444,15 @@ void Player::saveData() {
     mcp_compound_tag_set_long  (root, "lastPlayed",
         (int64_t)mcp_utils_time_ms());
 
+    // --- Personal spawn point (Infinity Human::saveNBT: SpawnX/Y/Z) ---
+    // Only meaningful once a bed was used; read back on login by
+    // PlayerLogin.cpp so the bed spawn survives restarts.
+    if (has_spawn_override_) {
+        mcp_compound_tag_set_int(root, "SpawnX", spawn_x_);
+        mcp_compound_tag_set_int(root, "SpawnY", spawn_y_);
+        mcp_compound_tag_set_int(root, "SpawnZ", spawn_z_);
+    }
+
     // --- Inventory + Armor as to single ListTag<CompoundTag> ---
     // bug FIX: this loop used to stop at PlayerInventory::SIZE (36),
     // which by design EXCLUDES the 4 armor slots (see the comment on
@@ -481,6 +497,12 @@ void Player::saveData() {
 
 // --- Nukkit-compat: getSpawn ---
 math::Vector3 Player::getSpawn() const {
+    // Personal spawn point (the bed this player last slept in) wins over
+    // the world spawn — Infinity Player::getSpawn() reads
+    // $this->spawnPosition once setSpawn() has been called.
+    if (has_spawn_override_) {
+        return math::Vector3{(double)spawn_x_, (double)spawn_y_, (double)spawn_z_};
+    }
     if (getWorld()) return getWorld()->spawn();
     return math::Vector3{0, 64, 0};
 }

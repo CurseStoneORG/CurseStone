@@ -350,6 +350,13 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int /*face*/) {
     if (action == network::protocol::PlayerActionPacket::ACTION_RELEASE_ITEM) {
         releaseBow();
     }
+    // Leave bed (protocol 84: ACTION_STOP_SLEEPING = 6 — Infinity
+    // PlayerActionPacket.php:36, mapped at Player.php:2839 to
+    // Player::stopSleep()). The 0.15.10 client sends this when the player
+    // taps "Leave bed" or presses jump while lying down.
+    if (action == network::protocol::PlayerActionPacket::ACTION_STOP_SLEEPING) {
+        stopSleep();
+    }
     // Mesa of crafting (block WORKBENCH=58): the 0.15.x takes precedence
     // ACTION_SET_SLOTS (?6) when opening the UI of the mesa. not there is state
     // server-side that keep (the 336 recetas already is mandaron in
