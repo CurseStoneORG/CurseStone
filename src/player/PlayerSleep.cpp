@@ -21,26 +21,6 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// PlayerSleep.cpp — the bed/sleep pipeline.
-//
-// Direct port of Infinity (Dr1xyDev/Infinity, MCPE 0.15.10)
-// pocketmine/Player.php:
-//
-//   sleepOn($pos)      Player.php:1250 — occupancy check, PlayerBedEnterEvent,
-//                      sleeping entity metadata, setSpawn(), sleepTicks = 60.
-//   stopSleep()        Player.php:1301 — PlayerBedLeaveEvent, metadata reset,
-//                      sleepTicks = 0, AnimatePacket WAKE_UP.
-//   setSpawn($pos)     Player.php:1283 — SetSpawnPositionPacket.
-//
-// Sleep state is sent as entity metadata: PROP_PLAYER_BED_POSITION (17,
-// three little-endian int32) followed by PROP_PLAYER_FLAGS (16, sleep
-// bit). It goes to every viewer with the runtime id and to the player
-// itself with eid 0, which is what opens the sleeping UI on the client.
-//
-// The "skip the night" vote itself lives in World::checkSleep()
-// (world/World.cpp), ported from Infinity Level.php:861: when every player
-// of the level is sleeping and it is night, the time jumps to the next
-// morning and everyone is woken up.
 #include "Player.h"
 #include "Server.h"
 #include "world/World.h"
@@ -57,7 +37,9 @@ namespace cursestone {
 using network::protocol::SetEntityDataPacket;
 
 // Sends the bed position and sleep flag to the viewers (runtime id) and to
-// the player itself (eid 0), like Infinity Player::setDataProperty().
+// the player itself, like Infinity Player::setDataProperty(). StartGame
+// tells the client its own id is the runtime id, so the self copy uses it;
+// the eid 0 copy covers clients that treat 0 as "me".
 static void broadcastSleepMetadata(Player* self, bool sleeping,
                                    int bx, int by, int bz) {
     if (!self || !self->server()) return;
@@ -80,6 +62,7 @@ static void broadcastSleepMetadata(Player* self, bool sleeping,
         return pk;
     };
 
+    self->sendPacket(build(self->runtimeId()));
     self->sendPacket(build(0));
 
     auto viewerPk = build(self->runtimeId());
@@ -170,10 +153,12 @@ void Player::stopSleep() {
     // Player.php:1235-1238 sends AnimatePacket with action 3 via
     // $this->dataPacket — self only; the other clients already saw the
     // flag byte clear).
-    auto anim = std::make_shared<network::protocol::AnimatePacket>();
-    anim->eid    = 0;   // Genisys/Infinity: own entity == eid 0
-    anim->action = network::protocol::ANIMATE_ACTION_WAKE_UP;
-    sendPacket(anim);
+    for (int64_t eid : {(int64_t)runtimeId(), (int64_t)0}) {
+        auto anim = std::make_shared<network::protocol::AnimatePacket>();
+        anim->eid    = eid;
+        anim->action = network::protocol::ANIMATE_ACTION_WAKE_UP;
+        sendPacket(anim);
+    }
 
     if (srv_ && srv_->advancedLog()) {
         utils::MainLogger::get().info("[SLEEP] " + cfg_.username + " stopped sleeping");
