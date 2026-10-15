@@ -1,8 +1,7 @@
 /*
  _____                     _____ _
 /  __ \                   /  ___| |
-| /  \/_   _ _ __ ___  ___\ `--.| |_ ___  _ __   ___
-| |   | | | | '__/ __|/ _ \`--. \ __/ _ \| '_ \ / _ \
+| |   | | | | | '__/ __|/ _ \`--. \ __/ _ \| '_ \ / _ \
 | \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
  \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
 
@@ -20,13 +19,21 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// Nether — nether generator. Fills the chunk with netherrack
-// (block 87) up to y=128 and carves caves heavily with a high
-// frequency 3D noise. Lava lakes at low Y. No biomes.
+// Nether — vanilla-style Nether generator for the 0.15.x world height
+// (128 blocks, no biomes beyond HELL):
 //
-// El ruido es el mismo modulo vanilla del Overworld (noise/): una sola
-// fuente (MersenneRandom) y dos capas de PerlinNoise, una para el relieve y
-// otra para las cuevas. Antes usaba el SimplexNoise propio, que ya no existe.
+//   * bedrock floor (solid at y=0, jagged up to y=4) and bedrock roof
+//     (solid at y=127, jagged down to y=123), the natural vanilla
+//     distribution,
+//   * netherrack terrain shaped by 3D density noise: a mostly solid
+//     shell at both ends and a large cavern belt around y=64,
+//   * a still-lava sea filling the open space up to y=32,
+//   * features: quartz ore, soul sand and gravel patches, hidden lava
+//     pockets, glowstone clusters hanging under ceilings, ground fire.
+//
+// The noise is the shared vanilla module (noise/): one MersenneRandom
+// feeding a single 4-octave PerlinNoise evaluated in 3D, sampled
+// sparsely and trilinear-interpolated like the classic fast 3D field.
 #pragma once
 #include "Generator.h"
 #include "world/generator/noise/VanillaNoise.h"
@@ -43,10 +50,9 @@ public:
         return mcp_v3(128.0, 64.0, 128.0);
     }
 private:
-    // Tiene que ir primero: las dos capas toman &random_.
+    // Must be declared first: the noise layer holds a pointer to it.
     MersenneRandom random_;
-    PerlinNoise terrain_;
-    PerlinNoise cave_;
+    PerlinNoise noise_;
     int64_t seed_;
 };
 } // namespace

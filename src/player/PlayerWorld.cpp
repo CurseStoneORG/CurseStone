@@ -182,57 +182,102 @@ void Player::finishDimensionSwitch() {
 }
 
 // ---------------------------------------------------------------------
-// Helpers of portal in the world target (look for uno near or build).
+// Portal helpers of the target world (search nearby or build).
 // ---------------------------------------------------------------------
 namespace {
 
 using block::NETHER_PORTAL;
 
-/// @brief looks for a block of portal in chunks already loaded around of
-///        (x,z) and returns in (x,and,z) a position of exit safe
-///        next to to él. not forces generation of chunks.
-bool findPortalNear(world::World* w, double& x, double& y, double& z) {
-    const int R = 8;
-    int bx = (int)std::floor(x);
-    int bz = (int)std::floor(z);
-    for (int dx = -R; dx <= R; ++dx) {
-        for (int dz = -R; dz <= R; ++dz) {
-            int px = bx + dx, pz = bz + dz;
-            // only columns of chunks loaded: avoid generaciones
-            // síncronas in cascada during the búsqueda.
-            if (!w->isChunkLoaded(px, pz)) continue;
-            for (int yy = 1; yy < 126; ++yy) {
-                if (w->getBlockId(px, yy, pz) != NETHER_PORTAL) continue;
-                // exit: cell free next to to the portal (same ground).
-                static const int kOff[4][2] = {{1,0},{-1,0},{0,1},{0,-1}};
-                for (auto& o : kOff) {
-                    int ax = px + o[0], az = pz + o[1];
-                    uint8_t legs = w->getBlockId(ax, yy, az);
-                    uint8_t head = w->getBlockId(ax, yy + 1, az);
-                    uint8_t floorb = w->getBlockId(ax, yy - 1, az);
-                    if (legs == block::AIR && head == block::AIR &&
-                        floorb != block::AIR) {
-                        x = ax + 0.5;
-                        y = (double)yy;
-                        z = az + 0.5;
-                        return true;
-                    }
+// Linking radius: an existing portal within this distance of the scaled
+// coordinates is reused instead of building a new one.
+constexpr double kPortalSearchRadius = 128.0;
+// Resident-block scan around the target (catches portals the registry
+// does not know yet, e.g. lit moments ago by another player).
+constexpr int kBlockScanRadius = 8;
+
+struct PortalSpot {
+    int32_t x = 0, y = 0, z = 0;   // anchor portal block
+    uint8_t axis = 0;
+    double exit_x = 0, exit_y = 0, exit_z = 0;
+    bool has_exit = false;
+};
+
+/// @brief safe standing cell beside the portal block at (px,py,pz): a
+///        side neighbour with two air blocks over a solid floor.
+bool findExitNextTo(world::World* w, int px, int py, int pz, PortalSpot& spot) {
+    static const int kOff[4][2] = {{1,0},{-1,0},{0,1},{0,-1}};
+    for (auto& o : kOff) {
+        int ax = px + o[0], az = pz + o[1];
+        uint8_t legs   = w->getBlockId(ax, py, az);
+        uint8_t head   = w->getBlockId(ax, py + 1, az);
+        uint8_t floorb = w->getBlockId(ax, py - 1, az);
+        if (legs == block::AIR && head == block::AIR && floorb != block::AIR) {
+            spot.exit_x = ax + 0.5;
+            spot.exit_y = (double)py;
+            spot.exit_z = az + 0.5;
+            spot.has_exit = true;
+            return true;
+        }
+    }
+    return false;
+}
+
+/// @brief anchor of the portal the player is standing in (searches the
+///        immediate neighbourhood of the given position).
+bool findPortalAround(world::World* w, double px, double py, double pz,
+                      PortalArrival& out) {
+    int bx = (int)std::floor(px), by = (int)std::floor(py), bz = (int)std::floor(pz);
+    for (int dy = -1; dy <= 2; ++dy)
+        for (int dx = -1; dx <= 1; ++dx)
+            for (int dz = -1; dz <= 1; ++dz) {
+                int x = bx + dx, y = by + dy, z = bz + dz;
+                if (y < 0 || y > 255) continue;
+                if (w->getBlockId(x, y, z) == NETHER_PORTAL) {
+                    out = PortalArrival{x, y, z, w->getBlockData(x, y, z)};
+                    return true;
                 }
+            }
+    return false;
+}
+
+/// @brief adds a portal to the world registry (and persists it) unless
+///        the registry already knows it.
+void registerPortal(world::World* w, const PortalArrival& p) {
+    if (!w || p.x < 0 || w->portals().contains(p.x, p.y, p.z)) return;
+    w->portals().add(p.x, p.y, p.z, p.axis);
+    w->savePortals();
+}
+
+/// @brief scans resident chunks around (x,z) for a portal block.
+///        Discovery only — distant portals come from the registry.
+bool scanLoadedPortal(world::World* w, double x, double z, PortalSpot& out) {
+    int bx = (int)std::floor(x), bz = (int)std::floor(z);
+    for (int dx = -kBlockScanRadius; dx <= kBlockScanRadius; ++dx) {
+        for (int dz = -kBlockScanRadius; dz <= kBlockScanRadius; ++dz) {
+            int px = bx + dx, pz = bz + dz;
+            // Only resident chunks: no cascading synchronous generation
+            // during the scan — the registry covers the rest.
+            if (!w->isChunkLoaded(px, pz)) continue;
+            for (int yy = 1; yy < 127; ++yy) {
+                if (w->getBlockId(px, yy, pz) != NETHER_PORTAL) continue;
+                out.x = px; out.y = yy; out.z = pz;
+                out.axis = w->getBlockData(px, yy, pz);
+                findExitNextTo(w, px, yy, pz, out);
+                return true;
             }
         }
     }
     return false;
 }
 
-/// @brief and safe for construir a portal in the columna (x,z).
-///        in the Nether looks for a hueco of air about ground solid; in the
-///        surface baja from the sky until the primer block firme.
+/// @brief ground level for a new portal column (nether: a solid floor
+///        with headroom inside the caverns; overworld: the surface).
 int findPortalGroundY(world::World* w, int x, int z, bool nether) {
     if (nether) {
         for (int y = 32; y < 96; ++y) {
             uint8_t ground = w->getBlockId(x, y, z);
             if (ground == block::AIR || ground == block::FLOWING_LAVA ||
-                ground == block::LAVA || ground == block::NETHER_PORTAL) continue;
+                ground == block::LAVA || ground == NETHER_PORTAL) continue;
             uint8_t a1 = w->getBlockId(x, y + 1, z);
             uint8_t a2 = w->getBlockId(x, y + 2, z);
             uint8_t a3 = w->getBlockId(x, y + 3, z);
@@ -242,7 +287,7 @@ int findPortalGroundY(world::World* w, int x, int z, bool nether) {
                 return y + 1;
             }
         }
-        return 64;   // without hueco: buildPortal despeja the zona
+        return 64;   // no pocket found: buildPortalAt clears the area
     }
     for (int y = 126; y > 0; --y) {
         uint8_t id = w->getBlockId(x, y, z);
@@ -254,28 +299,26 @@ int findPortalGroundY(world::World* w, int x, int z, bool nether) {
     return 64;
 }
 
-/// @brief places a portal funcional (frame 4x5 + interior of portal to
-///        it along of the axis X) with the ground and the air around listos.
-///        returns the position where must aparecer the player.
-void buildPortalAt(world::World* w, int x, int z, double& ox, double& oy, double& oz) {
-    // World::setBlock ignora chunks not resident (decisión anti-freeze);
-    // the target suele be terrain recién generado, this way that the vecindario
-    // 3x3 of chunks is load here of way síncrona before write.
+/// @brief builds a working portal (4x5 obsidian frame + 2x3 interior
+///        along the X axis) with the ground and air around it ready.
+///        Returns the portal anchor and the player exit position.
+PortalSpot buildPortalAt(world::World* w, int x, int z) {
+    // World::setBlock ignores non-resident chunks (anti-freeze rule);
+    // the target is usually fresh terrain, so load the 3x3 chunk
+    // neighbourhood synchronously before writing.
     int32_t ccx = x >> 4, ccz = z >> 4;
-    for (int dx = -1; dx <= 1; ++dx) {
-        for (int dz = -1; dz <= 1; ++dz) {
+    for (int dx = -1; dx <= 1; ++dx)
+        for (int dz = -1; dz <= 1; ++dz)
             w->chunks().getChunk(ccx + dx, ccz + dz);
-        }
-    }
 
     bool nether = w->dimension() != 0;
     int gy = findPortalGroundY(w, x, z, nether);
 
-    // interior 2x3 with base in gy; frame of obsidian around.
+    // 2x3 interior with base at gy; obsidian frame around.
     int x0 = x, z0 = z;
     int y0 = gy;
 
-    // Despejar the zona (without touch bedrock ni the own obsidian).
+    // Clear the area (never touching bedrock or the obsidian itself).
     for (int dx = -1; dx <= 4; ++dx) {
         for (int dy = -1; dy <= 5; ++dy) {
             for (int dz = -1; dz <= 1; ++dz) {
@@ -288,7 +331,7 @@ void buildPortalAt(world::World* w, int x, int z, double& ox, double& oy, double
         }
     }
 
-    // frame: base, techo and laterales.
+    // Frame: base, top and side columns.
     for (int i = 0; i < 4; ++i) {
         w->setBlock(x0 + i, y0 - 1, z0, block::OBSIDIAN, 0);
         w->setBlock(x0 + i, y0 + 3, z0, block::OBSIDIAN, 0);
@@ -297,20 +340,25 @@ void buildPortalAt(world::World* w, int x, int z, double& ox, double& oy, double
         w->setBlock(x0, y0 + j, z0, block::OBSIDIAN, 0);
         w->setBlock(x0 + 3, y0 + j, z0, block::OBSIDIAN, 0);
     }
-    // interior with portal (meta 0 = axis X).
+    // Interior with portal (meta 0 = X axis).
     for (int i = 1; i <= 2; ++i) {
         for (int j = 0; j < 3; ++j) {
             w->setBlock(x0 + i, y0 + j, z0, NETHER_PORTAL, 0);
         }
     }
 
-    // Piso firme in front to the portal so that the exit not is to the empty.
+    // Firm floor in front of the portal so the exit is not mid-air.
     w->setBlock(x0 + 1, y0 - 1, z0 + 1, block::OBSIDIAN, 0);
     w->setBlock(x0 + 2, y0 - 1, z0 + 1, block::OBSIDIAN, 0);
 
-    ox = x0 + 1.5;
-    oy = (double)y0;
-    oz = z0 + 1.5;
+    PortalSpot spot;
+    spot.x = x0 + 1; spot.y = y0; spot.z = z0;
+    spot.axis = 0;
+    spot.exit_x = x0 + 1.5;
+    spot.exit_y = (double)y0;
+    spot.exit_z = z0 + 1.5;
+    spot.has_exit = true;
+    return spot;
 }
 
 } // namespace
@@ -354,24 +402,124 @@ void Player::checkPortal() {
 }
 
 // ---------------------------------------------------------------------
-// Viajes dimensionales.
+// Cross-dimension travel.
 // ---------------------------------------------------------------------
+//
+// resolvePortalDestination — finds (or creates) the arrival portal in
+// `target` for a trip whose scaled coordinates seed the search at
+// (x,y,z). Resolution order, closest to vanilla first:
+//   1. persistent registry of the target world (radius 128 blocks),
+//   2. portal blocks already resident in memory around the target,
+//   3. the remembered link of the last trip through this same portal
+//      (keeps round trips exact when the scaled coordinates miss it),
+//   4. build a fresh portal at the scaled target.
+// On success (x,y,z) holds the exit position and `arrival` the anchor
+// block of the arrival portal.
+bool Player::resolvePortalDestination(world::World* target, double& x, double& y,
+                                      double& z, PortalArrival& arrival) {
+    if (!target) return false;
+    arrival = PortalArrival{};
+
+    auto useSpot = [&](const PortalSpot& spot) {
+        arrival = PortalArrival{spot.x, spot.y, spot.z, spot.axis};
+        if (spot.has_exit) {
+            x = spot.exit_x; y = spot.exit_y; z = spot.exit_z;
+        } else {
+            // Unloaded surroundings: stand in the portal block; the
+            // in-portal flag keeps this from re-triggering the travel.
+            x = spot.x + 0.5; y = (double)spot.y; z = spot.z + 0.5;
+        }
+    };
+
+    // 1) Registry: portals discovered on earlier trips (persists across
+    //    restarts).
+    if (const auto* hit = target->portals().findNearest(x, y, z, kPortalSearchRadius)) {
+        // Make the portal's chunk resident before trusting block reads.
+        target->chunks().getChunk(hit->x >> 4, hit->z >> 4);
+        if (target->getBlockId(hit->x, hit->y, hit->z) == NETHER_PORTAL) {
+            PortalSpot spot;
+            spot.x = hit->x; spot.y = hit->y; spot.z = hit->z;
+            spot.axis = hit->axis;
+            findExitNextTo(target, hit->x, hit->y, hit->z, spot);
+            useSpot(spot);
+            return true;
+        }
+        // Stale entry (portal mined away): forget it and keep looking.
+        target->portals().remove(hit->x, hit->y, hit->z);
+        target->savePortals();
+    }
+
+    // 2) Resident portal blocks around the target.
+    PortalSpot spot;
+    if (scanLoadedPortal(target, x, z, spot)) {
+        registerPortal(target, PortalArrival{spot.x, spot.y, spot.z, spot.axis});
+        useSpot(spot);
+        return true;
+    }
+
+    // 3) Remembered link: re-entering the portal of the last trip goes
+    //    back through it even when the scaled coordinates would not find
+    //    it within the search radius.
+    world::World* from = getWorld();
+    uint8_t from_dim = from ? from->dimension() : 0;
+    if (portal_link_used_ && portal_link_bdim_ == target->dimension() &&
+        portal_link_adim_ == from_dim &&
+        std::abs(portal_link_ax_ - (int32_t)std::floor(pos_.x)) <= 2 &&
+        std::abs(portal_link_ay_ - (int32_t)std::floor(pos_.y)) <= 2 &&
+        std::abs(portal_link_az_ - (int32_t)std::floor(pos_.z)) <= 2) {
+        target->chunks().getChunk(portal_link_bx_ >> 4, portal_link_bz_ >> 4);
+        if (target->getBlockId(portal_link_bx_, portal_link_by_,
+                               portal_link_bz_) == NETHER_PORTAL) {
+            PortalSpot link;
+            link.x = portal_link_bx_; link.y = portal_link_by_;
+            link.z = portal_link_bz_;
+            link.axis = target->getBlockData(link.x, link.y, link.z);
+            findExitNextTo(target, link.x, link.y, link.z, link);
+            useSpot(link);
+            return true;
+        }
+    }
+
+    // 4) Nothing suitable: build a fresh portal at the scaled target.
+    spot = buildPortalAt(target, (int)std::floor(x), (int)std::floor(z));
+    registerPortal(target, PortalArrival{spot.x, spot.y, spot.z, spot.axis});
+    useSpot(spot);
+    return true;
+}
+
+void Player::storePortalLink(const PortalArrival& from, uint8_t from_dim,
+                             const PortalArrival& to, uint8_t to_dim) {
+    portal_link_used_ = from.x >= 0 && to.x >= 0;
+    if (!portal_link_used_) return;
+    portal_link_ax_ = from.x; portal_link_ay_ = from.y; portal_link_az_ = from.z;
+    portal_link_bx_ = to.x;   portal_link_by_ = to.y;   portal_link_bz_ = to.z;
+    portal_link_adim_ = from_dim;
+    portal_link_bdim_ = to_dim;
+}
+
 bool Player::teleportToNether() {
     if (!srv_ || !srv_->netherEnabled()) return false;
     world::World* nether = srv_->getWorldByName("nether");
     if (!nether) nether = srv_->loadWorld("nether", "nether");
     if (!nether) return false;
 
-    // the world of regreso is that which estamos abandonando now.
-    portal_return_ = getWorld();
+    // The world of return is the one being left now.
+    world::World* from = getWorld();
+    portal_return_ = from;
 
+    // The portal being entered anchors the trip: it joins the source
+    // world's registry and becomes the entry end of the travel link.
+    PortalArrival entry;
+    bool has_entry = from && findPortalAround(from, pos_.x, pos_.y, pos_.z, entry);
+    if (has_entry) registerPortal(from, entry);
+
+    // Scaled coordinates (8:1 overworld -> nether) seed the search.
     double nx = pos_.x / 8.0;
     double ny = 64.0;
     double nz = pos_.z / 8.0;
-    if (!findPortalNear(nether, nx, ny, nz)) {
-        buildPortalAt(nether, (int)std::floor(nx), (int)std::floor(nz),
-                      nx, ny, nz);
-    }
+    PortalArrival arrival;
+    if (!resolvePortalDestination(nether, nx, ny, nz, arrival)) return false;
+    if (has_entry) storePortalLink(entry, from->dimension(), arrival, nether->dimension());
     return switchWorld(nether, nx, ny, nz, true);
 }
 
@@ -381,14 +529,18 @@ bool Player::teleportToOverworld() {
                                           : srv_->getDefaultWorld();
     if (!target) return false;
     portal_return_ = nullptr;
+    world::World* from = getWorld();
+
+    PortalArrival entry;
+    bool has_entry = from && findPortalAround(from, pos_.x, pos_.y, pos_.z, entry);
+    if (has_entry) registerPortal(from, entry);
 
     double ox = pos_.x * 8.0;
     double oy = 64.0;
     double oz = pos_.z * 8.0;
-    if (!findPortalNear(target, ox, oy, oz)) {
-        buildPortalAt(target, (int)std::floor(ox), (int)std::floor(oz),
-                      ox, oy, oz);
-    }
+    PortalArrival arrival;
+    if (!resolvePortalDestination(target, ox, oy, oz, arrival)) return false;
+    if (has_entry) storePortalLink(entry, from->dimension(), arrival, target->dimension());
     return switchWorld(target, ox, oy, oz, true);
 }
 
