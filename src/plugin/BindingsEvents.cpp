@@ -25,6 +25,11 @@
 //   events.on("PlayerJoin", function(e) ... end)
 //   events.on("PlayerQuit", function(e) ... end)
 //   events.on("PlayerChat", function(e) ... end)
+//   events.on("PlayerMove", function(e) ... end)           -- cada movimiento
+//                                                         -- aceptado; e.cancel()
+//                                                         -- lo revierte
+//   events.on("PlayerDropItem", function(e) ... end)       -- tirar item (Q)
+//   events.on("PlayerItemHeld", function(e) ... end)       -- cambia de slot
 //   events.on("BlockBreak", function(e) ... end)
 //   events.on("BlockPlace", function(e) ... end)
 //   events.on("EntityDamage", function(e) ... end)          -- dano (cualquier causa)
@@ -35,10 +40,14 @@
 //     ("PlayerSleepInBed" funciona como alias del mismo evento)
 //   events.on("PlayerBedLeave", function(e) ... end)        -- se levanta
 //   events.on("DoorToggle", function(e) ... end)            -- puerta abierta/cerrada
-//   events.on("PlayerInteract", function(e) ... end)        -- clic en bloque
+//   events.on("PlayerInteract", function(e) ... end)        -- clic en bloque/aire
+//                                                         -- con el item en mano
 //
 // `e` es una tabla simple por invocación:
 //   - eventos de jugador: e.player (NOMBRE, string), e.message
+//   - PlayerMove: e.player, e.fromX/fromY/fromZ, e.toX/toY/toZ (números)
+//   - eventos de item (DropItem/ItemHeld/Interact): e.item_id, e.item_meta,
+//     e.item_count reflejan el stack implicado (0/nil si la mano está vacía)
 //   - eventos de bloque:  e.player, e.x, e.y, e.z, e.block_id
 //   - eventos de dano:    e.entity (víctima), e.amount (ESCRIBIBLE — la
 //     cantidad leída de vuelta se aplica), e.cause (string: "entity_attack",
@@ -60,6 +69,9 @@
 #include "event/player/PlayerBedEnterEvent.h"
 #include "event/player/PlayerBedLeaveEvent.h"
 #include "event/player/PlayerInteractEvent.h"
+#include "event/player/PlayerMoveEvent.h"
+#include "event/player/PlayerDropItemEvent.h"
+#include "event/player/PlayerItemHeldEvent.h"
 #include "event/block/BlockBreakEvent.h"
 #include "event/block/BlockPlaceEvent.h"
 #include "event/block/DoorToggleEvent.h"
@@ -156,6 +168,21 @@ void fillBlock(lua_State* L, int eIdx, EventT& ev) {
     lua_setfield(L, eIdx, "z");
     lua_pushinteger(L, (lua_Integer)ev.block_id);
     lua_setfield(L, eIdx, "block_id");
+}
+
+// fill del stack de item compartido por los eventos PlayerDropItem,
+// PlayerItemHeld y PlayerInteract: id/meta/count del stack implicado.
+void fillItemStack(lua_State* L, int eIdx, const char* prefix,
+                   const cursestone::item::ItemStack& st) {
+    lua_pushfstring(L, "%s_id", prefix);
+    lua_pushinteger(L, (lua_Integer)st.id);
+    lua_settable(L, eIdx);
+    lua_pushfstring(L, "%s_meta", prefix);
+    lua_pushinteger(L, (lua_Integer)st.meta);
+    lua_settable(L, eIdx);
+    lua_pushfstring(L, "%s_count", prefix);
+    lua_pushinteger(L, (lua_Integer)st.count);
+    lua_settable(L, eIdx);
 }
 
 // ---- helpers de los eventos de daño ----
@@ -342,11 +369,13 @@ int l_events_on(lua_State* L) {
         hook<event::block::DoorToggleEvent>(pl, ref, f, {});
     }
     else if (name == "PlayerInteract") {
-        // Right/left click against a block, fired for EVERY interaction
-        // attempt before any specific branch (chests, doors, beds,
-        // placement...) reacts. e.player, e.x, e.y, e.z, e.face
-        // (0=bottom..5=east, 255 = in-air), e.action ("right_click_block"
-        // today), e.cancel() blocks the whole interaction.
+        // Right/left click against a block, or an item use in the air
+        // (face 255 = no block). Fired for EVERY interaction attempt
+        // before any specific branch (chests, doors, beds, placement...)
+        // reacts. e.player, e.x, e.y, e.z, e.face (0=bottom..5=east, 255
+        // = in-air), e.action ("right_click_block", "left_click_block",
+        // "right_click_air"), the held stack as e.item_id/e.item_meta/
+        // e.item_count, e.cancel() blocks the whole interaction.
         auto f = [](lua_State* L, int eIdx, event::player::PlayerInteractEvent& ev) {
             fillPlayer<event::player::PlayerInteractEvent>(L, eIdx, ev);
             lua_pushnumber(L, (lua_Number)ev.blockX);
@@ -357,11 +386,70 @@ int l_events_on(lua_State* L) {
             lua_setfield(L, eIdx, "z");
             lua_pushnumber(L, (lua_Number)ev.face);
             lua_setfield(L, eIdx, "face");
-            lua_pushstring(L, ev.action == event::player::PlayerInteractEvent::RIGHT_CLICK_BLOCK
-                                  ? "right_click_block" : "left_click_block");
+            const char* act = "left_click_block";
+            if (ev.action == event::player::PlayerInteractEvent::RIGHT_CLICK_BLOCK)
+                act = "right_click_block";
+            else if (ev.action == event::player::PlayerInteractEvent::RIGHT_CLICK_AIR)
+                act = "right_click_air";
+            else if (ev.action == event::player::PlayerInteractEvent::LEFT_CLICK_AIR)
+                act = "left_click_air";
+            else if (ev.action == event::player::PlayerInteractEvent::PHYSICAL)
+                act = "physical";
+            lua_pushstring(L, act);
             lua_setfield(L, eIdx, "action");
+            fillItemStack(L, eIdx, "item", ev.item);
         };
         hook<event::player::PlayerInteractEvent>(pl, ref, f, {});
+    }
+    else if (name == "PlayerMove") {
+        // Fired for every accepted MovePlayerPacket (~20/s per moving
+        // player). e.player, e.fromX/fromY/fromZ, e.toX/toY/toZ (feet
+        // coordinates). e.cancel() reverts the client to the from
+        // position — the same protection-zones pattern the server
+        // already uses internally.
+        auto f = [](lua_State* L, int eIdx, event::player::PlayerMoveEvent& ev) {
+            lua_pushstring(L, ev.player ? ev.player->getName().c_str() : "");
+            lua_setfield(L, eIdx, "player");
+            lua_pushnumber(L, (lua_Number)ev.fromX);
+            lua_setfield(L, eIdx, "fromX");
+            lua_pushnumber(L, (lua_Number)ev.fromY);
+            lua_setfield(L, eIdx, "fromY");
+            lua_pushnumber(L, (lua_Number)ev.fromZ);
+            lua_setfield(L, eIdx, "fromZ");
+            lua_pushnumber(L, (lua_Number)ev.toX);
+            lua_setfield(L, eIdx, "toX");
+            lua_pushnumber(L, (lua_Number)ev.toY);
+            lua_setfield(L, eIdx, "toY");
+            lua_pushnumber(L, (lua_Number)ev.toZ);
+            lua_setfield(L, eIdx, "toZ");
+        };
+        hook<event::player::PlayerMoveEvent>(pl, ref, f, {});
+    }
+    else if (name == "PlayerDropItem") {
+        // Q / Ctrl+Q drop attempt, fired BEFORE the stack leaves the
+        // inventory. e.player, e.item_id, e.item_meta, e.item_count (the
+        // stack as it sits in the slot), e.cancel() keeps the item in
+        // the inventory and resyncs the slot to the client.
+        auto f = [](lua_State* L, int eIdx, event::player::PlayerDropItemEvent& ev) {
+            lua_pushstring(L, ev.player ? ev.player->getName().c_str() : "");
+            lua_setfield(L, eIdx, "player");
+            fillItemStack(L, eIdx, "item", ev.item);
+        };
+        hook<event::player::PlayerDropItemEvent>(pl, ref, f, {});
+    }
+    else if (name == "PlayerItemHeld") {
+        // Hotbar switch (MobEquipmentPacket). e.player, e.item_id,
+        // e.item_meta (what the new slot holds), e.slot (hotbar index
+        // 0..8), e.cancel() keeps the previous slot selected and resyncs
+        // the inventory to the client.
+        auto f = [](lua_State* L, int eIdx, event::player::PlayerItemHeldEvent& ev) {
+            lua_pushstring(L, ev.player ? ev.player->getName().c_str() : "");
+            lua_setfield(L, eIdx, "player");
+            fillItemStack(L, eIdx, "item", ev.item);
+            lua_pushinteger(L, (lua_Integer)ev.slot);
+            lua_setfield(L, eIdx, "slot");
+        };
+        hook<event::player::PlayerItemHeldEvent>(pl, ref, f, {});
     }
     else {
         luaL_unref(L, LUA_REGISTRYINDEX, ref);

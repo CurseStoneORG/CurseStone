@@ -38,6 +38,7 @@ LuaPlugin::LuaPlugin(std::string dir, std::string dataRoot)
     : dir_(std::move(dir)), dataRoot_(std::move(dataRoot)) {
     folderName_ = std::filesystem::path(dir_).filename().string();
     dataDir_ = dataRoot_ + "/" + folderName_;
+    resourcesDir_ = dir_ + "/resources";
 }
 
 LuaPlugin::~LuaPlugin() {
@@ -416,7 +417,12 @@ bool LuaPlugin::enable() {
             lua_remove(L_, -2);          // sacar la tabla, dejar solo la función
             ok = pcall(0, 0);
         } else {
-            lua_pop(L_, 2);              // no era función: sacar nil + tabla
+            // La tabla no trae onEnable: aceptar también la función global
+            // onEnable definida en el script de entrada.
+            lua_pop(L_, 2);
+            lua_getglobal(L_, "onEnable");
+            if (lua_isfunction(L_, -1)) ok = pcall(0, 0);
+            else lua_pop(L_, 1);
         }
     }
 
@@ -436,7 +442,8 @@ void LuaPlugin::disable() {
     if (!enabled_) return;               // ya está deshabilitado: no hacer nada
     enabled_ = false;
 
-    // onDisable (si existe) con pcall.
+    // onDisable (si existe) con pcall. Igual que en enable(): la tabla
+    // manda, y si no la trae se acepta la global onDisable.
     if (tableRef_ != LUA_NOREF) {
         lua_rawgeti(L_, LUA_REGISTRYINDEX, tableRef_);
         lua_getfield(L_, -1, "onDisable");
@@ -445,6 +452,9 @@ void LuaPlugin::disable() {
             pcall(0, 0);
         } else {
             lua_pop(L_, 2);
+            lua_getglobal(L_, "onDisable");
+            if (lua_isfunction(L_, -1)) pcall(0, 0);
+            else lua_pop(L_, 1);
         }
     }
 

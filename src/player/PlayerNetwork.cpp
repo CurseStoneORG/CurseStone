@@ -53,6 +53,7 @@
 #include "inventory/PlayerInventory.h"
 #include "event/EventManager.h"
 #include "event/inventory/InventoryClickEvent.h"
+#include "event/player/PlayerItemHeldEvent.h"
 #include "utils/MainLogger.hpp"
 #include <chrono>
 #include <cstdio>
@@ -405,7 +406,18 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                     if (selected > 8) selected = (int)me->hotbarSlot;
                     if (selected >= 0 && selected <= 8 &&
                         selected != inv_->getHeldItemIndex()) {
-                        inv_->setHeldItemIndex(selected);
+                        // PlayerItemHeldEvent — a plugin can veto the
+                        // hotbar switch; on cancel the old slot stays
+                        // selected and the inventory is resynced so the
+                        // client's prediction is rolled back too.
+                        auto ev = event::EventManager::get().fire<event::player::PlayerItemHeldEvent>(
+                            this, inv_->getItem(inv_->getHotbarSlotIndex(selected)),
+                            selected, (int)me->hotbarSlot);
+                        if (ev.isCancelled()) {
+                            sendInventory();
+                        } else {
+                            inv_->setHeldItemIndex(selected);
+                        }
                     }
                     if (srv_ && srv_->advancedLog()) {
                         utils::MainLogger::get().info("[INV] " + cfg_.username +
