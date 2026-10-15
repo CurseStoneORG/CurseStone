@@ -330,6 +330,29 @@ void Player::handleBlockBreak(int x, int y, int z) {
         }
     }
 
+    // Fire sitting on the broken block loses its support: vanilla lets it
+    // burn out on its next tick, and fire here is static by design, so the
+    // support break is the extinguish trigger. The removal goes to the same
+    // viewers so nobody keeps a floating flame.
+    if (y + 1 < 256 && lvl->getBlockId(x, y + 1, z) == block::FIRE) {
+        lvl->setBlock(x, y + 1, z, 0, 0);
+        auto fubp = std::make_shared<network::protocol::UpdateBlockPacket>();
+        fubp->x = x;
+        fubp->z = z;
+        fubp->y = (uint8_t)(y + 1);
+        fubp->blockId = 0;
+        fubp->blockData = 0;
+        fubp->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
+        if (srv_) {
+            for (auto& other : srv_->playersSnapshot()) {
+                if (!other || other->getWorld() != lvl) continue;
+                if (!other->canSeeBlock(cx, cz)) continue;
+                if (!other->spawned()) continue;
+                other->sendPacket(fubp);
+            }
+        }
+    }
+
     // ---- Partner half removal (doors + beds) ----
     // Only when the partner cell actually still holds the matching block
     // (a stale/meta-mismatched neighbour is left alone — corrupt saves

@@ -50,17 +50,21 @@ namespace cursestone {
 // could — the "only my upper half can pick things up" report.
 constexpr double kEyeHeight = 1.62;
 
-// Construye la entrada de metadata que describe la pose de un jugador:
-// Entity::DATA_FLAGS = 0 (byte), bit 1 = SNEAKING, bit 3 = SPRINTING
-// (Genisys Entity.php:87-105). Se mandan los dos bits juntos porque
-// comparten la misma propiedad.
+// Builds the metadata entry describing a player's pose:
+// Entity::DATA_FLAGS = 0 (byte) — bit 0 = ON_FIRE, bit 1 = SNEAKING,
+// bit 3 = SPRINTING (protocol 84 entity metadata). Protocol 84 clients
+// render the burning effect (flames + fire overlay) from the ON_FIRE bit
+// alone. All bits share the same property, so they always travel together
+// as the full byte.
 inline network::protocol::SetEntityDataPacket::Entry makePoseFlagEntry(bool sneaking,
                                                                       bool sprinting,
-                                                                      bool action = false) {
+                                                                      bool action = false,
+                                                                      bool onFire = false) {
     network::protocol::SetEntityDataPacket::Entry e;
     e.index = network::protocol::SetEntityDataPacket::PROP_FLAGS;
     e.type  = network::protocol::SetEntityDataPacket::TYPE_BYTE;
     uint8_t flags = 0;
+    if (onFire)    flags |= (1 << network::protocol::SetEntityDataPacket::FLAG_BIT_ONFIRE);
     if (sneaking)  flags |= (1 << network::protocol::SetEntityDataPacket::FLAG_BIT_SNEAKING);
     if (sprinting) flags |= (1 << network::protocol::SetEntityDataPacket::FLAG_BIT_SPRINTING);
     if (action)    flags |= (1 << network::protocol::SetEntityDataPacket::FLAG_BIT_ACTION);

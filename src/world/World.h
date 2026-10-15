@@ -51,6 +51,7 @@ namespace tile { class Tile; }
 namespace world::generator { class Generator; }
 }
 namespace cursestone::world {
+namespace particle { class Particle; }
 
 // ArrowEntity — lightweight record of a flying/stuck arrow (protocol 84
 // entity type 80). Follows the DroppedItem pattern: the client integrates
@@ -382,6 +383,11 @@ public:
     std::vector<ArrowEntity*> arrows();
     // Atomic pickup claim — same semantics as tryClaimDroppedItem.
     bool tryClaimArrow(int64_t eid);
+
+    // Broadcasts one level particle (protocol 84: LevelEventPacket with
+    // evid = EVENT_ADD_PARTICLE_MASK | type) to every player who can see
+    // the chunk it plays in.
+    void addParticle(const particle::Particle& p);
 
     // ----- Falling-block physics (protocol 84 / Infinity FallingSand) -----
     // Converts the block cell (bx,by,bz) into a falling entity: reads the
