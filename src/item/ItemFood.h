@@ -25,8 +25,14 @@
 namespace cursestone::item {
 class ItemFood : public Item {
   public:
-    ItemFood(uint16_t id, int food, float saturation = 0.6f)
-        : Item(id), food_(food), saturation_(saturation) {
+    // food: hunger points restored (half drumsticks). saturation: hidden
+    // saturation restored (drains before hunger). always_edible: can be
+    // eaten at full hunger. residue_id: item swapped in when the stack
+    // empties (bowl for stews, 0 = nothing).
+    ItemFood(uint16_t id, int food, float saturation = 0.6f, bool always_edible = false,
+             uint16_t residue_id = 0)
+        : Item(id), food_(food), saturation_(saturation), always_edible_(always_edible),
+          residue_id_(residue_id) {
     }
     bool isFood() const override {
         return true;
@@ -34,12 +40,26 @@ class ItemFood : public Item {
     int foodPoints() const override {
         return food_;
     }
+    int foodPoints(uint8_t) const override {
+        return food_;
+    }
+    float foodSaturation(uint8_t) const override {
+        return saturation_;
+    }
     float saturation() const {
         return saturation_;
     }
+    bool alwaysEdible() const override {
+        return always_edible_;
+    }
+    uint16_t eatResidueId() const override {
+        return residue_id_;
+    }
 
-  private:
+  protected:
     int food_;
     float saturation_;
+    bool always_edible_;
+    uint16_t residue_id_;
 };
 } // namespace

@@ -28,6 +28,11 @@
 #include <string>
 #include <vector>
 #include <memory>
+
+namespace cursestone {
+class Player; // hunger system: applyEatEffects hook
+}
+
 namespace cursestone::item {
 class Item {
   public:
@@ -75,6 +80,24 @@ class Item {
     virtual int foodPoints() const {
         return 0;
     }
+    // Hunger system hooks. The meta-aware variants let multi-variant
+    // items (e.g. fish) report per-variant values.
+    virtual int foodPoints(uint8_t) const {
+        return foodPoints();
+    }
+    virtual float foodSaturation(uint8_t) const {
+        return 0.6f;
+    }
+    // Edible even at full hunger (golden apples).
+    virtual bool alwaysEdible() const {
+        return false;
+    }
+    // Item left in the hand after eating (bowl for stews, 0 = none).
+    virtual uint16_t eatResidueId() const {
+        return 0;
+    }
+    // Side effects applied on eat (poison, hunger, regeneration...).
+    virtual void applyEatEffects(Player&) const {}
     // Singleton accessor. For block-derived items, defers to
     // the corresponding Block.
     static Item* get(uint16_t id);

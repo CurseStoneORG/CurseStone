@@ -35,6 +35,23 @@
 #include "ItemCarrot.h"
 #include "ItemMelon.h"
 #include "ItemGoldenApple.h"
+#include "ItemEnchantedGoldenApple.h"
+#include "ItemCookie.h"
+#include "ItemFish.h"
+#include "ItemCookedFish.h"
+#include "ItemBakedPotato.h"
+#include "ItemGoldenCarrot.h"
+#include "ItemMushroomStew.h"
+#include "ItemRottenFlesh.h"
+#include "ItemSpiderEye.h"
+#include "ItemPumpkinPie.h"
+#include "ItemRawMutton.h"
+#include "ItemCookedMutton.h"
+#include "ItemRawRabbit.h"
+#include "ItemCookedRabbit.h"
+#include "ItemRabbitStew.h"
+#include "ItemBeetroot.h"
+#include "ItemBeetrootSoup.h"
 #include "ItemDiamond.h"
 #include "ItemIronIngot.h"
 #include "ItemGoldIngot.h"
@@ -113,6 +130,23 @@ void Item::registerAll() {
     registerItem(std::make_unique<ItemCarrot>());
     registerItem(std::make_unique<ItemMelon>());
     registerItem(std::make_unique<ItemGoldenApple>());
+    registerItem(std::make_unique<ItemEnchantedGoldenApple>());
+    registerItem(std::make_unique<ItemCookie>());
+    registerItem(std::make_unique<ItemFish>());
+    registerItem(std::make_unique<ItemCookedFish>());
+    registerItem(std::make_unique<ItemBakedPotato>());
+    registerItem(std::make_unique<ItemGoldenCarrot>());
+    registerItem(std::make_unique<ItemMushroomStew>());
+    registerItem(std::make_unique<ItemRottenFlesh>());
+    registerItem(std::make_unique<ItemSpiderEye>());
+    registerItem(std::make_unique<ItemPumpkinPie>());
+    registerItem(std::make_unique<ItemRawMutton>());
+    registerItem(std::make_unique<ItemCookedMutton>());
+    registerItem(std::make_unique<ItemRawRabbit>());
+    registerItem(std::make_unique<ItemCookedRabbit>());
+    registerItem(std::make_unique<ItemRabbitStew>());
+    registerItem(std::make_unique<ItemBeetroot>());
+    registerItem(std::make_unique<ItemBeetrootSoup>());
     registerItem(std::make_unique<ItemDiamond>());
     registerItem(std::make_unique<ItemIronIngot>());
     registerItem(std::make_unique<ItemGoldIngot>());

@@ -460,6 +460,8 @@ void Player::handleBlockBreak(int x, int y, int z) {
     // client, and the pickup works to the 100%.
     bool creative = (cfg_.gamemode & 1) != 0;
     if (!creative) {
+        // Breaking a block costs 0.025 exhaustion (vanilla).
+        addExhaustion(0.025f);
         // Doors/beds drop their ITEM (324/330/355) instead of the raw
         // block id — see the two-half block comment above.
         auto drop = (forcedDropId != 0) ? std::make_pair(forcedDropId, forcedDropMeta)

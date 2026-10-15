@@ -571,9 +571,19 @@ class Player : public IPlayer,
 
     // --- Health/food (Nukkit: setHealth/getFoodData/isFoodEnabled) ---
     void setHealth(int h);
-    // Hunger HUD sync (protocol 84 UpdateAttributesPacket): shows the
-    // server-side food value on the client's hunger bar.
+    // Hunger HUD sync (protocol 84 UpdateAttributesPacket): pushes the
+    // hunger, saturation and exhaustion attributes in one packet.
     void sendFoodLevel();
+    // Hunger system: accumulates action exhaustion. Every 4.0 units drain
+    // 1 saturation first, then 1 food. Attributes sync on the next tick
+    // (see tickHungerAndDamage).
+    void addExhaustion(float amount);
+    float foodExhaustion() const {
+        return food_exhaustion_;
+    }
+    float foodSaturation() const {
+        return food_saturation_;
+    }
     // Health-only attribute sync (Infinity player::setHealth): updates
     // the hearts immediately after ANY health change.
     void sendHealthAttribute();
@@ -860,24 +870,28 @@ class Player : public IPlayer,
     // releaseBow (PlayerActionPacket ACTION_RELEASE_ITEM).
     int64_t bow_start_action_ = -1;
 
-    // --- Hunger + ambient damage state (Infinity player.php foodData) ---
-    float food_saturation_ = 5.0f;  // hidden saturation, drains before food
-    int food_tick_timer_ = 0;       // countdown to next exhaustion drain
-    int food_depletion_ = 0;        // accumulated exhaustion (Infinity: exhaustionLevel)
-    uint64_t last_pos_y_ = 0;       // last tick's and as uint64 for fall tracking
-    bool last_pos_set_ = false;     // first-move guard for fall damage
-    bool was_in_lava_ = false;      // lava-damage throttle (PMMP resetFireTicks semantics)
-    bool was_on_fire_ = false;      // fire-tick state (carry after leaving the block)
-    uint64_t last_fire_dmg_ms_ = 0; // fire damage interval gate (0.5s, vanilla)
-    uint64_t last_lava_dmg_ms_ = 0; // lava damage interval gate (0.5s, vanilla)
+    // --- Hunger + ambient damage state ---
+    // Exhaustion model: movement/mining/attacks/damage accumulate
+    // exhaustion; every 4.0 units drain 1 saturation, else 1 food.
+    float food_saturation_ = 5.0f;   // hidden saturation, drains before food
+    float food_exhaustion_ = 0.0f;   // exhaustion accumulator (drains at 4.0)
+    uint64_t last_eat_ms_ = 0;       // eat-cooldown gate (1.6 s, vanilla)
+    float tick_move_dist_ = 0.0f;    // horizontal distance moved this tick
+    bool food_attrs_dirty_ = false;  // food attributes need a re-send
+    uint64_t last_pos_y_ = 0;        // last tick's and as uint64 for fall tracking
+    bool last_pos_set_ = false;      // first-move guard for fall damage
+    bool was_in_lava_ = false;       // lava-damage throttle (PMMP resetFireTicks semantics)
+    bool was_on_fire_ = false;       // fire-tick state (carry after leaving the block)
+    uint64_t last_fire_dmg_ms_ = 0;  // fire damage interval gate (0.5s, vanilla)
+    uint64_t last_lava_dmg_ms_ = 0;  // lava damage interval gate (0.5s, vanilla)
     uint64_t last_fire_tick_dmg_ms_ = 0;
     uint64_t last_drown_dmg_ms_ = 0; // drowning damage interval gate (1s, vanilla)
     uint64_t last_cactus_dmg_ms_ = 0;
-    uint64_t last_regen_ms_ = 0;   // natural-regen gate (4s at food>=17)
-    int starve_ticks_ = 0;         // starve damage accumulator (80 ticks @1 dmg)
-    int air_ticks_ = 300;          // remaining air underwater (vanilla 300 ticks)
-    int fire_ticks_ = 0;           // remaining burn ticks (8s after fire/lava)
-    bool moved_this_tick_ = false; // set by handleMovePlayer, read by tickHungerAndDamage
+    uint64_t last_regen_ms_ = 0;     // natural-regen gate (4s at food>=18)
+    int starve_ticks_ = 0;           // starve damage accumulator (80 ticks @1 dmg)
+    int air_ticks_ = 300;            // remaining air underwater (vanilla 300 ticks)
+    int fire_ticks_ = 0;             // remaining burn ticks (8s after fire/lava)
+    bool moved_this_tick_ = false;   // set by handleMovePlayer, read by tickHungerAndDamage
     bool sprinting_ = false;       // client reports sprint (PlayerAction 9/10)
     bool sneaking_ = false;        // client reports crouch (PlayerAction 11/12)
 
