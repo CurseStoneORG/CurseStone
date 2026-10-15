@@ -775,7 +775,7 @@ void Player::announceTo(Player* viewer) {
     // while nosotros already estabamos agachados not nos shows of pie.
     auto pose = std::make_shared<network::protocol::SetEntityDataPacket>();
     pose->eid = runtimeId();
-    pose->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_));
+    pose->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_, false, isOnFire()));
     viewer->sendPacket(pose);
 }
 
@@ -816,6 +816,7 @@ void Player::respawn() {
     air_ticks_ = 300;
     fall_distance_ = 0.0f;
     was_on_fire_ = false;
+    fire_ticks_ = 0;   // a new life starts unburnt (the flags byte agrees)
     was_in_lava_ = false;
     starve_ticks_ = 0;
     food_tick_timer_ = 0;
@@ -988,6 +989,7 @@ void Player::onDeath() {
 
     // Cleanup at death: fire goes out, food resets for the next life.
     was_on_fire_ = false;
+    fire_ticks_ = 0;
     was_in_lava_ = false;
     fall_distance_ = 0.0f;
     food_saturation_ = 5.0f;

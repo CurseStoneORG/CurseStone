@@ -42,6 +42,9 @@
 #include "event/EventManager.h"
 #include "event/player/PlayerMoveEvent.h"
 #include "event/player/PlayerChatEvent.h"
+#include "event/player/PlayerInteractEvent.h"
+#include "network/protocol/UpdateBlockPacket.h"
+#include "redstone/RedstoneManager.h"
 #include "nbt/tag/CompoundTag.h"
 #include "utils/TextColor.h"
 #include "utils/Utils.h"
@@ -74,14 +77,14 @@ void Player::broadcastPoseFlags() {
     if (!srv_) return;
     auto pk = std::make_shared<network::protocol::SetEntityDataPacket>();
     pk->eid = runtimeId();
-    pk->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_));
+    pk->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_, false, isOnFire()));
 
     // Nos it mandamos to nosotros with eid = 0, just like Genisys, for
     // that the client own not is quede with a pose contradicha.
     {
         auto self = std::make_shared<network::protocol::SetEntityDataPacket>();
         self->eid = 0;
-        self->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_));
+        self->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_, false, isOnFire()));
         sendPacket(self);
     }
 
@@ -251,7 +254,7 @@ void Player::handleChat(const std::string& message) {
     }
 }
 
-void Player::handlePlayerAction(int action, int x, int y, int z, int /*face*/) {
+void Player::handlePlayerAction(int action, int x, int y, int z, int face) {
     // PMMP: ACTION_START_BREAK=0, ACTION_ABORT_BREAK=1, ACTION_STOP_BREAK=2.
     //
     // bug fixed: "that is vea the animation when the block is va
@@ -295,6 +298,57 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int /*face*/) {
         double dz = pos_.z - (z + 0.5);
         double d2 = dx * dx + dy * dy + dz * dz;
         if (d2 > 10000.0 || y < 0 || y >= 256) return;
+
+        // ---- Fire extinguish on dig start (protocol 84 client rule) ----
+        // The 0.15 raycast passes through fire (it is not a dig target),
+        // so a punch at a flame reports START_BREAK on the block behind it
+        // plus the clicked face; the fire sits in the cell adjacent to that
+        // face. Removing it here is the only way a survival punch can put
+        // fire out, and it covers the creative tap as well.
+        if (action == network::protocol::PlayerActionPacket::ACTION_START_BREAK &&
+            face >= 0 && face < 6) {
+            auto* lvl = getWorld();
+            if (lvl) {
+                item::ItemStack held{};
+                if (inv_) held = inv_->getHeldItem();
+                bool inAir = lvl->getBlockId(x, y, z) == 0;
+                auto ev = event::EventManager::get().fire<event::player::PlayerInteractEvent>(
+                    this,
+                    inAir ? event::player::PlayerInteractEvent::LEFT_CLICK_AIR
+                          : event::player::PlayerInteractEvent::LEFT_CLICK_BLOCK,
+                    x, y, z, face, held);
+                if (ev.isCancelled()) {
+                    // Rejected interaction: heal the client's item prediction.
+                    if (inv_) sendSlot(inv_->heldSlot());
+                } else {
+                    static const int8_t fx[6] = {0, 0, 0, 0, -1, 1};
+                    static const int8_t fy[6] = {-1, 1, 0, 0, 0, 0};
+                    static const int8_t fz[6] = {0, 0, -1, 1, 0, 0};
+                    int32_t sx = x + fx[face], sy = y + fy[face], sz = z + fz[face];
+                    if (sy >= 0 && sy < 256 &&
+                        lvl->getBlockId(sx, sy, sz) == block::FIRE) {
+                        lvl->setBlock(sx, sy, sz, 0, 0);
+                        // Tell every viewer, the clicker included, the fire is gone.
+                        auto ubp = std::make_shared<network::protocol::UpdateBlockPacket>();
+                        ubp->x = sx;
+                        ubp->z = sz;
+                        ubp->y = (uint8_t)sy;
+                        ubp->blockId = 0;
+                        ubp->blockData = 0;
+                        ubp->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
+                        if (srv_) {
+                            for (auto& other : srv_->playersSnapshot()) {
+                                if (!other || other->getWorld() != lvl) continue;
+                                if (!other->canSeeBlock(sx >> 4, sz >> 4)) continue;
+                                if (!other->spawned()) continue;
+                                other->sendPacket(ubp);
+                            }
+                        }
+                        cursestone::redstone::notifyNeighbors(lvl, srv_, sx, sy, sz);
+                    }
+                }
+            }
+        }
 
         auto pa = std::make_shared<network::protocol::PlayerActionPacket>();
         pa->eid    = runtimeId();

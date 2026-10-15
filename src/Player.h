@@ -448,6 +448,9 @@ public:
     // --- Gamemode helpers (Nukkit: isSurvival/isCreative/isAdventure/isSpectator) ---
     bool isSurvival() const  { return cfg_.gamemode == 0; }
     bool isCreative() const  { return (cfg_.gamemode & 1) != 0; }
+    // True while the burn timer runs — the value broadcast in the
+    // DATA_FLAGS ON_FIRE bit (the burning visual on protocol 84).
+    bool isOnFire() const { return fire_ticks_ > 0; }
     bool isAdventure() const { return cfg_.gamemode == 2; }
     bool isSpectator() const { return cfg_.gamemode == 3; }
 
@@ -689,6 +692,11 @@ public:
         float amount, entity::Entity* damager,
         event::entity::DamageCause cause =
             event::entity::DamageCause::ENTITY_ATTACK) override;
+    // Entity virtual — burn-timer backend: raises the remaining burn time
+    // (never shortens it) and broadcasts the ON_FIRE metadata flag on the
+    // off->on edge; that flag is what renders the flame effect on
+    // protocol 84 clients.
+    void setOnFire(int seconds) override;
 
 private:
     Server* srv_;

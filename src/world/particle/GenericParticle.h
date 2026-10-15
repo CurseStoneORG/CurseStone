@@ -25,6 +25,7 @@
 namespace cursestone::world::particle {
 class GenericParticle : public Particle {
 public:
-    GenericParticle(ParticleId id, Position pos) : Particle(id, pos) {}
+    GenericParticle(ParticleId id, Position pos, int32_t data = 0)
+        : Particle(id, pos, data) {}
 };
 } // namespace

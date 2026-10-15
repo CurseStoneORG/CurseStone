@@ -105,6 +105,19 @@ void Player::onHealthChanged() {
     sendHealthAttribute();
 }
 
+// Entity::setOnFire — burn-timer backend behind the fire/lava contact
+// above. Extending a burn never restarts it and the ON_FIRE metadata flag
+// travels with the pose byte exactly on the off->on edge: protocol 84
+// clients render the flame effect from that flag alone, so keeping the
+// broadcast on the transition avoids a per-tick metadata flood.
+void Player::setOnFire(int seconds) {
+    int ticks = seconds * 20;
+    if (ticks <= fire_ticks_) return;   // an equal or longer burn is running
+    bool wasBurning = fire_ticks_ > 0;
+    fire_ticks_ = ticks;
+    if (!wasBurning) broadcastPoseFlags();
+}
+
 // --- Hunger + ambient damage pipeline (Infinity Player.php foodData/
 // processMovement) — runs once per tick for every spawned player. ---
 void Player::tickHungerAndDamage(uint64_t current_tick) {
@@ -143,7 +156,10 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
             damage(2.0f, event::entity::DamageCause::DROWNING); // 1 heart/s
         }
         // Water extinguishes fire (vanilla) and cancels pending fall damage.
-        fire_ticks_ = 0;
+        if (fire_ticks_ > 0) {
+            fire_ticks_ = 0;
+            broadcastPoseFlags();   // burn ended: clear the ON_FIRE flag
+        }
         was_on_fire_ = false;
         fall_distance_ = 0.0f;
     } else {
@@ -156,7 +172,10 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
     if (isDead()) return;
     // Burn timer: set to 160 ticks (8s) on fire/lava contact; when it
     // reaches 0 the player stops burning (vanilla setOnFire semantics).
-    if (fire_ticks_ > 0 && --fire_ticks_ == 0) was_on_fire_ = false;
+    if (fire_ticks_ > 0 && --fire_ticks_ == 0) {
+        was_on_fire_ = false;
+        broadcastPoseFlags();   // burn ended: clear the ON_FIRE flag
+    }
 
     // ---------- 2. Fall damage (Infinity processMovement) ----------
     // Distance is accumulated in handleMovePlayer(); here the damage is
@@ -179,9 +198,10 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
             if (!creative) damage(4.0f, event::entity::DamageCause::LAVA); // 2 hearts
         }
         was_in_lava_ = true;
-        was_on_fire_ = true;
-        setOnFire(8);
-        fire_ticks_ = 160;   // 8s of burning (vanilla)
+        if (!creative) {
+            was_on_fire_ = true;
+            setOnFire(8);   // 8s of burning (vanilla); raises the ON_FIRE flag
+        }
     } else {
         was_in_lava_ = false;
         if (was_on_fire_ && !creative) {
@@ -197,9 +217,10 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
             last_fire_dmg_ms_ = now_ms;
             if (!creative) damage(1.0f, event::entity::DamageCause::FIRE);
         }
-        was_on_fire_ = true;
-        setOnFire(8);
-        fire_ticks_ = 160;   // 8s of burning (vanilla)
+        if (!creative) {
+            was_on_fire_ = true;
+            setOnFire(8);   // 8s of burning (vanilla); raises the ON_FIRE flag
+        }
     }
     if (at == block::CACTUS) {
         if (now_ms - last_cactus_dmg_ms_ >= 500) {

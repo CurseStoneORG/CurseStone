@@ -121,7 +121,7 @@ void Player::handleUseItemAir(int16_t heldItemId) {
     // The whole flag byte goes out so the sneak/sprint bits survive.
     auto pk = std::make_shared<network::protocol::SetEntityDataPacket>();
     pk->eid = runtimeId();
-    pk->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_, true));
+    pk->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_, true, isOnFire()));
     for (auto& other : srv_->playersSnapshot()) {
         if (!other || other.get() == this) continue;
         if (other->isPendingRemoval()) continue;
@@ -143,7 +143,7 @@ void Player::releaseBow() {
 
     auto clearPk = std::make_shared<network::protocol::SetEntityDataPacket>();
     clearPk->eid = runtimeId();
-    clearPk->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_, false));
+    clearPk->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_, false, isOnFire()));
     for (auto& other : srv_->playersSnapshot()) {
         if (!other || other.get() == this) continue;
         if (other->isPendingRemoval()) continue;

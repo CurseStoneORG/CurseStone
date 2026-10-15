@@ -72,6 +72,10 @@ public:
     static constexpr int16_t EVENT_SOUND_DOOR             = 1003;
     // ---- Particle event ids (PMMP LevelEventPacket::EVENT_PARTICLE_*) ----
     static constexpr int16_t EVENT_PARTICLE_DESTROY      = 2001;  // break particle + sound
+    // Generic particle events: evid = EVENT_ADD_PARTICLE_MASK | type, with
+    // the type in the low 12 bits (protocol 84 — e.g. critical particles
+    // are 0x4000 | 2). data carries the particle payload (scale / color).
+    static constexpr int16_t EVENT_ADD_PARTICLE_MASK     = 0x4000;
     // ---- Weather event ids (Dr1xyDev/Infinity LevelEventPacket, MCPE 0.15.10) ----
     // NOTE: on protocol 84 START_THUNDER is 3002 and STOP_RAIN is 3003 —
     // the intuitive order (start=odd, stop=even) is WRONG here and the

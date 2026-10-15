@@ -58,6 +58,8 @@
 #include "network/protocol/SetEntityDataPacket.h"
 #include "network/protocol/AddItemEntityPacket.h"
 #include "network/protocol/EntityEventPacket.h"
+#include "world/particle/Particle.h"
+#include "world/particle/GenericParticle.h"
 #include "network/protocol/SetHealthPacket.h"
 #include "network/protocol/SetTimePacket.h"
 #include "scheduler/ServerScheduler.h"
@@ -1053,6 +1055,24 @@ bool World::tryClaimArrow(int64_t eid) {
     return true;
 }
 
+void World::addParticle(const particle::Particle& p) {
+    const auto& pos = p.position();
+    int32_t cx = (int32_t)std::floor(pos.x) >> 4;
+    int32_t cz = (int32_t)std::floor(pos.z) >> 4;
+    auto pk = std::make_shared<network::protocol::LevelEventPacket>();
+    pk->evid = (int16_t)(network::protocol::LevelEventPacket::EVENT_ADD_PARTICLE_MASK |
+                         (p.networkId() & 0xFFF));
+    pk->x = (float)pos.x;
+    pk->y = (float)pos.y;
+    pk->z = (float)pos.z;
+    pk->data = p.networkData();
+    for (auto& pl : Server::getInstance().playersSnapshot()) {
+        if (!pl || !pl->spawned() || pl->getWorld() != this) continue;
+        if (!pl->canSeeBlock(cx, cz)) continue;
+        pl->sendPacket(pk);
+    }
+}
+
 void World::tickArrows(uint64_t current_tick) {
     // Snapshot the raw pointers like tickDroppedItems does — the physics
     // pass holds no lock while it sends packets (lock-ordering rule).
@@ -1272,6 +1292,20 @@ void World::tickArrows(uint64_t current_tick) {
             double fh = std::sqrt(a->vx * a->vx + a->vz * a->vz);
             a->yaw   = (float)(std::atan2(a->vx, a->vz) * 180.0 / 3.14159265358979323846);
             a->pitch = (float)(std::atan2(a->vy, fh)     * 180.0 / 3.14159265358979323846);
+        }
+
+        // Critical particles along the flight path: one critical particle
+        // per airborne tick of a fully-charged shot, offset by a tiny
+        // random jitter (vanilla trajectory trail). They stop as soon as
+        // the arrow sticks or hits something.
+        if (a->critical && !a->stuck) {
+            particle::GenericParticle cp(
+                particle::PARTICLE_CRITICAL,
+                Position(a->x + 0.25 + ((std::rand() % 201) - 100) / 500.0,
+                         a->y + 0.25 + ((std::rand() % 201) - 100) / 500.0,
+                         a->z + 0.25 + ((std::rand() % 201) - 100) / 500.0),
+                2);
+            addParticle(cp);
         }
 
         // ---- updateMovement(): Infinity Entity::updateMovement() thresholds ----
