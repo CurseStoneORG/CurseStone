@@ -43,6 +43,7 @@
 #include "physics/Physics.h"
 #include "world/ChunkManager.h"
 #include "world/LightEngine.h"
+#include "world/PortalRegistry.h"
 #include "world/format/WorldProvider.h"
 namespace cursestone {
 class Player; class Entity;
@@ -204,6 +205,12 @@ public:
     /// @brief dimension of this world: 0 surface, 1 Nether.
     uint8_t dimension() const { return cfg_.dimension; }
     ChunkManager& chunks() { return chunks_; }
+    // Known nether portals of this world (persistent registry used by
+    // the cross-dimension portal search).
+    PortalRegistry& portals() { return portals_; }
+    // Flushes the portal registry to disk; called right after a new
+    // portal is registered so autosave drains never lose it.
+    void savePortals() { portals_.save(portals_path_); }
     /// @brief id of the block in coordinates of world. returns 0 if the
     ///        chunk not is loaded (not forces generation; for that is
     ///        chunks().getChunk()).
@@ -570,6 +577,8 @@ private:
     ChunkManager chunks_;
     std::shared_ptr<format::WorldProvider> provider_;
     std::shared_ptr<generator::Generator> generator_;
+    PortalRegistry portals_;          // known nether portals ("<world dir>/portals.dat")
+    std::string    portals_path_;     // set in the constructor
     mcp_vector3_t spawn_;
     std::unordered_map<uint64_t, class ChunkLoader*> loaders_;
 

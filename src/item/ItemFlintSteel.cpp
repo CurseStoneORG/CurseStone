@@ -202,6 +202,18 @@ static void broadcastBlockUpdate(Player* player, world::World* world,
     }
 }
 
+/// @brief Registers a lit portal in its world's persistent portal
+///        registry (anchor = first interior cell) so cross-dimension
+///        travel can find it later.
+static void registerLitPortal(world::World* world,
+                              const std::vector<FilledCell>& filled) {
+    if (!world || filled.empty()) return;
+    const FilledCell& anchor = filled.front();
+    world->portals().add(std::get<0>(anchor), std::get<1>(anchor),
+                         std::get<2>(anchor), std::get<3>(anchor));
+    world->savePortals();
+}
+
 /// @brief Broadcasts every portal cell the detection filled, each one
 ///        with its own axis metadata (0 = X plane, 1 = Z plane). Sending
 ///        a fixed meta here made Z-plane portals render with the wrong
@@ -256,6 +268,7 @@ bool ItemFlintSteel::onActivate(world::World* world, Player* player,
         if (tryPortalPlaneX(world, tx, ty, tz, filled) ||
             tryPortalPlaneZ(world, tx, ty, tz, filled)) {
             broadcastFilledCells(player, world, filled);
+            registerLitPortal(world, filled);
             applyDurability(player);
             return true;
         }
@@ -278,6 +291,7 @@ bool ItemFlintSteel::onActivate(world::World* world, Player* player,
             (tryPortalPlaneX(world, tx, by, tz, filled) ||
              tryPortalPlaneZ(world, tx, by, tz, filled))) {
             broadcastFilledCells(player, world, filled);
+            registerLitPortal(world, filled);
             applyDurability(player);
             return true;
         }

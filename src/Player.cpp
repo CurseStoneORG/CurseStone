@@ -374,6 +374,9 @@ void Player::setGamemode(int gm) {
     bool was_creative = (cfg_.gamemode & 1) != 0;
     bool is_creative  = (new_gm        & 1) != 0;
     cfg_.gamemode = new_gm;
+    // A mode switch cancels any fall in progress: distance accumulated
+    // before the switch must never land as damage in the other mode.
+    if (was_creative != is_creative) fall_distance_ = 0.0f;
     // Re-send creative inventory when creative state changes (PMMP
     // player.php:1461 sends it on every gamemode change).
     if (was_creative != is_creative || new_gm == 3) {

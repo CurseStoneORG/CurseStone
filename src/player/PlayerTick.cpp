@@ -163,13 +163,16 @@ void Player::handleMovePlayer(double x, double y, double z, float yaw, float pit
     pos_.x = x; pos_.y = ny; pos_.z = z;
     yaw_ = yaw; pitch_ = pitch;
 
-    // ---- Fall-distance tracking (Infinity processMovement) ----
+    // ---- Fall-distance tracking ----
     // While airborne: descending moves accumulate distance, rising moves
     // (jump/climb) reset the baseline. Ground contact does NOT reset here
     // — the accumulated distance must survive until tickHungerAndDamage()
     // applies the damage exactly once (it resets the accumulator after).
+    // Creative never accumulates: a fall performed while flying must not
+    // land as damage later, even if the mode switches before touchdown.
     if (!mp_onGround) {
-        if (dy < 0.0) fall_distance_ += (float)(-dy);   // accumulating fall
+        if (isCreative()) fall_distance_ = 0.0f;        // immune to fall damage
+        else if (dy < 0.0) fall_distance_ += (float)(-dy);   // accumulating fall
         else fall_distance_ = 0.0f;                     // rising — baseline reset
     }
     moved_this_tick_ = true;

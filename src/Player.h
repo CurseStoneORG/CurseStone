@@ -57,6 +57,13 @@ namespace network::protocol { class DataPacket; class LoginPacket; class DropIte
 namespace inventory { class PlayerInventory; }
 namespace tile { class Tile; class TileChest; class TileFurnace; }
 
+// PortalArrival — anchor block of a nether portal (any interior portal
+// block) plus its axis metadata, as resolved by a cross-dimension trip.
+struct PortalArrival {
+    int32_t x = -1, y = 0, z = 0;   // anchor portal block (-1 = none)
+    uint8_t axis = 0;
+};
+
 struct PlayerConfig {
     std::string username;
     std::string uuid;
@@ -779,8 +786,28 @@ private:
     // world of surface of the that salió hacia the Nether, for volver
     // to the same (the plugins can create several worlds of surface).
     World*   portal_return_ = nullptr;
+    // Remembered pair of the last portal trip: entry anchor (in the
+    // dimension left behind) and exit anchor (in the dimension arrived
+    // at). Session-scoped. When the coordinate search of a return trip
+    // finds nothing, the pair is used instead of building a duplicate,
+    // so round trips land exactly where they started.
+    bool     portal_link_used_ = false;
+    int32_t  portal_link_ax_ = 0, portal_link_ay_ = 0, portal_link_az_ = 0;
+    int32_t  portal_link_bx_ = 0, portal_link_by_ = 0, portal_link_bz_ = 0;
+    uint8_t  portal_link_adim_ = 0, portal_link_bdim_ = 0;
+
     bool  on_ground_fall_check_ = true; // last client-reported onGround
     float fall_distance_ = 0.0f;     // accumulated fall distance in blocks
+
+    // Cross-dimension portal resolution (see player/PlayerWorld.cpp):
+    // registry of the target world → resident portal blocks → remembered
+    // link → new portal. On success fills (x,y,z) with the exit position
+    // and `arrival` with the anchor block of the arrival portal.
+    bool resolvePortalDestination(World* target, double& x, double& y,
+                                  double& z, PortalArrival& arrival);
+    // Stores the entry/exit pair of a completed trip.
+    void storePortalLink(const PortalArrival& from, uint8_t from_dim,
+                         const PortalArrival& to, uint8_t to_dim);
 
     // Fix #3: shared spiral algorithm — single source of truth.
     static std::vector<std::pair<int32_t,int32_t>>

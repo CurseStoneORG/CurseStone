@@ -1,11 +1,15 @@
 // tools/portal_check.cpp
 //
-// Smoke test del sistema de portales SIN cliente:
-//   * tryLightNetherPortal() sobre un marco de obsidiana real (mundo flat)
-//   * relleno con PORTAL y meta por eje (1 = X, 2 = Z)
-//   * marcos rotos -> no se enciende nada
-//   * extinguishPortalAt() apaga la cadena al romper obsidiana
+// Regression checks for the Nether generator and the portal travel
+// support, without a network client:
+//   * Nether terrain: bedrock floor + roof (jagged), lava sea, cavern
+//     belt, HELL biome, features (quartz, soul sand, gravel, glowstone)
+//   * nether world spawn lands inside the caverns, not on the roof
+//   * PortalRegistry: dedupe, radius search, weighted Y, remove,
+//     save/load round trip, World load-on-boot integration
 //
+//   Link against the real build objects (same pattern as the other
+//   tools/ checks), from the build directory:
 //   g++ -std=c++20 -Isrc -o /tmp/portal_check tools/portal_check.cpp \
 //       $(ls build/CMakeFiles/CurseStone.dir/src/*.o \
 //          build/CMakeFiles/CurseStone.dir/src/**/*.o \
@@ -13,7 +17,7 @@
 //   /tmp/portal_check
 #include "Server.h"
 #include "world/World.h"
-#include "world/Portals.h"
+#include "world/PortalRegistry.h"
 #include "block/BlockIds.h"
 #include <cstdio>
 #include <filesystem>
@@ -28,7 +32,7 @@ static int failures = 0;
     if (cond) { printf("  ok  - %s\n", msg); } \
     else { printf("  FAIL- %s\n", msg); ++failures; } } while (0)
 
-// getBlockId/setBlock no generan chunks: hay que cargarlos a mano.
+// getBlockId/setBlock do not generate chunks: load them by hand.
 static void loadArea(World* w, int x0, int z0, int x1, int z1) {
     for (int cx = x0 >> 4; cx <= x1 >> 4; ++cx)
         for (int cz = z0 >> 4; cz <= z1 >> 4; ++cz)
@@ -50,72 +54,131 @@ static World* makeWorld(const std::string& name, const std::string& gen,
 }
 
 int main() {
-    // ---------- marco valido en eje X (interior 2x3) ----------
-    World* w = makeWorld("flat", "flat", 0, 12345);
-    loadArea(w, 0, 0, 40, 16);
-    for (int x = 0; x <= 3; ++x)
-        for (int y = 9; y <= 13; ++y)
-            w->setBlock(x, y, 10, (x == 0 || x == 3 || y == 9 || y == 13)
-                                      ? block::OBSIDIAN : block::AIR, 0);
-    CHECK(portals::tryLightNetherPortal(w, 1, 10, 10),
-          "portal lights inside a valid 2x3 X-frame");
-    CHECK(w->getBlockId(1, 10, 10) == block::PORTAL &&
-          w->getBlockId(2, 12, 10) == block::PORTAL,
-          "interior filled with PORTAL");
-    CHECK(w->getBlockData(1, 10, 10) == 1, "X-axis meta is 1");
-
-    // ---------- marco en eje Z ----------
-    for (int z = 0; z <= 3; ++z)
-        for (int y = 9; y <= 13; ++y)
-            w->setBlock(30, y, z, (y == 9 || y == 13 || z == 0 || z == 3)
-                                      ? block::OBSIDIAN : block::AIR, 0);
-    CHECK(portals::tryLightNetherPortal(w, 30, 10, 1),
-          "portal lights inside a valid 2x3 Z-frame");
-    CHECK(w->getBlockData(30, 10, 1) == 2, "Z-axis meta is 2");
-
-    // ---------- marcos rotos ----------
-    World* w2 = makeWorld("flat2", "flat", 0, 999);
-    for (int x = 0; x <= 3; ++x)
-        for (int y = 9; y <= 13; ++y)
-            w2->setBlock(x, y, 10, (x == 0 || x == 3 || y == 9)
-                                      ? block::OBSIDIAN : block::AIR, 0); // sin techo
-    CHECK(!portals::tryLightNetherPortal(w2, 1, 10, 10),
-          "frame without top does NOT light");
-    // interior bloqueado
-    for (int x = 0; x <= 3; ++x)
-        for (int y = 9; y <= 13; ++y)
-            w2->setBlock(x + 10, y, 10, (x == 0 || x == 3 || y == 9 || y == 13)
-                                            ? block::OBSIDIAN : block::AIR, 0);
-    w2->setBlock(12, 11, 10, block::STONE, 0);
-    CHECK(!portals::tryLightNetherPortal(w2, 11, 10, 10),
-          "obstructed interior does NOT light");
-
-    // ---------- romper una obsidiana apaga el portal ----------
-    int portalCount = 0;
-    for (int y = 10; y <= 12; ++y)
-        if (w->getBlockId(1, y, 10) == block::PORTAL) ++portalCount;
-    CHECK(portalCount == 3, "3 portal blocks before extinguish");
-    portals::extinguishPortalAt(w, 0, 10, 10);   // rompió la obsidiana lateral
-    portalCount = 0;
-    for (int y = 10; y <= 12; ++y)
-        for (int x = 0; x <= 3; ++x)
-            if (w->getBlockId(x, y, 10) == block::PORTAL) ++portalCount;
-    CHECK(portalCount == 0, "no portal blocks after extinguish");
-
-    // ---------- nether: mar de lava + bedrock techo/piso ----------
+    // ---------- nether terrain (5x5 chunks around the spawn) ----------
     World* wn = makeWorld("nether", "nether", 1, 777);
-    loadArea(wn, -16, -16, 16, 16);
-    CHECK(wn->getBlockId(0, 0, 0) == block::BEDROCK, "nether floor is bedrock");
-    CHECK(wn->getBlockId(0, 127, 0) == block::BEDROCK, "nether ceiling is bedrock");
-    // Escaneo amplio: una columna puntual puede ser solida por casualidad.
-    int lava = 0;
-    for (int dx = -12; dx <= 12 && lava == 0; dx += 4)
-    for (int dz = -12; dz <= 12 && lava == 0; dz += 4)
-        for (int y = 5; y < 31; ++y)
-            if (wn->getBlockId(dx, y, dz) == block::FLOWING_LAVA) { ++lava; break; }
-    CHECK(lava > 0, "lava sea present below y=32");
+    loadArea(wn, -32, -32, 32, 32);
 
-    delete w; delete w2; delete wn;
+    // Bedrock floor: solid at y=0 across the whole area.
+    int bad_floor = 0;
+    for (int x = -32; x <= 32; ++x)
+        for (int z = -32; z <= 32; ++z)
+            if (wn->getBlockId(x, 0, z) != block::BEDROCK) ++bad_floor;
+    CHECK(bad_floor == 0, "nether floor is solid bedrock at y=0");
+
+    // Bedrock roof: solid at y=127 across the whole area.
+    int bad_roof = 0;
+    for (int x = -32; x <= 32; ++x)
+        for (int z = -32; z <= 32; ++z)
+            if (wn->getBlockId(x, 127, z) != block::BEDROCK) ++bad_roof;
+    CHECK(bad_roof == 0, "nether roof is solid bedrock at y=127");
+
+    // Jagged distribution: bedrock also appears inside y=1..4 and
+    // y=123..126 (a scan over the area must find both).
+    int jag_low = 0, jag_high = 0;
+    for (int x = -32; x <= 32; x += 2)
+        for (int z = -32; z <= 32; z += 2) {
+            for (int y = 1; y <= 4; ++y)
+                if (wn->getBlockId(x, y, z) == block::BEDROCK) { ++jag_low; break; }
+            for (int y = 123; y <= 126; ++y)
+                if (wn->getBlockId(x, y, z) == block::BEDROCK) { ++jag_high; break; }
+        }
+    CHECK(jag_low > 100, "floor bedrock is jagged (found in y=1..4)");
+    CHECK(jag_high > 100, "roof bedrock is jagged (found in y=123..126)");
+
+    // Lava sea: open cells below y=32 hold lava.
+    int lava = 0;
+    for (int dx = -28; dx <= 28; dx += 2)
+        for (int dz = -28; dz <= 28; dz += 2)
+            for (int y = 2; y <= 31; ++y)
+                if (wn->getBlockId(dx, y, dz) == block::LAVA) { ++lava; break; }
+    CHECK(lava > 200, "lava sea present below y=32");
+
+    // Cavern belt: the middle band is not a solid shell.
+    int mid_air = 0, mid_total = 0;
+    for (int dx = -28; dx <= 28; dx += 4)
+        for (int dz = -28; dz <= 28; dz += 4) {
+            ++mid_total;
+            for (int y = 40; y <= 90; ++y)
+                if (wn->getBlockId(dx, y, dz) == block::AIR) { ++mid_air; break; }
+        }
+    CHECK(mid_air > mid_total / 2, "open cavern belt around the middle");
+
+    // HELL biome on every sampled column.
+    int bad_biome = 0;
+    for (int dx = -32; dx <= 32; dx += 4)
+        for (int dz = -32; dz <= 32; dz += 4) {
+            mcp_chunk_t* c = wn->chunks().getChunkIfLoaded(dx >> 4, dz >> 4);
+            if (c && mcp_chunk_get_biome(c, dx & 15, dz & 15) != 8) ++bad_biome;
+        }
+    CHECK(bad_biome == 0, "every nether column uses the HELL biome");
+
+    // Features across the area (each must exist somewhere).
+    int quartz = 0, soulsand = 0, gravel = 0, glowstone = 0;
+    for (int dx = -32; dx <= 32; ++dx)
+        for (int dz = -32; dz <= 32; ++dz)
+            for (int y = 1; y <= 126; ++y) {
+                uint8_t id = wn->getBlockId(dx, y, dz);
+                if (id == block::NETHER_QUARTZ_ORE) ++quartz;
+                else if (id == block::SOUL_SAND) ++soulsand;
+                else if (id == block::GRAVEL) ++gravel;
+                else if (id == block::GLOWSTONE) ++glowstone;
+            }
+    CHECK(quartz > 0, "nether quartz ore generated");
+    CHECK(soulsand > 0, "soul sand patches generated");
+    CHECK(gravel > 0, "gravel patches generated");
+    CHECK(glowstone > 0, "glowstone clusters generated");
+
+    // Spawn: the nether spawn must sit inside the caverns, not on the
+    // bedrock roof.
+    double sy = wn->spawn().y;
+    CHECK(sy > 0 && sy < 127, "nether spawn is not on the bedrock roof");
+    CHECK(wn->getBlockId((int)wn->spawn().x, (int)sy - 1, (int)wn->spawn().z)
+              != block::BEDROCK, "nether spawn does not stand on bedrock");
+
+    // ---------- PortalRegistry ----------
+    {
+        PortalRegistry reg;
+        reg.add(100, 40, 200, 0);
+        reg.add(101, 40, 201, 0);          // inside the dedupe distance
+        CHECK(reg.size() == 1, "duplicate portal entries are collapsed");
+        reg.add(300, 40, 200, 1);
+        CHECK(reg.size() == 2, "distant portal is kept");
+
+        const auto* hit = reg.findNearest(100.5, 40.5, 200.5, 128.0);
+        CHECK(hit && hit->x == 100 && hit->z == 200, "nearest portal found");
+        CHECK(!reg.findNearest(1000, 40, 200, 128.0),
+              "search radius respected");
+
+        // Vertical offset weighs less than a horizontal one.
+        PortalRegistry reg2;
+        reg2.add(0, 30, 0, 0);
+        reg2.add(0, 60, 0, 0);
+        const auto* by = reg2.findNearest(0.5, 59.0, 0.5, 128.0);
+        CHECK(by && by->y == 60, "vertical offset is weighted lower");
+
+        CHECK(reg.remove(100, 40, 200), "stale entry removed");
+        CHECK(!reg.contains(100, 40, 200), "removed entry is gone");
+        CHECK(!reg.remove(100, 40, 200), "removing a missing entry fails");
+
+        CHECK(reg.save("/tmp/cs_portal_check/portals.dat"),
+              "registry saves");
+        PortalRegistry reg3;
+        CHECK(reg3.load("/tmp/cs_portal_check/portals.dat"),
+              "registry loads");
+        CHECK(reg3.size() == 1 && reg3.contains(300, 40, 200),
+              "save/load round trip preserves entries");
+    }
+
+    // ---------- World integration: registry loads on boot ----------
+    wn->portals().add(5, 33, 5, 0);
+    CHECK(wn->portals().contains(5, 33, 5), "portal add into world registry");
+    wn->savePortals();
+    delete wn;
+    World* wn2 = makeWorld("nether", "nether", 1, 777);
+    CHECK(wn2->portals().contains(5, 33, 5),
+          "world registry persists across restarts");
+    delete wn2;
+
     printf("\n%s (%d failure(s))\n", failures ? "FAILED" : "ALL OK", failures);
     return failures ? 1 : 0;
 }

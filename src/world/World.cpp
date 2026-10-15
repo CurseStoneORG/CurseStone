@@ -136,6 +136,11 @@ World::World(WorldConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
     ensureDir(worldsRoot);
     ensureDir(worldDir);
 
+    // Known portals load here: the cross-dimension search reads them and
+    // every new portal appends to the same file.
+    portals_path_ = worldDir + "/portals.dat";
+    portals_.load(portals_path_);
+
     // Create the WorldProvider FIRST (it does not need the generator, so
     // nothing depends on it being created after one).
     //
@@ -251,6 +256,10 @@ World::World(WorldConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
                 uint8_t id = getBlockId(sbx, y, sbz);
                 if (id == 0) continue;                                    // air
                 if (id == block::LEAVES || id == block::LEAVES_2) continue; // canopy
+                // Bedrock is never a standing surface: skipping it lets a
+                // nether world spawn inside the caverns instead of on top
+                // of the bedrock roof.
+                if (id == block::BEDROCK) continue;
                 uint8_t above = getBlockId(sbx, y + 1, sbz);
                 if (above == 0 || above == block::WATER ||
                     above == block::FLOWING_WATER) {
@@ -423,6 +432,8 @@ void World::onChunkAdded(int32_t cx, int32_t cz) {
 }
 
 int World::save() {
+    // Portal registry: tiny text file, rewritten on every full save.
+    portals_.save(portals_path_);
     // Write every dirty tile's NBT back into its chunk's tile_entities
     // array BEFORE flushing — flushDirty() is what actually serializes
     // each dirty chunk (tile_entities included) to the .mca region file,
