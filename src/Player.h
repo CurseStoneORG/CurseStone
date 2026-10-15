@@ -518,8 +518,8 @@ public:
     // sleepOn: ports Infinity Player::sleepOn(). Occupancy check against
     // other sleeping players at the same bed, fires PlayerBedEnterEvent
     // (cancellable), turns on the sleeping entity metadata
-    // (PROP_PLAYER_FLAGS bit 0 + PROP_PLAYER_BED_POSITION) for the other
-    // clients, sets this bed as the player's personal spawn point and
+    // (PROP_PLAYER_FLAGS bit 1 + PROP_PLAYER_BED_POSITION) for the viewers
+    // and the player itself, sets this bed as the player's personal spawn point and
     // arms the world sleep countdown (World::sleepTicks = 60). Returns
     // false when the bed is occupied or a listener cancelled the event.
     bool sleepOn(int bx, int by, int bz);
