@@ -67,6 +67,8 @@ struct ArrowEntity {
     // the entity actually moved/rotated (PMMP Entity::updateMovement).
     double   lx = 0.0, ly = 0.0, lz = 0.0;
     float    lyaw = 0.0f, lpitch = 0.0f;
+    // Last motion broadcast in SetEntityMotionPacket.
+    double   lmx = 0.0, lmy = 0.0, lmz = 0.0;
     uint64_t spawn_tick = 0;
     uint64_t flight_ticks = 0;      // ticksLived — gates self-hit ignore
     float    damage = 2.0f;         // Infinity Arrow: $damage = 2

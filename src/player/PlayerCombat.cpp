@@ -20,33 +20,6 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// PlayerCombat — the bow (protocol 84, ported from Dr1xyDev/Infinity
-// Player.php USE_ITEM_PACKET / PLAYER_ACTION_PACKET cases).
-//
-// The 0.15.10 bow handshake is a two-packet dance:
-//
-//   1. UseItemPacket with face == 0xFF (right-click in the AIR) while the
-//      bow is in hand → the client starts the draw animation locally and
-//      the server records the start tick + raises the ACTION pose flag so
-//      OTHER clients see the drawing pose (Infinity: setDataFlag(
-//      DATA_FLAGS, DATA_FLAG_ACTION, true); $this->startAction = tick).
-//   2. PlayerActionPacket ACTION_RELEASE_ITEM (=5 on protocol 84) when the
-//      player lets go → the server computes the charge force from the tick
-//      diff, spawns the Arrow entity (type 80) with the shot motion and
-//      consumes an arrow + a durability point (survival):
-//
-//          $diff = tick - startAction;  $p = $diff / 20;
-//          $f = min((($p**2) + $p * 2) / 3, 1) * 2;      // 0..2
-//          cancelled when $f < 0.1 or $diff < 5          // dry release
-//
-//      motion direction (Infinity arrow NBT):
-//          x = -sin(yaw) * cos(pitch);  y = -sin(pitch);  z = cos(yaw) * cos(pitch)
-//      (angles in radians from the DEGREE yaw/pitch fields.)
-//
-// The arrow itself lives in the World as a world::ArrowEntity record:
-// tickArrows() integrates the same physics the client integrates
-// (gravity 0.05) and corrects viewers with MoveEntityPacket — the same
-// "client integrates, server verifies" model the dropped items use.
 #include "Player.h"
 #include "PlayerInternal.h"
 #include "Server.h"
@@ -56,6 +29,7 @@
 #include "network/protocol/AddEntityPacket.h"
 #include "network/protocol/LevelEventPacket.h"
 #include "network/protocol/SetEntityDataPacket.h"
+#include "network/protocol/SetEntityMotionPacket.h"
 #include <cmath>
 #include <memory>
 
@@ -219,12 +193,21 @@ void Player::releaseBow() {
     add->speedX = (float)(dx * f);
     add->speedY = (float)(dy * f);
     add->speedZ = (float)(dz * f);
-    add->yaw = yaw_;
-    add->pitch = pitch_;
+    // Arrow orientation follows its motion (not the player's yaw/pitch).
+    double flat = std::sqrt(dx * dx + dz * dz);
+    float arrowYaw   = (float)(std::atan2(dx, dz) * 180.0 / kPi);
+    float arrowPitch = (float)(std::atan2(dy, flat) * 180.0 / kPi);
+    add->yaw = arrowYaw;
+    add->pitch = arrowPitch;
+
+    // The client needs the motion as its own packet to fly the arrow.
+    auto motion = std::make_shared<network::protocol::SetEntityMotionPacket>();
+    motion->entities.push_back({eid, (float)(dx * f), (float)(dy * f), (float)(dz * f)});
     for (auto& other : srv_->playersSnapshot()) {
         if (!other || !other->spawned()) continue;
         if (other->getWorld() != lvl) continue;
         other->sendPacket(add);
+        other->sendPacket(motion);
     }
 
     // Launch sound (Infinity: new LaunchSound($this) → EVENT_SOUND_SHOOT).
@@ -250,10 +233,11 @@ void Player::releaseBow() {
     a.vx = dx * f;
     a.vy = dy * f;
     a.vz = dz * f;
-    a.yaw = yaw_;
-    a.pitch = pitch_;
+    a.yaw = arrowYaw;
+    a.pitch = arrowPitch;
     a.lx = a.x; a.ly = a.y; a.lz = a.z;
-    a.lyaw = yaw_; a.lpitch = pitch_;
+    a.lyaw = arrowYaw; a.lpitch = arrowPitch;
+    a.lmx = a.vx; a.lmy = a.vy; a.lmz = a.vz;
     a.spawn_tick = srv_->getCurrentTick();
     a.flight_ticks = 0;
     a.damage = 2.0f;                 // Infinity Arrow: protected $damage = 2

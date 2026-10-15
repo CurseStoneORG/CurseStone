@@ -21,6 +21,7 @@
  *
  */
 #include "Player.h"
+#include "item/ItemIds.h"
 #include "world/World.h"
 #include "world/format/Chunk.h"
 #include "network/protocol/UpdateBlockPacket.h"
@@ -539,6 +540,13 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     if (face == 0xFF) {
         handleUseItemAir(heldItemId);
         return;
+    }
+
+    // The client may send the bow use against a block face while aiming at
+    // terrain; the draw must still start or the release would do nothing.
+    if (heldItemId == (int16_t)item::ITEM_BOW && face <= 5 &&
+        bow_start_action_ < 0 && srv_) {
+        bow_start_action_ = (int64_t)srv_->getCurrentTick();
     }
 
     // ---- Compute placed block position based on face ----
