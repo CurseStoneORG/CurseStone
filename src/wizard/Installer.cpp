@@ -47,12 +47,14 @@ std::string Installer::ask(const std::string& q, const std::string& def) {
     fputs(": ", stdout);
     fflush(stdout);
     char buf[1024];
-    if (fgets(buf, sizeof(buf), stdin) == nullptr) return def;
+    if (fgets(buf, sizeof(buf), stdin) == nullptr)
+        return def;
     std::string line(buf);
     while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
         line.pop_back();
     }
-    if (line.empty()) return def;
+    if (line.empty())
+        return def;
     return line;
 }
 bool Installer::askYesNo(const std::string& q, bool def) {
@@ -61,22 +63,27 @@ bool Installer::askYesNo(const std::string& q, bool def) {
 }
 int Installer::askInt(const std::string& q, int def) {
     std::string s = ask(q, std::to_string(def));
-    try { return std::stoi(s); } catch (...) { return def; }
+    try {
+        return std::stoi(s);
+    } catch (...) {
+        return def;
+    }
 }
 
 bool Installer::runWizard() {
-    if (!shouldRun()) return true;  // already configured
+    if (!shouldRun())
+        return true; // already configured
     utils::MainLogger::get().info("Welcome to CurseStone! First-run setup:");
     auto& lang = InstallerLang::get();
     lang.load("eng");
-    std::string name     = ask(lang.get("installer.name_question"), "CurseStone");
-    int max_players      = askInt(lang.get("installer.max_players_question"), 20);
-    int port              = askInt(lang.get("installer.port_question"), 19132);
+    std::string name = ask(lang.get("installer.name_question"), "CurseStone");
+    int max_players = askInt(lang.get("installer.max_players_question"), 20);
+    int port = askInt(lang.get("installer.port_question"), 19132);
     std::string world_name = ask(lang.get("installer.world_name_question"), "world");
     std::string world_type = ask(lang.get("installer.world_type_question"), "normal");
-    int gamemode          = askInt(lang.get("installer.gamemode_question"), 0);
-    int difficulty        = askInt(lang.get("installer.difficulty_question"), 1);
-    bool whitelist        = askYesNo(lang.get("installer.whitelist_question"), false);
+    int gamemode = askInt(lang.get("installer.gamemode_question"), 0);
+    int difficulty = askInt(lang.get("installer.difficulty_question"), 1);
+    bool whitelist = askYesNo(lang.get("installer.whitelist_question"), false);
 
     // Basic answers go to server.properties; the generator is an advanced
     // setting and goes to cursestone.yml.
@@ -105,8 +112,10 @@ bool Installer::runWizard() {
     fs::create_directories(data_path_);
     bool ok = props.saveIni(data_path_ + "/server.properties") &&
               adv.saveYaml(data_path_ + "/cursestone.yml");
-    if (ok) utils::MainLogger::get().info(lang.get("installer.done"));
-    else    utils::MainLogger::get().error("Failed to save config");
+    if (ok)
+        utils::MainLogger::get().info(lang.get("installer.done"));
+    else
+        utils::MainLogger::get().error("Failed to save config");
     return ok;
 }
 

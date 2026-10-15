@@ -37,10 +37,13 @@
 namespace cursestone::world {
 
 class SimpleChunkManager : public ChunkManager {
-public:
-    explicit SimpleChunkManager(int64_t seed) : seed_(seed) {}
+  public:
+    explicit SimpleChunkManager(int64_t seed) : seed_(seed) {
+    }
 
-    int64_t getSeed() const override { return seed_; }
+    int64_t getSeed() const override {
+        return seed_;
+    }
 
     mcp_chunk_t* getChunkIfLoaded(int32_t x, int32_t z) const override {
         auto it = chunks_.find(hash(x, z));
@@ -60,8 +63,11 @@ public:
         chunks_[key] = chunk;
     }
 
-    void markDirty(int32_t /*x*/, int32_t /*z*/) override {}
-    int flushDirty() override { return 0; }
+    void markDirty(int32_t /*x*/, int32_t /*z*/) override {
+    }
+    int flushDirty() override {
+        return 0;
+    }
 
     void setProvider(std::shared_ptr<format::WorldProvider> p) override {
         provider_ = std::move(p);
@@ -69,11 +75,15 @@ public:
     std::shared_ptr<format::WorldProvider> provider() const override {
         return provider_;
     }
-    size_t count() const override { return chunks_.size(); }
+    size_t count() const override {
+        return chunks_.size();
+    }
 
-    void cleanChunks() { chunks_.clear(); }
+    void cleanChunks() {
+        chunks_.clear();
+    }
 
-private:
+  private:
     static int64_t hash(int32_t x, int32_t z) {
         return ((int64_t)x << 32) | ((uint32_t)z);
     }

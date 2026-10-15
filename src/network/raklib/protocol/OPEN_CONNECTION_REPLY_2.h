@@ -35,13 +35,13 @@ extern "C" {
 
 typedef struct mcp_pkt_open_connection_reply_2 {
     mcp_packet_t header;
-    
-    uint8_t  magic[16];
-    int64_t  server_id;
-    uint8_t  client_ip[4];
+
+    uint8_t magic[16];
+    int64_t server_id;
+    uint8_t client_ip[4];
     uint16_t client_port;
     uint16_t mtu;
-    uint8_t  security_flag;
+    uint8_t security_flag;
 
 } mcp_pkt_open_connection_reply_2_t;
 

@@ -35,8 +35,8 @@ struct EventHandler {
     bool ignoreCancelled = false;
 
     EventHandler() = default;
-    EventHandler(EventPriority p, bool ignore = false)
-        : priority(p), ignoreCancelled(ignore) {}
+    EventHandler(EventPriority p, bool ignore = false) : priority(p), ignoreCancelled(ignore) {
+    }
 };
 
 } // namespace cursestone::event

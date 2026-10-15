@@ -38,7 +38,7 @@
 #include <cerrno>
 #include <thread>
 #include <chrono>
-#include <cstdlib>   // std::_Exit
+#include <cstdlib> // std::_Exit
 #include <zlib.h>
 #include "command/CommandMap.h"
 #include "command/SimpleCommandMap.h"
@@ -72,7 +72,7 @@
 #include "nbt/tag/ListTag.h"
 #include "utils/BinaryStream.h"
 #include "permission/BanList.h"
-#include "plugin/PluginManager.h"   // plugins Lua (fase 3)
+#include "plugin/PluginManager.h" // plugins Lua (fase 3)
 #include "utils/Config.h"
 #include "utils/DefaultConfig.h"
 
@@ -97,9 +97,11 @@ namespace {
 // Reads to boolean accepting true/on/yes/and/1 (case-insensitive).
 bool readBool(const utils::Config& cfg, const char* key, bool def) {
     std::string v = cfg.getString(key, std::string());
-    if (v.empty()) return def;
-    std::transform(v.begin(), v.end(), v.begin(),
-                   [](unsigned char c) { return std::tolower(c); });
+    if (v.empty())
+        return def;
+    std::transform(v.begin(), v.end(), v.begin(), [](unsigned char c) {
+        return std::tolower(c);
+    });
     return v == "true" || v == "on" || v == "yes" || v == "y" || v == "1";
 }
 
@@ -107,11 +109,11 @@ bool readBool(const utils::Config& cfg, const char* key, bool def) {
 
 void Server::loadConfig() {
     using utils::Config;
-    Config props;  // server.properties: basic settings
-    Config adv;    // cursestone.yml: advanced settings
+    Config props; // server.properties: basic settings
+    Config adv;   // cursestone.yml: advanced settings
 
     const std::string props_path = dataPath_ + "/server.properties";
-    const std::string yaml_path  = dataPath_ + "/cursestone.yml";
+    const std::string yaml_path = dataPath_ + "/cursestone.yml";
     if (props.loadIni(props_path)) {
         utils::MainLogger::get().info("Loaded config: " + props_path);
     } else {
@@ -124,38 +126,35 @@ void Server::loadConfig() {
     }
 
     // server.properties
-    ip_            = props.getString("server-ip", "0.0.0.0");
-    port_          = (uint16_t)props.getInt("server-port", 19132);
-    motd_          = props.getString("motd", "CurseStone");
-    max_players_   = (int)props.getInt("max-players", 20);
-    gamemode_      = (int)props.getInt("gamemode", 0);
-    difficulty_    = (int)props.getInt("difficulty", 1);
-    whitelist_     = readBool(props, "white-list", false);
-    online_mode_   = readBool(props, "online-mode", false);
+    ip_ = props.getString("server-ip", "0.0.0.0");
+    port_ = (uint16_t)props.getInt("server-port", 19132);
+    motd_ = props.getString("motd", "CurseStone");
+    max_players_ = (int)props.getInt("max-players", 20);
+    gamemode_ = (int)props.getInt("gamemode", 0);
+    difficulty_ = (int)props.getInt("difficulty", 1);
+    whitelist_ = readBool(props, "white-list", false);
+    online_mode_ = readBool(props, "online-mode", false);
     view_distance_ = (int)props.getInt("view-distance", 8);
 
     // cursestone.yml
-    async_workers_  = (int)adv.getInt("settings.async-workers", 4);
+    async_workers_ = (int)adv.getInt("settings.async-workers", 4);
     autosave_ticks_ = (int)adv.getInt("settings.autosave-ticks", 6000);
-    advanced_log_   = readBool(adv, "settings.advanced-log", true);
+    advanced_log_ = readBool(adv, "settings.advanced-log", true);
 
     // Both values must be set before the tick loop so the first GC pass
     // already honors the configured budget.
     MemoryManager::get().setLimitMB((int)adv.getInt("memory.max-mb", 512));
     MemoryManager::get().setGcIntervalTicks(
-        (uint64_t)std::max<int64_t>(
-            20, adv.getInt("memory.gc-interval-ticks", 200)));
+        (uint64_t)std::max<int64_t>(20, adv.getInt("memory.gc-interval-ticks", 200)));
 
     utils::MainLogger::get().info("Server port: " + std::to_string(port_));
     utils::MainLogger::get().info("Server IP: " + ip_);
     utils::MainLogger::get().info("MOTD: " + motd_);
     utils::MainLogger::get().info("Max players: " + std::to_string(max_players_));
     utils::MainLogger::get().info("Gamemode: " + std::to_string(gamemode_) +
-        " (0=survival, 1=creative, 2=adventure, 3=spectator)");
-    utils::MainLogger::get().info("World generator: " +
-        adv.getString("world.generator", "normal"));
-    utils::MainLogger::get().info("World format: " +
-        adv.getString("world.format", "anvil"));
+                                  " (0=survival, 1=creative, 2=adventure, 3=spectator)");
+    utils::MainLogger::get().info("World generator: " + adv.getString("world.generator", "normal"));
+    utils::MainLogger::get().info("World format: " + adv.getString("world.format", "anvil"));
 }
 
 void Server::initLogger() {
@@ -163,10 +162,10 @@ void Server::initLogger() {
     // to disk in actual time (PMMP-equivalent: pocketmine.log).
     std::string log_path = dataPath_ + "/server.log";
     mcp_main_logger_init(log_path.c_str(), /*colored=*/true);
-    utils::MainLogger::get().info(std::string(CURSESTONE_NAME) +
-        " v" + CURSESTONE_API + " (codename: " + CURSESTONE_CODENAME + ")");
+    utils::MainLogger::get().info(std::string(CURSESTONE_NAME) + " v" + CURSESTONE_API +
+                                  " (codename: " + CURSESTONE_CODENAME + ")");
     utils::MainLogger::get().info(" Minecraft PE " + std::string(MINECRAFT_VERSION) +
-        ", protocol " + std::to_string(PROTOCOL_VERSION));
+                                  ", protocol " + std::to_string(PROTOCOL_VERSION));
     utils::MainLogger::get().info("Log file: " + log_path);
 }
 
@@ -199,22 +198,26 @@ void Server::loadDefaultWorld() {
     adv.loadYaml(dataPath_ + "/cursestone.yml");
 
     world::WorldConfig lc;
-    lc.name      = props.getString("world-name", "world");
-    if (lc.name.empty()) lc.name = "world";
-    lc.format    = adv.getString("world.format", "anvil");
+    lc.name = props.getString("world-name", "world");
+    if (lc.name.empty())
+        lc.name = "world";
+    lc.format = adv.getString("world.format", "anvil");
     lc.generator = adv.getString("world.generator", "normal");
-    if (lc.generator.empty()) lc.generator = "normal";
+    if (lc.generator.empty())
+        lc.generator = "normal";
     const int64_t seed = props.getInt("world-seed", 0);
     lc.seed = (seed != 0) ? seed : (int64_t)mcp_utils_time_ms();
-    lc.spawn_x = 0; lc.spawn_y = 64; lc.spawn_z = 0;
+    lc.spawn_x = 0;
+    lc.spawn_y = 64;
+    lc.spawn_z = 0;
     lc.view_distance = view_distance_;
-    lc.dataPath = dataPath_;   // so World can compute absolute world paths
+    lc.dataPath = dataPath_; // so World can compute absolute world paths
 
     // Create the world directory structure BEFORE constructing the World,
     // so the WorldProvider can open the region/ subdirectory on init().
     // Mirrors Nukkit's Anvil.generate(): worlds/<name>/ + worlds/<name>/region/
     std::string worldsDir = dataPath_ + "/worlds";
-    std::string worldDir  = worldsDir + "/" + lc.name;
+    std::string worldDir = worldsDir + "/" + lc.name;
     std::string regionDir = worldDir + "/region";
     ::mkdir(worldsDir.c_str(), 0755);
     ::mkdir(worldDir.c_str(), 0755);
@@ -238,9 +241,11 @@ void Server::loadDefaultWorld() {
 // tick/are stored in the same fases that the main.
 
 World* Server::loadWorld(const std::string& name, const std::string& generator) {
-    if (name.empty()) return nullptr;
+    if (name.empty())
+        return nullptr;
     // already loaded: return the existente without touch nothing.
-    if (World* existing = getWorldByName(name)) return existing;
+    if (World* existing = getWorldByName(name))
+        return existing;
 
     world::WorldConfig lc;
     lc.name = name;
@@ -253,18 +258,19 @@ World* Server::loadWorld(const std::string& name, const std::string& generator) 
     // same estructura of folders that loadDefaultWorld(): the provider
     // needs worlds/<name>/region/ before init().
     std::string worldsDir = dataPath_ + "/worlds";
-    std::string worldDir  = worldsDir + "/" + lc.name;
+    std::string worldDir = worldsDir + "/" + lc.name;
     std::string regionDir = worldDir + "/region";
     ::mkdir(worldsDir.c_str(), 0755);
     ::mkdir(worldDir.c_str(), 0755);
     ::mkdir(regionDir.c_str(), 0755);
 
     auto lv = std::make_shared<world::World>(std::move(lc));
-    if (!lv) return nullptr;
+    if (!lv)
+        return nullptr;
     worlds_.push_back(lv);
-    utils::MainLogger::get().info("World '" + name + "' loaded (generator=" +
-        lv->config().generator + ", dimension=" +
-        std::to_string(lv->dimension()) + ")");
+    utils::MainLogger::get().info("World '" + name +
+                                  "' loaded (generator=" + lv->config().generator +
+                                  ", dimension=" + std::to_string(lv->dimension()) + ")");
     event::EventManager::get().fire<event::world::WorldLoadEvent>(lv.get(), 0, 0);
     return lv.get();
 }
@@ -272,14 +278,15 @@ World* Server::loadWorld(const std::string& name, const std::string& generator) 
 bool Server::unloadWorld(const std::string& name) {
     for (auto it = worlds_.begin(); it != worlds_.end(); ++it) {
         World* w = it->get();
-        if (!w || w->name() != name) continue;
+        if (!w || w->name() != name)
+            continue;
         if (world_ && w == world_.get()) {
-            utils::MainLogger::get().warn("Cannot unload the default world '" +
-                name + "'.");
+            utils::MainLogger::get().warn("Cannot unload the default world '" + name + "'.");
             return false;
         }
         auto ev = event::EventManager::get().fire<event::world::WorldUnloadEvent>(w);
-        if (ev.isCancelled()) return false;
+        if (ev.isCancelled())
+            return false;
 
         // moves to the players of this world in the spawn of the world
         // by default before soltar the shared_ptr.
@@ -301,22 +308,27 @@ bool Server::unloadWorld(const std::string& name) {
 std::vector<World*> Server::getWorlds() const {
     std::vector<World*> out;
     out.reserve(worlds_.size());
-    for (auto& w : worlds_) if (w) out.push_back(w.get());
+    for (auto& w : worlds_)
+        if (w)
+            out.push_back(w.get());
     return out;
 }
 
 std::shared_ptr<World> Server::getWorldShared(const std::string& name) const {
     for (auto& w : worlds_) {
-        if (w && w->name() == name) return w;
+        if (w && w->name() == name)
+            return w;
     }
     return nullptr;
 }
 
 void Server::startCommandReader() {
     console_reader_ = std::make_unique<CommandReader>([this](const std::string& line) {
-        if (line.empty()) return;
+        if (line.empty())
+            return;
         ConsoleCommandSender sender;
-        if (command_map_) command_map_->dispatch(&sender, line);
+        if (command_map_)
+            command_map_->dispatch(&sender, line);
     });
     console_reader_->start();
 }
@@ -332,7 +344,8 @@ void Server::start(const std::string& dataPath) {
     // Diagnostics: mark the server start so crashdumps can report uptime.
     diagnostics::Diagnostics::get().setUptimeStart(
         (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count());
+            std::chrono::system_clock::now().time_since_epoch())
+            .count());
 
     // Ensure the data dir exists.
     std::error_code ec;
@@ -344,8 +357,7 @@ void Server::start(const std::string& dataPath) {
     // Seed any missing config file from the built-in defaults.
     std::vector<std::string> created;
     if (!utils::writeDefaultConfigs(dataPath_, &created)) {
-        utils::MainLogger::get().warn(
-            "Could not create default config files in " + dataPath_);
+        utils::MainLogger::get().warn("Could not create default config files in " + dataPath_);
     }
     for (const auto& name : created) {
         utils::MainLogger::get().info("Created default " + name);
@@ -364,8 +376,7 @@ void Server::start(const std::string& dataPath) {
     // file that was not packaged with the binary, so to clean release
     // ended up with not recipes at all.
     int recipeCount = crafting_->registerBuiltinRecipes();
-    utils::MainLogger::get().info("Loaded " + std::to_string(recipeCount) +
-        " crafting recipes");
+    utils::MainLogger::get().info("Loaded " + std::to_string(recipeCount) + " crafting recipes");
     async_pool_ = std::make_shared<scheduler::AsyncPool>(async_workers_);
     utils::MainLogger::get().info("Opening network interface...");
     openNetwork();
@@ -376,19 +387,17 @@ void Server::start(const std::string& dataPath) {
     // not receive commands yet (not command arrives while plugins
     // register).
     utils::MainLogger::get().info("Loading plugins...");
-    plugin::PluginManager::get().loadAll(dataPath_ + "/plugins",
-                                         dataPath_ + "/data_pl");
+    plugin::PluginManager::get().loadAll(dataPath_ + "/plugins", dataPath_ + "/data_pl");
     utils::MainLogger::get().info("Starting console command reader...");
     startCommandReader();
 
     // Compute total boot time.
     auto boot_end = std::chrono::steady_clock::now();
-    auto boot_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        boot_end - boot_start).count();
+    auto boot_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(boot_end - boot_start).count();
     double boot_sec = (double)boot_ms / 1000.0;
     utils::MainLogger::get().info("Server ready Tick loop starting...");
-    utils::MainLogger::get().info("Server started in " +
-        std::to_string(boot_sec) + "s");
+    utils::MainLogger::get().info("Server started in " + std::to_string(boot_sec) + "s");
 
     // Give the OS to brief moment to flush filesystem buffers after the
     // world directory + level.dat + provider init writes. Without this,
@@ -421,7 +430,8 @@ void Server::runTickLoop() {
         // This is the only place that flag is ever acted on; see
         // setExternalStopFlag()'s comment for why the handler itself
         // can't call shutdown() directly.
-        if (external_stop_flag_ && *external_stop_flag_ && running_.load(std::memory_order_relaxed)) {
+        if (external_stop_flag_ && *external_stop_flag_ &&
+            running_.load(std::memory_order_relaxed)) {
             shutdown();
             break;
         }
@@ -442,8 +452,10 @@ void Server::runTickLoop() {
         // Compute TPS once per second.
         if (currentTick_ - last_tick_count >= 20) {
             auto now = std::chrono::steady_clock::now();
-            auto elapsed_sec = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_tps_time).count();
-            if (elapsed_sec > 0) tps_ = (int)(20000 / elapsed_sec);
+            auto elapsed_sec =
+                std::chrono::duration_cast<std::chrono::milliseconds>(now - last_tps_time).count();
+            if (elapsed_sec > 0)
+                tps_ = (int)(20000 / elapsed_sec);
             last_tps_time = now;
             last_tick_count = currentTick_;
         }
@@ -460,14 +472,16 @@ void Server::runTickLoop() {
     // with the main thread destroying server members (mutexes, world_,
     // players_). By deferring all cleanup to here, we guarantee that
     // saveAll() runs single-threaded before any destructor fires.
-    if (network_) network_->tick();   // graceful RakLib close
+    if (network_)
+        network_->tick(); // graceful RakLib close
     // end global GC pass BEFORE saveAll(): flushes tile/entities, saves
     // out-of-view chunks as part of the chunk sweep, and drops picked-up
     // item records so nothing stale is written back to disk. Forced —
     // rate limiting must not eat the last pass.
     MemoryManager::get().collect(/*force=*/true);
     saveAll();
-    if (console_reader_) console_reader_->stop();
+    if (console_reader_)
+        console_reader_->stop();
 
     // Stop and JOIN the chunk-generation pool here, on the main thread,
     // while the process is still fully alive. The pool is owned by this
@@ -479,7 +493,8 @@ void Server::runTickLoop() {
     // whenever to player had chunks in flight at stop time). stop() joins
     // every worker and is idempotent, so the pool's own destructor stays to
     // not-op and nothing can be generating once we return.
-    if (async_pool_) async_pool_->stop();
+    if (async_pool_)
+        async_pool_->stop();
 
     utils::MainLogger::get().info("Shutdown complete.");
 }
@@ -497,12 +512,11 @@ void Server::tick() {
     // --- Reap players flagged for removal by player::close() ---
     {
         std::lock_guard<std::mutex> lk(players_mtx_);
-        players_.erase(
-            std::remove_if(players_.begin(), players_.end(),
-                [](const std::shared_ptr<Player>& p) {
-                    return !p || p->isPendingRemoval();
-                }),
-            players_.end());
+        players_.erase(std::remove_if(players_.begin(), players_.end(),
+                                      [](const std::shared_ptr<Player>& p) {
+                                          return !p || p->isPendingRemoval();
+                                      }),
+                       players_.end());
     }
 
     // --- Phase: scheduler ---
@@ -518,28 +532,31 @@ void Server::tick() {
     auto t0 = std::chrono::steady_clock::now();
     scheduler::ServerScheduler::get().tick(currentTick_);
     auto t1 = std::chrono::steady_clock::now();
-    WorkbenchManager::get().onTickPhase("scheduler",
+    WorkbenchManager::get().onTickPhase(
+        "scheduler",
         (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
 
     // --- Phase: world ---
     t0 = std::chrono::steady_clock::now();
     for (auto& w : worlds_) {
-        if (w) w->tick(currentTick_);
+        if (w)
+            w->tick(currentTick_);
     }
     t1 = std::chrono::steady_clock::now();
-    WorkbenchManager::get().onTickPhase("level",
-        (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
+    WorkbenchManager::get().onTickPhase(
+        "level", (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
 
     // --- Phase: block entities (furnaces) ---
     // Runs outside World::tick to keep that phase free of packet
     // sends (furnaces send progress/content to viewers here).
     t0 = std::chrono::steady_clock::now();
     for (auto& w : worlds_) {
-        if (w) w->tickTiles(currentTick_);
+        if (w)
+            w->tickTiles(currentTick_);
     }
     t1 = std::chrono::steady_clock::now();
-    WorkbenchManager::get().onTickPhase("tiles",
-        (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
+    WorkbenchManager::get().onTickPhase(
+        "tiles", (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
 
     // --- Phase: global GC ---
     // THE single GarbageCollector pass for the whole server. Everything
@@ -555,32 +572,38 @@ void Server::tick() {
     t0 = std::chrono::steady_clock::now();
     MemoryManager::get().collect();
     t1 = std::chrono::steady_clock::now();
-    WorkbenchManager::get().onTickPhase("gc",
-        (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
+    WorkbenchManager::get().onTickPhase(
+        "gc", (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
 
     // --- Phase: network (first pass) ---
     // CRITICAL: process network BEFORE player updates.
     t0 = std::chrono::steady_clock::now();
-    if (network_) network_->tick();
+    if (network_)
+        network_->tick();
     t1 = std::chrono::steady_clock::now();
-    WorkbenchManager::get().onTickPhase("network",
+    WorkbenchManager::get().onTickPhase(
+        "network",
         (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
 
     // Update watchdog: main thread is alive
     WorkbenchManager::get().last_drain_time_ms.store(
         (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count(),
+            std::chrono::steady_clock::now().time_since_epoch())
+            .count(),
         std::memory_order_relaxed);
 
     // --- Phase: player updates ---
     auto snap = playersSnapshot();
     for (auto& p : snap) {
-        if (!p) continue;
-        if (p->isPendingRemoval()) continue;
+        if (!p)
+            continue;
+        if (p->isPendingRemoval())
+            continue;
         auto pt0 = std::chrono::steady_clock::now();
         p->onUpdate(currentTick_);
         auto pt1 = std::chrono::steady_clock::now();
-        WorkbenchManager::get().onPlayerUpdate(p->getName(),
+        WorkbenchManager::get().onPlayerUpdate(
+            p->getName(),
             (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(pt1 - pt0).count());
     }
 
@@ -590,18 +613,22 @@ void Server::tick() {
     // the process is dying.
     if (currentTick_ % 10 == 0) {
         uint64_t now_wall = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count();
+                                std::chrono::system_clock::now().time_since_epoch())
+                                .count();
         std::vector<diagnostics::PlayerSnapshot> ps;
         ps.reserve(snap.size());
         for (auto& p : snap) {
-            if (!p) continue;
+            if (!p)
+                continue;
             diagnostics::PlayerSnapshot s;
             s.name = p->getName();
             s.ip = p->ip();
             s.port = p->port();
             s.eid = p->runtimeId();
             auto pos = p->getNextPosition();
-            s.x = pos.x; s.y = pos.y; s.z = pos.z;
+            s.x = pos.x;
+            s.y = pos.y;
+            s.z = pos.z;
             s.cx = p->chunkX();
             s.cz = p->chunkZ();
             s.gamemode = p->gamemode();
@@ -624,17 +651,21 @@ void Server::tick() {
     {
         auto bpf0 = std::chrono::steady_clock::now();
         for (auto& p : snap) {
-            if (!p) continue;
-            if (p->isPendingRemoval()) continue;
+            if (!p)
+                continue;
+            if (p->isPendingRemoval())
+                continue;
             p->flushPendingPackets();
         }
         auto bpf1 = std::chrono::steady_clock::now();
-        WorkbenchManager::get().onTickPhase("batch-flush",
+        WorkbenchManager::get().onTickPhase(
+            "batch-flush",
             (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(bpf1 - bpf0).count());
     }
 
     // --- Phase: network (second pass — flush outbound) ---
-    if (network_) network_->tick();
+    if (network_)
+        network_->tick();
 
     // --- Phase: auto-save (incremental) ---
     // Previously this block called world_->save(), which serializes ALL
@@ -652,16 +683,18 @@ void Server::tick() {
     if (autosave_ticks_ > 0 && currentTick_ % autosave_ticks_ == 0) {
         auto psnap = playersSnapshot();
         for (auto& p : psnap) {
-            if (p) p->saveData();   // NBT of player: barato, not is I/or of chunks
+            if (p)
+                p->saveData(); // NBT of player: barato, not is I/or of chunks
         }
         beginAutosaveDrain();
     }
-    if (autosave_draining_) tickAutosaveDrain();
+    if (autosave_draining_)
+        tickAutosaveDrain();
 
     // --- Workbench: tick end hook ---
     auto wb_end = std::chrono::steady_clock::now();
-    uint64_t total_ms = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
-        wb_end - wb_start).count();
+    uint64_t total_ms =
+        (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(wb_end - wb_start).count();
     WorkbenchManager::get().onTickEnd(total_ms);
 }
 
@@ -688,16 +721,15 @@ void Server::shutdown() {
             for (int i = 0; i < 50; ++i) {
                 if (!running_.load(std::memory_order_relaxed) &&
                     tick_loop_exited_.load(std::memory_order_relaxed)) {
-                    return;  // main loop exited cleanly
+                    return; // main loop exited cleanly
                 }
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
             // Timeout — force exit. We can't call ~server() safely here
             // because we're on to different thread and the destructors
             // may race, but _exit() bypasses destructors entirely.
-            utils::MainLogger::get().error(
-                "Shutdown watchdog: tick loop did not exit within 5s — "
-                "forcing process exit (unsaved chunks may be lost).");
+            utils::MainLogger::get().error("Shutdown watchdog: tick loop did not exit within 5s — "
+                                           "forcing process exit (unsaved chunks may be lost).");
             std::_Exit(1);
         }).detach();
     }
@@ -706,7 +738,8 @@ void Server::shutdown() {
 Player* Server::getPlayer(const std::string& name) const {
     auto snap = playersSnapshot();
     for (const auto& p : snap)
-        if (p && p->getName() == name) return p.get();
+        if (p && p->getName() == name)
+            return p.get();
     return nullptr;
 }
 void Server::addPlayer(std::shared_ptr<Player> p) {
@@ -716,7 +749,10 @@ void Server::addPlayer(std::shared_ptr<Player> p) {
 void Server::removePlayer(Player* p) {
     std::lock_guard<std::mutex> lk(players_mtx_);
     players_.erase(std::remove_if(players_.begin(), players_.end(),
-        [p](const std::shared_ptr<Player>& q) { return q.get() == p; }), players_.end());
+                                  [p](const std::shared_ptr<Player>& q) {
+                                      return q.get() == p;
+                                  }),
+                   players_.end());
 }
 std::vector<std::shared_ptr<Player>> Server::playersSnapshot() const {
     std::lock_guard<std::mutex> lk(players_mtx_);
@@ -724,7 +760,9 @@ std::vector<std::shared_ptr<Player>> Server::playersSnapshot() const {
 }
 void Server::broadcastMessage(const std::string& msg) {
     auto snap = playersSnapshot();
-    for (auto& p : snap) if (p) p->sendMessage(msg);
+    for (auto& p : snap)
+        if (p)
+            p->sendMessage(msg);
     // Every broadcast (player chat, join/quit/death messages, server
     // say) is mirrored to the server console with the §-codes stripped -
     // exactly like PMMP's server::broadcastMessage logging behaviour, so
@@ -744,18 +782,19 @@ void Server::saveAll() {
     //    marked dirty on the chunks before the world save runs.
     auto snap = playersSnapshot();
     for (auto& p : snap) {
-        if (p) p->saveData();
+        if (p)
+            p->saveData();
     }
-    utils::MainLogger::get().info("[SAVE] " + std::to_string(snap.size()) +
-        " player(s) saved.");
+    utils::MainLogger::get().info("[SAVE] " + std::to_string(snap.size()) + " player(s) saved.");
 
     // 2. Save every loaded world — flushes dirty chunks to .mca files
     //    AND writes level.dat (seed/spawn/time) via the provider.
     for (auto& w : worlds_) {
-        if (!w) continue;
+        if (!w)
+            continue;
         int saved = w->save();
-        utils::MainLogger::get().info("[SAVE] World '" + w->name() +
-            "' saved (" + std::to_string(saved) + " chunks flushed).");
+        utils::MainLogger::get().info("[SAVE] World '" + w->name() + "' saved (" +
+                                      std::to_string(saved) + " chunks flushed).");
     }
 }
 
@@ -773,56 +812,66 @@ void Server::saveAll() {
 // backlog now drains in ~10-15 ticks with a worst-case main-thread tick
 // of ~3 ms (was 8 chunks/tick with 12 ms spikes), and the disk work
 // overlaps gameplay on the worker thread.
-static constexpr size_t   kAutosaveChunksPerTick = 64;
-static constexpr uint64_t kAutosaveMsPerTick     = 3;
+static constexpr size_t kAutosaveChunksPerTick = 64;
+static constexpr uint64_t kAutosaveMsPerTick = 3;
 // If the flush writes nothing for this many ticks in to row (e.g. to
 // provider that always fails), the drain is closed instead of
 // retrying the same dirty chunk forever.
-static constexpr int      kAutosaveIdleTicksMax  = 40;
+static constexpr int kAutosaveIdleTicksMax = 40;
 
 static uint64_t nowSteadyMs() {
     return (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now().time_since_epoch()).count();
+               std::chrono::steady_clock::now().time_since_epoch())
+        .count();
 }
 
 void Server::beginAutosaveDrain() {
     autosave_draining_ = false;
-    if (worlds_.empty()) return;
+    if (worlds_.empty())
+        return;
 
-    autosave_drain_start_ms_     = nowSteadyMs();
-    autosave_drain_written_      = 0;
-    autosave_drain_ticks_        = 0;
-    autosave_drain_max_tick_ms_  = 0;
-    autosave_drain_idle_ticks_   = 0;
+    autosave_drain_start_ms_ = nowSteadyMs();
+    autosave_drain_written_ = 0;
+    autosave_drain_ticks_ = 0;
+    autosave_drain_max_tick_ms_ = 0;
+    autosave_drain_idle_ticks_ = 0;
 
     // level.dat (world time + spawn) is written HERE, once, with to
     // zero-chunk budget: it is to tiny file and we do not want to
     // rewrite it on every drain tick.
     auto t0 = std::chrono::steady_clock::now();
     for (auto& w : worlds_) {
-        if (w) w->saveBudget(/*max_chunks=*/0, /*max_ms=*/0,
-                             /*write_level_data=*/true);
+        if (w)
+            w->saveBudget(/*max_chunks=*/0, /*max_ms=*/0,
+                          /*write_level_data=*/true);
     }
-    WorkbenchManager::get().onAutosave((uint64_t)std::chrono::duration_cast<
-        std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count());
+    WorkbenchManager::get().onAutosave(
+        (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - t0)
+            .count());
 
     size_t pending = 0;
     for (auto& w : worlds_) {
-        if (w) pending += w->unsavedChunkCount();
+        if (w)
+            pending += w->unsavedChunkCount();
     }
-    if (pending == 0) return;   // nothing sucio: ni abrimos the drenaje
+    if (pending == 0)
+        return; // nothing sucio: ni abrimos the drenaje
 
     autosave_draining_ = true;
     if (advanced_log_) {
-        utils::MainLogger::get().info("[SAVE] Autosave: " +
-            std::to_string(pending) + " chunk(s) en cola -> drenando " +
-            std::to_string(kAutosaveChunksPerTick) + "/tick (max " +
-            std::to_string(kAutosaveMsPerTick) + "ms/tick).");
+        utils::MainLogger::get().info("[SAVE] Autosave: " + std::to_string(pending) +
+                                      " chunk(s) en cola -> drenando " +
+                                      std::to_string(kAutosaveChunksPerTick) + "/tick (max " +
+                                      std::to_string(kAutosaveMsPerTick) + "ms/tick).");
     }
 }
 
 void Server::tickAutosaveDrain() {
-    if (worlds_.empty()) { autosave_draining_ = false; return; }
+    if (worlds_.empty()) {
+        autosave_draining_ = false;
+        return;
+    }
 
     auto t0 = std::chrono::steady_clock::now();
     // the presupuesto is reparte between the worlds with chunks sucios:
@@ -830,11 +879,15 @@ void Server::tickAutosaveDrain() {
     int saved = 0;
     size_t chunk_budget = kAutosaveChunksPerTick;
     for (auto& w : worlds_) {
-        if (!w || chunk_budget == 0) continue;
-        if (w->unsavedChunkCount() == 0) continue;
-        uint64_t elapsed = (uint64_t)std::chrono::duration_cast<
-            std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
-        if (elapsed >= kAutosaveMsPerTick) break;
+        if (!w || chunk_budget == 0)
+            continue;
+        if (w->unsavedChunkCount() == 0)
+            continue;
+        uint64_t elapsed = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+                               std::chrono::steady_clock::now() - t0)
+                               .count();
+        if (elapsed >= kAutosaveMsPerTick)
+            break;
         int s = w->saveBudget(chunk_budget, kAutosaveMsPerTick - elapsed,
                               /*write_level_data=*/false);
         size_t used = (size_t)s < chunk_budget ? (size_t)s : chunk_budget;
@@ -842,35 +895,39 @@ void Server::tickAutosaveDrain() {
         saved += s;
     }
     uint64_t tick_ms = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now() - t0).count();
+                           std::chrono::steady_clock::now() - t0)
+                           .count();
 
     autosave_drain_written_ += (size_t)saved;
     ++autosave_drain_ticks_;
-    if (tick_ms > autosave_drain_max_tick_ms_) autosave_drain_max_tick_ms_ = tick_ms;
+    if (tick_ms > autosave_drain_max_tick_ms_)
+        autosave_drain_max_tick_ms_ = tick_ms;
     WorkbenchManager::get().onAutosave(tick_ms);
     if (tick_ms > 50) {
-        utils::MainLogger::get().warn("[SAVE] Autosave flush took " +
-            std::to_string(tick_ms) + "ms on one tick — this may cause "
-            "client lag spikes!");
+        utils::MainLogger::get().warn("[SAVE] Autosave flush took " + std::to_string(tick_ms) +
+                                      "ms on one tick — this may cause "
+                                      "client lag spikes!");
     }
 
     autosave_drain_idle_ticks_ = (saved == 0) ? (autosave_drain_idle_ticks_ + 1) : 0;
     size_t pending = 0;
     for (auto& w : worlds_) {
-        if (w) pending += w->unsavedChunkCount();
+        if (w)
+            pending += w->unsavedChunkCount();
     }
     bool stuck = (pending > 0 && autosave_drain_idle_ticks_ >= kAutosaveIdleTicksMax);
     if (pending == 0 || stuck) {
         autosave_draining_ = false;
         uint64_t total_ms = nowSteadyMs() - autosave_drain_start_ms_;
         if (stuck) {
-            utils::MainLogger::get().warn("[SAVE] Autosave drain stopped with " +
-                std::to_string(pending) + " chunk(s) still dirty (provider "
+            utils::MainLogger::get().warn(
+                "[SAVE] Autosave drain stopped with " + std::to_string(pending) +
+                " chunk(s) still dirty (provider "
                 "not accepting writes?) — will retry on the next autosave.");
         } else if (autosave_drain_written_ > 0) {
-            utils::MainLogger::get().info("[SAVE] Autosave done: " +
-                std::to_string(autosave_drain_written_) + " chunk(s) en " +
-                std::to_string(total_ms) + "ms (" +
+            utils::MainLogger::get().info(
+                "[SAVE] Autosave done: " + std::to_string(autosave_drain_written_) +
+                " chunk(s) en " + std::to_string(total_ms) + "ms (" +
                 std::to_string(autosave_drain_ticks_) + " tick(s), max " +
                 std::to_string(autosave_drain_max_tick_ms_) + "ms en un tick).");
         }
@@ -879,8 +936,7 @@ void Server::tickAutosaveDrain() {
 
 permission::BanList& Server::getNameBans() {
     if (!name_bans_) {
-        name_bans_ = std::make_unique<permission::BanList>(
-            dataPath_ + "/banned-players.json");
+        name_bans_ = std::make_unique<permission::BanList>(dataPath_ + "/banned-players.json");
         name_bans_->load();
     }
     return *name_bans_;
@@ -888,8 +944,7 @@ permission::BanList& Server::getNameBans() {
 
 permission::BanList& Server::getIPBans() {
     if (!ip_bans_) {
-        ip_bans_ = std::make_unique<permission::BanList>(
-            dataPath_ + "/banned-ips.json");
+        ip_bans_ = std::make_unique<permission::BanList>(dataPath_ + "/banned-ips.json");
         ip_bans_->load();
     }
     return *ip_bans_;
@@ -916,28 +971,36 @@ std::string normalizeOpName(std::string s) {
     std::string out;
     out.reserve(s.size());
     for (unsigned char c : s) {
-        if (c == 0) continue;            // NUL (UTF-16 leido as text)
-        if (c >= 0x80) continue;         // BOM, NBSP, zero ancho, acentos
-        if (c < 0x20 || c == 0x7F) continue;  // \r \n \t and other control
+        if (c == 0)
+            continue; // NUL (UTF-16 leido as text)
+        if (c >= 0x80)
+            continue; // BOM, NBSP, zero ancho, acentos
+        if (c < 0x20 || c == 0x7F)
+            continue; // \r \n \t and other control
         out.push_back((char)c);
     }
     size_t b = 0, e = out.size();
-    while (b < e && (out[b] == ' ' || out[b] == '\t')) ++b;
-    while (e > b && (out[e - 1] == ' ' || out[e - 1] == '\t')) --e;
+    while (b < e && (out[b] == ' ' || out[b] == '\t'))
+        ++b;
+    while (e > b && (out[e - 1] == ' ' || out[e - 1] == '\t'))
+        --e;
     out = out.substr(b, e - b);
-    std::transform(out.begin(), out.end(), out.begin(),
-                   [](unsigned char c) { return (char)std::tolower(c); });
+    std::transform(out.begin(), out.end(), out.begin(), [](unsigned char c) {
+        return (char)std::tolower(c);
+    });
     return out;
 }
 // Same rule PlayerLogin.cpp accepts for joining: [to-zA-Z0-9_]{3,16}.
 // to name outside that rule can NEVER match to connected player, so we
 // warn (instead of staying silent) to make it visible in the log.
 bool looksLikeValidOpName(const std::string& s) {
-    if (s.size() < 3 || s.size() > 16) return false;
+    if (s.size() < 3 || s.size() > 16)
+        return false;
     for (char c : s) {
-        bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-                  (c >= '0' && c <= '9') || c == '_';
-        if (!ok) return false;
+        bool ok =
+            (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+        if (!ok)
+            return false;
     }
     return true;
 }
@@ -956,15 +1019,14 @@ void Server::loadOps() {
         // returned silently and the server started with zero ops.
         const int e = errno;
         const std::string why = (e == ENOENT || e == 0)
-            ? std::string("file not found")
-            : std::string("cannot open (") + std::strerror(e) + ")";
+                                    ? std::string("file not found")
+                                    : std::string("cannot open (") + std::strerror(e) + ")";
         utils::MainLogger::get().info(
             "No operators loaded from " + ops_path + ": " + why +
             ". Nobody is op until you /op <player> (written back to that path). ");
         return;
     }
-    std::string content((std::istreambuf_iterator<char>(in)),
-                         std::istreambuf_iterator<char>());
+    std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 
     // An editor that saves as "UTF-8 with BOM" (Notepad on Windows,
     // several Android editors) leaves the 3 bytes 0xEF 0xBB 0xBF at the
@@ -983,27 +1045,24 @@ void Server::loadOps() {
             // it: even byte = low, odd byte = high. BE: the other way around.
             unsigned lo = (unsigned char)raw[big_endian ? i + 1 : i];
             unsigned hi = (unsigned char)raw[big_endian ? i : i + 1];
-            if (hi == 0 && lo != 0) s.push_back((char)lo);
+            if (hi == 0 && lo != 0)
+                s.push_back((char)lo);
         }
         return s;
     };
-    if (content.size() >= 2 &&
-        (unsigned char)content[0] == 0xFF &&
+    if (content.size() >= 2 && (unsigned char)content[0] == 0xFF &&
         (unsigned char)content[1] == 0xFE) {
         content = utf16_to_8(content.substr(2), false);
-    } else if (content.size() >= 2 &&
-        (unsigned char)content[0] == 0xFE &&
-        (unsigned char)content[1] == 0xFF) {
+    } else if (content.size() >= 2 && (unsigned char)content[0] == 0xFE &&
+               (unsigned char)content[1] == 0xFF) {
         content = utf16_to_8(content.substr(2), true);
-    } else if (content.size() >= 4 && content[0] != '\0' &&
-               content[1] == '\0' && content[3] == '\0') {
+    } else if (content.size() >= 4 && content[0] != '\0' && content[1] == '\0' &&
+               content[3] == '\0') {
         content = utf16_to_8(content, false);
     }
     // BOM UTF-8 (Notepad in Windows, several editores of Android).
-    if (content.size() >= 3 &&
-        (unsigned char)content[0] == 0xEF &&
-        (unsigned char)content[1] == 0xBB &&
-        (unsigned char)content[2] == 0xBF) {
+    if (content.size() >= 3 && (unsigned char)content[0] == 0xEF &&
+        (unsigned char)content[1] == 0xBB && (unsigned char)content[2] == 0xBF) {
         content.erase(0, 3);
     }
 
@@ -1014,18 +1073,20 @@ void Server::loadOps() {
     size_t weird = 0;
     while (pos <= content.size()) {
         size_t nl = content.find('\n', pos);
-        std::string raw = (nl == std::string::npos)
-            ? content.substr(pos) : content.substr(pos, nl - pos);
+        std::string raw =
+            (nl == std::string::npos) ? content.substr(pos) : content.substr(pos, nl - pos);
         pos = (nl == std::string::npos) ? content.size() + 1 : nl + 1;
         std::string line = normalizeOpName(raw);
-        if (line.empty()) continue;   // lineas in blanco / only basura
+        if (line.empty())
+            continue; // lineas in blanco / only basura
         if (!looksLikeValidOpName(line)) {
             ++weird;
             // Loaded anyway (to user entry is never dropped) but warned
             // about: to name PlayerLogin would reject can never match
             // anyone joining the server.
             utils::MainLogger::get().warn("ops.txt entry cannot match any "
-                "player name (kept anyway): '" + line + "' in " + ops_path);
+                                          "player name (kept anyway): '" +
+                                          line + "' in " + ops_path);
         }
         ops_.insert(std::move(line));
     }
@@ -1035,11 +1096,12 @@ void Server::loadOps() {
     // server does have me as op and the problem is elsewhere".
     std::string names;
     for (const auto& n : ops_) {
-        if (!names.empty()) names += ", ";
+        if (!names.empty())
+            names += ", ";
         names += n;
     }
-    utils::MainLogger::get().info("Loaded " + std::to_string(ops_.size()) +
-        " operator(s) from " + ops_path +
+    utils::MainLogger::get().info(
+        "Loaded " + std::to_string(ops_.size()) + " operator(s) from " + ops_path +
         (names.empty() ? std::string() : ": " + names) +
         (weird ? " (" + std::to_string(weird) + " suspicious entry/entries, see warnings above)"
                : std::string()));
@@ -1049,15 +1111,17 @@ void Server::saveOps() {
     const std::string ops_path = dataPath_ + "/ops.txt";
     std::ofstream out(ops_path, std::ios::trunc);
     if (!out.is_open()) {
-        utils::MainLogger::get().warn("Failed to write " + ops_path +
-            " (" + std::strerror(errno) + ") — operator changes stay in memory "
-            "ONLY and will be lost on restart.");
+        utils::MainLogger::get().warn("Failed to write " + ops_path + " (" + std::strerror(errno) +
+                                      ") — operator changes stay in memory "
+                                      "ONLY and will be lost on restart.");
         return;
     }
-    for (const auto& name : ops_) out << name << "\n";
+    for (const auto& name : ops_)
+        out << name << "\n";
     out.flush();
     if (!out.good()) {
-        utils::MainLogger::get().warn("Failed to write " + ops_path +
+        utils::MainLogger::get().warn(
+            "Failed to write " + ops_path +
             " — operator changes stay in memory ONLY and will be lost on restart.");
         return;
     }
@@ -1069,26 +1133,29 @@ bool Server::isOp(const std::string& name) const {
     // queried name (\r, NBSP, NUL, uppercase) is discarded before
     // comparing instead of being allowed to break the lookup.
     const std::string key = normalizeOpName(name);
-    if (key.empty()) return false;
+    if (key.empty())
+        return false;
     return ops_.find(key) != ops_.end();
 }
 
 void Server::setOp(const std::string& name, bool op) {
     const std::string key = normalizeOpName(name);
-    if (key.empty()) return;
+    if (key.empty())
+        return;
     bool changed = false;
     if (op) {
         changed = ops_.insert(key).second;
     } else {
         changed = ops_.erase(key) > 0;
     }
-    if (changed) saveOps();
+    if (changed)
+        saveOps();
     // Records in the log WHAT was saved and WHERE: if the player still
     // cannot use commands, the next log line shows whether the stored
     // name differs from the one queried later.
-    utils::MainLogger::get().info(std::string("/") + (op ? "op " : "deop ") +
-        key + (op ? " -> operator" : " -> not operator") +
-        " (" + std::to_string(ops_.size()) + " in " + dataPath_ + "/ops.txt)");
+    utils::MainLogger::get().info(std::string("/") + (op ? "op " : "deop ") + key +
+                                  (op ? " -> operator" : " -> not operator") + " (" +
+                                  std::to_string(ops_.size()) + " in " + dataPath_ + "/ops.txt)");
 }
 
 // Helper: ensure "<dataPath>/players/" exists.
@@ -1101,15 +1168,13 @@ static void ensurePlayersDir(const std::string& dataPath) {
 // Helper: build to default NBT compound for to new player.
 static NbtPtr buildDefaultPlayerNbt(Server* srv, const std::string& name) {
     mcp_tag_t* root = mcp_compound_tag_new_named("");
-    mcp_compound_tag_set_long(root, "firstPlayed",
-        (int64_t)(mcp_utils_time_ms()));
-    mcp_compound_tag_set_long(root, "lastPlayed",
-        (int64_t)(mcp_utils_time_ms()));
+    mcp_compound_tag_set_long(root, "firstPlayed", (int64_t)(mcp_utils_time_ms()));
+    mcp_compound_tag_set_long(root, "lastPlayed", (int64_t)(mcp_utils_time_ms()));
     mcp_compound_tag_set_short(root, "Health", 20);
     mcp_compound_tag_set_short(root, "MaxHealth", 20);
     mcp_compound_tag_set_short(root, "Hunger", 20);
     mcp_compound_tag_set_short(root, "Air", 300);
-    mcp_compound_tag_set_int (root, "playerGameType", srv->gamemode());
+    mcp_compound_tag_set_int(root, "playerGameType", srv->gamemode());
     mcp_compound_tag_set_string(root, "NameTag", name.c_str());
     mcp_compound_tag_set_string(root, "Level", "world");
     if (srv->getDefaultWorld()) {
@@ -1118,18 +1183,23 @@ static NbtPtr buildDefaultPlayerNbt(Server* srv, const std::string& name) {
         mcp_compound_tag_set_int(root, "SpawnY", (int32_t)sp.y);
         mcp_compound_tag_set_int(root, "SpawnZ", (int32_t)sp.z);
     }
-    return NbtPtr(root, [](mcp_tag_t* t){ if (t) mcp_tag_destroy(t); });
+    return NbtPtr(root, [](mcp_tag_t* t) {
+        if (t)
+            mcp_tag_destroy(t);
+    });
 }
 
 NbtPtr Server::getOfflinePlayerData(const std::string& name) {
     ensurePlayersDir(dataPath_);
     std::string path = dataPath_ + "/players/" + name + ".dat";
     std::ifstream in(path, std::ios::binary);
-    if (!in.is_open()) return buildDefaultPlayerNbt(this, name);
+    if (!in.is_open())
+        return buildDefaultPlayerNbt(this, name);
 
     std::vector<uint8_t> buf((std::istreambuf_iterator<char>(in)),
-                              std::istreambuf_iterator<char>());
-    if (buf.empty()) return buildDefaultPlayerNbt(this, name);
+                             std::istreambuf_iterator<char>());
+    if (buf.empty())
+        return buildDefaultPlayerNbt(this, name);
 
     // Nukkit-style player.dat: GZIP-compressed big-endian NBT.
     // Fall back to plain little-endian for legacy CurseStone files.
@@ -1138,24 +1208,26 @@ NbtPtr Server::getOfflinePlayerData(const std::string& name) {
         // Try GZIP + big-endian first.
         z_stream zs{};
         if (inflateInit2(&zs, 15 | 16) == Z_OK) {
-            zs.next_in  = (Bytef*)buf.data();
+            zs.next_in = (Bytef*)buf.data();
             zs.avail_in = (uInt)buf.size();
             std::vector<uint8_t> inflated;
             inflated.reserve(buf.size() * 4);
             uint8_t chunk[65536];
             int rc = Z_OK;
             do {
-                zs.next_out  = chunk;
+                zs.next_out = chunk;
                 zs.avail_out = sizeof(chunk);
                 rc = inflate(&zs, Z_NO_FLUSH);
-                if (rc != Z_OK && rc != Z_STREAM_END) break;
+                if (rc != Z_OK && rc != Z_STREAM_END)
+                    break;
                 size_t produced = sizeof(chunk) - zs.avail_out;
-                if (produced > 0) inflated.insert(inflated.end(), chunk, chunk + produced);
+                if (produced > 0)
+                    inflated.insert(inflated.end(), chunk, chunk + produced);
             } while (rc != Z_STREAM_END && zs.avail_in > 0);
             inflateEnd(&zs);
             if (rc == Z_STREAM_END && !inflated.empty()) {
                 root = mcp_nbt_read_bytes(inflated.data(), inflated.size(),
-                                            /*little_endian=*/false);
+                                          /*little_endian=*/false);
             }
         }
     }
@@ -1171,33 +1243,38 @@ NbtPtr Server::getOfflinePlayerData(const std::string& name) {
         utils::MainLogger::get().warn("Corrupt player data: " + path);
         return buildDefaultPlayerNbt(this, name);
     }
-    return NbtPtr(root, [](mcp_tag_t* t){ if (t) mcp_tag_destroy(t); });
+    return NbtPtr(root, [](mcp_tag_t* t) {
+        if (t)
+            mcp_tag_destroy(t);
+    });
 }
 
 void Server::saveOfflinePlayerData(const std::string& name, NbtPtr nbt) {
-    if (!nbt) return;
+    if (!nbt)
+        return;
     ensurePlayersDir(dataPath_);
     std::string path = dataPath_ + "/players/" + name + ".dat";
     size_t outLen = 0;
     uint8_t* bytes = mcp_nbt_write_bytes(nbt.get(), /*little_endian=*/false, &outLen);
     if (!bytes || outLen == 0) {
         utils::MainLogger::get().warn("Failed to serialize NBT for " + name);
-        if (bytes) free(bytes);
+        if (bytes)
+            free(bytes);
         return;
     }
     // GZIP-compress to match Nukkit player.dat layout.
     z_stream zs{};
-    if (deflateInit2(&zs, Z_DEFAULT_COMPRESSION, Z_DEFLATED,
-                       15 | 16, 8, Z_DEFAULT_STRATEGY) != Z_OK) {
+    if (deflateInit2(&zs, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 15 | 16, 8, Z_DEFAULT_STRATEGY) !=
+        Z_OK) {
         free(bytes);
         utils::MainLogger::get().warn("Failed to gzip player data for " + name);
         return;
     }
     size_t bound = deflateBound(&zs, (uLong)outLen);
     std::vector<uint8_t> gz(bound);
-    zs.next_in   = (Bytef*)bytes;
-    zs.avail_in  = (uInt)outLen;
-    zs.next_out  = (Bytef*)gz.data();
+    zs.next_in = (Bytef*)bytes;
+    zs.avail_in = (uInt)outLen;
+    zs.next_out = (Bytef*)gz.data();
     zs.avail_out = (uInt)gz.size();
     int rc = deflate(&zs, Z_FINISH);
     deflateEnd(&zs);
@@ -1223,12 +1300,15 @@ Player* Server::getPlayerExact(const std::string& name) const {
     for (const auto& p : snap) {
         if (p) {
             std::string pn = p->getName();
-            std::transform(pn.begin(), pn.end(), pn.begin(),
-                   [](unsigned char c) { return (char)::tolower(c); });
+            std::transform(pn.begin(), pn.end(), pn.begin(), [](unsigned char c) {
+                return (char)::tolower(c);
+            });
             std::string nl = name;
-            std::transform(nl.begin(), nl.end(), nl.begin(),
-                   [](unsigned char c) { return (char)::tolower(c); });
-            if (pn == nl) return p.get();
+            std::transform(nl.begin(), nl.end(), nl.begin(), [](unsigned char c) {
+                return (char)::tolower(c);
+            });
+            if (pn == nl)
+                return p.get();
         }
     }
     return nullptr;
@@ -1237,13 +1317,16 @@ Player* Server::getPlayerExact(const std::string& name) const {
 std::vector<Player*> Server::matchPlayer(const std::string& partialName) const {
     std::vector<Player*> result;
     std::string lower = partialName;
-    std::transform(lower.begin(), lower.end(), lower.begin(),
-                   [](unsigned char c) { return (char)::tolower(c); });
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
+        return (char)::tolower(c);
+    });
     for (const auto& p : playersSnapshot()) {
-        if (!p) continue;
+        if (!p)
+            continue;
         std::string pn = p->getName();
-        std::transform(pn.begin(), pn.end(), pn.begin(),
-                   [](unsigned char c) { return (char)::tolower(c); });
+        std::transform(pn.begin(), pn.end(), pn.begin(), [](unsigned char c) {
+            return (char)::tolower(c);
+        });
         if (pn.find(lower) != std::string::npos) {
             result.push_back(p.get());
         }
@@ -1261,7 +1344,8 @@ World* Server::getWorld(int worldId) const {
 
 World* Server::getWorldByName(const std::string& name) const {
     for (auto& w : worlds_) {
-        if (w && w->name() == name) return w.get();
+        if (w && w->name() == name)
+            return w.get();
     }
     return nullptr;
 }
@@ -1289,15 +1373,18 @@ bool Server::getConfigBool(const std::string& key, bool def) const {
 }
 
 void Server::setPropertyString(const std::string& key, const std::string& val) {
-    (void)key; (void)val;
+    (void)key;
+    (void)val;
 }
 
 void Server::setPropertyInt(const std::string& key, int val) {
-    (void)key; (void)val;
+    (void)key;
+    (void)val;
 }
 
 void Server::setPropertyBoolean(const std::string& key, bool val) {
-    (void)key; (void)val;
+    (void)key;
+    (void)val;
 }
 
 int Server::broadcast(const std::string& message, const std::string& /*permissions*/) {
@@ -1306,7 +1393,7 @@ int Server::broadcast(const std::string& message, const std::string& /*permissio
 }
 
 void Server::broadcastPacketsCallback(const std::vector<uint8_t>& /*data*/,
-                                       const std::vector<std::string>& /*identifiers*/) {
+                                      const std::vector<std::string>& /*identifiers*/) {
     // Stub — would batch-send to pre-encoded packet to specific players.
 }
 
@@ -1329,14 +1416,14 @@ void Server::saveOfflinePlayerData(const std::string& name, NbtPtr nbt, bool /*a
 void Server::titleTick() {
     // Update MOTD with player count + TPS (like Nukkit does)
     if (network_) {
-        std::string motd = "MCPE;" + motd_ + ";" +
-            std::to_string(PROTOCOL_VERSION) + ";" +
-            std::string(MINECRAFT_VERSION) + ";" +
-            std::to_string(playersSnapshot().size()) + ";" +
-            std::to_string(max_players_);
+        std::string motd = "MCPE;" + motd_ + ";" + std::to_string(PROTOCOL_VERSION) + ";" +
+                           std::string(MINECRAFT_VERSION) + ";" +
+                           std::to_string(playersSnapshot().size()) + ";" +
+                           std::to_string(max_players_);
         // Cast to RakLibInterface to access setServerName
         auto* raklib = dynamic_cast<network::RakLibInterface*>(network_->getRakLib());
-        if (raklib) raklib->setServerName(motd);
+        if (raklib)
+            raklib->setServerName(motd);
     }
 }
 
@@ -1346,16 +1433,15 @@ void Server::sendRecipeList(Player* player) {
     // loaded recipes and sends it to this player (doFirstSpawn already
     // sends it on its own; this method remains for manual re-syncs,
     // just like Nukkit's sendRecipeList()).
-    if (!player || !crafting_) return;
+    if (!player || !crafting_)
+        return;
     auto cd = std::make_shared<network::protocol::CraftingDataPacket>();
     cd->addAllRecipes(*crafting_);
     player->sendPacket(cd);
 }
 
-void Server::updatePlayerListData(const std::string& /*uuid*/,
-                                    const std::string& /*name*/,
-                                    int64_t /*eid*/,
-                                    const std::string& /*skin*/) {
+void Server::updatePlayerListData(const std::string& /*uuid*/, const std::string& /*name*/,
+                                  int64_t /*eid*/, const std::string& /*skin*/) {
     // Nukkit: broadcasts PlayerListPacket ADD to all online players.
     // We handle this in player::doFirstSpawn already.
 }

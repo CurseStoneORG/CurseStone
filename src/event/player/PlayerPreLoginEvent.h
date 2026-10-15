@@ -26,16 +26,20 @@
 #include "PlayerEvent.h"
 #include "../Cancellable.h"
 #include <string>
-namespace cursestone { class Player; }
+namespace cursestone {
+class Player;
+}
 
 namespace cursestone::event::player {
 class PlayerPreLoginEvent : public PlayerEvent, public Cancellable {
-public:
+  public:
     std::string message;
     PlayerPreLoginEvent(cursestone::Player* p, const std::string& msg = "")
-        : PlayerEvent(p), message(msg) {}
+        : PlayerEvent(p), message(msg) {
+    }
     const std::string& eventName() const override {
-        static std::string n = "PlayerPreLoginEvent"; return n;
+        static std::string n = "PlayerPreLoginEvent";
+        return n;
     }
 };
 } // namespace cursestone::event::player

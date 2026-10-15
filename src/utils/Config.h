@@ -41,7 +41,7 @@
 namespace cursestone::utils {
 
 class Config {
-public:
+  public:
     Config() = default;
     ~Config() = default;
 
@@ -52,8 +52,8 @@ public:
         enum class Type { Scalar, List, Map };
         Type type = Type::Scalar;
         std::string scalar;
-        std::vector<NodePtr>           list;
-        std::vector<std::pair<std::string, NodePtr>> map;  // insertion-ordered
+        std::vector<NodePtr> list;
+        std::vector<std::pair<std::string, NodePtr>> map; // insertion-ordered
     };
 
     // Load YAML from disk. Returns true on success.
@@ -66,34 +66,27 @@ public:
     bool saveIni(const std::string& path) const;
 
     // Generic getters with default fallback.
-    std::string getString(const std::string& dottedKey,
-                          const std::string& def = "") const;
-    int64_t     getInt(const std::string& dottedKey,
-                       int64_t def = 0) const;
-    double      getDouble(const std::string& dottedKey,
-                          double def = 0.0) const;
-    bool        getBool(const std::string& dottedKey,
-                       bool def = false) const;
-    std::vector<std::string> getStringList(
-        const std::string& dottedKey,
-        const std::vector<std::string>& def = {}) const;
+    std::string getString(const std::string& dottedKey, const std::string& def = "") const;
+    int64_t getInt(const std::string& dottedKey, int64_t def = 0) const;
+    double getDouble(const std::string& dottedKey, double def = 0.0) const;
+    bool getBool(const std::string& dottedKey, bool def = false) const;
+    std::vector<std::string> getStringList(const std::string& dottedKey,
+                                           const std::vector<std::string>& def = {}) const;
 
     void setString(const std::string& dottedKey, const std::string& v);
     void setInt(const std::string& dottedKey, int64_t v);
     void setBool(const std::string& dottedKey, bool v);
 
-private:
+  private:
     NodePtr root_;
 
     // Lookup by dotted key (e.g. "server.port"). Returns nullptr if missing.
     const Node* lookup(const std::string& dottedKey) const;
-    Node*       lookupOrCreate(const std::string& dottedKey);
+    Node* lookupOrCreate(const std::string& dottedKey);
 
     // Recursive YAML parser (minimal).
-    static NodePtr parseYamlLines(const std::vector<std::string>& lines,
-                                   size_t& i, size_t indent);
-    static void   writeYamlNode(const Node& n, std::string& out,
-                                 size_t indent);
+    static NodePtr parseYamlLines(const std::vector<std::string>& lines, size_t& i, size_t indent);
+    static void writeYamlNode(const Node& n, std::string& out, size_t indent);
 };
 
 } // namespace cursestone::utils

@@ -42,20 +42,29 @@
 #include <cstdint>
 
 namespace cursestone {
-    class Player;
-    namespace world { class World; }
+class Player;
+namespace world {
+class World;
+}
 }
 
 namespace cursestone::item {
 
 class ItemFlintSteel : public Item {
-public:
-    ItemFlintSteel() : Item(259) {}
-    std::string name() const override { return "Flint and Steel"; }
+  public:
+    ItemFlintSteel() : Item(259) {
+    }
+    std::string name() const override {
+        return "Flint and Steel";
+    }
 
     // Flint & Steel is a herramienta (toma durability).
-    bool isTool() const override { return true; }
-    int maxStackSize() const override { return 1; }
+    bool isTool() const override {
+        return true;
+    }
+    int maxStackSize() const override {
+        return 1;
+    }
 
     // durability máxima: 65 usos (just like PMMP MCPE 0.15.x)
     static constexpr uint8_t MAX_DURABILITY = 64;
@@ -73,12 +82,12 @@ public:
     //   face          — cara of the target (0=below, 1=above, 2-5=laterales)
     //
     // returns true if is realizó some action (propagando the respuesta to the client).
-    static bool onActivate(world::World* world, Player* player,
-                           int32_t bx, int32_t by, int32_t bz,   // block AIR
-                           int32_t tx, int32_t ty, int32_t tz,   // block target
+    static bool onActivate(world::World* world, Player* player, int32_t bx, int32_t by,
+                           int32_t bz,                         // block AIR
+                           int32_t tx, int32_t ty, int32_t tz, // block target
                            uint8_t face);
 
-private:
+  private:
     // applies 2 points of damage to the ítem in mano of the player (survival only).
     // mirrors: $this->useOn($block, 2)
     static void applyDurability(Player* player);

@@ -35,8 +35,10 @@
 namespace cursestone::network::protocol {
 
 class SetDifficultyPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return SET_DIFFICULTY_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return SET_DIFFICULTY_PACKET;
+    }
 
     int32_t difficulty = 1;
 

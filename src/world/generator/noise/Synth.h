@@ -32,7 +32,7 @@
 namespace cursestone::world::generator {
 
 class Synth {
-public:
+  public:
     virtual ~Synth();
 
     int getDataSize(int width, int height);

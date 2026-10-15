@@ -44,10 +44,14 @@ bool SetEntityMotionPacket::decode(const uint8_t* data, size_t len) {
     entities.clear();
     while (r.remaining() >= 20) {
         Motion m;
-        if (!r.readI64BE(m.eid)) return false;
-        if (!r.readF32BE(m.motX)) return false;
-        if (!r.readF32BE(m.motY)) return false;
-        if (!r.readF32BE(m.motZ)) return false;
+        if (!r.readI64BE(m.eid))
+            return false;
+        if (!r.readF32BE(m.motX))
+            return false;
+        if (!r.readF32BE(m.motY))
+            return false;
+        if (!r.readF32BE(m.motZ))
+            return false;
         entities.push_back(m);
     }
     return true;

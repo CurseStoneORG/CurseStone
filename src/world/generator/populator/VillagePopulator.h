@@ -78,8 +78,8 @@ namespace cursestone::world::generator::populator {
 // One placed piece of a village layout, in WORLD coordinates: the
 // top-left corner of the rotated footprint plus its extent.
 struct VillagePiecePlacement {
-    int kind;   // structure::village::PieceKind
-    int rot;    // total quarter turns (piece rotation + village rotation)
+    int kind; // structure::village::PieceKind
+    int rot;  // total quarter turns (piece rotation + village rotation)
     int x, z;
     int w, h;
 };
@@ -101,31 +101,32 @@ struct VillagePathCell {
 };
 
 struct VillagePlan {
-    std::vector<VillagePiecePlacement> pieces;     // well first
-    std::vector<VillagePathCell> pathCells;        // world road columns
-    int minX = 0, minZ = 0, maxX = 0, maxZ = 0;    // world bounding box (half-open)
-    int wellCx = 0, wellCz = 0;                    // well centre (biome gate)
+    std::vector<VillagePiecePlacement> pieces;  // well first
+    std::vector<VillagePathCell> pathCells;     // world road columns
+    int minX = 0, minZ = 0, maxX = 0, maxZ = 0; // world bounding box (half-open)
+    int wellCx = 0, wellCz = 0;                 // well centre (biome gate)
 };
 
 class VillagePopulator final : public Populator {
-public:
+  public:
     VillagePopulator() = default;
 
-    const char* name() const override { return "Village"; }
+    const char* name() const override {
+        return "Village";
+    }
     void populate(GenerationContext& ctx) override;
 
     // Build the layout of the village anchored in region (regionX,
     // regionZ). Deterministic: same arguments, byte-identical plan.
-    static void buildPlan(int64_t seed, int regionX, int regionZ,
-                          VillagePlan& out);
+    static void buildPlan(int64_t seed, int regionX, int regionZ, VillagePlan& out);
 
     // Does this village actually generate here? False when the well's
     // own footprint is unusable (lake, river, cliff, wrong biome) — the
     // case where the whole village is dropped instead of leaving orphan
     // roads. On true, outBiome/outWellH report the biome and ground
     // level the village builds with (the biome decides its materials).
-    static bool villageStands(const TerrainNoise& noise, const VillagePlan& plan,
-                              uint8_t& outBiome, int& outWellH);
+    static bool villageStands(const TerrainNoise& noise, const VillagePlan& plan, uint8_t& outBiome,
+                              int& outWellH);
 
     // Nanoseconds this populator has spent on the calling thread. The
     // verification tools read it to report the village's REAL marginal

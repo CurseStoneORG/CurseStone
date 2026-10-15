@@ -26,8 +26,12 @@
 #include "BlockIds.h"
 namespace cursestone::block {
 class BlockSign : public BlockTransparent {
-public:
-    uint8_t id() const override { return SIGN_POST; }
-    std::string name() const override { return "Sign"; }
+  public:
+    uint8_t id() const override {
+        return SIGN_POST;
+    }
+    std::string name() const override {
+        return "Sign";
+    }
 };
 } // namespace

@@ -25,8 +25,11 @@
 #include <string>
 namespace cursestone::item {
 class ItemEgg : public Item {
-public:
-    ItemEgg() : Item(344) {}
-    std::string name() const override { return "Egg"; }
+  public:
+    ItemEgg() : Item(344) {
+    }
+    std::string name() const override {
+        return "Egg";
+    }
 };
 } // namespace

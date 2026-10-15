@@ -36,11 +36,12 @@ const BiomeConfig& forestBiome() {
         .snowy = false,
         .underwater = false,
         .treeAmount = 10,
-        .trees = {
-            { object::TREE_OAK, 5 },
-            { object::TREE_BIRCH, 2 },
-            { object::TREE_BIG_OAK, 1 },
-        },
+        .trees =
+            {
+                {object::TREE_OAK, 5},
+                {object::TREE_BIRCH, 2},
+                {object::TREE_BIG_OAK, 1},
+            },
         .grassAmount = 5,
         .flowerAmount = 4,
         .doublePlantAmount = 2,

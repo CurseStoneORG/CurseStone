@@ -30,7 +30,7 @@ extern "C" {
 #endif
 typedef struct mcp_string_tag {
     mcp_tag_t header;
-    char*  value;       // owned UTF-8 buffer
+    char* value; // owned UTF-8 buffer
     size_t length;
 } mcp_string_tag_t;
 mcp_tag_t* mcp_string_tag_new(const char* value, size_t len);

@@ -60,23 +60,24 @@ namespace cursestone {
 //      with ContainerSetContentPacket windowid=0 — this way is as the
 //      client 0.15.x "ve" the result.
 // ============================================================
-void Player::handleCraftingEvent(
-        const std::array<uint8_t, 16>& recipe_uuid,
-        const std::vector<cursestone::item::ItemStack>& input,
-        const std::vector<cursestone::item::ItemStack>& output,
-        uint8_t window_id) {
-    if (!spawned_.load(std::memory_order_relaxed)) return;
-    if (!inv_ || !srv_) return;
-    (void)input; (void)output;  // the truth is in inv_, not in the packet
+void Player::handleCraftingEvent(const std::array<uint8_t, 16>& recipe_uuid,
+                                 const std::vector<cursestone::item::ItemStack>& input,
+                                 const std::vector<cursestone::item::ItemStack>& output,
+                                 uint8_t window_id) {
+    if (!spawned_.load(std::memory_order_relaxed))
+        return;
+    if (!inv_ || !srv_)
+        return;
+    (void)input;
+    (void)output; // the truth is in inv_, not in the packet
 
     auto* mgr = srv_->craftingManager();
-    const inventory::Recipe* recipe =
-        mgr ? mgr->getRecipeByUuidBytes(recipe_uuid.data()) : nullptr;
+    const inventory::Recipe* recipe = mgr ? mgr->getRecipeByUuidBytes(recipe_uuid.data()) : nullptr;
     if (!recipe) {
         // UUID unknown. Resync of the inventory and close the window
         // that the client released abierta (Genisys: sendContents + break).
         utils::MainLogger::get().debug("Player " + cfg_.username +
-            " sent unknown crafting recipe UUID");
+                                       " sent unknown crafting recipe UUID");
         if (window_id != 0 && window_id != container_window_id_) {
             auto cp = std::make_shared<network::protocol::ContainerClosePacket>();
             cp->windowid = window_id;
@@ -87,11 +88,18 @@ void Player::handleCraftingEvent(
     }
 
     // ---- Conteo of ingredients requeridos (id + meta) ----
-    struct Need { uint16_t id; int16_t meta; int count; };
+    struct Need {
+        uint16_t id;
+        int16_t meta;
+        int count;
+    };
     std::vector<Need> needs;
     auto addNeed = [&](uint16_t id, int16_t meta, int count) {
         for (auto& n : needs) {
-            if (n.id == id && n.meta == meta) { n.count += count; return; }
+            if (n.id == id && n.meta == meta) {
+                n.count += count;
+                return;
+            }
         }
         needs.push_back({id, meta, count});
     };
@@ -99,7 +107,8 @@ void Player::handleCraftingEvent(
         const auto& g = recipe->grid();
         const auto& m = recipe->gridMeta();
         for (int i = 0; i < 9; ++i) {
-            if (g[i] != 0) addNeed(g[i], m[i], 1);
+            if (g[i] != 0)
+                addNeed(g[i], m[i], 1);
         }
     } else if (recipe->type() == inventory::RECIPE_SHAPELESS) {
         const auto& ing = recipe->ingredients();
@@ -108,7 +117,7 @@ void Player::handleCraftingEvent(
             addNeed(ing[i], i < im.size() ? im[i] : (int16_t)-1, 1);
         }
     } else {
-        return;  // the recetas of furnace not is craftean in the grilla
+        return; // the recetas of furnace not is craftean in the grilla
     }
 
     // ---- Validar contra the inventory actual (slots 0..35) ----
@@ -120,20 +129,28 @@ void Player::handleCraftingEvent(
         int found = 0;
         for (int slot = 0; slot < inv_->getSize(); ++slot) {
             auto it = inv_->getItem(slot);
-            if (it.id != n.id) continue;
-            if (n.meta >= 0 && it.meta != (uint16_t)n.meta) continue;
+            if (it.id != n.id)
+                continue;
+            if (n.meta >= 0 && it.meta != (uint16_t)n.meta)
+                continue;
             int avail = it.count - used[slot];
-            if (avail <= 0) continue;
+            if (avail <= 0)
+                continue;
             int take = std::min(avail, n.count - found);
             used[slot] += take;
             found += take;
-            if (found >= n.count) break;
+            if (found >= n.count)
+                break;
         }
-        if (found < n.count) { canCraft = false; break; }
+        if (found < n.count) {
+            canCraft = false;
+            break;
+        }
     }
     if (!canCraft) {
         utils::MainLogger::get().debug("Player " + cfg_.username +
-            " lacks ingredients for recipe " + std::to_string(recipe->uuid()));
+                                       " lacks ingredients for recipe " +
+                                       std::to_string(recipe->uuid()));
         sendInventory();
         return;
     }
@@ -148,22 +165,24 @@ void Player::handleCraftingEvent(
 
     // ---- Consumir ingredients (marcados in used[]) ----
     for (int slot = 0; slot < inv_->getSize(); ++slot) {
-        if (used[slot] == 0) continue;
+        if (used[slot] == 0)
+            continue;
         auto it = inv_->getItem(slot);
         it.count -= used[slot];
-        if (it.count <= 0) it = cursestone::item::ItemStack::EMPTY();
+        if (it.count <= 0)
+            it = cursestone::item::ItemStack::EMPTY();
         inv_->setItem(slot, it);
     }
 
     // ---- Dar the result (or dropearlo if not cabe) ----
     auto result = recipe->result();
-    if (result.count <= 0) result.count = 1;
+    if (result.count <= 0)
+        result.count = 1;
     auto leftover = inv_->addItem({result});
     for (const auto& extra : leftover) {
         if (!extra.isEmpty()) {
-            dropItem(pos_.x, pos_.y, pos_.z,
-                     extra.id, (uint8_t)extra.count, extra.meta,
-                     0.0, 0.2, 0.0, 10, extra.nbt);
+            dropItem(pos_.x, pos_.y, pos_.z, extra.id, (uint8_t)extra.count, extra.meta, 0.0, 0.2,
+                     0.0, 10, extra.nbt);
         }
     }
 
@@ -176,8 +195,9 @@ void Player::handleCraftingEvent(
     sendInventory();
 
     if (srv_ && srv_->advancedLog()) {
-        utils::MainLogger::get().info("[CRAFT] " + cfg_.username + " crafted id=" +
-            std::to_string(result.id) + " count=" + std::to_string(result.count));
+        utils::MainLogger::get().info("[CRAFT] " + cfg_.username +
+                                      " crafted id=" + std::to_string(result.id) +
+                                      " count=" + std::to_string(result.count));
     }
 }
 
@@ -189,37 +209,48 @@ void Player::handleCraftingEvent(
 // event-path (validar + consumir + dar). same order of slots that
 // sendInventory(): 0..3 = grilla 2x2.
 void Player::handleInventoryCraft() {
-    if (!inv_ || !srv_) return;
+    if (!inv_ || !srv_)
+        return;
     auto* mgr = srv_->craftingManager();
-    if (!mgr) return;
+    if (!mgr)
+        return;
 
     std::array<uint16_t, 9> grid{};
     std::array<uint16_t, 9> meta{};
     bool any = false;
     for (int i = 0; i < 4; ++i) {
         auto it = inv_->getItem(i);
-        if (!it.isEmpty()) { grid[i] = it.id; meta[i] = it.meta; any = true; }
+        if (!it.isEmpty()) {
+            grid[i] = it.id;
+            meta[i] = it.meta;
+            any = true;
+        }
     }
-    if (!any) return;
+    if (!any)
+        return;
 
     const inventory::Recipe* r = mgr->matchShapedWithMeta(grid, meta);
     if (!r) {
-        std::vector<std::pair<uint16_t, uint16_t>> pairs;  // (id, meta)
+        std::vector<std::pair<uint16_t, uint16_t>> pairs; // (id, meta)
         for (int i = 0; i < 4; ++i) {
-            if (grid[i] != 0) pairs.push_back({grid[i], meta[i]});
+            if (grid[i] != 0)
+                pairs.push_back({grid[i], meta[i]});
         }
         std::sort(pairs.begin(), pairs.end());
         std::vector<uint16_t> ids, metas;
         ids.reserve(pairs.size());
         metas.reserve(pairs.size());
-        for (auto& pr : pairs) { ids.push_back(pr.first); metas.push_back(pr.second); }
+        for (auto& pr : pairs) {
+            ids.push_back(pr.first);
+            metas.push_back(pr.second);
+        }
         r = mgr->matchShapelessWithMeta(ids, metas);
     }
-    if (!r) return;
+    if (!r)
+        return;
 
     handleCraftingEvent(r->uuidBytes(), {}, {}, 0);
 }
-
 
 // ============================================================
 // Drop an item entity at to position — pocketmine\level\Level::dropItem()
@@ -235,13 +266,14 @@ void Player::handleInventoryCraft() {
 // lcg_value()*0.2 - 0.1)` used for block/death drops; to Q drop passes
 // getDirectionVector()->multiply(0.4) instead (see handleDropItem).
 // ============================================================
-int64_t Player::dropItem(double x, double y, double z, uint16_t itemId,
-                         uint8_t count, uint16_t damage,
-                         double motionX, double motionY, double motionZ,
+int64_t Player::dropItem(double x, double y, double z, uint16_t itemId, uint8_t count,
+                         uint16_t damage, double motionX, double motionY, double motionZ,
                          uint32_t pickup_delay, const std::string& nbt) {
     // World::dropItem() bails on an empty stack.
-    if (itemId == 0 || count == 0) return 0;
-    if (!srv_) return 0;
+    if (itemId == 0 || count == 0)
+        return 0;
+    if (!srv_)
+        return 0;
     if (motionX == 0.0 && motionY == 0.0 && motionZ == 0.0) {
         // World::dropItem()'s default: `$motion = new Vector3(
         // lcg_value() * 0.2 - 0.1, 0.2, lcg_value() * 0.2 - 0.1)`. The
@@ -259,11 +291,11 @@ int64_t Player::dropItem(double x, double y, double z, uint16_t itemId,
     int64_t eid = srv_->allocateEid();
 
     auto pk = std::make_shared<network::protocol::AddItemEntityPacket>();
-    pk->eid        = eid;
-    pk->itemId     = static_cast<int16_t>(itemId);
-    pk->itemCount  = count;
+    pk->eid = eid;
+    pk->itemId = static_cast<int16_t>(itemId);
+    pk->itemCount = count;
     pk->itemDamage = static_cast<int16_t>(damage);
-    pk->itemNbt    = nbt;   // custom-named drops keep their name
+    pk->itemNbt = nbt; // custom-named drops keep their name
     // Genisys uses the raw entity position — NOT floor(x)+0.5. Rounding to
     // the block centre is what used to make to dropped stack appear half to
     // block off from where the client thought it was.
@@ -278,8 +310,10 @@ int64_t Player::dropItem(double x, double y, double z, uint16_t itemId,
     int32_t pk_cx = (int)std::floor(x) >> 4;
     int32_t pk_cz = (int)std::floor(z) >> 4;
     for (auto& other : srv_->playersSnapshot()) {
-        if (!other) continue;
-        if (other->getWorld() != getWorld()) continue;   // same world
+        if (!other)
+            continue;
+        if (other->getWorld() != getWorld())
+            continue; // same world
         if (other.get() == this) {
             // Always send to the dropper too so they see their own drop.
         } else if (!other->canSeeBlock(pk_cx, pk_cz)) {
@@ -293,34 +327,35 @@ int64_t Player::dropItem(double x, double y, double z, uint16_t itemId,
     // same motion the client is integrating.
     if (getWorld()) {
         world::DroppedItem di;
-        di.eid        = eid;
-        di.itemId     = itemId;
-        di.count      = count;
-        di.damage     = damage;
-        di.nbt        = nbt;
-        di.x          = x;
-        di.y          = y;
-        di.z          = z;
+        di.eid = eid;
+        di.itemId = itemId;
+        di.count = count;
+        di.damage = damage;
+        di.nbt = nbt;
+        di.x = x;
+        di.y = y;
+        di.z = z;
         di.spawn_tick = srv_->getCurrentTick();
         di.pickup_delay_ticks = pickup_delay;
-        di.taken     = false;
-        di.vx        = motionX;
-        di.vy        = motionY;
-        di.vz        = motionZ;
+        di.taken = false;
+        di.vx = motionX;
+        di.vy = motionY;
+        di.vz = motionZ;
         // $lastX/$lastY/$lastZ — start at the spawn point so the very
         // first updateMovement() only fires once the item has really moved.
-        di.lx = x; di.ly = y; di.lz = z;
+        di.lx = x;
+        di.ly = y;
+        di.lz = z;
         getWorld()->addDroppedItem(di);
     }
 
     if (srv_->advancedLog()) {
-        utils::MainLogger::get().info("[DROP] eid=" + std::to_string(eid) +
-            " item=" + std::to_string(itemId) + " x" + std::to_string(count) +
-            " dmg=" + std::to_string(damage) + " at " +
-            std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(z) +
-            " motion=" + std::to_string(motionX) + "," +
-            std::to_string(motionY) + "," + std::to_string(motionZ) +
-            " delay=" + std::to_string(pickup_delay));
+        utils::MainLogger::get().info(
+            "[DROP] eid=" + std::to_string(eid) + " item=" + std::to_string(itemId) + " x" +
+            std::to_string(count) + " dmg=" + std::to_string(damage) + " at " + std::to_string(x) +
+            "," + std::to_string(y) + "," + std::to_string(z) +
+            " motion=" + std::to_string(motionX) + "," + std::to_string(motionY) + "," +
+            std::to_string(motionZ) + " delay=" + std::to_string(pickup_delay));
     }
     return eid;
 }
@@ -351,30 +386,49 @@ int64_t Player::dropItem(double x, double y, double z, uint16_t itemId,
 //     the server's inventory in agreement.
 // ============================================================
 void Player::handleDropItem(network::protocol::DropItemPacket& pk) {
-    if (!spawned() || !inv_) return;
-    if (isDead()) return;   // Genisys: `if(... or !$this->isAlive()) break;`
+    if (!spawned() || !inv_)
+        return;
+    if (isDead())
+        return; // Genisys: `if(... or !$this->isAlive()) break;`
 
     item::ItemStack want{};
-    want.id    = (uint16_t)pk.itemId;
-    want.meta  = (uint8_t)pk.itemDamage;
+    want.id = (uint16_t)pk.itemId;
+    want.meta = (uint8_t)pk.itemDamage;
     want.count = (int)pk.itemCount;
-    if (want.isEmpty()) return;
+    if (want.isEmpty())
+        return;
 
-    if (!inv_->contains(want)) { sendInventory(); return; }
+    if (!inv_->contains(want)) {
+        sendInventory();
+        return;
+    }
     int slot = inv_->first(want);
-    if (slot < 0) { sendInventory(); return; }
+    if (slot < 0) {
+        sendInventory();
+        return;
+    }
 
     item::ItemStack dropped = inv_->getItem(slot);
-    if (dropped.isEmpty() || dropped.count <= 0) { sendInventory(); return; }
+    if (dropped.isEmpty() || dropped.count <= 0) {
+        sendInventory();
+        return;
+    }
     auto ev = event::EventManager::get().fire<event::player::PlayerDropItemEvent>(this, dropped);
-    if (ev.isCancelled()) { sendSlot(slot); return; }
+    if (ev.isCancelled()) {
+        sendSlot(slot);
+        return;
+    }
 
     // type 1 = "drop the stack" (Ctrl+Q); type 0 = "drop what the packet
     // asked for". Clamp to what the slot actually holds so to spoofed
     // count can never clone or void items.
     int drop_count = (pk.type != 0) ? dropped.count : want.count;
-    if (drop_count > dropped.count) drop_count = dropped.count;
-    if (drop_count <= 0) { sendInventory(); return; }
+    if (drop_count > dropped.count)
+        drop_count = dropped.count;
+    if (drop_count <= 0) {
+        sendInventory();
+        return;
+    }
 
     // Take it out of the slot it came from — decrement and only clear the
     // slot when it runs out. BaseInventory::remove() used to erase the map
@@ -403,8 +457,7 @@ void Player::handleDropItem(network::protocol::DropItemPacket& pk) {
     // the item is always where you dropped it and always collectable.
     const double kMUL = 0.15;
     math::Vector3 dir = getDirectionVector();
-    dropItem(pos_.x, pos_.y + 1.3, pos_.z,
-             dropped.id, (uint8_t)drop_count, dropped.meta,
+    dropItem(pos_.x, pos_.y + 1.3, pos_.z, dropped.id, (uint8_t)drop_count, dropped.meta,
              dir.x * kMUL, dir.y * kMUL, dir.z * kMUL,
              40 /* PickupDelay: 2 s, Genisys' manual-drop value */,
              dropped.nbt /* a named stack keeps its name when thrown */);
@@ -416,15 +469,21 @@ void Player::handleDropItem(network::protocol::DropItemPacket& pk) {
 // FoodSource have efecto; the rest is not-op.
 // ============================================================
 void Player::consumeHeldItem() {
-    if (!spawned() || !inv_) return;
+    if (!spawned() || !inv_)
+        return;
     item::ItemStack held = inv_->getHeldItem();
-    if (held.isEmpty()) return;
+    if (held.isEmpty())
+        return;
 
     item::Item* def = item::Item::get(held.id);
-    if (!def || !def->isFood()) return;
+    if (!def || !def->isFood())
+        return;
 
     auto ev = event::EventManager::get().fire<event::player::PlayerItemConsumeEvent>(this, held);
-    if (ev.isCancelled()) { sendInventory(); return; }
+    if (ev.isCancelled()) {
+        sendInventory();
+        return;
+    }
 
     int restored = def->foodPoints();
     if (restored > 0) {
@@ -458,7 +517,8 @@ void Player::sendCreativeInventory() {
 // Nukkit player.sendInventory() + player.sendArmor().
 // ============================================================
 void Player::sendInventory() {
-    if (!inv_) return;
+    if (!inv_)
+        return;
 
     // main inventory (windowid 0x00): 45 slots (36 main + 9 hotbar).
     //
@@ -567,14 +627,15 @@ void Player::sendInventory() {
 // server's inventory.
 // ============================================================
 void Player::sendSlot(int slot) {
-    if (!inv_) return;
+    if (!inv_)
+        return;
 
     // Determine the windowid and the current slot index.
     uint8_t windowid;
     int actual_slot = slot;
 
     if (slot >= inventory::PlayerInventory::ARMOR_OFFSET &&
-        slot <  inventory::PlayerInventory::ARMOR_OFFSET + 4) {
+        slot < inventory::PlayerInventory::ARMOR_OFFSET + 4) {
         // Armor slot — windowid 0x78, slot 0..3.
         windowid = network::protocol::ContainerSetSlotPacket::SPECIAL_ARMOR;
         actual_slot = slot - inventory::PlayerInventory::ARMOR_OFFSET;
@@ -582,17 +643,18 @@ void Player::sendSlot(int slot) {
         // main inventory — windowid 0x00.
         windowid = network::protocol::ContainerSetSlotPacket::SPECIAL_INVENTORY;
     } else {
-        return;  // Invalid slot.
+        return; // Invalid slot.
     }
 
     auto pk = std::make_shared<network::protocol::ContainerSetSlotPacket>();
-    pk->windowid   = windowid;
-    pk->slot       = static_cast<int16_t>(actual_slot);
+    pk->windowid = windowid;
+    pk->slot = static_cast<int16_t>(actual_slot);
     pk->hotbarSlot = static_cast<int16_t>(actual_slot);
     auto item = inv_->getItem(slot);
-    pk->itemId     = static_cast<int16_t>(item.id);
-    pk->itemCount  = item.count;
+    pk->itemId = static_cast<int16_t>(item.id);
+    pk->itemCount = item.count;
     pk->itemDamage = static_cast<int16_t>(item.meta);
-    pk->itemNbt    = item.nbt;   // custom-named items keep their name
+    pk->itemNbt = item.nbt; // custom-named items keep their name
     sendPacket(pk);
-}} // namespace cursestone
+}
+} // namespace cursestone

@@ -80,17 +80,14 @@ int wrapRegion(int value) {
 // The chunk a region puts its village anchor in. Pure function of
 // (seed, regionX, regionZ) — copied from StructurePopulator so both
 // structure types share the exact same rigid placement math.
-void regionCandidate(int64_t seed, int regionX, int regionZ, int salt,
-                     int& chunkX, int& chunkZ) {
-    MersenneRandom rng(seed * 341873128712LL +
-                  (int64_t)regionX * 341873128712LL +
-                  (int64_t)regionZ * 132897987541LL +
-                  (int64_t)salt);
+void regionCandidate(int64_t seed, int regionX, int regionZ, int salt, int& chunkX, int& chunkZ) {
+    MersenneRandom rng(seed * 341873128712LL + (int64_t)regionX * 341873128712LL +
+                       (int64_t)regionZ * 132897987541LL + (int64_t)salt);
     const int span = kSpacing - kSeparation;
-    chunkX = regionX * kSpacing +
-             wrapRegion(regionX * kSpacing + kSeparation + (int)rng.nextInt(span));
-    chunkZ = regionZ * kSpacing +
-             wrapRegion(regionZ * kSpacing + kSeparation + (int)rng.nextInt(span));
+    chunkX =
+        regionX * kSpacing + wrapRegion(regionX * kSpacing + kSeparation + (int)rng.nextInt(span));
+    chunkZ =
+        regionZ * kSpacing + wrapRegion(regionZ * kSpacing + kSeparation + (int)rng.nextInt(span));
 }
 
 // Biomes a village may start in and grow through. Vanilla 1.9-era
@@ -100,8 +97,8 @@ void regionCandidate(int64_t seed, int regionX, int regionZ, int salt,
 // grassland/sand thing instead of one crawling through a jungle.
 bool isVillageBiome(uint8_t b) {
     using namespace biome;
-    return b == BIOME_PLAINS || b == BIOME_PLAINS_PLATEAU ||
-           b == BIOME_DESERT || b == BIOME_SAVANNA;
+    return b == BIOME_PLAINS || b == BIOME_PLAINS_PLATEAU || b == BIOME_DESERT ||
+           b == BIOME_SAVANNA;
 }
 
 // ---- Geometry helpers -----------------------------------------------------
@@ -127,10 +124,15 @@ void rotateRect(int& x, int& z, int& w, int& h, int rot) {
         }
     int x0 = ax[0], x1 = ax[0], z0 = az[0], z1 = az[0];
     for (int i = 1; i < 4; ++i) {
-        x0 = std::min(x0, ax[i]); x1 = std::max(x1, ax[i]);
-        z0 = std::min(z0, az[i]); z1 = std::max(z1, az[i]);
+        x0 = std::min(x0, ax[i]);
+        x1 = std::max(x1, ax[i]);
+        z0 = std::min(z0, az[i]);
+        z1 = std::max(z1, az[i]);
     }
-    x = x0; z = z0; w = x1 - x0; h = z1 - z0;
+    x = x0;
+    z = z0;
+    w = x1 - x0;
+    h = z1 - z0;
 }
 
 // The four road arms leaving the well. Each arm's buildings live on ONE
@@ -151,14 +153,16 @@ struct ArmSpec {
     int doorTarget; // java facing each door must point at (toward the road)
 };
 constexpr ArmSpec kArms[4] = {
-    {+1, true,  +1, 4},   // east
-    {-1, false, +1, 2},   // north
-    {-1, true,  -1, 3},   // west
-    {+1, false, -1, 1},   // south
+    {+1, true, +1, 4},  // east
+    {-1, false, +1, 2}, // north
+    {-1, true, -1, 3},  // west
+    {+1, false, -1, 1}, // south
 };
 
 // First coordinate of an arm at along-distance t (t=0 is the well face).
-inline int alongCoord(int dir, int t) { return dir > 0 ? 6 + t : -1 - t; }
+inline int alongCoord(int dir, int t) {
+    return dir > 0 ? 6 + t : -1 - t;
+}
 
 // Half-open [start, start+ext) span of `ext` cells starting at t.
 inline int alongStart(int dir, int t, int ext) {
@@ -168,7 +172,9 @@ inline int alongStart(int dir, int t, int ext) {
 // Perpendicular band start for a building/lamp of extent ext on the
 // arm's side: side +1 begins at row 3 (just south/east of the road),
 // side -1 ends at row 0 (just north/west of it).
-inline int perpStart(int side, int ext) { return side > 0 ? 3 : 1 - ext; }
+inline int perpStart(int side, int ext) {
+    return side > 0 ? 3 : 1 - ext;
+}
 
 // The weave of one arm's lane: a sine wave across the road's own
 // corridor, so streets bend gently instead of running ruler-straight.
@@ -181,7 +187,7 @@ inline int perpStart(int side, int ext) { return side > 0 ? 3 : 1 - ext; }
 // anyway, so the lane hugs the wall either way.
 struct LaneWeave {
     double phase;
-    double wave;     // wavelength in cells (short = more curvature)
+    double wave; // wavelength in cells (short = more curvature)
 
     int base(int t, int side) const {
         const double s = std::sin(6.283185307179586 * (double)t / wave + phase);
@@ -200,13 +206,14 @@ struct LaneWeave {
 
 // Vanilla's weighted village piece pool (StructureVillagePieces). The
 // one-shot buildings are capped at one copy the way vanilla caps them.
-struct PoolEntry { int kind; int weight; };
+struct PoolEntry {
+    int kind;
+    int weight;
+};
 constexpr PoolEntry kPool[] = {
-    {village::PIECE_T1_HOUSE, 4}, {village::PIECE_T2_HOUSE, 4},
-    {village::PIECE_T3_HOUSE, 3}, {village::PIECE_T4_HOUSE, 3},
-    {village::PIECE_T5_HOUSE, 2},
-    {village::PIECE_T1_FARM, 4},  {village::PIECE_T2_FARM, 3},
-    {village::PIECE_CHURCH, 2},   {village::PIECE_LIBRARY, 2},
+    {village::PIECE_T1_HOUSE, 4},   {village::PIECE_T2_HOUSE, 4}, {village::PIECE_T3_HOUSE, 3},
+    {village::PIECE_T4_HOUSE, 3},   {village::PIECE_T5_HOUSE, 2}, {village::PIECE_T1_FARM, 4},
+    {village::PIECE_T2_FARM, 3},    {village::PIECE_CHURCH, 2},   {village::PIECE_LIBRARY, 2},
     {village::PIECE_BLACKSMITH, 2}, {village::PIECE_BUTCHER, 2},
 };
 constexpr int kPoolTotal = 31;
@@ -224,11 +231,16 @@ int pieceFront(int kind) {
 // pointing at `target`.
 int facingCycleIndex(uint8_t f) {
     switch (f) {
-        case 4: return 0;  // north
-        case 1: return 1;  // east
-        case 3: return 2;  // south
-        case 2: return 3;  // west
-        default: return 0;
+    case 4:
+        return 0; // north
+    case 1:
+        return 1; // east
+    case 3:
+        return 2; // south
+    case 2:
+        return 3; // west
+    default:
+        return 0;
     }
 }
 int cwFacingSteps(uint8_t front, uint8_t target) {
@@ -244,30 +256,31 @@ int pickBuilding(MersenneRandom& rng, int counts[village::PIECE_COUNT]) {
         int r = (int)rng.nextInt(kPoolTotal);
         int kind = kPool[std::size(kPool) - 1].kind;
         for (const PoolEntry& e : kPool) {
-            if (r < e.weight) { kind = e.kind; break; }
+            if (r < e.weight) {
+                kind = e.kind;
+                break;
+            }
             r -= e.weight;
         }
-        const bool capped =
-            (kind == PIECE_CHURCH || kind == PIECE_LIBRARY ||
-             kind == PIECE_BLACKSMITH || kind == PIECE_BUTCHER) &&
-            counts[kind] >= 1;
-        if (!capped) return kind;
+        const bool capped = (kind == PIECE_CHURCH || kind == PIECE_LIBRARY ||
+                             kind == PIECE_BLACKSMITH || kind == PIECE_BUTCHER) &&
+                            counts[kind] >= 1;
+        if (!capped)
+            return kind;
     }
     return -1;
 }
 
-void buildLayout(int64_t seed, int regionX, int regionZ,
-                 int anchorChunkX, int anchorChunkZ, VillagePlan& out) {
+void buildLayout(int64_t seed, int regionX, int regionZ, int anchorChunkX, int anchorChunkZ,
+                 VillagePlan& out) {
     using namespace village;
 
     out = VillagePlan{};
 
     // The layout rng is mixed differently from regionCandidate's so the
     // well offset and the anchor chunk cannot correlate.
-    MersenneRandom rng(seed * 341873128712LL +
-                  (int64_t)regionX * 132897987541LL +
-                  (int64_t)regionZ * 341873128712LL +
-                  kSalt * 2 + 0x5F3759DFLL);
+    MersenneRandom rng(seed * 341873128712LL + (int64_t)regionX * 132897987541LL +
+                       (int64_t)regionZ * 341873128712LL + kSalt * 2 + 0x5F3759DFLL);
 
     // Well: inside the anchor chunk, nudged so the roads leave from a
     // spot near its middle instead of a corner.
@@ -283,7 +296,8 @@ void buildLayout(int64_t seed, int regionX, int regionZ,
     auto place = [&](int kind, int pieceRot, int vx, int vz, int vw, int vh) {
         int wx = vx, wz = vz, w = vw, h = vh;
         rotateRect(wx, wz, w, h, villageRot);
-        wx += wellWx; wz += wellWz;
+        wx += wellWx;
+        wz += wellWz;
         out.pieces.push_back(
             VillagePiecePlacement{kind, (pieceRot + villageRot) & 3, wx, wz, w, h});
     };
@@ -291,11 +305,14 @@ void buildLayout(int64_t seed, int regionX, int regionZ,
     // each remember the cell they walked from, then rotated to the world
     // with the very transform the pieces use — so a road can never
     // disagree with a building about where anything is.
-    struct VCell { int x, z, parent; };
+    struct VCell {
+        int x, z, parent;
+    };
     std::vector<VCell> road;
     auto roadFind = [&](int vx, int vz) -> int {
         for (int i = (int)road.size() - 1; i >= 0; --i)
-            if (road[i].x == vx && road[i].z == vz) return i;
+            if (road[i].x == vx && road[i].z == vz)
+                return i;
         return -1;
     };
     // Adds a road cell, or returns the one already there (the pad, the
@@ -303,7 +320,8 @@ void buildLayout(int64_t seed, int regionX, int regionZ,
     // to a NEW cell: the cell the road came from.
     auto roadAdd = [&](int vx, int vz, int parent) -> int {
         const int at = roadFind(vx, vz);
-        if (at >= 0) return at;
+        if (at >= 0)
+            return at;
         road.push_back({vx, vz, parent});
         return (int)road.size() - 1;
     };
@@ -317,9 +335,8 @@ void buildLayout(int64_t seed, int regionX, int regionZ,
         // How this arm's lane weaves: a sine across the road's own
         // corridor, drawn from the layout rng so every chunk rebuilds
         // the identical bend.
-        const LaneWeave lane{
-            (double)rng.nextFloat() * 6.283185307179586,
-            (double)(8.0f + rng.nextFloat() * 8.0f)};
+        const LaneWeave lane{(double)rng.nextFloat() * 6.283185307179586,
+                             (double)(8.0f + rng.nextFloat() * 8.0f)};
 
         // Street lamp beside the first stretch of road: 3x3 footprint
         // hugging the road lanes, drawn before the buildings so its slot
@@ -339,7 +356,8 @@ void buildLayout(int64_t seed, int regionX, int regionZ,
         const int n = 1 + (int)rng.nextInt(2);
         for (int bi = 0; bi < n; ++bi) {
             const int kind = pickBuilding(rng, counts);
-            if (kind < 0) continue;
+            if (kind < 0)
+                continue;
             const Structure* s = piece((PieceKind)kind);
 
             int pieceRot;
@@ -352,7 +370,7 @@ void buildLayout(int64_t seed, int regionX, int regionZ,
             const int rw = s->rotatedSizeX(pieceRot);
             const int rh = s->rotatedSizeZ(pieceRot);
             const int alongExt = arm.alongX ? rw : rh;
-            const int perpExt  = arm.alongX ? rh : rw;
+            const int perpExt = arm.alongX ? rh : rw;
             const int a0 = alongStart(arm.dir, t, alongExt);
             const int p0 = perpStart(arm.perpSide, perpExt);
             const int vx = arm.alongX ? a0 : p0;
@@ -361,7 +379,7 @@ void buildLayout(int64_t seed, int regionX, int regionZ,
 
             counts[kind]++;
             t += alongExt + 2;
-            lineEnd = t - 2;   // far edge of this building
+            lineEnd = t - 2; // far edge of this building
         }
 
         // The lane: a 3-wide pad spilling out of the well face, then
@@ -381,9 +399,9 @@ void buildLayout(int64_t seed, int regionX, int regionZ,
                 const int p = b + r;
                 const int a = alongCoord(arm.dir, tt);
                 const int parent = tt == 0 ? -1 : prev[std::min(r, 1)];
-                const int idx = roadAdd(arm.alongX ? a : p,
-                                        arm.alongX ? p : a, parent);
-                if (r < 2) prev[r] = idx;
+                const int idx = roadAdd(arm.alongX ? a : p, arm.alongX ? p : a, parent);
+                if (r < 2)
+                    prev[r] = idx;
             }
         }
 
@@ -394,23 +412,23 @@ void buildLayout(int64_t seed, int regionX, int regionZ,
         const int nBranch = rng.nextInt(10) < 7 ? 1 + (int)rng.nextInt(2) : 0;
         for (int bi = 0; bi < nBranch && laneEnd >= 5; ++bi) {
             const int tf = 3 + (int)rng.nextInt(laneEnd - 3);
-            const int out = -arm.perpSide;   // outward = away from buildings
+            const int out = -arm.perpSide; // outward = away from buildings
             const int prow = lane.base(tf, arm.perpSide) + (out > 0 ? 1 : 0);
             const int acol = alongCoord(arm.dir, tf);
-            const int fork = roadFind(arm.alongX ? acol : prow,
-                                      arm.alongX ? prow : acol);
-            if (fork < 0) continue;
+            const int fork = roadFind(arm.alongX ? acol : prow, arm.alongX ? prow : acol);
+            if (fork < 0)
+                continue;
 
             const double wAmp = (double)(0.4f + rng.nextFloat() * 0.7f);
-            const double wPh  = (double)rng.nextFloat() * 6.283185307179586;
+            const double wPh = (double)rng.nextFloat() * 6.283185307179586;
             const double wLen = (double)(4.0f + rng.nextFloat() * 5.0f);
-            const int len = 4 + (int)rng.nextInt(7);   // 4..10 cells out
+            const int len = 4 + (int)rng.nextInt(7); // 4..10 cells out
 
             int parent = fork, lx = 0, lz = 0;
             for (int s = 1; s <= len; ++s) {
                 const int p = prow + out * s;
-                const int off = (int)std::lround(
-                    wAmp * std::sin(6.283185307179586 * (double)s / wLen + wPh));
+                const int off =
+                    (int)std::lround(wAmp * std::sin(6.283185307179586 * (double)s / wLen + wPh));
                 const int a = acol + off;
                 lx = arm.alongX ? a : p;
                 lz = arm.alongX ? p : a;
@@ -469,10 +487,11 @@ void buildLayout(int64_t seed, int regionX, int regionZ,
         stack.pop_back();
         const int nb[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
         for (const auto& d : nb) {
-            const int64_t key = ((int64_t)(worldCells[i].x + d[0]) << 32) ^
-                                (uint32_t)(worldCells[i].z + d[1]);
+            const int64_t key =
+                ((int64_t)(worldCells[i].x + d[0]) << 32) ^ (uint32_t)(worldCells[i].z + d[1]);
             const auto it = at.find(key);
-            if (it == at.end() || reach[it->second]) continue;
+            if (it == at.end() || reach[it->second])
+                continue;
             reach[it->second] = 1;
             stack.push_back(it->second);
         }
@@ -484,18 +503,21 @@ void buildLayout(int64_t seed, int regionX, int regionZ,
     out.pathCells.reserve(worldCells.size());
     std::vector<int> newIdx(worldCells.size(), -1);
     for (size_t i = 0; i < worldCells.size(); ++i) {
-        if (!alive[i] || !reach[i]) continue;
+        if (!alive[i] || !reach[i])
+            continue;
         int p = worldCells[i].parent;
-        while (p >= 0 && newIdx[p] < 0) p = worldCells[p].parent;
+        while (p >= 0 && newIdx[p] < 0)
+            p = worldCells[p].parent;
         newIdx[i] = (int)out.pathCells.size();
-        out.pathCells.push_back({worldCells[i].x, worldCells[i].z,
-                                 p < 0 ? -1 : newIdx[p]});
+        out.pathCells.push_back({worldCells[i].x, worldCells[i].z, p < 0 ? -1 : newIdx[p]});
     }
 
     // World bounding box over everything.
     if (!out.pieces.empty()) {
-        out.minX = out.pieces[0].x; out.maxX = out.pieces[0].x + out.pieces[0].w;
-        out.minZ = out.pieces[0].z; out.maxZ = out.pieces[0].z + out.pieces[0].h;
+        out.minX = out.pieces[0].x;
+        out.maxX = out.pieces[0].x + out.pieces[0].w;
+        out.minZ = out.pieces[0].z;
+        out.maxZ = out.pieces[0].z + out.pieces[0].h;
     }
     for (const VillagePiecePlacement& p : out.pieces) {
         out.minX = std::min(out.minX, p.x);
@@ -528,9 +550,9 @@ void buildLayout(int64_t seed, int regionX, int regionZ,
 // road cell) is judged.
 struct SiteColumn {
     int16_t x, z;
-    int16_t h;        // terrain height: the surface block sits at h-1
-    uint8_t ground;   // the biome's surface block (used to pack under pieces)
-    uint8_t stamp;    // road cells only: may a road be drawn here?
+    int16_t h;      // terrain height: the surface block sits at h-1
+    uint8_t ground; // the biome's surface block (used to pack under pieces)
+    uint8_t stamp;  // road cells only: may a road be drawn here?
 };
 
 // Same contract as StructurePopulator's structureBaseY, for one piece:
@@ -539,22 +561,27 @@ struct SiteColumn {
 // template's first layer), or -1 to drop the piece. When `columns` is
 // given it collects the per-column facts of the footprint on the way, so
 // filling the ground under the piece later needs no noise at all.
-int pieceBaseY(const TerrainNoise& noise, const Structure& s, int rot,
-               int wx, int wz, std::vector<SiteColumn>* columns) {
+int pieceBaseY(const TerrainNoise& noise, const Structure& s, int rot, int wx, int wz,
+               std::vector<SiteColumn>* columns) {
     const int rw = s.rotatedSizeX(rot);
     const int rh = s.rotatedSizeZ(rot);
     int lowest = 128, highest = -1;
-    if (columns) columns->clear();
+    if (columns)
+        columns->clear();
 
     for (int j = 0; j < rh; ++j) {
         for (int i = 0; i < rw; ++i) {
             const int x = wx + i, z = wz + j;
             const int h = columnHeight(noise, x, z);
             const uint8_t b = columnBiome(noise, x, z, h);
-            if (!isVillageBiome(b)) return -1;
-            if (h < kSeaLevel + 1) return -1;                  // no water
-            if (h > 127 - s.sizeY() - 1) return -1;            // fits under the top
-            if (riverMask(noise, x, z) > 0.05) return -1;      // not in a river
+            if (!isVillageBiome(b))
+                return -1;
+            if (h < kSeaLevel + 1)
+                return -1; // no water
+            if (h > 127 - s.sizeY() - 1)
+                return -1; // fits under the top
+            if (riverMask(noise, x, z) > 0.05)
+                return -1; // not in a river
             lowest = std::min(lowest, h);
             highest = std::max(highest, h);
             if (columns)
@@ -562,22 +589,24 @@ int pieceBaseY(const TerrainNoise& noise, const Structure& s, int rot,
                                     biome::BiomeRegistry::forId(b).topBlock, 1});
         }
     }
-    if (highest < 0 || highest - lowest > kMaxGroundStep) return -1;
+    if (highest < 0 || highest - lowest > kMaxGroundStep)
+        return -1;
     return highest + 1;
 }
 
 // Pack the ground back up under a piece (same idea as the temple's
 // fillUnder) from the cached column facts — no noise, no registry.
-void fillUnderPiece(GenerationContext& ctx, const SiteColumn* cols, size_t count,
-                    int baseY) {
+void fillUnderPiece(GenerationContext& ctx, const SiteColumn* cols, size_t count, int baseY) {
     mcp_chunk_t* chunk = ctx.chunk;
     const int bx = ctx.chunk_x * 16, bz = ctx.chunk_z * 16;
 
     for (size_t k = 0; k < count; ++k) {
         const int x = cols[k].x, z = cols[k].z;
-        if (x < bx || x >= bx + 16 || z < bz || z >= bz + 16) continue;
+        if (x < bx || x >= bx + 16 || z < bz || z >= bz + 16)
+            continue;
         const int h = cols[k].h;
-        if (h >= baseY) continue;
+        if (h >= baseY)
+            continue;
         for (int y = h; y < baseY; ++y)
             mcp_chunk_set_block_full(chunk, x - bx, y, z - bz, cols[k].ground, 0);
     }
@@ -587,7 +616,7 @@ void fillUnderPiece(GenerationContext& ctx, const SiteColumn* cols, size_t count
 // village streets in sandstone and plains streets in path blocks.
 void pathMaterial(uint8_t wellBiome, uint8_t& id, uint8_t& data) {
     if (wellBiome == (uint8_t)biome::BIOME_DESERT) {
-        id = (uint8_t)BlockId::SANDSTONE;   // smooth sandstone roads
+        id = (uint8_t)BlockId::SANDSTONE; // smooth sandstone roads
         data = 0;
     } else {
         id = (uint8_t)BlockId::GRASS_PATH;
@@ -602,20 +631,21 @@ void pathMaterial(uint8_t wellBiome, uint8_t& id, uint8_t& data) {
 //
 // Only the surface test is left: whether a road may be drawn at all
 // (height, cliff, river, biome) was decided once with the site.
-bool stampPath(GenerationContext& ctx, const SiteColumn& c,
-               uint8_t pathId, uint8_t pathData) {
-    if (!c.stamp) return false;
+bool stampPath(GenerationContext& ctx, const SiteColumn& c, uint8_t pathId, uint8_t pathData) {
+    if (!c.stamp)
+        return false;
     mcp_chunk_t* chunk = ctx.chunk;
     const int bx = ctx.chunk_x * 16, bz = ctx.chunk_z * 16;
     const int x = c.x, z = c.z, h = c.h;
-    if (x < bx || x >= bx + 16 || z < bz || z >= bz + 16) return false;
+    if (x < bx || x >= bx + 16 || z < bz || z >= bz + 16)
+        return false;
 
     const int lx = x - bx, lz = z - bz;
     const uint8_t top = mcp_chunk_get_block_id(chunk, lx, h - 1, lz);
-    const bool natural = top == (uint8_t)BlockId::GRASS ||
-                         top == (uint8_t)BlockId::DIRT ||
+    const bool natural = top == (uint8_t)BlockId::GRASS || top == (uint8_t)BlockId::DIRT ||
                          top == (uint8_t)BlockId::SAND;
-    if (!natural) return false;              // trunk, rock, building — leave it
+    if (!natural)
+        return false; // trunk, rock, building — leave it
 
     mcp_chunk_set_block_full(chunk, lx, h - 1, lz, pathId, pathData);
 
@@ -624,12 +654,9 @@ bool stampPath(GenerationContext& ctx, const SiteColumn& c,
     // above, so this only ever runs over clear ground.
     for (int y = h; y <= h + 1 && y < 128; ++y) {
         const uint8_t id = mcp_chunk_get_block_id(chunk, lx, y, lz);
-        if (id == (uint8_t)BlockId::TALL_GRASS ||
-            id == (uint8_t)BlockId::DEAD_BUSH ||
-            id == (uint8_t)BlockId::FLOWER_YELLOW ||
-            id == (uint8_t)BlockId::FLOWER_RED ||
-            id == (uint8_t)BlockId::SAPLING ||
-            id == (uint8_t)BlockId::SNOW_LAYER ||
+        if (id == (uint8_t)BlockId::TALL_GRASS || id == (uint8_t)BlockId::DEAD_BUSH ||
+            id == (uint8_t)BlockId::FLOWER_YELLOW || id == (uint8_t)BlockId::FLOWER_RED ||
+            id == (uint8_t)BlockId::SAPLING || id == (uint8_t)BlockId::SNOW_LAYER ||
             id == (uint8_t)BlockId::DOUBLE_PLANT)
             mcp_chunk_set_block_full(chunk, lx, y, lz, 0, 0);
     }
@@ -651,22 +678,25 @@ struct VillageSite {
     bool stands = false;
     uint8_t wellBiome = 0;
     int wellH = 0;
-    std::vector<int> baseY;                   // per piece, -1 = dropped
-    std::vector<size_t> columnStart;          // per piece + 1, into columns
-    std::vector<SiteColumn> columns;          // piece footprints, row major
-    std::vector<SiteColumn> pathColumns;      // road cells with their verdict
+    std::vector<int> baseY;              // per piece, -1 = dropped
+    std::vector<size_t> columnStart;     // per piece + 1, into columns
+    std::vector<SiteColumn> columns;     // piece footprints, row major
+    std::vector<SiteColumn> pathColumns; // road cells with their verdict
 };
 
-void buildSite(int64_t seed, int rx, int rz, const TerrainNoise& n,
-               VillageSite& s) {
-    s.seed = seed; s.regionX = rx; s.regionZ = rz; s.valid = true;
+void buildSite(int64_t seed, int rx, int rz, const TerrainNoise& n, VillageSite& s) {
+    s.seed = seed;
+    s.regionX = rx;
+    s.regionZ = rz;
+    s.valid = true;
     VillagePopulator::buildPlan(seed, rx, rz, s.plan);
     s.stands = VillagePopulator::villageStands(n, s.plan, s.wellBiome, s.wellH);
     s.baseY.assign(s.plan.pieces.size(), -1);
     s.columnStart.assign(s.plan.pieces.size() + 1, 0);
     s.columns.clear();
     s.pathColumns.clear();
-    if (!s.stands) return;   // the whole village is dropped
+    if (!s.stands)
+        return; // the whole village is dropped
 
     // Collected per piece and appended: pieceBaseY clears what it is
     // given, so every piece needs its own scratch buffer.
@@ -676,7 +706,8 @@ void buildSite(int64_t seed, int rx, int rz, const TerrainNoise& n,
         const VillagePiecePlacement& p = s.plan.pieces[i];
         const Structure* st = village::piece((village::PieceKind)p.kind);
         s.baseY[i] = pieceBaseY(n, *st, p.rot, p.x, p.z, &pieceCols);
-        if (s.baseY[i] < 0) continue;      // dropped: no columns to keep
+        if (s.baseY[i] < 0)
+            continue; // dropped: no columns to keep
         s.columns.insert(s.columns.end(), pieceCols.begin(), pieceCols.end());
     }
     s.columnStart[s.plan.pieces.size()] = s.columns.size();
@@ -700,15 +731,17 @@ void buildSite(int64_t seed, int rx, int rz, const TerrainNoise& n,
         c.h = (int16_t)columnHeight(n, cell.x, cell.z);
         const uint8_t b = columnBiome(n, cell.x, cell.z, c.h);
         c.ground = biome::BiomeRegistry::forId(b).topBlock;
-        bool ok = c.h >= kSeaLevel + 1 && c.h <= 126 &&
-                  riverMask(n, cell.x, cell.z) <= 0.05 && isVillageBiome(b);
+        bool ok = c.h >= kSeaLevel + 1 && c.h <= 126 && riverMask(n, cell.x, cell.z) <= 0.05 &&
+                  isVillageBiome(b);
         if (ok) {
             if (cell.parent >= 0) {
-                if (!okOf[cell.parent]) ok = false;
+                if (!okOf[cell.parent])
+                    ok = false;
                 else if (std::abs((int)c.h - hOf[cell.parent]) > kMaxPathStepLocal)
                     ok = false;
             }
-            if (ok && std::abs((int)c.h - s.wellH) > kMaxPathStep) ok = false;
+            if (ok && std::abs((int)c.h - s.wellH) > kMaxPathStep)
+                ok = false;
         }
         c.stamp = ok ? 1 : 0;
         hOf[i] = c.h;
@@ -727,18 +760,18 @@ thread_local VillageSite tSites[kSiteSlots];
 thread_local uint64_t tSiteUsed[kSiteSlots] = {};
 thread_local uint64_t tSiteTick = 0;
 
-const VillageSite& cachedSite(int64_t seed, int rx, int rz,
-                              const TerrainNoise& n) {
+const VillageSite& cachedSite(int64_t seed, int rx, int rz, const TerrainNoise& n) {
     for (int i = 0; i < kSiteSlots; ++i)
-        if (tSites[i].valid && tSites[i].seed == seed &&
-            tSites[i].regionX == rx && tSites[i].regionZ == rz) {
+        if (tSites[i].valid && tSites[i].seed == seed && tSites[i].regionX == rx &&
+            tSites[i].regionZ == rz) {
             tSiteUsed[i] = ++tSiteTick;
             return tSites[i];
         }
 
-    int slot = 0;                       // least recently used
+    int slot = 0; // least recently used
     for (int i = 1; i < kSiteSlots; ++i)
-        if (tSiteUsed[i] < tSiteUsed[slot]) slot = i;
+        if (tSiteUsed[i] < tSiteUsed[slot])
+            slot = i;
     buildSite(seed, rx, rz, n, tSites[slot]);
     tSiteUsed[slot] = ++tSiteTick;
     return tSites[slot];
@@ -746,8 +779,7 @@ const VillageSite& cachedSite(int64_t seed, int rx, int rz,
 
 } // namespace
 
-void VillagePopulator::buildPlan(int64_t seed, int regionX, int regionZ,
-                                 VillagePlan& out) {
+void VillagePopulator::buildPlan(int64_t seed, int regionX, int regionZ, VillagePlan& out) {
     int anchorChunkX, anchorChunkZ;
     regionCandidate(seed, regionX, regionZ, kSalt, anchorChunkX, anchorChunkZ);
     buildLayout(seed, regionX, regionZ, anchorChunkX, anchorChunkZ, out);
@@ -758,16 +790,17 @@ uint64_t& VillagePopulator::nanosAccumulator() {
     return nanos;
 }
 
-bool VillagePopulator::villageStands(const TerrainNoise& noise,
-                                     const VillagePlan& plan,
+bool VillagePopulator::villageStands(const TerrainNoise& noise, const VillagePlan& plan,
                                      uint8_t& outBiome, int& outWellH) {
     outWellH = columnHeight(noise, plan.wellCx, plan.wellCz);
     outBiome = columnBiome(noise, plan.wellCx, plan.wellCz, outWellH);
-    if (!isVillageBiome(outBiome)) return false;
+    if (!isVillageBiome(outBiome))
+        return false;
     // The well is the start piece: when it cannot stand (lake, river,
     // cliff), the whole village is dropped instead of leaving roads
     // crawling toward nothing.
-    if (plan.pieces.empty()) return false;
+    if (plan.pieces.empty())
+        return false;
     const VillagePiecePlacement& well = plan.pieces[0];
     const Structure* wellS = village::piece(village::PIECE_WELL);
     return pieceBaseY(noise, *wellS, well.rot, well.x, well.z, nullptr) >= 0;
@@ -802,17 +835,18 @@ void VillagePopulator::populate(GenerationContext& ctx) {
                 continue;
 
             if (!noisePtr) {
-                if (!ownNoise.has_value()) ownNoise.emplace(ctx.seed);
+                if (!ownNoise.has_value())
+                    ownNoise.emplace(ctx.seed);
                 noisePtr = &*ownNoise;
             }
-            const TerrainNoise& noise = *noisePtr;   // alias para el resto del bucle
+            const TerrainNoise& noise = *noisePtr; // alias para el resto del bucle
             const VillageSite& site = cachedSite(ctx.seed, rx, rz, noise);
             const VillagePlan& plan = site.plan;
 
-            if (bx >= plan.maxX || bx + 16 <= plan.minX ||
-                bz >= plan.maxZ || bz + 16 <= plan.minZ)
+            if (bx >= plan.maxX || bx + 16 <= plan.minX || bz >= plan.maxZ || bz + 16 <= plan.minZ)
                 continue;
-            if (!site.stands) continue;
+            if (!site.stands)
+                continue;
 
             uint8_t pathId, pathData;
             pathMaterial(site.wellBiome, pathId, pathData);
@@ -826,29 +860,30 @@ void VillagePopulator::populate(GenerationContext& ctx) {
             for (size_t i = 0; i < plan.pieces.size(); ++i) {
                 const VillagePiecePlacement& p = plan.pieces[i];
                 // A piece that cannot reach this chunk costs nothing.
-                if (p.x >= bx + 16 || p.x + p.w <= bx ||
-                    p.z >= bz + 16 || p.z + p.h <= bz)
+                if (p.x >= bx + 16 || p.x + p.w <= bx || p.z >= bz + 16 || p.z + p.h <= bz)
                     continue;
                 const int baseY = site.baseY[i];
-                if (baseY < 0) continue;
+                if (baseY < 0)
+                    continue;
                 fillUnderPiece(ctx, site.columns.data() + site.columnStart[i],
-                               site.columnStart[i + 1] - site.columnStart[i],
-                               baseY);
+                               site.columnStart[i + 1] - site.columnStart[i], baseY);
                 const Structure* s = village::piece((village::PieceKind)p.kind);
-                const size_t wrote = s->placeInto(
-                    chunk, ctx.chunk_x, ctx.chunk_z, p.x, baseY, p.z,
-                    (cursestone::world::generator::structure::Rotation)p.rot,
-                    village::resolve, &wellBiome);
-                if (wrote > 0) dirty = true;
+                const size_t wrote =
+                    s->placeInto(chunk, ctx.chunk_x, ctx.chunk_z, p.x, baseY, p.z,
+                                 (cursestone::world::generator::structure::Rotation)p.rot,
+                                 village::resolve, &wellBiome);
+                if (wrote > 0)
+                    dirty = true;
             }
         }
     }
 
-    if (dirty) chunk->dirty = true;
+    if (dirty)
+        chunk->dirty = true;
 
-    nanosAccumulator() += (uint64_t)std::chrono::duration_cast<
-        std::chrono::nanoseconds>(std::chrono::steady_clock::now() - started)
-        .count();
+    nanosAccumulator() += (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(
+                              std::chrono::steady_clock::now() - started)
+                              .count();
 }
 
 } // namespace cursestone::world::generator::populator

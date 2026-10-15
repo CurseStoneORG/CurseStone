@@ -31,7 +31,7 @@ extern "C" {
 typedef struct mcp_byte_array_tag {
     mcp_tag_t header;
     uint8_t* data;
-    size_t   length;
+    size_t length;
 } mcp_byte_array_tag_t;
 mcp_tag_t* mcp_byte_array_tag_new(const uint8_t* data, size_t len);
 mcp_tag_t* mcp_byte_array_tag_new_named(const char* name, const uint8_t* data, size_t len);

@@ -26,8 +26,12 @@
 #include "BlockIds.h"
 namespace cursestone::block {
 class BlockLitRedstoneLamp : public BlockRedstoneLamp {
-public:
-    uint8_t id() const override { return LIT_REDSTONE_LAMP; }
-    std::string name() const override { return "Lit Redstone Lamp"; }
+  public:
+    uint8_t id() const override {
+        return LIT_REDSTONE_LAMP;
+    }
+    std::string name() const override {
+        return "Lit Redstone Lamp";
+    }
 };
 } // namespace

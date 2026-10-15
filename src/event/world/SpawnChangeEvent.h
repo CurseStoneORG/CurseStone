@@ -28,19 +28,25 @@
 #pragma once
 #include "WorldEvent.h"
 #include <string>
-namespace cursestone { namespace world { class World; } }
+namespace cursestone {
+namespace world {
+class World;
+}
+}
 
 namespace cursestone::event::world {
 
 class SpawnChangeEvent : public WorldEvent {
-public:
+  public:
     double prevX, prevY, prevZ;
 
     SpawnChangeEvent(cursestone::world::World* l, double px, double py, double pz)
-        : WorldEvent(l), prevX(px), prevY(py), prevZ(pz) {}
+        : WorldEvent(l), prevX(px), prevY(py), prevZ(pz) {
+    }
 
     const std::string& eventName() const override {
-        static std::string n = "SpawnChangeEvent"; return n;
+        static std::string n = "SpawnChangeEvent";
+        return n;
     }
 };
 

@@ -57,22 +57,20 @@
 namespace cursestone::world::generator::object::trees {
 
 class BigJungleTree : public GenericTree {
-public:
-    bool generate(mcp_chunk_t* c, int sourceX, int sourceY, int sourceZ,
-                  uint8_t soilId, MersenneRandom& rng) override;
+  public:
+    bool generate(mcp_chunk_t* c, int sourceX, int sourceY, int sourceZ, uint8_t soilId,
+                  MersenneRandom& rng) override;
 
-protected:
+  protected:
     void init(MersenneRandom& rng) override;
 
-private:
+  private:
     // Leaf disc of `radius` with the corners randomly culled.
-    void growLeavesLayer(mcp_chunk_t* c, int x, int y, int z, int radius,
-                         MersenneRandom& rng);
+    void growLeavesLayer(mcp_chunk_t* c, int x, int y, int z, int radius, MersenneRandom& rng);
     // Solid leaf square of `radius`, no culling.
     void growLeavesLayerStrict(mcp_chunk_t* c, int x, int y, int z, int radius);
     // A hanging vine on the given face (meta is the face bitmask).
-    void placeVine(mcp_chunk_t* c, MersenneRandom& rng, int x, int y, int z,
-                   uint8_t faceMask);
+    void placeVine(mcp_chunk_t* c, MersenneRandom& rng, int x, int y, int z, uint8_t faceMask);
     // The reference's canOverride(): can this block be replaced by wood?
     static bool canOverrideAt(mcp_chunk_t* c, int x, int y, int z);
 };

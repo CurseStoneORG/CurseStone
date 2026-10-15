@@ -36,7 +36,7 @@
 namespace cursestone::inventory {
 
 class CraftingManager {
-public:
+  public:
     CraftingManager();
 
     // Registra TODAS las recetas de MCPE 0.15.10 (protocolo 84)
@@ -93,13 +93,16 @@ public:
     // Recipes agrupadas por item resultante — usado como fallback
     // cuando el UUID que ecoa el cliente no coincide (bug conocido de
     // Win10: ecoa el UUID de otra receta desplazada en la grilla).
-    std::vector<const Recipe*> recipesByResult(uint16_t result_id,
-                                               uint16_t result_meta) const;
+    std::vector<const Recipe*> recipesByResult(uint16_t result_id, uint16_t result_meta) const;
 
-    size_t size() const { return recipes_.size(); }
-    const std::vector<std::unique_ptr<Recipe>>& recipes() const { return recipes_; }
+    size_t size() const {
+        return recipes_.size();
+    }
+    const std::vector<std::unique_ptr<Recipe>>& recipes() const {
+        return recipes_;
+    }
 
-private:
+  private:
     // Helpers de registro — los usa registerBuiltinRecipes() para
     // escribir cada receta como una linea legible en vez de construir
     // los Recipe a mano con los setters.
@@ -115,8 +118,7 @@ private:
     // lista de 9 pares a mano necesita un nivel extra de llaves, lo que
     // haria ilegible el dataset. Con initializer_list cada celda se
     // escribe plano: {{5,-1},{5,-1},{0,-1}, ...}.
-    void shaped(int w, int h,
-                std::initializer_list<std::pair<uint16_t, int16_t>> grid,
+    void shaped(int w, int h, std::initializer_list<std::pair<uint16_t, int16_t>> grid,
                 cursestone::item::ItemStack result);
 
     // shapeless(): lista de ingredientes sin orden en la grilla.
@@ -125,8 +127,7 @@ private:
 
     // furnace(): input_meta -1 = "cualquier damage" (lo que
     // matchFurnace() trata como ENTRY_FURNACE en el wire).
-    void furnace(uint16_t input_id, int16_t input_meta,
-                 cursestone::item::ItemStack result);
+    void furnace(uint16_t input_id, int16_t input_meta, cursestone::item::ItemStack result);
 
     // Asigna UUID deterministas (1, 2, 3...) a todas las recetas
     // registradas y construye el indice por bytes. Se llama una vez al
@@ -140,12 +141,15 @@ private:
     // (hashable con un functor propio).
     struct Uuid16Hash {
         size_t operator()(const std::array<uint8_t, 16>& k) const {
-            size_t h = 1469598103934665603ull;  // FNV offset basis
-            for (uint8_t b : k) { h ^= b; h *= 1099511628211ull; }
+            size_t h = 1469598103934665603ull; // FNV offset basis
+            for (uint8_t b : k) {
+                h ^= b;
+                h *= 1099511628211ull;
+            }
             return h;
         }
     };
-    std::unordered_map<std::array<uint8_t,16>, Recipe*, Uuid16Hash> by_uuid_;
+    std::unordered_map<std::array<uint8_t, 16>, Recipe*, Uuid16Hash> by_uuid_;
 };
 
 } // namespace cursestone::inventory

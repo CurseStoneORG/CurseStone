@@ -29,22 +29,21 @@
 
 namespace cursestone::utils {
 
-const char* const kDefaultServerProperties =
-    "# CurseStone server properties (basic settings).\n"
-    "# Advanced settings live in cursestone.yml.\n"
-    "\n"
-    "motd=CurseStone Server\n"
-    "server-ip=0.0.0.0\n"
-    "server-port=19132\n"
-    "max-players=20\n"
-    "gamemode=0\n"
-    "difficulty=1\n"
-    "white-list=false\n"
-    "online-mode=false\n"
-    "view-distance=8\n"
-    "world-name=world\n"
-    "# Empty or 0 picks a random seed.\n"
-    "world-seed=\n";
+const char* const kDefaultServerProperties = "# CurseStone server properties (basic settings).\n"
+                                             "# Advanced settings live in cursestone.yml.\n"
+                                             "\n"
+                                             "motd=CurseStone Server\n"
+                                             "server-ip=0.0.0.0\n"
+                                             "server-port=19132\n"
+                                             "max-players=20\n"
+                                             "gamemode=0\n"
+                                             "difficulty=1\n"
+                                             "white-list=false\n"
+                                             "online-mode=false\n"
+                                             "view-distance=8\n"
+                                             "world-name=world\n"
+                                             "# Empty or 0 picks a random seed.\n"
+                                             "world-seed=\n";
 
 const char* const kDefaultCursestoneYml =
     "# CurseStone advanced configuration.\n"
@@ -70,28 +69,29 @@ namespace {
 bool seedFile(const std::filesystem::path& path, const char* content,
               std::vector<std::string>* created) {
     std::error_code ec;
-    if (std::filesystem::exists(path, ec)) return true;
+    if (std::filesystem::exists(path, ec))
+        return true;
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    if (!out.is_open()) return false;
+    if (!out.is_open())
+        return false;
     out << content;
     out.close();
-    if (out.fail()) return false;
-    if (created) created->push_back(path.filename().string());
+    if (out.fail())
+        return false;
+    if (created)
+        created->push_back(path.filename().string());
     return true;
 }
 
 } // namespace
 
-bool writeDefaultConfigs(const std::string& dataPath,
-                         std::vector<std::string>* created) {
+bool writeDefaultConfigs(const std::string& dataPath, std::vector<std::string>* created) {
     namespace fs = std::filesystem;
     std::error_code ec;
     fs::create_directories(dataPath, ec);
     const fs::path dir(dataPath);
-    const bool props = seedFile(dir / "server.properties",
-                                kDefaultServerProperties, created);
-    const bool yml   = seedFile(dir / "cursestone.yml",
-                                kDefaultCursestoneYml, created);
+    const bool props = seedFile(dir / "server.properties", kDefaultServerProperties, created);
+    const bool yml = seedFile(dir / "cursestone.yml", kDefaultCursestoneYml, created);
     return props && yml;
 }
 

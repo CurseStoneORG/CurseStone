@@ -28,19 +28,24 @@
 #include "WeatherEvent.h"
 #include "../Cancellable.h"
 #include <string>
-namespace cursestone { namespace world { class World; } }
+namespace cursestone {
+namespace world {
+class World;
+}
+}
 
 namespace cursestone::event::weather {
 
 class ThunderChangeEvent : public WeatherEvent, public Cancellable {
-public:
+  public:
     bool to;
 
-    ThunderChangeEvent(cursestone::world::World* l, bool t)
-        : WeatherEvent(l), to(t) {}
+    ThunderChangeEvent(cursestone::world::World* l, bool t) : WeatherEvent(l), to(t) {
+    }
 
     const std::string& eventName() const override {
-        static std::string n = "ThunderChangeEvent"; return n;
+        static std::string n = "ThunderChangeEvent";
+        return n;
     }
 };
 

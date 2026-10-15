@@ -37,8 +37,10 @@
 namespace cursestone::network::protocol {
 
 class SetSpawnPositionPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return SET_SPAWN_POSITION_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return SET_SPAWN_POSITION_PACKET;
+    }
 
     int32_t x = 0;
     int32_t y = 64;

@@ -35,45 +35,43 @@ extern "C" {
 #endif
 
 // ---- Read big-endian primitives ----
-static inline uint8_t  mcp_binary_read_u8(const void* p) {
+static inline uint8_t mcp_binary_read_u8(const void* p) {
     const uint8_t* b = (const uint8_t*)p;
     return b[0];
 }
-static inline int8_t   mcp_binary_read_i8(const void* p) {
+static inline int8_t mcp_binary_read_i8(const void* p) {
     return (int8_t)mcp_binary_read_u8(p);
 }
 static inline uint16_t mcp_binary_read_u16_be(const void* p) {
     const uint8_t* b = (const uint8_t*)p;
     return (uint16_t)((b[0] << 8) | b[1]);
 }
-static inline int16_t  mcp_binary_read_i16_be(const void* p) {
+static inline int16_t mcp_binary_read_i16_be(const void* p) {
     return (int16_t)mcp_binary_read_u16_be(p);
 }
 static inline uint32_t mcp_binary_read_u32_be(const void* p) {
     const uint8_t* b = (const uint8_t*)p;
-    return ((uint32_t)b[0] << 24) | ((uint32_t)b[1] << 16) |
-           ((uint32_t)b[2] << 8)  |  (uint32_t)b[3];
+    return ((uint32_t)b[0] << 24) | ((uint32_t)b[1] << 16) | ((uint32_t)b[2] << 8) | (uint32_t)b[3];
 }
-static inline int32_t  mcp_binary_read_i32_be(const void* p) {
+static inline int32_t mcp_binary_read_i32_be(const void* p) {
     return (int32_t)mcp_binary_read_u32_be(p);
 }
 static inline uint64_t mcp_binary_read_u64_be(const void* p) {
     const uint8_t* b = (const uint8_t*)p;
-    return ((uint64_t)b[0] << 56) | ((uint64_t)b[1] << 48) |
-           ((uint64_t)b[2] << 40) | ((uint64_t)b[3] << 32) |
-           ((uint64_t)b[4] << 24) | ((uint64_t)b[5] << 16) |
-           ((uint64_t)b[6] << 8)  |  (uint64_t)b[7];
+    return ((uint64_t)b[0] << 56) | ((uint64_t)b[1] << 48) | ((uint64_t)b[2] << 40) |
+           ((uint64_t)b[3] << 32) | ((uint64_t)b[4] << 24) | ((uint64_t)b[5] << 16) |
+           ((uint64_t)b[6] << 8) | (uint64_t)b[7];
 }
-static inline int64_t  mcp_binary_read_i64_be(const void* p) {
+static inline int64_t mcp_binary_read_i64_be(const void* p) {
     return (int64_t)mcp_binary_read_u64_be(p);
 }
-static inline float    mcp_binary_read_f32_be(const void* p) {
+static inline float mcp_binary_read_f32_be(const void* p) {
     uint32_t v = mcp_binary_read_u32_be(p);
     float f;
     memcpy(&f, &v, sizeof(f));
     return f;
 }
-static inline double   mcp_binary_read_f64_be(const void* p) {
+static inline double mcp_binary_read_f64_be(const void* p) {
     uint64_t v = mcp_binary_read_u64_be(p);
     double d;
     memcpy(&d, &v, sizeof(d));
@@ -85,34 +83,32 @@ static inline uint16_t mcp_binary_read_u16_le(const void* p) {
     const uint8_t* b = (const uint8_t*)p;
     return (uint16_t)((b[1] << 8) | b[0]);
 }
-static inline int16_t  mcp_binary_read_i16_le(const void* p) {
+static inline int16_t mcp_binary_read_i16_le(const void* p) {
     return (int16_t)mcp_binary_read_u16_le(p);
 }
 static inline uint32_t mcp_binary_read_u32_le(const void* p) {
     const uint8_t* b = (const uint8_t*)p;
-    return ((uint32_t)b[3] << 24) | ((uint32_t)b[2] << 16) |
-           ((uint32_t)b[1] << 8)  |  (uint32_t)b[0];
+    return ((uint32_t)b[3] << 24) | ((uint32_t)b[2] << 16) | ((uint32_t)b[1] << 8) | (uint32_t)b[0];
 }
-static inline int32_t  mcp_binary_read_i32_le(const void* p) {
+static inline int32_t mcp_binary_read_i32_le(const void* p) {
     return (int32_t)mcp_binary_read_u32_le(p);
 }
 static inline uint64_t mcp_binary_read_u64_le(const void* p) {
     const uint8_t* b = (const uint8_t*)p;
-    return ((uint64_t)b[7] << 56) | ((uint64_t)b[6] << 48) |
-           ((uint64_t)b[5] << 40) | ((uint64_t)b[4] << 32) |
-           ((uint64_t)b[3] << 24) | ((uint64_t)b[2] << 16) |
-           ((uint64_t)b[1] << 8)  |  (uint64_t)b[0];
+    return ((uint64_t)b[7] << 56) | ((uint64_t)b[6] << 48) | ((uint64_t)b[5] << 40) |
+           ((uint64_t)b[4] << 32) | ((uint64_t)b[3] << 24) | ((uint64_t)b[2] << 16) |
+           ((uint64_t)b[1] << 8) | (uint64_t)b[0];
 }
-static inline int64_t  mcp_binary_read_i64_le(const void* p) {
+static inline int64_t mcp_binary_read_i64_le(const void* p) {
     return (int64_t)mcp_binary_read_u64_le(p);
 }
-static inline float    mcp_binary_read_f32_le(const void* p) {
+static inline float mcp_binary_read_f32_le(const void* p) {
     uint32_t v = mcp_binary_read_u32_le(p);
     float f;
     memcpy(&f, &v, sizeof(f));
     return f;
 }
-static inline double   mcp_binary_read_f64_le(const void* p) {
+static inline double mcp_binary_read_f64_le(const void* p) {
     uint64_t v = mcp_binary_read_u64_le(p);
     double d;
     memcpy(&d, &v, sizeof(d));
@@ -216,7 +212,7 @@ static inline size_t mcp_varint_write_u64(uint8_t* out, uint64_t v) {
 // Reads a VarInt. Returns bytes consumed in *out_len; -1 on overflow/truncation.
 static inline int mcp_varint_read_u32(const uint8_t* p, size_t max, uint32_t* out) {
     uint32_t result = 0;
-    size_t   shift  = 0;
+    size_t shift = 0;
     for (size_t i = 0; i < max && i < 5; ++i) {
         uint8_t b = p[i];
         result |= (uint32_t)(b & 0x7F) << shift;
@@ -230,7 +226,7 @@ static inline int mcp_varint_read_u32(const uint8_t* p, size_t max, uint32_t* ou
 }
 static inline int mcp_varint_read_u64(const uint8_t* p, size_t max, uint64_t* out) {
     uint64_t result = 0;
-    size_t   shift  = 0;
+    size_t shift = 0;
     for (size_t i = 0; i < max && i < 10; ++i) {
         uint8_t b = p[i];
         result |= (uint64_t)(b & 0x7F) << shift;
@@ -247,13 +243,13 @@ static inline int mcp_varint_read_u64(const uint8_t* p, size_t max, uint64_t* ou
 static inline uint32_t mcp_varint_zigzag_i32(int32_t v) {
     return (uint32_t)((v << 1) ^ (v >> 31));
 }
-static inline int32_t  mcp_varint_unzigzag_i32(uint32_t v) {
+static inline int32_t mcp_varint_unzigzag_i32(uint32_t v) {
     return (int32_t)((v >> 1) ^ -(int32_t)(v & 1));
 }
 static inline uint64_t mcp_varint_zigzag_i64(int64_t v) {
     return (uint64_t)((v << 1) ^ (v >> 63));
 }
-static inline int64_t  mcp_varint_unzigzag_i64(uint64_t v) {
+static inline int64_t mcp_varint_unzigzag_i64(uint64_t v) {
     return (int64_t)((v >> 1) ^ -(int64_t)(v & 1));
 }
 

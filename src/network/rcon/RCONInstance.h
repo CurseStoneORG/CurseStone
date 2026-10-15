@@ -36,16 +36,24 @@ class Server;
 namespace network {
 
 class RCONInstance {
-public:
-    explicit RCONInstance(Server* server) : server_(server) {}
-    ~RCONInstance() { shutdown(); }
+  public:
+    explicit RCONInstance(Server* server) : server_(server) {
+    }
+    ~RCONInstance() {
+        shutdown();
+    }
 
-    void start()  { running_ = true; }
-    void shutdown() { running_ = false; }
-    void tick()    { /* TODO: accept TCP connections, parse packets */ }
+    void start() {
+        running_ = true;
+    }
+    void shutdown() {
+        running_ = false;
+    }
+    void tick() { /* TODO: accept TCP connections, parse packets */
+    }
 
-private:
-    Server*       server_;
+  private:
+    Server* server_;
     std::atomic<bool> running_{false};
 };
 

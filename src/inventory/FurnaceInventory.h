@@ -34,13 +34,13 @@
 namespace cursestone::inventory {
 
 class FurnaceInventory : public BaseInventory {
-public:
-    FurnaceInventory()
-        : BaseInventory(nullptr, InventoryType::get(InventoryType::FURNACE)) {}
+  public:
+    FurnaceInventory() : BaseInventory(nullptr, InventoryType::get(InventoryType::FURNACE)) {
+    }
 
     // Índices de slot (convención Nukkit).
-    static constexpr int INPUT  = 0;
-    static constexpr int FUEL   = 1;
+    static constexpr int INPUT = 0;
+    static constexpr int FUEL = 1;
     static constexpr int RESULT = 2;
 };
 

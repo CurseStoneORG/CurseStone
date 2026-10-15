@@ -38,12 +38,12 @@
 #include <thread>
 #include <chrono>
 #include <filesystem>
-#include <cstring>      // strlen
+#include <cstring> // strlen
 #include <string>
-#include <cstdio>       // snprintf
-#include <exception>    // std::set_terminate / current_exception
+#include <cstdio>    // snprintf
+#include <exception> // std::set_terminate / current_exception
 #if defined(__linux__) || defined(__APPLE__)
-#include <sys/resource.h>   // getrlimit/setrlimit (RLIMIT_CORE)
+#include <sys/resource.h> // getrlimit/setrlimit (RLIMIT_CORE)
 #endif
 
 // ---- Platform-specific backtrace support -------------------------------
@@ -57,28 +57,28 @@
 // available, we fall back to a single-frame "trace unavailable" placeholder
 // so the crashdump still gets written (just without a stack walk).
 #if defined(__GLIBC__) || defined(__linux__) && !defined(__ANDROID__)
-    // glibc / Linux native — use execinfo when available.
-    #define CURSESTONE_HAVE_EXECINFO 1
-    #include <execinfo.h>
+// glibc / Linux native — use execinfo when available.
+#define CURSESTONE_HAVE_EXECINFO 1
+#include <execinfo.h>
 #elif defined(__ANDROID__) || defined(__BIONIC__)
     // Bionic — _Unwind_Backtrace from libunwind is the only portable way.
-    #define CURSESTONE_HAVE_UNWIND 1
-    #include <unwind.h>
+#define CURSESTONE_HAVE_UNWIND 1
+#include <unwind.h>
 #elif defined(__APPLE__)
-    #define CURSESTONE_HAVE_EXECINFO 1
-    #include <execinfo.h>
+#define CURSESTONE_HAVE_EXECINFO 1
+#include <execinfo.h>
 #endif
 
 #ifdef _WIN32
-#  include <io.h>
-#  ifndef STDERR_FILENO
-#    define STDERR_FILENO 2
-#  endif
+#include <io.h>
+#ifndef STDERR_FILENO
+#define STDERR_FILENO 2
+#endif
 // The CRT exposes write() as _write().
-#  define write _write
+#define write _write
 #else
 // write() lives in <unistd.h> on POSIX platforms.
-#  include <unistd.h>
+#include <unistd.h>
 #endif
 
 namespace {
@@ -141,21 +141,23 @@ volatile std::sig_atomic_t g_stopRequested = 0;
 #if defined(CURSESTONE_HAVE_UNWIND)
 // libunwind-based backtrace (Android / bionic).
 struct UnwindContext {
-    char** buf;        // not used; we write directly into `out`
+    char** buf; // not used; we write directly into `out`
     std::string* out;
-    int    max_frames;
-    int    count;
+    int max_frames;
+    int count;
 };
 
 static _Unwind_Reason_Code unwind_cb(struct _Unwind_Context* ctx, void* arg) {
     auto* uc = static_cast<UnwindContext*>(arg);
-    if (uc->count >= uc->max_frames) return _URC_END_OF_STACK;
+    if (uc->count >= uc->max_frames)
+        return _URC_END_OF_STACK;
     _Unwind_Ptr ip = _Unwind_GetIP(ctx);
-    if (ip == 0) return _URC_NO_REASON;
+    if (ip == 0)
+        return _URC_NO_REASON;
     char line[64];
-    int n = std::snprintf(line, sizeof(line), "#%d  0x%lx\n",
-                          uc->count, (unsigned long)ip);
-    if (n > 0) uc->out->append(line, (size_t)n);
+    int n = std::snprintf(line, sizeof(line), "#%d  0x%lx\n", uc->count, (unsigned long)ip);
+    if (n > 0)
+        uc->out->append(line, (size_t)n);
     uc->count++;
     return _URC_NO_REASON;
 }
@@ -207,8 +209,8 @@ void handleTerminate() {
     }
     // Best effort: report + write a file, then abort into the crash path.
     try {
-        cursestone::diagnostics::Diagnostics::get().writeReport(
-            "terminate", msg, "std::terminate called");
+        cursestone::diagnostics::Diagnostics::get().writeReport("terminate", msg,
+                                                                "std::terminate called");
     } catch (...) {}
     const char prefix[] = "\nCurseStone: std::terminate: ";
     (void)!write(STDERR_FILENO, prefix, sizeof(prefix) - 1);
@@ -239,12 +241,22 @@ void handleSignal(int sig) {
     // SIGSEGV / SIGABRT / SIGFPE / SIGILL / SIGBUS → crashdump
     const char* reason = "unknown signal";
     switch (sig) {
-        case SIGSEGV: reason = "SIGSEGV (segmentation fault)"; break;
-        case SIGABRT: reason = "SIGABRT (abort)"; break;
-        case SIGFPE:  reason = "SIGFPE (floating-point exception)"; break;
-        case SIGILL:  reason = "SIGILL (illegal instruction)"; break;
+    case SIGSEGV:
+        reason = "SIGSEGV (segmentation fault)";
+        break;
+    case SIGABRT:
+        reason = "SIGABRT (abort)";
+        break;
+    case SIGFPE:
+        reason = "SIGFPE (floating-point exception)";
+        break;
+    case SIGILL:
+        reason = "SIGILL (illegal instruction)";
+        break;
 #ifdef SIGBUS
-        case SIGBUS:  reason = "SIGBUS (bus error)"; break;
+    case SIGBUS:
+        reason = "SIGBUS (bus error)";
+        break;
 #endif
     }
 
@@ -277,16 +289,16 @@ int main(int argc, char* argv[]) {
     // Banner — use fputs instead of std::cout to avoid mixing C and
     // C++ I/O streams (the async logger uses fputs on stdout).
     {
-        std::string banner = std::string(CURSESTONE_NAME) + " v" +
-            CURSESTONE_API + " \"" + CURSESTONE_CODENAME + "\"\n" +
-            "Targeting Minecraft " + MINECRAFT_VERSION +
-            " (protocol " + std::to_string(PROTOCOL_VERSION) + ")\n\n";
+        std::string banner = std::string(CURSESTONE_NAME) + " v" + CURSESTONE_API + " \"" +
+                             CURSESTONE_CODENAME + "\"\n" + "Targeting Minecraft " +
+                             MINECRAFT_VERSION + " (protocol " + std::to_string(PROTOCOL_VERSION) +
+                             ")\n\n";
         fputs(banner.c_str(), stdout);
         fflush(stdout);
     }
 
     // Install signal handlers for clean shutdown
-    std::signal(SIGINT,  handleSignal);
+    std::signal(SIGINT, handleSignal);
     std::signal(SIGTERM, handleSignal);
     // Core dumps: without this, a SIGSEGV on a machine with
     // `ulimit -c 0` (the default on several distros/systemd) leaves
@@ -312,10 +324,10 @@ int main(int argc, char* argv[]) {
     // post-mortem-debug freezes and crashes.
     std::signal(SIGSEGV, handleSignal);
     std::signal(SIGABRT, handleSignal);
-    std::signal(SIGFPE,  handleSignal);
-    std::signal(SIGILL,  handleSignal);
+    std::signal(SIGFPE, handleSignal);
+    std::signal(SIGILL, handleSignal);
 #ifdef SIGBUS
-    std::signal(SIGBUS,  handleSignal);
+    std::signal(SIGBUS, handleSignal);
 #endif
 
     // Resolve data path (default: current working directory)

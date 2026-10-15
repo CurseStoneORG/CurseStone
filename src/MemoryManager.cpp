@@ -38,7 +38,7 @@
 namespace cursestone {
 
 MemoryManager& MemoryManager::get() {
-    static MemoryManager m;   // the ONE and only global GarbageCollector
+    static MemoryManager m; // the ONE and only global GarbageCollector
     return m;
 }
 
@@ -51,7 +51,8 @@ int64_t MemoryManager::currentUsageKB() const {
     while (std::getline(f, line)) {
         if (line.rfind("VmRSS:", 0) == 0) {
             size_t i = line.find_first_of("0123456789");
-            if (i != std::string::npos) return std::stoll(line.substr(i));
+            if (i != std::string::npos)
+                return std::stoll(line.substr(i));
         }
     }
 #endif
@@ -59,7 +60,8 @@ int64_t MemoryManager::currentUsageKB() const {
 }
 
 bool MemoryManager::shouldGc() const {
-    if (limit_mb_ <= 0) return false;
+    if (limit_mb_ <= 0)
+        return false;
     return currentUsageKB() > (int64_t)limit_mb_ * 1024;
 }
 
@@ -73,10 +75,10 @@ void MemoryManager::collect(bool force) {
     // bypasses the gate but never bypasses single-entry exclusivity.
     uint64_t expected = last_collect_tick_.load(std::memory_order_relaxed);
     while (true) {
-        if (!force && tick - expected < gc_interval_ticks_) return;
-        if (last_collect_tick_.compare_exchange_weak(
-                expected, tick, std::memory_order_relaxed,
-                std::memory_order_relaxed)) {
+        if (!force && tick - expected < gc_interval_ticks_)
+            return;
+        if (last_collect_tick_.compare_exchange_weak(expected, tick, std::memory_order_relaxed,
+                                                     std::memory_order_relaxed)) {
             break;
         }
         // expected was reloaded with the current value by the failed CAS;
@@ -92,15 +94,16 @@ void MemoryManager::collect(bool force) {
             auto snap = Server::getInstance().playersSnapshot();
             viewers.reserve(snap.size());
             for (auto& p : snap) {
-                if (!p) continue;
+                if (!p)
+                    continue;
                 viewers.push_back({p->chunkX(), p->chunkZ(), p->viewDistance()});
             }
         }
         if (!viewers.empty()) {
             int unloaded = lvl->unloadDistantChunks(viewers);
             if (unloaded > 0 && Server::getInstance().advancedLog()) {
-                utils::MainLogger::get().info("[GC] Unloaded " +
-                    std::to_string(unloaded) + " chunk(s) out of view.");
+                utils::MainLogger::get().info("[GC] Unloaded " + std::to_string(unloaded) +
+                                              " chunk(s) out of view.");
             }
         }
     }

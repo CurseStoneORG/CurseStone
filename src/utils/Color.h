@@ -34,17 +34,17 @@ typedef struct mcp_color {
     uint8_t r, g, b, a;
 } mcp_color_t;
 
-#define MCP_COLOR_BLACK       ((mcp_color_t){  0,   0,   0, 255})
-#define MCP_COLOR_WHITE       ((mcp_color_t){255, 255, 255, 255})
-#define MCP_COLOR_RED         ((mcp_color_t){255,   0,   0, 255})
-#define MCP_COLOR_GREEN       ((mcp_color_t){  0, 255,   0, 255})
-#define MCP_COLOR_BLUE        ((mcp_color_t){  0,   0, 255, 255})
-#define MCP_COLOR_YELLOW      ((mcp_color_t){255, 255,   0, 255})
-#define MCP_COLOR_CYAN        ((mcp_color_t){  0, 255, 255, 255})
-#define MCP_COLOR_MAGENTA     ((mcp_color_t){255,   0, 255, 255})
-#define MCP_COLOR_DIRT_BROWN  ((mcp_color_t){134,  96,  67, 255})
-#define MCP_COLOR_GRASS_GREEN ((mcp_color_t){120, 180,  80, 255})
-#define MCP_COLOR_STONE_GRAY  ((mcp_color_t){128, 128, 128, 255})
+#define MCP_COLOR_BLACK ((mcp_color_t){0, 0, 0, 255})
+#define MCP_COLOR_WHITE ((mcp_color_t){255, 255, 255, 255})
+#define MCP_COLOR_RED ((mcp_color_t){255, 0, 0, 255})
+#define MCP_COLOR_GREEN ((mcp_color_t){0, 255, 0, 255})
+#define MCP_COLOR_BLUE ((mcp_color_t){0, 0, 255, 255})
+#define MCP_COLOR_YELLOW ((mcp_color_t){255, 255, 0, 255})
+#define MCP_COLOR_CYAN ((mcp_color_t){0, 255, 255, 255})
+#define MCP_COLOR_MAGENTA ((mcp_color_t){255, 0, 255, 255})
+#define MCP_COLOR_DIRT_BROWN ((mcp_color_t){134, 96, 67, 255})
+#define MCP_COLOR_GRASS_GREEN ((mcp_color_t){120, 180, 80, 255})
+#define MCP_COLOR_STONE_GRAY ((mcp_color_t){128, 128, 128, 255})
 
 // Pack to/from 0xAARRGGBB uint32.
 uint32_t mcp_color_to_argb(const mcp_color_t* c);

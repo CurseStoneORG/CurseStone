@@ -25,9 +25,13 @@
 #include <string>
 namespace cursestone::entity {
 class EntitySheep : public Animal {
-public:
+  public:
     using Animal::Animal;
-    EntitySheep(int64_t rid, std::shared_ptr<World> l) : Animal(rid, std::move(l)) { setNetworkId(13); }
-    std::string name() const { return "Sheep"; }
+    EntitySheep(int64_t rid, std::shared_ptr<World> l) : Animal(rid, std::move(l)) {
+        setNetworkId(13);
+    }
+    std::string name() const {
+        return "Sheep";
+    }
 };
 } // namespace

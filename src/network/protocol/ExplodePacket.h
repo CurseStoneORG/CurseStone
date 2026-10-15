@@ -37,8 +37,10 @@
 namespace cursestone::network::protocol {
 
 class ExplodePacket : public DataPacket {
-public:
-    uint8_t pid() const override { return EXPLODE_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return EXPLODE_PACKET;
+    }
 
     float x = 0, y = 0, z = 0;
     float radius = 0;

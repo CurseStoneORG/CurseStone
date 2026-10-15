@@ -39,17 +39,20 @@
 #include "world/generator/noise/VanillaNoise.h"
 namespace cursestone::world::generator {
 class Nether : public Generator {
-public:
+  public:
     explicit Nether(int64_t seed);
     ~Nether() override;
-    const char* name() const override { return "nether"; }
+    const char* name() const override {
+        return "nether";
+    }
     void generate(GenerationContext& ctx) override;
     void populate(GenerationContext& ctx) override;
     // Mirrors Nukkit Nether.getSpawn(): (128, 64, 128)
     mcp_vector3_t getSpawn() const override {
         return mcp_v3(128.0, 64.0, 128.0);
     }
-private:
+
+  private:
     // Must be declared first: the noise layer holds a pointer to it.
     MersenneRandom random_;
     PerlinNoise noise_;

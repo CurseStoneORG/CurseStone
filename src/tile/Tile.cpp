@@ -24,7 +24,8 @@
 #include "nbt/tag/CompoundTag.h"
 namespace cursestone::tile {
 void Tile::writeNBT(mcp_tag_t* tag) const {
-    if (!tag) return;
+    if (!tag)
+        return;
     mcp_compound_tag_set_string(tag, "id", id_.c_str());
     mcp_compound_tag_set_int(tag, "x", static_cast<int32_t>(pos_.x));
     mcp_compound_tag_set_int(tag, "y", static_cast<int32_t>(pos_.y));

@@ -37,26 +37,34 @@ namespace cursestone::inventory {
 
 // ---- Constructors ----
 BaseInventory::BaseInventory(InventoryHolder* holder, std::shared_ptr<InventoryType> type)
-    : BaseInventory(holder, type, {}, type ? type->getDefaultSize() : 0, "") {}
+    : BaseInventory(holder, type, {}, type ? type->getDefaultSize() : 0, "") {
+}
 
 BaseInventory::BaseInventory(InventoryHolder* holder, std::shared_ptr<InventoryType> type,
-                               const std::unordered_map<int, item::ItemStack>& items)
-    : BaseInventory(holder, type, items, type ? type->getDefaultSize() : 0, "") {}
+                             const std::unordered_map<int, item::ItemStack>& items)
+    : BaseInventory(holder, type, items, type ? type->getDefaultSize() : 0, "") {
+}
 
 BaseInventory::BaseInventory(InventoryHolder* holder, std::shared_ptr<InventoryType> type,
-                               const std::unordered_map<int, item::ItemStack>& items,
-                               int overrideSize)
-    : BaseInventory(holder, type, items, overrideSize, "") {}
+                             const std::unordered_map<int, item::ItemStack>& items,
+                             int overrideSize)
+    : BaseInventory(holder, type, items, overrideSize, "") {
+}
 
 BaseInventory::BaseInventory(InventoryHolder* holder, std::shared_ptr<InventoryType> type,
-                               const std::unordered_map<int, item::ItemStack>& items,
-                               int overrideSize, const std::string& overrideTitle)
+                             const std::unordered_map<int, item::ItemStack>& items,
+                             int overrideSize, const std::string& overrideTitle)
     : type_(type), holder_(holder) {
-    if (overrideSize > 0) size_ = overrideSize;
-    else if (type_)      size_ = type_->getDefaultSize();
-    if (!overrideTitle.empty()) title_ = overrideTitle;
-    else if (type_)            title_ = type_->getDefaultTitle();
-    if (type_)                 name_  = type_->getDefaultTitle();
+    if (overrideSize > 0)
+        size_ = overrideSize;
+    else if (type_)
+        size_ = type_->getDefaultSize();
+    if (!overrideTitle.empty())
+        title_ = overrideTitle;
+    else if (type_)
+        title_ = type_->getDefaultTitle();
+    if (type_)
+        name_ = type_->getDefaultTitle();
     type_raw_ = type_.get();
     setContents(items);
 }
@@ -64,13 +72,16 @@ BaseInventory::BaseInventory(InventoryHolder* holder, std::shared_ptr<InventoryT
 // ---- getItem / setItem ----
 item::ItemStack BaseInventory::getItem(int index) {
     auto it = slots_.find(index);
-    if (it == slots_.end()) return item::ItemStack::EMPTY();
+    if (it == slots_.end())
+        return item::ItemStack::EMPTY();
     return it->second;
 }
 
 bool BaseInventory::setItem(int index, const item::ItemStack& item) {
-    if (index < 0 || index >= size_) return false;
-    if (item.id == 0 || item.count <= 0) return clear(index);
+    if (index < 0 || index >= size_)
+        return false;
+    if (item.id == 0 || item.count <= 0)
+        return clear(index);
 
     // (Nukkit fires EntityInventoryChangeEvent here — we skip the event
     //  layer and just store the item.)
@@ -82,7 +93,8 @@ bool BaseInventory::setItem(int index, const item::ItemStack& item) {
 
 // ---- canAddItem ----
 bool BaseInventory::canAddItem(const item::ItemStack& item) {
-    if (item.isEmpty()) return true;
+    if (item.isEmpty())
+        return true;
     int remaining = item.count;
     int max_stack = maxStackSize_;
     // getSize() (virtual) — NOT size_ directly. PlayerInventory
@@ -98,11 +110,13 @@ bool BaseInventory::canAddItem(const item::ItemStack& item) {
         // merge with an unnamed one, otherwise the name would disappear.
         if (slot.sameItem(item) && slot.count > 0) {
             int diff = max_stack - slot.count;
-            if (diff > 0) remaining -= diff;
+            if (diff > 0)
+                remaining -= diff;
         } else if (slot.id == 0) {
             remaining -= max_stack;
         }
-        if (remaining <= 0) return true;
+        if (remaining <= 0)
+            return true;
     }
     return remaining <= 0;
 }
@@ -111,7 +125,8 @@ bool BaseInventory::canAddItem(const item::ItemStack& item) {
 std::vector<item::ItemStack> BaseInventory::addItem(std::vector<item::ItemStack> slots) {
     std::vector<item::ItemStack> itemSlots;
     for (auto& s : slots) {
-        if (s.id != 0 && s.count > 0) itemSlots.push_back(s);
+        if (s.id != 0 && s.count > 0)
+            itemSlots.push_back(s);
     }
     std::vector<int> emptySlots;
     int max_stack = maxStackSize_;
@@ -124,18 +139,18 @@ std::vector<item::ItemStack> BaseInventory::addItem(std::vector<item::ItemStack>
 
     for (int i = 0; i < limit; ++i) {
         item::ItemStack item = getItem(i);
-        if (item.id == 0 || item.count <= 0) emptySlots.push_back(i);
+        if (item.id == 0 || item.count <= 0)
+            emptySlots.push_back(i);
 
-        for (auto it = itemSlots.begin(); it != itemSlots.end(); ) {
+        for (auto it = itemSlots.begin(); it != itemSlots.end();) {
             auto& slot = *it;
             // sameItem: merge only id+meta+NBT-equal stacks (see canAddItem).
-            if (slot.sameItem(item) &&
-                item.count < max_stack) {
+            if (slot.sameItem(item) && item.count < max_stack) {
                 int amount = std::min(max_stack - item.count, slot.count);
                 amount = std::min(amount, max_stack);
                 if (amount > 0) {
-                    slot.count  -= amount;
-                    item.count   += amount;
+                    slot.count -= amount;
+                    item.count += amount;
                     setItem(i, item);
                     if (slot.count <= 0) {
                         it = itemSlots.erase(it);
@@ -145,19 +160,22 @@ std::vector<item::ItemStack> BaseInventory::addItem(std::vector<item::ItemStack>
             }
             ++it;
         }
-        if (itemSlots.empty()) break;
+        if (itemSlots.empty())
+            break;
     }
 
     if (!itemSlots.empty() && !emptySlots.empty()) {
         for (int slotIndex : emptySlots) {
-            if (itemSlots.empty()) break;
+            if (itemSlots.empty())
+                break;
             auto& slot = itemSlots.front();
             int amount = std::min(max_stack, slot.count);
             slot.count -= amount;
             item::ItemStack newItem = slot;
             newItem.count = amount;
             setItem(slotIndex, newItem);
-            if (slot.count <= 0) itemSlots.erase(itemSlots.begin());
+            if (slot.count <= 0)
+                itemSlots.erase(itemSlots.begin());
         }
     }
     return itemSlots;
@@ -167,7 +185,8 @@ std::vector<item::ItemStack> BaseInventory::addItem(std::vector<item::ItemStack>
 std::vector<item::ItemStack> BaseInventory::removeItem(std::vector<item::ItemStack> slots) {
     std::vector<item::ItemStack> itemSlots;
     for (auto& s : slots) {
-        if (s.id != 0 && s.count > 0) itemSlots.push_back(s);
+        if (s.id != 0 && s.count > 0)
+            itemSlots.push_back(s);
     }
     // getSize() (virtual), not size_ — kept consistent with addItem/
     // canAddItem above so a rollback (see Player.cpp's dropped-item
@@ -176,8 +195,9 @@ std::vector<item::ItemStack> BaseInventory::removeItem(std::vector<item::ItemSta
     int limit = getSize();
     for (int i = 0; i < limit; ++i) {
         item::ItemStack item = getItem(i);
-        if (item.id == 0 || item.count <= 0) continue;
-        for (auto it = itemSlots.begin(); it != itemSlots.end(); ) {
+        if (item.id == 0 || item.count <= 0)
+            continue;
+        for (auto it = itemSlots.begin(); it != itemSlots.end();) {
             auto& slot = *it;
             if (slot.id == item.id && slot.meta == item.meta) {
                 int amount = std::min(item.count, slot.count);
@@ -191,7 +211,8 @@ std::vector<item::ItemStack> BaseInventory::removeItem(std::vector<item::ItemSta
             }
             ++it;
         }
-        if (itemSlots.empty()) break;
+        if (itemSlots.empty())
+            break;
     }
     return itemSlots;
 }
@@ -205,9 +226,11 @@ void BaseInventory::setContents(const std::unordered_map<int, item::ItemStack>& 
     for (int i = 0; i < size_; ++i) {
         auto it = items.find(i);
         if (it == items.end()) {
-            if (slots_.count(i)) clear(i);
+            if (slots_.count(i))
+                clear(i);
         } else {
-            if (!setItem(i, it->second)) clear(i);
+            if (!setItem(i, it->second))
+                clear(i);
         }
     }
 }
@@ -218,7 +241,8 @@ bool BaseInventory::contains(const item::ItemStack& item) {
     for (auto& [_, slot] : slots_) {
         if (slot.id == item.id && slot.meta == item.meta) {
             count -= slot.count;
-            if (count <= 0) return true;
+            if (count <= 0)
+                return true;
         }
     }
     return false;
@@ -250,7 +274,8 @@ int BaseInventory::firstEmpty(const item::ItemStack& /*item*/) {
     // could get back an armor slot index.
     int limit = getSize();
     for (int i = 0; i < limit; ++i) {
-        if (getItem(i).id == 0) return i;
+        if (getItem(i).id == 0)
+            return i;
     }
     return -1;
 }
@@ -271,7 +296,8 @@ void BaseInventory::remove(const item::ItemStack& item) {
             matches.push_back(entry.first);
         }
     }
-    for (int idx : matches) clear(idx);
+    for (int idx : matches)
+        clear(idx);
 }
 
 // ---- clear / clearAll ----
@@ -286,7 +312,8 @@ bool BaseInventory::clear(int index) {
 
 void BaseInventory::clearAll() {
     auto copy = slots_;
-    for (auto& [idx, _] : copy) clear(idx);
+    for (auto& [idx, _] : copy)
+        clear(idx);
 }
 
 // ---- onSlotChange ----
@@ -298,7 +325,8 @@ void BaseInventory::onSlotChange(int index, const item::ItemStack& /*before*/) {
 
 // ---- sendContents / sendSlot ----
 void BaseInventory::sendContents(Player* player) {
-    if (!player) return;
+    if (!player)
+        return;
     auto pk = std::make_shared<network::protocol::ContainerSetContentPacket>();
     pk->windowid = 0;
     pk->slots.reserve(size_);
@@ -309,19 +337,20 @@ void BaseInventory::sendContents(Player* player) {
 }
 
 void BaseInventory::sendSlot(int index, Player* player) {
-    if (!player) return;
+    if (!player)
+        return;
     auto pk = std::make_shared<network::protocol::ContainerSetSlotPacket>();
     pk->windowid = 0;
     pk->slot = static_cast<int16_t>(index);
     pk->hotbarSlot = static_cast<int16_t>(index);
     auto item = getItem(index);
-    pk->itemId     = static_cast<int16_t>(item.id);
-    pk->itemCount  = item.count;
+    pk->itemId = static_cast<int16_t>(item.id);
+    pk->itemCount = item.count;
     pk->itemDamage = static_cast<int16_t>(item.meta);
     // Same rule as PlayerInventory::sendSlot: the ack must echo the
     // stack's NBT ({display:{Name}}) or a custom-named item renders
     // nameless on the client after any slot update.
-    pk->itemNbt    = item.nbt;
+    pk->itemNbt = item.nbt;
     player->sendPacket(pk);
 }
 

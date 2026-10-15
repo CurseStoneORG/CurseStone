@@ -42,12 +42,13 @@ void BatchPacket::encode(std::vector<uint8_t>& out) const {
         return;
     }
     uLong srcLen = static_cast<uLong>(payload_.size());
-    uLong bound  = compressBound(srcLen) + 64;
+    uLong bound = compressBound(srcLen) + 64;
     std::vector<uint8_t> tmp(bound);
     uLongf dstLen = bound;
     int r = compress2(tmp.data(), &dstLen, payload_.data(), srcLen, 7);
     if (r != Z_OK) {
-        for (int i = 0; i < 4; ++i) out.push_back(0);
+        for (int i = 0; i < 4; ++i)
+            out.push_back(0);
         return;
     }
     uint32_t n = static_cast<uint32_t>(dstLen);
@@ -61,18 +62,20 @@ void BatchPacket::encode(std::vector<uint8_t>& out) const {
 bool BatchPacket::decode(const uint8_t* data, size_t len) {
     PacketReader r(data, len);
     uint32_t compressedLen;
-    if (!r.readU32BE(compressedLen)) return false;
-    if (compressedLen > r.remaining()) return false;
+    if (!r.readU32BE(compressedLen))
+        return false;
+    if (compressedLen > r.remaining())
+        return false;
 
     std::vector<uint8_t> compressed(compressedLen);
-    if (!r.readBytes(compressed.data(), compressedLen)) return false;
+    if (!r.readBytes(compressed.data(), compressedLen))
+        return false;
 
     // Try 1: zlib format (uncompress) — used by PMMP and Python bot
     {
-        uLongf dstLen = 1 << 20;  // 1 MiB cap
+        uLongf dstLen = 1 << 20; // 1 MiB cap
         std::vector<uint8_t> dst(dstLen);
-        int rc = uncompress(dst.data(), &dstLen,
-                            compressed.data(), (uLong)compressedLen);
+        int rc = uncompress(dst.data(), &dstLen, compressed.data(), (uLong)compressedLen);
         if (rc == Z_OK) {
             payload_.assign(dst.data(), dst.data() + dstLen);
             return true;
@@ -83,13 +86,14 @@ bool BatchPacket::decode(const uint8_t* data, size_t len) {
     {
         z_stream zs;
         std::memset(&zs, 0, sizeof(zs));
-        if (inflateInit2(&zs, -15) != Z_OK) goto try_streaming_zlib;
-        zs.next_in   = const_cast<Bytef*>(compressed.data());
-        zs.avail_in  = static_cast<uInt>(compressedLen);
+        if (inflateInit2(&zs, -15) != Z_OK)
+            goto try_streaming_zlib;
+        zs.next_in = const_cast<Bytef*>(compressed.data());
+        zs.avail_in = static_cast<uInt>(compressedLen);
 
         uLongf dstLen = 1 << 20;
         std::vector<uint8_t> dst(dstLen);
-        zs.next_out  = dst.data();
+        zs.next_out = dst.data();
         zs.avail_out = static_cast<uInt>(dstLen);
         int rc = inflate(&zs, Z_FINISH);
         uLongf produced = static_cast<uLongf>(dstLen - zs.avail_out);
@@ -105,19 +109,20 @@ try_streaming_zlib:
     {
         z_stream zs;
         std::memset(&zs, 0, sizeof(zs));
-        if (inflateInit(&zs) != Z_OK) return false;
-        zs.next_in  = const_cast<Bytef*>(compressed.data());
+        if (inflateInit(&zs) != Z_OK)
+            return false;
+        zs.next_in = const_cast<Bytef*>(compressed.data());
         zs.avail_in = static_cast<uInt>(compressedLen);
         std::vector<uint8_t> inflated;
         inflated.reserve(compressedLen * 4);
         uint8_t buf[16 * 1024];
         int ret;
         do {
-            zs.next_out  = buf;
+            zs.next_out = buf;
             zs.avail_out = sizeof(buf);
             ret = inflate(&zs, Z_NO_FLUSH);
-            if (ret == Z_STREAM_ERROR || ret == Z_NEED_DICT ||
-                ret == Z_DATA_ERROR || ret == Z_MEM_ERROR) {
+            if (ret == Z_STREAM_ERROR || ret == Z_NEED_DICT || ret == Z_DATA_ERROR ||
+                ret == Z_MEM_ERROR) {
                 inflateEnd(&zs);
                 return false;
             }

@@ -35,16 +35,19 @@ namespace cursestone {
  * @brief Holds the thread handles the server must join before exiting.
  */
 class ThreadManager {
-public:
+  public:
     /// Returns the process-wide instance.
     static ThreadManager& get();
 
     /// Hands a thread handle to the registry so joinAll() can join it later.
-    void registerThread(std::shared_ptr<std::thread> t) { threads_.push_back(std::move(t)); }
+    void registerThread(std::shared_ptr<std::thread> t) {
+        threads_.push_back(std::move(t));
+    }
 
     /// Joins every registered, joinable thread and clears the registry.
     void joinAll();
-private:
+
+  private:
     std::vector<std::shared_ptr<std::thread>> threads_;
 };
 } // namespace

@@ -38,7 +38,7 @@ namespace cursestone::world::generator {
 class ImprovedNoise;
 
 class PerlinNoise : public Synth {
-public:
+  public:
     explicit PerlinNoise(int levels);
     PerlinNoise(MersenneRandom* random, int levels);
     ~PerlinNoise() override;
@@ -46,11 +46,10 @@ public:
     float getValue(float x, float y) override;
     float getValue(float x, float y, float z);
 
-    float* getRegion(float* buffer, float x, float y, float z, int xSize,
-                     int ySize, int zSize, float xScale, float yScale,
-                     float zScale);
-    float* getRegion(float* sr, int x, int z, int xSize, int zSize, float xScale,
-                     float zScale, float pow);
+    float* getRegion(float* buffer, float x, float y, float z, int xSize, int ySize, int zSize,
+                     float xScale, float yScale, float zScale);
+    float* getRegion(float* sr, int x, int z, int xSize, int zSize, float xScale, float zScale,
+                     float pow);
 
     int hashCode();
 
@@ -58,7 +57,9 @@ public:
     // vanilla suma las octavas SIN dividir por la amplitud total, asi que su
     // salida crece con `levels`; nuestro generador espera campos en [-1, 1] y
     // usa esto para normalizar.
-    int levelCount() const { return levels; }
+    int levelCount() const {
+        return levels;
+    }
 
     // Optimizacion (NO cambia ni un bit): el puente del ruido vanilla
     // (noise/VanillaNoise.h) necesita estas dos constantes en CADA
@@ -66,10 +67,14 @@ public:
     // llamada. Son puros valores de la capa, asi que se guardan una vez
     // en init() y se leen aqui. Mismos numeros, mismo orden de
     // sumatoria: la salida de getValue() no se toca.
-    double amplitudeSum() const { return amp_sum_; }
-    double dominantScale() const { return dom_scale_; }
+    double amplitudeSum() const {
+        return amp_sum_;
+    }
+    double dominantScale() const {
+        return dom_scale_;
+    }
 
-private:
+  private:
     ImprovedNoise** noiseLevels;
     int levels;
 

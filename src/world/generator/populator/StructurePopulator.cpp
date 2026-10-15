@@ -65,17 +65,14 @@ int wrapRegion(int value) {
 
 // The chunk a region would put its structure in, plus which region that
 // chunk belongs to. Pure function of (seed, regionX, regionZ).
-void regionCandidate(int64_t seed, int regionX, int regionZ, int salt,
-                     int& chunkX, int& chunkZ) {
-    MersenneRandom rng(seed * 341873128712LL +
-                  (int64_t)regionX * 341873128712LL +
-                  (int64_t)regionZ * 132897987541LL +
-                  (int64_t)salt);
+void regionCandidate(int64_t seed, int regionX, int regionZ, int salt, int& chunkX, int& chunkZ) {
+    MersenneRandom rng(seed * 341873128712LL + (int64_t)regionX * 341873128712LL +
+                       (int64_t)regionZ * 132897987541LL + (int64_t)salt);
     const int span = kSpacing - kSeparation;
-    chunkX = regionX * kSpacing +
-             wrapRegion(regionX * kSpacing + kSeparation + (int)rng.nextInt(span));
-    chunkZ = regionZ * kSpacing +
-             wrapRegion(regionZ * kSpacing + kSeparation + (int)rng.nextInt(span));
+    chunkX =
+        regionX * kSpacing + wrapRegion(regionX * kSpacing + kSeparation + (int)rng.nextInt(span));
+    chunkZ =
+        regionZ * kSpacing + wrapRegion(regionZ * kSpacing + kSeparation + (int)rng.nextInt(span));
 }
 
 // The Y the structure's local (0,0,0) cell goes on, or -1 when the spot
@@ -95,16 +92,21 @@ int structureBaseY(const TerrainNoise& noise, const Structure& s, int wx, int wz
             const int x = wx + lx;
             const int z = wz + lz;
             const int h = columnHeight(noise, x, z);
-            if (!s.allowsBiome(columnBiome(noise, x, z, h))) return -1;
-            if (h < kSeaLevel + 1) return -1;                 // no water
-            if (h > 127 - s.sizeY() - 1) return -1;           // fits under the top
-            if (riverMask(noise, x, z) > 0.05) return -1;     // not in a river
+            if (!s.allowsBiome(columnBiome(noise, x, z, h)))
+                return -1;
+            if (h < kSeaLevel + 1)
+                return -1; // no water
+            if (h > 127 - s.sizeY() - 1)
+                return -1; // fits under the top
+            if (riverMask(noise, x, z) > 0.05)
+                return -1; // not in a river
             lowest = std::min(lowest, h);
             highest = std::max(highest, h);
         }
     }
 
-    if (highest < 0 || highest - lowest > kMaxGroundStep) return -1;
+    if (highest < 0 || highest - lowest > kMaxGroundStep)
+        return -1;
     return highest + 1;
 }
 
@@ -114,8 +116,8 @@ int structureBaseY(const TerrainNoise& noise, const Structure& s, int wx, int wz
 // one- or two-block dip that kMaxGroundStep allows there would be a gap
 // under the floor and the temple would look like it was hovering. Filling
 // with the biome's own surface block makes it sit in the sand.
-void fillUnder(const TerrainNoise& noise, GenerationContext& ctx, const Structure& s,
-               int wx, int baseY, int wz) {
+void fillUnder(const TerrainNoise& noise, GenerationContext& ctx, const Structure& s, int wx,
+               int baseY, int wz) {
     mcp_chunk_t* chunk = ctx.chunk;
     const int bx = ctx.chunk_x * 16;
     const int bz = ctx.chunk_z * 16;
@@ -124,10 +126,12 @@ void fillUnder(const TerrainNoise& noise, GenerationContext& ctx, const Structur
         for (int lx = 0; lx < s.sizeX(); ++lx) {
             const int x = wx + lx;
             const int z = wz + lz;
-            if (x < bx || x >= bx + 16 || z < bz || z >= bz + 16) continue;
+            if (x < bx || x >= bx + 16 || z < bz || z >= bz + 16)
+                continue;
 
             const int h = columnHeight(noise, x, z);
-            if (h >= baseY) continue;
+            if (h >= baseY)
+                continue;
             const uint8_t ground =
                 biome::BiomeRegistry::forId(columnBiome(noise, x, z, h)).topBlock;
             for (int y = h; y < baseY; ++y)
@@ -139,7 +143,8 @@ void fillUnder(const TerrainNoise& noise, GenerationContext& ctx, const Structur
 } // namespace
 
 void StructurePopulator::populate(GenerationContext& ctx) {
-    if (structures_.empty()) return;
+    if (structures_.empty())
+        return;
 
     // Regions are kSpacing chunks across, so only this region and its
     // eight neighbours can hold a structure that touches this chunk. The
@@ -179,16 +184,21 @@ void StructurePopulator::populate(GenerationContext& ctx) {
             }
         }
     }
-    if (candidates.empty()) return;
+    if (candidates.empty())
+        return;
 
     // OPT: ruido compartido del chunk (ver PopulatorTree::populate).
     const TerrainNoise* sharedNoise = static_cast<const TerrainNoise*>(ctx.noise_cache);
     std::optional<TerrainNoise> ownNoise;
-    if (!sharedNoise) { ownNoise.emplace(ctx.seed); sharedNoise = &*ownNoise; }
+    if (!sharedNoise) {
+        ownNoise.emplace(ctx.seed);
+        sharedNoise = &*ownNoise;
+    }
     const TerrainNoise& noise = *sharedNoise;
     for (const Candidate& c : candidates) {
         const int baseY = structureBaseY(noise, *c.structure, c.wx, c.wz);
-        if (baseY < 0) continue;
+        if (baseY < 0)
+            continue;
 
         fillUnder(noise, ctx, *c.structure, c.wx, baseY, c.wz);
         if (c.structure->placeInto(ctx.chunk, ctx.chunk_x, ctx.chunk_z, c.wx, baseY, c.wz))

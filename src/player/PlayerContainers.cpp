@@ -57,7 +57,8 @@ namespace cursestone {
 // ============================================================
 void Player::openChestAt(int x, int y, int z) {
     auto* lvl = getWorld();
-    if (!lvl) return;
+    if (!lvl)
+        return;
 
     // Only one container open at to time per player (see openContainerWindow).
     if (open_chest_) {
@@ -76,7 +77,8 @@ void Player::openChestAt(int x, int y, int z) {
     auto existing = lvl->getTile(x, y, z);
     if (existing) {
         chest = std::dynamic_pointer_cast<tile::TileChest>(existing);
-        if (!chest) return;
+        if (!chest)
+            return;
     } else {
         chest = std::make_shared<tile::TileChest>(
             cursestone::world::Position((double)x, (double)y, (double)z));
@@ -89,18 +91,21 @@ void Player::openChestAt(int x, int y, int z) {
     // registered if this is cancelled.
     auto ev = event::EventManager::get().fire<event::inventory::InventoryOpenEvent>(
         std::static_pointer_cast<inventory::Inventory>(chest->inventory()), this);
-    if (ev.isCancelled()) return;
+    if (ev.isCancelled())
+        return;
 
     chest->addViewer();
     open_chest_ = chest;
-    openContainerWindow();   // sets container_window_id_ for every packet below
+    openContainerWindow(); // sets container_window_id_ for every packet below
 
     auto op = std::make_shared<network::protocol::ContainerOpenPacket>();
     op->windowid = container_window_id_;
-    op->type     = network::protocol::ContainerOpenPacket::TYPE_CONTAINER;
-    op->slots    = (int16_t)chest->inventory()->getSize();
-    op->x = x; op->y = y; op->z = z;
-    op->entityId = -1;  // block-based container, not entity-based
+    op->type = network::protocol::ContainerOpenPacket::TYPE_CONTAINER;
+    op->slots = (int16_t)chest->inventory()->getSize();
+    op->x = x;
+    op->y = y;
+    op->z = z;
+    op->entityId = -1; // block-based container, not entity-based
     sendPacket(op);
 
     // The client can only draw and open to chest THROUGH its block
@@ -129,7 +134,8 @@ void Player::openChestAt(int x, int y, int z) {
 
     if (srv_ && srv_->advancedLog()) {
         utils::MainLogger::get().info("[CHEST] " + cfg_.username + " opened chest at " +
-            std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(z));
+                                      std::to_string(x) + "," + std::to_string(y) + "," +
+                                      std::to_string(z));
     }
 }
 
@@ -161,7 +167,8 @@ void Player::closeOpenChest() {
 // the 3 slots (input / fuel / output).
 void Player::openFurnaceAt(int x, int y, int z) {
     auto* lvl = getWorld();
-    if (!lvl) return;
+    if (!lvl)
+        return;
 
     // only a contenedor abierto per player.
     if (open_chest_ || open_furnace_) {
@@ -172,7 +179,8 @@ void Player::openFurnaceAt(int x, int y, int z) {
     auto existing = lvl->getTile(x, y, z);
     if (existing) {
         furnace = std::dynamic_pointer_cast<tile::TileFurnace>(existing);
-        if (!furnace) return;   // other tipo of tile in that position
+        if (!furnace)
+            return; // other tipo of tile in that position
     } else {
         furnace = std::make_shared<tile::TileFurnace>(
             cursestone::world::Position((double)x, (double)y, (double)z));
@@ -181,21 +189,23 @@ void Player::openFurnaceAt(int x, int y, int z) {
 
     // InventoryOpenEvent — cancelable (protección of zona, etc.), igual
     // that in openChestAt().
-    inventory::Inventory* fInvRaw =
-        static_cast<inventory::Inventory*>(furnace->inventory().get());
+    inventory::Inventory* fInvRaw = static_cast<inventory::Inventory*>(furnace->inventory().get());
     auto ev = event::EventManager::get().fire<event::inventory::InventoryOpenEvent>(
         std::shared_ptr<inventory::Inventory>(std::shared_ptr<void>(), fInvRaw), this);
-    if (ev.isCancelled()) return;
+    if (ev.isCancelled())
+        return;
 
     furnace->addViewer(this);
     open_furnace_ = furnace;
-    openContainerWindow();  // sets container_window_id_ for every packet below
+    openContainerWindow(); // sets container_window_id_ for every packet below
 
     auto op = std::make_shared<network::protocol::ContainerOpenPacket>();
     op->windowid = container_window_id_;
-    op->type     = network::protocol::ContainerOpenPacket::TYPE_FURNACE;
-    op->slots    = 3;
-    op->x = x; op->y = y; op->z = z;
+    op->type = network::protocol::ContainerOpenPacket::TYPE_FURNACE;
+    op->slots = 3;
+    op->x = x;
+    op->y = y;
+    op->z = z;
     op->entityId = -1;
     sendPacket(op);
 
@@ -210,7 +220,8 @@ void Player::openFurnaceAt(int x, int y, int z) {
     auto content = std::make_shared<network::protocol::ContainerSetContentPacket>();
     content->windowid = container_window_id_;
     content->slots.reserve(3);
-    for (int i = 0; i < 3; ++i) content->slots.push_back(furnace->getItem(i));
+    for (int i = 0; i < 3; ++i)
+        content->slots.push_back(furnace->getItem(i));
     sendPacket(content);
 
     // state initial of arrow/flame so that the UI not startup in a
@@ -219,7 +230,8 @@ void Player::openFurnaceAt(int x, int y, int z) {
 
     if (srv_ && srv_->advancedLog()) {
         utils::MainLogger::get().info("[FURNACE] " + cfg_.username + " opened furnace at " +
-            std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(z));
+                                      std::to_string(x) + "," + std::to_string(y) + "," +
+                                      std::to_string(z));
     }
 }
 
@@ -237,8 +249,7 @@ void Player::openFurnaceAt(int x, int y, int z) {
 uint8_t Player::openContainerWindow() {
     container_window_id_ = next_container_window_id_;
     next_container_window_id_ =
-        (next_container_window_id_ >= 98) ? 2
-                                           : (uint8_t)(next_container_window_id_ + 1);
+        (next_container_window_id_ >= 98) ? 2 : (uint8_t)(next_container_window_id_ + 1);
     return container_window_id_;
 }
 
@@ -251,33 +262,40 @@ uint8_t Player::openContainerWindow() {
 //   - dispara SignChangeEvent (cancelable) and applies the líneas.
 // ============================================================
 void Player::handleSignEdit(network::protocol::BlockEntityDataPacket& pk) {
-    if (!spawned() || !srv_) return;
+    if (!spawned() || !srv_)
+        return;
     world::World* lvl = getWorld();
-    if (!lvl) return;
+    if (!lvl)
+        return;
 
     double dx = (double)pk.x - pos_.x;
     double dy = (double)pk.y - pos_.y;
     double dz = (double)pk.z - pos_.z;
-    if (dx * dx + dy * dy + dz * dz > 10000.0) return;
+    if (dx * dx + dy * dy + dz * dz > 10000.0)
+        return;
 
     auto tile = lvl->getTile(pk.x, pk.y, pk.z);
     auto sign = std::dynamic_pointer_cast<tile::TileSign>(tile);
-    if (!sign) return;
-    if (pk.namedtag.empty()) return;
+    if (!sign)
+        return;
+    if (pk.namedtag.empty())
+        return;
 
     mcp_tag_t* root = mcp_nbt_read_bytes(pk.namedtag.data(), pk.namedtag.size(),
                                          /*little_endian=*/true);
-    if (!root) return;
+    if (!root)
+        return;
 
     std::string id = mcp_compound_tag_get_string(root, "id", "");
-    if (id != "Sign") { mcp_tag_destroy(root); return; }
+    if (id != "Sign") {
+        mcp_tag_destroy(root);
+        return;
+    }
 
-    std::array<std::string, 4> lines = {
-        mcp_compound_tag_get_string(root, "Text1", ""),
-        mcp_compound_tag_get_string(root, "Text2", ""),
-        mcp_compound_tag_get_string(root, "Text3", ""),
-        mcp_compound_tag_get_string(root, "Text4", "")
-    };
+    std::array<std::string, 4> lines = {mcp_compound_tag_get_string(root, "Text1", ""),
+                                        mcp_compound_tag_get_string(root, "Text2", ""),
+                                        mcp_compound_tag_get_string(root, "Text3", ""),
+                                        mcp_compound_tag_get_string(root, "Text4", "")};
     mcp_tag_destroy(root);
 
     // Genisys compares the Creator contra the NBT of the tile of the server
@@ -285,10 +303,11 @@ void Player::handleSignEdit(network::protocol::BlockEntityDataPacket& pk) {
     // takes precedence Creator in its BlockEntityData, this way that leerlo of the packet haría
     // that all editing is cancelara (bug). the dueño is who colocó the
     // sign (player::handleBlockPlace setea the Creator of the tile).
-    auto ev = event::EventManager::get().fire<event::block::SignChangeEvent>(
-        pk.x, pk.y, pk.z, this, lines);
+    auto ev = event::EventManager::get().fire<event::block::SignChangeEvent>(pk.x, pk.y, pk.z, this,
+                                                                             lines);
     const std::string& creator = sign->creator();
-    if (creator.empty() || creator != cfg_.uuid) ev.setCancelled(true);
+    if (creator.empty() || creator != cfg_.uuid)
+        ev.setCancelled(true);
     if (ev.isCancelled()) {
         // Genisys: `$t->spawnTo($this)` — forwards the NBT current of the sign
         // to the editor for revertir the text that the client already mostró.
@@ -296,7 +315,8 @@ void Player::handleSignEdit(network::protocol::BlockEntityDataPacket& pk) {
         return;
     }
 
-    for (int i = 0; i < 4; ++i) sign->setLine(i, ev.getLine(i));
+    for (int i = 0; i < 4; ++i)
+        sign->setLine(i, ev.getLine(i));
     // Genisys: Sign::setText() termina in `$this->spawnToAll()` — the sign
     // is respawns to all its viewers so that vean the text new without
     // recargar the chunk.
@@ -309,17 +329,21 @@ void Player::handleSignEdit(network::protocol::BlockEntityDataPacket& pk) {
 // (Genisys tile::spawnTo), or all those that trackean the chunk
 // (Genisys tile::spawnToAll). Reutilizable by any block entity.
 // ============================================================
-void Player::sendBlockEntityData(int32_t x, int32_t y, int32_t z,
-                                 tile::Tile& t, Player* only) {
-    if (!srv_) return;
+void Player::sendBlockEntityData(int32_t x, int32_t y, int32_t z, tile::Tile& t, Player* only) {
+    if (!srv_)
+        return;
 
     mcp_tag_t* tag = mcp_compound_tag_new();
-    if (!tag) return;
+    if (!tag)
+        return;
     t.writeNBT(tag);
     size_t blen = 0;
     uint8_t* bbuf = mcp_nbt_write_bytes(tag, /*little_endian=*/true, &blen);
     mcp_tag_destroy(tag);
-    if (!bbuf || blen == 0) { free(bbuf); return; }
+    if (!bbuf || blen == 0) {
+        free(bbuf);
+        return;
+    }
 
     auto pk = std::make_shared<network::protocol::BlockEntityDataPacket>();
     pk->x = x;
@@ -336,10 +360,13 @@ void Player::sendBlockEntityData(int32_t x, int32_t y, int32_t z,
     int32_t cx = x >> 4;
     int32_t cz = z >> 4;
     for (auto& other : srv_->playersSnapshot()) {
-        if (!other) continue;
-        if (other->getWorld() != getWorld()) continue;   // same world
+        if (!other)
+            continue;
+        if (other->getWorld() != getWorld())
+            continue; // same world
         if (other.get() == this || other->canSeeBlock(cx, cz)) {
             other->sendPacket(pk);
         }
     }
-}} // namespace cursestone
+}
+} // namespace cursestone

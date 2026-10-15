@@ -37,7 +37,8 @@ void InteractPacket::encode(std::vector<uint8_t>& out) const {
 
 bool InteractPacket::decode(const uint8_t* data, size_t len) {
     PacketReader r(data, len);
-    if (!r.readU8(action)) return false;
+    if (!r.readU8(action))
+        return false;
     return r.readI64BE(target);
 }
 

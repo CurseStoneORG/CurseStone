@@ -32,12 +32,13 @@ void ExplodePacket::encode(std::vector<uint8_t>& out) const {
     w.writeF32BE(y);
     w.writeF32BE(z);
     w.writeF32BE(radius);
-    w.writeI32BE(0);   // records count — Infinity spawns Lightning with []
+    w.writeI32BE(0); // records count — Infinity spawns Lightning with []
 }
 
 bool ExplodePacket::decode(const uint8_t* data, size_t len) {
-    (void)data; (void)len;
-    return true;  // server→client only
+    (void)data;
+    (void)len;
+    return true; // server→client only
 }
 
 } // namespace cursestone::network::protocol

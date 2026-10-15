@@ -35,10 +35,10 @@ extern "C" {
 
 typedef struct mcp_pkt_unconnected_ping {
     mcp_packet_t header;
-    
+
     uint64_t time;
-    uint8_t  magic[16];
-    int64_t  client_id;
+    uint8_t magic[16];
+    int64_t client_id;
 
 } mcp_pkt_unconnected_ping_t;
 

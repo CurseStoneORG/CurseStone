@@ -36,8 +36,10 @@
 namespace cursestone::network::protocol {
 
 class RespawnPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return RESPAWN_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return RESPAWN_PACKET;
+    }
 
     float x = 0.0f, y = 0.0f, z = 0.0f;
 

@@ -46,12 +46,19 @@
 #include "world/PortalRegistry.h"
 #include "world/format/WorldProvider.h"
 namespace cursestone {
-class Player; class Entity;
-namespace tile { class Tile; }
-namespace world::generator { class Generator; }
+class Player;
+class Entity;
+namespace tile {
+class Tile;
+}
+namespace world::generator {
+class Generator;
+}
 }
 namespace cursestone::world {
-namespace particle { class Particle; }
+namespace particle {
+class Particle;
+}
 
 // ArrowEntity — lightweight record of a flying/stuck arrow (protocol 84
 // entity type 80). Follows the DroppedItem pattern: the client integrates
@@ -60,23 +67,23 @@ namespace particle { class Particle; }
 // correcting the client with MoveEntityPacket, testing entity hits and
 // sticking the arrow when it collides with a block.
 struct ArrowEntity {
-    int64_t  eid = 0;
-    int64_t  shooter_eid = -1;      // shooter player runtime id (-1 = none)
-    double   x = 0.0, y = 0.0, z = 0.0;
-    double   vx = 0.0, vy = 0.0, vz = 0.0;
-    float    yaw = 0.0f, pitch = 0.0f;
+    int64_t eid = 0;
+    int64_t shooter_eid = -1; // shooter player runtime id (-1 = none)
+    double x = 0.0, y = 0.0, z = 0.0;
+    double vx = 0.0, vy = 0.0, vz = 0.0;
+    float yaw = 0.0f, pitch = 0.0f;
     // Last values broadcast in MoveEntityPacket — only re-broadcast when
     // the entity actually moved/rotated (PMMP Entity::updateMovement).
-    double   lx = 0.0, ly = 0.0, lz = 0.0;
-    float    lyaw = 0.0f, lpitch = 0.0f;
+    double lx = 0.0, ly = 0.0, lz = 0.0;
+    float lyaw = 0.0f, lpitch = 0.0f;
     // Last motion broadcast in SetEntityMotionPacket.
-    double   lmx = 0.0, lmy = 0.0, lmz = 0.0;
+    double lmx = 0.0, lmy = 0.0, lmz = 0.0;
     uint64_t spawn_tick = 0;
-    uint64_t flight_ticks = 0;      // ticksLived — gates self-hit ignore
-    float    damage = 2.0f;         // Infinity Arrow: $damage = 2
-    bool     critical = false;      // fully-charged shot (f == 2)
-    bool     stuck = false;         // hit a block: motion zeroed, pickable
-    bool     taken = false;         // claimed by a pickup (atomic claim)
+    uint64_t flight_ticks = 0; // ticksLived — gates self-hit ignore
+    float damage = 2.0f;       // Infinity Arrow: $damage = 2
+    bool critical = false;     // fully-charged shot (f == 2)
+    bool stuck = false;        // hit a block: motion zeroed, pickable
+    bool taken = false;        // claimed by a pickup (atomic claim)
 };
 
 // DroppedItem — to lightweight record of an item entity lying on the ground.
@@ -84,20 +91,20 @@ struct ArrowEntity {
 // track position + the item + to pickup-delay so the player who just threw
 // it doesn't instantly re-pick it up.
 struct DroppedItem {
-    int64_t  eid = 0;            // runtime entity id (matches AddItemEntityPacket)
+    int64_t eid = 0; // runtime entity id (matches AddItemEntityPacket)
     uint16_t itemId = 0;
-    uint8_t  count  = 1;
+    uint8_t count = 1;
     uint16_t damage = 0;
     // Raw little-endian NBT compound of the dropped stack (custom item
     // names survive the drop→pickup round trip through this field).
     std::string nbt;
-    double   x = 0.0, y = 0.0, z = 0.0;
-    uint64_t spawn_tick = 0;     // when it was dropped (server tick)
+    double x = 0.0, y = 0.0, z = 0.0;
+    uint64_t spawn_tick = 0; // when it was dropped (server tick)
     // Pickup delay, in ticks. Genisys player::DROP_ITEM_PACKET drops with
     // 40 ticks (2 s) and World::dropItem() defaults to 10, so the default
     // here matches that (0.5 s) and to manual drop passes 40 explicitly.
     uint32_t pickup_delay_ticks = 10;
-    bool     taken = false;      // marked for removal after pickup
+    bool taken = false; // marked for removal after pickup
 
     // --- Genisys entity\item state (pocketmine\entity\item) ---
     // $motionX / $motionY / $motionZ, applied and integrated every tick by
@@ -107,7 +114,7 @@ struct DroppedItem {
     // entity has long since left.
     double vx = 0.0, vy = 0.0, vz = 0.0;
     // $onGround — true when the last vertical move was clipped downwards.
-    bool   on_ground = false;
+    bool on_ground = false;
     // $lastX / $lastY / $lastZ — the position the client was last told
     // about, so updateMovement() can apply Genisys' 0.2-block dead-zone
     // (diffPosition > 0.04) instead of broadcasting on every 5th tick.
@@ -116,19 +123,19 @@ struct DroppedItem {
 
 struct FallingBlockEntity {
     int64_t eid = 0;
-    uint8_t blockId = 0;    // block rendered + placed back on landing
-    uint8_t blockData = 0;  // metadata carried through the fall
-    double   x = 0.0, y = 0.0, z = 0.0;   // entity position (block centre = bx+0.5)
-    double   vx = 0.0, vy = 0.0, vz = 0.0;
+    uint8_t blockId = 0;              // block rendered + placed back on landing
+    uint8_t blockData = 0;            // metadata carried through the fall
+    double x = 0.0, y = 0.0, z = 0.0; // entity position (block centre = bx+0.5)
+    double vx = 0.0, vy = 0.0, vz = 0.0;
     // Last position broadcast in MoveEntityPacket — only re-broadcast
     // when the entity actually moved (DroppedItem dead-zone pattern).
-    double   lx = 0.0, ly = 0.0, lz = 0.0;
+    double lx = 0.0, ly = 0.0, lz = 0.0;
     uint64_t spawn_tick = 0;
-    uint32_t age = 0;                     // ticksLived
+    uint32_t age = 0; // ticksLived
     // Infinity FallingSand: `$height = $this->fallDistance` feeds the
     // anvil crush damage (($height - 1) * 2, capped at 40).
-    float    fall_distance = 0.0f;
-    bool     taken = false;               // landed/despawned → erased next sweep
+    float fall_distance = 0.0f;
+    bool taken = false; // landed/despawned → erased next sweep
 };
 
 // ---------------------------------------------------------------------
@@ -159,33 +166,32 @@ struct FallingBlockEntity {
 // player::onUpdate() can never drift apart again (to dead ring where an
 // item is neither attracted nor collected is the same bug wearing to
 // different hat).
-constexpr double kItemHalfW         = 0.125;   // item width 0.25 / 2
-constexpr double kItemHeight        = 0.25;    // item height 0.25
-constexpr double kPickupHalfExtent  = 1.3;     // player half-width 0.3 + grow 1.0
-constexpr double kPickupBelowFeet   = 1.0;     // grow 1.0 below the feet
-constexpr double kPickupAboveFeet   = 2.8;     // height 1.8 + grow 1.0
+constexpr double kItemHalfW = 0.125;      // item width 0.25 / 2
+constexpr double kItemHeight = 0.25;      // item height 0.25
+constexpr double kPickupHalfExtent = 1.3; // player half-width 0.3 + grow 1.0
+constexpr double kPickupBelowFeet = 1.0;  // grow 1.0 below the feet
+constexpr double kPickupAboveFeet = 2.8;  // height 1.8 + grow 1.0
 
 // Strict per-axis AABB overlap of the item box against the player's
 // grown pickup box.
-inline bool itemWithinPickupVolume(double ix, double iy, double iz,
-                                   double px, double py, double pz) {
-    if (!(ix + kItemHalfW > px - kPickupHalfExtent &&
-          ix - kItemHalfW < px + kPickupHalfExtent)) return false;
-    if (!(iy + kItemHeight > py - kPickupBelowFeet &&
-          iy             < py + kPickupAboveFeet)) return false;
-    if (!(iz + kItemHalfW > pz - kPickupHalfExtent &&
-          iz - kItemHalfW < pz + kPickupHalfExtent)) return false;
+inline bool itemWithinPickupVolume(double ix, double iy, double iz, double px, double py,
+                                   double pz) {
+    if (!(ix + kItemHalfW > px - kPickupHalfExtent && ix - kItemHalfW < px + kPickupHalfExtent))
+        return false;
+    if (!(iy + kItemHeight > py - kPickupBelowFeet && iy < py + kPickupAboveFeet))
+        return false;
+    if (!(iz + kItemHalfW > pz - kPickupHalfExtent && iz - kItemHalfW < pz + kPickupHalfExtent))
+        return false;
     return true;
 }
 
-inline bool itemWithinPickupVolume(const DroppedItem& di,
-                                   double px, double py, double pz) {
+inline bool itemWithinPickupVolume(const DroppedItem& di, double px, double py, double pz) {
     return itemWithinPickupVolume(di.x, di.y, di.z, px, py, pz);
 }
 
 struct WorldConfig {
     std::string name;
-    std::string format   = "anvil";   ///< anvil (by default) | leveldb
+    std::string format = "anvil";     ///< anvil (by default) | leveldb
     std::string generator = "normal"; ///< normal | flat | Nether | void
     int64_t seed = 0;
     /// @brief dimension of the world according to the protocolo: 0 surface, 1 Nether.
@@ -194,24 +200,38 @@ struct WorldConfig {
     int32_t time = 0;
     int32_t spawn_x = 0, spawn_y = 64, spawn_z = 0;
     int32_t view_distance = 8;
-    std::string dataPath;   // absolute path to the server's data dir
+    std::string dataPath; // absolute path to the server's data dir
 };
 class World {
-public:
+  public:
     explicit World(WorldConfig cfg);
     ~World();
-    const std::string& name() const { return cfg_.name; }
-    int64_t seed() const { return cfg_.seed; }
-    const WorldConfig& config() const { return cfg_; }
+    const std::string& name() const {
+        return cfg_.name;
+    }
+    int64_t seed() const {
+        return cfg_.seed;
+    }
+    const WorldConfig& config() const {
+        return cfg_;
+    }
     /// @brief dimension of this world: 0 surface, 1 Nether.
-    uint8_t dimension() const { return cfg_.dimension; }
-    ChunkManager& chunks() { return chunks_; }
+    uint8_t dimension() const {
+        return cfg_.dimension;
+    }
+    ChunkManager& chunks() {
+        return chunks_;
+    }
     // Known nether portals of this world (persistent registry used by
     // the cross-dimension portal search).
-    PortalRegistry& portals() { return portals_; }
+    PortalRegistry& portals() {
+        return portals_;
+    }
     // Flushes the portal registry to disk; called right after a new
     // portal is registered so autosave drains never lose it.
-    void savePortals() { portals_.save(portals_path_); }
+    void savePortals() {
+        portals_.save(portals_path_);
+    }
     /// @brief id of the block in coordinates of world. returns 0 if the
     ///        chunk not is loaded (not forces generation; for that is
     ///        chunks().getChunk()).
@@ -256,9 +276,15 @@ public:
         return chunks_.getChunkIfLoaded(x >> 4, z >> 4) != nullptr;
     }
     // World time (0..24000). Incremented each tick (20/s).
-    int32_t time() const { return cfg_.time; }
-    void setTime(int32_t t) { cfg_.time = t; }
-    void advanceTime(int dt_ticks) { cfg_.time = (cfg_.time + dt_ticks) % 24000; }
+    int32_t time() const {
+        return cfg_.time;
+    }
+    void setTime(int32_t t) {
+        cfg_.time = t;
+    }
+    void advanceTime(int dt_ticks) {
+        cfg_.time = (cfg_.time + dt_ticks) % 24000;
+    }
 
     // ----- Sleep / skip-the-night (Infinity level/Level.php) -----
     // Ported from Infinity Level::$sleepTicks + Level::checkSleep()
@@ -272,14 +298,16 @@ public:
     //     the countdown is not re-armed until another player uses a bed).
     //
     // Day-phase constants (Infinity level/Level.php:143-148).
-    static constexpr int32_t TIME_SUNSET  = 12000;
-    static constexpr int32_t TIME_NIGHT   = 14000;
+    static constexpr int32_t TIME_SUNSET = 12000;
+    static constexpr int32_t TIME_NIGHT = 14000;
     static constexpr int32_t TIME_SUNRISE = 23000;
-    static constexpr int32_t TIME_FULL    = 24000;
+    static constexpr int32_t TIME_FULL = 24000;
     // Arms (or cancels with <= 0) the skip-the-night countdown. Called
     // from Player::sleepOn (60) and Player::stopSleep (0), exactly like
     // Infinity sets Level::$sleepTicks.
-    void setSleepTicks(int32_t t) { sleep_ticks_ = t; }
+    void setSleepTicks(int32_t t) {
+        sleep_ticks_ = t;
+    }
     // Runs at the end of every tick while a sleep vote is pending.
     void checkSleep();
 
@@ -301,7 +329,9 @@ public:
         WEATHER_RAINY_THUNDER = 2,
         WEATHER_THUNDER = 3,
     };
-    int weatherState() const { return weather_state_; }
+    int weatherState() const {
+        return weather_state_;
+    }
     bool isRaining() const {
         return weather_state_ == WEATHER_RAIN || weather_state_ == WEATHER_RAINY_THUNDER;
     }
@@ -309,7 +339,9 @@ public:
         return weather_state_ == WEATHER_RAINY_THUNDER || weather_state_ == WEATHER_THUNDER;
     }
     // Elapsed ticks of the current weather state; -1 = forever.
-    int32_t weatherTicksLeft() const { return weather_ticks_left_; }
+    int32_t weatherTicksLeft() const {
+        return weather_ticks_left_;
+    }
     // Changes the weather state and re-sends the full packet pair to every
     // online player (players who connect later get re-synced by player.cpp
     // via sendWeatherTo). Passing durationTicks <= 0 means "until /weather
@@ -343,8 +375,12 @@ public:
     // (Infinity's lightningFire behaviour).
     void spawnLightning(double x, double y, double z, bool withFire);
     // spawn point.
-    mcp_vector3_t spawn() const { return spawn_; }
-    void setSpawn(mcp_vector3_t v) { spawn_ = v; }
+    mcp_vector3_t spawn() const {
+        return spawn_;
+    }
+    void setSpawn(mcp_vector3_t v) {
+        spawn_ = v;
+    }
     // Save all dirty chunks (routes to the WorldProvider).
     // Bloquea until everything this in disk: off / saveAll().
     int save();
@@ -430,8 +466,7 @@ public:
     // drops. Used by the falling-block landing when the landing cell
     // holds a breakable non-solid block (Infinity drops the block's item
     // there instead of replacing it).
-    void dropItemAt(double x, double y, double z,
-                    uint16_t itemId, uint8_t count, uint16_t damage);
+    void dropItemAt(double x, double y, double z, uint16_t itemId, uint8_t count, uint16_t damage);
 
     // tick of block entities (hornos: fundido + fuel + progress of UI).
     // Llamado a time per tick from server::tick (outside of
@@ -451,9 +486,13 @@ public:
     // tick the pass runs at.
     size_t collectDroppedItems(uint64_t current_tick);
     // Generator accessor for AsyncPool workers.
-    std::shared_ptr<generator::Generator> generator() const { return generator_; }
+    std::shared_ptr<generator::Generator> generator() const {
+        return generator_;
+    }
     // The active WorldProvider (Anvil by default).
-    std::shared_ptr<format::WorldProvider> provider() const { return provider_; }
+    std::shared_ptr<format::WorldProvider> provider() const {
+        return provider_;
+    }
     // ChunkLoaders (players) registered to receive chunk updates.
     void registerLoader(uint64_t loader_id, class ChunkLoader* loader);
     void unregisterLoader(uint64_t loader_id);
@@ -513,7 +552,9 @@ public:
     // as to true per-axis radius (previously it silently reached only
     // vd/2, which server::tick() had to compensate for by halving the
     // value it passed here; that compensation is gone now).
-    struct ChunkViewer { int32_t cx, cz, view_radius; };
+    struct ChunkViewer {
+        int32_t cx, cz, view_radius;
+    };
 
     // Frees the in-memory copy of any loaded chunk that sits outside
     // EVERY given viewer's radius (+ `margin` chunks of hysteresis, so
@@ -534,7 +575,7 @@ public:
     // Returns how many chunks were actually unloaded, for logging.
     int unloadDistantChunks(const std::vector<ChunkViewer>& viewers, int32_t margin = 4);
 
-private:
+  private:
     // Flushes any dirty tile-entity inside chunk (cx,cz) into that
     // chunk's mcp_chunk_t::tile_entities array (same write path as
     // syncTilesToChunks(), just scoped to one chunk) and then drops
@@ -583,16 +624,16 @@ private:
     ChunkManager chunks_;
     std::shared_ptr<format::WorldProvider> provider_;
     std::shared_ptr<generator::Generator> generator_;
-    PortalRegistry portals_;          // known nether portals ("<world dir>/portals.dat")
-    std::string    portals_path_;     // set in the constructor
+    PortalRegistry portals_;   // known nether portals ("<world dir>/portals.dat")
+    std::string portals_path_; // set in the constructor
     mcp_vector3_t spawn_;
     std::unordered_map<uint64_t, class ChunkLoader*> loaders_;
 
     // ----- Weather state (see isRaining/setWeather above) -----
     // Infinity model: one integer state 0..3 + per-state strengths that
     // ride in the LevelEventPacket `data` field.
-    int      weather_state_ = WEATHER_CLEAR;
-    int32_t  weather_ticks_left_ = -1;      // -1 = lasts until changed manually
+    int weather_state_ = WEATHER_CLEAR;
+    int32_t weather_ticks_left_ = -1;       // -1 = lasts until changed manually
     uint32_t rain_strength_ = 100000;       // data for rain events (3001/3003)
     uint32_t thunder_strength_ = 35000;     // data for thunder events (3002/3004)
     uint64_t rain_scan_offset_ = 0;         // rotating chunk scan cursor (round-robin)
@@ -602,7 +643,7 @@ private:
     // Skip-the-night countdown (Infinity Level::$sleepTicks). 0 = idle;
     // armed to 60 ticks by Player::sleepOn, reset to 0 by Player::stopSleep.
     // checkSleep() runs from tick() the moment it hits 0.
-    int32_t  sleep_ticks_ = 0;
+    int32_t sleep_ticks_ = 0;
 
     // Picks to random online player and strikes lightning within ±64
     // blocks of them at the highest block of that column (Infinity

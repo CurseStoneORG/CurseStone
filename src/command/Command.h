@@ -29,7 +29,7 @@
 #include <vector>
 namespace cursestone {
 class Command {
-public:
+  public:
     // `permission` es el nodo de permiso que el emisor debe tener para
     // poder ejecutar este comando. VACIO = cualquiera puede ejecutarlo
     // (help, list, version...). Un nodo como "cursestone.command.stop"
@@ -39,16 +39,27 @@ public:
     Command(std::string name, std::string description = "", std::string usage = "",
             std::string permission = "")
         : name_(std::move(name)), description_(std::move(description)), usage_(std::move(usage)),
-          permission_(std::move(permission)) {}
+          permission_(std::move(permission)) {
+    }
     virtual ~Command() = default;
     virtual bool execute(CommandSender* sender, const std::string& label,
                          const std::vector<std::string>& args) = 0;
-    const std::string& name() const { return name_; }
-    const std::string& description() const { return description_; }
-    const std::string& usage() const { return usage_; }
+    const std::string& name() const {
+        return name_;
+    }
+    const std::string& description() const {
+        return description_;
+    }
+    const std::string& usage() const {
+        return usage_;
+    }
     // Nodo requerido, o "" si es público.
-    const std::string& permission() const { return permission_; }
-    bool isPublic() const { return permission_.empty(); }
+    const std::string& permission() const {
+        return permission_;
+    }
+    bool isPublic() const {
+        return permission_.empty();
+    }
     // ¿Puede este emisor usar el comando? SimpleCommandMap::dispatch() lo
     // consulta ANTES de execute() y /help lo usa para filtrar la lista.
     // Por defecto: público, o el emisor tiene el nodo de permiso pedido.
@@ -60,8 +71,11 @@ public:
     // returns its LuaPlugin*, core commands return nullptr. Used by
     // /plugins reload to unregister a plugin's commands BEFORE its
     // lua_State is destroyed (the command holds Lua refs).
-    virtual void* owner() const { return nullptr; }
-private:
+    virtual void* owner() const {
+        return nullptr;
+    }
+
+  private:
     std::string name_, description_, usage_, permission_;
 };
 } // namespace

@@ -46,20 +46,29 @@ void PlayerListPacket::encode(std::vector<uint8_t>& out) const {
 bool PlayerListPacket::decode(const uint8_t* data, size_t len) {
     PacketReader r(data, len);
     int32_t count;
-    if (!r.readU8(type))        return false;
-    if (!r.readI32BE(count))    return false;
-    if (count < 0)              return false;
+    if (!r.readU8(type))
+        return false;
+    if (!r.readI32BE(count))
+        return false;
+    if (count < 0)
+        return false;
     entries.clear();
     entries.reserve(count);
     for (int32_t i = 0; i < count; ++i) {
         Entry e;
-        if (r.remaining() < 16) return false;
-        if (!r.readBytes(e.uuid.data(), 16)) return false;
+        if (r.remaining() < 16)
+            return false;
+        if (!r.readBytes(e.uuid.data(), 16))
+            return false;
         if (type == TYPE_ADD) {
-            if (!r.readI64BE(e.eid))   return false;
-            if (!r.readBEString(e.name))  return false;
-            if (!r.readBEString(e.skinId))   return false;
-            if (!r.readBEString(e.skinData)) return false;
+            if (!r.readI64BE(e.eid))
+                return false;
+            if (!r.readBEString(e.name))
+                return false;
+            if (!r.readBEString(e.skinId))
+                return false;
+            if (!r.readBEString(e.skinData))
+                return false;
         }
         entries.push_back(std::move(e));
     }

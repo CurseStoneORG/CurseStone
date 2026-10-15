@@ -31,7 +31,7 @@ extern "C" {
 #endif
 
 typedef struct mcp_byte_tag {
-    mcp_tag_t header;   // must be first
+    mcp_tag_t header; // must be first
     int8_t value;
 } mcp_byte_tag_t;
 

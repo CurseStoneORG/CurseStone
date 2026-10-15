@@ -37,7 +37,10 @@
 
 namespace cursestone::scheduler {
 
-ServerScheduler& ServerScheduler::get() { static ServerScheduler s; return s; }
+ServerScheduler& ServerScheduler::get() {
+    static ServerScheduler s;
+    return s;
+}
 
 size_t ServerScheduler::size() const {
     std::lock_guard<std::mutex> lk(mtx_);
@@ -45,7 +48,8 @@ size_t ServerScheduler::size() const {
 }
 
 uint64_t ServerScheduler::scheduleSync(std::shared_ptr<Task> task, int delay, int period) {
-    if (!task) return 0;
+    if (!task)
+        return 0;
     std::lock_guard<std::mutex> lk(mtx_);
     uint64_t id = next_id_++;
     auto h = std::make_unique<TaskHandler>(id, task);
@@ -68,7 +72,8 @@ uint64_t ServerScheduler::scheduleSync(std::shared_ptr<Task> task, int delay, in
 }
 
 uint64_t ServerScheduler::scheduleAsync(std::shared_ptr<AsyncTask> task, int delay) {
-    if (!task) return 0;
+    if (!task)
+        return 0;
 
     auto* pool = Server::getInstance().getAsyncPool();
     if (!pool) {
@@ -103,10 +108,11 @@ uint64_t ServerScheduler::scheduleAsync(std::shared_ptr<AsyncTask> task, int del
         // Runs on a WORKER THREAD.
         if (task->isCancelled()) {
             std::lock_guard<std::mutex> lk(completion_mtx_);
-            in_flight_async_.erase(
-                std::remove_if(in_flight_async_.begin(), in_flight_async_.end(),
-                    [task_id](const auto& p) { return p.first == task_id; }),
-                in_flight_async_.end());
+            in_flight_async_.erase(std::remove_if(in_flight_async_.begin(), in_flight_async_.end(),
+                                                  [task_id](const auto& p) {
+                                                      return p.first == task_id;
+                                                  }),
+                                   in_flight_async_.end());
             return;
         }
 
@@ -114,32 +120,36 @@ uint64_t ServerScheduler::scheduleAsync(std::shared_ptr<AsyncTask> task, int del
             task->onRun();
         } catch (const std::exception& e) {
             utils::MainLogger::get().warn(
-                std::string("[Scheduler] AsyncTask threw during onRun() on a worker thread: ")
-                + e.what() + " — task dropped, server kept running.");
+                std::string("[Scheduler] AsyncTask threw during onRun() on a worker thread: ") +
+                e.what() + " — task dropped, server kept running.");
             std::lock_guard<std::mutex> lk(completion_mtx_);
-            in_flight_async_.erase(
-                std::remove_if(in_flight_async_.begin(), in_flight_async_.end(),
-                    [task_id](const auto& p) { return p.first == task_id; }),
-                in_flight_async_.end());
+            in_flight_async_.erase(std::remove_if(in_flight_async_.begin(), in_flight_async_.end(),
+                                                  [task_id](const auto& p) {
+                                                      return p.first == task_id;
+                                                  }),
+                                   in_flight_async_.end());
             return;
         } catch (...) {
             utils::MainLogger::get().warn(
                 "[Scheduler] AsyncTask threw a non-std::exception during onRun() on a worker thread — task dropped, server kept running.");
             std::lock_guard<std::mutex> lk(completion_mtx_);
-            in_flight_async_.erase(
-                std::remove_if(in_flight_async_.begin(), in_flight_async_.end(),
-                    [task_id](const auto& p) { return p.first == task_id; }),
-                in_flight_async_.end());
+            in_flight_async_.erase(std::remove_if(in_flight_async_.begin(), in_flight_async_.end(),
+                                                  [task_id](const auto& p) {
+                                                      return p.first == task_id;
+                                                  }),
+                                   in_flight_async_.end());
             return;
         }
 
         std::lock_guard<std::mutex> lk(completion_mtx_);
-        in_flight_async_.erase(
-            std::remove_if(in_flight_async_.begin(), in_flight_async_.end(),
-                [task_id](const auto& p) { return p.first == task_id; }),
-            in_flight_async_.end());
+        in_flight_async_.erase(std::remove_if(in_flight_async_.begin(), in_flight_async_.end(),
+                                              [task_id](const auto& p) {
+                                                  return p.first == task_id;
+                                              }),
+                               in_flight_async_.end());
 
-        if (task->isCancelled()) return;
+        if (task->isCancelled())
+            return;
 
         // FIX: cap pending completions so a burst of finished async
         // tasks can't grow this queue (and the memory it holds)
@@ -161,7 +171,8 @@ uint64_t ServerScheduler::scheduleAsync(std::shared_ptr<AsyncTask> task, int del
 }
 
 bool ServerScheduler::cancel(uint64_t task_id) {
-    if (task_id == 0) return false;
+    if (task_id == 0)
+        return false;
 
     // Sync tasks: mark cancelled. TaskHandler::tick() checks
     // isCancelled() before running and removes the handler.
@@ -222,9 +233,12 @@ void ServerScheduler::tick(uint64_t current_tick) {
     {
         std::lock_guard<std::mutex> lk(mtx_);
         for (auto& h : handlers_) {
-            if (due.size() >= MAX_TASKS_PER_TICK) break;
-            if (!h->task() || h->task()->isCancelled()) continue;
-            if (h->task()->nextRun() <= current_tick) due.push_back(h.get());
+            if (due.size() >= MAX_TASKS_PER_TICK)
+                break;
+            if (!h->task() || h->task()->isCancelled())
+                continue;
+            if (h->task()->nextRun() <= current_tick)
+                due.push_back(h.get());
         }
     }
 
@@ -255,13 +269,14 @@ void ServerScheduler::tick(uint64_t current_tick) {
     {
         std::lock_guard<std::mutex> lk(mtx_);
         auto& ids = finished_task_ids_;
-        handlers_.erase(
-            std::remove_if(handlers_.begin(), handlers_.end(),
-                [&ids](const std::unique_ptr<TaskHandler>& h) {
-                    if (!h->task() || h->task()->isCancelled()) return true;
-                    return std::find(ids.begin(), ids.end(), h->taskId()) != ids.end();
-                }),
-            handlers_.end());
+        handlers_.erase(std::remove_if(handlers_.begin(), handlers_.end(),
+                                       [&ids](const std::unique_ptr<TaskHandler>& h) {
+                                           if (!h->task() || h->task()->isCancelled())
+                                               return true;
+                                           return std::find(ids.begin(), ids.end(), h->taskId()) !=
+                                                  ids.end();
+                                       }),
+                        handlers_.end());
         ids.clear();
     }
 
@@ -286,13 +301,15 @@ void ServerScheduler::tick(uint64_t current_tick) {
         // handler is free to call scheduleAsync()/cancel() again
         // without deadlocking on its own lock.
         for (auto& task : batch) {
-            if (!task || task->isCancelled()) continue;
+            if (!task || task->isCancelled())
+                continue;
             try {
                 task->onCompletion();
             } catch (const std::exception& e) {
                 utils::MainLogger::get().warn(
-                    std::string("[Scheduler] AsyncTask threw during onCompletion() on the main thread: ")
-                    + e.what());
+                    std::string(
+                        "[Scheduler] AsyncTask threw during onCompletion() on the main thread: ") +
+                    e.what());
             } catch (...) {
                 utils::MainLogger::get().warn(
                     "[Scheduler] AsyncTask threw a non-std::exception during onCompletion() on the main thread.");

@@ -27,7 +27,7 @@
 #include <memory>
 namespace cursestone {
 class CommandSender {
-public:
+  public:
     virtual ~CommandSender() = default;
     // Where to send messages back to.
     virtual void sendMessage(const std::string& msg) = 0;

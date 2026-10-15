@@ -29,43 +29,56 @@
 #include <string.h>
 
 static void ia_destroy(mcp_tag_t* self) {
-    if (!self) return;
+    if (!self)
+        return;
     mcp_int_array_tag_t* t = (mcp_int_array_tag_t*)self;
-    if (t->data) free(t->data);
-    if (self->name) free(self->name);
+    if (t->data)
+        free(t->data);
+    if (self->name)
+        free(self->name);
     free(self);
 }
 static void ia_write(const mcp_tag_t* self, void* stream, bool le) {
     mcp_int_array_tag_t* t = (mcp_int_array_tag_t*)self;
     mcp_bstream_t* s = (mcp_bstream_t*)stream;
-    if (le) mcp_bstream_write_u32_le(s, (uint32_t)t->count);
-    else    mcp_bstream_write_u32_be(s, (uint32_t)t->count);
+    if (le)
+        mcp_bstream_write_u32_le(s, (uint32_t)t->count);
+    else
+        mcp_bstream_write_u32_be(s, (uint32_t)t->count);
     for (size_t i = 0; i < t->count; ++i) {
-        if (le) mcp_bstream_write_u32_le(s, (uint32_t)t->data[i]);
-        else    mcp_bstream_write_u32_be(s, (uint32_t)t->data[i]);
+        if (le)
+            mcp_bstream_write_u32_le(s, (uint32_t)t->data[i]);
+        else
+            mcp_bstream_write_u32_be(s, (uint32_t)t->data[i]);
     }
 }
 static void ia_to_string(const mcp_tag_t* self, char* out, size_t out_size) {
     (void)self;
-    if (out && out_size) out[0] = '\0';
+    if (out && out_size)
+        out[0] = '\0';
 }
-static const struct mcp_tag_vtable IA_VT = { ia_destroy, ia_write, ia_to_string };
+static const struct mcp_tag_vtable IA_VT = {ia_destroy, ia_write, ia_to_string};
 
 mcp_tag_t* mcp_int_array_tag_new(const int32_t* data, size_t count) {
     mcp_int_array_tag_t* t = (mcp_int_array_tag_t*)calloc(1, sizeof(*t));
-    if (!t) return NULL;
+    if (!t)
+        return NULL;
     t->header.vtable = &IA_VT;
-    t->header.type   = MCP_TAG_INT_ARRAY;
+    t->header.type = MCP_TAG_INT_ARRAY;
     t->count = count;
     if (count > 0) {
         t->data = (int32_t*)malloc(count * sizeof(int32_t));
-        if (!t->data) { free(t); return NULL; }
+        if (!t->data) {
+            free(t);
+            return NULL;
+        }
         memcpy(t->data, data, count * sizeof(int32_t));
     }
     return (mcp_tag_t*)t;
 }
 mcp_tag_t* mcp_int_array_tag_new_named(const char* name, const int32_t* data, size_t count) {
     mcp_tag_t* t = mcp_int_array_tag_new(data, count);
-    if (t) mcp_tag_set_name_cstr(t, name);
+    if (t)
+        mcp_tag_set_name_cstr(t, name);
     return t;
 }

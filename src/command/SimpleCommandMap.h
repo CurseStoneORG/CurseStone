@@ -28,7 +28,7 @@
 #include <memory>
 namespace cursestone {
 class SimpleCommandMap : public CommandMap {
-public:
+  public:
     bool registerCommand(std::unique_ptr<Command> cmd) override;
     // Reemplaza un comando existente por este (o lo registra normal si
     // el nombre no existia). El comando desplazado queda guardado como
@@ -45,8 +45,11 @@ public:
     // lua_State). Si un comando borrado habia pisado a otro (override),
     // el desplazado se restaura en su lugar. Devuelve cuántos borró.
     size_t unregisterByOwner(void* owner) override;
-    size_t size() const { return commands_.size(); }
-private:
+    size_t size() const {
+        return commands_.size();
+    }
+
+  private:
     std::unordered_map<std::string, std::unique_ptr<Command>> commands_;
     // comandos desplazados por override: nombre -> el comando original
     // (nucleo o de otro plugin) que vuelve cuando el que lo piso se va.

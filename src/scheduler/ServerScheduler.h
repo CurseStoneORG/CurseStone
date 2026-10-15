@@ -58,7 +58,7 @@
 namespace cursestone::scheduler {
 class AsyncTask;
 class ServerScheduler {
-public:
+  public:
     static ServerScheduler& get();
     uint64_t scheduleSync(std::shared_ptr<Task> task, int delay_ticks = 0, int period_ticks = 0);
     uint64_t scheduleAsync(std::shared_ptr<AsyncTask> task, int delay_ticks = 0);
@@ -80,9 +80,11 @@ public:
 
     // Number of async completions dropped so far because the
     // completion queue was full. Diagnostic only.
-    size_t droppedCompletions() const { return dropped_completions_.load(std::memory_order_relaxed); }
+    size_t droppedCompletions() const {
+        return dropped_completions_.load(std::memory_order_relaxed);
+    }
 
-private:
+  private:
     static constexpr size_t MAX_TASKS_PER_TICK = 64;
     static constexpr size_t MAX_PENDING_COMPLETIONS = 512;
 

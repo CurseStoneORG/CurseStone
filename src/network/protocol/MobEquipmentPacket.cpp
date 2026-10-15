@@ -37,17 +37,23 @@ namespace {
 // Shared slot reader — same encoding as ContainerSetSlotPacket::getSlot().
 // The NBT blob (custom item names) is captured into `nbt` instead of
 // skipped, so a re-broadcast of the held item keeps the name.
-bool readSlot(PacketReader& r, int16_t& id, uint8_t& count, int16_t& damage,
-              std::string& nbt) {
-    if (!r.readI16BE(id)) return false;
+bool readSlot(PacketReader& r, int16_t& id, uint8_t& count, int16_t& damage, std::string& nbt) {
+    if (!r.readI16BE(id))
+        return false;
     count = 0;
     damage = 0;
     nbt.clear();
-    if (id <= 0) { id = 0; return true; }   // empty/air slot: nothing follows
-    if (!r.readU8(count))    return false;
-    if (!r.readI16BE(damage)) return false;
+    if (id <= 0) {
+        id = 0;
+        return true;
+    } // empty/air slot: nothing follows
+    if (!r.readU8(count))
+        return false;
+    if (!r.readI16BE(damage))
+        return false;
     uint16_t nbtLen = 0;
-    if (!r.readU16LE(nbtLen)) return false;
+    if (!r.readU16LE(nbtLen))
+        return false;
     if (nbtLen > 0) {
         nbt.assign(nbtLen, '\0');
         if (!r.readBytes(reinterpret_cast<uint8_t*>(&nbt[0]), nbtLen)) {
@@ -58,17 +64,17 @@ bool readSlot(PacketReader& r, int16_t& id, uint8_t& count, int16_t& damage,
     return true;
 }
 
-void writeSlot(PacketWriter& w, int16_t id, uint8_t count, int16_t damage,
-               const std::string& nbt) {
+void writeSlot(PacketWriter& w, int16_t id, uint8_t count, int16_t damage, const std::string& nbt) {
     if (id <= 0) {
-        w.writeI16BE(0);                    // air: just the zeroed id
+        w.writeI16BE(0); // air: just the zeroed id
         return;
     }
     w.writeI16BE(id);
     w.writeU8(count);
     w.writeI16BE(damage);
-    w.writeU16LE((uint16_t)nbt.size());     // nbtLen (LE)
-    if (!nbt.empty()) w.writeBytes((const uint8_t*)nbt.data(), nbt.size());
+    w.writeU16LE((uint16_t)nbt.size()); // nbtLen (LE)
+    if (!nbt.empty())
+        w.writeBytes((const uint8_t*)nbt.data(), nbt.size());
 }
 
 } // namespace
@@ -83,10 +89,14 @@ void MobEquipmentPacket::encode(std::vector<uint8_t>& out) const {
 
 bool MobEquipmentPacket::decode(const uint8_t* data, size_t len) {
     PacketReader r(data, len);
-    if (!r.readI64BE(eid))  return false;
-    if (!readSlot(r, itemId, itemCount, itemDamage, itemNbt)) return false;
-    if (!r.readU8(hotbarSlot))   return false;
-    if (!r.readU8(selectedSlot)) return false;
+    if (!r.readI64BE(eid))
+        return false;
+    if (!readSlot(r, itemId, itemCount, itemDamage, itemNbt))
+        return false;
+    if (!r.readU8(hotbarSlot))
+        return false;
+    if (!r.readU8(selectedSlot))
+        return false;
     return true;
 }
 

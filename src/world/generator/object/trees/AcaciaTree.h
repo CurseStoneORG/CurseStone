@@ -30,18 +30,17 @@
 namespace cursestone::world::generator::object::trees {
 
 class AcaciaTree : public GenericTree {
-public:
-    bool generate(mcp_chunk_t* c, int sourceX, int sourceY, int sourceZ,
-                  uint8_t soilId, MersenneRandom& rng) override;
+  public:
+    bool generate(mcp_chunk_t* c, int sourceX, int sourceY, int sourceZ, uint8_t soilId,
+                  MersenneRandom& rng) override;
 
-protected:
+  protected:
     void init(MersenneRandom& rng) override;
     bool canPlaceOn(uint8_t soil) const override;
 
-private:
+  private:
     // Places the flat canopy centred on (cx, trunkTopY, cz).
-    void canopy(mcp_chunk_t* c, int cx, int trunkTopY, int cz,
-                MersenneRandom& rng, int spread);
+    void canopy(mcp_chunk_t* c, int cx, int trunkTopY, int cz, MersenneRandom& rng, int spread);
 };
 
 } // namespace cursestone::world::generator::object::trees

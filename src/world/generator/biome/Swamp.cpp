@@ -36,9 +36,10 @@ const BiomeConfig& swampBiome() {
         .snowy = false,
         .underwater = false,
         .treeAmount = 5,
-        .trees = {
-            { object::TREE_SWAMP, 5 },
-        },
+        .trees =
+            {
+                {object::TREE_SWAMP, 5},
+            },
         .grassAmount = 6,
         .flowerAmount = 2,
         .doublePlantAmount = 1,

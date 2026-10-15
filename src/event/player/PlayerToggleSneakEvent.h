@@ -25,16 +25,20 @@
 #pragma once
 #include "PlayerEvent.h"
 #include "../Cancellable.h"
-namespace cursestone { class Player; }
+namespace cursestone {
+class Player;
+}
 
 namespace cursestone::event::player {
 class PlayerToggleSneakEvent : public PlayerEvent, public Cancellable {
-public:
+  public:
     bool isSneaking = false;
     PlayerToggleSneakEvent(cursestone::Player* p, bool sneaking)
-        : PlayerEvent(p), isSneaking(sneaking) {}
+        : PlayerEvent(p), isSneaking(sneaking) {
+    }
     const std::string& eventName() const override {
-        static std::string n = "PlayerToggleSneakEvent"; return n;
+        static std::string n = "PlayerToggleSneakEvent";
+        return n;
     }
 };
 } // namespace cursestone::event::player

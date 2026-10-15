@@ -32,12 +32,16 @@ namespace cursestone::event::inventory {
 class TransactionGroup;
 
 class InventoryTransactionEvent : public Event, public Cancellable {
-public:
+  public:
     TransactionGroup* transaction;
-    explicit InventoryTransactionEvent(TransactionGroup* tg) : transaction(tg) {}
-    TransactionGroup* getTransaction() { return transaction; }
+    explicit InventoryTransactionEvent(TransactionGroup* tg) : transaction(tg) {
+    }
+    TransactionGroup* getTransaction() {
+        return transaction;
+    }
     const std::string& eventName() const override {
-        static std::string n = "InventoryTransactionEvent"; return n;
+        static std::string n = "InventoryTransactionEvent";
+        return n;
     }
 };
 

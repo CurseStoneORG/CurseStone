@@ -25,7 +25,8 @@
 namespace cursestone::item {
 std::vector<std::unique_ptr<Item>>& Item::registry() {
     static std::vector<std::unique_ptr<Item>> r;
-    if (r.empty()) r.resize(65536);
+    if (r.empty())
+        r.resize(65536);
     return r;
 }
 void Item::registerItem(std::unique_ptr<Item> b) {
@@ -34,7 +35,8 @@ void Item::registerItem(std::unique_ptr<Item> b) {
 }
 Item* Item::get(uint16_t id) {
     auto& r = registry();
-    if (id >= r.size()) return nullptr;
+    if (id >= r.size())
+        return nullptr;
     return r[id].get();
 }
 } // namespace

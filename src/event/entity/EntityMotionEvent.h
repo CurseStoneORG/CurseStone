@@ -25,19 +25,25 @@
 #pragma once
 #include "EntityEvent.h"
 #include "../Cancellable.h"
-namespace cursestone { namespace entity { class Entity; } }
+namespace cursestone {
+namespace entity {
+class Entity;
+}
+}
 namespace cursestone::event::entity {
 class EntityMotionEvent : public EntityEvent, public Cancellable {
-public:
+  public:
     double motX = 0.0;
     double motY = 0.0;
     double motZ = 0.0;
 
     EntityMotionEvent(cursestone::entity::Entity* e, double mx, double my, double mz)
-        : EntityEvent(e), motX(mx), motY(my), motZ(mz) {}
+        : EntityEvent(e), motX(mx), motY(my), motZ(mz) {
+    }
 
     const std::string& eventName() const override {
-        static std::string n = "EntityMotionEvent"; return n;
+        static std::string n = "EntityMotionEvent";
+        return n;
     }
 };
 } // namespace

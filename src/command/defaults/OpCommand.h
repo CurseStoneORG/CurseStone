@@ -25,8 +25,9 @@
 #include <string>
 namespace cursestone {
 class OpCommand : public Command {
-public:
-    OpCommand() : Command("op", "Grant operator rights", "", "cursestone.command.op") {}
+  public:
+    OpCommand() : Command("op", "Grant operator rights", "", "cursestone.command.op") {
+    }
     bool execute(CommandSender* sender, const std::string& label,
                  const std::vector<std::string>& args) override;
 };

@@ -40,30 +40,36 @@ inline std::vector<std::string> split(const std::string& s, char delim) {
     std::string tok;
     for (char c : s) {
         if (c == delim) {
-            if (!tok.empty()) { out.push_back(tok); tok.clear(); }
+            if (!tok.empty()) {
+                out.push_back(tok);
+                tok.clear();
+            }
         } else {
             tok += c;
         }
     }
-    if (!tok.empty()) out.push_back(tok);
+    if (!tok.empty())
+        out.push_back(tok);
     return out;
 }
 
 inline std::string trim(std::string s) {
     auto l = s.find_first_not_of(" \t\r\n");
-    auto r = s.find_last_not_of (" \t\r\n");
+    auto r = s.find_last_not_of(" \t\r\n");
     return (l == std::string::npos) ? "" : s.substr(l, r - l + 1);
 }
 
 inline std::string toLower(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(),
-                   [](unsigned char c){ return std::tolower(c); });
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
+        return std::tolower(c);
+    });
     return s;
 }
 
 inline std::string toUpper(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(),
-                   [](unsigned char c){ return std::toupper(c); });
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
+        return std::toupper(c);
+    });
     return s;
 }
 

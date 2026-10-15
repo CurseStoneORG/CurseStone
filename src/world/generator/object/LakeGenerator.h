@@ -31,11 +31,10 @@
 namespace cursestone::world::generator::object {
 
 class LakeGenerator {
-public:
+  public:
     // Carve an ellipsoidal pool centered on (x,y,z) (chunk-local).
     // liquidId is WATER (9) or LAVA (11). Returns true if one was carved.
-    static bool place(mcp_chunk_t* c, int x, int y, int z,
-                      uint8_t liquidId, MersenneRandom& rng);
+    static bool place(mcp_chunk_t* c, int x, int y, int z, uint8_t liquidId, MersenneRandom& rng);
 };
 
 } // namespace cursestone::world::generator::object

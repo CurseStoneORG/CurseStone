@@ -38,14 +38,12 @@ void FileWriteTask::onRun() {
     // throw, so it needs its own check).
     std::ofstream f(path_, std::ios::binary | std::ios::trunc);
     if (!f.is_open()) {
-        utils::MainLogger::get().warn(
-            "[FileWriteTask] Failed to open for writing: " + path_);
+        utils::MainLogger::get().warn("[FileWriteTask] Failed to open for writing: " + path_);
         return;
     }
     f.write(reinterpret_cast<const char*>(bytes_.data()), bytes_.size());
     if (!f.good()) {
-        utils::MainLogger::get().warn(
-            "[FileWriteTask] Write failed or was incomplete: " + path_);
+        utils::MainLogger::get().warn("[FileWriteTask] Write failed or was incomplete: " + path_);
         return;
     }
     f.close();

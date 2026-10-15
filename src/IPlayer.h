@@ -27,7 +27,7 @@
 #include "command/CommandSender.h"
 namespace cursestone {
 class IPlayer : public CommandSender {
-public:
+  public:
     virtual bool isOnline() const = 0;
     virtual void setOp(bool v) = 0;
     virtual bool isBanned() const = 0;

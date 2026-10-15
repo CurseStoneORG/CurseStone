@@ -33,10 +33,12 @@
 #include <string.h>
 namespace cursestone::world::generator {
 class GenerationTask {
-public:
+  public:
     using DoneCallback = std::function<void(mcp_chunk_t*)>;
-    GenerationTask(std::shared_ptr<Generator> gen, int32_t x, int32_t z, int64_t seed, DoneCallback done)
-        : gen_(std::move(gen)), x_(x), z_(z), seed_(seed), done_(std::move(done)) {}
+    GenerationTask(std::shared_ptr<Generator> gen, int32_t x, int32_t z, int64_t seed,
+                   DoneCallback done)
+        : gen_(std::move(gen)), x_(x), z_(z), seed_(seed), done_(std::move(done)) {
+    }
     void run() {
         // FIX (chunks que nunca se renderizan): TODO el cuerpo de abajo
         // corre en un worker thread de AsyncPool. Si generate()/populate()
@@ -62,23 +64,27 @@ public:
             // 'partial' es el chunk que runInner ya había allocado antes
             // de que generate()/populate() explotara — liberarlo para no
             // perder esa memoria en cada reintento del chunk.
-            if (partial) mcp_chunk_destroy(partial);
+            if (partial)
+                mcp_chunk_destroy(partial);
             done_(makeEmergencyChunk(e.what()));
         } catch (...) {
-            if (partial) mcp_chunk_destroy(partial);
+            if (partial)
+                mcp_chunk_destroy(partial);
             done_(makeEmergencyChunk("unknown exception"));
         }
     }
-private:
+
+  private:
     mcp_chunk_t* makeEmergencyChunk(const char* reason) {
         mcp_chunk_t* c = mcp_chunk_new(x_, z_);
-        if (!c) return nullptr;
+        if (!c)
+            return nullptr;
         for (int bx = 0; bx < 16; ++bx) {
             for (int bz = 0; bz < 16; ++bz) {
-                mcp_chunk_set_block_id(c, bx, 0, bz, 7);  // BEDROCK
-                mcp_chunk_set_block_id(c, bx, 1, bz, 3);  // DIRT
-                mcp_chunk_set_block_id(c, bx, 2, bz, 3);  // DIRT
-                mcp_chunk_set_block_id(c, bx, 3, bz, 2);  // GRASS
+                mcp_chunk_set_block_id(c, bx, 0, bz, 7); // BEDROCK
+                mcp_chunk_set_block_id(c, bx, 1, bz, 3); // DIRT
+                mcp_chunk_set_block_id(c, bx, 2, bz, 3); // DIRT
+                mcp_chunk_set_block_id(c, bx, 3, bz, 2); // GRASS
                 mcp_chunk_set_biome(c, bx, bz, 1);
             }
         }
@@ -91,8 +97,11 @@ private:
     }
     void runInner(mcp_chunk_t*& partial_out) {
         mcp_chunk_t* c = mcp_chunk_new(x_, z_);
-        if (!c) { done_(nullptr); return; }
-        partial_out = c;   // visible al catch de run() si algo de abajo explota
+        if (!c) {
+            done_(nullptr);
+            return;
+        }
+        partial_out = c; // visible al catch de run() si algo de abajo explota
 
         // Defensive default biome (plains) in case the generator
         // doesn't set its own (Normal/Flat both do, but this keeps
@@ -126,7 +135,8 @@ private:
         mcp_chunk_propagate_sky_light(c); // sets c->light_populated = true internally
         done_(c);
     }
-private:
+
+  private:
     std::shared_ptr<Generator> gen_;
     int32_t x_, z_;
     int64_t seed_;

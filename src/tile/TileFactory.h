@@ -46,8 +46,7 @@ namespace cursestone::tile {
 // The tile a block id implies, or nullptr when the block carries no
 // block entity (air, a plain block, a block kind we have no tile for).
 // `pos` is the world position of the block.
-std::shared_ptr<Tile> createTileForBlock(uint8_t blockId,
-                                         const cursestone::world::Position& pos);
+std::shared_ptr<Tile> createTileForBlock(uint8_t blockId, const cursestone::world::Position& pos);
 
 // True for the block ids createTileForBlock() can build. Used by the
 // chunk scan to skip the switch for every block in the world.

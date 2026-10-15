@@ -76,17 +76,18 @@ static inline uint32_t nibble_index(int x, int y, int z) {
 }
 
 static inline uint8_t get_nibble(const uint8_t* arr, int x, int y, int z) {
-    if (!arr) return 0;
-    uint32_t i   = nibble_index(x, y, z);
-    uint8_t  byte = arr[i >> 1];
-    return (i & 1) ? (uint8_t)((byte >> 4) & 0x0F)
-                  : (uint8_t)(byte & 0x0F);
+    if (!arr)
+        return 0;
+    uint32_t i = nibble_index(x, y, z);
+    uint8_t byte = arr[i >> 1];
+    return (i & 1) ? (uint8_t)((byte >> 4) & 0x0F) : (uint8_t)(byte & 0x0F);
 }
 
 static inline void set_nibble(uint8_t* arr, int x, int y, int z, uint8_t v) {
-    if (!arr) return;
+    if (!arr)
+        return;
     v &= 0x0F;
-    uint32_t i   = nibble_index(x, y, z);
+    uint32_t i = nibble_index(x, y, z);
     uint8_t* byte = &arr[i >> 1];
     if (i & 1) {
         *byte = (uint8_t)((*byte & 0x0F) | (v << 4));
@@ -99,29 +100,32 @@ static inline void set_nibble(uint8_t* arr, int x, int y, int z, uint8_t v) {
 
 mcp_chunk_t* mcp_chunk_new(int32_t x, int32_t z) {
     mcp_chunk_t* c = (mcp_chunk_t*)calloc(1, sizeof(*c));
-    if (!c) return NULL;
+    if (!c)
+        return NULL;
     c->x = x;
     c->z = z;
-    c->last_update      = 0;
+    c->last_update = 0;
     c->terrain_populated = false;
-    c->light_populated   = false;
-    c->dirty             = false;
-    for (int i = 0; i < 16; ++i) c->sections[i] = NULL;
-    c->biomes     = (uint8_t*)calloc(256, 1);
+    c->light_populated = false;
+    c->dirty = false;
+    for (int i = 0; i < 16; ++i)
+        c->sections[i] = NULL;
+    c->biomes = (uint8_t*)calloc(256, 1);
     c->height_map = (int32_t*)calloc(256, sizeof(int32_t));
     c->tile_entities = NULL;
     c->tile_entity_lens = NULL;
     c->tile_entity_count = 0;
-    c->tile_entity_cap   = 0;
-    c->entities      = NULL;
-    c->entity_lens   = NULL;
-    c->entity_count  = 0;
-    c->entity_cap    = 0;
+    c->tile_entity_cap = 0;
+    c->entities = NULL;
+    c->entity_lens = NULL;
+    c->entity_count = 0;
+    c->entity_cap = 0;
     return c;
 }
 
 void mcp_chunk_destroy(mcp_chunk_t* c) {
-    if (!c) return;
+    if (!c)
+        return;
     for (int i = 0; i < 16; ++i) {
         mcp_section_destroy(c->sections[i]);
         c->sections[i] = NULL;
@@ -136,12 +140,14 @@ void mcp_chunk_destroy(mcp_chunk_t* c) {
 // ---------------------------------------------------------------- sections
 
 mcp_chunk_section_t* mcp_chunk_get_section(mcp_chunk_t* c, uint8_t y) {
-    if (!c || y > 15) return NULL;
+    if (!c || y > 15)
+        return NULL;
     return c->sections[y];
 }
 
 mcp_chunk_section_t* mcp_chunk_get_or_alloc_section(mcp_chunk_t* c, uint8_t y) {
-    if (!c || y > 15) return NULL;
+    if (!c || y > 15)
+        return NULL;
     if (!c->sections[y]) {
         c->sections[y] = mcp_section_new(y);
     }
@@ -151,24 +157,29 @@ mcp_chunk_section_t* mcp_chunk_get_or_alloc_section(mcp_chunk_t* c, uint8_t y) {
 // ---------------------------------------------------------------- blocks
 
 uint8_t mcp_chunk_get_block_id(const mcp_chunk_t* c, int x, int y, int z) {
-    if (!c || y < 0 || y > 255) return 0;
+    if (!c || y < 0 || y > 255)
+        return 0;
     const mcp_chunk_section_t* s = c->sections[y >> 4];
-    if (!s || !s->blocks) return 0;
+    if (!s || !s->blocks)
+        return 0;
     return s->blocks[block_index(x, y, z)];
 }
 
 uint8_t mcp_chunk_get_block_data(const mcp_chunk_t* c, int x, int y, int z) {
-    if (!c || y < 0 || y > 255) return 0;
+    if (!c || y < 0 || y > 255)
+        return 0;
     const mcp_chunk_section_t* s = c->sections[y >> 4];
     return get_nibble(s ? s->data : NULL, x, y, z);
 }
 
-void mcp_chunk_set_block_full(mcp_chunk_t* c, int x, int y, int z,
-                                uint8_t block_id, uint8_t data) {
-    if (!c || y < 0 || y > 255) return;
+void mcp_chunk_set_block_full(mcp_chunk_t* c, int x, int y, int z, uint8_t block_id, uint8_t data) {
+    if (!c || y < 0 || y > 255)
+        return;
     mcp_chunk_section_t* s = mcp_chunk_get_or_alloc_section(c, (uint8_t)(y >> 4));
-    if (!s) return;
-    if (s->blocks) s->blocks[block_index(x, y, z)] = block_id;
+    if (!s)
+        return;
+    if (s->blocks)
+        s->blocks[block_index(x, y, z)] = block_id;
     set_nibble(s->data, x, y, z, data);
     if (block_id != 0) {
         s->non_air_top = true;
@@ -182,11 +193,14 @@ void mcp_chunk_set_block_full(mcp_chunk_t* c, int x, int y, int z,
 }
 
 void mcp_chunk_set_block_id(mcp_chunk_t* c, int x, int y, int z, uint8_t id) {
-    if (!c || y < 0 || y > 255) return;
+    if (!c || y < 0 || y > 255)
+        return;
     mcp_chunk_section_t* s = mcp_chunk_get_or_alloc_section(c, (uint8_t)(y >> 4));
-    if (!s || !s->blocks) return;
+    if (!s || !s->blocks)
+        return;
     s->blocks[block_index(x, y, z)] = id;
-    if (id != 0) s->non_air_top = true;
+    if (id != 0)
+        s->non_air_top = true;
     int col = (x & 15) + (z & 15) * 16;
     if (id != 0 && (y + 1) > c->height_map[col]) {
         c->height_map[col] = y + 1;
@@ -195,9 +209,11 @@ void mcp_chunk_set_block_id(mcp_chunk_t* c, int x, int y, int z, uint8_t id) {
 }
 
 void mcp_chunk_set_block_data(mcp_chunk_t* c, int x, int y, int z, uint8_t data) {
-    if (!c || y < 0 || y > 255) return;
+    if (!c || y < 0 || y > 255)
+        return;
     mcp_chunk_section_t* s = mcp_chunk_get_or_alloc_section(c, (uint8_t)(y >> 4));
-    if (!s) return;
+    if (!s)
+        return;
     set_nibble(s->data, x, y, z, data);
     c->dirty = true;
 }
@@ -205,9 +221,11 @@ void mcp_chunk_set_block_data(mcp_chunk_t* c, int x, int y, int z, uint8_t data)
 // ---------------------------------------------------------------- lighting
 
 uint8_t mcp_chunk_get_sky_light(const mcp_chunk_t* c, int x, int y, int z) {
-    if (!c || y < 0 || y > 255) return 0;
+    if (!c || y < 0 || y > 255)
+        return 0;
     const mcp_chunk_section_t* s = c->sections[y >> 4];
-    if (s) return get_nibble(s->sky_light, x, y, z);
+    if (s)
+        return get_nibble(s->sky_light, x, y, z);
     // Sección no alocada: en la práctica esto solo pasa para aire
     // puro por encima de la superficie más alta del chunk. Cualquier
     // sección que tenga un bloque real ya fue alocada al colocarlo
@@ -219,23 +237,28 @@ uint8_t mcp_chunk_get_sky_light(const mcp_chunk_t* c, int x, int y, int z) {
 }
 
 void mcp_chunk_set_sky_light(mcp_chunk_t* c, int x, int y, int z, uint8_t v) {
-    if (!c || y < 0 || y > 255) return;
+    if (!c || y < 0 || y > 255)
+        return;
     mcp_chunk_section_t* s = mcp_chunk_get_or_alloc_section(c, (uint8_t)(y >> 4));
-    if (!s) return;
+    if (!s)
+        return;
     set_nibble(s->sky_light, x, y, z, v);
     c->dirty = true;
 }
 
 uint8_t mcp_chunk_get_block_light(const mcp_chunk_t* c, int x, int y, int z) {
-    if (!c || y < 0 || y > 255) return 0;
+    if (!c || y < 0 || y > 255)
+        return 0;
     const mcp_chunk_section_t* s = c->sections[y >> 4];
     return get_nibble(s ? s->block_light : NULL, x, y, z);
 }
 
 void mcp_chunk_set_block_light(mcp_chunk_t* c, int x, int y, int z, uint8_t v) {
-    if (!c || y < 0 || y > 255) return;
+    if (!c || y < 0 || y > 255)
+        return;
     mcp_chunk_section_t* s = mcp_chunk_get_or_alloc_section(c, (uint8_t)(y >> 4));
-    if (!s) return;
+    if (!s)
+        return;
     set_nibble(s->block_light, x, y, z, v);
     c->dirty = true;
 }
@@ -243,29 +266,34 @@ void mcp_chunk_set_block_light(mcp_chunk_t* c, int x, int y, int z, uint8_t v) {
 // ---------------------------------------------------------------- biome + heightmap
 
 uint8_t mcp_chunk_get_biome(const mcp_chunk_t* c, int x, int z) {
-    if (!c || !c->biomes) return 0;
+    if (!c || !c->biomes)
+        return 0;
     return c->biomes[(x & 15) + (z & 15) * 16];
 }
 
 void mcp_chunk_set_biome(mcp_chunk_t* c, int x, int z, uint8_t b) {
-    if (!c || !c->biomes) return;
+    if (!c || !c->biomes)
+        return;
     c->biomes[(x & 15) + (z & 15) * 16] = b;
     c->dirty = true;
 }
 
 int32_t mcp_chunk_get_height_map(const mcp_chunk_t* c, int x, int z) {
-    if (!c || !c->height_map) return 0;
+    if (!c || !c->height_map)
+        return 0;
     return c->height_map[(x & 15) + (z & 15) * 16];
 }
 
 void mcp_chunk_set_height_map(mcp_chunk_t* c, int x, int z, int32_t h) {
-    if (!c || !c->height_map) return;
+    if (!c || !c->height_map)
+        return;
     c->height_map[(x & 15) + (z & 15) * 16] = h;
     c->dirty = true;
 }
 
 void mcp_chunk_recalculate_height_map_column(mcp_chunk_t* c, int x, int z) {
-    if (!c || !c->height_map) return;
+    if (!c || !c->height_map)
+        return;
     x &= 15;
     z &= 15;
     const int col = x + z * 16;
@@ -282,7 +310,8 @@ void mcp_chunk_recalculate_height_map_column(mcp_chunk_t* c, int x, int z) {
 }
 
 void mcp_chunk_recalculate_height_map(mcp_chunk_t* c) {
-    if (!c || !c->height_map) return;
+    if (!c || !c->height_map)
+        return;
     // BUG REAL (pasto/mundo negro): esta función marcaba como "techo"
     // cualquier bloque NO-AIRE (`!= 0`), incluyendo hojas, flores,
     // hierba alta, carteles, etc. — bloques que en Minecraft NO
@@ -305,23 +334,27 @@ void mcp_chunk_recalculate_height_map(mcp_chunk_t* c) {
 
 // ---------------------------------------------------------------- tile-entities + entities
 
-static int push_blob(uint8_t*** arr_ptr, size_t** len_ptr,
-                       size_t* count_ptr, size_t* cap_ptr,
-                       const uint8_t* src, size_t len) {
-    if (!arr_ptr || !len_ptr || !count_ptr || !cap_ptr) return -1;
+static int push_blob(uint8_t*** arr_ptr, size_t** len_ptr, size_t* count_ptr, size_t* cap_ptr,
+                     const uint8_t* src, size_t len) {
+    if (!arr_ptr || !len_ptr || !count_ptr || !cap_ptr)
+        return -1;
     if (*count_ptr >= *cap_ptr) {
         size_t new_cap = (*cap_ptr == 0) ? 4 : (*cap_ptr * 2);
         uint8_t** na = (uint8_t**)realloc(*arr_ptr, new_cap * sizeof(uint8_t*));
-        if (!na) return -1;
+        if (!na)
+            return -1;
         *arr_ptr = na;
         size_t* nl = (size_t*)realloc(*len_ptr, new_cap * sizeof(size_t));
-        if (!nl) return -1;
+        if (!nl)
+            return -1;
         *len_ptr = nl;
         *cap_ptr = new_cap;
     }
     uint8_t* copy = (uint8_t*)malloc(len > 0 ? len : 1);
-    if (!copy) return -1;
-    if (len > 0 && src) memcpy(copy, src, len);
+    if (!copy)
+        return -1;
+    if (len > 0 && src)
+        memcpy(copy, src, len);
     (*arr_ptr)[*count_ptr] = copy;
     (*len_ptr)[*count_ptr] = len;
     *count_ptr = *count_ptr + 1;
@@ -329,23 +362,27 @@ static int push_blob(uint8_t*** arr_ptr, size_t** len_ptr,
 }
 
 int mcp_chunk_add_tile_entity(mcp_chunk_t* c, const uint8_t* nbt, size_t len) {
-    if (!c) return -1;
-    int rc = push_blob(&c->tile_entities, &c->tile_entity_lens,
-                       &c->tile_entity_count, &c->tile_entity_cap, nbt, len);
-    if (rc == 0) c->dirty = true;
+    if (!c)
+        return -1;
+    int rc = push_blob(&c->tile_entities, &c->tile_entity_lens, &c->tile_entity_count,
+                       &c->tile_entity_cap, nbt, len);
+    if (rc == 0)
+        c->dirty = true;
     return rc;
 }
 
 int mcp_chunk_add_entity(mcp_chunk_t* c, const uint8_t* nbt, size_t len) {
-    if (!c) return -1;
-    int rc = push_blob(&c->entities, &c->entity_lens,
-                       &c->entity_count, &c->entity_cap, nbt, len);
-    if (rc == 0) c->dirty = true;
+    if (!c)
+        return -1;
+    int rc = push_blob(&c->entities, &c->entity_lens, &c->entity_count, &c->entity_cap, nbt, len);
+    if (rc == 0)
+        c->dirty = true;
     return rc;
 }
 
 void mcp_chunk_clear_tile_entities(mcp_chunk_t* c) {
-    if (!c) return;
+    if (!c)
+        return;
     if (c->tile_entities) {
         for (size_t i = 0; i < c->tile_entity_count; ++i) {
             free(c->tile_entities[i]);
@@ -356,11 +393,12 @@ void mcp_chunk_clear_tile_entities(mcp_chunk_t* c) {
     free(c->tile_entity_lens);
     c->tile_entity_lens = NULL;
     c->tile_entity_count = 0;
-    c->tile_entity_cap   = 0;
+    c->tile_entity_cap = 0;
 }
 
 void mcp_chunk_clear_entities(mcp_chunk_t* c) {
-    if (!c) return;
+    if (!c)
+        return;
     if (c->entities) {
         for (size_t i = 0; i < c->entity_count; ++i) {
             free(c->entities[i]);
@@ -371,19 +409,24 @@ void mcp_chunk_clear_entities(mcp_chunk_t* c) {
     free(c->entity_lens);
     c->entity_lens = NULL;
     c->entity_count = 0;
-    c->entity_cap   = 0;
+    c->entity_cap = 0;
 }
 
 // ---------------------------------------------------------------- section flags
 
 void mcp_chunk_recompute_section_flags(mcp_chunk_t* c) {
-    if (!c) return;
+    if (!c)
+        return;
     for (int i = 0; i < 16; ++i) {
         mcp_chunk_section_t* s = c->sections[i];
-        if (!s || !s->blocks) continue;
+        if (!s || !s->blocks)
+            continue;
         bool non_air = false;
-        for (int j = 2048; j < 4096; ++j) {  // upper half of section
-            if (s->blocks[j] != 0) { non_air = true; break; }
+        for (int j = 2048; j < 4096; ++j) { // upper half of section
+            if (s->blocks[j] != 0) {
+                non_air = true;
+                break;
+            }
         }
         s->non_air_top = non_air;
     }
@@ -419,19 +462,21 @@ void mcp_chunk_recompute_section_flags(mcp_chunk_t* c) {
 // a player receives is already sane.
 
 static uint8_t layer_get(const mcp_chunk_t* c, int x, int y, int z, int isSky) {
-    return isSky ? mcp_chunk_get_sky_light(c, x, y, z)
-                 : mcp_chunk_get_block_light(c, x, y, z);
+    return isSky ? mcp_chunk_get_sky_light(c, x, y, z) : mcp_chunk_get_block_light(c, x, y, z);
 }
 
 static void layer_set(mcp_chunk_t* c, int x, int y, int z, uint8_t v, int isSky) {
-    if (isSky) mcp_chunk_set_sky_light(c, x, y, z, v);
-    else mcp_chunk_set_block_light(c, x, y, z, v);
+    if (isSky)
+        mcp_chunk_set_sky_light(c, x, y, z, v);
+    else
+        mcp_chunk_set_block_light(c, x, y, z, v);
 }
 
 // A step into `id` costs 1 for anything light passes through and 15 for
 // an opaque block, which blocks outright.
 static int light_cost(uint8_t id) {
-    if (id == 0) return 1;
+    if (id == 0)
+        return 1;
     const uint8_t op = mcp_block_light_opacity(id);
     return op > 0 ? (int)op : 1;
 }
@@ -440,15 +485,20 @@ static int light_cost(uint8_t id) {
 // vanilla directions. Bounded to [0, maxTop]: above that there is not a
 // single block in any column of this chunk.
 static void propagate_layer(mcp_chunk_t* c, int maxTop, int isSky) {
-    typedef struct { uint8_t x, z; uint16_t y; } LightNode;
+    typedef struct {
+        uint8_t x, z;
+        uint16_t y;
+    } LightNode;
     const int dx[6] = {1, -1, 0, 0, 0, 0};
     const int dy[6] = {0, 0, 1, -1, 0, 0};
     const int dz[6] = {0, 0, 0, 0, 1, -1};
 
     size_t cap = (size_t)16 * 16 * (size_t)(maxTop + 1);
-    if (cap == 0) cap = 1;
+    if (cap == 0)
+        cap = 1;
     LightNode* queue = (LightNode*)malloc(cap * sizeof(LightNode));
-    if (!queue) return;
+    if (!queue)
+        return;
 
     size_t qhead = 0, qtail = 0;
     for (int x = 0; x < 16; ++x)
@@ -456,29 +506,31 @@ static void propagate_layer(mcp_chunk_t* c, int maxTop, int isSky) {
             for (int y = 0; y <= maxTop; ++y)
                 if (layer_get(c, x, y, z, isSky) > 1) {
                     if (qtail < cap)
-                        queue[qtail++] = (LightNode){(uint8_t)x, (uint8_t)z,
-                                                      (uint16_t)y};
+                        queue[qtail++] = (LightNode){(uint8_t)x, (uint8_t)z, (uint16_t)y};
                 }
 
     while (qhead < qtail) {
         const LightNode n = queue[qhead++];
         const uint8_t cur = layer_get(c, n.x, n.y, n.z, isSky);
-        if (cur <= 1) continue;
+        if (cur <= 1)
+            continue;
         for (int d = 0; d < 6; ++d) {
             const int nx = (int)n.x + dx[d];
             const int ny = (int)n.y + dy[d];
             const int nz = (int)n.z + dz[d];
-            if (ny < 0 || ny > maxTop) continue;
+            if (ny < 0 || ny > maxTop)
+                continue;
             // single-chunk pass: no cruzamos a chunks vecinos (World's
             // LightEngine se encarga del cruce de fronteras).
-            if (nx < 0 || nx > 15 || nz < 0 || nz > 15) continue;
+            if (nx < 0 || nx > 15 || nz < 0 || nz > 15)
+                continue;
             const int cand = (int)cur - light_cost(mcp_chunk_get_block_id(c, nx, ny, nz));
-            if (cand <= 0) continue;
+            if (cand <= 0)
+                continue;
             if ((uint8_t)cand > layer_get(c, nx, ny, nz, isSky)) {
                 layer_set(c, nx, ny, nz, (uint8_t)cand, isSky);
                 if (cand > 1 && qtail < cap)
-                    queue[qtail++] = (LightNode){(uint8_t)nx, (uint8_t)nz,
-                                                  (uint16_t)ny};
+                    queue[qtail++] = (LightNode){(uint8_t)nx, (uint8_t)nz, (uint16_t)ny};
             }
         }
     }
@@ -486,7 +538,8 @@ static void propagate_layer(mcp_chunk_t* c, int maxTop, int isSky) {
 }
 
 void mcp_chunk_propagate_sky_light(mcp_chunk_t* c) {
-    if (!c) return;
+    if (!c)
+        return;
 
     // BUG REAL (chunks que no renderizan): la versión anterior barría
     // y de 255 a 0 para las 256 columnas, en las tres fases (columna,
@@ -510,9 +563,11 @@ void mcp_chunk_propagate_sky_light(mcp_chunk_t* c) {
     int32_t maxTop = 0;
     for (int col = 0; col < 256; ++col) {
         int32_t h = c->height_map ? c->height_map[col] : 0;
-        if (h > maxTop) maxTop = h;
+        if (h > maxTop)
+            maxTop = h;
     }
-    if (maxTop > 255) maxTop = 255;
+    if (maxTop > 255)
+        maxTop = 255;
 
     // --- Fase 1: columna descendente (solo hasta maxTop) ---
     for (int x = 0; x < 16; ++x) {
@@ -533,7 +588,8 @@ void mcp_chunk_propagate_sky_light(mcp_chunk_t* c) {
                 if (id != 0) {
                     int dec = op > 0 ? op : 1;
                     light -= dec;
-                    if (light < 0) light = 0;
+                    if (light < 0)
+                        light = 0;
                 }
                 mcp_chunk_set_sky_light(c, x, y, z, (uint8_t)light);
                 if (light <= 0) {
@@ -558,8 +614,7 @@ void mcp_chunk_propagate_sky_light(mcp_chunk_t* c) {
     for (int x = 0; x < 16; ++x)
         for (int z = 0; z < 16; ++z)
             for (int y = 0; y <= maxTop; ++y) {
-                const uint8_t e =
-                    mcp_block_light_emission(mcp_chunk_get_block_id(c, x, y, z));
+                const uint8_t e = mcp_block_light_emission(mcp_chunk_get_block_id(c, x, y, z));
                 mcp_chunk_set_block_light(c, x, y, z, e);
             }
     propagate_layer(c, maxTop, /*isSky=*/0);
@@ -592,44 +647,156 @@ void mcp_chunk_propagate_sky_light(mcp_chunk_t* c) {
 // intenso y saturado, meseta/hell = marron. Bioma desconocido -> plains.
 static void mcp_biome_grass_color(uint8_t biomeId, uint8_t* r, uint8_t* g, uint8_t* b) {
     switch (biomeId) {
-        // --- Templado ---
-        case 0:  *r = 0x8E; *g = 0xB9; *b = 0x71; break; // OCEAN
-        case 1:  *r = 0x91; *g = 0xBD; *b = 0x59; break; // PLAINS
-        case 3:  *r = 0x79; *g = 0xC0; *b = 0x5A; break; // FOREST
-        case 4:  *r = 0x8A; *g = 0xB6; *b = 0x89; break; // EXTREME_HILLS
-        case 7:  *r = 0x8E; *g = 0xB9; *b = 0x71; break; // RIVER
-        case 16: *r = 0x91; *g = 0xBD; *b = 0x59; break; // BEACH (igual a plains)
-        case 18: *r = 0x79; *g = 0xC0; *b = 0x5A; break; // FOREST_HILLS
-        case 20: *r = 0x8A; *g = 0xB6; *b = 0x89; break; // MOUNTAINS
-        case 129:*r = 0x91; *g = 0xBD; *b = 0x59; break; // PLAINS_PLATEAU
+    // --- Templado ---
+    case 0:
+        *r = 0x8E;
+        *g = 0xB9;
+        *b = 0x71;
+        break; // OCEAN
+    case 1:
+        *r = 0x91;
+        *g = 0xBD;
+        *b = 0x59;
+        break; // PLAINS
+    case 3:
+        *r = 0x79;
+        *g = 0xC0;
+        *b = 0x5A;
+        break; // FOREST
+    case 4:
+        *r = 0x8A;
+        *g = 0xB6;
+        *b = 0x89;
+        break; // EXTREME_HILLS
+    case 7:
+        *r = 0x8E;
+        *g = 0xB9;
+        *b = 0x71;
+        break; // RIVER
+    case 16:
+        *r = 0x91;
+        *g = 0xBD;
+        *b = 0x59;
+        break; // BEACH (igual a plains)
+    case 18:
+        *r = 0x79;
+        *g = 0xC0;
+        *b = 0x5A;
+        break; // FOREST_HILLS
+    case 20:
+        *r = 0x8A;
+        *g = 0xB6;
+        *b = 0x89;
+        break; // MOUNTAINS
+    case 129:
+        *r = 0x91;
+        *g = 0xBD;
+        *b = 0x59;
+        break; // PLAINS_PLATEAU
 
-        // --- Frio: verde palido azulado ---
-        case 5:  *r = 0x86; *g = 0xB7; *b = 0x83; break; // TAIGA
-        case 10: *r = 0x80; *g = 0xB4; *b = 0x97; break; // FROZEN_OCEAN
-        case 11: *r = 0x80; *g = 0xB4; *b = 0x97; break; // FROZEN_RIVER
-        case 12: *r = 0x80; *g = 0xB4; *b = 0x97; break; // ICE_PLAINS
-        case 13: *r = 0x80; *g = 0xB4; *b = 0x97; break; // ICE_MOUNTAINS
-        case 19: *r = 0x86; *g = 0xB7; *b = 0x83; break; // TAIGA_HILLS
+    // --- Frio: verde palido azulado ---
+    case 5:
+        *r = 0x86;
+        *g = 0xB7;
+        *b = 0x83;
+        break; // TAIGA
+    case 10:
+        *r = 0x80;
+        *g = 0xB4;
+        *b = 0x97;
+        break; // FROZEN_OCEAN
+    case 11:
+        *r = 0x80;
+        *g = 0xB4;
+        *b = 0x97;
+        break; // FROZEN_RIVER
+    case 12:
+        *r = 0x80;
+        *g = 0xB4;
+        *b = 0x97;
+        break; // ICE_PLAINS
+    case 13:
+        *r = 0x80;
+        *g = 0xB4;
+        *b = 0x97;
+        break; // ICE_MOUNTAINS
+    case 19:
+        *r = 0x86;
+        *g = 0xB7;
+        *b = 0x83;
+        break; // TAIGA_HILLS
 
-        // --- Humedo: verde oscuro ---
-        case 6:  *r = 0x6A; *g = 0x70; *b = 0x39; break; // SWAMPLAND (oliva, como en Java)
-        case 21: *r = 0x59; *g = 0xC9; *b = 0x3C; break; // JUNGLE
-        case 22: *r = 0x59; *g = 0xC9; *b = 0x3C; break; // JUNGLE_HILLS
-        case 14: *r = 0x55; *g = 0xC9; *b = 0x3F; break; // MUSHROOM
-        case 15: *r = 0x55; *g = 0xC9; *b = 0x3F; break; // MUSHROOM_ISLAND
+    // --- Humedo: verde oscuro ---
+    case 6:
+        *r = 0x6A;
+        *g = 0x70;
+        *b = 0x39;
+        break; // SWAMPLAND (oliva, como en Java)
+    case 21:
+        *r = 0x59;
+        *g = 0xC9;
+        *b = 0x3C;
+        break; // JUNGLE
+    case 22:
+        *r = 0x59;
+        *g = 0xC9;
+        *b = 0x3C;
+        break; // JUNGLE_HILLS
+    case 14:
+        *r = 0x55;
+        *g = 0xC9;
+        *b = 0x3F;
+        break; // MUSHROOM
+    case 15:
+        *r = 0x55;
+        *g = 0xC9;
+        *b = 0x3F;
+        break; // MUSHROOM_ISLAND
 
-        // --- Calido/seco: verde amarillento ---
-        case 2:  *r = 0xBF; *g = 0xB7; *b = 0x55; break; // DESERT
-        case 17: *r = 0xBF; *g = 0xB7; *b = 0x55; break; // DESERT_HILLS
-        case 35: *r = 0xBF; *g = 0xB7; *b = 0x55; break; // SAVANNA
-        case 36: *r = 0xBD; *g = 0xB2; *b = 0x5F; break; // SAVANNA_PLATEAU
-        case 37: *r = 0x90; *g = 0x81; *b = 0x4D; break; // MESA
+    // --- Calido/seco: verde amarillento ---
+    case 2:
+        *r = 0xBF;
+        *g = 0xB7;
+        *b = 0x55;
+        break; // DESERT
+    case 17:
+        *r = 0xBF;
+        *g = 0xB7;
+        *b = 0x55;
+        break; // DESERT_HILLS
+    case 35:
+        *r = 0xBF;
+        *g = 0xB7;
+        *b = 0x55;
+        break; // SAVANNA
+    case 36:
+        *r = 0xBD;
+        *g = 0xB2;
+        *b = 0x5F;
+        break; // SAVANNA_PLATEAU
+    case 37:
+        *r = 0x90;
+        *g = 0x81;
+        *b = 0x4D;
+        break; // MESA
 
-        // --- No terrestre ---
-        case 8:  *r = 0x90; *g = 0x59; *b = 0x57; break; // HELL
-        case 9:  *r = 0x8E; *g = 0xB9; *b = 0x71; break; // SKY
+    // --- No terrestre ---
+    case 8:
+        *r = 0x90;
+        *g = 0x59;
+        *b = 0x57;
+        break; // HELL
+    case 9:
+        *r = 0x8E;
+        *g = 0xB9;
+        *b = 0x71;
+        break; // SKY
 
-        default: *r = 0x91; *g = 0xBD; *b = 0x59; break; // desconocido -> plains
+    default:
+        *r = 0x91;
+        *g = 0xBD;
+        *b = 0x59;
+        break; // desconocido -> plains
     }
 }
 
@@ -641,7 +808,8 @@ static void mcp_biome_grass_color(uint8_t biomeId, uint8_t* r, uint8_t* g, uint8
 //   + 1 byte extra (0x00 — historical "premium" flag)
 // Total: 132353 bytes typical.
 uint8_t* mcp_chunk_network_serialize(const mcp_chunk_t* c, size_t* out_len) {
-    if (!c || !out_len) return NULL;
+    if (!c || !out_len)
+        return NULL;
 
     // MCPE 0.15.10 ORDER_COLUMNS format (128-height world):
     //   32768 bytes: block IDs   (index = x<<11 | z<<7 | y, y=0..127)
@@ -653,16 +821,17 @@ uint8_t* mcp_chunk_network_serialize(const mcp_chunk_t* c, size_t* out_len) {
     //   4 bytes:    extra data count (LInt32 = 0)
     // Total: 66036 bytes
 
-    const size_t kBlocks    = 32768;  // 16*16*128
-    const size_t kData      = 16384;  // 16*16*64
-    const size_t kSkyLight  = 16384;
-    const size_t kBlockLight= 16384;
-    const size_t kHeightMap= 256;
-    const size_t kBiomeCol  = 1024;   // 256 * 4
-    const size_t kExtra     = 4;      // LInt32 count = 0
+    const size_t kBlocks = 32768; // 16*16*128
+    const size_t kData = 16384;   // 16*16*64
+    const size_t kSkyLight = 16384;
+    const size_t kBlockLight = 16384;
+    const size_t kHeightMap = 256;
+    const size_t kBiomeCol = 1024; // 256 * 4
+    const size_t kExtra = 4;       // LInt32 count = 0
     size_t total = kBlocks + kData + kSkyLight + kBlockLight + kHeightMap + kBiomeCol + kExtra;
     uint8_t* buf = (uint8_t*)calloc(total, 1);
-    if (!buf) return NULL;
+    if (!buf)
+        return NULL;
 
     size_t off = 0;
 
@@ -758,7 +927,8 @@ uint8_t* mcp_chunk_network_serialize(const mcp_chunk_t* c, size_t* out_len) {
         for (int x = 0; x < 16; ++x) {
             for (int z = 0; z < 16; ++z) {
                 int32_t h = c->height_map[(x & 15) + (z & 15) * 16];
-                if (h > 127) h = 127;
+                if (h > 127)
+                    h = 127;
                 buf[off + (x & 15) + (z & 15) * 16] = (uint8_t)h;
             }
         }

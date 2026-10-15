@@ -41,11 +41,16 @@ void PlayerActionPacket::encode(std::vector<uint8_t>& out) const {
 
 bool PlayerActionPacket::decode(const uint8_t* data, size_t len) {
     PacketReader r(data, len);
-    if (!r.readI64BE(eid))    return false;
-    if (!r.readI32BE(action)) return false;
-    if (!r.readI32BE(x))      return false;
-    if (!r.readI32BE(y))      return false;
-    if (!r.readI32BE(z))      return false;
+    if (!r.readI64BE(eid))
+        return false;
+    if (!r.readI32BE(action))
+        return false;
+    if (!r.readI32BE(x))
+        return false;
+    if (!r.readI32BE(y))
+        return false;
+    if (!r.readI32BE(z))
+        return false;
     return r.readI32BE(face);
 }
 

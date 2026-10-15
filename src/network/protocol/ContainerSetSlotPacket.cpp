@@ -37,32 +37,40 @@ void ContainerSetSlotPacket::encode(std::vector<uint8_t>& out) const {
     w.writeI16BE(slot);
     w.writeI16BE(hotbarSlot);
     if (itemId <= 0) {
-        w.writeI16BE(0);   // empty slot
+        w.writeI16BE(0); // empty slot
     } else {
         w.writeI16BE(itemId);
         w.writeU8(itemCount);
         w.writeI16BE(itemDamage);
         w.writeU16LE((uint16_t)itemNbt.size());
-        if (!itemNbt.empty()) w.writeBytes((const uint8_t*)itemNbt.data(), itemNbt.size());
+        if (!itemNbt.empty())
+            w.writeBytes((const uint8_t*)itemNbt.data(), itemNbt.size());
     }
 }
 
 bool ContainerSetSlotPacket::decode(const uint8_t* buf, size_t len) {
     PacketReader r(buf, len);
-    if (!r.readU8(windowid)) return false;
-    if (!r.readI16BE(slot)) return false;
-    if (!r.readI16BE(hotbarSlot)) return false;
-    if (!r.readI16BE(itemId)) return false;
+    if (!r.readU8(windowid))
+        return false;
+    if (!r.readI16BE(slot))
+        return false;
+    if (!r.readI16BE(hotbarSlot))
+        return false;
+    if (!r.readI16BE(itemId))
+        return false;
     if (itemId <= 0) {
         itemId = 0;
         itemCount = 0;
         itemDamage = 0;
         return true;
     }
-    if (!r.readU8(itemCount))   return false;
-    if (!r.readI16BE(itemDamage)) return false;
+    if (!r.readU8(itemCount))
+        return false;
+    if (!r.readI16BE(itemDamage))
+        return false;
     uint16_t nbtLen;
-    if (!r.readU16LE(nbtLen)) return false;
+    if (!r.readU16LE(nbtLen))
+        return false;
     if (nbtLen > 0) {
         itemNbt.assign(nbtLen, '\0');
         if (!r.readBytes(reinterpret_cast<uint8_t*>(&itemNbt[0]), nbtLen)) {

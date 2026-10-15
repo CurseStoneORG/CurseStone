@@ -63,18 +63,20 @@
 namespace cursestone::network::protocol {
 
 class UpdateBlockPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return UPDATE_BLOCK_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return UPDATE_BLOCK_PACKET;
+    }
 
     // Flag bits (Genisys UpdateBlockPacket constants).
-    static constexpr uint8_t FLAG_NONE      = 0b0000;
+    static constexpr uint8_t FLAG_NONE = 0b0000;
     static constexpr uint8_t FLAG_NEIGHBORS = 0b0001;
-    static constexpr uint8_t FLAG_NETWORK   = 0b0010;
+    static constexpr uint8_t FLAG_NETWORK = 0b0010;
     static constexpr uint8_t FLAG_NOGRAPHIC = 0b0100;
-    static constexpr uint8_t FLAG_PRIORITY  = 0b1000;
+    static constexpr uint8_t FLAG_PRIORITY = 0b1000;
 
-    static constexpr uint8_t FLAG_ALL          = (FLAG_NEIGHBORS | FLAG_NETWORK);          // 0x03
-    static constexpr uint8_t FLAG_ALL_PRIORITY = (FLAG_ALL | FLAG_PRIORITY);              // 0x0B
+    static constexpr uint8_t FLAG_ALL = (FLAG_NEIGHBORS | FLAG_NETWORK);     // 0x03
+    static constexpr uint8_t FLAG_ALL_PRIORITY = (FLAG_ALL | FLAG_PRIORITY); // 0x0B
 
     int32_t x = 0, z = 0;
     uint8_t y = 0;

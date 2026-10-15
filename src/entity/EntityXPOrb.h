@@ -25,9 +25,13 @@
 #include <string>
 namespace cursestone::entity {
 class EntityXPOrb : public Projectile {
-public:
+  public:
     using Projectile::Projectile;
-    EntityXPOrb(int64_t rid, std::shared_ptr<World> l) : Projectile(rid, std::move(l)) { setNetworkId(2); }
-    std::string name() const { return "Experience Orb"; }
+    EntityXPOrb(int64_t rid, std::shared_ptr<World> l) : Projectile(rid, std::move(l)) {
+        setNetworkId(2);
+    }
+    std::string name() const {
+        return "Experience Orb";
+    }
 };
 } // namespace

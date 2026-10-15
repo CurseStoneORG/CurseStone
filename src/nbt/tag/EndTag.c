@@ -28,26 +28,30 @@
 #include <stdlib.h>
 
 static void end_destroy(mcp_tag_t* self) {
-    if (!self) return;
-    if (self->name) free(self->name);
+    if (!self)
+        return;
+    if (self->name)
+        free(self->name);
     free(self);
 }
 static void end_write_payload(const mcp_tag_t* self, void* stream, bool le) {
-    (void)self; (void)stream; (void)le;
+    (void)self;
+    (void)stream;
+    (void)le;
     // EndTag has no payload.
 }
 static void end_to_string(const mcp_tag_t* self, char* out, size_t out_size) {
-    if (out && out_size) out[0] = '\0';
+    if (out && out_size)
+        out[0] = '\0';
     (void)self;
 }
-static const struct mcp_tag_vtable END_VT = {
-    end_destroy, end_write_payload, end_to_string
-};
+static const struct mcp_tag_vtable END_VT = {end_destroy, end_write_payload, end_to_string};
 
 mcp_tag_t* mcp_end_tag_new(void) {
     mcp_tag_t* t = (mcp_tag_t*)calloc(1, sizeof(mcp_tag_t));
-    if (!t) return NULL;
+    if (!t)
+        return NULL;
     t->vtable = &END_VT;
-    t->type   = MCP_TAG_END;
+    t->type = MCP_TAG_END;
     return t;
 }

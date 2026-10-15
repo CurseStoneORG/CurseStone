@@ -25,23 +25,26 @@
 #pragma once
 #include "PlayerEvent.h"
 #include "../Cancellable.h"
-namespace cursestone { class Player; }
+namespace cursestone {
+class Player;
+}
 
 namespace cursestone::event::player {
 class PlayerTeleportEvent : public PlayerEvent, public Cancellable {
-public:
+  public:
     double fromX = 0.0;
     double fromY = 0.0;
     double fromZ = 0.0;
     double toX = 0.0;
     double toY = 0.0;
     double toZ = 0.0;
-    PlayerTeleportEvent(cursestone::Player* p, double fx, double fy, double fz,
-                        double tx, double ty, double tz)
-        : PlayerEvent(p), fromX(fx), fromY(fy), fromZ(fz),
-          toX(tx), toY(ty), toZ(tz) {}
+    PlayerTeleportEvent(cursestone::Player* p, double fx, double fy, double fz, double tx,
+                        double ty, double tz)
+        : PlayerEvent(p), fromX(fx), fromY(fy), fromZ(fz), toX(tx), toY(ty), toZ(tz) {
+    }
     const std::string& eventName() const override {
-        static std::string n = "PlayerTeleportEvent"; return n;
+        static std::string n = "PlayerTeleportEvent";
+        return n;
     }
 };
 } // namespace cursestone::event::player

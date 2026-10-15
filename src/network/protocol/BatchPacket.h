@@ -41,10 +41,14 @@
 namespace cursestone::network::protocol {
 
 class BatchPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return BATCH_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return BATCH_PACKET;
+    }
 
-    bool canBeSentBeforeLogin() const override { return true; }
+    bool canBeSentBeforeLogin() const override {
+        return true;
+    }
 
     // Compress the given list of sub-packets into `compressed_`.
     void encode(std::vector<uint8_t>& out) const override;
@@ -63,16 +67,24 @@ public:
         payload_.insert(payload_.end(), sub.begin(), sub.end());
     }
 
-    const std::vector<uint8_t>& payload() const { return payload_; }
-    void setPayload(std::vector<uint8_t> p) { payload_ = std::move(p); }
+    const std::vector<uint8_t>& payload() const {
+        return payload_;
+    }
+    void setPayload(std::vector<uint8_t> p) {
+        payload_ = std::move(p);
+    }
 
     // Compressed wire payload (for outgoing packets).
-    const std::vector<uint8_t>& compressed() const { return compressed_; }
-    void setCompressed(std::vector<uint8_t> c) { compressed_ = std::move(c); }
+    const std::vector<uint8_t>& compressed() const {
+        return compressed_;
+    }
+    void setCompressed(std::vector<uint8_t> c) {
+        compressed_ = std::move(c);
+    }
 
-private:
-    std::vector<uint8_t> payload_;      // uncompressed sub-packets
-    std::vector<uint8_t> compressed_;  // zlib payload (no leading ID byte)
+  private:
+    std::vector<uint8_t> payload_;    // uncompressed sub-packets
+    std::vector<uint8_t> compressed_; // zlib payload (no leading ID byte)
 };
 
 } // namespace cursestone::network::protocol

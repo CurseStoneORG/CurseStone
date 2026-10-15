@@ -30,35 +30,44 @@ namespace cursestone::entity {
 bool Living::applyDamage(float amount) {
     bool was_alive = health_ > 0.0f;
     health_ -= amount;
-    if (health_ < 0) health_ = 0;
+    if (health_ < 0)
+        health_ = 0;
     bool just_died = was_alive && health_ <= 0.0f;
-    if (just_died) onDeath();
-    else onHealthChanged();   // sincronización inmediata de la barra de corazones
+    if (just_died)
+        onDeath();
+    else
+        onHealthChanged(); // sincronización inmediata de la barra de corazones
     return just_died;
 }
 
 DamageApply Living::damage(float amount) {
-    if (isDead()) return DamageApply::CANCELLED; // ya muerto — no re-disparar onDeath()
+    if (isDead())
+        return DamageApply::CANCELLED; // ya muerto — no re-disparar onDeath()
     auto ev = event::EventManager::get().fire<event::entity::EntityDamageEvent>(
         this, amount, event::entity::DamageCause::CUSTOM);
-    if (ev.isCancelled()) return DamageApply::CANCELLED;
+    if (ev.isCancelled())
+        return DamageApply::CANCELLED;
     return applyDamage(ev.amount) ? DamageApply::KILLED : DamageApply::HURT;
 }
 
 DamageApply Living::damage(float amount, event::entity::DamageCause cause) {
-    if (isDead()) return DamageApply::CANCELLED;
-    auto ev = event::EventManager::get().fire<event::entity::EntityDamageEvent>(
-        this, amount, cause);
-    if (ev.isCancelled()) return DamageApply::CANCELLED;
+    if (isDead())
+        return DamageApply::CANCELLED;
+    auto ev =
+        event::EventManager::get().fire<event::entity::EntityDamageEvent>(this, amount, cause);
+    if (ev.isCancelled())
+        return DamageApply::CANCELLED;
     return applyDamage(ev.amount) ? DamageApply::KILLED : DamageApply::HURT;
 }
 
 DamageApply Living::damageByEntity(float amount, Entity* damager,
-                                           event::entity::DamageCause cause) {
-    if (isDead()) return DamageApply::CANCELLED;
+                                   event::entity::DamageCause cause) {
+    if (isDead())
+        return DamageApply::CANCELLED;
     auto ev = event::EventManager::get().fire<event::entity::EntityDamageByEntityEvent>(
         this, amount, damager, cause);
-    if (ev.isCancelled()) return DamageApply::CANCELLED;
+    if (ev.isCancelled())
+        return DamageApply::CANCELLED;
     return applyDamage(ev.amount) ? DamageApply::KILLED : DamageApply::HURT;
 }
 
@@ -71,13 +80,16 @@ void Living::heal(float amount) {
     // isDead() ya era false. Genisys/Infinity solo procesan la
     // regeneracion mientras el ente esta vivo (Player::onUpdate hace
     // `if(!$this->isAlive() ...) return;`).
-    if (isDead()) return;
+    if (isDead())
+        return;
     health_ += amount;
-    if (health_ > max_health_) health_ = max_health_;
+    if (health_ > max_health_)
+        health_ = max_health_;
 }
 void Living::tick(uint64_t t) {
     Entity::tick(t);
-    for (auto& e : effects_) e->tick();
+    for (auto& e : effects_)
+        e->tick();
     // poison: 1 dmg every 2s
     // regen: +1 hp every 1.25s
     // (omitted for brevity; effect classes implement onTick)

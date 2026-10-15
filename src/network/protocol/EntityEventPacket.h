@@ -35,14 +35,16 @@
 namespace cursestone::network::protocol {
 
 class EntityEventPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return ENTITY_EVENT_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return ENTITY_EVENT_PACKET;
+    }
 
     // Solo se usan los eventos que el pipeline de combate actual
     // dispara de verdad — el resto de la tabla de PMMP (tame,
     // fish-hook, ambient sound, etc.) no aplica todavia porque esas
     // mecanicas no existen en CurseStone.
-    static constexpr uint8_t HURT_ANIMATION  = 2;
+    static constexpr uint8_t HURT_ANIMATION = 2;
     static constexpr uint8_t DEATH_ANIMATION = 3;
 
     int64_t eid = 0;

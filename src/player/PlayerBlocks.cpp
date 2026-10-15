@@ -51,11 +51,14 @@ namespace cursestone {
 bool Player::canSeeBlock(int32_t cx, int32_t cz) const {
     int32_t pcx = (int32_t)std::floor(pos_.x) >> 4;
     int32_t pcz = (int32_t)std::floor(pos_.z) >> 4;
-    int32_t vd  = cfg_.view_distance;
-    if (vd < 1) vd = 1;
+    int32_t vd = cfg_.view_distance;
+    if (vd < 1)
+        vd = 1;
     int32_t dx = cx - pcx, dz = cz - pcz;
-    if (dx < 0) dx = -dx;
-    if (dz < 0) dz = -dz;
+    if (dx < 0)
+        dx = -dx;
+    if (dz < 0)
+        dz = -dz;
     return dx <= vd && dz <= vd;
 }
 
@@ -71,10 +74,10 @@ static std::string hex8(uint8_t v) {
 // Helper: transmite a change of block puntual to all the players
 // that are viendo that chunk. is uses for componentes of redstone that
 // cambian more of a block (for example, puertas).
-static void broadcastBlockChange(cursestone::Server* server, world::World* world,
-                                   int32_t x, int32_t y, int32_t z,
-                                   uint8_t blockId, uint8_t blockData) {
-    if (!server || !world) return;
+static void broadcastBlockChange(cursestone::Server* server, world::World* world, int32_t x,
+                                 int32_t y, int32_t z, uint8_t blockId, uint8_t blockData) {
+    if (!server || !world)
+        return;
     auto ubp = std::make_shared<network::protocol::UpdateBlockPacket>();
     ubp->x = x;
     ubp->z = z;
@@ -84,9 +87,12 @@ static void broadcastBlockChange(cursestone::Server* server, world::World* world
     ubp->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
     int32_t cx = x >> 4, cz = z >> 4;
     for (auto& player : server->playersSnapshot()) {
-        if (!player) continue;
-        if (player->getWorld() != world) continue;   // same world
-        if (!player->canSeeBlock(cx, cz)) continue;
+        if (!player)
+            continue;
+        if (player->getWorld() != world)
+            continue; // same world
+        if (!player->canSeeBlock(cx, cz))
+            continue;
         player->sendPacket(ubp);
     }
 }
@@ -116,9 +122,10 @@ static std::pair<uint16_t, uint16_t> lookupBlockDrop(uint8_t blockId, uint8_t bl
 // other clients never saw the ghost. Cells whose chunk is not loaded
 // are skipped — getBlockId() would answer 0 for them and "correcting"
 // the client with air could delete a real block.
-static void resyncUseTarget(Player* self, world::World* lvl,
-                            int32_t x, int32_t y, int32_t z, uint8_t face) {
-    if (!self || !lvl) return;
+static void resyncUseTarget(Player* self, world::World* lvl, int32_t x, int32_t y, int32_t z,
+                            uint8_t face) {
+    if (!self || !lvl)
+        return;
     // Adjacent cell in the clicked-face direction — Infinity
     // `$block = $target->getSide($packet->face)`.
     static const int8_t fx[6] = {0, 0, 0, 0, -1, 1};
@@ -130,7 +137,8 @@ static void resyncUseTarget(Player* self, world::World* lvl,
     };
     for (auto& c : cells) {
         int32_t cx = c[0] >> 4, cz = c[2] >> 4;
-        if (!lvl->chunks().getChunkIfLoaded(cx, cz)) continue;
+        if (!lvl->chunks().getChunkIfLoaded(cx, cz))
+            continue;
         auto ubp = std::make_shared<network::protocol::UpdateBlockPacket>();
         ubp->x = c[0];
         ubp->z = c[2];
@@ -150,26 +158,31 @@ static void resyncUseTarget(Player* self, world::World* lvl,
 }
 
 void Player::handleBlockBreak(int x, int y, int z) {
-    if (!spawned_.load(std::memory_order_relaxed)) return;
+    if (!spawned_.load(std::memory_order_relaxed))
+        return;
     auto* lvl = getWorld();
-    if (!lvl) return;
+    if (!lvl)
+        return;
 
     // Reject out-of-world and values.
-    if (y < 0 || y >= 256) return;
+    if (y < 0 || y >= 256)
+        return;
 
     // Get the chunk containing this block.
     int32_t cx = x >> 4;
     int32_t cz = z >> 4;
     mcp_chunk_t* ch = lvl->chunks().getChunk(cx, cz);
-    if (!ch) return;
+    if (!ch)
+        return;
 
     int localX = x & 15;
     int localZ = z & 15;
-    uint8_t blockId   = mcp_chunk_get_block_id  (ch, localX, y, localZ);
+    uint8_t blockId = mcp_chunk_get_block_id(ch, localX, y, localZ);
     uint8_t blockData = mcp_chunk_get_block_data(ch, localX, y, localZ);
 
     // Don't break bedrock (id=7).
-    if (blockId == 7) return;
+    if (blockId == 7)
+        return;
     // Already air — nothing to break server-side. Infinity keeps
     // Level::useBreakOn's early return, but a client that just mined a
     // GHOST block (drawn by its own prediction, never written
@@ -186,10 +199,14 @@ void Player::handleBlockBreak(int x, int y, int z) {
         ghost->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
         if (srv_) {
             for (auto& other : srv_->playersSnapshot()) {
-                if (!other) continue;
-                if (other->getWorld() != lvl) continue;
-                if (!other->canSeeBlock(cx, cz)) continue;
-                if (!other->spawned()) continue;
+                if (!other)
+                    continue;
+                if (other->getWorld() != lvl)
+                    continue;
+                if (!other->canSeeBlock(cx, cz))
+                    continue;
+                if (!other->spawned())
+                    continue;
                 other->sendPacket(ghost);
             }
         }
@@ -201,7 +218,8 @@ void Player::handleBlockBreak(int x, int y, int z) {
     {
         auto ev = event::EventManager::get().fire<event::block::BlockBreakEvent>(
             this, math::Vector3{(double)x, (double)y, (double)z}, (int)blockId);
-        if (ev.isCancelled()) return;
+        if (ev.isCancelled())
+            return;
     }
 
     // ---- Two-half blocks (doors + beds) — Infinity Door::onBreak /
@@ -225,37 +243,38 @@ void Player::handleBlockBreak(int x, int y, int z) {
     bool hasPair = false;
     uint16_t forcedDropId = 0, forcedDropMeta = 0;
     {
-        static const int8_t bedDirX[4] = {0, -1, 0, 1};  // 0=S(+Z) 1=W(-X) 2=N(-Z) 3=E(+X)
+        static const int8_t bedDirX[4] = {0, -1, 0, 1}; // 0=S(+Z) 1=W(-X) 2=N(-Z) 3=E(+X)
         static const int8_t bedDirZ[4] = {1, 0, -1, 0};
         switch (blockId) {
-            case block::WOODEN_DOOR:
-            case block::IRON_DOOR: {
-                forcedDropId   = (uint16_t)((blockId == block::WOODEN_DOOR)
-                                                ? item::WOODEN_DOOR    // 324 — the item
-                                                : item::IRON_DOOR);    // 330
-                forcedDropMeta = 0;
-                bool isTop = (blockData & 0x08) != 0;
-                pairX = x; pairZ = z;
-                pairY = isTop ? (y - 1) : (y + 1);
-                hasPair = (pairY >= 0 && pairY < 256);
-                break;
-            }
-            case block::BED_BLOCK: {
-                forcedDropId   = (uint16_t)item::BED;   // 355 — the item
-                forcedDropMeta = 0;
-                bool isHead = (blockData & 0x08) != 0;
-                uint8_t dir = blockData & 0x03;
-                pairX = x + (isHead ? -bedDirX[dir] : bedDirX[dir]);
-                pairZ = z + (isHead ? -bedDirZ[dir] : bedDirZ[dir]);
-                pairY = y;
-                hasPair = true;
-                // Vanilla nicety on top of Infinity: anyone sleeping in
-                // this bed is woken up instead of left floating on air.
-                Player::wakeSleepersOnBed(srv_, lvl, x, y, z);
-                break;
-            }
-            default:
-                break;
+        case block::WOODEN_DOOR:
+        case block::IRON_DOOR: {
+            forcedDropId =
+                (uint16_t)((blockId == block::WOODEN_DOOR) ? item::WOODEN_DOOR // 324 — the item
+                                                           : item::IRON_DOOR); // 330
+            forcedDropMeta = 0;
+            bool isTop = (blockData & 0x08) != 0;
+            pairX = x;
+            pairZ = z;
+            pairY = isTop ? (y - 1) : (y + 1);
+            hasPair = (pairY >= 0 && pairY < 256);
+            break;
+        }
+        case block::BED_BLOCK: {
+            forcedDropId = (uint16_t)item::BED; // 355 — the item
+            forcedDropMeta = 0;
+            bool isHead = (blockData & 0x08) != 0;
+            uint8_t dir = blockData & 0x03;
+            pairX = x + (isHead ? -bedDirX[dir] : bedDirX[dir]);
+            pairZ = z + (isHead ? -bedDirZ[dir] : bedDirZ[dir]);
+            pairY = y;
+            hasPair = true;
+            // Vanilla nicety on top of Infinity: anyone sleeping in
+            // this bed is woken up instead of left floating on air.
+            Player::wakeSleepersOnBed(srv_, lvl, x, y, z);
+            break;
+        }
+        default:
+            break;
         }
     }
 
@@ -269,8 +288,7 @@ void Player::handleBlockBreak(int x, int y, int z) {
     // something in that same position the tile viejo "revive" with its contenido/
     // state anterior — the same tipo of bug of persistencia that the of the
     // sign. PMMP it resolves in tile::onBreak / World::useBreakOn.
-    if (blockId == block::CHEST || blockId == block::FURNACE ||
-        blockId == block::BURNING_FURNACE ||
+    if (blockId == block::CHEST || blockId == block::FURNACE || blockId == block::BURNING_FURNACE ||
         blockId == block::SIGN_POST || blockId == block::WALL_SIGN) {
         lvl->removeTile(x, y, z);
     }
@@ -320,10 +338,13 @@ void Player::handleBlockBreak(int x, int y, int z) {
     int broadcastTo = 0, broadcastOk = 0;
     if (srv_) {
         for (auto& other : srv_->playersSnapshot()) {
-            if (!other) continue;
-            if (!other->canSeeBlock(pk_cx, pk_cz)) continue;
+            if (!other)
+                continue;
+            if (!other->canSeeBlock(pk_cx, pk_cz))
+                continue;
             ++broadcastTo;
-            if (!other->spawned()) continue;
+            if (!other->spawned())
+                continue;
             other->sendPacket(ubp);
             other->sendPacket(partEv);
             ++broadcastOk;
@@ -345,9 +366,12 @@ void Player::handleBlockBreak(int x, int y, int z) {
         fubp->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
         if (srv_) {
             for (auto& other : srv_->playersSnapshot()) {
-                if (!other || other->getWorld() != lvl) continue;
-                if (!other->canSeeBlock(cx, cz)) continue;
-                if (!other->spawned()) continue;
+                if (!other || other->getWorld() != lvl)
+                    continue;
+                if (!other->canSeeBlock(cx, cz))
+                    continue;
+                if (!other->spawned())
+                    continue;
                 other->sendPacket(fubp);
             }
         }
@@ -363,23 +387,21 @@ void Player::handleBlockBreak(int x, int y, int z) {
         uint8_t pairId = lvl->getBlockId(pairX, pairY, pairZ);
         bool pairMatches = false;
         switch (blockId) {
-            case block::WOODEN_DOOR:
-            case block::IRON_DOOR:
-                // The partner must be the same door AND the opposite half
-                // (the 0x08 bit flips) — otherwise a door stacked directly
-                // above another door would eat its lower neighbour too.
-                pairMatches = (pairId == blockId) &&
-                    ((lvl->getBlockData(pairX, pairY, pairZ) & 0x08) !=
-                     (blockData & 0x08));
-                break;
-            case block::BED_BLOCK:
-                pairMatches = (pairId == block::BED_BLOCK) &&
-                              // the partner must be the OPPOSITE half
-                              ((lvl->getBlockData(pairX, pairY, pairZ) & 0x08) !=
-                               (blockData & 0x08));
-                break;
-            default:
-                break;
+        case block::WOODEN_DOOR:
+        case block::IRON_DOOR:
+            // The partner must be the same door AND the opposite half
+            // (the 0x08 bit flips) — otherwise a door stacked directly
+            // above another door would eat its lower neighbour too.
+            pairMatches = (pairId == blockId) &&
+                          ((lvl->getBlockData(pairX, pairY, pairZ) & 0x08) != (blockData & 0x08));
+            break;
+        case block::BED_BLOCK:
+            pairMatches = (pairId == block::BED_BLOCK) &&
+                          // the partner must be the OPPOSITE half
+                          ((lvl->getBlockData(pairX, pairY, pairZ) & 0x08) != (blockData & 0x08));
+            break;
+        default:
+            break;
         }
         if (pairMatches) {
             mcp_chunk_t* pch = lvl->chunks().getChunkIfLoaded(pairX >> 4, pairZ >> 4);
@@ -397,10 +419,14 @@ void Player::handleBlockBreak(int x, int y, int z) {
                 pubp->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
                 int32_t pcx = pairX >> 4, pcz = pairZ >> 4;
                 for (auto& other : srv_->playersSnapshot()) {
-                    if (!other) continue;
-                    if (other->getWorld() != lvl) continue;
-                    if (!other->canSeeBlock(pcx, pcz)) continue;
-                    if (!other->spawned()) continue;
+                    if (!other)
+                        continue;
+                    if (other->getWorld() != lvl)
+                        continue;
+                    if (!other->canSeeBlock(pcx, pcz))
+                        continue;
+                    if (!other->spawned())
+                        continue;
                     other->sendPacket(pubp);
                 }
                 // The removed partner can disconnect a redstone circuit
@@ -436,9 +462,8 @@ void Player::handleBlockBreak(int x, int y, int z) {
     if (!creative) {
         // Doors/beds drop their ITEM (324/330/355) instead of the raw
         // block id — see the two-half block comment above.
-        auto drop = (forcedDropId != 0)
-                        ? std::make_pair(forcedDropId, forcedDropMeta)
-                        : lookupBlockDrop(blockId, blockData);
+        auto drop = (forcedDropId != 0) ? std::make_pair(forcedDropId, forcedDropMeta)
+                                        : lookupBlockDrop(blockId, blockData);
         if (drop.first != 0) {
             dropItem(x + 0.5, y + 0.5, z + 0.5, drop.first, 1, drop.second);
         }
@@ -446,18 +471,18 @@ void Player::handleBlockBreak(int x, int y, int z) {
 
     if (srv_ && srv_->advancedLog()) {
         utils::MainLogger::get().info("[BLOCK] " + cfg_.username + " broke block at " +
-            std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(z) +
-            " (was id=" + std::to_string(blockId) + " data=" + std::to_string(blockData) + ")");
+                                      std::to_string(x) + "," + std::to_string(y) + "," +
+                                      std::to_string(z) + " (was id=" + std::to_string(blockId) +
+                                      " data=" + std::to_string(blockData) + ")");
         // diagnostic of the bug "the other not ven the block broken":
         // how many players remain inside of the area of vision of the chunk
         // and to how many actually to them mando the UpdateBlockPacket. if
         // esto dice sent=0 with area>0, the packet is lost in the path;
         // if area=0, the filtro of distancia not yet cubre to the receptor.
-        utils::MainLogger::get().info("[BLOCK-SYNC] break at chunk " +
-            std::to_string(pk_cx) + "," + std::to_string(pk_cz) +
+        utils::MainLogger::get().info(
+            "[BLOCK-SYNC] break at chunk " + std::to_string(pk_cx) + "," + std::to_string(pk_cz) +
             " flags=" + hex8(network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY) +
-            " -> in_view=" + std::to_string(broadcastTo) +
-            " sent=" + std::to_string(broadcastOk));
+            " -> in_view=" + std::to_string(broadcastTo) + " sent=" + std::to_string(broadcastOk));
     }
 }
 
@@ -469,12 +494,23 @@ namespace {
 // is are registered after; a id extra here not affects to nothing more.
 bool isStairsId(uint8_t id) {
     switch (id) {
-        case 53: case 67: case 108: case 109: case 114:
-        case 128: case 134: case 135: case 136:
-        case 156: case 163: case 164: case 180: case 203:
-            return true;
-        default:
-            return false;
+    case 53:
+    case 67:
+    case 108:
+    case 109:
+    case 114:
+    case 128:
+    case 134:
+    case 135:
+    case 136:
+    case 156:
+    case 163:
+    case 164:
+    case 180:
+    case 203:
+        return true;
+    default:
+        return false;
     }
 }
 
@@ -489,8 +525,8 @@ bool isStairsId(uint8_t id) {
 //   yaw  : yaw of the player in the momento of place
 //   hitY : componente and of the point of impacto (0..1) — sirve for slabs
 //          (half upper) and trampillas (montada above)
-uint8_t computeVanillaPlacementMeta(uint8_t blockId, uint8_t baseData,
-                                    uint8_t face, float yaw, float hitY) {
+uint8_t computeVanillaPlacementMeta(uint8_t blockId, uint8_t baseData, uint8_t face, float yaw,
+                                    float hitY) {
     using block::BlockOrientation;
     const uint8_t q = BlockOrientation::quadrant(yaw); // 0=S 1=W 2=N 3=E
 
@@ -503,69 +539,71 @@ uint8_t computeVanillaPlacementMeta(uint8_t blockId, uint8_t baseData,
 
     // Slabs / doubleslabs: bits bajos = variante, bit 0x08 = half upper
     // when the click apunta to the half alta of the lado of the cara.
-    if (blockId == 44 /*SLAB*/ || blockId == block::SLAB_WOOD ||
-        blockId == block::DOUBLE_SLAB_ID || blockId == block::DOUBLE_SLAB_WOOD) {
+    if (blockId == 44 /*SLAB*/ || blockId == block::SLAB_WOOD || blockId == block::DOUBLE_SLAB_ID ||
+        blockId == block::DOUBLE_SLAB_WOOD) {
         return (uint8_t)((baseData & 0x07) | ((face != 0 && hitY > 0.5f) ? 0x08 : 0x00));
     }
 
     switch (blockId) {
-        // --- Orientados hacia the player (in front = cuadrante) ---
-        case block::FURNACE:
-        case block::BURNING_FURNACE:
-        case block::CHEST:
-        case block::DISPENSER:
-        case block::DROPPER:
-            return BlockOrientation::horizontalFaceMeta(q);
+    // --- Orientados hacia the player (in front = cuadrante) ---
+    case block::FURNACE:
+    case block::BURNING_FURNACE:
+    case block::CHEST:
+    case block::DISPENSER:
+    case block::DROPPER:
+        return BlockOrientation::horizontalFaceMeta(q);
 
-        // --- Pegados to the cara clicked ---
-        case block::LADDER:
-        case block::WALL_SIGN:
-        case block::STONE_BUTTON:
-            return BlockOrientation::ladderMeta(face);
-        case block::TORCH:
-            return BlockOrientation::torchMeta(face);
-        case block::LEVER:
-            return BlockOrientation::leverMeta(face, face != 0 && hitY > 0.5f);
-        case block::VINE:
-            return BlockOrientation::vineMeta(face);
+    // --- Pegados to the cara clicked ---
+    case block::LADDER:
+    case block::WALL_SIGN:
+    case block::STONE_BUTTON:
+        return BlockOrientation::ladderMeta(face);
+    case block::TORCH:
+        return BlockOrientation::torchMeta(face);
+    case block::LEVER:
+        return BlockOrientation::leverMeta(face, face != 0 && hitY > 0.5f);
+    case block::VINE:
+        return BlockOrientation::vineMeta(face);
 
-        // --- Trampillas: orientación by yaw + bit 0x04 if is monta above ---
-        case block::TRAPDOOR:
-        case block::TRAPDOOR_IRON:
-            return (uint8_t)(BlockOrientation::trapdoorMeta(q) |
-                             ((face != 0 && hitY > 0.5f) ? 0x04 : 0x00));
+    // --- Trampillas: orientación by yaw + bit 0x04 if is monta above ---
+    case block::TRAPDOOR:
+    case block::TRAPDOOR_IRON:
+        return (uint8_t)(BlockOrientation::trapdoorMeta(q) |
+                         ((face != 0 && hitY > 0.5f) ? 0x04 : 0x00));
 
-        // --- Yunque: axis this-oeste by default, rota with the yaw ---
-        case block::ANVIL:
-            return BlockOrientation::anvilMeta(q);
+    // --- Yunque: axis this-oeste by default, rota with the yaw ---
+    case block::ANVIL:
+        return BlockOrientation::anvilMeta(q);
 
-        // --- Calabaza / repeater: miran HACIA the player (opuesto) ---
-        case block::PUMPKIN:
-        case block::LIT_PUMPKIN:
-        case block::UNPOWERED_REPEATER:
-        case block::POWERED_REPEATER:
-            return (uint8_t)((baseData & 0x0C) | BlockOrientation::yawToMetaOpposite(yaw));
+    // --- Calabaza / repeater: miran HACIA the player (opuesto) ---
+    case block::PUMPKIN:
+    case block::LIT_PUMPKIN:
+    case block::UNPOWERED_REPEATER:
+    case block::POWERED_REPEATER:
+        return (uint8_t)((baseData & 0x0C) | BlockOrientation::yawToMetaOpposite(yaw));
 
-        // --- Troncos / cuarzo pilar / heno: axis according to the cara of click ---
-        case block::LOG:
-        case 157: /* LOG2 (acacia/dark oak) */
-        case block::QUARTZ_BLOCK:
-        case block::HAY_BALE:
-            return BlockOrientation::axisMeta(face, baseData);
+    // --- Troncos / cuarzo pilar / heno: axis according to the cara of click ---
+    case block::LOG:
+    case 157: /* LOG2 (acacia/dark oak) */
+    case block::QUARTZ_BLOCK:
+    case block::HAY_BALE:
+        return BlockOrientation::axisMeta(face, baseData);
 
-        // Hopper saves its meta (modo of exit); the rest conserva baseData.
-        default:
-            return baseData;
+    // Hopper saves its meta (modo of exit); the rest conserva baseData.
+    default:
+        return baseData;
     }
 }
 
 } // namespace
 
-void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
-                              int16_t heldItemId, uint8_t heldCount, uint16_t heldDamage,
-                              float fx, float fy, float fz) {
-    if (!spawned_.load(std::memory_order_relaxed)) return;
-    if (!getWorld()) return;
+void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldItemId,
+                              uint8_t heldCount, uint16_t heldDamage, float fx, float fy,
+                              float fz) {
+    if (!spawned_.load(std::memory_order_relaxed))
+        return;
+    if (!getWorld())
+        return;
 
     // UseItemPacket with face == 0xFF is an "item use in the AIR" (Infinity:
     // `$packet->face === 0xff` branch of USE_ITEM_PACKET) — no block is
@@ -578,8 +616,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
 
     // The client may send the bow use against a block face while aiming at
     // terrain; the draw must still start or the release would do nothing.
-    if (heldItemId == (int16_t)item::ITEM_BOW && face <= 5 &&
-        bow_start_action_ < 0 && srv_) {
+    if (heldItemId == (int16_t)item::ITEM_BOW && face <= 5 && bow_start_action_ < 0 && srv_) {
         bow_start_action_ = (int64_t)srv_->getCurrentTick();
     }
 
@@ -591,15 +628,29 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     // "use of undeclared identifier" compile errors on both GCC and Clang.
     int placeX = x, placeY = y, placeZ = z;
     switch (face) {
-        case 0: placeY--; break;  // bottom
-        case 1: placeY++; break;  // top
-        case 2: placeZ--; break;  // north
-        case 3: placeZ++; break;  // south
-        case 4: placeX--; break;  // west
-        case 5: placeX++; break;  // east
-        default: return;
+    case 0:
+        placeY--;
+        break; // bottom
+    case 1:
+        placeY++;
+        break; // top
+    case 2:
+        placeZ--;
+        break; // north
+    case 3:
+        placeZ++;
+        break; // south
+    case 4:
+        placeX--;
+        break; // west
+    case 5:
+        placeX++;
+        break; // east
+    default:
+        return;
     }
-    if (placeY < 0 || placeY >= 256) return;
+    if (placeY < 0 || placeY >= 256)
+        return;
 
     auto* lvl = getWorld();
 
@@ -661,12 +712,12 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     // ocurrir, this way that anunciarla seria mentirle to the plugins.
     if (!sneakLocked) {
         item::ItemStack heldStack;
-        heldStack.id    = (uint16_t)heldItemId;
-        heldStack.meta  = (uint8_t)(heldDamage & 0xFF);
+        heldStack.id = (uint16_t)heldItemId;
+        heldStack.meta = (uint8_t)(heldDamage & 0xFF);
         heldStack.count = heldCount;
         auto ev = event::EventManager::get().fire<event::player::PlayerInteractEvent>(
-            this, event::player::PlayerInteractEvent::RIGHT_CLICK_BLOCK,
-            x, y, z, (int)face, heldStack);
+            this, event::player::PlayerInteractEvent::RIGHT_CLICK_BLOCK, x, y, z, (int)face,
+            heldStack);
         if (ev.isCancelled()) {
             // A cancelled use is a no-op use — same rejection resync
             // Infinity runs when useItemOn() fails (protection plugins
@@ -738,14 +789,16 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         uint8_t meta = lvl->getBlockData(x, y, z);
         int headX = x, headY = y, headZ = z;
         if ((meta & 0x08) == 0) {
-            static const int dx4[4] = {0, 0, -1, 1};   // N(-Z), S(+Z), W(-X), E(+X)
+            static const int dx4[4] = {0, 0, -1, 1}; // N(-Z), S(+Z), W(-X), E(+X)
             static const int dz4[4] = {-1, 1, 0, 0};
             bool found = false;
             for (int i = 0; i < 4; ++i) {
                 int nx = x + dx4[i], nz = z + dz4[i];
                 if (lvl->getBlockId(nx, y, nz) == block::BED_BLOCK &&
                     (lvl->getBlockData(nx, y, nz) & 0x08) == 0x08) {
-                    headX = nx; headY = y; headZ = nz;
+                    headX = nx;
+                    headY = y;
+                    headZ = nz;
                     found = true;
                     break;
                 }
@@ -773,11 +826,11 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     // none window server-side: the recetas viajan all in a only
     // packet global and the client filtra big/small according to where is
     // crafteando.
-    if (!sneakLocked && lvl->getBlockId(x, y, z) == block::WORKBENCH &&
-        srv_ && srv_->advancedLog()) {
-        utils::MainLogger::get().info("[CRAFT] " + cfg_.username +
-            " opened crafting table at " +
-            std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(z));
+    if (!sneakLocked && lvl->getBlockId(x, y, z) == block::WORKBENCH && srv_ &&
+        srv_->advancedLog()) {
+        utils::MainLogger::get().info("[CRAFT] " + cfg_.username + " opened crafting table at " +
+                                      std::to_string(x) + "," + std::to_string(y) + "," +
+                                      std::to_string(z));
     }
 
     // ---- Decide what block (if any) to place based on held item ----
@@ -789,12 +842,13 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     // (e.g. 259=flint&steel, 325=bucket, 326=water bucket, 327=lava bucket)
     // survive intact. Earlier the parameter was uint8_t which silently
     // truncated them and made the comparisons below tautologically false.
-    uint8_t placedBlockId   = 0;     // 0 = not placement
+    uint8_t placedBlockId = 0; // 0 = not placement
     uint8_t placedBlockData = 0;
-    bool    consumeItem     = false; // decrement inventory stack?
-    bool    skipPlaceSound  = false; // for fire/water/lava (PMMP doesn't play it)
-    (void)heldCount;  // currently unused — kept for API parity with PMMP
-    (void)fx; (void)fz;  // hit point X/Z — the orientación vanilla only uses fy (slabs/trapdoors)
+    bool consumeItem = false;    // decrement inventory stack?
+    bool skipPlaceSound = false; // for fire/water/lava (PMMP doesn't play it)
+    (void)heldCount;             // currently unused — kept for API parity with PMMP
+    (void)fx;
+    (void)fz; // hit point X/Z — the orientación vanilla only uses fy (slabs/trapdoors)
 
     if (heldItemId == 0) {
         // Empty hand — not placement. BUT, in MCPE 0.15.x the client also
@@ -830,9 +884,12 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
                 ubp->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
                 if (srv_) {
                     for (auto& other : srv_->playersSnapshot()) {
-                        if (!other) continue;
-                        if (other->getWorld() != getWorld()) continue;   // same world
-                        if (!other->canSeeBlock(tcx, tcz)) continue;
+                        if (!other)
+                            continue;
+                        if (other->getWorld() != getWorld())
+                            continue; // same world
+                        if (!other->canSeeBlock(tcx, tcz))
+                            continue;
                         other->sendPacket(ubp);
                     }
                 }
@@ -845,12 +902,11 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         resyncUseTarget(this, lvl, x, y, z, face);
         if (srv_ && srv_->advancedLog()) {
             utils::MainLogger::get().info("[BLOCK] " + cfg_.username +
-                " attempted place with empty hand — ignored");
+                                          " attempted place with empty hand — ignored");
         }
         return;
-    } else if (heldItemId == 193 || heldItemId == 194 || heldItemId == 195 ||
-               heldItemId == 196 || heldItemId == 197 ||
-               heldItemId == 324 || heldItemId == 330) {
+    } else if (heldItemId == 193 || heldItemId == 194 || heldItemId == 195 || heldItemId == 196 ||
+               heldItemId == 197 || heldItemId == 324 || heldItemId == 330) {
         // Puerta (any especie of madera, or hierro). is which is
         // the item exacto (193-197 = specie-doors of MCPE 0.15, each a
         // with id of block own in the rango <256; 324 = puerta of
@@ -869,8 +925,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         // seguir the flujo genérico of "a only setBlock" of more below
         // — is colocan ambas mitades here and is returns, just like already
         // does flint&steel some líneas above.
-        uint8_t doorId = (heldItemId == 330) ? item::IRON_DOOR_BLOCK
-                                              : item::DOOR_BLOCK;
+        uint8_t doorId = (heldItemId == 330) ? item::IRON_DOOR_BLOCK : item::DOOR_BLOCK;
         // Nota: item::DOOR_BLOCK (64) e item::IRON_DOOR_BLOCK (71) are
         // the same valores numéricos that block::WOODEN_DOOR and
         // block::IRON_DOOR in BlockIds.h (confirmado) — coherente with
@@ -888,22 +943,27 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         // nivel of rigor: only is requires air in the two celdas target,
         // without exigir soporte solid below, for not introducir a regla
         // more estricta that the rest of the sistema of colocación).
-        if (placeY + 1 >= 256) return; // the half upper is saldría of the world
+        if (placeY + 1 >= 256)
+            return; // the half upper is saldría of the world
 
         int32_t cxLower = placeX >> 4, czLower = placeZ >> 4;
         mcp_chunk_t* chLower = lvl->chunks().getChunkIfLoaded(cxLower, czLower);
-        if (!chLower) return; // same criterio that the rest: not generate chunk síncronamente
+        if (!chLower)
+            return; // same criterio that the rest: not generate chunk síncronamente
         int localXLower = placeX & 15, localZLower = placeZ & 15;
         uint8_t existingLower = mcp_chunk_get_block_id(chLower, localXLower, placeY, localZLower);
-        if (existingLower != 0) return; // cell inferior ocupada
+        if (existingLower != 0)
+            return; // cell inferior ocupada
 
         // the half upper can fall in a chunk different only if
         // placeY+1 cruza to other chunk verticalmente — in this format
         // the chunks are columns complete (0-255 of alto), this way that
         // cxLower/czLower siguen being válidos for and+1 also; not
         // needed volver to resolver the chunk.
-        uint8_t existingUpper = mcp_chunk_get_block_id(chLower, localXLower, placeY + 1, localZLower);
-        if (existingUpper != 0) return; // cell upper ocupada
+        uint8_t existingUpper =
+            mcp_chunk_get_block_id(chLower, localXLower, placeY + 1, localZLower);
+        if (existingUpper != 0)
+            return; // cell upper ocupada
 
         // Orientación by hacia where mira the player when placing,
         // just like vanilla actual. Conversión yaw→4 direcciones
@@ -917,11 +977,16 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         // Orientación vanilla Nukkit (BlockDoor.place): {1,2,3,0} about
         // the cuadrante yaw→{S,W,N,E} — tabla only in BlockOrientation.h
         // (reemplaza the fórmula emits that había here).
-        uint8_t doorFacing = block::BlockOrientation::doorMeta(
-            block::BlockOrientation::quadrant(yaw()));
+        uint8_t doorFacing =
+            block::BlockOrientation::doorMeta(block::BlockOrientation::quadrant(yaw()));
 
-        uint8_t lowerData = doorFacing & 0x03;       // bits 0-1: orientación; bit 0x04 (abierta) starts in 0; bit 0x08 (upper) in 0
-        uint8_t upperData = 0x08 | (doorFacing & 0x03); // bit 0x08 fixed (is upper); conserva orientación so that ambas mitades sepan hacia where mira the puerta without have that consultar the other
+        uint8_t lowerData =
+            doorFacing &
+            0x03; // bits 0-1: orientación; bit 0x04 (abierta) starts in 0; bit 0x08 (upper) in 0
+        uint8_t upperData =
+            0x08 |
+            (doorFacing &
+             0x03); // bit 0x08 fixed (is upper); conserva orientación so that ambas mitades sepan hacia where mira the puerta without have that consultar the other
 
         mcp_chunk_set_block_full(chLower, localXLower, placeY, localZLower, doorId, lowerData);
         mcp_chunk_set_block_full(chLower, localXLower, placeY + 1, localZLower, doorId, upperData);
@@ -944,9 +1009,12 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
             snd->data = (int32_t)doorId;
             int32_t scx = placeX >> 4, scz = placeZ >> 4;
             for (auto& other : srv_->playersSnapshot()) {
-                if (!other) continue;
-                if (other->getWorld() != lvl) continue;
-                if (!other->canSeeBlock(scx, scz)) continue;
+                if (!other)
+                    continue;
+                if (other->getWorld() != lvl)
+                    continue;
+                if (!other->canSeeBlock(scx, scz))
+                    continue;
                 other->sendPacket(snd);
             }
         }
@@ -958,8 +1026,12 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
             int held = inv_->heldSlot();
             auto cur = inv_->getItem(held);
             if (!cur.isEmpty()) {
-                if (cur.count > 1) { cur.count -= 1; inv_->setItem(held, cur); }
-                else { inv_->clear(held); }
+                if (cur.count > 1) {
+                    cur.count -= 1;
+                    inv_->setItem(held, cur);
+                } else {
+                    inv_->clear(held);
+                }
             }
         }
         return;
@@ -977,7 +1049,8 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
 
         int32_t cxB = placeX >> 4, czB = placeZ >> 4;
         mcp_chunk_t* chB = lvl->chunks().getChunkIfLoaded(cxB, czB);
-        if (!chB) return;
+        if (!chB)
+            return;
         int localXB = placeX & 15, localZB = placeZ & 15;
 
         // Support check — Infinity Bed.php:53 `$down->isTransparent()
@@ -985,9 +1058,11 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         // cell). Block::get() falls back to a solid default for unknown
         // ids, mirroring how the rest of the codebase treats them.
         {
-            if (placeY == 0) return;
+            if (placeY == 0)
+                return;
             uint8_t belowId = lvl->getBlockId(placeX, placeY - 1, placeZ);
-            if (block::Block::get(belowId)->isTransparent()) return;
+            if (block::Block::get(belowId)->isTransparent())
+                return;
         }
 
         // Direction — Infinity Bed.php:56-59 combines getDirection()
@@ -997,7 +1072,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         // faces (q0→+Z, q1→−X, q2→−Z, q3→+X). Foot and head share the
         // same 2 direction bits; the head adds 0x08.
         uint8_t bedMeta = block::BlockOrientation::quadrant(yaw());
-        static const int8_t headDX[4] = {0, -1, 0, 1};   // S, W, N, E
+        static const int8_t headDX[4] = {0, -1, 0, 1}; // S, W, N, E
         static const int8_t headDZ[4] = {1, 0, -1, 0};
         int headX = placeX + headDX[bedMeta & 0x03];
         int headZ = placeZ + headDZ[bedMeta & 0x03];
@@ -1005,17 +1080,21 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         // The head cell must be air (Infinity `$next->canBeReplaced()`)
         // and must have solid ground too (same support rule; Infinity
         // checks `$downNext->isTransparent() === false`).
-        if (headX < -1000000 || headZ < -1000000) return; // paranoia guard (int8 offsets can't overflow here)
+        if (headX < -1000000 || headZ < -1000000)
+            return; // paranoia guard (int8 offsets can't overflow here)
         int32_t headCx = headX >> 4, headCz = headZ >> 4;
-        mcp_chunk_t* chHead = (headCx == cxB && headCz == czB)
-                                  ? chB
-                                  : lvl->chunks().getChunkIfLoaded(headCx, headCz);
-        if (!chHead) return;
-        if (lvl->getBlockId(headX, placeY, headZ) != 0) return;
+        mcp_chunk_t* chHead =
+            (headCx == cxB && headCz == czB) ? chB : lvl->chunks().getChunkIfLoaded(headCx, headCz);
+        if (!chHead)
+            return;
+        if (lvl->getBlockId(headX, placeY, headZ) != 0)
+            return;
         {
-            if (placeY == 0) return;
+            if (placeY == 0)
+                return;
             uint8_t belowHeadId = lvl->getBlockId(headX, placeY - 1, headZ);
-            if (block::Block::get(belowHeadId)->isTransparent()) return;
+            if (block::Block::get(belowHeadId)->isTransparent())
+                return;
         }
 
         // BlockPlaceEvent — cancellable like every other placement
@@ -1024,20 +1103,20 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
             auto ev = event::EventManager::get().fire<event::block::BlockPlaceEvent>(
                 this, math::Vector3{(double)placeX, (double)placeY, (double)placeZ},
                 (int)block::BED_BLOCK);
-            if (ev.isCancelled()) return;
+            if (ev.isCancelled())
+                return;
         }
 
-        mcp_chunk_set_block_full(chB, localXB, placeY, localZB,
-                                 block::BED_BLOCK, bedMeta & 0x07);            // foot
-        mcp_chunk_set_block_full(chHead, headX & 15, placeY, headZ & 15,
-                                 block::BED_BLOCK, (uint8_t)((bedMeta & 0x07) | 0x08)); // head
+        mcp_chunk_set_block_full(chB, localXB, placeY, localZB, block::BED_BLOCK,
+                                 bedMeta & 0x07); // foot
+        mcp_chunk_set_block_full(chHead, headX & 15, placeY, headZ & 15, block::BED_BLOCK,
+                                 (uint8_t)((bedMeta & 0x07) | 0x08)); // head
         chB->dirty = true;
         chHead->dirty = true;
 
-        broadcastBlockChange(srv_, lvl, placeX, placeY, placeZ,
-                             block::BED_BLOCK, bedMeta & 0x07);
-        broadcastBlockChange(srv_, lvl, headX, placeY, headZ,
-                             block::BED_BLOCK, (uint8_t)((bedMeta & 0x07) | 0x08));
+        broadcastBlockChange(srv_, lvl, placeX, placeY, placeZ, block::BED_BLOCK, bedMeta & 0x07);
+        broadcastBlockChange(srv_, lvl, headX, placeY, headZ, block::BED_BLOCK,
+                             (uint8_t)((bedMeta & 0x07) | 0x08));
 
         // Place sound — same EVENT_SOUND_BLOCK_PLACE the generic path
         // and the door branch send.
@@ -1050,9 +1129,12 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
             snd->data = (int32_t)block::BED_BLOCK;
             int32_t scx = placeX >> 4, scz = placeZ >> 4;
             for (auto& other : srv_->playersSnapshot()) {
-                if (!other) continue;
-                if (other->getWorld() != lvl) continue;
-                if (!other->canSeeBlock(scx, scz)) continue;
+                if (!other)
+                    continue;
+                if (other->getWorld() != lvl)
+                    continue;
+                if (!other->canSeeBlock(scx, scz))
+                    continue;
                 other->sendPacket(snd);
             }
         }
@@ -1064,8 +1146,12 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
             int held = inv_->heldSlot();
             auto cur = inv_->getItem(held);
             if (!cur.isEmpty()) {
-                if (cur.count > 1) { cur.count -= 1; inv_->setItem(held, cur); }
-                else { inv_->clear(held); }
+                if (cur.count > 1) {
+                    cur.count -= 1;
+                    inv_->setItem(held, cur);
+                } else {
+                    inv_->clear(held);
+                }
             }
         }
         return;
@@ -1083,14 +1169,17 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         // apuntar above/below, not only to the 4 direcciones
         // horizontales — just like vanilla actual: mirar claramente hacia
         // above or below when placing it orienta verticalmente).
-        uint8_t pistonId = (heldItemId == item::STICKY_PISTON) ? block::STICKY_PISTON : block::PISTON_ID;
+        uint8_t pistonId =
+            (heldItemId == item::STICKY_PISTON) ? block::STICKY_PISTON : block::PISTON_ID;
 
         int32_t cxP = placeX >> 4, czP = placeZ >> 4;
         mcp_chunk_t* chP = lvl->chunks().getChunkIfLoaded(cxP, czP);
-        if (!chP) return;
+        if (!chP)
+            return;
         int localXP = placeX & 15, localZP = placeZ & 15;
         uint8_t existingP = mcp_chunk_get_block_id(chP, localXP, placeY, localZP);
-        if (existingP != 0) return;
+        if (existingP != 0)
+            return;
 
         float pitchDeg = pitch();
         uint8_t pistonFacing;
@@ -1102,8 +1191,8 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
             // Tabla vanilla Nukkit (pistón): {3,4,2,5} about the same
             // cuadrante yaw→{S,W,N,E} — BlockOrientation.h (before era a
             // tabla local duplicada with the same valores).
-            pistonFacing = block::BlockOrientation::pistonMeta(
-                block::BlockOrientation::quadrant(yaw()));
+            pistonFacing =
+                block::BlockOrientation::pistonMeta(block::BlockOrientation::quadrant(yaw()));
         }
 
         mcp_chunk_set_block_full(chP, localXP, placeY, localZP, pistonId, pistonFacing);
@@ -1115,8 +1204,12 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
             int held = inv_->heldSlot();
             auto cur = inv_->getItem(held);
             if (!cur.isEmpty()) {
-                if (cur.count > 1) { cur.count -= 1; inv_->setItem(held, cur); }
-                else { inv_->clear(held); }
+                if (cur.count > 1) {
+                    cur.count -= 1;
+                    inv_->setItem(held, cur);
+                } else {
+                    inv_->clear(held);
+                }
             }
         }
         return;
@@ -1128,32 +1221,33 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         //   face 0 (cara of below) → not is can place;
         //   face 1 (cara of above) → sign of pie, meta = rotación yaw;
         //   faces 2..5 (lateral)    → sign of wall, meta = cara clicked.
-        if (face == 0) return;
+        if (face == 0)
+            return;
         if (face == 1) {
-            placedBlockId   = block::SIGN_POST;   // 63
-            placedBlockData = (uint8_t)(
-                ((int)std::floor((yaw() + 180.0f) * 16.0f / 360.0f + 0.5f)) & 0x0F);
+            placedBlockId = block::SIGN_POST; // 63
+            placedBlockData =
+                (uint8_t)(((int)std::floor((yaw() + 180.0f) * 16.0f / 360.0f + 0.5f)) & 0x0F);
         } else {
-            placedBlockId   = block::WALL_SIGN;   // 68
+            placedBlockId = block::WALL_SIGN; // 68
             // BlockSignPost.place uses meta = cara clicked (2..5), igual
             // that the escalera of mano — ladderMeta it returns tal which.
             placedBlockData = block::BlockOrientation::ladderMeta(face);
         }
-        consumeItem = !(cfg_.gamemode & 1);  // survival only
+        consumeItem = !(cfg_.gamemode & 1); // survival only
     } else if (heldItemId >= 1 && heldItemId <= 255) {
         // Block item — place it directly. Base data = low 4 bits of
         // heldDamage; above is applies the orientación vanilla
         // (computeVanillaPlacementMeta: escaleras hacia the player,
         // furnace/chest/dispenser of cara, troncos by axis, etc.).
-        placedBlockId   = static_cast<uint8_t>(heldItemId);
+        placedBlockId = static_cast<uint8_t>(heldItemId);
         placedBlockData = computeVanillaPlacementMeta(
             (uint8_t)heldItemId, (uint8_t)(heldDamage & 0x0F), face, yaw(), fy);
-        consumeItem     = !(cfg_.gamemode & 1);  // survival only
+        consumeItem = !(cfg_.gamemode & 1); // survival only
     } else if (heldItemId == 331) {
         // Redstone dust item -> Redstone Wire block (55).
-        placedBlockId   = 55;
+        placedBlockId = 55;
         placedBlockData = 0;
-        consumeItem     = !(cfg_.gamemode & 1);
+        consumeItem = !(cfg_.gamemode & 1);
     } else if (heldItemId == 325) {
         // Bucket (empty) — not placement. Rejection resync keeps the
         // client honest (Infinity runs sendBlocks on this same path).
@@ -1168,8 +1262,8 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         // result but with a log much less util.
         if (srv_ && srv_->advancedLog()) {
             utils::MainLogger::get().info("[SNEAK] " + cfg_.username +
-                " tried to use item id=" + std::to_string(heldItemId) +
-                " while crouching — blocked (vanilla)");
+                                          " tried to use item id=" + std::to_string(heldItemId) +
+                                          " while crouching — blocked (vanilla)");
         }
         resyncUseTarget(this, lvl, x, y, z, face);
         return;
@@ -1178,16 +1272,16 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         // it as water that spreads. Using WATER (id=9) causes the client
         // to immediately replace it with to "floating lever" placeholder
         // because id=9 is to source-only block that needs adjacent flow.
-        placedBlockId  = 8;
+        placedBlockId = 8;
         placedBlockData = 0;
-        consumeItem     = !(cfg_.gamemode & 1);
-        skipPlaceSound  = true;
+        consumeItem = !(cfg_.gamemode & 1);
+        skipPlaceSound = true;
     } else if (heldItemId == 327) {
         // Lava bucket → place FLOWING_LAVA (id=10).
-        placedBlockId  = 10;
+        placedBlockId = 10;
         placedBlockData = 0;
-        consumeItem     = !(cfg_.gamemode & 1);
-        skipPlaceSound  = true;
+        consumeItem = !(cfg_.gamemode & 1);
+        skipPlaceSound = true;
     } else if (heldItemId == 259 && !sneakLocked) {
         // Flint and steel — delegate all the logic to ItemFlintSteel::onActivate().
         // Sneaking is handled by the sneakLocked branch above, which returns
@@ -1195,18 +1289,18 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         // Handles: solid-block check, Nether portal frame detection and
         // lighting (Infinity/PMMP algorithm), fire placement, first fire
         // tick scheduling and durability.
-        item::ItemFlintSteel::onActivate(lvl, this,
-            placeX, placeY, placeZ,  // air cell in front of the clicked face
-            x, y, z,                 // clicked block (the actual target)
-            face);
-        return;  // onActivate() already did the setBlock + broadcast
+        item::ItemFlintSteel::onActivate(lvl, this, placeX, placeY,
+                                         placeZ,  // air cell in front of the clicked face
+                                         x, y, z, // clicked block (the actual target)
+                                         face);
+        return; // onActivate() already did the setBlock + broadcast
     } else {
         // Other item (food, tool, etc.) — PMMP would call onItemUse; we not-op.
         // Rejection resync (Infinity sendBlocks on every failed use).
         resyncUseTarget(this, lvl, x, y, z, face);
         if (srv_ && srv_->advancedLog()) {
-            utils::MainLogger::get().info("[BLOCK] " + cfg_.username +
-                " used non-block item id=" + std::to_string(heldItemId) + " — no placement");
+            utils::MainLogger::get().info("[BLOCK] " + cfg_.username + " used non-block item id=" +
+                                          std::to_string(heldItemId) + " — no placement");
         }
         return;
     }
@@ -1225,8 +1319,8 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     mcp_chunk_t* ch = lvl->chunks().getChunkIfLoaded(cx, cz);
     if (!ch) {
         if (srv_ && srv_->advancedLog()) {
-            utils::MainLogger::get().info("[BLOCK] " + cfg_.username +
-                " tried to place block in unloaded chunk (" +
+            utils::MainLogger::get().info(
+                "[BLOCK] " + cfg_.username + " tried to place block in unloaded chunk (" +
                 std::to_string(cx) + "," + std::to_string(cz) + ") — ignored");
         }
         return;
@@ -1258,7 +1352,8 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         auto ev = event::EventManager::get().fire<event::block::BlockPlaceEvent>(
             this, math::Vector3{(double)placeX, (double)placeY, (double)placeZ},
             (int)placedBlockId);
-        if (ev.isCancelled()) return;
+        if (ev.isCancelled())
+            return;
     }
 
     // Set the block in the chunk.
@@ -1321,14 +1416,19 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     int placeInView = 0, placeSent = 0;
     if (srv_) {
         for (auto& other : srv_->playersSnapshot()) {
-            if (!other) continue;
-            if (other->getWorld() != getWorld()) continue;   // same world
-            if (!other->canSeeBlock(pk_cx, pk_cz)) continue;
+            if (!other)
+                continue;
+            if (other->getWorld() != getWorld())
+                continue; // same world
+            if (!other->canSeeBlock(pk_cx, pk_cz))
+                continue;
             ++placeInView;
-            if (!other->spawned()) continue;
+            if (!other->spawned())
+                continue;
             other->sendPacket(ubp);
             // Skip the place sound for fire/water/lava (PMMP behaviour).
-            if (!skipPlaceSound) other->sendPacket(sndEv);
+            if (!skipPlaceSound)
+                other->sendPacket(sndEv);
             ++placeSent;
         }
     }
@@ -1338,7 +1438,8 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     // with the block difundido, so that the client tenga the entity.
     if (placedBlockId == block::SIGN_POST || placedBlockId == block::WALL_SIGN) {
         auto t = lvl->getTile(placeX, placeY, placeZ);
-        if (t) sendBlockEntityData(placeX, placeY, placeZ, *t, nullptr);
+        if (t)
+            sendBlockEntityData(placeX, placeY, placeZ, *t, nullptr);
     }
 
     // Falling blocks (Infinity Fallable::place → setBlock → block
@@ -1354,16 +1455,16 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     lvl->checkFallingSupport(placeX, placeY, placeZ);
 
     if (srv_ && srv_->advancedLog()) {
-        utils::MainLogger::get().info("[BLOCK] " + cfg_.username + " placed block at " +
-            std::to_string(placeX) + "," + std::to_string(placeY) + "," + std::to_string(placeZ) +
+        utils::MainLogger::get().info(
+            "[BLOCK] " + cfg_.username + " placed block at " + std::to_string(placeX) + "," +
+            std::to_string(placeY) + "," + std::to_string(placeZ) +
             " (id=" + std::to_string(placedBlockId) + " data=" + std::to_string(placedBlockData) +
             " fromItem=" + std::to_string(heldItemId) + ")");
         // diagnostic of the bug "place/remove blocks not is ve in
         // multiplayer" — ver the comment equivalente in handleBlockBreak.
-        utils::MainLogger::get().info("[BLOCK-SYNC] place at chunk " +
-            std::to_string(pk_cx) + "," + std::to_string(pk_cz) +
-            " -> in_view=" + std::to_string(placeInView) +
-            " sent=" + std::to_string(placeSent));
+        utils::MainLogger::get().info(
+            "[BLOCK-SYNC] place at chunk " + std::to_string(pk_cx) + "," + std::to_string(pk_cz) +
+            " -> in_view=" + std::to_string(placeInView) + " sent=" + std::to_string(placeSent));
     }
 }
 
@@ -1374,37 +1475,64 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
 // ============================================================
 static std::pair<uint16_t, uint16_t> lookupBlockDrop(uint8_t blockId, uint8_t blockData) {
     switch (blockId) {
-        case 1:  return {4,   blockData & 0x07};   // Stone -> Cobblestone
-        case 2:  return {3,   0};                   // Grass -> Dirt
-        case 15: return {0,   0};                   // Iron Ore -> not drop (smelt)
-        case 16: return {263, 0};                   // Coal Ore -> Coal
-        case 14: return {0,   0};                   // Gold Ore -> not drop (smelt)
-        case 21: return {351, 4};                   // Lapis Ore -> Lapis Lazuli dye
-        case 56: return {264, 0};                   // Diamond Ore -> Diamond
-        case 73: return {331, 0};                   // Redstone Ore -> Redstone
-        case 55: return {331, 0};                   // Redstone Wire -> Redstone dust
-        case 76: return {75,  0};                   // Redstone Torch (ON) -> OFF item
-        case 124: return {123, 0};                  // Redstone Lamp (ON) -> OFF item
-        case 20: return {0,   0};                   // Glass -> not drop
-        case 79: return {0,   0};                   // Ice -> not drop
-        case 89: return {348, 0};                   // Glowstone -> Glowstone Dust
-        case 18: return {0,   0};                   // Leaves -> not drop (chance-based)
-        case 7:  return {0,   0};                   // Bedrock -> unbreakable
-        case 46: return {0,   0};                   // TNT -> not drop
-        case 51: return {0,   0};                   // FIRE -> not drop (PMMP Fire::getDrops() = [])
-        case 54: return {54,  0};                   // Chest -> chest item
-        case 61: return {61,  0};                   // furnace -> furnace item
-        case 62: return {61,  0};                   // Burning furnace -> furnace item
-        case 63: return {323, 0};                   // Standing Sign -> sign item (Genisys SignPost::getDrops)
-        case 68: return {323, 0};                   // Wall Sign -> sign item (Genisys WallSign::getDrops)
-        // Two-half blocks drop their ITEM, never the raw block id — the
-        // client cannot use "block 64/71/26" as an inventory item
-        // (handleBlockBreak routes doors/beds through forcedDropId first;
-        // these entries are the safety net for any other path).
-        case 64: return {324, 0};                   // Wooden Door block -> door item
-        case 71: return {330, 0};                   // Iron Door block -> iron door item
-        case 26: return {355, 0};                   // Bed block -> bed item
-        default: return {blockId, blockData};       // Default: drop self
+    case 1:
+        return {4, blockData & 0x07}; // Stone -> Cobblestone
+    case 2:
+        return {3, 0}; // Grass -> Dirt
+    case 15:
+        return {0, 0}; // Iron Ore -> not drop (smelt)
+    case 16:
+        return {263, 0}; // Coal Ore -> Coal
+    case 14:
+        return {0, 0}; // Gold Ore -> not drop (smelt)
+    case 21:
+        return {351, 4}; // Lapis Ore -> Lapis Lazuli dye
+    case 56:
+        return {264, 0}; // Diamond Ore -> Diamond
+    case 73:
+        return {331, 0}; // Redstone Ore -> Redstone
+    case 55:
+        return {331, 0}; // Redstone Wire -> Redstone dust
+    case 76:
+        return {75, 0}; // Redstone Torch (ON) -> OFF item
+    case 124:
+        return {123, 0}; // Redstone Lamp (ON) -> OFF item
+    case 20:
+        return {0, 0}; // Glass -> not drop
+    case 79:
+        return {0, 0}; // Ice -> not drop
+    case 89:
+        return {348, 0}; // Glowstone -> Glowstone Dust
+    case 18:
+        return {0, 0}; // Leaves -> not drop (chance-based)
+    case 7:
+        return {0, 0}; // Bedrock -> unbreakable
+    case 46:
+        return {0, 0}; // TNT -> not drop
+    case 51:
+        return {0, 0}; // FIRE -> not drop (PMMP Fire::getDrops() = [])
+    case 54:
+        return {54, 0}; // Chest -> chest item
+    case 61:
+        return {61, 0}; // furnace -> furnace item
+    case 62:
+        return {61, 0}; // Burning furnace -> furnace item
+    case 63:
+        return {323, 0}; // Standing Sign -> sign item (Genisys SignPost::getDrops)
+    case 68:
+        return {323, 0}; // Wall Sign -> sign item (Genisys WallSign::getDrops)
+    // Two-half blocks drop their ITEM, never the raw block id — the
+    // client cannot use "block 64/71/26" as an inventory item
+    // (handleBlockBreak routes doors/beds through forcedDropId first;
+    // these entries are the safety net for any other path).
+    case 64:
+        return {324, 0}; // Wooden Door block -> door item
+    case 71:
+        return {330, 0}; // Iron Door block -> iron door item
+    case 26:
+        return {355, 0}; // Bed block -> bed item
+    default:
+        return {blockId, blockData}; // Default: drop self
     }
 }
 
@@ -1412,15 +1540,17 @@ bool Player::canInteract(math::Vector3 pos, double maxDistance) const {
     double dx = pos.x - pos_.x;
     double dy = pos.y - pos_.y;
     double dz = pos.z - pos_.z;
-    return (dx*dx + dy*dy + dz*dz) <= maxDistance * maxDistance;
+    return (dx * dx + dy * dy + dz * dz) <= maxDistance * maxDistance;
 }
 std::vector<item::ItemStack> Player::getDrops() const {
     std::vector<item::ItemStack> drops;
     if (inv_) {
         for (int i = 0; i < inventory::PlayerInventory::SIZE; ++i) {
             auto it = inv_->getItem(i);
-            if (!it.isEmpty()) drops.push_back(it);
+            if (!it.isEmpty())
+                drops.push_back(it);
         }
     }
     return drops;
-}} // namespace cursestone
+}
+} // namespace cursestone

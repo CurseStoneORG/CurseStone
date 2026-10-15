@@ -36,8 +36,10 @@ void SetSpawnPositionPacket::encode(std::vector<uint8_t>& out) const {
 
 bool SetSpawnPositionPacket::decode(const uint8_t* data, size_t len) {
     PacketReader r(data, len);
-    if (!r.readI32BE(x)) return false;
-    if (!r.readI32BE(y)) return false;
+    if (!r.readI32BE(x))
+        return false;
+    if (!r.readI32BE(y))
+        return false;
     return r.readI32BE(z);
 }
 

@@ -43,7 +43,7 @@
 namespace cursestone::plugin {
 
 class PluginManager {
-public:
+  public:
     static PluginManager& get();
 
     /**
@@ -66,7 +66,12 @@ public:
     // disables all (is flame when shutting down the server).
     void disableAll();
 
-    struct Info { std::string name; std::string author; std::string version; bool enabled; };
+    struct Info {
+        std::string name;
+        std::string author;
+        std::string version;
+        bool enabled;
+    };
     std::vector<Info> list() const;
 
     /// @brief returns the plugin with that name, or nullptr if not exists.
@@ -75,10 +80,10 @@ public:
     ///        destroys and recrea the objetos).
     LuaPlugin* find(const std::string& name) const;
 
-private:
+  private:
     PluginManager() = default;
-    std::string pluginsDir_;            // stored by loadAll() for reloadAll()
-    std::string dataRoot_;              // data_pl root, remembered for reloadAll()
+    std::string pluginsDir_; // stored by loadAll() for reloadAll()
+    std::string dataRoot_;   // data_pl root, remembered for reloadAll()
     std::vector<std::unique_ptr<LuaPlugin>> plugins_;
 
     // without onDisable (already it hizo disableAll()): quita the commands of the

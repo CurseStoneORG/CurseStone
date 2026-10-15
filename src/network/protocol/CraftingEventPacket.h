@@ -46,8 +46,10 @@
 namespace cursestone::network::protocol {
 
 class CraftingEventPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return CRAFTING_EVENT_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return CRAFTING_EVENT_PACKET;
+    }
 
     static constexpr uint8_t CRAFTING_SMALL = 0;
 
@@ -60,7 +62,7 @@ public:
     std::vector<cursestone::item::ItemStack> input;
     std::vector<cursestone::item::ItemStack> output;
 
-    void encode(std::vector<uint8_t>& out) const override;   // no-op (PMMP)
+    void encode(std::vector<uint8_t>& out) const override; // no-op (PMMP)
     bool decode(const uint8_t* data, size_t len) override;
 };
 

@@ -25,9 +25,13 @@
 #include <string>
 namespace cursestone::entity {
 class EntityCreeper : public Monster {
-public:
+  public:
     using Monster::Monster;
-    EntityCreeper(int64_t rid, std::shared_ptr<World> l) : Monster(rid, std::move(l)) { setNetworkId(33); }
-    std::string name() const { return "Creeper"; }
+    EntityCreeper(int64_t rid, std::shared_ptr<World> l) : Monster(rid, std::move(l)) {
+        setNetworkId(33);
+    }
+    std::string name() const {
+        return "Creeper";
+    }
 };
 } // namespace

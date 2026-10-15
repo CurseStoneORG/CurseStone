@@ -25,19 +25,25 @@
 #pragma once
 #include "InventoryEvent.h"
 #include "../Cancellable.h"
-namespace cursestone::entity { class EntityArrow; }
+namespace cursestone::entity {
+class EntityArrow;
+}
 
 namespace cursestone::event::inventory {
 
 class InventoryPickupArrowEvent : public InventoryEvent, public Cancellable {
-public:
+  public:
     cursestone::entity::EntityArrow* arrow;
     InventoryPickupArrowEvent(std::shared_ptr<cursestone::inventory::Inventory> inv,
-                                cursestone::entity::EntityArrow* a)
-        : InventoryEvent(std::move(inv)), arrow(a) {}
-    cursestone::entity::EntityArrow* getArrow() { return arrow; }
+                              cursestone::entity::EntityArrow* a)
+        : InventoryEvent(std::move(inv)), arrow(a) {
+    }
+    cursestone::entity::EntityArrow* getArrow() {
+        return arrow;
+    }
     const std::string& eventName() const override {
-        static std::string n = "InventoryPickupArrowEvent"; return n;
+        static std::string n = "InventoryPickupArrowEvent";
+        return n;
     }
 };
 

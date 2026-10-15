@@ -66,7 +66,7 @@ namespace cursestone::world {
 class World;
 
 class LightEngine {
-public:
+  public:
     // Light falls off after 15 steps, so a region 15 blocks wider than the
     // change on every side can never miss a source further away: the
     // recomputation is self-contained.
@@ -79,7 +79,8 @@ public:
     // never stalls the main loop in one giant burst.
     static constexpr int32_t kPendingBudget = 2;
 
-    explicit LightEngine(World& lvl) : lvl_(lvl) {}
+    explicit LightEngine(World& lvl) : lvl_(lvl) {
+    }
 
     // Recompute both layers in a cube around a block change.
     void relightAround(int32_t x, int32_t y, int32_t z, int32_t radius);
@@ -98,7 +99,7 @@ public:
 
     bool hasPending() const;
 
-private:
+  private:
     struct Cell {
         int32_t x, y, z;
     };
@@ -108,8 +109,7 @@ private:
     std::deque<std::pair<int32_t, int32_t>> pending_;
 
     // Runs one full region recomputation for both layers.
-    void relight(int32_t x0, int32_t y0, int32_t z0,
-                 int32_t x1, int32_t y1, int32_t z1);
+    void relight(int32_t x0, int32_t y0, int32_t z0, int32_t x1, int32_t y1, int32_t z1);
 };
 
 } // namespace cursestone::world

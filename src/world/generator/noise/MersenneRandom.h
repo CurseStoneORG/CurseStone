@@ -42,8 +42,10 @@
 namespace cursestone::world::generator {
 
 class MersenneRandom {
-public:
-    explicit MersenneRandom(long seed) { setSeed(seed); }
+  public:
+    explicit MersenneRandom(long seed) {
+        setSeed(seed);
+    }
 
     void setSeed(long seed) {
         _seed = seed;
@@ -52,15 +54,31 @@ public:
         nextNextGaussian = 0;
         init_genrand(seed);
     }
-    long getSeed() { return _seed; }
+    long getSeed() {
+        return _seed;
+    }
 
-    bool nextBoolean() { return (genrand_int32() & 0x8000000) > 0; }
-    float nextFloat() { return (float)genrand_real2(); }
-    double nextDouble() { return genrand_real2(); }
-    int nextInt() { return (int)(genrand_int32() >> 1); }
-    int nextInt(int n) { return genrand_int32() % n; }
-    int nextLong() { return (int)(genrand_int32() >> 1); }
-    int nextLong(int n) { return genrand_int32() % n; }
+    bool nextBoolean() {
+        return (genrand_int32() & 0x8000000) > 0;
+    }
+    float nextFloat() {
+        return (float)genrand_real2();
+    }
+    double nextDouble() {
+        return genrand_real2();
+    }
+    int nextInt() {
+        return (int)(genrand_int32() >> 1);
+    }
+    int nextInt(int n) {
+        return genrand_int32() % n;
+    }
+    int nextLong() {
+        return (int)(genrand_int32() >> 1);
+    }
+    int nextLong(int n) {
+        return genrand_int32() % n;
+    }
 
     float nextGaussian() {
         if (haveNextNextGaussian) {
@@ -69,8 +87,8 @@ public:
         } else {
             float v1, v2, s;
             do {
-                v1 = 2 * nextFloat() - 1;   // between -1.0 and 1.0
-                v2 = 2 * nextFloat() - 1;   // between -1.0 and 1.0
+                v1 = 2 * nextFloat() - 1; // between -1.0 and 1.0
+                v2 = 2 * nextFloat() - 1; // between -1.0 and 1.0
                 s = v1 * v1 + v2 * v2;
             } while (s >= 1 || s == 0);
             float multiplier = std::sqrt(-2 * std::log(s) / s);
@@ -80,7 +98,7 @@ public:
         }
     }
 
-private:
+  private:
     long _seed;
 
     /* Period parameters */
@@ -100,8 +118,7 @@ private:
     void init_genrand(unsigned long s) {
         _mt[0] = s & 0xffffffffUL;
         for (_mti = 1; _mti < N; _mti++) {
-            _mt[_mti] =
-                (1812433253UL * (_mt[_mti - 1] ^ (_mt[_mti - 1] >> 30)) + _mti);
+            _mt[_mti] = (1812433253UL * (_mt[_mti - 1] ^ (_mt[_mti - 1] >> 30)) + _mti);
             /* See Knuth TAOCP Vol2. 3rd Ed. P.106 for multiplier. */
             /* In the previous versions, MSBs of the seed affect   */
             /* only MSBs of the array _mt[].                        */
@@ -118,22 +135,31 @@ private:
     void init_by_array(unsigned long init_key[], int key_length) {
         int i, j, k;
         init_genrand(19650218UL);
-        i = 1; j = 0;
+        i = 1;
+        j = 0;
         k = (N > key_length ? N : key_length);
         for (; k; k--) {
-            _mt[i] = (_mt[i] ^ ((_mt[i - 1] ^ (_mt[i - 1] >> 30)) * 1664525UL))
-                     + init_key[j] + j; /* non linear */
-            _mt[i] &= 0xffffffffUL;     /* for WORDSIZE > 32 machines */
-            i++; j++;
-            if (i >= N) { _mt[0] = _mt[N - 1]; i = 1; }
-            if (j >= key_length) j = 0;
-        }
-        for (k = N - 1; k; k--) {
-            _mt[i] = (_mt[i] ^ ((_mt[i - 1] ^ (_mt[i - 1] >> 30)) * 1566083941UL))
-                     - i; /* non linear */
+            _mt[i] = (_mt[i] ^ ((_mt[i - 1] ^ (_mt[i - 1] >> 30)) * 1664525UL)) + init_key[j] +
+                     j;             /* non linear */
             _mt[i] &= 0xffffffffUL; /* for WORDSIZE > 32 machines */
             i++;
-            if (i >= N) { _mt[0] = _mt[N - 1]; i = 1; }
+            j++;
+            if (i >= N) {
+                _mt[0] = _mt[N - 1];
+                i = 1;
+            }
+            if (j >= key_length)
+                j = 0;
+        }
+        for (k = N - 1; k; k--) {
+            _mt[i] =
+                (_mt[i] ^ ((_mt[i - 1] ^ (_mt[i - 1] >> 30)) * 1566083941UL)) - i; /* non linear */
+            _mt[i] &= 0xffffffffUL; /* for WORDSIZE > 32 machines */
+            i++;
+            if (i >= N) {
+                _mt[0] = _mt[N - 1];
+                i = 1;
+            }
         }
 
         _mt[0] = 0x80000000UL; /* MSB is 1; assuring non-zero initial array */
@@ -177,7 +203,9 @@ private:
     }
 
     /* generates a random number on [0,0x7fffffff]-interval */
-    long genrand_int31(void) { return (long)(genrand_int32() >> 1); }
+    long genrand_int31(void) {
+        return (long)(genrand_int32() >> 1);
+    }
 
     /* generates a random number on [0,1]-real-interval */
     double genrand_real1(void) {
@@ -208,13 +236,13 @@ private:
     //
     void rrDiff(float& x) {
         unsigned long u = genrand_int32();
-        const float xx0 = (u & 0xffff) / 65536.0f;  // 2 x 16 bits
+        const float xx0 = (u & 0xffff) / 65536.0f; // 2 x 16 bits
         const float xx1 = ((u >> 16) & 0xffff) / 65536.0f;
         x = xx0 - xx1;
     }
     void rrDiff(float& x, float& y) {
         unsigned long u = genrand_int32();
-        const float xx0 = ((u) & 0xff) / 256.0f;  // 4 x 8 bits
+        const float xx0 = ((u) & 0xff) / 256.0f; // 4 x 8 bits
         const float xx1 = ((u >> 8) & 0xff) / 256.0f;
         const float yy0 = ((u >> 16) & 0xff) / 256.0f;
         const float yy1 = ((u >> 24) & 0xff) / 256.0f;
@@ -223,7 +251,7 @@ private:
     }
     void rrDiff(float& x, float& y, float& z) {
         unsigned long u = genrand_int32();
-        const float xx0 = ((u) & 0x1f) / 32.0f;  // 6 x 5 bits
+        const float xx0 = ((u) & 0x1f) / 32.0f; // 6 x 5 bits
         const float xx1 = ((u >> 5) & 0x1f) / 32.0f;
         const float yy0 = ((u >> 10) & 0x1f) / 32.0f;
         const float yy1 = ((u >> 15) & 0x1f) / 32.0f;

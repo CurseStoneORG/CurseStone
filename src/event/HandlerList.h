@@ -64,13 +64,12 @@
 namespace cursestone::event {
 
 class HandlerList {
-public:
+  public:
     // Registra `callback` en la prioridad dada. Devuelve un id de
     // registro utilizable con unregister(). Devuelve 0 si callback
     // está vacío (nada que registrar).
-    uint64_t registerListener(void* owner, EventPriority priority,
-                               bool ignoreCancelled,
-                               std::function<void(Event&)> callback);
+    uint64_t registerListener(void* owner, EventPriority priority, bool ignoreCancelled,
+                              std::function<void(Event&)> callback);
 
     // Elimina un único registro por id. true si se encontró.
     bool unregister(uint64_t id);
@@ -90,7 +89,7 @@ public:
 
     size_t size() const;
 
-private:
+  private:
     mutable std::mutex mtx_;
     std::array<std::vector<RegisteredListener>, kEventPriorityCount> slots_;
     uint64_t next_id_ = 1;

@@ -24,13 +24,15 @@
 #include "utils/Utils.hpp"
 namespace cursestone {
 bool SimpleCommandMap::registerCommand(std::unique_ptr<Command> cmd) {
-    if (!cmd) return false;
+    if (!cmd)
+        return false;
     std::string n = cmd->name();
     auto [it, ok] = commands_.try_emplace(std::move(n), std::move(cmd));
     return ok;
 }
 bool SimpleCommandMap::overrideCommand(std::unique_ptr<Command> cmd) {
-    if (!cmd) return false;
+    if (!cmd)
+        return false;
     std::string n = cmd->name();
     auto it = commands_.find(n);
     if (it == commands_.end()) {
@@ -64,7 +66,8 @@ bool SimpleCommandMap::dispatch(CommandSender* sender, const std::string& cmd_li
     // consola, jugadores, RCON y cualquier comando que llame a dispatch().
     std::string cmd_line = cmd_line_arg;
     size_t start = cmd_line.find_first_not_of(" \t/");
-    if (start == std::string::npos) return false;  // linea vacia o solo "///"
+    if (start == std::string::npos)
+        return false; // linea vacia o solo "///"
     cmd_line.erase(0, start);
 
     // Split on first space: name + args
@@ -107,7 +110,8 @@ Command* SimpleCommandMap::getCommand(const std::string& name) const {
 std::vector<Command*> SimpleCommandMap::allCommands() const {
     std::vector<Command*> out;
     out.reserve(commands_.size());
-    for (const auto& [n, cmd] : commands_) out.push_back(cmd.get());
+    for (const auto& [n, cmd] : commands_)
+        out.push_back(cmd.get());
     return out;
 }
 size_t SimpleCommandMap::unregisterByOwner(void* owner) {

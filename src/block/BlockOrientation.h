@@ -58,12 +58,15 @@ struct BlockOrientation {
     // yaw (grados, [0,360)) → cuadrante 0=sur,1=oeste,2=norte,3=este.
     static uint8_t quadrant(float yawDeg) {
         yawDeg = yawDeg - 360.0f * (int)(yawDeg / 360.0f);
-        if (yawDeg < 0.0f) yawDeg += 360.0f;
+        if (yawDeg < 0.0f)
+            yawDeg += 360.0f;
         return (uint8_t)(((int)((yawDeg + 45.0f) / 90.0f)) & 0x03);
     }
 
     // Cuadrante del jugador (hacia donde mira).
-    static uint8_t yawToMeta(float yaw)       { return quadrant(yaw); }
+    static uint8_t yawToMeta(float yaw) {
+        return quadrant(yaw);
+    }
 
     // Cuadrante OPUESTO (calabaza, repeater: miran hacia el jugador).
     static uint8_t yawToMetaOpposite(float yaw) {
@@ -150,8 +153,9 @@ struct BlockOrientation {
     static uint8_t leverMeta(uint8_t face, bool topHalf) {
         static const uint8_t side[6] = {0, 5, 3, 2, 1, 4};
         uint8_t m = side[(face < 6) ? face : 0];
-        if (face == 1) return 5;                    // click en cara superior
-        if ((face == 2 || face == 3) && topHalf)    // mitad superior, caras N/S
+        if (face == 1)
+            return 5;                            // click en cara superior
+        if ((face == 2 || face == 3) && topHalf) // mitad superior, caras N/S
             m = (m == 3) ? 6 : 7;
         return m;
     }

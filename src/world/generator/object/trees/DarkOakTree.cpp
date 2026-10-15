@@ -31,9 +31,11 @@ namespace cursestone::world::generator::object::trees {
 using cursestone::block::BlockId;
 
 void DarkOakTree::init(MersenneRandom& rng) {
-    height_ = (int)(rng.nextInt(2) + rng.nextInt(3)) + 6;   // 6..10 (reference)
-    logId_ = 162;  logData_ = 1;   // WOOD_2, dark oak
-    leafId_ = 161; leafData_ = 1;  // LEAVES_2, dark oak
+    height_ = (int)(rng.nextInt(2) + rng.nextInt(3)) + 6; // 6..10 (reference)
+    logId_ = 162;
+    logData_ = 1; // WOOD_2, dark oak
+    leafId_ = 161;
+    leafData_ = 1; // LEAVES_2, dark oak
 }
 
 bool DarkOakTree::canPlaceOn(uint8_t soil) const {
@@ -72,17 +74,22 @@ void DarkOakTree::canopy(mcp_chunk_t* c, int cx, int trunkTopY, int cz, Mersenne
     }
 }
 
-bool DarkOakTree::generate(mcp_chunk_t* c, int sourceX, int sourceY,
-                           int sourceZ, uint8_t soilId, MersenneRandom& rng) {
+bool DarkOakTree::generate(mcp_chunk_t* c, int sourceX, int sourceY, int sourceZ, uint8_t soilId,
+                           MersenneRandom& rng) {
     init(rng);
-    if (sourceY < 2 || sourceY > 124) return false;
-    if (!canPlaceOn(soilId)) return false;
+    if (sourceY < 2 || sourceY > 124)
+        return false;
+    if (!canPlaceOn(soilId))
+        return false;
 
     float d = rng.nextFloat() * (float)(M_PI * 2.0);
     int dx = (int)(std::cos(d) + 1.5F) - 1;
     int dz = (int)(std::sin(d) + 1.5F) - 1;
     if (std::abs(dx) > 0 && std::abs(dz) > 0) {
-        if (rng.nextBoolean()) dx = 0; else dz = 0;
+        if (rng.nextBoolean())
+            dx = 0;
+        else
+            dz = 0;
     }
 
     int twistHeight = height_ - (int)rng.nextInt(4);
@@ -111,7 +118,8 @@ bool DarkOakTree::generate(mcp_chunk_t* c, int sourceX, int sourceY,
     for (int i = 0; i <= 1; ++i) {
         for (int j = 0; j <= 1; ++j) {
             int bx = sourceX + i, bz = sourceZ + j;
-            if (!inXZ(bx) || !inXZ(bz)) continue;
+            if (!inXZ(bx) || !inXZ(bz))
+                continue;
             uint8_t b = mcp_chunk_get_block_id(c, bx, sourceY - 1, bz);
             if (b == (uint8_t)BlockId::GRASS || b == (uint8_t)BlockId::DIRT)
                 setForced(c, bx, sourceY - 1, bz, (uint8_t)BlockId::DIRT, 0);

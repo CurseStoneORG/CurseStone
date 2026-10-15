@@ -38,7 +38,7 @@
 namespace cursestone::network::protocol {
 
 class PacketPool {
-public:
+  public:
     using Factory = std::function<std::shared_ptr<DataPacket>()>;
 
     // Singleton accessor.
@@ -51,7 +51,7 @@ public:
     // Returns nullptr for unknown IDs.
     std::shared_ptr<DataPacket> create(uint8_t pid) const;
 
-private:
+  private:
     PacketPool() = default;
 };
 

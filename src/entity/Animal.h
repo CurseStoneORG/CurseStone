@@ -24,7 +24,7 @@
 #include "Creature.h"
 namespace cursestone::entity {
 class Animal : public Creature {
-public:
+  public:
     using Creature::Creature;
 };
 } // namespace

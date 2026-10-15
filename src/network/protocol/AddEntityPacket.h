@@ -37,20 +37,22 @@
 #pragma once
 
 #include "DataPacket.h"
-#include "SetEntityDataPacket.h"   // metadata Entry (same wire encoding)
+#include "SetEntityDataPacket.h" // metadata Entry (same wire encoding)
 #include <vector>
 #include <cstdint>
 
 namespace cursestone::network::protocol {
 
 class AddEntityPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return ADD_ENTITY_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return ADD_ENTITY_PACKET;
+    }
 
     // Entity type network ids (protocol 84 / Infinity).
     static constexpr int32_t TYPE_LIGHTNING = 93;
-    static constexpr int32_t TYPE_ARROW     = 80;   // Infinity Arrow::NETWORK_ID
-    static constexpr int32_t TYPE_FALLING_BLOCK = 66;  // Infinity FallingSand::NETWORK_ID
+    static constexpr int32_t TYPE_ARROW = 80;         // Infinity Arrow::NETWORK_ID
+    static constexpr int32_t TYPE_FALLING_BLOCK = 66; // Infinity FallingSand::NETWORK_ID
 
     int64_t eid = 0;
     int32_t type = 0;
@@ -58,7 +60,7 @@ public:
     float speedX = 0, speedY = 0, speedZ = 0;
     float yaw = 0, pitch = 0;
     int32_t modifiers = 0;
-    bool yawPitchScaled = true;   // Infinity multiplies both by 0.71111
+    bool yawPitchScaled = true; // Infinity multiplies both by 0.71111
     // Optional entity metadata (Infinity: `$pk->metadata =
     // $this->dataProperties`, Binary::writeMetadata wire format: one
     // key byte `(type << 5) | index`, the value, then the 0x7F

@@ -60,7 +60,8 @@ static inline double mcp_v2_dist(mcp_vector2_t a, mcp_vector2_t b) {
 }
 static inline mcp_vector2_t mcp_v2_normalize(mcp_vector2_t a) {
     double len = mcp_v2_len(a);
-    if (len > 0.0) return mcp_v2_mul(a, 1.0 / len);
+    if (len > 0.0)
+        return mcp_v2_mul(a, 1.0 / len);
     return a;
 }
 static inline bool mcp_v2_eq(mcp_vector2_t a, mcp_vector2_t b) {

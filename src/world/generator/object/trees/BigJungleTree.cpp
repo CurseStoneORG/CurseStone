@@ -38,61 +38,62 @@ constexpr double kTau = 6.283185307179586476925286766559;
 // HugeTree::getHeight() -> baseHeight + rand->nextRange(0, extraRandom - 1).
 // These are the values the reference jungle populator constructs the tree
 // with (base 15, 10 blocks of randomness), giving a 15..24 block tree.
-constexpr int kBaseHeight  = 15;
+constexpr int kBaseHeight = 15;
 constexpr int kExtraRandom = 10;
 
 } // namespace
 
 void BigJungleTree::init(MersenneRandom& rng) {
-    height_ = kBaseHeight + (int)rng.nextInt(kExtraRandom);   // 15..24
-    logId_  = (uint8_t)BlockId::LOG;
-    logData_  = 3;      // jungle wood
+    height_ = kBaseHeight + (int)rng.nextInt(kExtraRandom); // 15..24
+    logId_ = (uint8_t)BlockId::LOG;
+    logData_ = 3; // jungle wood
     leafId_ = (uint8_t)BlockId::LEAVES;
-    leafData_ = 3;      // jungle leaves
+    leafData_ = 3; // jungle leaves
 }
 
 bool BigJungleTree::canOverrideAt(mcp_chunk_t* c, int x, int y, int z) {
     // Outside the chunk there is nothing to override: the reference walks
     // absolute coordinates and the block simply lives in the neighbour.
-    if (!inXZ(x) || !inXZ(z) || !inY(y)) return true;
+    if (!inXZ(x) || !inXZ(z) || !inY(y))
+        return true;
     switch (mcp_chunk_get_block_id(c, x, y, z)) {
-        case (uint8_t)BlockId::AIR:
-        case (uint8_t)BlockId::LEAVES:
-        case (uint8_t)BlockId::LEAVES_2:
-        case (uint8_t)BlockId::LOG:
-        case (uint8_t)BlockId::WOOD_2:
-        case (uint8_t)BlockId::TALL_GRASS:
-        case (uint8_t)BlockId::DOUBLE_PLANT:
-        case (uint8_t)BlockId::DEAD_BUSH:
-        case (uint8_t)BlockId::FLOWER_YELLOW:
-        case (uint8_t)BlockId::FLOWER_RED:
-        case (uint8_t)BlockId::VINE:
-        case (uint8_t)BlockId::SNOW_LAYER:
-            return true;
-        default:
-            return false;
+    case (uint8_t)BlockId::AIR:
+    case (uint8_t)BlockId::LEAVES:
+    case (uint8_t)BlockId::LEAVES_2:
+    case (uint8_t)BlockId::LOG:
+    case (uint8_t)BlockId::WOOD_2:
+    case (uint8_t)BlockId::TALL_GRASS:
+    case (uint8_t)BlockId::DOUBLE_PLANT:
+    case (uint8_t)BlockId::DEAD_BUSH:
+    case (uint8_t)BlockId::FLOWER_YELLOW:
+    case (uint8_t)BlockId::FLOWER_RED:
+    case (uint8_t)BlockId::VINE:
+    case (uint8_t)BlockId::SNOW_LAYER:
+        return true;
+    default:
+        return false;
     }
 }
 
-void BigJungleTree::growLeavesLayer(mcp_chunk_t* c, int x, int y, int z,
-                                    int radius, MersenneRandom& rng) {
+void BigJungleTree::growLeavesLayer(mcp_chunk_t* c, int x, int y, int z, int radius,
+                                    MersenneRandom& rng) {
     for (int dx = radius; dx >= -radius; --dx) {
         for (int dz = radius; dz >= -radius; --dz) {
-            if (dx != 0 && dz != 0 && rng.nextBoolean()) continue;  // cull corner
+            if (dx != 0 && dz != 0 && rng.nextBoolean())
+                continue; // cull corner
             setForced(c, x + dx, y, z + dz, leafId_, leafData_);
         }
     }
 }
 
-void BigJungleTree::growLeavesLayerStrict(mcp_chunk_t* c, int x, int y, int z,
-                                          int radius) {
+void BigJungleTree::growLeavesLayerStrict(mcp_chunk_t* c, int x, int y, int z, int radius) {
     for (int dx = -radius; dx <= radius; ++dx)
         for (int dz = -radius; dz <= radius; ++dz)
             setForced(c, x + dx, y, z + dz, leafId_, leafData_);
 }
 
-void BigJungleTree::placeVine(mcp_chunk_t* c, MersenneRandom& rng, int x, int y,
-                              int z, uint8_t faceMask) {
+void BigJungleTree::placeVine(mcp_chunk_t* c, MersenneRandom& rng, int x, int y, int z,
+                              uint8_t faceMask) {
     // The reference draws the random number BEFORE testing the block, and
     // that order matters: it is what makes the vine pattern reproducible.
     if (rng.nextInt(3) > 0 && inXZ(x) && inXZ(z) && inY(y) &&
@@ -101,17 +102,19 @@ void BigJungleTree::placeVine(mcp_chunk_t* c, MersenneRandom& rng, int x, int y,
     }
 }
 
-bool BigJungleTree::generate(mcp_chunk_t* c, int sourceX, int sourceY,
-                             int sourceZ, uint8_t soilId, MersenneRandom& rng) {
+bool BigJungleTree::generate(mcp_chunk_t* c, int sourceX, int sourceY, int sourceZ, uint8_t soilId,
+                             MersenneRandom& rng) {
     init(rng);
 
     // ensureGrowable(): room for the whole tree plus the crown above it,
     // and ground the species accepts.
-    if (sourceY < 2 || sourceY > 124 - height_) return false;
-    if (!canPlaceOn(soilId)) return false;
+    if (sourceY < 2 || sourceY > 124 - height_)
+        return false;
+    if (!canPlaceOn(soilId))
+        return false;
 
-    const int   height = height_;
-    const int   baseY  = sourceY;
+    const int height = height_;
+    const int baseY = sourceY;
     const double baseX = (double)sourceX;
     const double baseZ = (double)sourceZ;
 
@@ -128,8 +131,7 @@ bool BigJungleTree::generate(mcp_chunk_t* c, int sourceX, int sourceY,
     // PHP's $k/$l are FLOATS and Vector3 floors them, so the branch tip and
     // its leaf cluster share the i1 == 4 value of the inner loop.
     int tipX = crownX, tipZ = crownZ;
-    for (int j = baseY + height - 2 - (int)rng.nextInt(4);
-         j > baseY + height / 2;
+    for (int j = baseY + height - 2 - (int)rng.nextInt(4); j > baseY + height / 2;
          j -= 2 + (int)rng.nextInt(4)) {
         const double f = rng.nextFloat() * kTau;
         for (int i1 = 0; i1 < 5; ++i1) {
@@ -156,8 +158,8 @@ bool BigJungleTree::generate(mcp_chunk_t* c, int sourceX, int sourceY,
         if (canOverrideAt(c, sourceX, by, sourceZ)) {
             setForced(c, sourceX, by, sourceZ, logId_, logData_);
             if (i2 > 0) {
-                placeVine(c, rng, sourceX - 1, by, sourceZ, 8);  // west
-                placeVine(c, rng, sourceX,     by, sourceZ - 1, 1); // north
+                placeVine(c, rng, sourceX - 1, by, sourceZ, 8); // west
+                placeVine(c, rng, sourceX, by, sourceZ - 1, 1); // north
             }
         }
 
@@ -166,26 +168,26 @@ bool BigJungleTree::generate(mcp_chunk_t* c, int sourceX, int sourceY,
             if (canOverrideAt(c, ex, by, sourceZ)) {
                 setForced(c, ex, by, sourceZ, logId_, logData_);
                 if (i2 > 0) {
-                    placeVine(c, rng, ex + 1, by, sourceZ,     2);
-                    placeVine(c, rng, ex,     by, sourceZ - 1, 1);
+                    placeVine(c, rng, ex + 1, by, sourceZ, 2);
+                    placeVine(c, rng, ex, by, sourceZ - 1, 1);
                 }
             }
 
-            const int sx = sourceX + 1, sz = sourceZ + 1;   // south-east
+            const int sx = sourceX + 1, sz = sourceZ + 1; // south-east
             if (canOverrideAt(c, sx, by, sz)) {
                 setForced(c, sx, by, sz, logId_, logData_);
                 if (i2 > 0) {
-                    placeVine(c, rng, sx + 1, by, sz,     2);
-                    placeVine(c, rng, sx,     by, sz + 1, 4);
+                    placeVine(c, rng, sx + 1, by, sz, 2);
+                    placeVine(c, rng, sx, by, sz + 1, 4);
                 }
             }
 
-            const int sz3 = sourceZ + 1;                     // south
+            const int sz3 = sourceZ + 1; // south
             if (canOverrideAt(c, sourceX, by, sz3)) {
                 setForced(c, sourceX, by, sz3, logId_, logData_);
                 if (i2 > 0) {
-                    placeVine(c, rng, sourceX - 1, by, sz3,     8);
-                    placeVine(c, rng, sourceX,     by, sz3 + 1, 4);
+                    placeVine(c, rng, sourceX - 1, by, sz3, 8);
+                    placeVine(c, rng, sourceX, by, sz3 + 1, 4);
                 }
             }
         }

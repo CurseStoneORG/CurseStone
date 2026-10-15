@@ -37,7 +37,7 @@ inline constexpr int kDesertTempleSizeY = 7;
 inline constexpr int kDesertTempleSizeZ = 10;
 
 class DesertTemple final : public Structure {
-public:
+  public:
     DesertTemple();
 
     // Vanilla desert pyramids only generate in the desert biome (the

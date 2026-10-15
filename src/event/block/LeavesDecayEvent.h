@@ -32,12 +32,13 @@
 namespace cursestone::event::block {
 
 class LeavesDecayEvent : public BlockEvent, public Cancellable {
-public:
-    LeavesDecayEvent(int32_t bx, int32_t by, int32_t bz)
-        : BlockEvent(bx, by, bz) {}
+  public:
+    LeavesDecayEvent(int32_t bx, int32_t by, int32_t bz) : BlockEvent(bx, by, bz) {
+    }
 
     const std::string& eventName() const override {
-        static std::string n = "LeavesDecayEvent"; return n;
+        static std::string n = "LeavesDecayEvent";
+        return n;
     }
 };
 

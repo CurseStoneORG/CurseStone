@@ -30,12 +30,16 @@
 namespace cursestone {
 namespace network {
 
-RCON::RCON(Server* server) : server_(server) {}
+RCON::RCON(Server* server) : server_(server) {
+}
 
-RCON::~RCON() { shutdown(); }
+RCON::~RCON() {
+    shutdown();
+}
 
 void RCON::start() {
-    if (instance_) return;
+    if (instance_)
+        return;
     instance_ = std::make_unique<RCONInstance>(server_);
     instance_->start();
 }
@@ -48,7 +52,8 @@ void RCON::shutdown() {
 }
 
 void RCON::tick() {
-    if (instance_) instance_->tick();
+    if (instance_)
+        instance_->tick();
 }
 
 } // namespace network

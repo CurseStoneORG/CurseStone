@@ -27,11 +27,11 @@
 #include <stdbool.h>
 
 #ifdef _WIN32
-#  include <io.h>
-#  define IS_TTY_FD(fd) _isatty(fd)
+#include <io.h>
+#define IS_TTY_FD(fd) _isatty(fd)
 #else
-#  include <unistd.h>
-#  define IS_TTY_FD(fd) isatty(fd)
+#include <unistd.h>
+#define IS_TTY_FD(fd) isatty(fd)
 #endif
 
 static bool g_color_enabled = false;

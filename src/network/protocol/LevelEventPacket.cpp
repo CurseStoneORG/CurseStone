@@ -37,7 +37,7 @@ namespace cursestone::network::protocol {
 
 void LevelEventPacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
-    w.writeI16BE(evid);   // PMMP putShort -> 2-byte BE signed short
+    w.writeI16BE(evid); // PMMP putShort -> 2-byte BE signed short
     w.writeF32BE(x);
     w.writeF32BE(y);
     w.writeF32BE(z);
@@ -47,12 +47,17 @@ void LevelEventPacket::encode(std::vector<uint8_t>& out) const {
 bool LevelEventPacket::decode(const uint8_t* buf, size_t len) {
     PacketReader r(buf, len);
     int16_t ev;
-    if (!r.readI16BE(ev)) return false;
+    if (!r.readI16BE(ev))
+        return false;
     evid = ev;
-    if (!r.readF32BE(x))    return false;
-    if (!r.readF32BE(y))    return false;
-    if (!r.readF32BE(z))    return false;
-    if (!r.readI32BE(data)) return false;
+    if (!r.readF32BE(x))
+        return false;
+    if (!r.readF32BE(y))
+        return false;
+    if (!r.readF32BE(z))
+        return false;
+    if (!r.readI32BE(data))
+        return false;
     return true;
 }
 

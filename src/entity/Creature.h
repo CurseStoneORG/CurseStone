@@ -24,7 +24,7 @@
 #include "Living.h"
 namespace cursestone::entity {
 class Creature : public Living {
-public:
+  public:
     using Living::Living;
 };
 } // namespace

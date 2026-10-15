@@ -33,7 +33,7 @@
 namespace cursestone::event::server {
 
 class QueryRegenerateEvent : public ServerEvent {
-public:
+  public:
     int timeout = 0;
     std::string serverName;
     int numPlayers = 0;
@@ -45,7 +45,8 @@ public:
     QueryRegenerateEvent() = default;
 
     const std::string& eventName() const override {
-        static std::string n = "QueryRegenerateEvent"; return n;
+        static std::string n = "QueryRegenerateEvent";
+        return n;
     }
 };
 

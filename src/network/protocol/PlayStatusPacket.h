@@ -41,14 +41,16 @@
 namespace cursestone::network::protocol {
 
 class PlayStatusPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return PLAY_STATUS_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return PLAY_STATUS_PACKET;
+    }
 
     // Status enum (PMMP constants).
-    static constexpr int32_t LOGIN_SUCCESS       = 0;
+    static constexpr int32_t LOGIN_SUCCESS = 0;
     static constexpr int32_t LOGIN_FAILED_CLIENT = 1;
     static constexpr int32_t LOGIN_FAILED_SERVER = 2;
-    static constexpr int32_t PLAYER_SPAWN        = 3;
+    static constexpr int32_t PLAYER_SPAWN = 3;
 
     int32_t status = 0;
 

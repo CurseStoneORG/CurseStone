@@ -48,11 +48,13 @@
 namespace cursestone::network::protocol {
 
 class SetEntityMotionPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return SET_ENTITY_MOTION_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return SET_ENTITY_MOTION_PACKET;
+    }
 
     struct Motion {
-        int64_t eid  = 0;
+        int64_t eid = 0;
         float motX = 0.0f;
         float motY = 0.0f;
         float motZ = 0.0f;

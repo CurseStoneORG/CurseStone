@@ -36,8 +36,10 @@ void AdventureSettingsPacket::encode(std::vector<uint8_t>& out) const {
 
 bool AdventureSettingsPacket::decode(const uint8_t* data, size_t len) {
     PacketReader r(data, len);
-    if (!r.readU32BE(flags))            return false;
-    if (!r.readI32BE(userPermission))   return false;
+    if (!r.readU32BE(flags))
+        return false;
+    if (!r.readI32BE(userPermission))
+        return false;
     return r.readI32BE(globalPermission);
 }
 

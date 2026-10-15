@@ -56,18 +56,20 @@ constexpr double kEyeHeight = 1.62;
 // render the burning effect (flames + fire overlay) from the ON_FIRE bit
 // alone. All bits share the same property, so they always travel together
 // as the full byte.
-inline network::protocol::SetEntityDataPacket::Entry makePoseFlagEntry(bool sneaking,
-                                                                      bool sprinting,
-                                                                      bool action = false,
-                                                                      bool onFire = false) {
+inline network::protocol::SetEntityDataPacket::Entry
+makePoseFlagEntry(bool sneaking, bool sprinting, bool action = false, bool onFire = false) {
     network::protocol::SetEntityDataPacket::Entry e;
     e.index = network::protocol::SetEntityDataPacket::PROP_FLAGS;
-    e.type  = network::protocol::SetEntityDataPacket::TYPE_BYTE;
+    e.type = network::protocol::SetEntityDataPacket::TYPE_BYTE;
     uint8_t flags = 0;
-    if (onFire)    flags |= (1 << network::protocol::SetEntityDataPacket::FLAG_BIT_ONFIRE);
-    if (sneaking)  flags |= (1 << network::protocol::SetEntityDataPacket::FLAG_BIT_SNEAKING);
-    if (sprinting) flags |= (1 << network::protocol::SetEntityDataPacket::FLAG_BIT_SPRINTING);
-    if (action)    flags |= (1 << network::protocol::SetEntityDataPacket::FLAG_BIT_ACTION);
+    if (onFire)
+        flags |= (1 << network::protocol::SetEntityDataPacket::FLAG_BIT_ONFIRE);
+    if (sneaking)
+        flags |= (1 << network::protocol::SetEntityDataPacket::FLAG_BIT_SNEAKING);
+    if (sprinting)
+        flags |= (1 << network::protocol::SetEntityDataPacket::FLAG_BIT_SPRINTING);
+    if (action)
+        flags |= (1 << network::protocol::SetEntityDataPacket::FLAG_BIT_ACTION);
     e.ival = flags;
     return e;
 }

@@ -29,34 +29,34 @@
 
 #ifdef _WIN32
 
-#  ifndef WIN32_LEAN_AND_MEAN
-#    define WIN32_LEAN_AND_MEAN
-#  endif
-#  ifndef NOMINMAX
-#    define NOMINMAX
-#  endif
-#  include <windows.h>
-#  include <direct.h>
-#  include <io.h>
-#  include <cstdio>
-#  include <cstring>
-#  include <string>
-#  include <sys/stat.h>
-#  include <sys/types.h>
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <direct.h>
+#include <io.h>
+#include <cstdio>
+#include <cstring>
+#include <string>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 // MSVC's mkdir() takes no mode argument, so the macro drops it.
-#  define mkdir(path, mode) _mkdir(path)
+#define mkdir(path, mode) _mkdir(path)
 
-#  ifndef S_ISDIR
-#    define S_ISDIR(m) (((m) & _S_IFMT) == _S_IFDIR)
-#  endif
-#  ifndef S_ISREG
-#    define S_ISREG(m) (((m) & _S_IFMT) == _S_IFREG)
-#  endif
+#ifndef S_ISDIR
+#define S_ISDIR(m) (((m) & _S_IFMT) == _S_IFDIR)
+#endif
+#ifndef S_ISREG
+#define S_ISREG(m) (((m) & _S_IFMT) == _S_IFREG)
+#endif
 
 // _chsize_s() is the Windows counterpart of ftruncate() on a CRT descriptor.
-#  define ftruncate(fd, len) _chsize_s((fd), (len))
-#  define fileno _fileno
+#define ftruncate(fd, len) _chsize_s((fd), (len))
+#define fileno _fileno
 
 /** @brief One directory entry returned by readdir(); only d_name is provided. */
 struct dirent {
@@ -65,10 +65,10 @@ struct dirent {
 
 /** @brief Directory stream state for the opendir()/readdir()/closedir() shim. */
 struct DIR {
-    HANDLE           handle;
+    HANDLE handle;
     WIN32_FIND_DATAA data;
-    bool             first;  ///< true until the entry found by opendir() has been returned.
-    dirent           entry;
+    bool first; ///< true until the entry found by opendir() has been returned.
+    dirent entry;
 };
 
 /**
@@ -120,9 +120,9 @@ inline int closedir(DIR* d) {
 
 #else
 
-#  include <dirent.h>
-#  include <sys/stat.h>
-#  include <sys/types.h>
-#  include <unistd.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #endif

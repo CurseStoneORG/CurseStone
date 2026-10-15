@@ -42,19 +42,23 @@ namespace cursestone::tile {
 TileFurnace::TileFurnace(cursestone::world::Position pos,
                          const cursestone::inventory::CraftingManager* recipes)
     : Tile("Furnace", pos), recipes_(recipes),
-      inv_(std::make_unique<cursestone::inventory::FurnaceInventory>()) {}
+      inv_(std::make_unique<cursestone::inventory::FurnaceInventory>()) {
+}
 TileFurnace::~TileFurnace() = default;
 void TileFurnace::setItem(int slot, const cursestone::item::ItemStack& it) {
-    if (slot < 0 || slot >= 3) return;
+    if (slot < 0 || slot >= 3)
+        return;
     inv_->setItem(slot, it);
     dirty_ = true;
 }
 cursestone::item::ItemStack TileFurnace::getItem(int slot) const {
-    if (slot < 0 || slot >= 3) return cursestone::item::ItemStack::EMPTY();
+    if (slot < 0 || slot >= 3)
+        return cursestone::item::ItemStack::EMPTY();
     return inv_->getItem(slot);
 }
 void TileFurnace::removeItem(int slot) {
-    if (slot < 0 || slot >= 3) return;
+    if (slot < 0 || slot >= 3)
+        return;
     inv_->clear(slot);
     dirty_ = true;
 }
@@ -63,8 +67,7 @@ void TileFurnace::addViewer(void* player) {
         viewers_.push_back(player);
 }
 void TileFurnace::removeViewer(void* player) {
-    viewers_.erase(std::remove(viewers_.begin(), viewers_.end(), player),
-                   viewers_.end());
+    viewers_.erase(std::remove(viewers_.begin(), viewers_.end(), player), viewers_.end());
 }
 // ============================================================
 // Fuel — valores vanilla de PMMP/Genisys (Fuel.php).
@@ -73,19 +76,24 @@ void TileFurnace::removeViewer(void* player) {
 // consumirse deja un cubo vacío en el slot de fuel.
 // ============================================================
 namespace {
-constexpr int COAL_BURN = 1600;       // coal/charcoal (id 263, any meta)
+constexpr int COAL_BURN = 1600;         // coal/charcoal (id 263, any meta)
 constexpr int LAVA_BUCKET_BURN = 20000; // lava bucket (id 327)
-constexpr int BLAZE_ROD_BURN = 2400;  // blaze rod (id 369)
-constexpr int SAPLING_BURN = 100;     // sapling (id 6, any meta)
+constexpr int BLAZE_ROD_BURN = 2400;    // blaze rod (id 369)
+constexpr int SAPLING_BURN = 100;       // sapling (id 6, any meta)
 } // namespace
 
 int TileFurnace::fuelBurnTicks(uint16_t id) {
     switch (id) {
-        case 263: return COAL_BURN;
-        case 327: return LAVA_BUCKET_BURN;
-        case 369: return BLAZE_ROD_BURN;
-        case 6:   return SAPLING_BURN;
-        default:  return 0;
+    case 263:
+        return COAL_BURN;
+    case 327:
+        return LAVA_BUCKET_BURN;
+    case 369:
+        return BLAZE_ROD_BURN;
+    case 6:
+        return SAPLING_BURN;
+    default:
+        return 0;
     }
 }
 // ============================================================
@@ -94,14 +102,18 @@ int TileFurnace::fuelBurnTicks(uint16_t id) {
 bool TileFurnace::smeltResult(const cursestone::item::ItemStack& in,
                               cursestone::item::ItemStack& out) const {
     const cursestone::inventory::CraftingManager* mgr = recipes_;
-    if (!mgr) mgr = cursestone::Server::getInstance().craftingManager();
-    if (!mgr || in.isEmpty()) return false;
-    const inventory::Recipe* r =
-        mgr->matchFurnaceWithMeta(in.id, in.meta);
-    if (!r) r = mgr->matchFurnace(in.id);
-    if (!r) return false;
+    if (!mgr)
+        mgr = cursestone::Server::getInstance().craftingManager();
+    if (!mgr || in.isEmpty())
+        return false;
+    const inventory::Recipe* r = mgr->matchFurnaceWithMeta(in.id, in.meta);
+    if (!r)
+        r = mgr->matchFurnace(in.id);
+    if (!r)
+        return false;
     out = r->result();
-    if (out.count <= 0) out.count = 1;
+    if (out.count <= 0)
+        out.count = 1;
     return true;
 }
 
@@ -110,36 +122,39 @@ bool TileFurnace::smeltResult(const cursestone::item::ItemStack& in,
 // el World (sin broadcast) y el UpdateBlock solo se manda si el bloque
 // cambió de verdad.
 void TileFurnace::setFlame(bool lit) {
-    if (lit == lit_) return;
+    if (lit == lit_)
+        return;
     lit_ = lit;
     const int x = (int)pos_.x, y = (int)pos_.y, z = (int)pos_.z;
     auto* lvl = cursestone::Server::getInstance().getDefaultWorld();
-    if (!lvl) return;
-    if (!lvl->setFurnaceFlame(x, y, z, lit)) return;
+    if (!lvl)
+        return;
+    if (!lvl->setFurnaceFlame(x, y, z, lit))
+        return;
     auto pk = std::make_shared<network::protocol::UpdateBlockPacket>();
     pk->x = x;
     pk->y = (uint8_t)y;
     pk->z = z;
-    pk->blockId = lit ? (uint16_t)cursestone::block::BURNING_FURNACE
-                      : (uint16_t)cursestone::block::FURNACE;
+    pk->blockId =
+        lit ? (uint16_t)cursestone::block::BURNING_FURNACE : (uint16_t)cursestone::block::FURNACE;
     pk->blockData = lvl->getBlockData(x, y, z);
     pk->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
     for (auto& p : cursestone::Server::getInstance().playersSnapshot())
-        if (p && p->canSeeBlock(x >> 4, z >> 4)) p->sendPacket(pk);
+        if (p && p->canSeeBlock(x >> 4, z >> 4))
+            p->sendPacket(pk);
 }
 // ============================================================
 // tick — el corazón del horno.
 // ============================================================
 void TileFurnace::tick(uint64_t) {
-    auto input  = inv_->getItem(SLOT_INPUT);
-    auto fuel   = inv_->getItem(SLOT_FUEL);
+    auto input = inv_->getItem(SLOT_INPUT);
+    auto fuel = inv_->getItem(SLOT_FUEL);
     auto result = inv_->getItem(SLOT_RESULT);
     cursestone::item::ItemStack smelted;
     const bool canSmelt =
         !input.isEmpty() && smeltResult(input, smelted) &&
-        (result.isEmpty() ||
-         (result.id == smelted.id && result.meta == smelted.meta &&
-          result.count + smelted.count <= 64));
+        (result.isEmpty() || (result.id == smelted.id && result.meta == smelted.meta &&
+                              result.count + smelted.count <= 64));
     if (burn_time_ > 0) {
         --burn_time_;
     }
@@ -176,7 +191,8 @@ void TileFurnace::tick(uint64_t) {
             cook_time_ = 0;
             // 1 input → 1 result (PMMP: onContentsChange).
             input.count -= 1;
-            if (input.count <= 0) input = cursestone::item::ItemStack::EMPTY();
+            if (input.count <= 0)
+                input = cursestone::item::ItemStack::EMPTY();
             inv_->setItem(SLOT_INPUT, input);
             if (result.isEmpty()) {
                 result = smelted;
@@ -192,10 +208,10 @@ void TileFurnace::tick(uint64_t) {
     }
     // Reenviar contenido solo cuando cambió y hay viewers.
     if (dirty_inventory_ && !viewers_.empty()) {
-        auto content =
-            std::make_shared<network::protocol::ContainerSetContentPacket>();
+        auto content = std::make_shared<network::protocol::ContainerSetContentPacket>();
         content->slots.resize(3);
-        for (int i = 0; i < 3; ++i) content->slots[i] = inv_->getItem(i);
+        for (int i = 0; i < 3; ++i)
+            content->slots[i] = inv_->getItem(i);
         for (void* v : viewers_) {
             // v es un Player* — el cast estático es válido porque solo
             // Player::openFurnaceAt registra viewers y Player nunca es
@@ -207,27 +223,26 @@ void TileFurnace::tick(uint64_t) {
     }
     dirty_inventory_ = false;
     // Progreso de UI (solo con viewers; barato: 2 varints por viewer).
-    if (!viewers_.empty()) sendProgressToViewers();
+    if (!viewers_.empty())
+        sendProgressToViewers();
 }
 void TileFurnace::sendProgressToViewers() {
     // Los viewers son Player* crudos: un jugador puede desconectarse
     // (window cerrado via closeOpenChest en Player::close) sin que este
     // tile lo sepa — filtrar muertos antes de mandar nada.
-    viewers_.erase(
-        std::remove_if(viewers_.begin(), viewers_.end(),
-                       [](void* v) {
-                           auto* p = static_cast<cursestone::Player*>(v);
-                           return !p || !p->isConnected();
-                       }),
-        viewers_.end());
+    viewers_.erase(std::remove_if(viewers_.begin(), viewers_.end(),
+                                  [](void* v) {
+                                      auto* p = static_cast<cursestone::Player*>(v);
+                                      return !p || !p->isConnected();
+                                  }),
+                   viewers_.end());
 
     auto pk = std::make_shared<network::protocol::ContainerSetDataPacket>();
     pk->property = network::protocol::ContainerSetDataPacket::PROPERTY_FURNACE_TICKS;
     pk->value = std::clamp(cook_time_, 0, 200);
     auto pk2 = std::make_shared<network::protocol::ContainerSetDataPacket>();
     pk2->property = network::protocol::ContainerSetDataPacket::PROPERTY_FURNACE_FUEL;
-    pk2->value = max_burn_time_ > 0
-        ? std::clamp((burn_time_ * 200) / max_burn_time_, 0, 200) : 0;
+    pk2->value = max_burn_time_ > 0 ? std::clamp((burn_time_ * 200) / max_burn_time_, 0, 200) : 0;
     // Un paquete por viewer: cada jugador tiene SU propio window id de
     // contenedor (Player::openContainerWindow), asi que un paquete
     // compartido llevaria el id equivocado al segundo que mire.
@@ -244,18 +259,17 @@ void TileFurnace::sendProgressToViewers() {
 // CookTicks, Items:[{Slot,id,Damage,Count}]}.
 // ============================================================
 void TileFurnace::writeNBT(mcp_tag_t* tag) const {
-    if (!tag) return;
-    Tile::writeNBT(tag);  // id/x/y/z
-    mcp_compound_tag_set_short(tag, "BurnDuration",
-        static_cast<int16_t>(max_burn_time_));
-    mcp_compound_tag_set_short(tag, "BurnTicks",
-        static_cast<int16_t>(burn_time_));
-    mcp_compound_tag_set_short(tag, "CookTicks",
-        static_cast<int16_t>(cook_time_));
+    if (!tag)
+        return;
+    Tile::writeNBT(tag); // id/x/y/z
+    mcp_compound_tag_set_short(tag, "BurnDuration", static_cast<int16_t>(max_burn_time_));
+    mcp_compound_tag_set_short(tag, "BurnTicks", static_cast<int16_t>(burn_time_));
+    mcp_compound_tag_set_short(tag, "CookTicks", static_cast<int16_t>(cook_time_));
     mcp_tag_t* items = mcp_list_tag_new_named("Items", MCP_TAG_COMPOUND);
     for (int slot = 0; slot < 3; ++slot) {
         auto stack = inv_->getItem(slot);
-        if (stack.isEmpty()) continue;
+        if (stack.isEmpty())
+            continue;
         mcp_tag_t* entry = mcp_compound_tag_new();
         mcp_compound_tag_set_byte(entry, "Slot", static_cast<int8_t>(slot));
         item::itemStackToNbt(stack, entry);
@@ -264,24 +278,29 @@ void TileFurnace::writeNBT(mcp_tag_t* tag) const {
     mcp_compound_tag_set(tag, "Items", items);
 }
 void TileFurnace::readNBT(const mcp_tag_t* tag) {
-    if (!tag) return;
+    if (!tag)
+        return;
     Tile::readNBT(tag);
     burn_time_ = mcp_compound_tag_get_short(tag, "BurnTicks", 0);
     max_burn_time_ = mcp_compound_tag_get_short(tag, "BurnDuration", 0);
     cook_time_ = mcp_compound_tag_get_short(tag, "CookTicks", 0);
     const mcp_tag_t* items = mcp_compound_tag_get(tag, "Items");
-    if (!items || mcp_tag_get_type(items) != MCP_TAG_LIST) return;
+    if (!items || mcp_tag_get_type(items) != MCP_TAG_LIST)
+        return;
     size_t count = mcp_list_tag_size(items);
     for (size_t i = 0; i < count; ++i) {
         const mcp_tag_t* entry = mcp_list_tag_get(items, i);
-        if (!entry || mcp_tag_get_type(entry) != MCP_TAG_COMPOUND) continue;
+        if (!entry || mcp_tag_get_type(entry) != MCP_TAG_COMPOUND)
+            continue;
         int slot = mcp_compound_tag_get_byte(entry, "Slot", -1);
-        if (slot < 0 || slot >= 3) continue;
+        if (slot < 0 || slot >= 3)
+            continue;
         // id / Count / Damage + enchantments, shared with every other
         // container (src/item/ItemNbt.h) — a smelted/kept enchanted item
         // now survives a restart like it does in a chest.
         item::ItemStack stack;
-        if (!item::itemStackFromNbt(entry, stack)) continue;
+        if (!item::itemStackFromNbt(entry, stack))
+            continue;
         inv_->setItem(slot, stack);
     }
     dirty_ = false;

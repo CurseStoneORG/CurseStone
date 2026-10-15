@@ -25,24 +25,25 @@
 #include "BlockIterator.h"
 
 extern "C" {
-#  include "../math/Vector3.h"
+#include "../math/Vector3.h"
 }
 
 #include <cmath>
 
 namespace cursestone::utils {
 
-BlockIterator::BlockIterator(const math::Vector3& start,
-                              const math::Vector3& direction,
-                              double maxDistance)
+BlockIterator::BlockIterator(const math::Vector3& start, const math::Vector3& direction,
+                             double maxDistance)
     : maxDistance_(maxDistance), traveled_(0.0) {
     // math::Vector3 is the C struct mcp_vector3_t in the C++ namespace alias.
     // Field access is direct on the struct.
-    x_ = start.x; y_ = start.y; z_ = start.z;
-    double len = std::sqrt(direction.x * direction.x +
-                           direction.y * direction.y +
+    x_ = start.x;
+    y_ = start.y;
+    z_ = start.z;
+    double len = std::sqrt(direction.x * direction.x + direction.y * direction.y +
                            direction.z * direction.z);
-    if (len <= 0.0) len = 1.0;
+    if (len <= 0.0)
+        len = 1.0;
     dx_ = direction.x / len;
     dy_ = direction.y / len;
     dz_ = direction.z / len;
@@ -67,24 +68,28 @@ BlockIterator::BlockIterator(const math::Vector3& start,
 bool BlockIterator::next() {
     if (tMaxX_ < tMaxY_) {
         if (tMaxX_ < tMaxZ_) {
-            if (tMaxX_ > maxDistance_) return false;
+            if (tMaxX_ > maxDistance_)
+                return false;
             traveled_ = tMaxX_;
             curX_ += (int)stepX_;
             tMaxX_ += tDeltaX_;
         } else {
-            if (tMaxZ_ > maxDistance_) return false;
+            if (tMaxZ_ > maxDistance_)
+                return false;
             traveled_ = tMaxZ_;
             curZ_ += (int)stepZ_;
             tMaxZ_ += tDeltaZ_;
         }
     } else {
         if (tMaxY_ < tMaxZ_) {
-            if (tMaxY_ > maxDistance_) return false;
+            if (tMaxY_ > maxDistance_)
+                return false;
             traveled_ = tMaxY_;
             curY_ += (int)stepY_;
             tMaxY_ += tDeltaY_;
         } else {
-            if (tMaxZ_ > maxDistance_) return false;
+            if (tMaxZ_ > maxDistance_)
+                return false;
             traveled_ = tMaxZ_;
             curZ_ += (int)stepZ_;
             tMaxZ_ += tDeltaZ_;

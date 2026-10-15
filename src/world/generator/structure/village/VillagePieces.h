@@ -52,16 +52,18 @@ namespace cursestone::world::generator::structure::village {
 // (the tower houses, the farms, the lamp and the well), and such a
 // piece is rotated freely.
 class VillagePiece final : public Structure {
-public:
-    VillagePiece(const char* name, int sizeX, int sizeY, int sizeZ,
-                 const BlockSpec* specs, size_t specCount, const char* volume,
-                 int frontFacing)
+  public:
+    VillagePiece(const char* name, int sizeX, int sizeY, int sizeZ, const BlockSpec* specs,
+                 size_t specCount, const char* volume, int frontFacing)
         : Structure(name, sizeX, sizeY, sizeZ, specs, specCount, volume),
-          frontFacing_(frontFacing) {}
+          frontFacing_(frontFacing) {
+    }
 
-    int frontFacing() const { return frontFacing_; }
+    int frontFacing() const {
+        return frontFacing_;
+    }
 
-private:
+  private:
     int frontFacing_;
 };
 
@@ -92,6 +94,8 @@ const Structure* piece(PieceKind k);
 // door opens toward once placed; 0 when the export has no outside door.
 int pieceFrontFacing(PieceKind k);
 
-inline int pieceCount() { return PIECE_COUNT; }
+inline int pieceCount() {
+    return PIECE_COUNT;
+}
 
 } // namespace cursestone::world::generator::structure::village

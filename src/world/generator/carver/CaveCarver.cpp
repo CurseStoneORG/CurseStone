@@ -45,25 +45,28 @@ static inline const mcp_chunk_section_t* fast_section(const mcp_chunk_t* c, int 
 }
 
 static inline uint8_t bid(const mcp_chunk_t* c, int x, int y, int z) {
-    if ((unsigned)y > 255u) return 0;
+    if ((unsigned)y > 255u)
+        return 0;
     const mcp_chunk_section_t* s = fast_section(c, y);
-    if (!s || !s->blocks) return 0;
+    if (!s || !s->blocks)
+        return 0;
     return s->blocks[mcp_section_block_index(x, y, z)];
 }
 
-void CaveCarver::generate(int64_t seed, int32_t chunkX, int32_t chunkZ,
-                          mcp_chunk_t* chunk) {
+void CaveCarver::generate(int64_t seed, int32_t chunkX, int32_t chunkZ, mcp_chunk_t* chunk) {
     // Per-chunk deterministic seed: independent of generation order.
-    uint64_t mix = (uint64_t)(uint32_t)chunkX * 341873128712ULL ^
-                   (uint64_t)(uint32_t)chunkZ * 132897987541ULL;
+    uint64_t mix =
+        (uint64_t)(uint32_t)chunkX * 341873128712ULL ^ (uint64_t)(uint32_t)chunkZ * 132897987541ULL;
     MersenneRandom random((int64_t)((uint64_t)seed ^ mix));
 
     rand_.setSeed(random.getSeed());
     int64_t j = rand_.nextLong();
     int64_t k = rand_.nextLong();
 
-    for (int32_t currChunkX = chunkX - kChunkRadius; currChunkX <= chunkX + kChunkRadius; ++currChunkX) {
-        for (int32_t currChunkZ = chunkZ - kChunkRadius; currChunkZ <= chunkZ + kChunkRadius; ++currChunkZ) {
+    for (int32_t currChunkX = chunkX - kChunkRadius; currChunkX <= chunkX + kChunkRadius;
+         ++currChunkX) {
+        for (int32_t currChunkZ = chunkZ - kChunkRadius; currChunkZ <= chunkZ + kChunkRadius;
+             ++currChunkZ) {
             int64_t j1 = (int64_t)currChunkX * j;
             int64_t k1 = (int64_t)currChunkZ * k;
             rand_.setSeed(j1 ^ k1 ^ random.getSeed());
@@ -72,13 +75,12 @@ void CaveCarver::generate(int64_t seed, int32_t chunkX, int32_t chunkZ,
     }
 }
 
-void CaveCarver::recursiveGenerate(int32_t chunkX, int32_t chunkZ,
-                                    int32_t originChunkX, int32_t originChunkZ,
-                                    mcp_chunk_t* chunk, bool addRooms) {
-    int32_t numAttempts = (int32_t)rand_.nextInt(
-        rand_.nextInt(rand_.nextInt(15) + 1) + 1);
+void CaveCarver::recursiveGenerate(int32_t chunkX, int32_t chunkZ, int32_t originChunkX,
+                                   int32_t originChunkZ, mcp_chunk_t* chunk, bool addRooms) {
+    int32_t numAttempts = (int32_t)rand_.nextInt(rand_.nextInt(rand_.nextInt(15) + 1) + 1);
 
-    if (rand_.nextInt(100) > kDensity) numAttempts = 0;
+    if (rand_.nextInt(100) > kDensity)
+        numAttempts = 0;
 
     for (int32_t i = 0; i < numAttempts; ++i) {
         double startX = chunkX * 16 + (int32_t)rand_.nextInt(16);
@@ -101,8 +103,8 @@ void CaveCarver::recursiveGenerate(int32_t chunkX, int32_t chunkZ,
                 width *= rand_.nextFloat() * rand_.nextFloat() * 3.0F + 1.0F;
             }
 
-            addTunnel(rand_.nextLong(), originChunkX, originChunkZ, chunk,
-                      startX, startY, startZ, width, yaw, pitch, 0, 0, 1.0);
+            addTunnel(rand_.nextLong(), originChunkX, originChunkZ, chunk, startX, startY, startZ,
+                      width, yaw, pitch, 0, 0, 1.0);
         }
     }
 }
@@ -115,8 +117,8 @@ void CaveCarver::addRoom(int64_t seed, int32_t originChunkX, int32_t originChunk
 
 void CaveCarver::addTunnel(int64_t seed, int32_t originChunkX, int32_t originChunkZ,
                            mcp_chunk_t* chunk, double startX, double startY, double startZ,
-                           float width, float yaw, float pitch,
-                           int32_t startCounter, int32_t endCounter, double heightModifier) {
+                           float width, float yaw, float pitch, int32_t startCounter,
+                           int32_t endCounter, double heightModifier) {
     MersenneRandom random(seed);
 
     double originBlockX = (originChunkX * 16 + 8);
@@ -139,7 +141,8 @@ void CaveCarver::addTunnel(int64_t seed, int32_t originChunkX, int32_t originChu
     int32_t randomCounterValue = (int32_t)(random.nextInt(endCounter / 2) + endCounter / 4);
 
     while (startCounter < endCounter) {
-        double xzOffset = 1.5 + (double)(sin((float)startCounter * (float)M_PI / (float)endCounter) * width);
+        double xzOffset =
+            1.5 + (double)(sin((float)startCounter * (float)M_PI / (float)endCounter) * width);
         double yOffset = xzOffset * heightModifier;
 
         float pitchXZ = cos(pitch);
@@ -160,13 +163,12 @@ void CaveCarver::addTunnel(int64_t seed, int32_t originChunkX, int32_t originChu
         pitchModifier += (random.nextFloat() - random.nextFloat()) * random.nextFloat() * 2.0F;
         yawModifier += (random.nextFloat() - random.nextFloat()) * random.nextFloat() * 4.0F;
 
-        if (!comesFromRoom && startCounter == randomCounterValue && width > 1.0F && endCounter > 0) {
-            addTunnel(random.nextLong(), originChunkX, originChunkZ, chunk,
-                      startX, startY, startZ,
+        if (!comesFromRoom && startCounter == randomCounterValue && width > 1.0F &&
+            endCounter > 0) {
+            addTunnel(random.nextLong(), originChunkX, originChunkZ, chunk, startX, startY, startZ,
                       random.nextFloat() * 0.5F + 0.5F, yaw - ((float)M_PI / 2.0F), pitch / 3.0F,
                       startCounter, endCounter, 1.0);
-            addTunnel(random.nextLong(), originChunkX, originChunkZ, chunk,
-                      startX, startY, startZ,
+            addTunnel(random.nextLong(), originChunkX, originChunkZ, chunk, startX, startY, startZ,
                       random.nextFloat() * 0.5F + 0.5F, yaw + ((float)M_PI / 2.0F), pitch / 3.0F,
                       startCounter, endCounter, 1.0);
             return;
@@ -194,22 +196,32 @@ void CaveCarver::addTunnel(int64_t seed, int32_t originChunkX, int32_t originChu
                 int32_t maxY = (int32_t)(floor(startY + yOffset) + 1);
                 int32_t maxZ = (int32_t)(floor(startZ + xzOffset) - originChunkZ * 16 + 1);
 
-                if (minX < 0)   minX = 0;
-                if (maxX > 16)  maxX = 16;
-                if (minY < 1)   minY = 1;
-                if (maxY > 127) maxY = 127;   // MCPE 0.15.x world height
-                if (minZ < 0)   minZ = 0;
-                if (maxZ > 16)  maxZ = 16;
+                if (minX < 0)
+                    minX = 0;
+                if (maxX > 16)
+                    maxX = 16;
+                if (minY < 1)
+                    minY = 1;
+                if (maxY > 127)
+                    maxY = 127; // MCPE 0.15.x world height
+                if (minZ < 0)
+                    minZ = 0;
+                if (maxZ > 16)
+                    maxZ = 16;
 
                 for (int32_t currX = minX; currX < maxX; ++currX) {
-                    double xAxisDist = ((double)(currX + originChunkX * 16) + 0.5 - startX) / xzOffset;
+                    double xAxisDist =
+                        ((double)(currX + originChunkX * 16) + 0.5 - startX) / xzOffset;
                     for (int32_t currZ = minZ; currZ < maxZ; ++currZ) {
-                        double zAxisDist = ((double)(currZ + originChunkZ * 16) + 0.5 - startZ) / xzOffset;
+                        double zAxisDist =
+                            ((double)(currZ + originChunkZ * 16) + 0.5 - startZ) / xzOffset;
                         if (xAxisDist * xAxisDist + zAxisDist * zAxisDist < 1.0) {
                             for (int32_t currY = maxY; currY > minY; --currY) {
                                 double yAxisDist = ((double)(currY - 1) + 0.5 - startY) / yOffset;
-                                if (yAxisDist > -0.7 &&
-                                    xAxisDist * xAxisDist + yAxisDist * yAxisDist + zAxisDist * zAxisDist < 1.0) {
+                                if (yAxisDist > -0.7 && xAxisDist * xAxisDist +
+                                                                yAxisDist * yAxisDist +
+                                                                zAxisDist * zAxisDist <
+                                                            1.0) {
                                     digBlock(chunk, (int8_t)currX, (int16_t)currY, (int8_t)currZ);
                                 }
                             }
@@ -217,7 +229,8 @@ void CaveCarver::addTunnel(int64_t seed, int32_t originChunkX, int32_t originChu
                     }
                 }
 
-                if (comesFromRoom) break;
+                if (comesFromRoom)
+                    break;
             }
         }
         startCounter++;
@@ -226,7 +239,8 @@ void CaveCarver::addTunnel(int64_t seed, int32_t originChunkX, int32_t originChu
 
 int CaveCarver::highestBlockAt(const mcp_chunk_t* c, int x, int z) {
     for (int y = 127; y >= 0; --y) {
-        if (bid(c, x, y, z) != (uint8_t)BlockId::AIR) return y;
+        if (bid(c, x, y, z) != (uint8_t)BlockId::AIR)
+            return y;
     }
     return 0;
 }
@@ -242,13 +256,15 @@ void CaveCarver::digBlock(mcp_chunk_t* chunk, int8_t x, int16_t y, int8_t z) con
     // floor. The heightmap is set by the terrain pass (generate()) before
     // the carver runs.
     const int top = mcp_chunk_get_height_map(chunk, x, z);
-    if (top > 1 && y >= top - 1) return;
+    if (top > 1 && y >= top - 1)
+        return;
 
     // Chequeo de "puedo reemplazar" con un solo acceso al bloque (el
     // resto de canReplaceBlock() son comparaciones sobre ese mismo id,
     // que ya pidio el caller en la mayoria de los flujos). canReplace()
     // pide `block` y `above`, así que duplicar aqui no aporta.
-    if (!canReplaceBlock(chunk, x, y, z)) return;
+    if (!canReplaceBlock(chunk, x, y, z))
+        return;
 
     if ((y - 1) < kLiquidAltitude) {
         mcp_chunk_set_block_id(chunk, x, y, z, (uint8_t)BlockId::LAVA);
@@ -305,14 +321,17 @@ bool CaveCarver::canReplaceBlock(const mcp_chunk_t* chunk, int8_t x, int16_t y, 
 
     // Never carve a block directly under water/lava: that would drain the
     // body of liquid sitting on top of it (ocean / lake floors).
-    if (isLiquid(above)) return false;
+    if (isLiquid(above))
+        return false;
 
     if (y > kLiquidAltitude) {
-        const int ox[4] = { x - 1, x + 1, x, x };
-        const int oz[4] = { z, z, z - 1, z + 1 };
+        const int ox[4] = {x - 1, x + 1, x, x};
+        const int oz[4] = {z, z, z - 1, z + 1};
         for (int i = 0; i < 4; ++i) {
-            if (ox[i] < 0 || ox[i] > 15 || oz[i] < 0 || oz[i] > 15) continue;
-            if (isLiquid(bid(chunk, ox[i], y, oz[i]))) return false;
+            if (ox[i] < 0 || ox[i] > 15 || oz[i] < 0 || oz[i] > 15)
+                continue;
+            if (isLiquid(bid(chunk, ox[i], y, oz[i])))
+                return false;
         }
     }
 
@@ -322,7 +341,8 @@ bool CaveCarver::canReplaceBlock(const mcp_chunk_t* chunk, int8_t x, int16_t y, 
         return true;
     }
 
-    return (block == (uint8_t)BlockId::SAND || block == (uint8_t)BlockId::GRAVEL) && !isLiquid(above);
+    return (block == (uint8_t)BlockId::SAND || block == (uint8_t)BlockId::GRAVEL) &&
+           !isLiquid(above);
 }
 
 } // namespace cursestone::world::generator::carver

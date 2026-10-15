@@ -50,7 +50,6 @@ extern const char* const kDefaultCursestoneYml;
  * @param created   optional; receives the names of the files written.
  * @return true if both config files exist when the call returns.
  */
-bool writeDefaultConfigs(const std::string& dataPath,
-                         std::vector<std::string>* created = nullptr);
+bool writeDefaultConfigs(const std::string& dataPath, std::vector<std::string>* created = nullptr);
 
 } // namespace cursestone::utils

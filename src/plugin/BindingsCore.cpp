@@ -70,7 +70,7 @@
 //   scheduler.later(ticks, fn)        runs fn a time; returns id
 //   scheduler.every(ticks, fn)        runs fn each ticks; returns id
 //   scheduler.cancel(id)              cancela a tarea
-//   plugin.api                        version of the API of the server 
+//   plugin.api                        version of the API of the server
 //   plugin.name / .author / .version  metadata of this plugin
 //   plugin.getResource(name)          lee <plugin>/resources/<name>; UNICA
 //                                     carpeta de recursos valida (nil+err si no)
@@ -123,14 +123,23 @@ int logWith(lua_State* L, int level) {
     LuaPlugin* pl = LuaPlugin::from(L);
     std::string msg = "[" + pl->name() + "] " + luaL_checkstring(L, 1);
     auto& lg = utils::MainLogger::get();
-    if (level == 0) lg.info(msg);
-    else if (level == 1) lg.warn(msg);
-    else lg.error(msg);
+    if (level == 0)
+        lg.info(msg);
+    else if (level == 1)
+        lg.warn(msg);
+    else
+        lg.error(msg);
     return 0;
 }
-int l_log_info(lua_State* L)  { return logWith(L, 0); }
-int l_log_warn(lua_State* L)  { return logWith(L, 1); }
-int l_log_error(lua_State* L) { return logWith(L, 2); }
+int l_log_info(lua_State* L) {
+    return logWith(L, 0);
+}
+int l_log_warn(lua_State* L) {
+    return logWith(L, 1);
+}
+int l_log_error(lua_State* L) {
+    return logWith(L, 2);
+}
 
 // ---------- server ----------
 int l_server_broadcast(lua_State* L) {
@@ -155,7 +164,10 @@ Player* findPlayer(lua_State* L, int idx) {
 int l_player_message(lua_State* L) {
     Player* p = findPlayer(L, 1);
     const char* msg = luaL_checkstring(L, 2);
-    if (!p) { lua_pushboolean(L, 0); return 1; }
+    if (!p) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
     p->sendMessage(msg);
     lua_pushboolean(L, 1);
     return 1;
@@ -163,7 +175,10 @@ int l_player_message(lua_State* L) {
 int l_player_tip(lua_State* L) {
     Player* p = findPlayer(L, 1);
     const char* msg = luaL_checkstring(L, 2);
-    if (!p) { lua_pushboolean(L, 0); return 1; }
+    if (!p) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
     p->sendTip(msg);
     lua_pushboolean(L, 1);
     return 1;
@@ -171,7 +186,10 @@ int l_player_tip(lua_State* L) {
 int l_player_popup(lua_State* L) {
     Player* p = findPlayer(L, 1);
     const char* msg = luaL_checkstring(L, 2);
-    if (!p) { lua_pushboolean(L, 0); return 1; }
+    if (!p) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
     p->sendPopup(msg);
     lua_pushboolean(L, 1);
     return 1;
@@ -179,7 +197,10 @@ int l_player_popup(lua_State* L) {
 int l_player_kick(lua_State* L) {
     Player* p = findPlayer(L, 1);
     const char* reason = luaL_optstring(L, 2, "Expulsado");
-    if (!p) { lua_pushboolean(L, 0); return 1; }
+    if (!p) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
     p->kick(reason);
     lua_pushboolean(L, 1);
     return 1;
@@ -189,7 +210,10 @@ int l_player_teleport(lua_State* L) {
     lua_Number x = luaL_checknumber(L, 2);
     lua_Number y = luaL_checknumber(L, 3);
     lua_Number z = luaL_checknumber(L, 4);
-    if (!p) { lua_pushboolean(L, 0); return 1; }
+    if (!p) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
     p->teleport((double)x, (double)y, (double)z);
     lua_pushboolean(L, 1);
     return 1;
@@ -203,17 +227,25 @@ int l_player_teleportWorld(lua_State* L) {
     lua_Number x = luaL_checknumber(L, 3);
     lua_Number y = luaL_checknumber(L, 4);
     lua_Number z = luaL_checknumber(L, 5);
-    if (!p) { lua_pushboolean(L, 0); return 1; }
+    if (!p) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
     World* target = Server::getInstance().getWorldByName(worldName);
-    if (!target) { lua_pushboolean(L, 0); return 1; }
-    lua_pushboolean(L, p->switchWorld(target, (double)x, (double)y, (double)z,
-                                      false) ? 1 : 0);
+    if (!target) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+    lua_pushboolean(L, p->switchWorld(target, (double)x, (double)y, (double)z, false) ? 1 : 0);
     return 1;
 }
 // getWorld(name): handle `world` of the world in that which is the player.
 int l_player_getWorld(lua_State* L) {
     Player* p = findPlayer(L, 1);
-    if (!p) { lua_pushnil(L); return 1; }
+    if (!p) {
+        lua_pushnil(L);
+        return 1;
+    }
     pushWorldHandle(L, p->getWorld());
     return 1;
 }
@@ -247,8 +279,11 @@ int l_player_setPermission(lua_State* L) {
     Player* p = findPlayer(L, 1);
     const char* node = luaL_checkstring(L, 2);
     bool value = lua_toboolean(L, 3) != 0;
-    if (!p) { lua_pushboolean(L, 0); return 1; }
-    p->setPermission(node, value);       // PermissibleBase (in memory)
+    if (!p) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+    p->setPermission(node, value); // PermissibleBase (in memory)
     lua_pushboolean(L, 1);
     return 1;
 }
@@ -268,24 +303,31 @@ int l_player_hasPermission(lua_State* L) {
 // player does not exist or the stack did not fit.
 int l_player_giveItem(lua_State* L) {
     Player* p = findPlayer(L, 1);
-    lua_Integer id    = luaL_checkinteger(L, 2);
+    lua_Integer id = luaL_checkinteger(L, 2);
     lua_Integer count = luaL_optinteger(L, 3, 1);
-    lua_Integer meta  = luaL_optinteger(L, 4, 0);
+    lua_Integer meta = luaL_optinteger(L, 4, 0);
     const char* customName = luaL_optstring(L, 5, nullptr);
-    if (!p || !p->getInventory()) { lua_pushboolean(L, 0); return 1; }
-    if (id <= 0 || id > 65535 || count < 1) { lua_pushboolean(L, 0); return 1; }
-    if (count > 2304) count = 2304;   // 36 slots * 64 — keep it sane
+    if (!p || !p->getInventory()) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+    if (id <= 0 || id > 65535 || count < 1) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+    if (count > 2304)
+        count = 2304; // 36 slots * 64 — keep it sane
 
     item::ItemStack st;
-    st.id    = (uint16_t)id;
+    st.id = (uint16_t)id;
     st.count = (int)count;
-    st.meta  = (uint8_t)(meta & 0xFF);
-    if (customName && *customName) st.nbt = item::buildDisplayNbt(customName);
+    st.meta = (uint8_t)(meta & 0xFF);
+    if (customName && *customName)
+        st.nbt = item::buildDisplayNbt(customName);
 
     auto leftovers = p->getInventory()->addItem({st});
-    bool fit = leftovers.empty() || leftovers[0].isEmpty() ||
-               leftovers[0].count < count;
-    p->sendInventory();   // full resync — the client renders the new stack
+    bool fit = leftovers.empty() || leftovers[0].isEmpty() || leftovers[0].count < count;
+    p->sendInventory(); // full resync — the client renders the new stack
     lua_pushboolean(L, fit ? 1 : 0);
     return 1;
 }
@@ -296,14 +338,20 @@ int l_player_giveItem(lua_State* L) {
 int l_player_setNameTag(lua_State* L) {
     Player* p = findPlayer(L, 1);
     const char* tag = luaL_checkstring(L, 2);
-    if (!p) { lua_pushboolean(L, 0); return 1; }
+    if (!p) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
     p->setNameTag(tag);
     lua_pushboolean(L, 1);
     return 1;
 }
 int l_player_getNameTag(lua_State* L) {
     Player* p = findPlayer(L, 1);
-    if (!p) { lua_pushnil(L); return 1; }
+    if (!p) {
+        lua_pushnil(L);
+        return 1;
+    }
     lua_pushstring(L, p->getNameTag().c_str());
     return 1;
 }
@@ -312,14 +360,20 @@ int l_player_getNameTag(lua_State* L) {
 int l_player_setDisplayName(lua_State* L) {
     Player* p = findPlayer(L, 1);
     const char* dn = luaL_checkstring(L, 2);
-    if (!p) { lua_pushboolean(L, 0); return 1; }
+    if (!p) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
     p->setDisplayName(dn);
     lua_pushboolean(L, 1);
     return 1;
 }
 int l_player_getDisplayName(lua_State* L) {
     Player* p = findPlayer(L, 1);
-    if (!p) { lua_pushnil(L); return 1; }
+    if (!p) {
+        lua_pushnil(L);
+        return 1;
+    }
     lua_pushstring(L, p->getDisplayName().c_str());
     return 1;
 }
@@ -331,7 +385,10 @@ int l_player_getDisplayName(lua_State* L) {
 // only way back).
 int l_player_kill(lua_State* L) {
     Player* p = findPlayer(L, 1);
-    if (!p || p->isDead()) { lua_pushboolean(L, 0); return 1; }
+    if (!p || p->isDead()) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
     p->setHealth(0);
     lua_pushboolean(L, 1);
     return 1;
@@ -341,7 +398,10 @@ int l_player_kill(lua_State* L) {
 // get the exact server-side position, not a truncated copy.
 int l_player_getPosition(lua_State* L) {
     Player* p = findPlayer(L, 1);
-    if (!p) { lua_pushnil(L); return 1; }
+    if (!p) {
+        lua_pushnil(L);
+        return 1;
+    }
     const math::Vector3& pos = p->getNextPosition();
     lua_pushnumber(L, (lua_Number)pos.x);
     lua_pushnumber(L, (lua_Number)pos.y);
@@ -351,7 +411,10 @@ int l_player_getPosition(lua_State* L) {
 // getRotation(name) -> yaw, pitch | nil.
 int l_player_getRotation(lua_State* L) {
     Player* p = findPlayer(L, 1);
-    if (!p) { lua_pushnil(L); return 1; }
+    if (!p) {
+        lua_pushnil(L);
+        return 1;
+    }
     lua_pushnumber(L, (lua_Number)p->yaw());
     lua_pushnumber(L, (lua_Number)p->pitch());
     return 2;
@@ -363,9 +426,12 @@ int l_player_getRotation(lua_State* L) {
 // the view without moving the player.
 int l_player_setRotation(lua_State* L) {
     Player* p = findPlayer(L, 1);
-    lua_Number yaw   = luaL_checknumber(L, 2);
+    lua_Number yaw = luaL_checknumber(L, 2);
     lua_Number pitch = luaL_checknumber(L, 3);
-    if (!p) { lua_pushboolean(L, 0); return 1; }
+    if (!p) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
     p->setRotation((float)yaw, (float)pitch);
     const math::Vector3& pos = p->getNextPosition();
     p->sendPosition(pos.x, pos.y, pos.z, (double)yaw, (double)pitch,
@@ -381,7 +447,10 @@ int l_player_setMotion(lua_State* L) {
     lua_Number mx = luaL_checknumber(L, 2);
     lua_Number my = luaL_checknumber(L, 3);
     lua_Number mz = luaL_checknumber(L, 4);
-    if (!p) { lua_pushboolean(L, 0); return 1; }
+    if (!p) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
     p->setMotion(math::Vector3{(double)mx, (double)my, (double)mz});
     auto pk = std::make_shared<network::protocol::SetEntityMotionPacket>();
     pk->entities.push_back({0, (float)mx, (float)my, (float)mz});
@@ -405,7 +474,8 @@ static const char* kPlayerMeta = "CS.Player";
 // value is not a handle or the player is gone).
 Player* resolvePlayerHandle(lua_State* L, int idx) {
     auto* name = static_cast<std::string*>(luaL_testudata(L, idx, kPlayerMeta));
-    if (!name) return nullptr;
+    if (!name)
+        return nullptr;
     return Server::getInstance().getPlayerExact(*name);
 }
 
@@ -428,7 +498,10 @@ int l_player_handle_tostring(lua_State* L) {
 int l_server_getplayer(lua_State* L) {
     const char* req = luaL_checkstring(L, 1);
     Player* p = Server::getInstance().getPlayerExact(req);
-    if (!p) { lua_pushnil(L); return 1; }
+    if (!p) {
+        lua_pushnil(L);
+        return 1;
+    }
     auto* stored = static_cast<std::string*>(lua_newuserdata(L, sizeof(std::string)));
     new (stored) std::string(p->getName());
     luaL_getmetatable(L, kPlayerMeta);
@@ -441,10 +514,10 @@ int l_server_getplayer(lua_State* L) {
 // string argument and the rest of the stack stays untouched.
 int l_player_method(lua_State* L) {
     auto* name = static_cast<std::string*>(luaL_checkudata(L, 1, kPlayerMeta));
-    std::string held = *name;                  // copy: the stack mutates
-    lua_pop(L, 1);                             // drop the handle
+    std::string held = *name; // copy: the stack mutates
+    lua_pop(L, 1);            // drop the handle
     lua_pushstring(L, held.c_str());
-    lua_insert(L, 1);                          // name first, args follow
+    lua_insert(L, 1); // name first, args follow
     auto impl = (lua_CFunction)lua_tocfunction(L, lua_upvalueindex(1));
     return impl(L);
 }
@@ -467,20 +540,26 @@ int l_player_handle_isonline(lua_State* L) {
 // name-based functions) + getName/isOnline + __gc/__tostring.
 void bindPlayerHandle(lua_State* L) {
     luaL_newmetatable(L, kPlayerMeta);
-    lua_newtable(L);                           // __index
+    lua_newtable(L); // __index
     static const struct {
         const char* name;
         lua_CFunction impl;
     } mirror[] = {
-        {"message", l_player_message}, {"tip", l_player_tip},
-        {"popup", l_player_popup}, {"kick", l_player_kick},
-        {"teleport", l_player_teleport}, {"teleportWorld", l_player_teleportWorld},
-        {"getWorld", l_player_getWorld}, {"isOp", l_player_isOp},
-        {"getHealth", l_player_getHealth}, {"setHealth", l_player_setHealth},
+        {"message", l_player_message},
+        {"tip", l_player_tip},
+        {"popup", l_player_popup},
+        {"kick", l_player_kick},
+        {"teleport", l_player_teleport},
+        {"teleportWorld", l_player_teleportWorld},
+        {"getWorld", l_player_getWorld},
+        {"isOp", l_player_isOp},
+        {"getHealth", l_player_getHealth},
+        {"setHealth", l_player_setHealth},
         {"setPermission", l_player_setPermission},
         {"hasPermission", l_player_hasPermission},
         {"giveItem", l_player_giveItem},
-        {"setNameTag", l_player_setNameTag}, {"getNameTag", l_player_getNameTag},
+        {"setNameTag", l_player_setNameTag},
+        {"getNameTag", l_player_getNameTag},
         {"setDisplayName", l_player_setDisplayName},
         {"getDisplayName", l_player_getDisplayName},
         {"getPosition", l_player_getPosition},
@@ -490,13 +569,13 @@ void bindPlayerHandle(lua_State* L) {
         {"kill", l_player_kill},
     };
     for (const auto& m : mirror) {
-        lua_pushcfunction(L, m.impl);          // upvalue: the name-based impl
+        lua_pushcfunction(L, m.impl); // upvalue: the name-based impl
         lua_pushcclosure(L, l_player_method, 1);
         lua_setfield(L, -2, m.name);
     }
-    static const luaL_Reg special[] = {
-        {"getName", l_player_handle_getname}, {"isOnline", l_player_handle_isonline},
-        {nullptr, nullptr}};
+    static const luaL_Reg special[] = {{"getName", l_player_handle_getname},
+                                       {"isOnline", l_player_handle_isonline},
+                                       {nullptr, nullptr}};
     luaL_setfuncs(L, special, 0);
     lua_setfield(L, -2, "__index");
     lua_pushcfunction(L, l_player_handle_gc);
@@ -512,8 +591,9 @@ int l_plugin_getResource(lua_State* L) {
     std::string rel;
     if (!sanitizeRelPath(req, rel)) {
         return luaL_error(L,
-            "plugin.getResource: invalid path '%s' (only relative paths "
-            "inside resources/, no '..')", req);
+                          "plugin.getResource: invalid path '%s' (only relative paths "
+                          "inside resources/, no '..')",
+                          req);
     }
     std::string path = pl->resourcesDir() + "/" + rel;
     std::error_code ec;
@@ -528,8 +608,7 @@ int l_plugin_getResource(lua_State* L) {
         lua_pushfstring(L, "could not open resource '%s'", rel.c_str());
         return 2;
     }
-    std::string content((std::istreambuf_iterator<char>(in)),
-                        std::istreambuf_iterator<char>());
+    std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     lua_pushlstring(L, content.data(), content.size());
     return 1;
 }
@@ -559,7 +638,8 @@ int l_plugin_saveResource(lua_State* L) {
     }
     if (fs::exists(dst, ec) && !replace) {
         lua_pushboolean(L, 0);
-        lua_pushfstring(L, "'%s' already exists in the data folder (pass true to overwrite)", rel.c_str());
+        lua_pushfstring(L, "'%s' already exists in the data folder (pass true to overwrite)",
+                        rel.c_str());
         return 2;
     }
     fs::create_directories(fs::path(dst).parent_path(), ec);
@@ -588,9 +668,11 @@ int l_plugin_listResources(lua_State* L) {
     if (fs::exists(root, ec)) {
         for (auto& entry : fs::recursive_directory_iterator(root, ec)) {
             std::error_code e2;
-            if (!entry.is_regular_file(e2)) continue;
+            if (!entry.is_regular_file(e2))
+                continue;
             std::string rel = fs::relative(entry.path(), root, e2).string();
-            if (e2 || rel.empty()) continue;
+            if (e2 || rel.empty())
+                continue;
             lua_pushstring(L, rel.c_str());
             lua_rawseti(L, -2, i++);
         }
@@ -604,20 +686,22 @@ int l_plugin_listResources(lua_State* L) {
 int scheduleImpl(lua_State* L, bool repeat) {
     LuaPlugin* pl = LuaPlugin::from(L);
     int ticks = (int)luaL_checkinteger(L, 1);
-    if (ticks < 1) ticks = 1;
+    if (ticks < 1)
+        ticks = 1;
     luaL_checktype(L, 2, LUA_TFUNCTION);
 
     lua_pushvalue(L, 2);
-    int ref = luaL_ref(L, LUA_REGISTRYINDEX);          // save the function
-    auto idHolder = std::make_shared<uint64_t>(0);     // the id is is known after schedule
+    int ref = luaL_ref(L, LUA_REGISTRYINDEX);      // save the function
+    auto idHolder = std::make_shared<uint64_t>(0); // the id is is known after schedule
 
-    auto task = std::make_shared<scheduler::CallbackTask>(
-        [pl, ref, repeat, idHolder]() {
-            if (!pl->isEnabled()) return;              // plugin already deshabilitado
-            lua_rawgeti(pl->L(), LUA_REGISTRYINDEX, ref);
-            pl->pcall(0, 0);
-            if (!repeat) pl->releaseTask(*idHolder);   // one-shot: soltar the ref
-        });
+    auto task = std::make_shared<scheduler::CallbackTask>([pl, ref, repeat, idHolder]() {
+        if (!pl->isEnabled())
+            return; // plugin already deshabilitado
+        lua_rawgeti(pl->L(), LUA_REGISTRYINDEX, ref);
+        pl->pcall(0, 0);
+        if (!repeat)
+            pl->releaseTask(*idHolder); // one-shot: soltar the ref
+    });
 
     uint64_t id = scheduler::ServerScheduler::get().scheduleSync(task, ticks, repeat ? ticks : 0);
     *idHolder = id;
@@ -625,8 +709,12 @@ int scheduleImpl(lua_State* L, bool repeat) {
     lua_pushinteger(L, (lua_Integer)id);
     return 1;
 }
-int l_scheduler_later(lua_State* L)  { return scheduleImpl(L, false); }
-int l_scheduler_every(lua_State* L)  { return scheduleImpl(L, true); }
+int l_scheduler_later(lua_State* L) {
+    return scheduleImpl(L, false);
+}
+int l_scheduler_every(lua_State* L) {
+    return scheduleImpl(L, true);
+}
 int l_scheduler_cancel(lua_State* L) {
     LuaPlugin::from(L)->cancelTask((uint64_t)luaL_checkinteger(L, 1));
     return 0;
@@ -649,21 +737,20 @@ void bindPluginTable(lua_State* L) {
     LuaPlugin* pl = LuaPlugin::from(L);
     lua_newtable(L);
 
-    lua_pushstring(L, CURSESTONE_API);          // plugin.api
+    lua_pushstring(L, CURSESTONE_API); // plugin.api
     lua_setfield(L, -2, "api");
-    lua_pushstring(L, pl->name().c_str());          // plugin.name
+    lua_pushstring(L, pl->name().c_str()); // plugin.name
     lua_setfield(L, -2, "name");
-    lua_pushstring(L, pl->author().c_str());        // plugin.author
+    lua_pushstring(L, pl->author().c_str()); // plugin.author
     lua_setfield(L, -2, "author");
-    lua_pushstring(L, pl->version().c_str());       // plugin.version
+    lua_pushstring(L, pl->version().c_str()); // plugin.version
     lua_setfield(L, -2, "version");
 
-    static const luaL_Reg pluginF[] = {
-        {"include", l_plugin_include},
-        {"getResource", l_plugin_getResource},
-        {"saveResource", l_plugin_saveResource},
-        {"listResources", l_plugin_listResources},
-        {nullptr, nullptr}};
+    static const luaL_Reg pluginF[] = {{"include", l_plugin_include},
+                                       {"getResource", l_plugin_getResource},
+                                       {"saveResource", l_plugin_saveResource},
+                                       {"listResources", l_plugin_listResources},
+                                       {nullptr, nullptr}};
     luaL_setfuncs(L, pluginF, 0);
 
     lua_setglobal(L, "plugin");
@@ -673,40 +760,44 @@ void bindPluginTable(lua_State* L) {
 
 void bindCore(lua_State* L) {
     static const luaL_Reg logF[] = {
-        {"info", l_log_info}, {"warn", l_log_warn}, {"error", l_log_error},
-        {nullptr, nullptr}};
-    static const luaL_Reg srvF[] = {
-        {"broadcast", l_server_broadcast}, {"players", l_server_players},
-        {"getPlayer", l_server_getplayer},
-        {nullptr, nullptr}};
-    static const luaL_Reg plrF[] = {
-        {"message", l_player_message}, {"tip", l_player_tip},
-        {"popup", l_player_popup}, {"kick", l_player_kick},
-        {"teleport", l_player_teleport}, {"teleportWorld", l_player_teleportWorld},
-        {"getWorld", l_player_getWorld}, {"isOp", l_player_isOp},
-        {"getHealth", l_player_getHealth}, {"setHealth", l_player_setHealth},
-        {"setPermission", l_player_setPermission},
-        {"hasPermission", l_player_hasPermission},
-        {"giveItem", l_player_giveItem},
-        {"setNameTag", l_player_setNameTag}, {"getNameTag", l_player_getNameTag},
-        {"setDisplayName", l_player_setDisplayName},
-        {"getDisplayName", l_player_getDisplayName},
-        {"getPosition", l_player_getPosition},
-        {"getRotation", l_player_getRotation},
-        {"setRotation", l_player_setRotation},
-        {"setMotion", l_player_setMotion},
-        {"kill", l_player_kill},
-        {nullptr, nullptr}};
-    static const luaL_Reg schF[] = {
-        {"later", l_scheduler_later}, {"every", l_scheduler_every},
-        {"cancel", l_scheduler_cancel},
-        {nullptr, nullptr}};
+        {"info", l_log_info}, {"warn", l_log_warn}, {"error", l_log_error}, {nullptr, nullptr}};
+    static const luaL_Reg srvF[] = {{"broadcast", l_server_broadcast},
+                                    {"players", l_server_players},
+                                    {"getPlayer", l_server_getplayer},
+                                    {nullptr, nullptr}};
+    static const luaL_Reg plrF[] = {{"message", l_player_message},
+                                    {"tip", l_player_tip},
+                                    {"popup", l_player_popup},
+                                    {"kick", l_player_kick},
+                                    {"teleport", l_player_teleport},
+                                    {"teleportWorld", l_player_teleportWorld},
+                                    {"getWorld", l_player_getWorld},
+                                    {"isOp", l_player_isOp},
+                                    {"getHealth", l_player_getHealth},
+                                    {"setHealth", l_player_setHealth},
+                                    {"setPermission", l_player_setPermission},
+                                    {"hasPermission", l_player_hasPermission},
+                                    {"giveItem", l_player_giveItem},
+                                    {"setNameTag", l_player_setNameTag},
+                                    {"getNameTag", l_player_getNameTag},
+                                    {"setDisplayName", l_player_setDisplayName},
+                                    {"getDisplayName", l_player_getDisplayName},
+                                    {"getPosition", l_player_getPosition},
+                                    {"getRotation", l_player_getRotation},
+                                    {"setRotation", l_player_setRotation},
+                                    {"setMotion", l_player_setMotion},
+                                    {"kill", l_player_kill},
+                                    {nullptr, nullptr}};
+    static const luaL_Reg schF[] = {{"later", l_scheduler_later},
+                                    {"every", l_scheduler_every},
+                                    {"cancel", l_scheduler_cancel},
+                                    {nullptr, nullptr}};
     setTable(L, "log", logF);
     setTable(L, "server", srvF);
     setTable(L, "player", plrF);
     setTable(L, "scheduler", schF);
-    bindPlayerHandle(L);  // metatable CS.Player for server.getPlayer
-    bindPluginTable(L);   // plugin.api / .name / .author / .version / .include
+    bindPlayerHandle(L); // metatable CS.Player for server.getPlayer
+    bindPluginTable(L);  // plugin.api / .name / .author / .version / .include
 
     // import("module"): load of módulos Lua of the own plugin (the way
     // recommended; looks for in src/ and not requires extension). global, as requires

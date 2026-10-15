@@ -33,7 +33,7 @@
 namespace cursestone::world::generator::biome {
 
 class BiomeRegistry {
-public:
+  public:
     // Config for a biome id (hill/variant ids alias their base biome;
     // unknown ids fall back to plains so decoration never crashes).
     static const BiomeConfig& forId(uint8_t id);

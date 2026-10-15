@@ -41,7 +41,7 @@
 namespace cursestone {
 
 bool WeatherCommand::execute(CommandSender* sender, const std::string& label,
-                    const std::vector<std::string>& args) {
+                             const std::vector<std::string>& args) {
     (void)label;
     auto* lvl = Server::getInstance().getDefaultWorld();
     if (!lvl) {
@@ -51,12 +51,11 @@ bool WeatherCommand::execute(CommandSender* sender, const std::string& label,
 
     if (args.empty()) {
         sender->sendMessage("Usage: /weather <clear|rain|thunder> [duration in seconds]");
-        const char* names[4] = { "clear", "rain", "rain+thunder", "thunder" };
-        sender->sendMessage(std::string("Current: ") +
-            names[lvl->weatherState() & 3] +
-            (lvl->weatherTicksLeft() > 0
-                ? " (" + std::to_string(lvl->weatherTicksLeft() / 20) + "s left)"
-                : ""));
+        const char* names[4] = {"clear", "rain", "rain+thunder", "thunder"};
+        sender->sendMessage(std::string("Current: ") + names[lvl->weatherState() & 3] +
+                            (lvl->weatherTicksLeft() > 0
+                                 ? " (" + std::to_string(lvl->weatherTicksLeft() / 20) + "s left)"
+                                 : ""));
         return true;
     }
 
@@ -83,16 +82,22 @@ bool WeatherCommand::execute(CommandSender* sender, const std::string& label,
     } else if (w == "rain" || w == "rainy" || w == "1") {
         lvl->setWeather(world::World::WEATHER_RAIN, duration_ticks);
         sender->sendMessage("Rain started" +
-            std::string(duration_ticks > 0 ? " (" + std::to_string(duration_ticks / 20) + "s)" : ""));
+                            std::string(duration_ticks > 0
+                                            ? " (" + std::to_string(duration_ticks / 20) + "s)"
+                                            : ""));
     } else if (w == "storm" || w == "rain_thunder" || w == "rainy_thunder" || w == "2") {
         lvl->setWeather(world::World::WEATHER_RAINY_THUNDER, duration_ticks);
         sender->sendMessage("Thunderstorm started" +
-            std::string(duration_ticks > 0 ? " (" + std::to_string(duration_ticks / 20) + "s)" : ""));
+                            std::string(duration_ticks > 0
+                                            ? " (" + std::to_string(duration_ticks / 20) + "s)"
+                                            : ""));
     } else if (w == "thunder" || w == "3") {
         // Infinity's bare "thunder" is state 3: thunder WITHOUT rain.
         lvl->setWeather(world::World::WEATHER_THUNDER, duration_ticks);
         sender->sendMessage("Thunder started" +
-            std::string(duration_ticks > 0 ? " (" + std::to_string(duration_ticks / 20) + "s)" : ""));
+                            std::string(duration_ticks > 0
+                                            ? " (" + std::to_string(duration_ticks / 20) + "s)"
+                                            : ""));
     } else {
         sender->sendMessage("Usage: /weather <clear|rain|thunder> [duration in seconds]");
     }

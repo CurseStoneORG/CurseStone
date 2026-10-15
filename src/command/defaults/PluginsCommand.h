@@ -35,10 +35,11 @@
 namespace cursestone {
 
 class PluginsCommand : public Command {
-public:
+  public:
     PluginsCommand()
-        : Command("plugins", "List loaded plugins (op only)",
-                  "/plugins [reload]", "cursestone.command.plugins") {}
+        : Command("plugins", "List loaded plugins (op only)", "/plugins [reload]",
+                  "cursestone.command.plugins") {
+    }
     bool execute(CommandSender* sender, const std::string& label,
                  const std::vector<std::string>& args) override;
 };

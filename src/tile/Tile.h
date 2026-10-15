@@ -40,26 +40,37 @@
 #pragma once
 #include <cstdint>
 #include <memory>
-#include <string>           // required for std::string id_ and Tile(std::string, ...)
+#include <string> // required for std::string id_ and Tile(std::string, ...)
 #include "world/Position.h"
-#include "nbt/tag/Tag.h"    // mcp_tag_t
+#include "nbt/tag/Tag.h" // mcp_tag_t
 namespace cursestone::tile {
 class Tile {
-public:
-    Tile(std::string id, cursestone::world::Position pos)
-        : id_(std::move(id)), pos_(pos) {}
+  public:
+    Tile(std::string id, cursestone::world::Position pos) : id_(std::move(id)), pos_(pos) {
+    }
     virtual ~Tile() = default;
-    const std::string& getId() const { return id_; }
-    const cursestone::world::Position& position() const { return pos_; }
-    void markDirty() { dirty_ = true; }
-    bool isDirty() const { return dirty_; }
+    const std::string& getId() const {
+        return id_;
+    }
+    const cursestone::world::Position& position() const {
+        return pos_;
+    }
+    void markDirty() {
+        dirty_ = true;
+    }
+    bool isDirty() const {
+        return dirty_;
+    }
     // Clears the dirty flag after a successful write to the chunk's
     // tile_entities array (World::syncTilesToChunks calls this once a
     // tile's NBT has actually been handed to mcp_chunk_add_tile_entity —
     // NOT before, so a tile whose owning chunk isn't loaded stays dirty
     // and gets retried on the next save()).
-    void clearDirty() { dirty_ = false; }
-    virtual void tick(uint64_t /*current_tick*/) {}
+    void clearDirty() {
+        dirty_ = false;
+    }
+    virtual void tick(uint64_t /*current_tick*/) {
+    }
     // Serialise tile state into `tag` (a fresh MCP_TAG_COMPOUND owned by
     // the caller — World::syncTilesToChunks() creates it, hands it here,
     // then hands it to mcp_chunk_add_tile_entity()). Base implementation
@@ -73,8 +84,9 @@ public:
     // World::ensureTilesLoaded() reads x/y/z itself to decide which
     // position to construct the Tile at, before readNBT ever runs).
     virtual void readNBT(const mcp_tag_t* tag);
-protected:
-    std::string id_;                  // "Chest", "Furnace", "Sign", ...
+
+  protected:
+    std::string id_; // "Chest", "Furnace", "Sign", ...
     cursestone::world::Position pos_;
     bool dirty_ = true;
 };

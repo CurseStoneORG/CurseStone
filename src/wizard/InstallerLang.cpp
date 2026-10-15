@@ -22,10 +22,14 @@
  */
 #include "InstallerLang.h"
 namespace cursestone::wizard {
-InstallerLang& InstallerLang::get() { static InstallerLang i; return i; }
+InstallerLang& InstallerLang::get() {
+    static InstallerLang i;
+    return i;
+}
 bool InstallerLang::load(const std::string& lang_code) {
     // Only the English locale is built in.
-    if (lang_code != "eng") return false;
+    if (lang_code != "eng")
+        return false;
     strings_ = {
         {"installer.welcome", "Welcome to CurseStone! Let's set up your server."},
         {"installer.name_question", "Server name (motd)"},

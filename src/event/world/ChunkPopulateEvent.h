@@ -28,17 +28,22 @@
 #pragma once
 #include "ChunkEvent.h"
 #include <string>
-namespace cursestone { namespace world { class World; } }
+namespace cursestone {
+namespace world {
+class World;
+}
+}
 
 namespace cursestone::event::world {
 
 class ChunkPopulateEvent : public ChunkEvent {
-public:
-    ChunkPopulateEvent(cursestone::world::World* l, void* c)
-        : ChunkEvent(l, c) {}
+  public:
+    ChunkPopulateEvent(cursestone::world::World* l, void* c) : ChunkEvent(l, c) {
+    }
 
     const std::string& eventName() const override {
-        static std::string n = "ChunkPopulateEvent"; return n;
+        static std::string n = "ChunkPopulateEvent";
+        return n;
     }
 };
 

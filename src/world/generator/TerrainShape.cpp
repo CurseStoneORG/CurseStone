@@ -55,13 +55,15 @@ namespace {
 struct MemoEntry {
     uint64_t uid = 0;
     uint64_t kx = 0, kz = 0, kw = 0;
-    bool     valid = false;
-    double   dv = 0.0;   // valor para funciones double
-    int64_t  iv = 0;     // valor para funciones int/uint8
+    bool valid = false;
+    double dv = 0.0; // valor para funciones double
+    int64_t iv = 0;  // valor para funciones int/uint8
 };
 
 template <size_t N>
-struct MemoTable { MemoEntry e[N]; };
+struct MemoTable {
+    MemoEntry e[N];
+};
 
 inline uint64_t memoBits(double d) {
     uint64_t u;
@@ -83,31 +85,32 @@ inline uint64_t memoMix(uint64_t z) {
 }
 
 inline uint64_t memoHash(uint64_t uid, uint64_t kx, uint64_t kz, uint64_t kw) {
-    return memoMix(kx ^ memoMix(kz + 0x9E3779B97F4A7C15ULL)
-                       ^ memoMix(uid + kw * 0xC2B2AE3D27D4EB4FULL));
+    return memoMix(kx ^ memoMix(kz + 0x9E3779B97F4A7C15ULL) ^
+                   memoMix(uid + kw * 0xC2B2AE3D27D4EB4FULL));
 }
 
 template <size_t N>
-inline MemoEntry* memoFind(MemoTable<N>& t, uint64_t uid,
-                           uint64_t kx, uint64_t kz, uint64_t kw) {
+inline MemoEntry* memoFind(MemoTable<N>& t, uint64_t uid, uint64_t kx, uint64_t kz, uint64_t kw) {
     MemoEntry& e = t.e[memoHash(uid, kx, kz, kw) & (N - 1)];
-    return (e.valid && e.uid == uid && e.kx == kx && e.kz == kz && e.kw == kw)
-               ? &e : nullptr;
+    return (e.valid && e.uid == uid && e.kx == kx && e.kz == kz && e.kw == kw) ? &e : nullptr;
 }
 
 template <size_t N>
-inline MemoEntry& memoSlot(MemoTable<N>& t, uint64_t uid,
-                           uint64_t kx, uint64_t kz, uint64_t kw) {
+inline MemoEntry& memoSlot(MemoTable<N>& t, uint64_t uid, uint64_t kx, uint64_t kz, uint64_t kw) {
     MemoEntry& e = t.e[memoHash(uid, kx, kz, kw) & (N - 1)];
-    e.uid = uid; e.kx = kx; e.kz = kz; e.kw = kw; e.valid = true;
+    e.uid = uid;
+    e.kx = kx;
+    e.kz = kz;
+    e.kw = kw;
+    e.valid = true;
     return e;
 }
 
 // Tablas por funcion y por hilo (cada una ~64-128 KB).
-inline thread_local MemoTable<4096> t_rawMemo;      // rawColumnHeight
-inline thread_local MemoTable<4096> t_colHMemo;     // columnHeight
-inline thread_local MemoTable<4096> t_riverDMemo;   // riverDistance
-inline thread_local MemoTable<4096> t_biomeMemo;    // columnBiome
+inline thread_local MemoTable<4096> t_rawMemo;    // rawColumnHeight
+inline thread_local MemoTable<4096> t_colHMemo;   // columnHeight
+inline thread_local MemoTable<4096> t_riverDMemo; // riverDistance
+inline thread_local MemoTable<4096> t_biomeMemo;  // columnBiome
 
 // Contador de instancias de TerrainNoise (invalidacion de las tablas).
 inline uint64_t nextTerrainNoiseUid() {
@@ -152,9 +155,8 @@ inline double rawField2d(const FieldNoise& f, double x, double y) {
     return noiseValue2d(f.layer, x, y);
 }
 
-inline double noiseFbm2d(const FieldNoise& f, double x, double y,
-                         int /*octaves*/, double /*persistence*/,
-                         double /*lacunarity*/) {
+inline double noiseFbm2d(const FieldNoise& f, double x, double y, int /*octaves*/,
+                         double /*persistence*/, double /*lacunarity*/) {
     return (rawField2d(f, x, y) - f.offset) * f.gain;
 }
 
@@ -168,8 +170,8 @@ inline double noiseFbm2d(const FieldNoise& f, double x, double y,
 // generador siguen significando lo que significaban.
 //
 // Se hace una vez por mundo (y por campo), en el constructor de TerrainNoise.
-constexpr double kCalibHalfSize = 512.0;  // zona de referencia: +/-512 bloques
-constexpr double kCalibStep = 16.0;       //  64x64 muestras
+constexpr double kCalibHalfSize = 512.0; // zona de referencia: +/-512 bloques
+constexpr double kCalibStep = 16.0;      //  64x64 muestras
 constexpr double kMinGain = 0.25;
 constexpr double kMaxGain = 24.0;
 
@@ -191,27 +193,35 @@ void calibrate(FieldNoise& f, double scale, double targetRms, bool debias) {
             ++n;
         }
     }
-    if (n == 0) return;
+    if (n == 0)
+        return;
     const double mean = sum / (double)n;
     double var = sumSq / (double)n - mean * mean;
-    if (var < 0.0) var = 0.0;
+    if (var < 0.0)
+        var = 0.0;
     const double rms = std::sqrt(var);
     f.offset = debias ? mean : 0.0;
     const double centred = debias ? std::sqrt(std::max(0.0, var)) : rms;
     f.gain = (centred > 1e-9) ? (targetRms / centred) : 1.0;
-    if (f.gain < kMinGain) f.gain = kMinGain;
-    if (f.gain > kMaxGain) f.gain = kMaxGain;
+    if (f.gain < kMinGain)
+        f.gain = kMinGain;
+    if (f.gain > kMaxGain)
+        f.gain = kMaxGain;
 }
 
 inline double smoothstep(double e0, double e1, double x) {
     double t = (x - e0) / (e1 - e0);
-    if (t < 0.0) t = 0.0;
-    else if (t > 1.0) t = 1.0;
+    if (t < 0.0)
+        t = 0.0;
+    else if (t > 1.0)
+        t = 1.0;
     return t * t * (3.0 - 2.0 * t);
 }
 
 // Land mask: 0 over deep ocean, 1 on the continent.
-inline double landMask(double cont) { return smoothstep(-0.28, 0.02, cont); }
+inline double landMask(double cont) {
+    return smoothstep(-0.28, 0.02, cont);
+}
 
 // ---- River cross-section -----------------------------------------------
 // Ground height of a river as a function of the BLOCK distance `d` to the
@@ -228,11 +238,11 @@ inline double landMask(double cont) { return smoothstep(-0.28, 0.02, cont); }
 // cannot produce that: the ground only ever descends 1.1 blocks per block
 // outwards, so the smoothing kernel turns it into the stepped dirt/stone
 // banks the reference rivers have.
-constexpr double kRiverBed   = 2.4;   // half width carved to full depth
-constexpr double kRiverEdge  = 3.2;   // where the bed reaches sea level
-constexpr double kRiverShore = 3.0;   // flat grass bank at water level
-constexpr double kRiverClimb = 1.2;   // lowland: gentle terraced banks
-constexpr double kCliffClimb = 5.0;   // eroded gorge wall, ~65-75 deg once smoothed
+constexpr double kRiverBed = 2.4;   // half width carved to full depth
+constexpr double kRiverEdge = 3.2;  // where the bed reaches sea level
+constexpr double kRiverShore = 3.0; // flat grass bank at water level
+constexpr double kRiverClimb = 1.2; // lowland: gentle terraced banks
+constexpr double kCliffClimb = 5.0; // eroded gorge wall, ~65-75 deg once smoothed
 // How hard the river network is pulled towards the jungle belt, as a
 // fraction of the river field's own range. Roughly this many blocks of
 // sideways deflection across the gradient — big enough to visibly steer the
@@ -240,11 +250,12 @@ constexpr double kCliffClimb = 5.0;   // eroded gorge wall, ~65-75 deg once smoo
 constexpr double kRiverJungleBias = 0.24;
 
 inline double riverProfile(double d, double climb, double width) {
-    const double bed   = (double)kSeaLevel - 4.0;
-    const double kBed  = kRiverBed * width;
+    const double bed = (double)kSeaLevel - 4.0;
+    const double kBed = kRiverBed * width;
     const double kEdge = kRiverEdge * width;
-    const double kShr  = kRiverShore * width;
-    if (d <= kBed) return bed;
+    const double kShr = kRiverShore * width;
+    if (d <= kBed)
+        return bed;
     if (d <= kEdge) {
         const double t = (d - kBed) / (kEdge - kBed);
         return bed + ((double)kSeaLevel - bed) * t;
@@ -253,7 +264,8 @@ inline double riverProfile(double d, double climb, double width) {
     // explicit clamp, not just the start of the climb: without it the
     // profile keeps rising straight through sea level and the "bank" ends
     // up under the water instead of being a flat shelf beside it.
-    if (d <= kEdge + kShr) return (double)kSeaLevel;
+    if (d <= kEdge + kShr)
+        return (double)kSeaLevel;
     // Capped so a mountain cannot be cut into a bottomless trench; past the
     // cap the broad valley terms take over.
     const double dc = std::min(d, kEdge + kShr + 40.0);
@@ -294,9 +306,9 @@ inline double riverClimbRate(double cliff) {
 // wavelength) restores that variation without reintroducing the ponds,
 // because it scales a distance threshold rather than a field threshold.
 inline double riverWidthScale(const TerrainNoise& n, double wx, double wz) {
-    const double w = noiseFbm2d(n.surface, wx * 0.0011 + 61000.0,
-                                       wz * 0.0011 - 27000.0, 2, 0.5, 2.0);
-    return 0.70 + 0.60 * (w * 0.5 + 0.5);   // 0.70 .. 1.30
+    const double w =
+        noiseFbm2d(n.surface, wx * 0.0011 + 61000.0, wz * 0.0011 - 27000.0, 2, 0.5, 2.0);
+    return 0.70 + 0.60 * (w * 0.5 + 0.5); // 0.70 .. 1.30
 }
 
 // Half width of the water at this column. riverMask, the terrain carve and
@@ -319,11 +331,9 @@ double plainsFactor(const TerrainNoise& n, double wx, double wz) {
     // above the ocean is almost always plains. The coastal term is what
     // puts the wide open grassland right against the sea, with hills and
     // forest further back — the shape the reference generator produces.
-    const double p = noiseFbm2d(n.surface, wx * 0.0017 + 3300.0,
-                                       wz * 0.0017 - 1700.0, 2, 0.5, 2.0);
+    const double p = noiseFbm2d(n.surface, wx * 0.0017 + 3300.0, wz * 0.0017 - 1700.0, 2, 0.5, 2.0);
     const double inland = smoothstep(0.02, 0.40, p);
-    const double coast = smoothstep(-0.12, 0.10, cont) *
-                         (1.0 - smoothstep(0.14, 0.38, cont));
+    const double coast = smoothstep(-0.12, 0.10, cont) * (1.0 - smoothstep(0.14, 0.38, cont));
     return std::clamp(std::max(inland * 0.85, coast * 0.95), 0.0, 1.0);
 }
 
@@ -332,8 +342,7 @@ double tempAt(const TerrainNoise& n, double wx, double wz) {
 }
 
 double humidAt(const TerrainNoise& n, double wx, double wz) {
-    return noiseFbm2d(n.humid, wx * 0.0005 + 512.0,
-                             wz * 0.0005 - 256.0, 2, 0.5, 2.0);
+    return noiseFbm2d(n.humid, wx * 0.0005 + 512.0, wz * 0.0005 - 256.0, 2, 0.5, 2.0);
 }
 
 double plainsPlateau(const TerrainNoise& n, double wx, double wz) {
@@ -344,10 +353,10 @@ double plainsPlateau(const TerrainNoise& n, double wx, double wz) {
     // plainsFactor, which is the same factor the relief damping and the
     // biome choice read, so the raised table, the flat ground and the
     // plains biome always agree on where a plain is.
-    const double patch = smoothstep(0.02, 0.40,
-        noiseFbm2d(n.surface, wx * 0.0060 + 9100.0,
-                          wz * 0.0060 - 2700.0, 2, 0.5, 2.0));
-    if (patch <= 0.0) return 0.0;
+    const double patch = smoothstep(
+        0.02, 0.40, noiseFbm2d(n.surface, wx * 0.0060 + 9100.0, wz * 0.0060 - 2700.0, 2, 0.5, 2.0));
+    if (patch <= 0.0)
+        return 0.0;
     return patch * smoothstep(0.45, 0.72, plainsFactor(n, wx, wz));
 }
 
@@ -355,23 +364,22 @@ double plainsForest(const TerrainNoise& n, double wx, double wz) {
     // Woodland-scale patches inside the grassland. Same idea as the
     // plateau: the biome selection turns this into BIOME_FOREST, so the
     // patch gets real forest density instead of a handful of stray oaks.
-    const double patch = smoothstep(0.20, 0.48,
-        noiseFbm2d(n.surface, wx * 0.0062 - 6100.0,
-                          wz * 0.0062 + 2450.0, 2, 0.5, 2.0));
-    if (patch <= 0.0) return 0.0;
+    const double patch = smoothstep(
+        0.20, 0.48, noiseFbm2d(n.surface, wx * 0.0062 - 6100.0, wz * 0.0062 + 2450.0, 2, 0.5, 2.0));
+    if (patch <= 0.0)
+        return 0.0;
     return patch * smoothstep(0.45, 0.70, plainsFactor(n, wx, wz));
 }
 
 double savannaFactor(const TerrainNoise& n, double wx, double wz) {
-    const double t  = tempAt(n, wx, wz);
+    const double t = tempAt(n, wx, wz);
     const double hu = humidAt(n, wx, wz);
     // Ask the biome selection directly whether this climate is a savanna.
     // Hand-rolling the temperature/humidity cuts again would be one more
     // place for the flattened ground and the biome byte to disagree — and
     // the height is passed at sea level + 4 so the ocean/mountain overrides
     // in select() can never answer here.
-    if (biome::BiomeRegistry::select(t, hu, kSeaLevel + 4, kSeaLevel) !=
-        biome::BIOME_SAVANNA)
+    if (biome::BiomeRegistry::select(t, hu, kSeaLevel + 4, kSeaLevel) != biome::BIOME_SAVANNA)
         return 0.0;
     // Long stretches rather than a uniform sheet: the low-relief savanna
     // comes in patches a few hundred blocks wide. The mask is deliberately
@@ -380,9 +388,9 @@ double savannaFactor(const TerrainNoise& n, double wx, double wz) {
     // plains and the desert. The wavelength was lowered a touch (0.0032 ->
     // 0.0024) and the ramp widened so the savanna — and the table cut out
     // of it — read as broad country instead of ribbons.
-    return smoothstep(-0.24, 0.20,
-        noiseFbm2d(n.surface, wx * 0.0024 + 4200.0,
-                          wz * 0.0024 - 8800.0, 2, 0.5, 2.0));
+    return smoothstep(
+        -0.24, 0.20,
+        noiseFbm2d(n.surface, wx * 0.0024 + 4200.0, wz * 0.0024 - 8800.0, 2, 0.5, 2.0));
 }
 
 // Desert proximity in [0,1]: how close this climate is to the hot/dry
@@ -392,13 +400,14 @@ double savannaFactor(const TerrainNoise& n, double wx, double wz) {
 // exactly 1 for a genuine desert. The player wants savanna plateaus to
 // always form next to the desert, which is what this drives below.
 static double desertNearby(const TerrainNoise& n, double wx, double wz) {
-    const double t  = tempAt(n, wx, wz);
+    const double t = tempAt(n, wx, wz);
     const double hu = humidAt(n, wx, wz);
     // A desert exists ONLY in the hot band (temp > 0.5). In the cooler
     // savanna band (0.30 < temp <= 0.5) there is no desert to be next to,
     // so this must stay 0 there or every warm savanna would be forced into
     // a plateau.
-    if (t <= 0.50) return 0.0;
+    if (t <= 0.50)
+        return 0.0;
     // hu = -0.20 is the desert cut; ramp over ~0.30 of humidity so a plateau
     // starts to favour the desert side well before the biome actually flips.
     return smoothstep(-0.50, -0.20, hu);
@@ -412,7 +421,8 @@ double savannaCanyon(const TerrainNoise& n, double wx, double wz) {
     // higher threshold is what made the tables come out as thin ribbons.
     const double sf = savannaFactor(n, wx, wz);
     const double core = smoothstep(0.40, 0.55, sf);
-    if (core <= 0.0) return 0.0;
+    if (core <= 0.0)
+        return 0.0;
 
     // Desert neighbourhood. When a savanna touches a desert the player wants
     // the raised table to ALWAYS show up: it is the classic warm-country
@@ -432,30 +442,30 @@ double savannaCanyon(const TerrainNoise& n, double wx, double wz) {
     m = std::min(m, savannaFactor(n, wx, wz - kM));
     m = std::min(m, savannaFactor(n, wx, wz + kM));
     const double interior = smoothstep(0.42, 0.60, m);
-    if (interior <= 0.0) return 0.0;
+    if (interior <= 0.0)
+        return 0.0;
 
     // ...and inland: a canyon never overlooks a shoreline, so no beach or
     // ocean can end up sitting next to one. `continentField` is the cheap
     // proxy for "is there land here" — it is the same field the coast is
     // built from, and it cannot recurse back into the terrain height the
     // way a rawColumnHeight() probe would.
-    constexpr double kInland = -0.10;  // the shoreline/beach band sits below this
-    if (continentField(n, wx - kM, wz) < kInland ||
-        continentField(n, wx + kM, wz) < kInland ||
-        continentField(n, wx, wz - kM) < kInland ||
-        continentField(n, wx, wz + kM) < kInland)
+    constexpr double kInland = -0.10; // the shoreline/beach band sits below this
+    if (continentField(n, wx - kM, wz) < kInland || continentField(n, wx + kM, wz) < kInland ||
+        continentField(n, wx, wz - kM) < kInland || continentField(n, wx, wz + kM) < kInland)
         return 0.0;
-    const double notPlains =
-        1.0 - smoothstep(0.35, 0.55, plainsFactor(n, wx, wz));
-    if (notPlains <= 0.0) return 0.0;
+    const double notPlains = 1.0 - smoothstep(0.35, 0.55, plainsFactor(n, wx, wz));
+    if (notPlains <= 0.0)
+        return 0.0;
     // Broad, low-frequency table mask: the tables come out as big blobs
     // hundreds of blocks across rather than as small mounds or ribbons.
-    double patch = smoothstep(-0.22, 0.14,
-        noiseFbm2d(n.surface, wx * 0.0016 + 15500.0,
-                          wz * 0.0016 + 7300.0, 2, 0.5, 2.0));
+    double patch =
+        smoothstep(-0.22, 0.14,
+                   noiseFbm2d(n.surface, wx * 0.0016 + 15500.0, wz * 0.0016 + 7300.0, 2, 0.5, 2.0));
     // Near the desert the table is wanted on essentially every savanna
     // column, so the patch mask is lifted towards 1 there.
-    if (desert > 0.0) patch = std::max(patch, desert);
+    if (desert > 0.0)
+        patch = std::max(patch, desert);
     return core * interior * notPlains * patch;
 }
 
@@ -465,10 +475,8 @@ TerrainNoise::TerrainNoise(int64_t seed)
       // El reparto es fijo: la capa "baja" A para el relieve principal, las
       // de 4 octavas para el clima (temperatura/humedad), la "baja" B para la
       // red de rios y forestNoise para la superficie sin arboles.
-      height{vanilla.lperlinNoise1, 1.0, 0.0},
-      temp{vanilla.perlinNoise2, 1.0, 0.0},
-      humid{vanilla.perlinNoise3, 1.0, 0.0},
-      river{vanilla.lperlinNoise2, 1.0, 0.0},
+      height{vanilla.lperlinNoise1, 1.0, 0.0}, temp{vanilla.perlinNoise2, 1.0, 0.0},
+      humid{vanilla.perlinNoise3, 1.0, 0.0}, river{vanilla.lperlinNoise2, 1.0, 0.0},
       surface{vanilla.forestNoise, 1.0, 0.0} {
     // Identidad para invalidar las memo-tablas por hilo (ver arriba).
     uid = nextTerrainNoiseUid();
@@ -492,24 +500,21 @@ static double rawColumnHeightUncached(const TerrainNoise& n, double wx, double w
     const double cont = continentField(n, wx, wz);
     // Broad rolling swells — the large-scale swell that makes hills read as
     // hills instead of as one uniform bump field.
-    const double broad = noiseFbm2d(n.height, wx * 0.0022 + 313.0,
-                                           wz * 0.0022 + 727.0, 3, 0.5, 2.0);
+    const double broad =
+        noiseFbm2d(n.height, wx * 0.0022 + 313.0, wz * 0.0022 + 727.0, 3, 0.5, 2.0);
     // Rolled hills.
-    const double hill = noiseFbm2d(n.height, wx * 0.0055 + 77.3,
-                                          wz * 0.0055 - 41.7, 4, 0.5, 2.0);
+    const double hill = noiseFbm2d(n.height, wx * 0.0055 + 77.3, wz * 0.0055 - 41.7, 4, 0.5, 2.0);
     // Small surface detail — this is what keeps the terrain from looking
     // like a smooth ramp.
-    const double det = noiseFbm2d(n.height, wx * 0.0140 + 900.0,
-                                         wz * 0.0140 + 300.0, 3, 0.5, 2.0);
+    const double det = noiseFbm2d(n.height, wx * 0.0140 + 900.0, wz * 0.0140 + 300.0, 3, 0.5, 2.0);
     // Fine crags. The long-wavelength layers barely move between two
     // neighbouring columns, so without a short-wavelength layer the ground
     // reads as glassy smooth no matter how big the hills are. This is what
     // actually gives the surface its local roughness.
-    const double crag = noiseFbm2d(n.height, wx * 0.0320 - 555.0,
-                                          wz * 0.0320 + 111.0, 2, 0.5, 2.0);
+    const double crag = noiseFbm2d(n.height, wx * 0.0320 - 555.0, wz * 0.0320 + 111.0, 2, 0.5, 2.0);
     // Ridged mountains: a value that folds at 0 into sharp crests.
-    const double ridgeN = noiseFbm2d(n.height, wx * 0.0032 + 1234.5,
-                                            wz * 0.0032 - 987.6, 3, 0.5, 2.0);
+    const double ridgeN =
+        noiseFbm2d(n.height, wx * 0.0032 + 1234.5, wz * 0.0032 - 987.6, 3, 0.5, 2.0);
     double ridge = 1.0 - std::fabs(ridgeN);
     ridge *= ridge;
     // Sharp rocky outcrops. Every other layer here is low-frequency, so it
@@ -519,8 +524,7 @@ static double rawColumnHeightUncached(const TerrainNoise& n, double wx, double w
     // what finally produces real 3-block steps and bare rock faces on the
     // hills without touching the lowland. Keeping it out of the lowlands is
     // also what stops it from making the river banks harsher.
-    const double outN = noiseFbm2d(n.height, wx * 0.0210 + 88.0,
-                                          wz * 0.0210 - 55.0, 2, 0.5, 2.0);
+    const double outN = noiseFbm2d(n.height, wx * 0.0210 + 88.0, wz * 0.0210 - 55.0, 2, 0.5, 2.0);
     double outcrop = 1.0 - std::fabs(outN);
     outcrop = outcrop * outcrop * outcrop;
 
@@ -546,19 +550,20 @@ static double rawColumnHeightUncached(const TerrainNoise& n, double wx, double w
     const double damp = (savanna > plains) ? 0.78 : 0.90;
     const double relief = 1.0 - damp * std::max(plains, savanna);
 
-    double h = 70.0 + cont * 31.0;                       // 39 .. 101 base
+    double h = 70.0 + cont * 31.0; // 39 .. 101 base
     // The broad swell is damped too. It was the one layer still at full
     // strength inside a plain, and since it is the largest term it is the
     // one that decides whether two neighbouring columns differ at all.
     h += broad * (13.0 * land * (0.30 + 0.70 * relief) + 1.5 * (1.0 - land));
-    h += hill * (16.0 * land * relief + 3.0 * (1.0 - land));      // hills
+    h += hill * (16.0 * land * relief + 3.0 * (1.0 - land));          // hills
     h += ridge * 24.0 * land * relief * smoothstep(0.30, 0.62, cont); // mountains
     // Detail is boosted where the ground is already high: highland gets
     // craggier, lowland stays smooth, which is what vanilla does.
     const double highland = smoothstep(70.0, 92.0, h);
     h += det * (3.6 * land * relief + 0.25) * (1.0 + 0.8 * highland);
-    h += crag * (5.5 * land * relief + 0.12);    h += (outcrop - 0.30) * 9.5 * relief * smoothstep(84.0, 100.0, h) *
-         smoothstep(0.18, 0.55, cont);
+    h += crag * (5.5 * land * relief + 0.12);
+    h +=
+        (outcrop - 0.30) * 9.5 * relief * smoothstep(84.0, 100.0, h) * smoothstep(0.18, 0.55, cont);
 
     // ---- Deep oceans ----------------------------------------------------
     // The floor sinks PROGRESSIVELY from the shore (cont ~ 0, land ~ 1)
@@ -579,10 +584,10 @@ static double rawColumnHeightUncached(const TerrainNoise& n, double wx, double w
     // scale. Both terms below are weighted by `offshore`, so the coast keeps
     // its smooth shelf and only the genuinely deep water gets relief.
     if (offshore > 0.0) {
-        const double floorN = noiseFbm2d(n.height, wx * 0.0048 + 2200.0,
-                                                wz * 0.0048 - 6100.0, 3, 0.5, 2.0);
-        const double ridgeIn = noiseFbm2d(n.height, wx * 0.0021 - 4400.0,
-                                                wz * 0.0021 + 1700.0, 2, 0.5, 2.0);
+        const double floorN =
+            noiseFbm2d(n.height, wx * 0.0048 + 2200.0, wz * 0.0048 - 6100.0, 3, 0.5, 2.0);
+        const double ridgeIn =
+            noiseFbm2d(n.height, wx * 0.0021 - 4400.0, wz * 0.0021 + 1700.0, 2, 0.5, 2.0);
         double seamount = 1.0 - std::fabs(ridgeIn);
         seamount = seamount * seamount;
         h += offshore * (floorN * 7.0 + (seamount - 0.28) * 13.0);
@@ -615,8 +620,7 @@ static double rawColumnHeightUncached(const TerrainNoise& n, double wx, double w
     // height instead made the cliff rate depend on how much the valley had
     // already eaten, which varies from column to column and tore the gorge
     // into steps.
-    const double cliff = smoothstep((double)kSeaLevel + 8.0,
-                                    (double)kSeaLevel + 28.0, hLand);
+    const double cliff = smoothstep((double)kSeaLevel + 8.0, (double)kSeaLevel + 28.0, hLand);
     // Three stages, on purpose. A WIDE valley lowers the land into a gentle
     // bowl, a still wider SKIRT eases the approach, and only then does the
     // NARROW river mask cut a thin channel into the bottom of that bowl.
@@ -657,8 +661,8 @@ static double rawColumnHeightUncached(const TerrainNoise& n, double wx, double w
         // The skirt only really matters where there is height to ease away
         // from.
         const double above = std::max(0.0, h - (double)kSeaLevel);
-        const double depth = std::min(std::min(0.8 + above * 0.38, 9.0),
-                                      std::max(0.0, h - (double)(kSeaLevel + 1)));
+        const double depth =
+            std::min(std::min(0.8 + above * 0.38, 9.0), std::max(0.0, h - (double)(kSeaLevel + 1)));
         h -= rs * rs * (3.0 - 2.0 * rs) * depth * (1.0 - 0.85 * cliff);
     }
 
@@ -670,9 +674,8 @@ static double rawColumnHeightUncached(const TerrainNoise& n, double wx, double w
     // gently the banks come out as steps rather than as a sheer drop.
     if (land > 0.02) {
         const double fade = std::min(1.0, land / 0.30);
-        const double target =
-            riverProfile(riverDistance(n, wx, wz), riverClimbRate(cliff),
-                         riverWidthScale(n, wx, wz));
+        const double target = riverProfile(riverDistance(n, wx, wz), riverClimbRate(cliff),
+                                           riverWidthScale(n, wx, wz));
         h -= std::max(0.0, h - target) * fade;
     }
 
@@ -717,7 +720,8 @@ double rawColumnHeight(const TerrainNoise& n, double wx, double wz) {
     if (wx != std::floor(wx) || wz != std::floor(wz))
         return rawColumnHeightUncached(n, wx, wz);
     const uint64_t kx = memoBits(wx), kz = memoBits(wz);
-    if (const MemoEntry* e = memoFind(t_rawMemo, n.uid, kx, kz, 0)) return e->dv;
+    if (const MemoEntry* e = memoFind(t_rawMemo, n.uid, kx, kz, 0))
+        return e->dv;
     const double v = rawColumnHeightUncached(n, wx, wz);
     memoSlot(t_rawMemo, n.uid, kx, kz, 0).dv = v;
     return v;
@@ -727,7 +731,8 @@ int columnHeight(const TerrainNoise& n, double wx, double wz) {
     if (wx != std::floor(wx) || wz != std::floor(wz))
         return columnHeightUncached(n, wx, wz);
     const uint64_t kx = memoBits(wx), kz = memoBits(wz);
-    if (const MemoEntry* e = memoFind(t_colHMemo, n.uid, kx, kz, 0)) return (int)e->iv;
+    if (const MemoEntry* e = memoFind(t_colHMemo, n.uid, kx, kz, 0))
+        return (int)e->iv;
     const int v = columnHeightUncached(n, wx, wz);
     memoSlot(t_colHMemo, n.uid, kx, kz, 0).iv = v;
     return v;
@@ -760,14 +765,13 @@ inline double riverField(const TerrainNoise& n, double wx, double wz, double bia
     // often enough to give the reach kinks and short reaches of different
     // length instead of one long smooth drawn arc.
     constexpr double kWarpFreq = 0.00060;
-    constexpr double kAmp      = 30.0;      // blocks of sideways displacement
-    const double ox = noiseFbm2d(n.surface, wx * kWarpFreq + 12000.0,
-                                        wz * kWarpFreq - 3100.0, 2, 0.45, 2.8);
-    const double oz = noiseFbm2d(n.surface, wx * kWarpFreq - 7300.0,
-                                        wz * kWarpFreq + 9100.0, 2, 0.45, 2.8);
-    const double f = noiseFbm2d(n.river,
-                                       (wx + ox * kAmp) * 0.0014,
-                                       (wz + oz * kAmp) * 0.0014, 4, 0.5, 2.0);
+    constexpr double kAmp = 30.0; // blocks of sideways displacement
+    const double ox =
+        noiseFbm2d(n.surface, wx * kWarpFreq + 12000.0, wz * kWarpFreq - 3100.0, 2, 0.45, 2.8);
+    const double oz =
+        noiseFbm2d(n.surface, wx * kWarpFreq - 7300.0, wz * kWarpFreq + 9100.0, 2, 0.45, 2.8);
+    const double f =
+        noiseFbm2d(n.river, (wx + ox * kAmp) * 0.0014, (wz + oz * kAmp) * 0.0014, 4, 0.5, 2.0);
     // Subtracting the bias moves the zero contour towards the jungle belt.
     return f - bias;
 }
@@ -784,8 +788,8 @@ inline double riverJungleBias(const TerrainNoise& n, double wx, double wz) {
     // One octave each: this is a very slow field, so the extra octave the
     // public tempAt()/humidAt() use buys nothing here and this runs for
     // every column of the world.
-    const double t  = noiseFbm2d(n.temp,   wx * 0.0004, wz * 0.0004, 1, 0.5, 2.0);
-    const double hu = noiseFbm2d(n.humid,  wx * 0.0005, wz * 0.0005, 1, 0.5, 2.0);
+    const double t = noiseFbm2d(n.temp, wx * 0.0004, wz * 0.0004, 1, 0.5, 2.0);
+    const double hu = noiseFbm2d(n.humid, wx * 0.0005, wz * 0.0005, 1, 0.5, 2.0);
     // The jungle band of BiomeRegistry::select(): hot AND genuinely wet.
     const double lush = smoothstep(0.34, 0.60, t) * smoothstep(0.18, 0.45, hu);
     return kRiverJungleBias * lush;
@@ -804,11 +808,12 @@ inline double riverJungleBias(const TerrainNoise& n, double wx, double wz) {
 
 static double riverDistanceUncached(const TerrainNoise& n, double wx, double wz) {
     const double bias = riverJungleBias(n, wx, wz);
-    const double v  = riverField(n, wx, wz, bias);
+    const double v = riverField(n, wx, wz, bias);
     const double gx = riverField(n, wx + 1.0, wz, bias) - riverField(n, wx - 1.0, wz, bias);
     const double gz = riverField(n, wx, wz + 1.0, bias) - riverField(n, wx, wz - 1.0, bias);
-    const double g  = 0.5 * std::sqrt(gx * gx + gz * gz);   // field per block
-    if (g < 1e-9) return 1e9;                               // no contour here
+    const double g = 0.5 * std::sqrt(gx * gx + gz * gz); // field per block
+    if (g < 1e-9)
+        return 1e9; // no contour here
     return std::fabs(v) / g;
 }
 
@@ -819,7 +824,8 @@ double riverDistance(const TerrainNoise& n, double wx, double wz) {
     if (wx != std::floor(wx) || wz != std::floor(wz))
         return riverDistanceUncached(n, wx, wz);
     const uint64_t kx = memoBits(wx), kz = memoBits(wz);
-    if (const MemoEntry* e = memoFind(t_riverDMemo, n.uid, kx, kz, 0)) return e->dv;
+    if (const MemoEntry* e = memoFind(t_riverDMemo, n.uid, kx, kz, 0))
+        return e->dv;
     const double v = riverDistanceUncached(n, wx, wz);
     memoSlot(t_riverDMemo, n.uid, kx, kz, 0).dv = v;
     return v;
@@ -835,8 +841,10 @@ double riverMask(const TerrainNoise& n, double wx, double wz) {
     const double width = riverWidthScale(n, wx, wz);
     const double kCore = kRiverBed * width;
     const double kEdge = kRiverEdge * width;
-    if (d >= kEdge) return 0.0;
-    if (d <= kCore) return 1.0;
+    if (d >= kEdge)
+        return 0.0;
+    if (d <= kCore)
+        return 1.0;
     const double t = (d - kCore) / (kEdge - kCore);
     return 1.0 - t * t * (3.0 - 2.0 * t);
 }
@@ -850,7 +858,8 @@ double riverValley(const TerrainNoise& n, double wx, double wz) {
     // broad, soft bowl, and the terrain carve below is clamped so it can
     // never dig a bowl deep enough to fill with water.
     constexpr double kValley = 0.40;
-    if (d >= kValley) return 0.0;
+    if (d >= kValley)
+        return 0.0;
     return 1.0 - smoothstep(0.0, kValley, d);
 }
 
@@ -864,7 +873,8 @@ double riverShoulder(const TerrainNoise& n, double wx, double wz) {
     // long distance, which is what actually flattens the transition.
     const double d = std::fabs(riverField(n, wx, wz, bias));
     constexpr double kShoulder = 0.78;
-    if (d >= kShoulder) return 0.0;
+    if (d >= kShoulder)
+        return 0.0;
     return 1.0 - smoothstep(0.0, kShoulder, d);
 }
 
@@ -880,7 +890,8 @@ bool isShore(const TerrainNoise& n, double wx, double wz, int h, int radius) {
     //
     // This is also the cheap-guard: the expensive neighbour sampling below
     // only runs for the handful of columns that are actually near water.
-    if (h < kSeaLevel - 1 || h > kSeaLevel + 2) return false;
+    if (h < kSeaLevel - 1 || h > kSeaLevel + 2)
+        return false;
     // Neighbour test uses the RAW height rather than the smoothed
     // columnHeight(): this predicate runs for every near-water column
     // (and again for every tree candidate), and columnHeight() costs nine
@@ -890,7 +901,8 @@ bool isShore(const TerrainNoise& n, double wx, double wz, int h, int radius) {
     // speed.
     for (int dx = -radius; dx <= radius; ++dx) {
         for (int dz = -radius; dz <= radius; ++dz) {
-            if (dx == 0 && dz == 0) continue;
+            if (dx == 0 && dz == 0)
+                continue;
             if (rawColumnHeight(n, wx + dx, wz + dz) < (double)kSeaLevel - 0.5)
                 return true;
         }
@@ -899,12 +911,14 @@ bool isShore(const TerrainNoise& n, double wx, double wz, int h, int radius) {
 }
 
 bool isOceanShore(const TerrainNoise& n, double wx, double wz, int h, int radius) {
-    if (h < kSeaLevel - 1 || h > kSeaLevel + 2) return false;
+    if (h < kSeaLevel - 1 || h > kSeaLevel + 2)
+        return false;
     for (int dx = -radius; dx <= radius; ++dx) {
         for (int dz = -radius; dz <= radius; ++dz) {
-            if (dx == 0 && dz == 0) continue;
+            if (dx == 0 && dz == 0)
+                continue;
             if (rawColumnHeight(n, wx + dx, wz + dz) >= (double)kSeaLevel - 0.5)
-                continue;   // that neighbour is not water
+                continue; // that neighbour is not water
             // The water we touch has to be OCEAN, not a river channel. Both are
             // water at the same level, but a sandy bank is the NORM along
             // the sea and only an occasional accident along a river, so
@@ -912,7 +926,8 @@ bool isOceanShore(const TerrainNoise& n, double wx, double wz, int h, int radius
             // is what painted every river bank as a sand beach. The water
             // has to be a good way clear of the channel profile before it
             // counts as sea.
-            if (riverDistance(n, wx + dx, wz + dz) > 8.0) return true;
+            if (riverDistance(n, wx + dx, wz + dz) > 8.0)
+                return true;
         }
     }
     return false;
@@ -935,14 +950,15 @@ double riverSandBank(const TerrainNoise& n, double wx, double wz) {
     // 4 blocks long. Ramping it to 1 well inside the valley instead keeps the
     // whole bank of a chosen reach at full strength.
     const double v = riverValley(n, wx, wz);
-    if (v <= 0.06) return 0.0;
+    if (v <= 0.06)
+        return 0.0;
     const double nearRiver = smoothstep(0.06, 0.20, v);
 
-    const double s = noiseFbm2d(n.surface, wx * 0.0028 + 8080.0,
-                                       wz * 0.0028 + 4040.0, 2, 0.5, 2.0);
+    const double s = noiseFbm2d(n.surface, wx * 0.0028 + 8080.0, wz * 0.0028 + 4040.0, 2, 0.5, 2.0);
     constexpr double kStart = 0.34;
-    constexpr double kEdge  = 0.66;
-    if (s <= kStart) return 0.0;
+    constexpr double kEdge = 0.66;
+    if (s <= kStart)
+        return 0.0;
     const double t = (s - kStart) / (kEdge - kStart);
     return t * t * (3.0 - 2.0 * t) * nearRiver;
 }
@@ -952,16 +968,14 @@ double gravelPatch(const TerrainNoise& n, double wx, double wz, int h) {
     // coastlines and on the odd inland patch; the water-proximity term
     // keeps most of them where you would actually expect gravel. `h` is
     // passed in rather than recomputed, since this runs per land column.
-    const double g = noiseFbm2d(n.surface, wx * 0.035 + 61.0,
-                                       wz * 0.035 - 17.0, 2, 0.5, 2.0);
-    const double nearWater = 1.0 - smoothstep(0.0, 7.0,
-                                              std::fabs((double)h - (double)kSeaLevel));
-    const double near = std::max(riverValley(n, wx, wz),
-                                 std::max(riverMask(n, wx, wz), nearWater));
+    const double g = noiseFbm2d(n.surface, wx * 0.035 + 61.0, wz * 0.035 - 17.0, 2, 0.5, 2.0);
+    const double nearWater = 1.0 - smoothstep(0.0, 7.0, std::fabs((double)h - (double)kSeaLevel));
+    const double near = std::max(riverValley(n, wx, wz), std::max(riverMask(n, wx, wz), nearWater));
     // Threshold tuned so patches are genuinely occasional rather than a
     // second biome painted over the first.
     constexpr double kEdge = 0.70;
-    if (g <= 0.46) return 0.0;
+    if (g <= 0.46)
+        return 0.0;
     const double t = (g - 0.46) / (kEdge - 0.46);
     return std::clamp(t * t * (3.0 - 2.0 * t) * (0.35 + 0.65 * near), 0.0, 1.0);
 }
@@ -970,25 +984,24 @@ double treeFreeMask(const TerrainNoise& n, double wx, double wz, int h) {
     // Rare open ground: a low-frequency field thresholded hard, so most of
     // the world keeps its full tree cover and only occasional pockets come
     // out bare.
-    const double f = noiseFbm2d(n.surface, wx * 0.012 - 421.0,
-                                       wz * 0.012 + 88.0, 2, 0.5, 2.0);
-    if (f <= 0.58) return 0.0;
+    const double f = noiseFbm2d(n.surface, wx * 0.012 - 421.0, wz * 0.012 + 88.0, 2, 0.5, 2.0);
+    if (f <= 0.58)
+        return 0.0;
     const double t = std::clamp((f - 0.58) / 0.16, 0.0, 1.0);
     // Biased TOWARDS river banks and lowland (which is what plains mostly
     // are): the clearing is likeliest right next to the water, not out in
     // the middle of a forest far from it.
     // `h` is passed in by the caller, which has already computed it.
-    const double lowland = 1.0 - smoothstep(4.0, 22.0,
-                                            (double)h - (double)kSeaLevel);
-    const double bias = std::min(1.0, 0.45 + 0.55 * std::max(riverValley(n, wx, wz),
-                                                             lowland * 0.6));
+    const double lowland = 1.0 - smoothstep(4.0, 22.0, (double)h - (double)kSeaLevel);
+    const double bias =
+        std::min(1.0, 0.45 + 0.55 * std::max(riverValley(n, wx, wz), lowland * 0.6));
     return t * t * (3.0 - 2.0 * t) * bias;
 }
 
 static uint8_t columnBiomeUncached(const TerrainNoise& n, double wx, double wz, int h) {
     using namespace biome;
 
-    const double t  = tempAt(n, wx, wz);
+    const double t = tempAt(n, wx, wz);
     const double hu = humidAt(n, wx, wz);
 
     // River channel FIRST: a carved channel drops to kSeaLevel - 4, which is
@@ -1003,14 +1016,16 @@ static uint8_t columnBiomeUncached(const TerrainNoise& n, double wx, double wz, 
         return (t < -0.25) ? BIOME_FROZEN_RIVER : BIOME_RIVER;
 
     // Below sea level minus a shallow margin: open ocean.
-    if (h < kSeaLevel - 2) return BIOME_OCEAN;
+    if (h < kSeaLevel - 2)
+        return BIOME_OCEAN;
 
     // Beach: only along the OCEAN. A river bank is normally grass, so
     // giving river columns BIOME_BEACH (whose top block is sand) is what
     // used to make every river run between two sandy strips. Uses the same
     // isOceanShore() the surface fill uses, so the biome and the sand on
     // the ground can never disagree.
-    if (isOceanShore(n, wx, wz, h)) return BIOME_BEACH;
+    if (isOceanShore(n, wx, wz, h))
+        return BIOME_BEACH;
 
     // Where the terrain has actually been flattened into open grassland,
     // the biome has to agree with the shape of the ground, otherwise you
@@ -1019,8 +1034,10 @@ static uint8_t columnBiomeUncached(const TerrainNoise& n, double wx, double wz, 
     // to make room for. The two variants read the SAME masks the terrain
     // uses, so the raised table and the woodland patches line up exactly.
     if (plainsFactor(n, wx, wz) > 0.55 && h < kSeaLevel + 16) {
-        if (plainsForest(n, wx, wz) > 0.55) return BIOME_FOREST;
-        if (plainsPlateau(n, wx, wz) > 0.55) return BIOME_PLAINS_PLATEAU;
+        if (plainsForest(n, wx, wz) > 0.55)
+            return BIOME_FOREST;
+        if (plainsPlateau(n, wx, wz) > 0.55)
+            return BIOME_PLAINS_PLATEAU;
         return BIOME_PLAINS;
     }
 
@@ -1029,12 +1046,14 @@ static uint8_t columnBiomeUncached(const TerrainNoise& n, double wx, double wz, 
     // itself stands ~22 blocks above the plain.
     const double sf = savannaFactor(n, wx, wz);
     if (sf > 0.55 && h < kSeaLevel + 45) {
-        if (savannaCanyon(n, wx, wz) > 0.45) return BIOME_SAVANNA_PLATEAU;
+        if (savannaCanyon(n, wx, wz) > 0.45)
+            return BIOME_SAVANNA_PLATEAU;
         return BIOME_SAVANNA;
     }
 
     uint8_t b = BiomeRegistry::select(t, hu, h, kSeaLevel);
-    if (b == BIOME_OCEAN) b = BIOME_PLAINS;
+    if (b == BIOME_OCEAN)
+        b = BIOME_PLAINS;
     return b;
 }
 

@@ -38,20 +38,22 @@
 namespace cursestone::network::protocol {
 
 class ContainerSetSlotPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return CONTAINER_SET_SLOT_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return CONTAINER_SET_SLOT_PACKET;
+    }
 
     static constexpr uint8_t SPECIAL_INVENTORY = 0x00;
-    static constexpr uint8_t SPECIAL_ARMOR     = 0x78;
-    static constexpr uint8_t SPECIAL_CREATIVE  = 0x79;
-    static constexpr uint8_t SPECIAL_HOTBAR    = 0x7a;
+    static constexpr uint8_t SPECIAL_ARMOR = 0x78;
+    static constexpr uint8_t SPECIAL_CREATIVE = 0x79;
+    static constexpr uint8_t SPECIAL_HOTBAR = 0x7a;
 
-    uint8_t  windowid = 0;
-    int16_t  slot = 0;
-    int16_t  hotbarSlot = 0;
-    int16_t  itemId = 0;
-    uint8_t  itemCount = 0;
-    int16_t  itemDamage = 0;
+    uint8_t windowid = 0;
+    int16_t slot = 0;
+    int16_t hotbarSlot = 0;
+    int16_t itemId = 0;
+    uint8_t itemCount = 0;
+    int16_t itemDamage = 0;
     // Raw little-endian NBT compound of the item (custom names live
     // here). Written after the slot's nbtLen short; empty = no NBT.
     std::string itemNbt;

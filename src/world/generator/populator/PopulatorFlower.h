@@ -25,12 +25,16 @@
 #include <cstdint>
 namespace cursestone::world::generator::populator {
 class PopulatorFlower : public Populator {
-public:
+  public:
     PopulatorFlower(uint8_t flower_block, int attempts)
-        : flower_(flower_block), attempts_(attempts) {}
-    const char* name() const override { return "flower"; }
+        : flower_(flower_block), attempts_(attempts) {
+    }
+    const char* name() const override {
+        return "flower";
+    }
     void populate(GenerationContext& ctx) override;
-private:
+
+  private:
     uint8_t flower_;
     int attempts_;
 };

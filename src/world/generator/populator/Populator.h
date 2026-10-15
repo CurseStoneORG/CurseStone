@@ -27,7 +27,7 @@
 #include "world/generator/Generator.h"
 namespace cursestone::world::generator::populator {
 class Populator {
-public:
+  public:
     virtual ~Populator() = default;
     virtual const char* name() const = 0;
     virtual void populate(GenerationContext& ctx) = 0;

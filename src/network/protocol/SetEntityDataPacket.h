@@ -60,50 +60,52 @@
 namespace cursestone::network::protocol {
 
 class SetEntityDataPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return SET_ENTITY_DATA_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return SET_ENTITY_DATA_PACKET;
+    }
 
     // Value types (Genisys Entity::DATA_TYPE_*).
-    static constexpr uint8_t TYPE_BYTE   = 0;
-    static constexpr uint8_t TYPE_SHORT  = 1;
-    static constexpr uint8_t TYPE_INT    = 2;
-    static constexpr uint8_t TYPE_FLOAT  = 3;
+    static constexpr uint8_t TYPE_BYTE = 0;
+    static constexpr uint8_t TYPE_SHORT = 1;
+    static constexpr uint8_t TYPE_INT = 2;
+    static constexpr uint8_t TYPE_FLOAT = 3;
     static constexpr uint8_t TYPE_STRING = 4;
-    static constexpr uint8_t TYPE_POS    = 6;
-    static constexpr uint8_t TYPE_LONG   = 7;
+    static constexpr uint8_t TYPE_POS = 6;
+    static constexpr uint8_t TYPE_LONG = 7;
 
     // Metadata terminator byte (Genisys Binary::writeMetadata).
     static constexpr uint8_t TERMINATOR = 0x7F;
 
     // Well-known property indices / flag bits (Genisys Entity.php).
-    static constexpr uint8_t PROP_FLAGS           = 0;   // byte
-    static constexpr uint8_t FLAG_BIT_ONFIRE      = 0;
-    static constexpr uint8_t FLAG_BIT_SNEAKING    = 1;
-    static constexpr uint8_t FLAG_BIT_RIDING      = 2;
-    static constexpr uint8_t FLAG_BIT_SPRINTING   = 3;
-    static constexpr uint8_t FLAG_BIT_ACTION      = 4;
-    static constexpr uint8_t FLAG_BIT_INVISIBLE   = 5;
+    static constexpr uint8_t PROP_FLAGS = 0; // byte
+    static constexpr uint8_t FLAG_BIT_ONFIRE = 0;
+    static constexpr uint8_t FLAG_BIT_SNEAKING = 1;
+    static constexpr uint8_t FLAG_BIT_RIDING = 2;
+    static constexpr uint8_t FLAG_BIT_SPRINTING = 3;
+    static constexpr uint8_t FLAG_BIT_ACTION = 4;
+    static constexpr uint8_t FLAG_BIT_INVISIBLE = 5;
 
     // Player-specific metadata (Infinity pocketmine/entity/Human.php:50-55,
     // protocol 84 — note these indices DIFFER from the newer Genisys
     // multi-protocol tables: on protocol 84 the sleeping flags live at
     // 16/17, not 28/29).
-    static constexpr uint8_t PROP_PLAYER_FLAGS        = 16;  // byte, bit 1 = SLEEP
-    static constexpr uint8_t PROP_PLAYER_BED_POSITION = 17;  // pos (3 x int32 LE)
-    static constexpr uint8_t PLAYER_FLAG_SLEEP        = 1 << 1;  // mask inside PROP_PLAYER_FLAGS
+    static constexpr uint8_t PROP_PLAYER_FLAGS = 16;        // byte, bit 1 = SLEEP
+    static constexpr uint8_t PROP_PLAYER_BED_POSITION = 17; // pos (3 x int32 LE)
+    static constexpr uint8_t PLAYER_FLAG_SLEEP = 1 << 1;    // mask inside PROP_PLAYER_FLAGS
 
     // Falling-block render property (Infinity FallingSand.php:
     // `const DATA_BLOCK_INFO = 20` — int `blockId | (damage << 8)`,
     // the property the 0.15.10 client reads to draw the falling block).
-    static constexpr uint8_t PROP_BLOCK_INFO = 20;  // int
+    static constexpr uint8_t PROP_BLOCK_INFO = 20; // int
 
     struct Entry {
         uint8_t index = 0;
-        uint8_t type  = TYPE_BYTE;
-        int64_t ival  = 0;      // BYTE / SHORT / INT / LONG
-        float   fval  = 0.0f;   // FLOAT
-        std::string sval;       // STRING
-        int32_t px = 0, py = 0, pz = 0;  // POS (block coordinates)
+        uint8_t type = TYPE_BYTE;
+        int64_t ival = 0;               // BYTE / SHORT / INT / LONG
+        float fval = 0.0f;              // FLOAT
+        std::string sval;               // STRING
+        int32_t px = 0, py = 0, pz = 0; // POS (block coordinates)
     };
 
     int64_t eid = 0;

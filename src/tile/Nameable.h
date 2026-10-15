@@ -25,11 +25,16 @@
 #include <string>
 namespace cursestone::tile {
 class Nameable {
-public:
+  public:
     virtual ~Nameable() = default;
-    virtual const std::string& getName() const { return name_; }
-    virtual void setName(const std::string& s) { name_ = s; }
-private:
+    virtual const std::string& getName() const {
+        return name_;
+    }
+    virtual void setName(const std::string& s) {
+        name_ = s;
+    }
+
+  private:
     std::string name_;
 };
 } // namespace

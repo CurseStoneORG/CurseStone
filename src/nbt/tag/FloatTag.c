@@ -28,31 +28,38 @@
 #include <stdio.h>
 
 static void float_destroy(mcp_tag_t* self) {
-    if (!self) return;
-    if (self->name) free(self->name);
+    if (!self)
+        return;
+    if (self->name)
+        free(self->name);
     free(self);
 }
 static void float_write(const mcp_tag_t* self, void* stream, bool le) {
     mcp_float_tag_t* t = (mcp_float_tag_t*)self;
-    if (le) mcp_bstream_write_f32_le((mcp_bstream_t*)stream, t->value);
-    else    mcp_bstream_write_f32_be((mcp_bstream_t*)stream, t->value);
+    if (le)
+        mcp_bstream_write_f32_le((mcp_bstream_t*)stream, t->value);
+    else
+        mcp_bstream_write_f32_be((mcp_bstream_t*)stream, t->value);
 }
 static void float_to_string(const mcp_tag_t* self, char* out, size_t out_size) {
-    if (!out || out_size == 0) return;
+    if (!out || out_size == 0)
+        return;
     snprintf(out, out_size, "%f", ((mcp_float_tag_t*)self)->value);
 }
-static const struct mcp_tag_vtable FLOAT_VT = { float_destroy, float_write, float_to_string };
+static const struct mcp_tag_vtable FLOAT_VT = {float_destroy, float_write, float_to_string};
 
 mcp_tag_t* mcp_float_tag_new(float v) {
     mcp_float_tag_t* t = (mcp_float_tag_t*)calloc(1, sizeof(*t));
-    if (!t) return NULL;
+    if (!t)
+        return NULL;
     t->header.vtable = &FLOAT_VT;
-    t->header.type   = MCP_TAG_FLOAT;
+    t->header.type = MCP_TAG_FLOAT;
     t->value = v;
     return (mcp_tag_t*)t;
 }
 mcp_tag_t* mcp_float_tag_new_named(const char* name, float v) {
     mcp_tag_t* t = mcp_float_tag_new(v);
-    if (t) mcp_tag_set_name_cstr(t, name);
+    if (t)
+        mcp_tag_set_name_cstr(t, name);
     return t;
 }

@@ -35,11 +35,15 @@ namespace cursestone {
 // el emisor puede usar (Command::canUse). Los alias (gm, tp, ?...) son
 // comandos propios y aparecen como tales. Paginación estilo PMMP.
 bool HelpCommand::execute(CommandSender* sender, const std::string&,
-                    const std::vector<std::string>& args) {
+                          const std::vector<std::string>& args) {
     // Parse page number from args
     int pageNumber = 1;
     if (!args.empty()) {
-        try { pageNumber = std::stoi(args.back()); if (pageNumber < 1) pageNumber = 1; } catch (...) {}
+        try {
+            pageNumber = std::stoi(args.back());
+            if (pageNumber < 1)
+                pageNumber = 1;
+        } catch (...) {}
     }
 
     // Recolectar los comandos que ESTE emisor puede usar, con descripción.
@@ -49,9 +53,11 @@ bool HelpCommand::execute(CommandSender* sender, const std::string&,
     };
     std::vector<CmdEntry> commands;
     for (Command* cmd : Server::getInstance().getCommandMap()->allCommands()) {
-        if (!cmd->canUse(sender)) continue;   // ocultar los que no puede usar
+        if (!cmd->canUse(sender))
+            continue; // ocultar los que no puede usar
         std::string desc = cmd->description();
-        if (desc.empty()) desc = "(sin descripción)";
+        if (desc.empty())
+            desc = "(sin descripción)";
         commands.push_back(CmdEntry{cmd->name(), desc});
     }
     std::sort(commands.begin(), commands.end(), [](const CmdEntry& a, const CmdEntry& b) {
@@ -61,8 +67,10 @@ bool HelpCommand::execute(CommandSender* sender, const std::string&,
     // Paginate: 7 commands per page (like PMMP)
     int perPage = 7;
     int totalPages = (int)((commands.size() + perPage - 1) / perPage);
-    if (totalPages < 1) totalPages = 1;
-    if (pageNumber > totalPages) pageNumber = totalPages;
+    if (totalPages < 1)
+        totalPages = 1;
+    if (pageNumber > totalPages)
+        pageNumber = totalPages;
 
     // Header (PMMP style: "--- Showing help page X/Y ---")
     sender->sendMessage("--- Showing help page " + std::to_string(pageNumber) + "/" +

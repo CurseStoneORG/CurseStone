@@ -31,11 +31,13 @@
 namespace cursestone::event::plugin {
 
 class PluginDisableEvent : public PluginEvent {
-public:
-    explicit PluginDisableEvent(void* p) : PluginEvent(p) {}
+  public:
+    explicit PluginDisableEvent(void* p) : PluginEvent(p) {
+    }
 
     const std::string& eventName() const override {
-        static std::string n = "PluginDisableEvent"; return n;
+        static std::string n = "PluginDisableEvent";
+        return n;
     }
 };
 

@@ -31,8 +31,8 @@ const BiomeConfig& oceanBiome() {
         .name = "ocean",
         .temp = 0.5f,
         .humid = 0.5f,
-        .topBlock = 12,      // sand (floor near shore)
-        .fillerBlock = 13,   // gravel
+        .topBlock = 12,    // sand (floor near shore)
+        .fillerBlock = 13, // gravel
         .snowy = false,
         .underwater = true,
         .treeAmount = 0,

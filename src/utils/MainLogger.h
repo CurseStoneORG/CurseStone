@@ -39,10 +39,10 @@ extern "C" {
 #endif
 
 typedef struct mcp_main_logger {
-    mcp_logger_t vtable;     // must be first
-    FILE*        log_file;
-    bool         colored;
-    bool         shutdown_called;
+    mcp_logger_t vtable; // must be first
+    FILE* log_file;
+    bool colored;
+    bool shutdown_called;
     // Implicit singleton: mcp_main_logger_get_instance() returns &g_logger
 } mcp_main_logger_t;
 

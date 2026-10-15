@@ -27,7 +27,7 @@
 #include <string>
 namespace cursestone::event {
 class Event {
-public:
+  public:
     virtual ~Event() = default;
     virtual const std::string& eventName() const = 0;
 };

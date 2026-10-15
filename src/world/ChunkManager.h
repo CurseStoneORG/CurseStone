@@ -33,13 +33,17 @@
 #include <mutex>
 #include <vector>
 #include <utility>
-namespace cursestone::world::generator { class Generator; }
-namespace cursestone::scheduler { class AsyncPool; }
+namespace cursestone::world::generator {
+class Generator;
+}
+namespace cursestone::scheduler {
+class AsyncPool;
+}
 
 namespace cursestone::world {
 
 class ChunkManager {
-public:
+  public:
     ChunkManager();
     ~ChunkManager();
     mcp_chunk_t* getChunkIfLoaded(int32_t x, int32_t z) const;
@@ -109,21 +113,30 @@ public:
     // reference so the caller can iterate it without holding mtx_ for
     // the whole sweep (each unloadChunk() call above takes the lock
     // itself, per-chunk).
-    std::vector<std::pair<int32_t,int32_t>> loadedChunkCoords() const;
+    std::vector<std::pair<int32_t, int32_t>> loadedChunkCoords() const;
     // Numero de chunks en memoria con cambios sin escribir. El autosave
     // lo usa para saber si tiene que seguir drenando el flush.
     size_t dirtyCount() const;
-    void setProvider(std::shared_ptr<format::WorldProvider> p) { provider_ = std::move(p); }
-    std::shared_ptr<format::WorldProvider> provider() const { return provider_; }
+    void setProvider(std::shared_ptr<format::WorldProvider> p) {
+        provider_ = std::move(p);
+    }
+    std::shared_ptr<format::WorldProvider> provider() const {
+        return provider_;
+    }
     // Set the world generator used to create new chunks when they're
     // not on disk. Mirrors Nukkit where the generator is queried
     // for terrain + population.
-    void setGenerator(std::shared_ptr<generator::Generator> g) { generator_ = std::move(g); }
+    void setGenerator(std::shared_ptr<generator::Generator> g) {
+        generator_ = std::move(g);
+    }
     size_t count() const;
-private:
+
+  private:
     struct ChunkKey {
         int32_t x, z;
-        bool operator==(const ChunkKey& o) const { return x==o.x && z==o.z; }
+        bool operator==(const ChunkKey& o) const {
+            return x == o.x && z == o.z;
+        }
     };
     struct ChunkKeyHash {
         size_t operator()(const ChunkKey& k) const noexcept {

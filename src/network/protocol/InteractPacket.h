@@ -35,11 +35,13 @@
 namespace cursestone::network::protocol {
 
 class InteractPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return INTERACT_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return INTERACT_PACKET;
+    }
 
-    static constexpr uint8_t ACTION_RIGHT_CLICK   = 1;
-    static constexpr uint8_t ACTION_LEFT_CLICK    = 2;
+    static constexpr uint8_t ACTION_RIGHT_CLICK = 1;
+    static constexpr uint8_t ACTION_LEFT_CLICK = 2;
     static constexpr uint8_t ACTION_LEAVE_VEHICLE = 3;
 
     uint8_t action = 0;

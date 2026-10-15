@@ -53,47 +53,47 @@ extern "C" {
 #endif
 
 // Ring buffer dimensions.
-#define ASYNC_LOG_RING_SIZE  8192   // entries
-#define ASYNC_LOG_LINE_MAX   1024   // max chars per raw message
-#define ASYNC_LOG_BATCH_SIZE 4096   // batch write block size
-#define ASYNC_LOG_FLUSH_MS   25000  // force flush interval (25 s)
+#define ASYNC_LOG_RING_SIZE 8192  // entries
+#define ASYNC_LOG_LINE_MAX 1024   // max chars per raw message
+#define ASYNC_LOG_BATCH_SIZE 4096 // batch write block size
+#define ASYNC_LOG_FLUSH_MS 25000  // force flush interval (25 s)
 
 // One entry in the ring buffer.
 typedef struct {
-    char            text[ASYNC_LOG_LINE_MAX];  // raw message (no timestamp)
+    char text[ASYNC_LOG_LINE_MAX]; // raw message (no timestamp)
     mcp_log_level_t level;
-    uint16_t        len;                        // strlen(text)
+    uint16_t len; // strlen(text)
 } async_log_entry_t;
 
 // The async logger singleton. First field is the vtable so that
 // `&g_async.vtable` is the same pointer as `(mcp_logger_t*)&g_async`.
 typedef struct mcp_async_logger {
-    mcp_logger_t    vtable;                     // must be first
+    mcp_logger_t vtable; // must be first
 
     // Ring buffer (single-producer-safe via mutex, but head/tail are
     // also volatile for the worker's lock-free peek).
     async_log_entry_t ring[ASYNC_LOG_RING_SIZE];
-    volatile uint32_t head;                     // next write slot
-    volatile uint32_t tail;                     // next read slot
-    volatile uint32_t count;                    // entries in ring
+    volatile uint32_t head;  // next write slot
+    volatile uint32_t tail;  // next read slot
+    volatile uint32_t count; // entries in ring
 
     // Synchronization (portable layer: pthreads on POSIX, Win32 on
     // Windows — see src/utils/ThreadPort.h).
-    mcp_mutex_t  mtx;
-    mcp_cond_t   cond;
+    mcp_mutex_t mtx;
+    mcp_cond_t cond;
     mcp_thread_t worker;
-    bool         worker_started;
+    bool worker_started;
 
     // I/O targets.
-    FILE*           log_file;
-    bool            colored;
+    FILE* log_file;
+    bool colored;
 
     // Lifecycle.
-    volatile bool   running;
-    volatile bool   shutdown_requested;
+    volatile bool running;
+    volatile bool shutdown_requested;
 
     // Stats.
-    volatile uint64_t dropped_count;             // entries dropped (ring full)
+    volatile uint64_t dropped_count; // entries dropped (ring full)
 } mcp_async_logger_t;
 
 // Initialize the async logger singleton. `log_path` may be NULL to

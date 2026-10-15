@@ -27,7 +27,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-static uint8_t pkt_id(void) { return 0x8f; }
+static uint8_t pkt_id(void) {
+    return 0x8f;
+}
 static void pkt_encode(void* self, mcp_bstream_t* out) {
     mcp_pkt_data_packet_f_t* p = (mcp_pkt_data_packet_f_t*)self;
     mcp_bstream_write_u8(out, 0x8f);
@@ -45,16 +47,16 @@ static size_t pkt_size(const void* self) {
     return 512;
 }
 static void pkt_destroy(void* self) {
-    if (!self) return;
+    if (!self)
+        return;
     free(self);
 }
-static const mcp_packet_vtable_t VT = {
-    pkt_id, pkt_encode, pkt_decode, pkt_size, pkt_destroy
-};
+static const mcp_packet_vtable_t VT = {pkt_id, pkt_encode, pkt_decode, pkt_size, pkt_destroy};
 
 mcp_packet_t* mcp_pkt_data_packet_f_new(void) {
     mcp_pkt_data_packet_f_t* p = (mcp_pkt_data_packet_f_t*)calloc(1, sizeof(*p));
-    if (!p) return NULL;
+    if (!p)
+        return NULL;
     p->header.vtable = &VT;
     return (mcp_packet_t*)p;
 }

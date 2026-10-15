@@ -35,11 +35,11 @@ extern "C" {
 
 typedef struct mcp_pkt_nack {
     mcp_packet_t header;
-    
-    bool    is_nack;            // false for ACK (0xc0), true for NACK (0xa0)
+
+    bool is_nack; // false for ACK (0xc0), true for NACK (0xa0)
     uint32_t* records_min;
     uint32_t* records_max;
-    size_t   record_count;
+    size_t record_count;
 
 } mcp_pkt_nack_t;
 

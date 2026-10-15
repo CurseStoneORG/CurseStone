@@ -35,15 +35,15 @@
 #include <stdint.h>
 
 #ifdef _WIN32
-#  ifndef WIN32_LEAN_AND_MEAN
-#    define WIN32_LEAN_AND_MEAN  /* keep winsock.h out; winsock2.h comes first elsewhere */
-#  endif
-#  ifndef NOMINMAX
-#    define NOMINMAX            /* windows.h must not define min()/max() macros for C++ */
-#  endif
-#  include <windows.h>
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN /* keep winsock.h out; winsock2.h comes first elsewhere */
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX /* windows.h must not define min()/max() macros for C++ */
+#endif
+#include <windows.h>
 #else
-#  include <pthread.h>
+#include <pthread.h>
 #endif
 
 #ifdef __cplusplus
@@ -81,8 +81,8 @@ typedef struct mcp_cond {
 
 /** @brief Handle of a running thread, created by mcp_thread_start(). */
 typedef struct mcp_thread {
-    mcp_thread_fn fn;   /**< Thread body; its return value is discarded. */
-    void*         arg;  /**< Argument forwarded to fn. */
+    mcp_thread_fn fn; /**< Thread body; its return value is discarded. */
+    void* arg;        /**< Argument forwarded to fn. */
 #ifdef _WIN32
     HANDLE handle;
 #else

@@ -25,8 +25,11 @@
 #include <string>
 namespace cursestone::item {
 class ItemSign : public Item {
-public:
-    ItemSign() : Item(323) {}
-    std::string name() const override { return "Sign"; }
+  public:
+    ItemSign() : Item(323) {
+    }
+    std::string name() const override {
+        return "Sign";
+    }
 };
 } // namespace

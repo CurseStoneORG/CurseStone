@@ -32,15 +32,15 @@
 namespace cursestone::world::generator::object {
 
 class TreeGenerator {
-public:
+  public:
     // `x,z` are coordinates relative to the target chunk and MAY be outside
     // 0..15: a tree rooted in a neighbouring chunk writes only the blocks
     // that overlap this chunk (they are clipped), which is what lets trees
     // span chunk borders. `y` is the first trunk block (ground + 1) and
     // `soilId` the block directly below it. Returns true if a tree was
     // placed.
-    static bool place(mcp_chunk_t* c, int x, int y, int z, TreeType t,
-                      uint8_t soilId, MersenneRandom& rng);
+    static bool place(mcp_chunk_t* c, int x, int y, int z, TreeType t, uint8_t soilId,
+                      MersenneRandom& rng);
 };
 
 } // namespace cursestone::world::generator::object

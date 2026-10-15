@@ -53,18 +53,20 @@
 namespace cursestone::network::protocol {
 
 class ContainerSetContentPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return CONTAINER_SET_CONTENT_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return CONTAINER_SET_CONTENT_PACKET;
+    }
 
     // Window IDs (PMMP ContainerSetContentPacket constants).
     static constexpr uint8_t SPECIAL_INVENTORY = 0x00;
-    static constexpr uint8_t SPECIAL_ARMOR     = 0x78;
-    static constexpr uint8_t SPECIAL_CREATIVE  = 0x79;
-    static constexpr uint8_t SPECIAL_HOTBAR    = 0x7a;
+    static constexpr uint8_t SPECIAL_ARMOR = 0x78;
+    static constexpr uint8_t SPECIAL_CREATIVE = 0x79;
+    static constexpr uint8_t SPECIAL_HOTBAR = 0x7a;
 
-    uint8_t     windowid = 0;
+    uint8_t windowid = 0;
     std::vector<cursestone::item::ItemStack> slots;
-    std::vector<int32_t> hotbar;   // only used when windowid == SPECIAL_INVENTORY
+    std::vector<int32_t> hotbar; // only used when windowid == SPECIAL_INVENTORY
 
     void encode(std::vector<uint8_t>& out) const override;
     bool decode(const uint8_t* data, size_t len) override;

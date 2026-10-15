@@ -38,11 +38,13 @@
 namespace cursestone::network::protocol {
 
 class TakeItemEntityPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return TAKE_ITEM_ENTITY_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return TAKE_ITEM_ENTITY_PACKET;
+    }
 
-    int64_t target    = 0;   // entity ID of the dropped item
-    int64_t entityId  = 0;   // entity ID of the player picking up
+    int64_t target = 0;   // entity ID of the dropped item
+    int64_t entityId = 0; // entity ID of the player picking up
 
     void encode(std::vector<uint8_t>& out) const override;
     bool decode(const uint8_t* data, size_t len) override;

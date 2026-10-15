@@ -28,17 +28,20 @@
 #include <memory>
 namespace cursestone::world::generator {
 class Normal : public Generator {
-public:
+  public:
     explicit Normal(int64_t seed);
     ~Normal() override;
-    const char* name() const override { return "normal"; }
+    const char* name() const override {
+        return "normal";
+    }
     void generate(GenerationContext& ctx) override;
     void populate(GenerationContext& ctx) override;
     // Mirrors Nukkit Normal.getSpawn(): (127.5, 128, 127.5)
     mcp_vector3_t getSpawn() const override {
         return mcp_v3(127.5, 128.0, 127.5);
     }
-private:
+
+  private:
     int64_t seed_;
     // Terrain shape + climate + rivers, shared with the feature populators
     // through TerrainShape so trees can span chunk borders.

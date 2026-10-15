@@ -43,28 +43,34 @@ namespace cursestone::network::protocol {
 
 void UpdateAttributesPacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
-    w.writeU64BE(eid);                        // putLong — BE int64
-    w.writeU16BE((uint16_t)entries.size());   // putShort — BE uint16
+    w.writeU64BE(eid);                      // putLong — BE int64
+    w.writeU16BE((uint16_t)entries.size()); // putShort — BE uint16
     for (const auto& e : entries) {
-        w.writeF32BE(e.min);                  // putFloat — BE float
-        w.writeF32BE(e.max);                  // putFloat — BE float
-        w.writeF32BE(e.value);                // putFloat — BE float
-        w.writeBEString(e.name);              // putString — Short BE length + bytes
+        w.writeF32BE(e.min);     // putFloat — BE float
+        w.writeF32BE(e.max);     // putFloat — BE float
+        w.writeF32BE(e.value);   // putFloat — BE float
+        w.writeBEString(e.name); // putString — Short BE length + bytes
     }
 }
 
 bool UpdateAttributesPacket::decode(const uint8_t* data, size_t len) {
     PacketReader r(data, len);
-    if (!r.readU64BE(eid)) return false;
+    if (!r.readU64BE(eid))
+        return false;
     uint16_t count = 0;
-    if (!r.readU16BE(count)) return false;
+    if (!r.readU16BE(count))
+        return false;
     entries.clear();
     for (uint16_t i = 0; i < count && !r.eof(); ++i) {
         Entry e;
-        if (!r.readF32BE(e.min)) return false;
-        if (!r.readF32BE(e.max)) return false;
-        if (!r.readF32BE(e.value)) return false;
-        if (!r.readBEString(e.name)) return false;
+        if (!r.readF32BE(e.min))
+            return false;
+        if (!r.readF32BE(e.max))
+            return false;
+        if (!r.readF32BE(e.value))
+            return false;
+        if (!r.readBEString(e.name))
+            return false;
         entries.push_back(std::move(e));
     }
     return true;

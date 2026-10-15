@@ -36,10 +36,11 @@ const BiomeConfig& taigaBiome() {
         .snowy = false,
         .underwater = false,
         .treeAmount = 8,
-        .trees = {
-            { object::TREE_SPRUCE, 4 },
-            { object::TREE_OAK, 1 },
-        },
+        .trees =
+            {
+                {object::TREE_SPRUCE, 4},
+                {object::TREE_OAK, 1},
+            },
         .grassAmount = 4,
         .flowerAmount = 0,
         .doublePlantAmount = 3,

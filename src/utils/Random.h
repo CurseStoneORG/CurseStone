@@ -41,7 +41,7 @@ extern "C" {
 
 typedef struct mcp_random {
     uint32_t state[MCP_MT_N];
-    size_t   index;
+    size_t index;
 } mcp_random_t;
 
 // Initialize with a seed.

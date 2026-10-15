@@ -37,22 +37,30 @@
 #include <string>
 namespace cursestone {
 class CommandReader {
-public:
+  public:
     using LineCallback = std::function<void(const std::string&)>;
-    explicit CommandReader(LineCallback cb) : cb_(std::move(cb)) {}
-    ~CommandReader() { stop(); }
+    explicit CommandReader(LineCallback cb) : cb_(std::move(cb)) {
+    }
+    ~CommandReader() {
+        stop();
+    }
     void start() {
         running_ = true;
-        thread_ = std::thread([this](){ this->loop(); });
+        thread_ = std::thread([this]() {
+            this->loop();
+        });
     }
     void stop() {
-        if (!running_.exchange(false)) return;
+        if (!running_.exchange(false))
+            return;
         // The thread may be blocked on fgets(stdin). We can't
         // interrupt fgets, so we detach and let it die when stdin
         // closes (process exit).
-        if (thread_.joinable()) thread_.detach();
+        if (thread_.joinable())
+            thread_.detach();
     }
-private:
+
+  private:
     void loop() {
         char buf[1024];
         while (running_.load()) {

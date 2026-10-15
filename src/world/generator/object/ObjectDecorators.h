@@ -36,7 +36,7 @@
 namespace cursestone::world::generator::object {
 
 class ObjectDecorators {
-public:
+  public:
     static void cactus(mcp_chunk_t* c, int x, int y, int z, MersenneRandom& rng);
     static void sugarCane(mcp_chunk_t* c, int x, int y, int z, MersenneRandom& rng);
     static void deadBush(mcp_chunk_t* c, int x, int y, int z);

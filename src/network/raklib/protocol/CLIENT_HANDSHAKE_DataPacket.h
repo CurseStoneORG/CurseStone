@@ -35,13 +35,13 @@ extern "C" {
 
 typedef struct mcp_pkt_client_handshake {
     mcp_packet_t header;
-    
-    int64_t  client_id;
-    uint64_t  handshake_time;
-    uint8_t   client_ip[4];
-    uint16_t  client_port;
-    int64_t   client_timestamp;
-    int64_t   server_id;
+
+    int64_t client_id;
+    uint64_t handshake_time;
+    uint8_t client_ip[4];
+    uint16_t client_port;
+    int64_t client_timestamp;
+    int64_t server_id;
 
 } mcp_pkt_client_handshake_t;
 

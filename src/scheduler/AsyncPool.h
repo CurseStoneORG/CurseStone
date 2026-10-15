@@ -60,12 +60,16 @@
 #include "../utils/MainLogger.hpp"
 namespace cursestone::scheduler {
 class AsyncPool {
-public:
+  public:
     explicit AsyncPool(int n_workers = 4) : n_(n_workers > 0 ? n_workers : 1) {
         for (int i = 0; i < n_; ++i)
-            workers_.emplace_back([this]{ this->workerLoop(); });
+            workers_.emplace_back([this] {
+                this->workerLoop();
+            });
     }
-    ~AsyncPool() { stop(); }
+    ~AsyncPool() {
+        stop();
+    }
 
     using Work = std::function<void()>;
 
@@ -77,7 +81,8 @@ public:
     // implicitly.
     bool submit(Work w) {
         std::unique_lock<std::mutex> lk(mtx_);
-        if (!running_) return false;
+        if (!running_)
+            return false;
         queue_.push(std::move(w));
         cv_.notify_one();
         return true;
@@ -86,11 +91,14 @@ public:
     void stop() {
         {
             std::unique_lock<std::mutex> lk(mtx_);
-            if (!running_) return; // already stopped — idempotent
+            if (!running_)
+                return; // already stopped — idempotent
             running_ = false;
         }
         cv_.notify_all();
-        for (auto& t : workers_) if (t.joinable()) t.join();
+        for (auto& t : workers_)
+            if (t.joinable())
+                t.join();
 
         // FIX: drain anything still left in the queue after workers
         // have exited, instead of destroying the queue (and silently
@@ -110,15 +118,15 @@ public:
         }
     }
 
-private:
+  private:
     static void runOne(Work& w) {
-        if (!w) return;
+        if (!w)
+            return;
         try {
             w();
         } catch (const std::exception& e) {
-            utils::MainLogger::get().warn(
-                std::string("[AsyncPool] Task threw during execution: ") + e.what() +
-                " — task dropped, pool kept running.");
+            utils::MainLogger::get().warn(std::string("[AsyncPool] Task threw during execution: ") +
+                                          e.what() + " — task dropped, pool kept running.");
         } catch (...) {
             utils::MainLogger::get().warn(
                 "[AsyncPool] Task threw a non-std::exception during execution — task dropped, pool kept running.");
@@ -130,9 +138,13 @@ private:
             Work w;
             {
                 std::unique_lock<std::mutex> lk(mtx_);
-                cv_.wait(lk, [&] { return !running_ || !queue_.empty(); });
-                if (!running_ && queue_.empty()) return;
-                if (queue_.empty()) continue; // spurious wake / stop with items still draining elsewhere
+                cv_.wait(lk, [&] {
+                    return !running_ || !queue_.empty();
+                });
+                if (!running_ && queue_.empty())
+                    return;
+                if (queue_.empty())
+                    continue; // spurious wake / stop with items still draining elsewhere
                 w = std::move(queue_.front());
                 queue_.pop();
             }

@@ -31,8 +31,8 @@ const BiomeConfig& desertBiome() {
         .name = "desert",
         .temp = 0.85f,
         .humid = -0.7f,
-        .topBlock = 12,      // sand
-        .fillerBlock = 24,   // sandstone
+        .topBlock = 12,    // sand
+        .fillerBlock = 24, // sandstone
         .snowy = false,
         .underwater = false,
         .treeAmount = 0,

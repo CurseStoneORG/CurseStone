@@ -29,14 +29,18 @@
 namespace cursestone::event::inventory {
 
 class InventoryPickupItemEvent : public InventoryEvent, public Cancellable {
-public:
+  public:
     cursestone::world::DroppedItem* item;
     InventoryPickupItemEvent(std::shared_ptr<cursestone::inventory::Inventory> inv,
-                               cursestone::world::DroppedItem* di)
-        : InventoryEvent(std::move(inv)), item(di) {}
-    cursestone::world::DroppedItem* getItem() { return item; }
+                             cursestone::world::DroppedItem* di)
+        : InventoryEvent(std::move(inv)), item(di) {
+    }
+    cursestone::world::DroppedItem* getItem() {
+        return item;
+    }
     const std::string& eventName() const override {
-        static std::string n = "InventoryPickupItemEvent"; return n;
+        static std::string n = "InventoryPickupItemEvent";
+        return n;
     }
 };
 

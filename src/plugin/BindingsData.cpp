@@ -61,18 +61,23 @@ std::string resolveDataPath(lua_State* L, int idx) {
     const char* req = luaL_checkstring(L, idx);
     std::string rel;
     if (!sanitizeRelPath(req, rel)) {
-        luaL_error(L,
-            "data: invalid path '%s' (use paths relative to your data folder, no '..')",
-            req);
+        luaL_error(L, "data: invalid path '%s' (use paths relative to your data folder, no '..')",
+                   req);
     }
     return LuaPlugin::from(L)->dataDir() + "/" + rel;
 }
 
 bool readWholeFile(const std::string& path, std::string& out, std::string& err) {
     std::ifstream in(path, std::ios::binary);
-    if (!in) { err = "could not open '" + path + "'"; return false; }
+    if (!in) {
+        err = "could not open '" + path + "'";
+        return false;
+    }
     out.assign((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    if (in.bad()) { err = "read error on '" + path + "'"; return false; }
+    if (in.bad()) {
+        err = "read error on '" + path + "'";
+        return false;
+    }
     return true;
 }
 
@@ -83,9 +88,15 @@ bool writeWholeFile(const std::string& path, const std::string& data, std::strin
     fs::create_directories(fs::path(path).parent_path(), ec);
     ec.clear();
     std::ofstream outF(path, std::ios::binary | std::ios::trunc);
-    if (!outF) { err = "could not open for writing '" + path + "'"; return false; }
+    if (!outF) {
+        err = "could not open for writing '" + path + "'";
+        return false;
+    }
     outF.write(data.data(), (std::streamsize)data.size());
-    if (!outF) { err = "write error on '" + path + "'"; return false; }
+    if (!outF) {
+        err = "write error on '" + path + "'";
+        return false;
+    }
     return true;
 }
 
@@ -165,7 +176,7 @@ int l_data_loadYml(lua_State* L) {
 // data.saveYml(archivo, valor) -> true | nil, err
 // (acepta tabla anidada o escalar raíz; las claves no-string dan error)
 int l_data_saveYml(lua_State* L) {
-    resolveDataPath(L, 1);               // valida la ruta primero
+    resolveDataPath(L, 1); // valida la ruta primero
     std::string text, err;
     if (!yaml::fromLua(L, 2, text, err)) {
         lua_pushnil(L);
@@ -199,7 +210,7 @@ int l_data_loadJson(lua_State* L) {
 
 // data.saveJson(archivo, tabla) -> true | nil, err
 int l_data_saveJson(lua_State* L) {
-    resolveDataPath(L, 1);               // valida la ruta primero
+    resolveDataPath(L, 1); // valida la ruta primero
     std::string text, err;
     if (!json::fromLua(L, 2, text, err)) {
         lua_pushnil(L);
@@ -218,13 +229,11 @@ int l_data_saveJson(lua_State* L) {
 } // namespace
 
 void bindData(lua_State* L) {
-    static const luaL_Reg dataF[] = {
-        {"read", l_data_read},     {"write", l_data_write},
-        {"exists", l_data_exists}, {"delete", l_data_delete},
-        {"list", l_data_list},     {"loadYml", l_data_loadYml},
-        {"saveYml", l_data_saveYml}, {"loadJson", l_data_loadJson},
-        {"saveJson", l_data_saveJson},
-        {nullptr, nullptr}};
+    static const luaL_Reg dataF[] = {{"read", l_data_read},         {"write", l_data_write},
+                                     {"exists", l_data_exists},     {"delete", l_data_delete},
+                                     {"list", l_data_list},         {"loadYml", l_data_loadYml},
+                                     {"saveYml", l_data_saveYml},   {"loadJson", l_data_loadJson},
+                                     {"saveJson", l_data_saveJson}, {nullptr, nullptr}};
 
     lua_newtable(L);
     luaL_setfuncs(L, dataF, 0);

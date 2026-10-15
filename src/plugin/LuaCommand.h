@@ -44,14 +44,14 @@
 namespace cursestone::plugin {
 
 class LuaCommand : public Command {
-public:
+  public:
     enum class PermMode { PUBLIC, OP, NODE };
 
-    LuaCommand(LuaPlugin* plugin, int fnRef, std::string name,
-               std::string description, std::string usage,
-               PermMode mode, std::string node)
-        : Command(std::move(name), std::move(description), std::move(usage), ""),
-          plugin_(plugin), fnRef_(fnRef), mode_(mode), node_(std::move(node)) {}
+    LuaCommand(LuaPlugin* plugin, int fnRef, std::string name, std::string description,
+               std::string usage, PermMode mode, std::string node)
+        : Command(std::move(name), std::move(description), std::move(usage), ""), plugin_(plugin),
+          fnRef_(fnRef), mode_(mode), node_(std::move(node)) {
+    }
 
     // Criterio de permiso de ESTE comando (ver doc de la clase).
     bool canUse(CommandSender* sender) const override;
@@ -59,15 +59,18 @@ public:
     // Owner para SimpleCommandMap::unregisterByOwner: /plugins reload
     // borra los comandos de este plugin ANTES de cerrar su lua_State
     // (los refs de fnRef_ apuntan al registry de ese state).
-    void* owner() const override { return plugin_; }
+    void* owner() const override {
+        return plugin_;
+    }
 
     bool execute(CommandSender* sender, const std::string& label,
                  const std::vector<std::string>& args) override;
-private:
+
+  private:
     LuaPlugin* plugin_;
     int fnRef_;
     PermMode mode_;
-    std::string node_;                  // solo en modo NODE
+    std::string node_; // solo en modo NODE
 };
 
 }

@@ -78,15 +78,15 @@
 namespace cursestone::plugin {
 
 class LuaPlugin {
-public:
+  public:
     // dir: carpeta del plugin. dataRoot: carpeta RAÍZ de datos de plugins
     // (normalmente <dataPath>/data_pl); dentro se crea <dataRoot>/<carpeta>.
     LuaPlugin(std::string dir, std::string dataRoot);
-    ~LuaPlugin();                       // lua_close si hay state
+    ~LuaPlugin(); // lua_close si hay state
 
-    bool load();                        // manifiesto + state + script de entrada
-    bool enable();                      // llama onEnable (si existe)
-    void disable();                     // onDisable + unlistenAll + cancelAllTasks + enabled_=false
+    bool load();    // manifiesto + state + script de entrada
+    bool enable();  // llama onEnable (si existe)
+    void disable(); // onDisable + unlistenAll + cancelAllTasks + enabled_=false
 
     // Llamada protegida: espera la función + nargs args ya apilados.
     // Si falla, loguea "[nombre] error: ..." y devuelve false (deja la pila limpia).
@@ -111,42 +111,60 @@ public:
 
     // Tareas del scheduler (id de tarea -> ref de Lua de la función)
     void addTask(uint64_t id, int ref);
-    void cancelTask(uint64_t id);       // cancela en ServerScheduler + luaL_unref
-    void releaseTask(uint64_t id);      // solo luaL_unref + erase (tarea one-shot ya ejecutada)
+    void cancelTask(uint64_t id);  // cancela en ServerScheduler + luaL_unref
+    void releaseTask(uint64_t id); // solo luaL_unref + erase (tarea one-shot ya ejecutada)
     void cancelAllTasks();
 
-    lua_State* L() const { return L_; }
-    const std::string& name() const { return name_; }
-    const std::string& version() const { return version_; }
-    const std::string& author() const { return author_; }
-    const std::string& api() const { return api_; }
-    const std::string& entry() const { return entry_; }
+    lua_State* L() const {
+        return L_;
+    }
+    const std::string& name() const {
+        return name_;
+    }
+    const std::string& version() const {
+        return version_;
+    }
+    const std::string& author() const {
+        return author_;
+    }
+    const std::string& api() const {
+        return api_;
+    }
+    const std::string& entry() const {
+        return entry_;
+    }
     // Carpeta de datos del plugin (data_pl/<carpeta>); SOLO tocable vía
     // los bindings data.*, que sanitizan las rutas.
-    const std::string& dataDir() const { return dataDir_; }
+    const std::string& dataDir() const {
+        return dataDir_;
+    }
     // Carpeta de recursos base del plugin (<plugin>/resources/). Es la
     // ÚNICA carpeta desde la que plugin.getResource() lee: los recursos
     // que el plugin reparte con su release viven aquí, nunca en src/ ni
     // en la raíz. No se crea automáticamente: existe si el plugin la trae.
-    const std::string& resourcesDir() const { return resourcesDir_; }
-    bool isEnabled() const { return enabled_; }
+    const std::string& resourcesDir() const {
+        return resourcesDir_;
+    }
+    bool isEnabled() const {
+        return enabled_;
+    }
 
-private:
-    std::string dir_;                   // carpeta del plugin
-    std::string folderName_;            // nombre de la carpeta (clave en data_pl)
-    std::string dataRoot_;              // raíz de datos (data_pl)
-    std::string dataDir_;               // dataRoot_ + "/" + folderName_
-    std::string resourcesDir_;          // dir_ + "/resources"
+  private:
+    std::string dir_;          // carpeta del plugin
+    std::string folderName_;   // nombre de la carpeta (clave en data_pl)
+    std::string dataRoot_;     // raíz de datos (data_pl)
+    std::string dataDir_;      // dataRoot_ + "/" + folderName_
+    std::string resourcesDir_; // dir_ + "/resources"
     std::string name_;
     std::string version_ = "?";
     std::string author_;
     std::string api_;
-    std::string entry_;                 // ruta relativa del script de entrada
+    std::string entry_; // ruta relativa del script de entrada
     lua_State* L_ = nullptr;
-    int tableRef_ = LUA_NOREF;          // ref a la tabla que devolvió el script de entrada
+    int tableRef_ = LUA_NOREF; // ref a la tabla que devolvió el script de entrada
     bool enabled_ = false;
     std::unordered_map<uint64_t, int> tasks_;
-    std::unordered_map<std::string, int> included_;  // caché de include (rel -> ref)
+    std::unordered_map<std::string, int> included_; // caché de include (rel -> ref)
 
     // Núcleo común de include()/import(): carga rel (ya validado) con
     // caché tipo require. `what` es el nombre de la API para los errores

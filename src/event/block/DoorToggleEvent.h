@@ -28,20 +28,24 @@
 #pragma once
 #include "BlockUpdateEvent.h"
 #include <cstdint>
-namespace cursestone { class Player; }
+namespace cursestone {
+class Player;
+}
 namespace cursestone::event::block {
 
 // NOTA: no hereda Cancellable directamente — BlockUpdateEvent ya lo
 // hace. Repetirlo aquí crearía un diamante no-virtual, ambiguo en
 // tiempo de compilación para isCancelled()/setCancelled().
 class DoorToggleEvent : public BlockUpdateEvent {
-public:
+  public:
     cursestone::Player* player;
     DoorToggleEvent(int32_t bx, int32_t by, int32_t bz, cursestone::Player* p)
-        : BlockUpdateEvent(bx, by, bz), player(p) {}
+        : BlockUpdateEvent(bx, by, bz), player(p) {
+    }
 
     const std::string& eventName() const override {
-        static std::string n = "DoorToggleEvent"; return n;
+        static std::string n = "DoorToggleEvent";
+        return n;
     }
 };
 

@@ -34,14 +34,22 @@
 namespace cursestone::utils {
 
 class VersionString {
-public:
+  public:
     VersionString() = default;
     explicit VersionString(const std::string& s);
 
-    int major() const { return major_; }
-    int minor() const { return minor_; }
-    int patch() const { return patch_; }
-    const std::string& suffix() const { return suffix_; }
+    int major() const {
+        return major_;
+    }
+    int minor() const {
+        return minor_;
+    }
+    int patch() const {
+        return patch_;
+    }
+    const std::string& suffix() const {
+        return suffix_;
+    }
 
     // True if this version is >= `other`.
     bool operator>=(const VersionString& other) const;
@@ -50,10 +58,10 @@ public:
 
     std::string toString() const;
 
-private:
-    int         major_ = 0;
-    int         minor_ = 0;
-    int         patch_ = 0;
+  private:
+    int major_ = 0;
+    int minor_ = 0;
+    int patch_ = 0;
     std::string suffix_;
 };
 

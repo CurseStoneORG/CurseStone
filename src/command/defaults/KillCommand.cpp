@@ -27,10 +27,8 @@
 
 namespace cursestone {
 
-bool KillCommand::execute(
-    CommandSender* sender,
-    const std::string&,
-    const std::vector<std::string>& args) {
+bool KillCommand::execute(CommandSender* sender, const std::string&,
+                          const std::vector<std::string>& args) {
     if (args.empty()) {
         sender->sendMessage("Usage: /kill <player>");
         return true;

@@ -40,14 +40,16 @@
 namespace cursestone::network::protocol {
 
 class PlayerActionPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return PLAYER_ACTION_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return PLAYER_ACTION_PACKET;
+    }
 
     // Action constants (subset of PMMP PlayerAction:: constants relevant
     // for block breaking on protocol 84).
     static constexpr int32_t ACTION_START_BREAK = 0;
     static constexpr int32_t ACTION_ABORT_BREAK = 1;
-    static constexpr int32_t ACTION_STOP_BREAK  = 2;
+    static constexpr int32_t ACTION_STOP_BREAK = 2;
     // ACTION_RELEASE_ITEM = 5 — releasing a drawn bow (Infinity
     // PlayerActionPacket.php:35 — protocol 84 value; the 22 that later
     // protocol versions use is WRONG here and the client never sends it).
@@ -68,14 +70,14 @@ public:
     // RELEASE_ITEM/STOP_SLEEPING in this protocol — using them here made
     // the server misread those actions and never see real sprints).
     static constexpr int32_t ACTION_START_SPRINT = 9;
-    static constexpr int32_t ACTION_STOP_SPRINT  = 10;
+    static constexpr int32_t ACTION_STOP_SPRINT = 10;
     // Crouch toggle (protocol 84 — Genisys 0.15.0 PlayerActionPacket.php:
     // ACTION_START_SNEAK = 11, ACTION_STOP_SNEAK = 12). This is what the
     // 0.15.10 client sends when the player taps the sneak button or holds
     // shift on a touch device; the server has to mirror the pose to every
     // other client or the crouch is invisible to everyone else.
     static constexpr int32_t ACTION_START_SNEAK = 11;
-    static constexpr int32_t ACTION_STOP_SNEAK  = 12;
+    static constexpr int32_t ACTION_STOP_SNEAK = 12;
 
     int64_t eid = 0;
     int32_t action = 0;

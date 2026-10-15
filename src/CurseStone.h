@@ -50,21 +50,21 @@
 #include "math/AxisAlignedBB.h"
 
 // CurseStone version information.
-#define CURSESTONE_API       "1.0.1"
-#define CURSESTONE_NAME      "CurseStone"
-#define CURSESTONE_CODENAME  "Obsidian"
+#define CURSESTONE_API "1.0.1"
+#define CURSESTONE_NAME "CurseStone"
+#define CURSESTONE_CODENAME "Obsidian"
 
 // Minecraft compatibility.
-#define MINECRAFT_VERSION  "0.15.x"
-#define PROTOCOL_VERSION   84
+#define MINECRAFT_VERSION "0.15.x"
+#define PROTOCOL_VERSION 84
 
 // Server tick configuration.
-#define CURSESTONE_TICK_RATE  20  // Ticks per second (server tick loop).
-#define CURSESTONE_TICK_MS    50  // Milliseconds per tick.
+#define CURSESTONE_TICK_RATE 20 // Ticks per second (server tick loop).
+#define CURSESTONE_TICK_MS 50   // Milliseconds per tick.
 
 // Build information.
 #ifndef CURSESTONE_LEVELDB
-#  define CURSESTONE_LEVELDB 0
+#define CURSESTONE_LEVELDB 0
 #endif
 
 namespace cursestone {
@@ -84,9 +84,9 @@ class MainLogger;
 
 // World namespace.
 namespace world {
-    class World;
-    class Position;
-    class Location;
+class World;
+class Position;
+class Location;
 }
 
 // Alias for legacy code referencing cursestone::World without the
@@ -95,93 +95,93 @@ using World = world::World;
 
 // Block namespace.
 namespace block {
-    class Block;
+class Block;
 }
 
 // Item namespace.
 namespace item {
-    class Item;
+class Item;
 }
 
 // Entity namespace.
 namespace entity {
-    class Entity;
+class Entity;
 }
 
 // Network namespace.
 namespace network {
-    class Network;
-    class RakLibInterface;
-    class SourceInterface;
+class Network;
+class RakLibInterface;
+class SourceInterface;
 
-    namespace protocol {
-        class DataPacket;
-        class BatchPacket;
-    }
+namespace protocol {
+class DataPacket;
+class BatchPacket;
+}
 }
 
 // Inventory namespace.
 namespace inventory {
-    class Inventory;
-    class PlayerInventory;
+class Inventory;
+class PlayerInventory;
 }
 
 // Tile namespace.
 namespace tile {
-    class Tile;
+class Tile;
 }
 
 // NBT namespace.
 namespace nbt {
-    class NBT;
+class NBT;
 
-    namespace tag {
-        class Tag;
-        class CompoundTag;
-    }
+namespace tag {
+class Tag;
+class CompoundTag;
+}
 }
 
 // Math namespace.
 namespace math {
-    // C++ namespace aliases for the C struct types defined in the
-    // global-scope headers above.
-    using Vector2       = ::mcp_vector2_t;
-    using Vector3       = ::mcp_vector3_t;
-    using AxisAlignedBB = ::mcp_aabb_t;
+// C++ namespace aliases for the C struct types defined in the
+// global-scope headers above.
+using Vector2 = ::mcp_vector2_t;
+using Vector3 = ::mcp_vector3_t;
+using AxisAlignedBB = ::mcp_aabb_t;
 }
 
 // Utilities namespace.
 namespace utils {
-    class BinaryStream;
-    class Config;
-    class MainLogger;
-    class UUID;
+class BinaryStream;
+class Config;
+class MainLogger;
+class UUID;
 }
 
 // Scheduler namespace.
 namespace scheduler {
-    class ServerScheduler;
-    class Task;
-    class AsyncTask;
+class ServerScheduler;
+class Task;
+class AsyncTask;
 }
 
 // Permission namespace.
 namespace permission {
-    class Permission;
-    class Permissible;
+class Permission;
+class Permissible;
 }
 
 // Command namespace.
 namespace command {
-    class Command;
-    class CommandSender;
-    class CommandMap;
+class Command;
+class CommandSender;
+class CommandMap;
 }
 
 // Event namespace.
 namespace event {
-    class Event;
-    class HandlerList;
+class Event;
+class HandlerList;
 }
 
 } // namespace cursestone

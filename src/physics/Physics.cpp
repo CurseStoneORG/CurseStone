@@ -25,8 +25,7 @@
 
 namespace cursestone::physics {
 
-MotionResult sweep(mcp_aabb_t box, mcp_vector3_t motion,
-                   const std::vector<BlockBox>& boxes) {
+MotionResult sweep(mcp_aabb_t box, mcp_vector3_t motion, const std::vector<BlockBox>& boxes) {
     MotionResult r;
 
     double dx = motion.x, dy = motion.y, dz = motion.z;
@@ -37,13 +36,16 @@ MotionResult sweep(mcp_aabb_t box, mcp_vector3_t motion,
     // mutates the receiver in place). Skipping that intermediate offset
     // made the port clip the last two axes against coordinates the box
     // no longer had: items sank into floors and stopped short of walls.
-    for (const BlockBox& c : boxes) dy = mcp_aabb_clip_y_collide(bb, c.box, dy);
+    for (const BlockBox& c : boxes)
+        dy = mcp_aabb_clip_y_collide(bb, c.box, dy);
     bb = mcp_aabb_move(bb, 0.0, dy, 0.0);
 
-    for (const BlockBox& c : boxes) dx = mcp_aabb_clip_x_collide(bb, c.box, dx);
+    for (const BlockBox& c : boxes)
+        dx = mcp_aabb_clip_x_collide(bb, c.box, dx);
     bb = mcp_aabb_move(bb, dx, 0.0, 0.0);
 
-    for (const BlockBox& c : boxes) dz = mcp_aabb_clip_z_collide(bb, c.box, dz);
+    for (const BlockBox& c : boxes)
+        dz = mcp_aabb_clip_z_collide(bb, c.box, dz);
 
     r.motion = mcp_v3(dx, dy, dz);
     r.clipped_x = (dx != motion.x);
@@ -57,17 +59,20 @@ MotionResult sweep(mcp_aabb_t box, mcp_vector3_t motion,
     return r;
 }
 
-mcp_hit_result_t clipRay(mcp_vector3_t from, mcp_vector3_t to,
-                         const std::vector<BlockBox>& boxes) {
+mcp_hit_result_t clipRay(mcp_vector3_t from, mcp_vector3_t to, const std::vector<BlockBox>& boxes) {
     mcp_hit_result_t best = mcp_hit_none();
     double best_dist = 0.0;
 
     for (const BlockBox& c : boxes) {
         mcp_hit_result_t h = mcp_aabb_clip(c.box, from, to);
-        if (!mcp_hit_is_hit(&h)) continue;
+        if (!mcp_hit_is_hit(&h))
+            continue;
         double d = mcp_v3_dist_sq(from, h.pos);
-        if (mcp_hit_is_hit(&best) && d >= best_dist) continue;
-        h.x = c.x; h.y = c.y; h.z = c.z;
+        if (mcp_hit_is_hit(&best) && d >= best_dist)
+            continue;
+        h.x = c.x;
+        h.y = c.y;
+        h.z = c.z;
         best = h;
         best_dist = d;
     }

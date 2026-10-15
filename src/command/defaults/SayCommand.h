@@ -25,8 +25,9 @@
 #include <string>
 namespace cursestone {
 class SayCommand : public Command {
-public:
-    SayCommand() : Command("say", "Broadcast a message", "", "cursestone.command.say") {}
+  public:
+    SayCommand() : Command("say", "Broadcast a message", "", "cursestone.command.say") {
+    }
     bool execute(CommandSender* sender, const std::string& label,
                  const std::vector<std::string>& args) override;
 };

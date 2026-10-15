@@ -35,8 +35,10 @@
 namespace cursestone::network::protocol {
 
 class SetHealthPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return SET_HEALTH_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return SET_HEALTH_PACKET;
+    }
 
     int32_t health = 20;
 

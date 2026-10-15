@@ -25,8 +25,9 @@
 #include <string>
 namespace cursestone {
 class GiveCommand : public Command {
-public:
-    GiveCommand() : Command("give", "Give items to a player", "", "cursestone.command.give") {}
+  public:
+    GiveCommand() : Command("give", "Give items to a player", "", "cursestone.command.give") {
+    }
     bool execute(CommandSender* sender, const std::string& label,
                  const std::vector<std::string>& args) override;
 };

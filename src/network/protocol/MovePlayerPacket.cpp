@@ -37,22 +37,31 @@ void MovePlayerPacket::encode(std::vector<uint8_t>& out) const {
     w.writeF32BE(yaw);
     w.writeF32BE(bodyYaw);
     w.writeF32BE(pitch);
-    w.writeU8 (mode);
-    w.writeU8 (onGround ? 1 : 0);
+    w.writeU8(mode);
+    w.writeU8(onGround ? 1 : 0);
 }
 
 bool MovePlayerPacket::decode(const uint8_t* data, size_t len) {
     PacketReader r(data, len);
     uint8_t og;
-    if (!r.readI64BE(eid))     return false;
-    if (!r.readF32BE(x))       return false;
-    if (!r.readF32BE(y))       return false;
-    if (!r.readF32BE(z))       return false;
-    if (!r.readF32BE(yaw))     return false;
-    if (!r.readF32BE(bodyYaw)) return false;
-    if (!r.readF32BE(pitch))   return false;
-    if (!r.readU8 (mode))      return false;
-    if (!r.readU8 (og))        return false;
+    if (!r.readI64BE(eid))
+        return false;
+    if (!r.readF32BE(x))
+        return false;
+    if (!r.readF32BE(y))
+        return false;
+    if (!r.readF32BE(z))
+        return false;
+    if (!r.readF32BE(yaw))
+        return false;
+    if (!r.readF32BE(bodyYaw))
+        return false;
+    if (!r.readF32BE(pitch))
+        return false;
+    if (!r.readU8(mode))
+        return false;
+    if (!r.readU8(og))
+        return false;
     onGround = (og != 0);
     return true;
 }

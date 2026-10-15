@@ -52,31 +52,31 @@ void AddEntityPacket::encode(std::vector<uint8_t>& out) const {
         for (const SetEntityDataPacket::Entry& e : metadata) {
             w.writeU8((uint8_t)(((e.type & 0x07) << 5) | (e.index & 0x1F)));
             switch (e.type) {
-                case SetEntityDataPacket::TYPE_BYTE:
-                    w.writeU8((uint8_t)(e.ival & 0xFF));
-                    break;
-                case SetEntityDataPacket::TYPE_SHORT:
-                    w.writeU16LE((uint16_t)(e.ival & 0xFFFF));
-                    break;
-                case SetEntityDataPacket::TYPE_INT:
-                    w.writeU32LE((uint32_t)e.ival);
-                    break;
-                case SetEntityDataPacket::TYPE_LONG:
-                    w.writeI64BE(e.ival);
-                    break;
-                case SetEntityDataPacket::TYPE_FLOAT:
-                    w.writeF32BE(e.fval);
-                    break;
-                case SetEntityDataPacket::TYPE_STRING:
-                    w.writeBEString(e.sval);
-                    break;
-                case SetEntityDataPacket::TYPE_POS:
-                    w.writeU32LE((uint32_t)e.px);
-                    w.writeU32LE((uint32_t)e.py);
-                    w.writeU32LE((uint32_t)e.pz);
-                    break;
-                default:
-                    break;
+            case SetEntityDataPacket::TYPE_BYTE:
+                w.writeU8((uint8_t)(e.ival & 0xFF));
+                break;
+            case SetEntityDataPacket::TYPE_SHORT:
+                w.writeU16LE((uint16_t)(e.ival & 0xFFFF));
+                break;
+            case SetEntityDataPacket::TYPE_INT:
+                w.writeU32LE((uint32_t)e.ival);
+                break;
+            case SetEntityDataPacket::TYPE_LONG:
+                w.writeI64BE(e.ival);
+                break;
+            case SetEntityDataPacket::TYPE_FLOAT:
+                w.writeF32BE(e.fval);
+                break;
+            case SetEntityDataPacket::TYPE_STRING:
+                w.writeBEString(e.sval);
+                break;
+            case SetEntityDataPacket::TYPE_POS:
+                w.writeU32LE((uint32_t)e.px);
+                w.writeU32LE((uint32_t)e.py);
+                w.writeU32LE((uint32_t)e.pz);
+                break;
+            default:
+                break;
             }
         }
         w.writeU8(SetEntityDataPacket::TERMINATOR);
@@ -86,8 +86,9 @@ void AddEntityPacket::encode(std::vector<uint8_t>& out) const {
 }
 
 bool AddEntityPacket::decode(const uint8_t* data, size_t len) {
-    (void)data; (void)len;
-    return true;  // server→client only
+    (void)data;
+    (void)len;
+    return true; // server→client only
 }
 
 } // namespace cursestone::network::protocol

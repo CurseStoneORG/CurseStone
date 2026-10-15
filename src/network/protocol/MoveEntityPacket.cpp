@@ -32,9 +32,11 @@ namespace cursestone::network::protocol {
 
 static inline uint8_t angleToByte(float deg) {
     // Normalize to [0, 360) then scale to [0, 256).
-    if (!std::isfinite(deg)) deg = 0.0f;
+    if (!std::isfinite(deg))
+        deg = 0.0f;
     deg = std::fmod(deg, 360.0f);
-    if (deg < 0.0f) deg += 360.0f;
+    if (deg < 0.0f)
+        deg += 360.0f;
     float b = deg * (256.0f / 360.0f);
     return static_cast<uint8_t>(b);
 }
@@ -48,23 +50,30 @@ void MoveEntityPacket::encode(std::vector<uint8_t>& out) const {
     w.writeF32BE(x);
     w.writeF32BE(y);
     w.writeF32BE(z);
-    w.writeU8 (angleToByte(pitch));
-    w.writeU8 (angleToByte(yaw));
-    w.writeU8 (angleToByte(headYaw));
+    w.writeU8(angleToByte(pitch));
+    w.writeU8(angleToByte(yaw));
+    w.writeU8(angleToByte(headYaw));
 }
 
 bool MoveEntityPacket::decode(const uint8_t* data, size_t len) {
     PacketReader r(data, len);
     uint8_t bPitch, bYaw, bHeadYaw;
-    if (!r.readI64BE(eid))     return false;
-    if (!r.readF32BE(x))       return false;
-    if (!r.readF32BE(y))       return false;
-    if (!r.readF32BE(z))       return false;
-    if (!r.readU8 (bPitch))    return false;
-    if (!r.readU8 (bYaw))      return false;
-    if (!r.readU8 (bHeadYaw))  return false;
-    pitch   = byteToAngle(bPitch);
-    yaw     = byteToAngle(bYaw);
+    if (!r.readI64BE(eid))
+        return false;
+    if (!r.readF32BE(x))
+        return false;
+    if (!r.readF32BE(y))
+        return false;
+    if (!r.readF32BE(z))
+        return false;
+    if (!r.readU8(bPitch))
+        return false;
+    if (!r.readU8(bYaw))
+        return false;
+    if (!r.readU8(bHeadYaw))
+        return false;
+    pitch = byteToAngle(bPitch);
+    yaw = byteToAngle(bYaw);
     headYaw = byteToAngle(bHeadYaw);
     return true;
 }

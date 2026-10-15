@@ -36,17 +36,16 @@
 namespace cursestone::world {
 
 class PortalRegistry {
-public:
+  public:
     struct Portal {
-        int32_t x = 0, y = 0, z = 0;   // anchor portal block
-        uint8_t axis = 0;              // portal block metadata
+        int32_t x = 0, y = 0, z = 0; // anchor portal block
+        uint8_t axis = 0;            // portal block metadata
     };
 
     // Nearest portal to (x,y,z) within maxRadius (block units, weighted
     // so a vertical offset matters less than a horizontal one).
     // Returns nullptr when nothing is within range.
-    const Portal* findNearest(double x, double y, double z,
-                              double maxRadius) const;
+    const Portal* findNearest(double x, double y, double z, double maxRadius) const;
 
     // Adds a portal unless an entry already exists within a few blocks
     // of it (dedupe keeps repeated travels from growing the file).
@@ -67,7 +66,7 @@ public:
 
     size_t size() const;
 
-private:
+  private:
     mutable std::mutex mtx_;
     std::vector<Portal> portals_;
 };

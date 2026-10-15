@@ -43,8 +43,9 @@ using cursestone::world::World;
 // mandárselo).
 // ============================================================
 static void broadcastBlock(cursestone::Server* server, int32_t x, int32_t y, int32_t z,
-                             uint8_t blockId, uint8_t blockData) {
-    if (!server) return;
+                           uint8_t blockId, uint8_t blockData) {
+    if (!server)
+        return;
     auto ubp = std::make_shared<network::protocol::UpdateBlockPacket>();
     ubp->x = x;
     ubp->z = z;
@@ -56,8 +57,10 @@ static void broadcastBlock(cursestone::Server* server, int32_t x, int32_t y, int
     int32_t cx = x >> 4;
     int32_t cz = z >> 4;
     for (auto& player : server->playersSnapshot()) {
-        if (!player) continue;
-        if (!player->canSeeBlock(cx, cz)) continue;
+        if (!player)
+            continue;
+        if (!player->canSeeBlock(cx, cz))
+            continue;
         player->sendPacket(ubp);
     }
 }
@@ -68,10 +71,10 @@ static void broadcastBlock(cursestone::Server* server, int32_t x, int32_t y, int
 // AS GIVEN (block corner for sounds; callers pass what the reference
 // passes). Used for the door open/close sound (EVENT_SOUND_DOOR) on both
 // the hand-toggle and the redstone-toggle paths.
-static void broadcastLevelEvent(cursestone::Server* server,
-                                int16_t evid, int32_t data,
-                                float x, float y, float z) {
-    if (!server) return;
+static void broadcastLevelEvent(cursestone::Server* server, int16_t evid, int32_t data, float x,
+                                float y, float z) {
+    if (!server)
+        return;
     auto pk = std::make_shared<network::protocol::LevelEventPacket>();
     pk->evid = evid;
     pk->data = data;
@@ -81,8 +84,10 @@ static void broadcastLevelEvent(cursestone::Server* server,
     int32_t cx = (int32_t)std::floor(x) >> 4;
     int32_t cz = (int32_t)std::floor(z) >> 4;
     for (auto& player : server->playersSnapshot()) {
-        if (!player) continue;
-        if (!player->canSeeBlock(cx, cz)) continue;
+        if (!player)
+            continue;
+        if (!player->canSeeBlock(cx, cz))
+            continue;
         player->sendPacket(pk);
     }
 }
@@ -91,51 +96,52 @@ static void broadcastLevelEvent(cursestone::Server* server,
 // level/sound/DoorSound.php → LevelEventPacket evid=1003 at the door
 // block position, data = pitch*1000 = 0). The 0.15.10 client needs this
 // or the door toggles silently (bug: "las puertas no emiten sonido").
-static void playDoorSound(cursestone::Server* server,
-                          int32_t x, int32_t y, int32_t z) {
-    broadcastLevelEvent(server,
-                        network::protocol::LevelEventPacket::EVENT_SOUND_DOOR,
-                        0, (float)x, (float)y, (float)z);
+static void playDoorSound(cursestone::Server* server, int32_t x, int32_t y, int32_t z) {
+    broadcastLevelEvent(server, network::protocol::LevelEventPacket::EVENT_SOUND_DOOR, 0, (float)x,
+                        (float)y, (float)z);
 }
 
 // ============================================================
 // getEmittedPower — cuánta señal aporta este bloque hacia afuera.
 // ============================================================
 int getEmittedPower(World* world, int32_t x, int32_t y, int32_t z) {
-    if (!world) return 0;
-    if (y < 0 || y >= 256) return 0;
+    if (!world)
+        return 0;
+    if (y < 0 || y >= 256)
+        return 0;
     // CRÍTICO: no leer bloques en chunks no cargados. World::getBlockId
     // puede disparar generación síncrona de chunk si el chunk no está
     // en memoria — exactamente el patrón que causó el freeze de 88s en
     // BlockFire v5 (propagación tocando vecinos sin este chequeo). Un
     // vecino en un chunk no cargado se trata simplemente como "sin
     // señal", nunca se fuerza su carga.
-    if (!world->isChunkLoaded(x, z)) return 0;
+    if (!world->isChunkLoaded(x, z))
+        return 0;
     uint8_t id = world->getBlockId(x, y, z);
     uint8_t data = world->getBlockData(x, y, z);
 
     switch (id) {
-        case block::REDSTONE_TORCH_ON:
-            // Antorcha encendida: potencia máxima hacia los vecinos
-            // laterales y hacia arriba (no hacia el bloque que la
-            // sostiene — comportamiento real de Minecraft).
-            return 15;
-        case block::REDSTONE_BLOCK:
-            return 15;
-        case block::LEVER:
-            // Bit 0x8 = encendida (convención PMMP/vanilla para lever).
-            return (data & 0x08) ? 15 : 0;
-        case block::STONE_BUTTON:
-            return (data & 0x08) ? 15 : 0;
-        case block::WOOD_PRESSURE_PLATE:
-        case block::STONE_PRESSURE_PLATE:
-            // data almacena 0 (sin pisar) o 1 (pisada) para placas simples.
-            return (data != 0) ? 15 : 0;
-        case block::REDSTONE_WIRE:
-            // El wire emite su propia potencia actual (almacenada en data).
-            return data & 0x0F;
-        default:
-            return 0;
+    case block::REDSTONE_TORCH_ON:
+        // Antorcha encendida: potencia máxima hacia los vecinos
+        // laterales y hacia arriba (no hacia el bloque que la
+        // sostiene — comportamiento real de Minecraft).
+        return 15;
+    case block::REDSTONE_BLOCK:
+        return 15;
+    case block::LEVER:
+        // Bit 0x8 = encendida (convención PMMP/vanilla para lever).
+        return (data & 0x08) ? 15 : 0;
+    case block::STONE_BUTTON:
+        return (data & 0x08) ? 15 : 0;
+    case block::WOOD_PRESSURE_PLATE:
+    case block::STONE_PRESSURE_PLATE:
+        // data almacena 0 (sin pisar) o 1 (pisada) para placas simples.
+        return (data != 0) ? 15 : 0;
+    case block::REDSTONE_WIRE:
+        // El wire emite su propia potencia actual (almacenada en data).
+        return data & 0x0F;
+    default:
+        return 0;
     }
 }
 
@@ -145,20 +151,25 @@ int getEmittedPower(World* world, int32_t x, int32_t y, int32_t z) {
 // nada, pero un bloque JUNTO a una palanca encendida sí está powered.)
 // ============================================================
 bool isPowered(World* world, int32_t x, int32_t y, int32_t z) {
-    if (!world) return false;
+    if (!world)
+        return false;
     // Los 6 vecinos directos.
     static const int32_t dx[6] = {1, -1, 0, 0, 0, 0};
     static const int32_t dy[6] = {0, 0, 1, -1, 0, 0};
     static const int32_t dz[6] = {0, 0, 0, 0, 1, -1};
     for (int i = 0; i < 6; ++i) {
         int32_t nx = x + dx[i], ny = y + dy[i], nz = z + dz[i];
-        if (ny < 0 || ny >= 256) continue;
-        if (!world->isChunkLoaded(nx, nz)) continue;
-        if (getEmittedPower(world, nx, ny, nz) > 0) return true;
+        if (ny < 0 || ny >= 256)
+            continue;
+        if (!world->isChunkLoaded(nx, nz))
+            continue;
+        if (getEmittedPower(world, nx, ny, nz) > 0)
+            return true;
     }
     // El propio bloque, si es wire con potencia > 0, cuenta como
     // "powered" para sí mismo (lo consultan cosas colocadas sobre él).
-    if (!world->isChunkLoaded(x, z)) return false;
+    if (!world->isChunkLoaded(x, z))
+        return false;
     uint8_t id = world->getBlockId(x, y, z);
     if (id == block::REDSTONE_WIRE) {
         return (world->getBlockData(x, y, z) & 0x0F) > 0;
@@ -175,9 +186,12 @@ bool isPowered(World* world, int32_t x, int32_t y, int32_t z) {
 // ============================================================
 bool tryInteract(World* world, cursestone::Server* server, int32_t x, int32_t y, int32_t z,
                  cursestone::Player* player) {
-    if (!world) return false;
-    if (y < 0 || y >= 256) return false;
-    if (!world->isChunkLoaded(x, z)) return false;
+    if (!world)
+        return false;
+    if (y < 0 || y >= 256)
+        return false;
+    if (!world->isChunkLoaded(x, z))
+        return false;
     uint8_t id = world->getBlockId(x, y, z);
     uint8_t data = world->getBlockData(x, y, z);
 
@@ -207,12 +221,16 @@ bool tryInteract(World* world, cursestone::Server* server, int32_t x, int32_t y,
         // de las dos mitades indistintamente.
         bool isTopHalf = (data & 0x08) != 0;
         int32_t lowerY = isTopHalf ? (y - 1) : y;
-        if (lowerY < 0 || lowerY >= 256) return false;
-        if (!world->isChunkLoaded(x, z)) return false;
+        if (lowerY < 0 || lowerY >= 256)
+            return false;
+        if (!world->isChunkLoaded(x, z))
+            return false;
         uint8_t lowerId = world->getBlockId(x, lowerY, z);
-        if (lowerId != block::WOODEN_DOOR) return false; // desincronizada — no tocar
+        if (lowerId != block::WOODEN_DOOR)
+            return false; // desincronizada — no tocar
         uint8_t lowerData = world->getBlockData(x, lowerY, z);
-        if ((lowerData & 0x08) != 0) return false; // salvaguarda de datos corruptos, igual que updateDoorAt
+        if ((lowerData & 0x08) != 0)
+            return false; // salvaguarda de datos corruptos, igual que updateDoorAt
 
         // DoorToggleEvent (Nukkit/PMMP block/Door.php onActivate fires
         // DoorSound; the event type itself is this project's port of
@@ -220,9 +238,10 @@ bool tryInteract(World* world, cursestone::Server* server, int32_t x, int32_t y,
         // protected-door plugin blocks the toggle and the click is
         // consumed (no accidental block placement INTO the door cell).
         {
-            auto ev = event::EventManager::get().fire<event::block::DoorToggleEvent>(
-                x, lowerY, z, player);
-            if (ev.isCancelled()) return true;
+            auto ev = event::EventManager::get().fire<event::block::DoorToggleEvent>(x, lowerY, z,
+                                                                                     player);
+            if (ev.isCancelled())
+                return true;
         }
 
         uint8_t newLowerData = lowerData ^ 0x04;
@@ -254,14 +273,19 @@ bool tryInteract(World* world, cursestone::Server* server, int32_t x, int32_t y,
 // máximo de 15 bloques de wire consecutivos antes de que la potencia
 // llegue a 0 y la recursión se detenga por sí sola.
 // ============================================================
-static void updateWireInternal(World* world, cursestone::Server* server,
-                                 int32_t x, int32_t y, int32_t z, int depth) {
-    if (!world) return;
-    if (depth > 16) return; // guarda de seguridad extra (nunca debería alcanzarse)
-    if (y < 0 || y >= 256) return;
-    if (!world->isChunkLoaded(x, z)) return;
+static void updateWireInternal(World* world, cursestone::Server* server, int32_t x, int32_t y,
+                               int32_t z, int depth) {
+    if (!world)
+        return;
+    if (depth > 16)
+        return; // guarda de seguridad extra (nunca debería alcanzarse)
+    if (y < 0 || y >= 256)
+        return;
+    if (!world->isChunkLoaded(x, z))
+        return;
     uint8_t id = world->getBlockId(x, y, z);
-    if (id != block::REDSTONE_WIRE) return;
+    if (id != block::REDSTONE_WIRE)
+        return;
 
     uint8_t oldData = world->getBlockData(x, y, z);
     int oldPower = oldData & 0x0F;
@@ -276,8 +300,10 @@ static void updateWireInternal(World* world, cursestone::Server* server,
     static const int32_t dz[6] = {0, 0, 0, 0, 1, -1};
     for (int i = 0; i < 6; ++i) {
         int32_t nx = x + dx[i], ny = y + dy[i], nz = z + dz[i];
-        if (ny < 0 || ny >= 256) continue;
-        if (!world->isChunkLoaded(nx, nz)) continue;
+        if (ny < 0 || ny >= 256)
+            continue;
+        if (!world->isChunkLoaded(nx, nz))
+            continue;
         uint8_t nid = world->getBlockId(nx, ny, nz);
         if (nid == block::REDSTONE_WIRE) {
             int npower = world->getBlockData(nx, ny, nz) & 0x0F;
@@ -289,7 +315,8 @@ static void updateWireInternal(World* world, cursestone::Server* server,
     }
     best = std::max(0, std::min(15, best));
 
-    if (best == oldPower) return; // sin cambio, no propagar más
+    if (best == oldPower)
+        return; // sin cambio, no propagar más
 
     world->setBlock(x, y, z, block::REDSTONE_WIRE, (uint8_t)best);
     // FIX (reportado por el usuario): sin esto, el cambio de potencia
@@ -311,8 +338,10 @@ static void updateWireInternal(World* world, cursestone::Server* server,
     // pistón, porque el pistón no es vecino directo de la palanca.
     for (int i = 0; i < 6; ++i) {
         int32_t nx = x + dx[i], ny = y + dy[i], nz = z + dz[i];
-        if (ny < 0 || ny >= 256) continue;
-        if (!world->isChunkLoaded(nx, nz)) continue;
+        if (ny < 0 || ny >= 256)
+            continue;
+        if (!world->isChunkLoaded(nx, nz))
+            continue;
         uint8_t nid = world->getBlockId(nx, ny, nz);
         if (nid == block::REDSTONE_WIRE) {
             updateWireInternal(world, server, nx, ny, nz, depth + 1);
@@ -322,8 +351,8 @@ static void updateWireInternal(World* world, cursestone::Server* server,
             updateDoorAt(world, server, nx, ny, nz);
         } else if (nid == block::PISTON_ID || nid == block::STICKY_PISTON) {
             updatePistonAt(world, server, nx, ny, nz);
-        } else if ((nid == block::REDSTONE_TORCH_ON || nid == block::REDSTONE_TORCH_OFF)
-                   && nx == x && nz == z && ny == y + 1) {
+        } else if ((nid == block::REDSTONE_TORCH_ON || nid == block::REDSTONE_TORCH_OFF) &&
+                   nx == x && nz == z && ny == y + 1) {
             // Misma restricción que en notifyNeighbors: sólo si el
             // wire ES el soporte de esa antorcha (está justo debajo).
             updateRedstoneTorchAt(world, server, nx, ny, nz);
@@ -343,15 +372,20 @@ void updateWireAt(World* world, cursestone::Server* server, int32_t x, int32_t y
 // cascada aquí en absoluto.
 // ============================================================
 void updateLampAt(World* world, cursestone::Server* server, int32_t x, int32_t y, int32_t z) {
-    if (!world) return;
-    if (y < 0 || y >= 256) return;
-    if (!world->isChunkLoaded(x, z)) return;
+    if (!world)
+        return;
+    if (y < 0 || y >= 256)
+        return;
+    if (!world->isChunkLoaded(x, z))
+        return;
     uint8_t id = world->getBlockId(x, y, z);
-    if (id != block::REDSTONE_LAMP && id != block::LIT_REDSTONE_LAMP) return;
+    if (id != block::REDSTONE_LAMP && id != block::LIT_REDSTONE_LAMP)
+        return;
 
     bool powered = isPowered(world, x, y, z);
     uint8_t wantId = powered ? block::LIT_REDSTONE_LAMP : block::REDSTONE_LAMP;
-    if (wantId == id) return; // ya está en el estado correcto
+    if (wantId == id)
+        return; // ya está en el estado correcto
 
     world->setBlock(x, y, z, wantId, 0);
     broadcastBlock(server, x, y, z, wantId, 0);
@@ -372,12 +406,17 @@ void updateLampAt(World* world, cursestone::Server* server, int32_t x, int32_t y
 // esta función (notifyNeighbors) también notifica al resto de vecinos
 // del bloque que originó el cambio.
 // ============================================================
-void updateRedstoneTorchAt(World* world, cursestone::Server* server, int32_t x, int32_t y, int32_t z) {
-    if (!world) return;
-    if (y < 1 || y >= 256) return; // necesita soporte debajo; y=0 no tiene bloque debajo
-    if (!world->isChunkLoaded(x, z)) return;
+void updateRedstoneTorchAt(World* world, cursestone::Server* server, int32_t x, int32_t y,
+                           int32_t z) {
+    if (!world)
+        return;
+    if (y < 1 || y >= 256)
+        return; // necesita soporte debajo; y=0 no tiene bloque debajo
+    if (!world->isChunkLoaded(x, z))
+        return;
     uint8_t id = world->getBlockId(x, y, z);
-    if (id != block::REDSTONE_TORCH_ON && id != block::REDSTONE_TORCH_OFF) return;
+    if (id != block::REDSTONE_TORCH_ON && id != block::REDSTONE_TORCH_OFF)
+        return;
 
     // NOTA DE ALCANCE: esta función sólo decide ON vs OFF por señal.
     // No comprueba si el bloque de soporte fue removido por completo
@@ -400,16 +439,22 @@ void updateRedstoneTorchAt(World* world, cursestone::Server* server, int32_t x, 
     // de más abajo), exactamente igual que isPowered pero excluyendo
     // el vecino de arriba.
     int32_t sx = x, sy = y - 1, sz = z;
-    if (!world->isChunkLoaded(sx, sz)) return;
+    if (!world->isChunkLoaded(sx, sz))
+        return;
     static const int32_t dx[5] = {1, -1, 0, 0, 0};
     static const int32_t dz[5] = {0, 0, 1, -1, 0};
     static const int32_t dy[5] = {0, 0, 0, 0, -1};
     bool supportPowered = false;
     for (int i = 0; i < 5; ++i) {
         int32_t nx = sx + dx[i], ny = sy + dy[i], nz = sz + dz[i];
-        if (ny < 0 || ny >= 256) continue;
-        if (!world->isChunkLoaded(nx, nz)) continue;
-        if (getEmittedPower(world, nx, ny, nz) > 0) { supportPowered = true; break; }
+        if (ny < 0 || ny >= 256)
+            continue;
+        if (!world->isChunkLoaded(nx, nz))
+            continue;
+        if (getEmittedPower(world, nx, ny, nz) > 0) {
+            supportPowered = true;
+            break;
+        }
     }
     // El soporte también puede ser él mismo un wire con potencia
     // (mismo caso que contempla isPowered para wire).
@@ -421,7 +466,8 @@ void updateRedstoneTorchAt(World* world, cursestone::Server* server, int32_t x, 
     }
 
     uint8_t wantId = supportPowered ? block::REDSTONE_TORCH_OFF : block::REDSTONE_TORCH_ON;
-    if (wantId == id) return;
+    if (wantId == id)
+        return;
 
     world->setBlock(x, y, z, wantId, 0);
     broadcastBlock(server, x, y, z, wantId, 0);
@@ -453,26 +499,35 @@ void updateRedstoneTorchAt(World* world, cursestone::Server* server, int32_t x, 
 //     (Player.cpp) y nunca tocados por este motor.
 // ============================================================
 void updateDoorAt(World* world, cursestone::Server* server, int32_t x, int32_t y, int32_t z) {
-    if (!world) return;
-    if (y < 0 || y >= 256) return;
-    if (!world->isChunkLoaded(x, z)) return;
+    if (!world)
+        return;
+    if (y < 0 || y >= 256)
+        return;
+    if (!world->isChunkLoaded(x, z))
+        return;
     uint8_t id = world->getBlockId(x, y, z);
-    if (id != block::WOODEN_DOOR && id != block::IRON_DOOR) return;
+    if (id != block::WOODEN_DOOR && id != block::IRON_DOOR)
+        return;
 
     uint8_t data = world->getBlockData(x, y, z);
     bool isTopHalf = (data & 0x08) != 0;
     int32_t lowerY = isTopHalf ? (y - 1) : y;
-    if (lowerY < 0 || lowerY >= 256) return;
-    if (!world->isChunkLoaded(x, z)) return;
+    if (lowerY < 0 || lowerY >= 256)
+        return;
+    if (!world->isChunkLoaded(x, z))
+        return;
     uint8_t lowerId = world->getBlockId(x, lowerY, z);
-    if (lowerId != id) return; // la mitad inferior no coincide (puerta rota a medias / desincronizada) — no tocar nada
+    if (lowerId != id)
+        return; // la mitad inferior no coincide (puerta rota a medias / desincronizada) — no tocar nada
 
     uint8_t lowerData = world->getBlockData(x, lowerY, z);
-    if ((lowerData & 0x08) != 0) return; // salvaguarda: lo que creíamos "inferior" también trae el bit de superior — datos corruptos, no tocar
+    if ((lowerData & 0x08) != 0)
+        return; // salvaguarda: lo que creíamos "inferior" también trae el bit de superior — datos corruptos, no tocar
 
     bool currentlyOpen = (lowerData & 0x04) != 0;
     bool shouldBeOpen = isPowered(world, x, lowerY, z);
-    if (shouldBeOpen == currentlyOpen) return; // sin cambio
+    if (shouldBeOpen == currentlyOpen)
+        return; // sin cambio
 
     uint8_t newLowerData = lowerData ^ 0x04;
     world->setBlock(x, lowerY, z, id, newLowerData);
@@ -500,33 +555,53 @@ void updateDoorAt(World* world, cursestone::Server* server, int32_t x, int32_t y
 static void pistonDirOffset(uint8_t dirBits, int32_t& ox, int32_t& oy, int32_t& oz) {
     ox = oy = oz = 0;
     switch (dirBits & 0x07) {
-        case 0: oy = -1; break; // abajo
-        case 1: oy = 1;  break; // arriba
-        case 2: oz = -1; break; // norte
-        case 3: oz = 1;  break; // sur
-        case 4: ox = -1; break; // oeste
-        case 5: ox = 1;  break; // este
-        default: break; // 6/7 no son direcciones válidas en vanilla — no-op seguro
+    case 0:
+        oy = -1;
+        break; // abajo
+    case 1:
+        oy = 1;
+        break; // arriba
+    case 2:
+        oz = -1;
+        break; // norte
+    case 3:
+        oz = 1;
+        break; // sur
+    case 4:
+        ox = -1;
+        break; // oeste
+    case 5:
+        ox = 1;
+        break; // este
+    default:
+        break; // 6/7 no son direcciones válidas en vanilla — no-op seguro
     }
 }
 
 void updatePistonAt(World* world, cursestone::Server* server, int32_t x, int32_t y, int32_t z) {
-    if (!world) return;
-    if (y < 0 || y >= 256) return;
-    if (!world->isChunkLoaded(x, z)) return;
+    if (!world)
+        return;
+    if (y < 0 || y >= 256)
+        return;
+    if (!world->isChunkLoaded(x, z))
+        return;
     uint8_t id = world->getBlockId(x, y, z);
-    if (id != block::PISTON_ID && id != block::STICKY_PISTON) return;
+    if (id != block::PISTON_ID && id != block::STICKY_PISTON)
+        return;
 
     uint8_t data = world->getBlockData(x, y, z);
     bool currentlyExtended = (data & 0x08) != 0;
     bool shouldExtend = isPowered(world, x, y, z);
-    if (shouldExtend == currentlyExtended) return; // sin cambio
+    if (shouldExtend == currentlyExtended)
+        return; // sin cambio
 
     int32_t ox, oy, oz;
     pistonDirOffset(data, ox, oy, oz);
     int32_t headX = x + ox, headY = y + oy, headZ = z + oz;
-    if (headY < 0 || headY >= 256) return; // el cabezal caería fuera del mundo — no-op seguro
-    if (!world->isChunkLoaded(headX, headZ)) return;
+    if (headY < 0 || headY >= 256)
+        return; // el cabezal caería fuera del mundo — no-op seguro
+    if (!world->isChunkLoaded(headX, headZ))
+        return;
 
     if (shouldExtend) {
         // Sólo empuja si el destino es aire puro. Empujar fluidos u
@@ -542,7 +617,8 @@ void updatePistonAt(World* world, cursestone::Server* server, int32_t x, int32_t
         // (headX,headY,headZ), que revisa SUS 6 vecinos — y el pistón
         // en (x,y,z) es uno de ellos — así que se re-evalúa solo, sin
         // necesitar un scheduler ni un estado extra.
-        if (destId != 0) return;
+        if (destId != 0)
+            return;
 
         uint8_t newData = data | 0x08;
         world->setBlock(x, y, z, id, newData);
@@ -584,7 +660,8 @@ void updatePistonAt(World* world, cursestone::Server* server, int32_t x, int32_t
 // actualización si son componentes de redstone.
 // ============================================================
 void notifyNeighbors(World* world, cursestone::Server* server, int32_t x, int32_t y, int32_t z) {
-    if (!world) return;
+    if (!world)
+        return;
     static const int32_t dx[6] = {1, -1, 0, 0, 0, 0};
     static const int32_t dy[6] = {0, 0, 1, -1, 0, 0};
     static const int32_t dz[6] = {0, 0, 0, 0, 1, -1};
@@ -609,8 +686,10 @@ void notifyNeighbors(World* world, cursestone::Server* server, int32_t x, int32_
 
     for (int i = 0; i < 6; ++i) {
         int32_t nx = x + dx[i], ny = y + dy[i], nz = z + dz[i];
-        if (ny < 0 || ny >= 256) continue;
-        if (!world->isChunkLoaded(nx, nz)) continue;
+        if (ny < 0 || ny >= 256)
+            continue;
+        if (!world->isChunkLoaded(nx, nz))
+            continue;
         uint8_t nid = world->getBlockId(nx, ny, nz);
         if (nid == block::REDSTONE_WIRE) {
             updateWireAt(world, server, nx, ny, nz);

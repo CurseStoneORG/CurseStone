@@ -31,14 +31,15 @@ const BiomeConfig& icePlainsBiome() {
         .name = "ice_plains",
         .temp = -0.9f,
         .humid = 0.1f,
-        .topBlock = 2,       // grass (covered by snow layer by the terrain)
+        .topBlock = 2, // grass (covered by snow layer by the terrain)
         .fillerBlock = 3,
         .snowy = true,
         .underwater = false,
         .treeAmount = 1,
-        .trees = {
-            { object::TREE_SPRUCE, 1 },
-        },
+        .trees =
+            {
+                {object::TREE_SPRUCE, 1},
+            },
         .grassAmount = 2,
         .flowerAmount = 0,
         .doublePlantAmount = 1,

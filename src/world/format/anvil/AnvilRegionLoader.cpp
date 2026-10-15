@@ -37,18 +37,19 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
-#include "../../../utils/PlatformCompat.h"   // ftruncate / fileno
+#include "../../../utils/PlatformCompat.h" // ftruncate / fileno
 #include <zlib.h>
 
 namespace cursestone::world::format::anvil {
 
 static void write_be32(uint8_t* p, uint32_t v) {
-    p[0] = (uint8_t)(v >> 24); p[1] = (uint8_t)(v >> 16);
-    p[2] = (uint8_t)(v >> 8);  p[3] = (uint8_t)(v);
+    p[0] = (uint8_t)(v >> 24);
+    p[1] = (uint8_t)(v >> 16);
+    p[2] = (uint8_t)(v >> 8);
+    p[3] = (uint8_t)(v);
 }
 static uint32_t read_be32(const uint8_t* p) {
-    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
-           ((uint32_t)p[2] << 8)  | (uint32_t)p[3];
+    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | (uint32_t)p[3];
 }
 
 static long now_unix_seconds() {
@@ -56,7 +57,9 @@ static long now_unix_seconds() {
 }
 
 AnvilRegionLoader::AnvilRegionLoader() = default;
-AnvilRegionLoader::~AnvilRegionLoader() { close(); }
+AnvilRegionLoader::~AnvilRegionLoader() {
+    close();
+}
 
 bool AnvilRegionLoader::open(const std::string& path, int32_t rx, int32_t rz) {
     path_ = path;
@@ -67,24 +70,28 @@ bool AnvilRegionLoader::open(const std::string& path, int32_t rx, int32_t rz) {
     fp_ = std::fopen(path.c_str(), "r+b");
     if (!fp_) {
         fp_ = std::fopen(path.c_str(), "w+b");
-        if (!fp_) return false;
+        if (!fp_)
+            return false;
     }
     std::fseek(fp_, 0, SEEK_END);
     long sz = std::ftell(fp_);
     if (sz == 0) {
         // Brand-new file — write blank 8 KiB header.
         if (!createBlank()) {
-            std::fclose(fp_); fp_ = nullptr;
+            std::fclose(fp_);
+            fp_ = nullptr;
             return false;
         }
     } else {
         if (!loadLocationTable()) {
-            std::fclose(fp_); fp_ = nullptr;
+            std::fclose(fp_);
+            fp_ = nullptr;
             return false;
         }
     }
     last_used_ = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
+                     std::chrono::system_clock::now().time_since_epoch())
+                     .count();
     return true;
 }
 
@@ -97,7 +104,8 @@ void AnvilRegionLoader::close() {
 }
 
 bool AnvilRegionLoader::createBlank() {
-    if (!fp_) return false;
+    if (!fp_)
+        return false;
     std::fseek(fp_, 0, SEEK_SET);
     ::ftruncate(fileno(fp_), 0);
     last_sector_ = 1;
@@ -123,7 +131,8 @@ bool AnvilRegionLoader::createBlank() {
 }
 
 bool AnvilRegionLoader::loadLocationTable() {
-    if (!fp_) return false;
+    if (!fp_)
+        return false;
     std::fseek(fp_, 0, SEEK_SET);
 
     uint8_t loc_buf[kLocationTableSize];
@@ -139,25 +148,26 @@ bool AnvilRegionLoader::loadLocationTable() {
     for (size_t i = 0; i < kChunkSlotCount; ++i) {
         uint32_t raw = read_be32(loc_buf + i * 4);
         uint32_t off = (raw >> 8) & 0x00FFFFFF;
-        uint8_t  cnt = (uint8_t)(raw & 0xFF);
-        uint32_t ts  = read_be32(ts_buf + i * 4);
+        uint8_t cnt = (uint8_t)(raw & 0xFF);
+        uint32_t ts = read_be32(ts_buf + i * 4);
         table_[i] = LocationEntry{off, cnt, ts};
         if (off != 0 && cnt != 0) {
             // Last sector used by this chunk = off + cnt - 1.
             uint32_t last = off + cnt - 1;
-            if (last > last_sector_) last_sector_ = last;
+            if (last > last_sector_)
+                last_sector_ = last;
         }
     }
     return true;
 }
 
 bool AnvilRegionLoader::writeLocationTable() {
-    if (!fp_) return false;
+    if (!fp_)
+        return false;
     std::fseek(fp_, 0, SEEK_SET);
     uint8_t loc_buf[kLocationTableSize];
     for (size_t i = 0; i < kChunkSlotCount; ++i) {
-        uint32_t raw = ((table_[i].offset & 0x00FFFFFF) << 8) |
-                       (table_[i].count & 0xFF);
+        uint32_t raw = ((table_[i].offset & 0x00FFFFFF) << 8) | (table_[i].count & 0xFF);
         write_be32(loc_buf + i * 4, raw);
     }
     if (std::fwrite(loc_buf, 1, kLocationTableSize, fp_) != kLocationTableSize)
@@ -174,42 +184,50 @@ bool AnvilRegionLoader::writeLocationTable() {
 }
 
 bool AnvilRegionLoader::writeLocationIndex(size_t index) {
-    if (!fp_) return false;
+    if (!fp_)
+        return false;
     // Location entry at offset index*4 within [0..4095].
     std::fseek(fp_, (long)(index * 4), SEEK_SET);
     uint8_t buf[4];
-    uint32_t raw = ((table_[index].offset & 0x00FFFFFF) << 8) |
-                   (table_[index].count & 0xFF);
+    uint32_t raw = ((table_[index].offset & 0x00FFFFFF) << 8) | (table_[index].count & 0xFF);
     write_be32(buf, raw);
-    if (std::fwrite(buf, 1, 4, fp_) != 4) return false;
+    if (std::fwrite(buf, 1, 4, fp_) != 4)
+        return false;
     // Timestamp entry at offset 4096 + index*4.
     std::fseek(fp_, (long)(kLocationTableSize + index * 4), SEEK_SET);
     write_be32(buf, table_[index].timestamp);
-    if (std::fwrite(buf, 1, 4, fp_) != 4) return false;
+    if (std::fwrite(buf, 1, 4, fp_) != 4)
+        return false;
     std::fflush(fp_);
     return true;
 }
 
-std::optional<std::vector<uint8_t>>
-AnvilRegionLoader::readChunk(int32_t lx, int32_t lz) {
-    if (!fp_) return std::nullopt;
+std::optional<std::vector<uint8_t>> AnvilRegionLoader::readChunk(int32_t lx, int32_t lz) {
+    if (!fp_)
+        return std::nullopt;
     size_t idx = slotIndex(lx, lz);
     const LocationEntry& e = table_[idx];
-    if (e.offset == 0 || e.count == 0) return std::nullopt;
+    if (e.offset == 0 || e.count == 0)
+        return std::nullopt;
     last_used_ = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
+                     std::chrono::system_clock::now().time_since_epoch())
+                     .count();
 
     long byte_off = (long)e.offset * (long)kSectorSize;
-    if (std::fseek(fp_, byte_off, SEEK_SET) != 0) return std::nullopt;
+    if (std::fseek(fp_, byte_off, SEEK_SET) != 0)
+        return std::nullopt;
 
     uint8_t hdr[5];
-    if (std::fread(hdr, 1, 5, fp_) != 5) return std::nullopt;
+    if (std::fread(hdr, 1, 5, fp_) != 5)
+        return std::nullopt;
     uint32_t length = read_be32(hdr);
-    uint8_t  compression = hdr[4];
+    uint8_t compression = hdr[4];
 
     // length includes the 1-byte compression prefix; payload is length-1.
-    if (length == 0) return std::nullopt;
-    if (length >= (kMaxChunkSectors * kSectorSize)) return std::nullopt;
+    if (length == 0)
+        return std::nullopt;
+    if (length >= (kMaxChunkSectors * kSectorSize))
+        return std::nullopt;
     if (compression != kCompressionGzip && compression != kCompressionZlib)
         return std::nullopt;
 
@@ -222,22 +240,25 @@ AnvilRegionLoader::readChunk(int32_t lx, int32_t lz) {
     return payload;
 }
 
-bool AnvilRegionLoader::writeChunk(int32_t lx, int32_t lz,
-                                     uint8_t compression,
-                                     const std::vector<uint8_t>& payload) {
-    if (!fp_) return false;
+bool AnvilRegionLoader::writeChunk(int32_t lx, int32_t lz, uint8_t compression,
+                                   const std::vector<uint8_t>& payload) {
+    if (!fp_)
+        return false;
     if (compression != kCompressionGzip && compression != kCompressionZlib)
         return false;
 
     // length = payload + 1 (compression byte).
     uint32_t length = (uint32_t)(payload.size() + 1);
-    if (length + 4 > (kMaxChunkSectors * (uint32_t)kSectorSize)) return false;
+    if (length + 4 > (kMaxChunkSectors * (uint32_t)kSectorSize))
+        return false;
 
     // Number of sectors needed for [length(4) | compression(1) | payload].
     size_t total_bytes = 4 + 1 + payload.size();
     uint32_t sectors = (uint32_t)((total_bytes + kSectorSize - 1) / kSectorSize);
-    if (sectors == 0) sectors = 1;
-    if (sectors > 255) return false;
+    if (sectors == 0)
+        sectors = 1;
+    if (sectors > 255)
+        return false;
 
     size_t idx = slotIndex(lx, lz);
     LocationEntry& e = table_[idx];
@@ -265,22 +286,26 @@ bool AnvilRegionLoader::writeChunk(int32_t lx, int32_t lz,
         long pad = needed_end - cur_end;
         std::vector<uint8_t> zero(pad, 0);
         std::fseek(fp_, cur_end, SEEK_SET);
-        if (std::fwrite(zero.data(), 1, zero.size(), fp_) != zero.size()) return false;
+        if (std::fwrite(zero.data(), 1, zero.size(), fp_) != zero.size())
+            return false;
     }
-    if (std::fseek(fp_, byte_off, SEEK_SET) != 0) return false;
+    if (std::fseek(fp_, byte_off, SEEK_SET) != 0)
+        return false;
 
     // Write [length BE][compression][payload], then zero-pad to sector multiple.
     uint8_t len_buf[4];
     write_be32(len_buf, length);
-    if (std::fwrite(len_buf, 1, 4, fp_) != 4) return false;
-    if (std::fwrite(&compression, 1, 1, fp_) != 1) return false;
+    if (std::fwrite(len_buf, 1, 4, fp_) != 4)
+        return false;
+    if (std::fwrite(&compression, 1, 1, fp_) != 1)
+        return false;
     if (!payload.empty()) {
         if (std::fwrite(payload.data(), 1, payload.size(), fp_) != payload.size())
             return false;
     }
     // Pad to sectors * kSectorSize.
     size_t written = 4 + 1 + payload.size();
-    size_t padded  = (size_t)sectors * kSectorSize;
+    size_t padded = (size_t)sectors * kSectorSize;
     if (written < padded) {
         std::vector<uint8_t> zero(padded - written, 0);
         if (std::fwrite(zero.data(), 1, zero.size(), fp_) != zero.size())
@@ -288,10 +313,12 @@ bool AnvilRegionLoader::writeChunk(int32_t lx, int32_t lz,
     }
     std::fflush(fp_);
     if (index_changed) {
-        if (!writeLocationIndex(idx)) return false;
+        if (!writeLocationIndex(idx))
+            return false;
     }
     last_used_ = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
+                     std::chrono::system_clock::now().time_since_epoch())
+                     .count();
     return true;
 }
 

@@ -26,17 +26,22 @@
 #include <string>
 #include "event/Cancellable.h"
 #include "math/Vector3.h"
-#include "CurseStone.h"   // math::Vector3 alias (cursestone::math::Vector3 = mcp_vector3_t)
-namespace cursestone { class Player; }
+#include "CurseStone.h" // math::Vector3 alias (cursestone::math::Vector3 = mcp_vector3_t)
+namespace cursestone {
+class Player;
+}
 namespace cursestone::event::block {
 class BlockBreakEvent : public Event, public Cancellable {
-public:
+  public:
     cursestone::Player* player;
     math::Vector3 pos;
     int block_id;
-    BlockBreakEvent(cursestone::Player* p, math::Vector3 v, int id=0) : player(p), pos(v), block_id(id) {}
+    BlockBreakEvent(cursestone::Player* p, math::Vector3 v, int id = 0)
+        : player(p), pos(v), block_id(id) {
+    }
     const std::string& eventName() const override {
-        static std::string n = "BlockBreakEvent"; return n;
+        static std::string n = "BlockBreakEvent";
+        return n;
     }
 };
 } // namespace

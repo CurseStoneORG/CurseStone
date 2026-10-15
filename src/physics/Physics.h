@@ -43,7 +43,7 @@
 // ============================================================
 #pragma once
 
-#include "CurseStone.h"   // cursestone::math aliases
+#include "CurseStone.h" // cursestone::math aliases
 #include <cstdint>
 #include <vector>
 #include "math/AxisAlignedBB.h"
@@ -80,14 +80,12 @@ struct MotionResult {
 //
 // `on_ground` is Entity::checkGroundState(): true only when the DOWNWARD
 // motion was clipped, i.e. `clipped_y && motion.y < 0`.
-MotionResult sweep(mcp_aabb_t box, mcp_vector3_t motion,
-                   const std::vector<BlockBox>& boxes);
+MotionResult sweep(mcp_aabb_t box, mcp_vector3_t motion, const std::vector<BlockBox>& boxes);
 
 // Nearest block hit along `from` -> `to` (segment, not infinite ray),
 // with the block's coordinates and the face that was struck. Returns
 // MCP_HIT_NONE when the segment reaches nothing. Ties are resolved by
 // distance from `from`; boxes are not sorted by the caller.
-mcp_hit_result_t clipRay(mcp_vector3_t from, mcp_vector3_t to,
-                         const std::vector<BlockBox>& boxes);
+mcp_hit_result_t clipRay(mcp_vector3_t from, mcp_vector3_t to, const std::vector<BlockBox>& boxes);
 
 } // namespace cursestone::physics

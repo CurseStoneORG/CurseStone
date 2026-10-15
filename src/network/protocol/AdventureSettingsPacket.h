@@ -41,26 +41,28 @@
 namespace cursestone::network::protocol {
 
 class AdventureSettingsPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return ADVENTURE_SETTINGS_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return ADVENTURE_SETTINGS_PACKET;
+    }
 
     // Common flag bits (PMMP Player::sendSettings).
-    static constexpr uint32_t FLAG_WORLD_IMMUTABLE   = 0x01;
-    static constexpr uint32_t FLAG_NO_PVP            = 0x02;
-    static constexpr uint32_t FLAG_NO_MOBS           = 0x04;
-    static constexpr uint32_t FLAG_WORLD_BUILDER     = 0x08;
-    static constexpr uint32_t FLAG_ALLOW_FLIGHT       = 0x40;
-    static constexpr uint32_t FLAG_FLYING            = 0x80;
+    static constexpr uint32_t FLAG_WORLD_IMMUTABLE = 0x01;
+    static constexpr uint32_t FLAG_NO_PVP = 0x02;
+    static constexpr uint32_t FLAG_NO_MOBS = 0x04;
+    static constexpr uint32_t FLAG_WORLD_BUILDER = 0x08;
+    static constexpr uint32_t FLAG_ALLOW_FLIGHT = 0x40;
+    static constexpr uint32_t FLAG_FLYING = 0x80;
 
     // Permission constants.
     static constexpr int32_t PERMISSION_VISITOR = 0x1F;
-    static constexpr int32_t PERMISSION_NORMAL  = 0;
+    static constexpr int32_t PERMISSION_NORMAL = 0;
     static constexpr int32_t PERMISSION_OPERATOR = 1;
-    static constexpr int32_t PERMISSION_HOST     = 2;
+    static constexpr int32_t PERMISSION_HOST = 2;
 
-    uint32_t flags             = 0;
-    int32_t  userPermission    = PERMISSION_NORMAL;
-    int32_t  globalPermission  = PERMISSION_NORMAL;
+    uint32_t flags = 0;
+    int32_t userPermission = PERMISSION_NORMAL;
+    int32_t globalPermission = PERMISSION_NORMAL;
 
     void encode(std::vector<uint8_t>& out) const override;
     bool decode(const uint8_t* data, size_t len) override;

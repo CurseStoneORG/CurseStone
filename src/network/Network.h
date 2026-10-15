@@ -41,33 +41,35 @@ class Player;
 class Server;
 struct PlayerConfig;
 
-namespace network::protocol { class DataPacket; }
+namespace network::protocol {
+class DataPacket;
+}
 
 namespace network {
 
 class Network {
-public:
-    explicit Network(Server* server) : server_(server) {}
+  public:
+    explicit Network(Server* server) : server_(server) {
+    }
 
     // Register / lookup interfaces by string name ("raklib", "query", "rcon").
     void registerInterface(std::unique_ptr<SourceInterface> iface);
     SourceInterface* getInterface(const std::string& name);
     AdvancedSourceInterface* getInterfaceAdvanced(const std::string& name);
-    AdvancedSourceInterface* getRakLib() { return getInterfaceAdvanced("raklib"); }
+    AdvancedSourceInterface* getRakLib() {
+        return getInterfaceAdvanced("raklib");
+    }
 
     // Called by RakLibInterface when a packet arrives. Dispatches to player.
-    void processIncoming(const std::string& ip, uint16_t port,
-                          const uint8_t* data, size_t len);
+    void processIncoming(const std::string& ip, uint16_t port, const uint8_t* data, size_t len);
 
     // Called by RakLibInterface when a session opens/closes.
     void onSessionOpen(const std::string& ip, uint16_t port, int64_t clientId);
-    void onSessionClose(const std::string& ip, uint16_t port,
-                          const std::string& reason);
+    void onSessionClose(const std::string& ip, uint16_t port, const std::string& reason);
 
     // Look up or create a Player for an incoming session.
     Player* getPlayer(const std::string& ip, uint16_t port);
-    void registerSession(const std::string& ip, uint16_t port,
-                          std::shared_ptr<Player> p);
+    void registerSession(const std::string& ip, uint16_t port, std::shared_ptr<Player> p);
     void unregisterSession(Player* p);
     void addPlayer(std::unique_ptr<Player> p);
     void removePlayer(Player* p);
@@ -79,14 +81,13 @@ public:
     void blockAddress(const std::string& ip, uint64_t timeoutMs = 0);
     bool isBlocked(const std::string& ip) const;
 
-private:
+  private:
     // Dispatches a single (already-extracted) sub-packet body to its Player.
-    void dispatchSingle(const std::string& ip, uint16_t port,
-                          const uint8_t* data, size_t len);
+    void dispatchSingle(const std::string& ip, uint16_t port, const uint8_t* data, size_t len);
     // Instantiates the right DataPacket subclass by ID and decodes the body.
     // `who` is the "ip:port" the packet came from, used for diagnostics.
-    std::shared_ptr<protocol::DataPacket> decodePacketById(uint8_t pid,
-        const uint8_t* body, size_t bodyLen, const std::string& who);
+    std::shared_ptr<protocol::DataPacket> decodePacketById(uint8_t pid, const uint8_t* body,
+                                                           size_t bodyLen, const std::string& who);
     // Creates a Player for a new (ip,port) session. Returns true on success.
     bool createPlayerForSession(const std::string& ip, uint16_t port);
 

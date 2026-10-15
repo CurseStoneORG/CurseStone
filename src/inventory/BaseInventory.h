@@ -37,26 +37,37 @@
 namespace cursestone::inventory {
 
 class BaseInventory : public Inventory {
-public:
+  public:
     BaseInventory(InventoryHolder* holder, std::shared_ptr<InventoryType> type);
     BaseInventory(InventoryHolder* holder, std::shared_ptr<InventoryType> type,
-                   const std::unordered_map<int, item::ItemStack>& items);
+                  const std::unordered_map<int, item::ItemStack>& items);
     BaseInventory(InventoryHolder* holder, std::shared_ptr<InventoryType> type,
-                   const std::unordered_map<int, item::ItemStack>& items,
-                   int overrideSize);
+                  const std::unordered_map<int, item::ItemStack>& items, int overrideSize);
     BaseInventory(InventoryHolder* holder, std::shared_ptr<InventoryType> type,
-                   const std::unordered_map<int, item::ItemStack>& items,
-                   int overrideSize, const std::string& overrideTitle);
+                  const std::unordered_map<int, item::ItemStack>& items, int overrideSize,
+                  const std::string& overrideTitle);
 
     ~BaseInventory() override = default;
 
     // ---- Inventory interface ----
-    int  getSize() const override { return size_; }
-    void setSize(int sz) { size_ = sz; }
-    int  getMaxStackSize() const override { return maxStackSize_; }
-    void setMaxStackSize(int sz) override { maxStackSize_ = sz; }
-    const std::string& getName() const override { return name_; }
-    const std::string& getTitle() const override { return title_; }
+    int getSize() const override {
+        return size_;
+    }
+    void setSize(int sz) {
+        size_ = sz;
+    }
+    int getMaxStackSize() const override {
+        return maxStackSize_;
+    }
+    void setMaxStackSize(int sz) override {
+        maxStackSize_ = sz;
+    }
+    const std::string& getName() const override {
+        return name_;
+    }
+    const std::string& getTitle() const override {
+        return title_;
+    }
 
     item::ItemStack getItem(int index) override;
     bool setItem(int index, const item::ItemStack& item) override;
@@ -73,8 +84,8 @@ public:
 
     bool contains(const item::ItemStack& item) override;
     std::unordered_map<int, item::ItemStack> all(const item::ItemStack& item) override;
-    int  first(const item::ItemStack& item) override;
-    int  firstEmpty(const item::ItemStack& item) override;
+    int first(const item::ItemStack& item) override;
+    int firstEmpty(const item::ItemStack& item) override;
     void remove(const item::ItemStack& item) override;
 
     bool clear(int index) override;
@@ -82,14 +93,18 @@ public:
 
     void onSlotChange(int index, const item::ItemStack& before) override;
 
-    std::shared_ptr<InventoryType> getType() override { return type_; }
-    InventoryHolder* getHolder() { return holder_; }
+    std::shared_ptr<InventoryType> getType() override {
+        return type_;
+    }
+    InventoryHolder* getHolder() {
+        return holder_;
+    }
 
-protected:
-    InventoryType* type_raw_ = nullptr;  // cached for fast access
+  protected:
+    InventoryType* type_raw_ = nullptr; // cached for fast access
     std::shared_ptr<InventoryType> type_;
-    int  maxStackSize_ = MAX_STACK;
-    int  size_ = 0;
+    int maxStackSize_ = MAX_STACK;
+    int size_ = 0;
     std::string name_;
     std::string title_;
     std::unordered_map<int, item::ItemStack> slots_;

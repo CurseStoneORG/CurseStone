@@ -33,7 +33,7 @@ namespace cursestone::inventory {
 class Inventory;
 
 class InventoryHolder {
-public:
+  public:
     virtual ~InventoryHolder() = default;
     // Returns the inventory this holder owns. May return nullptr if the
     // holder has been closed/destroyed.

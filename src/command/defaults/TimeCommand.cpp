@@ -27,10 +27,11 @@
 #include "Player.h"
 namespace cursestone {
 bool TimeCommand::execute(CommandSender* sender, const std::string&,
-                    const std::vector<std::string>& args) {
+                          const std::vector<std::string>& args) {
     if (args.empty()) {
         auto* lvl = Server::getInstance().getDefaultWorld();
-        if (lvl) sender->sendMessage("Current time: " + std::to_string(lvl->time()));
+        if (lvl)
+            sender->sendMessage("Current time: " + std::to_string(lvl->time()));
         return true;
     }
     if (args[0] == "set" && args.size() >= 2) {
@@ -42,23 +43,45 @@ bool TimeCommand::execute(CommandSender* sender, const std::string&,
         // night" — the classic "it looks like night but the bed says no"
         // trap). Aliasing the command to TIME_NIGHT keeps the command and
         // the bed check on the same definition of night.
-        if (args[1] == "day") t = 1000;
-        else if (args[1] == "night") t = world::World::TIME_NIGHT;
-        else { try { t = std::stoi(args[1]); } catch (...) { sender->sendMessage("Invalid time"); return true; } }
+        if (args[1] == "day")
+            t = 1000;
+        else if (args[1] == "night")
+            t = world::World::TIME_NIGHT;
+        else {
+            try {
+                t = std::stoi(args[1]);
+            } catch (...) {
+                sender->sendMessage("Invalid time");
+                return true;
+            }
+        }
         auto* lvl = Server::getInstance().getDefaultWorld();
         if (lvl) {
             lvl->setTime(t);
             auto pk = std::make_shared<network::protocol::SetTimePacket>();
-            pk->time = t; pk->started = true;
-            for (auto& p : Server::getInstance().playersSnapshot()) { if (p) p->sendPacket(pk); }
+            pk->time = t;
+            pk->started = true;
+            for (auto& p : Server::getInstance().playersSnapshot()) {
+                if (p)
+                    p->sendPacket(pk);
+            }
             sender->sendMessage("Set time to " + std::to_string(t));
         }
         return true;
     }
     if (args[0] == "add" && args.size() >= 2) {
-        int32_t t; try { t = std::stoi(args[1]); } catch (...) { sender->sendMessage("Invalid value"); return true; }
+        int32_t t;
+        try {
+            t = std::stoi(args[1]);
+        } catch (...) {
+            sender->sendMessage("Invalid value");
+            return true;
+        }
         auto* lvl = Server::getInstance().getDefaultWorld();
-        if (lvl) { lvl->advanceTime(t); sender->sendMessage("Added " + std::to_string(t) + " to time"); }
+        if (lvl) {
+            lvl->advanceTime(t);
+            sender->sendMessage("Added " + std::to_string(t) + " to time");
+        }
         return true;
     }
     sender->sendMessage("Usage: /time <set|add|get> [value]");

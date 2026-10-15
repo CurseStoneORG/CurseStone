@@ -39,15 +39,17 @@
 namespace cursestone::network::protocol {
 
 class FullChunkDataPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return FULL_CHUNK_DATA_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return FULL_CHUNK_DATA_PACKET;
+    }
 
     static constexpr uint8_t ORDER_COLUMNS = 0;
     static constexpr uint8_t ORDER_LAYERED = 1;
 
-    int32_t  chunkX = 0;
-    int32_t  chunkZ = 0;
-    uint8_t  order  = ORDER_COLUMNS;
+    int32_t chunkX = 0;
+    int32_t chunkZ = 0;
+    uint8_t order = ORDER_COLUMNS;
     std::vector<uint8_t> data;
 
     void encode(std::vector<uint8_t>& out) const override;

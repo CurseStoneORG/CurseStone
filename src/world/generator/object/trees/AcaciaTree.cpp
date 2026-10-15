@@ -31,17 +31,19 @@ namespace cursestone::world::generator::object::trees {
 using cursestone::block::BlockId;
 
 void AcaciaTree::init(MersenneRandom& rng) {
-    height_ = (int)(rng.nextInt(3) + rng.nextInt(3)) + 5;   // reference
-    logId_ = 162; logData_ = 0;    // WOOD_2, acacia
-    leafId_ = 161; leafData_ = 0;  // LEAVES_2, acacia
+    height_ = (int)(rng.nextInt(3) + rng.nextInt(3)) + 5; // reference
+    logId_ = 162;
+    logData_ = 0; // WOOD_2, acacia
+    leafId_ = 161;
+    leafData_ = 0; // LEAVES_2, acacia
 }
 
 bool AcaciaTree::canPlaceOn(uint8_t soil) const {
     return soil == (uint8_t)BlockId::GRASS || soil == (uint8_t)BlockId::DIRT;
 }
 
-void AcaciaTree::canopy(mcp_chunk_t* c, int cx, int trunkTopY, int cz,
-                        MersenneRandom&, int /*spread*/) {
+void AcaciaTree::canopy(mcp_chunk_t* c, int cx, int trunkTopY, int cz, MersenneRandom&,
+                        int /*spread*/) {
     // Reference AcaciaTree::Generate leaf block:
     //   at trunkTopY    : square minus corners (abs(x)<3 || abs(z)<3)
     //   at trunkTopY+1  : inner 3x3 plus the 4 edge middles
@@ -51,25 +53,29 @@ void AcaciaTree::canopy(mcp_chunk_t* c, int cx, int trunkTopY, int cz,
                 setLeaf(c, cx + x, trunkTopY, cz + z, leafId_, leafData_);
             if (std::abs(x) < 2 && std::abs(z) < 2)
                 setLeaf(c, cx + x, trunkTopY + 1, cz + z, leafId_, leafData_);
-            if ((std::abs(x) == 2 && std::abs(z) == 0) ||
-                (std::abs(x) == 0 && std::abs(z) == 2))
+            if ((std::abs(x) == 2 && std::abs(z) == 0) || (std::abs(x) == 0 && std::abs(z) == 2))
                 setLeaf(c, cx + x, trunkTopY + 1, cz + z, leafId_, leafData_);
         }
     }
 }
 
-bool AcaciaTree::generate(mcp_chunk_t* c, int sourceX, int sourceY,
-                          int sourceZ, uint8_t soilId, MersenneRandom& rng) {
+bool AcaciaTree::generate(mcp_chunk_t* c, int sourceX, int sourceY, int sourceZ, uint8_t soilId,
+                          MersenneRandom& rng) {
     init(rng);
-    if (sourceY < 2 || sourceY > 124) return false;
-    if (!canPlaceOn(soilId)) return false;
+    if (sourceY < 2 || sourceY > 124)
+        return false;
+    if (!canPlaceOn(soilId))
+        return false;
 
     // Direction of the trunk twist (reduced to NESW).
     float d = rng.nextFloat() * (float)(M_PI * 2.0);
     int dx = (int)(std::cos(d) + 1.5F) - 1;
     int dz = (int)(std::sin(d) + 1.5F) - 1;
     if (std::abs(dx) > 0 && std::abs(dz) > 0) {
-        if (rng.nextBoolean()) dx = 0; else dz = 0;
+        if (rng.nextBoolean())
+            dx = 0;
+        else
+            dz = 0;
     }
 
     int twistHeight = height_ - 1 - (int)rng.nextInt(4);
@@ -94,11 +100,15 @@ bool AcaciaTree::generate(mcp_chunk_t* c, int sourceX, int sourceY,
     int dxB = (int)(std::cos(d) + 1.5F) - 1;
     int dzB = (int)(std::sin(d) + 1.5F) - 1;
     if (std::abs(dxB) > 0 && std::abs(dzB) > 0) {
-        if (rng.nextBoolean()) dxB = 0; else dzB = 0;
+        if (rng.nextBoolean())
+            dxB = 0;
+        else
+            dzB = 0;
     }
 
     if (dx != dxB || dz != dzB) {
-        centerX = sourceX; centerZ = sourceZ;
+        centerX = sourceX;
+        centerZ = sourceZ;
         int branchHeight = twistHeight - 1 - (int)rng.nextInt(2);
         twistCount = (int)rng.nextInt(3) + 1;
         trunkTopY = 0;

@@ -43,7 +43,7 @@
 namespace cursestone::world::generator::populator {
 
 class StructurePopulator final : public Populator {
-public:
+  public:
     StructurePopulator() = default;
 
     // Register a structure to place. Every registered structure is tried
@@ -52,10 +52,12 @@ public:
         structures_.push_back(std::move(s));
     }
 
-    const char* name() const override { return "Structure"; }
+    const char* name() const override {
+        return "Structure";
+    }
     void populate(GenerationContext& ctx) override;
 
-private:
+  private:
     std::vector<std::shared_ptr<structure::Structure>> structures_;
 };
 

@@ -31,8 +31,8 @@ const BiomeConfig& beachBiome() {
         .name = "beach",
         .temp = 0.5f,
         .humid = 0.5f,
-        .topBlock = 12,      // sand
-        .fillerBlock = 12,   // sand
+        .topBlock = 12,    // sand
+        .fillerBlock = 12, // sand
         .snowy = false,
         .underwater = false,
         .treeAmount = 0,

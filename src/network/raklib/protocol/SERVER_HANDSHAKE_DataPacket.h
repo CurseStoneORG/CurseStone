@@ -37,10 +37,10 @@ extern "C" {
 
 typedef struct mcp_pkt_server_handshake {
     mcp_packet_t header;
-    uint8_t  client_ip[4];
+    uint8_t client_ip[4];
     uint16_t client_port;
-    int64_t  send_ping;
-    int64_t  send_pong;
+    int64_t send_ping;
+    int64_t send_pong;
 } mcp_pkt_server_handshake_t;
 
 mcp_packet_t* mcp_pkt_server_handshake_new(void);

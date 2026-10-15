@@ -47,20 +47,22 @@
 namespace cursestone::network::protocol {
 
 class TextPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return TEXT_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return TEXT_PACKET;
+    }
 
-    static constexpr uint8_t TYPE_RAW         = 0;
-    static constexpr uint8_t TYPE_CHAT        = 1;
+    static constexpr uint8_t TYPE_RAW = 0;
+    static constexpr uint8_t TYPE_CHAT = 1;
     static constexpr uint8_t TYPE_TRANSLATION = 2;
-    static constexpr uint8_t TYPE_POPUP       = 3;
-    static constexpr uint8_t TYPE_TIP         = 4;
-    static constexpr uint8_t TYPE_SYSTEM      = 5;
+    static constexpr uint8_t TYPE_POPUP = 3;
+    static constexpr uint8_t TYPE_TIP = 4;
+    static constexpr uint8_t TYPE_SYSTEM = 5;
 
-    uint8_t     type = TYPE_RAW;
-    std::string source;                       // CHAT/POPUP only
+    uint8_t type = TYPE_RAW;
+    std::string source; // CHAT/POPUP only
     std::string message;
-    std::vector<std::string> parameters;      // TRANSLATION only
+    std::vector<std::string> parameters; // TRANSLATION only
 
     void encode(std::vector<uint8_t>& out) const override;
     bool decode(const uint8_t* data, size_t len) override;

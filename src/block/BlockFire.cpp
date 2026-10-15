@@ -64,8 +64,8 @@ namespace cursestone::block {
 // schedule more fires, producing the cascade that froze the server.
 // Now it does nothing — fires are static visual blocks.
 // ============================================================
-void BlockFire::scheduleUpdate(world::World* /*world*/,
-                               int32_t /*x*/, int32_t /*y*/, int32_t /*z*/) {
+void BlockFire::scheduleUpdate(world::World* /*world*/, int32_t /*x*/, int32_t /*y*/,
+                               int32_t /*z*/) {
     // Intentionally empty.
     // Fire does not tick. Fire does not spread. Fire does not age.
 }
@@ -78,37 +78,63 @@ void BlockFire::scheduleUpdate(world::World* /*world*/,
 // ============================================================
 int BlockFire::getBurnAbility(uint8_t id) {
     switch (id) {
-        case PLANKS:      return 20;
-        case LOG:         return 5;
-        case LEAVES:      return 60;
-        case BOOKSHELF:   return 30;
-        case TNT:         return 15;
-        case WOOL:        return 30;
-        case TALL_GRASS:  return 60;
-        case DEAD_BUSH:   return 60;
-        case FENCE:       return 20;
-        case VINE:        return 15;
-        case WOOD_STAIRS: return 20;
-        case 126:         return 20;
-        default:          return 0;
+    case PLANKS:
+        return 20;
+    case LOG:
+        return 5;
+    case LEAVES:
+        return 60;
+    case BOOKSHELF:
+        return 30;
+    case TNT:
+        return 15;
+    case WOOL:
+        return 30;
+    case TALL_GRASS:
+        return 60;
+    case DEAD_BUSH:
+        return 60;
+    case FENCE:
+        return 20;
+    case VINE:
+        return 15;
+    case WOOD_STAIRS:
+        return 20;
+    case 126:
+        return 20;
+    default:
+        return 0;
     }
 }
 
 int BlockFire::getBurnChance(uint8_t id) {
     switch (id) {
-        case PLANKS:      return 5;
-        case LOG:         return 5;
-        case LEAVES:      return 30;
-        case BOOKSHELF:   return 30;
-        case TNT:         return 15;
-        case WOOL:        return 10;
-        case TALL_GRASS:  return 60;
-        case DEAD_BUSH:   return 60;
-        case FENCE:       return 5;
-        case VINE:        return 15;
-        case WOOD_STAIRS: return 5;
-        case 126:         return 5;
-        default:          return 0;
+    case PLANKS:
+        return 5;
+    case LOG:
+        return 5;
+    case LEAVES:
+        return 30;
+    case BOOKSHELF:
+        return 30;
+    case TNT:
+        return 15;
+    case WOOL:
+        return 10;
+    case TALL_GRASS:
+        return 60;
+    case DEAD_BUSH:
+        return 60;
+    case FENCE:
+        return 5;
+    case VINE:
+        return 15;
+    case WOOD_STAIRS:
+        return 5;
+    case 126:
+        return 5;
+    default:
+        return 0;
     }
 }
 
@@ -117,19 +143,24 @@ int BlockFire::getBurnChance(uint8_t id) {
 // Used by ItemFlintSteel::onActivate to decide whether the fire
 // has solid ground below it (and therefore should be placed).
 // ============================================================
-bool BlockFire::isTopFacingSurfaceSolid(world::World* world,
-                                        int32_t x, int32_t y, int32_t z) {
-    if (y < 0 || y >= 256) return false;
-    if (!world->isChunkLoaded(x, z)) return false;
+bool BlockFire::isTopFacingSurfaceSolid(world::World* world, int32_t x, int32_t y, int32_t z) {
+    if (y < 0 || y >= 256)
+        return false;
+    if (!world->isChunkLoaded(x, z))
+        return false;
     uint8_t bid = world->getBlockId(x, y, z);
     switch (bid) {
-        case AIR: case FIRE:
-        case TALL_GRASS: case DEAD_BUSH:
-        case FLOWING_WATER: case WATER:
-        case FLOWING_LAVA:  case LAVA:
-            return false;
-        default:
-            return true;
+    case AIR:
+    case FIRE:
+    case TALL_GRASS:
+    case DEAD_BUSH:
+    case FLOWING_WATER:
+    case WATER:
+    case FLOWING_LAVA:
+    case LAVA:
+        return false;
+    default:
+        return true;
     }
 }
 
@@ -138,16 +169,17 @@ bool BlockFire::isTopFacingSurfaceSolid(world::World* world,
 // Used by ItemFlintSteel::onActivate to decide whether to place
 // fire even without solid ground (e.g. next to a plank wall).
 // ============================================================
-bool BlockFire::canNeighborBurn(world::World* world,
-                                int32_t x, int32_t y, int32_t z) {
-    static const int dx[6] = { 0, 0, 0, 0,-1, 1};
+bool BlockFire::canNeighborBurn(world::World* world, int32_t x, int32_t y, int32_t z) {
+    static const int dx[6] = {0, 0, 0, 0, -1, 1};
     static const int dy[6] = {-1, 1, 0, 0, 0, 0};
-    static const int dz[6] = { 0, 0,-1, 1, 0, 0};
+    static const int dz[6] = {0, 0, -1, 1, 0, 0};
     for (int i = 0; i < 6; i++) {
         int ny = y + dy[i];
-        if (ny < 0 || ny >= 256) continue;
+        if (ny < 0 || ny >= 256)
+            continue;
         int32_t nx = x + dx[i], nz = z + dz[i];
-        if (!world->isChunkLoaded(nx, nz)) continue;
+        if (!world->isChunkLoaded(nx, nz))
+            continue;
         if (getBurnAbility(world->getBlockId(nx, ny, nz)) > 0)
             return true;
     }
@@ -158,8 +190,8 @@ bool BlockFire::canNeighborBurn(world::World* world,
 // getChanceOfNeighborsEncouragingFire — DEAD in v6.
 // Retained as a stub so the header signature stays valid. Never called.
 // ============================================================
-int BlockFire::getChanceOfNeighborsEncouragingFire(world::World* /*world*/,
-                                                   int32_t /*x*/, int32_t /*y*/, int32_t /*z*/) {
+int BlockFire::getChanceOfNeighborsEncouragingFire(world::World* /*world*/, int32_t /*x*/,
+                                                   int32_t /*y*/, int32_t /*z*/) {
     return 0;
 }
 
@@ -167,9 +199,8 @@ int BlockFire::getChanceOfNeighborsEncouragingFire(world::World* /*world*/,
 // tryToCatchBlockOnFire — DEAD in v6.
 // Retained as a stub. Never called.
 // ============================================================
-void BlockFire::tryToCatchBlockOnFire(world::World* /*world*/,
-                                      int32_t /*tx*/, int32_t /*ty*/, int32_t /*tz*/,
-                                      int /*bound*/, int /*damage*/) {
+void BlockFire::tryToCatchBlockOnFire(world::World* /*world*/, int32_t /*tx*/, int32_t /*ty*/,
+                                      int32_t /*tz*/, int /*bound*/, int /*damage*/) {
     // No-op.
 }
 
@@ -180,10 +211,10 @@ void BlockFire::tryToCatchBlockOnFire(world::World* /*world*/,
 // invoked by the entity-tick loop directly), so it doesn't contribute
 // to the cascade.
 // ============================================================
-void BlockFire::onEntityCollide(world::World* /*world*/,
-                                int32_t /*bx*/, int32_t /*by*/, int32_t /*bz*/,
-                                entity::Entity* entity) {
-    if (!entity) return;
+void BlockFire::onEntityCollide(world::World* /*world*/, int32_t /*bx*/, int32_t /*by*/,
+                                int32_t /*bz*/, entity::Entity* entity) {
+    if (!entity)
+        return;
     // TODO: ignorar si entity tiene efecto FIRE_RESISTANCE
     entity->attack(1);
     entity->setOnFire(8);
@@ -195,8 +226,8 @@ void BlockFire::onEntityCollide(world::World* /*world*/,
 // as a defensive stub in case something else queues a fire task
 // (e.g. legacy saved chunks referencing BLOCK_UPDATE_SCHEDULED).
 // ============================================================
-void BlockFire::onScheduledUpdate(world::World* /*world*/,
-                                  int32_t /*x*/, int32_t /*y*/, int32_t /*z*/) {
+void BlockFire::onScheduledUpdate(world::World* /*world*/, int32_t /*x*/, int32_t /*y*/,
+                                  int32_t /*z*/) {
     // Intentionally empty — fire is a static visual block in v6.
 }
 

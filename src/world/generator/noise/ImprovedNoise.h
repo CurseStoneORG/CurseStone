@@ -37,7 +37,7 @@ namespace cursestone::world::generator {
 class MersenneRandom;
 
 class ImprovedNoise : public Synth {
-public:
+  public:
     ImprovedNoise();
 
     explicit ImprovedNoise(MersenneRandom* random);
@@ -54,15 +54,15 @@ public:
     float getValue(float x, float y) override;
     float getValue(float x, float y, float z);
 
-    void add(float* buffer, float _x, float _y, float _z, int xSize, int ySize,
-             int zSize, float xs, float ys, float zs, float pow);
+    void add(float* buffer, float _x, float _y, float _z, int xSize, int ySize, int zSize, float xs,
+             float ys, float zs, float pow);
 
     int hashCode();
 
     float scale;
     float xo, yo, zo;
 
-private:
+  private:
     int p[512];
 };
 

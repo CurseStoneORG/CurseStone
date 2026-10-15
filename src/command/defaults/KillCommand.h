@@ -30,20 +30,12 @@
 namespace cursestone {
 
 class KillCommand : public Command {
-public:
-    KillCommand()
-        : Command(
-              "kill",
-              "Kill a player",
-              "/kill <player>",
-              "cursestone.command.kill"
-          ) {}
+  public:
+    KillCommand() : Command("kill", "Kill a player", "/kill <player>", "cursestone.command.kill") {
+    }
 
-    bool execute(
-        CommandSender* sender,
-        const std::string& label,
-        const std::vector<std::string>& args
-    ) override;
+    bool execute(CommandSender* sender, const std::string& label,
+                 const std::vector<std::string>& args) override;
 };
 
 } // namespace cursestone

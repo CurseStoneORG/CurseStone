@@ -29,13 +29,13 @@
 namespace cursestone::world::generator::object::trees {
 
 class SwampTree : public GenericTree {
-protected:
+  protected:
     void init(MersenneRandom& rng) override;
     bool canPlaceOn(uint8_t soil) const override;
-    void placeCanopy(mcp_chunk_t* c, int sourceX, int sourceY,
-                     int sourceZ, MersenneRandom& rng) override;
-    void placeTrunk(mcp_chunk_t* c, int sourceX, int sourceY,
-                    int sourceZ, MersenneRandom& rng) override;
+    void placeCanopy(mcp_chunk_t* c, int sourceX, int sourceY, int sourceZ,
+                     MersenneRandom& rng) override;
+    void placeTrunk(mcp_chunk_t* c, int sourceX, int sourceY, int sourceZ,
+                    MersenneRandom& rng) override;
 };
 
 } // namespace cursestone::world::generator::object::trees

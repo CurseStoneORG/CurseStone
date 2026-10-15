@@ -35,7 +35,8 @@ extern "C" {
 
 typedef struct mcp_pkt_client_disconnect {
     mcp_packet_t header;
-    int64_t  client_id; int64_t server_id;
+    int64_t client_id;
+    int64_t server_id;
 } mcp_pkt_client_disconnect_t;
 
 mcp_packet_t* mcp_pkt_client_disconnect_new(void);

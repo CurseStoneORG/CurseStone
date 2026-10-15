@@ -26,7 +26,7 @@
 #include <string>
 namespace cursestone::permission {
 class Permissible {
-public:
+  public:
     virtual ~Permissible() = default;
     virtual bool hasPermission(const std::string& name) const = 0;
     virtual void recalculatePermissions() = 0;

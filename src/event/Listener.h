@@ -29,7 +29,7 @@
 namespace cursestone::event {
 
 class Listener {
-public:
+  public:
     virtual ~Listener() = default;
 };
 

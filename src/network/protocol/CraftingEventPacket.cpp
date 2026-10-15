@@ -48,7 +48,8 @@ namespace {
 // BinaryStream::getSlot de protocolo 84 (formato shorts BE).
 bool readSlot(PacketReader& r, cursestone::item::ItemStack& out) {
     int16_t id = 0;
-    if (!r.readI16BE(id)) return false;
+    if (!r.readI16BE(id))
+        return false;
     if (id <= 0) {
         // Slot vacío: solo los 2 bytes del short — el cliente tampoco
         // escribe count/damage/nbt para slots vacíos.
@@ -56,12 +57,16 @@ bool readSlot(PacketReader& r, cursestone::item::ItemStack& out) {
         return true;
     }
     uint8_t count = 0;
-    if (!r.readU8(count)) return false;
+    if (!r.readU8(count))
+        return false;
     uint16_t damageRaw = 0;
-    if (!r.readU16BE(damageRaw)) return false;
+    if (!r.readU16BE(damageRaw))
+        return false;
     uint16_t nbtLen = 0;
-    if (!r.readU16LE(nbtLen)) return false;   // getLShort = LE
-    if (nbtLen > 0 && !r.skipBytes(nbtLen)) return false;
+    if (!r.readU16LE(nbtLen))
+        return false; // getLShort = LE
+    if (nbtLen > 0 && !r.skipBytes(nbtLen))
+        return false;
     out.id = static_cast<uint16_t>(id);
     out.count = count;
     out.meta = static_cast<uint8_t>(static_cast<int16_t>(damageRaw) & 0xFF);
@@ -76,24 +81,31 @@ void CraftingEventPacket::encode(std::vector<uint8_t>&) const {
 
 bool CraftingEventPacket::decode(const uint8_t* data, size_t len) {
     PacketReader r(data, len);
-    if (!r.readU8(windowId)) return false;
-    if (!r.readI32BE(type)) return false;     // getInt = BE con signo
-    if (!r.readBytes(id.data(), 16)) return false;
+    if (!r.readU8(windowId))
+        return false;
+    if (!r.readI32BE(type))
+        return false; // getInt = BE con signo
+    if (!r.readBytes(id.data(), 16))
+        return false;
 
     int32_t n = 0;
-    if (!r.readI32BE(n) || n < 0) return false;
+    if (!r.readI32BE(n) || n < 0)
+        return false;
     input.clear();
     for (int32_t i = 0; i < n && i < 128; ++i) {
         cursestone::item::ItemStack s;
-        if (!readSlot(r, s)) return false;
+        if (!readSlot(r, s))
+            return false;
         input.push_back(s);
     }
 
-    if (!r.readI32BE(n) || n < 0) return false;
+    if (!r.readI32BE(n) || n < 0)
+        return false;
     output.clear();
     for (int32_t i = 0; i < n && i < 128; ++i) {
         cursestone::item::ItemStack s;
-        if (!readSlot(r, s)) return false;
+        if (!readSlot(r, s))
+            return false;
         output.push_back(s);
     }
     return true;

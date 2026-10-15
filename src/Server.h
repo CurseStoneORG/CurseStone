@@ -41,7 +41,7 @@
 //   - player chat /slash via player::handleChat → SimpleCommandMap::dispatch.
 #pragma once
 #include "CurseStone.h"
-#include "nbt/tag/Tag.h"               // mcp_tag_t / ::mcp_tag
+#include "nbt/tag/Tag.h" // mcp_tag_t / ::mcp_tag
 #include <string>
 #include <vector>
 #include <memory>
@@ -56,14 +56,32 @@ namespace cursestone {
 class Player;
 class CommandMap;
 class CommandReader;
-namespace world { class World; }   // resolved via `using World = world::World;` in CurseStone.h
-namespace network { class Network; }
-namespace inventory { class CraftingManager; }
-namespace scheduler { class AsyncPool; }
-namespace permission { class BanList; }
-namespace nbt        { namespace tag { class CompoundTag; } }   // C++ class (matches CurseStone.h declaration)
-namespace block    { void register_all_blocks(); }
-namespace item     { class Item; }
+namespace world {
+class World;
+} // resolved via `using World = world::World;` in CurseStone.h
+namespace network {
+class Network;
+}
+namespace inventory {
+class CraftingManager;
+}
+namespace scheduler {
+class AsyncPool;
+}
+namespace permission {
+class BanList;
+}
+namespace nbt {
+namespace tag {
+class CompoundTag;
+}
+} // C++ class (matches CurseStone.h declaration)
+namespace block {
+void register_all_blocks();
+}
+namespace item {
+class Item;
+}
 
 // Owning shared pointer for an NBT root tag (mcp_tag_t*). Frees via
 // mcp_tag_destroy when the refcount drops to zero. Defined in server.cpp.
@@ -77,7 +95,7 @@ using NbtPtr = std::shared_ptr<::mcp_tag>;
  * broadcast handling, command processing).
  */
 class Server {
-public:
+  public:
     static Server& getInstance() {
         static Server instance;
         return instance;
@@ -120,14 +138,26 @@ public:
         external_stop_flag_ = flag;
     }
 
-    bool isRunning() const { return running_.load(std::memory_order_relaxed); }
-    const std::string& getDataPath() const { return dataPath_; }
-    uint64_t getCurrentTick() const { return currentTick_; }
-    int getTPS() const { return tps_; }
+    bool isRunning() const {
+        return running_.load(std::memory_order_relaxed);
+    }
+    const std::string& getDataPath() const {
+        return dataPath_;
+    }
+    uint64_t getCurrentTick() const {
+        return currentTick_;
+    }
+    int getTPS() const {
+        return tps_;
+    }
 
     // player roster.
-    std::vector<std::shared_ptr<Player>>& players() { return players_; }
-    const std::vector<std::shared_ptr<Player>>& players() const { return players_; }
+    std::vector<std::shared_ptr<Player>>& players() {
+        return players_;
+    }
+    const std::vector<std::shared_ptr<Player>>& players() const {
+        return players_;
+    }
     /**
      * @brief Returns to thread-safe copy of the player list.
      *
@@ -160,10 +190,18 @@ public:
     void broadcastPacket(/* DataPacket */ void* p);
 
     // World + scheduler + network accessors.
-    World* getDefaultWorld() const { return world_.get(); }
-    scheduler::AsyncPool* getAsyncPool() const { return async_pool_.get(); }
-    CommandMap* getCommandMap() const { return command_map_.get(); }
-    network::Network* getNetwork() const { return network_.get(); }
+    World* getDefaultWorld() const {
+        return world_.get();
+    }
+    scheduler::AsyncPool* getAsyncPool() const {
+        return async_pool_.get();
+    }
+    CommandMap* getCommandMap() const {
+        return command_map_.get();
+    }
+    network::Network* getNetwork() const {
+        return network_.get();
+    }
 
     // --- Gestión of worlds (multiworld) ---
     //
@@ -188,16 +226,36 @@ public:
     std::shared_ptr<World> getWorldShared(const std::string& name) const;
 
     // Settings convenience accessors.
-    int maxPlayers() const { return max_players_; }
-    int viewDistance() const { return view_distance_; }
-    int gamemode() const { return gamemode_; }
-    int difficulty() const { return difficulty_; }
-    bool whitelistEnabled() const { return whitelist_; }
-    bool onlineMode() const { return online_mode_; }
-    bool advancedLog() const { return advanced_log_; }
-    const std::string& ip() const { return ip_; }
-    uint16_t port() const { return port_; }
-    std::string getMotd() const { return motd_; }
+    int maxPlayers() const {
+        return max_players_;
+    }
+    int viewDistance() const {
+        return view_distance_;
+    }
+    int gamemode() const {
+        return gamemode_;
+    }
+    int difficulty() const {
+        return difficulty_;
+    }
+    bool whitelistEnabled() const {
+        return whitelist_;
+    }
+    bool onlineMode() const {
+        return online_mode_;
+    }
+    bool advancedLog() const {
+        return advanced_log_;
+    }
+    const std::string& ip() const {
+        return ip_;
+    }
+    uint16_t port() const {
+        return port_;
+    }
+    std::string getMotd() const {
+        return motd_;
+    }
 
     // ---- World behaviour flags (used by BlockFire propagation) ----
     // Both default to TRUE so the fire-spread + Nether portal logic in
@@ -205,8 +263,12 @@ public:
     // are exposed as getters so to future server.properties can override
     // them without touching call sites.
     // mirrors PMMP server::isFireSpreadEnabled() / isNetherEnabled()
-    bool fireSpreadEnabled() const { return fire_spread_enabled_; }
-    bool netherEnabled()     const { return nether_enabled_; }
+    bool fireSpreadEnabled() const {
+        return fire_spread_enabled_;
+    }
+    bool netherEnabled() const {
+        return nether_enabled_;
+    }
 
     // Ban lists (lazily-initialized singletons).
     permission::BanList& getNameBans();
@@ -225,7 +287,9 @@ public:
     // index 1-based about the list of worlds loaded (1 = by default).
     World* getWorld(int worldId) const;
     World* getWorldByName(const std::string& name) const;
-    void setDefaultWorld(std::shared_ptr<World> l) { world_ = std::move(l); }
+    void setDefaultWorld(std::shared_ptr<World> l) {
+        world_ = std::move(l);
+    }
 
     // --- Nukkit-compat: player management ---
     Player* getPlayerExact(const std::string& name) const;
@@ -245,19 +309,29 @@ public:
     // --- Nukkit-compat: Broadcasting ---
     int broadcast(const std::string& message, const std::string& permissions);
     void broadcastPacketsCallback(const std::vector<uint8_t>& data,
-                                   const std::vector<std::string>& identifiers);
+                                  const std::vector<std::string>& identifiers);
 
     // --- Nukkit-compat: ops / Whitelist ---
-    void addOp(const std::string& name) { setOp(name, true); }
-    void removeOp(const std::string& name) { setOp(name, false); }
+    void addOp(const std::string& name) {
+        setOp(name, true);
+    }
+    void removeOp(const std::string& name) {
+        setOp(name, false);
+    }
     void addWhitelist(const std::string& name);
     void removeWhitelist(const std::string& name);
     void reloadWhitelist();
 
     // --- Nukkit-compat: Auto-save ---
-    bool isAutoSaveEnabled() const { return autosave_ticks_ > 0; }
-    void setAutoSave(bool enabled) { autosave_ticks_ = enabled ? 6000 : 0; }
-    void doAutoSave() { saveAll(); }
+    bool isAutoSaveEnabled() const {
+        return autosave_ticks_ > 0;
+    }
+    void setAutoSave(bool enabled) {
+        autosave_ticks_ = enabled ? 6000 : 0;
+    }
+    void doAutoSave() {
+        saveAll();
+    }
 
     // --- Autosave incremental ---
     // The autosave does NOT write the world in one go. The autosave tick
@@ -285,15 +359,17 @@ public:
     // global CraftingManager (recipes registered in code at startup).
     // Consumed by player::handleCraftingEvent and TileFurnace::tick.
     // May be nullptr before start().
-    inventory::CraftingManager* craftingManager() const { return crafting_.get(); }
+    inventory::CraftingManager* craftingManager() const {
+        return crafting_.get();
+    }
 
     // --- Nukkit-compat: player list data (PlayerListPacket broadcast) ---
-    void updatePlayerListData(const std::string& uuid, const std::string& name,
-                               int64_t eid, const std::string& skin = "");
+    void updatePlayerListData(const std::string& uuid, const std::string& name, int64_t eid,
+                              const std::string& skin = "");
     void removePlayerListData(const std::string& uuid);
     void sendFullPlayerListData(Player* target);
 
-private:
+  private:
     Server();
     ~Server();
     Server(const Server&) = delete;
@@ -313,7 +389,7 @@ private:
     std::string dataPath_;
     std::atomic<bool> running_{false};
     uint64_t currentTick_{0};
-    std::atomic<bool> tick_loop_exited_{false};  // set true when runTickLoop returns
+    std::atomic<bool> tick_loop_exited_{false}; // set true when runTickLoop returns
     // See setExternalStopFlag() above. Read only from runTickLoop() on
     // the main thread — never dereferenced from signal context here.
     const volatile std::sig_atomic_t* external_stop_flag_ = nullptr;
@@ -334,26 +410,26 @@ private:
     bool fire_spread_enabled_ = true;
     bool nether_enabled_ = true;
     int async_workers_ = 4;
-    int autosave_ticks_ = 6000;   // 5 minutes at 20 TPS (PMMP default)
+    int autosave_ticks_ = 6000; // 5 minutes at 20 TPS (PMMP default)
 
     // state of the autosave incremental (ver beginAutosaveDrain).
-    bool     autosave_draining_ = false;
+    bool autosave_draining_ = false;
     uint64_t autosave_drain_start_ms_ = 0;
-    size_t   autosave_drain_written_ = 0;
+    size_t autosave_drain_written_ = 0;
     uint64_t autosave_drain_ticks_ = 0;
     uint64_t autosave_drain_max_tick_ms_ = 0;
-    int      autosave_drain_idle_ticks_ = 0;
+    int autosave_drain_idle_ticks_ = 0;
 
     // Subsystems (lazily populated in start()).
     std::shared_ptr<network::Network> network_;
-    std::shared_ptr<World> world_;              // world by default (spawn)
+    std::shared_ptr<World> world_;               // world by default (spawn)
     std::vector<std::shared_ptr<World>> worlds_; // all the worlds loaded; worlds_[0] == world_
     std::shared_ptr<CommandMap> command_map_;
     std::shared_ptr<inventory::CraftingManager> crafting_;
     std::shared_ptr<scheduler::AsyncPool> async_pool_;
     std::unique_ptr<CommandReader> console_reader_;
     std::vector<std::shared_ptr<Player>> players_;
-    mutable std::mutex players_mtx_;             // guards players_
+    mutable std::mutex players_mtx_; // guards players_
 
     // Runtime entity-id allocator (atomic, monotonic from 2 — 0 and 1 are
     // reserved for "not entity" and "host player" respectively).

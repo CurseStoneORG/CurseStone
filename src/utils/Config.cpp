@@ -43,39 +43,47 @@ static Config::NodePtr makeNode_(Config::Node::Type t) {
 // ---- INI parser ----
 bool Config::loadIni(const std::string& path) {
     std::ifstream in(path);
-    if (!in.is_open()) return false;
+    if (!in.is_open())
+        return false;
     root_ = makeNode(Node::Type::Map);
     std::string line;
     std::string section;
     while (std::getline(in, line)) {
         // Strip trailing \r
-        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
         // Skip comments and empty lines
         size_t firstNonWS = line.find_first_not_of(" \t");
-        if (firstNonWS == std::string::npos) continue;
-        if (line[firstNonWS] == '#' || line[firstNonWS] == ';') continue;
+        if (firstNonWS == std::string::npos)
+            continue;
+        if (line[firstNonWS] == '#' || line[firstNonWS] == ';')
+            continue;
         if (line[firstNonWS] == '[' && line.back() == ']') {
-            section = line.substr(firstNonWS + 1,
-                                  line.size() - firstNonWS - 2);
+            section = line.substr(firstNonWS + 1, line.size() - firstNonWS - 2);
             continue;
         }
         size_t eq = line.find('=');
-        if (eq == std::string::npos) continue;
+        if (eq == std::string::npos)
+            continue;
         std::string key = line.substr(firstNonWS, eq - firstNonWS);
         std::string val = line.substr(eq + 1);
         // Trim trailing whitespace from key
-        while (!key.empty() && std::isspace((unsigned char)key.back())) key.pop_back();
+        while (!key.empty() && std::isspace((unsigned char)key.back()))
+            key.pop_back();
         // Trim leading whitespace from val
         size_t vstart = val.find_first_not_of(" \t");
-        if (vstart != std::string::npos) val = val.substr(vstart);
+        if (vstart != std::string::npos)
+            val = val.substr(vstart);
         std::string fullKey = key;
-        if (!section.empty()) fullKey = section + "." + key;
+        if (!section.empty())
+            fullKey = section + "." + key;
         // Store as scalar under the root map.
         Node* cur = root_.get();
         // Simple flat storage: just put it at root.<section>.<key>
         if (!section.empty()) {
-            auto it = std::find_if(cur->map.begin(), cur->map.end(),
-                [&](const auto& p){ return p.first == section; });
+            auto it = std::find_if(cur->map.begin(), cur->map.end(), [&](const auto& p) {
+                return p.first == section;
+            });
             Node* sec = nullptr;
             if (it == cur->map.end()) {
                 cur->map.emplace_back(section, makeNode(Node::Type::Map));
@@ -95,8 +103,10 @@ bool Config::loadIni(const std::string& path) {
 
 bool Config::saveIni(const std::string& path) const {
     std::ofstream out(path, std::ios::trunc);
-    if (!out.is_open()) return false;
-    if (!root_) return true;
+    if (!out.is_open())
+        return false;
+    if (!root_)
+        return true;
     // Write flat key=value (no section support for output).
     for (const auto& kv : root_->map) {
         if (kv.second->type == Node::Type::Scalar) {
@@ -109,19 +119,21 @@ bool Config::saveIni(const std::string& path) const {
 // ---- Minimal YAML parser (nested maps + lists + scalars only) ----
 static std::string stripComment(const std::string& s) {
     auto hash = s.find('#');
-    if (hash == std::string::npos) return s;
+    if (hash == std::string::npos)
+        return s;
     // Naively treat any '#' as comment start; doesn't handle quoted strings.
     return s.substr(0, hash);
 }
 
 static size_t leadingSpaces(const std::string& s) {
     size_t i = 0;
-    while (i < s.size() && (s[i] == ' ' || s[i] == '\t')) ++i;
+    while (i < s.size() && (s[i] == ' ' || s[i] == '\t'))
+        ++i;
     return i;
 }
 
-Config::NodePtr Config::parseYamlLines(
-        const std::vector<std::string>& lines, size_t& i, size_t indent) {
+Config::NodePtr Config::parseYamlLines(const std::vector<std::string>& lines, size_t& i,
+                                       size_t indent) {
     auto node = makeNode(Node::Type::Map);
     while (i < lines.size()) {
         const std::string& raw = lines[i];
@@ -132,7 +144,8 @@ Config::NodePtr Config::parseYamlLines(
             continue;
         }
         size_t ind = leadingSpaces(line);
-        if (ind < indent) break;     // dedent → return to caller
+        if (ind < indent)
+            break; // dedent → return to caller
         if (ind > indent) {
             // Shouldn't happen at the top of the loop, but skip defensively.
             ++i;
@@ -148,8 +161,7 @@ Config::NodePtr Config::parseYamlLines(
             auto child = makeNode(Node::Type::Scalar);
             child->scalar = item;
             // Trim
-            while (!child->scalar.empty() &&
-                    std::isspace((unsigned char)child->scalar.back())) {
+            while (!child->scalar.empty() && std::isspace((unsigned char)child->scalar.back())) {
                 child->scalar.pop_back();
             }
             node->list.push_back(std::move(child));
@@ -163,7 +175,8 @@ Config::NodePtr Config::parseYamlLines(
             continue;
         }
         std::string key = body.substr(0, colon);
-        while (!key.empty() && std::isspace((unsigned char)key.back())) key.pop_back();
+        while (!key.empty() && std::isspace((unsigned char)key.back()))
+            key.pop_back();
         std::string val = body.substr(colon + 1);
         size_t vstart = val.find_first_not_of(" \t");
         if (vstart == std::string::npos) {
@@ -173,8 +186,8 @@ Config::NodePtr Config::parseYamlLines(
             node->map.emplace_back(key, std::move(child));
         } else {
             std::string scalar = val.substr(vstart);
-            while (!scalar.empty() &&
-                    std::isspace((unsigned char)scalar.back())) scalar.pop_back();
+            while (!scalar.empty() && std::isspace((unsigned char)scalar.back()))
+                scalar.pop_back();
             // Strip quotes if present
             if (scalar.size() >= 2 && scalar.front() == '"' && scalar.back() == '"') {
                 scalar = scalar.substr(1, scalar.size() - 2);
@@ -190,11 +203,13 @@ Config::NodePtr Config::parseYamlLines(
 
 bool Config::loadYaml(const std::string& path) {
     std::ifstream in(path);
-    if (!in.is_open()) return false;
+    if (!in.is_open())
+        return false;
     std::vector<std::string> lines;
     std::string line;
     while (std::getline(in, line)) {
-        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
         lines.push_back(line);
     }
     size_t i = 0;
@@ -205,45 +220,47 @@ bool Config::loadYaml(const std::string& path) {
 void Config::writeYamlNode(const Node& n, std::string& out, size_t indent) {
     std::string pad(indent, ' ');
     switch (n.type) {
-        case Node::Type::Scalar:
-            out += n.scalar;
-            out += "\n";
-            break;
-        case Node::Type::List:
-            for (const auto& item : n.list) {
-                out += pad;
-                out += "- ";
-                if (item->type == Node::Type::Scalar) {
-                    out += item->scalar;
-                    out += "\n";
-                } else {
-                    out += "\n";
-                    writeYamlNode(*item, out, indent + 2);
-                }
+    case Node::Type::Scalar:
+        out += n.scalar;
+        out += "\n";
+        break;
+    case Node::Type::List:
+        for (const auto& item : n.list) {
+            out += pad;
+            out += "- ";
+            if (item->type == Node::Type::Scalar) {
+                out += item->scalar;
+                out += "\n";
+            } else {
+                out += "\n";
+                writeYamlNode(*item, out, indent + 2);
             }
-            break;
-        case Node::Type::Map:
-            for (const auto& kv : n.map) {
-                out += pad;
-                out += kv.first;
-                out += ":";
-                if (kv.second->type == Node::Type::Scalar) {
-                    out += " ";
-                    out += kv.second->scalar;
-                    out += "\n";
-                } else {
-                    out += "\n";
-                    writeYamlNode(*kv.second, out, indent + 2);
-                }
+        }
+        break;
+    case Node::Type::Map:
+        for (const auto& kv : n.map) {
+            out += pad;
+            out += kv.first;
+            out += ":";
+            if (kv.second->type == Node::Type::Scalar) {
+                out += " ";
+                out += kv.second->scalar;
+                out += "\n";
+            } else {
+                out += "\n";
+                writeYamlNode(*kv.second, out, indent + 2);
             }
-            break;
+        }
+        break;
     }
 }
 
 bool Config::saveYaml(const std::string& path) const {
     std::ofstream out(path, std::ios::trunc);
-    if (!out.is_open()) return false;
-    if (!root_) return true;
+    if (!out.is_open())
+        return false;
+    if (!root_)
+        return true;
     std::string buf;
     writeYamlNode(*root_, buf, 0);
     out << buf;
@@ -252,83 +269,103 @@ bool Config::saveYaml(const std::string& path) const {
 
 // ---- Lookups ----
 const Config::Node* Config::lookup(const std::string& dottedKey) const {
-    if (!root_) return nullptr;
+    if (!root_)
+        return nullptr;
     const Node* cur = root_.get();
     size_t start = 0;
     while (start < dottedKey.size()) {
         size_t dot = dottedKey.find('.', start);
-        std::string seg = (dot == std::string::npos)
-            ? dottedKey.substr(start)
-            : dottedKey.substr(start, dot - start);
-        if (cur->type != Node::Type::Map) return nullptr;
-        auto it = std::find_if(cur->map.begin(), cur->map.end(),
-            [&](const auto& p){ return p.first == seg; });
-        if (it == cur->map.end()) return nullptr;
+        std::string seg = (dot == std::string::npos) ? dottedKey.substr(start)
+                                                     : dottedKey.substr(start, dot - start);
+        if (cur->type != Node::Type::Map)
+            return nullptr;
+        auto it = std::find_if(cur->map.begin(), cur->map.end(), [&](const auto& p) {
+            return p.first == seg;
+        });
+        if (it == cur->map.end())
+            return nullptr;
         cur = it->second.get();
-        if (dot == std::string::npos) break;
+        if (dot == std::string::npos)
+            break;
         start = dot + 1;
     }
     return cur;
 }
 
 Config::Node* Config::lookupOrCreate(const std::string& dottedKey) {
-    if (!root_) root_ = makeNode(Node::Type::Map);
+    if (!root_)
+        root_ = makeNode(Node::Type::Map);
     Node* cur = root_.get();
     size_t start = 0;
     while (start < dottedKey.size()) {
         size_t dot = dottedKey.find('.', start);
-        std::string seg = (dot == std::string::npos)
-            ? dottedKey.substr(start)
-            : dottedKey.substr(start, dot - start);
+        std::string seg = (dot == std::string::npos) ? dottedKey.substr(start)
+                                                     : dottedKey.substr(start, dot - start);
         if (cur->type != Node::Type::Map) {
             cur->type = Node::Type::Map;
         }
-        auto it = std::find_if(cur->map.begin(), cur->map.end(),
-            [&](const auto& p){ return p.first == seg; });
+        auto it = std::find_if(cur->map.begin(), cur->map.end(), [&](const auto& p) {
+            return p.first == seg;
+        });
         if (it == cur->map.end()) {
             cur->map.emplace_back(seg, makeNode(Node::Type::Scalar));
             cur = cur->map.back().second.get();
         } else {
             cur = it->second.get();
         }
-        if (dot == std::string::npos) break;
+        if (dot == std::string::npos)
+            break;
         start = dot + 1;
     }
     return cur;
 }
 
-std::string Config::getString(const std::string& key,
-                               const std::string& def) const {
+std::string Config::getString(const std::string& key, const std::string& def) const {
     const Node* n = lookup(key);
-    if (!n || n->type != Node::Type::Scalar) return def;
+    if (!n || n->type != Node::Type::Scalar)
+        return def;
     return n->scalar;
 }
 int64_t Config::getInt(const std::string& key, int64_t def) const {
     std::string s = getString(key, "");
-    if (s.empty()) return def;
-    try { return std::stoll(s); } catch (...) { return def; }
+    if (s.empty())
+        return def;
+    try {
+        return std::stoll(s);
+    } catch (...) {
+        return def;
+    }
 }
 double Config::getDouble(const std::string& key, double def) const {
     std::string s = getString(key, "");
-    if (s.empty()) return def;
-    try { return std::stod(s); } catch (...) { return def; }
+    if (s.empty())
+        return def;
+    try {
+        return std::stod(s);
+    } catch (...) {
+        return def;
+    }
 }
 bool Config::getBool(const std::string& key, bool def) const {
     std::string s = getString(key, "");
-    if (s.empty()) return def;
-    if (s == "true" || s == "yes" || s == "1") return true;
-    if (s == "false" || s == "no" || s == "0") return false;
+    if (s.empty())
+        return def;
+    if (s == "true" || s == "yes" || s == "1")
+        return true;
+    if (s == "false" || s == "no" || s == "0")
+        return false;
     return def;
 }
-std::vector<std::string> Config::getStringList(
-        const std::string& key,
-        const std::vector<std::string>& def) const {
+std::vector<std::string> Config::getStringList(const std::string& key,
+                                               const std::vector<std::string>& def) const {
     const Node* n = lookup(key);
-    if (!n || n->type != Node::Type::List) return def;
+    if (!n || n->type != Node::Type::List)
+        return def;
     std::vector<std::string> out;
     out.reserve(n->list.size());
     for (const auto& item : n->list) {
-        if (item->type == Node::Type::Scalar) out.push_back(item->scalar);
+        if (item->type == Node::Type::Scalar)
+            out.push_back(item->scalar);
     }
     return out;
 }
