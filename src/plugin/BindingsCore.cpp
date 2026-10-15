@@ -46,11 +46,29 @@
 //   player.setPermission(name, node, v) concede/niega a node of permiso
 //                                     in memory (false if not exists the player)
 //   player.hasPermission(name, node)  ¿has that node? (false if not exists)
+//   player.getPosition(name)          x, y, z (pies) | nil si no existe
+//   player.getRotation(name)          yaw, pitch | nil si no existe
+//   player.setRotation(name, yaw, pitch) gira la CÁMARA del jugador: fija
+//                                     la rotación en el server y re-sincroniza
+//                                     al cliente con un MovePlayerPacket RESET
+//                                     (mismo patrón que el revert anti-cheat y
+//                                     el teleport; el cliente 0.15 gira la vista
+//                                     con ese paquete). false si no existe.
+//   player.setMotion(name, x, y, z)   impulso al jugador (empujón/lanza):
+//                                     SetEntityMotionPacket con eid=0 al
+//                                     propio cliente (convención del protocolo
+//                                     84 para el self-motion). false si no existe.
 //   scheduler.later(ticks, fn)        runs fn a time; returns id
 //   scheduler.every(ticks, fn)        runs fn each ticks; returns id
 //   scheduler.cancel(id)              cancela a tarea
-//   plugin.api                        version of the API of the server ("1.0.0")
+//   plugin.api                        version of the API of the server 
 //   plugin.name / .author / .version  metadata of this plugin
+//   plugin.getResource(name)          lee <plugin>/resources/<name>; UNICA
+//                                     carpeta de recursos valida (nil+err si no)
+//   plugin.saveResource(name, replace) copia resources/<name> a la carpeta de
+//                                     datos del plugin (instala el config por
+//                                     defecto); true | false, motivo
+//   plugin.listResources()            rutas relativas de resources/ (recursivo)
 //   import("core/Example")            function global: load a module Lua
 //                                     of the own plugin (looks for in src/,
 //                                     extension optional, with cache)
@@ -64,13 +82,18 @@
 //     are stored as refs in the registry of the state of the plugin.
 #include "LuaBindings.h"
 #include "LuaPlugin.h"
+#include "PathSafe.h"
 #include "Server.h"
 #include "Player.h"
 #include "inventory/PlayerInventory.h"
 #include "item/ItemNbt.h"
+#include "network/protocol/MovePlayerPacket.h"
+#include "network/protocol/SetEntityMotionPacket.h"
 #include "utils/MainLogger.hpp"
 #include "scheduler/ServerScheduler.h"
 #include "scheduler/CallbackTask.h"
+#include <filesystem>
+#include <fstream>
 #include <memory>
 
 namespace cursestone::plugin {
@@ -290,6 +313,160 @@ int l_player_getDisplayName(lua_State* L) {
     return 1;
 }
 
+// ---------- player movement + camera (API 1.1.0) ----------
+// getPosition(name) -> x, y, z (feet) | nil. Values are doubles so plugins
+// get the exact server-side position, not a truncated copy.
+int l_player_getPosition(lua_State* L) {
+    Player* p = findPlayer(L, 1);
+    if (!p) { lua_pushnil(L); return 1; }
+    const math::Vector3& pos = p->getNextPosition();
+    lua_pushnumber(L, (lua_Number)pos.x);
+    lua_pushnumber(L, (lua_Number)pos.y);
+    lua_pushnumber(L, (lua_Number)pos.z);
+    return 3;
+}
+// getRotation(name) -> yaw, pitch | nil.
+int l_player_getRotation(lua_State* L) {
+    Player* p = findPlayer(L, 1);
+    if (!p) { lua_pushnil(L); return 1; }
+    lua_pushnumber(L, (lua_Number)p->yaw());
+    lua_pushnumber(L, (lua_Number)p->pitch());
+    return 2;
+}
+// setRotation(name, yaw, pitch) -> bool. Camera control: store the new
+// angles server-side, then push a MODE_RESET MovePlayerPacket carrying the
+// CURRENT position + the new yaw/pitch — the same packet shape the
+// anti-cheat revert and teleport already use, so the 0.15.10 client turns
+// the view without moving the player.
+int l_player_setRotation(lua_State* L) {
+    Player* p = findPlayer(L, 1);
+    lua_Number yaw   = luaL_checknumber(L, 2);
+    lua_Number pitch = luaL_checknumber(L, 3);
+    if (!p) { lua_pushboolean(L, 0); return 1; }
+    p->setRotation((float)yaw, (float)pitch);
+    const math::Vector3& pos = p->getNextPosition();
+    p->sendPosition(pos.x, pos.y, pos.z, (double)yaw, (double)pitch,
+                    network::protocol::MovePlayerPacket::MODE_RESET);
+    lua_pushboolean(L, 1);
+    return 1;
+}
+// setMotion(name, x, y, z) -> bool. Pushes the player. Server state first,
+// then SetEntityMotionPacket with eid=0 addressed to the player itself —
+// the protocol-84 self-motion form (eid 0 means "this client's player").
+int l_player_setMotion(lua_State* L) {
+    Player* p = findPlayer(L, 1);
+    lua_Number mx = luaL_checknumber(L, 2);
+    lua_Number my = luaL_checknumber(L, 3);
+    lua_Number mz = luaL_checknumber(L, 4);
+    if (!p) { lua_pushboolean(L, 0); return 1; }
+    p->setMotion(math::Vector3{(double)mx, (double)my, (double)mz});
+    auto pk = std::make_shared<network::protocol::SetEntityMotionPacket>();
+    pk->entities.push_back({0, (float)mx, (float)my, (float)mz});
+    p->sendPacket(pk);
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+// ---------- plugin resources (<plugin>/resources/, API 1.1.0) ----------
+// The resource folder is FIXED: <plugin>/resources/. Every path a plugin
+// passes is sanitized with sanitizeRelPath (no '..', no absolute, no
+// backslash) and joined onto that folder, so a resource request can never
+// reach plugin.yml, src/ or any file outside resources/.
+//
+// getResource(name) -> content | nil, err. Binary-safe (Lua strings hold
+// \0), same contract as data.read.
+int l_plugin_getResource(lua_State* L) {
+    LuaPlugin* pl = LuaPlugin::from(L);
+    const char* req = luaL_checkstring(L, 1);
+    std::string rel;
+    if (!sanitizeRelPath(req, rel)) {
+        return luaL_error(L,
+            "plugin.getResource: invalid path '%s' (only relative paths "
+            "inside resources/, no '..')", req);
+    }
+    std::string path = pl->resourcesDir() + "/" + rel;
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec)) {
+        lua_pushnil(L);
+        lua_pushfstring(L, "resource '%s' does not exist", rel.c_str());
+        return 2;
+    }
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+        lua_pushnil(L);
+        lua_pushfstring(L, "could not open resource '%s'", rel.c_str());
+        return 2;
+    }
+    std::string content((std::istreambuf_iterator<char>(in)),
+                        std::istreambuf_iterator<char>());
+    lua_pushlstring(L, content.data(), content.size());
+    return 1;
+}
+// saveResource(name, replace) -> true | false, reason. Installs a bundled
+// resource into the plugin's data folder (the default-config flow: ship
+// resources/config.yml, call saveResource("config.yml") in onEnable, then
+// data.loadYml("config.yml")). Parent folders are created; an existing
+// file is only overwritten when replace is truthy.
+int l_plugin_saveResource(lua_State* L) {
+    namespace fs = std::filesystem;
+    LuaPlugin* pl = LuaPlugin::from(L);
+    const char* req = luaL_checkstring(L, 1);
+    bool replace = lua_toboolean(L, 2) != 0;
+    std::string rel;
+    if (!sanitizeRelPath(req, rel)) {
+        lua_pushboolean(L, 0);
+        lua_pushfstring(L, "invalid path '%s' (only relative paths inside resources/)", req);
+        return 2;
+    }
+    std::string src = pl->resourcesDir() + "/" + rel;
+    std::string dst = pl->dataDir() + "/" + rel;
+    std::error_code ec;
+    if (!fs::exists(src, ec)) {
+        lua_pushboolean(L, 0);
+        lua_pushfstring(L, "resource '%s' does not exist", rel.c_str());
+        return 2;
+    }
+    if (fs::exists(dst, ec) && !replace) {
+        lua_pushboolean(L, 0);
+        lua_pushfstring(L, "'%s' already exists in the data folder (pass true to overwrite)", rel.c_str());
+        return 2;
+    }
+    fs::create_directories(fs::path(dst).parent_path(), ec);
+    if (ec) {
+        lua_pushboolean(L, 0);
+        lua_pushstring(L, ec.message().c_str());
+        return 2;
+    }
+    fs::copy_file(src, dst, fs::copy_options::overwrite_existing, ec);
+    if (ec) {
+        lua_pushboolean(L, 0);
+        lua_pushstring(L, ec.message().c_str());
+        return 2;
+    }
+    lua_pushboolean(L, 1);
+    return 1;
+}
+// listResources() -> { "config.yml", "layouts/hud.txt", ... } — relative
+// paths, recursive, ready to feed back into getResource()/saveResource().
+int l_plugin_listResources(lua_State* L) {
+    namespace fs = std::filesystem;
+    std::string root = LuaPlugin::from(L)->resourcesDir();
+    lua_createtable(L, 0, 0);
+    int i = 1;
+    std::error_code ec;
+    if (fs::exists(root, ec)) {
+        for (auto& entry : fs::recursive_directory_iterator(root, ec)) {
+            std::error_code e2;
+            if (!entry.is_regular_file(e2)) continue;
+            std::string rel = fs::relative(entry.path(), root, e2).string();
+            if (e2 || rel.empty()) continue;
+            lua_pushstring(L, rel.c_str());
+            lua_rawseti(L, -2, i++);
+        }
+    }
+    return 1;
+}
+
 // ---------- scheduler ----------
 // common to later() and every(): save the function as ref, schedule a
 // CallbackTask in the ServerScheduler and return the id of tarea to Lua.
@@ -352,6 +529,9 @@ void bindPluginTable(lua_State* L) {
 
     static const luaL_Reg pluginF[] = {
         {"include", l_plugin_include},
+        {"getResource", l_plugin_getResource},
+        {"saveResource", l_plugin_saveResource},
+        {"listResources", l_plugin_listResources},
         {nullptr, nullptr}};
     luaL_setfuncs(L, pluginF, 0);
 
@@ -379,6 +559,10 @@ void bindCore(lua_State* L) {
         {"setNameTag", l_player_setNameTag}, {"getNameTag", l_player_getNameTag},
         {"setDisplayName", l_player_setDisplayName},
         {"getDisplayName", l_player_getDisplayName},
+        {"getPosition", l_player_getPosition},
+        {"getRotation", l_player_getRotation},
+        {"setRotation", l_player_setRotation},
+        {"setMotion", l_player_setMotion},
         {nullptr, nullptr}};
     static const luaL_Reg schF[] = {
         {"later", l_scheduler_later}, {"every", l_scheduler_every},

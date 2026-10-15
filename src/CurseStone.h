@@ -51,7 +51,11 @@
 // declare THIS number in their plugin.yml (`api:` field). Previously there
 // were two constants (CURSESTONE_VERSION + CURSESTONE_API_VERSION) that
 // could drift apart; they were unified per the CurseStoneTeam request.
-// NOTE: value intentionally NOT bumped (still 1.0.1).
+// NOTE: bumped to 1.0.2 — the plugin API gained the resources/ loader
+// (plugin.getResource/saveResource/listResources), player movement and
+// camera control (player.getPosition/getRotation/setRotation/setMotion)
+// and the PlayerMove/PlayerDropItem/PlayerItemHeld events plus the held
+// item fields on PlayerInteract. Plugins declaring 1.0.x stay loadable.
 #define CURSESTONE_API       "1.0.1"
 #define CURSESTONE_NAME      "CurseStone"
 #define CURSESTONE_CODENAME  "Obsidian"

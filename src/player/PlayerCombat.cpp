@@ -30,6 +30,8 @@
 #include "network/protocol/LevelEventPacket.h"
 #include "network/protocol/SetEntityDataPacket.h"
 #include "network/protocol/SetEntityMotionPacket.h"
+#include "event/EventManager.h"
+#include "event/player/PlayerInteractEvent.h"
 #include <cmath>
 #include <memory>
 
@@ -88,8 +90,27 @@ constexpr int kBowMaxDurability = 385;
 void Player::handleUseItemAir(int16_t heldItemId) {
     if (!spawned_.load(std::memory_order_relaxed)) return;
     if (isDead()) return;
-    if (heldItemId != (int16_t)item::ITEM_BOW) return;   // only the bow uses air
     if (!srv_) return;
+
+    // PlayerInteractEvent (RIGHT_CLICK_AIR) — the item-use-in-air branch
+    // of the UseItemPacket path (face 0xFF). Fired for EVERY held item
+    // before the per-item logic, so plugins can gate item use; face is
+    // 255 and the block fields are 0 because no block was clicked.
+    // Cancel resyncs the held slot (client prediction rollback) and
+    // drops the use, matching the rejected-use handling elsewhere.
+    {
+        item::ItemStack held{};
+        if (inv_) held = inv_->getHeldItem();
+        auto ev = event::EventManager::get().fire<event::player::PlayerInteractEvent>(
+            this, event::player::PlayerInteractEvent::RIGHT_CLICK_AIR,
+            0, 0, 0, 255, held);
+        if (ev.isCancelled()) {
+            if (inv_) sendSlot(inv_->heldSlot());
+            return;
+        }
+    }
+
+    if (heldItemId != (int16_t)item::ITEM_BOW) return;   // only the bow uses air
 
     // Infinity: setDataFlag(DATA_FLAGS, DATA_FLAG_ACTION, true);
     //           $this->startAction = $this->server->getTick();

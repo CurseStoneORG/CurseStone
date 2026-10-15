@@ -28,6 +28,10 @@
 //     plugin.yml        <- manifiesto: api, name, author, version, main
 //     src/main.lua      <- script de entrada (lo que diga `main`)
 //     src/...           <- subcarpetas con más archivos Lua del plugin
+//     resources/        <- recursos base del plugin (configs por defecto,
+//                          plantillas, datos estáticos). Única carpeta de
+//                          la que lee plugin.getResource(); saveResource()
+//                          copia de aquí a la carpeta de datos del plugin.
 //     (datos propios)   <- en data_pl/<nombre>/ (NO en su carpeta)
 //
 //   El manifiesto plugin.yml se ve así:
@@ -53,10 +57,12 @@
 //   1. load()    crea el lua_State, abre SOLO las libs seguras
 //                (base, string, table, math, utf8), lee el manifiesto,
 //                valida la API, crea data_pl/<plugin> y ejecuta la entrada.
-//   2. enable()  pone enabled_=true y llama plugin.onEnable() si existe.
-//   3. disable() llama plugin.onDisable() si existe, quita todos los
-//                listeners de eventos registrados por este plugin
-//                (owner = this) y cancela sus tareas del scheduler.
+//   2. enable()  pone enabled_=true y llama plugin.onEnable() si existe
+//                (o la función global onEnable si la tabla no la trae).
+//   3. disable() llama plugin.onDisable() si existe (o la global
+//                onDisable), quita todos los listeners de eventos
+//                registrados por este plugin (owner = this) y cancela
+//                sus tareas del scheduler.
 //
 // Reglas de diseño (NO romper):
 //   - Todo el Lua corre en el hilo principal.
@@ -118,6 +124,11 @@ public:
     // Carpeta de datos del plugin (data_pl/<carpeta>); SOLO tocable vía
     // los bindings data.*, que sanitizan las rutas.
     const std::string& dataDir() const { return dataDir_; }
+    // Carpeta de recursos base del plugin (<plugin>/resources/). Es la
+    // ÚNICA carpeta desde la que plugin.getResource() lee: los recursos
+    // que el plugin reparte con su release viven aquí, nunca en src/ ni
+    // en la raíz. No se crea automáticamente: existe si el plugin la trae.
+    const std::string& resourcesDir() const { return resourcesDir_; }
     bool isEnabled() const { return enabled_; }
 
 private:
@@ -125,6 +136,7 @@ private:
     std::string folderName_;            // nombre de la carpeta (clave en data_pl)
     std::string dataRoot_;              // raíz de datos (data_pl)
     std::string dataDir_;               // dataRoot_ + "/" + folderName_
+    std::string resourcesDir_;          // dir_ + "/resources"
     std::string name_;
     std::string version_ = "?";
     std::string author_;
