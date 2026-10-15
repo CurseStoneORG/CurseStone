@@ -32,18 +32,10 @@
 //                      sleepTicks = 0, AnimatePacket WAKE_UP.
 //   setSpawn($pos)     Player.php:1283 — SetSpawnPositionPacket.
 //
-// The entity metadata is what makes OTHER clients render the sleeper lying
-// down: on protocol 84 the sleeping flag lives in the player-specific
-// property DATA_PLAYER_FLAGS = 16 (bit 0) and the bed position in
-// DATA_PLAYER_BED_POSITION = 17 (type POS, three packed int32 BE), per
-// Infinity Human.php:50-55. Note the newer Genisys multi-protocol tables
-// use 28/29 — those are WRONG for protocol 84 and would be ignored by the
-// 0.15.10 client.
-//
-// The sleeping player's OWN client needs no metadata — it enters the bed
-// view locally when the bed is used at night and leaves it on the
-// AnimatePacket(WAKE_UP) that stopSleep() sends, exactly as on Infinity
-// servers.
+// Sleep state is sent as entity metadata: PROP_PLAYER_BED_POSITION (17,
+// three little-endian int32) followed by PROP_PLAYER_FLAGS (16, sleep
+// bit). It goes to every viewer with the runtime id and to the player
+// itself with eid 0, which is what opens the sleeping UI on the client.
 //
 // The "skip the night" vote itself lives in World::checkSleep()
 // (world/World.cpp), ported from Infinity Level.php:861: when every player
@@ -64,40 +56,39 @@ namespace cursestone {
 
 using network::protocol::SetEntityDataPacket;
 
-// broadcastSleepMetadata — pushes the sleeping property pair to every other
-// client that can see this player. Mirrors Infinity
-// Entity::setDataProperty() ($send = true → Entity::sendData($this->hasSpawned)):
-// the packet goes to VIEWERS with the player's runtime id; the sleeping
-// player itself is never in its own hasSpawned, so it gets nothing — and
-// its client keeps the local bed view it entered on its own.
-//
-// When `sleeping` is false the properties are reset to Infinity's
-// stopSleep() values ([0,0,0] bed position + cleared flag byte).
+// Sends the bed position and sleep flag to the viewers (runtime id) and to
+// the player itself (eid 0), like Infinity Player::setDataProperty().
 static void broadcastSleepMetadata(Player* self, bool sleeping,
                                    int bx, int by, int bz) {
     if (!self || !self->server()) return;
 
-    auto pk = std::make_shared<SetEntityDataPacket>();
-    pk->eid = self->runtimeId();
+    auto build = [&](int64_t eid) {
+        auto pk = std::make_shared<SetEntityDataPacket>();
+        pk->eid = eid;
 
-    SetEntityDataPacket::Entry flags;
-    flags.index = SetEntityDataPacket::PROP_PLAYER_FLAGS;
-    flags.type  = SetEntityDataPacket::TYPE_BYTE;
-    flags.ival  = sleeping ? SetEntityDataPacket::PLAYER_FLAG_SLEEP : 0;
-    pk->entries.push_back(flags);
+        SetEntityDataPacket::Entry bedPos;
+        bedPos.index = SetEntityDataPacket::PROP_PLAYER_BED_POSITION;
+        bedPos.type  = SetEntityDataPacket::TYPE_POS;
+        bedPos.px = bx; bedPos.py = by; bedPos.pz = bz;
+        pk->entries.push_back(bedPos);
 
-    SetEntityDataPacket::Entry bedPos;
-    bedPos.index = SetEntityDataPacket::PROP_PLAYER_BED_POSITION;
-    bedPos.type  = SetEntityDataPacket::TYPE_POS;
-    bedPos.px = bx; bedPos.py = by; bedPos.pz = bz;
-    pk->entries.push_back(bedPos);
+        SetEntityDataPacket::Entry flags;
+        flags.index = SetEntityDataPacket::PROP_PLAYER_FLAGS;
+        flags.type  = SetEntityDataPacket::TYPE_BYTE;
+        flags.ival  = sleeping ? SetEntityDataPacket::PLAYER_FLAG_SLEEP : 0;
+        pk->entries.push_back(flags);
+        return pk;
+    };
 
+    self->sendPacket(build(0));
+
+    auto viewerPk = build(self->runtimeId());
     for (auto& other : self->server()->playersSnapshot()) {
         if (!other || other.get() == self) continue;
         if (other->isPendingRemoval()) continue;
         if (!other->spawned()) continue;
         if (other->getWorld() != self->getWorld()) continue;
-        other->sendPacket(pk);
+        other->sendPacket(viewerPk);
     }
 }
 
@@ -140,13 +131,9 @@ bool Player::sleepOn(int bx, int by, int bz) {
     sleeping_ = true;
     sleep_x_ = bx; sleep_y_ = by; sleep_z_ = bz;
 
-    // Show the sleeper lying down to everyone else (metadata pair above).
     broadcastSleepMetadata(this, true, bx, by, bz);
 
-    // Sleeping in a bed re-binds the personal spawn point to it
-    // (Infinity Player.php:1276 `$this->setSpawn($pos);`) — and that
-    // SetSpawnPositionPacket is also what confirms the accepted sleep to
-    // the 0.15.10 client.
+    // Sleeping re-binds the personal spawn point to the bed.
     setSpawn(bx, by, bz, /*save*/ true);
 
     // Arm the level's skip-the-night countdown (Infinity
@@ -173,8 +160,7 @@ void Player::stopSleep() {
 
     sleeping_ = false;
 
-    // Reset the metadata pair for the viewers ([0,0,0] + cleared flag byte,
-    // Infinity Player.php:1229-1231).
+    // Clear the bed position and the sleep flag.
     broadcastSleepMetadata(this, false, 0, 0, 0);
 
     // Cancel the pending night-skip vote (Infinity: sleepTicks = 0).
