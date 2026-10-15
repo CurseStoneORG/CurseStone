@@ -25,6 +25,26 @@
 #include "world/World.h"
 #include <cmath>
 namespace cursestone::world {
+
+// Explosion::explode — minimal blast: removes blocks inside a sphere.
+//
+// TODO (explosion): bring this up to the vanilla/Infinity behavior:
+//   1. Broadcast the explosion itself — LevelEventPacket EVENT_SOUND_EXPLODE
+//      (3501) at the blast center + EVENT_PARTICLE_DESTROY (2001) for every
+//      removed block, so players actually SEE and HEAR it (a silent invisible
+//      crater is the #1 "the explosion does not work" report).
+//   2. Entity damage + knockback — hurt every Living whose bounding box
+//      touches the blast sphere, force scaled by distance (Infinity
+//      Explosion::explodeB), with per-entity damage events for plugins.
+//   3. Drops — destroy ~30% of the removed blocks into item entities
+//      (vanilla explosion drop chance; today everything just vanishes).
+//   4. Fire — optionally seed FIRE (id 51) on a few blast-facing cells
+//      like vanilla TNT/bed detonations do in the Nether.
+//   5. Cancellable EntityExplodeEvent carrying the block list, so plugins
+//      can protect regions (parity with event/entity/EntityExplodeEvent.h).
+// Callers today: the bed-used-in-the-Nether detonation
+// (player/PlayerBlocks.cpp). The TNT detonation (block/BlockTNT.cpp TODO)
+// will call this too once the ignite chain exists.
 int Explosion::explode() {
     int destroyed = 0;
     int r = (int)(power_ + 0.5f);

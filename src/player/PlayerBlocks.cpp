@@ -93,6 +93,61 @@ static void broadcastBlockChange(cursestone::Server* server, world::World* world
 // Forward decl — defined below handlePlayerAction.
 static std::pair<uint16_t, uint16_t> lookupBlockDrop(uint8_t blockId, uint8_t blockData);
 
+// resyncUseTarget — the vanilla "rejection resync" of Infinity
+// Player.php (USE_ITEM_PACKET case, ~line 2477): whenever a block use
+// ends up doing NOTHING server-side, the server re-sends the CLICKED
+// block plus the cell adjacent to the clicked face straight to the
+// clicker:
+//
+//     $this->level->sendBlocks([$this], [$target, $block],
+//                              UpdateBlockPacket::FLAG_ALL_PRIORITY);
+//
+// Why this matters more here than on Infinity: a world that predates
+// the server-side door/bed placement is full of GHOST blocks — the
+// client draws a door/bed its own prediction placed, but the server
+// still has AIR in those cells. Every interaction with a ghost is met
+// with silence, so the ghost never goes away and the user keeps "using
+// a door that has no sound and breaks in half". The resync tells the
+// client the truth (air, or the real block state), the phantom pops
+// out of existence, and re-placing it produces a fully working block.
+//
+// Audience is the CLICKER ONLY (that is who carries the prediction);
+// other clients never saw the ghost. Cells whose chunk is not loaded
+// are skipped — getBlockId() would answer 0 for them and "correcting"
+// the client with air could delete a real block.
+static void resyncUseTarget(Player* self, world::World* lvl,
+                            int32_t x, int32_t y, int32_t z, uint8_t face) {
+    if (!self || !lvl) return;
+    // Adjacent cell in the clicked-face direction — Infinity
+    // `$block = $target->getSide($packet->face)`.
+    static const int8_t fx[6] = {0, 0, 0, 0, -1, 1};
+    static const int8_t fy[6] = {-1, 1, 0, 0, 0, 0};
+    static const int8_t fz[6] = {0, 0, -1, 1, 0, 0};
+    const int cells[2][3] = {
+        {x, y, z},
+        {x + fx[face], y + fy[face], z + fz[face]},
+    };
+    for (auto& c : cells) {
+        int32_t cx = c[0] >> 4, cz = c[2] >> 4;
+        if (!lvl->chunks().getChunkIfLoaded(cx, cz)) continue;
+        auto ubp = std::make_shared<network::protocol::UpdateBlockPacket>();
+        ubp->x = c[0];
+        ubp->z = c[2];
+        ubp->y = (uint8_t)c[1];
+        ubp->blockId = lvl->getBlockId(c[0], c[1], c[2]);
+        ubp->blockData = lvl->getBlockData(c[0], c[1], c[2]);
+        ubp->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
+        self->sendPacket(ubp);
+    }
+    // Infinity also re-syncs the held item on every rejected use
+    // (`$this->inventory->sendHeldItem($this)`), which heals the
+    // client-side item prediction the same way the block pair heals
+    // the block prediction.
+    if (self->getInventory()) {
+        self->sendSlot(self->getInventory()->heldSlot());
+    }
+}
+
 void Player::handleBlockBreak(int x, int y, int z) {
     if (!spawned_.load(std::memory_order_relaxed)) return;
     auto* lvl = getWorld();
@@ -114,8 +169,31 @@ void Player::handleBlockBreak(int x, int y, int z) {
 
     // Don't break bedrock (id=7).
     if (blockId == 7) return;
-    // Already air — nothing to do.
-    if (blockId == 0) return;
+    // Already air — nothing to break server-side. Infinity keeps
+    // Level::useBreakOn's early return, but a client that just mined a
+    // GHOST block (drawn by its own prediction, never written
+    // server-side — see the long note on resyncUseTarget) would keep
+    // the phantom on screen forever: the world says air, so say so.
+    // The air update is idempotent and truthful for every viewer.
+    if (blockId == 0) {
+        auto ghost = std::make_shared<network::protocol::UpdateBlockPacket>();
+        ghost->x = x;
+        ghost->z = z;
+        ghost->y = (uint8_t)y;
+        ghost->blockId = 0;
+        ghost->blockData = 0;
+        ghost->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
+        if (srv_) {
+            for (auto& other : srv_->playersSnapshot()) {
+                if (!other) continue;
+                if (other->getWorld() != lvl) continue;
+                if (!other->canSeeBlock(cx, cz)) continue;
+                if (!other->spawned()) continue;
+                other->sendPacket(ghost);
+            }
+        }
+        return;
+    }
 
     // BlockBreakEvent — a listener can cancelarlo (p.ej. protección
     // of zonas) for impedir the breakage without touch the rest of the pipeline.
@@ -492,6 +570,22 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         return;
     }
 
+    // Infinity Level::useItemOn (its `if($target->getId() === Item::AIR)
+    // return false;` early exit): a click against a cell the server sees
+    // as AIR can never place anything — useItemOn() returns false right
+    // away and the Player.php USE_ITEM case falls through to the
+    // sendBlocks() rejection resync. Without this, a client tapping a
+    // GHOST door/bed (drawn by an old prediction that
+    // the server never persisted) got pure silence back: the phantom
+    // stayed on screen, kept "breaking in half" and stayed silent
+    // forever, because every packet it sent described a block the
+    // server does not have. The resync tells the client the truth and
+    // the re-placed block then behaves (sound, two-half break, sleep).
+    if (lvl->getBlockId(x, y, z) == 0) {
+        resyncUseTarget(this, lvl, x, y, z, face);
+        return;
+    }
+
     // ---- REGLA VANILLA of sneaking -------------------------------
     //
     // while the player this sneaking (PlayerActionPacket
@@ -531,7 +625,13 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         auto ev = event::EventManager::get().fire<event::player::PlayerInteractEvent>(
             this, event::player::PlayerInteractEvent::RIGHT_CLICK_BLOCK,
             x, y, z, (int)face, heldStack);
-        if (ev.isCancelled()) return;
+        if (ev.isCancelled()) {
+            // A cancelled use is a no-op use — same rejection resync
+            // Infinity runs when useItemOn() fails (protection plugins
+            // leave the client's prediction on screen otherwise).
+            resyncUseTarget(this, lvl, x, y, z, face);
+            return;
+        }
     }
 
     // Chest — right-clicking to chest opens its inventory instead of
@@ -565,6 +665,14 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         // Dimension check — Infinity Bed.php:58 `if($this->getLevel()
         // ->getDimension() == Level::DIMENSION_NETHER)` → Explosion(6).
         // A bed used in the Nether detonates instead of sleeping.
+        //
+        // TODO (explosion): the current detonation is the minimal
+        // world::Explosion(6) block-removal loop (world/Explosion.cpp).
+        // The full vanilla bed explosion still needs: the EVENT_SOUND_EXPLODE
+        // (3501) + destroy particles broadcast, entity damage + knockback
+        // inside the blast sphere, the ~30% block-drop pass, and a
+        // cancellable EntityExplodeEvent for plugins. Same TODO list lives
+        // in world/Explosion.cpp and block/BlockTNT.cpp (TNT detonation).
         if (lvl->dimension() == 1) {
             world::Explosion boom(world::Position((double)x, (double)y, (double)z), 6.0f);
             boom.explode();
@@ -686,7 +794,10 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
             }
             return;
         }
-        // Not fire — just log "not placement" and bail.
+        // Not fire — just log "not placement" and bail. The client is
+        // still told the truth about the two cells it clicked (Infinity
+        // sendBlocks rejection resync) so its prediction cannot drift.
+        resyncUseTarget(this, lvl, x, y, z, face);
         if (srv_ && srv_->advancedLog()) {
             utils::MainLogger::get().info("[BLOCK] " + cfg_.username +
                 " attempted place with empty hand — ignored");
@@ -999,7 +1110,9 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         placedBlockData = 0;
         consumeItem     = !(cfg_.gamemode & 1);
     } else if (heldItemId == 325) {
-        // Bucket (empty) — not placement.
+        // Bucket (empty) — not placement. Rejection resync keeps the
+        // client honest (Infinity runs sendBlocks on this same path).
+        resyncUseTarget(this, lvl, x, y, z, face);
         return;
     } else if (sneakLocked && heldItemId > 255) {
         // REGLA VANILLA of sneaking: any item of id > 255
@@ -1013,6 +1126,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
                 " tried to use item id=" + std::to_string(heldItemId) +
                 " while crouching — blocked (vanilla)");
         }
+        resyncUseTarget(this, lvl, x, y, z, face);
         return;
     } else if (heldItemId == 326) {
         // Water bucket → place FLOWING_WATER (id=8) so the client renders
@@ -1043,6 +1157,8 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         return;  // onActivate() already did the setBlock + broadcast
     } else {
         // Other item (food, tool, etc.) — PMMP would call onItemUse; we not-op.
+        // Rejection resync (Infinity sendBlocks on every failed use).
+        resyncUseTarget(this, lvl, x, y, z, face);
         if (srv_ && srv_->advancedLog()) {
             utils::MainLogger::get().info("[BLOCK] " + cfg_.username +
                 " used non-block item id=" + std::to_string(heldItemId) + " — no placement");
@@ -1084,7 +1200,12 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
     // then drop to fire item (because the server still has FIRE there).
     uint8_t existing = mcp_chunk_get_block_id(ch, localX, placeY, localZ);
     constexpr uint8_t FIRE_ID = 51;
-    if (existing != 0 && existing != FIRE_ID) return;
+    if (existing != 0 && existing != FIRE_ID) {
+        // The replace cell is occupied — the use did nothing. Rejection
+        // resync (Infinity: useItemOn false → sendBlocks target+side).
+        resyncUseTarget(this, lvl, x, y, z, face);
+        return;
+    }
 
     // BlockPlaceEvent — a listener can cancelarlo (p.ej. protección
     // of zonas) for impedir the colocación without touch inventory ni chunk.
