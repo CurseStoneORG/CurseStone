@@ -54,6 +54,7 @@
 #include <cmath>
 #include "network/protocol/RemoveEntityPacket.h"
 #include "network/protocol/MoveEntityPacket.h"
+#include "network/protocol/SetEntityMotionPacket.h"
 #include "network/protocol/EntityEventPacket.h"
 #include "network/protocol/SetHealthPacket.h"
 #include "network/protocol/SetTimePacket.h"
@@ -1051,6 +1052,7 @@ void World::tickArrows(uint64_t current_tick) {
         if (steps < 1) steps = 1;
         if (steps > 8) steps = 8;
         bool collided = false;
+        int hitStep = 0;
         for (int i = 1; i <= steps; ++i) {
             double sx = a->x + a->vx * ((double)i / steps);
             double sy = a->y + a->vy * ((double)i / steps);
@@ -1059,12 +1061,32 @@ void World::tickArrows(uint64_t current_tick) {
                                           (int)std::floor(sy),
                                           (int)std::floor(sz)))) {
                 collided = true;
+                hitStep = i;
                 break;
             }
         }
         if (collided) {
-            // PMMP: hadCollision = true; motion = 0. The arrow sticks at
-            // the last free position (we never committed the blocked step).
+            // PMMP: hadCollision = true; motion = 0. Bisect the blocked
+            // sub-step so the arrow sticks right at the block surface and
+            // keeps the orientation it had in flight.
+            double tFree = (double)(hitStep - 1) / steps;
+            double tHit  = (double)hitStep / steps;
+            for (int k = 0; k < 8; ++k) {
+                double tm = 0.5 * (tFree + tHit);
+                if (dropBlockSolid(getBlockId((int)std::floor(a->x + a->vx * tm),
+                                              (int)std::floor(a->y + a->vy * tm),
+                                              (int)std::floor(a->z + a->vz * tm)))) {
+                    tHit = tm;
+                } else {
+                    tFree = tm;
+                }
+            }
+            double fh0 = std::sqrt(a->vx * a->vx + a->vz * a->vz);
+            a->yaw   = (float)(std::atan2(a->vx, a->vz) * 180.0 / 3.14159265358979323846);
+            a->pitch = (float)(std::atan2(a->vy, fh0)    * 180.0 / 3.14159265358979323846);
+            a->x += a->vx * tFree;
+            a->y += a->vy * tFree;
+            a->z += a->vz * tFree;
             a->stuck = true;
             a->vx = a->vy = a->vz = 0.0;
         } else {
@@ -1089,30 +1111,51 @@ void World::tickArrows(uint64_t current_tick) {
             a->pitch = (float)(std::atan2(a->vy, fh)     * 180.0 / 3.14159265358979323846);
         }
 
-        // ---- updateMovement(): MoveEntityPacket when it really moved ----
-        bool moved = std::fabs(a->x - a->lx) > 0.0001 ||
-                     std::fabs(a->y - a->ly) > 0.0001 ||
-                     std::fabs(a->z - a->lz) > 0.0001 ||
-                     std::fabs(a->yaw - a->lyaw) > 0.1f ||
-                     std::fabs(a->pitch - a->lpitch) > 0.1f;
-        if (!moved) continue;
-        a->lx = a->x; a->ly = a->y; a->lz = a->z;
-        a->lyaw = a->yaw; a->lpitch = a->pitch;
+        // ---- updateMovement(): Infinity Entity::updateMovement() thresholds ----
+        auto sq = [](double v) { return v * v; };
+        double dpos = sq(a->x - a->lx) + sq(a->y - a->ly) + sq(a->z - a->lz);
+        double drot = sq((double)a->yaw - a->lyaw) + sq((double)a->pitch - a->lpitch);
+        double dmot = sq(a->vx - a->lmx) + sq(a->vy - a->lmy) + sq(a->vz - a->lmz);
+        double vlen2 = a->vx * a->vx + a->vy * a->vy + a->vz * a->vz;
 
-        auto mv = std::make_shared<network::protocol::MoveEntityPacket>();
-        mv->eid = a->eid;
-        mv->x = (float)a->x;
-        mv->y = (float)a->y;
-        mv->z = (float)a->z;
-        mv->yaw = a->yaw;
-        mv->headYaw = a->yaw;
-        mv->pitch = a->pitch;
+        bool sendMove   = collided || dpos > 0.04 ||
+                          (drot > 2.25 && dmot > 0.0001 && vlen2 <= 0.00001);
+        bool sendMotion = collided || dmot > 0.0025 ||
+                          (dmot > 0.0001 && vlen2 <= 0.0001);
+        if (!sendMove && !sendMotion) continue;
+
         int32_t vcx = (int32_t)std::floor(a->x) >> 4;
         int32_t vcz = (int32_t)std::floor(a->z) >> 4;
-        for (auto& p : Server::getInstance().playersSnapshot()) {
-            if (!p || !p->spawned() || p->getWorld() != this) continue;
-            if (!p->canSeeBlock(vcx, vcz)) continue;
-            p->sendPacket(mv);
+
+        if (sendMove) {
+            a->lx = a->x; a->ly = a->y; a->lz = a->z;
+            a->lyaw = a->yaw; a->lpitch = a->pitch;
+
+            auto mv = std::make_shared<network::protocol::MoveEntityPacket>();
+            mv->eid = a->eid;
+            mv->x = (float)a->x;
+            mv->y = (float)a->y;
+            mv->z = (float)a->z;
+            mv->yaw = a->yaw;
+            mv->headYaw = a->yaw;
+            mv->pitch = a->pitch;
+            for (auto& p : Server::getInstance().playersSnapshot()) {
+                if (!p || !p->spawned() || p->getWorld() != this) continue;
+                if (!p->canSeeBlock(vcx, vcz)) continue;
+                p->sendPacket(mv);
+            }
+        }
+
+        if (sendMotion) {
+            a->lmx = a->vx; a->lmy = a->vy; a->lmz = a->vz;
+
+            auto mo = std::make_shared<network::protocol::SetEntityMotionPacket>();
+            mo->entities.push_back({a->eid, (float)a->vx, (float)a->vy, (float)a->vz});
+            for (auto& p : Server::getInstance().playersSnapshot()) {
+                if (!p || !p->spawned() || p->getWorld() != this) continue;
+                if (!p->canSeeBlock(vcx, vcz)) continue;
+                p->sendPacket(mo);
+            }
         }
     }
 
