@@ -35,8 +35,15 @@ bool TimeCommand::execute(CommandSender* sender, const std::string&,
     }
     if (args[0] == "set" && args.size() >= 2) {
         int32_t t;
+        // "night" = World::TIME_NIGHT (14000), exactly what PMMP/Infinity
+        // do (`case "night": $value = Level::TIME_NIGHT;`). It used to be
+        // 13000, which the client renders as dark BUT the sleep check
+        // rejects (a bed tapped at 13000 answers "You can only sleep at
+        // night" — the classic "it looks like night but the bed says no"
+        // trap). Aliasing the command to TIME_NIGHT keeps the command and
+        // the bed check on the same definition of night.
         if (args[1] == "day") t = 1000;
-        else if (args[1] == "night") t = 13000;
+        else if (args[1] == "night") t = world::World::TIME_NIGHT;
         else { try { t = std::stoi(args[1]); } catch (...) { sender->sendMessage("Invalid time"); return true; } }
         auto* lvl = Server::getInstance().getDefaultWorld();
         if (lvl) {
