@@ -21,7 +21,6 @@ permissions:
   contents: write
 
 jobs:
-  # Use jobs build for compile
   build:
     name: Compile Binaries
     uses: ./.github/workflows/Build.yml
@@ -30,29 +29,102 @@ jobs:
       body: ${{ inputs.body }}
       prerelease: ${{ inputs.prerelease }}
 
-  # Launch the releases with zipped binaries
   publish:
     name: Make Release ${{ inputs.version }}
     runs-on: ubuntu-22.04
-    needs: [ build ]
+    needs: [build]
 
     steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
       - name: Download Binaries
         uses: actions/download-artifact@v4
         with:
           path: dist/
 
-      - name: Zip the Binaries
+      - name: Copy Start Scripts
+        shell: bash
         run: |
+          set -euo pipefail
+
+          # Verify the original scripts exist in the repository root
+          test -f start.sh
+          test -f start.bat
+
+          # Linux x86_64
+          cp start.sh dist/CurseStone-linux-x86_64/start.sh
+
+          # Android ARM64
+          cp start.sh dist/CurseStone-android-arm64/start.sh
+
+          # Windows x86_64
+          cp start.bat dist/CurseStone-windows-x86_64/start.bat
+
+          # Preserve executable permissions for Unix scripts
+          chmod +x \
+            dist/CurseStone-linux-x86_64/start.sh \
+            dist/CurseStone-android-arm64/start.sh
+
+      - name: Package ZIP Archives
+        shell: bash
+        run: |
+          set -euo pipefail
+
           VERSION='${{ inputs.version }}'
           mkdir -p out
-          chmod +x dist/CurseStone-linux-x86_64/CurseStone dist/CurseStone-android-arm64/CurseStone
-          (cd dist/CurseStone-linux-x86_64   && zip -9 "$GITHUB_WORKSPACE/out/CurseStone-${VERSION}-linux-x86_64.zip" CurseStone)
-          (cd dist/CurseStone-android-arm64  && zip -9 "$GITHUB_WORKSPACE/out/CurseStone-${VERSION}-android-arm64.zip" CurseStone)
-          (cd dist/CurseStone-windows-x86_64 && zip -9 "$GITHUB_WORKSPACE/out/CurseStone-${VERSION}-windows-x86_64.zip" CurseStone.exe)
-          ls -la out/
 
-      - name: Launch Release to GitHub
+          # Verify the expected binaries and scripts exist
+          test -f dist/CurseStone-linux-x86_64/CurseStone
+          test -f dist/CurseStone-linux-x86_64/start.sh
+
+          test -f dist/CurseStone-android-arm64/CurseStone
+          test -f dist/CurseStone-android-arm64/start.sh
+
+          test -f dist/CurseStone-windows-x86_64/CurseStone.exe
+          test -f dist/CurseStone-windows-x86_64/start.bat
+
+          # Set executable permissions
+          chmod +x \
+            dist/CurseStone-linux-x86_64/CurseStone \
+            dist/CurseStone-linux-x86_64/start.sh \
+            dist/CurseStone-android-arm64/CurseStone \
+            dist/CurseStone-android-arm64/start.sh
+
+          # Linux x86_64 ZIP
+          (
+            cd dist/CurseStone-linux-x86_64
+            zip -9 "$GITHUB_WORKSPACE/out/CurseStone-${VERSION}-linux-x86_64.zip" \
+              CurseStone start.sh
+          )
+
+          # Android ARM64 ZIP
+          (
+            cd dist/CurseStone-android-arm64
+            zip -9 "$GITHUB_WORKSPACE/out/CurseStone-${VERSION}-android-arm64.zip" \
+              CurseStone start.sh
+          )
+
+          # Windows x86_64 ZIP
+          (
+            cd dist/CurseStone-windows-x86_64
+            zip -9 "$GITHUB_WORKSPACE/out/CurseStone-${VERSION}-windows-x86_64.zip" \
+              CurseStone.exe start.bat
+          )
+
+          echo "Generated release archives:"
+          ls -lh out/
+
+          echo "Linux archive contents:"
+          unzip -l "out/CurseStone-${VERSION}-linux-x86_64.zip"
+
+          echo "Android archive contents:"
+          unzip -l "out/CurseStone-${VERSION}-android-arm64.zip"
+
+          echo "Windows archive contents:"
+          unzip -l "out/CurseStone-${VERSION}-windows-x86_64.zip"
+
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.version }}
