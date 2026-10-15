@@ -20,6 +20,7 @@ report).
 """
 import argparse
 import base64
+import hashlib
 import json
 import socket
 import struct
@@ -89,7 +90,9 @@ class Client:
         except OSError:
             pass
         self.sock.settimeout(0.4)
-        self.client_id = int(time.time()) & 0xFFFFFFFF
+        # Unique per instance: two harness clients in the same second must
+        # not collide (the server kicks duplicate session ids).
+        self.client_id = (time.time_ns() ^ (id(self) * 0x9E3779B1)) & 0xFFFFFFFF
         self.send_seq = 0
         self.message_index = 0
         self.order_index = [0] * 32   # per-channel ordering index
@@ -334,14 +337,18 @@ class Client:
         # LoginPacket::decode splits on '.' twice, so a single blob is
         # silently ignored and the username ends up empty -> kicked with
         # "disconnectionScreen.invalidName".
+        # Identity is derived from the name: two harness clients must not
+        # share one UUID (the server kicks duplicate-uuid sessions).
+        ident_tail = hashlib.md5(self.name.encode()).hexdigest()[:12]
+        identity = f"11111111-2222-3333-4444-{ident_tail}"
         chain_jwt = (b64u({"alg": "ES384"}) + "." +
                      b64u({"displayName": self.name,
-                           "identity": "11111111-2222-3333-4444-555555555555",
+                           "identity": identity,
                            "extraData": {}}) + ".sig")
         chain = json.dumps({"chain": [chain_jwt]}, separators=(",", ":")).encode()
         cdata_jwt = (b64u({"alg": "ES384"}) + "." +
                      b64u({"DisplayName": self.name,
-                           "Identity": "11111111-2222-3333-4444-555555555555",
+                           "Identity": identity,
                            "DeviceModel": "Linux",
                            "DeviceOS": 7,
                            "LanguageCode": "en_US",

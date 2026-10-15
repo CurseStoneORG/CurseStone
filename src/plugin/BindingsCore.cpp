@@ -25,6 +25,12 @@
 //   log.info/warn/error(msg)          antepone "[NombrePlugin] "
 //   server.broadcast(msg)             message to all the players
 //   server.players()                  list of names connected
+//   server.getPlayer(name)            player handle (nil if not online);
+//                                     the handle carries the NAME and each
+//                                     method re-resolves the live player:
+//                                     p:getName() p:isOnline() p:kill()
+//                                     and the player.* actions as methods
+//                                     (p:message, p:teleport, p:getHealth, ...)
 //   player.message(name, msg)         message to a player (false if not exists)
 //   player.tip(name, msg)             TIP flotante (false if not exists)
 //   player.popup(name, msg)           POPUP about the hotbar (false if not exists)
@@ -47,6 +53,9 @@
 //                                     in memory (false if not exists the player)
 //   player.hasPermission(name, node)  ¿has that node? (false if not exists)
 //   player.getPosition(name)          x, y, z (pies) | nil si no existe
+//   player.kill(name)                 mata por el pipeline normal de muerte
+//                                     (pantalla de muerte, drops, evento);
+//                                     false si no existe o ya está muerto
 //   player.getRotation(name)          yaw, pitch | nil si no existe
 //   player.setRotation(name, yaw, pitch) gira la CÁMARA del jugador: fija
 //                                     la rotación en el server y re-sincroniza
@@ -77,7 +86,9 @@
 //
 // REGLAS:
 //   - everything by name of player (string). never is saves a player*:
-//     is looks for with getPlayerExact in each call.
+//     is looks for with getPlayerExact in each call. The handles of
+//     server.getPlayer() follow the same rule: the userdata only carries
+//     the name (same shape as the world handles).
 //   - the scheduler runs in the thread main; the functions Lua is
 //     are stored as refs in the registry of the state of the plugin.
 #include "LuaBindings.h"
@@ -313,7 +324,19 @@ int l_player_getDisplayName(lua_State* L) {
     return 1;
 }
 
-// ---------- player movement + camera (API 1.1.0) ----------
+// player.kill(name) -> boolean. Kills through the regular damage
+// pipeline (Player::setHealth(0) -> applyDamage -> onDeath: death screen
+// for the client, drops, PlayerDeathEvent + the "<name> died" broadcast).
+// false when the player is not online or is already dead (respawn is the
+// only way back).
+int l_player_kill(lua_State* L) {
+    Player* p = findPlayer(L, 1);
+    if (!p || p->isDead()) { lua_pushboolean(L, 0); return 1; }
+    p->setHealth(0);
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
 // getPosition(name) -> x, y, z (feet) | nil. Values are doubles so plugins
 // get the exact server-side position, not a truncated copy.
 int l_player_getPosition(lua_State* L) {
@@ -367,14 +390,122 @@ int l_player_setMotion(lua_State* L) {
     return 1;
 }
 
-// ---------- plugin resources (<plugin>/resources/, API 1.1.0) ----------
-// The resource folder is FIXED: <plugin>/resources/. Every path a plugin
-// passes is sanitized with sanitizeRelPath (no '..', no absolute, no
-// backslash) and joined onto that folder, so a resource request can never
-// reach plugin.yml, src/ or any file outside resources/.
-//
-// getResource(name) -> content | nil, err. Binary-safe (Lua strings hold
-// \0), same contract as data.read.
+// ---------- player handle (server.getPlayer) ----------
+// server.getPlayer(name) returns the OBJECT counterpart of the name-based
+// player.* API: a handle whose userdata carries just the login NAME (same
+// shape as the world handles — never a Player*). Every method call
+// re-resolves the live player with getPlayerExact, so a handle of a
+// player who leaves starts returning nil/false instead of dangling.
+// The methods are the name-based functions themselves: the dispatcher
+// swaps the handle for its name and jumps into the very same C function,
+// so both surfaces can never drift apart.
+static const char* kPlayerMeta = "CS.Player";
+
+// resolves the live Player* behind the handle at idx (nullptr when the
+// value is not a handle or the player is gone).
+Player* resolvePlayerHandle(lua_State* L, int idx) {
+    auto* name = static_cast<std::string*>(luaL_testudata(L, idx, kPlayerMeta));
+    if (!name) return nullptr;
+    return Server::getInstance().getPlayerExact(*name);
+}
+
+int l_player_handle_gc(lua_State* L) {
+    if (auto* name = static_cast<std::string*>(lua_touserdata(L, 1))) {
+        name->~basic_string();
+    }
+    return 0;
+}
+
+int l_player_handle_tostring(lua_State* L) {
+    auto* name = static_cast<std::string*>(lua_touserdata(L, 1));
+    lua_pushfstring(L, "player(%s)", name ? name->c_str() : "?");
+    return 1;
+}
+
+// server.getPlayer(name) -> handle | nil. nil when no online player
+// matches (the lookup is the same case-insensitive one the name-based
+// API uses).
+int l_server_getplayer(lua_State* L) {
+    const char* req = luaL_checkstring(L, 1);
+    Player* p = Server::getInstance().getPlayerExact(req);
+    if (!p) { lua_pushnil(L); return 1; }
+    auto* stored = static_cast<std::string*>(lua_newuserdata(L, sizeof(std::string)));
+    new (stored) std::string(p->getName());
+    luaL_getmetatable(L, kPlayerMeta);
+    lua_setmetatable(L, -2);
+    return 1;
+}
+
+// generic method dispatch: (self, ...) -> impl(name, ...). Upvalue 1 is
+// the C function of the name-based API; the handle becomes its first
+// string argument and the rest of the stack stays untouched.
+int l_player_method(lua_State* L) {
+    auto* name = static_cast<std::string*>(luaL_checkudata(L, 1, kPlayerMeta));
+    std::string held = *name;                  // copy: the stack mutates
+    lua_pop(L, 1);                             // drop the handle
+    lua_pushstring(L, held.c_str());
+    lua_insert(L, 1);                          // name first, args follow
+    auto impl = (lua_CFunction)lua_tocfunction(L, lua_upvalueindex(1));
+    return impl(L);
+}
+
+// p:getName() — the login name the handle carries; works even after the
+// player left (pair it with isOnline()).
+int l_player_handle_getname(lua_State* L) {
+    auto* name = static_cast<std::string*>(luaL_checkudata(L, 1, kPlayerMeta));
+    lua_pushlstring(L, name->data(), name->size());
+    return 1;
+}
+
+// p:isOnline() — true while the player is still connected.
+int l_player_handle_isonline(lua_State* L) {
+    lua_pushboolean(L, resolvePlayerHandle(L, 1) != nullptr);
+    return 1;
+}
+
+// metatable CS.Player: mirrored methods (dispatchers around the
+// name-based functions) + getName/isOnline + __gc/__tostring.
+void bindPlayerHandle(lua_State* L) {
+    luaL_newmetatable(L, kPlayerMeta);
+    lua_newtable(L);                           // __index
+    static const struct {
+        const char* name;
+        lua_CFunction impl;
+    } mirror[] = {
+        {"message", l_player_message}, {"tip", l_player_tip},
+        {"popup", l_player_popup}, {"kick", l_player_kick},
+        {"teleport", l_player_teleport}, {"teleportWorld", l_player_teleportWorld},
+        {"getWorld", l_player_getWorld}, {"isOp", l_player_isOp},
+        {"getHealth", l_player_getHealth}, {"setHealth", l_player_setHealth},
+        {"setPermission", l_player_setPermission},
+        {"hasPermission", l_player_hasPermission},
+        {"giveItem", l_player_giveItem},
+        {"setNameTag", l_player_setNameTag}, {"getNameTag", l_player_getNameTag},
+        {"setDisplayName", l_player_setDisplayName},
+        {"getDisplayName", l_player_getDisplayName},
+        {"getPosition", l_player_getPosition},
+        {"getRotation", l_player_getRotation},
+        {"setRotation", l_player_setRotation},
+        {"setMotion", l_player_setMotion},
+        {"kill", l_player_kill},
+    };
+    for (const auto& m : mirror) {
+        lua_pushcfunction(L, m.impl);          // upvalue: the name-based impl
+        lua_pushcclosure(L, l_player_method, 1);
+        lua_setfield(L, -2, m.name);
+    }
+    static const luaL_Reg special[] = {
+        {"getName", l_player_handle_getname}, {"isOnline", l_player_handle_isonline},
+        {nullptr, nullptr}};
+    luaL_setfuncs(L, special, 0);
+    lua_setfield(L, -2, "__index");
+    lua_pushcfunction(L, l_player_handle_gc);
+    lua_setfield(L, -2, "__gc");
+    lua_pushcfunction(L, l_player_handle_tostring);
+    lua_setfield(L, -2, "__tostring");
+    lua_pop(L, 1);
+}
+
 int l_plugin_getResource(lua_State* L) {
     LuaPlugin* pl = LuaPlugin::from(L);
     const char* req = luaL_checkstring(L, 1);
@@ -546,6 +677,7 @@ void bindCore(lua_State* L) {
         {nullptr, nullptr}};
     static const luaL_Reg srvF[] = {
         {"broadcast", l_server_broadcast}, {"players", l_server_players},
+        {"getPlayer", l_server_getplayer},
         {nullptr, nullptr}};
     static const luaL_Reg plrF[] = {
         {"message", l_player_message}, {"tip", l_player_tip},
@@ -563,6 +695,7 @@ void bindCore(lua_State* L) {
         {"getRotation", l_player_getRotation},
         {"setRotation", l_player_setRotation},
         {"setMotion", l_player_setMotion},
+        {"kill", l_player_kill},
         {nullptr, nullptr}};
     static const luaL_Reg schF[] = {
         {"later", l_scheduler_later}, {"every", l_scheduler_every},
@@ -572,6 +705,7 @@ void bindCore(lua_State* L) {
     setTable(L, "server", srvF);
     setTable(L, "player", plrF);
     setTable(L, "scheduler", schF);
+    bindPlayerHandle(L);  // metatable CS.Player for server.getPlayer
     bindPluginTable(L);   // plugin.api / .name / .author / .version / .include
 
     // import("module"): load of módulos Lua of the own plugin (the way

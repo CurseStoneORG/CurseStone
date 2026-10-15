@@ -20,14 +20,18 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
+
 // SPDX-License-Identifier: LGPL-3.0-or-later
+
 // CurseStone — umbrella header for the server core: version constants,
 // tick tuning, build flags, and common forward declarations.
 // Inspired by PocketMine-MP 4.0.0; mirrors its module layout.
+
 #pragma once
 
-#include <cstdint>
+// Standard C++ headers.
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <memory>
 #include <vector>
@@ -40,45 +44,25 @@
 #include <mutex>
 #include <chrono>
 
-// ---- Pure-C math headers (global scope; C++ wrappers would break otherwise) ----
+// Pure-C math headers (global scope; C++ wrappers would break otherwise).
 #include "math/Vector2.h"
 #include "math/Vector3.h"
 #include "math/AxisAlignedBB.h"
 
-// ---- CurseStone API (SINGLE version, unified) ----
-// There is exactly ONE version constant now: CURSESTONE_API. It is the
-// server version AND the plugin API version at the same time — plugins
-// declare THIS number in their plugin.yml (`api:` field). Previously there
-// were two constants (CURSESTONE_VERSION + CURSESTONE_API_VERSION) that
-// could drift apart; they were unified per the CurseStoneTeam request.
-// NOTE: bumped to 1.0.2 — the plugin API gained the resources/ loader
-// (plugin.getResource/saveResource/listResources), player movement and
-// camera control (player.getPosition/getRotation/setRotation/setMotion)
-// and the PlayerMove/PlayerDropItem/PlayerItemHeld events plus the held
-// item fields on PlayerInteract. Plugins declaring 1.0.x stay loadable.
+// CurseStone version information.
 #define CURSESTONE_API       "1.0.1"
 #define CURSESTONE_NAME      "CurseStone"
 #define CURSESTONE_CODENAME  "Obsidian"
 
-// ---- Target Minecraft version ----
-// CurseStone targets MCPE/Bedrock protocol version 84 (MCPE 0.15.x era).
-#define MINECRAFT_VERSION      "0.15.x"
-#define PROTOCOL_VERSION       84
+// Minecraft compatibility.
+#define MINECRAFT_VERSION  "0.15.x"
+#define PROTOCOL_VERSION   84
 
-// ---- tick loop tuning ----
-// NOTE: The macro is prefixed with CURSESTONE_ to avoid colliding with the
-// `static constexpr int TICK_RATE = 30;` member declared in
-// block/BlockFire.h (fire spreading tick rate). Without the prefix,
-// the preprocessor would rewrite that member into `static constexpr int 20 = 30;`
-// which is to hard compile error on both GCC and Clang.
-#define CURSESTONE_TICK_RATE          20    // ticks per second (server tick loop)
-#define CURSESTONE_TICK_MS            50    // milliseconds per tick
-// Backwards-compat alias (deprecated) — kept so external code that still
-// references TICK_RATE keeps compiling. New code should use CURSESTONE_TICK_RATE.
-// We deliberately do NOT define the bare `TICK_RATE` token here, because
-// doing so would re-introduce the macro collision with BlockFire::TICK_RATE.
+// Server tick configuration.
+#define CURSESTONE_TICK_RATE  20  // Ticks per second (server tick loop).
+#define CURSESTONE_TICK_MS    50  // Milliseconds per tick.
 
-// ---- Build info ----
+// Build information.
 #ifndef CURSESTONE_LEVELDB
 #  define CURSESTONE_LEVELDB 0
 #endif
@@ -98,29 +82,106 @@ class CommandMap;
 class ServerScheduler;
 class MainLogger;
 
-namespace world       { class World; class Position; class Location; }
-// Alias so legacy code referencing `cursestone::World` (without the world::
-// qualifier) still works. Both refer to cursestone::world::World.
+// World namespace.
+namespace world {
+    class World;
+    class Position;
+    class Location;
+}
+
+// Alias for legacy code referencing cursestone::World without the
+// world:: qualifier. Both refer to cursestone::world::World.
 using World = world::World;
-namespace block       { class Block; }
-namespace item        { class Item; }
-namespace entity      { class Entity; }
-namespace network     { class Network; class RakLibInterface; class SourceInterface;
-                        namespace protocol { class DataPacket; class BatchPacket; } }
-namespace inventory   { class Inventory; class PlayerInventory; }
-namespace tile        { class Tile; }
-namespace nbt         { class NBT; namespace tag { class Tag; class CompoundTag; } }
-namespace math        {
+
+// Block namespace.
+namespace block {
+    class Block;
+}
+
+// Item namespace.
+namespace item {
+    class Item;
+}
+
+// Entity namespace.
+namespace entity {
+    class Entity;
+}
+
+// Network namespace.
+namespace network {
+    class Network;
+    class RakLibInterface;
+    class SourceInterface;
+
+    namespace protocol {
+        class DataPacket;
+        class BatchPacket;
+    }
+}
+
+// Inventory namespace.
+namespace inventory {
+    class Inventory;
+    class PlayerInventory;
+}
+
+// Tile namespace.
+namespace tile {
+    class Tile;
+}
+
+// NBT namespace.
+namespace nbt {
+    class NBT;
+
+    namespace tag {
+        class Tag;
+        class CompoundTag;
+    }
+}
+
+// Math namespace.
+namespace math {
     // C++ namespace aliases for the C struct types defined in the
     // global-scope headers above.
     using Vector2       = ::mcp_vector2_t;
     using Vector3       = ::mcp_vector3_t;
     using AxisAlignedBB = ::mcp_aabb_t;
 }
-namespace utils       { class BinaryStream; class Config; class MainLogger; class UUID; }
-namespace scheduler   { class ServerScheduler; class Task; class AsyncTask; }
-namespace permission  { class Permission; class Permissible; }
-namespace command     { class Command; class CommandSender; class CommandMap; }
-namespace event       { class Event; class HandlerList; }
+
+// Utilities namespace.
+namespace utils {
+    class BinaryStream;
+    class Config;
+    class MainLogger;
+    class UUID;
+}
+
+// Scheduler namespace.
+namespace scheduler {
+    class ServerScheduler;
+    class Task;
+    class AsyncTask;
+}
+
+// Permission namespace.
+namespace permission {
+    class Permission;
+    class Permissible;
+}
+
+// Command namespace.
+namespace command {
+    class Command;
+    class CommandSender;
+    class CommandMap;
+}
+
+// Event namespace.
+namespace event {
+    class Event;
+    class HandlerList;
+}
 
 } // namespace cursestone
