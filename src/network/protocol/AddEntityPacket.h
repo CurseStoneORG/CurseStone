@@ -37,6 +37,7 @@
 #pragma once
 
 #include "DataPacket.h"
+#include "SetEntityDataPacket.h"   // metadata Entry (same wire encoding)
 #include <vector>
 #include <cstdint>
 
@@ -46,9 +47,10 @@ class AddEntityPacket : public DataPacket {
 public:
     uint8_t pid() const override { return ADD_ENTITY_PACKET; }
 
-    // Entity type network ids (Infinity Entity.php).
+    // Entity type network ids (protocol 84 / Infinity).
     static constexpr int32_t TYPE_LIGHTNING = 93;
     static constexpr int32_t TYPE_ARROW     = 80;   // Infinity Arrow::NETWORK_ID
+    static constexpr int32_t TYPE_FALLING_BLOCK = 66;  // Infinity FallingSand::NETWORK_ID
 
     int64_t eid = 0;
     int32_t type = 0;
@@ -57,6 +59,14 @@ public:
     float yaw = 0, pitch = 0;
     int32_t modifiers = 0;
     bool yawPitchScaled = true;   // Infinity multiplies both by 0.71111
+    // Optional entity metadata (Infinity: `$pk->metadata =
+    // $this->dataProperties`, Binary::writeMetadata wire format: one
+    // key byte `(type << 5) | index`, the value, then the 0x7F
+    // terminator). Falling blocks ship DATA_BLOCK_INFO (20) here so the
+    // 0.15.10 client knows which block to render. EMPTY keeps the
+    // historical single-0x00 body this server always sent (arrows,
+    // lightning and players are spawned with it and render fine).
+    std::vector<SetEntityDataPacket::Entry> metadata;
 
     void encode(std::vector<uint8_t>& out) const override;
     bool decode(const uint8_t* data, size_t len) override;

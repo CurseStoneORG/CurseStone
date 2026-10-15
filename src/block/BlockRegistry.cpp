@@ -24,6 +24,7 @@
 // Block::get() flyweight map. Called once at server startup (phase 21).
 #include "Block.h"
 #include "BlockAir.h"
+#include "BlockAnvil.h"
 #include "BlockBedrock.h"
 #include "BlockChest.h"
 #include "BlockCobblestone.h"
@@ -125,5 +126,12 @@ void register_all_blocks() {
     Block::registerBlock(std::make_unique<BlockWoodStairs>());
     Block::registerBlock(std::make_unique<BlockStoneBricks>());
     Block::registerBlock(std::make_unique<BlockMagmaBlock>());
+    // Anvil (145) — existed in MCPE 0.15.10 (BlockIds.h carried the id
+    // all along); it was simply never registered, which left Block::get
+    // (145) == nullptr (crash risk on support checks that do not null-
+    // test, e.g. the bed-support check) and, with the falling-block
+    // physics, an unregistered anvil could not fall. Registered LAST so
+    // it does not disturb the ids above if something else re-registers.
+    Block::registerBlock(std::make_unique<BlockAnvil>());
 }
 } // namespace

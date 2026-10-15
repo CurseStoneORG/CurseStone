@@ -92,6 +92,11 @@ public:
     static constexpr uint8_t PROP_PLAYER_BED_POSITION = 17;  // pos (3 x int32 LE)
     static constexpr uint8_t PLAYER_FLAG_SLEEP        = 1 << 1;  // mask inside PROP_PLAYER_FLAGS
 
+    // Falling-block render property (Infinity FallingSand.php:
+    // `const DATA_BLOCK_INFO = 20` — int `blockId | (damage << 8)`,
+    // the property the 0.15.10 client reads to draw the falling block).
+    static constexpr uint8_t PROP_BLOCK_INFO = 20;  // int
+
     struct Entry {
         uint8_t index = 0;
         uint8_t type  = TYPE_BYTE;

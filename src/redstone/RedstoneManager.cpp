@@ -571,6 +571,9 @@ void updatePistonAt(World* world, cursestone::Server* server, int32_t x, int32_t
         if (headId == block::PISTON_HEAD) {
             world->setBlock(headX, headY, headZ, 0, 0);
             broadcastBlock(server, headX, headY, headZ, 0, 0);
+            // NOTE: el chequeo de soporte de bloques con gravedad vive
+            // DENTRO de World::setBlock — vaciar el cabezal re-evalúa el
+            // bloque de encima (arena/grava/yunque caen).
         }
     }
 }

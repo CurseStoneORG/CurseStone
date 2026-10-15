@@ -278,6 +278,13 @@ void Player::handleBlockBreak(int x, int y, int z) {
     // Redstone: breaking to block can disconnect to circuit or remove to support.
     cursestone::redstone::notifyNeighbors(lvl, srv_, x, y, z);
 
+    // Falling blocks (Infinity Fallable::onUpdate BLOCK_UPDATE_NORMAL):
+    // the cell ABOVE the removed block may have just lost its support —
+    // sand/gravel/anvil there convert to a falling entity (and the
+    // check cascades upward for stacked columns). y+1 can never be out
+    // of range here (the block itself was at y < 256).
+    lvl->checkFallingSupport(x, y + 1, z);
+
     // Broadcast UpdateBlockPacket.
     auto ubp = std::make_shared<network::protocol::UpdateBlockPacket>();
     ubp->x = x;
@@ -376,6 +383,10 @@ void Player::handleBlockBreak(int x, int y, int z) {
                 // The removed partner can disconnect a redstone circuit
                 // too (its neighbours just lost a block).
                 cursestone::redstone::notifyNeighbors(lvl, srv_, pairX, pairY, pairZ);
+                // ...and its cell above may lose a falling block
+                // (partner half of a door/bed is never fallable itself,
+                // but sand stacked on TOP of it is).
+                lvl->checkFallingSupport(pairX, pairY + 1, pairZ);
             }
         }
     }
@@ -782,6 +793,9 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
                 mcp_chunk_set_block_full(tch, tlx, y, tlz, 0, 0);
                 tch->dirty = true;
                 cursestone::redstone::notifyNeighbors(lvl, srv_, x, y, z);
+                // The fire's cell above just lost its support too
+                // (falling blocks).
+                lvl->checkFallingSupport(x, y + 1, z);
 
                 // Broadcast UpdateBlockPacket to nearby players.
                 auto ubp = std::make_shared<network::protocol::UpdateBlockPacket>();
@@ -1303,6 +1317,18 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face,
         auto t = lvl->getTile(placeX, placeY, placeZ);
         if (t) sendBlockEntityData(placeX, placeY, placeZ, *t, nullptr);
     }
+
+    // Falling blocks (Infinity Fallable::place → setBlock → block
+    // update): a fallable block placed against a wall/floor side with
+    // NOTHING underneath (air or liquid) starts falling immediately.
+    // Deliberately AFTER the place broadcast above: if the block falls
+    // on this same tick, the clients first see the placed block and then
+    // this tick's air-update + falling entity, in that packet order —
+    // doing it before the broadcast would re-send the placed block AFTER
+    // the air update and leave a ghost block on screen.
+    // checkFallingSupport() no-ops for every non-fallable block, so this
+    // is free for the rest of the catalog.
+    lvl->checkFallingSupport(placeX, placeY, placeZ);
 
     if (srv_ && srv_->advancedLog()) {
         utils::MainLogger::get().info("[BLOCK] " + cfg_.username + " placed block at " +

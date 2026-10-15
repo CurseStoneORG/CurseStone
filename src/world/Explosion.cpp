@@ -64,6 +64,9 @@ int Explosion::explode() {
         if ((dx + dy + dz) & 1) continue;
         world->setBlock((int32_t)px, (int32_t)py, (int32_t)pz, 0, 0);
         ++destroyed;
+        // NOTE: the falling-block support check lives INSIDE
+        // World::setBlock — clearing a cell re-evaluates the block above
+        // it (sand/gravel/anvil there convert to falling entities).
     }
     return destroyed;
 }
