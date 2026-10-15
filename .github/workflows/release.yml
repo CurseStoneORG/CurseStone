@@ -1,13 +1,5 @@
 name: Release personalizado
 
-# Crea un release de GitHub con la versión y descripción que tú elijas
-# (ej. versión: "CurseStone-alpha-v1.0") y adjunta los binarios de
-# Linux x86_64, Android ARM64 y Windows x86_64 ya compilados.
-#
-# Cómo usarlo:
-#   GitHub → Actions → "Release personalizado" → Run workflow
-#   (o gh workflow run release.yml -f version=CurseStone-alpha-v1.0 -f body="..." )
-
 on:
   workflow_dispatch:
     inputs:
@@ -29,36 +21,38 @@ permissions:
   contents: write
 
 jobs:
-  # Reutiliza los builds de Build.yml (Linux x86_64 + Android ARM64 + Windows x86_64).
+  # Use jobs build for compile
   build:
-    name: Compilar binarios
+    name: Compile Binaries
     uses: ./.github/workflows/Build.yml
     with:
       version: ${{ inputs.version }}
       body: ${{ inputs.body }}
       prerelease: ${{ inputs.prerelease }}
 
-  # Publica el release con los binarios adjuntos.
+  # Launch the releases with zipped binaries
   publish:
-    name: Crear release ${{ inputs.version }}
+    name: Make Release ${{ inputs.version }}
     runs-on: ubuntu-22.04
     needs: [ build ]
 
     steps:
-      - name: Descargar binarios
+      - name: Download Binaries
         uses: actions/download-artifact@v4
         with:
           path: dist/
 
-      - name: Renombrar binarios con la versión
+      - name: Zip the Binaries
         run: |
           VERSION='${{ inputs.version }}'
-          mv dist/CurseStone-linux-x86_64/CurseStone        "dist/CurseStone-${VERSION}-linux-x86_64"
-          mv dist/CurseStone-android-arm64/CurseStone      "dist/CurseStone-${VERSION}-android-arm64"
-          mv dist/CurseStone-windows-x86_64/CurseStone.exe "dist/CurseStone-${VERSION}-windows-x86_64.exe"
-          ls -la dist/
+          mkdir -p out
+          chmod +x dist/CurseStone-linux-x86_64/CurseStone dist/CurseStone-android-arm64/CurseStone
+          (cd dist/CurseStone-linux-x86_64   && zip -9 "$GITHUB_WORKSPACE/out/CurseStone-${VERSION}-linux-x86_64.zip" CurseStone)
+          (cd dist/CurseStone-android-arm64  && zip -9 "$GITHUB_WORKSPACE/out/CurseStone-${VERSION}-android-arm64.zip" CurseStone)
+          (cd dist/CurseStone-windows-x86_64 && zip -9 "$GITHUB_WORKSPACE/out/CurseStone-${VERSION}-windows-x86_64.zip" CurseStone.exe)
+          ls -la out/
 
-      - name: Publicar release en GitHub
+      - name: Launch Release to GitHub
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.version }}
@@ -66,7 +60,7 @@ jobs:
           body: ${{ inputs.body }}
           prerelease: ${{ inputs.prerelease }}
           files: |
-            dist/CurseStone-${{ inputs.version }}-linux-x86_64
-            dist/CurseStone-${{ inputs.version }}-android-arm64
-            dist/CurseStone-${{ inputs.version }}-windows-x86_64.exe
+            out/CurseStone-${{ inputs.version }}-linux-x86_64.zip
+            out/CurseStone-${{ inputs.version }}-android-arm64.zip
+            out/CurseStone-${{ inputs.version }}-windows-x86_64.zip
           fail_on_unmatched_files: true
