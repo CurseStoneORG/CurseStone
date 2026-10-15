@@ -34,21 +34,21 @@
 namespace cursestone::network {
 
 class CompressBatchedTask : public scheduler::AsyncTask {
-public:
+  public:
     using CompletionCb = std::function<void(std::vector<uint8_t>)>;
 
-    CompressBatchedTask(std::vector<uint8_t> payload, int level,
-                          CompletionCb cb)
-        : payload_(std::move(payload)), level_(level), cb_(std::move(cb)) {}
+    CompressBatchedTask(std::vector<uint8_t> payload, int level, CompletionCb cb)
+        : payload_(std::move(payload)), level_(level), cb_(std::move(cb)) {
+    }
 
-    void onRun() override;          // worker thread: do zlib compression
-    void onCompletion() override;    // main thread: deliver result via cb_
+    void onRun() override;        // worker thread: do zlib compression
+    void onCompletion() override; // main thread: deliver result via cb_
 
-private:
+  private:
     std::vector<uint8_t> payload_;
-    int                   level_;
-    CompletionCb          cb_;
-    std::vector<uint8_t>  result_;   // populated by onRun()
+    int level_;
+    CompletionCb cb_;
+    std::vector<uint8_t> result_; // populated by onRun()
 };
 
 } // namespace cursestone::network

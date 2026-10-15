@@ -28,12 +28,14 @@
 #pragma once
 #include "math/Vector3.h"
 #include <cstdint>
-namespace cursestone { class Entity; }
+namespace cursestone {
+class Entity;
+}
 
 namespace cursestone::world {
 
 class MovingObjectPosition {
-public:
+  public:
     // 0 = block, 1 = entity
     int typeOfHit = 0;
 
@@ -48,18 +50,18 @@ public:
     // Only valid when typeOfHit == 1.
     cursestone::Entity* entityHit = nullptr;
 
-    static MovingObjectPosition fromBlock(int x, int y, int z, int side,
-                                            const math::Vector3& hit) {
+    static MovingObjectPosition fromBlock(int x, int y, int z, int side, const math::Vector3& hit) {
         MovingObjectPosition r;
         r.typeOfHit = 0;
-        r.blockX = x; r.blockY = y; r.blockZ = z;
+        r.blockX = x;
+        r.blockY = y;
+        r.blockZ = z;
         r.sideHit = side;
         r.hitVector = hit;
         return r;
     }
 
-    static MovingObjectPosition fromEntity(cursestone::Entity* e,
-                                            double x, double y, double z) {
+    static MovingObjectPosition fromEntity(cursestone::Entity* e, double x, double y, double z) {
         MovingObjectPosition r;
         r.typeOfHit = 1;
         r.entityHit = e;

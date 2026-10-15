@@ -31,8 +31,10 @@
 namespace cursestone::network::protocol {
 
 class AddPaintingPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return ADD_PAINTING_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return ADD_PAINTING_PACKET;
+    }
 
     void encode(std::vector<uint8_t>& out) const override;
     bool decode(const uint8_t* data, size_t len) override;

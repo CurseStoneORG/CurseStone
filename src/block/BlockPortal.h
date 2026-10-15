@@ -33,11 +33,19 @@ namespace cursestone::block {
 /// player it passes through when entering) and in the meta saves the axis of the
 /// portal: 0 to it along of X, 1 to it along of Z.
 class BlockPortal : public Block {
-public:
-    uint8_t id() const override { return NETHER_PORTAL; }
-    std::string name() const override { return "Nether Portal"; }
-    bool isSolid() const override { return false; }
-    bool isTransparent() const override { return true; }
+  public:
+    uint8_t id() const override {
+        return NETHER_PORTAL;
+    }
+    std::string name() const override {
+        return "Nether Portal";
+    }
+    bool isSolid() const override {
+        return false;
+    }
+    bool isTransparent() const override {
+        return true;
+    }
 };
 
 } // namespace cursestone::block

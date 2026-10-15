@@ -26,8 +26,12 @@
 #include "BlockIds.h"
 namespace cursestone::block {
 class BlockDoorDarkOak : public BlockDoorWood {
-public:
-    uint8_t id() const override { return WOODEN_DOOR; }
-    std::string name() const override { return "Dark Oak Door"; }
+  public:
+    uint8_t id() const override {
+        return WOODEN_DOOR;
+    }
+    std::string name() const override {
+        return "Dark Oak Door";
+    }
 };
 } // namespace

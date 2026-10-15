@@ -44,9 +44,8 @@ namespace cursestone::world::generator::structure {
 // in lockstep. Blocks falling outside the chunk or above the 128-block
 // world are skipped: every chunk re-derives the same template and writes
 // only its own share, so nothing is ever half written.
-size_t Structure::writeCells(const Structure& s, mcp_chunk_t* chunk,
-                             int chunkX, int chunkZ, int wx, int wy, int wz,
-                             int rot, SpecResolver resolve, void* user) {
+size_t Structure::writeCells(const Structure& s, mcp_chunk_t* chunk, int chunkX, int chunkZ, int wx,
+                             int wy, int wz, int rot, SpecResolver resolve, void* user) {
     const int bx = chunkX * 16;
     const int bz = chunkZ * 16;
     const int sx = s.rotatedSizeX(rot);
@@ -55,15 +54,18 @@ size_t Structure::writeCells(const Structure& s, mcp_chunk_t* chunk,
 
     for (int ly = 0; ly < s.sizeY(); ++ly) {
         const int y = wy + ly;
-        if (y < 0 || y > 127) continue;
+        if (y < 0 || y > 127)
+            continue;
 
         for (int lz = 0; lz < szz; ++lz) {
             const int cz = wz + lz - bz;
-            if (cz < 0 || cz > 15) continue;
+            if (cz < 0 || cz > 15)
+                continue;
 
             for (int lx = 0; lx < sx; ++lx) {
                 const int cx = wx + lx - bx;
-                if (cx < 0 || cx > 15) continue;
+                if (cx < 0 || cx > 15)
+                    continue;
 
                 int ox, oz;
                 s.sourceCell(lx, lz, rot, ox, oz);
@@ -80,24 +82,23 @@ size_t Structure::writeCells(const Structure& s, mcp_chunk_t* chunk,
     return written;
 }
 
-size_t Structure::placeRotated(mcp_chunk_t* chunk, int chunkX, int chunkZ,
-                               int wx, int wy, int wz, int rot,
-                               SpecResolver resolve, void* user) const {
+size_t Structure::placeRotated(mcp_chunk_t* chunk, int chunkX, int chunkZ, int wx, int wy, int wz,
+                               int rot, SpecResolver resolve, void* user) const {
     if (specs_ != nullptr) {
         // Spec palette: a resolver is required to turn specs into legacy
         // blocks; without one there is nothing meaningful to write.
-        if (resolve == nullptr) return 0;
-        return writeCells(*this, chunk, chunkX, chunkZ, wx, wy, wz,
-                          rot, resolve, user);
+        if (resolve == nullptr)
+            return 0;
+        return writeCells(*this, chunk, chunkX, chunkZ, wx, wy, wz, rot, resolve, user);
     }
     if (palette_ != nullptr) {
         // Direct palette (desert temple): blocks are already legacy
         // pairs, placement is verbatim. Rotation of a finished legacy
         // palette would need per-block data-bit knowledge that lives
         // with the template, not here — and no caller rotates those.
-        if (rot != ROT_0) return 0;
-        return writeCells(*this, chunk, chunkX, chunkZ, wx, wy, wz,
-                          ROT_0, nullptr, nullptr);
+        if (rot != ROT_0)
+            return 0;
+        return writeCells(*this, chunk, chunkX, chunkZ, wx, wy, wz, ROT_0, nullptr, nullptr);
     }
     return 0;
 }

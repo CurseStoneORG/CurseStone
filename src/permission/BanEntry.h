@@ -27,14 +27,22 @@
 #include <cstdint>
 namespace cursestone::permission {
 class BanEntry {
-public:
+  public:
     BanEntry(std::string target, std::string reason = "Banned", int64_t expires = 0)
-        : target_(std::move(target)), reason_(std::move(reason)), expires_(expires) {}
-    const std::string& target() const { return target_; }
-    const std::string& reason() const { return reason_; }
-    int64_t expires() const { return expires_; }
+        : target_(std::move(target)), reason_(std::move(reason)), expires_(expires) {
+    }
+    const std::string& target() const {
+        return target_;
+    }
+    const std::string& reason() const {
+        return reason_;
+    }
+    int64_t expires() const {
+        return expires_;
+    }
     bool isExpired() const;
-private:
+
+  private:
     std::string target_;
     std::string reason_;
     int64_t expires_;

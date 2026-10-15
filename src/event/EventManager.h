@@ -73,7 +73,7 @@
 namespace cursestone::event {
 
 class EventManager {
-public:
+  public:
     static EventManager& get();
 
     // Registra `handler` para EventT en la prioridad dada. `owner` es
@@ -82,15 +82,14 @@ public:
     // adelante — nunca se desreferencia. Devuelve un id de registro
     // utilizable con unlisten<EventT>().
     template <typename EventT>
-    uint64_t listen(void* owner,
-                     std::function<void(EventT&)> handler,
-                     EventPriority priority = EventPriority::NORMAL,
-                     bool ignoreCancelled = false) {
+    uint64_t listen(void* owner, std::function<void(EventT&)> handler,
+                    EventPriority priority = EventPriority::NORMAL, bool ignoreCancelled = false) {
         static_assert(std::is_base_of<Event, EventT>::value,
                       "EventManager::listen<T>() requiere que T herede de event::Event");
         HandlerList& list = listFor(std::type_index(typeid(EventT)));
-        return list.registerListener(owner, priority, ignoreCancelled,
-            [handler](Event& e) { handler(static_cast<EventT&>(e)); });
+        return list.registerListener(owner, priority, ignoreCancelled, [handler](Event& e) {
+            handler(static_cast<EventT&>(e));
+        });
     }
 
     // Quita un único registro de EventT por id.
@@ -133,7 +132,7 @@ public:
         return list ? list->size() : 0;
     }
 
-private:
+  private:
     HandlerList& listFor(const std::type_index& idx);
     HandlerList* findList(const std::type_index& idx) const;
 

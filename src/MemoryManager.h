@@ -43,15 +43,23 @@
 #include <atomic>
 namespace cursestone {
 class MemoryManager {
-public:
+  public:
     static MemoryManager& get();
 
     // Config (from cursestone.yml).
-    void setLimitMB(int mb) { limit_mb_ = mb; }
-    int limitMB() const { return limit_mb_; }
+    void setLimitMB(int mb) {
+        limit_mb_ = mb;
+    }
+    int limitMB() const {
+        return limit_mb_;
+    }
     // Interval between global GC passes, in ticks (20 TPS => 10s).
-    void setGcIntervalTicks(uint64_t t) { gc_interval_ticks_ = t; }
-    uint64_t gcIntervalTicks() const { return gc_interval_ticks_; }
+    void setGcIntervalTicks(uint64_t t) {
+        gc_interval_ticks_ = t;
+    }
+    uint64_t gcIntervalTicks() const {
+        return gc_interval_ticks_;
+    }
 
     /**
      * @brief Reads the process resident set size (RSS).
@@ -93,17 +101,23 @@ public:
      *
      * Name kept for compatibility with existing call sites.
      */
-    void runGc() { collect(true); }
+    void runGc() {
+        collect(true);
+    }
 
     // Diagnostics.
-    uint64_t collectCount() const { return collects_.load(std::memory_order_relaxed); }
-    uint64_t lastCollectTick() const { return last_collect_tick_.load(std::memory_order_relaxed); }
+    uint64_t collectCount() const {
+        return collects_.load(std::memory_order_relaxed);
+    }
+    uint64_t lastCollectTick() const {
+        return last_collect_tick_.load(std::memory_order_relaxed);
+    }
 
-private:
+  private:
     MemoryManager() = default;
 
     int limit_mb_ = 512;
-    uint64_t gc_interval_ticks_ = 200;  // 10s at 20 TPS
+    uint64_t gc_interval_ticks_ = 200; // 10s at 20 TPS
     std::atomic<uint64_t> last_collect_tick_{0};
     std::atomic<uint64_t> collects_{0};
 };

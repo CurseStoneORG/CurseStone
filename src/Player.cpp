@@ -52,7 +52,7 @@ namespace cursestone {
 Player::Player(Server* srv, PlayerConfig cfg)
     : entity::Human(cfg.runtime_eid, nullptr), srv_(srv), cfg_(std::move(cfg)) {
     inv_ = std::make_shared<inventory::PlayerInventory>();
-    inv_->setOwner(this);  // so onSlotChange can send packets back to us
+    inv_->setOwner(this); // so onSlotChange can send packets back to us
     connected_.store(true, std::memory_order_relaxed);
     setMaxHealth(20);
     setHealth(20);
@@ -87,9 +87,9 @@ Player::~Player() {
                 mcp_compound_tag_set_double(named_tag_.get(), "PosX", pos_.x);
                 mcp_compound_tag_set_double(named_tag_.get(), "PosY", pos_.y);
                 mcp_compound_tag_set_double(named_tag_.get(), "PosZ", pos_.z);
-                mcp_compound_tag_set_float (named_tag_.get(), "Yaw",   yaw_);
-                mcp_compound_tag_set_float (named_tag_.get(), "Pitch", pitch_);
-                mcp_compound_tag_set_int   (named_tag_.get(), "playerGameType", cfg_.gamemode);
+                mcp_compound_tag_set_float(named_tag_.get(), "Yaw", yaw_);
+                mcp_compound_tag_set_float(named_tag_.get(), "Pitch", pitch_);
+                mcp_compound_tag_set_int(named_tag_.get(), "playerGameType", cfg_.gamemode);
                 srv_->saveOfflinePlayerData(cfg_.username, named_tag_);
             }
         } catch (...) {}
@@ -103,14 +103,17 @@ bool Player::isOp() const {
     return srv_ && srv_->isOp(cfg_.username);
 }
 void Player::setOp(bool v) {
-    if (srv_) srv_->setOp(cfg_.username, v);
+    if (srv_)
+        srv_->setOp(cfg_.username, v);
 }
 bool Player::isBanned() const {
-    if (!srv_) return false;
+    if (!srv_)
+        return false;
     return srv_->getNameBans().isBanned(cfg_.username);
 }
 void Player::setBanned(bool v) {
-    if (!srv_ || cfg_.username.empty()) return;
+    if (!srv_ || cfg_.username.empty())
+        return;
     if (v) {
         srv_->getNameBans().add(permission::BanEntry(cfg_.username, "Banned"));
     } else {
@@ -118,11 +121,13 @@ void Player::setBanned(bool v) {
     }
 }
 bool Player::isWhitelisted() const {
-    if (!srv_ || !srv_->whitelistEnabled()) return true;
+    if (!srv_ || !srv_->whitelistEnabled())
+        return true;
     // not whitelist file yet: treat all as whitelisted.
     return true;
 }
-void Player::setWhitelisted(bool /*v*/) {}
+void Player::setWhitelisted(bool /*v*/) {
+}
 
 // ============================================================
 // Phase 9 — close (clean shutdown; idempotent + thread-safe)
@@ -172,8 +177,8 @@ void Player::close(const std::string& reason) {
             return;
         }
 
-        utils::MainLogger::get().info("Closing player " + cfg_.username +
-            " (" + cfg_.ip + ":" + std::to_string(cfg_.port) + "): " + reason);
+        utils::MainLogger::get().info("Closing player " + cfg_.username + " (" + cfg_.ip + ":" +
+                                      std::to_string(cfg_.port) + "): " + reason);
 
         // Release any chest this player still had open. connected_ is
         // already false at this point, so closeOpenChest()'s
@@ -194,13 +199,17 @@ void Player::close(const std::string& reason) {
         // Workbench: capture disconnect state for diagnostics.
         {
             uint64_t now_ms = (uint64_t)(std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count());
+                                             std::chrono::system_clock::now().time_since_epoch())
+                                             .count());
             uint64_t session_ms = now_ms - (start_time_ms_ > 0 ? start_time_ms_ : now_ms);
             uint64_t last_act = now_ms - (last_activity_ms_ > 0 ? last_activity_ms_ : now_ms);
             size_t chunk_q = 0;
-            { std::lock_guard<std::mutex> lk(queue_mtx_); chunk_q = chunk_queue_.size(); }
-            WorkbenchManager::get().onDisconnect(cfg_.username, reason,
-                session_ms, last_act, chunk_q);
+            {
+                std::lock_guard<std::mutex> lk(queue_mtx_);
+                chunk_q = chunk_queue_.size();
+            }
+            WorkbenchManager::get().onDisconnect(cfg_.username, reason, session_ms, last_act,
+                                                 chunk_q);
         }
 
         // 1. Save NBT + inventory to disk (if we ever loaded NBT).
@@ -230,11 +239,16 @@ void Player::close(const std::string& reason) {
                 auto pk = std::make_shared<network::protocol::RemoveEntityPacket>();
                 pk->eid = runtimeId();
                 for (auto& other : snapshot) {
-                    if (!other) continue;
-                    if (other.get() == this) continue;
-                    if (other->isPendingRemoval()) continue;
-                    if (!other->spawned()) continue;
-                    if (other->getWorld() != getWorld()) continue;   // same world
+                    if (!other)
+                        continue;
+                    if (other.get() == this)
+                        continue;
+                    if (other->isPendingRemoval())
+                        continue;
+                    if (!other->spawned())
+                        continue;
+                    if (other->getWorld() != getWorld())
+                        continue; // same world
                     try {
                         other->sendPacket(pk);
                     } catch (...) {}
@@ -321,11 +335,14 @@ void Player::teleport(double x, double y, double z) {
     // of the code depende of that "always is mueva".
     auto ev = event::EventManager::get().fire<event::player::PlayerTeleportEvent>(
         this, pos_.x, pos_.y, pos_.z, x, y, z);
-    if (ev.isCancelled()) return;
+    if (ev.isCancelled())
+        return;
 
     int32_t old_cx = (int)pos_.x >> 4;
     int32_t old_cz = (int)pos_.z >> 4;
-    pos_.x = ev.toX; pos_.y = ev.toY; pos_.z = ev.toZ;
+    pos_.x = ev.toX;
+    pos_.y = ev.toY;
+    pos_.z = ev.toZ;
     int32_t new_cx = (int)pos_.x >> 4;
     int32_t new_cz = (int)pos_.z >> 4;
 
@@ -360,10 +377,12 @@ void Player::teleport(double x, double y, double z) {
     if (spawned_.load(std::memory_order_relaxed)) {
         auto pk = std::make_shared<network::protocol::MovePlayerPacket>();
         pk->eid = runtimeId();
-        pk->x   = (float)pos_.x;
-        pk->y   = (float)(pos_.y + kEyeHeight);   // wire and is the eye
-        pk->z   = (float)pos_.z;
-        pk->yaw = yaw_; pk->bodyYaw = yaw_; pk->pitch = pitch_;
+        pk->x = (float)pos_.x;
+        pk->y = (float)(pos_.y + kEyeHeight); // wire and is the eye
+        pk->z = (float)pos_.z;
+        pk->yaw = yaw_;
+        pk->bodyYaw = yaw_;
+        pk->pitch = pitch_;
         pk->mode = network::protocol::MovePlayerPacket::MODE_RESET;
         pk->onGround = onGround();
         sendPacket(pk);
@@ -372,11 +391,12 @@ void Player::teleport(double x, double y, double z) {
 void Player::setGamemode(int gm) {
     int new_gm = gm & 0x03;
     bool was_creative = (cfg_.gamemode & 1) != 0;
-    bool is_creative  = (new_gm        & 1) != 0;
+    bool is_creative = (new_gm & 1) != 0;
     cfg_.gamemode = new_gm;
     // A mode switch cancels any fall in progress: distance accumulated
     // before the switch must never land as damage in the other mode.
-    if (was_creative != is_creative) fall_distance_ = 0.0f;
+    if (was_creative != is_creative)
+        fall_distance_ = 0.0f;
     // Re-send creative inventory when creative state changes (PMMP
     // player.php:1461 sends it on every gamemode change).
     if (was_creative != is_creative || new_gm == 3) {
@@ -422,30 +442,32 @@ void Player::setGamemode(int gm) {
 // Nukkit's player.loadNBT() exactly so worlds are interchangeable.
 // ============================================================
 void Player::saveData() {
-    if (!srv_ || cfg_.username.empty()) return;
+    if (!srv_ || cfg_.username.empty())
+        return;
     if (!named_tag_) {
         // Construct to fresh NBT root if none exists.
-        named_tag_ = std::shared_ptr<::mcp_tag>(
-            mcp_compound_tag_new(),
-            [](::mcp_tag* t) { if (t) mcp_tag_destroy(t); });
+        named_tag_ = std::shared_ptr<::mcp_tag>(mcp_compound_tag_new(), [](::mcp_tag* t) {
+            if (t)
+                mcp_tag_destroy(t);
+        });
     }
     ::mcp_tag* root = named_tag_.get();
-    if (!root) return;
+    if (!root)
+        return;
 
     // --- Position / rotation / stats ---
-    mcp_compound_tag_set_double(root, "PosX",  pos_.x);
-    mcp_compound_tag_set_double(root, "PosY",  pos_.y);
-    mcp_compound_tag_set_double(root, "PosZ",  pos_.z);
-    mcp_compound_tag_set_float (root, "Yaw",    yaw_);
-    mcp_compound_tag_set_float (root, "Pitch",  pitch_);
-    mcp_compound_tag_set_int   (root, "playerGameType", cfg_.gamemode);
-    mcp_compound_tag_set_short (root, "Health",  (int16_t)health());
-    mcp_compound_tag_set_short (root, "MaxHealth", (int16_t)maxHealth());
-    mcp_compound_tag_set_short (root, "Hunger",  (int16_t)foodLevel());
-    mcp_compound_tag_set_short (root, "Air",     300);
-    mcp_compound_tag_set_long  (root, "RuntimeId", runtimeId());
-    mcp_compound_tag_set_long  (root, "lastPlayed",
-        (int64_t)mcp_utils_time_ms());
+    mcp_compound_tag_set_double(root, "PosX", pos_.x);
+    mcp_compound_tag_set_double(root, "PosY", pos_.y);
+    mcp_compound_tag_set_double(root, "PosZ", pos_.z);
+    mcp_compound_tag_set_float(root, "Yaw", yaw_);
+    mcp_compound_tag_set_float(root, "Pitch", pitch_);
+    mcp_compound_tag_set_int(root, "playerGameType", cfg_.gamemode);
+    mcp_compound_tag_set_short(root, "Health", (int16_t)health());
+    mcp_compound_tag_set_short(root, "MaxHealth", (int16_t)maxHealth());
+    mcp_compound_tag_set_short(root, "Hunger", (int16_t)foodLevel());
+    mcp_compound_tag_set_short(root, "Air", 300);
+    mcp_compound_tag_set_long(root, "RuntimeId", runtimeId());
+    mcp_compound_tag_set_long(root, "lastPlayed", (int64_t)mcp_utils_time_ms());
 
     // --- Personal spawn point (Infinity Human::saveNBT: SpawnX/Y/Z) ---
     // Only meaningful once a bed was used; read back on login by
@@ -471,10 +493,11 @@ void Player::saveData() {
     if (inv_list && inv_) {
         for (int slot = 0; slot < inventory::PLAYER_INV_TOTAL; ++slot) {
             auto it = inv_->getItem(slot);
-            if (it.isEmpty()) continue;
+            if (it.isEmpty())
+                continue;
             int nbt_slot = slot;
             if (slot >= inventory::PlayerInventory::ARMOR_OFFSET &&
-                slot <  inventory::PlayerInventory::ARMOR_OFFSET + 4) {
+                slot < inventory::PlayerInventory::ARMOR_OFFSET + 4) {
                 nbt_slot = 100 + (slot - inventory::PlayerInventory::ARMOR_OFFSET);
             }
             mcp_tag_t* entry = mcp_compound_tag_new_named("");
@@ -487,8 +510,7 @@ void Player::saveData() {
             item::itemStackToNbt(it, entry);
             mcp_list_tag_append(inv_list, entry);
         }
-        mcp_compound_tag_set_int(root, "SelectedItemSlot",
-            inv_->heldSlot());
+        mcp_compound_tag_set_int(root, "SelectedItemSlot", inv_->heldSlot());
     }
     mcp_compound_tag_set(root, "Inventory", inv_list);
 
@@ -506,7 +528,8 @@ math::Vector3 Player::getSpawn() const {
     if (has_spawn_override_) {
         return math::Vector3{(double)spawn_x_, (double)spawn_y_, (double)spawn_z_};
     }
-    if (getWorld()) return getWorld()->spawn();
+    if (getWorld())
+        return getWorld()->spawn();
     return math::Vector3{0, 64, 0};
 }
 
@@ -528,7 +551,8 @@ math::Vector3 Player::getSpawn() const {
 math::Vector3 Player::getServerSpawnSafe() const {
     math::Vector3 sp = getSpawn();
     auto* lvl = getWorld();
-    if (!lvl) return sp;
+    if (!lvl)
+        return sp;
     int32_t bx = (int32_t)std::floor(sp.x);
     int32_t bz = (int32_t)std::floor(sp.z);
     auto& chunks = lvl->chunks();
@@ -540,19 +564,21 @@ math::Vector3 Player::getServerSpawnSafe() const {
     if (c) {
         for (int y = 127; y > 0; --y) {
             uint8_t id = mcp_chunk_get_block_id(c, bx & 15, y, bz & 15);
-            if (id == 0) continue;                                   // air
-            if (id == block::LEAVES || id == block::LEAVES_2) continue; // canopy
+            if (id == 0)
+                continue; // air
+            if (id == block::LEAVES || id == block::LEAVES_2)
+                continue; // canopy
             // First non-air, non-leaves block: stand on top of it.
             uint8_t above = mcp_chunk_get_block_id(c, bx & 15, y + 1, bz & 15);
-            if (above == 0 || above == block::WATER ||
-                above == block::FLOWING_WATER) {
+            if (above == 0 || above == block::WATER || above == block::FLOWING_WATER) {
                 sp.y = (double)y + 1.0;
                 return sp;
             }
             // Solid-with-solid-above (tree/overhang): keep scanning down.
         }
     }
-    if (sp.y < 1.0) sp.y = 64.0; // vanilla fallback
+    if (sp.y < 1.0)
+        sp.y = 64.0; // vanilla fallback
     return sp;
 }
 

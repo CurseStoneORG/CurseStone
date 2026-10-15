@@ -32,7 +32,7 @@
 #include <vector>
 namespace cursestone::permission {
 class PermissibleBase : public Permissible {
-public:
+  public:
     bool hasPermission(const std::string& name) const override;
     void recalculatePermissions() override;
     void setPermission(const std::string& name, bool value);
@@ -42,7 +42,8 @@ public:
         recalculatePermissions();
         return a.get();
     }
-private:
+
+  private:
     std::unordered_map<std::string, bool> perms_;
     std::vector<std::shared_ptr<PermissionAttachment>> attachments_;
 };

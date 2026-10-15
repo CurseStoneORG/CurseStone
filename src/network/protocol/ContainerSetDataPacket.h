@@ -43,8 +43,10 @@
 namespace cursestone::network::protocol {
 
 class ContainerSetDataPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return CONTAINER_SET_DATA_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return CONTAINER_SET_DATA_PACKET;
+    }
 
     // Properties (vanilla): 0 = progreso de fundición (0..200),
     // 1 = remaining fuel burn (0..200). El cliente escala ambos a su

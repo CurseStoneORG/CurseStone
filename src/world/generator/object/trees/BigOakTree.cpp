@@ -27,22 +27,26 @@
 namespace cursestone::world::generator::object::trees {
 
 void BigOakTree::init(MersenneRandom& rng) {
-    height_ = 5 + (int)rng.nextInt(12);            // 5..16 (reference BigOakTree)
+    height_ = 5 + (int)rng.nextInt(12); // 5..16 (reference BigOakTree)
     trunkHeight_ = (int)(height_ * 0.618);
-    if (trunkHeight_ >= height_) trunkHeight_ = height_ - 1;
-    if (trunkHeight_ < 2) trunkHeight_ = 2;
-    logId_ = 17;  logData_ = 0;   // LOG, oak
-    leafId_ = 18; leafData_ = 0;  // LEAVES, oak
+    if (trunkHeight_ >= height_)
+        trunkHeight_ = height_ - 1;
+    if (trunkHeight_ < 2)
+        trunkHeight_ = 2;
+    logId_ = 17;
+    logData_ = 0; // LOG, oak
+    leafId_ = 18;
+    leafData_ = 0; // LEAVES, oak
 }
 
-void BigOakTree::placeTrunk(mcp_chunk_t* c, int sourceX, int sourceY,
-                            int sourceZ, MersenneRandom&) {
+void BigOakTree::placeTrunk(mcp_chunk_t* c, int sourceX, int sourceY, int sourceZ,
+                            MersenneRandom&) {
     for (int i = 0; i < trunkHeight_; ++i)
         setLog(c, sourceX, sourceY + i, sourceZ, logId_, logData_);
 }
 
-void BigOakTree::placeCanopy(mcp_chunk_t* c, int sourceX, int sourceY,
-                             int sourceZ, MersenneRandom& rng) {
+void BigOakTree::placeCanopy(mcp_chunk_t* c, int sourceX, int sourceY, int sourceZ,
+                             MersenneRandom& rng) {
     const int top = sourceY + height_;
 
     // Main canopy blob (rounded, 3 layers + a small cap).
@@ -62,13 +66,16 @@ void BigOakTree::placeCanopy(mcp_chunk_t* c, int sourceX, int sourceY,
     for (int b = 0; b < branches; ++b) {
         int dirX = (int)rng.nextInt(3) - 1;
         int dirZ = (int)rng.nextInt(3) - 1;
-        if (dirX == 0 && dirZ == 0) dirX = 1;
+        if (dirX == 0 && dirZ == 0)
+            dirX = 1;
 
         int startY = sourceY + trunkHeight_ - 1 + (int)rng.nextInt(2);
         int len = 2 + (int)rng.nextInt(3);
         int bx = sourceX, bz = sourceZ, by = startY;
         for (int k = 0; k < len; ++k) {
-            bx += dirX; bz += dirZ; by += 1;
+            bx += dirX;
+            bz += dirZ;
+            by += 1;
             setLog(c, bx, by, bz, logId_, logData_);
         }
 

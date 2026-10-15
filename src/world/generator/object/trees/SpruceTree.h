@@ -29,15 +29,15 @@
 namespace cursestone::world::generator::object::trees {
 
 class SpruceTree : public GenericTree {
-protected:
+  protected:
     void init(MersenneRandom& rng) override;
-    bool canPlaceOn(uint8_t soil) const override;   // spruce only on grass
-    void placeCanopy(mcp_chunk_t* c, int sourceX, int sourceY,
-                     int sourceZ, MersenneRandom& rng) override;
-    void placeTrunk(mcp_chunk_t* c, int sourceX, int sourceY,
-                    int sourceZ, MersenneRandom& rng) override;
+    bool canPlaceOn(uint8_t soil) const override; // spruce only on grass
+    void placeCanopy(mcp_chunk_t* c, int sourceX, int sourceY, int sourceZ,
+                     MersenneRandom& rng) override;
+    void placeTrunk(mcp_chunk_t* c, int sourceX, int sourceY, int sourceZ,
+                    MersenneRandom& rng) override;
 
-private:
+  private:
     int leavesHeight_ = 1;
     int maxRadius_ = 2;
 };

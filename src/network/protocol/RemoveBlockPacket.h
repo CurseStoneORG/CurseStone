@@ -40,8 +40,10 @@
 namespace cursestone::network::protocol {
 
 class RemoveBlockPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return REMOVE_BLOCK_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return REMOVE_BLOCK_PACKET;
+    }
 
     int64_t eid = 0;
     int32_t x = 0, z = 0;

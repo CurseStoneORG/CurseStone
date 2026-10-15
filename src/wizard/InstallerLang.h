@@ -28,11 +28,12 @@
 #include <unordered_map>
 namespace cursestone::wizard {
 class InstallerLang {
-public:
+  public:
     static InstallerLang& get();
     bool load(const std::string& lang_code);
     const std::string& get(const std::string& key) const;
-private:
+
+  private:
     std::unordered_map<std::string, std::string> strings_;
     std::string missing_ = "[?]";
 };

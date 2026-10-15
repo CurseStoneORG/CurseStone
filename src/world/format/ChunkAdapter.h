@@ -44,7 +44,7 @@
 namespace cursestone::world::format {
 
 class ChunkAdapter : public FullChunk {
-public:
+  public:
     // Construct an empty chunk at (x, z). Allocates the underlying
     // `mcp_chunk_t` via mcp_chunk_new.
     explicit ChunkAdapter(int32_t x, int32_t z);
@@ -70,42 +70,48 @@ public:
 
     // Borrow-only access to the underlying C struct. The pointer
     // remains owned by the adapter.
-    mcp_chunk_t*       chunk()       { return chunk_; }
-    const mcp_chunk_t* chunk() const { return chunk_; }
+    mcp_chunk_t* chunk() {
+        return chunk_;
+    }
+    const mcp_chunk_t* chunk() const {
+        return chunk_;
+    }
 
     // Release ownership. Caller must mcp_chunk_destroy() the result.
     mcp_chunk_t* releaseChunk();
 
     // ----- FullChunk interface (see FullChunk.h for docs).
-    int32_t      getX() const override;
-    int32_t      getZ() const override;
-    const char*  getProviderName() const override { return "adapter"; }
+    int32_t getX() const override;
+    int32_t getZ() const override;
+    const char* getProviderName() const override {
+        return "adapter";
+    }
 
-    uint8_t  getBlockId  (int x, int y, int z) const override;
-    uint8_t  getBlockData(int x, int y, int z) const override;
-    void     setBlock(int x, int y, int z, uint8_t id, uint8_t data) override;
+    uint8_t getBlockId(int x, int y, int z) const override;
+    uint8_t getBlockData(int x, int y, int z) const override;
+    void setBlock(int x, int y, int z, uint8_t id, uint8_t data) override;
 
-    uint8_t  getSkyLight  (int x, int y, int z) const override;
-    void     setSkyLight  (int x, int y, int z, uint8_t v) override;
-    uint8_t  getBlockLight(int x, int y, int z) const override;
-    void     setBlockLight(int x, int y, int z, uint8_t v) override;
+    uint8_t getSkyLight(int x, int y, int z) const override;
+    void setSkyLight(int x, int y, int z, uint8_t v) override;
+    uint8_t getBlockLight(int x, int y, int z) const override;
+    void setBlockLight(int x, int y, int z, uint8_t v) override;
 
-    uint8_t  getBiome(int x, int z) const override;
-    void     setBiome(int x, int z, uint8_t b) override;
+    uint8_t getBiome(int x, int z) const override;
+    void setBiome(int x, int z, uint8_t b) override;
 
-    int32_t  getHeightMap(int x, int z) const override;
-    void     setHeightMap(int x, int z, int32_t h) override;
+    int32_t getHeightMap(int x, int z) const override;
+    void setHeightMap(int x, int z, int32_t h) override;
 
-    bool     isPopulated() const override;
-    bool     isGenerated()  const override;
-    bool     isDirty()     const override;
-    void     setDirty(bool dirty) override;
+    bool isPopulated() const override;
+    bool isGenerated() const override;
+    bool isDirty() const override;
+    void setDirty(bool dirty) override;
 
     std::vector<uint8_t> networkSerialize() const override;
 
-private:
+  private:
     mcp_chunk_t* chunk_ = nullptr;
-    bool          owns_chunk_ = true;  // false when created via borrow()
+    bool owns_chunk_ = true; // false when created via borrow()
 };
 
 } // namespace cursestone::world::format

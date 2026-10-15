@@ -55,22 +55,30 @@ namespace {
 // uuid string -> the 16 raw bytes PlayerListPacket::putUUID writes.
 void parseUuid(const std::string& s, std::array<uint8_t, 16>& out) {
     out.fill(0);
-    if (s.empty()) return;
+    if (s.empty())
+        return;
     size_t bi = 0;
     auto hexVal = [](char c) -> int {
-        if (c >= '0' && c <= '9') return c - '0';
-        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        if (c >= '0' && c <= '9')
+            return c - '0';
+        if (c >= 'a' && c <= 'f')
+            return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F')
+            return c - 'A' + 10;
         return -1;
     };
     for (size_t i = 0; i + 1 < s.size() && bi < 16; ++i) {
         int hi = hexVal(s[i]);
-        if (hi < 0) continue;   // dashes (and anything non-hex) are skipped
+        if (hi < 0)
+            continue; // dashes (and anything non-hex) are skipped
         size_t j = i + 1;
-        while (j < s.size() && s[j] == '-') ++j;
-        if (j >= s.size()) break;
+        while (j < s.size() && s[j] == '-')
+            ++j;
+        if (j >= s.size())
+            break;
         int lo = hexVal(s[j]);
-        if (lo < 0) continue;
+        if (lo < 0)
+            continue;
         out[bi++] = (uint8_t)((hi << 4) | lo);
         i = j;
     }
@@ -80,8 +88,10 @@ void parseUuid(const std::string& s, std::array<uint8_t, 16>& out) {
 
 void Player::setNameTag(const std::string& tag) {
     nametag_ = tag;
-    if (!spawned()) return;   // doFirstSpawn announces the tag on its own
-    if (!srv_) return;
+    if (!spawned())
+        return; // doFirstSpawn announces the tag on its own
+    if (!srv_)
+        return;
 
     // Server::updatePlayerListData() / removePlayerListData() (Genisys
     // Server.php): one REMOVE + one ADD broadcast over the global player
@@ -99,15 +109,16 @@ void Player::setNameTag(const std::string& tag) {
     auto add = std::make_shared<network::protocol::PlayerListPacket>();
     add->type = network::protocol::PlayerListPacket::TYPE_ADD;
     network::protocol::PlayerListPacket::Entry e;
-    e.uuid     = uuid;
-    e.eid      = runtimeId();
-    e.name     = getNameTag();
-    e.skinId   = skinId();
+    e.uuid = uuid;
+    e.eid = runtimeId();
+    e.name = getNameTag();
+    e.skinId = skinId();
     e.skinData = skinData();
     add->entries.push_back(std::move(e));
 
     for (auto& other : srv_->playersSnapshot()) {
-        if (!other || !other->spawned()) continue;
+        if (!other || !other->spawned())
+            continue;
         other->sendPacket(rm);
         other->sendPacket(add);
     }

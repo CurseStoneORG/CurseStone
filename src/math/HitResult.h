@@ -49,33 +49,35 @@ extern "C" {
 #endif
 
 typedef enum mcp_hit_type {
-    MCP_HIT_NONE   = 0,   // the client's NO_HIT
-    MCP_HIT_TILE   = 1,   // hit a block
-    MCP_HIT_ENTITY = 2    // hit an entity (not produced by the AABB clip)
+    MCP_HIT_NONE = 0,  // the client's NO_HIT
+    MCP_HIT_TILE = 1,  // hit a block
+    MCP_HIT_ENTITY = 2 // hit an entity (not produced by the AABB clip)
 } mcp_hit_type_t;
 
 enum {
-    MCP_FACE_DOWN  = 0,
-    MCP_FACE_UP    = 1,
+    MCP_FACE_DOWN = 0,
+    MCP_FACE_UP = 1,
     MCP_FACE_NORTH = 2,
     MCP_FACE_SOUTH = 3,
-    MCP_FACE_WEST  = 4,
-    MCP_FACE_EAST  = 5
+    MCP_FACE_WEST = 4,
+    MCP_FACE_EAST = 5
 };
 
 typedef struct mcp_hit_result {
     mcp_hit_type_t type;
-    int32_t x, y, z;      // block coords (MCP_HIT_TILE; 0 until filled in)
-    int32_t face;         // MCP_FACE_* , or -1 when type == MCP_HIT_NONE
-    mcp_vector3_t pos;    // exact intersection point, world space
-    void*   entity;       // MCP_HIT_ENTITY only; borrowed, never owned
-    bool    indirect_hit; // the client's HitResult::indirectHit
+    int32_t x, y, z;   // block coords (MCP_HIT_TILE; 0 until filled in)
+    int32_t face;      // MCP_FACE_* , or -1 when type == MCP_HIT_NONE
+    mcp_vector3_t pos; // exact intersection point, world space
+    void* entity;      // MCP_HIT_ENTITY only; borrowed, never owned
+    bool indirect_hit; // the client's HitResult::indirectHit
 } mcp_hit_result_t;
 
 static inline mcp_hit_result_t mcp_hit_none(void) {
     mcp_hit_result_t h;
     h.type = MCP_HIT_NONE;
-    h.x = 0; h.y = 0; h.z = 0;
+    h.x = 0;
+    h.y = 0;
+    h.z = 0;
     h.face = -1;
     h.pos = mcp_v3(0.0, 0.0, 0.0);
     h.entity = (void*)0;

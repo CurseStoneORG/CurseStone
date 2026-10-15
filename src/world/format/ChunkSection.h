@@ -44,12 +44,12 @@ extern "C" {
 // `mcp_chunk_section_t` is the public alias; users go through
 // the accessors below and never touch the fields directly.
 typedef struct mcp_chunk_section {
-    uint8_t  y_index;            // 0..15 — which sub-Y this is.
-    uint8_t* blocks;             // 4096 bytes (XZY order)
-    uint8_t* data;               // 2048 bytes  (4-bit nibbles)
-    uint8_t* sky_light;          // 2048 bytes  (4-bit nibbles)
-    uint8_t* block_light;        // 2048 bytes  (4-bit nibbles)
-    bool     non_air_top;        // true if upper half has any non-air block
+    uint8_t y_index;      // 0..15 — which sub-Y this is.
+    uint8_t* blocks;      // 4096 bytes (XZY order)
+    uint8_t* data;        // 2048 bytes  (4-bit nibbles)
+    uint8_t* sky_light;   // 2048 bytes  (4-bit nibbles)
+    uint8_t* block_light; // 2048 bytes  (4-bit nibbles)
+    bool non_air_top;     // true if upper half has any non-air block
 } mcp_chunk_section_t;
 
 // XZY coordinate packing: idx = (x&15) | ((z&15)<<4) | ((y&15)<<8).
@@ -62,18 +62,17 @@ static inline uint32_t mcp_section_nibble_index(int x, int y, int z) {
     return (uint32_t)((x & 15) | ((z & 15) << 4) | ((y & 15) << 7));
 }
 
-static inline uint8_t mcp_section_get_nibble(const uint8_t* arr,
-                                                int x, int y, int z) {
-    if (!arr) return 0;
+static inline uint8_t mcp_section_get_nibble(const uint8_t* arr, int x, int y, int z) {
+    if (!arr)
+        return 0;
     uint32_t i = mcp_section_nibble_index(x, y, z);
-    uint8_t  b = arr[i >> 1];
-    return (i & 1) ? (uint8_t)((b >> 4) & 0x0F)
-                  : (uint8_t)(b & 0x0F);
+    uint8_t b = arr[i >> 1];
+    return (i & 1) ? (uint8_t)((b >> 4) & 0x0F) : (uint8_t)(b & 0x0F);
 }
 
-static inline void mcp_section_set_nibble(uint8_t* arr,
-                                            int x, int y, int z, uint8_t v) {
-    if (!arr) return;
+static inline void mcp_section_set_nibble(uint8_t* arr, int x, int y, int z, uint8_t v) {
+    if (!arr)
+        return;
     v &= 0x0F;
     uint32_t i = mcp_section_nibble_index(x, y, z);
     uint8_t* b = &arr[i >> 1];
@@ -88,7 +87,7 @@ static inline void mcp_section_set_nibble(uint8_t* arr,
 // sky_light defaulting to 0xFF (full bright) for freshly generated
 // chunks that haven't had a light pass yet.
 mcp_chunk_section_t* mcp_section_new(uint8_t y);
-void                mcp_section_destroy(mcp_chunk_section_t* s);
+void mcp_section_destroy(mcp_chunk_section_t* s);
 
 // Fill `s->blocks` with `id` for the entire 4096-byte array.
 // Used by the Flat generator and the Void generator's bedrock floor.

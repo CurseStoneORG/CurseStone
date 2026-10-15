@@ -39,22 +39,22 @@ extern "C" {
 typedef struct mcp_rak_session_manager mcp_rak_session_manager_t;
 
 // ---- Session states (mirrors PMMP Session.php) ----
-#define MCP_SESSION_STATE_UNCONNECTED  0
-#define MCP_SESSION_STATE_CONNECTING_1 1   // after OCR1 → waiting OCR2
-#define MCP_SESSION_STATE_CONNECTING_2 2   // after OCR2 → waiting CLIENT_CONNECT (0x09)
-#define MCP_SESSION_STATE_CONNECTED    3   // fully established
+#define MCP_SESSION_STATE_UNCONNECTED 0
+#define MCP_SESSION_STATE_CONNECTING_1 1 // after OCR1 → waiting OCR2
+#define MCP_SESSION_STATE_CONNECTING_2 2 // after OCR2 → waiting CLIENT_CONNECT (0x09)
+#define MCP_SESSION_STATE_CONNECTED 3    // fully established
 
 // Maximum encapsulated packet size inside one DataPacket datagram (per PMMP).
-#define MCP_SESSION_MAX_SPLIT_SIZE   128
-#define MCP_SESSION_MAX_SPLIT_COUNT    4
-#define MCP_SESSION_WINDOW_SIZE     2048
+#define MCP_SESSION_MAX_SPLIT_SIZE 128
+#define MCP_SESSION_MAX_SPLIT_COUNT 4
+#define MCP_SESSION_WINDOW_SIZE 2048
 
 // Connection timeout for the session sweep, in milliseconds (30s — the
 // RakLib/PMMP default). The timeout clock means "no datagram received at
 // all": keepalive PINGs and ACK/NACK traffic both count as activity, so
 // a player who stays idle (AFK) with the game open is never kicked; only
 // a genuinely dead connection (app closed, network lost) is reaped.
-#define MCP_SESSION_TIMEOUT_MS      30000
+#define MCP_SESSION_TIMEOUT_MS 30000
 
 // FIX (audit priority 4/12): RakNet's 24-bit index spaces (datagram
 // sequence number, reliable message index, ordering index) all wrap at
@@ -73,16 +73,16 @@ typedef struct mcp_rak_session_manager mcp_rak_session_manager_t;
 // ACK's seq value (always 24-bit) for any datagram sent after that
 // point — retransmission bookkeeping would silently stop being able to
 // recognize its own acknowledgments.
-#define MCP_SEQ24_MASK   0x00FFFFFFu
+#define MCP_SEQ24_MASK 0x00FFFFFFu
 
 // RakNet encapsulated packet: the header inside a Data datagram.
 // Simplified: only tracks fields needed for Proto 84 / MCPE 0.15.10.
 typedef struct mcp_encapsulated_header {
-    uint8_t  reliability;       // PacketReliability value
-    bool     has_split;
-    uint32_t message_index;     // present if RELIABLE
-    uint32_t order_index;       // present if ORDERED
-    uint8_t  order_channel;
+    uint8_t reliability; // PacketReliability value
+    bool has_split;
+    uint32_t message_index; // present if RELIABLE
+    uint32_t order_index;   // present if ORDERED
+    uint8_t order_channel;
     uint16_t split_id;
     uint32_t split_index;
     uint32_t split_count;
@@ -103,13 +103,13 @@ typedef struct mcp_split_store {
     uint32_t count;
     uint32_t received;
     uint8_t* segments[MCP_MAX_SPLIT_SEGMENTS]; // heap-allocated
-    size_t   seg_sizes[MCP_MAX_SPLIT_SEGMENTS];
-    bool     in_use;
+    size_t seg_sizes[MCP_MAX_SPLIT_SEGMENTS];
+    bool in_use;
     // FIX: ordering info from the first fragment, applied once to the
     // reassembled packet (see deliver_ordered() in SessionManager.c).
-    bool     is_ordered;
+    bool is_ordered;
     uint32_t order_index;
-    uint8_t  order_channel;
+    uint8_t order_channel;
     // FIX (critical, confirmed by server.log): reliability + message_index
     // from the first fragment. RakNet's real reference implementation
     // assigns a single reliableMessageNumber to a fragmented message
@@ -119,7 +119,7 @@ typedef struct mcp_split_store {
     // against the REASSEMBLED message — never per-fragment, which would
     // reject every fragment after the first as "already seen" the moment
     // the first one set that index's bit in the receive window.
-    bool     is_reliable;
+    bool is_reliable;
     uint32_t message_index;
     // FIX: if a fragment never arrives, this store used to sit "in_use"
     // forever — not a disconnect by itself, but unbounded per-session
@@ -133,8 +133,8 @@ typedef struct mcp_split_store {
     uint64_t last_fragment_ms;
 } mcp_split_store_t;
 
-#define MCP_MAX_ACK_QUEUE    256
-#define MCP_MAX_NACK_QUEUE   256
+#define MCP_MAX_ACK_QUEUE 256
+#define MCP_MAX_NACK_QUEUE 256
 // FIX: raised from 512 → 4096. With chunk bursts of 60+ reliable
 // fragments per tick (documented elsewhere in this codebase), 512
 // in-flight slots could be exhausted before the corresponding ACKs
@@ -146,7 +146,7 @@ typedef struct mcp_split_store {
 // 4096 slots (~32KB of pointers/metadata per session, negligible)
 // gives enough headroom for several ticks worth of chunk bursts
 // even under real-world latency before wraparound can occur.
-#define MCP_RECOVERY_CAP     4096
+#define MCP_RECOVERY_CAP 4096
 
 // ---------------------------------------------------------------------------
 // Flow control + liveness instrumentation (multiplayer hardening).
@@ -176,64 +176,64 @@ typedef struct mcp_split_store {
 //     entry: a datagram that has already been resent is retried less and
 //     less often instead of every 5s forever.
 // ---------------------------------------------------------------------------
-#define MCP_MAX_INFLIGHT_RELIABLE   512
-#define MCP_RETRANSMIT_BASE_MS      5000
-#define MCP_RETRANSMIT_MAX_MS      40000
-#define MCP_RETRANSMIT_MAX_PER_SESSION  8
-#define MCP_RETRANSMIT_MAX_PER_TICK     24
+#define MCP_MAX_INFLIGHT_RELIABLE 512
+#define MCP_RETRANSMIT_BASE_MS 5000
+#define MCP_RETRANSMIT_MAX_MS 40000
+#define MCP_RETRANSMIT_MAX_PER_SESSION 8
+#define MCP_RETRANSMIT_MAX_PER_TICK 24
 // Server-side keepalive: if the server has had nothing to send to a
 // session for this long it pings it and measures the round trip. That
 // RTT is what tells "the client is gone" apart from "the client is alive
 // but its uplink is drowning in our chunk data".
-#define MCP_KEEPALIVE_PING_MS        5000
-#define MCP_KEEPALIVE_PING_ID_BASE   0x4353000000000000LL
+#define MCP_KEEPALIVE_PING_MS 5000
+#define MCP_KEEPALIVE_PING_ID_BASE 0x4353000000000000LL
 
 // Per-session send queue slot.
 typedef struct mcp_send_slot {
     uint8_t* data;
-    size_t   len;
+    size_t len;
     uint64_t send_time_ms;
     uint32_t seq;
-    uint8_t  retries;   // consecutive resends; drives the backoff above
+    uint8_t retries; // consecutive resends; drives the backoff above
 } mcp_send_slot_t;
 
 typedef struct mcp_rak_session {
     // Identity
-    uint8_t   ip[4];
-    uint16_t  port;
-    int64_t   client_id;
-    int64_t   server_id;
+    uint8_t ip[4];
+    uint16_t port;
+    int64_t client_id;
+    int64_t server_id;
 
     // State machine
-    uint8_t   state;            // MCP_SESSION_STATE_*
+    uint8_t state; // MCP_SESSION_STATE_*
 
     // Sequence numbers
-    uint32_t  send_seq;
-    int32_t   last_recv_seq;    // -1 = nothing received yet
+    uint32_t send_seq;
+    int32_t last_recv_seq; // -1 = nothing received yet
 
     // Sliding window
-    uint32_t  window_start;
-    uint32_t  window_end;
-    bool      recv_window[MCP_SESSION_WINDOW_SIZE];
+    uint32_t window_start;
+    uint32_t window_end;
+    bool recv_window[MCP_SESSION_WINDOW_SIZE];
 
     // ACK / NACK queues (sequence numbers pending transmission)
-    uint32_t  ack_queue[MCP_MAX_ACK_QUEUE];
-    size_t    ack_queue_len;
-    uint32_t  nack_queue[MCP_MAX_NACK_QUEUE];
-    size_t    nack_queue_len;
+    uint32_t ack_queue[MCP_MAX_ACK_QUEUE];
+    size_t ack_queue_len;
+    uint32_t nack_queue[MCP_MAX_NACK_QUEUE];
+    size_t nack_queue_len;
 
     // Send queue (DataPacket 0x84 datagrams awaiting flush)
     uint8_t** send_queue_bufs;
-    size_t*   send_queue_lens;
-    size_t    send_queue_count;
-    size_t    send_queue_cap;
+    size_t* send_queue_lens;
+    size_t send_queue_count;
+    size_t send_queue_cap;
 
     // Recovery queue (for retransmit): indexed by seq % MCP_RECOVERY_CAP
     mcp_send_slot_t recovery[MCP_RECOVERY_CAP];
 
     // Reliability counters
-    uint32_t  message_index;    // monotonically increasing per RELIABLE pkt
-    uint32_t  channel_index[32];// per ordered-channel index (SEND side)
+    uint32_t message_index;     // monotonically increasing per RELIABLE pkt
+    uint32_t channel_index[32]; // per ordered-channel index (SEND side)
 
     // FIX: RELIABLE_ORDERED receive-side reordering. RakNet guarantees
     // packets on an ordered channel are delivered to the application in
@@ -245,7 +245,7 @@ typedef struct mcp_rak_session {
     // jitter (no packet loss required, just reordering) breaks it, and
     // MCPE clients that send anything on an ordered channel would have
     // it processed out of sequence server-side.
-    uint32_t  recv_order_index[32];  // next index expected, per channel
+    uint32_t recv_order_index[32]; // next index expected, per channel
     // FIX: last time recv_order_index[chan] actually advanced. Needed to
     // detect a channel stalled on a gap where the missing packet AND
     // every one of its retransmits were lost — expire_order_holds() only
@@ -255,17 +255,17 @@ typedef struct mcp_rak_session {
     // forever (every later ordered packet held indefinitely, itself
     // never expiring because deliver_ordered() only holds packets that
     // arrived — a hole with nothing behind it isn't "held" by anything).
-    uint64_t  recv_order_advanced_ms[32];
+    uint64_t recv_order_advanced_ms[32];
     // Packets that arrived ahead of the expected index, held until the
     // gap is filled. Small ring buffer per channel is enough — MCPE's
     // own traffic patterns never realistically get more than a handful
     // of ordered packets in flight out of order at once.
 #define MCP_ORDER_HOLD_CAP 32
     struct {
-        bool     used;
+        bool used;
         uint32_t order_index;
         uint8_t* data;
-        size_t   len;
+        size_t len;
         // FIX #3-C: when this slot was populated, so a stale held packet
         // (the gap it's waiting on will never be filled — e.g. the
         // missing packet's own retransmit was also lost) can be evicted
@@ -287,9 +287,9 @@ typedef struct mcp_rak_session {
     // message can't be told apart from a genuinely new one, and reordered
     // reliable messages have no duplicate/staleness check of their own.
 #define MCP_RELIABLE_WINDOW_SIZE 2048
-    uint32_t  reliable_window_start;
-    bool      reliable_recv_window[MCP_RELIABLE_WINDOW_SIZE];
-    int32_t   last_reliable_index; // -1 = nothing received yet
+    uint32_t reliable_window_start;
+    bool reliable_recv_window[MCP_RELIABLE_WINDOW_SIZE];
+    int32_t last_reliable_index; // -1 = nothing received yet
 
     // Payload-aware duplicate detection for reliable messages.
     //
@@ -322,7 +322,7 @@ typedef struct mcp_rak_session {
         uint32_t index;
         uint32_t hash;
         uint32_t len;
-        bool     used;
+        bool used;
     } reliable_seen[MCP_RELIABLE_WINDOW_SIZE];
 
     // Same idea for RELIABLE_ORDERED channels. A stale order_index is
@@ -332,81 +332,81 @@ typedef struct mcp_rak_session {
     // discarded silently, stranding the session before login.
 #define MCP_ORDER_DELIVERED_SLOTS 64
     struct {
-        uint8_t  chan;
+        uint8_t chan;
         uint32_t index;
         uint32_t hash;
         uint32_t len;
-        bool     used;
+        bool used;
     } order_delivered[MCP_ORDER_DELIVERED_SLOTS];
-    uint32_t  order_delivered_next;
-    bool      diag_order_index_reuse_logged;
+    uint32_t order_delivered_next;
+    bool diag_order_index_reuse_logged;
 
     // ---- Diagnostics (point #12/#13 in the audit): counters surfaced in
     // the disconnect log so a timeout/kick can be correlated with what
     // was actually happening in the reliability layer at the time. ----
-    uint64_t  diag_recv_packets;
-    uint64_t  diag_sent_packets;
+    uint64_t diag_recv_packets;
+    uint64_t diag_sent_packets;
     // FIX: one-shot flag so a hard UDP sendto() failure (e.g. outbound UDP
     // blocked by a hosting panel's firewall) is logged exactly once per
     // session instead of spamming the console on every retransmit.
-    bool      diag_send_fail_logged;
-    uint64_t  diag_ack_received;
-    uint64_t  diag_nack_received;
-    uint64_t  diag_retransmits;
-    uint32_t  diag_recovery_occupied; // current count — kept incrementally,
-                                       // never scanned, so it's cheap to
-                                       // update on every send/ack
-    uint32_t  diag_recovery_peak;
-    uint32_t  diag_recovery_overwrites;
-    uint32_t  diag_split_active;
-    uint32_t  diag_split_completed;
-    uint32_t  diag_split_expired;
-    uint32_t  diag_split_evicted;
-    uint32_t  diag_order_hold_peak;
-    uint32_t  diag_order_hold_full;
-    uint32_t  diag_order_duplicate;
+    bool diag_send_fail_logged;
+    uint64_t diag_ack_received;
+    uint64_t diag_nack_received;
+    uint64_t diag_retransmits;
+    uint32_t diag_recovery_occupied; // current count — kept incrementally,
+                                     // never scanned, so it's cheap to
+                                     // update on every send/ack
+    uint32_t diag_recovery_peak;
+    uint32_t diag_recovery_overwrites;
+    uint32_t diag_split_active;
+    uint32_t diag_split_completed;
+    uint32_t diag_split_expired;
+    uint32_t diag_split_evicted;
+    uint32_t diag_order_hold_peak;
+    uint32_t diag_order_hold_full;
+    uint32_t diag_order_duplicate;
     // FIX: separate counter for the forced-skip case above — a channel
     // that was stuck long enough to have its gap declared permanently
     // lost and skipped. Kept distinct from diag_order_duplicate (an
     // unrelated event: an order_index arriving that's already held)
     // so the disconnect log can tell the two apart instead of one
     // number silently meaning either thing.
-    uint32_t  diag_order_forced_skip;
+    uint32_t diag_order_forced_skip;
     // Packets accepted despite arriving on an already-used order index,
     // i.e. a client that reuses one order index for the whole session.
-    uint32_t  diag_order_index_reuse;
+    uint32_t diag_order_index_reuse;
 
     // ---- Flow control + liveness (see the constants above) ----
     // Every datagram of ANY kind received (the old diag_recv_packets only
     // counted encapsulated game packets, which made a session that was
     // quietly answering ACK/NACK/PING look like it had stopped talking —
     // exactly the confusion this block exists to remove).
-    uint64_t  diag_datagrams_received;
-    uint64_t  last_ack_received_ms;
-    uint64_t  diag_bytes_sent;
-    uint32_t  diag_inflight_peak;
+    uint64_t diag_datagrams_received;
+    uint64_t last_ack_received_ms;
+    uint64_t diag_bytes_sent;
+    uint32_t diag_inflight_peak;
     // Reliable datagrams REFUSED because the session already had
     // MCP_MAX_INFLIGHT_RELIABLE un-ACKed ones (stalled client).
-    uint32_t  diag_backpressure_drops;
-    bool      diag_backpressure_logged;
+    uint32_t diag_backpressure_drops;
+    bool diag_backpressure_logged;
     // Server keepalive: last ping we sent, its id, the RTT it got back
     // (0 = never answered) and how many were sent/answered.
-    uint64_t  keepalive_ping_sent_ms;
-    int64_t   keepalive_ping_id;
-    uint32_t  rtt_ms;
-    uint32_t  diag_keepalive_pings;
-    uint32_t  diag_keepalive_pongs;
-    uint64_t  last_health_log_ms;
+    uint64_t keepalive_ping_sent_ms;
+    int64_t keepalive_ping_id;
+    uint32_t rtt_ms;
+    uint32_t diag_keepalive_pings;
+    uint32_t diag_keepalive_pongs;
+    uint64_t last_health_log_ms;
     // Reliable messages dropped as genuine retransmits (same message index
     // AND same bytes). Surfaced in the disconnect dump so a network that
     // keeps retransmitting is visible, while only the FIRST one per session
     // is printed to the console — otherwise a retransmit-happy link floods
     // stderr with one line per duplicate and buries the real log.
-    uint32_t  diag_duplicate_dropped;
-    bool      diag_duplicate_logged;
+    uint32_t diag_duplicate_dropped;
+    bool diag_duplicate_logged;
 
     // MTU negotiated during handshake
-    uint16_t  mtu;
+    uint16_t mtu;
 
     // Timing
     // last_activity_ms is the canonical "does this session keep its
@@ -417,45 +417,43 @@ typedef struct mcp_rak_session {
     // dropped for it. The fields below are purely diagnostic breakdowns
     // (last_game_packet_received_ms distinguishes a truly silent session
     // from an idle-but-alive one in disconnect logs).
-    uint64_t  last_activity_ms;
-    uint64_t  last_packet_received_ms;      // any RakNet datagram at all
-    uint64_t  last_game_packet_received_ms; // non-PING encapsulated packet
-    uint64_t  last_ping_received_ms;
-    uint64_t  last_packet_sent_ms;
-    uint64_t  start_time_ms;
-    bool      is_active;        // received at least one packet this tick
+    uint64_t last_activity_ms;
+    uint64_t last_packet_received_ms;      // any RakNet datagram at all
+    uint64_t last_game_packet_received_ms; // non-PING encapsulated packet
+    uint64_t last_ping_received_ms;
+    uint64_t last_packet_sent_ms;
+    uint64_t start_time_ms;
+    bool is_active; // received at least one packet this tick
 
     // splitID counter for outbound fragmented packets
-    uint16_t  split_id_counter;
+    uint16_t split_id_counter;
 
     // Bug 2 fix: set when CLIENT_DISCONNECT (0x15) is received.
     // The session is cleaned up on the next tick sweep — no double-close.
-    bool      is_disconnecting;
+    bool is_disconnecting;
 } mcp_rak_session_t;
 
 // Init / destroy
-void mcp_rak_session_init(mcp_rak_session_t* s, const uint8_t ip[4],
-                           uint16_t port, int64_t client_id, int64_t server_id);
+void mcp_rak_session_init(mcp_rak_session_t* s, const uint8_t ip[4], uint16_t port,
+                          int64_t client_id, int64_t server_id);
 void mcp_rak_session_destroy(mcp_rak_session_t* s);
 
 // ACK handling
-void   mcp_rak_session_queue_ack(mcp_rak_session_t* s, uint32_t seq);
-void   mcp_rak_session_queue_nack(mcp_rak_session_t* s, uint32_t seq);
-size_t mcp_rak_session_drain_ack_queue(mcp_rak_session_t* s,
-                                        uint32_t* out_mins, uint32_t* out_maxs,
-                                        size_t out_cap);
-size_t mcp_rak_session_drain_nack_queue(mcp_rak_session_t* s,
-                                         uint32_t* out_mins, uint32_t* out_maxs,
-                                         size_t out_cap);
+void mcp_rak_session_queue_ack(mcp_rak_session_t* s, uint32_t seq);
+void mcp_rak_session_queue_nack(mcp_rak_session_t* s, uint32_t seq);
+size_t mcp_rak_session_drain_ack_queue(mcp_rak_session_t* s, uint32_t* out_mins, uint32_t* out_maxs,
+                                       size_t out_cap);
+size_t mcp_rak_session_drain_nack_queue(mcp_rak_session_t* s, uint32_t* out_mins,
+                                        uint32_t* out_maxs, size_t out_cap);
 
 // Overhead constants (bytes) for computing fragment sizes.
 // Datagram header:  1 (type 0x84) + 3 (seq LE24) = 4
 // Encap no-split:   1 (flags) + 2 (bit-len BE16) + 3 (msgIdx LE24)
 //                 + 3 (ordIdx LE24) + 1 (ordChan) = 10
 // Split fields:     2 (splitID BE16) + 4 (splitIdx BE32) + 4 (splitCount BE32) = 10
-#define MCP_DATAGRAM_HEADER_BYTES  4
-#define MCP_ENCAP_BASE_BYTES      10   // flags+bitlen+msgIdx+ordIdx+ordChan
-#define MCP_ENCAP_SPLIT_BYTES     10   // splitID+splitIndex+splitCount
+#define MCP_DATAGRAM_HEADER_BYTES 4
+#define MCP_ENCAP_BASE_BYTES 10  // flags+bitlen+msgIdx+ordIdx+ordChan
+#define MCP_ENCAP_SPLIT_BYTES 10 // splitID+splitIndex+splitCount
 // Per-datagram transport overhead that is NOT part of s->mtu.
 // s->mtu is the maximum IP PACKET size (that is what SessionManager.c
 // advertises in UnconnectedPing: `mtu = len + 28`, i.e. the bytes we sent
@@ -473,36 +471,31 @@ size_t mcp_rak_session_drain_nack_queue(mcp_rak_session_t* s,
 // while small packets (chat, keepalive, container updates) kept working.
 // Android survived because its UDP/PMTUD path copes differently on a plain
 // 1500-MTU Wi-Fi link.
-#define MCP_IPV4_HEADER_BYTES     20
-#define MCP_UDP_HEADER_BYTES       8
+#define MCP_IPV4_HEADER_BYTES 20
+#define MCP_UDP_HEADER_BYTES 8
 
 // Encapsulation: wrap a MCPE payload inside a RakNet encapsulated record
 // inside a DataPacket_4 (0x84) datagram. Returns bytes written, or 0 on error.
 // INTERNAL — builds exactly one datagram for the given payload slice.
 // For payloads that may exceed MTU, call mcp_rak_session_send_payload instead.
-size_t mcp_rak_session_build_datagram(mcp_rak_session_t* s,
-                                       uint8_t* out, size_t out_cap,
-                                       const uint8_t* payload, size_t plen,
-                                       uint8_t reliability, uint8_t order_channel,
-                                       bool has_split, uint16_t split_id,
-                                       uint32_t split_index, uint32_t split_count);
+size_t mcp_rak_session_build_datagram(mcp_rak_session_t* s, uint8_t* out, size_t out_cap,
+                                      const uint8_t* payload, size_t plen, uint8_t reliability,
+                                      uint8_t order_channel, bool has_split, uint16_t split_id,
+                                      uint32_t split_index, uint32_t split_count);
 
 // High-level send: splits payload into MTU-sized fragments if needed,
 // builds a datagram per fragment, and sends each via the socket.
 // This is the correct function to call for all game-level packet sends.
 // Returns true if all fragments were sent successfully.
-bool mcp_rak_session_send_payload(mcp_rak_session_t* s,
-                                   mcp_rak_session_manager_t* sm,
-                                   const uint8_t* payload, size_t plen,
-                                   uint8_t reliability, uint8_t order_channel);
+bool mcp_rak_session_send_payload(mcp_rak_session_t* s, mcp_rak_session_manager_t* sm,
+                                  const uint8_t* payload, size_t plen, uint8_t reliability,
+                                  uint8_t order_channel);
 
 // Enqueue a datagram for sending; flushed by tick.
-bool mcp_rak_session_enqueue(mcp_rak_session_t* s,
-                              const uint8_t* data, size_t len);
+bool mcp_rak_session_enqueue(mcp_rak_session_t* s, const uint8_t* data, size_t len);
 
 // Timeout check
-bool mcp_rak_session_is_timed_out(const mcp_rak_session_t* s,
-                                    uint64_t now_ms, uint64_t timeout_ms);
+bool mcp_rak_session_is_timed_out(const mcp_rak_session_t* s, uint64_t now_ms, uint64_t timeout_ms);
 
 #ifdef __cplusplus
 } // extern "C"

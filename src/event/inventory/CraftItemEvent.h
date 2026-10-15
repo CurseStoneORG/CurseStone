@@ -35,20 +35,25 @@
 namespace cursestone::event::inventory {
 
 class CraftItemEvent : public InventoryEvent, public Cancellable {
-public:
+  public:
     cursestone::Player* who;
     const cursestone::inventory::Recipe* recipe;
 
-    CraftItemEvent(cursestone::Player* p,
-                   std::shared_ptr<cursestone::inventory::Inventory> inv,
+    CraftItemEvent(cursestone::Player* p, std::shared_ptr<cursestone::inventory::Inventory> inv,
                    const cursestone::inventory::Recipe& r)
-        : InventoryEvent(std::move(inv)), who(p), recipe(&r) {}
+        : InventoryEvent(std::move(inv)), who(p), recipe(&r) {
+    }
 
-    cursestone::Player* getPlayer() { return who; }
-    const cursestone::inventory::Recipe* getRecipe() const { return recipe; }
+    cursestone::Player* getPlayer() {
+        return who;
+    }
+    const cursestone::inventory::Recipe* getRecipe() const {
+        return recipe;
+    }
 
     const std::string& eventName() const override {
-        static std::string n = "CraftItemEvent"; return n;
+        static std::string n = "CraftItemEvent";
+        return n;
     }
 };
 

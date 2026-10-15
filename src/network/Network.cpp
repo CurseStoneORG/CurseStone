@@ -50,13 +50,15 @@ void Network::registerInterface(std::unique_ptr<SourceInterface> iface) {
 
 SourceInterface* Network::getInterface(const std::string& name) {
     auto it = nameToIndex_.find(name);
-    if (it == nameToIndex_.end()) return nullptr;
+    if (it == nameToIndex_.end())
+        return nullptr;
     return interfaces_[it->second].get();
 }
 
 AdvancedSourceInterface* Network::getInterfaceAdvanced(const std::string& name) {
     auto it = nameToIndex_.find(name);
-    if (it == nameToIndex_.end()) return nullptr;
+    if (it == nameToIndex_.end())
+        return nullptr;
     return dynamic_cast<AdvancedSourceInterface*>(interfaces_[it->second].get());
 }
 
@@ -66,11 +68,11 @@ static std::string sessionKey(const std::string& ip, uint16_t port) {
     return o.str();
 }
 
-void Network::onSessionOpen(const std::string& ip, uint16_t port,
-                              int64_t clientId) {
+void Network::onSessionOpen(const std::string& ip, uint16_t port, int64_t clientId) {
     (void)clientId;
     if (isBlocked(ip)) {
-        if (auto* raklib = getRakLib()) raklib->closeSession(ip, port, "blocked");
+        if (auto* raklib = getRakLib())
+            raklib->closeSession(ip, port, "blocked");
         return;
     }
     // Don't create the Player yet — wait for the LoginPacket (PMMP semantics).
@@ -78,8 +80,7 @@ void Network::onSessionOpen(const std::string& ip, uint16_t port,
     // first packet that looks like a LoginPacket (raw or wrapped in Batch).
 }
 
-void Network::onSessionClose(const std::string& ip, uint16_t port,
-                                const std::string& reason) {
+void Network::onSessionClose(const std::string& ip, uint16_t port, const std::string& reason) {
     std::string key = sessionKey(ip, port);
     auto it = sessions_.find(key);
     if (it != sessions_.end()) {
@@ -94,9 +95,10 @@ void Network::onSessionClose(const std::string& ip, uint16_t port,
     }
 }
 
-void Network::processIncoming(const std::string& ip, uint16_t port,
-                                const uint8_t* data, size_t len) {
-    if (isBlocked(ip) || !data || len == 0) return;
+void Network::processIncoming(const std::string& ip, uint16_t port, const uint8_t* data,
+                              size_t len) {
+    if (isBlocked(ip) || !data || len == 0)
+        return;
 
     (void)server_; // adv logging removed
 
@@ -120,27 +122,28 @@ void Network::processIncoming(const std::string& ip, uint16_t port,
             size_t cdlen = len - 1;
             if (cdlen > 4) {
                 // Skip the 4-byte BE length prefix
-                uint32_t clen = ((uint32_t)cd[0]<<24)|((uint32_t)cd[1]<<16)|((uint32_t)cd[2]<<8)|cd[3];
+                uint32_t clen = ((uint32_t)cd[0] << 24) | ((uint32_t)cd[1] << 16) |
+                                ((uint32_t)cd[2] << 8) | cd[3];
                 const uint8_t* cdata = cd + 4;
-                size_t reallen = clen < (cdlen-4) ? clen : (cdlen-4);
+                size_t reallen = clen < (cdlen - 4) ? clen : (cdlen - 4);
                 for (size_t i = 0; i < reallen && i < 32; ++i)
-                    snprintf(hex + i*3, 4, "%02x ", cdata[i]);
+                    snprintf(hex + i * 3, 4, "%02x ", cdata[i]);
                 utils::MainLogger::get().warn("Malformed BatchPacket from " + ip +
-                    " (compressedLen=" + std::to_string(clen) + " firstBytes: " + hex + ")");
+                                              " (compressedLen=" + std::to_string(clen) +
+                                              " firstBytes: " + hex + ")");
             } else {
                 utils::MainLogger::get().warn("Malformed BatchPacket from " + ip + " (too short)");
             }
-            if (auto* r = getRakLib()) r->closeSession(ip, port, "bad batch");
+            if (auto* r = getRakLib())
+                r->closeSession(ip, port, "bad batch");
             return;
         }
         const auto& payload = bp.payload();
         // BATCH debug logging disabled.
         size_t off = 0;
         while (off + 4 <= payload.size()) {
-            uint32_t sl = ((uint32_t)payload[off]   << 24) |
-                          ((uint32_t)payload[off+1] << 16) |
-                          ((uint32_t)payload[off+2] << 8)  |
-                          ((uint32_t)payload[off+3]);
+            uint32_t sl = ((uint32_t)payload[off] << 24) | ((uint32_t)payload[off + 1] << 16) |
+                          ((uint32_t)payload[off + 2] << 8) | ((uint32_t)payload[off + 3]);
             off += 4;
             if (off + sl > payload.size()) {
                 utils::MainLogger::get().warn("Truncated sub-packet in batch from " + ip);
@@ -157,9 +160,10 @@ void Network::processIncoming(const std::string& ip, uint16_t port,
     dispatchSingle(ip, port, data, len);
 }
 
-void Network::dispatchSingle(const std::string& ip, uint16_t port,
-                                const uint8_t* data, size_t len) {
-    if (len == 0) return;
+void Network::dispatchSingle(const std::string& ip, uint16_t port, const uint8_t* data,
+                             size_t len) {
+    if (len == 0)
+        return;
     uint8_t pid = data[0];
 
     // Lock the session's weak_ptr to get a safe shared_ptr. This keeps
@@ -176,28 +180,33 @@ void Network::dispatchSingle(const std::string& ip, uint16_t port,
         if (pid != protocol::LOGIN_PACKET) {
             return;
         }
-        if (!createPlayerForSession(ip, port)) return;
+        if (!createPlayerForSession(ip, port))
+            return;
         // Re-lock the newly-registered session.
         auto it2 = sessions_.find(sessionKey(ip, port));
-        if (it2 == sessions_.end()) return;
+        if (it2 == sessions_.end())
+            return;
         player_sp = it2->second.lock();
-        if (!player_sp) return;
+        if (!player_sp)
+            return;
     }
 
     // Decode the body (everything after the leading ID byte) via the
     // PacketPool registry and forward to the Player's dispatcher.
-    auto pkt = decodePacketById(pid, data + 1, len - 1,
-                                ip + ":" + std::to_string(port));
-    if (!pkt) return;
+    auto pkt = decodePacketById(pid, data + 1, len - 1, ip + ":" + std::to_string(port));
+    if (!pkt)
+        return;
     // CRITICAL: skip if the player was closed between the lock() above
     // and here. connected_ is atomic; if false, the player is being
     // torn down and we must NOT call onUpdate or handle packets.
-    if (!player_sp->isConnected()) return;
+    if (!player_sp->isConnected())
+        return;
     player_sp->handleDataPacket(*pkt);
 }
 
-std::shared_ptr<protocol::DataPacket> Network::decodePacketById(uint8_t pid,
-        const uint8_t* body, size_t bodyLen, const std::string& who) {
+std::shared_ptr<protocol::DataPacket> Network::decodePacketById(uint8_t pid, const uint8_t* body,
+                                                                size_t bodyLen,
+                                                                const std::string& who) {
     // Helper local: primeros N bytes en hex, para diagnóstico.
     auto hexDump = [](const uint8_t* b, size_t n) {
         size_t cap = n < 40 ? n : 40;
@@ -223,16 +232,17 @@ std::shared_ptr<protocol::DataPacket> Network::decodePacketById(uint8_t pid,
         // para no ensuciar el log en uso normal.
         char pidHex[4];
         snprintf(pidHex, sizeof(pidHex), "%02x", pid);
-        const std::string detail = "len=" + std::to_string(bodyLen) + " bytes=" + hexDump(body, bodyLen);
+        const std::string detail =
+            "len=" + std::to_string(bodyLen) + " bytes=" + hexDump(body, bodyLen);
         if (server_ && server_->advancedLog()) {
-            utils::MainLogger::get().warn(std::string("[PKT] ID desconocido 0x") + pidHex +
-                " " + detail);
+            utils::MainLogger::get().warn(std::string("[PKT] ID desconocido 0x") + pidHex + " " +
+                                          detail);
         }
         // Always-on (no /workbench needed): record unknown packet IDs so a
         // later crash/error report can reveal what the client sent.
         diagnostics::Diagnostics::get().report("packet",
-            std::string("unknown packet id 0x") + pidHex, detail,
-            /*console=*/false);
+                                               std::string("unknown packet id 0x") + pidHex, detail,
+                                               /*console=*/false);
         return nullptr;
     }
     bool ok = pkt->decode(body, bodyLen);
@@ -241,9 +251,10 @@ std::shared_ptr<protocol::DataPacket> Network::decodePacketById(uint8_t pid,
         // kind of thing that must show up in the crashdump).
         char pidHex[4];
         snprintf(pidHex, sizeof(pidHex), "%02x", pid);
-        const std::string detail = "len=" + std::to_string(bodyLen) + " bytes=" + hexDump(body, bodyLen);
-        diagnostics::Diagnostics::get().report("packet",
-            std::string("decode() failed for id 0x") + pidHex, detail);
+        const std::string detail =
+            "len=" + std::to_string(bodyLen) + " bytes=" + hexDump(body, bodyLen);
+        diagnostics::Diagnostics::get().report(
+            "packet", std::string("decode() failed for id 0x") + pidHex, detail);
     }
     // DIAGNÓSTICO extra específico para CONTAINER_SET_SLOT_PACKET
     // (0x2c) — el sospechoso del bug de creativo. Se loguea SIEMPRE
@@ -253,8 +264,8 @@ std::shared_ptr<protocol::DataPacket> Network::decodePacketById(uint8_t pid,
     // ContainerSetSlotPacket.h). Gateado en advancedLog().
     if (pid == protocol::CONTAINER_SET_SLOT_PACKET && server_ && server_->advancedLog()) {
         utils::MainLogger::get().info(std::string("[PKT] CONTAINER_SET_SLOT_PACKET decode=") +
-            (ok ? "OK" : "FALLO") + " len=" + std::to_string(bodyLen) +
-            " bytes=" + hexDump(body, bodyLen));
+                                      (ok ? "OK" : "FALLO") + " len=" + std::to_string(bodyLen) +
+                                      " bytes=" + hexDump(body, bodyLen));
     }
     if (!ok) {
         // A LoginPacket that cannot be decoded is the one failure that
@@ -266,10 +277,9 @@ std::shared_ptr<protocol::DataPacket> Network::decodePacketById(uint8_t pid,
         if (pid == protocol::LOGIN_PACKET) {
             auto* lp = dynamic_cast<protocol::LoginPacket*>(pkt.get());
             utils::MainLogger::get().warn(
-                "LoginPacket from " + who + " could not be decoded (len=" +
-                std::to_string(bodyLen) + "): " +
-                (!lp || lp->decode_error.empty() ? std::string("unknown")
-                                                  : lp->decode_error) +
+                "LoginPacket from " + who +
+                " could not be decoded (len=" + std::to_string(bodyLen) + "): " +
+                (!lp || lp->decode_error.empty() ? std::string("unknown") : lp->decode_error) +
                 " — no session created");
         }
         // Decode failed — silently drop (log above already covered it
@@ -281,16 +291,17 @@ std::shared_ptr<protocol::DataPacket> Network::decodePacketById(uint8_t pid,
 
 bool Network::createPlayerForSession(const std::string& ip, uint16_t port) {
     PlayerConfig cfg;
-    cfg.ip   = ip;
+    cfg.ip = ip;
     cfg.port = port;
-    cfg.gamemode        = server_->gamemode();
-    cfg.view_distance   = server_->viewDistance();
+    cfg.gamemode = server_->gamemode();
+    cfg.view_distance = server_->viewDistance();
     // Allocate a fresh unique runtime entity ID for this player (PMMP uses
     // Entity::$entityCount for the same purpose). Without this, every player
     // shares EID 0 and AddPlayerPacket broadcasts confuse the client.
-    cfg.runtime_eid     = server_->allocateEid();
+    cfg.runtime_eid = server_->allocateEid();
     auto p = std::make_shared<Player>(server_, std::move(cfg));
-    if (auto* r = getRakLib()) p->setSourceInterface(r);
+    if (auto* r = getRakLib())
+        p->setSourceInterface(r);
     server_->addPlayer(p);
     // Store as weak_ptr so the Network doesn't keep the Player alive
     // after Server::tick() reaps it from players_.
@@ -300,22 +311,26 @@ bool Network::createPlayerForSession(const std::string& ip, uint16_t port) {
 
 Player* Network::getPlayer(const std::string& ip, uint16_t port) {
     auto it = sessions_.find(sessionKey(ip, port));
-    if (it == sessions_.end()) return nullptr;
+    if (it == sessions_.end())
+        return nullptr;
     // Lock the weak_ptr; if the Player was destroyed, return nullptr.
     auto sp = it->second.lock();
     return sp.get();
 }
 
-void Network::registerSession(const std::string& ip, uint16_t port,
-                                std::shared_ptr<Player> p) {
-    sessions_[sessionKey(ip, port)] = p;  // weak_ptr from shared_ptr
+void Network::registerSession(const std::string& ip, uint16_t port, std::shared_ptr<Player> p) {
+    sessions_[sessionKey(ip, port)] = p; // weak_ptr from shared_ptr
 }
 
 void Network::unregisterSession(Player* p) {
-    if (!p) return;
+    if (!p)
+        return;
     for (auto it = sessions_.begin(); it != sessions_.end(); ++it) {
         auto sp = it->second.lock();
-        if (sp.get() == p) { sessions_.erase(it); return; }
+        if (sp.get() == p) {
+            sessions_.erase(it);
+            return;
+        }
     }
 }
 
@@ -324,10 +339,14 @@ void Network::addPlayer(std::unique_ptr<Player> /*p*/) {
 }
 
 void Network::removePlayer(Player* p) {
-    if (!p) return;
+    if (!p)
+        return;
     for (auto it = sessions_.begin(); it != sessions_.end(); ++it) {
         auto sp = it->second.lock();
-        if (sp.get() == p) { sessions_.erase(it); return; }
+        if (sp.get() == p) {
+            sessions_.erase(it);
+            return;
+        }
     }
 }
 
@@ -338,15 +357,15 @@ void Network::tick() {
 }
 
 void Network::blockAddress(const std::string& ip, uint64_t timeoutMs) {
-    blockedUntil_[ip] = (timeoutMs == 0)
-        ? UINT64_MAX
-        : mcp_utils_time_ms() + timeoutMs;
+    blockedUntil_[ip] = (timeoutMs == 0) ? UINT64_MAX : mcp_utils_time_ms() + timeoutMs;
 }
 
 bool Network::isBlocked(const std::string& ip) const {
     auto it = blockedUntil_.find(ip);
-    if (it == blockedUntil_.end()) return false;
-    if (it->second == UINT64_MAX) return true;
+    if (it == blockedUntil_.end())
+        return false;
+    if (it->second == UINT64_MAX)
+        return true;
     return mcp_utils_time_ms() < it->second;
 }
 

@@ -35,12 +35,12 @@ extern "C" {
 
 typedef struct mcp_pkt_data_packet_d {
     mcp_packet_t header;
-    
-    uint32_t sequence;          // 24-bit LEB128 sequence number
-    bool     is_ordered;        // packet reliability has ordering flag
-    bool     needs_ack;        // set when this datagram requires ACK
+
+    uint32_t sequence; // 24-bit LEB128 sequence number
+    bool is_ordered;   // packet reliability has ordering flag
+    bool needs_ack;    // set when this datagram requires ACK
     uint8_t* payload;
-    size_t   payload_len;
+    size_t payload_len;
 
 } mcp_pkt_data_packet_d_t;
 

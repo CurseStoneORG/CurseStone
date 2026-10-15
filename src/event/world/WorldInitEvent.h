@@ -28,17 +28,22 @@
 #pragma once
 #include "WorldEvent.h"
 #include <string>
-namespace cursestone { namespace world { class World; } }
+namespace cursestone {
+namespace world {
+class World;
+}
+}
 
 namespace cursestone::event::world {
 
 class WorldInitEvent : public WorldEvent {
-public:
-    explicit WorldInitEvent(cursestone::world::World* l)
-        : WorldEvent(l) {}
+  public:
+    explicit WorldInitEvent(cursestone::world::World* l) : WorldEvent(l) {
+    }
 
     const std::string& eventName() const override {
-        static std::string n = "WorldInitEvent"; return n;
+        static std::string n = "WorldInitEvent";
+        return n;
     }
 };
 

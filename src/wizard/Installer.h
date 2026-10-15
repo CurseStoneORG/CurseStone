@@ -32,12 +32,14 @@
 #include <string>
 namespace cursestone::wizard {
 class Installer {
-public:
-    explicit Installer(std::string data_path) : data_path_(std::move(data_path)) {}
+  public:
+    explicit Installer(std::string data_path) : data_path_(std::move(data_path)) {
+    }
     bool runWizard();
     bool shouldRun() const;
     bool generateDefaultConfig();
-private:
+
+  private:
     std::string ask(const std::string& question, const std::string& def = "");
     bool askYesNo(const std::string& question, bool def = false);
     int askInt(const std::string& question, int def);

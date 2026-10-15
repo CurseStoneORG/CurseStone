@@ -36,9 +36,10 @@ const BiomeConfig& savannaBiome() {
         .snowy = false,
         .underwater = false,
         .treeAmount = 3,
-        .trees = {
-            { object::TREE_ACACIA, 5 },
-        },
+        .trees =
+            {
+                {object::TREE_ACACIA, 5},
+            },
         .grassAmount = 8,
         .flowerAmount = 2,
         .doublePlantAmount = 1,

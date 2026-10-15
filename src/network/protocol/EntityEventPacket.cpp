@@ -37,7 +37,8 @@ void EntityEventPacket::encode(std::vector<uint8_t>& out) const {
 
 bool EntityEventPacket::decode(const uint8_t* data, size_t len) {
     PacketReader r(data, len);
-    if (!r.readI64BE(eid)) return false;
+    if (!r.readI64BE(eid))
+        return false;
     return r.readU8(event);
 }
 

@@ -33,30 +33,38 @@ namespace cursestone::world {
 class World;
 
 class Position {
-public:
+  public:
     double x{0}, y{0}, z{0};
 
     Position() = default;
     Position(double x, double y, double z, std::shared_ptr<World> world = nullptr)
-        : x(x), y(y), z(z), world_(std::move(world)) {}
+        : x(x), y(y), z(z), world_(std::move(world)) {
+    }
 
     // Convert to/from the raw C type used by generators and chunk code.
-    explicit Position(mcp_vector3_t v) : x(v.x), y(v.y), z(v.z) {}
-    mcp_vector3_t toV3() const { return mcp_v3(x, y, z); }
+    explicit Position(mcp_vector3_t v) : x(v.x), y(v.y), z(v.z) {
+    }
+    mcp_vector3_t toV3() const {
+        return mcp_v3(x, y, z);
+    }
 
-    std::shared_ptr<World> world() const { return world_; }
-    void setWorld(std::shared_ptr<World> l) { world_ = std::move(l); }
+    std::shared_ptr<World> world() const {
+        return world_;
+    }
+    void setWorld(std::shared_ptr<World> l) {
+        world_ = std::move(l);
+    }
 
     double distance(const Position& o) const {
         double dx = x - o.x, dy = y - o.y, dz = z - o.z;
-        return std::sqrt(dx*dx + dy*dy + dz*dz);
+        return std::sqrt(dx * dx + dy * dy + dz * dz);
     }
 
     bool operator==(const Position& o) const {
         return x == o.x && y == o.y && z == o.z;
     }
 
-protected:
+  protected:
     std::shared_ptr<World> world_;
 };
 

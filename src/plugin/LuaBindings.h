@@ -30,8 +30,8 @@
 // registerApi() the flame all in order.
 #pragma once
 #include <lua.hpp>
-#include "CurseStone.h"   // CURSESTONE_API — the ONLY version constant (unified:
-                          // server version == plugin API version)
+#include "CurseStone.h" // CURSESTONE_API — the ONLY version constant (unified:
+                        // server version == plugin API version)
 #include <string>
 
 namespace cursestone::plugin {

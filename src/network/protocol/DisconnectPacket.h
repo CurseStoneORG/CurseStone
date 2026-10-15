@@ -36,10 +36,14 @@
 namespace cursestone::network::protocol {
 
 class DisconnectPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return DISCONNECT_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return DISCONNECT_PACKET;
+    }
     // Can be sent before login completes (e.g. protocol mismatch).
-    bool canBeSentBeforeLogin() const override { return true; }
+    bool canBeSentBeforeLogin() const override {
+        return true;
+    }
 
     std::string message;
 

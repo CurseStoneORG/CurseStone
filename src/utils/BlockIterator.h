@@ -32,24 +32,30 @@
 namespace cursestone::utils {
 
 class BlockIterator {
-public:
-    BlockIterator(const math::Vector3& start,
-                  const math::Vector3& direction,
-                  double maxDistance);
+  public:
+    BlockIterator(const math::Vector3& start, const math::Vector3& direction, double maxDistance);
 
     // Advance to the next voxel boundary. Returns false if maxDistance exceeded.
     bool next();
 
-    int   currentX() const { return curX_; }
-    int   currentY() const { return curY_; }
-    int   currentZ() const { return curZ_; }
-    double traveled() const { return traveled_; }
+    int currentX() const {
+        return curX_;
+    }
+    int currentY() const {
+        return curY_;
+    }
+    int currentZ() const {
+        return curZ_;
+    }
+    double traveled() const {
+        return traveled_;
+    }
 
-private:
+  private:
     // Amanatides & Woo's fast voxel traversal.
     double x_, y_, z_;
     double dx_, dy_, dz_;
-    int    curX_, curY_, curZ_;
+    int curX_, curY_, curZ_;
     double stepX_, stepY_, stepZ_;
     double tMaxX_, tMaxY_, tMaxZ_;
     double tDeltaX_, tDeltaY_, tDeltaZ_;

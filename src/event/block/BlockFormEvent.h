@@ -36,13 +36,14 @@ namespace cursestone::event::block {
 // subobjetos Cancellable), lo que vuelve ambiguos isCancelled()/
 // setCancelled() en tiempo de compilación.
 class BlockFormEvent : public BlockGrowEvent {
-public:
-    BlockFormEvent(int32_t bx, int32_t by, int32_t bz,
-                   int32_t nsx, int32_t nsy, int32_t nsz)
-        : BlockGrowEvent(bx, by, bz, nsx, nsy, nsz) {}
+  public:
+    BlockFormEvent(int32_t bx, int32_t by, int32_t bz, int32_t nsx, int32_t nsy, int32_t nsz)
+        : BlockGrowEvent(bx, by, bz, nsx, nsy, nsz) {
+    }
 
     const std::string& eventName() const override {
-        static std::string n = "BlockFormEvent"; return n;
+        static std::string n = "BlockFormEvent";
+        return n;
     }
 };
 

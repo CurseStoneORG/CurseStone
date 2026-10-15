@@ -42,11 +42,15 @@ void ChangeDimensionPacket::encode(std::vector<uint8_t>& out) const {
 bool ChangeDimensionPacket::decode(const uint8_t* data, size_t len) {
     PacketReader r(data, len);
     uint8_t dim = 0;
-    if (!r.readU8(dim)) return false;
+    if (!r.readU8(dim))
+        return false;
     dimension = dim;
-    if (!r.readF32BE(x)) return false;
-    if (!r.readF32BE(y)) return false;
-    if (!r.readF32BE(z)) return false;
+    if (!r.readF32BE(x))
+        return false;
+    if (!r.readF32BE(y))
+        return false;
+    if (!r.readF32BE(z))
+        return false;
     return r.readU8(unknown);
 }
 

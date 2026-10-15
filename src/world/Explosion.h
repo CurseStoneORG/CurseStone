@@ -31,15 +31,20 @@
 #include <cstdint>
 namespace cursestone::world {
 class Explosion {
-public:
-    Explosion(Position pos, float power)
-        : pos_(pos), power_(power) {}
+  public:
+    Explosion(Position pos, float power) : pos_(pos), power_(power) {
+    }
     // Computes the affected blocks and removes them. Returns the
     // count of blocks destroyed.
     int explode();
-    float power() const { return power_; }
-    const Position& position() const { return pos_; }
-private:
+    float power() const {
+        return power_;
+    }
+    const Position& position() const {
+        return pos_;
+    }
+
+  private:
     Position pos_;
     float power_;
 };

@@ -36,36 +36,62 @@
 namespace cursestone::scheduler {
 class TaskHandler;
 class Task {
-public:
+  public:
     virtual ~Task() = default;
-    virtual void onRun() {}
-    virtual void onCompletion() {}
-    int  period() const { return period_; }
-    void setPeriod(int p)  { period_ = p; }
-    int delay() const { return delay_; }
-    void setDelay(int d) { delay_ = d; }
-    uint64_t nextRun() const { return next_run_; }
-    void setNextRun(uint64_t tick) { next_run_ = tick; }
-    bool isCancelled() const { return cancelled_.load(std::memory_order_acquire); }
-    void cancel() { cancelled_.store(true, std::memory_order_release); }
-private:
+    virtual void onRun() {
+    }
+    virtual void onCompletion() {
+    }
+    int period() const {
+        return period_;
+    }
+    void setPeriod(int p) {
+        period_ = p;
+    }
+    int delay() const {
+        return delay_;
+    }
+    void setDelay(int d) {
+        delay_ = d;
+    }
+    uint64_t nextRun() const {
+        return next_run_;
+    }
+    void setNextRun(uint64_t tick) {
+        next_run_ = tick;
+    }
+    bool isCancelled() const {
+        return cancelled_.load(std::memory_order_acquire);
+    }
+    void cancel() {
+        cancelled_.store(true, std::memory_order_release);
+    }
+
+  private:
     friend class TaskHandler;
-    int period_ = 0;   // ticks between runs; 0 = one-shot
+    int period_ = 0; // ticks between runs; 0 = one-shot
     int delay_ = 0;
     uint64_t next_run_ = 0;
     std::atomic<bool> cancelled_{false};
 };
 
 class AsyncTask : public Task {
-public:
+  public:
     // Worker-thread entry. Subclasses do the work here.
-    void onRun() override {}
+    void onRun() override {
+    }
     // Main-thread callback after onRun() completes.
-    void onCompletion() override {}
+    void onCompletion() override {
+    }
     // Result placeholder; subclasses can store arbitrary data.
-    void* result() const { return result_; }
-    void setResult(void* p) { result_ = p; }
-private:
+    void* result() const {
+        return result_;
+    }
+    void setResult(void* p) {
+        result_ = p;
+    }
+
+  private:
     void* result_ = nullptr;
 };
 } // namespace

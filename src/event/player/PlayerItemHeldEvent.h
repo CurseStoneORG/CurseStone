@@ -26,19 +26,22 @@
 #include "PlayerEvent.h"
 #include "../Cancellable.h"
 #include "../../item/ItemStack.h"
-namespace cursestone { class Player; }
+namespace cursestone {
+class Player;
+}
 
 namespace cursestone::event::player {
 class PlayerItemHeldEvent : public PlayerEvent, public Cancellable {
-public:
+  public:
     cursestone::item::ItemStack item;
     int slot = 0;
     int hotbarSlot = 0;
-    PlayerItemHeldEvent(cursestone::Player* p, const cursestone::item::ItemStack& it,
-                        int s, int hs)
-        : PlayerEvent(p), item(it), slot(s), hotbarSlot(hs) {}
+    PlayerItemHeldEvent(cursestone::Player* p, const cursestone::item::ItemStack& it, int s, int hs)
+        : PlayerEvent(p), item(it), slot(s), hotbarSlot(hs) {
+    }
     const std::string& eventName() const override {
-        static std::string n = "PlayerItemHeldEvent"; return n;
+        static std::string n = "PlayerItemHeldEvent";
+        return n;
     }
 };
 } // namespace cursestone::event::player

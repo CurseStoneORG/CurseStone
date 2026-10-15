@@ -25,9 +25,9 @@
 #include "Color.h"
 
 uint32_t mcp_color_to_argb(const mcp_color_t* c) {
-    if (!c) return 0;
-    return ((uint32_t)c->a << 24) | ((uint32_t)c->r << 16) |
-           ((uint32_t)c->g << 8)  |  (uint32_t)c->b;
+    if (!c)
+        return 0;
+    return ((uint32_t)c->a << 24) | ((uint32_t)c->r << 16) | ((uint32_t)c->g << 8) | (uint32_t)c->b;
 }
 
 mcp_color_t mcp_color_from_argb(uint32_t argb) {
@@ -40,8 +40,10 @@ mcp_color_t mcp_color_from_argb(uint32_t argb) {
 }
 
 mcp_color_t mcp_color_lerp(mcp_color_t a, mcp_color_t b, float t) {
-    if (t < 0.0f) t = 0.0f;
-    if (t > 1.0f) t = 1.0f;
+    if (t < 0.0f)
+        t = 0.0f;
+    if (t > 1.0f)
+        t = 1.0f;
     mcp_color_t r;
     r.r = (uint8_t)(a.r + (int)(b.r - a.r) * t);
     r.g = (uint8_t)(a.g + (int)(b.g - a.g) * t);

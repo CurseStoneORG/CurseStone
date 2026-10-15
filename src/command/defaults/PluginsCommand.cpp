@@ -33,7 +33,7 @@
 // próximo tick, en el hilo principal. El resultado se reporta en el log.
 #include "PluginsCommand.h"
 #include "plugin/PluginManager.h"
-#include "plugin/LuaBindings.h"        // CURSESTONE_API
+#include "plugin/LuaBindings.h" // CURSESTONE_API
 #include "Server.h"
 #include "Player.h"
 #include "scheduler/ServerScheduler.h"
@@ -50,8 +50,9 @@ bool PluginsCommand::execute(CommandSender* sender, const std::string&,
     // ---- /plugins reload: op/consola, ejecutado en el hilo principal ----
     if (!args.empty()) {
         std::string sub = args[0];
-        std::transform(sub.begin(), sub.end(), sub.begin(),
-                       [](unsigned char c) { return (char)std::tolower(c); });
+        std::transform(sub.begin(), sub.end(), sub.begin(), [](unsigned char c) {
+            return (char)std::tolower(c);
+        });
 
         if (sub == "reload") {
             if (!sender->isOp()) {
@@ -80,17 +81,19 @@ bool PluginsCommand::execute(CommandSender* sender, const std::string&,
     // ---- /plugins a secas: lista ----
     auto list = plugin::PluginManager::get().list();
     if (list.empty()) {
-        sender->sendMessage("No plugins loaded. (API " +
-                            std::string(CURSESTONE_API) + ")");
+        sender->sendMessage("No plugins loaded. (API " + std::string(CURSESTONE_API) + ")");
         return true;
     }
-    std::string out = "Plugins (API " + std::string(CURSESTONE_API) + ") (" +
-                      std::to_string(list.size()) + "): ";
+    std::string out =
+        "Plugins (API " + std::string(CURSESTONE_API) + ") (" + std::to_string(list.size()) + "): ";
     for (size_t i = 0; i < list.size(); ++i) {
-        if (i) out += ", ";
+        if (i)
+            out += ", ";
         out += list[i].name + " v" + list[i].version;
-        if (!list[i].author.empty()) out += " by " + list[i].author;
-        if (!list[i].enabled) out += " (disabled)";
+        if (!list[i].author.empty())
+            out += " by " + list[i].author;
+        if (!list[i].enabled)
+            out += " (disabled)";
     }
     sender->sendMessage(out);
     return true;

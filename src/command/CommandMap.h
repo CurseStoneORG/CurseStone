@@ -26,7 +26,7 @@
 #include <vector>
 namespace cursestone {
 class CommandMap {
-public:
+  public:
     virtual ~CommandMap() = default;
     virtual bool registerCommand(std::unique_ptr<Command> cmd) = 0;
     // Plugin override of an EXISTING command (core or another plugin's):
@@ -42,7 +42,9 @@ public:
     virtual Command* getCommand(const std::string& name) const = 0;
     // Todos los comandos registrados (para /help dinámico). Los alias
     // (gm, tp, ?...) son comandos propios y aparecen como tales.
-    virtual std::vector<Command*> allCommands() const { return {}; }
+    virtual std::vector<Command*> allCommands() const {
+        return {};
+    }
     // Removes every command whose Command::owner() == owner (a plugin's
     // LuaCommand objects, right before /plugins reload destroys their
     // lua_State). Returns how many commands were removed. The default is

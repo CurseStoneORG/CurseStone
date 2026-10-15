@@ -36,11 +36,13 @@
 namespace cursestone::network::protocol {
 
 class SetTimePacket : public DataPacket {
-public:
-    uint8_t pid() const override { return SET_TIME_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return SET_TIME_PACKET;
+    }
 
-    int32_t time    = 0;
-    bool    started = true;
+    int32_t time = 0;
+    bool started = true;
 
     void encode(std::vector<uint8_t>& out) const override;
     bool decode(const uint8_t* data, size_t len) override;

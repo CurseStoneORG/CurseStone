@@ -36,11 +36,11 @@ extern "C" {
 
 typedef struct mcp_pkt_open_connection_request_2 {
     mcp_packet_t header;
-    uint8_t  magic[16];
-    uint8_t  server_ip[4];   // server address IP
-    uint16_t server_port;    // server address port
+    uint8_t magic[16];
+    uint8_t server_ip[4]; // server address IP
+    uint16_t server_port; // server address port
     uint16_t mtu;
-    int64_t  client_id;
+    int64_t client_id;
 } mcp_pkt_open_connection_request_2_t;
 
 mcp_packet_t* mcp_pkt_open_connection_request_2_new(void);

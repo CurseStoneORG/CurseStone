@@ -53,18 +53,20 @@
 namespace cursestone::network::protocol {
 
 class UseItemPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return USE_ITEM_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return USE_ITEM_PACKET;
+    }
 
-    int32_t  x = 0, y = 0, z = 0;
-    uint8_t  face = 0;
-    float    fx = 0, fy = 0, fz = 0;
-    float    posX = 0, posY = 0, posZ = 0;
-    int32_t  slot = 0;
+    int32_t x = 0, y = 0, z = 0;
+    uint8_t face = 0;
+    float fx = 0, fy = 0, fz = 0;
+    float posX = 0, posY = 0, posZ = 0;
+    int32_t slot = 0;
     // Decoded item slot. id 0 = empty hand.
-    int16_t  itemId = 0;
-    uint8_t  itemCount = 0;
-    int16_t  itemDamage = 0;
+    int16_t itemId = 0;
+    uint8_t itemCount = 0;
+    int16_t itemDamage = 0;
 
     void encode(std::vector<uint8_t>& out) const override;
     bool decode(const uint8_t* data, size_t len) override;

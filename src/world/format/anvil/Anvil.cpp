@@ -61,12 +61,15 @@ namespace cursestone::world::format::anvil {
 AnvilRegistrar g_anvil_registrar_;
 AnvilRegistrar::AnvilRegistrar() {
     auto& mgr = WorldProviderManager::getInstance();
-    mgr.registerProvider("anvil",
-        []() { return std::unique_ptr<WorldProvider>(new Anvil()); });
-    mgr.registerProvider("mcanvil",
-        []() { return std::unique_ptr<WorldProvider>(new Anvil()); });
-    mgr.registerProvider("mca",
-        []() { return std::unique_ptr<WorldProvider>(new Anvil()); });
+    mgr.registerProvider("anvil", []() {
+        return std::unique_ptr<WorldProvider>(new Anvil());
+    });
+    mgr.registerProvider("mcanvil", []() {
+        return std::unique_ptr<WorldProvider>(new Anvil());
+    });
+    mgr.registerProvider("mca", []() {
+        return std::unique_ptr<WorldProvider>(new Anvil());
+    });
 }
 
 // ============================================================================
@@ -74,14 +77,17 @@ AnvilRegistrar::AnvilRegistrar() {
 // ============================================================================
 static bool ensure_dir(const std::string& path) {
     struct stat st{};
-    if (::stat(path.c_str(), &st) == 0) return S_ISDIR(st.st_mode);
-    if (errno != ENOENT) return false;
+    if (::stat(path.c_str(), &st) == 0)
+        return S_ISDIR(st.st_mode);
+    if (errno != ENOENT)
+        return false;
     return ::mkdir(path.c_str(), 0775) == 0;
 }
 
 static int64_t current_millis() {
     return (int64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
+               std::chrono::system_clock::now().time_since_epoch())
+        .count();
 }
 
 static int64_t current_unix_seconds() {
@@ -91,11 +97,15 @@ static int64_t current_unix_seconds() {
 // Read entire file into a buffer. Returns false on I/O error.
 static bool read_file(const std::string& path, std::vector<uint8_t>* out) {
     FILE* fp = std::fopen(path.c_str(), "rb");
-    if (!fp) return false;
+    if (!fp)
+        return false;
     std::fseek(fp, 0, SEEK_END);
     long sz = std::ftell(fp);
     std::fseek(fp, 0, SEEK_SET);
-    if (sz <= 0) { std::fclose(fp); return false; }
+    if (sz <= 0) {
+        std::fclose(fp);
+        return false;
+    }
     out->resize((size_t)sz);
     bool ok = (std::fread(out->data(), 1, (size_t)sz, fp) == (size_t)sz);
     std::fclose(fp);
@@ -104,40 +114,41 @@ static bool read_file(const std::string& path, std::vector<uint8_t>* out) {
 
 static bool write_file(const std::string& path, const uint8_t* data, size_t len) {
     FILE* fp = std::fopen(path.c_str(), "wb");
-    if (!fp) return false;
+    if (!fp)
+        return false;
     bool ok = (std::fwrite(data, 1, len, fp) == len);
     std::fclose(fp);
     return ok;
 }
 
 // GZIP-compress `src` → `out`. Returns false on deflate error.
-static bool gzip_compress(const uint8_t* src, size_t src_len,
-                            std::vector<uint8_t>* out) {
+static bool gzip_compress(const uint8_t* src, size_t src_len, std::vector<uint8_t>* out) {
     z_stream zs{};
     if (deflateInit2(&zs, Z_DEFAULT_COMPRESSION, Z_DEFLATED,
-                       15 | 16,   // 15 = max window bits, +16 = gzip header
-                       8, Z_DEFAULT_STRATEGY) != Z_OK) {
+                     15 | 16, // 15 = max window bits, +16 = gzip header
+                     8, Z_DEFAULT_STRATEGY) != Z_OK) {
         return false;
     }
     size_t bound = deflateBound(&zs, (uLong)src_len);
     out->resize(bound);
-    zs.next_in   = (Bytef*)src;
-    zs.avail_in  = (uInt)src_len;
-    zs.next_out  = (Bytef*)out->data();
+    zs.next_in = (Bytef*)src;
+    zs.avail_in = (uInt)src_len;
+    zs.next_out = (Bytef*)out->data();
     zs.avail_out = (uInt)out->size();
     int rc = deflate(&zs, Z_FINISH);
     deflateEnd(&zs);
-    if (rc != Z_STREAM_END) return false;
+    if (rc != Z_STREAM_END)
+        return false;
     out->resize(bound - zs.avail_out);
     return true;
 }
 
 // GZIP-decompress `src` → `out`. Returns false on inflate error.
-static bool gzip_decompress(const uint8_t* src, size_t src_len,
-                              std::vector<uint8_t>* out) {
+static bool gzip_decompress(const uint8_t* src, size_t src_len, std::vector<uint8_t>* out) {
     z_stream zs{};
-    if (inflateInit2(&zs, 15 | 16) != Z_OK) return false;  // gzip
-    zs.next_in  = (Bytef*)src;
+    if (inflateInit2(&zs, 15 | 16) != Z_OK)
+        return false; // gzip
+    zs.next_in = (Bytef*)src;
     zs.avail_in = (uInt)src_len;
 
     // Grow output buffer incrementally.
@@ -146,7 +157,7 @@ static bool gzip_decompress(const uint8_t* src, size_t src_len,
     uint8_t chunk[65536];
     int rc = Z_OK;
     do {
-        zs.next_out  = chunk;
+        zs.next_out = chunk;
         zs.avail_out = sizeof(chunk);
         rc = inflate(&zs, Z_NO_FLUSH);
         if (rc != Z_OK && rc != Z_STREAM_END) {
@@ -181,31 +192,32 @@ static bool gzip_decompress(const uint8_t* src, size_t src_len,
 static constexpr int kChunkCompressionLevel = 1;
 
 // ZLIB-compress (raw deflate) — used for chunk payloads in .mca files.
-static bool zlib_compress(const uint8_t* src, size_t src_len,
-                            std::vector<uint8_t>* out) {
+static bool zlib_compress(const uint8_t* src, size_t src_len, std::vector<uint8_t>* out) {
     uLongf bound = compressBound((uLong)src_len);
     out->resize(bound);
     uLongf dest_len = bound;
-    int rc = compress2(out->data(), &dest_len, src, (uLong)src_len,
-                        kChunkCompressionLevel);
-    if (rc != Z_OK) { out->clear(); return false; }
+    int rc = compress2(out->data(), &dest_len, src, (uLong)src_len, kChunkCompressionLevel);
+    if (rc != Z_OK) {
+        out->clear();
+        return false;
+    }
     out->resize(dest_len);
     return true;
 }
 
 // ZLIB-decompress (raw inflate).
-static bool zlib_decompress(const uint8_t* src, size_t src_len,
-                              std::vector<uint8_t>* out) {
+static bool zlib_decompress(const uint8_t* src, size_t src_len, std::vector<uint8_t>* out) {
     z_stream zs{};
-    if (inflateInit(&zs) != Z_OK) return false;
-    zs.next_in  = (Bytef*)src;
+    if (inflateInit(&zs) != Z_OK)
+        return false;
+    zs.next_in = (Bytef*)src;
     zs.avail_in = (uInt)src_len;
     out->resize(0);
     out->reserve(src_len * 4);
     uint8_t chunk[65536];
     int rc = Z_OK;
     do {
-        zs.next_out  = chunk;
+        zs.next_out = chunk;
         zs.avail_out = sizeof(chunk);
         rc = inflate(&zs, Z_NO_FLUSH);
         if (rc != Z_OK && rc != Z_STREAM_END) {
@@ -225,7 +237,9 @@ static bool zlib_decompress(const uint8_t* src, size_t src_len,
 // Anvil ctor / dtor
 // ============================================================================
 Anvil::Anvil() = default;
-Anvil::~Anvil() { shutdown(); }
+Anvil::~Anvil() {
+    shutdown();
+}
 
 // ============================================================================
 // init — open the world directory, read level.dat, create region/ if missing.
@@ -243,8 +257,8 @@ void Anvil::init(const std::string& path) {
         // No level.dat → generate defaults. Seed/spawn come from
         // WorldConfig via setSpawn/setCurrentTime (called by World ctor).
         // We'll write level.dat on shutdown/saveMetadata().
-        utils::MainLogger::get().info("[Anvil] No level.dat found at " +
-            level_dat + "; will create on save.");
+        utils::MainLogger::get().info("[Anvil] No level.dat found at " + level_dat +
+                                      "; will create on save.");
     } else {
         std::fclose(fp);
         loadMetadata();
@@ -265,7 +279,8 @@ void Anvil::shutdown() {
     {
         std::lock_guard<std::mutex> io(io_mtx_);
         for (auto& [_, rf_ptr] : regions_) {
-            if (rf_ptr) rf_ptr->close();
+            if (rf_ptr)
+                rf_ptr->close();
         }
         regions_.clear();
         region_lru_.clear();
@@ -281,8 +296,7 @@ std::string Anvil::regionPath(int32_t cx, int32_t cz) const {
     int32_t rx = (cx >= 0) ? (cx / 32) : ((cx - 31) / 32);
     int32_t rz = (cz >= 0) ? (cz / 32) : ((cz - 31) / 32);
     char buf[128];
-    std::snprintf(buf, sizeof(buf), "%s/region/r.%d.%d.mca",
-                   path_.c_str(), (int)rx, (int)rz);
+    std::snprintf(buf, sizeof(buf), "%s/region/r.%d.%d.mca", path_.c_str(), (int)rx, (int)rz);
     return std::string(buf);
 }
 
@@ -301,11 +315,13 @@ AnvilRegionLoader* Anvil::regionFor(int32_t cx, int32_t cz, bool create) {
         }
         return it->second.get();
     }
-    if (regions_.size() >= kMaxOpenRegions) evictOldestRegion();
+    if (regions_.size() >= kMaxOpenRegions)
+        evictOldestRegion();
     int32_t rx = (cx >= 0) ? (cx / 32) : ((cx - 31) / 32);
     int32_t rz = (cz >= 0) ? (cz / 32) : ((cz - 31) / 32);
     auto rf = std::make_unique<AnvilRegionLoader>();
-    if (!rf->open(p, rx, rz)) return nullptr;
+    if (!rf->open(p, rx, rz))
+        return nullptr;
     AnvilRegionLoader* raw = rf.get();
     regions_[p] = std::move(rf);
     region_lru_.push_back(p);
@@ -313,12 +329,14 @@ AnvilRegionLoader* Anvil::regionFor(int32_t cx, int32_t cz, bool create) {
 }
 
 void Anvil::evictOldestRegion() {
-    if (region_lru_.empty()) return;
+    if (region_lru_.empty())
+        return;
     std::string oldest = region_lru_.front();
     region_lru_.erase(region_lru_.begin());
     auto it = regions_.find(oldest);
     if (it != regions_.end()) {
-        if (it->second) it->second->close();
+        if (it->second)
+            it->second->close();
         regions_.erase(it);
     }
 }
@@ -326,8 +344,7 @@ void Anvil::evictOldestRegion() {
 // ============================================================================
 // Chunk I/O
 // ============================================================================
-std::optional<std::shared_ptr<FullChunk>>
-Anvil::loadChunk(int32_t x, int32_t z) {
+std::optional<std::shared_ptr<FullChunk>> Anvil::loadChunk(int32_t x, int32_t z) {
     // The loader pointer must stay valid until readChunk() is done — keep
     // the whole region lookup + read under io_mtx_ so a concurrent worker
     // write cannot evict/reopen the region between the two calls.
@@ -335,22 +352,25 @@ Anvil::loadChunk(int32_t x, int32_t z) {
     {
         std::lock_guard<std::mutex> io(io_mtx_);
         AnvilRegionLoader* rf = regionFor(x, z, /*create=*/false);
-        if (!rf) return std::nullopt;
+        if (!rf)
+            return std::nullopt;
         auto read = rf->readChunk(x & 31, z & 31);
-        if (!read) return std::nullopt;
+        if (!read)
+            return std::nullopt;
         payload = std::move(*read);
     }
 
     // Inflate ZLIB.
     std::vector<uint8_t> inflated;
     if (!zlib_decompress(payload.data(), payload.size(), &inflated)) {
-        utils::MainLogger::get().warn("[Anvil] Failed to inflate chunk " +
-            std::to_string(x) + "," + std::to_string(z));
+        utils::MainLogger::get().warn("[Anvil] Failed to inflate chunk " + std::to_string(x) + "," +
+                                      std::to_string(z));
         return std::nullopt;
     }
 
     mcp_chunk_t* raw = anvil_chunk_decode(inflated.data(), inflated.size());
-    if (!raw) return std::nullopt;
+    if (!raw)
+        return std::nullopt;
 
     auto adapter = std::make_shared<ChunkAdapter>(raw);
     return adapter;
@@ -379,11 +399,14 @@ Anvil::loadChunk(int32_t x, int32_t z) {
 // guarantee the async pipeline can make.
 // ============================================================================
 void Anvil::saveChunk(const std::shared_ptr<FullChunk>& chunk) {
-    if (!chunk) return;
+    if (!chunk)
+        return;
     auto* adapter = dynamic_cast<ChunkAdapter*>(chunk.get());
-    if (!adapter) return;
+    if (!adapter)
+        return;
     mcp_chunk_t* raw = adapter->chunk();
-    if (!raw) return;
+    if (!raw)
+        return;
 
     raw->last_update = current_millis();
 
@@ -391,8 +414,8 @@ void Anvil::saveChunk(const std::shared_ptr<FullChunk>& chunk) {
     size_t nbt_len = 0;
     uint8_t* nbt_buf = anvil_chunk_encode(raw, &nbt_len);
     if (!nbt_buf || nbt_len == 0) {
-        utils::MainLogger::get().warn("[Anvil] Failed to encode chunk " +
-            std::to_string(raw->x) + "," + std::to_string(raw->z));
+        utils::MainLogger::get().warn("[Anvil] Failed to encode chunk " + std::to_string(raw->x) +
+                                      "," + std::to_string(raw->z));
         return;
     }
 
@@ -412,7 +435,9 @@ void Anvil::startWorker() {
         std::lock_guard<std::mutex> lk(job_mtx_);
         worker_stop_ = false;
     }
-    worker_ = std::thread([this] { workerLoop(); });
+    worker_ = std::thread([this] {
+        workerLoop();
+    });
 }
 
 void Anvil::stopWorker() {
@@ -423,7 +448,8 @@ void Anvil::stopWorker() {
     job_cv_.notify_all();
     // join() waits until the worker has written EVERY queued chunk: it
     // only exits when worker_stop_ is set AND the queue is drained.
-    if (worker_.joinable()) worker_.join();
+    if (worker_.joinable())
+        worker_.join();
 }
 
 void Anvil::enqueueSave(SaveJob&& job) {
@@ -432,7 +458,9 @@ void Anvil::enqueueSave(SaveJob&& job) {
     // for a long stretch, block the (already budgeted) drainer instead of
     // ballooning memory. The worker keeps draining even past worker_stop_,
     // so this cannot deadlock against shutdown.
-    job_cv_.wait(lk, [&] { return job_queue_.size() < kMaxQueuedSaves; });
+    job_cv_.wait(lk, [&] {
+        return job_queue_.size() < kMaxQueuedSaves;
+    });
     job_queue_.push_back(std::move(job));
     lk.unlock();
     job_cv_.notify_one();
@@ -465,15 +493,14 @@ void Anvil::workerLoop() {
             AnvilRegionLoader* rf = regionFor(job.x, job.z, /*create=*/true);
             if (!rf) {
                 utils::MainLogger::get().warn("[Anvil] Failed to open region for chunk " +
-                    std::to_string(job.x) + "," + std::to_string(job.z));
-            } else if (!rf->writeChunk(job.x & 31, job.z & 31,
-                                       kCompressionZlib, compressed)) {
+                                              std::to_string(job.x) + "," + std::to_string(job.z));
+            } else if (!rf->writeChunk(job.x & 31, job.z & 31, kCompressionZlib, compressed)) {
                 utils::MainLogger::get().warn("[Anvil] Failed to write chunk " +
-                    std::to_string(job.x) + "," + std::to_string(job.z));
+                                              std::to_string(job.x) + "," + std::to_string(job.z));
             }
         } else {
             utils::MainLogger::get().warn("[Anvil] zlib compress failed for chunk " +
-                std::to_string(job.x) + "," + std::to_string(job.z));
+                                          std::to_string(job.x) + "," + std::to_string(job.z));
         }
         job.nbt.clear();
         job.nbt.shrink_to_fit();
@@ -481,14 +508,16 @@ void Anvil::workerLoop() {
         {
             std::lock_guard<std::mutex> lk(job_mtx_);
             job_busy_ = false;
-            if (job_queue_.empty()) done_cv_.notify_all();
+            if (job_queue_.empty())
+                done_cv_.notify_all();
         }
     }
 }
 
 void Anvil::flushPendingSaves() {
     std::unique_lock<std::mutex> lk(job_mtx_);
-    if (!worker_.joinable()) return;   // worker never started
+    if (!worker_.joinable())
+        return; // worker never started
     done_cv_.wait(lk, [&] {
         return job_queue_.empty() && !job_busy_;
     });
@@ -502,34 +531,42 @@ void Anvil::unloadChunk(int32_t /*x*/, int32_t /*z*/) {
 // ============================================================================
 // listChunks — enumerate every chunk coordinate present on disk.
 // ============================================================================
-std::vector<std::pair<int32_t, int32_t>>
-Anvil::listChunks() const {
+std::vector<std::pair<int32_t, int32_t>> Anvil::listChunks() const {
     std::vector<std::pair<int32_t, int32_t>> out;
     std::string regions_dir = path_ + "/region";
     DIR* dir = ::opendir(regions_dir.c_str());
-    if (!dir) return out;
+    if (!dir)
+        return out;
     struct dirent* ent;
     while ((ent = ::readdir(dir)) != nullptr) {
         std::string name = ent->d_name;
-        if (name.size() < 8) continue;
-        if (name.substr(0, 2) != "r.") continue;
-        if (name.substr(name.size() - 4) != ".mca") continue;
+        if (name.size() < 8)
+            continue;
+        if (name.substr(0, 2) != "r.")
+            continue;
+        if (name.substr(name.size() - 4) != ".mca")
+            continue;
         size_t first_dot = name.find('.', 2);
-        if (first_dot == std::string::npos) continue;
+        if (first_dot == std::string::npos)
+            continue;
         size_t second_dot = name.find('.', first_dot + 1);
-        if (second_dot == std::string::npos) continue;
+        if (second_dot == std::string::npos)
+            continue;
         std::string rx_str = name.substr(2, first_dot - 2);
         std::string rz_str = name.substr(first_dot + 1, second_dot - first_dot - 1);
         int32_t rx = 0, rz = 0;
         try {
             rx = std::stoi(rx_str);
             rz = std::stoi(rz_str);
-        } catch (...) { continue; }
+        } catch (...) {
+            continue;
+        }
         // Open the region file and walk its location table to enumerate
         // the actual chunk coordinates that exist on disk.
         auto* self = const_cast<Anvil*>(this);
         AnvilRegionLoader* rf = self->regionFor(rx * 32, rz * 32, /*create=*/false);
-        if (!rf) continue;
+        if (!rf)
+            continue;
         for (int32_t lz = 0; lz < 32; ++lz) {
             for (int32_t lx = 0; lx < 32; ++lx) {
                 if (rf->hasChunk(lx, lz)) {
@@ -549,8 +586,8 @@ void Anvil::loadMetadata() {
     std::string p = path_ + "/level.dat";
     std::vector<uint8_t> raw;
     if (!read_file(p, &raw)) {
-        seed_  = 0;
-        time_  = 0;
+        seed_ = 0;
+        time_ = 0;
         spawn_ = math::Vector3{0.0, 64.0, 0.0};
         return;
     }
@@ -563,24 +600,30 @@ void Anvil::loadMetadata() {
     }
 
     mcp_tag_t* root = mcp_nbt_read_bytes(inflated.data(), inflated.size(),
-                                            /*little_endian=*/false);
+                                         /*little_endian=*/false);
     if (!root || mcp_tag_get_type(root) != MCP_TAG_COMPOUND) {
-        if (root) mcp_tag_destroy(root);
+        if (root)
+            mcp_tag_destroy(root);
         return;
     }
     const mcp_tag_t* data = mcp_compound_tag_get_compound(root, "Data");
-    if (!data) { mcp_tag_destroy(root); return; }
+    if (!data) {
+        mcp_tag_destroy(root);
+        return;
+    }
 
-    seed_           = mcp_compound_tag_get_long(data, "RandomSeed", 0);
-    time_           = mcp_compound_tag_get_long(data, "Time", 0);
-    int64_t day     = mcp_compound_tag_get_long(data, "DayTime", 0);
-    if (time_ == 0 && day != 0) time_ = day;
-    int32_t sx      = mcp_compound_tag_get_int(data, "SpawnX", 0);
-    int32_t sy      = mcp_compound_tag_get_int(data, "SpawnY", 64);
-    int32_t sz      = mcp_compound_tag_get_int(data, "SpawnZ", 0);
-    spawn_          = math::Vector3{(double)sx, (double)sy, (double)sz};
+    seed_ = mcp_compound_tag_get_long(data, "RandomSeed", 0);
+    time_ = mcp_compound_tag_get_long(data, "Time", 0);
+    int64_t day = mcp_compound_tag_get_long(data, "DayTime", 0);
+    if (time_ == 0 && day != 0)
+        time_ = day;
+    int32_t sx = mcp_compound_tag_get_int(data, "SpawnX", 0);
+    int32_t sy = mcp_compound_tag_get_int(data, "SpawnY", 64);
+    int32_t sz = mcp_compound_tag_get_int(data, "SpawnZ", 0);
+    spawn_ = math::Vector3{(double)sx, (double)sy, (double)sz};
     const char* gen = mcp_compound_tag_get_string(data, "generatorName", "normal");
-    if (gen) generator_name_ = gen;
+    if (gen)
+        generator_name_ = gen;
 
     mcp_tag_destroy(root);
 }
@@ -588,11 +631,15 @@ void Anvil::loadMetadata() {
 void Anvil::saveMetadata() {
     // Build root compound "".
     mcp_tag_t* root = mcp_compound_tag_new_named("");
-    if (!root) return;
+    if (!root)
+        return;
 
     // Build "Data" compound (mirrors Nukkit's Anvil.generate()).
     mcp_tag_t* data = mcp_compound_tag_new_named("Data");
-    if (!data) { mcp_tag_destroy(root); return; }
+    if (!data) {
+        mcp_tag_destroy(root);
+        return;
+    }
 
     mcp_compound_tag_set_long(data, "DayTime", time_);
     mcp_compound_tag_set_int(data, "GameType", 0);
@@ -607,8 +654,10 @@ void Anvil::saveMetadata() {
         std::string lname;
         if (!path_.empty()) {
             size_t pos = path_.find_last_of('/');
-            if (pos == std::string::npos) lname = path_;
-            else                          lname = path_.substr(pos + 1);
+            if (pos == std::string::npos)
+                lname = path_;
+            else
+                lname = path_.substr(pos + 1);
         }
         mcp_compound_tag_set_string(data, "LevelName", lname.c_str());
     }
@@ -634,7 +683,8 @@ void Anvil::saveMetadata() {
     size_t nbt_len = 0;
     uint8_t* nbt_buf = mcp_nbt_write_bytes(root, /*little_endian=*/false, &nbt_len);
     mcp_tag_destroy(root);
-    if (!nbt_buf || nbt_len == 0) return;
+    if (!nbt_buf || nbt_len == 0)
+        return;
 
     // GZIP-compress.
     std::vector<uint8_t> gz;
@@ -656,18 +706,24 @@ void Anvil::saveMetadata() {
 // ============================================================================
 bool Anvil::isValid(const std::string& path) {
     struct stat st{};
-    if (::stat((path + "/level.dat").c_str(), &st) != 0) return false;
-    if (!S_ISREG(st.st_mode)) return false;
-    if (::stat((path + "/region").c_str(), &st) != 0) return false;
-    if (!S_ISDIR(st.st_mode)) return false;
+    if (::stat((path + "/level.dat").c_str(), &st) != 0)
+        return false;
+    if (!S_ISREG(st.st_mode))
+        return false;
+    if (::stat((path + "/region").c_str(), &st) != 0)
+        return false;
+    if (!S_ISDIR(st.st_mode))
+        return false;
     // Every file in region/ must end in .mca.
     DIR* dir = ::opendir((path + "/region").c_str());
-    if (!dir) return false;
+    if (!dir)
+        return false;
     struct dirent* ent;
     bool all_mca = true;
     while ((ent = ::readdir(dir)) != nullptr) {
         std::string name = ent->d_name;
-        if (name == "." || name == "..") continue;
+        if (name == "." || name == "..")
+            continue;
         if (name.size() < 4 || name.substr(name.size() - 4) != ".mca") {
             all_mca = false;
             break;
@@ -677,14 +733,17 @@ bool Anvil::isValid(const std::string& path) {
     return all_mca;
 }
 
-bool Anvil::generate(const std::string& path, const std::string& name,
-                      int64_t seed, const std::string& generatorName) {
-    if (!ensure_dir(path)) return false;
-    if (!ensure_dir(path + "/region")) return false;
+bool Anvil::generate(const std::string& path, const std::string& name, int64_t seed,
+                     const std::string& generatorName) {
+    if (!ensure_dir(path))
+        return false;
+    if (!ensure_dir(path + "/region"))
+        return false;
 
     // Build Data compound.
     mcp_tag_t* data = mcp_compound_tag_new_named("Data");
-    if (!data) return false;
+    if (!data)
+        return false;
     mcp_tag_t* game_rules = mcp_compound_tag_new_named("GameRules");
     mcp_compound_tag_set(data, "GameRules", game_rules);
 
@@ -715,12 +774,14 @@ bool Anvil::generate(const std::string& path, const std::string& name,
     size_t nbt_len = 0;
     uint8_t* nbt_buf = mcp_nbt_write_bytes(root, /*little_endian=*/false, &nbt_len);
     mcp_tag_destroy(root);
-    if (!nbt_buf || nbt_len == 0) return false;
+    if (!nbt_buf || nbt_len == 0)
+        return false;
 
     std::vector<uint8_t> gz;
     bool ok = gzip_compress(nbt_buf, nbt_len, &gz);
     free(nbt_buf);
-    if (!ok) return false;
+    if (!ok)
+        return false;
 
     std::string level_dat = path + "/level.dat";
     return write_file(level_dat, gz.data(), gz.size());

@@ -32,7 +32,7 @@
 namespace cursestone::network {
 
 class SourceInterface {
-public:
+  public:
     virtual ~SourceInterface() = default;
     virtual std::string getName() const = 0;
     virtual void start() = 0;

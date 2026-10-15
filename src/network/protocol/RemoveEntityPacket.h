@@ -35,8 +35,10 @@
 namespace cursestone::network::protocol {
 
 class RemoveEntityPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return REMOVE_ENTITY_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return REMOVE_ENTITY_PACKET;
+    }
 
     int64_t eid = 0;
 

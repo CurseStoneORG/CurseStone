@@ -51,22 +51,21 @@ void CrashDump::crash(const std::string& reason, const std::string& trace) {
     auto t = std::chrono::system_clock::now();
     auto t_c = std::chrono::system_clock::to_time_t(t);
     uint64_t now_ms = static_cast<uint64_t>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            t.time_since_epoch()).count());
+        std::chrono::duration_cast<std::chrono::milliseconds>(t.time_since_epoch()).count());
 
     using cursestone::diagnostics::Diagnostics;
     // Pull the always-on context. These renderers use try_lock, so they are
     // safe to call from the signal handler that invokes crash().
     std::string context = Diagnostics::get().renderContext();
     std::string players = Diagnostics::get().renderPlayers();
-    std::string errors  = Diagnostics::get().renderRecentErrors(20);
+    std::string errors = Diagnostics::get().renderRecentErrors(20);
     std::string packets = Diagnostics::get().renderRecentPackets(40);
 
     std::ostringstream fname;
-    fname << data_path_ << "/crashdump_"
-          << std::put_time(std::gmtime(&t_c), "%Y%m%d_%H%M%S") << ".json";
+    fname << data_path_ << "/crashdump_" << std::put_time(std::gmtime(&t_c), "%Y%m%d_%H%M%S")
+          << ".json";
     std::string json_path = fname.str();
-    std::string log_path  = json_path + ".log";
+    std::string log_path = json_path + ".log";
 
     auto esc = diagnostics::json_escape;
 
@@ -97,11 +96,12 @@ void CrashDump::crash(const std::string& reason, const std::string& trace) {
            << "Minecraft:  " << MINECRAFT_VERSION << " (protocol " << PROTOCOL_VERSION << ")\n"
            << "Time (UTC): " << utcStamp(now_ms, "%Y-%m-%d %H:%M:%S") << "\n"
            << "Reason:     " << reason << "\n"
-           << "\n--- Context ---\n" << context
-           << "\n--- Players ---\n" << players
-           << "\n--- Recent errors ---\n" << errors
-           << "\n--- Recent packets ---\n" << packets
-           << "\n--- Backtrace ---\n" << trace << "\n";
+           << "\n--- Context ---\n"
+           << context << "\n--- Players ---\n"
+           << players << "\n--- Recent errors ---\n"
+           << errors << "\n--- Recent packets ---\n"
+           << packets << "\n--- Backtrace ---\n"
+           << trace << "\n";
         lf.flush();
     }
 

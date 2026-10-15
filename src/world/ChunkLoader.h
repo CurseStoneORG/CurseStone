@@ -28,10 +28,14 @@
 #include "world/format/Chunk.h"
 namespace cursestone::world {
 class ChunkLoader {
-public:
+  public:
     virtual ~ChunkLoader() = default;
     virtual void onChunkLoaded(int32_t x, int32_t z, const mcp_chunk_t* c) = 0;
-    virtual int32_t viewDistance() const { return 8; }
-    virtual bool isAlive() const { return true; }
+    virtual int32_t viewDistance() const {
+        return 8;
+    }
+    virtual bool isAlive() const {
+        return true;
+    }
 };
 } // namespace

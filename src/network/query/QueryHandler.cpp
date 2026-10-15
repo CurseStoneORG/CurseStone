@@ -53,17 +53,20 @@ void QueryHandler::tick() {
     // handlePacket() when RakLib forwards them.
 }
 
-bool QueryHandler::handlePacket(const std::string& ip, uint16_t port,
-                                   const uint8_t* data, size_t len) {
-    if (!data || len < 7) return false;
+bool QueryHandler::handlePacket(const std::string& ip, uint16_t port, const uint8_t* data,
+                                size_t len) {
+    if (!data || len < 7)
+        return false;
     // GS4 magic: 0xFE 0xFD 0xFD 0xFE 0xFE 0xFE 0xFD (first 7 bytes).
     static const uint8_t MAGIC[7] = {0xFE, 0xFD, 0xFD, 0xFE, 0xFE, 0xFE, 0xFD};
-    if (memcmp(data, MAGIC, 7) != 0) return false;
+    if (memcmp(data, MAGIC, 7) != 0)
+        return false;
 
     // Byte 7 = session ID (4 bytes), byte 11 = packet type (0x00=handshake,
     // 0x00=status, 0x09=stat). Real GS4 is more complex; we stub it.
-    (void)ip; (void)port;
-    return true;  // Acknowledged, no response yet.
+    (void)ip;
+    (void)port;
+    return true; // Acknowledged, no response yet.
 }
 
 } // namespace network

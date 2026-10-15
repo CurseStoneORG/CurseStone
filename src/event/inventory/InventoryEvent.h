@@ -31,20 +31,26 @@
 #include "../Event.h"
 #include "../../inventory/Inventory.h"
 #include <memory>
-namespace cursestone { class Player; }
+namespace cursestone {
+class Player;
+}
 namespace cursestone::event::inventory {
 
 class InventoryEvent : public Event {
-public:
+  public:
     std::shared_ptr<cursestone::inventory::Inventory> inv;
 
     explicit InventoryEvent(std::shared_ptr<cursestone::inventory::Inventory> inventory)
-        : inv(std::move(inventory)) {}
+        : inv(std::move(inventory)) {
+    }
 
-    std::shared_ptr<cursestone::inventory::Inventory> getInventory() { return inv; }
+    std::shared_ptr<cursestone::inventory::Inventory> getInventory() {
+        return inv;
+    }
 
     const std::string& eventName() const override {
-        static std::string n = "InventoryEvent"; return n;
+        static std::string n = "InventoryEvent";
+        return n;
     }
 };
 

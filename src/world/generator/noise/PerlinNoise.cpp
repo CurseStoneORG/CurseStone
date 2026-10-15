@@ -38,7 +38,10 @@ void PerlinNoise::init(int levels) {
     // los valores sean bit identicos a los que antes se calculaban en
     // cada evaluacion de campo.
     double s = 0.0, amp = 1.0;
-    for (int i = 0; i < levels; ++i) { s += amp; amp *= 2.0; }
+    for (int i = 0; i < levels; ++i) {
+        s += amp;
+        amp *= 2.0;
+    }
     amp_sum_ = s;
     dom_scale_ = (levels <= 0) ? 1.0 : (double)(1u << (levels - 1));
 }
@@ -86,9 +89,8 @@ float PerlinNoise::getValue(float x, float y, float z) {
     return value;
 }
 
-float* PerlinNoise::getRegion(float* buffer, float x, float y, float z, int xSize,
-                              int ySize, int zSize, float xScale, float yScale,
-                              float zScale) {
+float* PerlinNoise::getRegion(float* buffer, float x, float y, float z, int xSize, int ySize,
+                              int zSize, float xScale, float yScale, float zScale) {
     const int size = xSize * ySize * zSize;
     if (buffer == 0) {
         buffer = new float[size];
@@ -99,18 +101,17 @@ float* PerlinNoise::getRegion(float* buffer, float x, float y, float z, int xSiz
     float pow = 1;
 
     for (int i = 0; i < levels; i++) {
-        noiseLevels[i]->add(buffer, x, y, z, xSize, ySize, zSize, xScale * pow,
-                            yScale * pow, zScale * pow, pow);
+        noiseLevels[i]->add(buffer, x, y, z, xSize, ySize, zSize, xScale * pow, yScale * pow,
+                            zScale * pow, pow);
         pow /= 2;
     }
 
     return buffer;
 }
 
-float* PerlinNoise::getRegion(float* sr, int x, int z, int xSize, int zSize,
-                              float xScale, float zScale, float pow) {
-    return getRegion(sr, (float)x, 10.0f, (float)z, xSize, 1, zSize, xScale, 1,
-                     zScale);
+float* PerlinNoise::getRegion(float* sr, int x, int z, int xSize, int zSize, float xScale,
+                              float zScale, float pow) {
+    return getRegion(sr, (float)x, 10.0f, (float)z, xSize, 1, zSize, xScale, 1, zScale);
 }
 
 int PerlinNoise::hashCode() {

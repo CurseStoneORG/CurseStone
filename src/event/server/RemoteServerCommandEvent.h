@@ -28,17 +28,21 @@
 #pragma once
 #include "ServerCommandEvent.h"
 #include <string>
-namespace cursestone { class CommandSender; }
+namespace cursestone {
+class CommandSender;
+}
 
 namespace cursestone::event::server {
 
 class RemoteServerCommandEvent : public ServerCommandEvent {
-public:
+  public:
     RemoteServerCommandEvent(void* sender, const std::string& cmd)
-        : ServerCommandEvent(static_cast<cursestone::CommandSender*>(sender), cmd) {}
+        : ServerCommandEvent(static_cast<cursestone::CommandSender*>(sender), cmd) {
+    }
 
     const std::string& eventName() const override {
-        static std::string n = "RemoteServerCommandEvent"; return n;
+        static std::string n = "RemoteServerCommandEvent";
+        return n;
     }
 };
 

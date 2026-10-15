@@ -35,8 +35,9 @@ namespace cursestone {
  * @brief Captures fatal-error state to disk.
  */
 class CrashDump {
-public:
-    explicit CrashDump(std::string data_path) : data_path_(std::move(data_path)) {}
+  public:
+    explicit CrashDump(std::string data_path) : data_path_(std::move(data_path)) {
+    }
 
     /**
      * @brief Serializes the crash context to the dump files.
@@ -49,7 +50,8 @@ public:
      * @param trace   formatted backtrace to embed in the dump.
      */
     void crash(const std::string& reason, const std::string& trace);
-private:
+
+  private:
     std::string data_path_;
 };
 } // namespace

@@ -55,7 +55,7 @@
 #include "LuaPlugin.h"
 #include "LuaCommand.h"
 #include "Server.h"
-#include "command/SimpleCommandMap.h"   // definición completa de CommandMap
+#include "command/SimpleCommandMap.h" // definición completa de CommandMap
 #include "Player.h"
 #include "utils/MainLogger.hpp"
 #include <algorithm>
@@ -70,8 +70,9 @@ namespace {
 int l_commands_register(lua_State* L) {
     // 1. Nombre (obligatorio) a minúsculas.
     std::string name = luaL_checkstring(L, 1);
-    std::transform(name.begin(), name.end(), name.begin(),
-                   [](unsigned char c) { return (char)std::tolower(c); });
+    std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) {
+        return (char)std::tolower(c);
+    });
 
     // 2. opts: tabla opcional. Leer description / usage / permission / override.
     std::string description, usage;
@@ -80,10 +81,12 @@ int l_commands_register(lua_State* L) {
     bool overrideCmd = false;
     if (lua_istable(L, 2)) {
         lua_getfield(L, 2, "description");
-        if (const char* s = lua_tostring(L, -1)) description = s;
+        if (const char* s = lua_tostring(L, -1))
+            description = s;
         lua_pop(L, 1);
         lua_getfield(L, 2, "usage");
-        if (const char* s = lua_tostring(L, -1)) usage = s;
+        if (const char* s = lua_tostring(L, -1))
+            usage = s;
         lua_pop(L, 1);
         lua_getfield(L, 2, "override");
         overrideCmd = lua_toboolean(L, -1) != 0;
@@ -91,14 +94,15 @@ int l_commands_register(lua_State* L) {
         lua_getfield(L, 2, "permission");
         if (const char* s = lua_tostring(L, -1)) {
             std::string p = s;
-            std::transform(p.begin(), p.end(), p.begin(),
-                           [](unsigned char c) { return (char)std::tolower(c); });
+            std::transform(p.begin(), p.end(), p.begin(), [](unsigned char c) {
+                return (char)std::tolower(c);
+            });
             if (p == "op" || p == "admin") {
                 mode = LuaCommand::PermMode::OP;
-            } else if (p != "default" && p != "all" && p != "public" &&
-                       p != "everyone" && p != "todos") {
+            } else if (p != "default" && p != "all" && p != "public" && p != "everyone" &&
+                       p != "todos") {
                 mode = LuaCommand::PermMode::NODE;
-                node = s;                 // el nodo se respeta tal cual (sin bajar)
+                node = s; // el nodo se respeta tal cual (sin bajar)
             }
             // default/all/public/everyone/todos -> PUBLIC (ya está por defecto)
         }
@@ -121,9 +125,8 @@ int l_commands_register(lua_State* L) {
         Command* displaced = map->getCommand(name);
         ok = map->overrideCommand(std::move(cmd));
         if (ok && displaced) {
-            utils::MainLogger::get().info(
-                "[" + pl->name() + "] overrode command /" + name +
-                " (original cancelled, restored on plugin unload)");
+            utils::MainLogger::get().info("[" + pl->name() + "] overrode command /" + name +
+                                          " (original cancelled, restored on plugin unload)");
         }
     } else {
         ok = Server::getInstance().getCommandMap()->registerCommand(std::move(cmd));
@@ -132,8 +135,7 @@ int l_commands_register(lua_State* L) {
     // 5. Si el nombre ya estaba tomado: soltar la ref y avisar.
     if (!ok) {
         luaL_unref(L, LUA_REGISTRYINDEX, fnRef);
-        utils::MainLogger::get().warn(
-            "[" + pl->name() + "] command '" + name + "' already exists");
+        utils::MainLogger::get().warn("[" + pl->name() + "] command '" + name + "' already exists");
         lua_pushboolean(L, 0);
         return 1;
     }
@@ -161,7 +163,8 @@ int l_commands_reply(lua_State* L) {
     lua_pop(L, 1);
     if (name) {
         Player* p = Server::getInstance().getPlayerExact(name);
-        if (p) p->sendMessage(msg);
+        if (p)
+            p->sendMessage(msg);
     }
     return 0;
 }
@@ -170,8 +173,7 @@ int l_commands_reply(lua_State* L) {
 
 void bindCommands(lua_State* L) {
     static const luaL_Reg cmdsF[] = {
-        {"register", l_commands_register}, {"reply", l_commands_reply},
-        {nullptr, nullptr}};
+        {"register", l_commands_register}, {"reply", l_commands_reply}, {nullptr, nullptr}};
     lua_newtable(L);
     luaL_setfuncs(L, cmdsF, 0);
     lua_setglobal(L, "commands");

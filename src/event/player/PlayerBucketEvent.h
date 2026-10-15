@@ -29,21 +29,25 @@
 #include "PlayerEvent.h"
 #include "../Cancellable.h"
 #include "../../item/ItemStack.h"
-namespace cursestone { class Player; }
+namespace cursestone {
+class Player;
+}
 
 namespace cursestone::event::player {
 class PlayerBucketEvent : public PlayerEvent, public Cancellable {
-public:
+  public:
     cursestone::item::ItemStack bucket;
     int blockX = 0;
     int blockY = 0;
     int blockZ = 0;
     int face = 0;
-    PlayerBucketEvent(cursestone::Player* p, const cursestone::item::ItemStack& b,
-                      int bx, int by, int bz, int f)
-        : PlayerEvent(p), bucket(b), blockX(bx), blockY(by), blockZ(bz), face(f) {}
+    PlayerBucketEvent(cursestone::Player* p, const cursestone::item::ItemStack& b, int bx, int by,
+                      int bz, int f)
+        : PlayerEvent(p), bucket(b), blockX(bx), blockY(by), blockZ(bz), face(f) {
+    }
     const std::string& eventName() const override {
-        static std::string n = "PlayerBucketEvent"; return n;
+        static std::string n = "PlayerBucketEvent";
+        return n;
     }
 };
 } // namespace cursestone::event::player

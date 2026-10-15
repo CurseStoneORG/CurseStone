@@ -26,8 +26,12 @@
 #include "BlockIds.h"
 namespace cursestone::block {
 class BlockLavaStill : public BlockLava {
-public:
-    uint8_t id() const override { return LAVA_STILL; }
-    std::string name() const override { return "Still Lava"; }
+  public:
+    uint8_t id() const override {
+        return LAVA_STILL;
+    }
+    std::string name() const override {
+        return "Still Lava";
+    }
 };
 } // namespace

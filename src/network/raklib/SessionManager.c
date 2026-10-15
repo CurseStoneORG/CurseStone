@@ -65,29 +65,27 @@
 #include <stdio.h>
 
 // RakNet magic bytes (offline message data id)
-static const uint8_t RAKLIB_MAGIC_BYTES[16] = {
-    0x00, 0xff, 0xff, 0x00, 0xfe, 0xfe, 0xfe, 0xfe,
-    0xfd, 0xfd, 0xfd, 0xfd, 0x12, 0x34, 0x56, 0x78
-};
+static const uint8_t RAKLIB_MAGIC_BYTES[16] = {0x00, 0xff, 0xff, 0x00, 0xfe, 0xfe, 0xfe, 0xfe,
+                                               0xfd, 0xfd, 0xfd, 0xfd, 0x12, 0x34, 0x56, 0x78};
 
 // =========================================================================
 // Init / Destroy
 // =========================================================================
-void mcp_rak_session_manager_init(mcp_rak_session_manager_t* sm,
-                                    int64_t server_id, uint16_t mtu,
-                                    mcp_server_instance_t* instance) {
-    if (!sm) return;
+void mcp_rak_session_manager_init(mcp_rak_session_manager_t* sm, int64_t server_id, uint16_t mtu,
+                                  mcp_server_instance_t* instance) {
+    if (!sm)
+        return;
     memset(sm, 0, sizeof(*sm));
     sm->socket.fd = -1;
     sm->server_id = server_id;
-    sm->mtu       = mtu ? mtu : RAKLIB_MAX_MTU;
-    sm->instance  = instance;
-    snprintf(sm->server_name, sizeof(sm->server_name),
-             "MCCPP;Demo;84;0.15.10;0;20");
+    sm->mtu = mtu ? mtu : RAKLIB_MAX_MTU;
+    sm->instance = instance;
+    snprintf(sm->server_name, sizeof(sm->server_name), "MCCPP;Demo;84;0.15.10;0;20");
 }
 
 void mcp_rak_session_manager_destroy(mcp_rak_session_manager_t* sm) {
-    if (!sm) return;
+    if (!sm)
+        return;
     mcp_udp_socket_close(&sm->socket);
     if (sm->sessions) {
         for (size_t i = 0; i < sm->session_count; ++i) {
@@ -99,18 +97,18 @@ void mcp_rak_session_manager_destroy(mcp_rak_session_manager_t* sm) {
     memset(sm, 0, sizeof(*sm));
 }
 
-void mcp_rak_session_manager_set_name(mcp_rak_session_manager_t* sm,
-                                       const char* name) {
-    if (!sm || !name) return;
+void mcp_rak_session_manager_set_name(mcp_rak_session_manager_t* sm, const char* name) {
+    if (!sm || !name)
+        return;
     snprintf(sm->server_name, sizeof(sm->server_name), "%s", name);
 }
 
 // =========================================================================
 // Bind
 // =========================================================================
-int mcp_rak_session_manager_bind(mcp_rak_session_manager_t* sm,
-                                   const char* host, uint16_t port) {
-    if (!sm) return -1;
+int mcp_rak_session_manager_bind(mcp_rak_session_manager_t* sm, const char* host, uint16_t port) {
+    if (!sm)
+        return -1;
     int r = mcp_udp_socket_open(&sm->socket, host ? host : "0.0.0.0", port);
     if (r == 0) {
         mcp_udp_socket_set_blocking(&sm->socket, false);
@@ -122,30 +120,32 @@ int mcp_rak_session_manager_bind(mcp_rak_session_manager_t* sm,
 // =========================================================================
 // Session lookup / creation
 // =========================================================================
-mcp_rak_session_t* mcp_rak_session_manager_find(
-    mcp_rak_session_manager_t* sm, const uint8_t ip[4], uint16_t port) {
+mcp_rak_session_t* mcp_rak_session_manager_find(mcp_rak_session_manager_t* sm, const uint8_t ip[4],
+                                                uint16_t port) {
     for (size_t i = 0; i < sm->session_count; ++i) {
-        if (memcmp(sm->sessions[i]->ip, ip, 4) == 0 &&
-            sm->sessions[i]->port == port)
+        if (memcmp(sm->sessions[i]->ip, ip, 4) == 0 && sm->sessions[i]->port == port)
             return sm->sessions[i];
     }
     return NULL;
 }
 
-mcp_rak_session_t* mcp_rak_session_manager_get_or_create(
-    mcp_rak_session_manager_t* sm, const uint8_t ip[4], uint16_t port) {
+mcp_rak_session_t* mcp_rak_session_manager_get_or_create(mcp_rak_session_manager_t* sm,
+                                                         const uint8_t ip[4], uint16_t port) {
     mcp_rak_session_t* s = mcp_rak_session_manager_find(sm, ip, port);
-    if (s) return s;
+    if (s)
+        return s;
     if (sm->session_count == sm->session_capacity) {
         size_t nc = sm->session_capacity == 0 ? 8 : sm->session_capacity * 2;
-        mcp_rak_session_t** arr = (mcp_rak_session_t**)realloc(
-            sm->sessions, nc * sizeof(mcp_rak_session_t*));
-        if (!arr) return NULL;
+        mcp_rak_session_t** arr =
+            (mcp_rak_session_t**)realloc(sm->sessions, nc * sizeof(mcp_rak_session_t*));
+        if (!arr)
+            return NULL;
         sm->sessions = arr;
         sm->session_capacity = nc;
     }
     mcp_rak_session_t* ns = (mcp_rak_session_t*)calloc(1, sizeof(*ns));
-    if (!ns) return NULL;
+    if (!ns)
+        return NULL;
     mcp_rak_session_init(ns, ip, port, 0, sm->server_id);
     sm->sessions[sm->session_count++] = ns;
     return ns;
@@ -154,21 +154,21 @@ mcp_rak_session_t* mcp_rak_session_manager_get_or_create(
 // =========================================================================
 // Send helpers
 // =========================================================================
-ssize_t mcp_rak_session_manager_send(mcp_rak_session_manager_t* sm,
-                                       const uint8_t* data, size_t len,
-                                       const uint8_t ip[4], uint16_t port) {
-    if (!sm || !data || !ip) return -1;
+ssize_t mcp_rak_session_manager_send(mcp_rak_session_manager_t* sm, const uint8_t* data, size_t len,
+                                     const uint8_t ip[4], uint16_t port) {
+    if (!sm || !data || !ip)
+        return -1;
     return mcp_udp_socket_send(&sm->socket, data, len, ip, port);
 }
 
-bool mcp_rak_session_manager_send_encapsulated(mcp_rak_session_manager_t* sm,
-                                                const uint8_t ip[4], uint16_t port,
-                                                const uint8_t* payload, size_t plen,
-                                                uint8_t reliability,
-                                                uint8_t order_channel) {
-    if (!sm || !ip || !payload || plen == 0) return false;
+bool mcp_rak_session_manager_send_encapsulated(mcp_rak_session_manager_t* sm, const uint8_t ip[4],
+                                               uint16_t port, const uint8_t* payload, size_t plen,
+                                               uint8_t reliability, uint8_t order_channel) {
+    if (!sm || !ip || !payload || plen == 0)
+        return false;
     mcp_rak_session_t* s = mcp_rak_session_manager_find(sm, ip, port);
-    if (!s || s->state < MCP_SESSION_STATE_CONNECTING_2) return false;
+    if (!s || s->state < MCP_SESSION_STATE_CONNECTING_2)
+        return false;
     // ---- Flow control: never let one stalled session grow without end.
     // A client that has stopped acknowledging (crashed, saturated phone,
     // proxy that stopped forwarding) used to keep the server queueing
@@ -184,12 +184,11 @@ bool mcp_rak_session_manager_send_encapsulated(mcp_rak_session_manager_t* sm,
         if (!s->diag_backpressure_logged) {
             s->diag_backpressure_logged = true;
             fprintf(stderr,
-                "[NET] %u.%u.%u.%u:%u is not acknowledging: %u reliable "
-                "datagrams still un-ACKed (cap %u) — refusing new reliable "
-                "data for this session (drops=%u)\n",
-                s->ip[0], s->ip[1], s->ip[2], s->ip[3], s->port,
-                s->diag_recovery_occupied, (unsigned)MCP_MAX_INFLIGHT_RELIABLE,
-                s->diag_backpressure_drops);
+                    "[NET] %u.%u.%u.%u:%u is not acknowledging: %u reliable "
+                    "datagrams still un-ACKed (cap %u) — refusing new reliable "
+                    "data for this session (drops=%u)\n",
+                    s->ip[0], s->ip[1], s->ip[2], s->ip[3], s->port, s->diag_recovery_occupied,
+                    (unsigned)MCP_MAX_INFLIGHT_RELIABLE, s->diag_backpressure_drops);
         }
         return false;
     }
@@ -233,9 +232,9 @@ bool mcp_rak_session_manager_send_encapsulated(mcp_rak_session_manager_t* sm,
 // are not counted (no session to count on) and never spam failure logs.
 // =========================================================================
 static ssize_t sm_send_reply(mcp_rak_session_manager_t* sm, mcp_rak_session_t* s,
-                             const uint8_t* data, size_t len,
-                             const uint8_t ip[4], uint16_t port) {
-    if (!sm || !data || !ip || len == 0) return -1;
+                             const uint8_t* data, size_t len, const uint8_t ip[4], uint16_t port) {
+    if (!sm || !data || !ip || len == 0)
+        return -1;
     ssize_t r = mcp_rak_session_manager_send(sm, data, len, ip, port);
     if (r > 0) {
         if (s) {
@@ -244,10 +243,10 @@ static ssize_t sm_send_reply(mcp_rak_session_manager_t* sm, mcp_rak_session_t* s
         }
     } else if (r < 0 && s && !s->diag_send_fail_logged) {
         fprintf(stderr,
-            "[NET] WARNING: UDP send to %u.%u.%u.%u:%u FAILED (result=%zd). "
-            "Outbound UDP may be blocked by the host firewall/panel — "
-            "clients will time out during the handshake.\n",
-            ip[0], ip[1], ip[2], ip[3], port, (ssize_t)r);
+                "[NET] WARNING: UDP send to %u.%u.%u.%u:%u FAILED (result=%zd). "
+                "Outbound UDP may be blocked by the host firewall/panel — "
+                "clients will time out during the handshake.\n",
+                ip[0], ip[1], ip[2], ip[3], port, (ssize_t)r);
         s->diag_send_fail_logged = true;
     }
     return r;
@@ -269,7 +268,8 @@ static void write_u24_le(uint8_t* b, size_t* oi, uint32_t v) {
     b[(*oi)++] = (uint8_t)((v >> 16) & 0xFF);
 }
 static void write_u64_be(uint8_t* b, size_t* oi, uint64_t v) {
-    for (int s = 56; s >= 0; s -= 8) b[(*oi)++] = (uint8_t)(v >> s);
+    for (int s = 56; s >= 0; s -= 8)
+        b[(*oi)++] = (uint8_t)(v >> s);
 }
 static void write_u64_le(uint8_t* b, size_t* oi, uint64_t v) {
     for (int k = 0; k < 8; ++k)
@@ -286,9 +286,8 @@ static void write_magic(uint8_t* b, size_t* oi) {
     write_bytes(b, oi, RAKLIB_MAGIC_BYTES, 16);
 }
 // RakNet address format: [version=4][ip0][ip1][ip2][ip3][port BE]
-static void write_address(uint8_t* b, size_t* oi,
-                           const uint8_t ip[4], uint16_t port) {
-    write_u8(b, oi, 4);       // IPv4
+static void write_address(uint8_t* b, size_t* oi, const uint8_t ip[4], uint16_t port) {
+    write_u8(b, oi, 4); // IPv4
     write_bytes(b, oi, ip, 4);
     write_u16_be(b, oi, port);
 }
@@ -296,23 +295,27 @@ static void write_address(uint8_t* b, size_t* oi,
 static void write_rakstring(uint8_t* b, size_t* oi, const char* str) {
     uint16_t len = str ? (uint16_t)strlen(str) : 0;
     write_u16_be(b, oi, len);
-    if (len) write_bytes(b, oi, str, len);
+    if (len)
+        write_bytes(b, oi, str, len);
 }
 
 // Read helpers
-static uint8_t  rb_u8(const uint8_t* b, size_t len, size_t* i) {
-    if (*i >= len) return 0;
+static uint8_t rb_u8(const uint8_t* b, size_t len, size_t* i) {
+    if (*i >= len)
+        return 0;
     return b[(*i)++];
 }
 static uint16_t rb_u16_be(const uint8_t* b, size_t len, size_t* i) {
-    if (*i + 2 > len) return 0;
-    uint16_t v = ((uint16_t)b[*i] << 8) | b[*i+1];
+    if (*i + 2 > len)
+        return 0;
+    uint16_t v = ((uint16_t)b[*i] << 8) | b[*i + 1];
     *i += 2;
     return v;
 }
 static uint32_t rb_u24_le(const uint8_t* b, size_t len, size_t* i) {
-    if (*i + 3 > len) return 0;
-    uint32_t v = b[*i] | ((uint32_t)b[*i+1] << 8) | ((uint32_t)b[*i+2] << 16);
+    if (*i + 3 > len)
+        return 0;
+    uint32_t v = b[*i] | ((uint32_t)b[*i + 1] << 8) | ((uint32_t)b[*i + 2] << 16);
     *i += 3;
     return v;
 }
@@ -344,7 +347,7 @@ static uint32_t rb_u24_le(const uint8_t* b, size_t len, size_t* i) {
 // file to avoid two independent, easily-desynced definitions of the
 // same protocol constant.
 // =========================================================================
-#define MCP_SEQ24_HALF   0x00800000u
+#define MCP_SEQ24_HALF 0x00800000u
 
 // True if `a` is strictly after `b` in the circular 24-bit space.
 static inline bool seq24_greater(uint32_t a, uint32_t b) {
@@ -362,18 +365,22 @@ static inline bool seq24_less(uint32_t a, uint32_t b) {
 // smaller than the half-space threshold) before computing a distance.
 static inline int32_t seq24_diff(uint32_t a, uint32_t b) {
     uint32_t d = (a - b) & MCP_SEQ24_MASK;
-    if (d >= MCP_SEQ24_HALF) d -= (MCP_SEQ24_MASK + 1);
+    if (d >= MCP_SEQ24_HALF)
+        d -= (MCP_SEQ24_MASK + 1);
     return (int32_t)d;
 }
 
 static uint64_t rb_u64_be(const uint8_t* b, size_t len, size_t* i) {
-    if (*i + 8 > len) return 0;
+    if (*i + 8 > len)
+        return 0;
     uint64_t v = 0;
-    for (int s = 56; s >= 0; s -= 8) v |= ((uint64_t)b[(*i)++] << s);
+    for (int s = 56; s >= 0; s -= 8)
+        v |= ((uint64_t)b[(*i)++] << s);
     return v;
 }
 static uint64_t rb_u64_le(const uint8_t* b, size_t len, size_t* i) {
-    if (*i + 8 > len) return 0;
+    if (*i + 8 > len)
+        return 0;
     uint64_t v = 0;
     for (int k = 0; k < 8; ++k)
         v |= (uint64_t)b[(*i)++] << (k * 8);
@@ -387,11 +394,11 @@ static int64_t rb_i64_be(const uint8_t* b, size_t len, size_t* i) {
 // Build ACK packet (0xc0):
 //   [0xc0] [u16_be record_count] { [single=0x01/range=0x00] [min 3LE] ([max 3LE]) }
 // =========================================================================
-static size_t build_ack_pkt(uint8_t* out, size_t cap,
-                              const uint32_t* mins, const uint32_t* maxs, size_t n,
-                              bool is_nack) {
+static size_t build_ack_pkt(uint8_t* out, size_t cap, const uint32_t* mins, const uint32_t* maxs,
+                            size_t n, bool is_nack) {
     size_t oi = 0;
-    if (oi + 3 + n * 7 > cap) return 0;
+    if (oi + 3 + n * 7 > cap)
+        return 0;
     out[oi++] = is_nack ? 0xa0 : 0xc0;
     out[oi++] = (uint8_t)(n >> 8);
     out[oi++] = (uint8_t)(n & 0xFF);
@@ -414,9 +421,8 @@ static size_t build_ack_pkt(uint8_t* out, size_t cap,
 // PMMP writes ping_time as LE (getLong = LE), server_id as BE (getLong = BE
 // only for server fields). Mirror that exactly.
 // =========================================================================
-static size_t build_unconnected_pong(uint8_t* out, size_t cap,
-                                      uint64_t ping_time, int64_t server_id,
-                                      const char* name) {
+static size_t build_unconnected_pong(uint8_t* out, size_t cap, uint64_t ping_time,
+                                     int64_t server_id, const char* name) {
     size_t oi = 0;
     out[oi++] = 0x1c;
     write_u64_le(out, &oi, ping_time);
@@ -431,8 +437,7 @@ static size_t build_unconnected_pong(uint8_t* out, size_t cap,
 // Build OPEN_CONNECTION_REPLY_1 (0x06)
 // Format: [0x06][magic 16][serverID u64][security=0][mtu u16 BE]
 // =========================================================================
-static size_t build_ocr1_reply(uint8_t* out, size_t cap,
-                                 int64_t server_id, uint16_t mtu) {
+static size_t build_ocr1_reply(uint8_t* out, size_t cap, int64_t server_id, uint16_t mtu) {
     size_t oi = 0;
     out[oi++] = 0x06;
     write_magic(out, &oi);
@@ -447,10 +452,8 @@ static size_t build_ocr1_reply(uint8_t* out, size_t cap,
 // Build OPEN_CONNECTION_REPLY_2 (0x08)
 // Format: [0x08][magic 16][serverID u64][clientIP][mtu u16 BE][security=0]
 // =========================================================================
-static size_t build_ocr2_reply(uint8_t* out, size_t cap,
-                                 int64_t server_id,
-                                 const uint8_t client_ip[4], uint16_t client_port,
-                                 uint16_t mtu) {
+static size_t build_ocr2_reply(uint8_t* out, size_t cap, int64_t server_id,
+                               const uint8_t client_ip[4], uint16_t client_port, uint16_t mtu) {
     size_t oi = 0;
     out[oi++] = 0x08;
     write_magic(out, &oi);
@@ -466,9 +469,8 @@ static size_t build_ocr2_reply(uint8_t* out, size_t cap,
 // Build SERVER_HANDSHAKE_DataPacket (0x10) — sent encapsulated
 // Format: [0x10][clientIP][short=0][10 x sysaddr][sendPing i64][sendPong i64]
 // =========================================================================
-static size_t build_server_handshake(uint8_t* out, size_t cap,
-                                      const uint8_t client_ip[4], uint16_t client_port,
-                                      int64_t send_ping) {
+static size_t build_server_handshake(uint8_t* out, size_t cap, const uint8_t client_ip[4],
+                                     uint16_t client_port, int64_t send_ping) {
     static const uint8_t null_ip[4] = {0, 0, 0, 0};
     size_t oi = 0;
     out[oi++] = 0x10;
@@ -477,7 +479,8 @@ static size_t build_server_handshake(uint8_t* out, size_t cap,
     // 10 system addresses (127.0.0.1:0 + 9x 0.0.0.0:0)
     static const uint8_t loopback[4] = {127, 0, 0, 1};
     write_address(out, &oi, loopback, 0);
-    for (int i = 1; i < 10; ++i) write_address(out, &oi, null_ip, 0);
+    for (int i = 1; i < 10; ++i)
+        write_address(out, &oi, null_ip, 0);
     write_i64_be(out, &oi, send_ping);
     write_i64_be(out, &oi, send_ping + 1000); // sendPong = sendPing + 1ms
     (void)cap;
@@ -499,8 +502,7 @@ static size_t build_server_handshake(uint8_t* out, size_t cap,
 // a completely EMPTY log — the server never created a session and never
 // said why, which is exactly the "it just says the session closed and
 // nothing else" symptom. Data packets are NOT logged here (far too many).
-static void note_handshake_drop(const uint8_t* data, size_t len,
-                                const uint8_t ip[4], uint16_t port,
+static void note_handshake_drop(const uint8_t* data, size_t len, const uint8_t ip[4], uint16_t port,
                                 const char* why) {
     char hex[80];
     size_t cap = len < 16 ? len : 16;
@@ -514,15 +516,16 @@ static void note_handshake_drop(const uint8_t* data, size_t len,
             data[0], ip[0], ip[1], ip[2], ip[3], port, len, why, hex);
 }
 
-static bool decode_ocr1(const uint8_t* data, size_t len,
-                          uint8_t* out_protocol, uint16_t* out_mtu) {
-    if (len < 18) return false; // 1(id) + 16(magic) + 1(protocol) min
+static bool decode_ocr1(const uint8_t* data, size_t len, uint8_t* out_protocol, uint16_t* out_mtu) {
+    if (len < 18)
+        return false; // 1(id) + 16(magic) + 1(protocol) min
     // skip id(1) + magic(16)
     *out_protocol = data[17];
     // Remaining bytes after protocol are padding to probe MTU
     // MTU = len + 28 (IP header + UDP header not in payload)
     *out_mtu = (uint16_t)(len + 28);
-    if (*out_mtu > RAKLIB_MAX_MTU) *out_mtu = RAKLIB_MAX_MTU;
+    if (*out_mtu > RAKLIB_MAX_MTU)
+        *out_mtu = RAKLIB_MAX_MTU;
     return true;
 }
 
@@ -530,9 +533,8 @@ static bool decode_ocr1(const uint8_t* data, size_t len,
 // Decode OPEN_CONNECTION_REQUEST_2 (0x07)
 // Layout: [id][magic 16][serverAddress][mtu u16 BE][clientID i64]
 // =========================================================================
-static bool decode_ocr2(const uint8_t* data, size_t len,
-                          uint16_t* out_mtu, int64_t* out_client_id,
-                          uint16_t* out_server_port) {
+static bool decode_ocr2(const uint8_t* data, size_t len, uint16_t* out_mtu, int64_t* out_client_id,
+                        uint16_t* out_server_port) {
     // Layout: [id][magic 16][serverAddress][mtu u16 BE][clientID i64]
     //
     // RakNet's serverAddress is 7 bytes: [version u8][ip 4][port 2],
@@ -545,16 +547,22 @@ static bool decode_ocr2(const uint8_t* data, size_t len,
     // is long enough for the canonical layout, 6-byte otherwise. Every
     // read is bounds-checked, and the trailing clientID is optional
     // (older clients omit it) rather than a hard failure.
-    if (len < 1 + 16 + 6 + 2) return false;
-    size_t i = 1 + 16;                 // skip id + magic
+    if (len < 1 + 16 + 6 + 2)
+        return false;
+    size_t i = 1 + 16; // skip id + magic
     size_t addr = (len >= 1 + 16 + 7 + 2 + 8) ? 7 : 6;
-    if (len < i + addr + 2) return false;
-    i += addr - 2;                     // land on the port field
-    *out_server_port = (uint16_t)((data[i] << 8) | data[i+1]); i += 2;
-    *out_mtu = (uint16_t)((data[i] << 8) | data[i+1]); i += 2;
-    if (*out_mtu > RAKLIB_MAX_MTU) *out_mtu = RAKLIB_MAX_MTU;
+    if (len < i + addr + 2)
+        return false;
+    i += addr - 2; // land on the port field
+    *out_server_port = (uint16_t)((data[i] << 8) | data[i + 1]);
+    i += 2;
+    *out_mtu = (uint16_t)((data[i] << 8) | data[i + 1]);
+    i += 2;
+    if (*out_mtu > RAKLIB_MAX_MTU)
+        *out_mtu = RAKLIB_MAX_MTU;
     *out_client_id = 0;
-    if (i + 8 <= len) *out_client_id = rb_i64_be(data, len, &i);
+    if (i + 8 <= len)
+        *out_client_id = rb_i64_be(data, len, &i);
     return true;
 }
 
@@ -562,9 +570,10 @@ static bool decode_ocr2(const uint8_t* data, size_t len,
 // Decode RakNet DATA_PACKET (0x80..0x8F) header
 // Returns payload offset, fills seq.
 // =========================================================================
-static bool decode_data_header(const uint8_t* data, size_t len,
-                                 uint32_t* out_seq, size_t* out_payload_off) {
-    if (len < 4) return false;
+static bool decode_data_header(const uint8_t* data, size_t len, uint32_t* out_seq,
+                               size_t* out_payload_off) {
+    if (len < 4)
+        return false;
     // skip type byte (data[0])
     *out_seq = (uint32_t)data[1] | ((uint32_t)data[2] << 8) | ((uint32_t)data[3] << 16);
     *out_payload_off = 4;
@@ -577,17 +586,13 @@ static bool decode_data_header(const uint8_t* data, size_t len,
 // Sets *out_done = true when no more records remain.
 // If the packet is a split fragment, fills split info for reassembly.
 // =========================================================================
-static size_t parse_encap_record(const uint8_t* buf, size_t buf_len,
-                                   const uint8_t** out_payload, size_t* out_plen,
-                                   bool* out_done,
-                                   bool* out_has_split, uint32_t* out_split_count,
-                                   uint16_t* out_split_id, uint32_t* out_split_index,
-                                   uint8_t* out_reliability,
-                                   bool* out_is_reliable,
-                                   uint32_t* out_message_index,
-                                   bool* out_is_ordered,
-                                   uint32_t* out_order_index,
-                                   uint8_t* out_order_channel) {
+static size_t parse_encap_record(const uint8_t* buf, size_t buf_len, const uint8_t** out_payload,
+                                 size_t* out_plen, bool* out_done, bool* out_has_split,
+                                 uint32_t* out_split_count, uint16_t* out_split_id,
+                                 uint32_t* out_split_index, uint8_t* out_reliability,
+                                 bool* out_is_reliable, uint32_t* out_message_index,
+                                 bool* out_is_ordered, uint32_t* out_order_index,
+                                 uint8_t* out_order_channel) {
     *out_done = true;
     *out_payload = NULL;
     *out_plen = 0;
@@ -601,17 +606,19 @@ static size_t parse_encap_record(const uint8_t* buf, size_t buf_len,
     *out_is_ordered = false;
     *out_order_index = 0;
     *out_order_channel = 0;
-    if (buf_len < 3) return 0;
+    if (buf_len < 3)
+        return 0;
 
     size_t i = 0;
-    uint8_t flags    = buf[i++];
+    uint8_t flags = buf[i++];
     uint8_t reliability = (flags >> 5) & 0x07;
-    bool    has_split   = (flags & 0x10) != 0;
+    bool has_split = (flags & 0x10) != 0;
     *out_reliability = reliability;
 
     // bit-length of payload (u16 BE)
-    uint16_t bit_len = (uint16_t)((buf[i] << 8) | buf[i+1]); i += 2;
-    size_t   plen    = (bit_len + 7) / 8;
+    uint16_t bit_len = (uint16_t)((buf[i] << 8) | buf[i + 1]);
+    i += 2;
+    size_t plen = (bit_len + 7) / 8;
 
     // FIX #9: define reliable/ordered/sequenced explicitly against all
     // 8 PacketReliability values instead of only recognizing a subset —
@@ -631,63 +638,69 @@ static size_t parse_encap_record(const uint8_t* buf, size_t buf_len,
                         reliability == MCP_RELIABILITY_RELIABLE_SEQUENCED ||
                         reliability == MCP_RELIABILITY_RELIABLE_WITH_ACK_RECEIPT ||
                         reliability == MCP_RELIABILITY_RELIABLE_ORDERED_WITH_ACK_RECEIPT);
-    bool is_ordered  = (reliability == MCP_RELIABILITY_RELIABLE_ORDERED ||
-                        reliability == MCP_RELIABILITY_RELIABLE_ORDERED_WITH_ACK_RECEIPT);
+    bool is_ordered = (reliability == MCP_RELIABILITY_RELIABLE_ORDERED ||
+                       reliability == MCP_RELIABILITY_RELIABLE_ORDERED_WITH_ACK_RECEIPT);
     bool is_sequenced = (reliability == MCP_RELIABILITY_UNRELIABLE_SEQUENCED ||
                          reliability == MCP_RELIABILITY_RELIABLE_SEQUENCED);
     *out_is_reliable = is_reliable;
 
     // messageIndex (3-byte LE) — present for every is_reliable value above.
     if (is_reliable) {
-        if (i + 3 > buf_len) return 0;
+        if (i + 3 > buf_len)
+            return 0;
         // FIX #2: actually decode this instead of just skipping past it.
         // This is the reliable MESSAGE index — distinct from both the
         // datagram sequence number and the ordering index. Needed to
         // give reliable messages their own duplicate/staleness window,
         // independent of which physical datagram (and possibly which
         // retransmit) carried them.
-        uint32_t mi = (uint32_t)buf[i] | ((uint32_t)buf[i+1] << 8) |
-                      ((uint32_t)buf[i+2] << 16);
+        uint32_t mi = (uint32_t)buf[i] | ((uint32_t)buf[i + 1] << 8) | ((uint32_t)buf[i + 2] << 16);
         i += 3;
         *out_message_index = mi;
     }
 
     // sequenceIndex (3-byte LE) for SEQUENCED
     if (is_sequenced) {
-        if (i + 3 > buf_len) return 0;
+        if (i + 3 > buf_len)
+            return 0;
         i += 3;
     }
 
     // orderIndex (3-byte LE) + orderChannel (1-byte) for ORDERED
     if (is_ordered) {
-        if (i + 4 > buf_len) return 0;
+        if (i + 4 > buf_len)
+            return 0;
         // FIX: actually decode these instead of just skipping past them.
         // Without this, the caller has no way to know a packet needs to
         // wait for earlier packets on its channel.
-        uint32_t oi = (uint32_t)buf[i] | ((uint32_t)buf[i+1] << 8) |
-                      ((uint32_t)buf[i+2] << 16);
+        uint32_t oi = (uint32_t)buf[i] | ((uint32_t)buf[i + 1] << 8) | ((uint32_t)buf[i + 2] << 16);
         i += 3;
         uint8_t chan = buf[i++] & 0x1F;
-        *out_is_ordered    = true;
-        *out_order_index   = oi;
+        *out_is_ordered = true;
+        *out_order_index = oi;
         *out_order_channel = chan;
     }
 
     // split info
     if (has_split) {
-        if (i + 10 > buf_len) return 0;
+        if (i + 10 > buf_len)
+            return 0;
         *out_has_split = true;
-        *out_split_count = ((uint32_t)buf[i] << 24) | ((uint32_t)buf[i+1] << 16) |
-                           ((uint32_t)buf[i+2] << 8) | buf[i+3]; i += 4;
-        *out_split_id = ((uint16_t)buf[i] << 8) | buf[i+1]; i += 2;
-        *out_split_index = ((uint32_t)buf[i] << 24) | ((uint32_t)buf[i+1] << 16) |
-                           ((uint32_t)buf[i+2] << 8) | buf[i+3]; i += 4;
+        *out_split_count = ((uint32_t)buf[i] << 24) | ((uint32_t)buf[i + 1] << 16) |
+                           ((uint32_t)buf[i + 2] << 8) | buf[i + 3];
+        i += 4;
+        *out_split_id = ((uint16_t)buf[i] << 8) | buf[i + 1];
+        i += 2;
+        *out_split_index = ((uint32_t)buf[i] << 24) | ((uint32_t)buf[i + 1] << 16) |
+                           ((uint32_t)buf[i + 2] << 8) | buf[i + 3];
+        i += 4;
     }
 
-    if (i + plen > buf_len) return 0;
+    if (i + plen > buf_len)
+        return 0;
     *out_payload = buf + i;
-    *out_plen    = plen;
-    *out_done    = false;
+    *out_plen = plen;
+    *out_done = false;
     return i + plen;
 }
 
@@ -722,35 +735,38 @@ static uint32_t reliable_payload_hash(const uint8_t* p, size_t n) {
     return h;
 }
 
-static void reliable_remember(mcp_rak_session_t* s, uint32_t message_index,
-                              const uint8_t* payload, size_t plen) {
+static void reliable_remember(mcp_rak_session_t* s, uint32_t message_index, const uint8_t* payload,
+                              size_t plen) {
     // Direct-mapped by the SAME modulus reliable_recv_window uses, so the
     // two structures describe exactly the same index space and can never
     // disagree about whether a given index is still "in the window".
     uint32_t slot = message_index % MCP_RELIABLE_WINDOW_SIZE;
     s->reliable_seen[slot].index = message_index;
-    s->reliable_seen[slot].hash  = reliable_payload_hash(payload, plen);
-    s->reliable_seen[slot].len   = (uint32_t)plen;
-    s->reliable_seen[slot].used  = true;
+    s->reliable_seen[slot].hash = reliable_payload_hash(payload, plen);
+    s->reliable_seen[slot].len = (uint32_t)plen;
+    s->reliable_seen[slot].used = true;
 }
 
 // True when this exact (index, bytes) pair was already delivered.
-static bool reliable_already_delivered(mcp_rak_session_t* s,
-                                       uint32_t message_index,
+static bool reliable_already_delivered(mcp_rak_session_t* s, uint32_t message_index,
                                        const uint8_t* payload, size_t plen) {
-    if (!payload) return false;
+    if (!payload)
+        return false;
     // O(1) direct lookup — the entry for this index can only ever live at
     // message_index % MCP_RELIABLE_WINDOW_SIZE, so there is no ring to scan
     // and no 256-entry blind spot (see the struct's comment in Session.h).
     uint32_t slot = message_index % MCP_RELIABLE_WINDOW_SIZE;
-    if (!s->reliable_seen[slot].used) return false;
-    if (s->reliable_seen[slot].index != message_index) return false;
-    if (s->reliable_seen[slot].len != (uint32_t)plen) return false;
+    if (!s->reliable_seen[slot].used)
+        return false;
+    if (s->reliable_seen[slot].index != message_index)
+        return false;
+    if (s->reliable_seen[slot].len != (uint32_t)plen)
+        return false;
     return s->reliable_seen[slot].hash == reliable_payload_hash(payload, plen);
 }
 
 static bool reliable_index_accept(mcp_rak_session_t* s, uint32_t message_index,
-                                    const uint8_t* payload, size_t plen) {
+                                  const uint8_t* payload, size_t plen) {
     if (s->last_reliable_index < 0) {
         // FIX: first reliable message this session has ever seen — center
         // the window on WHATEVER index it actually is, not unconditionally
@@ -791,11 +807,10 @@ static bool reliable_index_accept(mcp_rak_session_t* s, uint32_t message_index,
                 if (!s->diag_duplicate_logged) {
                     s->diag_duplicate_logged = true;
                     fprintf(stderr,
-                        "[NET] Duplicate reliable message dropped "
-                        "(index=%u, %zu bytes) from %u.%u.%u.%u:%u "
-                        "(suppressing further such lines this session)\n",
-                        message_index, plen,
-                        s->ip[0], s->ip[1], s->ip[2], s->ip[3], s->port);
+                            "[NET] Duplicate reliable message dropped "
+                            "(index=%u, %zu bytes) from %u.%u.%u.%u:%u "
+                            "(suppressing further such lines this session)\n",
+                            message_index, plen, s->ip[0], s->ip[1], s->ip[2], s->ip[3], s->port);
                 }
                 return false;
             }
@@ -812,7 +827,8 @@ static bool reliable_index_accept(mcp_rak_session_t* s, uint32_t message_index,
         // transport-level recv_window below.
         // FIX: circular comparison — a plain >= here has the same
         // wrap hazard as everywhere else message_index is compared.
-        if (seq24_diff(message_index, s->reliable_window_start) >= (int32_t)(MCP_RELIABLE_WINDOW_SIZE / 2)) {
+        if (seq24_diff(message_index, s->reliable_window_start) >=
+            (int32_t)(MCP_RELIABLE_WINDOW_SIZE / 2)) {
             uint32_t new_start = (message_index - MCP_RELIABLE_WINDOW_SIZE / 2) & MCP_SEQ24_MASK;
             // FIX: walk the cleared range in wrap-safe steps instead of a
             // plain `for (m = old_start; m < new_start; ++m)`, which
@@ -842,9 +858,8 @@ static void log_session_diagnostics(const mcp_rak_session_t* s, const char* reas
 
 // Forward declaration — deliver_ordered() below calls this once a packet
 // is confirmed to be next-in-order (or doesn't need ordering at all).
-static void handle_encapsulated(mcp_rak_session_manager_t* sm,
-                                  mcp_rak_session_t* s,
-                                  const uint8_t* payload, size_t plen);
+static void handle_encapsulated(mcp_rak_session_manager_t* sm, mcp_rak_session_t* s,
+                                const uint8_t* payload, size_t plen);
 
 // =========================================================================
 // FIX: RELIABLE_ORDERED delivery gate.
@@ -863,38 +878,38 @@ static void handle_encapsulated(mcp_rak_session_manager_t* sm,
 // never ordered/reliable — there's nothing to wait for).
 // =========================================================================
 // True when this exact (channel, order_index, bytes) was already delivered.
-static bool order_already_delivered(mcp_rak_session_t* s, uint8_t chan,
-                                    uint32_t order_index,
+static bool order_already_delivered(mcp_rak_session_t* s, uint8_t chan, uint32_t order_index,
                                     const uint8_t* payload, size_t plen) {
-    if (!payload) return false;
+    if (!payload)
+        return false;
     uint32_t h = reliable_payload_hash(payload, plen);
     for (uint32_t i = 0; i < MCP_ORDER_DELIVERED_SLOTS; ++i) {
-        if (!s->order_delivered[i].used) continue;
-        if (s->order_delivered[i].chan != chan) continue;
-        if (s->order_delivered[i].index != order_index) continue;
+        if (!s->order_delivered[i].used)
+            continue;
+        if (s->order_delivered[i].chan != chan)
+            continue;
+        if (s->order_delivered[i].index != order_index)
+            continue;
         if (s->order_delivered[i].hash == h && s->order_delivered[i].len == plen)
             return true;
     }
     return false;
 }
 
-static void order_remember_delivered(mcp_rak_session_t* s, uint8_t chan,
-                                     uint32_t order_index,
+static void order_remember_delivered(mcp_rak_session_t* s, uint8_t chan, uint32_t order_index,
                                      const uint8_t* payload, size_t plen) {
     uint32_t i = s->order_delivered_next % MCP_ORDER_DELIVERED_SLOTS;
-    s->order_delivered[i].chan  = chan;
+    s->order_delivered[i].chan = chan;
     s->order_delivered[i].index = order_index;
-    s->order_delivered[i].hash  = payload ? reliable_payload_hash(payload, plen) : 0;
-    s->order_delivered[i].len   = (uint32_t)plen;
-    s->order_delivered[i].used  = true;
+    s->order_delivered[i].hash = payload ? reliable_payload_hash(payload, plen) : 0;
+    s->order_delivered[i].len = (uint32_t)plen;
+    s->order_delivered[i].used = true;
     s->order_delivered_next = i + 1;
 }
 
-static void deliver_ordered(mcp_rak_session_manager_t* sm,
-                              mcp_rak_session_t* s,
-                              bool is_ordered, uint32_t order_index,
-                              uint8_t order_channel,
-                              const uint8_t* payload, size_t plen) {
+static void deliver_ordered(mcp_rak_session_manager_t* sm, mcp_rak_session_t* s, bool is_ordered,
+                            uint32_t order_index, uint8_t order_channel, const uint8_t* payload,
+                            size_t plen) {
     if (!is_ordered) {
         // UNRELIABLE / RELIABLE (unordered) — deliver immediately, exactly
         // as before. Only RELIABLE_ORDERED needs the gate.
@@ -927,12 +942,12 @@ static void deliver_ordered(mcp_rak_session_manager_t* sm,
             if (!s->diag_order_index_reuse_logged) {
                 s->diag_order_index_reuse_logged = true;
                 fprintf(stderr,
-                    "[NET] WARNING: %u.%u.%u.%u:%u reuses ordered-channel "
-                    "order indexes (got %u, expected %u). Delivering it "
-                    "anyway; packet reordering protection is degraded for "
-                    "this session.\n",
-                    s->ip[0], s->ip[1], s->ip[2], s->ip[3], s->port,
-                    order_index, s->recv_order_index[chan]);
+                        "[NET] WARNING: %u.%u.%u.%u:%u reuses ordered-channel "
+                        "order indexes (got %u, expected %u). Delivering it "
+                        "anyway; packet reordering protection is degraded for "
+                        "this session.\n",
+                        s->ip[0], s->ip[1], s->ip[2], s->ip[3], s->port, order_index,
+                        s->recv_order_index[chan]);
             }
             s->diag_order_index_reuse++;
             order_remember_delivered(s, chan, order_index, payload, plen);
@@ -952,8 +967,10 @@ static void deliver_ordered(mcp_rak_session_manager_t* sm,
         // reusing the index, which replaces the held one.
         int hold_replace = -1;
         for (int k = 0; k < MCP_ORDER_HOLD_CAP; ++k) {
-            if (!s->order_hold[chan][k].used) continue;
-            if (s->order_hold[chan][k].order_index != order_index) continue;
+            if (!s->order_hold[chan][k].used)
+                continue;
+            if (s->order_hold[chan][k].order_index != order_index)
+                continue;
             if (s->order_hold[chan][k].len == plen &&
                 memcmp(s->order_hold[chan][k].data, payload, plen) == 0)
                 return; // already holding these exact bytes
@@ -965,9 +982,9 @@ static void deliver_ordered(mcp_rak_session_manager_t* sm,
             if (copy) {
                 memcpy(copy, payload, plen);
                 free(s->order_hold[chan][hold_replace].data);
-                s->order_hold[chan][hold_replace].data        = copy;
-                s->order_hold[chan][hold_replace].len         = plen;
-                s->order_hold[chan][hold_replace].stored_ms   = mcp_utils_time_ms();
+                s->order_hold[chan][hold_replace].data = copy;
+                s->order_hold[chan][hold_replace].len = plen;
+                s->order_hold[chan][hold_replace].stored_ms = mcp_utils_time_ms();
             }
             return;
         }
@@ -986,16 +1003,17 @@ static void deliver_ordered(mcp_rak_session_manager_t* sm,
                     break;
                 }
                 memcpy(copy, payload, plen);
-                s->order_hold[chan][k].used        = true;
+                s->order_hold[chan][k].used = true;
                 s->order_hold[chan][k].order_index = order_index;
-                s->order_hold[chan][k].data        = copy;
-                s->order_hold[chan][k].len         = plen;
-                s->order_hold[chan][k].stored_ms   = mcp_utils_time_ms();
+                s->order_hold[chan][k].data = copy;
+                s->order_hold[chan][k].len = plen;
+                s->order_hold[chan][k].stored_ms = mcp_utils_time_ms();
                 stored = true;
                 // Diagnostics: track how full this ever gets.
                 uint32_t used_now = 0;
                 for (int kk = 0; kk < MCP_ORDER_HOLD_CAP; ++kk)
-                    if (s->order_hold[chan][kk].used) used_now++;
+                    if (s->order_hold[chan][kk].used)
+                        used_now++;
                 if (used_now > s->diag_order_hold_peak)
                     s->diag_order_hold_peak = used_now;
                 break;
@@ -1026,7 +1044,7 @@ static void deliver_ordered(mcp_rak_session_manager_t* sm,
             if (s->order_hold[chan][k].used &&
                 s->order_hold[chan][k].order_index == s->recv_order_index[chan]) {
                 uint8_t* held_data = s->order_hold[chan][k].data;
-                size_t   held_len  = s->order_hold[chan][k].len;
+                size_t held_len = s->order_hold[chan][k].len;
                 // Record the HELD packet's own index, not the index of the
                 // packet that just closed the gap.
                 uint32_t held_index = s->order_hold[chan][k].order_index;
@@ -1061,13 +1079,13 @@ static void expire_order_holds(mcp_rak_session_t* s, uint64_t now) {
     for (int chan = 0; chan < 32; ++chan) {
         bool any_expired = false;
         for (int k = 0; k < MCP_ORDER_HOLD_CAP; ++k) {
-            if (s->order_hold[chan][k].used &&
-                (now - s->order_hold[chan][k].stored_ms) > 10000) {
+            if (s->order_hold[chan][k].used && (now - s->order_hold[chan][k].stored_ms) > 10000) {
                 any_expired = true;
                 break;
             }
         }
-        if (!any_expired) continue;
+        if (!any_expired)
+            continue;
 
         // Something in this channel has been stuck long enough to give
         // up on. Free every expired slot. If the CHANNEL's own next
@@ -1081,8 +1099,7 @@ static void expire_order_holds(mcp_rak_session_t* s, uint64_t now) {
         // reached 10s yet is left completely untouched.
         bool expected_was_freed = false;
         for (int k = 0; k < MCP_ORDER_HOLD_CAP; ++k) {
-            if (s->order_hold[chan][k].used &&
-                (now - s->order_hold[chan][k].stored_ms) > 10000) {
+            if (s->order_hold[chan][k].used && (now - s->order_hold[chan][k].stored_ms) > 10000) {
                 if (s->order_hold[chan][k].order_index == s->recv_order_index[chan]) {
                     // This shouldn't normally happen (a slot holding
                     // exactly the currently-expected index would have
@@ -1090,7 +1107,8 @@ static void expire_order_holds(mcp_rak_session_t* s, uint64_t now) {
                     // loop), but handle it defensively rather than assume.
                     expected_was_freed = true;
                 }
-                if (s->order_hold[chan][k].data) free(s->order_hold[chan][k].data);
+                if (s->order_hold[chan][k].data)
+                    free(s->order_hold[chan][k].data);
                 s->order_hold[chan][k].used = false;
                 s->order_hold[chan][k].data = NULL;
             }
@@ -1115,7 +1133,10 @@ static void expire_order_holds(mcp_rak_session_t* s, uint64_t now) {
         if ((now - s->recv_order_advanced_ms[chan]) > 10000) {
             bool something_waiting_ahead = false;
             for (int k = 0; k < MCP_ORDER_HOLD_CAP; ++k) {
-                if (s->order_hold[chan][k].used) { something_waiting_ahead = true; break; }
+                if (s->order_hold[chan][k].used) {
+                    something_waiting_ahead = true;
+                    break;
+                }
             }
             if (something_waiting_ahead) {
                 s->recv_order_index[chan] = (s->recv_order_index[chan] + 1) & MCP_SEQ24_MASK;
@@ -1143,14 +1164,14 @@ static void expire_order_holds(mcp_rak_session_t* s, uint64_t now) {
 // Handle an encapsulated application-layer packet from an established
 // or connecting session. Called after the DATA_PACKET header is stripped.
 // =========================================================================
-static void handle_encapsulated(mcp_rak_session_manager_t* sm,
-                                  mcp_rak_session_t* s,
-                                  const uint8_t* payload, size_t plen) {
-    if (plen < 1) return;
+static void handle_encapsulated(mcp_rak_session_manager_t* sm, mcp_rak_session_t* s,
+                                const uint8_t* payload, size_t plen) {
+    if (plen < 1)
+        return;
     uint8_t pid = payload[0];
     uint8_t dgram[RAKLIB_MAX_MTU + 128];
-    size_t  dgram_len = 0;
-    char    ipStr[20];
+    size_t dgram_len = 0;
+    char ipStr[20];
 
     if (s->state == MCP_SESSION_STATE_CONNECTING_2) {
         // ---- CLIENT_CONNECT (0x09) ----
@@ -1181,17 +1202,15 @@ static void handle_encapsulated(mcp_rak_session_manager_t* sm,
             // the standard encapsulated send path ALSO feeds
             // diag_sent_packets/last_packet_sent_ms, so the disconnect
             // dump stops lying about the handshake phase.
-            dgram_len = build_server_handshake(dgram, sizeof(dgram),
-                                                s->ip, s->port, send_ping);
+            dgram_len = build_server_handshake(dgram, sizeof(dgram), s->ip, s->port, send_ping);
             if (dgram_len == 0 ||
-                !mcp_rak_session_manager_send_encapsulated(
-                    sm, s->ip, s->port, dgram, dgram_len,
-                    MCP_RELIABILITY_RELIABLE_ORDERED, 0)) {
+                !mcp_rak_session_manager_send_encapsulated(sm, s->ip, s->port, dgram, dgram_len,
+                                                           MCP_RELIABILITY_RELIABLE_ORDERED, 0)) {
                 fprintf(stderr,
-                    "[NET] WARNING: SERVER_HANDSHAKE for %u.%u.%u.%u:%u could "
-                    "not be sent (build failed or socket send failed) — the "
-                    "client will time out.\n",
-                    s->ip[0], s->ip[1], s->ip[2], s->ip[3], s->port);
+                        "[NET] WARNING: SERVER_HANDSHAKE for %u.%u.%u.%u:%u could "
+                        "not be sent (build failed or socket send failed) — the "
+                        "client will time out.\n",
+                        s->ip[0], s->ip[1], s->ip[2], s->ip[3], s->port);
             }
             return;
         }
@@ -1207,9 +1226,9 @@ static void handle_encapsulated(mcp_rak_session_manager_t* sm,
         // the 0x09 branch above.
         if (pid != 0x13 && pid != 0x15) {
             fprintf(stderr,
-                "[RakLib][diag] Unhandled packet in CONNECTING_2: pid=0x%02x "
-                "plen=%zu from %u.%u.%u.%u:%u\n",
-                pid, plen, s->ip[0], s->ip[1], s->ip[2], s->ip[3], s->port);
+                    "[RakLib][diag] Unhandled packet in CONNECTING_2: pid=0x%02x "
+                    "plen=%zu from %u.%u.%u.%u:%u\n",
+                    pid, plen, s->ip[0], s->ip[1], s->ip[2], s->ip[3], s->port);
         }
 
         // ---- CLIENT_HANDSHAKE (0x13) ----
@@ -1228,10 +1247,9 @@ static void handle_encapsulated(mcp_rak_session_manager_t* sm,
                 s->state = MCP_SESSION_STATE_CONNECTED;
                 // Notify upper layer
                 if (sm->instance && sm->instance->on_open_session) {
-                    snprintf(ipStr, sizeof(ipStr), "%u.%u.%u.%u",
-                             s->ip[0], s->ip[1], s->ip[2], s->ip[3]);
-                    sm->instance->on_open_session(sm->instance->impl,
-                                                    ipStr, s->port, s->client_id);
+                    snprintf(ipStr, sizeof(ipStr), "%u.%u.%u.%u", s->ip[0], s->ip[1], s->ip[2],
+                             s->ip[3]);
+                    sm->instance->on_open_session(sm->instance->impl, ipStr, s->port, s->client_id);
                 }
             }
             return;
@@ -1240,12 +1258,12 @@ static void handle_encapsulated(mcp_rak_session_manager_t* sm,
         // ---- CLIENT_DISCONNECT (0x15) ----
         if (pid == 0x15) {
             if (sm->instance && sm->instance->on_close_session) {
-                snprintf(ipStr, sizeof(ipStr), "%u.%u.%u.%u",
-                         s->ip[0], s->ip[1], s->ip[2], s->ip[3]);
-                sm->instance->on_close_session(sm->instance->impl,
-                                                 ipStr, s->port, "client disconnect");
+                snprintf(ipStr, sizeof(ipStr), "%u.%u.%u.%u", s->ip[0], s->ip[1], s->ip[2],
+                         s->ip[3]);
+                sm->instance->on_close_session(sm->instance->impl, ipStr, s->port,
+                                               "client disconnect");
             }
-            s->is_disconnecting = true;  // Bug 2 fix: cleanup next tick
+            s->is_disconnecting = true; // Bug 2 fix: cleanup next tick
             return;
         }
     }
@@ -1287,9 +1305,8 @@ static void handle_encapsulated(mcp_rak_session_manager_t* sm,
             write_i64_be(dgram, &oi, ping_id);
             dgram_len = oi;
             uint8_t dp[64];
-            size_t dp_len = mcp_rak_session_build_datagram(s, dp, sizeof(dp),
-                                dgram, dgram_len, MCP_RELIABILITY_UNRELIABLE, 0,
-                                false, 0, 0, 0);
+            size_t dp_len = mcp_rak_session_build_datagram(
+                s, dp, sizeof(dp), dgram, dgram_len, MCP_RELIABILITY_UNRELIABLE, 0, false, 0, 0, 0);
             // FIX: count this send (see sm_send_reply) so the disconnect
             // dump reflects keepalive traffic instead of always showing
             // sent_packets frozen at 0.
@@ -1302,12 +1319,12 @@ static void handle_encapsulated(mcp_rak_session_manager_t* sm,
         if (pid == 0x15) {
             log_session_diagnostics(s, "CLIENT_DISCONNECT");
             if (sm->instance && sm->instance->on_close_session) {
-                snprintf(ipStr, sizeof(ipStr), "%u.%u.%u.%u",
-                         s->ip[0], s->ip[1], s->ip[2], s->ip[3]);
-                sm->instance->on_close_session(sm->instance->impl,
-                                                 ipStr, s->port, "client disconnect");
+                snprintf(ipStr, sizeof(ipStr), "%u.%u.%u.%u", s->ip[0], s->ip[1], s->ip[2],
+                         s->ip[3]);
+                sm->instance->on_close_session(sm->instance->impl, ipStr, s->port,
+                                               "client disconnect");
             }
-            s->is_disconnecting = true;  // Bug 2 fix: cleanup next tick
+            s->is_disconnecting = true; // Bug 2 fix: cleanup next tick
             return;
         }
 
@@ -1330,10 +1347,8 @@ static void handle_encapsulated(mcp_rak_session_manager_t* sm,
 
         // ---- Any other packet → forward to game layer ----
         if (sm->instance && sm->instance->on_packet_receive) {
-            snprintf(ipStr, sizeof(ipStr), "%u.%u.%u.%u",
-                     s->ip[0], s->ip[1], s->ip[2], s->ip[3]);
-            sm->instance->on_packet_receive(sm->instance->impl,
-                                              ipStr, s->port, payload, plen);
+            snprintf(ipStr, sizeof(ipStr), "%u.%u.%u.%u", s->ip[0], s->ip[1], s->ip[2], s->ip[3]);
+            sm->instance->on_packet_receive(sm->instance->impl, ipStr, s->port, payload, plen);
         }
     }
 }
@@ -1341,12 +1356,12 @@ static void handle_encapsulated(mcp_rak_session_manager_t* sm,
 // =========================================================================
 // Handle a received DATA_PACKET (0x80..0x8F)
 // =========================================================================
-static void handle_data_packet(mcp_rak_session_manager_t* sm,
-                                  mcp_rak_session_t* s,
-                                  const uint8_t* data, size_t len) {
+static void handle_data_packet(mcp_rak_session_manager_t* sm, mcp_rak_session_t* s,
+                               const uint8_t* data, size_t len) {
     uint32_t seq;
-    size_t   payload_off;
-    if (!decode_data_header(data, len, &seq, &payload_off)) return;
+    size_t payload_off;
+    if (!decode_data_header(data, len, &seq, &payload_off))
+        return;
 
     // Sequence-number / window logic (mirrors PMMP Session.php).
     // FIX (priority 4): use wrap-safe circular comparison instead of
@@ -1360,23 +1375,23 @@ static void handle_data_packet(mcp_rak_session_manager_t* sm,
         // NACKs for "missing" numbers before it — there's nothing to
         // recover, they were simply never part of this session.
         s->last_recv_seq = (int32_t)seq; // stored only as a bit pattern now
-        s->window_start  = seq; // will be re-centered below via diff==0 path
+        s->window_start = seq;           // will be re-centered below via diff==0 path
         // FIX: window_end used to stay at its init value
         // (MCP_SESSION_WINDOW_SIZE) while window_start jumped to the
         // client's actual first sequence number, leaving a lopsided window
         // [seq, 2048) whenever the first seq was large. Center it the same
         // way every later slide does.
-        s->window_end    = (seq + MCP_SESSION_WINDOW_SIZE / 2) & MCP_SEQ24_MASK;
+        s->window_end = (seq + MCP_SESSION_WINDOW_SIZE / 2) & MCP_SEQ24_MASK;
     } else {
         uint32_t last = (uint32_t)s->last_recv_seq & MCP_SEQ24_MASK;
-        if (seq24_less(seq, s->window_start) ||
-            !seq24_less(seq, s->window_end)) {
+        if (seq24_less(seq, s->window_start) || !seq24_less(seq, s->window_end)) {
             return; // out of window — drop
         }
         (void)last;
     }
     uint32_t slot = seq % MCP_SESSION_WINDOW_SIZE;
-    if (s->recv_window[slot]) return; // duplicate
+    if (s->recv_window[slot])
+        return; // duplicate
 
     uint32_t lastu = (uint32_t)s->last_recv_seq & MCP_SEQ24_MASK;
     int32_t diff = (s->last_recv_seq < 0) ? 1 : seq24_diff(seq, lastu);
@@ -1463,8 +1478,8 @@ static void handle_data_packet(mcp_rak_session_manager_t* sm,
             }
         }
         s->last_recv_seq = (int32_t)seq;
-        s->window_start  = new_start;
-        s->window_end    = (seq + MCP_SESSION_WINDOW_SIZE / 2) & MCP_SEQ24_MASK;
+        s->window_start = new_start;
+        s->window_end = (seq + MCP_SESSION_WINDOW_SIZE / 2) & MCP_SEQ24_MASK;
     }
     // Any datagram received refreshes the session's alive clock (RakNet
     // Connection::lastUpdate semantics). A client that only sends ACKs
@@ -1475,26 +1490,26 @@ static void handle_data_packet(mcp_rak_session_manager_t* sm,
     s->diag_recv_packets++;
     s->last_packet_received_ms = mcp_utils_time_ms();
     const uint8_t* ptr = data + payload_off;
-    size_t         rem = len  - payload_off;
+    size_t rem = len - payload_off;
     while (rem > 0) {
         const uint8_t* epayload;
         size_t eplen;
-        bool   done;
-        bool   has_split = false;
+        bool done;
+        bool has_split = false;
         uint32_t split_count = 0, split_index = 0;
         uint16_t split_id = 0;
-        uint8_t  reliability = 0;
-        bool     is_reliable = false;
+        uint8_t reliability = 0;
+        bool is_reliable = false;
         uint32_t message_index = 0;
-        bool     is_ordered = false;
+        bool is_ordered = false;
         uint32_t order_index = 0;
-        uint8_t  order_channel = 0;
+        uint8_t order_channel = 0;
 
-        size_t consumed = parse_encap_record(ptr, rem, &epayload, &eplen, &done,
-                                              &has_split, &split_count, &split_id, &split_index,
-                                              &reliability, &is_reliable, &message_index,
-                                              &is_ordered, &order_index, &order_channel);
-        if (consumed == 0 || done) break;
+        size_t consumed = parse_encap_record(
+            ptr, rem, &epayload, &eplen, &done, &has_split, &split_count, &split_id, &split_index,
+            &reliability, &is_reliable, &message_index, &is_ordered, &order_index, &order_channel);
+        if (consumed == 0 || done)
+            break;
 
         // BUG CRÍTICO CONFIRMADO (server.log real: split_completed=1 pero
         // el resto de la sesión sospechosamente silenciosa en tráfico
@@ -1547,7 +1562,10 @@ static void handle_data_packet(mcp_rak_session_manager_t* sm,
             }
             if (!slot) {
                 for (int si = 0; si < MCP_MAX_CONCURRENT_SPLITS; ++si) {
-                    if (!s->split_slots[si].in_use) { slot = &s->split_slots[si]; break; }
+                    if (!s->split_slots[si].in_use) {
+                        slot = &s->split_slots[si];
+                        break;
+                    }
                 }
             }
             if (!slot) {
@@ -1556,10 +1574,12 @@ static void handle_data_packet(mcp_rak_session_manager_t* sm,
                 // time (almost certainly the stalest / most likely dead).
                 int oldest = 0;
                 for (int si = 1; si < MCP_MAX_CONCURRENT_SPLITS; ++si) {
-                    if (s->split_slots[si].last_fragment_ms < s->split_slots[oldest].last_fragment_ms)
+                    if (s->split_slots[si].last_fragment_ms <
+                        s->split_slots[oldest].last_fragment_ms)
                         oldest = si;
                 }
-                for (uint32_t k = 0; k < s->split_slots[oldest].count && k < MCP_MAX_SPLIT_SEGMENTS; ++k) {
+                for (uint32_t k = 0; k < s->split_slots[oldest].count && k < MCP_MAX_SPLIT_SEGMENTS;
+                     ++k) {
                     if (s->split_slots[oldest].segments[k]) {
                         free(s->split_slots[oldest].segments[k]);
                         s->split_slots[oldest].segments[k] = NULL;
@@ -1573,21 +1593,21 @@ static void handle_data_packet(mcp_rak_session_manager_t* sm,
             if (!slot->in_use) {
                 // Freshly claimed slot — initialize for this split_id.
                 memset(slot, 0, sizeof(*slot));
-                slot->split_id     = split_id;
-                slot->count        = split_count;
-                slot->in_use       = true;
+                slot->split_id = split_id;
+                slot->count = split_count;
+                slot->in_use = true;
                 // Ordering info comes from the first fragment seen — every
                 // fragment of one split packet shares the same
                 // order_index/order_channel (the sender only allocates
                 // one), so capturing it once here is correct.
-                slot->is_ordered    = is_ordered;
-                slot->order_index   = order_index;
+                slot->is_ordered = is_ordered;
+                slot->order_index = order_index;
                 slot->order_channel = order_channel;
                 // Same reasoning applies to reliability/message_index —
                 // see the comment on these fields in Session.h.
-                slot->is_reliable   = is_reliable;
+                slot->is_reliable = is_reliable;
                 slot->message_index = message_index;
-                slot->started_ms    = mcp_utils_time_ms();
+                slot->started_ms = mcp_utils_time_ms();
                 s->diag_split_active++;
             }
             slot->last_fragment_ms = mcp_utils_time_ms();
@@ -1646,17 +1666,16 @@ static void handle_data_packet(mcp_rak_session_manager_t* sm,
                     // whole message exists, the real bytes are available and
                     // a genuine retransmit of an already-delivered split is
                     // correctly recognized and dropped.
-                    bool duplicate = slot->is_reliable &&
-                                      !reliable_index_accept(s, slot->message_index,
-                                                             reassembled, total);
+                    bool duplicate =
+                        slot->is_reliable &&
+                        !reliable_index_accept(s, slot->message_index, reassembled, total);
                     if (!duplicate) {
                         // Process the complete reassembled packet — through
                         // the same ordering gate as non-fragmented packets,
                         // using the ordering info captured from the first
                         // fragment.
-                        deliver_ordered(sm, s, slot->is_ordered,
-                                         slot->order_index, slot->order_channel,
-                                         reassembled, total);
+                        deliver_ordered(sm, s, slot->is_ordered, slot->order_index,
+                                        slot->order_channel, reassembled, total);
                     }
                     free(reassembled);
                 }
@@ -1665,14 +1684,16 @@ static void handle_data_packet(mcp_rak_session_manager_t* sm,
                 // Clean up this slot only — every other in-flight split_id
                 // for this session is untouched.
                 for (uint32_t k = 0; k < slot->count; ++k) {
-                    if (slot->segments[k]) { free(slot->segments[k]); slot->segments[k] = NULL; }
+                    if (slot->segments[k]) {
+                        free(slot->segments[k]);
+                        slot->segments[k] = NULL;
+                    }
                 }
                 memset(slot, 0, sizeof(*slot));
             }
         } else {
             // Non-fragmented packet — process through the ordering gate.
-            deliver_ordered(sm, s, is_ordered, order_index, order_channel,
-                             epayload, eplen);
+            deliver_ordered(sm, s, is_ordered, order_index, order_channel, epayload, eplen);
         }
 
         ptr += consumed;
@@ -1692,15 +1713,18 @@ static void log_session_diagnostics(const mcp_rak_session_t* s, const char* reas
     uint64_t now = mcp_utils_time_ms();
     uint32_t split_active_now = 0;
     for (int i = 0; i < MCP_MAX_CONCURRENT_SPLITS; ++i) {
-        if (s->split_slots[i].in_use) split_active_now++;
+        if (s->split_slots[i].in_use)
+            split_active_now++;
     }
     uint32_t order_hold_active_now = 0;
     for (int c = 0; c < 32; ++c) {
         for (int k = 0; k < MCP_ORDER_HOLD_CAP; ++k) {
-            if (s->order_hold[c][k].used) order_hold_active_now++;
+            if (s->order_hold[c][k].used)
+                order_hold_active_now++;
         }
     }
-    fprintf(stderr,
+    fprintf(
+        stderr,
         "[NET] Session closed\n"
         "  ip=%u.%u.%u.%u:%u\n"
         "  reason=%s\n"
@@ -1718,8 +1742,7 @@ static void log_session_diagnostics(const mcp_rak_session_t* s, const char* reas
         "  split_active_now=%u split_completed=%llu split_expired=%u split_evicted=%u\n"
         "  order_hold_active_now=%u order_hold_peak=%u order_hold_full=%u order_duplicate=%u order_forced_skip=%u\n"
         "  order_index_reuse=%u duplicate_reliable_dropped=%u\n",
-        s->ip[0], s->ip[1], s->ip[2], s->ip[3], s->port,
-        reason,
+        s->ip[0], s->ip[1], s->ip[2], s->ip[3], s->port, reason,
         (unsigned long long)(now - s->start_time_ms),
         (unsigned long long)(now - s->last_packet_received_ms),
         (unsigned long long)(now - s->last_game_packet_received_ms),
@@ -1727,28 +1750,23 @@ static void log_session_diagnostics(const mcp_rak_session_t* s, const char* reas
         (unsigned long long)(now - s->last_packet_sent_ms),
         (unsigned long long)s->diag_recv_packets, (unsigned long long)s->diag_sent_packets,
         (unsigned long long)s->diag_ack_received, (unsigned long long)s->diag_nack_received,
-        (unsigned long long)s->diag_retransmits,
-        (unsigned long long)s->diag_datagrams_received,
-        (unsigned long long)(now - s->last_ack_received_ms),
-        (unsigned long long)s->diag_bytes_sent,
+        (unsigned long long)s->diag_retransmits, (unsigned long long)s->diag_datagrams_received,
+        (unsigned long long)(now - s->last_ack_received_ms), (unsigned long long)s->diag_bytes_sent,
         s->diag_recovery_occupied, s->diag_recovery_peak, s->diag_recovery_overwrites,
-        (unsigned)MCP_RECOVERY_CAP,
-        s->diag_inflight_peak, s->diag_backpressure_drops,
-        (unsigned)MCP_MAX_INFLIGHT_RELIABLE,
-        s->diag_keepalive_pings, s->diag_keepalive_pongs, s->rtt_ms,
-        split_active_now, (unsigned long long)s->diag_split_completed,
-        s->diag_split_expired, s->diag_split_evicted,
-        order_hold_active_now, s->diag_order_hold_peak,
-        s->diag_order_hold_full, s->diag_order_duplicate, s->diag_order_forced_skip,
-        s->diag_order_index_reuse, s->diag_duplicate_dropped);
+        (unsigned)MCP_RECOVERY_CAP, s->diag_inflight_peak, s->diag_backpressure_drops,
+        (unsigned)MCP_MAX_INFLIGHT_RELIABLE, s->diag_keepalive_pings, s->diag_keepalive_pongs,
+        s->rtt_ms, split_active_now, (unsigned long long)s->diag_split_completed,
+        s->diag_split_expired, s->diag_split_evicted, order_hold_active_now,
+        s->diag_order_hold_peak, s->diag_order_hold_full, s->diag_order_duplicate,
+        s->diag_order_forced_skip, s->diag_order_index_reuse, s->diag_duplicate_dropped);
 }
 
 // =========================================================================
 // Handle ACK (0xc0): remove from recovery queue
 // =========================================================================
-static void handle_ack(mcp_rak_session_t* s,
-                         const uint8_t* data, size_t len) {
-    if (len < 3) return;
+static void handle_ack(mcp_rak_session_t* s, const uint8_t* data, size_t len) {
+    if (len < 3)
+        return;
     s->diag_ack_received++;
     // An ACK is proof of life: the client is still receiving and
     // answering. The rest of this file documents last_activity_ms as
@@ -1766,11 +1784,13 @@ static void handle_ack(mcp_rak_session_t* s,
     uint16_t count = rb_u16_be(data, len, &i);
     for (uint16_t k = 0; k < count && i < len; ++k) {
         uint8_t record_type = data[i++];
-        if (i + 3 > len) break;
+        if (i + 3 > len)
+            break;
         uint32_t lo = rb_u24_le(data, len, &i);
         uint32_t hi = lo;
         if (record_type == 0x00) { // range
-            if (i + 3 > len) break;
+            if (i + 3 > len)
+                break;
             hi = rb_u24_le(data, len, &i);
         }
         // SECURITY FIX: a corrupt or malicious ACK can claim an enormous
@@ -1780,14 +1800,16 @@ static void handle_ack(mcp_rak_session_t* s,
         // looking exactly like a timeout/disconnect to players. Real
         // ACK ranges only ever cover recently-sent sequence numbers,
         // which can never span more than the recovery window.
-        if (hi < lo || (hi - lo) >= MCP_RECOVERY_CAP) continue;
+        if (hi < lo || (hi - lo) >= MCP_RECOVERY_CAP)
+            continue;
         for (uint32_t seq = lo; seq <= hi; ++seq) {
             uint32_t slot = seq % MCP_RECOVERY_CAP;
             if (s->recovery[slot].data && s->recovery[slot].seq == seq) {
                 free(s->recovery[slot].data);
                 s->recovery[slot].data = NULL;
-                s->recovery[slot].len  = 0;
-                if (s->diag_recovery_occupied > 0) s->diag_recovery_occupied--;
+                s->recovery[slot].len = 0;
+                if (s->diag_recovery_occupied > 0)
+                    s->diag_recovery_occupied--;
             }
         }
     }
@@ -1798,30 +1820,33 @@ static void handle_ack(mcp_rak_session_t* s,
 // =========================================================================
 // Handle NACK (0xa0): retransmit from recovery
 // =========================================================================
-static void handle_nack(mcp_rak_session_manager_t* sm, mcp_rak_session_t* s,
-                          const uint8_t* data, size_t len) {
-    if (len < 3) return;
+static void handle_nack(mcp_rak_session_manager_t* sm, mcp_rak_session_t* s, const uint8_t* data,
+                        size_t len) {
+    if (len < 3)
+        return;
     s->diag_nack_received++;
     s->diag_datagrams_received++;
     size_t i = 1;
     uint16_t count = rb_u16_be(data, len, &i);
     for (uint16_t k = 0; k < count && i < len; ++k) {
         uint8_t record_type = data[i++];
-        if (i + 3 > len) break;
+        if (i + 3 > len)
+            break;
         uint32_t lo = rb_u24_le(data, len, &i);
         uint32_t hi = lo;
         if (record_type == 0x00) {
-            if (i + 3 > len) break;
+            if (i + 3 > len)
+                break;
             hi = rb_u24_le(data, len, &i);
         }
         // SECURITY FIX: same unbounded-range hang as handle_ack() above.
-        if (hi < lo || (hi - lo) >= MCP_RECOVERY_CAP) continue;
+        if (hi < lo || (hi - lo) >= MCP_RECOVERY_CAP)
+            continue;
         for (uint32_t seq = lo; seq <= hi; ++seq) {
             uint32_t slot = seq % MCP_RECOVERY_CAP;
             if (s->recovery[slot].data && s->recovery[slot].seq == seq) {
-                mcp_rak_session_manager_send(sm,
-                    s->recovery[slot].data, s->recovery[slot].len,
-                    s->ip, s->port);
+                mcp_rak_session_manager_send(sm, s->recovery[slot].data, s->recovery[slot].len,
+                                             s->ip, s->port);
             }
         }
     }
@@ -1833,26 +1858,24 @@ static void handle_nack(mcp_rak_session_manager_t* sm, mcp_rak_session_t* s,
 // =========================================================================
 // Handle unconnected (offline) packets
 // =========================================================================
-static void handle_unconnected(mcp_rak_session_manager_t* sm,
-                                  const uint8_t* data, size_t len,
-                                  const uint8_t ip[4], uint16_t port) {
-    if (len < 1) return;
+static void handle_unconnected(mcp_rak_session_manager_t* sm, const uint8_t* data, size_t len,
+                               const uint8_t ip[4], uint16_t port) {
+    if (len < 1)
+        return;
     uint8_t pid = data[0];
     uint8_t out[512];
-    size_t  out_len = 0;
+    size_t out_len = 0;
 
     // ---- UNCONNECTED_PING (0x01) / PING_OPEN_CONNECTIONS (0x02) ----
     if (pid == 0x01 || pid == 0x02) {
         if (len < 17) {
-            note_handshake_drop(data, len, ip, port,
-                                "unconnected ping shorter than 17 bytes");
+            note_handshake_drop(data, len, ip, port, "unconnected ping shorter than 17 bytes");
             return;
         }
         size_t pi = 1;
         uint64_t ping_time = rb_u64_le(data, len, &pi);
-        out_len = build_unconnected_pong(out, sizeof(out),
-                                          ping_time, sm->server_id,
-                                          sm->server_name);
+        out_len =
+            build_unconnected_pong(out, sizeof(out), ping_time, sm->server_id, sm->server_name);
         // FIX: count this reply (see sm_send_reply) so sends are visible
         // in the disconnect dump instead of always reporting 0.
         sm_send_reply(sm, NULL, out, out_len, ip, port);
@@ -1861,7 +1884,7 @@ static void handle_unconnected(mcp_rak_session_manager_t* sm,
 
     // ---- OPEN_CONNECTION_REQUEST_1 (0x05) ----
     if (pid == 0x05) {
-        uint8_t  protocol;
+        uint8_t protocol;
         uint16_t mtu;
         if (!decode_ocr1(data, len, &protocol, &mtu)) {
             note_handshake_drop(data, len, ip, port,
@@ -1888,7 +1911,8 @@ static void handle_unconnected(mcp_rak_session_manager_t* sm,
             // session (silent >10s) is reset for a new handshake attempt.
             uint64_t now = mcp_utils_time_ms();
             uint64_t last_seen = s->last_activity_ms > s->last_packet_received_ms
-                                 ? s->last_activity_ms : s->last_packet_received_ms;
+                                     ? s->last_activity_ms
+                                     : s->last_packet_received_ms;
             if ((now - last_seen) <= 10000) {
                 out_len = build_ocr1_reply(out, sizeof(out), sm->server_id, mtu);
                 sm_send_reply(sm, s, out, out_len, ip, port);
@@ -1911,9 +1935,10 @@ static void handle_unconnected(mcp_rak_session_manager_t* sm,
         // packet is DROPPED rather than fragmented and no split ever
         // completes. Taking min(client, sm->mtu) is what makes the server
         // work on both a plain LAN and a hosted Linux box.
-        if (sm->mtu && mtu > sm->mtu) mtu = sm->mtu;
+        if (sm->mtu && mtu > sm->mtu)
+            mtu = sm->mtu;
 
-        s->mtu   = mtu;
+        s->mtu = mtu;
         s->state = MCP_SESSION_STATE_CONNECTING_1;
         s->last_activity_ms = mcp_utils_time_ms();
 
@@ -1935,7 +1960,7 @@ static void handle_unconnected(mcp_rak_session_manager_t* sm,
             }
         }
         uint16_t mtu;
-        int64_t  client_id;
+        int64_t client_id;
         uint16_t srv_port;
         if (!decode_ocr2(data, len, &mtu, &client_id, &srv_port)) {
             note_handshake_drop(data, len, ip, port,
@@ -1946,9 +1971,12 @@ static void handle_unconnected(mcp_rak_session_manager_t* sm,
         // Clamp MTU like PMMP, then cap it by the server's own configured
         // MTU (see the OCR1 handler for why): the client asking for 1492
         // does not make 1492 safe on every path.
-        if (mtu > RAKLIB_MAX_MTU) mtu = RAKLIB_MAX_MTU;
-        if (sm->mtu && mtu > sm->mtu) mtu = sm->mtu;
-        if (mtu < RAKLIB_MIN_MTU) mtu = RAKLIB_MIN_MTU;
+        if (mtu > RAKLIB_MAX_MTU)
+            mtu = RAKLIB_MAX_MTU;
+        if (sm->mtu && mtu > sm->mtu)
+            mtu = sm->mtu;
+        if (mtu < RAKLIB_MIN_MTU)
+            mtu = RAKLIB_MIN_MTU;
 
         // FIX (state downgrade): same guard as the OCR1 handler — a
         // duplicate/retransmitted OCR2 must not reset a session that is
@@ -1959,22 +1987,21 @@ static void handle_unconnected(mcp_rak_session_manager_t* sm,
             s->state != MCP_SESSION_STATE_CONNECTING_1) {
             uint64_t now = mcp_utils_time_ms();
             uint64_t last_seen = s->last_activity_ms > s->last_packet_received_ms
-                                 ? s->last_activity_ms : s->last_packet_received_ms;
+                                     ? s->last_activity_ms
+                                     : s->last_packet_received_ms;
             if ((now - last_seen) <= 10000) {
-                out_len = build_ocr2_reply(out, sizeof(out),
-                                            sm->server_id, ip, port, mtu);
+                out_len = build_ocr2_reply(out, sizeof(out), sm->server_id, ip, port, mtu);
                 sm_send_reply(sm, s, out, out_len, ip, port);
                 return;
             }
         }
 
-        s->mtu       = mtu;
+        s->mtu = mtu;
         s->client_id = client_id;
-        s->state     = MCP_SESSION_STATE_CONNECTING_2;
+        s->state = MCP_SESSION_STATE_CONNECTING_2;
         s->last_activity_ms = mcp_utils_time_ms();
 
-        out_len = build_ocr2_reply(out, sizeof(out),
-                                    sm->server_id, ip, port, mtu);
+        out_len = build_ocr2_reply(out, sizeof(out), sm->server_id, ip, port, mtu);
         sm_send_reply(sm, s, out, out_len, ip, port);
         return;
     }
@@ -1982,8 +2009,7 @@ static void handle_unconnected(mcp_rak_session_manager_t* sm,
     // ---- Everything else → raw packet callback ----
     if (sm->instance && sm->instance->on_raw_packet) {
         char ipStr[20];
-        snprintf(ipStr, sizeof(ipStr), "%u.%u.%u.%u",
-                 ip[0], ip[1], ip[2], ip[3]);
+        snprintf(ipStr, sizeof(ipStr), "%u.%u.%u.%u", ip[0], ip[1], ip[2], ip[3]);
         sm->instance->on_raw_packet(sm->instance->impl, ipStr, port, data, len);
     }
 }
@@ -1991,14 +2017,13 @@ static void handle_unconnected(mcp_rak_session_manager_t* sm,
 // =========================================================================
 // Flush per-session ACK + NACK
 // =========================================================================
-static void flush_ack_nack(mcp_rak_session_manager_t* sm,
-                             mcp_rak_session_t* s) {
+static void flush_ack_nack(mcp_rak_session_manager_t* sm, mcp_rak_session_t* s) {
     uint32_t mins[64], maxs[64];
 
     size_t na = mcp_rak_session_drain_ack_queue(s, mins, maxs, 64);
     if (na > 0) {
         uint8_t ackBuf[512];
-        size_t  alen = build_ack_pkt(ackBuf, sizeof(ackBuf), mins, maxs, na, false);
+        size_t alen = build_ack_pkt(ackBuf, sizeof(ackBuf), mins, maxs, na, false);
         if (alen > 0)
             mcp_rak_session_manager_send(sm, ackBuf, alen, s->ip, s->port);
     }
@@ -2006,7 +2031,7 @@ static void flush_ack_nack(mcp_rak_session_manager_t* sm,
     size_t nn = mcp_rak_session_drain_nack_queue(s, mins, maxs, 64);
     if (nn > 0) {
         uint8_t nackBuf[512];
-        size_t  nlen = build_ack_pkt(nackBuf, sizeof(nackBuf), mins, maxs, nn, true);
+        size_t nlen = build_ack_pkt(nackBuf, sizeof(nackBuf), mins, maxs, nn, true);
         if (nlen > 0)
             mcp_rak_session_manager_send(sm, nackBuf, nlen, s->ip, s->port);
     }
@@ -2027,29 +2052,36 @@ static void flush_ack_nack(mcp_rak_session_manager_t* sm,
 //    and per session on top of that (MCP_RETRANSMIT_MAX_PER_SESSION), so a
 //    session that never acknowledges can never starve the others.
 // =========================================================================
-static void retransmit_stale(mcp_rak_session_manager_t* sm,
-                               mcp_rak_session_t* s,
-                               size_t* global_budget) {
-    if (s->diag_recovery_occupied == 0) return;
-    if (!global_budget || *global_budget == 0) return;
+static void retransmit_stale(mcp_rak_session_manager_t* sm, mcp_rak_session_t* s,
+                             size_t* global_budget) {
+    if (s->diag_recovery_occupied == 0)
+        return;
+    if (!global_budget || *global_budget == 0)
+        return;
 
     uint64_t now = mcp_utils_time_ms();
     size_t sent_this_session = 0;
     for (size_t k = 0; k < MCP_RECOVERY_CAP; ++k) {
-        if (*global_budget == 0) break;
-        if (sent_this_session >= MCP_RETRANSMIT_MAX_PER_SESSION) break;
+        if (*global_budget == 0)
+            break;
+        if (sent_this_session >= MCP_RETRANSMIT_MAX_PER_SESSION)
+            break;
         mcp_send_slot_t* slot = &s->recovery[k];
-        if (!slot->data) continue;
+        if (!slot->data)
+            continue;
 
         uint64_t interval = MCP_RETRANSMIT_BASE_MS;
         for (uint8_t i = 0; i < slot->retries && interval < MCP_RETRANSMIT_MAX_MS; ++i)
             interval *= 2;
-        if (interval > MCP_RETRANSMIT_MAX_MS) interval = MCP_RETRANSMIT_MAX_MS;
-        if ((now - slot->send_time_ms) <= interval) continue;
+        if (interval > MCP_RETRANSMIT_MAX_MS)
+            interval = MCP_RETRANSMIT_MAX_MS;
+        if ((now - slot->send_time_ms) <= interval)
+            continue;
 
         mcp_rak_session_manager_send(sm, slot->data, slot->len, s->ip, s->port);
         slot->send_time_ms = now;
-        if (slot->retries < 255) slot->retries++;
+        if (slot->retries < 255)
+            slot->retries++;
         s->diag_retransmits++;
         ++sent_this_session;
         --(*global_budget);
@@ -2060,10 +2092,11 @@ static void retransmit_stale(mcp_rak_session_manager_t* sm,
 // Main tick
 // =========================================================================
 void mcp_rak_session_manager_tick(mcp_rak_session_manager_t* sm) {
-    if (!sm || sm->socket.fd < 0) return;
+    if (!sm || sm->socket.fd < 0)
+        return;
 
-    uint8_t  buf[RAKLIB_MAX_MTU + 8];
-    uint8_t  ip[4];
+    uint8_t buf[RAKLIB_MAX_MTU + 8];
+    uint8_t ip[4];
     uint16_t port;
 
     // Reset per-IP flood counter
@@ -2072,8 +2105,10 @@ void mcp_rak_session_manager_tick(mcp_rak_session_manager_t* sm) {
     // Receive up to 128 datagrams per tick
     for (int n = 0; n < 128; ++n) {
         ssize_t r = mcp_udp_socket_recv(&sm->socket, buf, sizeof(buf), ip, &port);
-        if (r <= 0) break;
-        if (r < 1) continue;
+        if (r <= 0)
+            break;
+        if (r < 1)
+            continue;
 
         uint8_t pid = buf[0];
 
@@ -2084,16 +2119,19 @@ void mcp_rak_session_manager_tick(mcp_rak_session_manager_t* sm) {
             // get_or_create would recreate zombie sessions for in-flight
             // retransmits arriving after a client disconnect.
             mcp_rak_session_t* s = mcp_rak_session_manager_find(sm, ip, port);
-            if (s) handle_data_packet(sm, s, buf, (size_t)r);
+            if (s)
+                handle_data_packet(sm, s, buf, (size_t)r);
             // else: stale packet from a dead session — ignore silently
         } else if (pid == 0xc0 || pid == 0xc1 || pid == 0xc2 || pid == 0xc3) {
             // ACK
             mcp_rak_session_t* s = mcp_rak_session_manager_find(sm, ip, port);
-            if (s) handle_ack(s, buf, (size_t)r);
+            if (s)
+                handle_ack(s, buf, (size_t)r);
         } else if (pid == 0xa0 || pid == 0xa1 || pid == 0xa2 || pid == 0xa3) {
             // NACK
             mcp_rak_session_t* s = mcp_rak_session_manager_find(sm, ip, port);
-            if (s) handle_nack(sm, s, buf, (size_t)r);
+            if (s)
+                handle_nack(sm, s, buf, (size_t)r);
         } else {
             // Offline / unconnected packets
             handle_unconnected(sm, buf, (size_t)r, ip, port);
@@ -2104,7 +2142,7 @@ void mcp_rak_session_manager_tick(mcp_rak_session_manager_t* sm) {
     uint64_t now = mcp_utils_time_ms();
     // ONE retransmit budget for the whole tick, shared by every session.
     size_t retransmit_budget = MCP_RETRANSMIT_MAX_PER_TICK;
-    for (size_t i = 0; i < sm->session_count; ) {
+    for (size_t i = 0; i < sm->session_count;) {
         mcp_rak_session_t* s = sm->sessions[i];
 
         flush_ack_nack(sm, s);
@@ -2129,9 +2167,9 @@ void mcp_rak_session_manager_tick(mcp_rak_session_manager_t* sm) {
         // slot(s) that actually timed out are evicted — every other
         // in-flight split_id for this session is left untouched.
         for (int si = 0; si < MCP_MAX_CONCURRENT_SPLITS; ++si) {
-            if (s->split_slots[si].in_use &&
-                (now - s->split_slots[si].started_ms) > 10000) {
-                for (uint32_t k = 0; k < s->split_slots[si].count && k < MCP_MAX_SPLIT_SEGMENTS; ++k) {
+            if (s->split_slots[si].in_use && (now - s->split_slots[si].started_ms) > 10000) {
+                for (uint32_t k = 0; k < s->split_slots[si].count && k < MCP_MAX_SPLIT_SEGMENTS;
+                     ++k) {
                     if (s->split_slots[si].segments[k]) {
                         free(s->split_slots[si].segments[k]);
                         s->split_slots[si].segments[k] = NULL;
@@ -2154,8 +2192,8 @@ void mcp_rak_session_manager_tick(mcp_rak_session_manager_t* sm) {
         // (Historical note: this used to fire on "no non-PING game packet
         // for 15s/30s", which force-disconnected healthy idle players —
         // the AFK kick that players kept reporting.)
-        bool should_remove = s->is_disconnecting ||
-                             mcp_rak_session_is_timed_out(s, now, MCP_SESSION_TIMEOUT_MS);
+        bool should_remove =
+            s->is_disconnecting || mcp_rak_session_is_timed_out(s, now, MCP_SESSION_TIMEOUT_MS);
 
         // ---- Server keepalive + liveness instrumentation ---------------
         // A session that has had nothing to say for MCP_KEEPALIVE_PING_MS
@@ -2168,17 +2206,15 @@ void mcp_rak_session_manager_tick(mcp_rak_session_manager_t* sm) {
         if (!should_remove && s->state == MCP_SESSION_STATE_CONNECTED &&
             (now - s->last_packet_sent_ms) >= MCP_KEEPALIVE_PING_MS &&
             s->diag_recovery_occupied == 0) {
-            const int64_t ping_id = (int64_t)now ^
-                                   ((int64_t)s->port << 32) ^
-                                   (int64_t)MCP_KEEPALIVE_PING_ID_BASE;
+            const int64_t ping_id =
+                (int64_t)now ^ ((int64_t)s->port << 32) ^ (int64_t)MCP_KEEPALIVE_PING_ID_BASE;
             uint8_t dgram[32];
             size_t oi = 0;
-            dgram[oi++] = 0x00;          // PING
+            dgram[oi++] = 0x00; // PING
             write_i64_be(dgram, &oi, ping_id);
             uint8_t dp[64];
-            size_t dp_len = mcp_rak_session_build_datagram(s, dp, sizeof(dp),
-                                dgram, oi, MCP_RELIABILITY_UNRELIABLE, 0,
-                                false, 0, 0, 0);
+            size_t dp_len = mcp_rak_session_build_datagram(
+                s, dp, sizeof(dp), dgram, oi, MCP_RELIABILITY_UNRELIABLE, 0, false, 0, 0, 0);
             if (dp_len > 0) {
                 s->diag_keepalive_pings++;
                 s->keepalive_ping_sent_ms = now;
@@ -2186,8 +2222,7 @@ void mcp_rak_session_manager_tick(mcp_rak_session_manager_t* sm) {
                 sm_send_reply(sm, s, dp, dp_len, s->ip, s->port);
             }
         }
-        if (!should_remove &&
-            (now - s->last_health_log_ms) >= MCP_KEEPALIVE_PING_MS) {
+        if (!should_remove && (now - s->last_health_log_ms) >= MCP_KEEPALIVE_PING_MS) {
             s->last_health_log_ms = now;
             // Only flag what is actually wrong: data we sent is still not
             // acknowledged, or the client has gone completely silent.
@@ -2197,30 +2232,27 @@ void mcp_rak_session_manager_tick(mcp_rak_session_manager_t* sm) {
             if (s->diag_recovery_occupied > 0 ||
                 (now - s->last_activity_ms) > MCP_KEEPALIVE_PING_MS) {
                 fprintf(stderr,
-                    "[NET] health %u.%u.%u.%u:%u inflight=%u/%u "
-                    "backpressure_drops=%u since_last_datagram=%llums "
-                    "since_last_ack=%llums rtt=%ums retransmits=%llu "
-                    "keepalive=%u/%u\n",
-                    s->ip[0], s->ip[1], s->ip[2], s->ip[3], s->port,
-                    s->diag_recovery_occupied, (unsigned)MCP_MAX_INFLIGHT_RELIABLE,
-                    s->diag_backpressure_drops,
-                    (unsigned long long)(now - s->last_packet_received_ms),
-                    (unsigned long long)(now - s->last_ack_received_ms),
-                    s->rtt_ms, (unsigned long long)s->diag_retransmits,
-                    s->diag_keepalive_pongs, s->diag_keepalive_pings);
+                        "[NET] health %u.%u.%u.%u:%u inflight=%u/%u "
+                        "backpressure_drops=%u since_last_datagram=%llums "
+                        "since_last_ack=%llums rtt=%ums retransmits=%llu "
+                        "keepalive=%u/%u\n",
+                        s->ip[0], s->ip[1], s->ip[2], s->ip[3], s->port, s->diag_recovery_occupied,
+                        (unsigned)MCP_MAX_INFLIGHT_RELIABLE, s->diag_backpressure_drops,
+                        (unsigned long long)(now - s->last_packet_received_ms),
+                        (unsigned long long)(now - s->last_ack_received_ms), s->rtt_ms,
+                        (unsigned long long)s->diag_retransmits, s->diag_keepalive_pongs,
+                        s->diag_keepalive_pings);
             }
         }
         if (should_remove) {
             // Only call on_close_session for timeout — NOT for disconnect
             // (the disconnect handler already called it when 0x15 arrived).
-            if (!s->is_disconnecting && sm->instance &&
-                sm->instance->on_close_session) {
+            if (!s->is_disconnecting && sm->instance && sm->instance->on_close_session) {
                 log_session_diagnostics(s, "TIMEOUT");
                 char ipStr[20];
-                snprintf(ipStr, sizeof(ipStr), "%u.%u.%u.%u",
-                         s->ip[0], s->ip[1], s->ip[2], s->ip[3]);
-                sm->instance->on_close_session(sm->instance->impl,
-                                                 ipStr, s->port, "timeout");
+                snprintf(ipStr, sizeof(ipStr), "%u.%u.%u.%u", s->ip[0], s->ip[1], s->ip[2],
+                         s->ip[3]);
+                sm->instance->on_close_session(sm->instance->impl, ipStr, s->port, "timeout");
             }
             mcp_rak_session_destroy(s);
             free(s);

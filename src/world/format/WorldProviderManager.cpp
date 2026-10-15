@@ -41,23 +41,23 @@ WorldProviderManager& WorldProviderManager::getInstance() {
     return instance;
 }
 
-bool WorldProviderManager::registerProvider(const std::string& name,
-                                              ProviderFactory factory) {
-    if (!factory) return false;
+bool WorldProviderManager::registerProvider(const std::string& name, ProviderFactory factory) {
+    if (!factory)
+        return false;
     return registry_.emplace(name, std::move(factory)).second;
 }
 
-ProviderFactory
-WorldProviderManager::getFactory(const std::string& name) const {
+ProviderFactory WorldProviderManager::getFactory(const std::string& name) const {
     auto it = registry_.find(name);
-    if (it == registry_.end()) return nullptr;
+    if (it == registry_.end())
+        return nullptr;
     return it->second;
 }
 
-std::unique_ptr<WorldProvider>
-WorldProviderManager::create(const std::string& name) const {
+std::unique_ptr<WorldProvider> WorldProviderManager::create(const std::string& name) const {
     auto factory = getFactory(name);
-    if (!factory) return nullptr;
+    if (!factory)
+        return nullptr;
     return factory();
 }
 

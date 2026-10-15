@@ -40,7 +40,7 @@ PlayerInventory::PlayerInventory()
     // InventoryType PLAYER has defaultSize=49 (36+4+9). We use 40
     // (36 main + 4 armor) because hotbar is just a reference array,
     // not actual slots.
-    size_ = PLAYER_INV_TOTAL;  // 40
+    size_ = PLAYER_INV_TOTAL; // 40
     hotbar_.fill(-1);
     // Default hotbar links: hotbar[0]→slot 0, hotbar[1]→slot 1, etc.
     for (int i = 0; i < PLAYER_INV_HOTBAR_SIZE; ++i) {
@@ -50,7 +50,8 @@ PlayerInventory::PlayerInventory()
 
 // ---- Hotbar ----
 int PlayerInventory::getHotbarSlotIndex(int index) const {
-    if (index >= 0 && index < PLAYER_INV_HOTBAR_SIZE) return hotbar_[index];
+    if (index >= 0 && index < PLAYER_INV_HOTBAR_SIZE)
+        return hotbar_[index];
     return -1;
 }
 
@@ -77,8 +78,10 @@ void PlayerInventory::setHeldSlot(int slot) {
 
 // ---- setItem / clear / clearAll ----
 bool PlayerInventory::setItem(int index, const item::ItemStack& item) {
-    if (index < 0 || index >= size_) return false;
-    if (item.id == 0 || item.count <= 0) return clear(index);
+    if (index < 0 || index >= size_)
+        return false;
+    if (item.id == 0 || item.count <= 0)
+        return clear(index);
 
     item::ItemStack old = getItem(index);
     slots_[index] = item;
@@ -97,7 +100,8 @@ bool PlayerInventory::clear(int index) {
 
 void PlayerInventory::clearAll() {
     int limit = SIZE + 4;
-    for (int i = 0; i < limit; ++i) clear(i);
+    for (int i = 0; i < limit; ++i)
+        clear(i);
 }
 
 // ---- Armor ----
@@ -141,9 +145,10 @@ void PlayerInventory::onSlotChange(int index, const item::ItemStack& before) {
 // but it's part of the public Inventory interface, so keep it consistent
 // with the real fix in case something starts calling it.
 void PlayerInventory::sendContents(Player* player) {
-    if (!player) return;
+    if (!player)
+        return;
     auto pk = std::make_shared<network::protocol::ContainerSetContentPacket>();
-    pk->windowid = 0;  // SPECIAL_INVENTORY
+    pk->windowid = 0; // SPECIAL_INVENTORY
     pk->slots.reserve(SIZE + 9);
     for (int i = 0; i < SIZE; ++i) {
         pk->slots.push_back(getItem(i));
@@ -161,13 +166,14 @@ void PlayerInventory::sendContents(Player* player) {
 
 // ---- sendSlot ----
 void PlayerInventory::sendSlot(int index, Player* player) {
-    if (!player) return;
+    if (!player)
+        return;
     auto pk = std::make_shared<network::protocol::ContainerSetSlotPacket>();
     pk->slot = static_cast<int16_t>(index);
     pk->hotbarSlot = static_cast<int16_t>(index);
     auto item = getItem(index);
-    pk->itemId     = static_cast<int16_t>(item.id);
-    pk->itemCount  = item.count;
+    pk->itemId = static_cast<int16_t>(item.id);
+    pk->itemCount = item.count;
     pk->itemDamage = static_cast<int16_t>(item.meta);
     // The confirmation slot MUST carry the stack's NBT blob. This packet
     // is what the client uses to re-render the slot after every change;
@@ -176,7 +182,7 @@ void PlayerInventory::sendSlot(int index, Player* player) {
     // name" bug — the inventory data was correct, only this ack was
     // lossy). Genisys' ContainerSetSlotPacket encodes the full
     // putSlot() payload exactly like this.
-    pk->itemNbt    = item.nbt;
+    pk->itemNbt = item.nbt;
 
     // Determine windowid.
     if (player == owner_) {
@@ -188,7 +194,7 @@ void PlayerInventory::sendSlot(int index, Player* player) {
             pk->windowid = network::protocol::ContainerSetSlotPacket::SPECIAL_INVENTORY;
         }
     } else {
-        pk->windowid = 0;  // fallback
+        pk->windowid = 0; // fallback
     }
     player->sendPacket(pk);
 }

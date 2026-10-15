@@ -32,15 +32,15 @@
 namespace cursestone::event::block {
 
 class BlockGrowEvent : public BlockEvent, public Cancellable {
-public:
+  public:
     int32_t newStateX, newStateY, newStateZ;
-    BlockGrowEvent(int32_t bx, int32_t by, int32_t bz,
-                   int32_t nsx, int32_t nsy, int32_t nsz)
-        : BlockEvent(bx, by, bz),
-          newStateX(nsx), newStateY(nsy), newStateZ(nsz) {}
+    BlockGrowEvent(int32_t bx, int32_t by, int32_t bz, int32_t nsx, int32_t nsy, int32_t nsz)
+        : BlockEvent(bx, by, bz), newStateX(nsx), newStateY(nsy), newStateZ(nsz) {
+    }
 
     const std::string& eventName() const override {
-        static std::string n = "BlockGrowEvent"; return n;
+        static std::string n = "BlockGrowEvent";
+        return n;
     }
 };
 

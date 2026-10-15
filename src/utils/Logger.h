@@ -38,9 +38,9 @@ extern "C" {
 
 typedef enum mcp_log_level {
     MCP_LOG_DEBUG = 0,
-    MCP_LOG_INFO  = 1,
-    MCP_LOG_NOTICE= 2,
-    MCP_LOG_WARN  = 3,
+    MCP_LOG_INFO = 1,
+    MCP_LOG_NOTICE = 2,
+    MCP_LOG_WARN = 3,
     MCP_LOG_ERROR = 4,
     MCP_LOG_CRITICAL = 5,
     MCP_LOG_EMERGENCY = 6
@@ -61,14 +61,14 @@ typedef struct mcp_logger {
 } mcp_logger_t;
 
 // Helper macros for use through the vtable.
-#define MCP_LOG(lg, lvl, msg)   ((lg) ? (lg)->log((lg)->impl, (lvl), (msg)) : (void)0)
-#define MCP_LOG_DEBUG(lg, msg)  ((lg) ? (lg)->debug((lg)->impl, (msg)) : (void)0)
-#define MCP_LOG_INFO(lg, msg)   ((lg) ? (lg)->info((lg)->impl, (msg)) : (void)0)
+#define MCP_LOG(lg, lvl, msg) ((lg) ? (lg)->log((lg)->impl, (lvl), (msg)) : (void)0)
+#define MCP_LOG_DEBUG(lg, msg) ((lg) ? (lg)->debug((lg)->impl, (msg)) : (void)0)
+#define MCP_LOG_INFO(lg, msg) ((lg) ? (lg)->info((lg)->impl, (msg)) : (void)0)
 #define MCP_LOG_NOTICE(lg, msg) ((lg) ? (lg)->notice((lg)->impl, (msg)) : (void)0)
-#define MCP_LOG_WARN(lg, msg)   ((lg) ? (lg)->warn((lg)->impl, (msg)) : (void)0)
-#define MCP_LOG_ERROR(lg, msg)  ((lg) ? (lg)->error((lg)->impl, (msg)) : (void)0)
-#define MCP_LOG_CRIT(lg, msg)   ((lg) ? (lg)->critical((lg)->impl, (msg)) : (void)0)
-#define MCP_LOG_EMERG(lg, msg)  ((lg) ? (lg)->emergency((lg)->impl, (msg)) : (void)0)
+#define MCP_LOG_WARN(lg, msg) ((lg) ? (lg)->warn((lg)->impl, (msg)) : (void)0)
+#define MCP_LOG_ERROR(lg, msg) ((lg) ? (lg)->error((lg)->impl, (msg)) : (void)0)
+#define MCP_LOG_CRIT(lg, msg) ((lg) ? (lg)->critical((lg)->impl, (msg)) : (void)0)
+#define MCP_LOG_EMERG(lg, msg) ((lg) ? (lg)->emergency((lg)->impl, (msg)) : (void)0)
 
 const char* mcp_log_level_name(mcp_log_level_t lvl);
 

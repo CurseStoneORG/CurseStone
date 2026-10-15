@@ -36,15 +36,15 @@ namespace cursestone::plugin {
 // normales that already use hasPermission there.
 bool LuaCommand::canUse(CommandSender* sender) const {
     switch (mode_) {
-        case PermMode::PUBLIC: return true;
-        case PermMode::OP:
-            // ops and consola pass; a player normal with the node of the
-            // command granted explicitly also.
-            return sender->isOp() ||
-                   sender->hasPermission("cursestone.command." + name());
-        case PermMode::NODE:
-            // the node custom takes precedence; the ops are admin and pass always.
-            return sender->hasPermission(node_) || sender->isOp();
+    case PermMode::PUBLIC:
+        return true;
+    case PermMode::OP:
+        // ops and consola pass; a player normal with the node of the
+        // command granted explicitly also.
+        return sender->isOp() || sender->hasPermission("cursestone.command." + name());
+    case PermMode::NODE:
+        // the node custom takes precedence; the ops are admin and pass always.
+        return sender->hasPermission(node_) || sender->isOp();
     }
     return false;
 }
@@ -77,14 +77,15 @@ bool LuaCommand::execute(CommandSender* sender, const std::string&,
     auto task = std::make_shared<scheduler::CallbackTask>(
         [pluginName, fnRef, senderName, isConsole, isOp, args]() {
             LuaPlugin* plugin = PluginManager::get().find(pluginName);
-            if (!plugin || !plugin->isEnabled()) return;
+            if (!plugin || !plugin->isEnabled())
+                return;
             lua_State* L = plugin->L();
 
             lua_pushvalue(L, LUA_REGISTRYINDEX);
             lua_rawgeti(L, -1, fnRef);
             bool haveFn = lua_isfunction(L, -1);
-            lua_remove(L, -2);   // quita the tabla registry, deja fn/nil
-            if (!haveFn) {       // ref of a state anterior (tras reload)
+            lua_remove(L, -2); // quita the tabla registry, deja fn/nil
+            if (!haveFn) {     // ref of a state anterior (tras reload)
                 lua_pop(L, 1);
                 return;
             }
@@ -105,7 +106,7 @@ bool LuaCommand::execute(CommandSender* sender, const std::string&,
                 lua_rawseti(L, -2, (int)(i + 1));
             }
 
-            plugin->pcall(2, 0);                        // consume fn + 2 args
+            plugin->pcall(2, 0); // consume fn + 2 args
         });
 
     // 4. schedule with delay 0 (runs in the next tick) and return true:

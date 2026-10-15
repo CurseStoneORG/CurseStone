@@ -31,7 +31,7 @@ namespace cursestone::network::protocol {
 void StartGamePacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
     w.writeI32BE(seed);
-    w.writeU8 (dimension);
+    w.writeU8(dimension);
     w.writeI32BE(generator);
     w.writeI32BE(gamemode);
     w.writeI64BE(eid);
@@ -41,29 +41,43 @@ void StartGamePacket::encode(std::vector<uint8_t>& out) const {
     w.writeF32BE(x);
     w.writeF32BE(y);
     w.writeF32BE(z);
-    w.writeU8(1);             // unknown flag, always 1
-    w.writeU8(1);             // unknown flag, always 1
-    w.writeU8(0);             // unknown, always 0
+    w.writeU8(1); // unknown flag, always 1
+    w.writeU8(1); // unknown flag, always 1
+    w.writeU8(0); // unknown, always 0
     w.writeBEString(unknown);
 }
 
 bool StartGamePacket::decode(const uint8_t* data, size_t len) {
     PacketReader r(data, len);
-    if (!r.readI32BE(seed))       return false;
-    if (!r.readU8 (dimension))    return false;
-    if (!r.readI32BE(generator))  return false;
-    if (!r.readI32BE(gamemode))   return false;
-    if (!r.readI64BE(eid))        return false;
-    if (!r.readI32BE(spawnX))     return false;
-    if (!r.readI32BE(spawnY))     return false;
-    if (!r.readI32BE(spawnZ))     return false;
-    if (!r.readF32BE(x))          return false;
-    if (!r.readF32BE(y))          return false;
-    if (!r.readF32BE(z))          return false;
+    if (!r.readI32BE(seed))
+        return false;
+    if (!r.readU8(dimension))
+        return false;
+    if (!r.readI32BE(generator))
+        return false;
+    if (!r.readI32BE(gamemode))
+        return false;
+    if (!r.readI64BE(eid))
+        return false;
+    if (!r.readI32BE(spawnX))
+        return false;
+    if (!r.readI32BE(spawnY))
+        return false;
+    if (!r.readI32BE(spawnZ))
+        return false;
+    if (!r.readF32BE(x))
+        return false;
+    if (!r.readF32BE(y))
+        return false;
+    if (!r.readF32BE(z))
+        return false;
     uint8_t skip;
-    if (!r.readU8(skip)) return false;
-    if (!r.readU8(skip)) return false;
-    if (!r.readU8(skip)) return false;
+    if (!r.readU8(skip))
+        return false;
+    if (!r.readU8(skip))
+        return false;
+    if (!r.readU8(skip))
+        return false;
     return r.readBEString(unknown);
 }
 

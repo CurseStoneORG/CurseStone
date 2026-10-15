@@ -36,16 +36,16 @@ namespace cursestone::event::block {
 // Cancellable en el mismo objeto (diamante no-virtual), ambiguo en
 // tiempo de compilación para isCancelled()/setCancelled().
 class BlockSpreadEvent : public BlockFormEvent {
-public:
+  public:
     int32_t sourceX, sourceY, sourceZ;
-    BlockSpreadEvent(int32_t bx, int32_t by, int32_t bz,
-                     int32_t sx, int32_t sy, int32_t sz,
+    BlockSpreadEvent(int32_t bx, int32_t by, int32_t bz, int32_t sx, int32_t sy, int32_t sz,
                      int32_t nsx, int32_t nsy, int32_t nsz)
-        : BlockFormEvent(bx, by, bz, nsx, nsy, nsz),
-          sourceX(sx), sourceY(sy), sourceZ(sz) {}
+        : BlockFormEvent(bx, by, bz, nsx, nsy, nsz), sourceX(sx), sourceY(sy), sourceZ(sz) {
+    }
 
     const std::string& eventName() const override {
-        static std::string n = "BlockSpreadEvent"; return n;
+        static std::string n = "BlockSpreadEvent";
+        return n;
     }
 };
 

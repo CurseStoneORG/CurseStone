@@ -37,8 +37,10 @@
 namespace cursestone::network::protocol {
 
 class ContainerClosePacket : public DataPacket {
-public:
-    uint8_t pid() const override { return CONTAINER_CLOSE_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return CONTAINER_CLOSE_PACKET;
+    }
 
     uint8_t windowid = 0;
 

@@ -44,13 +44,15 @@
 namespace cursestone::network::protocol {
 
 class MobArmorEquipmentPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return MOB_ARMOR_EQUIPMENT_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return MOB_ARMOR_EQUIPMENT_PACKET;
+    }
 
-    int64_t  eid = 0;
-    int16_t  helmetId = 0, chestplateId = 0, leggingsId = 0, bootsId = 0;
-    uint8_t  helmetCount = 0, chestplateCount = 0, leggingsCount = 0, bootsCount = 0;
-    int16_t  helmetDamage = 0, chestplateDamage = 0, leggingsDamage = 0, bootsDamage = 0;
+    int64_t eid = 0;
+    int16_t helmetId = 0, chestplateId = 0, leggingsId = 0, bootsId = 0;
+    uint8_t helmetCount = 0, chestplateCount = 0, leggingsCount = 0, bootsCount = 0;
+    int16_t helmetDamage = 0, chestplateDamage = 0, leggingsDamage = 0, bootsDamage = 0;
 
     void encode(std::vector<uint8_t>& out) const override;
     bool decode(const uint8_t* data, size_t len) override;

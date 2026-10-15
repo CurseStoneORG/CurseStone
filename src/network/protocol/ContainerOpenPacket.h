@@ -49,19 +49,21 @@
 namespace cursestone::network::protocol {
 
 class ContainerOpenPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return CONTAINER_OPEN_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return CONTAINER_OPEN_PACKET;
+    }
 
     // Window "type" byte — PMMP's WindowTypes table. Only the ones this
     // project actually opens are named here; add more as they're needed.
     static constexpr uint8_t TYPE_CONTAINER = 0;
-    static constexpr uint8_t TYPE_FURNACE   = 2;   // WORKBENCH=1, FURNACE=2
+    static constexpr uint8_t TYPE_FURNACE = 2; // WORKBENCH=1, FURNACE=2
 
-    uint8_t  windowid  = 0;
-    uint8_t  type      = TYPE_CONTAINER;
-    int16_t  slots     = 0;
-    int32_t  x = 0, y = 0, z = 0;
-    int64_t  entityId  = -1;
+    uint8_t windowid = 0;
+    uint8_t type = TYPE_CONTAINER;
+    int16_t slots = 0;
+    int32_t x = 0, y = 0, z = 0;
+    int64_t entityId = -1;
 
     void encode(std::vector<uint8_t>& out) const override;
     bool decode(const uint8_t* data, size_t len) override;

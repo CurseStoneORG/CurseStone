@@ -40,52 +40,82 @@ namespace cursestone::inventory {
 // Backward-compat constants used by Player.cpp.
 // SIZE is the number of slots EXCLUDING the 4 armor slots (Nukkit's
 // getSize() returns super.getSize() - 4). Total storage = SIZE + 4.
-static constexpr int PLAYER_INV_MAIN_SIZE   = 36;
-static constexpr int PLAYER_INV_ARMOR_COUNT  = 4;
-static constexpr int PLAYER_INV_TOTAL        = PLAYER_INV_MAIN_SIZE + PLAYER_INV_ARMOR_COUNT; // 40
-static constexpr int PLAYER_INV_HOTBAR_SIZE  = 9;
+static constexpr int PLAYER_INV_MAIN_SIZE = 36;
+static constexpr int PLAYER_INV_ARMOR_COUNT = 4;
+static constexpr int PLAYER_INV_TOTAL = PLAYER_INV_MAIN_SIZE + PLAYER_INV_ARMOR_COUNT; // 40
+static constexpr int PLAYER_INV_HOTBAR_SIZE = 9;
 
 class PlayerInventory : public BaseInventory {
-public:
+  public:
     // Backward-compat constants.
-    static constexpr int SIZE         = PLAYER_INV_MAIN_SIZE;     // 36
-    static constexpr int ARMOR_OFFSET = PLAYER_INV_MAIN_SIZE;      // 36
-    static constexpr int HELMET       = ARMOR_OFFSET;              // 36
-    static constexpr int CHESTPLATE  = ARMOR_OFFSET + 1;          // 37
-    static constexpr int LEGGINGS     = ARMOR_OFFSET + 2;          // 38
-    static constexpr int BOOTS        = ARMOR_OFFSET + 3;          // 39
+    static constexpr int SIZE = PLAYER_INV_MAIN_SIZE;         // 36
+    static constexpr int ARMOR_OFFSET = PLAYER_INV_MAIN_SIZE; // 36
+    static constexpr int HELMET = ARMOR_OFFSET;               // 36
+    static constexpr int CHESTPLATE = ARMOR_OFFSET + 1;       // 37
+    static constexpr int LEGGINGS = ARMOR_OFFSET + 2;         // 38
+    static constexpr int BOOTS = ARMOR_OFFSET + 3;            // 39
 
     // Default constructor — used by Player.cpp. Creates a Player-type
     // inventory with 40 slots (36 main + 4 armor) and 9 hotbar indices.
     PlayerInventory();
 
     // ---- Hotbar / held slot ----
-    int  getHotbarSize() const { return PLAYER_INV_HOTBAR_SIZE; }
-    int  getHotbarSlotIndex(int index) const;
+    int getHotbarSize() const {
+        return PLAYER_INV_HOTBAR_SIZE;
+    }
+    int getHotbarSlotIndex(int index) const;
     void setHotbarSlotIndex(int index, int slot);
 
-    int  getHeldItemIndex() const { return itemInHandIndex_; }
+    int getHeldItemIndex() const {
+        return itemInHandIndex_;
+    }
     void setHeldItemIndex(int index);
 
-    int  heldSlot() const { return getHotbarSlotIndex(itemInHandIndex_); }
+    int heldSlot() const {
+        return getHotbarSlotIndex(itemInHandIndex_);
+    }
     void setHeldSlot(int slot);
 
-    item::ItemStack getHeldItem() { return getItem(heldSlot()); }
-    bool setItemInHand(const item::ItemStack& item) { return setItem(heldSlot(), item); }
+    item::ItemStack getHeldItem() {
+        return getItem(heldSlot());
+    }
+    bool setItemInHand(const item::ItemStack& item) {
+        return setItem(heldSlot(), item);
+    }
 
     // ---- Armor accessors (mirrors Nukkit) ----
-    item::ItemStack getHelmet()      { return getItem(SIZE); }
-    item::ItemStack getChestplate() { return getItem(SIZE + 1); }
-    item::ItemStack getLeggings()    { return getItem(SIZE + 2); }
-    item::ItemStack getBoots()       { return getItem(SIZE + 3); }
+    item::ItemStack getHelmet() {
+        return getItem(SIZE);
+    }
+    item::ItemStack getChestplate() {
+        return getItem(SIZE + 1);
+    }
+    item::ItemStack getLeggings() {
+        return getItem(SIZE + 2);
+    }
+    item::ItemStack getBoots() {
+        return getItem(SIZE + 3);
+    }
 
-    bool setHelmet(const item::ItemStack& it)      { return setItem(SIZE, it); }
-    bool setChestplate(const item::ItemStack& it) { return setItem(SIZE + 1, it); }
-    bool setLeggings(const item::ItemStack& it)    { return setItem(SIZE + 2, it); }
-    bool setBoots(const item::ItemStack& it)       { return setItem(SIZE + 3, it); }
+    bool setHelmet(const item::ItemStack& it) {
+        return setItem(SIZE, it);
+    }
+    bool setChestplate(const item::ItemStack& it) {
+        return setItem(SIZE + 1, it);
+    }
+    bool setLeggings(const item::ItemStack& it) {
+        return setItem(SIZE + 2, it);
+    }
+    bool setBoots(const item::ItemStack& it) {
+        return setItem(SIZE + 3, it);
+    }
 
-    item::ItemStack getArmorItem(int index) { return getItem(SIZE + index); }
-    bool setArmorItem(int index, const item::ItemStack& it) { return setItem(SIZE + index, it); }
+    item::ItemStack getArmorItem(int index) {
+        return getItem(SIZE + index);
+    }
+    bool setArmorItem(int index, const item::ItemStack& it) {
+        return setItem(SIZE + index, it);
+    }
 
     std::array<item::ItemStack, 4> getArmorContents();
     void setArmorContents(const std::array<item::ItemStack, 4>& items);
@@ -93,7 +123,9 @@ public:
     // ---- Nukkit overrides ----
     // getSize() returns the MAIN inventory size (36), NOT including armor.
     // The underlying storage has 40 slots (36 + 4 armor).
-    int  getSize() const override { return SIZE; }
+    int getSize() const override {
+        return SIZE;
+    }
 
     bool setItem(int index, const item::ItemStack& item) override;
     bool clear(int index) override;
@@ -111,13 +143,17 @@ public:
 
     // The player who owns this inventory. Set by Player on construction.
     // Used to know where to send slot-change packets.
-    void setOwner(Player* p) { owner_ = p; }
-    Player* getOwner() const { return owner_; }
+    void setOwner(Player* p) {
+        owner_ = p;
+    }
+    Player* getOwner() const {
+        return owner_;
+    }
 
-private:
+  private:
     int itemInHandIndex_ = 0;
     std::array<int, PLAYER_INV_HOTBAR_SIZE> hotbar_;
-    Player* owner_ = nullptr;  // the Player who owns this inventory
+    Player* owner_ = nullptr; // the Player who owns this inventory
 };
 
 } // namespace cursestone::inventory

@@ -32,29 +32,34 @@
 #include <array>
 #include <cstdint>
 #include <string>
-namespace cursestone { class Player; }
+namespace cursestone {
+class Player;
+}
 namespace cursestone::event::block {
 
 class SignChangeEvent : public BlockEvent, public Cancellable {
-public:
+  public:
     cursestone::Player* player;
     std::array<std::string, 4> lines;
 
-    SignChangeEvent(int32_t bx, int32_t by, int32_t bz,
-                    cursestone::Player* p,
+    SignChangeEvent(int32_t bx, int32_t by, int32_t bz, cursestone::Player* p,
                     std::array<std::string, 4> l)
-        : BlockEvent(bx, by, bz), player(p), lines(std::move(l)) {}
+        : BlockEvent(bx, by, bz), player(p), lines(std::move(l)) {
+    }
 
     std::string getLine(int i) const {
-        if (i < 0 || i >= 4) return {};
+        if (i < 0 || i >= 4)
+            return {};
         return lines[i];
     }
     void setLine(int i, const std::string& s) {
-        if (i >= 0 && i < 4) lines[i] = s;
+        if (i >= 0 && i < 4)
+            lines[i] = s;
     }
 
     const std::string& eventName() const override {
-        static std::string n = "SignChangeEvent"; return n;
+        static std::string n = "SignChangeEvent";
+        return n;
     }
 };
 

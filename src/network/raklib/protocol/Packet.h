@@ -33,11 +33,11 @@ extern "C" {
 #endif
 
 typedef struct mcp_packet_vtable {
-    uint8_t  (*id)(void);
-    void     (*encode)(void* self, mcp_bstream_t* out);
-    void     (*decode)(void* self, mcp_bstream_t* in);
-    size_t   (*size_estimate)(const void* self);
-    void     (*destroy)(void* self);
+    uint8_t (*id)(void);
+    void (*encode)(void* self, mcp_bstream_t* out);
+    void (*decode)(void* self, mcp_bstream_t* in);
+    size_t (*size_estimate)(const void* self);
+    void (*destroy)(void* self);
 } mcp_packet_vtable_t;
 
 typedef struct mcp_packet {

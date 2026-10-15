@@ -29,7 +29,7 @@
 #include <stdbool.h>
 
 #ifndef M_PI
-#  define M_PI 3.14159265358979323846
+#define M_PI 3.14159265358979323846
 #endif
 
 #ifdef __cplusplus
@@ -42,14 +42,17 @@ static inline double mcp_math_lerp(double a, double b, double t) {
 }
 // Clamp.
 static inline double mcp_math_clamp(double v, double lo, double hi) {
-    if (v < lo) return lo;
-    if (v > hi) return hi;
+    if (v < lo)
+        return lo;
+    if (v > hi)
+        return hi;
     return v;
 }
 // Wrap to range [0, range).
 static inline double mcp_math_wrap(double v, double range) {
     double r = fmod(v, range);
-    if (r < 0) r += range;
+    if (r < 0)
+        r += range;
     return r;
 }
 // Map noise [-1, 1] → [0, 1].
@@ -65,21 +68,29 @@ static inline double mcp_math_fade(double t) {
     return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
 }
 // degrees <-> radians
-static inline double mcp_math_deg2rad(double d) { return d * M_PI / 180.0; }
-static inline double mcp_math_rad2deg(double r) { return r * 180.0 / M_PI; }
+static inline double mcp_math_deg2rad(double d) {
+    return d * M_PI / 180.0;
+}
+static inline double mcp_math_rad2deg(double r) {
+    return r * 180.0 / M_PI;
+}
 // Integer floor division for non-negative operands.
 static inline int64_t mcp_math_floor_div(int64_t a, int64_t b) {
-    if (b == 0) return 0;
+    if (b == 0)
+        return 0;
     int64_t q = a / b;
     int64_t r = a % b;
-    if ((r != 0) && ((r < 0) != (b < 0))) --q;
+    if ((r != 0) && ((r < 0) != (b < 0)))
+        --q;
     return q;
 }
 // Integer floor modulus for non-negative modulus.
 static inline int64_t mcp_math_floor_mod(int64_t a, int64_t b) {
-    if (b == 0) return 0;
+    if (b == 0)
+        return 0;
     int64_t r = a % b;
-    if (r < 0) r += (b > 0) ? b : -b;
+    if (r < 0)
+        r += (b > 0) ? b : -b;
     return r;
 }
 

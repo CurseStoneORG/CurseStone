@@ -42,18 +42,20 @@
 namespace cursestone::network::protocol {
 
 class AddItemEntityPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return ADD_ITEM_ENTITY_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return ADD_ITEM_ENTITY_PACKET;
+    }
 
-    int64_t  eid = 0;
-    int16_t  itemId = 0;
-    uint8_t  itemCount = 1;
-    int16_t  itemDamage = 0;
+    int64_t eid = 0;
+    int16_t itemId = 0;
+    uint8_t itemCount = 1;
+    int16_t itemDamage = 0;
     // Raw little-endian NBT compound of the dropped stack (custom item
     // names survive being dropped thanks to this).
     std::string itemNbt;
-    float    x = 0, y = 0, z = 0;
-    float    speedX = 0, speedY = 0, speedZ = 0;
+    float x = 0, y = 0, z = 0;
+    float speedX = 0, speedY = 0, speedZ = 0;
 
     void encode(std::vector<uint8_t>& out) const override;
     bool decode(const uint8_t* data, size_t len) override;

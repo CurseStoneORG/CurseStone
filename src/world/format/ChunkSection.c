@@ -33,11 +33,12 @@
 
 mcp_chunk_section_t* mcp_section_new(uint8_t y) {
     mcp_chunk_section_t* s = (mcp_chunk_section_t*)calloc(1, sizeof(*s));
-    if (!s) return NULL;
-    s->y_index     = y;
-    s->blocks      = (uint8_t*)calloc(4096, 1);
-    s->data        = (uint8_t*)calloc(2048, 1);
-    s->sky_light   = (uint8_t*)calloc(2048, 1);
+    if (!s)
+        return NULL;
+    s->y_index = y;
+    s->blocks = (uint8_t*)calloc(4096, 1);
+    s->data = (uint8_t*)calloc(2048, 1);
+    s->sky_light = (uint8_t*)calloc(2048, 1);
     s->block_light = (uint8_t*)calloc(2048, 1);
     // Default sky_light to full-bright (15) so freshly generated chunks
     // aren't pitch black before the light pass runs.
@@ -58,7 +59,8 @@ mcp_chunk_section_t* mcp_section_new(uint8_t y) {
 }
 
 void mcp_section_destroy(mcp_chunk_section_t* s) {
-    if (!s) return;
+    if (!s)
+        return;
     free(s->blocks);
     free(s->data);
     free(s->sky_light);
@@ -67,24 +69,29 @@ void mcp_section_destroy(mcp_chunk_section_t* s) {
 }
 
 void mcp_section_fill_blocks(mcp_chunk_section_t* s, uint8_t id) {
-    if (!s || !s->blocks) return;
+    if (!s || !s->blocks)
+        return;
     memset(s->blocks, id, 4096);
     s->non_air_top = (id != 0);
 }
 
 bool mcp_section_is_empty(const mcp_chunk_section_t* s) {
-    if (!s || !s->blocks) return true;
+    if (!s || !s->blocks)
+        return true;
     for (size_t i = 0; i < 4096; ++i) {
-        if (s->blocks[i] != 0) return false;
+        if (s->blocks[i] != 0)
+            return false;
     }
     return true;
 }
 
 size_t mcp_section_count_non_air(const mcp_chunk_section_t* s) {
-    if (!s || !s->blocks) return 0;
+    if (!s || !s->blocks)
+        return 0;
     size_t n = 0;
     for (size_t i = 0; i < 4096; ++i) {
-        if (s->blocks[i] != 0) ++n;
+        if (s->blocks[i] != 0)
+            ++n;
     }
     return n;
 }

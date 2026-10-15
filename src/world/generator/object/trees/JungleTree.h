@@ -29,11 +29,13 @@
 namespace cursestone::world::generator::object::trees {
 
 class JungleTree : public GenericTree {
-protected:
+  protected:
     void init(MersenneRandom& rng) override {
-        height_ = 4 + (int)rng.nextInt(7);   // 4..10, reference JungleTree
-        logId_ = 17;  logData_ = 3;   // LOG, jungle
-        leafId_ = 18; leafData_ = 3;  // LEAVES, jungle
+        height_ = 4 + (int)rng.nextInt(7); // 4..10, reference JungleTree
+        logId_ = 17;
+        logData_ = 3; // LOG, jungle
+        leafId_ = 18;
+        leafData_ = 3; // LEAVES, jungle
     }
 };
 

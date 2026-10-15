@@ -24,7 +24,9 @@
 #include "Block.h"
 namespace cursestone::block {
 class BlockTransparent : public Block {
-public:
-    bool isTransparent() const override { return true; }
+  public:
+    bool isTransparent() const override {
+        return true;
+    }
 };
 } // namespace

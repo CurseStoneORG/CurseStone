@@ -76,7 +76,10 @@
 #include <memory>
 namespace cursestone::block {
 namespace {
-template <typename T> std::unique_ptr<T> make_id() { return std::make_unique<T>(); }
+template <typename T>
+std::unique_ptr<T> make_id() {
+    return std::make_unique<T>();
+}
 }
 
 void register_all_blocks() {

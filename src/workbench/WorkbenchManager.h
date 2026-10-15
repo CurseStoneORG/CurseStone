@@ -74,7 +74,7 @@ struct TickSample {
 // ---- Packet log entry ----
 struct PacketLogEntry {
     std::string timestamp;
-    std::string direction;   // "IN " or "OUT"
+    std::string direction; // "IN " or "OUT"
     std::string player;
     uint8_t pid = 0;
     size_t size = 0;
@@ -94,7 +94,7 @@ struct DisconnectDump {
 };
 
 class WorkbenchManager {
-public:
+  public:
     static WorkbenchManager& get() {
         static WorkbenchManager instance;
         return instance;
@@ -103,10 +103,12 @@ public:
     // ---- Lifecycle ----
     void start();
     void stop();
-    void report();   // export without stopping
-    void status();   // print to console
+    void report(); // export without stopping
+    void status(); // print to console
 
-    bool isActive() const { return active_.load(std::memory_order_relaxed); }
+    bool isActive() const {
+        return active_.load(std::memory_order_relaxed);
+    }
 
     // ---- Hook points (called from Server::tick / Network / Player) ----
     void onTickStart();
@@ -116,9 +118,8 @@ public:
     void onAutosave(uint64_t duration_ms);
     void onPacketIn(const std::string& ip_port, uint8_t pid, size_t size);
     void onPacketOut(const std::string& player, uint8_t pid, size_t size);
-    void onDisconnect(const std::string& player, const std::string& reason,
-                       uint64_t session_ms, uint64_t last_activity_delta_ms,
-                       size_t chunk_queue_pending);
+    void onDisconnect(const std::string& player, const std::string& reason, uint64_t session_ms,
+                      uint64_t last_activity_delta_ms, size_t chunk_queue_pending);
 
     // ---- RakLib atomic counters (incremented from RakLib thread) ----
     std::atomic<uint64_t> raklib_pkts_sent{0};
@@ -132,14 +133,14 @@ public:
     // ---- Watchdog: main thread updates this every network->tick() ----
     std::atomic<uint64_t> last_drain_time_ms{0};
 
-private:
+  private:
     WorkbenchManager() = default;
     ~WorkbenchManager();
 
     // ---- Module 1: TPS Monitor ----
     void tpsMonitorTick();
     void exportTps(const std::string& dir);
-    std::deque<uint64_t> tick_timestamps_;   // last 20 tick times (ms)
+    std::deque<uint64_t> tick_timestamps_; // last 20 tick times (ms)
     std::mutex tps_mtx_;
     std::deque<std::string> tps_log_;
     double tps_sum_ = 0;
@@ -150,7 +151,7 @@ private:
 
     // ---- Module 2: Tick Profiler ----
     void exportTickProfiler(const std::string& dir);
-    std::deque<TickSample> slow_ticks_;   // ring buffer, max 1000
+    std::deque<TickSample> slow_ticks_; // ring buffer, max 1000
     std::mutex profiler_mtx_;
     uint64_t total_ticks_monitored_ = 0;
     uint64_t current_tick_id_ = 0;

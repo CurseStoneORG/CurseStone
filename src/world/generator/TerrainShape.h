@@ -68,11 +68,13 @@ struct FieldNoise {
     double gain = 1.0;
     double offset = 0.0;
 
-    int levelCount() const { return layer.levelCount(); }
+    int levelCount() const {
+        return layer.levelCount();
+    }
 };
 
 struct TerrainNoise {
-    VanillaNoise vanilla;  // las 8 capas, semilla y orden vanilla
+    VanillaNoise vanilla; // las 8 capas, semilla y orden vanilla
 
     // Id unico de INSTANCIA. Los caches por hilo de TerrainShape.cpp lo
     // usan para invalidarse solos: si una TerrainNoise se destruye y
@@ -82,11 +84,11 @@ struct TerrainNoise {
 
     // Cada campo se apoya en una de esas capas (el paquete completo sigue
     // disponible en `vanilla`, que es quien las construye y las posee).
-    FieldNoise height;   // continentes + colinas + crestas + detalle
-    FieldNoise temp;     // clima: temperatura
-    FieldNoise humid;    // clima: humedad
-    FieldNoise river;    // red de rios (el valor cruza el 0)
-    FieldNoise surface;  // grava + suelo sin arboles
+    FieldNoise height;  // continentes + colinas + crestas + detalle
+    FieldNoise temp;    // clima: temperatura
+    FieldNoise humid;   // clima: humedad
+    FieldNoise river;   // red de rios (el valor cruza el 0)
+    FieldNoise surface; // grava + suelo sin arboles
 
     explicit TerrainNoise(int64_t seed);
     ~TerrainNoise();

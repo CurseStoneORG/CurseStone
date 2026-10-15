@@ -25,7 +25,8 @@
 
 namespace cursestone::world::generator {
 
-Synth::~Synth() {}
+Synth::~Synth() {
+}
 
 int Synth::getDataSize(int width, int height) {
     return width * height * sizeof(float);

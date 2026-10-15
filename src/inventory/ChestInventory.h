@@ -27,8 +27,8 @@
 #include "InventoryType.h"
 namespace cursestone::inventory {
 class ChestInventory : public BaseInventory {
-public:
-    ChestInventory()
-        : BaseInventory(nullptr, InventoryType::get(InventoryType::CHEST)) {}
+  public:
+    ChestInventory() : BaseInventory(nullptr, InventoryType::get(InventoryType::CHEST)) {
+    }
 };
 } // namespace

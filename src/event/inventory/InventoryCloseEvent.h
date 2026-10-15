@@ -27,13 +27,18 @@
 namespace cursestone::event::inventory {
 
 class InventoryCloseEvent : public InventoryEvent {
-public:
+  public:
     cursestone::Player* who;
-    InventoryCloseEvent(std::shared_ptr<cursestone::inventory::Inventory> inv, cursestone::Player* p)
-        : InventoryEvent(std::move(inv)), who(p) {}
-    cursestone::Player* getPlayer() { return who; }
+    InventoryCloseEvent(std::shared_ptr<cursestone::inventory::Inventory> inv,
+                        cursestone::Player* p)
+        : InventoryEvent(std::move(inv)), who(p) {
+    }
+    cursestone::Player* getPlayer() {
+        return who;
+    }
     const std::string& eventName() const override {
-        static std::string n = "InventoryCloseEvent"; return n;
+        static std::string n = "InventoryCloseEvent";
+        return n;
     }
 };
 

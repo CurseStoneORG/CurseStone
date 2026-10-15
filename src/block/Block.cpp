@@ -33,26 +33,31 @@
 // ordinary solids. Torch/glowstone light EMISSION is handled
 // separately by mcp_block_light_emission below.
 uint8_t mcp_block_light_opacity(uint8_t block_id) {
-    if (block_id == 0) return 0; // air — fast path, avoids touching the registry
+    if (block_id == 0)
+        return 0; // air — fast path, avoids touching the registry
     cursestone::block::Block* b = cursestone::block::Block::get(block_id);
-    if (!b) return 15; // unknown id — treat as solid, same fallback as Block::get
+    if (!b)
+        return 15; // unknown id — treat as solid, same fallback as Block::get
     return b->isTransparent() ? 0 : 15;
 }
 
 uint8_t mcp_block_light_emission(uint8_t block_id) {
-    if (block_id == 0) return 0;
+    if (block_id == 0)
+        return 0;
     cursestone::block::Block* b = cursestone::block::Block::get(block_id);
-    if (!b) return 0;
+    if (!b)
+        return 0;
     return b->getLightLevel();
 }
 
 namespace cursestone::block {
 cursestone::math::AxisAlignedBB Block::getBoundingBox() const {
-    return {0,0,0, 1,1,1};
+    return {0, 0, 0, 1, 1, 1};
 }
 std::vector<std::unique_ptr<Block>>& Block::registry() {
     static std::vector<std::unique_ptr<Block>> r;
-    if (r.empty()) r.resize(256);
+    if (r.empty())
+        r.resize(256);
     return r;
 }
 void Block::registerBlock(std::unique_ptr<Block> b) {

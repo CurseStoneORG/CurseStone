@@ -24,7 +24,7 @@
 // projectile). Holds the unique runtime id, position, motion, AABB
 // and the level reference. Mirrors pocketmine/entity/Entity.php.
 #pragma once
-#include "CurseStone.h"   // brings in the `using World = world::World;` alias
+#include "CurseStone.h" // brings in the `using World = world::World;` alias
 #include <cstdint>
 #include <memory>
 #include "math/Vector3.h"
@@ -33,29 +33,58 @@
 namespace cursestone {
 namespace entity {
 class Entity {
-public:
+  public:
     Entity(int64_t runtime_id, std::shared_ptr<World> lvl);
     virtual ~Entity() = default;
-    int64_t runtimeId() const { return runtime_id_; }
-    int32_t networkId() const { return network_id_; }
-    void setNetworkId(int32_t id) { network_id_ = id; }
-    const cursestone::math::Vector3& position() const { return pos_; }
-    const cursestone::math::Vector3& motion() const  { return motion_; }
-    void setPosition(cursestone::math::Vector3 p) { pos_ = p; }
-    void setMotion(cursestone::math::Vector3 m) { motion_ = m; }
-    float yaw() const { return yaw_; }
-    float pitch() const { return pitch_; }
-    void setRotation(float yaw, float pitch) { yaw_ = yaw; pitch_ = pitch; }
-    bool onGround() const { return on_ground_; }
-    void setOnGround(bool b) { on_ground_ = b; }
+    int64_t runtimeId() const {
+        return runtime_id_;
+    }
+    int32_t networkId() const {
+        return network_id_;
+    }
+    void setNetworkId(int32_t id) {
+        network_id_ = id;
+    }
+    const cursestone::math::Vector3& position() const {
+        return pos_;
+    }
+    const cursestone::math::Vector3& motion() const {
+        return motion_;
+    }
+    void setPosition(cursestone::math::Vector3 p) {
+        pos_ = p;
+    }
+    void setMotion(cursestone::math::Vector3 m) {
+        motion_ = m;
+    }
+    float yaw() const {
+        return yaw_;
+    }
+    float pitch() const {
+        return pitch_;
+    }
+    void setRotation(float yaw, float pitch) {
+        yaw_ = yaw;
+        pitch_ = pitch;
+    }
+    bool onGround() const {
+        return on_ground_;
+    }
+    void setOnGround(bool b) {
+        on_ground_ = b;
+    }
     // Bounding box for collision (defaults to 0.6×1.8×0.6).
     virtual cursestone::math::AxisAlignedBB getBoundingBox() const;
     // Ticks this entity. Default: gravity + friction + simple AABB
     // collision against blocks in the level.
     virtual void tick(uint64_t current_tick);
     // Returns true if this entity should be removed at next sweep.
-    bool isClosed() const { return closed_; }
-    void close() { closed_ = true; }
+    bool isClosed() const {
+        return closed_;
+    }
+    void close() {
+        closed_ = true;
+    }
 
     // ---- Damage / status effects (stubs) ----
     // These exist so BlockFire::onEntityCollide can compile against a
@@ -63,10 +92,13 @@ public:
     // not implemented yet in CurseStone — the bodies are intentional no-ops
     // and marked with TODO so they're easy to find later.
     // mirrors PMMP Entity::attack(EntityDamageEvent)
-    virtual void attack(float /*damage*/) { /* TODO: damage event pipeline */ }
+    virtual void attack(float /*damage*/) { /* TODO: damage event pipeline */
+    }
     // mirrors PMMP Entity::setOnFire(int $seconds)
-    virtual void setOnFire(int /*seconds*/) { /* TODO: fire tick tracking */ }
-protected:
+    virtual void setOnFire(int /*seconds*/) { /* TODO: fire tick tracking */
+    }
+
+  protected:
     int64_t runtime_id_;
     int32_t network_id_ = 0;
     cursestone::math::Vector3 pos_;

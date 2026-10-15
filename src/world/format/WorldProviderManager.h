@@ -49,7 +49,7 @@ namespace cursestone::world::format {
 using ProviderFactory = std::function<std::unique_ptr<WorldProvider>()>;
 
 class WorldProviderManager {
-public:
+  public:
     static WorldProviderManager& getInstance();
 
     // Register a provider by canonical name. Names are lower-case
@@ -70,7 +70,7 @@ public:
     // Default format used when a config doesn't specify one.
     static const char* defaultFormatName();
 
-private:
+  private:
     WorldProviderManager() = default;
     std::unordered_map<std::string, ProviderFactory> registry_;
 };

@@ -46,64 +46,78 @@
 #include <string>
 
 namespace cursestone {
-    namespace world { class World; }
-    namespace entity { class Entity; }
+namespace world {
+class World;
+}
+namespace entity {
+class Entity;
+}
 }
 
 namespace cursestone::block {
 
 class BlockFire : public BlockTransparent {
-public:
+  public:
     // ---- Identidad ----
-    uint8_t id() const override { return FIRE; }
-    std::string name() const override { return "Fire Block"; }
+    uint8_t id() const override {
+        return FIRE;
+    }
+    std::string name() const override {
+        return "Fire Block";
+    }
 
     // ---- Propiedades físicas / de render ----
-    bool isSolid()        const override { return false; }
-    bool isTransparent()  const override { return true; }
-    bool canBeReplaced()  const override { return true; }   // PMMP: return true
-    bool canWalkThrough() const override { return true; }
-    float getHardness()   const override { return 0.0f; }
-    uint8_t getLightLevel() const override { return 15; }   // PMMP: return 15
+    bool isSolid() const override {
+        return false;
+    }
+    bool isTransparent() const override {
+        return true;
+    }
+    bool canBeReplaced() const override {
+        return true;
+    } // PMMP: return true
+    bool canWalkThrough() const override {
+        return true;
+    }
+    float getHardness() const override {
+        return 0.0f;
+    }
+    uint8_t getLightLevel() const override {
+        return 15;
+    } // PMMP: return 15
 
     // ---- Interacción con entidades ----
     // Llama el entity-tick loop por cada entidad que se superpone con este bloque.
     // Mirrors PMMP Fire::onEntityCollide($entity)
-    static void onEntityCollide(world::World* world,
-                                int32_t bx, int32_t by, int32_t bz,
+    static void onEntityCollide(world::World* world, int32_t bx, int32_t by, int32_t bz,
                                 entity::Entity* entity);
 
     // ---- Tick programado ----
     // Encola el siguiente update de propagación/extinción para (x,y,z).
     // delay = TICK_RATE + rand(0..10)  — idéntico a PMMP scheduleUpdate.
-    static void scheduleUpdate(world::World* world,
-                               int32_t x, int32_t y, int32_t z);
+    static void scheduleUpdate(world::World* world, int32_t x, int32_t y, int32_t z);
 
     // Lógica de propagación + extinción, llamada por FireUpdateTask::onRun().
     // Mirrors PMMP Fire::onUpdate(BLOCK_UPDATE_SCHEDULED)
-    static void onScheduledUpdate(world::World* world,
-                                  int32_t x, int32_t y, int32_t z);
+    static void onScheduledUpdate(world::World* world, int32_t x, int32_t y, int32_t z);
 
-    static constexpr int TICK_RATE = 30;  // ticks (= 1.5 s a 20 TPS)
+    static constexpr int TICK_RATE = 30; // ticks (= 1.5 s a 20 TPS)
 
     // ---- Tablas de flamabilidad (PMMP verbatim) ----
     // Retornan 0 si el bloque no es inflamable.
-    static int getBurnAbility(uint8_t blockId);  // probabilidad de consumirse
-    static int getBurnChance(uint8_t blockId);   // probabilidad de propagarse
+    static int getBurnAbility(uint8_t blockId); // probabilidad de consumirse
+    static int getBurnChance(uint8_t blockId);  // probabilidad de propagarse
 
     // ---- Helpers de geometría ----
-    static bool isTopFacingSurfaceSolid(world::World* world,
-                                        int32_t x, int32_t y, int32_t z);
-    static bool canNeighborBurn(world::World* world,
-                                int32_t x, int32_t y, int32_t z);
+    static bool isTopFacingSurfaceSolid(world::World* world, int32_t x, int32_t y, int32_t z);
+    static bool canNeighborBurn(world::World* world, int32_t x, int32_t y, int32_t z);
 
-private:
-    static void tryToCatchBlockOnFire(world::World* world,
-                                      int32_t tx, int32_t ty, int32_t tz,
+  private:
+    static void tryToCatchBlockOnFire(world::World* world, int32_t tx, int32_t ty, int32_t tz,
                                       int bound, int damage);
 
-    static int getChanceOfNeighborsEncouragingFire(world::World* world,
-                                                   int32_t x, int32_t y, int32_t z);
+    static int getChanceOfNeighborsEncouragingFire(world::World* world, int32_t x, int32_t y,
+                                                   int32_t z);
 };
 
 } // namespace cursestone::block

@@ -58,7 +58,10 @@ namespace {
 // Resuelve (allocando si falta) la seccion sy del chunk y la devuelve.
 static inline mcp_chunk_section_t* section8(mcp_chunk_t* c, int sy) {
     mcp_chunk_section_t* s = c->sections[sy];
-    if (!s) { s = mcp_section_new((uint8_t)sy); c->sections[sy] = s; }
+    if (!s) {
+        s = mcp_section_new((uint8_t)sy);
+        c->sections[sy] = s;
+    }
     return s;
 }
 } // namespace
@@ -66,14 +69,14 @@ static inline mcp_chunk_section_t* section8(mcp_chunk_t* c, int sy) {
 Normal::Normal(int64_t seed) : seed_(seed), noise_(seed) {
     // Vanilla ore distribution (ported from the reference's OrePopulator).
     std::vector<OreVein> ores = {
-        {3,  1,   0, 128, 32, 10},  // dirt patches
-        {13, 1,   0, 128, 32,  8},  // gravel patches
-        {16, 1,   0, 128, 16, 20},  // coal
-        {15, 1,   0,  64,  8, 20},  // iron
-        {14, 1,   0,  32,  8,  2},  // gold
-        {73, 1,   0,  16,  7,  8},  // redstone
-        {56, 1,   0,  16,  7,  1},  // diamond
-        {21, 1,  16,  24,  6,  1},  // lapis lazuli
+        {3, 1, 0, 128, 32, 10},  // dirt patches
+        {13, 1, 0, 128, 32, 8},  // gravel patches
+        {16, 1, 0, 128, 16, 20}, // coal
+        {15, 1, 0, 64, 8, 20},   // iron
+        {14, 1, 0, 32, 8, 2},    // gold
+        {73, 1, 0, 16, 7, 8},    // redstone
+        {56, 1, 0, 16, 7, 1},    // diamond
+        {21, 1, 16, 24, 6, 1},   // lapis lazuli
     };
 
     // Populator order matters: ores + caves first (they edit raw ground),
@@ -97,8 +100,8 @@ Normal::Normal(int64_t seed) : seed_(seed), noise_(seed) {
     populators_.push_back(std::make_unique<populator::PopulatorTree>(16));
     populators_.push_back(std::make_unique<populator::PopulatorTallGrass>(16));
     populators_.push_back(std::make_unique<populator::PopulatorDoublePlant>(16, 2)); // large grass
-    populators_.push_back(std::make_unique<populator::PopulatorFlower>(37, 16)); // dandelion
-    populators_.push_back(std::make_unique<populator::PopulatorFlower>(38, 16)); // poppy
+    populators_.push_back(std::make_unique<populator::PopulatorFlower>(37, 16));     // dandelion
+    populators_.push_back(std::make_unique<populator::PopulatorFlower>(38, 16));     // poppy
     populators_.push_back(std::make_unique<populator::PopulatorCactus>(16));
     populators_.push_back(std::make_unique<populator::PopulatorDeadBush>(16));
     populators_.push_back(std::make_unique<populator::PopulatorSugarCane>(16));
@@ -165,7 +168,7 @@ void Normal::generate(GenerationContext& ctx) {
     // on an 18x18 grid (1-block margin) so the smoothing kernel and the
     // beach/water neighbour test are identical at every chunk border. Two
     // neighbouring chunks therefore agree on every shared column.
-    constexpr int GW = 18;   // world offsets -1 .. 16
+    constexpr int GW = 18; // world offsets -1 .. 16
     double raw[GW][GW];
     for (int i = 0; i < GW; ++i)
         for (int j = 0; j < GW; ++j)
@@ -199,7 +202,7 @@ void Normal::generate(GenerationContext& ctx) {
             const int wz = baseZ + z;
             const BiomeConfig& cfg = BiomeRegistry::forId(b);
 
-            uint8_t top    = cfg.topBlock;
+            uint8_t top = cfg.topBlock;
             uint8_t filler = cfg.fillerBlock;
 
             // Vanilla-ish surface extras per biome.
@@ -217,10 +220,10 @@ void Normal::generate(GenerationContext& ctx) {
                 // drops SAND. Above the waterline the bank is grass and dirt
                 // like the land around it.
                 if (h < kSeaLevel) {
-                    if (h <= kSeaLevel - 3) {      // scoured channel floor
+                    if (h <= kSeaLevel - 3) { // scoured channel floor
                         top = (uint8_t)BlockId::GRAVEL;
                         filler = (uint8_t)BlockId::GRAVEL;
-                    } else {                        // shallow lip / margin
+                    } else { // shallow lip / margin
                         top = (uint8_t)BlockId::SAND;
                         filler = (uint8_t)BlockId::SAND;
                     }
@@ -241,7 +244,10 @@ void Normal::generate(GenerationContext& ctx) {
                 // the whole surface on some seeds). The player asked for
                 // green hills, so rock is now reserved for the genuine high
                 // peaks only.
-                if (h >= 100) { top = (uint8_t)BlockId::STONE; filler = (uint8_t)BlockId::STONE; }
+                if (h >= 100) {
+                    top = (uint8_t)BlockId::STONE;
+                    filler = (uint8_t)BlockId::STONE;
+                }
             }
 
             // ---- Shorelines: sand at the water line -------------------------
@@ -255,11 +261,10 @@ void Normal::generate(GenerationContext& ctx) {
             // has a one-block margin all round (GW = 18, world offsets
             // -1..16), so all four neighbours are available even on the
             // chunk border: column x sits at raw[x + 1].
-            const bool touchesWater =
-                raw[x][z + 1]     < (double)kSeaLevel - 0.5 ||
-                raw[x + 2][z + 1] < (double)kSeaLevel - 0.5 ||
-                raw[x + 1][z]     < (double)kSeaLevel - 0.5 ||
-                raw[x + 1][z + 2] < (double)kSeaLevel - 0.5;
+            const bool touchesWater = raw[x][z + 1] < (double)kSeaLevel - 0.5 ||
+                                      raw[x + 2][z + 1] < (double)kSeaLevel - 0.5 ||
+                                      raw[x + 1][z] < (double)kSeaLevel - 0.5 ||
+                                      raw[x + 1][z + 2] < (double)kSeaLevel - 0.5;
             if (shore && top != (uint8_t)BlockId::STONE) {
                 top = (uint8_t)BlockId::SAND;
                 // Sand on top of dirt, the way a beach is built up.
@@ -282,8 +287,8 @@ void Normal::generate(GenerationContext& ctx) {
             // threshold put the sand either underwater or one block too far
             // up the bank. The neighbour test is exact everywhere, and it
             // automatically covers every land biome the bank runs through.
-            if (!shore && h >= kSeaLevel && b != BIOME_OCEAN &&
-                top != (uint8_t)BlockId::STONE && touchesWater) {
+            if (!shore && h >= kSeaLevel && b != BIOME_OCEAN && top != (uint8_t)BlockId::STONE &&
+                touchesWater) {
                 top = (uint8_t)BlockId::SAND;
                 if (filler == (uint8_t)BlockId::GRASS || filler == (uint8_t)BlockId::DIRT)
                     filler = (uint8_t)BlockId::SAND;
@@ -295,8 +300,7 @@ void Normal::generate(GenerationContext& ctx) {
             // follows the river for hundreds of blocks rather than making
             // round patches — and it stays rare because it is gated on the
             // river valley AND thresholded hard.
-            if (!shore && h >= kSeaLevel &&
-                riverSandBank(noise, wx, wz) > 0.62) {
+            if (!shore && h >= kSeaLevel && riverSandBank(noise, wx, wz) > 0.62) {
                 top = (uint8_t)BlockId::SAND;
                 filler = (uint8_t)BlockId::SAND;
             }
@@ -341,10 +345,14 @@ void Normal::generate(GenerationContext& ctx) {
             // still leaving the layering visible on every terrace.
             int surfaceDepth = 4;
             int lowN = h;
-            if (x > 0)  lowN = std::min(lowN, heights[x - 1][z]);
-            if (x < 15) lowN = std::min(lowN, heights[x + 1][z]);
-            if (z > 0)  lowN = std::min(lowN, heights[x][z - 1]);
-            if (z < 15) lowN = std::min(lowN, heights[x][z + 1]);
+            if (x > 0)
+                lowN = std::min(lowN, heights[x - 1][z]);
+            if (x < 15)
+                lowN = std::min(lowN, heights[x + 1][z]);
+            if (z > 0)
+                lowN = std::min(lowN, heights[x][z - 1]);
+            if (z < 15)
+                lowN = std::min(lowN, heights[x][z + 1]);
             if (b != BIOME_EXTREME_HILLS && b != BIOME_MOUNTAINS)
                 surfaceDepth = std::min(4 + (h - lowN) / 2, 8);
 
@@ -356,8 +364,8 @@ void Normal::generate(GenerationContext& ctx) {
             // mountain faces. Only applied inside the river's own cut, so the
             // terraced lowland banks and the savanna plateau walls keep the
             // soil the player asked for there.
-            if (b != BIOME_OCEAN && b != BIOME_RIVER && b != BIOME_FROZEN_RIVER &&
-                h - lowN >= 5 && riverDistance(noise, wx, wz) < 26.0)
+            if (b != BIOME_OCEAN && b != BIOME_RIVER && b != BIOME_FROZEN_RIVER && h - lowN >= 5 &&
+                riverDistance(noise, wx, wz) < 26.0)
                 filler = (uint8_t)BlockId::STONE;
             // Oceans and submerged river beds keep 4 gravel layers at the
             // bottom regardless of the surrounding relief.
@@ -383,10 +391,14 @@ void Normal::generate(GenerationContext& ctx) {
                 const uint8_t topId = (int)BlockId::BEDROCK;
                 for (int y = 0; y < h; ++y) {
                     uint8_t id;
-                    if (y == 0)                       id = (uint8_t)BlockId::BEDROCK;
-                    else if (y < h - surfaceDepth)    id = (uint8_t)BlockId::STONE;
-                    else if (y < h - 1)               id = filler;
-                    else                              id = top;
+                    if (y == 0)
+                        id = (uint8_t)BlockId::BEDROCK;
+                    else if (y < h - surfaceDepth)
+                        id = (uint8_t)BlockId::STONE;
+                    else if (y < h - 1)
+                        id = filler;
+                    else
+                        id = top;
                     // Stone runs right through the terrain layers, so a
                     // cliff or a cut bank shows rock instead of an
                     // unbroken dirt shell. Bands of it appear at random
@@ -432,7 +444,8 @@ void Normal::generate(GenerationContext& ctx) {
 }
 
 void Normal::populate(GenerationContext& ctx) {
-    for (auto& p : populators_) p->populate(ctx);
+    for (auto& p : populators_)
+        p->populate(ctx);
 }
 
 } // namespace cursestone::world::generator

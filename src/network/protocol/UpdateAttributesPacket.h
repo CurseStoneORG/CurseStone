@@ -47,8 +47,10 @@
 namespace cursestone::network::protocol {
 
 class UpdateAttributesPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return UPDATE_ATTRIBUTES_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return UPDATE_ATTRIBUTES_PACKET;
+    }
 
     struct Entry {
         float min = 0.0f;

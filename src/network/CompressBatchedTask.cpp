@@ -31,12 +31,11 @@ namespace network {
 
 void CompressBatchedTask::onRun() {
     uLong srcLen = static_cast<uLong>(payload_.size());
-    uLong bound  = compressBound(srcLen);
+    uLong bound = compressBound(srcLen);
     std::vector<uint8_t> tmp(bound);
     uLongf dstLen = bound;
-    int r = compress2(tmp.data(), &dstLen,
-                       payload_.data(), srcLen,
-                       level_ >= 1 && level_ <= 9 ? level_ : 7);
+    int r = compress2(tmp.data(), &dstLen, payload_.data(), srcLen,
+                      level_ >= 1 && level_ <= 9 ? level_ : 7);
     if (r != Z_OK) {
         result_.clear();
         return;
@@ -45,7 +44,8 @@ void CompressBatchedTask::onRun() {
 }
 
 void CompressBatchedTask::onCompletion() {
-    if (cb_) cb_(std::move(result_));
+    if (cb_)
+        cb_(std::move(result_));
 }
 
 } // namespace network

@@ -29,11 +29,13 @@
 #include <cstdint>
 namespace cursestone::scheduler {
 class FileWriteTask : public AsyncTask {
-public:
+  public:
     FileWriteTask(std::string path, std::vector<uint8_t> bytes)
-        : path_(std::move(path)), bytes_(std::move(bytes)) {}
+        : path_(std::move(path)), bytes_(std::move(bytes)) {
+    }
     void onRun() override;
-private:
+
+  private:
     std::string path_;
     std::vector<uint8_t> bytes_;
 };

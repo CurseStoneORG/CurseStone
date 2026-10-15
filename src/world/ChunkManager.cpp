@@ -43,19 +43,23 @@
 
 namespace cursestone::world {
 
-ChunkManager::ChunkManager() {}
+ChunkManager::ChunkManager() {
+}
 ChunkManager::~ChunkManager() {
-    for (auto& kv : chunks_) if (kv.second) mcp_chunk_destroy(kv.second);
+    for (auto& kv : chunks_)
+        if (kv.second)
+            mcp_chunk_destroy(kv.second);
 }
 
 mcp_chunk_t* ChunkManager::getChunkIfLoaded(int32_t x, int32_t z) const {
     std::lock_guard<std::mutex> lk(mtx_);
-    auto it = chunks_.find({x,z});
+    auto it = chunks_.find({x, z});
     return it == chunks_.end() ? nullptr : it->second;
 }
 
 mcp_chunk_t* ChunkManager::getChunk(int32_t x, int32_t z) {
-    if (mcp_chunk_t* c = getChunkIfLoaded(x,z)) return c;
+    if (mcp_chunk_t* c = getChunkIfLoaded(x, z))
+        return c;
 
     // First, try loading from the provider (disk). If the chunk
     // exists on disk, we get back a fully populated mcp_chunk_t*.
@@ -127,10 +131,10 @@ mcp_chunk_t* ChunkManager::getChunk(int32_t x, int32_t z) {
         c->dirty = true;
         for (int bx = 0; bx < 16; ++bx) {
             for (int bz = 0; bz < 16; ++bz) {
-                mcp_chunk_set_block_id(c, bx, 0, bz, 7);  // BEDROCK
-                mcp_chunk_set_block_id(c, bx, 1, bz, 3);  // DIRT
-                mcp_chunk_set_block_id(c, bx, 2, bz, 3);  // DIRT
-                mcp_chunk_set_block_id(c, bx, 3, bz, 2);  // GRASS
+                mcp_chunk_set_block_id(c, bx, 0, bz, 7); // BEDROCK
+                mcp_chunk_set_block_id(c, bx, 1, bz, 3); // DIRT
+                mcp_chunk_set_block_id(c, bx, 2, bz, 3); // DIRT
+                mcp_chunk_set_block_id(c, bx, 3, bz, 2); // GRASS
             }
         }
         for (int bx = 0; bx < 16; ++bx) {
@@ -147,20 +151,24 @@ mcp_chunk_t* ChunkManager::getChunk(int32_t x, int32_t z) {
     return c;
 }
 
-mcp_chunk_t* ChunkManager::getChunkOrRequestAsync(int32_t x, int32_t z, scheduler::AsyncPool* pool) {
+mcp_chunk_t* ChunkManager::getChunkOrRequestAsync(int32_t x, int32_t z,
+                                                  scheduler::AsyncPool* pool) {
     // Already in memory (loaded from disk earlier, or a previous async
     // generation already completed) — return immediately, no blocking.
-    if (mcp_chunk_t* c = getChunkIfLoaded(x, z)) return c;
+    if (mcp_chunk_t* c = getChunkIfLoaded(x, z))
+        return c;
 
     // No pool (or no generator) available — fall back to the old
     // synchronous path rather than returning nullptr forever. This
     // keeps single-threaded builds / early boot / tests working.
-    if (!pool || !generator_) return getChunk(x, z);
+    if (!pool || !generator_)
+        return getChunk(x, z);
 
     ChunkKey key{x, z};
     {
         std::lock_guard<std::mutex> lk(pending_mtx_);
-        if (pending_.count(key)) return nullptr;   // already in flight
+        if (pending_.count(key))
+            return nullptr; // already in flight
         pending_.insert(key);
     }
 
@@ -205,7 +213,8 @@ mcp_chunk_t* ChunkManager::getChunkOrRequestAsync(int32_t x, int32_t z, schedule
         ChunkKey key;
         bool& handed_to_pool;
         ~PendingGuard() {
-            if (handed_to_pool) return;  // async task/callback owns the erase now
+            if (handed_to_pool)
+                return; // async task/callback owns the erase now
             std::lock_guard<std::mutex> lk(mtx);
             pending.erase(key);
         }
@@ -222,7 +231,7 @@ mcp_chunk_t* ChunkManager::getChunkOrRequestAsync(int32_t x, int32_t z, schedule
                 mcp_chunk_t* raw = adapter->releaseChunk();
                 if (raw) {
                     setChunk(x, z, raw);
-                    return raw;   // guard erases pending_ on the way out
+                    return raw; // guard erases pending_ on the way out
                 }
             }
             // loadChunk() had a value but we couldn't extract a usable
@@ -235,8 +244,7 @@ mcp_chunk_t* ChunkManager::getChunkOrRequestAsync(int32_t x, int32_t z, schedule
 
     int64_t seed = provider_ ? provider_->getSeed() : 0;
     auto task = std::make_shared<generator::GenerationTask>(
-        generator_, x, z, seed,
-        [this, key](mcp_chunk_t* c) {
+        generator_, x, z, seed, [this, key](mcp_chunk_t* c) {
             // GenerationTask::run() already filled light/biome defaults
             // and ran generate()+populate() before calling us — just
             // hand the finished chunk to the map and clear the in-flight
@@ -264,12 +272,15 @@ mcp_chunk_t* ChunkManager::getChunkOrRequestAsync(int32_t x, int32_t z, schedule
                     installed = true;
                 }
             }
-            if (c && !installed) mcp_chunk_destroy(c);
+            if (c && !installed)
+                mcp_chunk_destroy(c);
             std::lock_guard<std::mutex> lk(pending_mtx_);
             pending_.erase(key);
         });
 
-    if (pool->submit([task]{ task->run(); })) {
+    if (pool->submit([task] {
+            task->run();
+        })) {
         // Successfully handed off — the callback above now owns
         // clearing `pending_` once generation finishes. Tell the guard
         // not to erase it out from under the in-flight task.
@@ -293,12 +304,14 @@ void ChunkManager::setChunk(int32_t x, int32_t z, mcp_chunk_t* chunk) {
     // Fuera del lock: el callback (World) solo encola el chunk para un
     // barrido de luz posterior. Llamarlo con mtx_ cogido lo dejaria
     // esperando justo el mutex que ChunkManager necesita.
-    if (on_chunk_added_) on_chunk_added_(x, z);
+    if (on_chunk_added_)
+        on_chunk_added_(x, z);
 }
 
 void ChunkManager::markDirty(int32_t x, int32_t z) {
     mcp_chunk_t* c = getChunkIfLoaded(x, z);
-    if (c) c->dirty = true;
+    if (c)
+        c->dirty = true;
 }
 
 int ChunkManager::flushDirty() {
@@ -314,7 +327,8 @@ int ChunkManager::flushDirty() {
         return n;
     }
     for (auto& kv : chunks_) {
-        if (!kv.second || !kv.second->dirty) continue;
+        if (!kv.second || !kv.second->dirty)
+            continue;
         auto adapter = format::ChunkAdapter::borrow(kv.second);
         if (adapter) {
             provider_->saveChunk(adapter);
@@ -342,16 +356,19 @@ int ChunkManager::flushDirty() {
 // cientos. Los workers del AsyncPool que hacen setChunk() esperan a lo
 // sumo ese presupuesto.
 int ChunkManager::flushDirtyBudget(size_t max_chunks, uint64_t max_ms) {
-    if (max_chunks == 0) return 0;
+    if (max_chunks == 0)
+        return 0;
 
     std::lock_guard<std::mutex> lk(mtx_);
     int n = 0;
     auto t0 = std::chrono::steady_clock::now();
     for (auto& kv : chunks_) {
-        if (!kv.second || !kv.second->dirty) continue;
+        if (!kv.second || !kv.second->dirty)
+            continue;
         if (provider_) {
             auto adapter = format::ChunkAdapter::borrow(kv.second);
-            if (!adapter) continue;
+            if (!adapter)
+                continue;
             provider_->saveChunk(adapter);
         }
         // Ojo: se limpia el flag pase lo que pase, igual que flushDirty()
@@ -362,11 +379,14 @@ int ChunkManager::flushDirtyBudget(size_t max_chunks, uint64_t max_ms) {
         // reintentarlo eternamente.
         kv.second->dirty = false;
         ++n;
-        if ((size_t)n >= max_chunks) break;
+        if ((size_t)n >= max_chunks)
+            break;
         if (max_ms > 0) {
             uint64_t used = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now() - t0).count();
-            if (used >= max_ms) break;
+                                std::chrono::steady_clock::now() - t0)
+                                .count();
+            if (used >= max_ms)
+                break;
         }
     }
     return n;
@@ -376,7 +396,8 @@ size_t ChunkManager::dirtyCount() const {
     std::lock_guard<std::mutex> lk(mtx_);
     size_t n = 0;
     for (auto& kv : chunks_) {
-        if (kv.second && kv.second->dirty) ++n;
+        if (kv.second && kv.second->dirty)
+            ++n;
     }
     return n;
 }
@@ -391,11 +412,13 @@ bool ChunkManager::unloadChunk(int32_t x, int32_t z, bool save) {
     {
         std::lock_guard<std::mutex> lk(mtx_);
         auto it = chunks_.find({x, z});
-        if (it == chunks_.end()) return false;
+        if (it == chunks_.end())
+            return false;
         c = it->second;
         chunks_.erase(it);
     }
-    if (!c) return false;
+    if (!c)
+        return false;
     // Save BEFORE destroying, and outside mtx_ — saveChunk() does disk
     // I/O, and holding the chunk-map lock across a write would block
     // every other getChunk()/setChunk() on this level for the duration.
@@ -414,11 +437,12 @@ bool ChunkManager::unloadChunk(int32_t x, int32_t z, bool save) {
     return true;
 }
 
-std::vector<std::pair<int32_t,int32_t>> ChunkManager::loadedChunkCoords() const {
+std::vector<std::pair<int32_t, int32_t>> ChunkManager::loadedChunkCoords() const {
     std::lock_guard<std::mutex> lk(mtx_);
-    std::vector<std::pair<int32_t,int32_t>> out;
+    std::vector<std::pair<int32_t, int32_t>> out;
     out.reserve(chunks_.size());
-    for (auto& kv : chunks_) out.emplace_back(kv.first.x, kv.first.z);
+    for (auto& kv : chunks_)
+        out.emplace_back(kv.first.x, kv.first.z);
     return out;
 }
 

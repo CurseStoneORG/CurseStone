@@ -58,24 +58,26 @@
 namespace cursestone::network::protocol {
 
 class LevelEventPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return LEVEL_EVENT_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return LEVEL_EVENT_PACKET;
+    }
 
     // ---- Sound event ids (PMMP LevelEventPacket::EVENT_SOUND_*) ----
-    static constexpr int16_t EVENT_SOUND_BLOCK_PLACE      = 1052;
-    static constexpr int16_t EVENT_SOUND_SHOOT            = 1002;  // bow release (Infinity LaunchSound)
+    static constexpr int16_t EVENT_SOUND_BLOCK_PLACE = 1052;
+    static constexpr int16_t EVENT_SOUND_SHOOT = 1002; // bow release (Infinity LaunchSound)
     // Door open/close (Infinity level/sound/DoorSound.php: EVENT_SOUND_DOOR).
     // Sent as a LevelEventPacket at the door block position; data = pitch*1000
     // (Infinity always passes pitch 0 for doors). This is the sound the
     // wooden door makes when it is toggled open/closed — by hand or by
     // redstone — and the only "door sound" of protocol 84.
-    static constexpr int16_t EVENT_SOUND_DOOR             = 1003;
+    static constexpr int16_t EVENT_SOUND_DOOR = 1003;
     // ---- Particle event ids (PMMP LevelEventPacket::EVENT_PARTICLE_*) ----
-    static constexpr int16_t EVENT_PARTICLE_DESTROY      = 2001;  // break particle + sound
+    static constexpr int16_t EVENT_PARTICLE_DESTROY = 2001; // break particle + sound
     // Generic particle events: evid = EVENT_ADD_PARTICLE_MASK | type, with
     // the type in the low 12 bits (protocol 84 — e.g. critical particles
     // are 0x4000 | 2). data carries the particle payload (scale / color).
-    static constexpr int16_t EVENT_ADD_PARTICLE_MASK     = 0x4000;
+    static constexpr int16_t EVENT_ADD_PARTICLE_MASK = 0x4000;
     // ---- Weather event ids (Dr1xyDev/Infinity LevelEventPacket, MCPE 0.15.10) ----
     // NOTE: on protocol 84 START_THUNDER is 3002 and STOP_RAIN is 3003 —
     // the intuitive order (start=odd, stop=even) is WRONG here and the
@@ -86,14 +88,14 @@ public:
     //   thunder: mt_rand(30000, 40000)
     // A LevelEventPacket with evid=3001 and data=0 is a no-op on the
     // 0.15.10 client (sky stays clear) — that was the original bug.
-    static constexpr int16_t EVENT_START_RAIN    = 3001;
+    static constexpr int16_t EVENT_START_RAIN = 3001;
     static constexpr int16_t EVENT_START_THUNDER = 3002;
-    static constexpr int16_t EVENT_STOP_RAIN     = 3003;
-    static constexpr int16_t EVENT_STOP_THUNDER  = 3004;
+    static constexpr int16_t EVENT_STOP_RAIN = 3003;
+    static constexpr int16_t EVENT_STOP_THUNDER = 3004;
 
-    int16_t  evid = 0;
-    float    x = 0, y = 0, z = 0;
-    int32_t  data = 0;
+    int16_t evid = 0;
+    float x = 0, y = 0, z = 0;
+    int32_t data = 0;
 
     void encode(std::vector<uint8_t>& out) const override;
     bool decode(const uint8_t* data, size_t len) override;

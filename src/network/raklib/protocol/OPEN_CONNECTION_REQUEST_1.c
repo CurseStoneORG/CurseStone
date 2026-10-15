@@ -27,34 +27,47 @@
 #include <stdlib.h>
 #include <string.h>
 
-static uint8_t pkt_id(void) { return 0x05; }
+static uint8_t pkt_id(void) {
+    return 0x05;
+}
 static void pkt_encode(void* self, mcp_bstream_t* out) {
     mcp_pkt_open_connection_request_1_t* p = (mcp_pkt_open_connection_request_1_t*)self;
     mcp_bstream_write_u8(out, 0x05);
-    mcp_bstream_write_bytes(out, p->magic, 16); mcp_bstream_write_u8(out, p->protocol); mcp_bstream_write_u8(out, 0xff); mcp_bstream_write_u8(out, 0xff); mcp_bstream_write_u8(out, (uint8_t)(p->mtu & 0xff));
+    mcp_bstream_write_bytes(out, p->magic, 16);
+    mcp_bstream_write_u8(out, p->protocol);
+    mcp_bstream_write_u8(out, 0xff);
+    mcp_bstream_write_u8(out, 0xff);
+    mcp_bstream_write_u8(out, (uint8_t)(p->mtu & 0xff));
 }
 static void pkt_decode(void* self, mcp_bstream_t* in) {
     mcp_pkt_open_connection_request_1_t* p = (mcp_pkt_open_connection_request_1_t*)self;
     (void)p;
     uint8_t id;
     mcp_bstream_read_u8(in, &id);
-    mcp_bstream_read_bytes(in, p->magic, 16); mcp_bstream_read_u8(in, &p->protocol); uint8_t b0, b1, b2; mcp_bstream_read_u8(in, &b0); mcp_bstream_read_u8(in, &b1); mcp_bstream_read_u8(in, &b2); p->mtu = (uint16_t)((b0 << 8) | b1) | b2;
+    mcp_bstream_read_bytes(in, p->magic, 16);
+    mcp_bstream_read_u8(in, &p->protocol);
+    uint8_t b0, b1, b2;
+    mcp_bstream_read_u8(in, &b0);
+    mcp_bstream_read_u8(in, &b1);
+    mcp_bstream_read_u8(in, &b2);
+    p->mtu = (uint16_t)((b0 << 8) | b1) | b2;
 }
 static size_t pkt_size(const void* self) {
     (void)self;
     return 19;
 }
 static void pkt_destroy(void* self) {
-    if (!self) return;
+    if (!self)
+        return;
     free(self);
 }
-static const mcp_packet_vtable_t VT = {
-    pkt_id, pkt_encode, pkt_decode, pkt_size, pkt_destroy
-};
+static const mcp_packet_vtable_t VT = {pkt_id, pkt_encode, pkt_decode, pkt_size, pkt_destroy};
 
 mcp_packet_t* mcp_pkt_open_connection_request_1_new(void) {
-    mcp_pkt_open_connection_request_1_t* p = (mcp_pkt_open_connection_request_1_t*)calloc(1, sizeof(*p));
-    if (!p) return NULL;
+    mcp_pkt_open_connection_request_1_t* p =
+        (mcp_pkt_open_connection_request_1_t*)calloc(1, sizeof(*p));
+    if (!p)
+        return NULL;
     p->header.vtable = &VT;
     return (mcp_packet_t*)p;
 }

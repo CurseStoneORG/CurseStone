@@ -35,8 +35,10 @@
 namespace cursestone::network::protocol {
 
 class RequestChunkRadiusPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return REQUEST_CHUNK_RADIUS_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return REQUEST_CHUNK_RADIUS_PACKET;
+    }
 
     int32_t radius = 8;
 

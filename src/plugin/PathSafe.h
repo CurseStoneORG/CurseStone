@@ -38,21 +38,26 @@
 namespace cursestone::plugin {
 
 inline bool sanitizeRelPath(const std::string& in, std::string& out) {
-    if (in.empty() || in[0] == '/' || in.find('\\') != std::string::npos) return false;
+    if (in.empty() || in[0] == '/' || in.find('\\') != std::string::npos)
+        return false;
     std::string clean;
     size_t i = 0;
     while (i <= in.size()) {
         size_t j = in.find('/', i);
-        if (j == std::string::npos) j = in.size();
+        if (j == std::string::npos)
+            j = in.size();
         std::string part = in.substr(i, j - i);
         if (!part.empty() && part != ".") {
-            if (part == "..") return false;         // NO salirse de la carpeta base
-            if (!clean.empty()) clean += '/';
+            if (part == "..")
+                return false; // NO salirse de la carpeta base
+            if (!clean.empty())
+                clean += '/';
             clean += part;
         }
         i = j + 1;
     }
-    if (clean.empty()) return false;
+    if (clean.empty())
+        return false;
     out = clean;
     return true;
 }

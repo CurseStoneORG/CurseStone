@@ -62,9 +62,11 @@ static const char* kWorldMeta = "CS.World";
 ///        returns nullptr if the handle is invalid or the world already not
 ///        is loaded; in that case the methods devuelven nil/false.
 World* resolveWorld(lua_State* L, int idx) {
-    if (!lua_isuserdata(L, idx)) return nullptr;
+    if (!lua_isuserdata(L, idx))
+        return nullptr;
     void* p = lua_touserdata(L, idx);
-    if (!p) return nullptr;
+    if (!p)
+        return nullptr;
     luaL_getmetatable(L, kWorldMeta);
     if (lua_getmetatable(L, idx) == 0) {
         lua_pop(L, 1);
@@ -72,7 +74,8 @@ World* resolveWorld(lua_State* L, int idx) {
     }
     bool same = lua_rawequal(L, -1, -2) == 1;
     lua_pop(L, 2);
-    if (!same) return nullptr;
+    if (!same)
+        return nullptr;
     const std::string* name = static_cast<const std::string*>(p);
     return Server::getInstance().getWorldByName(*name);
 }
@@ -105,14 +108,33 @@ int l_world_tostring(lua_State* L) {
     return 1;
 }
 
-#define WORLD_OR_NIL() \
-    World* w = resolveWorld(L, 1); \
-    if (!w) { lua_pushnil(L); return 1; }
+#define WORLD_OR_NIL()                                                                             \
+    World* w = resolveWorld(L, 1);                                                                 \
+    if (!w) {                                                                                      \
+        lua_pushnil(L);                                                                            \
+        return 1;                                                                                  \
+    }
 
-int l_world_name(lua_State* L)      { WORLD_OR_NIL(); lua_pushstring(L, w->name().c_str()); return 1; }
-int l_world_seed(lua_State* L)      { WORLD_OR_NIL(); lua_pushinteger(L, (lua_Integer)w->seed()); return 1; }
-int l_world_dimension(lua_State* L) { WORLD_OR_NIL(); lua_pushinteger(L, w->dimension()); return 1; }
-int l_world_gettime(lua_State* L)   { WORLD_OR_NIL(); lua_pushinteger(L, w->time()); return 1; }
+int l_world_name(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_pushstring(L, w->name().c_str());
+    return 1;
+}
+int l_world_seed(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_pushinteger(L, (lua_Integer)w->seed());
+    return 1;
+}
+int l_world_dimension(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_pushinteger(L, w->dimension());
+    return 1;
+}
+int l_world_gettime(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_pushinteger(L, w->time());
+    return 1;
+}
 
 int l_world_settime(lua_State* L) {
     WORLD_OR_NIL();
@@ -128,7 +150,10 @@ int l_world_getblock(lua_State* L) {
     lua_Integer x = luaL_checkinteger(L, 2);
     lua_Integer y = luaL_checkinteger(L, 3);
     lua_Integer z = luaL_checkinteger(L, 4);
-    if (y < 0 || y > 255) { lua_pushinteger(L, 0); return 1; }
+    if (y < 0 || y > 255) {
+        lua_pushinteger(L, 0);
+        return 1;
+    }
     lua_pushinteger(L, w->getBlockId((int32_t)x, (int32_t)y, (int32_t)z));
     return 1;
 }

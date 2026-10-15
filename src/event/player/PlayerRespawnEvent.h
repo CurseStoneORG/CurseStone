@@ -34,16 +34,20 @@
 #pragma once
 #include "event/Event.h"
 #include <string>
-namespace cursestone { class Player; }
+namespace cursestone {
+class Player;
+}
 namespace cursestone::event::player {
 class PlayerRespawnEvent : public Event {
-public:
+  public:
     cursestone::Player* player;
     double respawnX = 0.0, respawnY = 0.0, respawnZ = 0.0;
     PlayerRespawnEvent(cursestone::Player* p, double x, double y, double z)
-        : player(p), respawnX(x), respawnY(y), respawnZ(z) {}
+        : player(p), respawnX(x), respawnY(y), respawnZ(z) {
+    }
     const std::string& eventName() const override {
-        static std::string n = "PlayerRespawnEvent"; return n;
+        static std::string n = "PlayerRespawnEvent";
+        return n;
     }
 };
 } // namespace

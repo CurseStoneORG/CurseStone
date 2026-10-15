@@ -35,8 +35,10 @@
 namespace cursestone::network::protocol {
 
 class SetPlayerGameTypePacket : public DataPacket {
-public:
-    uint8_t pid() const override { return SET_PLAYER_GAMETYPE_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return SET_PLAYER_GAMETYPE_PACKET;
+    }
 
     int32_t gamemode = 0;
 

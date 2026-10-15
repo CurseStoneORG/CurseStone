@@ -57,8 +57,7 @@ entity::DamageApply Player::damage(float amount) {
     return entity::Living::damage(amount);
 }
 
-entity::DamageApply Player::damage(float amount,
-                                   event::entity::DamageCause cause) {
+entity::DamageApply Player::damage(float amount, event::entity::DamageCause cause) {
     // Creative: immune to every environmental cause. VOID still kills
     // (falling out of the world is fatal in creative — vanilla), and
     // CUSTOM (server-initiated) stays allowed, mirroring Infinity's
@@ -70,13 +69,14 @@ entity::DamageApply Player::damage(float amount,
     return entity::Living::damage(amount, cause);
 }
 
-entity::DamageApply Player::damageByEntity(
-    float amount, entity::Entity* damager, event::entity::DamageCause cause) {
+entity::DamageApply Player::damageByEntity(float amount, entity::Entity* damager,
+                                           event::entity::DamageCause cause) {
     // Melee (ENTITY_ATTACK) and arrows (PROJECTILE): creative players are
     // flat-out immune — no magic/projectile-with-potion cause exists on
     // this server yet, so there is no exception (Infinity would only let
     // MAGIC through, which this server cannot produce).
-    if (isCreative()) return entity::DamageApply::CANCELLED;
+    if (isCreative())
+        return entity::DamageApply::CANCELLED;
     return entity::Living::damageByEntity(amount, damager, cause);
 }
 
@@ -88,9 +88,12 @@ constexpr int kBowMaxDurability = 385;
 } // namespace
 
 void Player::handleUseItemAir(int16_t heldItemId) {
-    if (!spawned_.load(std::memory_order_relaxed)) return;
-    if (isDead()) return;
-    if (!srv_) return;
+    if (!spawned_.load(std::memory_order_relaxed))
+        return;
+    if (isDead())
+        return;
+    if (!srv_)
+        return;
 
     // PlayerInteractEvent (RIGHT_CLICK_AIR) — the item-use-in-air branch
     // of the UseItemPacket path (face 0xFF). Fired for EVERY held item
@@ -100,17 +103,19 @@ void Player::handleUseItemAir(int16_t heldItemId) {
     // drops the use, matching the rejected-use handling elsewhere.
     {
         item::ItemStack held{};
-        if (inv_) held = inv_->getHeldItem();
+        if (inv_)
+            held = inv_->getHeldItem();
         auto ev = event::EventManager::get().fire<event::player::PlayerInteractEvent>(
-            this, event::player::PlayerInteractEvent::RIGHT_CLICK_AIR,
-            0, 0, 0, 255, held);
+            this, event::player::PlayerInteractEvent::RIGHT_CLICK_AIR, 0, 0, 0, 255, held);
         if (ev.isCancelled()) {
-            if (inv_) sendSlot(inv_->heldSlot());
+            if (inv_)
+                sendSlot(inv_->heldSlot());
             return;
         }
     }
 
-    if (heldItemId != (int16_t)item::ITEM_BOW) return;   // only the bow uses air
+    if (heldItemId != (int16_t)item::ITEM_BOW)
+        return; // only the bow uses air
 
     // Infinity: setDataFlag(DATA_FLAGS, DATA_FLAG_ACTION, true);
     //           $this->startAction = $this->server->getTick();
@@ -123,16 +128,21 @@ void Player::handleUseItemAir(int16_t heldItemId) {
     pk->eid = runtimeId();
     pk->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_, true, isOnFire()));
     for (auto& other : srv_->playersSnapshot()) {
-        if (!other || other.get() == this) continue;
-        if (other->isPendingRemoval()) continue;
-        if (!other->spawned()) continue;
-        if (other->getWorld() != getWorld()) continue;
+        if (!other || other.get() == this)
+            continue;
+        if (other->isPendingRemoval())
+            continue;
+        if (!other->spawned())
+            continue;
+        if (other->getWorld() != getWorld())
+            continue;
         other->sendPacket(pk);
     }
 }
 
 void Player::releaseBow() {
-    if (!srv_) return;
+    if (!srv_)
+        return;
 
     // One-shot: the draw state is consumed on the first release packet,
     // and the ACTION pose bit is lowered for the others no matter what
@@ -145,34 +155,45 @@ void Player::releaseBow() {
     clearPk->eid = runtimeId();
     clearPk->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_, false, isOnFire()));
     for (auto& other : srv_->playersSnapshot()) {
-        if (!other || other.get() == this) continue;
-        if (other->isPendingRemoval()) continue;
-        if (!other->spawned()) continue;
-        if (other->getWorld() != getWorld()) continue;
+        if (!other || other.get() == this)
+            continue;
+        if (other->isPendingRemoval())
+            continue;
+        if (!other->spawned())
+            continue;
+        if (other->getWorld() != getWorld())
+            continue;
         other->sendPacket(clearPk);
     }
 
-    if (!drawing) return;
-    if (isDead()) return;
+    if (!drawing)
+        return;
+    if (isDead())
+        return;
 
     auto inv = getInventory();
-    if (!inv) return;
+    if (!inv)
+        return;
     auto held = inv->getHeldItem();
-    if (held.id != item::ITEM_BOW) return;   // swapped items mid-draw
+    if (held.id != item::ITEM_BOW)
+        return; // swapped items mid-draw
 
     auto* lvl = getWorld();
-    if (!lvl) return;
+    if (!lvl)
+        return;
 
     // $diff = ($this->server->getTick() - $this->startAction);
     // $p = $diff / 20; $f = min((($p ** 2) + $p * 2) / 3, 1) * 2;
     int64_t diff = (int64_t)srv_->getCurrentTick() - startTick;
-    if (diff < 0) diff = 0;
+    if (diff < 0)
+        diff = 0;
     double p = (double)diff / 20.0;
     double f = std::min((p * p + p * 2.0) / 3.0, 1.0) * 2.0;
 
     // if($f < 0.1 or $diff < 5) cancelled — a tap is a dry release: no
     // arrow, no durability, no sound.
-    if (f < 0.1 || diff < 5) return;
+    if (f < 0.1 || diff < 5)
+        return;
 
     // An arrow is required in SURVIVAL (Infinity scans the inventory and
     // resyncs it when missing; creative always has one).
@@ -188,17 +209,17 @@ void Player::releaseBow() {
             }
         }
         if (!hasArrow) {
-            inv->sendContents(this);   // Infinity: sendContents($this); break;
+            inv->sendContents(this); // Infinity: sendContents($this); break;
             return;
         }
     }
 
     // Shot direction (Infinity arrow NBT Motion) — yaw/pitch are degrees.
-    double yawRad   = (double)yaw_ * kPi / 180.0;
+    double yawRad = (double)yaw_ * kPi / 180.0;
     double pitchRad = (double)pitch_ * kPi / 180.0;
     double dx = -std::sin(yawRad) * std::cos(pitchRad);
     double dy = -std::sin(pitchRad);
-    double dz =  std::cos(yawRad) * std::cos(pitchRad);
+    double dz = std::cos(yawRad) * std::cos(pitchRad);
 
     int64_t eid = srv_->allocateEid();
 
@@ -206,17 +227,17 @@ void Player::releaseBow() {
     // of the same world INCLUDING the shooter (the client does not predict
     // its own arrows; without this the shooter never sees them).
     auto add = std::make_shared<network::protocol::AddEntityPacket>();
-    add->eid  = eid;
+    add->eid = eid;
     add->type = network::protocol::AddEntityPacket::TYPE_ARROW;
     add->x = (float)(pos_.x);
-    add->y = (float)(pos_.y + kEyeHeight);   // Infinity: $this->y + getEyeHeight()
+    add->y = (float)(pos_.y + kEyeHeight); // Infinity: $this->y + getEyeHeight()
     add->z = (float)(pos_.z);
     add->speedX = (float)(dx * f);
     add->speedY = (float)(dy * f);
     add->speedZ = (float)(dz * f);
     // Arrow orientation follows its motion (not the player's yaw/pitch).
     double flat = std::sqrt(dx * dx + dz * dz);
-    float arrowYaw   = (float)(std::atan2(dx, dz) * 180.0 / kPi);
+    float arrowYaw = (float)(std::atan2(dx, dz) * 180.0 / kPi);
     float arrowPitch = (float)(std::atan2(dy, flat) * 180.0 / kPi);
     add->yaw = arrowYaw;
     add->pitch = arrowPitch;
@@ -225,8 +246,10 @@ void Player::releaseBow() {
     auto motion = std::make_shared<network::protocol::SetEntityMotionPacket>();
     motion->entities.push_back({eid, (float)(dx * f), (float)(dy * f), (float)(dz * f)});
     for (auto& other : srv_->playersSnapshot()) {
-        if (!other || !other->spawned()) continue;
-        if (other->getWorld() != lvl) continue;
+        if (!other || !other->spawned())
+            continue;
+        if (other->getWorld() != lvl)
+            continue;
         other->sendPacket(add);
         other->sendPacket(motion);
     }
@@ -239,8 +262,10 @@ void Player::releaseBow() {
     snd->z = (float)pos_.z;
     snd->data = 0;
     for (auto& other : srv_->playersSnapshot()) {
-        if (!other || !other->spawned()) continue;
-        if (other->getWorld() != lvl) continue;
+        if (!other || !other->spawned())
+            continue;
+        if (other->getWorld() != lvl)
+            continue;
         other->sendPacket(snd);
     }
 
@@ -256,13 +281,18 @@ void Player::releaseBow() {
     a.vz = dz * f;
     a.yaw = arrowYaw;
     a.pitch = arrowPitch;
-    a.lx = a.x; a.ly = a.y; a.lz = a.z;
-    a.lyaw = arrowYaw; a.lpitch = arrowPitch;
-    a.lmx = a.vx; a.lmy = a.vy; a.lmz = a.vz;
+    a.lx = a.x;
+    a.ly = a.y;
+    a.lz = a.z;
+    a.lyaw = arrowYaw;
+    a.lpitch = arrowPitch;
+    a.lmx = a.vx;
+    a.lmy = a.vy;
+    a.lmz = a.vz;
     a.spawn_tick = srv_->getCurrentTick();
     a.flight_ticks = 0;
-    a.damage = 2.0f;                 // Infinity Arrow: protected $damage = 2
-    a.critical = (f >= 2.0);         // Infinity: createEntity(..., $f == 2)
+    a.damage = 2.0f;         // Infinity Arrow: protected $damage = 2
+    a.critical = (f >= 2.0); // Infinity: createEntity(..., $f == 2)
     a.stuck = false;
     a.taken = false;
     lvl->addArrow(a);

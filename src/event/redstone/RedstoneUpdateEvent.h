@@ -33,12 +33,13 @@
 namespace cursestone::event::redstone {
 
 class RedstoneUpdateEvent : public cursestone::event::block::BlockUpdateEvent {
-public:
-    RedstoneUpdateEvent(int32_t bx, int32_t by, int32_t bz)
-        : BlockUpdateEvent(bx, by, bz) {}
+  public:
+    RedstoneUpdateEvent(int32_t bx, int32_t by, int32_t bz) : BlockUpdateEvent(bx, by, bz) {
+    }
 
     const std::string& eventName() const override {
-        static std::string n = "RedstoneUpdateEvent"; return n;
+        static std::string n = "RedstoneUpdateEvent";
+        return n;
     }
 };
 

@@ -22,5 +22,8 @@
  */
 #include "Timings.h"
 namespace cursestone::event {
-Timings& Timings::get() { static Timings t; return t; }
+Timings& Timings::get() {
+    static Timings t;
+    return t;
+}
 } // namespace

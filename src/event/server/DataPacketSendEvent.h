@@ -29,20 +29,23 @@
 #include "ServerEvent.h"
 #include "../Cancellable.h"
 #include <string>
-namespace cursestone { class Player; }
+namespace cursestone {
+class Player;
+}
 
 namespace cursestone::event::server {
 
 class DataPacketSendEvent : public ServerEvent, public Cancellable {
-public:
+  public:
     void* packet;
     cursestone::Player* player;
 
-    DataPacketSendEvent(cursestone::Player* p, void* pk)
-        : packet(pk), player(p) {}
+    DataPacketSendEvent(cursestone::Player* p, void* pk) : packet(pk), player(p) {
+    }
 
     const std::string& eventName() const override {
-        static std::string n = "DataPacketSendEvent"; return n;
+        static std::string n = "DataPacketSendEvent";
+        return n;
     }
 };
 

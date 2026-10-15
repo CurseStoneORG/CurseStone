@@ -31,9 +31,10 @@
 namespace cursestone::event::server {
 
 class ServerEvent : public Event {
-public:
+  public:
     const std::string& eventName() const override {
-        static std::string n = "ServerEvent"; return n;
+        static std::string n = "ServerEvent";
+        return n;
     }
 };
 

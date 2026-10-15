@@ -44,28 +44,24 @@
 namespace cursestone::world::generator {
 
 class VanillaNoise {
-public:
-    explicit VanillaNoise(int64_t seed) : random((long)seed),
-        lperlinNoise1(&random, 16),
-        lperlinNoise2(&random, 16),
-        perlinNoise1(&random, 8),
-        perlinNoise2(&random, 4),
-        perlinNoise3(&random, 4),
-        scaleNoise(&random, 10),
-        depthNoise(&random, 16),
-        forestNoise(&random, 8) {}
+  public:
+    explicit VanillaNoise(int64_t seed)
+        : random((long)seed), lperlinNoise1(&random, 16), lperlinNoise2(&random, 16),
+          perlinNoise1(&random, 8), perlinNoise2(&random, 4), perlinNoise3(&random, 4),
+          scaleNoise(&random, 10), depthNoise(&random, 16), forestNoise(&random, 8) {
+    }
 
     // Tiene que ir primero: todas las capas toman &random.
     MersenneRandom random;
 
-    PerlinNoise lperlinNoise1;  // ruido "bajo" A (continentes/hondonadas)
-    PerlinNoise lperlinNoise2;  // ruido "bajo" B (relleno del medio)
-    PerlinNoise perlinNoise1;   // ruido selector principal (8 octavas)
-    PerlinNoise perlinNoise2;   // clima
-    PerlinNoise perlinNoise3;   // clima
-    PerlinNoise scaleNoise;     // escala del relieve
-    PerlinNoise depthNoise;     // profundidad vertical
-    PerlinNoise forestNoise;    // densidad de vegetacion
+    PerlinNoise lperlinNoise1; // ruido "bajo" A (continentes/hondonadas)
+    PerlinNoise lperlinNoise2; // ruido "bajo" B (relleno del medio)
+    PerlinNoise perlinNoise1;  // ruido selector principal (8 octavas)
+    PerlinNoise perlinNoise2;  // clima
+    PerlinNoise perlinNoise3;  // clima
+    PerlinNoise scaleNoise;    // escala del relieve
+    PerlinNoise depthNoise;    // profundidad vertical
+    PerlinNoise forestNoise;   // densidad de vegetacion
 };
 
 // ============================================================
@@ -84,7 +80,10 @@ public:
 // [-1, 1] comparable al del fbm que usaba el generador.
 inline double layerAmplitudeSum(int levels) {
     double s = 0.0, amp = 1.0;
-    for (int i = 0; i < levels; ++i) { s += amp; amp *= 2.0; }
+    for (int i = 0; i < levels; ++i) {
+        s += amp;
+        amp *= 2.0;
+    }
     return s;
 }
 
@@ -98,14 +97,16 @@ inline double noiseValue2d(PerlinNoise& p, double x, double y) {
     // cada columna de terreno pide decenas de estas. Mismos valores,
     // mismos bits, sin el bucle.
     const double sum = p.amplitudeSum();
-    if (sum <= 0.0) return 0.0;
+    if (sum <= 0.0)
+        return 0.0;
     const double k = p.dominantScale();
     return (double)p.getValue((float)(x * k), (float)(y * k)) / sum;
 }
 
 inline double noiseValue3d(PerlinNoise& p, double x, double y, double z) {
     const double sum = p.amplitudeSum();
-    if (sum <= 0.0) return 0.0;
+    if (sum <= 0.0)
+        return 0.0;
     const double k = p.dominantScale();
     return (double)p.getValue((float)(x * k), (float)(y * k), (float)(z * k)) / sum;
 }

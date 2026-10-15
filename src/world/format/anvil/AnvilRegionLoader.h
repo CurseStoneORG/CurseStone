@@ -50,24 +50,24 @@
 
 namespace cursestone::world::format::anvil {
 
-constexpr int32_t kRegionSize        = 32;     // 32x32 chunks per region
-constexpr int32_t kChunkSlotCount    = 1024;   // 32 * 32
-constexpr size_t  kSectorSize        = 4096;
-constexpr size_t  kLocationTableSize = 4096;   // 1024 * 4
-constexpr size_t  kTimestampTableSize = 4096;
-constexpr size_t  kHeaderSize        = kLocationTableSize + kTimestampTableSize; // 8192
-constexpr size_t  kMaxChunkSectors   = 256;    // 256 * 4096 = 1 MiB cap
-constexpr uint8_t kCompressionGzip   = 1;
-constexpr uint8_t kCompressionZlib   = 2;
+constexpr int32_t kRegionSize = 32;       // 32x32 chunks per region
+constexpr int32_t kChunkSlotCount = 1024; // 32 * 32
+constexpr size_t kSectorSize = 4096;
+constexpr size_t kLocationTableSize = 4096; // 1024 * 4
+constexpr size_t kTimestampTableSize = 4096;
+constexpr size_t kHeaderSize = kLocationTableSize + kTimestampTableSize; // 8192
+constexpr size_t kMaxChunkSectors = 256;                                 // 256 * 4096 = 1 MiB cap
+constexpr uint8_t kCompressionGzip = 1;
+constexpr uint8_t kCompressionZlib = 2;
 
 struct LocationEntry {
-    uint32_t offset = 0;     // in sectors (from start of file)
-    uint8_t  count   = 0;     // in sectors
-    uint32_t timestamp = 0;   // unix seconds
+    uint32_t offset = 0;    // in sectors (from start of file)
+    uint8_t count = 0;      // in sectors
+    uint32_t timestamp = 0; // unix seconds
 };
 
 class AnvilRegionLoader {
-public:
+  public:
     AnvilRegionLoader();
     ~AnvilRegionLoader();
 
@@ -82,8 +82,7 @@ public:
     // The returned bytes are the *compressed* chunk payload (without
     // the 4-byte length / 1-byte compression prefix); callers must
     // inflate (ZLIB) before NBT decoding.
-    std::optional<std::vector<uint8_t>>
-    readChunk(int32_t lx, int32_t lz);
+    std::optional<std::vector<uint8_t>> readChunk(int32_t lx, int32_t lz);
 
     // Write compressed payload at slot (lx, lz). The compression byte
     // is written by this function; `payload` is the already-compressed
@@ -91,29 +90,35 @@ public:
     bool writeChunk(int32_t lx, int32_t lz, uint8_t compression,
                     const std::vector<uint8_t>& payload);
 
-    bool        hasChunk(int32_t lx, int32_t lz) const;
-    int32_t     regionX() const { return region_x_; }
-    int32_t     regionZ() const { return region_z_; }
-    long        lastUsed() const { return last_used_; }
+    bool hasChunk(int32_t lx, int32_t lz) const;
+    int32_t regionX() const {
+        return region_x_;
+    }
+    int32_t regionZ() const {
+        return region_z_;
+    }
+    long lastUsed() const {
+        return last_used_;
+    }
 
     // Compute the chunk-slot index from local (lx, lz).
     static inline size_t slotIndex(int32_t lx, int32_t lz) {
         return (size_t)((lx & 31) + ((lz & 31) << 5));
     }
 
-private:
+  private:
     bool loadLocationTable();
     bool writeLocationTable();
     bool writeLocationIndex(size_t index);
     bool createBlank();
 
-    std::string                path_;
-    FILE*                      fp_ = nullptr;
-    int32_t                    region_x_ = 0;
-    int32_t                    region_z_ = 0;
-    uint32_t                   last_sector_ = 1;  // next free sector (1-based; 0 = header)
+    std::string path_;
+    FILE* fp_ = nullptr;
+    int32_t region_x_ = 0;
+    int32_t region_z_ = 0;
+    uint32_t last_sector_ = 1; // next free sector (1-based; 0 = header)
     std::array<LocationEntry, kChunkSlotCount> table_{};
-    long                       last_used_ = 0;
+    long last_used_ = 0;
 };
 
 } // namespace cursestone::world::format::anvil

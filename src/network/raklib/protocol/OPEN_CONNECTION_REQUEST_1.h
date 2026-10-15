@@ -35,9 +35,9 @@ extern "C" {
 
 typedef struct mcp_pkt_open_connection_request_1 {
     mcp_packet_t header;
-    
-    uint8_t  magic[16];
-    uint8_t  protocol;
+
+    uint8_t magic[16];
+    uint8_t protocol;
     uint16_t mtu;
 
 } mcp_pkt_open_connection_request_1_t;

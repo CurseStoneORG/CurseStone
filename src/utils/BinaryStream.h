@@ -36,9 +36,9 @@ extern "C" {
 
 typedef struct mcp_bstream {
     uint8_t* data;
-    size_t   size;       // bytes used
-    size_t   capacity;  // bytes allocated
-    size_t   offset;     // read cursor
+    size_t size;     // bytes used
+    size_t capacity; // bytes allocated
+    size_t offset;   // read cursor
 } mcp_bstream_t;
 
 // Lifecycle
@@ -86,10 +86,10 @@ int mcp_bstream_read_f64_be(mcp_bstream_t* s, double* v);
 int mcp_bstream_read_f64_le(mcp_bstream_t* s, double* v);
 // Caller must free() the returned string.
 char* mcp_bstream_read_string(mcp_bstream_t* s);
-int   mcp_bstream_read_var_u32(mcp_bstream_t* s, uint32_t* v);
-int   mcp_bstream_read_var_u64(mcp_bstream_t* s, uint64_t* v);
-int   mcp_bstream_read_var_i32(mcp_bstream_t* s, int32_t* v);
-int   mcp_bstream_read_var_i64(mcp_bstream_t* s, int64_t* v);
+int mcp_bstream_read_var_u32(mcp_bstream_t* s, uint32_t* v);
+int mcp_bstream_read_var_u64(mcp_bstream_t* s, uint64_t* v);
+int mcp_bstream_read_var_i32(mcp_bstream_t* s, int32_t* v);
+int mcp_bstream_read_var_i64(mcp_bstream_t* s, int64_t* v);
 
 // Peek without advancing the cursor.
 int mcp_bstream_peek_u8(const mcp_bstream_t* s, uint8_t* v);

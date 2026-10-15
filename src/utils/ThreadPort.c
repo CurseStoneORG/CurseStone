@@ -33,16 +33,16 @@
 // POSIX visibility for clock_gettime() and pthread_cond_timedwait() under
 // strict -std=c2x / C17 (MSVC never takes this branch).
 #ifndef _WIN32
-#  ifndef _POSIX_C_SOURCE
-#    define _POSIX_C_SOURCE 200809L
-#  endif
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
 #endif
 
 #include "ThreadPort.h"
 
 #ifndef _WIN32
-#  include <errno.h>
-#  include <time.h>
+#include <errno.h>
+#include <time.h>
 #endif
 
 #ifdef _WIN32
@@ -95,8 +95,8 @@ static DWORD WINAPI thread_entry(LPVOID param) {
 }
 
 bool mcp_thread_start(mcp_thread_t* t, mcp_thread_fn fn, void* arg) {
-    t->fn   = fn;
-    t->arg  = arg;
+    t->fn = fn;
+    t->arg = arg;
     t->handle = CreateThread(NULL, 0, thread_entry, t, 0, NULL);
     return t->handle != NULL;
 }
@@ -150,10 +150,10 @@ bool mcp_cond_wait(mcp_cond_t* c, mcp_mutex_t* m, uint32_t timeout_ms) {
     // relative timeout now so the API stays portable.
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
-    ts.tv_sec  += (time_t)(timeout_ms / 1000u);
+    ts.tv_sec += (time_t)(timeout_ms / 1000u);
     ts.tv_nsec += (long)(timeout_ms % 1000u) * 1000000L;
     if (ts.tv_nsec >= 1000000000L) {
-        ts.tv_sec  += 1;
+        ts.tv_sec += 1;
         ts.tv_nsec -= 1000000000L;
     }
     return pthread_cond_timedwait(&c->handle, &m->handle, &ts) != ETIMEDOUT;
@@ -166,8 +166,8 @@ static void* thread_entry(void* param) {
 }
 
 bool mcp_thread_start(mcp_thread_t* t, mcp_thread_fn fn, void* arg) {
-    t->fn   = fn;
-    t->arg  = arg;
+    t->fn = fn;
+    t->arg = arg;
     return pthread_create(&t->handle, NULL, thread_entry, t) == 0;
 }
 

@@ -89,17 +89,19 @@ namespace {
 // indicado. La forma del wire es identica a la del envio individual
 // historico (un batch con un solo subpaquete es byte a byte lo que
 // mandaba el sendPacket antiguo), asi que el cliente no distingue.
-void sendBatchWire(cursestone::network::AdvancedSourceInterface* iface,
-                   const std::string& ip, uint16_t port,
-                   std::vector<std::vector<uint8_t>>& subs, bool ordered) {
-    if (!iface || subs.empty()) return;
+void sendBatchWire(cursestone::network::AdvancedSourceInterface* iface, const std::string& ip,
+                   uint16_t port, std::vector<std::vector<uint8_t>>& subs, bool ordered) {
+    if (!iface || subs.empty())
+        return;
 
     network::protocol::BatchPacket batch;
-    for (auto& sub : subs) batch.addSubPacket(sub);
+    for (auto& sub : subs)
+        batch.addSubPacket(sub);
 
     std::vector<uint8_t> batchBody;
     batch.encode(batchBody);
-    if (batchBody.empty()) return;
+    if (batchBody.empty())
+        return;
 
     // CRITICAL: MCPE clients expect ALL game packets to start with 0xFE.
     // PMMP RakLibInterface.php: chr(0xfe) . $packet->buffer.
@@ -107,7 +109,7 @@ void sendBatchWire(cursestone::network::AdvancedSourceInterface* iface,
     // server (PlayStatus, StartGame, chunks, etc.) — the player sees
     // "Connecting..." forever and eventually times out.
     std::vector<uint8_t> wire;
-    wire.push_back(0xFE);                            // game-packet indicator
+    wire.push_back(0xFE);                                        // game-packet indicator
     wire.push_back(cursestone::network::protocol::BATCH_PACKET); // 0x06
     wire.insert(wire.end(), batchBody.begin(), batchBody.end());
 
@@ -116,10 +118,11 @@ void sendBatchWire(cursestone::network::AdvancedSourceInterface* iface,
 
 } // namespace
 
-void Player::sendPacket(std::shared_ptr<network::protocol::DataPacket> p,
-                         bool ordered) {
-    if (!p) return;
-    if (!connected_.load(std::memory_order_relaxed)) return;
+void Player::sendPacket(std::shared_ptr<network::protocol::DataPacket> p, bool ordered) {
+    if (!p)
+        return;
+    if (!connected_.load(std::memory_order_relaxed))
+        return;
     if (!adv_iface_) {
         utils::MainLogger::get().warn("sendPacket: no interface for " + cfg_.username);
         return;
@@ -131,7 +134,8 @@ void Player::sendPacket(std::shared_ptr<network::protocol::DataPacket> p,
     // Serialize the packet: [1-byte ID][body].
     std::vector<uint8_t> body;
     p->writePacket(body);
-    if (body.empty()) return;
+    if (body.empty())
+        return;
 
     // Always-on diagnostics: keep the last packets per server so a crash
     // or error report shows what was flowing just before it happened.
@@ -148,18 +152,22 @@ void Player::sendPacket(std::shared_ptr<network::protocol::DataPacket> p,
     }
     // Un lote que ya cruza el umbral (p.ej. rafaga de chunks) sale ya —
     // fuera del lock del buffer para no encadenar mutexes.
-    if (flush_now) flushPendingPackets();
+    if (flush_now)
+        flushPendingPackets();
 }
 
 void Player::flushPendingPackets() {
-    if (!connected_.load(std::memory_order_relaxed)) return;
-    if (!adv_iface_) return;
+    if (!connected_.load(std::memory_order_relaxed))
+        return;
+    if (!adv_iface_)
+        return;
 
     std::vector<std::vector<uint8_t>> take_unordered;
     std::vector<std::vector<uint8_t>> take_ordered;
     {
         std::lock_guard<std::mutex> lk(batch_mtx_);
-        if (batch_unordered_.empty() && batch_ordered_.empty()) return;
+        if (batch_unordered_.empty() && batch_ordered_.empty())
+            return;
         take_unordered.swap(batch_unordered_);
         take_ordered.swap(batch_ordered_);
         batch_bytes_ = 0;
@@ -200,13 +208,13 @@ void Player::flushPendingPackets() {
     // Mandando el lote ordered primero se recupera exactamente el orden
     // que garantizaba el envío individual histórico (orden de llamada),
     // y da igual qué paquete haya cruzado el umbral de tamaño.
-    sendBatchWire(adv_iface_, cfg_.ip, cfg_.port, take_ordered,   /*ordered=*/true);
+    sendBatchWire(adv_iface_, cfg_.ip, cfg_.port, take_ordered, /*ordered=*/true);
     sendBatchWire(adv_iface_, cfg_.ip, cfg_.port, take_unordered, /*ordered=*/false);
 }
 
 void Player::sendMessage(const std::string& msg) {
     auto pk = std::make_shared<network::protocol::TextPacket>();
-    pk->type    = network::protocol::TextPacket::TYPE_RAW;
+    pk->type = network::protocol::TextPacket::TYPE_RAW;
     pk->message = msg;
     sendPacket(pk);
 }
@@ -234,10 +242,11 @@ void Player::sendMessage(const std::string& msg) {
 // campos que ÉL mandó — esos son los que su UI está esperando de
 // vuelta, sea cual sea el significado exacto que le da internamente.
 static void giveCreativeItem(cursestone::Player* player,
-                              std::shared_ptr<cursestone::inventory::PlayerInventory> inv,
-                              const network::protocol::ContainerSetSlotPacket& cs,
-                              cursestone::item::ItemStack it) {
-    if (!player || !inv) return;
+                             std::shared_ptr<cursestone::inventory::PlayerInventory> inv,
+                             const network::protocol::ContainerSetSlotPacket& cs,
+                             cursestone::item::ItemStack it) {
+    if (!player || !inv)
+        return;
     // FALLBACK: si el ítem que venía embebido en el paquete llega vacío
     // (id==0), puede que para el gesto "tap en el catálogo" el cliente
     // NO mande el ítem completo — solo `cs.slot` como índice DENTRO del
@@ -252,20 +261,21 @@ static void giveCreativeItem(cursestone::Player* player,
             it = catalog[(size_t)cs.slot];
         }
     }
-    if (it.id == 0) return;
+    if (it.id == 0)
+        return;
     auto leftover = inv->addItem({it});
     bool given = leftover.empty() || leftover[0].count < it.count;
 
     auto confirm = std::make_shared<network::protocol::ContainerSetSlotPacket>();
-    confirm->windowid   = cs.windowid;
-    confirm->slot       = cs.slot;
+    confirm->windowid = cs.windowid;
+    confirm->slot = cs.slot;
     confirm->hotbarSlot = cs.hotbarSlot;
     if (given) {
-        confirm->itemId     = (int16_t)it.id;
-        confirm->itemCount  = it.count;
+        confirm->itemId = (int16_t)it.id;
+        confirm->itemCount = it.count;
         confirm->itemDamage = (int16_t)it.meta;
     } else {
-        confirm->itemId = 0;  // inventario principal lleno — no se pudo dar
+        confirm->itemId = 0; // inventario principal lleno — no se pudo dar
     }
     player->sendPacket(confirm);
 }
@@ -274,14 +284,15 @@ static void giveCreativeItem(cursestone::Player* player,
 // Phase 2 — handleDataPacket: dispatch by packet ID
 // ============================================================
 void Player::handleDataPacket(network::protocol::DataPacket& p) {
-    if (!connected_.load(std::memory_order_relaxed)) return;
+    if (!connected_.load(std::memory_order_relaxed))
+        return;
     uint8_t pid = p.pid();
 
     // Workbench: track last activity time + log incoming packet.
     last_activity_ms_ = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
-    WorkbenchManager::get().onPacketIn(
-        cfg_.ip + ":" + std::to_string(cfg_.port), pid, 0);
+                            std::chrono::system_clock::now().time_since_epoch())
+                            .count();
+    WorkbenchManager::get().onPacketIn(cfg_.ip + ":" + std::to_string(cfg_.port), pid, 0);
 
     // Always-on diagnostics: record the incoming packet and set the current
     // "action" so a crash/error dump shows exactly which packet was being
@@ -294,7 +305,7 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
     // report (crashdumps/error_*.json) and kick just the offending player
     // with the error in the disconnect message, like Nukkit does.
     try {
-    switch (pid) {
+        switch (pid) {
         case network::protocol::LOGIN_PACKET:
             if (auto* lp = dynamic_cast<network::protocol::LoginPacket*>(&p)) {
                 handleLogin(*lp);
@@ -336,8 +347,10 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
             // server-side; we honour the client's request clamped to a max.
             if (auto* rp = dynamic_cast<network::protocol::RequestChunkRadiusPacket*>(&p)) {
                 int32_t r = rp->radius;
-                if (r < 1) r = 1;
-                if (r > cfg_.view_distance) r = cfg_.view_distance;
+                if (r < 1)
+                    r = 1;
+                if (r > cfg_.view_distance)
+                    r = cfg_.view_distance;
                 auto resp = std::make_shared<network::protocol::ChunkRadiusUpdatedPacket>();
                 resp->radius = r;
                 sendPacket(resp);
@@ -359,10 +372,8 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                 // bucket, 327=lava bucket). Casting to uint8_t would silently
                 // truncate them and break those items forever, so we pass the
                 // full int16_t value through.
-                handleBlockPlace(ui->x, ui->y, ui->z, ui->face,
-                                 ui->itemId,
-                                 ui->itemCount, ui->itemDamage,
-                                 ui->fx, ui->fy, ui->fz);
+                handleBlockPlace(ui->x, ui->y, ui->z, ui->face, ui->itemId, ui->itemCount,
+                                 ui->itemDamage, ui->fx, ui->fy, ui->fz);
             }
             break;
         case network::protocol::REMOVE_BLOCK_PACKET:
@@ -403,16 +414,17 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                     // si no, caemos al otro byte (hotbarSlot) y, si
                     // tampoco sirve, dejamos el que ya teniamos.
                     int selected = (int)me->selectedSlot;
-                    if (selected > 8) selected = (int)me->hotbarSlot;
-                    if (selected >= 0 && selected <= 8 &&
-                        selected != inv_->getHeldItemIndex()) {
+                    if (selected > 8)
+                        selected = (int)me->hotbarSlot;
+                    if (selected >= 0 && selected <= 8 && selected != inv_->getHeldItemIndex()) {
                         // PlayerItemHeldEvent — a plugin can veto the
                         // hotbar switch; on cancel the old slot stays
                         // selected and the inventory is resynced so the
                         // client's prediction is rolled back too.
-                        auto ev = event::EventManager::get().fire<event::player::PlayerItemHeldEvent>(
-                            this, inv_->getItem(inv_->getHotbarSlotIndex(selected)),
-                            selected, (int)me->hotbarSlot);
+                        auto ev =
+                            event::EventManager::get().fire<event::player::PlayerItemHeldEvent>(
+                                this, inv_->getItem(inv_->getHotbarSlotIndex(selected)), selected,
+                                (int)me->hotbarSlot);
                         if (ev.isCancelled()) {
                             sendInventory();
                         } else {
@@ -421,8 +433,8 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                     }
                     if (srv_ && srv_->advancedLog()) {
                         utils::MainLogger::get().info("[INV] " + cfg_.username +
-                            " switched to hotbar slot " +
-                            std::to_string(inv_->getHeldItemIndex()));
+                                                      " switched to hotbar slot " +
+                                                      std::to_string(inv_->getHeldItemIndex()));
                     }
                 }
             }
@@ -441,9 +453,12 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                     int32_t an_cx = (int32_t)pos.x >> 4;
                     int32_t an_cz = (int32_t)pos.z >> 4;
                     for (auto& other : srv_->playersSnapshot()) {
-                        if (!other || other.get() == this) continue;
-                        if (other->isPendingRemoval() || !other->spawned()) continue;
-                        if (!other->isTrackingChunk(an_cx, an_cz)) continue;
+                        if (!other || other.get() == this)
+                            continue;
+                        if (other->isPendingRemoval() || !other->spawned())
+                            continue;
+                        if (!other->isTrackingChunk(an_cx, an_cz))
+                            continue;
                         other->sendPacket(fwd);
                     }
                 }
@@ -473,9 +488,9 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
             if (auto* cs = dynamic_cast<network::protocol::ContainerSetSlotPacket*>(&p)) {
                 if (inv_) {
                     cursestone::item::ItemStack it;
-                    it.id    = static_cast<uint16_t>(cs->itemId);
+                    it.id = static_cast<uint16_t>(cs->itemId);
                     it.count = cs->itemCount;
-                    it.meta  = static_cast<uint8_t>(cs->itemDamage & 0xFF);
+                    it.meta = static_cast<uint8_t>(cs->itemDamage & 0xFF);
                     // Keep the client's NBT echo. The 0.15.x client sends the
                     // FULL slot back (custom display-name compound included)
                     // on every inventory move; dropping the blob here stored
@@ -484,7 +499,7 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                     // its custom name" bug). The blob is the exact
                     // little-endian compound the client already parsed, so
                     // storing it verbatim is safe and lossless.
-                    it.nbt   = cs->itemNbt;
+                    it.nbt = cs->itemNbt;
 
                     // MCPE 0.15.x sometimes sends count=0 for creative items
                     // on the first tap. Nukkit's getSlot() defaults count to
@@ -497,12 +512,15 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                     // Debug log for creative inventory clicks.
                     if (srv_ && srv_->advancedLog()) {
                         utils::MainLogger::get().info("[INV] " + cfg_.username +
-                            " ContainerSetSlot: wid=0x" +
-                            ([](uint8_t v){char b[4];snprintf(b,4,"%02x",v);return std::string(b);})(cs->windowid) +
-                            " slot=" + std::to_string(cs->slot) +
-                            " hotbar=" + std::to_string(cs->hotbarSlot) +
-                            " id=" + std::to_string(it.id) +
-                            " count=" + std::to_string((int)it.count));
+                                                      " ContainerSetSlot: wid=0x" + ([](uint8_t v) {
+                                                          char b[4];
+                                                          snprintf(b, 4, "%02x", v);
+                                                          return std::string(b);
+                                                      })(cs->windowid) +
+                                                      " slot=" + std::to_string(cs->slot) +
+                                                      " hotbar=" + std::to_string(cs->hotbarSlot) +
+                                                      " id=" + std::to_string(it.id) +
+                                                      " count=" + std::to_string((int)it.count));
                     }
 
                     // Chest routing — short-circuits BEFORE the
@@ -519,9 +537,11 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                         if (open_chest_ && cs->slot >= 0 &&
                             cs->slot < open_chest_->inventory()->getSize()) {
                             auto chestInv = open_chest_->inventory();
-                            auto cev = event::EventManager::get().fire<event::inventory::InventoryClickEvent>(
-                                std::static_pointer_cast<inventory::Inventory>(chestInv),
-                                this, (int)cs->slot, it);
+                            auto cev =
+                                event::EventManager::get()
+                                    .fire<event::inventory::InventoryClickEvent>(
+                                        std::static_pointer_cast<inventory::Inventory>(chestInv),
+                                        this, (int)cs->slot, it);
                             if (!cev.isCancelled()) {
                                 chestInv->setItem(cs->slot, it);
                             }
@@ -530,17 +550,18 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                             // 0.15.x visually reverts a slot that never
                             // gets a confirmation packet back, whether
                             // the write actually landed or was cancelled.
-                            auto confirm = std::make_shared<network::protocol::ContainerSetSlotPacket>();
+                            auto confirm =
+                                std::make_shared<network::protocol::ContainerSetSlotPacket>();
                             confirm->windowid = container_window_id_;
                             confirm->slot = cs->slot;
                             confirm->hotbarSlot = cs->slot;
                             auto cur = chestInv->getItem(cs->slot);
-                            confirm->itemId     = (int16_t)cur.id;
-                            confirm->itemCount  = cur.count;
+                            confirm->itemId = (int16_t)cur.id;
+                            confirm->itemCount = cur.count;
                             confirm->itemDamage = (int16_t)cur.meta;
                             // Named stacks must confirm WITH their NBT or the
                             // client re-renders the slot with the default name.
-                            confirm->itemNbt    = cur.nbt;
+                            confirm->itemNbt = cur.nbt;
                             sendPacket(confirm);
                         }
                         break;
@@ -558,23 +579,26 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                             auto f = open_furnace_;
                             inventory::Inventory* fInvRaw =
                                 static_cast<inventory::Inventory*>(f->inventory().get());
-                            auto cev = event::EventManager::get().fire<event::inventory::InventoryClickEvent>(
-                                std::shared_ptr<inventory::Inventory>(std::shared_ptr<void>(), fInvRaw),
-                                this, (int)cs->slot, it);
+                            auto cev = event::EventManager::get()
+                                           .fire<event::inventory::InventoryClickEvent>(
+                                               std::shared_ptr<inventory::Inventory>(
+                                                   std::shared_ptr<void>(), fInvRaw),
+                                               this, (int)cs->slot, it);
                             if (!cev.isCancelled()) {
                                 f->setItem(cs->slot, it);
                             }
-                            auto confirm = std::make_shared<network::protocol::ContainerSetSlotPacket>();
+                            auto confirm =
+                                std::make_shared<network::protocol::ContainerSetSlotPacket>();
                             confirm->windowid = container_window_id_;
                             confirm->slot = cs->slot;
                             confirm->hotbarSlot = cs->slot;
                             auto cur = f->getItem(cs->slot);
-                            confirm->itemId     = (int16_t)cur.id;
-                            confirm->itemCount  = cur.count;
+                            confirm->itemId = (int16_t)cur.id;
+                            confirm->itemCount = cur.count;
                             confirm->itemDamage = (int16_t)cur.meta;
                             // Named stacks must confirm WITH their NBT or the
                             // client re-renders the slot with the default name.
-                            confirm->itemNbt    = cur.nbt;
+                            confirm->itemNbt = cur.nbt;
                             sendPacket(confirm);
                         }
                         break;
@@ -589,9 +613,10 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                     // inventario bloqueado durante un trade).
                     bool clickCancelled = false;
                     {
-                        auto ev = event::EventManager::get().fire<event::inventory::InventoryClickEvent>(
-                            std::static_pointer_cast<inventory::Inventory>(inv_),
-                            this, (int)cs->slot, it);
+                        auto ev =
+                            event::EventManager::get().fire<event::inventory::InventoryClickEvent>(
+                                std::static_pointer_cast<inventory::Inventory>(inv_), this,
+                                (int)cs->slot, it);
                         clickCancelled = ev.isCancelled();
                     }
                     if (clickCancelled) {
@@ -613,7 +638,8 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                         break;
                     }
 
-                    if (cs->windowid == network::protocol::ContainerSetSlotPacket::SPECIAL_INVENTORY) {
+                    if (cs->windowid ==
+                        network::protocol::ContainerSetSlotPacket::SPECIAL_INVENTORY) {
                         // windowid 0x00 — main inventory slots 0..44.
                         //
                         // CORREGIDO contra el Player.php REAL de PocketMine
@@ -651,8 +677,8 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                             // If the player is creative and the slot is in
                             // the hotbar range (0..8), link it as the held
                             // slot so the client shows the item in hand.
-                            if ((cfg_.gamemode & 1) != 0 && it.id != 0 &&
-                                cs->slot >= 0 && cs->slot < 9) {
+                            if ((cfg_.gamemode & 1) != 0 && it.id != 0 && cs->slot >= 0 &&
+                                cs->slot < 9) {
                                 inv_->setHeldSlot(cs->slot);
                             }
                             // NOTE: no manual sendSlot() here on purpose.
@@ -666,13 +692,15 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                             // pure waste. Same fix applies to the two
                             // branches below.
                         }
-                    } else if (cs->windowid == network::protocol::ContainerSetSlotPacket::SPECIAL_ARMOR) {
+                    } else if (cs->windowid ==
+                               network::protocol::ContainerSetSlotPacket::SPECIAL_ARMOR) {
                         // windowid 0x78 — armor slot 0..3 → store at 36..39.
                         if (cs->slot >= 0 && cs->slot < 4) {
                             int dest = inventory::PlayerInventory::ARMOR_OFFSET + cs->slot;
                             inv_->setItem(dest, it);
                         }
-                    } else if (cs->windowid == network::protocol::ContainerSetSlotPacket::SPECIAL_HOTBAR) {
+                    } else if (cs->windowid ==
+                               network::protocol::ContainerSetSlotPacket::SPECIAL_HOTBAR) {
                         // windowid 0x7a — BUG REAL DEL "no puedo sacar
                         // items del creativo en slots distintos al que ya
                         // tenia algo".
@@ -721,7 +749,8 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                         // — el toque real del catalogo creativo siempre
                         // llega tambien (o en su lugar) por windowid=0x00,
                         // que sí es el que aplica el cambio correctamente.
-                    } else if (cs->windowid == network::protocol::ContainerSetSlotPacket::SPECIAL_CREATIVE) {
+                    } else if (cs->windowid ==
+                               network::protocol::ContainerSetSlotPacket::SPECIAL_CREATIVE) {
                         // windowid 0x79 — el Player.php real de Genisys NO
                         // tiene ningún caso especial para este windowid en
                         // absoluto dentro de CONTAINER_SET_SLOT_PACKET: cae
@@ -822,10 +851,10 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
             char hex[8];
             std::snprintf(hex, sizeof(hex), "%02x", pid);
             utils::MainLogger::get().debug("Player " + cfg_.username +
-                " sent unhandled packet id=0x" + hex);
+                                           " sent unhandled packet id=0x" + hex);
             break;
         }
-    }
+        }
     } catch (const std::exception& e) {
         handlePacketError(pid, std::string("std::exception: ") + e.what());
     } catch (...) {
@@ -839,22 +868,21 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
 void Player::handlePacketError(uint8_t pid, const std::string& what) {
     char hex[8];
     std::snprintf(hex, sizeof(hex), "%02x", pid);
-    const std::string summary =
-        "Internal server error handling packet 0x" + std::string(hex) +
-        " from " + cfg_.username + ": " + what;
+    const std::string summary = "Internal server error handling packet 0x" + std::string(hex) +
+                                " from " + cfg_.username + ": " + what;
 
     // Never let diagnostics itself throw out of the catch block.
     try {
         diagnostics::Diagnostics::get().writeReport(
-            "exception", summary,
-            "class=Player::handleDataPacket pid=0x" + std::string(hex));
+            "exception", summary, "class=Player::handleDataPacket pid=0x" + std::string(hex));
     } catch (...) {}
 
     // Nukkit-style: surface the error to the player instead of a bare kick.
     try {
         kick("Internal server error",
              "The server hit an error while processing your action and the "
-             "error was logged. Details: " + what);
+             "error was logged. Details: " +
+                 what);
     } catch (...) {
         close("server error");
     }
@@ -879,8 +907,12 @@ void Player::sendTranslation(const std::string& key) {
 void Player::sendSettings() {
     auto as = std::make_shared<network::protocol::AdventureSettingsPacket>();
     uint32_t flags = 0;
-    flags |= 0x02; flags |= 0x04; flags |= 0x08; flags |= 0x40;
-    if ((cfg_.gamemode & 1) != 0) flags |= 0x80;
+    flags |= 0x02;
+    flags |= 0x04;
+    flags |= 0x08;
+    flags |= 0x40;
+    if ((cfg_.gamemode & 1) != 0)
+        flags |= 0x80;
     as->flags = flags;
     as->userPermission = 2;
     as->globalPermission = 2;
@@ -889,4 +921,5 @@ void Player::sendSettings() {
 bool Player::batchDataPacket(const std::vector<uint8_t>& data) {
     (void)data;
     return true;
-}} // namespace cursestone
+}
+} // namespace cursestone

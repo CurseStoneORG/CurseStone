@@ -48,22 +48,24 @@
 namespace cursestone::network::protocol {
 
 class MobEquipmentPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return MOB_EQUIPMENT_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return MOB_EQUIPMENT_PACKET;
+    }
 
-    int64_t  eid = 0;
+    int64_t eid = 0;
     // Decoded item slot (the item the player just selected/equipped).
-    int16_t  itemId = 0;
-    uint8_t  itemCount = 0;
-    int16_t  itemDamage = 0;
+    int16_t itemId = 0;
+    uint8_t itemCount = 0;
+    int16_t itemDamage = 0;
     // Raw little-endian NBT compound the client sent with the slot
     // (custom item names); re-broadcast verbatim.
     std::string itemNbt;
     // Hotbar slot the player is now holding (0..8).
-    uint8_t  hotbarSlot = 0;
+    uint8_t hotbarSlot = 0;
     // Second byte sent by the client (selectedSlot in PMMP). Kept for
     // protocol fidelity; the server only acts on hotbarSlot.
-    uint8_t  selectedSlot = 0;
+    uint8_t selectedSlot = 0;
 
     void encode(std::vector<uint8_t>& out) const override;
     bool decode(const uint8_t* data, size_t len) override;

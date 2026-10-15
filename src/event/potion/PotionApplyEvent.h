@@ -33,14 +33,15 @@
 namespace cursestone::event::potion {
 
 class PotionApplyEvent : public PotionEvent, public Cancellable {
-public:
+  public:
     void* entity;
 
-    PotionApplyEvent(void* potion, void* e)
-        : PotionEvent(potion), entity(e) {}
+    PotionApplyEvent(void* potion, void* e) : PotionEvent(potion), entity(e) {
+    }
 
     const std::string& eventName() const override {
-        static std::string n = "PotionApplyEvent"; return n;
+        static std::string n = "PotionApplyEvent";
+        return n;
     }
 };
 

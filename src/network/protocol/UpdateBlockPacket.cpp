@@ -45,13 +45,18 @@ void UpdateBlockPacket::encode(std::vector<uint8_t>& out) const {
 
 bool UpdateBlockPacket::decode(const uint8_t* data, size_t len) {
     PacketReader r(data, len);
-    if (!r.readI32BE(x))      return false;
-    if (!r.readI32BE(z))      return false;
-    if (!r.readU8(y))         return false;
-    if (!r.readU8(blockId))   return false;
+    if (!r.readI32BE(x))
+        return false;
+    if (!r.readI32BE(z))
+        return false;
+    if (!r.readU8(y))
+        return false;
+    if (!r.readU8(blockId))
+        return false;
     uint8_t combined = 0;
-    if (!r.readU8(combined))  return false;
-    flags     = (uint8_t)(combined >> 4);
+    if (!r.readU8(combined))
+        return false;
+    flags = (uint8_t)(combined >> 4);
     blockData = (uint8_t)(combined & 0x0F);
     return true;
 }

@@ -35,7 +35,8 @@ extern "C" {
 
 typedef struct mcp_pkt_pong {
     mcp_packet_t header;
-    int64_t ping_time; int64_t pong_time;
+    int64_t ping_time;
+    int64_t pong_time;
 } mcp_pkt_pong_t;
 
 mcp_packet_t* mcp_pkt_pong_new(void);

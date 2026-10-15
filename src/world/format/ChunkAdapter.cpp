@@ -35,7 +35,8 @@ ChunkAdapter::ChunkAdapter(int32_t x, int32_t z) : owns_chunk_(true) {
     chunk_ = mcp_chunk_new(x, z);
 }
 
-ChunkAdapter::ChunkAdapter(mcp_chunk_t* c) : chunk_(c), owns_chunk_(true) {}
+ChunkAdapter::ChunkAdapter(mcp_chunk_t* c) : chunk_(c), owns_chunk_(true) {
+}
 
 std::shared_ptr<ChunkAdapter> ChunkAdapter::borrow(mcp_chunk_t* c) {
     // Private-ctor helper: create an adapter that doesn't own the chunk.
@@ -47,7 +48,8 @@ std::shared_ptr<ChunkAdapter> ChunkAdapter::borrow(mcp_chunk_t* c) {
 }
 
 ChunkAdapter::~ChunkAdapter() {
-    if (chunk_ && owns_chunk_) mcp_chunk_destroy(chunk_);
+    if (chunk_ && owns_chunk_)
+        mcp_chunk_destroy(chunk_);
 }
 
 ChunkAdapter::ChunkAdapter(ChunkAdapter&& other) noexcept
@@ -58,9 +60,10 @@ ChunkAdapter::ChunkAdapter(ChunkAdapter&& other) noexcept
 
 ChunkAdapter& ChunkAdapter::operator=(ChunkAdapter&& other) noexcept {
     if (this != &other) {
-        if (chunk_ && owns_chunk_) mcp_chunk_destroy(chunk_);
-        chunk_       = other.chunk_;
-        owns_chunk_  = other.owns_chunk_;
+        if (chunk_ && owns_chunk_)
+            mcp_chunk_destroy(chunk_);
+        chunk_ = other.chunk_;
+        owns_chunk_ = other.owns_chunk_;
         other.chunk_ = nullptr;
         other.owns_chunk_ = true;
     }
@@ -70,14 +73,18 @@ ChunkAdapter& ChunkAdapter::operator=(ChunkAdapter&& other) noexcept {
 mcp_chunk_t* ChunkAdapter::releaseChunk() {
     mcp_chunk_t* c = chunk_;
     chunk_ = nullptr;
-    owns_chunk_ = true;   // safe default after release
+    owns_chunk_ = true; // safe default after release
     return c;
 }
 
 // ----- FullChunk interface
 
-int32_t ChunkAdapter::getX() const { return chunk_ ? chunk_->x : 0; }
-int32_t ChunkAdapter::getZ() const { return chunk_ ? chunk_->z : 0; }
+int32_t ChunkAdapter::getX() const {
+    return chunk_ ? chunk_->x : 0;
+}
+int32_t ChunkAdapter::getZ() const {
+    return chunk_ ? chunk_->z : 0;
+}
 
 uint8_t ChunkAdapter::getBlockId(int x, int y, int z) const {
     return mcp_chunk_get_block_id(chunk_, x, y, z);
@@ -128,8 +135,7 @@ bool ChunkAdapter::isPopulated() const {
 }
 
 bool ChunkAdapter::isGenerated() const {
-    return chunk_ ? (chunk_->terrain_populated && chunk_->light_populated)
-                  : false;
+    return chunk_ ? (chunk_->terrain_populated && chunk_->light_populated) : false;
 }
 
 bool ChunkAdapter::isDirty() const {
@@ -137,14 +143,17 @@ bool ChunkAdapter::isDirty() const {
 }
 
 void ChunkAdapter::setDirty(bool dirty) {
-    if (chunk_) chunk_->dirty = dirty;
+    if (chunk_)
+        chunk_->dirty = dirty;
 }
 
 std::vector<uint8_t> ChunkAdapter::networkSerialize() const {
-    if (!chunk_) return {};
+    if (!chunk_)
+        return {};
     size_t len = 0;
     uint8_t* buf = mcp_chunk_network_serialize(chunk_, &len);
-    if (!buf) return {};
+    if (!buf)
+        return {};
     std::vector<uint8_t> out(buf, buf + len);
     free(buf);
     return out;

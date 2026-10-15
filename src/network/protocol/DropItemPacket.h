@@ -36,13 +36,15 @@
 namespace cursestone::network::protocol {
 
 class DropItemPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return DROP_ITEM_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return DROP_ITEM_PACKET;
+    }
 
     uint8_t type = 0;
     // Slot (ItemStack) — mismo formato que ContainerSetSlotPacket.
-    int16_t itemId     = 0;
-    uint8_t itemCount  = 0;
+    int16_t itemId = 0;
+    uint8_t itemCount = 0;
     int16_t itemDamage = 0;
 
     void encode(std::vector<uint8_t>& out) const override;

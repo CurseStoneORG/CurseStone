@@ -42,14 +42,16 @@ namespace cursestone::network::protocol {
 ///   [Float BE] z
 ///   [Uint8   ] unknown (0)
 class ChangeDimensionPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return CHANGE_DIMENSION_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return CHANGE_DIMENSION_PACKET;
+    }
 
-    int32_t dimension = 0;  ///< 0 Overworld, 1 Nether
-    float x = 0.0f;         ///< destination X
-    float y = 0.0f;         ///< destination Y
-    float z = 0.0f;         ///< destination Z
-    uint8_t unknown = 0;    ///< ignored by the 0.15.x client
+    int32_t dimension = 0; ///< 0 Overworld, 1 Nether
+    float x = 0.0f;        ///< destination X
+    float y = 0.0f;        ///< destination Y
+    float z = 0.0f;        ///< destination Z
+    uint8_t unknown = 0;   ///< ignored by the 0.15.x client
 
     void encode(std::vector<uint8_t>& out) const override;
     bool decode(const uint8_t* data, size_t len) override;

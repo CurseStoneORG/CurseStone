@@ -41,7 +41,7 @@
 namespace cursestone::world::generator::object::trees {
 
 class GenericTree {
-public:
+  public:
     virtual ~GenericTree() = default;
 
     // Generates the tree at (sourceX, sourceY, sourceZ). `soilId` is the
@@ -53,37 +53,41 @@ public:
     // Returns false if there was no room / unsuitable soil.
     // Virtual: some species (acacia, dark oak, big oak) replace the whole
     // layout with their own algorithm.
-    virtual bool generate(mcp_chunk_t* c, int sourceX, int sourceY, int sourceZ,
-                          uint8_t soilId, MersenneRandom& rng);
+    virtual bool generate(mcp_chunk_t* c, int sourceX, int sourceY, int sourceZ, uint8_t soilId,
+                          MersenneRandom& rng);
 
-protected:
+  protected:
     // Species parameters (height, log/leaf ids + data). Subclasses set
     // these in their own init() override.
     virtual void init(MersenneRandom& rng);
 
     // Leaf placement. Default = vanilla oak blob (radius 1..2, rounded
     // corners culled randomly). Subclasses may replace it.
-    virtual void placeCanopy(mcp_chunk_t* c, int sourceX, int sourceY,
-                             int sourceZ, MersenneRandom& rng);
+    virtual void placeCanopy(mcp_chunk_t* c, int sourceX, int sourceY, int sourceZ,
+                             MersenneRandom& rng);
 
     // Trunk placement. Default = straight vertical column.
-    virtual void placeTrunk(mcp_chunk_t* c, int sourceX, int sourceY,
-                            int sourceZ, MersenneRandom& rng);
+    virtual void placeTrunk(mcp_chunk_t* c, int sourceX, int sourceY, int sourceZ,
+                            MersenneRandom& rng);
 
     // Soil the species accepts (default: grass or dirt).
     virtual bool canPlaceOn(uint8_t soil) const;
 
     // Species ids. LOG/LEAVES data: 0=oak 1=spruce 2=birch 3=jungle.
     // WOOD_2/LEAVES_2 data: 0=acacia 1=dark oak.
-    int     height_ = 5;
-    uint8_t logId_  = 17; // LOG
+    int height_ = 5;
+    uint8_t logId_ = 17; // LOG
     uint8_t logData_ = 0;
-    uint8_t leafId_  = 18; // LEAVES
+    uint8_t leafId_ = 18; // LEAVES
     uint8_t leafData_ = 0;
 
     // ---- shared block helpers (chunk-local, clipped) ----
-    static bool inXZ(int v) { return v >= 0 && v < 16; }
-    static bool inY(int y) { return y >= 0 && y <= 127; }
+    static bool inXZ(int v) {
+        return v >= 0 && v < 16;
+    }
+    static bool inY(int y) {
+        return y >= 0 && y <= 127;
+    }
     static bool replaceable(uint8_t id);
 
     static void setLeaf(mcp_chunk_t* c, int x, int y, int z, uint8_t id, uint8_t data);

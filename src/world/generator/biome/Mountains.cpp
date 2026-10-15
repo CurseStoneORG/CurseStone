@@ -32,15 +32,16 @@ const BiomeConfig& mountainsBiome() {
         .name = "extreme_hills",
         .temp = -0.2f,
         .humid = 0.0f,
-        .topBlock = 2,       // grass (stone patches added by the terrain pass)
-        .fillerBlock = 1,    // stone
-        .snowy = false,      // high peaks get snow by height, not by climate
+        .topBlock = 2,    // grass (stone patches added by the terrain pass)
+        .fillerBlock = 1, // stone
+        .snowy = false,   // high peaks get snow by height, not by climate
         .underwater = false,
         .treeAmount = 3,
-        .trees = {
-            { object::TREE_SPRUCE, 3 },
-            { object::TREE_OAK, 1 },
-        },
+        .trees =
+            {
+                {object::TREE_SPRUCE, 3},
+                {object::TREE_OAK, 1},
+            },
         .grassAmount = 3,
         .flowerAmount = 1,
         .doublePlantAmount = 0,

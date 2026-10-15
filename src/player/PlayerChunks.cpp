@@ -59,10 +59,12 @@ bool Player::isTrackingChunk(int32_t cx, int32_t cz) const {
 // and server.cpp had to compensate with to hardcoded `viewDistance()/2`
 // for the unload sweep. That compensation is removed now that this
 // returns to true radius.
-std::vector<std::pair<int32_t,int32_t>>
-Player::buildChunkSpiral(int radius) {
-    std::vector<std::pair<int32_t,int32_t>> order;
-    if (radius <= 0) { order.emplace_back(0, 0); return order; }
+std::vector<std::pair<int32_t, int32_t>> Player::buildChunkSpiral(int radius) {
+    std::vector<std::pair<int32_t, int32_t>> order;
+    if (radius <= 0) {
+        order.emplace_back(0, 0);
+        return order;
+    }
     int side = 2 * radius + 1;
     order.reserve((size_t)side * (size_t)side);
     int layer = 1, leg = 0, x = 0, z = 0;
@@ -70,10 +72,28 @@ Player::buildChunkSpiral(int radius) {
     int total = side * side;
     for (int i = 1; i < total; ++i) {
         switch (leg) {
-            case 0: ++x; if (x == layer) ++leg; break;
-            case 1: ++z; if (z == layer) ++leg; break;
-            case 2: --x; if (-x == layer) ++leg; break;
-            case 3: --z; if (-z == layer) { leg = 0; ++layer; } break;
+        case 0:
+            ++x;
+            if (x == layer)
+                ++leg;
+            break;
+        case 1:
+            ++z;
+            if (z == layer)
+                ++leg;
+            break;
+        case 2:
+            --x;
+            if (-x == layer)
+                ++leg;
+            break;
+        case 3:
+            --z;
+            if (-z == layer) {
+                leg = 0;
+                ++layer;
+            }
+            break;
         }
         order.emplace_back(x, z);
     }
@@ -142,10 +162,12 @@ void Player::sendChunksAroundSpawn() {
 // NBT, this way that the text not is renders until someone it edit again.
 // ============================================================
 void Player::sendChunkTiles(int32_t cx, int32_t cz) {
-    if (!getWorld()) return;
+    if (!getWorld())
+        return;
     auto tiles = getWorld()->getTilesInChunk(cx, cz);
     for (auto& t : tiles) {
-        if (!t) continue;
+        if (!t)
+            continue;
         const auto& p = t->position();
         sendBlockEntityData((int32_t)p.x, (int32_t)p.y, (int32_t)p.z, *t, this);
     }
@@ -157,7 +179,8 @@ bool Player::isChunkLoaded(int cx, int cz) const {
     return used_chunks_.count(hash) > 0;
 }
 bool Player::isChunkLoading(int cx, int cz) const {
-    (void)cx; (void)cz;  // stub — not yet tracking in-flight chunk sends
+    (void)cx;
+    (void)cz; // stub — not yet tracking in-flight chunk sends
     return false;
 }
 void Player::unloadChunk(int cx, int cz) {
@@ -166,15 +189,19 @@ void Player::unloadChunk(int cx, int cz) {
     used_chunks_.erase(hash);
 }
 void Player::sendChunk(int cx, int cz) {
-    if (!getWorld()) return;
+    if (!getWorld())
+        return;
     auto& chunks = getWorld()->chunks();
     mcp_chunk_t* ch = chunks.getChunk(cx, cz);
-    if (!ch) return;
+    if (!ch)
+        return;
     size_t outLen = 0;
     uint8_t* buf = mcp_chunk_network_serialize(ch, &outLen);
-    if (!buf || outLen == 0) return;
+    if (!buf || outLen == 0)
+        return;
     auto pk = std::make_shared<network::protocol::FullChunkDataPacket>();
-    pk->chunkX = cx; pk->chunkZ = cz;
+    pk->chunkX = cx;
+    pk->chunkZ = cz;
     pk->data.assign(buf, buf + outLen);
     free(buf);
     sendPacket(pk);
@@ -182,4 +209,5 @@ void Player::sendChunk(int cx, int cz) {
     int64_t hash = ((int64_t)cx << 32) | ((uint32_t)cz);
     std::lock_guard<std::mutex> lk(chunks_mtx_);
     used_chunks_.insert(hash);
-}} // namespace cursestone
+}
+} // namespace cursestone

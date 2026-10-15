@@ -27,10 +27,15 @@
 #include <functional>
 namespace cursestone::scheduler {
 class CallbackTask : public Task {
-public:
-    explicit CallbackTask(std::function<void()> fn) : fn_(std::move(fn)) {}
-    void onRun() override { if (fn_) fn_(); }
-private:
+  public:
+    explicit CallbackTask(std::function<void()> fn) : fn_(std::move(fn)) {
+    }
+    void onRun() override {
+        if (fn_)
+            fn_();
+    }
+
+  private:
     std::function<void()> fn_;
 };
 } // namespace

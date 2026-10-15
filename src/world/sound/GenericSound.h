@@ -24,8 +24,9 @@
 #include "Sound.h"
 namespace cursestone::world::sound {
 class GenericSound : public Sound {
-public:
+  public:
     GenericSound(SoundId id, Position pos, float pitch = 1.0f, float volume = 1.0f)
-        : Sound(id, pos, pitch, volume) {}
+        : Sound(id, pos, pitch, volume) {
+    }
 };
 } // namespace

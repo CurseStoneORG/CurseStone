@@ -48,14 +48,16 @@ constexpr uint32_t ANIMATE_ACTION_SWING_ARM = 1;
 // WAKE_UP = 3 (Infinity event/player/PlayerAnimationEvent.php) — sent to
 // the player itself by Player::stopSleep() so the 0.15.10 client leaves
 // the bed view.
-constexpr uint32_t ANIMATE_ACTION_WAKE_UP   = 3;
+constexpr uint32_t ANIMATE_ACTION_WAKE_UP = 3;
 
 class AnimatePacket : public DataPacket {
-public:
-    uint8_t pid() const override { return ANIMATE_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return ANIMATE_PACKET;
+    }
 
     uint32_t action = ANIMATE_ACTION_SWING_ARM;
-    int64_t  eid = 0;
+    int64_t eid = 0;
 
     void encode(std::vector<uint8_t>& out) const override;
     bool decode(const uint8_t* data, size_t len) override;

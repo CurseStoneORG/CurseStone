@@ -25,16 +25,20 @@
 #pragma once
 #include "PlayerEvent.h"
 #include <string>
-namespace cursestone { class Player; }
+namespace cursestone {
+class Player;
+}
 
 namespace cursestone::event::player {
 class PlayerCreationEvent : public PlayerEvent {
-public:
+  public:
     std::string username;
     PlayerCreationEvent(cursestone::Player* p, const std::string& name)
-        : PlayerEvent(p), username(name) {}
+        : PlayerEvent(p), username(name) {
+    }
     const std::string& eventName() const override {
-        static std::string n = "PlayerCreationEvent"; return n;
+        static std::string n = "PlayerCreationEvent";
+        return n;
     }
 };
 } // namespace cursestone::event::player

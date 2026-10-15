@@ -59,33 +59,26 @@ class Server;
 namespace network {
 
 // Inbound event types (RakLib → main thread)
-enum class RakLibEventType {
-    SESSION_OPEN,
-    SESSION_CLOSE,
-    PACKET_RECEIVED
-};
+enum class RakLibEventType { SESSION_OPEN, SESSION_CLOSE, PACKET_RECEIVED };
 
 struct RakLibEvent {
     RakLibEventType type;
-    std::string     ip;
-    uint16_t        port = 0;
-    int64_t         clientId = 0;
-    std::string     reason;
+    std::string ip;
+    uint16_t port = 0;
+    int64_t clientId = 0;
+    std::string reason;
     std::vector<uint8_t> data;
 };
 
 // Outbound action types (main → RakLib)
-enum class RakLibActionType {
-    SEND_PACKET,
-    CLOSE_SESSION
-};
+enum class RakLibActionType { SEND_PACKET, CLOSE_SESSION };
 
 struct RakLibAction {
     RakLibActionType type;
-    std::string      ip;
-    uint16_t         port = 0;
+    std::string ip;
+    uint16_t port = 0;
     std::vector<uint8_t> data;
-    std::string      reason;
+    std::string reason;
     // BUG FIX: see raklibThreadLoop() for the full story. True routes
     // this send through RELIABLE_ORDERED on a dedicated channel so
     // strict-sequence packets (login/spawn) can never arrive out of
@@ -93,18 +86,20 @@ struct RakLibAction {
     // behavior for everything else (chunks, entity updates, ...),
     // now on its own separate channel so it can never block ordered
     // traffic either.
-    bool             ordered = false;
+    bool ordered = false;
 };
 
 class RakLibInterface : public AdvancedSourceInterface {
-public:
+  public:
     explicit RakLibInterface(Server* server);
     ~RakLibInterface() override;
 
-    std::string getName() const override { return "raklib"; }
+    std::string getName() const override {
+        return "raklib";
+    }
     void start() override;
     void shutdown() override;
-    void tick() override;  // Drains inbound_queue_ on main thread
+    void tick() override; // Drains inbound_queue_ on main thread
 
     // AdvancedSourceInterface — these now enqueue to outbound_queue_
     // ordered=true sends this packet RELIABLE_ORDERED on a dedicated
@@ -112,77 +107,75 @@ public:
     // order it was sent relative to other ordered=true sends. Use for
     // strict-sequence packets (login/spawn handshake). Default false
     // keeps the existing unordered RELIABLE behavior.
-    void sendRawPacket(const std::string& ip, uint16_t port,
-                         const std::vector<uint8_t>& data,
-                         bool ordered = false) override;
-    void closeSession(const std::string& ip, uint16_t port,
-                        const std::string& reason) override;
+    void sendRawPacket(const std::string& ip, uint16_t port, const std::vector<uint8_t>& data,
+                       bool ordered = false) override;
+    void closeSession(const std::string& ip, uint16_t port, const std::string& reason) override;
 
     void setServerName(const std::string& motd);
 
     // C-to-C++ callbacks (called from RakLib thread)
     void onOpenSession(const std::string& ip, uint16_t port, int64_t clientId);
-    void onCloseSession(const std::string& ip, uint16_t port,
-                          const std::string& reason);
-    void onPacketReceive(const std::string& ip, uint16_t port,
-                          const uint8_t* data, size_t len);
-    void onRawPacket(const std::string& ip, uint16_t port,
-                       const uint8_t* data, size_t len);
+    void onCloseSession(const std::string& ip, uint16_t port, const std::string& reason);
+    void onPacketReceive(const std::string& ip, uint16_t port, const uint8_t* data, size_t len);
+    void onRawPacket(const std::string& ip, uint16_t port, const uint8_t* data, size_t len);
     void onTick();
 
-    int64_t getServerId() const { return serverId_; }
-    bool    isRunning()   const { return running_; }
+    int64_t getServerId() const {
+        return serverId_;
+    }
+    bool isRunning() const {
+        return running_;
+    }
 
     // Drain pending events (called by Network::tick on main thread).
     // Returns the number of events processed.
     size_t drainEvents();
 
-private:
-    static void c_onOpen  (void* impl, const char* ip, uint16_t port, int64_t cid);
-    static void c_onClose (void* impl, const char* ip, uint16_t port, const char* reason);
-    static void c_onPacket(void* impl, const char* ip, uint16_t port,
-                            const uint8_t* data, size_t len);
-    static void c_onRaw   (void* impl, const char* ip, uint16_t port,
-                            const uint8_t* data, size_t len);
-    static void c_onTick  (void* impl);
+  private:
+    static void c_onOpen(void* impl, const char* ip, uint16_t port, int64_t cid);
+    static void c_onClose(void* impl, const char* ip, uint16_t port, const char* reason);
+    static void c_onPacket(void* impl, const char* ip, uint16_t port, const uint8_t* data,
+                           size_t len);
+    static void c_onRaw(void* impl, const char* ip, uint16_t port, const uint8_t* data, size_t len);
+    static void c_onTick(void* impl);
 
     // RakLib thread loop — runs at ~100Hz
     void raklibThreadLoop();
 
-    Server*               server_;
-    mcp_raklib_server_t   raklib_;
+    Server* server_;
+    mcp_raklib_server_t raklib_;
     mcp_server_instance_t instance_;
-    int64_t               serverId_ = 0;
-    std::atomic<bool>     running_{false};
-    std::atomic<bool>     stop_flag_{false};
+    int64_t serverId_ = 0;
+    std::atomic<bool> running_{false};
+    std::atomic<bool> stop_flag_{false};
 
     // RakLib worker thread
-    std::thread           raklib_thread_;
+    std::thread raklib_thread_;
 
     // Inbound queue (RakLib → main): events to process on main thread
     std::queue<RakLibEvent> inbound_queue_;
-    std::mutex             inbound_mtx_;
+    std::mutex inbound_mtx_;
 
     // Outbound queue (main → RakLib): packets to send / sessions to close
     std::queue<RakLibAction> outbound_queue_;
-    std::mutex               outbound_mtx_;
+    std::mutex outbound_mtx_;
     // FIX (audit priority 12/13): peak observed outbound_queue_ size —
     // diagnostic only, read by getOutboundQueuePeak() so it can be
     // surfaced if this session's disconnect needs correlating with
     // outbound backlog. Updated under outbound_mtx_ alongside the queue
     // itself, so no separate synchronization is needed for it.
-    std::atomic<size_t>     outbound_queue_peak_{0};
+    std::atomic<size_t> outbound_queue_peak_{0};
 
-public:
+  public:
     size_t getOutboundQueuePeak() const {
         return outbound_queue_peak_.load(std::memory_order_relaxed);
     }
-private:
 
+  private:
     // Motd update flag (main → RakLib)
-    std::mutex             motd_mtx_;
-    std::string            pending_motd_;
-    std::atomic<bool>      motd_changed_{false};
+    std::mutex motd_mtx_;
+    std::string pending_motd_;
+    std::atomic<bool> motd_changed_{false};
 };
 
 } // namespace network

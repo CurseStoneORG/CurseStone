@@ -37,8 +37,10 @@ void RespawnPacket::encode(std::vector<uint8_t>& out) const {
 
 bool RespawnPacket::decode(const uint8_t* data, size_t len) {
     PacketReader r(data, len);
-    if (!r.readF32BE(x)) return false;
-    if (!r.readF32BE(y)) return false;
+    if (!r.readF32BE(x))
+        return false;
+    if (!r.readF32BE(y))
+        return false;
     return r.readF32BE(z);
 }
 

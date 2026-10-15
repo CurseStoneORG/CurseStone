@@ -34,7 +34,9 @@
 #include "event/Event.h"
 #include <string>
 #include "event/Cancellable.h"
-namespace cursestone::entity { class Entity; }
+namespace cursestone::entity {
+class Entity;
+}
 namespace cursestone::event::entity {
 
 enum class DamageCause {
@@ -56,16 +58,17 @@ enum class DamageCause {
 };
 
 class EntityDamageEvent : public Event, public Cancellable {
-public:
+  public:
     cursestone::entity::Entity* entity;
     float amount = 0.0f;
     DamageCause cause = DamageCause::CUSTOM;
-    EntityDamageEvent(cursestone::entity::Entity* e = nullptr,
-                      float amt = 0.0f,
+    EntityDamageEvent(cursestone::entity::Entity* e = nullptr, float amt = 0.0f,
                       DamageCause c = DamageCause::CUSTOM)
-        : entity(e), amount(amt), cause(c) {}
+        : entity(e), amount(amt), cause(c) {
+    }
     const std::string& eventName() const override {
-        static std::string n = "EntityDamageEvent"; return n;
+        static std::string n = "EntityDamageEvent";
+        return n;
     }
 };
 } // namespace

@@ -24,11 +24,16 @@
 #include "Event.h"
 namespace cursestone::event {
 class Cancellable {
-public:
+  public:
     virtual ~Cancellable() = default;
-    bool isCancelled() const { return cancelled_; }
-    void setCancelled(bool c = true) { cancelled_ = c; }
-private:
+    bool isCancelled() const {
+        return cancelled_;
+    }
+    void setCancelled(bool c = true) {
+        cancelled_ = c;
+    }
+
+  private:
     bool cancelled_ = false;
 };
 } // namespace

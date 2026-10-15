@@ -35,13 +35,13 @@ extern "C" {
 
 typedef struct mcp_pkt_unconnected_pong {
     mcp_packet_t header;
-    
+
     uint64_t server_id;
-    uint8_t  magic[16];
+    uint8_t magic[16];
     uint64_t time;
-    uint8_t  server_id_str[8];
-    char*    motd;
-    size_t   motd_len;
+    uint8_t server_id_str[8];
+    char* motd;
+    size_t motd_len;
 
 } mcp_pkt_unconnected_pong_t;
 

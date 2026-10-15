@@ -27,7 +27,7 @@
 #include "Permissible.h"
 namespace cursestone::permission {
 class DefaultPermissions {
-public:
+  public:
     static void registerCorePermissions(Permissible& p);
 };
 } // namespace

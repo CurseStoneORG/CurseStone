@@ -37,13 +37,12 @@ typedef struct mcp_aabb {
     double maxX, maxY, maxZ;
 } mcp_aabb_t;
 
-static inline mcp_aabb_t mcp_aabb_make(double minX, double minY, double minZ,
-                                        double maxX, double maxY, double maxZ) {
+static inline mcp_aabb_t mcp_aabb_make(double minX, double minY, double minZ, double maxX,
+                                       double maxY, double maxZ) {
     mcp_aabb_t b = {minX, minY, minZ, maxX, maxY, maxZ};
     return b;
 }
-static inline mcp_aabb_t mcp_aabb_from_corners(mcp_vector3_t a,
-                                                 mcp_vector3_t b) {
+static inline mcp_aabb_t mcp_aabb_from_corners(mcp_vector3_t a, mcp_vector3_t b) {
     mcp_aabb_t out;
     out.minX = (a.x < b.x) ? a.x : b.x;
     out.minY = (a.y < b.y) ? a.y : b.y;
@@ -53,25 +52,27 @@ static inline mcp_aabb_t mcp_aabb_from_corners(mcp_vector3_t a,
     out.maxZ = (a.z > b.z) ? a.z : b.z;
     return out;
 }
-static inline double mcp_aabb_width(mcp_aabb_t b)  { return b.maxX - b.minX; }
-static inline double mcp_aabb_height(mcp_aabb_t b) { return b.maxY - b.minY; }
-static inline double mcp_aabb_depth(mcp_aabb_t b)  { return b.maxZ - b.minZ; }
+static inline double mcp_aabb_width(mcp_aabb_t b) {
+    return b.maxX - b.minX;
+}
+static inline double mcp_aabb_height(mcp_aabb_t b) {
+    return b.maxY - b.minY;
+}
+static inline double mcp_aabb_depth(mcp_aabb_t b) {
+    return b.maxZ - b.minZ;
+}
 static inline mcp_vector3_t mcp_aabb_center(mcp_aabb_t b) {
-    return mcp_v3((b.minX + b.maxX) * 0.5,
-                  (b.minY + b.maxY) * 0.5,
-                  (b.minZ + b.maxZ) * 0.5);
+    return mcp_v3((b.minX + b.maxX) * 0.5, (b.minY + b.maxY) * 0.5, (b.minZ + b.maxZ) * 0.5);
 }
 // True if `b` and `other` overlap (touch is not overlap).
 static inline bool mcp_aabb_intersects(mcp_aabb_t b, mcp_aabb_t o) {
-    return b.minX < o.maxX && b.maxX > o.minX &&
-           b.minY < o.maxY && b.maxY > o.minY &&
+    return b.minX < o.maxX && b.maxX > o.minX && b.minY < o.maxY && b.maxY > o.minY &&
            b.minZ < o.maxZ && b.maxZ > o.minZ;
 }
 // True if `point` lies inside `b`.
 static inline bool mcp_aabb_contains_point(mcp_aabb_t b, mcp_vector3_t p) {
-    return p.x >= b.minX && p.x <= b.maxX &&
-           p.y >= b.minY && p.y <= b.maxY &&
-           p.z >= b.minZ && p.z <= b.maxZ;
+    return p.x >= b.minX && p.x <= b.maxX && p.y >= b.minY && p.y <= b.maxY && p.z >= b.minZ &&
+           p.z <= b.maxZ;
 }
 // Compute the intersection ratio (0..1) of `t*p0 + (1-t)*p1` with `b`,
 // or -1 if no intersection. Used for ray-cast hits.
@@ -79,8 +80,12 @@ double mcp_aabb_ray_intersect(mcp_aabb_t b, mcp_vector3_t p0, mcp_vector3_t p1);
 
 // Grow the box by `pad` in all directions.
 static inline mcp_aabb_t mcp_aabb_grow(mcp_aabb_t b, double pad) {
-    b.minX -= pad; b.minY -= pad; b.minZ -= pad;
-    b.maxX += pad; b.maxY += pad; b.maxZ += pad;
+    b.minX -= pad;
+    b.minY -= pad;
+    b.minZ -= pad;
+    b.maxX += pad;
+    b.maxY += pad;
+    b.maxZ += pad;
     return b;
 }
 
@@ -98,12 +103,18 @@ static inline mcp_aabb_t mcp_aabb_grow(mcp_aabb_t b, double pad) {
 static inline mcp_aabb_t mcp_aabb_expand(mcp_aabb_t b, double dx, double dy, double dz) {
     double x0 = b.minX, y0 = b.minY, z0 = b.minZ;
     double x1 = b.maxX, y1 = b.maxY, z1 = b.maxZ;
-    if (dx < 0) x0 += dx;
-    if (dx > 0) x1 += dx;
-    if (dy < 0) y0 += dy;
-    if (dy > 0) y1 += dy;
-    if (dz < 0) z0 += dz;
-    if (dz > 0) z1 += dz;
+    if (dx < 0)
+        x0 += dx;
+    if (dx > 0)
+        x1 += dx;
+    if (dy < 0)
+        y0 += dy;
+    if (dy > 0)
+        y1 += dy;
+    if (dz < 0)
+        z0 += dz;
+    if (dz > 0)
+        z1 += dz;
     return mcp_aabb_make(x0, y0, z0, x1, y1, z1);
 }
 
@@ -113,8 +124,8 @@ static inline mcp_aabb_t mcp_aabb_expand(mcp_aabb_t b, double dx, double dy, dou
 // physics exactly; expand() is kept for callers that want the full
 // swept volume.
 static inline mcp_aabb_t mcp_aabb_clone_move(mcp_aabb_t b, double dx, double dy, double dz) {
-    return mcp_aabb_make(b.minX + dx, b.minY + dy, b.minZ + dz,
-                         b.maxX + dx, b.maxY + dy, b.maxZ + dz);
+    return mcp_aabb_make(b.minX + dx, b.minY + dy, b.minZ + dz, b.maxX + dx, b.maxY + dy,
+                         b.maxZ + dz);
 }
 
 // `move` — same thing, as an in-place mutation (the PHP original
@@ -126,8 +137,8 @@ static inline mcp_aabb_t mcp_aabb_move(mcp_aabb_t b, double dx, double dy, doubl
 
 // Inset every face by the given amount (negative amounts grow).
 static inline mcp_aabb_t mcp_aabb_shrink(mcp_aabb_t b, double dx, double dy, double dz) {
-    return mcp_aabb_make(b.minX + dx, b.minY + dy, b.minZ + dz,
-                         b.maxX - dx, b.maxY - dy, b.maxZ - dz);
+    return mcp_aabb_make(b.minX + dx, b.minY + dy, b.minZ + dz, b.maxX - dx, b.maxY - dy,
+                         b.maxZ - dz);
 }
 
 // Mean extent over the three axes (client AABB::getSize()). Used to
@@ -139,8 +150,7 @@ static inline double mcp_aabb_size(mcp_aabb_t b) {
 // Overlap that treats a merely TOUCHING face as an overlap, where
 // mcp_aabb_intersects() above requires real interpenetration.
 static inline bool mcp_aabb_intersects_inner(mcp_aabb_t b, mcp_aabb_t o) {
-    return b.minX <= o.maxX && b.maxX >= o.minX &&
-           b.minY <= o.maxY && b.maxY >= o.minY &&
+    return b.minX <= o.maxX && b.maxX >= o.minX && b.minY <= o.maxY && b.maxY >= o.minY &&
            b.minZ <= o.maxZ && b.maxZ >= o.minZ;
 }
 
@@ -150,9 +160,8 @@ static inline bool mcp_aabb_intersects_inner(mcp_aabb_t b, mcp_aabb_t o) {
 // read differently in the two, and Entity::move() relies on the strict
 // one.
 static inline bool mcp_aabb_contains_strict(mcp_aabb_t b, mcp_vector3_t p) {
-    return p.x > b.minX && p.x < b.maxX &&
-           p.y > b.minY && p.y < b.maxY &&
-           p.z > b.minZ && p.z < b.maxZ;
+    return p.x > b.minX && p.x < b.maxX && p.y > b.minY && p.y < b.maxY && p.z > b.minZ &&
+           p.z < b.maxZ;
 }
 
 // ---- per-axis swept clipping ---------------------------------------
@@ -174,41 +183,53 @@ static inline bool mcp_aabb_contains_strict(mcp_aabb_t b, mcp_vector3_t p) {
 // `c` must already overlap `b` on the other two axes; that is what the
 // two early-outs test.
 static inline double mcp_aabb_clip_x_collide(mcp_aabb_t b, mcp_aabb_t c, double d) {
-    if (c.maxY <= b.minY || c.minY >= b.maxY) return d;
-    if (c.maxZ <= b.minZ || c.minZ >= b.maxZ) return d;
+    if (c.maxY <= b.minY || c.minY >= b.maxY)
+        return d;
+    if (c.maxZ <= b.minZ || c.minZ >= b.maxZ)
+        return d;
     if (d > 0.0 && c.minX >= b.maxX) {
         double gap = c.minX - b.maxX;
-        if (gap < d) d = gap;
+        if (gap < d)
+            d = gap;
     }
     if (d < 0.0 && c.maxX <= b.minX) {
         double gap = c.maxX - b.minX;
-        if (gap > d) d = gap;
+        if (gap > d)
+            d = gap;
     }
     return d;
 }
 static inline double mcp_aabb_clip_y_collide(mcp_aabb_t b, mcp_aabb_t c, double d) {
-    if (c.maxX <= b.minX || c.minX >= b.maxX) return d;
-    if (c.maxZ <= b.minZ || c.minZ >= b.maxZ) return d;
+    if (c.maxX <= b.minX || c.minX >= b.maxX)
+        return d;
+    if (c.maxZ <= b.minZ || c.minZ >= b.maxZ)
+        return d;
     if (d > 0.0 && c.minY >= b.maxY) {
         double gap = c.minY - b.maxY;
-        if (gap < d) d = gap;
+        if (gap < d)
+            d = gap;
     }
     if (d < 0.0 && c.maxY <= b.minY) {
         double gap = c.maxY - b.minY;
-        if (gap > d) d = gap;
+        if (gap > d)
+            d = gap;
     }
     return d;
 }
 static inline double mcp_aabb_clip_z_collide(mcp_aabb_t b, mcp_aabb_t c, double d) {
-    if (c.maxX <= b.minX || c.minX >= b.maxX) return d;
-    if (c.maxY <= b.minY || c.minY >= b.maxY) return d;
+    if (c.maxX <= b.minX || c.minX >= b.maxX)
+        return d;
+    if (c.maxY <= b.minY || c.minY >= b.maxY)
+        return d;
     if (d > 0.0 && c.minZ >= b.maxZ) {
         double gap = c.minZ - b.maxZ;
-        if (gap < d) d = gap;
+        if (gap < d)
+            d = gap;
     }
     if (d < 0.0 && c.maxZ <= b.minZ) {
         double gap = c.maxZ - b.minZ;
-        if (gap > d) d = gap;
+        if (gap > d)
+            d = gap;
     }
     return d;
 }

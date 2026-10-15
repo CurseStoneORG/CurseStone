@@ -94,12 +94,16 @@ namespace cursestone::world {
 // appeared on disk because ensureDir() had failed upstream on the
 // world directory itself.
 static void ensureDir(const std::string& path) {
-    if (path.empty()) return;
+    if (path.empty())
+        return;
     std::string partial;
     partial.reserve(path.size());
     size_t i = 0;
     // Skip to leading '/' so we don't try to mkdir("") first.
-    if (path[0] == '/') { partial += '/'; i = 1; }
+    if (path[0] == '/') {
+        partial += '/';
+        i = 1;
+    }
     while (i <= path.size()) {
         if (i == path.size() || path[i] == '/') {
             if (!partial.empty() && partial != "/") {
@@ -109,8 +113,10 @@ static void ensureDir(const std::string& path) {
                 }
             }
         }
-        if (i < path.size() && path[i] == '/') partial += '/';
-        else if (i < path.size()) partial += path[i];
+        if (i < path.size() && path[i] == '/')
+            partial += '/';
+        else if (i < path.size())
+            partial += path[i];
         ++i;
     }
 }
@@ -132,8 +138,7 @@ World::World(WorldConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
     // Determine the world directory path. We use either:
     //   <dataPath>/worlds/<name>   (if dataPath is set), or
     //   worlds/<name>              (relative fallback for legacy code)
-    std::string worldsRoot = cfg_.dataPath.empty()
-        ? "worlds" : (cfg_.dataPath + "/worlds");
+    std::string worldsRoot = cfg_.dataPath.empty() ? "worlds" : (cfg_.dataPath + "/worlds");
     std::string worldDir = worldsRoot + "/" + cfg_.name;
     ensureDir(worldsRoot);
     ensureDir(worldDir);
@@ -167,7 +172,8 @@ World::World(WorldConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
     auto provider_unique = mgr.create(cfg_.format);
     if (!provider_unique) {
         utils::MainLogger::get().warn("Unknown level format '" + cfg_.format +
-            "'; falling back to default '" + mgr.defaultFormatName() + "'");
+                                      "'; falling back to default '" + mgr.defaultFormatName() +
+                                      "'");
         provider_unique = mgr.create(mgr.defaultFormatName());
     }
     std::shared_ptr<format::WorldProvider> provider = std::move(provider_unique);
@@ -189,9 +195,9 @@ World::World(WorldConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
     if (cfg_.generator == "flat") {
         // Default flat preset: bedrock / 2x dirt / grass.
         std::vector<generator::FlatLayer> layers = {
-            {7, 1},   // bedrock
-            {3, 2},   // dirt
-            {2, 1},   // grass
+            {7, 1}, // bedrock
+            {3, 2}, // dirt
+            {2, 1}, // grass
         };
         generator_ = std::make_shared<generator::Flat>(std::move(layers));
     } else if (cfg_.generator == "nether") {
@@ -209,24 +215,22 @@ World::World(WorldConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
 
     if (provider) {
         // Apply the generator's spawn to the provider.
-        provider->setSpawn(math::Vector3{
-            gen_spawn.x, gen_spawn.y, gen_spawn.z});
+        provider->setSpawn(math::Vector3{gen_spawn.x, gen_spawn.y, gen_spawn.z});
         provider->setCurrentTime(cfg_.time);
         // If the provider loaded to spawn from level.dat (existing world),
         // use that instead of the generator default. This way the spawn
         // is preserved across restarts.
         if (provider->getSpawn().y > 0) {
-            spawn_ = mcp_v3(provider->getSpawn().x + 0.5,
-                              provider->getSpawn().y,
-                              provider->getSpawn().z + 0.5);
+            spawn_ = mcp_v3(provider->getSpawn().x + 0.5, provider->getSpawn().y,
+                            provider->getSpawn().z + 0.5);
         }
-        utils::MainLogger::get().info("World '" + cfg_.name + "' loaded from " +
-            worldDir + " (format=" + provider->getName() +
-            ", seed=" + std::to_string(cfg_.seed) +
-            ", generator=" + cfg_.generator + ")");
+        utils::MainLogger::get().info("World '" + cfg_.name + "' loaded from " + worldDir +
+                                      " (format=" + provider->getName() +
+                                      ", seed=" + std::to_string(cfg_.seed) +
+                                      ", generator=" + cfg_.generator + ")");
     } else {
         utils::MainLogger::get().error("Failed to create level provider for format '" +
-            cfg_.format + "' — chunks will be in-memory only!");
+                                       cfg_.format + "' — chunks will be in-memory only!");
     }
 
     // Connect the provider to the ChunkManager so flushDirty() actually
@@ -239,8 +243,9 @@ World::World(WorldConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
     // each chunk that entra to the manager avisa so that its luz is
     // recalcule next to with the of its vecinos (not in solitario, that is
     // what dejaba a franja oscura in the bordes of chunk).
-    chunks_.setOnChunkAdded(
-        [this](int32_t cx, int32_t cz) { onChunkAdded(cx, cz); });
+    chunks_.setOnChunkAdded([this](int32_t cx, int32_t cz) {
+        onChunkAdded(cx, cz);
+    });
 
     // FIX ("the spawn is in the sky the first time that entro"): the
     // generator spawn and (Nukkit's static 128 for Normal) is only correct
@@ -256,33 +261,35 @@ World::World(WorldConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
         if (chunks_.getChunk(sbx >> 4, sbz >> 4) != nullptr) {
             for (int y = 127; y > 0; --y) {
                 uint8_t id = getBlockId(sbx, y, sbz);
-                if (id == 0) continue;                                    // air
-                if (id == block::LEAVES || id == block::LEAVES_2) continue; // canopy
+                if (id == 0)
+                    continue; // air
+                if (id == block::LEAVES || id == block::LEAVES_2)
+                    continue; // canopy
                 // Bedrock is never a standing surface: skipping it lets a
                 // nether world spawn inside the caverns instead of on top
                 // of the bedrock roof.
-                if (id == block::BEDROCK) continue;
+                if (id == block::BEDROCK)
+                    continue;
                 uint8_t above = getBlockId(sbx, y + 1, sbz);
-                if (above == 0 || above == block::WATER ||
-                    above == block::FLOWING_WATER) {
+                if (above == 0 || above == block::WATER || above == block::FLOWING_WATER) {
                     spawn_.y = (double)y + 1.0;
                     break;
                 }
                 // Solid with solid above (tree trunk / overhang): keep down.
             }
             if (provider_) {
-                provider_->setSpawn(math::Vector3{
-                    (double)spawn_.x, spawn_.y, (double)spawn_.z});
+                provider_->setSpawn(math::Vector3{(double)spawn_.x, spawn_.y, (double)spawn_.z});
             }
-            utils::MainLogger::get().info("Spawn snapped to terrain: " +
-                std::to_string((int)spawn_.x) + ", " + std::to_string((int)spawn_.y) +
-                ", " + std::to_string((int)spawn_.z));
+            utils::MainLogger::get().info(
+                "Spawn snapped to terrain: " + std::to_string((int)spawn_.x) + ", " +
+                std::to_string((int)spawn_.y) + ", " + std::to_string((int)spawn_.z));
         }
     }
 }
 
 World::~World() {
-    if (provider_) provider_->shutdown();
+    if (provider_)
+        provider_->shutdown();
 }
 
 namespace {
@@ -301,7 +308,8 @@ bool fallableBlockId(uint8_t id);
 uint8_t World::getBlockId(int32_t x, int32_t y, int32_t z) {
     int32_t cx = x >> 4, cz = z >> 4;
     mcp_chunk_t* c = chunks_.getChunkIfLoaded(cx, cz);
-    if (!c) return 0;
+    if (!c)
+        return 0;
     return mcp_chunk_get_block_id(c, x & 15, y, z & 15);
 }
 
@@ -325,7 +333,8 @@ std::vector<physics::BlockBox> World::collisionBoxes(mcp_aabb_t region) {
                 uint8_t id = getBlockId(bx, by, bz);
                 // Block::$solid (dropBlockSolid): air, liquids, fire,
                 // cobweb and the decorations are walk-through.
-                if (!dropBlockSolid(id)) continue;
+                if (!dropBlockSolid(id))
+                    continue;
 
                 mcp_aabb_t local = mcp_aabb_make(0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
                 block::Block* b = block::Block::get(id);
@@ -341,7 +350,9 @@ std::vector<physics::BlockBox> World::collisionBoxes(mcp_aabb_t region) {
                 }
 
                 physics::BlockBox box;
-                box.x = bx; box.y = by; box.z = bz;
+                box.x = bx;
+                box.y = by;
+                box.z = bz;
                 box.box = mcp_aabb_make(local.minX + bx, local.minY + by, local.minZ + bz,
                                         local.maxX + bx, local.maxY + by, local.maxZ + bz);
                 out.push_back(box);
@@ -354,7 +365,8 @@ std::vector<physics::BlockBox> World::collisionBoxes(mcp_aabb_t region) {
 uint8_t World::getBlockData(int32_t x, int32_t y, int32_t z) {
     int32_t cx = x >> 4, cz = z >> 4;
     mcp_chunk_t* c = chunks_.getChunkIfLoaded(cx, cz);
-    if (!c) return 0;
+    if (!c)
+        return 0;
     return mcp_chunk_get_block_data(c, x & 15, y, z & 15);
 }
 
@@ -366,11 +378,12 @@ uint8_t World::getBlockData(int32_t x, int32_t y, int32_t z) {
 bool World::setFurnaceFlame(int32_t x, int32_t y, int32_t z, bool lit) {
     int32_t cx = x >> 4, cz = z >> 4;
     mcp_chunk_t* c = chunks_.getChunkIfLoaded(cx, cz);
-    if (!c) return false;
-    const uint8_t want = lit ? (uint8_t)block::BURNING_FURNACE
-                             : (uint8_t)block::FURNACE;
+    if (!c)
+        return false;
+    const uint8_t want = lit ? (uint8_t)block::BURNING_FURNACE : (uint8_t)block::FURNACE;
     const uint8_t have = mcp_chunk_get_block_id(c, x & 15, y, z & 15);
-    if (have == want) return false;
+    if (have == want)
+        return false;
     const uint8_t data = mcp_chunk_get_block_data(c, x & 15, y, z & 15);
     mcp_chunk_set_block_full(c, x & 15, y, z & 15, want, data);
     c->dirty = true;
@@ -449,13 +462,13 @@ int World::save() {
     // autosave (saveBudget) never blocks like this — that's what keeps its
     // per-tick cost in the sub-millisecond range.
     int saved = chunks_.flushDirty();
-    if (provider_) provider_->flushPendingSaves();
+    if (provider_)
+        provider_->flushPendingSaves();
     // Persist world metadata (level.dat) so seed/spawn/time survive
     // the next restart — mirroring Nukkit's Level.save() which calls
     // provider.saveLevelData() after flushing chunks.
     if (provider_) {
-        provider_->setSpawn(math::Vector3{
-            (double)spawn_.x, (double)spawn_.y, (double)spawn_.z});
+        provider_->setSpawn(math::Vector3{(double)spawn_.x, (double)spawn_.y, (double)spawn_.z});
         provider_->setCurrentTime(cfg_.time);
         provider_->saveLevelData();
     }
@@ -468,8 +481,7 @@ int World::saveBudget(size_t max_chunks, uint64_t max_ms, bool write_level_data)
     syncTilesToChunks();
     int saved = chunks_.flushDirtyBudget(max_chunks, max_ms);
     if (write_level_data && provider_) {
-        provider_->setSpawn(math::Vector3{
-            (double)spawn_.x, (double)spawn_.y, (double)spawn_.z});
+        provider_->setSpawn(math::Vector3{(double)spawn_.x, (double)spawn_.y, (double)spawn_.z});
         provider_->setCurrentTime(cfg_.time);
         provider_->saveLevelData();
     }
@@ -534,16 +546,23 @@ void World::tick(uint64_t current_tick) {
 void World::checkSleep() {
     auto& srv = cursestone::Server::getInstance();
     auto players = srv.playersSnapshot();
-    if (players.empty()) return;
+    if (players.empty())
+        return;
 
     bool resetTime = true;
     for (auto& p : players) {
-        if (!p || p->isPendingRemoval()) continue;      // quitting players don't count
-        if (p->getWorld() != this) continue;            // other levels don't vote here
-        if (!p->isSleeping()) { resetTime = false; break; }
+        if (!p || p->isPendingRemoval())
+            continue; // quitting players don't count
+        if (p->getWorld() != this)
+            continue; // other levels don't vote here
+        if (!p->isSleeping()) {
+            resetTime = false;
+            break;
+        }
     }
 
-    if (!resetTime) return;
+    if (!resetTime)
+        return;
 
     int32_t time = cfg_.time % TIME_FULL;
     if (time >= TIME_NIGHT && time < TIME_SUNRISE) {
@@ -553,9 +572,12 @@ void World::checkSleep() {
         // Wake everyone up (their stopSleep resets sleep_ticks_ to 0 and
         // clears the sleeping metadata + sends the WAKE_UP animation).
         for (auto& p : players) {
-            if (!p) continue;
-            if (p->getWorld() != this) continue;
-            if (p->isSleeping()) p->stopSleep();
+            if (!p)
+                continue;
+            if (p->getWorld() != this)
+                continue;
+            if (p->isSleeping())
+                p->stopSleep();
         }
 
         // Push the new clock to every player of this world so the sky
@@ -564,13 +586,14 @@ void World::checkSleep() {
         pk->time = cfg_.time;
         pk->started = true;
         for (auto& p : players) {
-            if (!p || p->getWorld() != this) continue;
+            if (!p || p->getWorld() != this)
+                continue;
             p->sendPacket(pk);
         }
 
-        utils::MainLogger::get().info("[SLEEP] Everyone is asleep in \"" +
-            cfg_.name + "\" — time skipped to morning (" +
-            std::to_string(cfg_.time % TIME_FULL) + ")");
+        utils::MainLogger::get().info("[SLEEP] Everyone is asleep in \"" + cfg_.name +
+                                      "\" — time skipped to morning (" +
+                                      std::to_string(cfg_.time % TIME_FULL) + ")");
     }
 }
 
@@ -598,9 +621,9 @@ void World::checkSleep() {
 // that got clipped.
 namespace {
 
-constexpr double kItemGravity  = 0.04;   // pocketmine\entity\item::$gravity
-constexpr double kItemDrag     = 0.02;   // pocketmine\entity\item::$drag
-constexpr double kBlockFriction = 0.6;   // Block::getFrictionFactor()
+constexpr double kItemGravity = 0.04;  // pocketmine\entity\item::$gravity
+constexpr double kItemDrag = 0.02;     // pocketmine\entity\item::$drag
+constexpr double kBlockFriction = 0.6; // Block::getFrictionFactor()
 // The item box (kItemHalfW / kItemHeight) and the whole pickup volume live
 // in World.h so the attraction gate below and the pickup scan in
 // player::onUpdate() share ONE definition of "is this item in reach".
@@ -608,25 +631,36 @@ constexpr double kBlockFriction = 0.6;   // Block::getFrictionFactor()
 // pocketmine\block\Block::$solid — see the forward declaration above.
 bool dropBlockSolid(uint8_t id) {
     switch (id) {
-        case block::AIR:
-        case block::FLOWING_WATER: case block::WATER:
-        case block::FLOWING_LAVA:  case block::LAVA:
-        case block::FIRE:
-        case block::COBWEB:
-        case block::SAPLING:      case block::TALL_GRASS:
-        case block::DEAD_BUSH:     case block::FLOWER_YELLOW:
-        case block::FLOWER_RED:   case block::BROWN_MUSHROOM:
-        case block::RED_MUSHROOM: case block::TORCH:
-        case block::REDSTONE_TORCH_ON: case block::REDSTONE_WIRE:
-        case block::LEVER:        case block::RAIL:
-        case block::POWERED_RAIL: case block::DETECTOR_RAIL:
-        case block::WHITE_CARPET: case block::SNOW_LAYER:
-        case block::LILY_PAD:     case block::VINE:
-        case block::SUGARCANE:
-        case block::NETHER_PORTAL:
-            return false;
-        default:
-            return true;
+    case block::AIR:
+    case block::FLOWING_WATER:
+    case block::WATER:
+    case block::FLOWING_LAVA:
+    case block::LAVA:
+    case block::FIRE:
+    case block::COBWEB:
+    case block::SAPLING:
+    case block::TALL_GRASS:
+    case block::DEAD_BUSH:
+    case block::FLOWER_YELLOW:
+    case block::FLOWER_RED:
+    case block::BROWN_MUSHROOM:
+    case block::RED_MUSHROOM:
+    case block::TORCH:
+    case block::REDSTONE_TORCH_ON:
+    case block::REDSTONE_WIRE:
+    case block::LEVER:
+    case block::RAIL:
+    case block::POWERED_RAIL:
+    case block::DETECTOR_RAIL:
+    case block::WHITE_CARPET:
+    case block::SNOW_LAYER:
+    case block::LILY_PAD:
+    case block::VINE:
+    case block::SUGARCANE:
+    case block::NETHER_PORTAL:
+        return false;
+    default:
+        return true;
     }
 }
 
@@ -635,16 +669,16 @@ bool dropBlockSolid(uint8_t id) {
 // ---------------------------------------------------------------------
 
 // The complete set of blocks that obey gravity in MCPE 0.15.10:
-//   sand 12 (incl. red sand 12:1), gravel 13, anvil 145 
+//   sand 12 (incl. red sand 12:1), gravel 13, anvil 145
 // learn them. See the FallingBlockEntity note in World.h.
 bool fallableBlockId(uint8_t id) {
     switch (id) {
-        case block::SAND:      // 12 — also red sand via meta 1
-        case block::GRAVEL:    // 13
-        case block::ANVIL:     // 145 — direction bits 0x03, damage 0x0c
-            return true;
-        default:
-            return false;
+    case block::SAND:   // 12 — also red sand via meta 1
+    case block::GRAVEL: // 13
+    case block::ANVIL:  // 145 — direction bits 0x03, damage 0x0c
+        return true;
+    default:
+        return false;
     }
 }
 
@@ -653,11 +687,13 @@ bool fallableBlockId(uint8_t id) {
 // — all four moving/static water/lava ids).
 bool liquidForFalling(uint8_t id) {
     switch (id) {
-        case block::FLOWING_WATER: case block::WATER:
-        case block::FLOWING_LAVA:  case block::LAVA:
-            return true;
-        default:
-            return false;
+    case block::FLOWING_WATER:
+    case block::WATER:
+    case block::FLOWING_LAVA:
+    case block::LAVA:
+        return true;
+    default:
+        return false;
     }
 }
 
@@ -665,8 +701,7 @@ bool liquidForFalling(uint8_t id) {
 // spawned player of the world that can see the chunk — the same
 // visibility rule the break/place paths use (canSeeBlock, NOT
 // isTrackingChunk; see the ghost-block note in PlayerBlocks.cpp).
-void sendUpdateBlock(World* w, int32_t x, int32_t y, int32_t z,
-                     uint8_t id, uint8_t data) {
+void sendUpdateBlock(World* w, int32_t x, int32_t y, int32_t z, uint8_t id, uint8_t data) {
     auto pk = std::make_shared<network::protocol::UpdateBlockPacket>();
     pk->x = x;
     pk->z = z;
@@ -676,9 +711,12 @@ void sendUpdateBlock(World* w, int32_t x, int32_t y, int32_t z,
     pk->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
     int32_t cx = x >> 4, cz = z >> 4;
     for (auto& p : cursestone::Server::getInstance().playersSnapshot()) {
-        if (!p || !p->spawned()) continue;
-        if (p->getWorld() != w) continue;   // same world
-        if (!p->canSeeBlock(cx, cz)) continue;
+        if (!p || !p->spawned())
+            continue;
+        if (p->getWorld() != w)
+            continue; // same world
+        if (!p->canSeeBlock(cx, cz))
+            continue;
         p->sendPacket(pk);
     }
 }
@@ -689,9 +727,12 @@ void sendUpdateBlock(World* w, int32_t x, int32_t y, int32_t z,
 void sendToChunkViewers(World* w, int32_t cx, int32_t cz,
                         const std::shared_ptr<network::protocol::DataPacket>& pk) {
     for (auto& p : cursestone::Server::getInstance().playersSnapshot()) {
-        if (!p || !p->spawned()) continue;
-        if (p->getWorld() != w) continue;   // same world
-        if (!p->canSeeBlock(cx, cz)) continue;
+        if (!p || !p->spawned())
+            continue;
+        if (p->getWorld() != w)
+            continue; // same world
+        if (!p->canSeeBlock(cx, cz))
+            continue;
         p->sendPacket(pk);
     }
 }
@@ -703,8 +744,10 @@ void sendRemoveEntity(World* w, int64_t eid) {
     auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
     rm->eid = eid;
     for (auto& p : cursestone::Server::getInstance().playersSnapshot()) {
-        if (!p || !p->spawned()) continue;
-        if (p->getWorld() != w) continue;
+        if (!p || !p->spawned())
+            continue;
+        if (p->getWorld() != w)
+            continue;
         p->sendPacket(rm);
     }
 }
@@ -720,10 +763,9 @@ void sendRemoveEntity(World* w, int64_t eid) {
 //     EntityDamageEvent cause Infinity's EntityDamageByEntityEvent
 //     carries (CAUSE_FALL), minus the attacker that a falling block
 //     cannot be anyway.
-void anvilLandingEffects(World* w, int32_t bx, int32_t by, int32_t bz,
-                         float fall_distance) {
+void anvilLandingEffects(World* w, int32_t bx, int32_t by, int32_t bz, float fall_distance) {
     auto snd = std::make_shared<network::protocol::LevelEventPacket>();
-    snd->evid = 1022;   // EVENT_SOUND_ANVIL_FALL (protocol 84)
+    snd->evid = 1022; // EVENT_SOUND_ANVIL_FALL (protocol 84)
     snd->x = (float)bx + 0.5f;
     snd->y = (float)by + 0.5f;
     snd->z = (float)bz + 0.5f;
@@ -731,22 +773,29 @@ void anvilLandingEffects(World* w, int32_t bx, int32_t by, int32_t bz,
     sendToChunkViewers(w, bx >> 4, bz >> 4, snd);
 
     float dmg = (fall_distance - 1.0f) * 2.0f;
-    if (dmg > 40.0f) dmg = 40.0f;
-    if (dmg <= 0.0f) return;
+    if (dmg > 40.0f)
+        dmg = 40.0f;
+    if (dmg <= 0.0f)
+        return;
 
     // Landed falling-block box (0.98 wide) grown 0.1 on every axis —
     // Infinity `boundingBox->grow(0.1, 0.1, 0.1)`.
     double minx = (double)bx + 0.5 - 0.49 - 0.1, maxx = (double)bx + 0.5 + 0.49 + 0.1;
-    double miny = (double)by - 0.1,             maxy = (double)by + 0.98 + 0.1;
+    double miny = (double)by - 0.1, maxy = (double)by + 0.98 + 0.1;
     double minz = (double)bz + 0.5 - 0.49 - 0.1, maxz = (double)bz + 0.5 + 0.49 + 0.1;
     for (auto& p : cursestone::Server::getInstance().playersSnapshot()) {
-        if (!p || !p->spawned() || p->isDead() || p->isPendingRemoval()) continue;
-        if (p->getWorld() != w) continue;
+        if (!p || !p->spawned() || p->isDead() || p->isPendingRemoval())
+            continue;
+        if (p->getWorld() != w)
+            continue;
         const math::Vector3& pp = p->getNextPosition();
         // Player AABB: [x±0.3, y .. y+1.8, z±0.3] (Human dimensions).
-        if (pp.x + 0.3 <= minx || pp.x - 0.3 >= maxx) continue;
-        if (pp.y + 1.8 <= miny || pp.y >= maxy) continue;
-        if (pp.z + 0.3 <= minz || pp.z - 0.3 >= maxz) continue;
+        if (pp.x + 0.3 <= minx || pp.x - 0.3 >= maxx)
+            continue;
+        if (pp.y + 1.8 <= miny || pp.y >= maxy)
+            continue;
+        if (pp.z + 0.3 <= minz || pp.z - 0.3 >= maxz)
+            continue;
         p->damage(dmg, event::entity::DamageCause::FALL);
     }
 }
@@ -763,10 +812,12 @@ void World::tickDroppedItems(uint64_t current_tick) {
         std::lock_guard<std::mutex> lk(dropped_items_mtx_);
         snapshot.reserve(dropped_items_.size());
         for (auto& [_, di] : dropped_items_) {
-            if (di && !di->taken) snapshot.push_back(di.get());
+            if (di && !di->taken)
+                snapshot.push_back(di.get());
         }
     }
-    if (snapshot.empty()) return;
+    if (snapshot.empty())
+        return;
 
     // The per-item step below not longer needs the tick number: the sync
     // happens on the tick the item actually moves, so the client is
@@ -779,8 +830,10 @@ void World::tickDroppedItems(uint64_t current_tick) {
         // unloaded world forever). It resumes as soon as the chunk is back.
         int item_cx = (int)std::floor(di->x) >> 4;
         int item_cz = (int)std::floor(di->z) >> 4;
-        if (chunks_.getChunkIfLoaded(item_cx, item_cz) == nullptr) continue;
-        if (di->y < 0.0 || di->y > 255.0) continue;
+        if (chunks_.getChunkIfLoaded(item_cx, item_cz) == nullptr)
+            continue;
+        if (di->y < 0.0 || di->y > 255.0)
+            continue;
 
         // $this->pickupDelay -= $tickDiff (never above 32767 = infinite).
         if (di->pickup_delay_ticks > 0 && di->pickup_delay_ticks < 32767) {
@@ -808,22 +861,52 @@ void World::tickDroppedItems(uint64_t current_tick) {
 
                 int direction = -1;
                 double limit = 9999;
-                if (f0)                       { limit = diffX;        direction = 0; }
-                if (f1 && 1 - diffX < limit)  { limit = 1 - diffX;    direction = 1; }
-                if (f2 && diffY < limit)      { limit = diffY;        direction = 2; }
-                if (f3 && 1 - diffY < limit)  { limit = 1 - diffY;    direction = 3; }
-                if (f4 && diffZ < limit)      { limit = diffZ;        direction = 4; }
-                if (f5 && 1 - diffZ < limit)  {                      direction = 5; }
+                if (f0) {
+                    limit = diffX;
+                    direction = 0;
+                }
+                if (f1 && 1 - diffX < limit) {
+                    limit = 1 - diffX;
+                    direction = 1;
+                }
+                if (f2 && diffY < limit) {
+                    limit = diffY;
+                    direction = 2;
+                }
+                if (f3 && 1 - diffY < limit) {
+                    limit = 1 - diffY;
+                    direction = 3;
+                }
+                if (f4 && diffZ < limit) {
+                    limit = diffZ;
+                    direction = 4;
+                }
+                if (f5 && 1 - diffZ < limit) {
+                    direction = 5;
+                }
 
                 double force = (double)std::rand() / (double)RAND_MAX * 0.2 + 0.1;
                 switch (direction) {
-                    case 0: di->vx = -force; break;
-                    case 1: di->vx =  force; break;
-                    case 2: di->vy = -force; break;
-                    case 3: di->vy =  force; break;
-                    case 4: di->vz = -force; break;
-                    case 5: di->vz =  force; break;
-                    default: break;
+                case 0:
+                    di->vx = -force;
+                    break;
+                case 1:
+                    di->vx = force;
+                    break;
+                case 2:
+                    di->vy = -force;
+                    break;
+                case 3:
+                    di->vy = force;
+                    break;
+                case 4:
+                    di->vz = -force;
+                    break;
+                case 5:
+                    di->vz = force;
+                    break;
+                default:
+                    break;
                 }
             }
         }
@@ -851,7 +934,7 @@ void World::tickDroppedItems(uint64_t current_tick) {
         // the SAME one player::onUpdate() collects with.
         if (di->on_ground) {
             constexpr double kAttractRadius = 2.0;
-            constexpr double kAttractSpeed  = 0.35;
+            constexpr double kAttractSpeed = 0.35;
             // One attractor per tick: the CLOSEST player. Taking the first
             // one in the player list instead meant to bystander standing
             // further away could steal the item while the player walking
@@ -860,19 +943,25 @@ void World::tickDroppedItems(uint64_t current_tick) {
             double bdx = 0.0, bdy = 0.0, bdz = 0.0;
             bool attracted = false;
             for (auto& p : Server::getInstance().playersSnapshot()) {
-                if (!p || !p->spawned() || p->isDead()) continue;
-                if (p->getWorld() != this) continue;   // same world
+                if (!p || !p->spawned() || p->isDead())
+                    continue;
+                if (p->getWorld() != this)
+                    continue; // same world
                 math::Vector3 pp = p->getNextPosition();
                 // Already collectable from here -> don't drag it through the
                 // floor, the pickup pass this same tick will take it.
-                if (itemWithinPickupVolume(*di, pp.x, pp.y, pp.z)) continue;
+                if (itemWithinPickupVolume(*di, pp.x, pp.y, pp.z))
+                    continue;
                 double adx = pp.x - di->x;
-                double ady = (pp.y + 0.9) - di->y;   // converge at the chest
+                double ady = (pp.y + 0.9) - di->y; // converge at the chest
                 double adz = pp.z - di->z;
                 double dist = std::sqrt(adx * adx + ady * ady + adz * adz);
-                if (dist <= 0.0001 || dist >= best_dist) continue;
+                if (dist <= 0.0001 || dist >= best_dist)
+                    continue;
                 best_dist = dist;
-                bdx = adx; bdy = ady; bdz = adz;
+                bdx = adx;
+                bdy = ady;
+                bdz = adz;
                 attracted = true;
             }
             if (attracted) {
@@ -883,7 +972,9 @@ void World::tickDroppedItems(uint64_t current_tick) {
                 double sp = std::sqrt(di->vx * di->vx + di->vy * di->vy + di->vz * di->vz);
                 if (sp > kAttractSpeed) {
                     double k = kAttractSpeed / sp;
-                    di->vx *= k; di->vy *= k; di->vz *= k;
+                    di->vx *= k;
+                    di->vy *= k;
+                    di->vz *= k;
                 }
             }
         }
@@ -895,8 +986,9 @@ void World::tickDroppedItems(uint64_t current_tick) {
         // motion and, then X, then Z, exactly as the client does.
         const double movX = di->vx, movY = di->vy, movZ = di->vz;
         {
-            mcp_aabb_t bb = mcp_aabb_make(di->x - kItemHalfW, di->y,              di->z - kItemHalfW,
-                                          di->x + kItemHalfW, di->y + kItemHeight, di->z + kItemHalfW);
+            mcp_aabb_t bb =
+                mcp_aabb_make(di->x - kItemHalfW, di->y, di->z - kItemHalfW, di->x + kItemHalfW,
+                              di->y + kItemHeight, di->z + kItemHalfW);
 
             // World::getCollisionCubes($this, $bb->offset($dx, $dy, $dz)) —
             // the lookup region is the TRANSLATED box, which is what this
@@ -914,20 +1006,23 @@ void World::tickDroppedItems(uint64_t current_tick) {
             // downward motion was clipped — the same rule sweep() applies
             // (clipped_y && movY < 0).
             di->on_ground = res.on_ground;
-            if (res.clipped_x) di->vx = 0;
-            if (res.clipped_y) di->vy = 0;
-            if (res.clipped_z) di->vz = 0;
+            if (res.clipped_x)
+                di->vx = 0;
+            if (res.clipped_y)
+                di->vy = 0;
+            if (res.clipped_z)
+                di->vz = 0;
         }
 
         double friction = 1.0 - kItemDrag;
-        if (di->on_ground && (std::fabs(di->vx) > 0.00001 ||
-                             std::fabs(di->vz) > 0.00001)) {
+        if (di->on_ground && (std::fabs(di->vx) > 0.00001 || std::fabs(di->vz) > 0.00001)) {
             friction = kBlockFriction * friction;
         }
         di->vx *= friction;
         di->vy *= 1.0 - kItemDrag;
         di->vz *= friction;
-        if (di->on_ground) di->vy *= -0.5;
+        if (di->on_ground)
+            di->vy *= -0.5;
     }
 
     // server-authoritative sync. Genisys only re-broadcasts every 5th tick
@@ -938,28 +1033,33 @@ void World::tickDroppedItems(uint64_t current_tick) {
     // says it is, so the correction goes out on every tick it moves.
     for (DroppedItem* di : snapshot) {
         double dx = di->x - di->lx, dy = di->y - di->ly, dz = di->z - di->lz;
-        if (std::fabs(dx) < 0.0005 && std::fabs(dy) < 0.0005 &&
-            std::fabs(dz) < 0.0005) continue;
-        di->lx = di->x; di->ly = di->y; di->lz = di->z;
+        if (std::fabs(dx) < 0.0005 && std::fabs(dy) < 0.0005 && std::fabs(dz) < 0.0005)
+            continue;
+        di->lx = di->x;
+        di->ly = di->y;
+        di->lz = di->z;
 
         auto pk = std::make_shared<network::protocol::MoveEntityPacket>();
         pk->eid = di->eid;
-        pk->x   = (float)di->x;
-        pk->y   = (float)di->y;
-        pk->z   = (float)di->z;
+        pk->x = (float)di->x;
+        pk->y = (float)di->y;
+        pk->z = (float)di->z;
         int32_t pk_cx = (int32_t)std::floor(di->x) >> 4;
         int32_t pk_cz = (int32_t)std::floor(di->z) >> 4;
         for (auto& p : Server::getInstance().playersSnapshot()) {
-            if (!p || !p->spawned()) continue;
-            if (p->getWorld() != this) continue;   // same world
-            if (!p->canSeeBlock(pk_cx, pk_cz)) continue;
+            if (!p || !p->spawned())
+                continue;
+            if (p->getWorld() != this)
+                continue; // same world
+            if (!p->canSeeBlock(pk_cx, pk_cz))
+                continue;
             p->sendPacket(pk);
         }
     }
 }
 
 size_t World::collectDroppedItems(uint64_t current_tick) {
-    constexpr uint64_t DESPAWN_TICKS = 6000;  // 5 min at 20 TPS — vanilla EntityItem lifetime
+    constexpr uint64_t DESPAWN_TICKS = 6000; // 5 min at 20 TPS — vanilla EntityItem lifetime
 
     // Phase 1: despawn expired items. Snapshot FIRST, then broadcast with
     // not registry lock held (lock-ordering rule used by every other
@@ -973,10 +1073,12 @@ size_t World::collectDroppedItems(uint64_t current_tick) {
     std::vector<int64_t> expired;
     {
         std::lock_guard<std::mutex> lk(dropped_items_mtx_);
-        for (auto it = dropped_items_.begin(); it != dropped_items_.end(); ) {
-            if (!it->second) { it = dropped_items_.erase(it); continue; }
-            if (!it->second->taken &&
-                current_tick - it->second->spawn_tick >= DESPAWN_TICKS) {
+        for (auto it = dropped_items_.begin(); it != dropped_items_.end();) {
+            if (!it->second) {
+                it = dropped_items_.erase(it);
+                continue;
+            }
+            if (!it->second->taken && current_tick - it->second->spawn_tick >= DESPAWN_TICKS) {
                 expired.push_back(it->first);
                 it = dropped_items_.erase(it);
             } else {
@@ -988,10 +1090,12 @@ size_t World::collectDroppedItems(uint64_t current_tick) {
         auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
         // One packet per eid — RemoveEntityPacket carries to single eid.
         for (size_t i = 0; i < expired.size(); ++i) {
-            if (i > 0) rm = std::make_shared<network::protocol::RemoveEntityPacket>();
+            if (i > 0)
+                rm = std::make_shared<network::protocol::RemoveEntityPacket>();
             rm->eid = expired[i];
             for (auto& p : Server::getInstance().playersSnapshot()) {
-                if (p && p->spawned() && p->getWorld() == this) p->sendPacket(rm);
+                if (p && p->spawned() && p->getWorld() == this)
+                    p->sendPacket(rm);
             }
         }
     }
@@ -1004,7 +1108,7 @@ size_t World::collectDroppedItems(uint64_t current_tick) {
     size_t removed = expired.size();
     {
         std::lock_guard<std::mutex> lk(dropped_items_mtx_);
-        for (auto it = dropped_items_.begin(); it != dropped_items_.end(); ) {
+        for (auto it = dropped_items_.begin(); it != dropped_items_.end();) {
             if (it->second && it->second->taken) {
                 it = dropped_items_.erase(it);
                 ++removed;
@@ -1041,7 +1145,8 @@ std::vector<ArrowEntity*> World::arrows() {
     std::lock_guard<std::mutex> lk(arrows_mtx_);
     out.reserve(arrows_.size());
     for (auto& [_, a] : arrows_) {
-        if (a && !a->taken) out.push_back(a.get());
+        if (a && !a->taken)
+            out.push_back(a.get());
     }
     return out;
 }
@@ -1049,8 +1154,10 @@ std::vector<ArrowEntity*> World::arrows() {
 bool World::tryClaimArrow(int64_t eid) {
     std::lock_guard<std::mutex> lk(arrows_mtx_);
     auto it = arrows_.find(eid);
-    if (it == arrows_.end() || !it->second) return false;
-    if (it->second->taken) return false;
+    if (it == arrows_.end() || !it->second)
+        return false;
+    if (it->second->taken)
+        return false;
     it->second->taken = true;
     return true;
 }
@@ -1067,8 +1174,10 @@ void World::addParticle(const particle::Particle& p) {
     pk->z = (float)pos.z;
     pk->data = p.networkData();
     for (auto& pl : Server::getInstance().playersSnapshot()) {
-        if (!pl || !pl->spawned() || pl->getWorld() != this) continue;
-        if (!pl->canSeeBlock(cx, cz)) continue;
+        if (!pl || !pl->spawned() || pl->getWorld() != this)
+            continue;
+        if (!pl->canSeeBlock(cx, cz))
+            continue;
         pl->sendPacket(pk);
     }
 }
@@ -1081,10 +1190,12 @@ void World::tickArrows(uint64_t current_tick) {
         std::lock_guard<std::mutex> lk(arrows_mtx_);
         snapshot.reserve(arrows_.size());
         for (auto& [_, a] : arrows_) {
-            if (a && !a->taken) snapshot.push_back(a.get());
+            if (a && !a->taken)
+                snapshot.push_back(a.get());
         }
     }
-    if (snapshot.empty()) return;
+    if (snapshot.empty())
+        return;
 
     for (ArrowEntity* a : snapshot) {
         // PMMP Arrow::onUpdate — despawn after 1200 ticks in flight OR
@@ -1094,21 +1205,26 @@ void World::tickArrows(uint64_t current_tick) {
             auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
             rm->eid = a->eid;
             for (auto& p : Server::getInstance().playersSnapshot()) {
-                if (p && p->spawned() && p->getWorld() == this) p->sendPacket(rm);
+                if (p && p->spawned() && p->getWorld() == this)
+                    p->sendPacket(rm);
             }
             continue;
         }
 
         // Stuck arrows freeze (motion is already zero) — the pickup scan
         // is player-side. Still counted so their age keeps running.
-        if (a->stuck) { ++a->flight_ticks; continue; }
+        if (a->stuck) {
+            ++a->flight_ticks;
+            continue;
+        }
 
         // No physics while the chunk is not resident — getBlockId answers
         // AIR for unloaded chunks and the arrow would fall through the
         // world (same gate as tickDroppedItems).
         int acx = (int)std::floor(a->x) >> 4;
         int acz = (int)std::floor(a->z) >> 4;
-        if (chunks_.getChunkIfLoaded(acx, acz) == nullptr) continue;
+        if (chunks_.getChunkIfLoaded(acx, acz) == nullptr)
+            continue;
         ++a->flight_ticks;
 
         // $this->motionY -= $this->gravity; (Infinity Arrow: 0.05)
@@ -1124,26 +1240,36 @@ void World::tickArrows(uint64_t current_tick) {
         // box grown by 0.3. Equivalent slab test per player, straight from
         // the segment (old pos -> new pos) to the grown AABB.
         Player* hit = nullptr;
-        double bestT = 2.0;   // t in [0,1] along the segment
+        double bestT = 2.0; // t in [0,1] along the segment
         for (auto& p : Server::getInstance().playersSnapshot()) {
-            if (!p || !p->spawned() || p->isDead()) continue;
-            if (p->isPendingRemoval()) continue;
-            if (p->getWorld() != this) continue;
+            if (!p || !p->spawned() || p->isDead())
+                continue;
+            if (p->isPendingRemoval())
+                continue;
+            if (p->getWorld() != this)
+                continue;
             // The shooter cannot be hit by its own arrow for the first
             // 5 ticks (PMMP: $entity === $this->shootingEntity and
             // $this->ticksLived < 5).
-            if (p->runtimeId() == a->shooter_eid && a->flight_ticks < 5) continue;
+            if (p->runtimeId() == a->shooter_eid && a->flight_ticks < 5)
+                continue;
             const auto& pp = p->getNextPosition();
             // Player AABB [x-0.3, y, z-0.3]..[x+0.3, y+1.8, z+0.3], grown 0.3.
             double minx = pp.x - 0.6, maxx = pp.x + 0.6;
             double miny = pp.y - 0.3, maxy = pp.y + 2.1;
             double minz = pp.z - 0.6, maxz = pp.z + 0.6;
-            if (nx < minx && a->x < minx) continue;
-            if (nx > maxx && a->x > maxx) continue;
-            if (ny < miny && a->y < miny) continue;
-            if (ny > maxy && a->y > maxy) continue;
-            if (nz < minz && a->z < minz) continue;
-            if (nz > maxz && a->z > maxz) continue;
+            if (nx < minx && a->x < minx)
+                continue;
+            if (nx > maxx && a->x > maxx)
+                continue;
+            if (ny < miny && a->y < miny)
+                continue;
+            if (ny > maxy && a->y > maxy)
+                continue;
+            if (nz < minz && a->z < minz)
+                continue;
+            if (nz > maxz && a->z > maxz)
+                continue;
             // Slab method: t interval where the segment is inside the box.
             double tmin = 0.0, tmax = 1.0;
             bool miss = false;
@@ -1153,17 +1279,27 @@ void World::tickArrows(uint64_t current_tick) {
             const double bhi[3] = {maxx, maxy, maxz};
             for (int ax = 0; ax < 3; ++ax) {
                 if (std::fabs(sd[ax]) < 1e-12) {
-                    if (so[ax] < blo[ax] || so[ax] > bhi[ax]) { miss = true; break; }
+                    if (so[ax] < blo[ax] || so[ax] > bhi[ax]) {
+                        miss = true;
+                        break;
+                    }
                     continue;
                 }
                 double t1 = (blo[ax] - so[ax]) / sd[ax];
                 double t2 = (bhi[ax] - so[ax]) / sd[ax];
-                if (t1 > t2) std::swap(t1, t2);
-                if (t1 > tmin) tmin = t1;
-                if (t2 < tmax) tmax = t2;
-                if (tmin > tmax) { miss = true; break; }
+                if (t1 > t2)
+                    std::swap(t1, t2);
+                if (t1 > tmin)
+                    tmin = t1;
+                if (t2 < tmax)
+                    tmax = t2;
+                if (tmin > tmax) {
+                    miss = true;
+                    break;
+                }
             }
-            if (miss || tmin > bestT) continue;
+            if (miss || tmin > bestT)
+                continue;
             bestT = tmin;
             hit = p.get();
         }
@@ -1180,14 +1316,16 @@ void World::tickArrows(uint64_t current_tick) {
             // to a plain PROJECTILE damage when it logged off.
             Player* shooter = nullptr;
             for (auto& p : Server::getInstance().playersSnapshot()) {
-                if (p && p->runtimeId() == a->shooter_eid) { shooter = p.get(); break; }
+                if (p && p->runtimeId() == a->shooter_eid) {
+                    shooter = p.get();
+                    break;
+                }
             }
             // PROJECTILE cause so Lua listeners can tell bow hits from
             // melee (EntityDamageByEntityEvent carries the cause now).
-            auto applied = shooter
-                ? hit->damageByEntity(dmg, shooter,
-                                      event::entity::DamageCause::PROJECTILE)
-                : hit->damage(dmg, event::entity::DamageCause::PROJECTILE);
+            auto applied =
+                shooter ? hit->damageByEntity(dmg, shooter, event::entity::DamageCause::PROJECTILE)
+                        : hit->damage(dmg, event::entity::DamageCause::PROJECTILE);
 
             if (applied != cursestone::entity::DamageApply::CANCELLED) {
                 // Hurt animation to the VIEWERS ONLY — same rule as
@@ -1203,8 +1341,10 @@ void World::tickArrows(uint64_t current_tick) {
                     hurtEv->eid = hit->runtimeId();
                     hurtEv->event = network::protocol::EntityEventPacket::HURT_ANIMATION;
                     for (auto& other : Server::getInstance().playersSnapshot()) {
-                        if (!other || other.get() == hit) continue;
-                        if (!other->spawned()) continue;
+                        if (!other || other.get() == hit)
+                            continue;
+                        if (!other->spawned())
+                            continue;
                         other->sendPacket(hurtEv);
                     }
                     auto sh = std::make_shared<network::protocol::SetHealthPacket>();
@@ -1220,7 +1360,8 @@ void World::tickArrows(uint64_t current_tick) {
             auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
             rm->eid = a->eid;
             for (auto& p : Server::getInstance().playersSnapshot()) {
-                if (p && p->spawned() && p->getWorld() == this) p->sendPacket(rm);
+                if (p && p->spawned() && p->getWorld() == this)
+                    p->sendPacket(rm);
             }
             continue;
         }
@@ -1229,20 +1370,20 @@ void World::tickArrows(uint64_t current_tick) {
         // PMMP's move() sweeps the bounding box; with the record model a
         // stepped center-point probe is the equivalent that cannot tunnel
         // through a thin wall at full charge (~3 blocks/tick).
-        double maxStep = std::max(std::fabs(a->vx),
-                        std::max(std::fabs(a->vy), std::fabs(a->vz)));
+        double maxStep = std::max(std::fabs(a->vx), std::max(std::fabs(a->vy), std::fabs(a->vz)));
         int steps = (int)std::ceil(maxStep / 0.5);
-        if (steps < 1) steps = 1;
-        if (steps > 8) steps = 8;
+        if (steps < 1)
+            steps = 1;
+        if (steps > 8)
+            steps = 8;
         bool collided = false;
         int hitStep = 0;
         for (int i = 1; i <= steps; ++i) {
             double sx = a->x + a->vx * ((double)i / steps);
             double sy = a->y + a->vy * ((double)i / steps);
             double sz = a->z + a->vz * ((double)i / steps);
-            if (dropBlockSolid(getBlockId((int)std::floor(sx),
-                                          (int)std::floor(sy),
-                                          (int)std::floor(sz)))) {
+            if (dropBlockSolid(
+                    getBlockId((int)std::floor(sx), (int)std::floor(sy), (int)std::floor(sz)))) {
                 collided = true;
                 hitStep = i;
                 break;
@@ -1253,7 +1394,7 @@ void World::tickArrows(uint64_t current_tick) {
             // sub-step so the arrow sticks right at the block surface and
             // keeps the orientation it had in flight.
             double tFree = (double)(hitStep - 1) / steps;
-            double tHit  = (double)hitStep / steps;
+            double tHit = (double)hitStep / steps;
             for (int k = 0; k < 8; ++k) {
                 double tm = 0.5 * (tFree + tHit);
                 if (dropBlockSolid(getBlockId((int)std::floor(a->x + a->vx * tm),
@@ -1265,15 +1406,17 @@ void World::tickArrows(uint64_t current_tick) {
                 }
             }
             double fh0 = std::sqrt(a->vx * a->vx + a->vz * a->vz);
-            a->yaw   = (float)(std::atan2(a->vx, a->vz) * 180.0 / 3.14159265358979323846);
-            a->pitch = (float)(std::atan2(a->vy, fh0)    * 180.0 / 3.14159265358979323846);
+            a->yaw = (float)(std::atan2(a->vx, a->vz) * 180.0 / 3.14159265358979323846);
+            a->pitch = (float)(std::atan2(a->vy, fh0) * 180.0 / 3.14159265358979323846);
             a->x += a->vx * tFree;
             a->y += a->vy * tFree;
             a->z += a->vz * tFree;
             a->stuck = true;
             a->vx = a->vy = a->vz = 0.0;
         } else {
-            a->x = nx; a->y = ny; a->z = nz;
+            a->x = nx;
+            a->y = ny;
+            a->z = nz;
         }
 
         // Void / build-limit despawn.
@@ -1282,7 +1425,8 @@ void World::tickArrows(uint64_t current_tick) {
             auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
             rm->eid = a->eid;
             for (auto& p : Server::getInstance().playersSnapshot()) {
-                if (p && p->spawned() && p->getWorld() == this) p->sendPacket(rm);
+                if (p && p->spawned() && p->getWorld() == this)
+                    p->sendPacket(rm);
             }
             continue;
         }
@@ -1290,8 +1434,8 @@ void World::tickArrows(uint64_t current_tick) {
         // ---- Yaw/pitch from motion (PMMP) ----
         if (!a->stuck) {
             double fh = std::sqrt(a->vx * a->vx + a->vz * a->vz);
-            a->yaw   = (float)(std::atan2(a->vx, a->vz) * 180.0 / 3.14159265358979323846);
-            a->pitch = (float)(std::atan2(a->vy, fh)     * 180.0 / 3.14159265358979323846);
+            a->yaw = (float)(std::atan2(a->vx, a->vz) * 180.0 / 3.14159265358979323846);
+            a->pitch = (float)(std::atan2(a->vy, fh) * 180.0 / 3.14159265358979323846);
         }
 
         // Critical particles along the flight path: one critical particle
@@ -1309,24 +1453,29 @@ void World::tickArrows(uint64_t current_tick) {
         }
 
         // ---- updateMovement(): Infinity Entity::updateMovement() thresholds ----
-        auto sq = [](double v) { return v * v; };
+        auto sq = [](double v) {
+            return v * v;
+        };
         double dpos = sq(a->x - a->lx) + sq(a->y - a->ly) + sq(a->z - a->lz);
         double drot = sq((double)a->yaw - a->lyaw) + sq((double)a->pitch - a->lpitch);
         double dmot = sq(a->vx - a->lmx) + sq(a->vy - a->lmy) + sq(a->vz - a->lmz);
         double vlen2 = a->vx * a->vx + a->vy * a->vy + a->vz * a->vz;
 
-        bool sendMove   = collided || dpos > 0.04 ||
-                          (drot > 2.25 && dmot > 0.0001 && vlen2 <= 0.00001);
-        bool sendMotion = collided || dmot > 0.0025 ||
-                          (dmot > 0.0001 && vlen2 <= 0.0001);
-        if (!sendMove && !sendMotion) continue;
+        bool sendMove =
+            collided || dpos > 0.04 || (drot > 2.25 && dmot > 0.0001 && vlen2 <= 0.00001);
+        bool sendMotion = collided || dmot > 0.0025 || (dmot > 0.0001 && vlen2 <= 0.0001);
+        if (!sendMove && !sendMotion)
+            continue;
 
         int32_t vcx = (int32_t)std::floor(a->x) >> 4;
         int32_t vcz = (int32_t)std::floor(a->z) >> 4;
 
         if (sendMove) {
-            a->lx = a->x; a->ly = a->y; a->lz = a->z;
-            a->lyaw = a->yaw; a->lpitch = a->pitch;
+            a->lx = a->x;
+            a->ly = a->y;
+            a->lz = a->z;
+            a->lyaw = a->yaw;
+            a->lpitch = a->pitch;
 
             auto mv = std::make_shared<network::protocol::MoveEntityPacket>();
             mv->eid = a->eid;
@@ -1337,20 +1486,26 @@ void World::tickArrows(uint64_t current_tick) {
             mv->headYaw = a->yaw;
             mv->pitch = a->pitch;
             for (auto& p : Server::getInstance().playersSnapshot()) {
-                if (!p || !p->spawned() || p->getWorld() != this) continue;
-                if (!p->canSeeBlock(vcx, vcz)) continue;
+                if (!p || !p->spawned() || p->getWorld() != this)
+                    continue;
+                if (!p->canSeeBlock(vcx, vcz))
+                    continue;
                 p->sendPacket(mv);
             }
         }
 
         if (sendMotion) {
-            a->lmx = a->vx; a->lmy = a->vy; a->lmz = a->vz;
+            a->lmx = a->vx;
+            a->lmy = a->vy;
+            a->lmz = a->vz;
 
             auto mo = std::make_shared<network::protocol::SetEntityMotionPacket>();
             mo->entities.push_back({a->eid, (float)a->vx, (float)a->vy, (float)a->vz});
             for (auto& p : Server::getInstance().playersSnapshot()) {
-                if (!p || !p->spawned() || p->getWorld() != this) continue;
-                if (!p->canSeeBlock(vcx, vcz)) continue;
+                if (!p || !p->spawned() || p->getWorld() != this)
+                    continue;
+                if (!p->canSeeBlock(vcx, vcz))
+                    continue;
                 p->sendPacket(mo);
             }
         }
@@ -1360,9 +1515,11 @@ void World::tickArrows(uint64_t current_tick) {
     // dropped-items sweep).
     {
         std::lock_guard<std::mutex> lk(arrows_mtx_);
-        for (auto it = arrows_.begin(); it != arrows_.end(); ) {
-            if (it->second && it->second->taken) it = arrows_.erase(it);
-            else ++it;
+        for (auto it = arrows_.begin(); it != arrows_.end();) {
+            if (it->second && it->second->taken)
+                it = arrows_.erase(it);
+            else
+                ++it;
         }
     }
 }
@@ -1415,29 +1572,36 @@ bool World::isFallableBlockId(uint8_t id) {
 }
 
 void World::checkFallingSupport(int32_t x, int32_t y, int32_t z) {
-    if (y < 0 || y >= 256) return;
+    if (y < 0 || y >= 256)
+        return;
     // Cheap probe — never trigger chunk generation from a support check
     // (same rule as setBlock: a missing chunk contributes nothing).
-    if (chunks_.getChunkIfLoaded(x >> 4, z >> 4) == nullptr) return;
+    if (chunks_.getChunkIfLoaded(x >> 4, z >> 4) == nullptr)
+        return;
     uint8_t id = getBlockId(x, y, z);
-    if (!fallableBlockId(id)) return;
+    if (!fallableBlockId(id))
+        return;
     // Infinity Fallable::onUpdate (BLOCK_UPDATE_NORMAL): the block falls
     // when the one below is AIR or a Liquid. Below the world floor
     // (y == 0) there is no support either — PMMP answers air for y < 0,
     // so the block falls into the void.
     uint8_t below = (y > 0) ? getBlockId(x, y - 1, z) : (uint8_t)block::AIR;
-    if (below != block::AIR && !liquidForFalling(below)) return;
+    if (below != block::AIR && !liquidForFalling(below))
+        return;
     spawnFallingBlock(x, y, z);
 }
 
 void World::spawnFallingBlock(int32_t bx, int32_t by, int32_t bz) {
-    if (by < 0 || by >= 256) return;
-    if (chunks_.getChunkIfLoaded(bx >> 4, bz >> 4) == nullptr) return;
+    if (by < 0 || by >= 256)
+        return;
+    if (chunks_.getChunkIfLoaded(bx >> 4, bz >> 4) == nullptr)
+        return;
     // Read from the chunk (and re-validate): the caller checked a moment
     // ago, but this is also a recursion entry point (via the cascade
     // below) — be safe.
     uint8_t cellId = getBlockId(bx, by, bz);
-    if (!fallableBlockId(cellId)) return;
+    if (!fallableBlockId(cellId))
+        return;
     uint8_t cellData = getBlockData(bx, by, bz);
 
     int64_t eid = cursestone::Server::getInstance().allocateEid();
@@ -1448,14 +1612,16 @@ void World::spawnFallingBlock(int32_t bx, int32_t by, int32_t bz) {
     sendUpdateBlock(this, bx, by, bz, 0, 0);
 
     FallingBlockEntity fb;
-    fb.eid       = eid;
-    fb.blockId   = cellId;
+    fb.eid = eid;
+    fb.blockId = cellId;
     fb.blockData = cellData;
     fb.x = (double)bx + 0.5;
     fb.y = (double)by;
     fb.z = (double)bz + 0.5;
     fb.vx = fb.vy = fb.vz = 0.0;
-    fb.lx = fb.x; fb.ly = fb.y; fb.lz = fb.z;
+    fb.lx = fb.x;
+    fb.ly = fb.y;
+    fb.lz = fb.z;
     fb.spawn_tick = cursestone::Server::getInstance().getCurrentTick();
     {
         std::lock_guard<std::mutex> lk(falling_blocks_mtx_);
@@ -1473,11 +1639,12 @@ void World::spawnFallingBlock(int32_t bx, int32_t by, int32_t bz) {
     pk->y = (float)by;
     pk->z = (float)(bz + 0.5);
     pk->speedX = pk->speedY = pk->speedZ = 0.0f;
-    pk->yaw = 0.0f; pk->pitch = 0.0f;
+    pk->yaw = 0.0f;
+    pk->pitch = 0.0f;
     network::protocol::SetEntityDataPacket::Entry meta;
     meta.index = network::protocol::SetEntityDataPacket::PROP_BLOCK_INFO;
-    meta.type  = network::protocol::SetEntityDataPacket::TYPE_INT;
-    meta.ival  = (int32_t)((uint32_t)cellId | ((uint32_t)cellData << 8));
+    meta.type = network::protocol::SetEntityDataPacket::TYPE_INT;
+    meta.ival = (int32_t)((uint32_t)cellId | ((uint32_t)cellData << 8));
     pk->metadata.push_back(meta);
     sendToChunkViewers(this, bx >> 4, bz >> 4, pk);
 
@@ -1487,20 +1654,23 @@ void World::spawnFallingBlock(int32_t bx, int32_t by, int32_t bz) {
     // for us, recursively converting the rest of the column.
 }
 
-void World::dropItemAt(double x, double y, double z,
-                       uint16_t itemId, uint8_t count, uint16_t damage) {
-    if (itemId == 0 || count == 0) return;
+void World::dropItemAt(double x, double y, double z, uint16_t itemId, uint8_t count,
+                       uint16_t damage) {
+    if (itemId == 0 || count == 0)
+        return;
     int64_t eid = cursestone::Server::getInstance().allocateEid();
 
     // World::dropItem()'s default nudge (Genisys
     // `lcg_value()*0.2-0.1, 0.2, lcg_value()*0.2-0.1`): makes the drop
     // pop out of the cell it broke in instead of sinking into it.
-    auto lcg = []() { return (double)std::rand() / (double)RAND_MAX; };
+    auto lcg = []() {
+        return (double)std::rand() / (double)RAND_MAX;
+    };
 
     auto pk = std::make_shared<network::protocol::AddItemEntityPacket>();
-    pk->eid        = eid;
-    pk->itemId     = (int16_t)itemId;
-    pk->itemCount  = count;
+    pk->eid = eid;
+    pk->itemId = (int16_t)itemId;
+    pk->itemCount = count;
     pk->itemDamage = (int16_t)damage;
     pk->x = (float)x;
     pk->y = (float)y;
@@ -1508,26 +1678,27 @@ void World::dropItemAt(double x, double y, double z,
     pk->speedX = (float)(lcg() * 0.2 - 0.1);
     pk->speedY = 0.2f;
     pk->speedZ = (float)(lcg() * 0.2 - 0.1);
-    sendToChunkViewers(this, (int32_t)std::floor(x) >> 4,
-                       (int32_t)std::floor(z) >> 4, pk);
+    sendToChunkViewers(this, (int32_t)std::floor(x) >> 4, (int32_t)std::floor(z) >> 4, pk);
 
     // Register the record so the pickup scan and tickDroppedItems see it
     // (same fields Player::dropItem fills for player drops).
     DroppedItem di;
-    di.eid        = eid;
-    di.itemId     = itemId;
-    di.count      = count;
-    di.damage     = damage;
-    di.x          = x;
-    di.y          = y;
-    di.z          = z;
+    di.eid = eid;
+    di.itemId = itemId;
+    di.count = count;
+    di.damage = damage;
+    di.x = x;
+    di.y = y;
+    di.z = z;
     di.spawn_tick = cursestone::Server::getInstance().getCurrentTick();
-    di.pickup_delay_ticks = 10;   // World::dropItem() default (0.5 s)
-    di.taken      = false;
-    di.vx         = pk->speedX;
-    di.vy         = pk->speedY;
-    di.vz         = pk->speedZ;
-    di.lx = x; di.ly = y; di.lz = z;
+    di.pickup_delay_ticks = 10; // World::dropItem() default (0.5 s)
+    di.taken = false;
+    di.vx = pk->speedX;
+    di.vy = pk->speedY;
+    di.vz = pk->speedZ;
+    di.lx = x;
+    di.ly = y;
+    di.lz = z;
     {
         std::lock_guard<std::mutex> lk(dropped_items_mtx_);
         dropped_items_[eid] = std::make_unique<DroppedItem>(std::move(di));
@@ -1535,7 +1706,7 @@ void World::dropItemAt(double x, double y, double z,
 }
 
 void World::tickFallingBlocks(uint64_t current_tick) {
-    (void)current_tick;   // age is per-record; no global tick dependency
+    (void)current_tick; // age is per-record; no global tick dependency
 
     // Snapshot the raw pointers (lock-ordering rule: never hold a
     // registry mutex while sending packets) SORTED BY Y ASCENDING so a
@@ -1547,14 +1718,17 @@ void World::tickFallingBlocks(uint64_t current_tick) {
         std::lock_guard<std::mutex> lk(falling_blocks_mtx_);
         snapshot.reserve(falling_blocks_.size());
         for (auto& [_, fb] : falling_blocks_) {
-            if (fb && !fb->taken) snapshot.push_back(fb.get());
+            if (fb && !fb->taken)
+                snapshot.push_back(fb.get());
         }
     }
-    if (snapshot.empty()) return;
+    if (snapshot.empty())
+        return;
     std::sort(snapshot.begin(), snapshot.end(),
               [](const FallingBlockEntity* a, const FallingBlockEntity* b) {
-                  if (a->y != b->y) return a->y < b->y;
-                  return a->eid < b->eid;   // stable tie-break
+                  if (a->y != b->y)
+                      return a->y < b->y;
+                  return a->eid < b->eid; // stable tie-break
               });
 
     for (FallingBlockEntity* fb : snapshot) {
@@ -1587,15 +1761,16 @@ void World::tickFallingBlocks(uint64_t current_tick) {
         // age cap above still reaps it eventually.
         int fcx = (int)std::floor(fb->x) >> 4;
         int fcz = (int)std::floor(fb->z) >> 4;
-        if (chunks_.getChunkIfLoaded(fcx, fcz) == nullptr) continue;
+        if (chunks_.getChunkIfLoaded(fcx, fcz) == nullptr)
+            continue;
 
         // --- Gravity, then the swept move (Infinity order) -----------
         fb->vy -= 0.04;
 
         // Infinity FallingSand box: width/length/height 0.98, centred on
         // the entity position.
-        mcp_aabb_t bb = mcp_aabb_make(fb->x - 0.49, fb->y, fb->z - 0.49,
-                                      fb->x + 0.49, fb->y + 0.98, fb->z + 0.49);
+        mcp_aabb_t bb = mcp_aabb_make(fb->x - 0.49, fb->y, fb->z - 0.49, fb->x + 0.49, fb->y + 0.98,
+                                      fb->z + 0.49);
         mcp_aabb_t lookup = mcp_aabb_clone_move(bb, fb->vx, fb->vy, fb->vz);
         const std::vector<physics::BlockBox> boxes = collisionBoxes(lookup);
 
@@ -1606,10 +1781,13 @@ void World::tickFallingBlocks(uint64_t current_tick) {
 
         // fallDistance feeds the anvil crush damage
         // (Infinity FallingSand: `$height = $this->fallDistance`).
-        if (res.motion.y < 0.0) fb->fall_distance += (float)(-res.motion.y);
+        if (res.motion.y < 0.0)
+            fb->fall_distance += (float)(-res.motion.y);
 
-        if (res.clipped_x) fb->vx = 0.0;
-        if (res.clipped_z) fb->vz = 0.0;
+        if (res.clipped_x)
+            fb->vx = 0.0;
+        if (res.clipped_z)
+            fb->vz = 0.0;
 
         // --- Landing (Infinity: `if ($this->onGround)`) ---------------
         if (res.on_ground) {
@@ -1618,9 +1796,9 @@ void World::tickFallingBlocks(uint64_t current_tick) {
             // Landing cell — Infinity `(x-0.5, y, z-0.5)->round()`. The
             // sweep clips EXACTLY at contact, so y is the integer top of
             // the block below and floor(y+0.5) is that top cell.
-            int cx = (int)std::floor(fb->x);        // round(x - 0.5), x = cell + 0.5
-            int cy = (int)std::floor(fb->y + 0.5);  // round(y)
-            int cz = (int)std::floor(fb->z);        // round(z - 0.5), z = cell + 0.5
+            int cx = (int)std::floor(fb->x);       // round(x - 0.5), x = cell + 0.5
+            int cy = (int)std::floor(fb->y + 0.5); // round(y)
+            int cz = (int)std::floor(fb->z);       // round(z - 0.5), z = cell + 0.5
 
             // Final absolute position so clients see the entity stop
             // where it landed before the despawn broadcast.
@@ -1635,8 +1813,8 @@ void World::tickFallingBlocks(uint64_t current_tick) {
             sendRemoveEntity(this, fb->eid);
 
             // --- Convert back into a block ----------------------------
-            bool chunkOk = (cy >= 0 && cy < 256) &&
-                           (chunks_.getChunkIfLoaded(cx >> 4, cz >> 4) != nullptr);
+            bool chunkOk =
+                (cy >= 0 && cy < 256) && (chunks_.getChunkIfLoaded(cx >> 4, cz >> 4) != nullptr);
             if (chunkOk) {
                 uint8_t cellId = getBlockId(cx, cy, cz);
                 if (cellId == block::SNOW_LAYER) {
@@ -1647,15 +1825,16 @@ void World::tickFallingBlocks(uint64_t current_tick) {
                     // anvil's damage bits with the layer's thickness).
                     setBlock(cx, cy, cz, fb->blockId, fb->blockData);
                     sendUpdateBlock(this, cx, cy, cz, fb->blockId, fb->blockData);
-                    if (fb->blockId == block::ANVIL) anvilLandingEffects(this, cx, cy, cz, fb->fall_distance);
-                } else if (cellId > 0 && !dropBlockSolid(cellId) &&
-                           !liquidForFalling(cellId)) {
+                    if (fb->blockId == block::ANVIL)
+                        anvilLandingEffects(this, cx, cy, cz, fb->fall_distance);
+                } else if (cellId > 0 && !dropBlockSolid(cellId) && !liquidForFalling(cellId)) {
                     // Infinity: a non-solid, non-liquid obstacle (torch,
                     // tall grass, sapling...) pops the falling block as
                     // an ITEM instead of replacing it.
-                    dropItemAt(fb->x, fb->y, fb->z,
-                               (uint16_t)fb->blockId, 1, (uint16_t)fb->blockData);
-                    if (fb->blockId == block::ANVIL) anvilLandingEffects(this, cx, cy, cz, fb->fall_distance);
+                    dropItemAt(fb->x, fb->y, fb->z, (uint16_t)fb->blockId, 1,
+                               (uint16_t)fb->blockData);
+                    if (fb->blockId == block::ANVIL)
+                        anvilLandingEffects(this, cx, cy, cz, fb->fall_distance);
                 } else {
                     // Air, liquid (the block sinks through and replaces
                     // the liquid cell it stopped in) or anything else —
@@ -1664,7 +1843,8 @@ void World::tickFallingBlocks(uint64_t current_tick) {
                     // damage bits).
                     setBlock(cx, cy, cz, fb->blockId, fb->blockData);
                     sendUpdateBlock(this, cx, cy, cz, fb->blockId, fb->blockData);
-                    if (fb->blockId == block::ANVIL) anvilLandingEffects(this, cx, cy, cz, fb->fall_distance);
+                    if (fb->blockId == block::ANVIL)
+                        anvilLandingEffects(this, cx, cy, cz, fb->fall_distance);
                 }
             }
             // Chunk unloaded at the moment of landing: the entity
@@ -1683,9 +1863,11 @@ void World::tickFallingBlocks(uint64_t current_tick) {
         // on the very tick the position changes, so the falling block
         // never visibly drifts from where the server will place it.
         double dx = fb->x - fb->lx, dy = fb->y - fb->ly, dz = fb->z - fb->lz;
-        if (std::fabs(dx) < 0.0005 && std::fabs(dy) < 0.0005 &&
-            std::fabs(dz) < 0.0005) continue;
-        fb->lx = fb->x; fb->ly = fb->y; fb->lz = fb->z;
+        if (std::fabs(dx) < 0.0005 && std::fabs(dy) < 0.0005 && std::fabs(dz) < 0.0005)
+            continue;
+        fb->lx = fb->x;
+        fb->ly = fb->y;
+        fb->lz = fb->z;
 
         auto mv = std::make_shared<network::protocol::MoveEntityPacket>();
         mv->eid = fb->eid;
@@ -1701,9 +1883,11 @@ void World::tickFallingBlocks(uint64_t current_tick) {
     // dropped-items sweep).
     {
         std::lock_guard<std::mutex> lk(falling_blocks_mtx_);
-        for (auto it = falling_blocks_.begin(); it != falling_blocks_.end(); ) {
-            if (it->second && it->second->taken) it = falling_blocks_.erase(it);
-            else ++it;
+        for (auto it = falling_blocks_.begin(); it != falling_blocks_.end();) {
+            if (it->second && it->second->taken)
+                it = falling_blocks_.erase(it);
+            else
+                ++it;
         }
     }
 }
@@ -1713,11 +1897,13 @@ size_t World::tickTiles(uint64_t current_tick) {
     {
         std::lock_guard<std::mutex> lk(tiles_mtx_);
         snapshot.reserve(tiles_.size());
-        for (auto& [_, t] : tiles_) snapshot.push_back(t);
+        for (auto& [_, t] : tiles_)
+            snapshot.push_back(t);
     }
     size_t n = 0;
     for (auto& t : snapshot) {
-        if (!t) continue;
+        if (!t)
+            continue;
         t->tick(current_tick);
         ++n;
     }
@@ -1738,7 +1924,8 @@ void World::unregisterLoader(uint64_t id) {
 DroppedItem* World::droppedItem(int64_t eid) {
     std::lock_guard<std::mutex> lk(dropped_items_mtx_);
     auto it = dropped_items_.find(eid);
-    if (it == dropped_items_.end()) return nullptr;
+    if (it == dropped_items_.end())
+        return nullptr;
     return it->second.get();
 }
 
@@ -1747,7 +1934,8 @@ std::vector<DroppedItem*> World::droppedItems() {
     std::vector<DroppedItem*> out;
     out.reserve(dropped_items_.size());
     for (auto& [_, di] : dropped_items_) {
-        if (di && !di->taken) out.push_back(di.get());
+        if (di && !di->taken)
+            out.push_back(di.get());
     }
     return out;
 }
@@ -1769,9 +1957,11 @@ void World::removeDroppedItem(int64_t eid) {
 bool World::tryClaimDroppedItem(int64_t eid) {
     std::lock_guard<std::mutex> lk(dropped_items_mtx_);
     auto it = dropped_items_.find(eid);
-    if (it == dropped_items_.end()) return false;
+    if (it == dropped_items_.end())
+        return false;
     DroppedItem* di = it->second.get();
-    if (!di || di->taken) return false;
+    if (!di || di->taken)
+        return false;
     // Atomically claim: set taken=true while holding the lock.
     // This prevents to second player from also claiming the same item.
     di->taken = true;
@@ -1785,7 +1975,8 @@ std::shared_ptr<cursestone::tile::Tile> World::getTile(int32_t x, int32_t y, int
     ensureTilesLoaded(x >> 4, z >> 4);
     std::lock_guard<std::mutex> lk(tiles_mtx_);
     auto it = tiles_.find(packTilePos(x, y, z));
-    if (it == tiles_.end()) return nullptr;
+    if (it == tiles_.end())
+        return nullptr;
     return it->second;
 }
 
@@ -1797,7 +1988,8 @@ void World::setTile(int32_t x, int32_t y, int32_t z, std::shared_ptr<cursestone:
 void World::removeTile(int32_t x, int32_t y, int32_t z) {
     std::lock_guard<std::mutex> lk(tiles_mtx_);
     auto it = tiles_.find(packTilePos(x, y, z));
-    if (it == tiles_.end()) return;
+    if (it == tiles_.end())
+        return;
     tiles_.erase(it);
     // The NBT blob of the tile we just dropped is still sitting in the
     // owning chunk's tile_entities array. syncTilesToChunks() rebuilds to
@@ -1809,13 +2001,15 @@ void World::removeTile(int32_t x, int32_t y, int32_t z) {
     tiles_dirty_chunks_.insert(packChunkPos(x >> 4, z >> 4));
 }
 
-std::vector<std::shared_ptr<cursestone::tile::Tile>> World::getTilesInChunk(int32_t cx, int32_t cz) {
+std::vector<std::shared_ptr<cursestone::tile::Tile>> World::getTilesInChunk(int32_t cx,
+                                                                            int32_t cz) {
     ensureTilesLoaded(cx, cz);
     std::vector<std::shared_ptr<cursestone::tile::Tile>> out;
     std::lock_guard<std::mutex> lk(tiles_mtx_);
     for (auto& kv : tiles_) {
         auto& t = kv.second;
-        if (!t) continue;
+        if (!t)
+            continue;
         const auto& p = t->position();
         if (((int32_t)p.x >> 4) == cx && ((int32_t)p.z >> 4) == cz) {
             out.push_back(t);
@@ -1831,7 +2025,8 @@ void World::ensureTilesLoaded(int32_t cx, int32_t cz) {
     uint64_t ckey = packChunkPos(cx, cz);
     {
         std::lock_guard<std::mutex> lk(tiles_mtx_);
-        if (tiles_hydrated_chunks_.count(ckey)) return;
+        if (tiles_hydrated_chunks_.count(ckey))
+            return;
     }
     mcp_chunk_t* c = chunks_.getChunkIfLoaded(cx, cz);
     // "Not loaded yet" is NOT the same as "already looked at":
@@ -1841,10 +2036,12 @@ void World::ensureTilesLoaded(int32_t cx, int32_t cz) {
     // bug for every container reached that way. Claim it only now, with
     // the chunk actually in hand — to chunk with zero containers is still
     // marked, so the scan runs once and not on every getTile().
-    if (!c) return;
+    if (!c)
+        return;
     {
         std::lock_guard<std::mutex> lk(tiles_mtx_);
-        if (tiles_hydrated_chunks_.count(ckey)) return;  // another thread won
+        if (tiles_hydrated_chunks_.count(ckey))
+            return; // another thread won
         tiles_hydrated_chunks_.insert(ckey);
     }
 
@@ -1852,11 +2049,13 @@ void World::ensureTilesLoaded(int32_t cx, int32_t cz) {
         for (size_t i = 0; i < c->tile_entity_count; ++i) {
             const uint8_t* blob = c->tile_entities[i];
             size_t blen = c->tile_entity_lens ? c->tile_entity_lens[i] : 0;
-            if (!blob || blen == 0) continue;
+            if (!blob || blen == 0)
+                continue;
             // Blobs on mcp_chunk_t are stored little-endian, same convention
             // AnvilChunkCodec already uses for these same arrays.
             mcp_tag_t* tag = mcp_nbt_read_bytes(blob, blen, /*little_endian=*/true);
-            if (!tag) continue;
+            if (!tag)
+                continue;
 
             const char* id = mcp_compound_tag_get_string(tag, "id", "");
             int32_t tx = mcp_compound_tag_get_int(tag, "x", 0);
@@ -1914,17 +2113,19 @@ void World::hydrateTilesFromBlocks(int32_t cx, int32_t cz, mcp_chunk_t* c) {
         for (int32_t lz = 0; lz < 16; ++lz)
             for (int32_t lx = 0; lx < 16; ++lx) {
                 const uint8_t id = mcp_chunk_get_block_id(c, lx, y, lz);
-                if (!isTileBlock(id)) continue;
+                if (!isTileBlock(id))
+                    continue;
                 const int32_t wx = baseX + lx, wz = baseZ + lz;
                 {
                     std::lock_guard<std::mutex> lk(tiles_mtx_);
-                    if (tiles_.count(packTilePos(wx, y, wz))) continue;
+                    if (tiles_.count(packTilePos(wx, y, wz)))
+                        continue;
                 }
                 fresh.push_back(createTileForBlock(
-                    id, cursestone::world::Position((double)wx, (double)y,
-                                                    (double)wz)));
+                    id, cursestone::world::Position((double)wx, (double)y, (double)wz)));
             }
-    if (fresh.empty()) return;
+    if (fresh.empty())
+        return;
 
     std::lock_guard<std::mutex> lk(tiles_mtx_);
     for (auto& t : fresh)
@@ -1951,8 +2152,10 @@ void World::syncTilesToChunks() {
     {
         std::lock_guard<std::mutex> lk(tiles_mtx_);
         for (auto& [_, t] : tiles_) {
-            if (!t) continue;
-            if (t->isDirty()) anyDirty = true;
+            if (!t)
+                continue;
+            if (t->isDirty())
+                anyDirty = true;
             int32_t cx = static_cast<int32_t>(t->position().x) >> 4;
             int32_t cz = static_cast<int32_t>(t->position().z) >> 4;
             byChunk[packChunkPos(cx, cz)].push_back(t);
@@ -1961,29 +2164,37 @@ void World::syncTilesToChunks() {
         // live tiles left: seed them with an empty list so the loop below
         // clears their stale tile_entities array instead of skipping them.
         for (uint64_t ck : tiles_dirty_chunks_) {
-            if (byChunk.find(ck) == byChunk.end()) byChunk[ck] = {};
+            if (byChunk.find(ck) == byChunk.end())
+                byChunk[ck] = {};
         }
         anyDirty = anyDirty || !tiles_dirty_chunks_.empty();
     }
-    if (!anyDirty) return;  // nothing changed since the last save()
+    if (!anyDirty)
+        return; // nothing changed since the last save()
 
     for (auto& [ckey, tilesInChunk] : byChunk) {
         // Only rebuild to chunk's tile_entities array if something in it
         // actually changed — skips the write+serialize cost for every
         // chunk holding only untouched tiles.
         bool chunkHasDirty = false;
-        for (auto& t : tilesInChunk) if (t->isDirty()) { chunkHasDirty = true; break; }
+        for (auto& t : tilesInChunk)
+            if (t->isDirty()) {
+                chunkHasDirty = true;
+                break;
+            }
         bool emptied = false;
         {
             std::lock_guard<std::mutex> lk(tiles_mtx_);
             emptied = tiles_dirty_chunks_.count(ckey) != 0;
         }
-        if (!chunkHasDirty && !emptied) continue;
+        if (!chunkHasDirty && !emptied)
+            continue;
 
         int32_t cx = static_cast<int32_t>(ckey >> 32);
         int32_t cz = static_cast<int32_t>(ckey & 0xFFFFFFFFULL);
         mcp_chunk_t* c = chunks_.getChunkIfLoaded(cx, cz);
-        if (!c) continue;  // chunk got unloaded since the tile was touched — stays dirty, retried next save()
+        if (!c)
+            continue; // chunk got unloaded since the tile was touched — stays dirty, retried next save()
 
         mcp_chunk_clear_tile_entities(c);
         for (auto& t : tilesInChunk) {
@@ -1993,12 +2204,12 @@ void World::syncTilesToChunks() {
             uint8_t* bbuf = mcp_nbt_write_bytes(tag, /*little_endian=*/true, &blen);
             if (bbuf && blen > 0) {
                 mcp_chunk_add_tile_entity(c, bbuf, blen);
-                t->clearDirty();  // only clear once actually written to the chunk
+                t->clearDirty(); // only clear once actually written to the chunk
             }
             free(bbuf);
             mcp_tag_destroy(tag);
         }
-        c->dirty = true;  // ensure flushDirty() picks this chunk up
+        c->dirty = true; // ensure flushDirty() picks this chunk up
         if (emptied) {
             std::lock_guard<std::mutex> lk(tiles_mtx_);
             tiles_dirty_chunks_.erase(ckey);
@@ -2018,27 +2229,37 @@ void World::evictTilesForChunk(int32_t cx, int32_t cz) {
     std::vector<std::shared_ptr<cursestone::tile::Tile>> tilesInChunk;
     {
         std::lock_guard<std::mutex> lk(tiles_mtx_);
-        for (auto it = tiles_.begin(); it != tiles_.end(); ) {
-            if (!it->second) { it = tiles_.erase(it); continue; }
+        for (auto it = tiles_.begin(); it != tiles_.end();) {
+            if (!it->second) {
+                it = tiles_.erase(it);
+                continue;
+            }
             int32_t tcx = static_cast<int32_t>(it->second->position().x) >> 4;
             int32_t tcz = static_cast<int32_t>(it->second->position().z) >> 4;
             if (tcx == cx && tcz == cz) {
                 tilesInChunk.push_back(it->second);
-                it = tiles_.erase(it);   // drop from the registry regardless of dirty state
+                it = tiles_.erase(it); // drop from the registry regardless of dirty state
             } else {
                 ++it;
             }
         }
-        tiles_hydrated_chunks_.erase(ckey);  // force re-hydration on next load
+        tiles_hydrated_chunks_.erase(ckey); // force re-hydration on next load
     }
-    if (tilesInChunk.empty()) return;
+    if (tilesInChunk.empty())
+        return;
 
     bool anyDirty = false;
-    for (auto& t : tilesInChunk) if (t->isDirty()) { anyDirty = true; break; }
-    if (!anyDirty) return;  // nothing to flush — they were dropped above either way
+    for (auto& t : tilesInChunk)
+        if (t->isDirty()) {
+            anyDirty = true;
+            break;
+        }
+    if (!anyDirty)
+        return; // nothing to flush — they were dropped above either way
 
     mcp_chunk_t* c = chunks_.getChunkIfLoaded(cx, cz);
-    if (!c) return;  // chunk is gone already; the (unsaved) dirty tile data is lost with it
+    if (!c)
+        return; // chunk is gone already; the (unsaved) dirty tile data is lost with it
 
     mcp_chunk_clear_tile_entities(c);
     for (auto& t : tilesInChunk) {
@@ -2052,7 +2273,7 @@ void World::evictTilesForChunk(int32_t cx, int32_t cz) {
         free(bbuf);
         mcp_tag_destroy(tag);
     }
-    c->dirty = true;  // so ChunkManager::unloadChunk()'s save-if-dirty picks it up
+    c->dirty = true; // so ChunkManager::unloadChunk()'s save-if-dirty picks it up
 }
 
 int World::unloadDistantChunks(const std::vector<ChunkViewer>& viewers, int32_t margin) {
@@ -2063,12 +2284,17 @@ int World::unloadDistantChunks(const std::vector<ChunkViewer>& viewers, int32_t 
         for (auto& v : viewers) {
             int32_t dx = cx - v.cx, dz = cz - v.cz;
             int32_t dist = std::max(std::abs(dx), std::abs(dz));
-            if (dist <= v.view_radius + margin) { needed = true; break; }
+            if (dist <= v.view_radius + margin) {
+                needed = true;
+                break;
+            }
         }
-        if (needed) continue;
+        if (needed)
+            continue;
 
-        evictTilesForChunk(cx, cz);  // flush + drop tiles BEFORE the chunk disappears
-        if (chunks_.unloadChunk(cx, cz, /*save=*/true)) ++unloaded;
+        evictTilesForChunk(cx, cz); // flush + drop tiles BEFORE the chunk disappears
+        if (chunks_.unloadChunk(cx, cz, /*save=*/true))
+            ++unloaded;
     }
     return unloaded;
 }
@@ -2088,7 +2314,8 @@ int World::unloadDistantChunks(const std::vector<ChunkViewer>& viewers, int32_t 
 //     state. Re-sending the full pair is idempotent on the client and
 //     guarantees to clean transition between any two states.
 void World::sendWeatherTo(Player* p) {
-    if (!p) return;
+    if (!p)
+        return;
     auto stop_rain = std::make_shared<network::protocol::LevelEventPacket>();
     stop_rain->evid = network::protocol::LevelEventPacket::EVENT_STOP_RAIN;
     stop_rain->data = (int32_t)rain_strength_;
@@ -2114,24 +2341,25 @@ void World::sendWeatherTo(Player* p) {
 }
 
 void World::setWeather(int state, int32_t durationTicks) {
-    if (state < WEATHER_CLEAR || state > WEATHER_THUNDER) state = WEATHER_CLEAR;
+    if (state < WEATHER_CLEAR || state > WEATHER_THUNDER)
+        state = WEATHER_CLEAR;
     bool changed = (weather_state_ != state);
     weather_state_ = state;
     weather_ticks_left_ = durationTicks > 0 ? durationTicks : -1;
     // Re-roll the strengths on every change, like Infinity's setWeather
     // (mt_rand(90000,110000) / mt_rand(30000,40000)).
-    rain_strength_    = 90000 + (uint32_t)(rand() % 20001);
+    rain_strength_ = 90000 + (uint32_t)(rand() % 20001);
     thunder_strength_ = 30000 + (uint32_t)(rand() % 10001);
     for (auto& p : Server::getInstance().playersSnapshot()) {
-        if (p && p->spawned() && p->getWorld() == this) sendWeatherTo(p.get());
+        if (p && p->spawned() && p->getWorld() == this)
+            sendWeatherTo(p.get());
     }
     if (changed) {
-        static const char* kNames[4] = { "clear", "rain", "rain+thunder", "thunder" };
-        utils::MainLogger::get().info(std::string("[Weather] World '") + cfg_.name +
-            "' -> " + kNames[state] +
-            (weather_ticks_left_ > 0
-                ? " (" + std::to_string(weather_ticks_left_ / 20) + "s)"
-                : ""));
+        static const char* kNames[4] = {"clear", "rain", "rain+thunder", "thunder"};
+        utils::MainLogger::get().info(
+            std::string("[Weather] World '") + cfg_.name + "' -> " + kNames[state] +
+            (weather_ticks_left_ > 0 ? " (" + std::to_string(weather_ticks_left_ / 20) + "s)"
+                                     : ""));
     }
 }
 
@@ -2144,18 +2372,21 @@ namespace {
 // onUpdate -> age > 20 ticks -> kill/close). Runs on the main thread
 // via the scheduler, same constraints as every other sync task.
 class LightningRemovalTask : public scheduler::Task {
-public:
-    LightningRemovalTask(int64_t eid, World* world) : eid_(eid), world_(world) {}
+  public:
+    LightningRemovalTask(int64_t eid, World* world) : eid_(eid), world_(world) {
+    }
     void onRun() override {
         auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
         rm->eid = eid_;
         for (auto& p : Server::getInstance().playersSnapshot()) {
-            if (p && p->spawned() && p->getWorld() == world_) p->sendPacket(rm);
+            if (p && p->spawned() && p->getWorld() == world_)
+                p->sendPacket(rm);
         }
     }
-private:
+
+  private:
     int64_t eid_;
-    World* world_;   // world where cayó the rayo
+    World* world_; // world where cayó the rayo
 };
 
 } // namespace
@@ -2168,9 +2399,13 @@ void World::spawnLightning(double x, double y, double z, bool withFire) {
     auto add = std::make_shared<network::protocol::AddEntityPacket>();
     add->eid = eid;
     add->type = network::protocol::AddEntityPacket::TYPE_LIGHTNING;
-    add->x = (float)x; add->y = (float)y; add->z = (float)z;
+    add->x = (float)x;
+    add->y = (float)y;
+    add->z = (float)z;
     auto exp = std::make_shared<network::protocol::ExplodePacket>();
-    exp->x = (float)x; exp->y = (float)y; exp->z = (float)z;
+    exp->x = (float)x;
+    exp->y = (float)y;
+    exp->z = (float)z;
     exp->radius = 10.0f;
     for (auto& p : Server::getInstance().playersSnapshot()) {
         if (p && p->spawned() && p->getWorld() == this) {
@@ -2187,11 +2422,14 @@ void World::spawnLightning(double x, double y, double z, bool withFire) {
     // mt_rand(8, 20) damage, setOnFire(mt_rand(3, 8)) — survival only.
     if (Server::getInstance().difficulty() > 0) {
         for (auto& p : Server::getInstance().playersSnapshot()) {
-            if (!p || !p->spawned()) continue;
-            if (p->getWorld() != this) continue;   // same world
+            if (!p || !p->spawned())
+                continue;
+            if (p->getWorld() != this)
+                continue; // same world
             const auto& pos = p->getNextPosition();
             if (std::fabs(pos.x - x) > 4.0 || std::fabs(pos.y - y) > 3.0 ||
-                std::fabs(pos.z - z) > 4.0) continue;
+                std::fabs(pos.z - z) > 4.0)
+                continue;
             p->attack(8.0f + (float)(std::rand() % 13));
             p->setOnFire(3 + std::rand() % 6);
         }
@@ -2206,19 +2444,20 @@ void World::spawnLightning(double x, double y, double z, bool withFire) {
         int32_t by = (int32_t)std::floor(y);
         if (by >= 0 && by <= 255 && isChunkLoaded(bx, bz)) {
             uint8_t at = getBlockId(bx, by, bz);
-            uint8_t below = by > 0 ? getBlockId(bx, by - 1, bz)
-                                   : static_cast<uint8_t>(block::AIR);
+            uint8_t below = by > 0 ? getBlockId(bx, by - 1, bz) : static_cast<uint8_t>(block::AIR);
             bool below_liquid = (below == block::WATER || below == block::FLOWING_WATER ||
-                                 below == block::LAVA  || below == block::FLOWING_LAVA);
+                                 below == block::LAVA || below == block::FLOWING_LAVA);
             if ((at == block::AIR || at == block::TALL_GRASS) && !below_liquid) {
                 setBlock(bx, by, bz, block::FIRE, 0);
                 auto up = std::make_shared<network::protocol::UpdateBlockPacket>();
-                up->x = bx; up->z = bz;
+                up->x = bx;
+                up->z = bz;
                 up->y = (uint8_t)by;
                 up->blockId = block::FIRE;
                 up->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
                 for (auto& p : Server::getInstance().playersSnapshot()) {
-                    if (p && p->spawned() && p->getWorld() == this) p->sendPacket(up);
+                    if (p && p->spawned() && p->getWorld() == this)
+                        p->sendPacket(up);
                 }
             }
         }
@@ -2231,19 +2470,26 @@ void World::strikeRandomPlayerLightning() {
     auto players = Server::getInstance().playersSnapshot();
     Player* target = nullptr;
     for (auto& p : players) {
-        if (p && p->spawned() && p->getWorld() == this) { target = p.get(); break; }
+        if (p && p->spawned() && p->getWorld() == this) {
+            target = p.get();
+            break;
+        }
     }
-    if (!target) return;
+    if (!target)
+        return;
 
     const auto& tpos = target->getNextPosition();
     int32_t bx = (int32_t)std::floor(tpos.x) + (std::rand() % 129 - 64);
     int32_t bz = (int32_t)std::floor(tpos.z) + (std::rand() % 129 - 64);
-    if (!isChunkLoaded(bx, bz)) return;   // strike fell outside loaded world
+    if (!isChunkLoaded(bx, bz))
+        return; // strike fell outside loaded world
     mcp_chunk_t* c = chunks_.getChunkIfLoaded(bx >> 4, bz >> 4);
-    if (!c || !c->height_map) return;
+    if (!c || !c->height_map)
+        return;
     // height_map = topmost light-blocking block + 1 => first AIR and.
     int32_t y = c->height_map[((bz & 15) << 4) | (bx & 15)];
-    if (y <= 0 || y > 255) return;
+    if (y <= 0 || y > 255)
+        return;
     spawnLightning((double)bx + 0.5, (double)y, (double)bz + 0.5, /*withFire=*/true);
 }
 
@@ -2269,7 +2515,8 @@ void World::strikeRandomPlayerLightning() {
 void World::doWeatherTick(uint64_t current_tick) {
     // 1. Duration countdown.
     if (weather_ticks_left_ > 0) {
-        if (--weather_ticks_left_ <= 0) setWeather(WEATHER_CLEAR);
+        if (--weather_ticks_left_ <= 0)
+            setWeather(WEATHER_CLEAR);
     }
 
     // 1.5. Lightning strikes (Infinity Weather::calcWeather strikes
@@ -2283,24 +2530,29 @@ void World::doWeatherTick(uint64_t current_tick) {
         strikeRandomPlayerLightning();
     }
 
-    if (!isRaining()) return;
+    if (!isRaining())
+        return;
 
     // 2. Fire sweep (only while raining).
     auto coords = chunks_.loadedChunkCoords();
-    if (coords.empty()) return;
+    if (coords.empty())
+        return;
     int extinguished = 0;
     for (int i = 0; i < WEATHER_CHUNKS_PER_TICK && extinguished < MAX_EXTINGUISH_PER_TICK; ++i) {
         const auto& [cx, cz] = coords[(rain_scan_offset_ + (uint64_t)i) % coords.size()];
         mcp_chunk_t* c = chunks_.getChunkIfLoaded(cx, cz);
-        if (!c) continue;
+        if (!c)
+            continue;
 
         for (uint8_t sy = 0; sy < 16; ++sy) {
             mcp_chunk_section_t* sec = c->sections[sy];
-            if (!sec || !sec->blocks) continue;
+            if (!sec || !sec->blocks)
+                continue;
             // Cheap pre-filter: is there ANY fire in this 4096-block
             // section? Avoids 4096 iterations on every section of
             // every chunk when there is not fire anywhere.
-            if (!std::memchr(sec->blocks, (int)block::FIRE, 4096)) continue;
+            if (!std::memchr(sec->blocks, (int)block::FIRE, 4096))
+                continue;
 
             // bug FIX ("extinguished 6 fire block(s)" spam, fire never
             // dies): the scan previously wrapped the j-loop in an extra
@@ -2312,7 +2564,8 @@ void World::doWeatherTick(uint64_t current_tick) {
             // the same fire once per mismatched ly, so the memory never
             // changed and the log repeated forever. and now comes from j.
             for (int j = 0; j < 4096 && extinguished < MAX_EXTINGUISH_PER_TICK; ++j) {
-                if (sec->blocks[j] != (uint8_t)block::FIRE) continue;
+                if (sec->blocks[j] != (uint8_t)block::FIRE)
+                    continue;
                 int lx = j & 15;
                 int lz = (j >> 4) & 15;
                 int32_t y = ((int32_t)sy << 4) | (j >> 8);
@@ -2322,7 +2575,8 @@ void World::doWeatherTick(uint64_t current_tick) {
                 // (mcp_block_light_opacity(FIRE) == 0), so to fire
                 // whose top face touches open sky has and >= h here.
                 int32_t h = c->height_map ? c->height_map[(lz << 4) | lx] : 256;
-                if (y < h) continue;
+                if (y < h)
+                    continue;
                 int32_t wx = (cx << 4) | lx;
                 int32_t wz = (cz << 4) | lz;
                 // Route through World::setBlock so the chunk dirty
@@ -2330,13 +2584,15 @@ void World::doWeatherTick(uint64_t current_tick) {
                 // the rest of the server).
                 setBlock(wx, y, wz, block::AIR, 0);
                 auto up = std::make_shared<network::protocol::UpdateBlockPacket>();
-                up->x = wx; up->z = wz;
+                up->x = wx;
+                up->z = wz;
                 up->y = (uint8_t)y;
                 up->blockId = block::AIR;
                 up->blockData = 0;
                 up->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
                 for (auto& p : Server::getInstance().playersSnapshot()) {
-                    if (p && p->spawned() && p->getWorld() == this) p->sendPacket(up);
+                    if (p && p->spawned() && p->getWorld() == this)
+                        p->sendPacket(up);
                 }
                 ++extinguished;
             }
@@ -2348,9 +2604,9 @@ void World::doWeatherTick(uint64_t current_tick) {
     if (extinguished > 0 &&
         current_tick - last_fire_extinguish_log_ >= FIRE_EXTINGUISH_LOG_INTERVAL) {
         last_fire_extinguish_log_ = current_tick;
-        utils::MainLogger::get().info(
-            "[Weather] Rain extinguished " + std::to_string(extinguished) +
-            " fire block(s) in level '" + cfg_.name + "'");
+        utils::MainLogger::get().info("[Weather] Rain extinguished " +
+                                      std::to_string(extinguished) + " fire block(s) in level '" +
+                                      cfg_.name + "'");
     }
 }
 

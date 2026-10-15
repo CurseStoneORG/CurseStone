@@ -29,11 +29,11 @@
 #include <stddef.h>
 #include <stdbool.h>
 #if defined(_MSC_VER)
-#  include <BaseTsd.h>
+#include <BaseTsd.h>
 // MSVC does not provide ssize_t; map it to the signed pointer-sized SSIZE_T.
 typedef SSIZE_T ssize_t;
 #else
-#  include <sys/types.h>   // ssize_t on POSIX and MinGW
+#include <sys/types.h> // ssize_t on POSIX and MinGW
 #endif
 
 #ifdef __cplusplus
@@ -41,8 +41,8 @@ extern "C" {
 #endif
 
 typedef struct mcp_udp_socket {
-    int       fd;     // POSIX int / Win32 SOCKET cast to int
-    bool      blocking;
+    int fd; // POSIX int / Win32 SOCKET cast to int
+    bool blocking;
 } mcp_udp_socket_t;
 
 // Open a UDP socket bound to `host`:`port` (IPv4). Returns 0 on success.
@@ -57,14 +57,12 @@ void mcp_udp_socket_set_blocking(mcp_udp_socket_t* s, bool blocking);
 // Receive a datagram into `buf` (size `cap`). Returns the actual byte
 // count, or -1 on error (or -EAGAIN when non-blocking and no data).
 // On success, fills `*src_ip` (4 bytes) and `*src_port`.
-ssize_t mcp_udp_socket_recv(mcp_udp_socket_t* s,
-                              void* buf, size_t cap,
-                              uint8_t* src_ip, uint16_t* src_port);
+ssize_t mcp_udp_socket_recv(mcp_udp_socket_t* s, void* buf, size_t cap, uint8_t* src_ip,
+                            uint16_t* src_port);
 
 // Send a datagram to `dst_ip`:`dst_port`. Returns bytes sent, or -1.
-ssize_t mcp_udp_socket_send(mcp_udp_socket_t* s,
-                              const void* buf, size_t len,
-                              const uint8_t* dst_ip, uint16_t dst_port);
+ssize_t mcp_udp_socket_send(mcp_udp_socket_t* s, const void* buf, size_t len, const uint8_t* dst_ip,
+                            uint16_t dst_port);
 
 #ifdef __cplusplus
 } // extern "C"

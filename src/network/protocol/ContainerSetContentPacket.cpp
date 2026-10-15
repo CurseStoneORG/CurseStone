@@ -49,7 +49,7 @@ void ContainerSetContentPacket::encode(std::vector<uint8_t>& out) const {
         //   else: putShort(id) + putByte(count) + putShort(damage) +
         //         putLShort(nbtLen) [+ nbt bytes]
         if (s.id == 0 || s.count <= 0) {
-            w.writeI16BE(0);   // empty slot — 2 bytes only
+            w.writeI16BE(0); // empty slot — 2 bytes only
         } else {
             w.writeI16BE(static_cast<int16_t>(s.id));
             w.writeU8(static_cast<uint8_t>(s.count & 0xFF));
@@ -63,7 +63,8 @@ void ContainerSetContentPacket::encode(std::vector<uint8_t>& out) const {
     // Trailing hotbar count.
     if (windowid == SPECIAL_INVENTORY && !hotbar.empty()) {
         w.writeU16BE(static_cast<uint16_t>(hotbar.size()));
-        for (int32_t v : hotbar) w.writeI32BE(v);
+        for (int32_t v : hotbar)
+            w.writeI32BE(v);
     } else {
         w.writeU16BE(0);
     }
@@ -71,14 +72,17 @@ void ContainerSetContentPacket::encode(std::vector<uint8_t>& out) const {
 
 bool ContainerSetContentPacket::decode(const uint8_t* buf, size_t len) {
     PacketReader r(buf, len);
-    if (!r.readU8(windowid)) return false;
+    if (!r.readU8(windowid))
+        return false;
     uint16_t n;
-    if (!r.readU16BE(n)) return false;
+    if (!r.readU16BE(n))
+        return false;
     slots.clear();
     slots.reserve(n);
     for (uint16_t i = 0; i < n; ++i) {
         int16_t id;
-        if (!r.readI16BE(id)) return false;
+        if (!r.readI16BE(id))
+            return false;
         cursestone::item::ItemStack s;
         if (id <= 0) {
             s = cursestone::item::ItemStack::EMPTY();
@@ -86,25 +90,31 @@ bool ContainerSetContentPacket::decode(const uint8_t* buf, size_t len) {
             uint8_t cnt;
             int16_t dmg;
             uint16_t nbtLen;
-            if (!r.readU8(cnt))   return false;
-            if (!r.readI16BE(dmg)) return false;
-            if (!r.readU16LE(nbtLen)) return false;
+            if (!r.readU8(cnt))
+                return false;
+            if (!r.readI16BE(dmg))
+                return false;
+            if (!r.readU16LE(nbtLen))
+                return false;
             if (nbtLen > 0) {
-                if (!r.skipBytes(nbtLen)) return false;
+                if (!r.skipBytes(nbtLen))
+                    return false;
             }
             s.id = static_cast<uint16_t>(id);
             s.count = cnt;
-            s.meta  = static_cast<uint8_t>(dmg & 0xFF);
+            s.meta = static_cast<uint8_t>(dmg & 0xFF);
         }
         slots.push_back(s);
     }
     uint16_t hn;
-    if (!r.readU16BE(hn)) return false;
+    if (!r.readU16BE(hn))
+        return false;
     hotbar.clear();
     hotbar.reserve(hn);
     for (uint16_t i = 0; i < hn; ++i) {
         int32_t v;
-        if (!r.readI32BE(v)) return false;
+        if (!r.readI32BE(v))
+            return false;
         hotbar.push_back(v);
     }
     return true;

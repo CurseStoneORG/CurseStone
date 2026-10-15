@@ -50,21 +50,23 @@
 namespace cursestone::network::protocol {
 
 class StartGamePacket : public DataPacket {
-public:
-    uint8_t pid() const override { return START_GAME_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return START_GAME_PACKET;
+    }
 
-    int32_t  seed       = 0;
-    uint8_t  dimension  = 0;
-    int32_t  generator  = 1;       // 1 = infinite
-    int32_t  gamemode   = 0;
-    int64_t  eid        = 0;
-    int32_t  spawnX     = 0;
-    int32_t  spawnY     = 64;
-    int32_t  spawnZ     = 0;
-    float    x          = 0.0f;
-    float    y          = 64.0f;
-    float    z          = 0.0f;
-    std::string unknown;           // typically empty
+    int32_t seed = 0;
+    uint8_t dimension = 0;
+    int32_t generator = 1; // 1 = infinite
+    int32_t gamemode = 0;
+    int64_t eid = 0;
+    int32_t spawnX = 0;
+    int32_t spawnY = 64;
+    int32_t spawnZ = 0;
+    float x = 0.0f;
+    float y = 64.0f;
+    float z = 0.0f;
+    std::string unknown; // typically empty
 
     void encode(std::vector<uint8_t>& out) const override;
     bool decode(const uint8_t* data, size_t len) override;

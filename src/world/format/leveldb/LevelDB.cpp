@@ -36,12 +36,15 @@ namespace cursestone::world::format::leveldb {
 
 LevelDBRegistrar g_leveldb_registrar_;
 LevelDBRegistrar::LevelDBRegistrar() {
-    WorldProviderManager::getInstance().registerProvider(
-        "leveldb", [](){ return std::unique_ptr<WorldProvider>(new LevelDB()); });
+    WorldProviderManager::getInstance().registerProvider("leveldb", []() {
+        return std::unique_ptr<WorldProvider>(new LevelDB());
+    });
 }
 
 LevelDB::LevelDB() = default;
-LevelDB::~LevelDB() { shutdown(); }
+LevelDB::~LevelDB() {
+    shutdown();
+}
 
 void LevelDB::init(const std::string& path) {
     path_ = path;
@@ -80,8 +83,7 @@ bool LevelDB::hasLevelDB() {
 #endif
 }
 
-std::optional<std::shared_ptr<FullChunk>>
-LevelDB::loadChunk(int32_t /*x*/, int32_t /*z*/) {
+std::optional<std::shared_ptr<FullChunk>> LevelDB::loadChunk(int32_t /*x*/, int32_t /*z*/) {
     // Stub: pretend the chunk isn't on disk so World falls
     // back to chunk generation.
     return std::nullopt;
@@ -95,8 +97,7 @@ void LevelDB::unloadChunk(int32_t /*x*/, int32_t /*z*/) {
     // Stub: no-op.
 }
 
-std::vector<std::pair<int32_t, int32_t>>
-LevelDB::listChunks() const {
+std::vector<std::pair<int32_t, int32_t>> LevelDB::listChunks() const {
     return {};
 }
 

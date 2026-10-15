@@ -33,21 +33,29 @@ void ItemFrameDropItemPacket::encode(std::vector<uint8_t>& out) const {
 
 bool ItemFrameDropItemPacket::decode(const uint8_t* buf, size_t len) {
     PacketReader r(buf, len);
-    if (!r.readI32BE(z)) return false;
-    if (!r.readI32BE(y)) return false;
-    if (!r.readI32BE(x)) return false;
-    if (!r.readI16BE(itemId)) return false;
+    if (!r.readI32BE(z))
+        return false;
+    if (!r.readI32BE(y))
+        return false;
+    if (!r.readI32BE(x))
+        return false;
+    if (!r.readI16BE(itemId))
+        return false;
     if (itemId <= 0) {
         itemId = 0;
         itemCount = 0;
         itemDamage = 0;
         return true;
     }
-    if (!r.readU8(itemCount)) return false;
-    if (!r.readI16BE(itemDamage)) return false;
+    if (!r.readU8(itemCount))
+        return false;
+    if (!r.readI16BE(itemDamage))
+        return false;
     uint16_t nbtLen;
-    if (!r.readU16LE(nbtLen)) return false;
-    if (nbtLen > 0 && !r.skipBytes(nbtLen)) return false;
+    if (!r.readU16LE(nbtLen))
+        return false;
+    if (nbtLen > 0 && !r.skipBytes(nbtLen))
+        return false;
     return true;
 }
 

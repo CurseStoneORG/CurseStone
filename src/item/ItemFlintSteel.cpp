@@ -90,13 +90,14 @@ static bool tryPortalPlaneX(world::World* w, int32_t tx, int32_t ty, int32_t tz,
                             std::vector<FilledCell>& filled) {
     // Obsidian run of the clicked row along X (the base row candidate).
     int32_t xMax = tx;
-    while (xMax - tx < kPortalOuterMax &&
-           w->getBlockId(xMax + 1, ty, tz) == OBSIDIAN) ++xMax;
+    while (xMax - tx < kPortalOuterMax && w->getBlockId(xMax + 1, ty, tz) == OBSIDIAN)
+        ++xMax;
     int32_t xMin = tx;
-    while (tx - xMin < kPortalOuterMax &&
-           w->getBlockId(xMin - 1, ty, tz) == OBSIDIAN) --xMin;
+    while (tx - xMin < kPortalOuterMax && w->getBlockId(xMin - 1, ty, tz) == OBSIDIAN)
+        --xMin;
     int32_t countX = xMax - xMin + 1;
-    if (countX < kPortalOuterMin || countX > kPortalOuterMax) return false;
+    if (countX < kPortalOuterMin || countX > kPortalOuterMax)
+        return false;
 
     // Side-column heights, counted from the base row (base included) —
     // exactly how the Infinity/PMMP for-loop counts them, so topL/topR
@@ -105,30 +106,30 @@ static bool tryPortalPlaneX(world::World* w, int32_t tx, int32_t ty, int32_t tz,
     // one (the previous port) skipped the top row and made the top-row
     // check below always fail: the portal never lit.
     int32_t topL = ty, topR = ty;
-    for (int32_t y = ty;
-         y - ty <= kPortalOuterMax && w->getBlockId(xMin, y, tz) == OBSIDIAN; ++y) {
+    for (int32_t y = ty; y - ty <= kPortalOuterMax && w->getBlockId(xMin, y, tz) == OBSIDIAN; ++y) {
         topL = y + 1;
     }
-    for (int32_t y = ty;
-         y - ty <= kPortalOuterMax && w->getBlockId(xMax, y, tz) == OBSIDIAN; ++y) {
+    for (int32_t y = ty; y - ty <= kPortalOuterMax && w->getBlockId(xMax, y, tz) == OBSIDIAN; ++y) {
         topR = y + 1;
     }
     int32_t yMax = std::min(topL, topR) - 1;
-    int32_t countY = yMax - ty + 2;   // outer height: base row + top row
-    if (countY < kPortalOuterMin + 1 || countY > kPortalOuterMax) return false;
+    int32_t countY = yMax - ty + 2; // outer height: base row + top row
+    if (countY < kPortalOuterMin + 1 || countY > kPortalOuterMax)
+        return false;
 
     // The top row must be a continuous obsidian run of the same width.
     int32_t countTop = 0;
-    for (int32_t xx = xMin;
-         xx <= xMax && w->getBlockId(xx, yMax, tz) == OBSIDIAN; ++xx) {
+    for (int32_t xx = xMin; xx <= xMax && w->getBlockId(xx, yMax, tz) == OBSIDIAN; ++xx) {
         ++countTop;
     }
-    if (countTop != countX) return false;
+    if (countTop != countX)
+        return false;
 
     // Fill the interior with portal blocks (meta 0 = X axis).
     for (int32_t xx = xMin + 1; xx < xMax; ++xx) {
         for (int32_t yy = ty + 1; yy < yMax; ++yy) {
-            if (!isPortalInterior(w, xx, yy, tz)) continue;
+            if (!isPortalInterior(w, xx, yy, tz))
+                continue;
             w->setBlock(xx, yy, tz, NETHER_PORTAL, 0);
             filled.emplace_back(xx, yy, tz, 0);
         }
@@ -141,39 +142,40 @@ static bool tryPortalPlaneX(world::World* w, int32_t tx, int32_t ty, int32_t tz,
 static bool tryPortalPlaneZ(world::World* w, int32_t tx, int32_t ty, int32_t tz,
                             std::vector<FilledCell>& filled) {
     int32_t zMax = tz;
-    while (zMax - tz < kPortalOuterMax &&
-           w->getBlockId(tx, ty, zMax + 1) == OBSIDIAN) ++zMax;
+    while (zMax - tz < kPortalOuterMax && w->getBlockId(tx, ty, zMax + 1) == OBSIDIAN)
+        ++zMax;
     int32_t zMin = tz;
-    while (tz - zMin < kPortalOuterMax &&
-           w->getBlockId(tx, ty, zMin - 1) == OBSIDIAN) --zMin;
+    while (tz - zMin < kPortalOuterMax && w->getBlockId(tx, ty, zMin - 1) == OBSIDIAN)
+        --zMin;
     int32_t countZ = zMax - zMin + 1;
-    if (countZ < kPortalOuterMin || countZ > kPortalOuterMax) return false;
+    if (countZ < kPortalOuterMin || countZ > kPortalOuterMax)
+        return false;
 
     // Side-column heights counted from the base row (see tryPortalPlaneX).
     int32_t topL = ty, topR = ty;
-    for (int32_t y = ty;
-         y - ty <= kPortalOuterMax && w->getBlockId(tx, y, zMin) == OBSIDIAN; ++y) {
+    for (int32_t y = ty; y - ty <= kPortalOuterMax && w->getBlockId(tx, y, zMin) == OBSIDIAN; ++y) {
         topL = y + 1;
     }
-    for (int32_t y = ty;
-         y - ty <= kPortalOuterMax && w->getBlockId(tx, y, zMax) == OBSIDIAN; ++y) {
+    for (int32_t y = ty; y - ty <= kPortalOuterMax && w->getBlockId(tx, y, zMax) == OBSIDIAN; ++y) {
         topR = y + 1;
     }
     int32_t yMax = std::min(topL, topR) - 1;
     int32_t countY = yMax - ty + 2;
-    if (countY < kPortalOuterMin + 1 || countY > kPortalOuterMax) return false;
+    if (countY < kPortalOuterMin + 1 || countY > kPortalOuterMax)
+        return false;
 
     int32_t countTop = 0;
-    for (int32_t zz = zMin;
-         zz <= zMax && w->getBlockId(tx, yMax, zz) == OBSIDIAN; ++zz) {
+    for (int32_t zz = zMin; zz <= zMax && w->getBlockId(tx, yMax, zz) == OBSIDIAN; ++zz) {
         ++countTop;
     }
-    if (countTop != countZ) return false;
+    if (countTop != countZ)
+        return false;
 
     // Fill the interior with portal blocks (meta 1 = Z axis).
     for (int32_t zz = zMin + 1; zz < zMax; ++zz) {
         for (int32_t yy = ty + 1; yy < yMax; ++yy) {
-            if (!isPortalInterior(w, tx, yy, zz)) continue;
+            if (!isPortalInterior(w, tx, yy, zz))
+                continue;
             w->setBlock(tx, yy, zz, NETHER_PORTAL, 1);
             filled.emplace_back(tx, yy, zz, 1);
         }
@@ -183,10 +185,10 @@ static bool tryPortalPlaneZ(world::World* w, int32_t tx, int32_t ty, int32_t tz,
 
 /// @brief Broadcasts a block change to every player of the same world
 ///        that can see that chunk.
-static void broadcastBlockUpdate(Player* player, world::World* world,
-                                 int32_t x, int32_t y, int32_t z,
-                                 uint8_t id, uint8_t data) {
-    if (!player || !player->server()) return;
+static void broadcastBlockUpdate(Player* player, world::World* world, int32_t x, int32_t y,
+                                 int32_t z, uint8_t id, uint8_t data) {
+    if (!player || !player->server())
+        return;
     auto ubp = std::make_shared<network::protocol::UpdateBlockPacket>();
     ubp->x = x;
     ubp->z = z;
@@ -205,12 +207,12 @@ static void broadcastBlockUpdate(Player* player, world::World* world,
 /// @brief Registers a lit portal in its world's persistent portal
 ///        registry (anchor = first interior cell) so cross-dimension
 ///        travel can find it later.
-static void registerLitPortal(world::World* world,
-                              const std::vector<FilledCell>& filled) {
-    if (!world || filled.empty()) return;
+static void registerLitPortal(world::World* world, const std::vector<FilledCell>& filled) {
+    if (!world || filled.empty())
+        return;
     const FilledCell& anchor = filled.front();
-    world->portals().add(std::get<0>(anchor), std::get<1>(anchor),
-                         std::get<2>(anchor), std::get<3>(anchor));
+    world->portals().add(std::get<0>(anchor), std::get<1>(anchor), std::get<2>(anchor),
+                         std::get<3>(anchor));
     world->savePortals();
 }
 
@@ -226,13 +228,16 @@ static void broadcastFilledCells(Player* player, world::World* world,
 }
 
 void ItemFlintSteel::applyDurability(Player* player) {
-    if (!player || !player->isSurvival()) return;
+    if (!player || !player->isSurvival())
+        return;
 
     auto inv = player->getInventory();
-    if (!inv) return;
+    if (!inv)
+        return;
 
     auto held = inv->getHeldItem();
-    if (held.isEmpty() || held.id != 259) return;
+    if (held.isEmpty() || held.id != 259)
+        return;
 
     held.meta += 2;
     if (held.meta > MAX_DURABILITY) {
@@ -245,15 +250,15 @@ void ItemFlintSteel::applyDurability(Player* player) {
     // ContainerSetSlotPacket confirmations on its own.
 }
 
-bool ItemFlintSteel::onActivate(world::World* world, Player* player,
-                                int32_t bx, int32_t by, int32_t bz,
-                                int32_t tx, int32_t ty, int32_t tz,
-                                uint8_t /*face*/) {
-    if (!world || !player) return false;
-    if (!player->server() || !player->server()->netherEnabled()) return false;
+bool ItemFlintSteel::onActivate(world::World* world, Player* player, int32_t bx, int32_t by,
+                                int32_t bz, int32_t tx, int32_t ty, int32_t tz, uint8_t /*face*/) {
+    if (!world || !player)
+        return false;
+    if (!player->server() || !player->server()->netherEnabled())
+        return false;
 
     uint8_t targetId = world->getBlockId(tx, ty, tz);
-    uint8_t airId    = world->getBlockId(bx, by, bz);
+    uint8_t airId = world->getBlockId(bx, by, bz);
 
     // Portal: the click landed on obsidian. The detection is anchored on
     // the TARGET obsidian (PMMP 0.15 semantics), X plane first, then Z
@@ -282,14 +287,12 @@ bool ItemFlintSteel::onActivate(world::World* world, Player* player,
         //    side-effect free.
         int32_t by = ty;
         int steps = 0;
-        while (by > 0 && steps < kPortalOuterMax &&
-               world->getBlockId(tx, by - 1, tz) == OBSIDIAN) {
+        while (by > 0 && steps < kPortalOuterMax && world->getBlockId(tx, by - 1, tz) == OBSIDIAN) {
             --by;
             ++steps;
         }
-        if (by != ty &&
-            (tryPortalPlaneX(world, tx, by, tz, filled) ||
-             tryPortalPlaneZ(world, tx, by, tz, filled))) {
+        if (by != ty && (tryPortalPlaneX(world, tx, by, tz, filled) ||
+                         tryPortalPlaneZ(world, tx, by, tz, filled))) {
             broadcastFilledCells(player, world, filled);
             registerLitPortal(world, filled);
             applyDurability(player);
@@ -301,10 +304,14 @@ bool ItemFlintSteel::onActivate(world::World* world, Player* player,
 
     // Fire: the placement cell must be air and the clicked target must
     // be a non-air, non-liquid block.
-    if (airId != AIR) return false;
-    if (targetId == AIR) return false;
-    if (targetId == FLOWING_WATER || targetId == WATER) return false;
-    if (targetId == FLOWING_LAVA  || targetId == LAVA)  return false;
+    if (airId != AIR)
+        return false;
+    if (targetId == AIR)
+        return false;
+    if (targetId == FLOWING_WATER || targetId == WATER)
+        return false;
+    if (targetId == FLOWING_LAVA || targetId == LAVA)
+        return false;
 
     world->setBlock(bx, by, bz, FIRE, 0);
     broadcastBlockUpdate(player, world, bx, by, bz, FIRE, 0);

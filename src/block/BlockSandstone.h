@@ -26,8 +26,12 @@
 #include "BlockIds.h"
 namespace cursestone::block {
 class BlockSandstone : public BlockSolid {
-public:
-    uint8_t id() const override { return SANDSTONE; }
-    std::string name() const override { return "Sandstone"; }
+  public:
+    uint8_t id() const override {
+        return SANDSTONE;
+    }
+    std::string name() const override {
+        return "Sandstone";
+    }
 };
 } // namespace

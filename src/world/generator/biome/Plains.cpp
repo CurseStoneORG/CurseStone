@@ -31,15 +31,16 @@ const BiomeConfig& plainsBiome() {
         .name = "plains",
         .temp = 0.1f,
         .humid = -0.3f,
-        .topBlock = 2,       // grass
-        .fillerBlock = 3,    // dirt
+        .topBlock = 2,    // grass
+        .fillerBlock = 3, // dirt
         .snowy = false,
         .underwater = false,
         .treeAmount = 2,
-        .trees = {
-            { object::TREE_OAK, 7 },
-            { object::TREE_BIG_OAK, 2 },
-        },
+        .trees =
+            {
+                {object::TREE_OAK, 7},
+                {object::TREE_BIG_OAK, 2},
+            },
         .grassAmount = 12,
         .flowerAmount = 8,
         .doublePlantAmount = 2,

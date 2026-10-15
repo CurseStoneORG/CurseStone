@@ -38,17 +38,19 @@
 #include "../utils/MainLogger.hpp"
 namespace cursestone::scheduler {
 class AsyncWorker {
-public:
+  public:
     using Work = std::function<void()>;
-    explicit AsyncWorker(Work w) : work_(std::move(w)) {}
+    explicit AsyncWorker(Work w) : work_(std::move(w)) {
+    }
     void start() {
         running_ = true;
-        thread_ = std::thread([this]{
+        thread_ = std::thread([this] {
             // FIX: an exception escaping a std::thread's entry
             // function calls std::terminate() and kills the whole
             // process. Guard the same way AsyncPool does.
             try {
-                if (work_) work_();
+                if (work_)
+                    work_();
             } catch (const std::exception& e) {
                 utils::MainLogger::get().warn(
                     std::string("[AsyncWorker] Task threw during execution: ") + e.what());
@@ -59,10 +61,19 @@ public:
             running_ = false;
         });
     }
-    bool isRunning() const { return running_.load(std::memory_order_relaxed); }
-    void join() { if (thread_.joinable()) thread_.join(); }
-    void detach() { if (thread_.joinable()) thread_.detach(); }
-private:
+    bool isRunning() const {
+        return running_.load(std::memory_order_relaxed);
+    }
+    void join() {
+        if (thread_.joinable())
+            thread_.join();
+    }
+    void detach() {
+        if (thread_.joinable())
+            thread_.detach();
+    }
+
+  private:
     Work work_;
     std::atomic<bool> running_{false};
     std::thread thread_;

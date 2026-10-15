@@ -24,10 +24,14 @@
 // EntityDamageByEntityEvent.h — ported from cn.nukkit.event.entity.EntityDamageByEntityEvent
 #pragma once
 #include "EntityDamageEvent.h"
-namespace cursestone { namespace entity { class Entity; } }
+namespace cursestone {
+namespace entity {
+class Entity;
+}
+}
 namespace cursestone::event::entity {
 class EntityDamageByEntityEvent : public EntityDamageEvent {
-public:
+  public:
     cursestone::entity::Entity* damager = nullptr;
 
     // `cause` defaults to ENTITY_ATTACK (melee). World::tickArrows passes
@@ -40,7 +44,8 @@ public:
     }
 
     const std::string& eventName() const override {
-        static std::string n = "EntityDamageByEntityEvent"; return n;
+        static std::string n = "EntityDamageByEntityEvent";
+        return n;
     }
 };
 } // namespace

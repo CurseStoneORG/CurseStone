@@ -30,11 +30,13 @@ namespace cursestone::world::generator::object::trees {
 using cursestone::block::BlockId;
 
 void SpruceTree::init(MersenneRandom& rng) {
-    height_ = 6 + (int)rng.nextInt(4);        // 6..9 (reference RedwoodTree)
-    leavesHeight_ = 1 + (int)rng.nextInt(2);  // 1..2
-    maxRadius_ = 2 + (int)rng.nextInt(2);     // 2..3
-    logId_ = 17;  logData_ = 1;   // LOG, spruce
-    leafId_ = 18; leafData_ = 1;  // LEAVES, spruce
+    height_ = 6 + (int)rng.nextInt(4);       // 6..9 (reference RedwoodTree)
+    leavesHeight_ = 1 + (int)rng.nextInt(2); // 1..2
+    maxRadius_ = 2 + (int)rng.nextInt(2);    // 2..3
+    logId_ = 17;
+    logData_ = 1; // LOG, spruce
+    leafId_ = 18;
+    leafData_ = 1; // LEAVES, spruce
 }
 
 bool SpruceTree::canPlaceOn(uint8_t soil) const {
@@ -44,9 +46,9 @@ bool SpruceTree::canPlaceOn(uint8_t soil) const {
 // Reference RedwoodTree::Generate — canopy built from the top down, with a
 // radius that widens step by step and whose minimum/peak grow as we go,
 // producing the classic tapering conifer silhouette.
-void SpruceTree::placeCanopy(mcp_chunk_t* c, int sourceX, int sourceY,
-                             int sourceZ, MersenneRandom& rng) {
-    int radius = (int)rng.nextInt(2);   // 0..1
+void SpruceTree::placeCanopy(mcp_chunk_t* c, int sourceX, int sourceY, int sourceZ,
+                             MersenneRandom& rng) {
+    int radius = (int)rng.nextInt(2); // 0..1
     int peakRadius = 1;
     int minRadius = 0;
 
@@ -62,15 +64,16 @@ void SpruceTree::placeCanopy(mcp_chunk_t* c, int sourceX, int sourceY,
         if (radius >= peakRadius) {
             radius = minRadius;
             minRadius = 1;
-            if (++peakRadius > maxRadius_) peakRadius = maxRadius_;
+            if (++peakRadius > maxRadius_)
+                peakRadius = maxRadius_;
         } else {
             radius++;
         }
     }
 }
 
-void SpruceTree::placeTrunk(mcp_chunk_t* c, int sourceX, int sourceY,
-                            int sourceZ, MersenneRandom& rng) {
+void SpruceTree::placeTrunk(mcp_chunk_t* c, int sourceX, int sourceY, int sourceZ,
+                            MersenneRandom& rng) {
     int h = height_ - (int)rng.nextInt(3);
     for (int i = 0; i < h; ++i)
         setLog(c, sourceX, sourceY + i, sourceZ, logId_, logData_);

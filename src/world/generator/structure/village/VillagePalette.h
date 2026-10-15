@@ -55,7 +55,7 @@ using cursestone::block::BlockId;
 
 // ---- The vocabulary -------------------------------------------------------
 enum SpecKind : uint8_t {
-    SPEC_AIR            = 0,
+    SPEC_AIR = 0,
     SPEC_COBBLE,        // cobblestone walls/frames; desert: smooth sandstone
     SPEC_LOG,           // log pillars/beams; desert: smooth sandstone pillar
     SPEC_PLANKS,        // plank floors/walls; desert: cut sandstone
@@ -110,16 +110,16 @@ inline bool isDesertVillageBiome(uint8_t biomeId) {
 //     3 south, 4 west, 5 east), while a chest/furnace's data is its
 //     front direction in 0..3 (0 north, 1 south, 2 west, 3 east).
 //   * standing torch: 5.
-constexpr uint8_t kStairsFacing[5]   = {0, 0, 1, 2, 3};  // idx = java facing
-constexpr uint8_t kDoorFacing[5]     = {0, 0, 2, 1, 3};
-constexpr uint8_t kWallTorchFacing[5]= {0, 2, 1, 3, 4};
+constexpr uint8_t kStairsFacing[5] = {0, 0, 1, 2, 3}; // idx = java facing
+constexpr uint8_t kDoorFacing[5] = {0, 0, 2, 1, 3};
+constexpr uint8_t kWallTorchFacing[5] = {0, 2, 1, 3, 4};
 // Ladder: legacy data is the side the ladder's face touches
 // (2 north, 3 south, 4 west, 5 east).
-constexpr uint8_t kLadderFacing[5]   = {0, 5, 4, 3, 2};
+constexpr uint8_t kLadderFacing[5] = {0, 5, 4, 3, 2};
 // Chest/furnace: legacy data is the FRONT direction in 0..3
 // (0 north, 1 south, 2 west, 3 east) — a different table from the
 // ladder's, and writing a ladder value here would spawn a double chest.
-constexpr uint8_t kFrontFacing[5]    = {0, 3, 2, 1, 0};
+constexpr uint8_t kFrontFacing[5] = {0, 3, 2, 1, 0};
 
 // The spec facings are the JAVA compass (1 east, 2 west, 3 south, 4
 // north), so they index the tables directly — masking with 3 here would
@@ -129,8 +129,7 @@ inline uint8_t stairsData(const BlockSpec& s) {
 }
 inline uint8_t doorData(const BlockSpec& s) {
     const bool upper = (s.aux & 1) != 0;
-    const uint8_t bits = (uint8_t)(kDoorFacing[s.facing] |
-                                   (s.misc & 1 ? 4 : 0));  // open
+    const uint8_t bits = (uint8_t)(kDoorFacing[s.facing] | (s.misc & 1 ? 4 : 0)); // open
     return upper ? (uint8_t)(bits | 8) : bits;
 }
 
@@ -142,50 +141,75 @@ inline BlockState resolve(const BlockSpec& s, int rot, void* user) {
     // Facings rotate WITH the template (rotation-invariant kinds just
     // pass through; the door's hinge/open bits ride along untouched).
     const uint8_t facing =
-        (s.facing <= 4 && (rot & 3) != 0) ? rotateFacing(s.facing, rot)
-                                          : s.facing;
+        (s.facing <= 4 && (rot & 3) != 0) ? rotateFacing(s.facing, rot) : s.facing;
     const BlockSpec t{s.kind, facing, s.aux, s.misc};
 
     switch (s.kind) {
-        case SPEC_AIR:          return {0, 0};
-        case SPEC_COBBLE:       return desert ? BlockState{(uint8_t)BlockId::SANDSTONE, 0}
-                                              : BlockState{(uint8_t)BlockId::COBBLESTONE, 0};
-        case SPEC_LOG:          return desert ? BlockState{(uint8_t)BlockId::SANDSTONE, 0}
-                                              : BlockState{(uint8_t)BlockId::LOG, 0};
-        case SPEC_PLANKS:       return desert ? BlockState{(uint8_t)BlockId::SANDSTONE, 2}
-                                              : BlockState{(uint8_t)BlockId::PLANKS, 0};
-        case SPEC_DOUBLE_SLAB:  return desert ? BlockState{43, 1}
-                                              : BlockState{43, 0};
-        case SPEC_SLAB:         return desert ? BlockState{(uint8_t)BlockId::STONE_SLAB,
-                                                           (uint8_t)(1 | (t.aux & 1 ? 8 : 0))}
-                                              : BlockState{(uint8_t)BlockId::STONE_SLAB,
-                                                           (uint8_t)(3 | (t.aux & 1 ? 8 : 0))};
-        case SPEC_WOOD_STAIRS:  return desert ? BlockState{(uint8_t)BlockId::COBBLE_STAIRS, stairsData(t)}
-                                              : BlockState{(uint8_t)BlockId::WOOD_STAIRS, stairsData(t)};
-        case SPEC_COBBLE_STAIRS:return {(uint8_t)BlockId::COBBLE_STAIRS, stairsData(t)};
-        case SPEC_FENCE:        return {(uint8_t)BlockId::FENCE, 0};
-        case SPEC_DOOR:         return {(uint8_t)BlockId::WOODEN_DOOR, doorData(t)};
-        case SPEC_PLATE:        return {(uint8_t)BlockId::WOOD_PRESSURE_PLATE, 0};
-        case SPEC_STONE_PLATE:  return {(uint8_t)BlockId::STONE_PRESSURE_PLATE, 0};
-        case SPEC_TORCH:        return {(uint8_t)BlockId::TORCH, 5};
-        case SPEC_WALL_TORCH:   return {(uint8_t)BlockId::TORCH, kWallTorchFacing[t.facing]};
-        case SPEC_LADDER:       return {(uint8_t)BlockId::LADDER, kLadderFacing[t.facing]};
-        case SPEC_GLASS_PANE:   return {(uint8_t)BlockId::GLASS_PANE, 0};
-        case SPEC_BOOKSHELF:    return {(uint8_t)BlockId::BOOKSHELF, 0};
-        case SPEC_CRAFTING:     return {(uint8_t)BlockId::WORKBENCH, 0};
-        case SPEC_CHEST:        return {(uint8_t)BlockId::CHEST, kFrontFacing[t.facing]};
-        case SPEC_FURNACE:      return {(uint8_t)BlockId::FURNACE, kFrontFacing[t.facing]};
-        case SPEC_IRON_BARS:    return {(uint8_t)BlockId::IRON_BARS, 0};
-        case SPEC_WOOL:         return {(uint8_t)BlockId::WOOL, t.misc};
-        case SPEC_GRASS:        return desert ? BlockState{(uint8_t)BlockId::SAND, 0}
-                                              : BlockState{(uint8_t)BlockId::GRASS, 0};
-        case SPEC_DIRT:         return desert ? BlockState{(uint8_t)BlockId::SAND, 0}
-                                              : BlockState{(uint8_t)BlockId::DIRT, 0};
-        case SPEC_FARMLAND:     return desert ? BlockState{(uint8_t)BlockId::SAND, 0}
-                                              : BlockState{(uint8_t)BlockId::FARMLAND, t.aux};
-        case SPEC_WATER:        return {(uint8_t)BlockId::WATER, t.misc};
-        case SPEC_LAVA:         return {(uint8_t)BlockId::LAVA, t.misc};
-        default:                return {0, 0};
+    case SPEC_AIR:
+        return {0, 0};
+    case SPEC_COBBLE:
+        return desert ? BlockState{(uint8_t)BlockId::SANDSTONE, 0}
+                      : BlockState{(uint8_t)BlockId::COBBLESTONE, 0};
+    case SPEC_LOG:
+        return desert ? BlockState{(uint8_t)BlockId::SANDSTONE, 0}
+                      : BlockState{(uint8_t)BlockId::LOG, 0};
+    case SPEC_PLANKS:
+        return desert ? BlockState{(uint8_t)BlockId::SANDSTONE, 2}
+                      : BlockState{(uint8_t)BlockId::PLANKS, 0};
+    case SPEC_DOUBLE_SLAB:
+        return desert ? BlockState{43, 1} : BlockState{43, 0};
+    case SPEC_SLAB:
+        return desert
+                   ? BlockState{(uint8_t)BlockId::STONE_SLAB, (uint8_t)(1 | (t.aux & 1 ? 8 : 0))}
+                   : BlockState{(uint8_t)BlockId::STONE_SLAB, (uint8_t)(3 | (t.aux & 1 ? 8 : 0))};
+    case SPEC_WOOD_STAIRS:
+        return desert ? BlockState{(uint8_t)BlockId::COBBLE_STAIRS, stairsData(t)}
+                      : BlockState{(uint8_t)BlockId::WOOD_STAIRS, stairsData(t)};
+    case SPEC_COBBLE_STAIRS:
+        return {(uint8_t)BlockId::COBBLE_STAIRS, stairsData(t)};
+    case SPEC_FENCE:
+        return {(uint8_t)BlockId::FENCE, 0};
+    case SPEC_DOOR:
+        return {(uint8_t)BlockId::WOODEN_DOOR, doorData(t)};
+    case SPEC_PLATE:
+        return {(uint8_t)BlockId::WOOD_PRESSURE_PLATE, 0};
+    case SPEC_STONE_PLATE:
+        return {(uint8_t)BlockId::STONE_PRESSURE_PLATE, 0};
+    case SPEC_TORCH:
+        return {(uint8_t)BlockId::TORCH, 5};
+    case SPEC_WALL_TORCH:
+        return {(uint8_t)BlockId::TORCH, kWallTorchFacing[t.facing]};
+    case SPEC_LADDER:
+        return {(uint8_t)BlockId::LADDER, kLadderFacing[t.facing]};
+    case SPEC_GLASS_PANE:
+        return {(uint8_t)BlockId::GLASS_PANE, 0};
+    case SPEC_BOOKSHELF:
+        return {(uint8_t)BlockId::BOOKSHELF, 0};
+    case SPEC_CRAFTING:
+        return {(uint8_t)BlockId::WORKBENCH, 0};
+    case SPEC_CHEST:
+        return {(uint8_t)BlockId::CHEST, kFrontFacing[t.facing]};
+    case SPEC_FURNACE:
+        return {(uint8_t)BlockId::FURNACE, kFrontFacing[t.facing]};
+    case SPEC_IRON_BARS:
+        return {(uint8_t)BlockId::IRON_BARS, 0};
+    case SPEC_WOOL:
+        return {(uint8_t)BlockId::WOOL, t.misc};
+    case SPEC_GRASS:
+        return desert ? BlockState{(uint8_t)BlockId::SAND, 0}
+                      : BlockState{(uint8_t)BlockId::GRASS, 0};
+    case SPEC_DIRT:
+        return desert ? BlockState{(uint8_t)BlockId::SAND, 0}
+                      : BlockState{(uint8_t)BlockId::DIRT, 0};
+    case SPEC_FARMLAND:
+        return desert ? BlockState{(uint8_t)BlockId::SAND, 0}
+                      : BlockState{(uint8_t)BlockId::FARMLAND, t.aux};
+    case SPEC_WATER:
+        return {(uint8_t)BlockId::WATER, t.misc};
+    case SPEC_LAVA:
+        return {(uint8_t)BlockId::LAVA, t.misc};
+    default:
+        return {0, 0};
     }
 }
 

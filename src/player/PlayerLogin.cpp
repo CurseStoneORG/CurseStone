@@ -86,52 +86,41 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
 
     // 1. Protocol version check.
     if (pk.protocol != network::protocol::CURRENT_PROTOCOL) {
-        auto resp =
-            std::make_shared<network::protocol::PlayStatusPacket>();
+        auto resp = std::make_shared<network::protocol::PlayStatusPacket>();
 
         if (pk.protocol < network::protocol::CURRENT_PROTOCOL) {
-            resp->status =
-                network::protocol::PlayStatusPacket::LOGIN_FAILED_CLIENT;
+            resp->status = network::protocol::PlayStatusPacket::LOGIN_FAILED_CLIENT;
         } else {
-            resp->status =
-                network::protocol::PlayStatusPacket::LOGIN_FAILED_SERVER;
+            resp->status = network::protocol::PlayStatusPacket::LOGIN_FAILED_SERVER;
         }
 
         sendPacket(resp);
 
-        close(
-            "disconnectionScreen.outdated" +
-            std::string(
-                pk.protocol < network::protocol::CURRENT_PROTOCOL
-                    ? "Client"
-                    : "Server"
-            )
-        );
+        close("disconnectionScreen.outdated" +
+              std::string(pk.protocol < network::protocol::CURRENT_PROTOCOL ? "Client" : "Server"));
 
         return;
     }
 
     // 2. Pull username/UUID/clientId from the parsed LoginPacket fields.
-    cfg_.username  = pk.username;
-    cfg_.uuid      = pk.clientUUID;
+    cfg_.username = pk.username;
+    cfg_.uuid = pk.clientUUID;
     cfg_.client_id = std::to_string(pk.clientId);
 
     // Skin for the PlayerListPacket entries the other players get when
     // this one joins. The 0.15.10 client ALWAYS ships its skin in its
     // login JWT; forward it verbatim (that is exactly what Genisys
     // does), and never let the field go out empty.
-    cfg_.skin_id   = pk.skinId;
+    cfg_.skin_id = pk.skinId;
     cfg_.skin_data.assign(pk.skinData.begin(), pk.skinData.end());
 
     if (cfg_.skin_data.empty()) {
-        cfg_.skin_id   = defaultSkinId();
+        cfg_.skin_id = defaultSkinId();
         cfg_.skin_data = defaultSkinData();
 
         utils::MainLogger::get().warn(
-            cfg_.username +
-            " sent no skin in its login packet — using the "
-            "default one (an empty skin blob crashes the 0.15.10 client)"
-        );
+            cfg_.username + " sent no skin in its login packet — using the "
+                            "default one (an empty skin blob crashes the 0.15.10 client)");
     }
 
     // 3. Username validation: [a-zA-Z0-9_]{3,16}, disallow "rcon"/"console".
@@ -142,10 +131,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
 
     for (char c : cfg_.username) {
         bool ok =
-            (c >= 'a' && c <= 'z') ||
-            (c >= 'A' && c <= 'Z') ||
-            (c >= '0' && c <= '9') ||
-            c == '_';
+            (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
 
         if (!ok) {
             close("disconnectionScreen.invalidName");
@@ -158,14 +144,9 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
     // Cast to unsigned char: ::tolower with a negative value (char is
     // signed on x86 Linux, unsigned on ARM/Android) is undefined
     // behaviour and can index outside glibc's ctype table.
-    std::transform(
-        lower.begin(),
-        lower.end(),
-        lower.begin(),
-        [](unsigned char c) {
-            return (char)::tolower(c);
-        }
-    );
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
+        return (char)::tolower(c);
+    });
 
     if (lower == "rcon" || lower == "console") {
         close("disconnectionScreen.invalidName");
@@ -194,21 +175,14 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
     size_t sl = pk.skinData.size();
 
     if (sl != 64 * 32 * 4 && sl != 64 * 64 * 4) {
-        utils::MainLogger::get().warn(
-            "Non-standard skin size (" +
-            std::to_string(sl) +
-            " bytes) from " +
-            cfg_.username +
-            " — using default skin"
-        );
+        utils::MainLogger::get().warn("Non-standard skin size (" + std::to_string(sl) +
+                                      " bytes) from " + cfg_.username + " — using default skin");
 
         pk.skinData.assign(64 * 32 * 4, 0);
     }
 
     // 5. Server full?
-    if (srv_ &&
-        srv_->playersSnapshot().size() >=
-            (size_t)srv_->maxPlayers()) {
+    if (srv_ && srv_->playersSnapshot().size() >= (size_t)srv_->maxPlayers()) {
         kick("disconnectionScreen.serverFull");
         return;
     }
@@ -225,8 +199,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
     }
 
     if (srv_ &&
-        (srv_->getNameBans().isBanned(cfg_.username) ||
-         srv_->getIPBans().isBanned(cfg_.ip))) {
+        (srv_->getNameBans().isBanned(cfg_.username) || srv_->getIPBans().isBanned(cfg_.ip))) {
         close("You are banned");
         return;
     }
@@ -244,22 +217,14 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
 
             std::string on = other->getName();
 
-            std::transform(
-                on.begin(),
-                on.end(),
-                on.begin(),
-                [](unsigned char c) {
-                    return (char)::tolower(c);
-                }
-            );
+            std::transform(on.begin(), on.end(), on.begin(), [](unsigned char c) {
+                return (char)::tolower(c);
+            });
 
             if (on == lower) {
                 other->kick("logged in from another location");
-            } else if (
-                other->loggedIn() &&
-                !other->config().uuid.empty() &&
-                other->config().uuid == cfg_.uuid
-            ) {
+            } else if (other->loggedIn() && !other->config().uuid.empty() &&
+                       other->config().uuid == cfg_.uuid) {
                 other->kick("logged in from another location");
             }
         }
@@ -270,34 +235,19 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
         named_tag_ = srv_->getOfflinePlayerData(cfg_.username);
 
         if (named_tag_) {
-            int32_t gm = mcp_compound_tag_get_int(
-                named_tag_.get(),
-                "playerGameType",
-                srv_->gamemode()
-            );
+            int32_t gm =
+                mcp_compound_tag_get_int(named_tag_.get(), "playerGameType", srv_->gamemode());
 
             setGamemode(gm);
 
-            int16_t hp = mcp_compound_tag_get_short(
-                named_tag_.get(),
-                "Health",
-                20
-            );
+            int16_t hp = mcp_compound_tag_get_short(named_tag_.get(), "Health", 20);
 
-            int16_t mh = mcp_compound_tag_get_short(
-                named_tag_.get(),
-                "MaxHealth",
-                20
-            );
+            int16_t mh = mcp_compound_tag_get_short(named_tag_.get(), "MaxHealth", 20);
 
             setMaxHealth(mh > 0 ? mh : 20);
             setHealth(hp <= 0 ? 20 : hp);
 
-            int16_t hunger = mcp_compound_tag_get_short(
-                named_tag_.get(),
-                "Hunger",
-                20
-            );
+            int16_t hunger = mcp_compound_tag_get_short(named_tag_.get(), "Hunger", 20);
 
             setFoodLevel(hunger);
 
@@ -306,60 +256,26 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
             // if PosX is missing.
             const double sentinel = -99999.999;
 
-            double px = mcp_compound_tag_get_double(
-                named_tag_.get(),
-                "PosX",
-                sentinel
-            );
+            double px = mcp_compound_tag_get_double(named_tag_.get(), "PosX", sentinel);
 
             if (px != sentinel) {
                 pos_.x = px;
 
-                pos_.y = mcp_compound_tag_get_double(
-                    named_tag_.get(),
-                    "PosY",
-                    64.0
-                );
+                pos_.y = mcp_compound_tag_get_double(named_tag_.get(), "PosY", 64.0);
 
-                pos_.z = mcp_compound_tag_get_double(
-                    named_tag_.get(),
-                    "PosZ",
-                    0.0
-                );
+                pos_.z = mcp_compound_tag_get_double(named_tag_.get(), "PosZ", 0.0);
 
-                yaw_ = mcp_compound_tag_get_float(
-                    named_tag_.get(),
-                    "Yaw",
-                    0.0f
-                );
+                yaw_ = mcp_compound_tag_get_float(named_tag_.get(), "Yaw", 0.0f);
 
-                pitch_ = mcp_compound_tag_get_float(
-                    named_tag_.get(),
-                    "Pitch",
-                    0.0f
-                );
+                pitch_ = mcp_compound_tag_get_float(named_tag_.get(), "Pitch", 0.0f);
             } else {
-                int32_t sx = mcp_compound_tag_get_int(
-                    named_tag_.get(),
-                    "SpawnX",
-                    INT32_MIN
-                );
+                int32_t sx = mcp_compound_tag_get_int(named_tag_.get(), "SpawnX", INT32_MIN);
 
-                int32_t sy = mcp_compound_tag_get_int(
-                    named_tag_.get(),
-                    "SpawnY",
-                    INT32_MIN
-                );
+                int32_t sy = mcp_compound_tag_get_int(named_tag_.get(), "SpawnY", INT32_MIN);
 
-                int32_t sz = mcp_compound_tag_get_int(
-                    named_tag_.get(),
-                    "SpawnZ",
-                    INT32_MIN
-                );
+                int32_t sz = mcp_compound_tag_get_int(named_tag_.get(), "SpawnZ", INT32_MIN);
 
-                if (sx != INT32_MIN ||
-                    sy != INT32_MIN ||
-                    sz != INT32_MIN) {
+                if (sx != INT32_MIN || sy != INT32_MIN || sz != INT32_MIN) {
                     pos_.x = (double)sx + 0.5;
                     pos_.y = (double)sy;
                     pos_.z = (double)sz + 0.5;
@@ -373,27 +289,13 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
 
             // Personal spawn point (Infinity Human::saveNBT: SpawnX/Y/Z).
             {
-                int32_t sx = mcp_compound_tag_get_int(
-                    named_tag_.get(),
-                    "SpawnX",
-                    INT32_MIN
-                );
+                int32_t sx = mcp_compound_tag_get_int(named_tag_.get(), "SpawnX", INT32_MIN);
 
-                int32_t sy = mcp_compound_tag_get_int(
-                    named_tag_.get(),
-                    "SpawnY",
-                    INT32_MIN
-                );
+                int32_t sy = mcp_compound_tag_get_int(named_tag_.get(), "SpawnY", INT32_MIN);
 
-                int32_t sz = mcp_compound_tag_get_int(
-                    named_tag_.get(),
-                    "SpawnZ",
-                    INT32_MIN
-                );
+                int32_t sz = mcp_compound_tag_get_int(named_tag_.get(), "SpawnZ", INT32_MIN);
 
-                if (sx != INT32_MIN &&
-                    sy != INT32_MIN &&
-                    sz != INT32_MIN) {
+                if (sx != INT32_MIN && sy != INT32_MIN && sz != INT32_MIN) {
                     has_spawn_override_ = true;
                     spawn_x_ = sx;
                     spawn_y_ = sy;
@@ -402,30 +304,21 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
             }
 
             // Restore inventory from the NBT ListTag.
-            const mcp_tag_t* inv_tag =
-                mcp_compound_tag_get(named_tag_.get(), "Inventory");
+            const mcp_tag_t* inv_tag = mcp_compound_tag_get(named_tag_.get(), "Inventory");
 
-            if (inv_tag &&
-                mcp_tag_get_type(inv_tag) == MCP_TAG_LIST) {
-                const mcp_list_tag_t* inv_list =
-                    (const mcp_list_tag_t*)inv_tag;
+            if (inv_tag && mcp_tag_get_type(inv_tag) == MCP_TAG_LIST) {
+                const mcp_list_tag_t* inv_list = (const mcp_list_tag_t*)inv_tag;
 
                 int loaded = 0;
 
                 for (size_t i = 0; i < inv_list->count; ++i) {
-                    const mcp_tag_t* entry =
-                        mcp_list_tag_get(inv_tag, i);
+                    const mcp_tag_t* entry = mcp_list_tag_get(inv_tag, i);
 
-                    if (!entry ||
-                        mcp_tag_get_type(entry) != MCP_TAG_COMPOUND) {
+                    if (!entry || mcp_tag_get_type(entry) != MCP_TAG_COMPOUND) {
                         continue;
                     }
 
-                    int8_t nbt_slot = mcp_compound_tag_get_byte(
-                        entry,
-                        "Slot",
-                        -1
-                    );
+                    int8_t nbt_slot = mcp_compound_tag_get_byte(entry, "Slot", -1);
 
                     item::ItemStack it;
 
@@ -440,9 +333,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
                         dest_slot = nbt_slot;
                     } else if (nbt_slot >= 100 && nbt_slot <= 103) {
                         // Armor: 100=helmet, 101=chest, 102=legs, 103=boots.
-                        dest_slot =
-                            inventory::PlayerInventory::ARMOR_OFFSET +
-                            (nbt_slot - 100);
+                        dest_slot = inventory::PlayerInventory::ARMOR_OFFSET + (nbt_slot - 100);
                     } else if (nbt_slot >= 36 && nbt_slot < 45) {
                         // Legacy CurseStone layout (armor at 36..39).
                         dest_slot = nbt_slot;
@@ -450,28 +341,18 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
 
                     // Armor occupies slots 36..39. PLAYER_INV_TOTAL includes
                     // these slots, whereas SIZE excludes them.
-                    if (dest_slot >= 0 &&
-                        dest_slot < inventory::PLAYER_INV_TOTAL) {
+                    if (dest_slot >= 0 && dest_slot < inventory::PLAYER_INV_TOTAL) {
                         inv_->setItem(dest_slot, it);
                         ++loaded;
                     }
                 }
 
-                utils::MainLogger::get().info(
-                    "Loaded inventory for " +
-                    cfg_.username +
-                    " (" +
-                    std::to_string(loaded) +
-                    " items)"
-                );
+                utils::MainLogger::get().info("Loaded inventory for " + cfg_.username + " (" +
+                                              std::to_string(loaded) + " items)");
             }
 
             // Restore held hotbar slot.
-            int32_t held = mcp_compound_tag_get_int(
-                named_tag_.get(),
-                "SelectedItemSlot",
-                -1
-            );
+            int32_t held = mcp_compound_tag_get_int(named_tag_.get(), "SelectedItemSlot", -1);
 
             if (held >= 0 && held <= 8) {
                 inv_->setHeldSlot(held);
@@ -480,24 +361,22 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
     }
 
     // Tell the client "login OK".
-    auto ps =
-        std::make_shared<network::protocol::PlayStatusPacket>();
+    auto ps = std::make_shared<network::protocol::PlayStatusPacket>();
 
     ps->status = network::protocol::PlayStatusPacket::LOGIN_SUCCESS;
     sendPacket(ps, true);
 
     // Send StartGamePacket so the client can render the loading screen.
-    auto sg =
-        std::make_shared<network::protocol::StartGamePacket>();
+    auto sg = std::make_shared<network::protocol::StartGamePacket>();
 
     if (getWorld()) {
         auto* lvl = getWorld();
 
-        sg->seed      = (int32_t)lvl->seed();
+        sg->seed = (int32_t)lvl->seed();
         sg->dimension = lvl->dimension();
         sg->generator = 1;
-        sg->gamemode  = cfg_.gamemode & 0x01;
-        sg->eid       = static_cast<int64_t>(runtimeId());
+        sg->gamemode = cfg_.gamemode & 0x01;
+        sg->eid = static_cast<int64_t>(runtimeId());
 
         auto sp = lvl->spawn();
 
@@ -516,10 +395,9 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
 
     // SetTimePacket.
     if (getWorld()) {
-        auto st =
-            std::make_shared<network::protocol::SetTimePacket>();
+        auto st = std::make_shared<network::protocol::SetTimePacket>();
 
-        st->time    = getWorld()->time();
+        st->time = getWorld()->time();
         st->started = true;
 
         sendPacket(st, true);
@@ -534,8 +412,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
     if (getWorld()) {
         auto sp = getWorld()->spawn();
 
-        auto ssp =
-            std::make_shared<network::protocol::SetSpawnPositionPacket>();
+        auto ssp = std::make_shared<network::protocol::SetSpawnPositionPacket>();
 
         ssp->x = (int32_t)sp.x;
         ssp->y = (int32_t)sp.y;
@@ -546,8 +423,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
 
     // SetDifficulty.
     if (srv_) {
-        auto sd =
-            std::make_shared<network::protocol::SetDifficultyPacket>();
+        auto sd = std::make_shared<network::protocol::SetDifficultyPacket>();
 
         sd->difficulty = srv_->difficulty();
 
@@ -556,23 +432,15 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
 
     // SetHealth.
     {
-        auto sh =
-            std::make_shared<network::protocol::SetHealthPacket>();
+        auto sh = std::make_shared<network::protocol::SetHealthPacket>();
 
         sh->health = (int32_t)health();
 
         sendPacket(sh, true);
     }
 
-    utils::MainLogger::get().info(
-        "Player " +
-        cfg_.username +
-        " logged in (" +
-        cfg_.ip +
-        ":" +
-        std::to_string(cfg_.port) +
-        ")"
-    );
+    utils::MainLogger::get().info("Player " + cfg_.username + " logged in (" + cfg_.ip + ":" +
+                                  std::to_string(cfg_.port) + ")");
 
     // Stream chunks and trigger first spawn.
     sendChunksAroundSpawn();
@@ -599,10 +467,7 @@ static const char* defaultSkinId() {
 }
 
 // Helper: parse UUID string into 16 raw bytes.
-static void parseUuidBytes(
-    const std::string& s,
-    std::array<uint8_t, 16>& out
-) {
+static void parseUuidBytes(const std::string& s, std::array<uint8_t, 16>& out) {
     out.fill(0);
 
     if (s.empty()) {
@@ -666,17 +531,15 @@ void Player::doFirstSpawn() {
         return;
     }
 
-    start_time_ms_ = (uint64_t)
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch()
-        ).count();
+    start_time_ms_ = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+                         std::chrono::system_clock::now().time_since_epoch())
+                         .count();
 
     last_activity_ms_ = start_time_ms_;
 
     // AdventureSettings (flight/pvp flags).
     {
-        auto as =
-            std::make_shared<network::protocol::AdventureSettingsPacket>();
+        auto as = std::make_shared<network::protocol::AdventureSettingsPacket>();
 
         uint32_t flags = 0;
 
@@ -697,8 +560,8 @@ void Player::doFirstSpawn() {
             flags |= 0x100;
         }
 
-        as->flags            = flags;
-        as->userPermission   = 2;
+        as->flags = flags;
+        as->userPermission = 2;
         as->globalPermission = 2;
 
         sendPacket(as);
@@ -706,18 +569,13 @@ void Player::doFirstSpawn() {
 
     // CraftingDataPacket.
     if (srv_) {
-        auto cd =
-            std::make_shared<network::protocol::CraftingDataPacket>();
+        auto cd = std::make_shared<network::protocol::CraftingDataPacket>();
 
         if (auto* mgr = srv_->craftingManager()) {
             cd->addAllRecipes(*mgr);
 
-            utils::MainLogger::get().info(
-                "Sent " +
-                std::to_string(mgr->size()) +
-                " recipes to " +
-                cfg_.username
-            );
+            utils::MainLogger::get().info("Sent " + std::to_string(mgr->size()) + " recipes to " +
+                                          cfg_.username);
         }
 
         sendPacket(cd);
@@ -725,8 +583,7 @@ void Player::doFirstSpawn() {
 
     // PLAYER_SPAWN.
     {
-        auto ps =
-            std::make_shared<network::protocol::PlayStatusPacket>();
+        auto ps = std::make_shared<network::protocol::PlayStatusPacket>();
 
         ps->status = network::protocol::PlayStatusPacket::PLAYER_SPAWN;
 
@@ -739,8 +596,7 @@ void Player::doFirstSpawn() {
 
     // Broadcast player-list entries for currently-online players.
     if (srv_) {
-        auto plp =
-            std::make_shared<network::protocol::PlayerListPacket>();
+        auto plp = std::make_shared<network::protocol::PlayerListPacket>();
 
         plp->type = network::protocol::PlayerListPacket::TYPE_ADD;
 
@@ -757,9 +613,9 @@ void Player::doFirstSpawn() {
 
             parseUuidBytes(other->config().uuid, e.uuid);
 
-            e.eid      = other->runtimeId();
-            e.name     = other->getNameTag();
-            e.skinId   = other->skinId();
+            e.eid = other->runtimeId();
+            e.name = other->getNameTag();
+            e.skinId = other->skinId();
             e.skinData = other->skinData();
 
             plp->entries.push_back(std::move(e));
@@ -783,21 +639,20 @@ void Player::doFirstSpawn() {
                 continue;
             }
 
-            auto ap =
-                std::make_shared<network::protocol::AddPlayerPacket>();
+            auto ap = std::make_shared<network::protocol::AddPlayerPacket>();
 
             parseUuidBytes(other->config().uuid, ap->uuid);
 
             ap->username = other->getNameTag();
-            ap->eid      = other->runtimeId();
+            ap->eid = other->runtimeId();
 
             ap->x = (float)other->position().x;
             ap->y = (float)other->position().y;
             ap->z = (float)other->position().z;
 
-            ap->yaw     = other->yaw();
+            ap->yaw = other->yaw();
             ap->headYaw = other->yaw();
-            ap->pitch   = other->pitch();
+            ap->pitch = other->pitch();
 
             sendPacket(ap);
         }
@@ -807,20 +662,15 @@ void Player::doFirstSpawn() {
 
     // Broadcast join message.
     if (srv_) {
-        auto ev =
-            event::EventManager::get().fire<event::player::PlayerJoinEvent>(
-                this,
-                cfg_.username + " joined the game"
-            );
+        auto ev = event::EventManager::get().fire<event::player::PlayerJoinEvent>(
+            this, cfg_.username + " joined the game");
 
         if (!ev.isCancelled() && !ev.message.empty()) {
             srv_->broadcastMessage(ev.message);
         }
     }
 
-    utils::MainLogger::get().info(
-        "First spawn for " + cfg_.username
-    );
+    utils::MainLogger::get().info("First spawn for " + cfg_.username);
 }
 
 // ============================================================
@@ -832,8 +682,7 @@ void Player::announceSelfToOthers() {
         return;
     }
 
-    auto plp_add =
-        std::make_shared<network::protocol::PlayerListPacket>();
+    auto plp_add = std::make_shared<network::protocol::PlayerListPacket>();
 
     plp_add->type = network::protocol::PlayerListPacket::TYPE_ADD;
 
@@ -842,29 +691,28 @@ void Player::announceSelfToOthers() {
 
         parseUuidBytes(cfg_.uuid, e.uuid);
 
-        e.eid      = runtimeId();
-        e.name     = getNameTag();
-        e.skinId   = skinId();
+        e.eid = runtimeId();
+        e.name = getNameTag();
+        e.skinId = skinId();
         e.skinData = skinData();
 
         plp_add->entries.push_back(std::move(e));
     }
 
-    auto ap_self =
-        std::make_shared<network::protocol::AddPlayerPacket>();
+    auto ap_self = std::make_shared<network::protocol::AddPlayerPacket>();
 
     parseUuidBytes(cfg_.uuid, ap_self->uuid);
 
     ap_self->username = getNameTag();
-    ap_self->eid      = runtimeId();
+    ap_self->eid = runtimeId();
 
     ap_self->x = (float)pos_.x;
     ap_self->y = (float)pos_.y;
     ap_self->z = (float)pos_.z;
 
-    ap_self->yaw     = yaw_;
+    ap_self->yaw = yaw_;
     ap_self->headYaw = yaw_;
-    ap_self->pitch   = pitch_;
+    ap_self->pitch = pitch_;
 
     for (auto& other : srv_->playersSnapshot()) {
         if (!other || other.get() == this) {
@@ -898,8 +746,7 @@ void Player::announceTo(Player* viewer) {
         return;
     }
 
-    auto plp =
-        std::make_shared<network::protocol::PlayerListPacket>();
+    auto plp = std::make_shared<network::protocol::PlayerListPacket>();
 
     plp->type = network::protocol::PlayerListPacket::TYPE_ADD;
 
@@ -908,9 +755,9 @@ void Player::announceTo(Player* viewer) {
 
         parseUuidBytes(cfg_.uuid, e.uuid);
 
-        e.eid      = runtimeId();
-        e.name     = getName();
-        e.skinId   = skinId();
+        e.eid = runtimeId();
+        e.name = getName();
+        e.skinId = skinId();
         e.skinData = skinData();
 
         plp->entries.push_back(std::move(e));
@@ -918,38 +765,29 @@ void Player::announceTo(Player* viewer) {
 
     viewer->sendPacket(plp);
 
-    auto ap =
-        std::make_shared<network::protocol::AddPlayerPacket>();
+    auto ap = std::make_shared<network::protocol::AddPlayerPacket>();
 
     parseUuidBytes(cfg_.uuid, ap->uuid);
 
     ap->username = getNameTag();
-    ap->eid      = runtimeId();
+    ap->eid = runtimeId();
 
     ap->x = (float)pos_.x;
     ap->y = (float)pos_.y;
     ap->z = (float)pos_.z;
 
-    ap->yaw     = yaw_;
+    ap->yaw = yaw_;
     ap->headYaw = yaw_;
-    ap->pitch   = pitch_;
+    ap->pitch = pitch_;
 
     viewer->sendPacket(ap);
 
     // Forward the current pose.
-    auto pose =
-        std::make_shared<network::protocol::SetEntityDataPacket>();
+    auto pose = std::make_shared<network::protocol::SetEntityDataPacket>();
 
     pose->eid = runtimeId();
 
-    pose->entries.push_back(
-        makePoseFlagEntry(
-            sneaking_,
-            sprinting_,
-            false,
-            isOnFire()
-        )
-    );
+    pose->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_, false, isOnFire()));
 
     viewer->sendPacket(pose);
 }
@@ -966,12 +804,7 @@ void Player::respawn() {
     math::Vector3 sp = getSpawn();
 
     auto ev =
-        event::EventManager::get().fire<event::player::PlayerRespawnEvent>(
-            this,
-            sp.x,
-            sp.y,
-            sp.z
-        );
+        event::EventManager::get().fire<event::player::PlayerRespawnEvent>(this, sp.x, sp.y, sp.z);
 
     entity::Living::setHealth((float)maxHealth());
 
@@ -991,12 +824,12 @@ void Player::respawn() {
     pos_.z = ev.respawnZ;
 
     // Reset per-life state.
-    air_ticks_      = 300;
-    fall_distance_  = 0.0f;
-    was_on_fire_    = false;
-    fire_ticks_     = 0;
-    was_in_lava_    = false;
-    starve_ticks_   = 0;
+    air_ticks_ = 300;
+    fall_distance_ = 0.0f;
+    was_on_fire_ = false;
+    fire_ticks_ = 0;
+    was_in_lava_ = false;
+    starve_ticks_ = 0;
     food_tick_timer_ = 0;
     food_depletion_ = 0;
 
@@ -1006,8 +839,7 @@ void Player::respawn() {
     if (spawned_.load(std::memory_order_relaxed)) {
         spawn_ack_done_.store(false, std::memory_order_relaxed);
 
-        auto rp =
-            std::make_shared<network::protocol::RespawnPacket>();
+        auto rp = std::make_shared<network::protocol::RespawnPacket>();
 
         rp->x = (float)pos_.x;
         rp->y = (float)pos_.y;
@@ -1015,8 +847,7 @@ void Player::respawn() {
 
         sendPacket(rp);
 
-        auto sh =
-            std::make_shared<network::protocol::SetHealthPacket>();
+        auto sh = std::make_shared<network::protocol::SetHealthPacket>();
 
         sh->health = (int32_t)health();
 
@@ -1024,8 +855,7 @@ void Player::respawn() {
 
         sendAllAttributes();
 
-        auto mp =
-            std::make_shared<network::protocol::MovePlayerPacket>();
+        auto mp = std::make_shared<network::protocol::MovePlayerPacket>();
 
         mp->eid = runtimeId();
 
@@ -1033,9 +863,9 @@ void Player::respawn() {
         mp->y = (float)(pos_.y + kEyeHeight);
         mp->z = (float)pos_.z;
 
-        mp->yaw     = yaw_;
+        mp->yaw = yaw_;
         mp->bodyYaw = yaw_;
-        mp->pitch   = pitch_;
+        mp->pitch = pitch_;
 
         mp->mode = network::protocol::MovePlayerPacket::MODE_RESET;
 
@@ -1065,8 +895,7 @@ void Player::respawn() {
             }
         }
 
-        auto ps =
-            std::make_shared<network::protocol::PlayStatusPacket>();
+        auto ps = std::make_shared<network::protocol::PlayStatusPacket>();
 
         ps->status = network::protocol::PlayStatusPacket::PLAYER_SPAWN;
 
@@ -1075,13 +904,8 @@ void Player::respawn() {
 
     if (srv_ && srv_->advancedLog()) {
         utils::MainLogger::get().info(
-            "[RESPAWN] " +
-            cfg_.username +
-            " respawned at " +
-            std::to_string((int)pos_.x) + "," +
-            std::to_string((int)pos_.y) + "," +
-            std::to_string((int)pos_.z)
-        );
+            "[RESPAWN] " + cfg_.username + " respawned at " + std::to_string((int)pos_.x) + "," +
+            std::to_string((int)pos_.y) + "," + std::to_string((int)pos_.z));
     }
 }
 
@@ -1092,11 +916,7 @@ void Player::respawn() {
 void Player::onDeath() {
     std::string msg = cfg_.username + " died";
 
-    auto ev =
-        event::EventManager::get().fire<event::player::PlayerDeathEvent>(
-            this,
-            msg
-        );
+    auto ev = event::EventManager::get().fire<event::player::PlayerDeathEvent>(this, msg);
 
     if (!ev.isCancelled() && !ev.message.empty() && srv_) {
         srv_->broadcastMessage(ev.message);
@@ -1104,10 +924,9 @@ void Player::onDeath() {
 
     // Death sequence (protocol 84).
     {
-        auto ee =
-            std::make_shared<network::protocol::EntityEventPacket>();
+        auto ee = std::make_shared<network::protocol::EntityEventPacket>();
 
-        ee->eid   = runtimeId();
+        ee->eid = runtimeId();
         ee->event = network::protocol::EntityEventPacket::DEATH_ANIMATION;
 
         sendPacket(ee);
@@ -1122,8 +941,7 @@ void Player::onDeath() {
             }
         }
 
-        auto sh =
-            std::make_shared<network::protocol::SetHealthPacket>();
+        auto sh = std::make_shared<network::protocol::SetHealthPacket>();
 
         sh->health = 0;
 
@@ -1134,8 +952,7 @@ void Player::onDeath() {
         {
             math::Vector3 sp = getSpawn();
 
-            auto rp =
-                std::make_shared<network::protocol::RespawnPacket>();
+            auto rp = std::make_shared<network::protocol::RespawnPacket>();
 
             rp->x = (float)sp.x;
             rp->y = (float)sp.y;
@@ -1154,14 +971,7 @@ void Player::onDeath() {
                 continue;
             }
 
-            dropItem(
-                pos_.x,
-                pos_.y,
-                pos_.z,
-                it.id,
-                (uint8_t)it.count,
-                it.meta
-            );
+            dropItem(pos_.x, pos_.y, pos_.z, it.id, (uint8_t)it.count, it.meta);
         }
 
         // Armor slots.
@@ -1172,29 +982,22 @@ void Player::onDeath() {
                 continue;
             }
 
-            dropItem(
-                pos_.x,
-                pos_.y,
-                pos_.z,
-                it.id,
-                (uint8_t)it.count,
-                it.meta
-            );
+            dropItem(pos_.x, pos_.y, pos_.z, it.id, (uint8_t)it.count, it.meta);
         }
 
         inv_->clearAll();
     }
 
     // Cleanup at death.
-    was_on_fire_     = false;
-    fire_ticks_      = 0;
-    was_in_lava_     = false;
-    fall_distance_   = 0.0f;
+    was_on_fire_ = false;
+    fire_ticks_ = 0;
+    was_in_lava_ = false;
+    fall_distance_ = 0.0f;
     food_saturation_ = 5.0f;
-    food_depletion_  = 0;
+    food_depletion_ = 0;
     food_tick_timer_ = 0;
-    starve_ticks_    = 0;
-    air_ticks_       = 300;
+    starve_ticks_ = 0;
+    air_ticks_ = 300;
 }
 
 void Player::spawnTo(Player* player) {
@@ -1202,21 +1005,20 @@ void Player::spawnTo(Player* player) {
         return;
     }
 
-    auto ap =
-        std::make_shared<network::protocol::AddPlayerPacket>();
+    auto ap = std::make_shared<network::protocol::AddPlayerPacket>();
 
     parseUuidBytes(cfg_.uuid, ap->uuid);
 
     ap->username = cfg_.username;
-    ap->eid      = runtimeId();
+    ap->eid = runtimeId();
 
     ap->x = (float)pos_.x;
     ap->y = (float)pos_.y;
     ap->z = (float)pos_.z;
 
-    ap->yaw     = yaw_;
+    ap->yaw = yaw_;
     ap->headYaw = yaw_;
-    ap->pitch   = pitch_;
+    ap->pitch = pitch_;
 
     player->sendPacket(ap);
 }

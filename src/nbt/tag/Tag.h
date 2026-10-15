@@ -48,18 +48,18 @@ extern "C" {
 #endif
 
 typedef enum mcp_tag_type {
-    MCP_TAG_END       = 0,
-    MCP_TAG_BYTE      = 1,
-    MCP_TAG_SHORT     = 2,
-    MCP_TAG_INT       = 3,
-    MCP_TAG_LONG      = 4,
-    MCP_TAG_FLOAT     = 5,
-    MCP_TAG_DOUBLE    = 6,
-    MCP_TAG_BYTE_ARRAY= 7,
-    MCP_TAG_STRING    = 8,
-    MCP_TAG_LIST      = 9,
-    MCP_TAG_COMPOUND  = 10,
-    MCP_TAG_INT_ARRAY= 11,
+    MCP_TAG_END = 0,
+    MCP_TAG_BYTE = 1,
+    MCP_TAG_SHORT = 2,
+    MCP_TAG_INT = 3,
+    MCP_TAG_LONG = 4,
+    MCP_TAG_FLOAT = 5,
+    MCP_TAG_DOUBLE = 6,
+    MCP_TAG_BYTE_ARRAY = 7,
+    MCP_TAG_STRING = 8,
+    MCP_TAG_LIST = 9,
+    MCP_TAG_COMPOUND = 10,
+    MCP_TAG_INT_ARRAY = 11,
 } mcp_tag_type_t;
 
 // Forward declaration of the public Tag interface.
@@ -79,7 +79,7 @@ struct mcp_tag_vtable {
 struct mcp_tag {
     const struct mcp_tag_vtable* vtable;
     mcp_tag_type_t type;
-    char* name;          // NUL-terminated; may be NULL for list elements
+    char* name; // NUL-terminated; may be NULL for list elements
     size_t name_len;
 };
 

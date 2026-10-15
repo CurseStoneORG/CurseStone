@@ -42,33 +42,37 @@
 namespace cursestone::network::protocol {
 
 class LoginPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return LOGIN_PACKET; }
-    bool canBeSentBeforeLogin() const override { return true; }
+  public:
+    uint8_t pid() const override {
+        return LOGIN_PACKET;
+    }
+    bool canBeSentBeforeLogin() const override {
+        return true;
+    }
 
     void encode(std::vector<uint8_t>& out) const override;
     bool decode(const uint8_t* data, size_t len) override;
 
     // Public fields (populated by decode()).
-    int       protocol = 0;
-    uint8_t   edition = 0;            // 0 = Pocket
-    std::string chainJson;            // raw chain data JSON
-    std::string clientDataJwt;        // raw clientData JWT (3-dot-separated)
+    int protocol = 0;
+    uint8_t edition = 0;       // 0 = Pocket
+    std::string chainJson;     // raw chain data JSON
+    std::string clientDataJwt; // raw clientData JWT (3-dot-separated)
     // Parsed fields from the clientData JWT payload.
     std::string username;
     std::string clientUUID;
     std::string skinId;
     std::vector<uint8_t> skinData;
-    std::string languageCode  = "en_US";
-    std::string deviceModel   = "Standard";
-    int         deviceOS      = -1;   // -1 = unknown
-    int         clientId       = 0;
+    std::string languageCode = "en_US";
+    std::string deviceModel = "Standard";
+    int deviceOS = -1; // -1 = unknown
+    int clientId = 0;
     // Why decode() gave up (empty on success). Surfaced in the console
     // log so an operator can tell a malformed/short buffer from a zlib
     // failure instead of only seeing "no session created".
     std::string decode_error;
 
-private:
+  private:
     // Parses the third segment of the clientData JWT (a JSON object).
     void parseClientDataPayload();
 };

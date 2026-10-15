@@ -31,8 +31,8 @@
 namespace cursestone::item {
 struct ItemStack {
     uint16_t id = 0;
-    uint8_t  meta = 0;
-    int      count = 0;
+    uint8_t meta = 0;
+    int count = 0;
     // Raw little-endian network NBT compound of this stack (the exact
     // bytes the 0.15.10 client expects after the slot's nbtLen short —
     // Genisys Item::$tags). Empty string = no NBT. A custom item name is
@@ -49,10 +49,16 @@ struct ItemStack {
     // cuanto el NBT de items se lea, los encantamientos empiezan a contar
     // sin tocar el pipeline.
     enchantment::EnchantmentList ench;
-    bool isEmpty() const { return count <= 0 || id == 0; }
-    static ItemStack EMPTY() { return {0, 0, 0, {}, {}}; }
+    bool isEmpty() const {
+        return count <= 0 || id == 0;
+    }
+    static ItemStack EMPTY() {
+        return {0, 0, 0, {}, {}};
+    }
     // Nivel del encantamiento en este stack (0 = no lo tiene).
-    int enchantmentLevel(enchantment::EnchantmentId e) const { return (int)ench.level(e); }
+    int enchantmentLevel(enchantment::EnchantmentId e) const {
+        return (int)ench.level(e);
+    }
     // Two stacks merge only when their NBT blobs are identical —
     // otherwise a named item would silently lose its name by merging
     // into an unnamed pile (PMMP Item::equals compares the compound tag).

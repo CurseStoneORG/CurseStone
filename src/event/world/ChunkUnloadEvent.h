@@ -28,17 +28,22 @@
 #include "ChunkEvent.h"
 #include "../Cancellable.h"
 #include <string>
-namespace cursestone { namespace world { class World; } }
+namespace cursestone {
+namespace world {
+class World;
+}
+}
 
 namespace cursestone::event::world {
 
 class ChunkUnloadEvent : public ChunkEvent, public Cancellable {
-public:
-    ChunkUnloadEvent(cursestone::world::World* l, void* c)
-        : ChunkEvent(l, c) {}
+  public:
+    ChunkUnloadEvent(cursestone::world::World* l, void* c) : ChunkEvent(l, c) {
+    }
 
     const std::string& eventName() const override {
-        static std::string n = "ChunkUnloadEvent"; return n;
+        static std::string n = "ChunkUnloadEvent";
+        return n;
     }
 };
 

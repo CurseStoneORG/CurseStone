@@ -28,7 +28,7 @@
 #include <time.h>
 
 #if defined(_MSC_VER) && !defined(__clang__)
-#  include <intrin.h>
+#include <intrin.h>
 // MSVC has no __builtin_clz; v must be nonzero.
 static int mcp_clz32(uint32_t v) {
     unsigned long idx;
@@ -36,14 +36,13 @@ static int mcp_clz32(uint32_t v) {
     return 31 - (int)idx;
 }
 #else
-#  define mcp_clz32(v) __builtin_clz(v)
+#define mcp_clz32(v) __builtin_clz(v)
 #endif
-
 
 static void mt_generate(mcp_random_t* r) {
     static const uint32_t MATRIX_A = 0x9908B0DFu;
-    static const uint32_t UPPER    = 0x80000000u;
-    static const uint32_t LOWER    = 0x7FFFFFFFu;
+    static const uint32_t UPPER = 0x80000000u;
+    static const uint32_t LOWER = 0x7FFFFFFFu;
     uint32_t* s = r->state;
     for (size_t i = 0; i < MCP_MT_N - MCP_MT_M; ++i) {
         uint32_t y = (s[i] & UPPER) | (s[i + 1] & LOWER);
@@ -59,7 +58,8 @@ static void mt_generate(mcp_random_t* r) {
 }
 
 void mcp_random_seed(mcp_random_t* r, uint32_t seed) {
-    if (!r) return;
+    if (!r)
+        return;
     r->state[0] = seed;
     for (size_t i = 1; i < MCP_MT_N; ++i) {
         r->state[i] = 1812433253u * (r->state[i - 1] ^ (r->state[i - 1] >> 30)) + (uint32_t)i;
@@ -72,20 +72,22 @@ void mcp_random_auto_seed(mcp_random_t* r) {
 }
 
 uint32_t mcp_random_next_u32(mcp_random_t* r) {
-    if (!r) return 0;
+    if (!r)
+        return 0;
     if (r->index >= MCP_MT_N) {
         mt_generate(r);
     }
     uint32_t y = r->state[r->index++];
     y ^= (y >> 11);
-    y ^= (y << 7)  & 0x9D2C5680u;
+    y ^= (y << 7) & 0x9D2C5680u;
     y ^= (y << 15) & 0xEFC60000u;
     y ^= (y >> 18);
     return y;
 }
 
 int mcp_random_next_int_range(mcp_random_t* r, int range) {
-    if (range <= 0) return 0;
+    if (range <= 0)
+        return 0;
     // Avoid modulo bias by rejection sampling the high bits.
     uint32_t mask = ~0u;
     uint32_t lim = (uint32_t)range;

@@ -26,7 +26,7 @@
 #pragma once
 namespace cursestone::tile {
 class Spawnable {
-public:
+  public:
     virtual ~Spawnable() = default;
     // Spawn block entity data packet to clients in range.
     virtual void spawnTo(/* Player* */ void* player) = 0;

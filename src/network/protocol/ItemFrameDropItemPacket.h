@@ -39,12 +39,14 @@
 namespace cursestone::network::protocol {
 
 class ItemFrameDropItemPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return ITEM_FRAME_DROP_ITEM_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return ITEM_FRAME_DROP_ITEM_PACKET;
+    }
 
     int32_t x = 0, y = 0, z = 0;
-    int16_t itemId     = 0;
-    uint8_t itemCount  = 0;
+    int16_t itemId = 0;
+    uint8_t itemCount = 0;
     int16_t itemDamage = 0;
 
     void encode(std::vector<uint8_t>& out) const override;

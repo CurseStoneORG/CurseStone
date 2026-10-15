@@ -62,33 +62,39 @@ float ImprovedNoise::noise(float _x, float _y, float _z) {
     int yf = (int)y;
     int zf = (int)z;
 
-    if (x < xf) xf--;
-    if (y < yf) yf--;
-    if (z < zf) zf--;
+    if (x < xf)
+        xf--;
+    if (y < yf)
+        yf--;
+    if (z < zf)
+        zf--;
 
-    int X = xf & 255,  // FIND UNIT CUBE THAT
-        Y = yf & 255,  // CONTAINS POINT.
+    int X = xf & 255, // FIND UNIT CUBE THAT
+        Y = yf & 255, // CONTAINS POINT.
         Z = zf & 255;
 
-    x -= xf;  // FIND RELATIVE X,Y,Z
-    y -= yf;  // OF POINT IN CUBE.
+    x -= xf; // FIND RELATIVE X,Y,Z
+    y -= yf; // OF POINT IN CUBE.
     z -= zf;
 
-    float u = x * x * x * (x * (x * 6 - 15) + 10),  // COMPUTE FADE CURVES
-        v = y * y * y * (y * (y * 6 - 15) + 10),    // FOR EACH OF X,Y,Z.
+    float u = x * x * x * (x * (x * 6 - 15) + 10), // COMPUTE FADE CURVES
+        v = y * y * y * (y * (y * 6 - 15) + 10),   // FOR EACH OF X,Y,Z.
         w = z * z * z * (z * (z * 6 - 15) + 10);
 
-    int A = p[X] + Y, AA = p[A] + Z, AB = p[A + 1] + Z,       // HASH COORDINATES OF
-        B = p[X + 1] + Y, BA = p[B] + Z, BB = p[B + 1] + Z;   // THE 8 CUBE CORNERS,
+    int A = p[X] + Y, AA = p[A] + Z, AB = p[A + 1] + Z,     // HASH COORDINATES OF
+        B = p[X + 1] + Y, BA = p[B] + Z, BB = p[B + 1] + Z; // THE 8 CUBE CORNERS,
 
-    return lerp(w, lerp(v, lerp(u, grad(p[AA], x, y, z),             // AND ADD
-                                grad(p[BA], x - 1, y, z)),           // BLENDED
-                        lerp(u, grad(p[AB], x, y - 1, z),            // RESULTS
-                                grad(p[BB], x - 1, y - 1, z))),      // FROM  8
-                lerp(v, lerp(u, grad(p[AA + 1], x, y, z - 1),        // CORNERS
-                                grad(p[BA + 1], x - 1, y, z - 1)),   // OF CUBE
-                        lerp(u, grad(p[AB + 1], x, y - 1, z - 1),
-                                grad(p[BB + 1], x - 1, y - 1, z - 1))));
+    return lerp(
+        w,
+        lerp(v,
+             lerp(u, grad(p[AA], x, y, z),        // AND ADD
+                  grad(p[BA], x - 1, y, z)),      // BLENDED
+             lerp(u, grad(p[AB], x, y - 1, z),    // RESULTS
+                  grad(p[BB], x - 1, y - 1, z))), // FROM  8
+        lerp(v,
+             lerp(u, grad(p[AA + 1], x, y, z - 1),   // CORNERS
+                  grad(p[BA + 1], x - 1, y, z - 1)), // OF CUBE
+             lerp(u, grad(p[AB + 1], x, y - 1, z - 1), grad(p[BB + 1], x - 1, y - 1, z - 1))));
 }
 
 float ImprovedNoise::lerp(float t, float a, float b) const {
@@ -96,19 +102,23 @@ float ImprovedNoise::lerp(float t, float a, float b) const {
 }
 
 float ImprovedNoise::grad2(int hash, float x, float z) const {
-    int h = hash & 15;  // CONVERT LO 4 BITS OF HASH CODE
+    int h = hash & 15; // CONVERT LO 4 BITS OF HASH CODE
 
-    float u = (1 - ((h & 8) >> 3)) * x,  // INTO 12 GRADIENT DIRECTIONS.
-        v = h < 4 ? 0 : h == 12 || h == 14 ? x : z;
+    float u = (1 - ((h & 8) >> 3)) * x, // INTO 12 GRADIENT DIRECTIONS.
+        v = h < 4                ? 0
+            : h == 12 || h == 14 ? x
+                                 : z;
 
     return ((h & 1) == 0 ? u : -u) + ((h & 2) == 0 ? v : -v);
 }
 
 float ImprovedNoise::grad(int hash, float x, float y, float z) const {
-    int h = hash & 15;  // CONVERT LO 4 BITS OF HASH CODE
+    int h = hash & 15; // CONVERT LO 4 BITS OF HASH CODE
 
-    float u = h < 8 ? x : y,  // INTO 12 GRADIENT DIRECTIONS.
-        v = h < 4 ? y : h == 12 || h == 14 ? x : z;
+    float u = h < 8 ? x : y, // INTO 12 GRADIENT DIRECTIONS.
+        v = h < 4                ? y
+            : h == 12 || h == 14 ? x
+                                 : z;
 
     return ((h & 1) == 0 ? u : -u) + ((h & 2) == 0 ? v : -v);
 }
@@ -121,9 +131,8 @@ float ImprovedNoise::getValue(float x, float y, float z) {
     return noise(x, y, z);
 }
 
-void ImprovedNoise::add(float* buffer, float _x, float _y, float _z, int xSize,
-                        int ySize, int zSize, float xs, float ys, float zs,
-                        float pow) {
+void ImprovedNoise::add(float* buffer, float _x, float _y, float _z, int xSize, int ySize,
+                        int zSize, float xs, float ys, float zs, float pow) {
     if (ySize == 1) {
         int A = 0, AA = 0, B = 0, BA = 0;
         float vv0 = 0, vv2 = 0;
@@ -132,7 +141,8 @@ void ImprovedNoise::add(float* buffer, float _x, float _y, float _z, int xSize,
         for (int xx = 0; xx < xSize; xx++) {
             float x = (_x + xx) * xs + xo;
             int xf = (int)x;
-            if (x < xf) xf--;
+            if (x < xf)
+                xf--;
             int X = xf & 255;
             x -= xf;
             float u = x * x * x * (x * (x * 6 - 15) + 10);
@@ -140,7 +150,8 @@ void ImprovedNoise::add(float* buffer, float _x, float _y, float _z, int xSize,
             for (int zz = 0; zz < zSize; zz++) {
                 float z = (_z + zz) * zs + zo;
                 int zf = (int)z;
-                if (z < zf) zf--;
+                if (z < zf)
+                    zf--;
                 int Z = zf & 255;
                 z -= zf;
                 float w = z * z * z * (z * (z * 6 - 15) + 10);
@@ -150,8 +161,7 @@ void ImprovedNoise::add(float* buffer, float _x, float _y, float _z, int xSize,
                 B = p[X + 1] + 0;
                 BA = p[B] + Z;
                 vv0 = lerp(u, grad2(p[AA], x, z), grad(p[BA], x - 1, 0, z));
-                vv2 = lerp(u, grad(p[AA + 1], x, 0, z - 1),
-                              grad(p[BA + 1], x - 1, 0, z - 1));
+                vv2 = lerp(u, grad(p[AA + 1], x, 0, z - 1), grad(p[BA + 1], x - 1, 0, z - 1));
 
                 float val = lerp(w, vv0, vv2);
 
@@ -169,7 +179,8 @@ void ImprovedNoise::add(float* buffer, float _x, float _y, float _z, int xSize,
     for (int xx = 0; xx < xSize; xx++) {
         float x = (_x + xx) * xs + xo;
         int xf = (int)x;
-        if (x < xf) xf--;
+        if (x < xf)
+            xf--;
         int X = xf & 255;
         x -= xf;
         float u = x * x * x * (x * (x * 6 - 15) + 10);
@@ -177,7 +188,8 @@ void ImprovedNoise::add(float* buffer, float _x, float _y, float _z, int xSize,
         for (int zz = 0; zz < zSize; zz++) {
             float z = (_z + zz) * zs + zo;
             int zf = (int)z;
-            if (z < zf) zf--;
+            if (z < zf)
+                zf--;
             int Z = zf & 255;
             z -= zf;
             float w = z * z * z * (z * (z * 6 - 15) + 10);
@@ -185,7 +197,8 @@ void ImprovedNoise::add(float* buffer, float _x, float _y, float _z, int xSize,
             for (int yy = 0; yy < ySize; yy++) {
                 float y = (_y + yy) * ys + yo;
                 int yf = (int)y;
-                if (y < yf) yf--;
+                if (y < yf)
+                    yf--;
                 int Y = yf & 255;
                 y -= yf;
                 float v = y * y * y * (y * (y * 6 - 15) + 10);
@@ -199,12 +212,10 @@ void ImprovedNoise::add(float* buffer, float _x, float _y, float _z, int xSize,
                     BA = p[B] + Z;
                     BB = p[B + 1] + Z;
                     vv0 = lerp(u, grad(p[AA], x, y, z), grad(p[BA], x - 1, y, z));
-                    vv1 = lerp(u, grad(p[AB], x, y - 1, z),
-                                  grad(p[BB], x - 1, y - 1, z));
-                    vv2 = lerp(u, grad(p[AA + 1], x, y, z - 1),
-                                  grad(p[BA + 1], x - 1, y, z - 1));
+                    vv1 = lerp(u, grad(p[AB], x, y - 1, z), grad(p[BB], x - 1, y - 1, z));
+                    vv2 = lerp(u, grad(p[AA + 1], x, y, z - 1), grad(p[BA + 1], x - 1, y, z - 1));
                     vv3 = lerp(u, grad(p[AB + 1], x, y - 1, z - 1),
-                                  grad(p[BB + 1], x - 1, y - 1, z - 1));
+                               grad(p[BB + 1], x - 1, y - 1, z - 1));
                 }
 
                 float v0 = lerp(v, vv0, vv1);

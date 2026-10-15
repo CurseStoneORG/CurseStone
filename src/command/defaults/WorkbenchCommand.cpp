@@ -30,7 +30,7 @@
 namespace cursestone {
 
 bool WorkbenchCommand::execute(CommandSender* sender, const std::string&,
-                                const std::vector<std::string>& args) {
+                               const std::vector<std::string>& args) {
     // Only ops can use this command.
     if (!sender->isOp()) {
         sender->sendMessage(TC::RED + "You don't have permission to use this command." + TC::RESET);
@@ -53,10 +53,14 @@ bool WorkbenchCommand::execute(CommandSender* sender, const std::string&,
         WorkbenchManager::get().status();
     } else {
         sender->sendMessage(TC::GOLD + "=== Workbench ===" + TC::RESET);
-        sender->sendMessage(TC::WHITE + "/workbench start  " + TC::GRAY + "- Start all diagnostic modules" + TC::RESET);
-        sender->sendMessage(TC::WHITE + "/workbench stop   " + TC::GRAY + "- Stop and export reports" + TC::RESET);
-        sender->sendMessage(TC::WHITE + "/workbench status " + TC::GRAY + "- Show current status" + TC::RESET);
-        sender->sendMessage(TC::WHITE + "/workbench report " + TC::GRAY + "- Export snapshot without stopping" + TC::RESET);
+        sender->sendMessage(TC::WHITE + "/workbench start  " + TC::GRAY +
+                            "- Start all diagnostic modules" + TC::RESET);
+        sender->sendMessage(TC::WHITE + "/workbench stop   " + TC::GRAY +
+                            "- Stop and export reports" + TC::RESET);
+        sender->sendMessage(TC::WHITE + "/workbench status " + TC::GRAY + "- Show current status" +
+                            TC::RESET);
+        sender->sendMessage(TC::WHITE + "/workbench report " + TC::GRAY +
+                            "- Export snapshot without stopping" + TC::RESET);
     }
     return true;
 }

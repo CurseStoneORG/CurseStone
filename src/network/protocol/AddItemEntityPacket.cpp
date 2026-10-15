@@ -35,13 +35,14 @@ void AddItemEntityPacket::encode(std::vector<uint8_t>& out) const {
     w.writeI64BE(eid);
     // PMMP putSlot
     if (itemId <= 0) {
-        w.writeI16BE(0);   // empty slot
+        w.writeI16BE(0); // empty slot
     } else {
         w.writeI16BE(itemId);
         w.writeU8(itemCount);
         w.writeI16BE(itemDamage);
         w.writeU16LE((uint16_t)itemNbt.size());
-        if (!itemNbt.empty()) w.writeBytes((const uint8_t*)itemNbt.data(), itemNbt.size());
+        if (!itemNbt.empty())
+            w.writeBytes((const uint8_t*)itemNbt.data(), itemNbt.size());
     }
     w.writeF32BE(x);
     w.writeF32BE(y);
@@ -53,15 +54,20 @@ void AddItemEntityPacket::encode(std::vector<uint8_t>& out) const {
 
 bool AddItemEntityPacket::decode(const uint8_t* buf, size_t len) {
     PacketReader r(buf, len);
-    if (!r.readI64BE(eid)) return false;
-    if (!r.readI16BE(itemId)) return false;
+    if (!r.readI64BE(eid))
+        return false;
+    if (!r.readI16BE(itemId))
+        return false;
     if (itemId <= 0) {
         itemId = 0;
     } else {
-        if (!r.readU8(itemCount))   return false;
-        if (!r.readI16BE(itemDamage)) return false;
+        if (!r.readU8(itemCount))
+            return false;
+        if (!r.readI16BE(itemDamage))
+            return false;
         uint16_t nbtLen;
-        if (!r.readU16LE(nbtLen)) return false;
+        if (!r.readU16LE(nbtLen))
+            return false;
         if (nbtLen > 0) {
             itemNbt.assign(nbtLen, '\0');
             if (!r.readBytes(reinterpret_cast<uint8_t*>(&itemNbt[0]), nbtLen)) {
@@ -72,12 +78,18 @@ bool AddItemEntityPacket::decode(const uint8_t* buf, size_t len) {
             itemNbt.clear();
         }
     }
-    if (!r.readF32BE(x))      return false;
-    if (!r.readF32BE(y))      return false;
-    if (!r.readF32BE(z))      return false;
-    if (!r.readF32BE(speedX)) return false;
-    if (!r.readF32BE(speedY)) return false;
-    if (!r.readF32BE(speedZ)) return false;
+    if (!r.readF32BE(x))
+        return false;
+    if (!r.readF32BE(y))
+        return false;
+    if (!r.readF32BE(z))
+        return false;
+    if (!r.readF32BE(speedX))
+        return false;
+    if (!r.readF32BE(speedY))
+        return false;
+    if (!r.readF32BE(speedZ))
+        return false;
     return true;
 }
 

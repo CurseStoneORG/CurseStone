@@ -35,11 +35,11 @@ extern "C" {
 #endif
 
 typedef struct mcp_list_tag {
-    mcp_tag_t   header;
+    mcp_tag_t header;
     mcp_tag_type_t element_type;
     mcp_tag_t** children;
-    size_t      count;
-    size_t      capacity;
+    size_t count;
+    size_t capacity;
 } mcp_list_tag_t;
 
 mcp_tag_t* mcp_list_tag_new(mcp_tag_type_t element_type);

@@ -26,8 +26,10 @@
 #include <string>
 namespace cursestone::scheduler {
 bool TaskHandler::tick(uint64_t current_tick) {
-    if (!task_ || task_->isCancelled()) return true;
-    if (task_->nextRun() > current_tick) return false;
+    if (!task_ || task_->isCancelled())
+        return true;
+    if (task_->nextRun() > current_tick)
+        return false;
 
     // FIX: a task's onRun() must never be allowed to escape as an
     // uncaught exception. Before this fix, any exception thrown here
@@ -40,9 +42,8 @@ bool TaskHandler::tick(uint64_t current_tick) {
     try {
         task_->onRun();
     } catch (const std::exception& e) {
-        utils::MainLogger::get().warn(
-            std::string("[Scheduler] Task threw during onRun(): ") + e.what() +
-            " — task removed.");
+        utils::MainLogger::get().warn(std::string("[Scheduler] Task threw during onRun(): ") +
+                                      e.what() + " — task removed.");
         return true;
     } catch (...) {
         utils::MainLogger::get().warn(
@@ -52,7 +53,8 @@ bool TaskHandler::tick(uint64_t current_tick) {
 
     // Re-check cancellation: onRun() itself (or something it triggered
     // synchronously) may have cancelled this task.
-    if (task_->isCancelled()) return true;
+    if (task_->isCancelled())
+        return true;
 
     if (task_->period() > 0) {
         task_->setNextRun(current_tick + task_->period());

@@ -36,8 +36,10 @@ void SetTimePacket::encode(std::vector<uint8_t>& out) const {
 bool SetTimePacket::decode(const uint8_t* data, size_t len) {
     PacketReader r(data, len);
     uint8_t s;
-    if (!r.readI32BE(time)) return false;
-    if (!r.readU8(s))       return false;
+    if (!r.readI32BE(time))
+        return false;
+    if (!r.readU8(s))
+        return false;
     started = (s != 0);
     return true;
 }

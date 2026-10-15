@@ -74,7 +74,8 @@ namespace cursestone {
 // Genisys Entity::sendData() uses eid = 0 when the target is the own
 // entity (sendData($this)); for the rest, the runtime id actual.
 void Player::broadcastPoseFlags() {
-    if (!srv_) return;
+    if (!srv_)
+        return;
     auto pk = std::make_shared<network::protocol::SetEntityDataPacket>();
     pk->eid = runtimeId();
     pk->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_, false, isOnFire()));
@@ -89,15 +90,19 @@ void Player::broadcastPoseFlags() {
     }
 
     for (auto& other : srv_->playersSnapshot()) {
-        if (!other || other.get() == this) continue;
-        if (other->isPendingRemoval()) continue;
-        if (!other->spawned()) continue;
+        if (!other || other.get() == this)
+            continue;
+        if (other->isPendingRemoval())
+            continue;
+        if (!other->spawned())
+            continue;
         other->sendPacket(pk);
     }
 }
 
 void Player::setSneaking(bool v) {
-    if (sneaking_ == v) return;
+    if (sneaking_ == v)
+        return;
     sneaking_ = v;
     broadcastPoseFlags();
 }
@@ -111,27 +116,36 @@ void Player::setSneaking(bool v) {
 // ============================================================
 void Player::handleMovePlayer(double x, double y, double z, float yaw, float pitch,
                               bool mp_onGround) {
-    if (!spawned_.load(std::memory_order_relaxed)) return;
-    if (isDead()) return; // congelado until ACTION_SPAWN_SAME_DIMENSION (ver player::respawn)
+    if (!spawned_.load(std::memory_order_relaxed))
+        return;
+    if (isDead())
+        return; // congelado until ACTION_SPAWN_SAME_DIMENSION (ver player::respawn)
 
     // Reject NaN / inf / clearly bogus coordinates.
-    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) return;
-    if (!std::isfinite(yaw) || !std::isfinite(pitch)) return;
+    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z))
+        return;
+    if (!std::isfinite(yaw) || !std::isfinite(pitch))
+        return;
     // Reject obviously out-of-world and values.
-    if (y < -64.0 || y > 320.0) return;
+    if (y < -64.0 || y > 320.0)
+        return;
     // The wire and is the EYE altitude (vanilla); pos_ is the FEET. Convert
     // once and use the feet value everywhere below so the speed check, the
     // stored position and the fall-distance delta all agree.
     double ny = y - kEyeHeight;
     // Anti-cheat: rough speed cap (~20 blocks/tick = 400 b/s — very generous).
     double dx = x - pos_.x, dy = ny - pos_.y, dz = z - pos_.z;
-    double d2 = dx*dx + dy*dy + dz*dz;
+    double d2 = dx * dx + dy * dy + dz * dz;
     if (d2 > 400.0) {
         // Snap the player back to last known position.
         auto mp = std::make_shared<network::protocol::MovePlayerPacket>();
         mp->eid = runtimeId();
-        mp->x = (float)pos_.x; mp->y = (float)(pos_.y + kEyeHeight); mp->z = (float)pos_.z;
-        mp->yaw = yaw_; mp->bodyYaw = yaw_; mp->pitch = pitch_;
+        mp->x = (float)pos_.x;
+        mp->y = (float)(pos_.y + kEyeHeight);
+        mp->z = (float)pos_.z;
+        mp->yaw = yaw_;
+        mp->bodyYaw = yaw_;
+        mp->pitch = pitch_;
         mp->mode = network::protocol::MovePlayerPacket::MODE_RESET;
         sendPacket(mp);
         return;
@@ -155,16 +169,23 @@ void Player::handleMovePlayer(double x, double y, double z, float yaw, float pit
             // just like the rama of anti-cheat of but above.
             auto mp = std::make_shared<network::protocol::MovePlayerPacket>();
             mp->eid = runtimeId();
-            mp->x = (float)pos_.x; mp->y = (float)(pos_.y + kEyeHeight); mp->z = (float)pos_.z;
-            mp->yaw = yaw_; mp->bodyYaw = yaw_; mp->pitch = pitch_;
+            mp->x = (float)pos_.x;
+            mp->y = (float)(pos_.y + kEyeHeight);
+            mp->z = (float)pos_.z;
+            mp->yaw = yaw_;
+            mp->bodyYaw = yaw_;
+            mp->pitch = pitch_;
             mp->mode = network::protocol::MovePlayerPacket::MODE_RESET;
             sendPacket(mp);
             return;
         }
     }
 
-    pos_.x = x; pos_.y = ny; pos_.z = z;
-    yaw_ = yaw; pitch_ = pitch;
+    pos_.x = x;
+    pos_.y = ny;
+    pos_.z = z;
+    yaw_ = yaw;
+    pitch_ = pitch;
 
     // ---- Fall-distance tracking ----
     // While airborne: descending moves accumulate distance, rising moves
@@ -174,9 +195,12 @@ void Player::handleMovePlayer(double x, double y, double z, float yaw, float pit
     // Creative never accumulates: a fall performed while flying must not
     // land as damage later, even if the mode switches before touchdown.
     if (!mp_onGround) {
-        if (isCreative()) fall_distance_ = 0.0f;        // immune to fall damage
-        else if (dy < 0.0) fall_distance_ += (float)(-dy);   // accumulating fall
-        else fall_distance_ = 0.0f;                     // rising — baseline reset
+        if (isCreative())
+            fall_distance_ = 0.0f; // immune to fall damage
+        else if (dy < 0.0)
+            fall_distance_ += (float)(-dy); // accumulating fall
+        else
+            fall_distance_ = 0.0f; // rising — baseline reset
     }
     moved_this_tick_ = true;
 
@@ -203,19 +227,27 @@ void Player::handleMovePlayer(double x, double y, double z, float yaw, float pit
     if (srv_) {
         auto me = std::make_shared<network::protocol::MoveEntityPacket>();
         me->eid = runtimeId();
-        me->x = (float)pos_.x; me->y = (float)(pos_.y + kEyeHeight); me->z = (float)pos_.z;
-        me->yaw = yaw_; me->headYaw = yaw_; me->pitch = pitch_;
+        me->x = (float)pos_.x;
+        me->y = (float)(pos_.y + kEyeHeight);
+        me->z = (float)pos_.z;
+        me->yaw = yaw_;
+        me->headYaw = yaw_;
+        me->pitch = pitch_;
         for (auto& other : srv_->playersSnapshot()) {
-            if (other.get() == this) continue;
-            if (!other->spawned()) continue;
-            if (other->getWorld() != getWorld()) continue;   // same world
+            if (other.get() == this)
+                continue;
+            if (!other->spawned())
+                continue;
+            if (other->getWorld() != getWorld())
+                continue; // same world
             other->sendPacket(me);
         }
     }
 }
 
 void Player::handleChat(const std::string& message) {
-    if (message.empty()) return;
+    if (message.empty())
+        return;
 
     // PMMP behavior:
     //   - Strip §-codes only for command dispatch (so "/§aversion" still
@@ -225,8 +257,10 @@ void Player::handleChat(const std::string& message) {
     //   - For plain chat, KEEP the original message (with §-codes intact)
     //     so colors are rendered on every receiver's screen.
     std::string stripped = TC::clean(message);
-    if (stripped.empty()) return;
-    if (stripped.size() > 256) stripped.resize(256);
+    if (stripped.empty())
+        return;
+    if (stripped.size() > 256)
+        stripped.resize(256);
 
     // Dispatch /commands through the CommandMap; chat otherwise.
     if (stripped[0] == '/') {
@@ -246,8 +280,7 @@ void Player::handleChat(const std::string& message) {
     // chat line: rank plugins restyle the name with
     // player.setDisplayName() while the nametag colors the overhead tag.
     if (srv_) {
-        auto ev = event::EventManager::get().fire<event::player::PlayerChatEvent>(
-            this, message);
+        auto ev = event::EventManager::get().fire<event::player::PlayerChatEvent>(this, message);
         if (!ev.isCancelled()) {
             srv_->broadcastMessage("<" + getDisplayName() + "> " + ev.message);
         }
@@ -285,9 +318,9 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int face) {
         action == network::protocol::PlayerActionPacket::ACTION_ABORT_BREAK ||
         action == network::protocol::PlayerActionPacket::ACTION_STOP_BREAK) {
         if (srv_ && srv_->advancedLog()) {
-            utils::MainLogger::get().info("[ACTION] " + cfg_.username + " break action=" +
-                std::to_string(action) + " at " + std::to_string(x) + "," +
-                std::to_string(y) + "," + std::to_string(z));
+            utils::MainLogger::get().info(
+                "[ACTION] " + cfg_.username + " break action=" + std::to_string(action) + " at " +
+                std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(z));
         }
 
         // Chequeo of distancia of Genisys
@@ -297,7 +330,8 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int face) {
         double dy = pos_.y - (y + 0.5);
         double dz = pos_.z - (z + 0.5);
         double d2 = dx * dx + dy * dy + dz * dz;
-        if (d2 > 10000.0 || y < 0 || y >= 256) return;
+        if (d2 > 10000.0 || y < 0 || y >= 256)
+            return;
 
         // ---- Fire extinguish on dig start (protocol 84 client rule) ----
         // The 0.15 raycast passes through fire (it is not a dig target),
@@ -305,12 +339,13 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int face) {
         // plus the clicked face; the fire sits in the cell adjacent to that
         // face. Removing it here is the only way a survival punch can put
         // fire out, and it covers the creative tap as well.
-        if (action == network::protocol::PlayerActionPacket::ACTION_START_BREAK &&
-            face >= 0 && face < 6) {
+        if (action == network::protocol::PlayerActionPacket::ACTION_START_BREAK && face >= 0 &&
+            face < 6) {
             auto* lvl = getWorld();
             if (lvl) {
                 item::ItemStack held{};
-                if (inv_) held = inv_->getHeldItem();
+                if (inv_)
+                    held = inv_->getHeldItem();
                 bool inAir = lvl->getBlockId(x, y, z) == 0;
                 auto ev = event::EventManager::get().fire<event::player::PlayerInteractEvent>(
                     this,
@@ -319,14 +354,14 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int face) {
                     x, y, z, face, held);
                 if (ev.isCancelled()) {
                     // Rejected interaction: heal the client's item prediction.
-                    if (inv_) sendSlot(inv_->heldSlot());
+                    if (inv_)
+                        sendSlot(inv_->heldSlot());
                 } else {
                     static const int8_t fx[6] = {0, 0, 0, 0, -1, 1};
                     static const int8_t fy[6] = {-1, 1, 0, 0, 0, 0};
                     static const int8_t fz[6] = {0, 0, -1, 1, 0, 0};
                     int32_t sx = x + fx[face], sy = y + fy[face], sz = z + fz[face];
-                    if (sy >= 0 && sy < 256 &&
-                        lvl->getBlockId(sx, sy, sz) == block::FIRE) {
+                    if (sy >= 0 && sy < 256 && lvl->getBlockId(sx, sy, sz) == block::FIRE) {
                         lvl->setBlock(sx, sy, sz, 0, 0);
                         // Tell every viewer, the clicker included, the fire is gone.
                         auto ubp = std::make_shared<network::protocol::UpdateBlockPacket>();
@@ -338,9 +373,12 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int face) {
                         ubp->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
                         if (srv_) {
                             for (auto& other : srv_->playersSnapshot()) {
-                                if (!other || other->getWorld() != lvl) continue;
-                                if (!other->canSeeBlock(sx >> 4, sz >> 4)) continue;
-                                if (!other->spawned()) continue;
+                                if (!other || other->getWorld() != lvl)
+                                    continue;
+                                if (!other->canSeeBlock(sx >> 4, sz >> 4))
+                                    continue;
+                                if (!other->spawned())
+                                    continue;
                                 other->sendPacket(ubp);
                             }
                         }
@@ -351,23 +389,31 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int face) {
         }
 
         auto pa = std::make_shared<network::protocol::PlayerActionPacket>();
-        pa->eid    = runtimeId();
+        pa->eid = runtimeId();
         pa->action = action;
-        pa->x = x; pa->y = y; pa->z = z;
+        pa->x = x;
+        pa->y = y;
+        pa->z = z;
         int32_t bcx = x >> 4, bcz = z >> 4;
         int32_t sent = 0;
         for (auto& other : srv_->playersSnapshot()) {
-            if (!other || other.get() == this) continue;
-            if (other->isPendingRemoval()) continue;
-            if (!other->spawned()) continue;
-            if (!other->canSeeBlock(bcx, bcz)) continue;
+            if (!other || other.get() == this)
+                continue;
+            if (other->isPendingRemoval())
+                continue;
+            if (!other->spawned())
+                continue;
+            if (!other->canSeeBlock(bcx, bcz))
+                continue;
             other->sendPacket(pa);
             ++sent;
         }
-        if (srv_ && srv_->advancedLog() && action == network::protocol::PlayerActionPacket::ACTION_START_BREAK) {
-            utils::MainLogger::get().info("[BREAK-ANIM] " + cfg_.username +
-                " started crack at " + std::to_string(x) + "," + std::to_string(y) + "," +
-                std::to_string(z) + " -> viewers=" + std::to_string(sent));
+        if (srv_ && srv_->advancedLog() &&
+            action == network::protocol::PlayerActionPacket::ACTION_START_BREAK) {
+            utils::MainLogger::get().info("[BREAK-ANIM] " + cfg_.username + " started crack at " +
+                                          std::to_string(x) + "," + std::to_string(y) + "," +
+                                          std::to_string(z) +
+                                          " -> viewers=" + std::to_string(sent));
         }
         return;
     }
@@ -382,9 +428,15 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int face) {
     // that the other client is quedaba with the pose previa forever.
     // now each change forwards the byte of flags complete to all.
     if (action == network::protocol::PlayerActionPacket::ACTION_START_SPRINT) {
-        if (!sprinting_) { sprinting_ = true;  broadcastPoseFlags(); }
+        if (!sprinting_) {
+            sprinting_ = true;
+            broadcastPoseFlags();
+        }
     } else if (action == network::protocol::PlayerActionPacket::ACTION_STOP_SPRINT) {
-        if (sprinting_)  { sprinting_ = false; broadcastPoseFlags(); }
+        if (sprinting_) {
+            sprinting_ = false;
+            broadcastPoseFlags();
+        }
     }
     // Crouch / sneak toggle (protocol 84, Genisys 0.15.0
     // PlayerActionPacket.php: ACTION_START_SNEAK = 11,
@@ -421,9 +473,9 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int face) {
     if (srv_ && srv_->advancedLog() && x != 0 && y != 0 && z != 0) {
         auto* lvl = getWorld();
         if (lvl && lvl->getBlockId(x, y, z) == block::WORKBENCH) {
-            utils::MainLogger::get().info("[CRAFT] " + cfg_.username +
-                " used crafting table at " +
-                std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(z));
+            utils::MainLogger::get().info("[CRAFT] " + cfg_.username + " used crafting table at " +
+                                          std::to_string(x) + "," + std::to_string(y) + "," +
+                                          std::to_string(z));
         }
     }
 }
@@ -449,27 +501,38 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int face) {
 //     system.
 // ============================================================
 void Player::handleInteract(int action, int64_t targetEid) {
-    if (!spawned_.load(std::memory_order_relaxed)) return;
-    if (action != network::protocol::InteractPacket::ACTION_LEFT_CLICK) return;
-    if (!srv_) return;
-    if (isDead()) return; // a player dead not can golpear
+    if (!spawned_.load(std::memory_order_relaxed))
+        return;
+    if (action != network::protocol::InteractPacket::ACTION_LEFT_CLICK)
+        return;
+    if (!srv_)
+        return;
+    if (isDead())
+        return; // a player dead not can golpear
 
     // Cooldown server-side anti-spam (not is "attack cooldown" of
     // gameplay as in versions modernas — ver comment next to to
     // ATTACK_COOLDOWN_MS in player.h).
     uint64_t now_ms = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
-    if (now_ms - last_attack_ms_ < ATTACK_COOLDOWN_MS) return;
+                          std::chrono::system_clock::now().time_since_epoch())
+                          .count();
+    if (now_ms - last_attack_ms_ < ATTACK_COOLDOWN_MS)
+        return;
 
     // Resolver the eid objetivo contra the players connected. not
     // there is mobs with runtime id still, this way that this is the unico
     // universo of objetivos possible.
     std::shared_ptr<Player> target;
     for (auto& other : srv_->playersSnapshot()) {
-        if (!other || other.get() == this) continue;
-        if (other->runtimeId() == targetEid) { target = other; break; }
+        if (!other || other.get() == this)
+            continue;
+        if (other->runtimeId() == targetEid) {
+            target = other;
+            break;
+        }
     }
-    if (!target || !target->spawned() || target->isDead()) return;
+    if (!target || !target->spawned() || target->isDead())
+        return;
 
     last_attack_ms_ = now_ms;
 
@@ -484,8 +547,8 @@ void Player::handleInteract(int action, int64_t targetEid) {
     // the 0.15.10 client never expected damage traffic for a creative
     // self, and now it simply never receives any.
     auto applied = target->damageByEntity(BASE_ATTACK_DAMAGE, this);
-    bool died  = (applied == entity::DamageApply::KILLED);
-    bool hurt  = (applied == entity::DamageApply::HURT);
+    bool died = (applied == entity::DamageApply::KILLED);
+    bool hurt = (applied == entity::DamageApply::HURT);
 
     if (hurt) {
         // ---- Hurt animation to the VIEWERS ONLY (Infinity Living::
@@ -504,9 +567,12 @@ void Player::handleInteract(int action, int64_t targetEid) {
         hurtEv->eid = target->runtimeId();
         hurtEv->event = network::protocol::EntityEventPacket::HURT_ANIMATION;
         for (auto& other : srv_->playersSnapshot()) {
-            if (!other) continue;
-            if (other.get() == target.get()) continue;   // never the victim
-            if (!other->spawned()) continue;
+            if (!other)
+                continue;
+            if (other.get() == target.get())
+                continue; // never the victim
+            if (!other->spawned())
+                continue;
             other->sendPacket(hurtEv);
         }
         // Belt-and-suspenders SetHealthPacket to the victim (protocol 84
@@ -557,7 +623,7 @@ void Player::handleInteract(int action, int64_t targetEid) {
         double f = std::sqrt(dx * dx + dz * dz);
         if (f > 1e-6) {
             f = 1.0 / f;
-            constexpr double kBase = 0.4;   // Genisys Living::knockBack default
+            constexpr double kBase = 0.4; // Genisys Living::knockBack default
             // motion current of the victim, reduced to the half.
             double mx = target->motion().x * 0.5;
             double my = target->motion().y * 0.5;
@@ -565,22 +631,26 @@ void Player::handleInteract(int action, int64_t targetEid) {
             mx += dx * f * kBase;
             my += kBase;
             mz += dz * f * kBase;
-            if (my > kBase) my = kBase;     // tope vertical of Genisys
+            if (my > kBase)
+                my = kBase; // tope vertical of Genisys
 
             target->setMotion(math::Vector3{mx, my, mz});
 
             // SetEntityMotionPacket to all those that ven to the victim
             // (same filtro of visibilidad that the rest of difusiones).
             auto motion = std::make_shared<network::protocol::SetEntityMotionPacket>();
-            motion->entities.push_back({target->runtimeId(),
-                                        (float)mx, (float)my, (float)mz});
+            motion->entities.push_back({target->runtimeId(), (float)mx, (float)my, (float)mz});
             int32_t tcx = (int32_t)std::floor(target->position().x) >> 4;
             int32_t tcz = (int32_t)std::floor(target->position().z) >> 4;
             for (auto& other : srv_->playersSnapshot()) {
-                if (!other) continue;
-                if (other->isPendingRemoval()) continue;
-                if (!other->spawned()) continue;
-                if (!other->canSeeBlock(tcx, tcz)) continue;
+                if (!other)
+                    continue;
+                if (other->isPendingRemoval())
+                    continue;
+                if (!other->spawned())
+                    continue;
+                if (!other->canSeeBlock(tcx, tcz))
+                    continue;
                 other->sendPacket(motion);
             }
             // is includes to the own victim in the bucle intentionally:
@@ -592,13 +662,13 @@ void Player::handleInteract(int action, int64_t targetEid) {
     }
 
     if (srv_->advancedLog()) {
-        utils::MainLogger::get().info("[COMBAT] " + cfg_.username + " hit " +
-            target->getName() + " for " + std::to_string(BASE_ATTACK_DAMAGE) +
-            " (health now " + std::to_string((int)target->health()) + ")" +
-            (died ? " — killed" : "") +
-            (applied == entity::DamageApply::CANCELLED
-                 ? " — CANCELLED (plugin or creative immunity)"
-                 : " knockback=0.4"));
+        utils::MainLogger::get().info("[COMBAT] " + cfg_.username + " hit " + target->getName() +
+                                      " for " + std::to_string(BASE_ATTACK_DAMAGE) +
+                                      " (health now " + std::to_string((int)target->health()) +
+                                      ")" + (died ? " — killed" : "") +
+                                      (applied == entity::DamageApply::CANCELLED
+                                           ? " — CANCELLED (plugin or creative immunity)"
+                                           : " knockback=0.4"));
     }
 }
 
@@ -612,12 +682,16 @@ void Player::handleInteract(int action, int64_t targetEid) {
 // ============================================================
 math::Vector3 Player::getDirectionVector() const {
     const double kDegToRad = M_PI / 180.0;
-    double y  = -std::sin((double)yaw_ * kDegToRad);
-    double xz =  std::cos((double)pitch_ * kDegToRad);
-    double x  = -xz * std::sin((double)yaw_ * kDegToRad);
-    double z  =  xz * std::cos((double)yaw_ * kDegToRad);
+    double y = -std::sin((double)yaw_ * kDegToRad);
+    double xz = std::cos((double)pitch_ * kDegToRad);
+    double x = -xz * std::sin((double)yaw_ * kDegToRad);
+    double z = xz * std::cos((double)yaw_ * kDegToRad);
     double len = std::sqrt(x * x + y * y + z * z);
-    if (len > 0) { x /= len; y /= len; z /= len; }
+    if (len > 0) {
+        x /= len;
+        y /= len;
+        z /= len;
+    }
     return math::Vector3{x, y, z};
 }
 
@@ -625,8 +699,10 @@ math::Vector3 Player::getDirectionVector() const {
 // Phase 8 — onUpdate (chunk streaming, keepalive, auto-save)
 // ============================================================
 void Player::onUpdate(uint64_t current_tick) {
-    if (!connected_.load(std::memory_order_relaxed)) return;
-    if (!logged_in_.load(std::memory_order_relaxed)) return;
+    if (!connected_.load(std::memory_order_relaxed))
+        return;
+    if (!logged_in_.load(std::memory_order_relaxed))
+        return;
 
     // 1. Stream chunks — send up to MAX_CHUNKS_PER_TICK unsent chunks
     // every tick, regardless of whether the player moved. The `moved`
@@ -729,24 +805,35 @@ void Player::onUpdate(uint64_t current_tick) {
             int64_t hash = ((int64_t)chX << 32) | ((uint32_t)chZ);
             still_in_view.insert(hash);
             bool already_sent;
-            { std::lock_guard<std::mutex> lk(chunks_mtx_); already_sent = used_chunks_.count(hash) > 0; }
-            if (already_sent) continue;
+            {
+                std::lock_guard<std::mutex> lk(chunks_mtx_);
+                already_sent = used_chunks_.count(hash) > 0;
+            }
+            if (already_sent)
+                continue;
             // Always request/fetch — cheap and non-blocking — even past
             // the send limit, so generation keeps racing ahead in the
             // background instead of waiting its turn behind the throttle.
             mcp_chunk_t* ch = chunks.getChunkOrRequestAsync(chX, chZ, pool);
-            if (!ch) continue;   // not loaded yet — generation requested (or already in flight)
-            if (chunks_sent_this_tick >= MAX_CHUNKS_PER_TICK) continue;   // ready, but send is throttled this tick
+            if (!ch)
+                continue; // not loaded yet — generation requested (or already in flight)
+            if (chunks_sent_this_tick >= MAX_CHUNKS_PER_TICK)
+                continue; // ready, but send is throttled this tick
             size_t outLen = 0;
             uint8_t* buf = mcp_chunk_network_serialize(ch, &outLen);
-            if (!buf || outLen == 0) continue;
+            if (!buf || outLen == 0)
+                continue;
             auto pk = std::make_shared<network::protocol::FullChunkDataPacket>();
-            pk->chunkX = chX; pk->chunkZ = chZ;
+            pk->chunkX = chX;
+            pk->chunkZ = chZ;
             pk->data.assign(buf, buf + outLen);
             free(buf);
             sendPacket(pk);
             sendChunkTiles(chX, chZ);
-            { std::lock_guard<std::mutex> lk(chunks_mtx_); used_chunks_.insert(hash); }
+            {
+                std::lock_guard<std::mutex> lk(chunks_mtx_);
+                used_chunks_.insert(hash);
+            }
             chunks_sent_this_tick++;
         }
 
@@ -758,7 +845,10 @@ void Player::onUpdate(uint64_t current_tick) {
         // guard) so there's not risk of double-firing.
         if (awaiting_spawn) {
             size_t sent_count;
-            { std::lock_guard<std::mutex> lk(chunks_mtx_); sent_count = used_chunks_.size(); }
+            {
+                std::lock_guard<std::mutex> lk(chunks_mtx_);
+                sent_count = used_chunks_.size();
+            }
             if (sent_count >= (size_t)FIRST_SPAWN_CHUNK_THRESHOLD) {
                 awaiting_first_spawn_.store(false, std::memory_order_relaxed);
                 doFirstSpawn();
@@ -776,14 +866,16 @@ void Player::onUpdate(uint64_t current_tick) {
             {
                 std::lock_guard<std::mutex> lk(chunks_mtx_);
                 for (auto& pr : order) {
-                    int64_t h = ((int64_t)(cx + pr.first) << 32) |
-                                ((uint32_t)(cz + pr.second));
-                    if (used_chunks_.count(h) == 0) { all_sent = false; break; }
+                    int64_t h = ((int64_t)(cx + pr.first) << 32) | ((uint32_t)(cz + pr.second));
+                    if (used_chunks_.count(h) == 0) {
+                        all_sent = false;
+                        break;
+                    }
                 }
             }
-            bool timed_out =
-                mcp_utils_time_ms() - dimension_switch_ms_ > 10000;
-            if (all_sent || timed_out) finishDimensionSwitch();
+            bool timed_out = mcp_utils_time_ms() - dimension_switch_ms_ > 10000;
+            if (all_sent || timed_out)
+                finishDimensionSwitch();
         }
 
         // Only clean up out-of-view chunks when the player actually
@@ -791,9 +883,11 @@ void Player::onUpdate(uint64_t current_tick) {
         if (moved) {
             {
                 std::lock_guard<std::mutex> lk(chunks_mtx_);
-                for (auto it = used_chunks_.begin(); it != used_chunks_.end(); ) {
-                    if (still_in_view.count(*it) == 0) it = used_chunks_.erase(it);
-                    else ++it;
+                for (auto it = used_chunks_.begin(); it != used_chunks_.end();) {
+                    if (still_in_view.count(*it) == 0)
+                        it = used_chunks_.erase(it);
+                    else
+                        ++it;
                 }
             }
             {
@@ -809,7 +903,7 @@ void Player::onUpdate(uint64_t current_tick) {
     // reports it via MovePlayerPacket; this pipeline only applies the
     // consequences (Infinity foodData + processMovement/checkBlockCollision).
     tickHungerAndDamage(current_tick);
-    moved_this_tick_ = false;   // consumed for this tick
+    moved_this_tick_ = false; // consumed for this tick
 
     // 2.2. portal of the Nether: with the player already spawned is checks
     // if is inside of a block of portal and touches travel of dimension.
@@ -852,126 +946,137 @@ void Player::onUpdate(uint64_t current_tick) {
         // tick it comes into reach. Bounded so to full inventory, which fails
         // canAddItem() and reports not progress, cannot spin.
         for (int pass = 0; pass < 32; ++pass) {
-        auto dropped = lvl->droppedItems();
-        bool picked_this_pass = false;
+            auto dropped = lvl->droppedItems();
+            bool picked_this_pass = false;
 
-        for (world::DroppedItem* di : dropped) {
-            if (!di || di->taken) continue;
-            if (di->pickup_delay_ticks > 0) continue;
+            for (world::DroppedItem* di : dropped) {
+                if (!di || di->taken)
+                    continue;
+                if (di->pickup_delay_ticks > 0)
+                    continue;
 
-            // AxisAlignedBB::intersectsWith(playerBB->grow(1, 1, 1), itemBB)
-            if (!world::itemWithinPickupVolume(*di, pos_.x, pos_.y, pos_.z)) continue;
+                // AxisAlignedBB::intersectsWith(playerBB->grow(1, 1, 1), itemBB)
+                if (!world::itemWithinPickupVolume(*di, pos_.x, pos_.y, pos_.z))
+                    continue;
 
-            cursestone::item::ItemStack pickup;
-            pickup.id    = di->itemId;
-            pickup.count = di->count;
-            pickup.meta  = (uint8_t)(di->damage & 0xFF);
-            pickup.nbt   = di->nbt;   // custom-named drops keep their name
+                cursestone::item::ItemStack pickup;
+                pickup.id = di->itemId;
+                pickup.count = di->count;
+                pickup.meta = (uint8_t)(di->damage & 0xFF);
+                pickup.nbt = di->nbt; // custom-named drops keep their name
 
-            bool can_pickup;
-            if ((cfg_.gamemode & 1) != 0) {
-                can_pickup = true;
-            } else {
-                can_pickup = inv_->canAddItem(pickup);
-            }
-            if (!can_pickup) continue;
-
-            // Add to inventory FIRST.
-            std::vector<cursestone::item::ItemStack> leftovers =
-                inv_->addItem({pickup});
-            int leftover_count = leftovers.empty() ? 0 : leftovers[0].count;
-            int absorbed = pickup.count - leftover_count;
-            if (absorbed <= 0) continue;
-
-            // FIX #1: Atomic claim — prevents race condition where two
-            // players pick up the same item in the same tick.
-            // tryClaimDroppedItem sets taken=true under mutex. If another
-            // player already claimed it, we rollback the addItem.
-            if (!lvl->tryClaimDroppedItem(di->eid)) {
-                // Another player got it first — rollback the inventory
-                // addition by removing the items we just added.
-                cursestone::item::ItemStack rollback;
-                rollback.id = pickup.id;
-                rollback.meta = pickup.meta;
-                rollback.count = absorbed;
-                rollback.nbt = pickup.nbt;
-                inv_->removeItem({rollback});
-                continue;
-            }
-
-            // FIX #6: For partial pickup, do NOT send TakeItemEntityPacket
-            // to other viewers — they would see the item disappear and
-            // reappear. Only send TakeItemEntityPacket for full pickup.
-            if (leftover_count == 0) {
-                // Full pickup — send TakeItemEntityPacket to viewers
-                // + RemoveEntityPacket to picker.
-                //
-                // bug FIX (same mechanism that MoveEntityPacket/
-                // EntityEventPacket more above): entityId reference to the
-                // player that picked up the item — a viewer that still
-                // is in its window of streaming of chunks (without
-                // spawned() still) can already estar "tracking" this
-                // chunk (the tracking arranca before of the spawn) without
-                // know still the entity of who picked up the item.
-                auto pk_viewer = std::make_shared<network::protocol::TakeItemEntityPacket>();
-                pk_viewer->target   = di->eid;
-                pk_viewer->entityId = runtimeId();
-                auto rm_pk = std::make_shared<network::protocol::RemoveEntityPacket>();
-                rm_pk->eid = di->eid;
-                int32_t pk_cx = (int32_t)std::floor(di->x) >> 4;
-                int32_t pk_cz = (int32_t)std::floor(di->z) >> 4;
-                int viewers = 0;
-                for (auto& other : srv_->playersSnapshot()) {
-                    if (!other) continue;
-                    if (other.get() == this) continue;
-                    if (other->isPendingRemoval()) continue;
-                    if (!other->spawned()) continue;
-                    if (!other->canSeeBlock(pk_cx, pk_cz)) continue;
-                    other->sendPacket(pk_viewer);
-                    // *** bug fixed: "the items flotantes not is limpian
-                    // in broadcast" ***
-                    //
-                    // RemoveEntityPacket is sent only to the that picked up the
-                    // item. the other recibian TakeItemEntityPacket (that
-                    // only reproduce the animation of "the item vuela hacia
-                    // the player") but never recibian the order of remove
-                    // the entity, this way that its client is quedaba with the
-                    // item flotando forever, since the server if
-                    // it habia removed of the world (removeDroppedItem).
-                    //
-                    // Genisys: Entity::close() -> Level::removeEntity()
-                    // -> RemoveEntityPacket to all the hasSpawned, without
-                    // exclude to who it picked up. therefore the item disappears
-                    // for all and not only for that which it picked up.
-                    other->sendPacket(rm_pk);
-                    ++viewers;
+                bool can_pickup;
+                if ((cfg_.gamemode & 1) != 0) {
+                    can_pickup = true;
+                } else {
+                    can_pickup = inv_->canAddItem(pickup);
                 }
-                auto pk_picker = std::make_shared<network::protocol::TakeItemEntityPacket>();
-                pk_picker->target   = di->eid;
-                pk_picker->entityId = 0;
-                sendPacket(pk_picker);
-                lvl->removeDroppedItem(di->eid);
-                sendPacket(rm_pk);
-                if (srv_ && srv_->advancedLog()) {
-                    utils::MainLogger::get().info("[PICKUP] " + cfg_.username +
-                        " picked up eid=" + std::to_string(di->eid) +
-                        " at chunk " + std::to_string(pk_cx) + "," + std::to_string(pk_cz) +
-                        " -> viewers_notified=" + std::to_string(viewers));
-                }
-            } else {
-                // Partial pickup — update the dropped item's count.
-                // Reset taken=false so it can be picked up again.
-                // Do NOT send TakeItemEntityPacket to viewers — only
-                // the picker should know (via inventory update).
-                di->count = (uint8_t)leftover_count;
-                di->taken = false;
-            }
+                if (!can_pickup)
+                    continue;
 
-            any_picked_up = true;
-            picked_this_pass = true;
-            break;   // inventory changed — re-scan for the next entity
-        }
-        if (!picked_this_pass) break;
+                // Add to inventory FIRST.
+                std::vector<cursestone::item::ItemStack> leftovers = inv_->addItem({pickup});
+                int leftover_count = leftovers.empty() ? 0 : leftovers[0].count;
+                int absorbed = pickup.count - leftover_count;
+                if (absorbed <= 0)
+                    continue;
+
+                // FIX #1: Atomic claim — prevents race condition where two
+                // players pick up the same item in the same tick.
+                // tryClaimDroppedItem sets taken=true under mutex. If another
+                // player already claimed it, we rollback the addItem.
+                if (!lvl->tryClaimDroppedItem(di->eid)) {
+                    // Another player got it first — rollback the inventory
+                    // addition by removing the items we just added.
+                    cursestone::item::ItemStack rollback;
+                    rollback.id = pickup.id;
+                    rollback.meta = pickup.meta;
+                    rollback.count = absorbed;
+                    rollback.nbt = pickup.nbt;
+                    inv_->removeItem({rollback});
+                    continue;
+                }
+
+                // FIX #6: For partial pickup, do NOT send TakeItemEntityPacket
+                // to other viewers — they would see the item disappear and
+                // reappear. Only send TakeItemEntityPacket for full pickup.
+                if (leftover_count == 0) {
+                    // Full pickup — send TakeItemEntityPacket to viewers
+                    // + RemoveEntityPacket to picker.
+                    //
+                    // bug FIX (same mechanism that MoveEntityPacket/
+                    // EntityEventPacket more above): entityId reference to the
+                    // player that picked up the item — a viewer that still
+                    // is in its window of streaming of chunks (without
+                    // spawned() still) can already estar "tracking" this
+                    // chunk (the tracking arranca before of the spawn) without
+                    // know still the entity of who picked up the item.
+                    auto pk_viewer = std::make_shared<network::protocol::TakeItemEntityPacket>();
+                    pk_viewer->target = di->eid;
+                    pk_viewer->entityId = runtimeId();
+                    auto rm_pk = std::make_shared<network::protocol::RemoveEntityPacket>();
+                    rm_pk->eid = di->eid;
+                    int32_t pk_cx = (int32_t)std::floor(di->x) >> 4;
+                    int32_t pk_cz = (int32_t)std::floor(di->z) >> 4;
+                    int viewers = 0;
+                    for (auto& other : srv_->playersSnapshot()) {
+                        if (!other)
+                            continue;
+                        if (other.get() == this)
+                            continue;
+                        if (other->isPendingRemoval())
+                            continue;
+                        if (!other->spawned())
+                            continue;
+                        if (!other->canSeeBlock(pk_cx, pk_cz))
+                            continue;
+                        other->sendPacket(pk_viewer);
+                        // *** bug fixed: "the items flotantes not is limpian
+                        // in broadcast" ***
+                        //
+                        // RemoveEntityPacket is sent only to the that picked up the
+                        // item. the other recibian TakeItemEntityPacket (that
+                        // only reproduce the animation of "the item vuela hacia
+                        // the player") but never recibian the order of remove
+                        // the entity, this way that its client is quedaba with the
+                        // item flotando forever, since the server if
+                        // it habia removed of the world (removeDroppedItem).
+                        //
+                        // Genisys: Entity::close() -> Level::removeEntity()
+                        // -> RemoveEntityPacket to all the hasSpawned, without
+                        // exclude to who it picked up. therefore the item disappears
+                        // for all and not only for that which it picked up.
+                        other->sendPacket(rm_pk);
+                        ++viewers;
+                    }
+                    auto pk_picker = std::make_shared<network::protocol::TakeItemEntityPacket>();
+                    pk_picker->target = di->eid;
+                    pk_picker->entityId = 0;
+                    sendPacket(pk_picker);
+                    lvl->removeDroppedItem(di->eid);
+                    sendPacket(rm_pk);
+                    if (srv_ && srv_->advancedLog()) {
+                        utils::MainLogger::get().info(
+                            "[PICKUP] " + cfg_.username +
+                            " picked up eid=" + std::to_string(di->eid) + " at chunk " +
+                            std::to_string(pk_cx) + "," + std::to_string(pk_cz) +
+                            " -> viewers_notified=" + std::to_string(viewers));
+                    }
+                } else {
+                    // Partial pickup — update the dropped item's count.
+                    // Reset taken=false so it can be picked up again.
+                    // Do NOT send TakeItemEntityPacket to viewers — only
+                    // the picker should know (via inventory update).
+                    di->count = (uint8_t)leftover_count;
+                    di->taken = false;
+                }
+
+                any_picked_up = true;
+                picked_this_pass = true;
+                break; // inventory changed — re-scan for the next entity
+            }
+            if (!picked_this_pass)
+                break;
         }
         if (any_picked_up) {
             sendInventory();
@@ -986,26 +1091,32 @@ void Player::onUpdate(uint64_t current_tick) {
         // collect without an inventory check (matches the item path).
         auto stuckArrows = lvl->arrows();
         for (world::ArrowEntity* a : stuckArrows) {
-            if (!a || a->taken || !a->stuck) continue;
+            if (!a || a->taken || !a->stuck)
+                continue;
 
             // Same overlap test as the items (player AABB grown by 1).
-            if (a->x < pos_.x - 1.3 || a->x > pos_.x + 1.3) continue;
-            if (a->z < pos_.z - 1.3 || a->z > pos_.z + 1.3) continue;
-            if (a->y < pos_.y - 1.0 || a->y > pos_.y + 2.8) continue;
+            if (a->x < pos_.x - 1.3 || a->x > pos_.x + 1.3)
+                continue;
+            if (a->z < pos_.z - 1.3 || a->z > pos_.z + 1.3)
+                continue;
+            if (a->y < pos_.y - 1.0 || a->y > pos_.y + 2.8)
+                continue;
 
             bool can_pickup;
             if ((cfg_.gamemode & 1) != 0) {
-                can_pickup = true;   // creative: no inventory room needed
+                can_pickup = true; // creative: no inventory room needed
             } else {
                 item::ItemStack arrowIt;
                 arrowIt.id = item::ITEM_ARROW;
                 arrowIt.count = 1;
                 can_pickup = inv_->canAddItem(arrowIt);
             }
-            if (!can_pickup) continue;
+            if (!can_pickup)
+                continue;
 
             // Atomic claim — another player may collect the same tick.
-            if (!lvl->tryClaimArrow(a->eid)) continue;
+            if (!lvl->tryClaimArrow(a->eid))
+                continue;
 
             if ((cfg_.gamemode & 1) == 0) {
                 item::ItemStack arrowIt;
@@ -1018,19 +1129,22 @@ void Player::onUpdate(uint64_t current_tick) {
             // + RemoveEntityPacket to everyone — same reasoning as the
             // item path above (stale floating entities otherwise).
             auto tk = std::make_shared<network::protocol::TakeItemEntityPacket>();
-            tk->target   = a->eid;
+            tk->target = a->eid;
             tk->entityId = runtimeId();
             auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
             rm->eid = a->eid;
             for (auto& other : srv_->playersSnapshot()) {
-                if (!other || !other->spawned()) continue;
-                if (other->getWorld() != lvl) continue;
-                if (other.get() != this) other->sendPacket(tk);
+                if (!other || !other->spawned())
+                    continue;
+                if (other->getWorld() != lvl)
+                    continue;
+                if (other.get() != this)
+                    other->sendPacket(tk);
                 other->sendPacket(rm);
             }
-            sendPacket(tk);   // the picker sees the animation too
+            sendPacket(tk); // the picker sees the animation too
             sendInventory();
-            break;            // one arrow per tick is plenty
+            break; // one arrow per tick is plenty
         }
     }
 
@@ -1044,13 +1158,12 @@ void Player::onUpdate(uint64_t current_tick) {
             mcp_compound_tag_set_double(named_tag_.get(), "PosX", pos_.x);
             mcp_compound_tag_set_double(named_tag_.get(), "PosY", pos_.y);
             mcp_compound_tag_set_double(named_tag_.get(), "PosZ", pos_.z);
-            mcp_compound_tag_set_float (named_tag_.get(), "Yaw",   yaw_);
-            mcp_compound_tag_set_float (named_tag_.get(), "Pitch", pitch_);
+            mcp_compound_tag_set_float(named_tag_.get(), "Yaw", yaw_);
+            mcp_compound_tag_set_float(named_tag_.get(), "Pitch", pitch_);
             mcp_compound_tag_set_short(named_tag_.get(), "Health", (int16_t)health());
             mcp_compound_tag_set_short(named_tag_.get(), "Hunger", (int16_t)foodLevel());
-            mcp_compound_tag_set_int  (named_tag_.get(), "playerGameType", cfg_.gamemode);
-            mcp_compound_tag_set_long  (named_tag_.get(), "lastPlayed",
-                (int64_t)mcp_utils_time_ms());
+            mcp_compound_tag_set_int(named_tag_.get(), "playerGameType", cfg_.gamemode);
+            mcp_compound_tag_set_long(named_tag_.get(), "lastPlayed", (int64_t)mcp_utils_time_ms());
             srv_->saveOfflinePlayerData(cfg_.username, named_tag_);
         }
     }
@@ -1065,9 +1178,14 @@ void Player::sendPosition(double x, double y, double z, double yaw, double pitch
     // the eye altitude.
     auto pk = std::make_shared<network::protocol::MovePlayerPacket>();
     pk->eid = runtimeId();
-    pk->x = (float)x; pk->y = (float)(y + kEyeHeight); pk->z = (float)z;
-    pk->yaw = (float)yaw; pk->bodyYaw = (float)yaw; pk->pitch = (float)pitch;
+    pk->x = (float)x;
+    pk->y = (float)(y + kEyeHeight);
+    pk->z = (float)z;
+    pk->yaw = (float)yaw;
+    pk->bodyYaw = (float)yaw;
+    pk->pitch = (float)pitch;
     pk->mode = mode;
     pk->onGround = onGround();
     sendPacket(pk);
-}} // namespace cursestone
+}
+} // namespace cursestone

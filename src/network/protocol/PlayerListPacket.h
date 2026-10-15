@@ -62,18 +62,20 @@
 namespace cursestone::network::protocol {
 
 class PlayerListPacket : public DataPacket {
-public:
-    uint8_t pid() const override { return PLAYER_LIST_PACKET; }
+  public:
+    uint8_t pid() const override {
+        return PLAYER_LIST_PACKET;
+    }
 
-    static constexpr uint8_t TYPE_ADD    = 0;
+    static constexpr uint8_t TYPE_ADD = 0;
     static constexpr uint8_t TYPE_REMOVE = 1;
 
     struct Entry {
         std::array<uint8_t, 16> uuid{};
-        int64_t     eid   = 0;
+        int64_t eid = 0;
         std::string name;
-        std::string skinId;      // the player's own SkinId from its login
-        std::string skinData;    // its decoded SkinData blob (never empty)
+        std::string skinId;   // the player's own SkinId from its login
+        std::string skinData; // its decoded SkinData blob (never empty)
     };
 
     uint8_t type = TYPE_ADD;

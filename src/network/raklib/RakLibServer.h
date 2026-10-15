@@ -39,19 +39,18 @@ extern "C" {
 
 typedef struct mcp_raklib_server {
     mcp_rak_session_manager_t manager;
-    mcp_server_handler_t     handler;
-    mcp_server_instance_t    instance;
-    int64_t                  server_id;
-    bool                     running;
+    mcp_server_handler_t handler;
+    mcp_server_instance_t instance;
+    int64_t server_id;
+    bool running;
 } mcp_raklib_server_t;
 
 // Initialize (does not bind). Returns 0 on success.
-int mcp_raklib_server_init(mcp_raklib_server_t* s, int64_t server_id,
-                              uint16_t mtu, void* instance_impl);
+int mcp_raklib_server_init(mcp_raklib_server_t* s, int64_t server_id, uint16_t mtu,
+                           void* instance_impl);
 
 // Bind and start the loop. Returns 0 on success.
-int mcp_raklib_server_start(mcp_raklib_server_t* s, const char* host,
-                              uint16_t port);
+int mcp_raklib_server_start(mcp_raklib_server_t* s, const char* host, uint16_t port);
 
 // Tick once (call from main thread if not running worker).
 void mcp_raklib_server_tick(mcp_raklib_server_t* s);

@@ -55,34 +55,51 @@
 namespace cursestone::world::format::leveldb {
 
 class LevelDB : public WorldProvider {
-public:
+  public:
     LevelDB();
     ~LevelDB() override;
 
-    void             init(const std::string& path) override;
-    void             shutdown() override;
-    std::string      getName() const override { return "leveldb"; }
+    void init(const std::string& path) override;
+    void shutdown() override;
+    std::string getName() const override {
+        return "leveldb";
+    }
 
-    std::optional<std::shared_ptr<FullChunk>>
-                     loadChunk(int32_t x, int32_t z) override;
-    void             saveChunk(const std::shared_ptr<FullChunk>& chunk) override;
-    void             unloadChunk(int32_t x, int32_t z) override;
+    std::optional<std::shared_ptr<FullChunk>> loadChunk(int32_t x, int32_t z) override;
+    void saveChunk(const std::shared_ptr<FullChunk>& chunk) override;
+    void unloadChunk(int32_t x, int32_t z) override;
 
-    std::vector<std::pair<int32_t, int32_t>>
-                     listChunks() const override;
+    std::vector<std::pair<int32_t, int32_t>> listChunks() const override;
 
-    int64_t          getSeed()      const override { return seed_; }
-    void             setSeed(int64_t s) override { seed_ = s; }
-    int64_t          getCurrentTime() const override { return time_; }
-    void             setCurrentTime(int64_t t) override { time_ = t; }
-    math::Vector3    getSpawn() const override { return spawn_; }
-    void             setSpawn(const math::Vector3& v) override { spawn_ = v; }
+    int64_t getSeed() const override {
+        return seed_;
+    }
+    void setSeed(int64_t s) override {
+        seed_ = s;
+    }
+    int64_t getCurrentTime() const override {
+        return time_;
+    }
+    void setCurrentTime(int64_t t) override {
+        time_ = t;
+    }
+    math::Vector3 getSpawn() const override {
+        return spawn_;
+    }
+    void setSpawn(const math::Vector3& v) override {
+        spawn_ = v;
+    }
 
-    void             setGenerator(generator::Generator* g) override { generator_ = g; }
-    generator::Generator* getGenerator() const override { return generator_; }
+    void setGenerator(generator::Generator* g) override {
+        generator_ = g;
+    }
+    generator::Generator* getGenerator() const override {
+        return generator_;
+    }
 
     // Stub — LevelDB doesn't use level.dat in the same way.
-    void             saveLevelData() override {}
+    void saveLevelData() override {
+    }
 
     // ----- LevelDB-specific surface
 
@@ -93,14 +110,14 @@ public:
 
     // Whether the on-disk LevelDB library was linked in. False in
     // Stub — callers should fall back to anvil.
-    static bool     hasLevelDB();
+    static bool hasLevelDB();
 
-private:
-    std::string                   path_;
-    int64_t                       seed_ = 0;
-    int64_t                       time_ = 0;
-    math::Vector3                 spawn_{0.0, 64.0, 0.0};
-    generator::Generator*         generator_ = nullptr;
+  private:
+    std::string path_;
+    int64_t seed_ = 0;
+    int64_t time_ = 0;
+    math::Vector3 spawn_{0.0, 64.0, 0.0};
+    generator::Generator* generator_ = nullptr;
 };
 
 struct LevelDBRegistrar {

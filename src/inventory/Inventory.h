@@ -41,18 +41,18 @@
 
 namespace cursestone {
 
-class Player;  // forward
+class Player; // forward
 
 namespace inventory {
 
 class Inventory {
-public:
+  public:
     static constexpr int MAX_STACK = 64;
 
     virtual ~Inventory() = default;
 
-    virtual int  getSize() const = 0;
-    virtual int  getMaxStackSize() const = 0;
+    virtual int getSize() const = 0;
+    virtual int getMaxStackSize() const = 0;
     virtual void setMaxStackSize(int size) = 0;
 
     virtual const std::string& getName() const = 0;
@@ -80,8 +80,8 @@ public:
 
     virtual bool contains(const item::ItemStack& item) = 0;
     virtual std::unordered_map<int, item::ItemStack> all(const item::ItemStack& item) = 0;
-    virtual int  first(const item::ItemStack& item) = 0;
-    virtual int  firstEmpty(const item::ItemStack& item) = 0;
+    virtual int first(const item::ItemStack& item) = 0;
+    virtual int firstEmpty(const item::ItemStack& item) = 0;
     virtual void remove(const item::ItemStack& item) = 0;
 
     virtual bool clear(int index) = 0;

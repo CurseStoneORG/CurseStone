@@ -25,8 +25,9 @@
 #include <string>
 namespace cursestone {
 class SaveCommand : public Command {
-public:
-    SaveCommand() : Command("save", "Save worlds", "", "cursestone.command.save") {}
+  public:
+    SaveCommand() : Command("save", "Save worlds", "", "cursestone.command.save") {
+    }
     bool execute(CommandSender* sender, const std::string& label,
                  const std::vector<std::string>& args) override;
 };

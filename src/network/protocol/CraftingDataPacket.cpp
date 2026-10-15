@@ -59,8 +59,8 @@ void putSlotRaw(PacketWriter& w, uint16_t id, int16_t meta, uint8_t count) {
     }
     w.writeI16BE(static_cast<int16_t>(id));
     w.writeU8(count);
-    w.writeI16BE(meta);          // -1 → 0xFFFF, igual que PMMP
-    w.writeU16LE(0);             // nbtLen = 0 (putLShort = LE)
+    w.writeI16BE(meta); // -1 → 0xFFFF, igual que PMMP
+    w.writeU16LE(0);    // nbtLen = 0 (putLShort = LE)
 }
 
 // BinaryStream::putInt — 4 bytes BIG-endian con signo (pack("N")).
@@ -74,7 +74,8 @@ void CraftingDataPacket::addAllRecipes(const inventory::CraftingManager& mgr) {
     entries_.clear();
     entries_.reserve(mgr.recipes().size());
     for (const auto& r : mgr.recipes()) {
-        if (!r) continue;
+        if (!r)
+            continue;
         CraftingEntry e;
         e.type = r->type();
         e.result = r->result();
@@ -109,67 +110,64 @@ void CraftingDataPacket::encode(std::vector<uint8_t>& out) const {
         int32_t entryType = -1;
 
         switch (rec.type) {
-            case inventory::RECIPE_SHAPED: {
-                entryType = ENTRY_SHAPED;
-                putIntBE(bw, rec.width);
-                putIntBE(bw, rec.height);
-                // Celdas fila-por-fila: z<Height exterior, x<Width
-                // interior (Genisys/Infinity). Recipe::grid está anclado
-                // arriba-izquierda en fila-major (row*3+col), así que el
-                // índice lineal es exactamente row*width + col SIN
-                // padding — Width x Height celdas exactas. Requirement
-                // por celda = 1 (el "Count: 9" del JSON legacy de Nukkit
-                // es un artefacto del generador; PMMP también fuerza 1).
-                const auto& grid = rec.grid;
-                const auto& meta = rec.gridMeta;
-                for (int row = 0; row < rec.height; ++row) {
-                    for (int col = 0; col < rec.width; ++col) {
-                        int i = row * 3 + col;
-                        putSlotRaw(bw, grid[i], meta[i], 1);
-                    }
+        case inventory::RECIPE_SHAPED: {
+            entryType = ENTRY_SHAPED;
+            putIntBE(bw, rec.width);
+            putIntBE(bw, rec.height);
+            // Celdas fila-por-fila: z<Height exterior, x<Width
+            // interior (Genisys/Infinity). Recipe::grid está anclado
+            // arriba-izquierda en fila-major (row*3+col), así que el
+            // índice lineal es exactamente row*width + col SIN
+            // padding — Width x Height celdas exactas. Requirement
+            // por celda = 1 (el "Count: 9" del JSON legacy de Nukkit
+            // es un artefacto del generador; PMMP también fuerza 1).
+            const auto& grid = rec.grid;
+            const auto& meta = rec.gridMeta;
+            for (int row = 0; row < rec.height; ++row) {
+                for (int col = 0; col < rec.width; ++col) {
+                    int i = row * 3 + col;
+                    putSlotRaw(bw, grid[i], meta[i], 1);
                 }
-                putIntBE(bw, 1);
-                putSlotRaw(bw, rec.result.id,
-                           static_cast<int16_t>(rec.result.meta),
-                           static_cast<uint8_t>(rec.result.count));
-                bw.writeBytes(rec.uuid.data(), 16);
-                break;
             }
-            case inventory::RECIPE_SHAPELESS: {
-                entryType = ENTRY_SHAPELESS;
-                const auto& ing = rec.ingredients;
-                const auto& imeta = rec.ingredientMeta;
-                putIntBE(bw, static_cast<int32_t>(ing.size()));
-                for (size_t i = 0; i < ing.size(); ++i) {
-                    int16_t m = i < imeta.size() ? imeta[i] : 0;
-                    putSlotRaw(bw, ing[i], m, 1);
-                }
-                putIntBE(bw, 1);
-                putSlotRaw(bw, rec.result.id,
-                           static_cast<int16_t>(rec.result.meta),
-                           static_cast<uint8_t>(rec.result.count));
-                bw.writeBytes(rec.uuid.data(), 16);
-                break;
+            putIntBE(bw, 1);
+            putSlotRaw(bw, rec.result.id, static_cast<int16_t>(rec.result.meta),
+                       static_cast<uint8_t>(rec.result.count));
+            bw.writeBytes(rec.uuid.data(), 16);
+            break;
+        }
+        case inventory::RECIPE_SHAPELESS: {
+            entryType = ENTRY_SHAPELESS;
+            const auto& ing = rec.ingredients;
+            const auto& imeta = rec.ingredientMeta;
+            putIntBE(bw, static_cast<int32_t>(ing.size()));
+            for (size_t i = 0; i < ing.size(); ++i) {
+                int16_t m = i < imeta.size() ? imeta[i] : 0;
+                putSlotRaw(bw, ing[i], m, 1);
             }
-            case inventory::RECIPE_FURNACE: {
-                uint16_t inputId = rec.ingredients.empty() ? 0 : rec.ingredients[0];
-                if (rec.furnaceInputMeta >= 0) {
-                    entryType = ENTRY_FURNACE_DATA;
-                    // ENTRY_FURNACE_DATA: (id << 16) | damage como UN
-                    // solo int BE (writeFurnaceRecipe de Infinity).
-                    putIntBE(bw, (static_cast<int32_t>(inputId) << 16) |
-                                     static_cast<int32_t>(rec.furnaceInputMeta));
-                } else {
-                    entryType = ENTRY_FURNACE;
-                    putIntBE(bw, inputId);
-                }
-                putSlotRaw(bw, rec.result.id,
-                           static_cast<int16_t>(rec.result.meta),
-                           static_cast<uint8_t>(rec.result.count));
-                break;
+            putIntBE(bw, 1);
+            putSlotRaw(bw, rec.result.id, static_cast<int16_t>(rec.result.meta),
+                       static_cast<uint8_t>(rec.result.count));
+            bw.writeBytes(rec.uuid.data(), 16);
+            break;
+        }
+        case inventory::RECIPE_FURNACE: {
+            uint16_t inputId = rec.ingredients.empty() ? 0 : rec.ingredients[0];
+            if (rec.furnaceInputMeta >= 0) {
+                entryType = ENTRY_FURNACE_DATA;
+                // ENTRY_FURNACE_DATA: (id << 16) | damage como UN
+                // solo int BE (writeFurnaceRecipe de Infinity).
+                putIntBE(bw, (static_cast<int32_t>(inputId) << 16) |
+                                 static_cast<int32_t>(rec.furnaceInputMeta));
+            } else {
+                entryType = ENTRY_FURNACE;
+                putIntBE(bw, inputId);
             }
-            default:
-                continue;   // tipo desconocido — no mandar la entrada
+            putSlotRaw(bw, rec.result.id, static_cast<int16_t>(rec.result.meta),
+                       static_cast<uint8_t>(rec.result.count));
+            break;
+        }
+        default:
+            continue; // tipo desconocido — no mandar la entrada
         }
 
         putIntBE(w, entryType);

@@ -77,26 +77,35 @@ static void format_timestamp(char* buf, size_t bufsz) {
 
 static const char* level_color(mcp_log_level_t lvl) {
     switch (lvl) {
-        case MCP_LOG_DEBUG:     return MCP_TERM_BBLACK;
-        case MCP_LOG_INFO:      return MCP_TERM_BGREEN;
-        case MCP_LOG_NOTICE:    return MCP_TERM_BCYAN;
-        case MCP_LOG_WARN:      return MCP_TERM_BYELLOW;
-        case MCP_LOG_ERROR:     return MCP_TERM_BRED;
-        case MCP_LOG_CRITICAL:  return MCP_TERM_BRED;
-        case MCP_LOG_EMERGENCY: return MCP_TERM_BRED;
-        default:                return "";
+    case MCP_LOG_DEBUG:
+        return MCP_TERM_BBLACK;
+    case MCP_LOG_INFO:
+        return MCP_TERM_BGREEN;
+    case MCP_LOG_NOTICE:
+        return MCP_TERM_BCYAN;
+    case MCP_LOG_WARN:
+        return MCP_TERM_BYELLOW;
+    case MCP_LOG_ERROR:
+        return MCP_TERM_BRED;
+    case MCP_LOG_CRITICAL:
+        return MCP_TERM_BRED;
+    case MCP_LOG_EMERGENCY:
+        return MCP_TERM_BRED;
+    default:
+        return "";
     }
 }
 
 // Ring buffer push (called by tick thread via vtable functions)
-static void async_push(mcp_async_logger_t* self, mcp_log_level_t lvl,
-                         const char* msg) {
-    if (!self || !self->running) return;
+static void async_push(mcp_async_logger_t* self, mcp_log_level_t lvl, const char* msg) {
+    if (!self || !self->running)
+        return;
 
     uint16_t len = 0;
     if (msg) {
         len = (uint16_t)strlen(msg);
-        if (len >= ASYNC_LOG_LINE_MAX) len = ASYNC_LOG_LINE_MAX - 1;
+        if (len >= ASYNC_LOG_LINE_MAX)
+            len = ASYNC_LOG_LINE_MAX - 1;
     }
 
     mcp_mutex_lock(&self->mtx);
@@ -115,7 +124,7 @@ static void async_push(mcp_async_logger_t* self, mcp_log_level_t lvl,
     }
     entry->text[len] = '\0';
     entry->level = lvl;
-    entry->len   = len;
+    entry->len = len;
 
     self->head = (idx + 1) % ASYNC_LOG_RING_SIZE;
     self->count++;
@@ -151,8 +160,8 @@ static void async_emergency_fn(void* self, const char* msg) {
 }
 static void async_log_exception_fn(void* self, const char* what, const char* where) {
     char buf[1024];
-    snprintf(buf, sizeof(buf), "Exception: %s in %s",
-             what ? what : "(null)", where ? where : "(null)");
+    snprintf(buf, sizeof(buf), "Exception: %s in %s", what ? what : "(null)",
+             where ? where : "(null)");
     async_push((mcp_async_logger_t*)self, MCP_LOG_ERROR, buf);
 }
 static void async_shutdown_fn(void* self) {
@@ -162,10 +171,8 @@ static void async_shutdown_fn(void* self) {
 }
 
 // Worker thread — drains the ring buffer and writes to stdout + file
-static void format_and_write(mcp_async_logger_t* self,
-                               const async_log_entry_t* entry,
-                               char* batch, size_t* batch_len,
-                               size_t batch_cap) {
+static void format_and_write(mcp_async_logger_t* self, const async_log_entry_t* entry, char* batch,
+                             size_t* batch_len, size_t batch_cap) {
     char ts[16];
     format_timestamp(ts, sizeof(ts));
     const char* lvl_name = mcp_log_level_name(entry->level);
@@ -173,16 +180,16 @@ static void format_and_write(mcp_async_logger_t* self,
 
     // Build the plain line (for file + non-colored terminal).
     char plain[ASYNC_LOG_LINE_MAX + 64];
-    int n = snprintf(plain, sizeof(plain), "[%s] [%s] %s\n",
-                     ts, lvl_name, msg);
-    if (n < 0) return;
+    int n = snprintf(plain, sizeof(plain), "[%s] [%s] %s\n", ts, lvl_name, msg);
+    if (n < 0)
+        return;
 
     // If colored, build the ANSI version for stdout.
     if (self->colored) {
         const char* lvl_c = level_color(entry->level);
         char colored[ASYNC_LOG_LINE_MAX + 128];
-        snprintf(colored, sizeof(colored), "[%s] [%s%s%s] %s\n",
-                 ts, lvl_c, lvl_name, MCP_TERM_RESET, msg);
+        snprintf(colored, sizeof(colored), "[%s] [%s%s%s] %s\n", ts, lvl_c, lvl_name,
+                 MCP_TERM_RESET, msg);
 
         // Convert § codes to ANSI.
         char ansi[ASYNC_LOG_LINE_MAX + 256];
@@ -254,7 +261,7 @@ static void* async_worker_fn(void* arg) {
         while (self->count == 0 && !self->shutdown_requested) {
             // Relative timeout, so a wall-clock step cannot stall the wait.
             if (!mcp_cond_wait(&self->cond, &self->mtx, ASYNC_LOG_POLL_MS)) {
-                break;  // timed out
+                break; // timed out
             }
         }
 
@@ -280,7 +287,8 @@ static void* async_worker_fn(void* arg) {
                 batch_len = 0;
                 batch[0] = '\0';
             }
-            if (self->shutdown_requested) break;
+            if (self->shutdown_requested)
+                break;
             continue;
         }
 
@@ -308,29 +316,26 @@ static void* async_worker_fn(void* arg) {
         // Emit "[LOG DROPPED xN]" if any were dropped.
         if (dropped > 0) {
             char drop_msg[128];
-            snprintf(drop_msg, sizeof(drop_msg),
-                     "[LOG DROPPED x%llu]", (unsigned long long)dropped);
+            snprintf(drop_msg, sizeof(drop_msg), "[LOG DROPPED x%llu]",
+                     (unsigned long long)dropped);
             async_log_entry_t drop_entry;
             strncpy(drop_entry.text, drop_msg, ASYNC_LOG_LINE_MAX - 1);
             drop_entry.text[ASYNC_LOG_LINE_MAX - 1] = '\0';
             drop_entry.level = MCP_LOG_WARN;
             drop_entry.len = (uint16_t)strlen(drop_entry.text);
-            format_and_write(self, &drop_entry, batch, &batch_len,
-                             sizeof(batch));
+            format_and_write(self, &drop_entry, batch, &batch_len, sizeof(batch));
         }
 
         // Process drained entries.
         for (uint32_t i = 0; i < n_drained; ++i) {
-            format_and_write(self, &local_entries[i], batch, &batch_len,
-                             sizeof(batch));
+            format_and_write(self, &local_entries[i], batch, &batch_len, sizeof(batch));
         }
 
         // Flush batch if:
         //  - batch is getting full (> 4 KB)
         //  - shutdown was requested (final flush)
         //  - we hit the timeout (periodic flush)
-        if (batch_len >= ASYNC_LOG_BATCH_SIZE || do_shutdown ||
-            n_drained == 0) {
+        if (batch_len >= ASYNC_LOG_BATCH_SIZE || do_shutdown || n_drained == 0) {
             if (batch_len > 0) {
                 fputs(batch, stdout);
                 if (self->log_file) {
@@ -363,7 +368,8 @@ static void* async_worker_fn(void* arg) {
 
 // Public API
 void mcp_main_logger_async_init(const char* log_path, bool colored) {
-    if (g_async_initialized) return;
+    if (g_async_initialized)
+        return;
 
     mcp_terminal_init(colored);
 
@@ -381,31 +387,31 @@ void mcp_main_logger_async_init(const char* log_path, bool colored) {
     }
 
     // Set up the vtable.
-    g_async.vtable.log           = async_log_fn;
-    g_async.vtable.debug         = async_debug_fn;
-    g_async.vtable.info          = async_info_fn;
-    g_async.vtable.notice        = async_notice_fn;
-    g_async.vtable.warn          = async_warn_fn;
-    g_async.vtable.error         = async_error_fn;
-    g_async.vtable.critical      = async_critical_fn;
-    g_async.vtable.emergency     = async_emergency_fn;
+    g_async.vtable.log = async_log_fn;
+    g_async.vtable.debug = async_debug_fn;
+    g_async.vtable.info = async_info_fn;
+    g_async.vtable.notice = async_notice_fn;
+    g_async.vtable.warn = async_warn_fn;
+    g_async.vtable.error = async_error_fn;
+    g_async.vtable.critical = async_critical_fn;
+    g_async.vtable.emergency = async_emergency_fn;
     g_async.vtable.log_exception = async_log_exception_fn;
-    g_async.vtable.shutdown      = async_shutdown_fn;
-    g_async.vtable.impl          = &g_async;
+    g_async.vtable.shutdown = async_shutdown_fn;
+    g_async.vtable.impl = &g_async;
 
     // Initialize sync primitives.
     mcp_mutex_init(&g_async.mtx);
     mcp_cond_init(&g_async.cond);
 
     // Spawn worker thread.
-    g_async.worker_started =
-        mcp_thread_start(&g_async.worker, async_worker_fn, &g_async);
+    g_async.worker_started = mcp_thread_start(&g_async.worker, async_worker_fn, &g_async);
 
     g_async_initialized = true;
 }
 
 void mcp_main_logger_async_destroy(void) {
-    if (!g_async_initialized) return;
+    if (!g_async_initialized)
+        return;
 
     // Signal shutdown.
     mcp_mutex_lock(&g_async.mtx);
