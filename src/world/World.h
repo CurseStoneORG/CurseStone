@@ -112,6 +112,23 @@ struct DroppedItem {
     double lx = 0.0, ly = 0.0, lz = 0.0;
 };
 
+struct FallingBlockEntity {
+    int64_t eid = 0;
+    uint8_t blockId = 0;    // block rendered + placed back on landing
+    uint8_t blockData = 0;  // metadata carried through the fall
+    double   x = 0.0, y = 0.0, z = 0.0;   // entity position (block centre = bx+0.5)
+    double   vx = 0.0, vy = 0.0, vz = 0.0;
+    // Last position broadcast in MoveEntityPacket — only re-broadcast
+    // when the entity actually moved (DroppedItem dead-zone pattern).
+    double   lx = 0.0, ly = 0.0, lz = 0.0;
+    uint64_t spawn_tick = 0;
+    uint32_t age = 0;                     // ticksLived
+    // Infinity FallingSand: `$height = $this->fallDistance` feeds the
+    // anvil crush damage (($height - 1) * 2, capped at 40).
+    float    fall_distance = 0.0f;
+    bool     taken = false;               // landed/despawned → erased next sweep
+};
+
 // ---------------------------------------------------------------------
 // Vanilla dropped-item pickup volume (MCPE 0.15.10 / Bedrock)
 // ---------------------------------------------------------------------
@@ -358,6 +375,51 @@ public:
     std::vector<ArrowEntity*> arrows();
     // Atomic pickup claim — same semantics as tryClaimDroppedItem.
     bool tryClaimArrow(int64_t eid);
+
+    // ----- Falling-block physics (protocol 84 / Infinity FallingSand) -----
+    // Converts the block cell (bx,by,bz) into a falling entity: reads the
+    // cell (id + data) from the chunk, sets it to air, broadcasts the
+    // UpdateBlockPacket + the AddEntityPacket (type 66 + DATA_BLOCK_INFO
+    // metadata) and cascades the support check one cell up (stacked
+    // columns fall together, exactly like the scheduled-update cascade of
+    // the reference implementation). The id/data are re-read from the
+    // chunk (and re-validated) so a stale caller cannot spawn an entity
+    // for a cell that already changed. Only ever call this for a cell
+    // that already holds a fallable block with air/liquid below —
+    // checkFallingSupport() enforces both.
+    void spawnFallingBlock(int32_t bx, int32_t by, int32_t bz);
+    // One physics step for every falling block still in the air
+    // (Infinity FallingSand::onUpdate): gravity 0.04 / drag 0.02, swept
+    // collision against the world, landing conversion back into a block
+    // (or an item drop when the landing cell holds a non-solid, e.g. a
+    // torch), anvil fall sound + crush damage, MoveEntityPacket sync and
+    // the taken-record sweep. Entities are processed bottom-up so a
+    // stacked column lands as a column (each entity rests on the block
+    // the previous one just became) instead of collapsing into items.
+    void tickFallingBlocks(uint64_t current_tick);
+    // Support-loss check for the cell (x,y,z): if it holds a fallable
+    // block (SAND/GRAVEL/ANVIL — the MCPE 0.15.10 set) and the cell below
+    // is air or a liquid (Infinity Fallable::onUpdate BLOCK_UPDATE_NORMAL
+    // condition), the cell becomes a falling entity. Call this after any
+    // block change that can remove support: break (cell ABOVE the removed
+    // one), placement (the placed cell itself — sand placed against a wall
+    // hangs and must fall), fire extinguish, door/bed half removal, piston
+    // retract, explosions. Recursion only ever moves one cell UP and each
+    // step converts exactly one block, so a column of any height is
+    // bounded and the call can never loop.
+    void checkFallingSupport(int32_t x, int32_t y, int32_t z);
+    // True when `id` is one of the blocks that obey gravity in MCPE
+    // 0.15.10 (12, 13, 145). Static so plugins/tools can query it too.
+    static bool isFallableBlockId(uint8_t id);
+    // World-side item drop (no player context): broadcasts
+    // AddItemEntityPacket to the chunk viewers and registers the record
+    // in dropped_items_, exactly like Player::dropItem does for player
+    // drops. Used by the falling-block landing when the landing cell
+    // holds a breakable non-solid block (Infinity drops the block's item
+    // there instead of replacing it).
+    void dropItemAt(double x, double y, double z,
+                    uint16_t itemId, uint8_t count, uint16_t damage);
+
     // tick of block entities (hornos: fundido + fuel + progress of UI).
     // Llamado a time per tick from server::tick (outside of
     // World::tick for not bloquear the fase of time/weather with I/or of
@@ -538,6 +600,12 @@ private:
     mutable std::mutex dropped_items_mtx_;
     std::unordered_map<int64_t, std::unique_ptr<ArrowEntity>> arrows_;
     mutable std::mutex arrows_mtx_;
+
+    // All falling blocks in this level, keyed by runtime entity id.
+    // tickFallingBlocks() removes records with taken==true (landed,
+    // despawned in the void, or past the runaway-fall safety cap).
+    std::unordered_map<int64_t, std::unique_ptr<FallingBlockEntity>> falling_blocks_;
+    mutable std::mutex falling_blocks_mtx_;
 
     // All tile-entities in this level, keyed by to packed (x,and,z) block
     // position. See getTile/setTile/removeTile above.

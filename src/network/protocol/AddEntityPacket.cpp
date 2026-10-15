@@ -42,8 +42,45 @@ void AddEntityPacket::encode(std::vector<uint8_t>& out) const {
     w.writeF32BE(yawPitchScaled ? yaw * kRotScale : yaw);
     w.writeF32BE(yawPitchScaled ? pitch * kRotScale : pitch);
     w.writeI32BE(modifiers);
-    // Empty metadata: single 0 byte (same convention as AddPlayerPacket).
-    w.writeU8(0);
+    if (metadata.empty()) {
+        // Empty metadata: single 0 byte (same convention as AddPlayerPacket).
+        w.writeU8(0);
+    } else {
+        // Infinity Binary::writeMetadata: key byte (type << 5) | index,
+        // then the value — INT is LITTLE-endian (writeLInt) on protocol
+        // 84 — then the 0x7F terminator.
+        for (const SetEntityDataPacket::Entry& e : metadata) {
+            w.writeU8((uint8_t)(((e.type & 0x07) << 5) | (e.index & 0x1F)));
+            switch (e.type) {
+                case SetEntityDataPacket::TYPE_BYTE:
+                    w.writeU8((uint8_t)(e.ival & 0xFF));
+                    break;
+                case SetEntityDataPacket::TYPE_SHORT:
+                    w.writeU16LE((uint16_t)(e.ival & 0xFFFF));
+                    break;
+                case SetEntityDataPacket::TYPE_INT:
+                    w.writeU32LE((uint32_t)e.ival);
+                    break;
+                case SetEntityDataPacket::TYPE_LONG:
+                    w.writeI64BE(e.ival);
+                    break;
+                case SetEntityDataPacket::TYPE_FLOAT:
+                    w.writeF32BE(e.fval);
+                    break;
+                case SetEntityDataPacket::TYPE_STRING:
+                    w.writeBEString(e.sval);
+                    break;
+                case SetEntityDataPacket::TYPE_POS:
+                    w.writeU32LE((uint32_t)e.px);
+                    w.writeU32LE((uint32_t)e.py);
+                    w.writeU32LE((uint32_t)e.pz);
+                    break;
+                default:
+                    break;
+            }
+        }
+        w.writeU8(SetEntityDataPacket::TERMINATOR);
+    }
     // No entity links.
     w.writeI16BE(0);
 }

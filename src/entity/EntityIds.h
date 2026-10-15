@@ -29,7 +29,11 @@ enum EntityId : int32_t {
     EITEM_ITEM             = 1,
     EITEM_XP_ORB            = 2,
     EITEM_ENDER_PEARL       = 14,
-    EITEM_FALLING_BLOCK    = 10,
+    // Protocol 84 FallingSand (Infinity FallingSand.php NETWORK_ID = 66).
+    // This used to say 10, which is the CHICKEN type on protocol 84 (a
+    // latent bug: the constant was never sent — the falling-block spawn
+    // path now uses AddEntityPacket::TYPE_FALLING_BLOCK, same value).
+    EITEM_FALLING_BLOCK    = 66,
     EITEM_PAINTING         = 9,
     EITEM_PRIMED_TNT       = 65,
     EITEM_ARROW            = 80,

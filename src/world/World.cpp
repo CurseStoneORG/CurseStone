@@ -55,6 +55,8 @@
 #include "network/protocol/RemoveEntityPacket.h"
 #include "network/protocol/MoveEntityPacket.h"
 #include "network/protocol/SetEntityMotionPacket.h"
+#include "network/protocol/SetEntityDataPacket.h"
+#include "network/protocol/AddItemEntityPacket.h"
 #include "network/protocol/EntityEventPacket.h"
 #include "network/protocol/SetHealthPacket.h"
 #include "network/protocol/SetTimePacket.h"
@@ -279,6 +281,10 @@ namespace {
 // next to tickDroppedItems() live in to second anonymous namespace, which is
 // the same namespace.
 bool dropBlockSolid(uint8_t id);
+// True for the blocks that obey gravity in MCPE 0.15.10 (sand 12,
+// gravel 13, anvil 145). Defined next to tickFallingBlocks(); used by
+// World::setBlock's support check above.
+bool fallableBlockId(uint8_t id);
 } // namespace
 
 uint8_t World::getBlockId(int32_t x, int32_t y, int32_t z) {
@@ -387,6 +393,25 @@ void World::setBlock(int32_t x, int32_t y, int32_t z, uint8_t id, uint8_t data) 
         // that the luz can recorrer, this way that the region recalculada
         // always is coherente by if sola.
         light_.relightAround(x, y, z, LightEngine::kRelightRadius);
+
+        // Falling-block support check (Infinity Fallable::onUpdate,
+        // BLOCK_UPDATE_NORMAL). setBlock is the ONE choke point every
+        // block-modifying system goes through (redstone, explosions,
+        // flint&steel, the Lua plugin API world.setBlock(...)), so the
+        // support loss is re-evaluated here for every path:
+        //   * the removed cell (air now) — the block ABOVE may fall;
+        //   * the written cell — a fallable block written over air or a
+        //     liquid (plugin placed sand mid-air) falls immediately.
+        // The direct chunk-write paths (player break/place) bypass
+        // setBlock and call checkFallingSupport() from their own call
+        // sites — see PlayerBlocks.cpp.
+        if (y >= 0 && y < 256) {
+            if (id == block::AIR) {
+                checkFallingSupport(x, y + 1, z);
+            } else if (fallableBlockId(id)) {
+                checkFallingSupport(x, y, z);
+            }
+        }
     }
 }
 
@@ -469,6 +494,12 @@ void World::tick(uint64_t current_tick) {
     // integrate the identical physics (Infinity Arrow gravity) and correct
     // the clients with MoveEntityPacket, or the two drift apart.
     tickArrows(current_tick);
+    // Falling blocks (sand / gravel / anvil — Infinity FallingSand): the
+    // support-loss conversion happens in checkFallingSupport() from the
+    // block-change call sites; this pass runs the actual fall physics
+    // and the landing conversion, server-authoritative like everything
+    // else in this tick.
+    tickFallingBlocks(current_tick);
 }
 
 // ============================================================
@@ -583,6 +614,127 @@ bool dropBlockSolid(uint8_t id) {
             return false;
         default:
             return true;
+    }
+}
+
+// ---------------------------------------------------------------------
+// Falling-block helpers (protocol 84 / Infinity FallingSand).
+// ---------------------------------------------------------------------
+
+// The complete set of blocks that obey gravity in MCPE 0.15.10:
+//   sand 12 (incl. red sand 12:1), gravel 13, anvil 145 
+// learn them. See the FallingBlockEntity note in World.h.
+bool fallableBlockId(uint8_t id) {
+    switch (id) {
+        case block::SAND:      // 12 — also red sand via meta 1
+        case block::GRAVEL:    // 13
+        case block::ANVIL:     // 145 — direction bits 0x03, damage 0x0c
+            return true;
+        default:
+            return false;
+    }
+}
+
+// Infinity Fallable::onUpdate: the block falls when its support is AIR
+// `$down->getId() === self::AIR` or a Liquid (`$down instanceof Liquid`
+// — all four moving/static water/lava ids).
+bool liquidForFalling(uint8_t id) {
+    switch (id) {
+        case block::FLOWING_WATER: case block::WATER:
+        case block::FLOWING_LAVA:  case block::LAVA:
+            return true;
+        default:
+            return false;
+    }
+}
+
+// Broadcast one UpdateBlockPacket(id,data) for cell (x,y,z) to every
+// spawned player of the world that can see the chunk — the same
+// visibility rule the break/place paths use (canSeeBlock, NOT
+// isTrackingChunk; see the ghost-block note in PlayerBlocks.cpp).
+void sendUpdateBlock(World* w, int32_t x, int32_t y, int32_t z,
+                     uint8_t id, uint8_t data) {
+    auto pk = std::make_shared<network::protocol::UpdateBlockPacket>();
+    pk->x = x;
+    pk->z = z;
+    pk->y = (uint8_t)y;
+    pk->blockId = id;
+    pk->blockData = data;
+    pk->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
+    int32_t cx = x >> 4, cz = z >> 4;
+    for (auto& p : cursestone::Server::getInstance().playersSnapshot()) {
+        if (!p || !p->spawned()) continue;
+        if (p->getWorld() != w) continue;   // same world
+        if (!p->canSeeBlock(cx, cz)) continue;
+        p->sendPacket(pk);
+    }
+}
+
+// Broadcast any packet to every spawned player of the world that can
+// see chunk (cx,cz) — shared by the falling-block spawn/move/remove
+// broadcasts so they all stay on ONE visibility rule.
+void sendToChunkViewers(World* w, int32_t cx, int32_t cz,
+                        const std::shared_ptr<network::protocol::DataPacket>& pk) {
+    for (auto& p : cursestone::Server::getInstance().playersSnapshot()) {
+        if (!p || !p->spawned()) continue;
+        if (p->getWorld() != w) continue;   // same world
+        if (!p->canSeeBlock(cx, cz)) continue;
+        p->sendPacket(pk);
+    }
+}
+
+// RemoveEntityPacket broadcast for a despawning falling block — sent to
+// every spawned player of the world (same pattern as the arrow despawn;
+// clients safely ignore removals of entities they never saw).
+void sendRemoveEntity(World* w, int64_t eid) {
+    auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
+    rm->eid = eid;
+    for (auto& p : cursestone::Server::getInstance().playersSnapshot()) {
+        if (!p || !p->spawned()) continue;
+        if (p->getWorld() != w) continue;
+        p->sendPacket(rm);
+    }
+}
+
+// Anvil landing extras (Infinity FallingSand, `$ev->getTo() instanceof
+// Anvil` branch):
+//   * AnvilFallSound — LevelEventPacket evid 1022
+//     (EVENT_SOUND_ANVIL_FALL on protocol 84) at the block centre;
+//   * crush damage `($fallDistance - 1) * 2` capped at 40 to every
+//     Living overlapping the landed box grown by 0.1. CurseStone has no
+//     mob spawn system yet (players are the only Living in worlds), so
+//     the scan covers players; `damage(cause FALL)` is the same
+//     EntityDamageEvent cause Infinity's EntityDamageByEntityEvent
+//     carries (CAUSE_FALL), minus the attacker that a falling block
+//     cannot be anyway.
+void anvilLandingEffects(World* w, int32_t bx, int32_t by, int32_t bz,
+                         float fall_distance) {
+    auto snd = std::make_shared<network::protocol::LevelEventPacket>();
+    snd->evid = 1022;   // EVENT_SOUND_ANVIL_FALL (protocol 84)
+    snd->x = (float)bx + 0.5f;
+    snd->y = (float)by + 0.5f;
+    snd->z = (float)bz + 0.5f;
+    snd->data = 0;
+    sendToChunkViewers(w, bx >> 4, bz >> 4, snd);
+
+    float dmg = (fall_distance - 1.0f) * 2.0f;
+    if (dmg > 40.0f) dmg = 40.0f;
+    if (dmg <= 0.0f) return;
+
+    // Landed falling-block box (0.98 wide) grown 0.1 on every axis —
+    // Infinity `boundingBox->grow(0.1, 0.1, 0.1)`.
+    double minx = (double)bx + 0.5 - 0.49 - 0.1, maxx = (double)bx + 0.5 + 0.49 + 0.1;
+    double miny = (double)by - 0.1,             maxy = (double)by + 0.98 + 0.1;
+    double minz = (double)bz + 0.5 - 0.49 - 0.1, maxz = (double)bz + 0.5 + 0.49 + 0.1;
+    for (auto& p : cursestone::Server::getInstance().playersSnapshot()) {
+        if (!p || !p->spawned() || p->isDead() || p->isPendingRemoval()) continue;
+        if (p->getWorld() != w) continue;
+        const math::Vector3& pp = p->getNextPosition();
+        // Player AABB: [x±0.3, y .. y+1.8, z±0.3] (Human dimensions).
+        if (pp.x + 0.3 <= minx || pp.x - 0.3 >= maxx) continue;
+        if (pp.y + 1.8 <= miny || pp.y >= maxy) continue;
+        if (pp.z + 0.3 <= minz || pp.z - 0.3 >= maxz) continue;
+        p->damage(dmg, event::entity::DamageCause::FALL);
     }
 }
 
@@ -1165,6 +1317,347 @@ void World::tickArrows(uint64_t current_tick) {
         std::lock_guard<std::mutex> lk(arrows_mtx_);
         for (auto it = arrows_.begin(); it != arrows_.end(); ) {
             if (it->second && it->second->taken) it = arrows_.erase(it);
+            else ++it;
+        }
+    }
+}
+
+// ============================================================
+// Falling-block physics — Infinity FallingSand::onUpdate (protocol 84,
+// the MCPE 0.15.10 reference this port follows).
+// ============================================================
+//
+// Infinity tick (pocketmine/entity/FallingSand.php):
+//     $this->motionY -= $this->gravity;           // 0.04
+//     $this->move($motionX, $motionY, $motionZ);  // swept vs blocks
+//     $friction = 1 - $this->drag;                // 0.98
+//     motionX *= $friction; motionY *= 1-$drag; motionZ *= $friction;
+//     if ($this->onGround):
+//         kill; $pos = round(x-0.5, y, z-0.5);
+//         if (cell id > 0 && !solid && !liquid) → drop the block as item
+//         else                                  → setBlock(id, damage)
+//         anvil → AnvilFallSound + (($fallDistance-1)*2, cap 40) crush
+//     $this->updateMovement();
+//
+// The only fallable blocks in MCPE 0.15.10 are sand (12, incl. red
+// sand), gravel (13) and the anvil (145) — see fallableBlockId().
+//
+// Anti-runaway guarantees (task requirement: no infinite falls, no
+// leaked records):
+//   * every record ages every tick — even one frozen in an unloaded
+//     chunk is despawned by the kFallingBlockMaxAge cap, so a record can
+//     never outlive the world;
+//   * conversion only ever happens through this single pass (main
+//     thread), so two entities can never claim the same landing cell;
+//   * entities are swept bottom-up so a stacked column lands as a
+//     column: the lower block becomes a real block first and the one
+//     above clips against it instead of tunneling into its cell (which
+//     would turn the whole column into item drops — the classic
+//     stacked-sand duplication/loss bug).
+namespace {
+
+// 30 s at 20 TPS. A falling block under real gravity always lands far
+// earlier than this; only an entity stuck in a never-loaded chunk (or
+// some pathological state) can reach the cap. On expiry the entity
+// despawns — Infinity's chunk-unload path closes its entities the same
+// way, so this is no worse than the reference implementation.
+constexpr uint32_t kFallingBlockMaxAge = 600;
+
+} // namespace
+
+bool World::isFallableBlockId(uint8_t id) {
+    return fallableBlockId(id);
+}
+
+void World::checkFallingSupport(int32_t x, int32_t y, int32_t z) {
+    if (y < 0 || y >= 256) return;
+    // Cheap probe — never trigger chunk generation from a support check
+    // (same rule as setBlock: a missing chunk contributes nothing).
+    if (chunks_.getChunkIfLoaded(x >> 4, z >> 4) == nullptr) return;
+    uint8_t id = getBlockId(x, y, z);
+    if (!fallableBlockId(id)) return;
+    // Infinity Fallable::onUpdate (BLOCK_UPDATE_NORMAL): the block falls
+    // when the one below is AIR or a Liquid. Below the world floor
+    // (y == 0) there is no support either — PMMP answers air for y < 0,
+    // so the block falls into the void.
+    uint8_t below = (y > 0) ? getBlockId(x, y - 1, z) : (uint8_t)block::AIR;
+    if (below != block::AIR && !liquidForFalling(below)) return;
+    spawnFallingBlock(x, y, z);
+}
+
+void World::spawnFallingBlock(int32_t bx, int32_t by, int32_t bz) {
+    if (by < 0 || by >= 256) return;
+    if (chunks_.getChunkIfLoaded(bx >> 4, bz >> 4) == nullptr) return;
+    // Read from the chunk (and re-validate): the caller checked a moment
+    // ago, but this is also a recursion entry point (via the cascade
+    // below) — be safe.
+    uint8_t cellId = getBlockId(bx, by, bz);
+    if (!fallableBlockId(cellId)) return;
+    uint8_t cellData = getBlockData(bx, by, bz);
+
+    int64_t eid = cursestone::Server::getInstance().allocateEid();
+
+    // The source cell becomes air. world::setBlock() keeps the heightmap,
+    // the light region and the chunk dirty flag correct in one call.
+    setBlock(bx, by, bz, 0, 0);
+    sendUpdateBlock(this, bx, by, bz, 0, 0);
+
+    FallingBlockEntity fb;
+    fb.eid       = eid;
+    fb.blockId   = cellId;
+    fb.blockData = cellData;
+    fb.x = (double)bx + 0.5;
+    fb.y = (double)by;
+    fb.z = (double)bz + 0.5;
+    fb.vx = fb.vy = fb.vz = 0.0;
+    fb.lx = fb.x; fb.ly = fb.y; fb.lz = fb.z;
+    fb.spawn_tick = cursestone::Server::getInstance().getCurrentTick();
+    {
+        std::lock_guard<std::mutex> lk(falling_blocks_mtx_);
+        falling_blocks_[eid] = std::make_unique<FallingBlockEntity>(std::move(fb));
+    }
+
+    // AddEntityPacket type 66 (Infinity FallingSand::NETWORK_ID) with the
+    // DATA_BLOCK_INFO (20) int metadata `blockId | (damage << 8)` — the
+    // 0.15.10 client renders the falling block from that property
+    // (Infinity FallingSand::initEntity / spawnTo).
+    auto pk = std::make_shared<network::protocol::AddEntityPacket>();
+    pk->eid = eid;
+    pk->type = network::protocol::AddEntityPacket::TYPE_FALLING_BLOCK;
+    pk->x = (float)(bx + 0.5);
+    pk->y = (float)by;
+    pk->z = (float)(bz + 0.5);
+    pk->speedX = pk->speedY = pk->speedZ = 0.0f;
+    pk->yaw = 0.0f; pk->pitch = 0.0f;
+    network::protocol::SetEntityDataPacket::Entry meta;
+    meta.index = network::protocol::SetEntityDataPacket::PROP_BLOCK_INFO;
+    meta.type  = network::protocol::SetEntityDataPacket::TYPE_INT;
+    meta.ival  = (int32_t)((uint32_t)cellId | ((uint32_t)cellData << 8));
+    pk->metadata.push_back(meta);
+    sendToChunkViewers(this, bx >> 4, bz >> 4, pk);
+
+    // NOTE: the stacked-column cascade (the cell above losing its
+    // support) is driven by the support check INSIDE World::setBlock —
+    // the setBlock(air) above triggers checkFallingSupport(bx, by+1, bz)
+    // for us, recursively converting the rest of the column.
+}
+
+void World::dropItemAt(double x, double y, double z,
+                       uint16_t itemId, uint8_t count, uint16_t damage) {
+    if (itemId == 0 || count == 0) return;
+    int64_t eid = cursestone::Server::getInstance().allocateEid();
+
+    // World::dropItem()'s default nudge (Genisys
+    // `lcg_value()*0.2-0.1, 0.2, lcg_value()*0.2-0.1`): makes the drop
+    // pop out of the cell it broke in instead of sinking into it.
+    auto lcg = []() { return (double)std::rand() / (double)RAND_MAX; };
+
+    auto pk = std::make_shared<network::protocol::AddItemEntityPacket>();
+    pk->eid        = eid;
+    pk->itemId     = (int16_t)itemId;
+    pk->itemCount  = count;
+    pk->itemDamage = (int16_t)damage;
+    pk->x = (float)x;
+    pk->y = (float)y;
+    pk->z = (float)z;
+    pk->speedX = (float)(lcg() * 0.2 - 0.1);
+    pk->speedY = 0.2f;
+    pk->speedZ = (float)(lcg() * 0.2 - 0.1);
+    sendToChunkViewers(this, (int32_t)std::floor(x) >> 4,
+                       (int32_t)std::floor(z) >> 4, pk);
+
+    // Register the record so the pickup scan and tickDroppedItems see it
+    // (same fields Player::dropItem fills for player drops).
+    DroppedItem di;
+    di.eid        = eid;
+    di.itemId     = itemId;
+    di.count      = count;
+    di.damage     = damage;
+    di.x          = x;
+    di.y          = y;
+    di.z          = z;
+    di.spawn_tick = cursestone::Server::getInstance().getCurrentTick();
+    di.pickup_delay_ticks = 10;   // World::dropItem() default (0.5 s)
+    di.taken      = false;
+    di.vx         = pk->speedX;
+    di.vy         = pk->speedY;
+    di.vz         = pk->speedZ;
+    di.lx = x; di.ly = y; di.lz = z;
+    {
+        std::lock_guard<std::mutex> lk(dropped_items_mtx_);
+        dropped_items_[eid] = std::make_unique<DroppedItem>(std::move(di));
+    }
+}
+
+void World::tickFallingBlocks(uint64_t current_tick) {
+    (void)current_tick;   // age is per-record; no global tick dependency
+
+    // Snapshot the raw pointers (lock-ordering rule: never hold a
+    // registry mutex while sending packets) SORTED BY Y ASCENDING so a
+    // stacked column lands bottom-up — the lower entity becomes a real
+    // block in the same tick before the upper one is swept, so the upper
+    // one rests on it instead of tunneling into its cell.
+    std::vector<FallingBlockEntity*> snapshot;
+    {
+        std::lock_guard<std::mutex> lk(falling_blocks_mtx_);
+        snapshot.reserve(falling_blocks_.size());
+        for (auto& [_, fb] : falling_blocks_) {
+            if (fb && !fb->taken) snapshot.push_back(fb.get());
+        }
+    }
+    if (snapshot.empty()) return;
+    std::sort(snapshot.begin(), snapshot.end(),
+              [](const FallingBlockEntity* a, const FallingBlockEntity* b) {
+                  if (a->y != b->y) return a->y < b->y;
+                  return a->eid < b->eid;   // stable tie-break
+              });
+
+    for (FallingBlockEntity* fb : snapshot) {
+        // --- Age + runaway cap (runs even for frozen entities) -------
+        ++fb->age;
+        if (fb->age > kFallingBlockMaxAge) {
+            fb->taken = true;
+            sendRemoveEntity(this, fb->eid);
+            if (cursestone::Server::getInstance().advancedLog()) {
+                utils::MainLogger::get().info(
+                    "[FALLING] eid=" + std::to_string(fb->eid) +
+                    " despawned at age cap (chunk unloaded?) — block lost");
+            }
+            continue;
+        }
+
+        // --- Void / build limit: despawn, nothing is placed ----------
+        // Infinity kills a FallingSand in the void via CAUSE_VOID
+        // damage; the net effect is the entity vanishing without
+        // placing anything, which is exactly this.
+        if (fb->y < 0.0 || fb->y > 256.0) {
+            fb->taken = true;
+            sendRemoveEntity(this, fb->eid);
+            continue;
+        }
+
+        // --- No physics while the chunk is not resident ---------------
+        // getBlockId answers AIR for unloaded chunks — without this gate
+        // the block would fall through an unloaded world forever. The
+        // age cap above still reaps it eventually.
+        int fcx = (int)std::floor(fb->x) >> 4;
+        int fcz = (int)std::floor(fb->z) >> 4;
+        if (chunks_.getChunkIfLoaded(fcx, fcz) == nullptr) continue;
+
+        // --- Gravity, then the swept move (Infinity order) -----------
+        fb->vy -= 0.04;
+
+        // Infinity FallingSand box: width/length/height 0.98, centred on
+        // the entity position.
+        mcp_aabb_t bb = mcp_aabb_make(fb->x - 0.49, fb->y, fb->z - 0.49,
+                                      fb->x + 0.49, fb->y + 0.98, fb->z + 0.49);
+        mcp_aabb_t lookup = mcp_aabb_clone_move(bb, fb->vx, fb->vy, fb->vz);
+        const std::vector<physics::BlockBox> boxes = collisionBoxes(lookup);
+
+        physics::MotionResult res = physics::sweep(bb, mcp_v3(fb->vx, fb->vy, fb->vz), boxes);
+        fb->x += res.motion.x;
+        fb->y += res.motion.y;
+        fb->z += res.motion.z;
+
+        // fallDistance feeds the anvil crush damage
+        // (Infinity FallingSand: `$height = $this->fallDistance`).
+        if (res.motion.y < 0.0) fb->fall_distance += (float)(-res.motion.y);
+
+        if (res.clipped_x) fb->vx = 0.0;
+        if (res.clipped_z) fb->vz = 0.0;
+
+        // --- Landing (Infinity: `if ($this->onGround)`) ---------------
+        if (res.on_ground) {
+            fb->taken = true;
+
+            // Landing cell — Infinity `(x-0.5, y, z-0.5)->round()`. The
+            // sweep clips EXACTLY at contact, so y is the integer top of
+            // the block below and floor(y+0.5) is that top cell.
+            int cx = (int)std::floor(fb->x);        // round(x - 0.5), x = cell + 0.5
+            int cy = (int)std::floor(fb->y + 0.5);  // round(y)
+            int cz = (int)std::floor(fb->z);        // round(z - 0.5), z = cell + 0.5
+
+            // Final absolute position so clients see the entity stop
+            // where it landed before the despawn broadcast.
+            {
+                auto mv = std::make_shared<network::protocol::MoveEntityPacket>();
+                mv->eid = fb->eid;
+                mv->x = (float)fb->x;
+                mv->y = (float)fb->y;
+                mv->z = (float)fb->z;
+                sendToChunkViewers(this, cx >> 4, cz >> 4, mv);
+            }
+            sendRemoveEntity(this, fb->eid);
+
+            // --- Convert back into a block ----------------------------
+            bool chunkOk = (cy >= 0 && cy < 256) &&
+                           (chunks_.getChunkIfLoaded(cx >> 4, cz >> 4) != nullptr);
+            if (chunkOk) {
+                uint8_t cellId = getBlockId(cx, cy, cz);
+                if (cellId == block::SNOW_LAYER) {
+                    // Vanilla: the falling block replaces the snow layer
+                    // (the layer is destroyed, no drop, the falling
+                    // block keeps its OWN metadata — Infinity's
+                    // `damage + oldDamage` merge would corrupt e.g. an
+                    // anvil's damage bits with the layer's thickness).
+                    setBlock(cx, cy, cz, fb->blockId, fb->blockData);
+                    sendUpdateBlock(this, cx, cy, cz, fb->blockId, fb->blockData);
+                    if (fb->blockId == block::ANVIL) anvilLandingEffects(this, cx, cy, cz, fb->fall_distance);
+                } else if (cellId > 0 && !dropBlockSolid(cellId) &&
+                           !liquidForFalling(cellId)) {
+                    // Infinity: a non-solid, non-liquid obstacle (torch,
+                    // tall grass, sapling...) pops the falling block as
+                    // an ITEM instead of replacing it.
+                    dropItemAt(fb->x, fb->y, fb->z,
+                               (uint16_t)fb->blockId, 1, (uint16_t)fb->blockData);
+                    if (fb->blockId == block::ANVIL) anvilLandingEffects(this, cx, cy, cz, fb->fall_distance);
+                } else {
+                    // Air, liquid (the block sinks through and replaces
+                    // the liquid cell it stopped in) or anything else —
+                    // the block lands here with its metadata intact
+                    // (red sand stays red, anvil keeps direction +
+                    // damage bits).
+                    setBlock(cx, cy, cz, fb->blockId, fb->blockData);
+                    sendUpdateBlock(this, cx, cy, cz, fb->blockId, fb->blockData);
+                    if (fb->blockId == block::ANVIL) anvilLandingEffects(this, cx, cy, cz, fb->fall_distance);
+                }
+            }
+            // Chunk unloaded at the moment of landing: the entity
+            // despawns and the block is lost — the same thing Infinity
+            // does (its entities are closed when their chunk unloads).
+            continue;
+        }
+
+        // --- drag (Infinity: friction = 1 - drag = 0.98 on all axes) --
+        fb->vx *= 0.98;
+        fb->vy *= 0.98;
+        fb->vz *= 0.98;
+
+        // --- server-authoritative movement sync -----------------------
+        // Same dead-zone pattern as tickDroppedItems: correct the client
+        // on the very tick the position changes, so the falling block
+        // never visibly drifts from where the server will place it.
+        double dx = fb->x - fb->lx, dy = fb->y - fb->ly, dz = fb->z - fb->lz;
+        if (std::fabs(dx) < 0.0005 && std::fabs(dy) < 0.0005 &&
+            std::fabs(dz) < 0.0005) continue;
+        fb->lx = fb->x; fb->ly = fb->y; fb->lz = fb->z;
+
+        auto mv = std::make_shared<network::protocol::MoveEntityPacket>();
+        mv->eid = fb->eid;
+        mv->x = (float)fb->x;
+        mv->y = (float)fb->y;
+        mv->z = (float)fb->z;
+        int32_t vcx = (int32_t)std::floor(fb->x) >> 4;
+        int32_t vcz = (int32_t)std::floor(fb->z) >> 4;
+        sendToChunkViewers(this, vcx, vcz, mv);
+    }
+
+    // Phase 2: drop landed/despawned records (same shape as the
+    // dropped-items sweep).
+    {
+        std::lock_guard<std::mutex> lk(falling_blocks_mtx_);
+        for (auto it = falling_blocks_.begin(); it != falling_blocks_.end(); ) {
+            if (it->second && it->second->taken) it = falling_blocks_.erase(it);
             else ++it;
         }
     }
