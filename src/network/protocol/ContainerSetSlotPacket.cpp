@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // ContainerSetSlotPacket.cpp — decode (client→server).
 //
-// PMMP decode: getByte(windowid) + getShort(slot) + getShort(hotbarSlot) + getSlot(item)
+// The reference server decode: getByte(windowid) + getShort(slot) + getShort(hotbarSlot) + getSlot(item)
 // The slot carries an optional raw NBT blob (putSlot: u16 LE length +
 // bytes) — a custom-named item needs it so the client keeps showing the
 // name after the server confirms a slot change.

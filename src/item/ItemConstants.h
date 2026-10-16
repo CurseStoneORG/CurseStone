@@ -24,7 +24,7 @@
 // ItemConstants.h — item id constants.
 //
 // Mirrors cn.nukkit.item.item (the file the user uploaded) which itself
-// mirrors pocketmine/item/item.php. All Block IDs are also here (since
+// mirrors item/item. All Block IDs are also here (since
 // MCPE 0.15 uses item IDs < 256 for block items).
 //
 // Usage:

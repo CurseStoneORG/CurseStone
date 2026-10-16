@@ -285,7 +285,7 @@ int BaseInventory::firstEmpty(const item::ItemStack& /*item*/) {
 // the map node the loop's iterator points at, so the following `++it` was
 // a use-after-free — dropping a stack from the hotbar killed the server.
 // Collect the keys first (clearAll() below does the same) and only then
-// erase, exactly like PHP's BaseInventory::remove() which iterates over
+// erase, exactly like the original's BaseInventory::remove() which iterates over
 // getContents() — a *copy* of the slot map.
 void BaseInventory::remove(const item::ItemStack& item) {
     std::vector<int> matches;

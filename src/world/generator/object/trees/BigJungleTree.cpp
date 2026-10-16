@@ -128,7 +128,7 @@ bool BigJungleTree::generate(mcp_chunk_t* c, int sourceX, int sourceY, int sourc
     // ---- branches -------------------------------------------------------
     // Walking up from just below the crown, each branch throws a wooden
     // arm out at a random bearing and caps it with a blob of leaves.
-    // PHP's $k/$l are FLOATS and Vector3 floors them, so the branch tip and
+    // the original's k/l are FLOATS and Vector3 floors them, so the branch tip and
     // its leaf cluster share the i1 == 4 value of the inner loop.
     int tipX = crownX, tipZ = crownZ;
     for (int j = baseY + height - 2 - (int)rng.nextInt(4); j > baseY + height / 2;

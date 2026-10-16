@@ -23,13 +23,13 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // StartGamePacket.h — server tells client "world starts now".
 //
-// Wire format (protocol 84) — PMMP StartGamePacket::encode:
+// Wire format (protocol 84) — the reference server StartGamePacket::encode:
 //   [1 byte id 0x09]
 //   [Int32 BE] seed
 //   [Uint8  ] dimension (0=surface, 1=Nether)
 //   [Int32 BE] generator (0=old, 1=infinite, 2=flat)
 //   [Int32 BE] gamemode (only low bit matters to client: 0=survival,1=creative)
-//   [Int64 BE] eid  (EntityID of the player; PMMP always sends 0)
+//   [Int64 BE] eid  (EntityID of the player; The reference server always sends 0)
 //   [Int32 BE] spawnX
 //   [Int32 BE] spawnY
 //   [Int32 BE] spawnZ

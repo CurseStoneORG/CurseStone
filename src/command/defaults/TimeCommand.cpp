@@ -36,8 +36,8 @@ bool TimeCommand::execute(CommandSender* sender, const std::string&,
     }
     if (args[0] == "set" && args.size() >= 2) {
         int32_t t;
-        // "night" = World::TIME_NIGHT (14000), exactly what PMMP/Infinity
-        // do (`case "night": $value = Level::TIME_NIGHT;`). It used to be
+        // "night" = World::TIME_NIGHT (14000), exactly what the reference server
+        // do (`case "night"` -> World::TIME_NIGHT). It used to be
         // 13000, which the client renders as dark BUT the sleep check
         // rejects (a bed tapped at 13000 answers "You can only sleep at
         // night" — the classic "it looks like night but the bed says no"

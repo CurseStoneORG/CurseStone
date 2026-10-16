@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // TextPacket.cpp — encode/decode.
 //
-// PMMP putByte / putString (= BE short length + bytes).
+// The reference server putByte / putString (= BE short length + bytes).
 #include "TextPacket.h"
 
 #include <cstdint>

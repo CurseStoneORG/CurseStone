@@ -25,13 +25,12 @@
 //
 // Wire format (protocol 84) — Genisys 0.15.0 UpdateBlockPacket::encode:
 //
-//   foreach($this->records as $r){          // x, z, y, blockId, blockData, flags
-//       $this->putInt($r[0]);               // x
-//       $this->putInt($r[1]);               // z
-//       $this->putByte($r[2]);              // y
-//       $this->putByte($r[3]);              // blockId
-//       $this->putByte(($r[5] << 4) | $r[4]); // blockData | flags  <-- ONE byte
-//   }
+//   for each record:
+//       [Int32 BE] x
+//       [Int32 BE] z
+//       [Byte]     y
+//       [Byte]     blockId
+//       [Byte]     (flags << 4) | blockData   <-- ONE byte
 //
 // *** flags AND blockData share the SAME byte ***
 //
@@ -52,8 +51,8 @@
 //     client parses.
 //
 // Flag values themselves follow Genisys, which uses FLAG_ALL_PRIORITY
-// (0x0B) for both useBreakOn (Level.php:1525) and block placement
-// (Level.php:1628).
+// (0x0B) for both useBreakOn (Level) and block placement
+// (Level).
 #pragma once
 
 #include "DataPacket.h"

@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // InteractPacket — serverbound. El cliente lo envia al hacer click
 // (izq/der) sobre una entidad. Wire format (protocol 84, mirrors
-// PMMP legacy InteractPacket):
+// The reference server legacy InteractPacket):
 //   [Byte]     action
 //   [Int64 BE] target (runtime eid de la entidad clickeada)
 #pragma once

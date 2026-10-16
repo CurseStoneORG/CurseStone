@@ -6,6 +6,21 @@
 | \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
  \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
 
+ * CurseStone | Open Source server Software
+ *
+ * Copyright (C) 2026 CurseStoneTeam
+ *
+ * Developed by CurseStoneTeam.
+ * Built for an open and extensible Minecraft server ecosystem.
+ *
+ * Licensed under the GNU Lesser General Public License v3.0 or later.
+ * You may study, modify, and redistribute this software under its license.
+ *
+ * License: https://www.gnu.org/licenses/lgpl-3.0.html
+ * Repository: https://github.com/CurseStoneTeam/CurseStone
+ *
+ */
+
  * CurseStone | Open Source Server Software
  *
  * Copyright (C) 2026 CurseStoneTeam
@@ -20,9 +35,9 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// Item — base class for inventory items. Like Block, every subclass
-// is a flyweight registered with Item::get(id). Mirrors pocketmine
-// /item/Item.php.
+
+// Base class for inventory items. Subclasses are registered instances
+// retrieved through Item::get(id).
 #pragma once
 #include <cstdint>
 #include <string>
@@ -30,7 +45,7 @@
 #include <memory>
 
 namespace cursestone {
-class Player; // hunger system: applyEatEffects hook
+class Player; // Provides the hunger and eating effect hooks.
 }
 
 namespace cursestone::item {
@@ -57,52 +72,54 @@ class Item {
     virtual std::string name() const {
         return std::string("Item#") + std::to_string(id_);
     }
-    // Maximum stack size (default 64, blocks/tools = 1/16 depending).
+    // Return the maximum stack size.
     virtual int maxStackSize() const {
         return 64;
     }
-    // Tool / combat attack damage (0 for non-weapons).
+    // Return the item's attack damage.
     virtual int attackDamage() const {
         return 0;
     }
-    // Whether this item is a tool that takes durability damage.
+    // Check whether the item is a tool with durability.
     virtual bool isTool() const {
         return false;
     }
-    // Whether this item is armor (worn in armor slots).
+    // Check whether the item can be worn as armor.
     virtual bool isArmor() const {
         return false;
     }
-    // Whether this item is food (can be eaten).
+    // Check whether the item can be eaten.
     virtual bool isFood() const {
         return false;
     }
     virtual int foodPoints() const {
         return 0;
     }
-    // Hunger system hooks. The meta-aware variants let multi-variant
-    // items (e.g. fish) report per-variant values.
+    // Return food values for a specific item variant.
     virtual int foodPoints(uint8_t) const {
         return foodPoints();
     }
     virtual float foodSaturation(uint8_t) const {
         return 0.6f;
     }
-    // Edible even at full hunger (golden apples).
+    // Check whether the item can be eaten at full hunger.
     virtual bool alwaysEdible() const {
         return false;
     }
-    // Item left in the hand after eating (bowl for stews, 0 = none).
+    // Return whether a specific item variant can always be eaten.
+    virtual bool alwaysEdible(uint8_t) const {
+        return alwaysEdible();
+    }
+    // Return the item left after eating, or 0 if there is none.
     virtual uint16_t eatResidueId() const {
         return 0;
     }
-    // Side effects applied on eat (poison, hunger, regeneration...).
-    virtual void applyEatEffects(Player&) const {}
-    // Singleton accessor. For block-derived items, defers to
-    // the corresponding Block.
+    // Apply eating effects for the specified item variant.
+    virtual void applyEatEffects(Player&, uint8_t) const {}
+    // Retrieve the registered item, using its block definition when applicable.
     static Item* get(uint16_t id);
     static void registerItem(std::unique_ptr<Item> b);
-    // Registry bootstrap (defined in ItemRegistry.cpp)
+    // Register all built-in items.
     static void registerAll();
 
   private:
@@ -111,4 +128,4 @@ class Item {
     int count_;
     static std::vector<std::unique_ptr<Item>>& registry();
 };
-} // namespace
+} // namespace cursestone::item

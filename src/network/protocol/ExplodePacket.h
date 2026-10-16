@@ -23,8 +23,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // ExplodePacket.h — client-side explosion/shockwave effect.
 //
-// Wire format (protocol 84, verified against Dr1xyDev/Infinity
-// ExplodePacket.php):
+// Wire format (protocol 84, verified against the reference implementation
+// ExplodePacket):
 //   [Float BE] x, y, z
 //   [Float BE] radius
 //   [Int   BE] records count (we send 0 records)

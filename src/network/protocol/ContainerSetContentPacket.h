@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // ContainerSetContentPacket — server→client full inventory contents.
 //
-// PMMP wire format (protocol 84) — ContainerSetContentPacket::encode:
+// The reference server wire format (protocol 84) — ContainerSetContentPacket::encode:
 //   [1 byte ID 0x2e]
 //   [Uint8]    windowid   (0=main, 0x78=armor, 0x79=creative, 0x7a=hotbar)
 //   [Int16 BE] count      number of slots
@@ -31,7 +31,7 @@
 //   [Int16 BE] hotbarCount (always 0 unless windowid==0)
 //   [Int32 BE hotbar[count]] hotbar link indices (only when windowid==0)
 //
-// PMMP Slot (BinaryStream::putSlot):
+// The reference server Slot (BinaryStream::putSlot):
 //   if (id == 0)  write ONLY putShort(0) — 2 bytes total.
 //   else:
 //     putShort(id)         // 2 bytes BE
@@ -58,7 +58,7 @@ class ContainerSetContentPacket : public DataPacket {
         return CONTAINER_SET_CONTENT_PACKET;
     }
 
-    // Window IDs (PMMP ContainerSetContentPacket constants).
+    // Window IDs (the reference server ContainerSetContentPacket constants).
     static constexpr uint8_t SPECIAL_INVENTORY = 0x00;
     static constexpr uint8_t SPECIAL_ARMOR = 0x78;
     static constexpr uint8_t SPECIAL_CREATIVE = 0x79;

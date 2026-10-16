@@ -111,7 +111,7 @@ class Recipe {
     }
     // Los 16 bytes crudos del UUID de receta que viaja en
     // CraftingDataPacket y vuelve en CraftingEventPacket (mismo orden
-    // que PMMP UUID::toBinary). El cliente lo ecoa tal cual, así que el
+    // que el servidor de referencia UUID::toBinary). El cliente lo ecoa tal cual, así que el
     // match contra recetas se hace por estos bytes, no por uuid().
     void setUuidBytes(const std::array<uint8_t, 16>& b) {
         uuid_bytes_ = b;

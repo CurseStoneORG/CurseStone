@@ -22,7 +22,7 @@
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // Session.c — per-client RakNet state machine, Protocol 84 / MCPE 0.15.10
-// Ported from raklib/server/Session.php (PocketMine-MP 4.0.0 legacy branch)
+// Ported from raklib/server/Session (the reference server 4.0.0 legacy branch)
 #include "Session.h"
 #include "SessionManager.h"
 #include "RakLib.h"
@@ -206,7 +206,7 @@ size_t mcp_rak_session_drain_nack_queue(mcp_rak_session_t* s, uint32_t* mins, ui
 
 // --------------------------------------------------------------------------
 // Build one encapsulated DataPacket_4 (0x84) datagram — one fragment.
-// Format (per RakLib PHP):
+// Format (per RakLib):
 //   [0x84] [3-byte LE seqNo] { encapsulated record }
 // Encapsulated record:
 //   [flags byte] [16-bit BE bit-length]
@@ -298,7 +298,7 @@ size_t mcp_rak_session_build_datagram(mcp_rak_session_t* s, uint8_t* out, size_t
     // BUG FIX: wire order for RakNet's split info is FIXED at
     // splitCount(4) + splitID(2) + splitIndex(4) — this matches the
     // real RakNet/RakLib spec (see raklib\protocol\EncapsulatedPacket
-    // ::SPLIT_INFO_LENGTH = 4+2+4 in PocketMine-MP's RakLib, and
+    // ::SPLIT_INFO_LENGTH = 4+2+4 in the reference server's RakLib, and
     // RakNet's own InternalPacket.h field order: splitPacketId,
     // splitPacketIndex, splitPacketCount are tracked separately but
     // serialized on the wire as count-first). This function used to
@@ -395,7 +395,7 @@ size_t mcp_rak_session_build_datagram(mcp_rak_session_t* s, uint8_t* out, size_t
 //   as a separate DataPacket_4 with has_split=true, same splitID. The MCPE
 //   client reassembles using splitIndex/splitCount before processing.
 //
-// Mirrors PMMP raklib/server/Session.php::addEncapsulatedToQueue().
+// Mirrors the reference server raklib/server/Session::addEncapsulatedToQueue().
 // --------------------------------------------------------------------------
 bool mcp_rak_session_send_payload(mcp_rak_session_t* s, mcp_rak_session_manager_t* sm,
                                   const uint8_t* payload, size_t plen, uint8_t reliability,
@@ -443,7 +443,7 @@ bool mcp_rak_session_send_payload(mcp_rak_session_t* s, mcp_rak_session_manager_
     bool ok = true;
 
     // FIX (chunks not rendering / stuck in the sky, Linux release only):
-    // per PMMP SendReliabilityLayer::sendPacket(), each FRAGMENT of a split
+    // per the reference server SendReliabilityLayer::sendPacket(), each FRAGMENT of a split
     // packet is its own reliable message on the wire: messageIndex is
     // incremented once per fragment, while all fragments of one split share
     // the packet's single orderIndex. The previous "fix" here did the exact
@@ -485,7 +485,7 @@ bool mcp_rak_session_send_payload(mcp_rak_session_t* s, mcp_rak_session_manager_
 
     // After the loop:
     //   - message_index was advanced once per fragment by build_datagram()
-    //     (exactly what PMMP's SendReliabilityLayer does for split packets).
+    //     (exactly what the reference server's SendReliabilityLayer does for split packets).
     //   - the per-channel order counter was restored to its snapshot before
     //     each fragment, so it ends at snapshot+1: all fragments shared one
     //     orderIndex and the next packet gets the following one.
@@ -523,7 +523,7 @@ bool mcp_rak_session_enqueue(mcp_rak_session_t* s, const uint8_t* data, size_t l
 // FIX (AFK kick): a session is only stale when NO datagram whatsoever has
 // arrived for the timeout window. Keepalive PINGs (0x00) and ACK/NACK
 // traffic both count as activity — that is exactly how RakLib
-// (Connection::lastUpdate) and PMMP define the session timeout. Under the
+// (Connection::lastUpdate) and the reference server define the session timeout. Under the
 // old rule ("only non-PING game packets refresh the clock"), an idle but
 // perfectly healthy player — one who left the game running without input —
 // was force-disconnected after 30s with "timeout" even though the

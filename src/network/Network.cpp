@@ -75,7 +75,7 @@ void Network::onSessionOpen(const std::string& ip, uint16_t port, int64_t client
             raklib->closeSession(ip, port, "blocked");
         return;
     }
-    // Don't create the Player yet — wait for the LoginPacket (PMMP semantics).
+    // Don't create the Player yet — wait for the LoginPacket (the reference server semantics).
     // The actual session creation happens in processIncoming when we see the
     // first packet that looks like a LoginPacket (raw or wrapped in Batch).
 }
@@ -295,8 +295,8 @@ bool Network::createPlayerForSession(const std::string& ip, uint16_t port) {
     cfg.port = port;
     cfg.gamemode = server_->gamemode();
     cfg.view_distance = server_->viewDistance();
-    // Allocate a fresh unique runtime entity ID for this player (PMMP uses
-    // Entity::$entityCount for the same purpose). Without this, every player
+    // Allocate a fresh unique runtime entity ID for this player (the reference server uses
+    // the entity counter for the same purpose). Without this, every player
     // shares EID 0 and AddPlayerPacket broadcasts confuse the client.
     cfg.runtime_eid = server_->allocateEid();
     auto p = std::make_shared<Player>(server_, std::move(cfg));

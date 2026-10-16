@@ -24,7 +24,7 @@
 // DropItemPacket — cliente→servidor. El jugador suelta el item del slot
 // seleccionado (Q, o arrastrar fuera del inventario con ventana abierta).
 //
-// Wire format (protocolo 84, mirrors Genisys DropItemPacket.php):
+// Wire format (protocolo 84, mirrors Genisys DropItemPacket):
 //   [Byte] type                     // 0 = drop, 1 = drop all (Q vs Ctrl+Q)
 //   [Slot] item                     // id/daño/count del item soltado
 #pragma once

@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // FullChunkDataPacket.h — send a fully-serialized chunk to the client.
 //
-// Wire format (protocol 84) — PMMP FullChunkDataPacket::encode:
+// Wire format (protocol 84) — the reference server FullChunkDataPacket::encode:
 //   [1 byte ID 0x34]
 //   [Int32 BE] chunkX
 //   [Int32 BE] chunkZ

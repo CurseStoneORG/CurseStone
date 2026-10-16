@@ -26,7 +26,8 @@
 #include <cstdlib>
 namespace cursestone::item {
 // 30% chance of Hunger for 30 s after eating.
-void ItemRawChicken::applyEatEffects(Player& eater) const {
+void ItemRawChicken::applyEatEffects(Player& eater, uint8_t meta) const {
+    (void)meta;
     if (std::rand() % 100 < 30)
         eater.addEffect(std::make_shared<entity::Effect>(entity::EFF_HUNGER, "Hunger", 600, 0));
 }

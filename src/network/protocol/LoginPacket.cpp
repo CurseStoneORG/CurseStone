@@ -23,13 +23,13 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // LoginPacket.cpp — decode the chain + clientData JWTs (protocol 84).
 //
-// Wire format (PMMP LoginPacket::decode):
-//   [Int32 BE] protocol version (PMMP: getInt() reads 4 BE bytes).
+// Wire format (the reference server LoginPacket::decode):
+//   [Int32 BE] protocol version (the reference server: getInt() reads 4 BE bytes).
 //   [Uint8  ] edition (0 = Pocket)
 //   [Int32 BE] outerPayload length (compressed)
 //   [N bytes ] outerPayload (zlib stream)
 //   decompressed payload layout:
-//     [LInt32 LE] chainJson length  (PMMP: $this->getLInt())
+//     [LInt32 LE] chainJson length  (read as a little-endian int32)
 //     [N bytes  ] chainJson (JSON object: {"chain": [jwt1, jwt2, ...]})
 //     [LInt32 LE] clientDataJwt length
 //     [N bytes  ] clientDataJwt (3-dot-separated JWT)
@@ -124,13 +124,13 @@ bool LoginPacket::decode(const uint8_t* data, size_t len) {
         return false;
     };
 
-    // PMMP reads protocol as getInt() (BE int32).
+    // The reference server reads protocol as getInt() (BE int32).
     int32_t proto32 = 0;
     if (!r.readI32BE(proto32))
         return fail("truncated: missing protocol int32");
     protocol = static_cast<int>(proto32);
 
-    // PMMP semantics: if the protocol is not in ACCEPTED_PROTOCOLS, return
+    // The reference server semantics: if the protocol is not in ACCEPTED_PROTOCOLS, return
     // immediately WITHOUT attempting to decode any further fields. This
     // prevents reading garbage bytes (edition/outerLen/zlib payload) when
     // an outdated client sends a short buffer with the wrong protocol
@@ -216,7 +216,7 @@ bool LoginPacket::decode(const uint8_t* data, size_t len) {
     clientDataJwt.assign(reinterpret_cast<const char*>(inner.ptr()), cdLen);
 
     // Parse chain JWT to extract displayName and identity from extraData.
-    // PMMP gets these from the chain, not from clientData.
+    // The reference server gets these from the chain, not from clientData.
     {
         size_t search = 0;
         while (search < chainJson.size()) {

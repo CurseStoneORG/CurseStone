@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // MovePlayerPacket.cpp — encode/decode.
 //
-// PMMP: putLong (BE) + 6× putFloat (BE) + putByte (mode) + putByte (onGround).
+// The reference server: putLong (BE) + 6× putFloat (BE) + putByte (mode) + putByte (onGround).
 #include "MovePlayerPacket.h"
 
 namespace cursestone::network::protocol {

@@ -93,7 +93,7 @@ class PacketReader {
     bool readU64LE(uint64_t& v);
     bool readF32LE(float& v);
     bool readF64LE(double& v);
-    // Big-endian readers (PMMP uses putInt/putLong which are BE).
+    // Big-endian readers (the reference server uses putInt/putLong which are BE).
     bool readU16BE(uint16_t& v);
     bool readI16BE(int16_t& v);
     bool readU32BE(uint32_t& v);
@@ -157,8 +157,8 @@ class PacketWriter {
     }
 
     // ---- Big-endian primitives ----
-    // PMMP uses putInt/putLong/putShort/putFloat which are big-endian
-    // (see pocketmine/utils/Binary.php::writeInt -> pack("N", ...) = BE32).
+    // The reference server uses putInt/putLong/putShort/putFloat which are big-endian
+    // (32-bit big-endian write).
     // MCPE protocol 84 wire format expects BE for almost all numeric fields.
     void writeU16BE(uint16_t v) {
         out_.push_back((uint8_t)(v >> 8));
@@ -194,7 +194,7 @@ class PacketWriter {
         writeU64BE(u);
     }
 
-    // BE-prefixed string: 2-byte BE length + bytes. Mirrors PMMP putString.
+    // BE-prefixed string: 2-byte BE length + bytes. Mirrors the reference server putString.
     void writeBEString(const std::string& s) {
         writeU16BE(static_cast<uint16_t>(s.size()));
         out_.insert(out_.end(), s.data(), s.data() + s.size());

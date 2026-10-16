@@ -1,5 +1,5 @@
 # CurseStone main configuration
-# Mirrors PocketMine-MP's pocketmine.yml schema, adapted for C++.
+# Server configuration schema, adapted for C++.
 
 settings:
   language: "eng"

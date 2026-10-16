@@ -31,7 +31,7 @@
 extern "C" {
 #endif
 
-// Minecraft § color/format codes (Minecraft BE). PocketMine uses these
+// Minecraft § color/format codes (Minecraft BE). The reference server uses these
 // for chat formatting; CurseStone will use them in player-facing messages.
 #define MCP_TF_BLACK '0'
 #define MCP_TF_DARK_BLUE '1'

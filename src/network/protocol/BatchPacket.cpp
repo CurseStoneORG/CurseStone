@@ -22,7 +22,7 @@
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // BatchPacket.cpp — dual-format zlib/raw-deflate envelope.
-// PMMP uses zlib_encode/zlib_decode (zlib format with 0x78 header).
+// The reference server uses zlib_encode/zlib_decode (zlib format with 0x78 header).
 // Some MCPE 0.15.10 clients use raw deflate (no header).
 // We try both formats to handle all clients.
 #include "BatchPacket.h"
@@ -71,7 +71,7 @@ bool BatchPacket::decode(const uint8_t* data, size_t len) {
     if (!r.readBytes(compressed.data(), compressedLen))
         return false;
 
-    // Try 1: zlib format (uncompress) — used by PMMP and Python bot
+    // Try 1: zlib format (uncompress) — used by the reference server and Python bot
     {
         uLongf dstLen = 1 << 20; // 1 MiB cap
         std::vector<uint8_t> dst(dstLen);

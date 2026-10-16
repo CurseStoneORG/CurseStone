@@ -25,8 +25,8 @@
 // closes a container UI (X button, Esc, moving too far away); server
 // sends it to force-close a UI (e.g. chest broken while open).
 //
-// PMMP wire format (protocol 84) — both encode() and decode() are just
-// a single windowid byte (ContainerClosePacket.php, attached as design
+// The reference server wire format (protocol 84) — both encode() and decode() are just
+// a single windowid byte (ContainerClosePacket, attached as design
 // reference).
 #pragma once
 

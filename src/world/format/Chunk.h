@@ -122,12 +122,12 @@ void mcp_chunk_recalculate_height_map_column(mcp_chunk_t* c, int x, int z);
 // down to the heightmap surface, then decrements by each opaque
 // block's light filter going down, and finally flood-fills sideways
 // so light also wraps under overhangs / around leaves — same
-// algorithm PMMP's SimpleChunkManager::populateSkyLight +
+// algorithm the reference server's SimpleChunkManager::populateSkyLight +
 // updateBlockSkyLight uses (per-column bright-to-heightmap plus a
 // horizontal BFS spread for occluded neighbours). Single-chunk only:
 // does not read neighbouring chunks, so light right at a chunk edge
 // under an overhang from the next chunk over may need a follow-up
-// pass once neighbours are loaded (same limitation PMMP has before
+// pass once neighbours are loaded (same limitation the reference server has before
 // its cross-chunk light-populator queue runs).
 void mcp_chunk_propagate_sky_light(mcp_chunk_t* c);
 

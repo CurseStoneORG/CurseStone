@@ -25,7 +25,7 @@
 // entidad (salud, hambre...) para que el cliente renderice la barra de
 // hambre del HUD.
 //
-// Wire format (protocol 84 — mirrors Infinity/PMMP 0.15.10
+// Wire format (protocol 84 — mirrors the reference server 0.15.10
 // UpdateAttributesPacket BYTE-FOR-BYTE; NO varints in this protocol):
 //   [Long BE]  eid (8 bytes, Binary::writeLong)
 //   [Short BE] count (2 bytes)
@@ -62,7 +62,7 @@ class UpdateAttributesPacket : public DataPacket {
         std::string name;
     };
 
-    // Infinity: putLong($this->entityId) — 8-byte big-endian, NOT varint.
+    // The reference server: entityId as Int64 — 8-byte big-endian, NOT varint.
     uint64_t eid = 0;
     std::vector<Entry> entries;
 

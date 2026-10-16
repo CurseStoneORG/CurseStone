@@ -20,7 +20,7 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// ItemFlintSteel.h — portado of pocketmine/item/FlintSteel.php (PMMP)
+// ItemFlintSteel.h — portado of item/FlintSteel (the reference server)
 //
 // Implementa:
 //   - Colocación of fire in blocks solids (onActivate)
@@ -28,14 +28,14 @@
 //     (interior of 2x3 until 21x21, in the axis X or in the axis Z)
 //   - Degradación of durability (2 points by use in survival)
 //
-// Diferencias with the PHP original:
+// Diferencias with the original:
 //   - onActivate() receives World* + player* + coordinates enteras instead of
 //     objetos Block with position embebida.
 //   - the inserción of blocks portal uses World::setBlock(x,and,z, portal, meta).
 //     BlockPortal (id=90 in MCPE 0.15.x) must estar registrado in
 //     Block::registry().
-//   - the durability is saves in the field `meta` of the ItemStack (mirrors PMMP
-//     Tool::useOn($block, $damage=2)).
+//   - the durability is saves in the field `meta` of the ItemStack (mirrors the reference server
+//     Tool::useOn(block, damage=2)).
 #pragma once
 #include "Item.h"
 #include <string>
@@ -66,13 +66,13 @@ class ItemFlintSteel : public Item {
         return 1;
     }
 
-    // durability máxima: 65 usos (just like PMMP MCPE 0.15.x)
+    // durability máxima: 65 usos (just like the reference server MCPE 0.15.x)
     static constexpr uint8_t MAX_DURABILITY = 64;
 
     // point of entrada main — call from player::handleBlockPlace()
     // when heldItemId == 259.
     //
-    // Mirrors: FlintSteel::onActivate($level, $player, $block, $target, $face, ...)
+    // Mirrors: FlintSteel::onActivate(level, player, block, target, face, ...)
     //
     // Parámetros:
     //   level         — world activo
@@ -89,7 +89,7 @@ class ItemFlintSteel : public Item {
 
   private:
     // applies 2 points of damage to the ítem in mano of the player (survival only).
-    // mirrors: $this->useOn($block, 2)
+    // mirrors: useOn(block, 2)
     static void applyDurability(Player* player);
 };
 

@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// ExplodePacket.cpp — encoder per Infinity ExplodePacket.php.
+// ExplodePacket.cpp — encoder per the reference server ExplodePacket.
 #include "ExplodePacket.h"
 
 namespace cursestone::network::protocol {
@@ -32,7 +32,7 @@ void ExplodePacket::encode(std::vector<uint8_t>& out) const {
     w.writeF32BE(y);
     w.writeF32BE(z);
     w.writeF32BE(radius);
-    w.writeI32BE(0); // records count — Infinity spawns Lightning with []
+    w.writeI32BE(0); // records count — the reference server spawns Lightning with []
 }
 
 bool ExplodePacket::decode(const uint8_t* data, size_t len) {

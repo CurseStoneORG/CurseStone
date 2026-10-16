@@ -77,7 +77,7 @@ class Network {
     // Update average packet receive rate for diagnostics.
     void tick();
 
-    // IP ban list (mirrors PocketMine's Network::blockAddress).
+    // IP ban list (mirrors the reference server's Network::blockAddress).
     void blockAddress(const std::string& ip, uint64_t timeoutMs = 0);
     bool isBlocked(const std::string& ip) const;
 

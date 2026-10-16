@@ -20,7 +20,7 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// Command — base class for any registered command. Mirrors pocketmine
+// Command — base class for any registered command. Mirrors the reference server
 // /command/Command. Subclasses define execute() which is invoked by
 // SimpleCommandMap when a player or the console types /<name>.
 #pragma once

@@ -40,7 +40,7 @@
 //     de las bajas, y los listeners MONITOR siempre ven el estado final.
 //   - Un listener registrado con ignoreCancelled=true se salta en
 //     cuanto el evento ya fue cancelado por un listener anterior —
-//     replica RegisteredListener::callEvent() de PMMP.
+//     replica RegisteredListener::callEvent() del servidor de referencia.
 //   - Un listener que lanza una excepción se captura, se loguea y se
 //     salta: un handler roto jamás puede tumbar el tick loop ni
 //     bloquear al resto de los handlers (misma doctrina de estabilidad

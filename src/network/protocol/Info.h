@@ -22,7 +22,7 @@
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // Info.h — All MCPE protocol 84 packet IDs (0x01 – 0x41).
-// Mirrors pocketmine/network/mcpe/protocol/ProtocolInfo.php.
+// Mirrors network/mcpe/protocol/ProtocolInfo.
 #pragma once
 
 #include <cstdint>
@@ -31,7 +31,7 @@ namespace cursestone::network::protocol {
 
 constexpr int CURRENT_PROTOCOL = 84;
 
-// Packet ID constants. Names follow PocketMine's packet naming convention.
+// Packet ID constants. Names follow the reference server's packet naming convention.
 constexpr uint8_t LOGIN_PACKET = 0x01;
 constexpr uint8_t PLAY_STATUS_PACKET = 0x02;
 constexpr uint8_t SERVER_TO_CLIENT_HANDSHAKE = 0x03;

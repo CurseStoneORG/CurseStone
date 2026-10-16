@@ -21,7 +21,7 @@
  *
  */
 // IPlayer — interface implemented by Player and OfflinePlayer.
-// Mirrors pocketmine/IPlayer.php.
+// Mirrors IPlayer.
 #pragma once
 #include <string>
 #include "command/CommandSender.h"

@@ -24,7 +24,7 @@
 // ItemFrameDropItemPacket — cliente→servidor. El jugador rompe/golpea un
 // item frame para soltar el item que cuelga de él.
 //
-// Wire format (protocolo 84, mirrors Genisys ItemFrameDropItemPacket.php):
+// Wire format (protocolo 84, mirrors Genisys ItemFrameDropItemPacket):
 //   [Int BE] z
 //   [Int BE] y
 //   [Int BE] x

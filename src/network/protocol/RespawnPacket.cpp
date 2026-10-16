@@ -22,7 +22,7 @@
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // RespawnPacket.cpp — encode/decode.
-// PMMP: putFloat(x) + putFloat(y) + putFloat(z). Clientbound only in
+// The reference server: putFloat(x) + putFloat(y) + putFloat(z). Clientbound only in
 // practice, decode() implemented for symmetry/tests.
 #include "RespawnPacket.h"
 

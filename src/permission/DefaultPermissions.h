@@ -21,7 +21,7 @@
  *
  */
 // DefaultPermissions — registers the standard permission tree used
-// by CommandSender::hasPermission. Mirrors pocketmine/permission/
+// by CommandSender::hasPermission. Mirrors permission/
 // DefaultPermissions.
 #pragma once
 #include "Permissible.h"

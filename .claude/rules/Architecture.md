@@ -4,9 +4,9 @@ Everything here was read from sources, build files or CI. Items marked **Unverif
 
 ## 1. Identity and constants
 - MCPE 0.15.x server, protocol 84 only (`CURRENT_PROTOCOL = 84` in `network/protocol/Info.h`; `PROTOCOL_VERSION 84` in `src/CurseStone.h`). LGPL-3.0-or-later.
-- `src/CurseStone.h` (umbrella header): `CURSESTONE_API "1.0.1"`, codename "Obsidian", tick rate 20/s (`CURSESTONE_TICK_MS 50`), `CURSESTONE_LEVELDB` default 0.
-- Version drift: `CMakeLists.txt` says `VERSION 1.0.0` while `CurseStone.h` says `1.0.1`. Do not "fix" one silently; report it.
-- Model: docs say PocketMine 0.15.10; `CurseStone.h` says "Inspired by PocketMine-MP 4.0.0". Both appear; the protocol-84 target is the authoritative one.
+- `src/CurseStone.h` (umbrella header): `CURSESTONE_API "1.0.2"`, codename "Obsidian", tick rate 20/s (`CURSESTONE_TICK_MS 50`), `CURSESTONE_LEVELDB` default 0.
+- Version drift: `CMakeLists.txt` says `VERSION 1.0.2` while `CurseStone.h` says `1.0.2`. Do not "fix" one silently; report it.
+- Model: docs say modeled on a 0.15.10 legacy server; `CurseStone.h` says "Inspired by a 4.0.0 legacy server". Both appear; the protocol-84 target is the authoritative one.
 
 ## 2. Build shape (`CMakeLists.txt`)
 - One executable, `CurseStone`. `src/**/*.c` and `src/**/*.cpp` are globbed with `CONFIGURE_DEPENDS`: new files need no CMake edit. Include root is `src/` (`#include "world/World.h"`).

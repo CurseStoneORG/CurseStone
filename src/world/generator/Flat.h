@@ -22,7 +22,7 @@
  */
 // Flat — super-flat generator. Layers from y=0 upward are defined
 // by a layer list in the constructor. Default layer profile is
-// bedrock / 2x dirt / grass (y=4 = grass), matching PocketMine's
+// bedrock / 2x dirt / grass (y=4 = grass), matching the reference server's
 // default flat preset.
 #pragma once
 #include "Generator.h"

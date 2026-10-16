@@ -21,7 +21,7 @@
  *
  */
 // Container — interface for tiles that expose an inventory (chest,
-// furnace, brewing stand). Mirrors pocketmine/tile/Container.
+// furnace, brewing stand). Mirrors tile/Container.
 #pragma once
 #include <vector>
 #include <cstdint>

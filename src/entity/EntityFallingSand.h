@@ -27,7 +27,7 @@ namespace cursestone::entity {
 class EntityFallingSand : public Projectile {
   public:
     using Projectile::Projectile;
-    // Protocol 84 FallingSand network type (Infinity FallingSand.php
+    // Protocol 84 FallingSand network type (the reference server FallingSand
     // NETWORK_ID = 66; the old value 10 is the chicken type).
     EntityFallingSand(int64_t rid, std::shared_ptr<World> l) : Projectile(rid, std::move(l)) {
         setNetworkId(66);

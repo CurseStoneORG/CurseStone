@@ -50,7 +50,7 @@ class TileSign : public Tile, public Spawnable {
     }
     // UUID del jugador que colocó el cartel (NBT "Creator"). handleSignEdit
     // lo compara contra el UUID del jugador para autorizar la edición,
-    // igual que Genisys (`$t->namedtag["Creator"] !== $this->getRawUniqueId()`).
+    // igual que Genisys (the sign's stored creator id is compared with the player's unique id).
     const std::string& creator() const {
         return creator_;
     }

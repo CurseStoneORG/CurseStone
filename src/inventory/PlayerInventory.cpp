@@ -138,7 +138,7 @@ void PlayerInventory::onSlotChange(int index, const item::ItemStack& before) {
 // ---- sendContents ----
 // BUG FIX: same missing "9 dummy AIR slots" padding as
 // Player::sendInventory() in Player.cpp — see the comment there for the
-// full explanation (real PMMP's PlayerInventory::sendContents() pads 9
+// full explanation (real reference server's PlayerInventory::sendContents() pads 9
 // extra AIR slots because the MCPE 0.15.x client under-renders windowid=0
 // by exactly 9 slots otherwise). This override isn't currently called
 // anywhere (Player::sendInventory() builds windowid=0 by hand instead),

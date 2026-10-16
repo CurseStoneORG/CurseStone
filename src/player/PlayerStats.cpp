@@ -25,6 +25,7 @@
 #include "world/World.h"
 #include "block/BlockIds.h"
 #include "network/protocol/UpdateAttributesPacket.h"
+#include "network/protocol/MobEffectPacket.h"
 #include "network/protocol/EntityEventPacket.h"
 #include "event/entity/EntityDamageEvent.h"
 #include <algorithm>
@@ -33,11 +34,8 @@
 
 namespace cursestone {
 
-// --- Health sync (Infinity Player::setHealth) -------------------
-// Health-only UpdateAttributesPacket: the client moves the hearts the
-// instant this packet arrives. Infinity syncs the HEALTH attribute on
-// EVERY setHealth() call — without this the hearts only moved on regen
-// or food changes and felt stuck for seconds after taking damage.
+// Synchronize health attributes whenever Player::setHealth() is called.
+// The reference server updates the health attribute immediately, keeping client hearts responsive.
 void Player::sendHealthAttribute() {
     if (!connected_.load(std::memory_order_relaxed))
         return;
@@ -53,10 +51,7 @@ void Player::sendHealthAttribute() {
     sendPacket(pk);
 }
 
-// --- Attribute sync (protocol 84 UpdateAttributesPacket) ---
-// One packet with the full hunger state: hunger bar, hidden saturation
-// and exhaustion. The client maps the HUD bars by these identifier
-// strings, so they must match the reference attribute names exactly.
+// Synchronize hunger, saturation, and exhaustion using protocol 84 attributes.
 void Player::sendFoodLevel() {
     if (!connected_.load(std::memory_order_relaxed))
         return;
@@ -86,6 +81,7 @@ void Player::sendFoodLevel() {
     sendPacket(pk);
 }
 
+// Send all health and hunger attributes in a single packet.
 void Player::sendAllAttributes() {
     if (!connected_.load(std::memory_order_relaxed))
         return;
@@ -122,12 +118,7 @@ void Player::sendAllAttributes() {
     sendPacket(pk);
 }
 
-// Living hook (Living::applyDamage): runs after every non-fatal damage
-// application. Mirrors two Infinity behaviours at once:
-//   * Player::attack(): EntityEventPacket HURT_ANIMATION with eid=0 —
-//     "me" in protocol 84 — so the client flashes red immediately.
-//   * Player::setHealth(): sync the HEALTH attribute so the hearts move
-//     in the same tick as the damage.
+// Apply the hurt animation and synchronize health after non-fatal damage.
 void Player::onHealthChanged() {
     if (!spawned_.load(std::memory_order_relaxed))
         return;
@@ -135,32 +126,25 @@ void Player::onHealthChanged() {
         return;
 
     auto ee = std::make_shared<network::protocol::EntityEventPacket>();
-    ee->eid = 0; // protocol 84: eid 0 = "the local player"
+    ee->eid = 0; // Protocol 84 uses eid 0 for the local player.
     ee->event = network::protocol::EntityEventPacket::HURT_ANIMATION;
     sendPacket(ee);
 
     sendHealthAttribute();
 }
 
-// Entity::setOnFire — burn-timer backend behind the fire/lava contact
-// above. Extending a burn never restarts it and the ON_FIRE metadata flag
-// travels with the pose byte exactly on the off->on edge: protocol 84
-// clients render the flame effect from that flag alone, so keeping the
-// broadcast on the transition avoids a per-tick metadata flood.
+// Extend the burn timer without restarting an active burn or rebroadcasting unchanged flags.
 void Player::setOnFire(int seconds) {
     int ticks = seconds * 20;
     if (ticks <= fire_ticks_)
-        return; // an equal or longer burn is running
+        return; // Keep the existing burn when it lasts longer.
     bool wasBurning = fire_ticks_ > 0;
     fire_ticks_ = ticks;
     if (!wasBurning)
         broadcastPoseFlags();
 }
 
-// addExhaustion — hunger system core. Actions (sprinting, mining,
-// attacks, damage, natural regen) accumulate exhaustion; every 4.0
-// units drain 1 saturation first, then 1 food. Peaceful difficulty
-// never drains. Attributes sync on the next hunger tick.
+// Accumulate exhaustion and drain saturation before food, except on Peaceful difficulty.
 void Player::addExhaustion(float amount) {
     if (amount <= 0.0f)
         return;
@@ -176,14 +160,129 @@ void Player::addExhaustion(float amount) {
             }
         }
     }
-    // Display clamp only (reference attribute max); the accumulator above
-    // must keep the full amount so per-tick overflow is not lost.
+    // Clamp the displayed value without discarding accumulated exhaustion.
     food_exhaustion_ = std::min(5.0f, food_exhaustion_);
     food_attrs_dirty_ = true;
 }
 
-// --- Hunger + ambient damage pipeline — runs once per tick for every
-// spawned player. ---
+// Create a protocol 84 effect packet for the specified entity and event.
+namespace {
+std::shared_ptr<network::protocol::MobEffectPacket> makeEffectPacket(uint64_t eid,
+                                                                     const entity::Effect& e,
+                                                                     uint8_t eventId) {
+    auto pk = std::make_shared<network::protocol::MobEffectPacket>();
+    pk->eid = eid;
+    pk->eventId = eventId;
+    pk->effectId = (uint8_t)e.id();
+    pk->amplifier = (uint8_t)e.amplifier();
+    pk->particles = true;
+    pk->duration = e.duration();
+    return pk;
+}
+} // namespace
+
+// Send effect updates to the owner and other spawned players in the same world.
+void Player::sendEffectPacket(const entity::Effect& e, uint8_t eventId) {
+    if (!spawned_.load(std::memory_order_relaxed))
+        return;
+    sendPacket(makeEffectPacket(0, e, eventId)); // Protocol 84 uses eid 0 for the local player.
+    if (!srv_)
+        return;
+    auto others = makeEffectPacket(runtimeId(), e, eventId);
+    for (auto& other : srv_->playersSnapshot()) {
+        if (!other || other.get() == this)
+            continue;
+        if (other->isPendingRemoval() || !other->spawned())
+            continue;
+        if (other->getWorld() != getWorld())
+            continue;
+        other->sendPacket(others);
+    }
+}
+
+void Player::onEffectAdded(const entity::Effect& e) {
+    sendEffectPacket(e, network::protocol::MobEffectPacket::EVENT_ADD);
+    switch (e.id()) {
+        case entity::EFF_SPEED:
+        case entity::EFF_SLOWNESS:
+            sendMovementSpeedAttribute();
+            break;
+        case entity::EFF_INVISIBILITY:
+            if (!invisible_) {
+                invisible_ = true;
+                broadcastPoseFlags();
+            }
+            break;
+        default:
+            break;
+    }
+}
+
+void Player::onEffectModified(const entity::Effect& e) {
+    sendEffectPacket(e, network::protocol::MobEffectPacket::EVENT_MODIFY);
+    if (e.id() == entity::EFF_SPEED || e.id() == entity::EFF_SLOWNESS)
+        sendMovementSpeedAttribute();
+}
+
+void Player::onEffectRemoved(const entity::Effect& e) {
+    sendEffectPacket(e, network::protocol::MobEffectPacket::EVENT_REMOVE);
+    if (e.id() == entity::EFF_SPEED || e.id() == entity::EFF_SLOWNESS)
+        sendMovementSpeedAttribute();
+    if (e.id() == entity::EFF_INVISIBILITY && invisible_) {
+        invisible_ = false;
+        broadcastPoseFlags();
+    }
+}
+
+// Hunger drains 0.005 exhaustion per effect level each tick.
+void Player::onHungerEffectTick(int amplifier) {
+    addExhaustion(0.1f * (amplifier + 1));
+}
+
+// Restore one food point and one saturation point per effect interval.
+void Player::onSaturationEffectTick(int amplifier) {
+    (void)amplifier;
+    food_saturation_ = std::min(20.0f, food_saturation_ + 1.0f);
+    setFoodLevel(std::min(20, foodLevel() + 1));
+    food_attrs_dirty_ = true;
+}
+
+// Recalculate movement speed from its base to avoid stacking drift.
+void Player::sendMovementSpeedAttribute() {
+    if (!spawned_.load(std::memory_order_relaxed))
+        return;
+    float speed = movement_speed_base_;
+    if (const entity::Effect* sp = getEffect(entity::EFF_SPEED))
+        speed *= 1.0f + 0.2f * (sp->amplifier() + 1);
+    if (const entity::Effect* sl = getEffect(entity::EFF_SLOWNESS))
+        speed *= std::max(0.0f, 1.0f - 0.15f * (sl->amplifier() + 1));
+    auto pk = std::make_shared<network::protocol::UpdateAttributesPacket>();
+    pk->eid = runtimeId();
+    network::protocol::UpdateAttributesPacket::Entry e;
+    e.name = "generic.movementSpeed";
+    e.min = 0.0f;
+    e.max = 340282346638528859811704183484516925440.0f;
+    e.value = speed;
+    e.defaultValue = 0.1f;
+    pk->entries.push_back(e);
+    sendPacket(pk);
+}
+
+// Restore active effects after login and synchronize their client-side state.
+void Player::sendActiveEffects() {
+    if (!spawned_.load(std::memory_order_relaxed))
+        return;
+    for (const auto& e : effects())
+        sendPacket(makeEffectPacket(0, *e, network::protocol::MobEffectPacket::EVENT_ADD));
+    if (hasEffect(entity::EFF_INVISIBILITY))
+        invisible_ = true;
+    if (invisible_)
+        broadcastPoseFlags();
+    if (hasEffect(entity::EFF_SPEED) || hasEffect(entity::EFF_SLOWNESS))
+        sendMovementSpeedAttribute();
+}
+
+// Process hunger, environmental damage, and regeneration once per spawned-player tick.
 void Player::tickHungerAndDamage(uint64_t current_tick) {
     if (!spawned_.load(std::memory_order_relaxed))
         return;
@@ -196,6 +295,11 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
     bool creative = isCreative();
     int difficulty = srv_->difficulty();
 
+    // Tick potion effects and stop if they kill the player.
+    tickEffects();
+    if (isDead())
+        return;
+
     uint64_t now_ms = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
                           std::chrono::system_clock::now().time_since_epoch())
                           .count();
@@ -203,80 +307,70 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
     int by = (int)std::floor(pos_.y);
     int bz = (int)std::floor(pos_.z);
     uint8_t at = lvl->getBlockId(bx, by, bz);
-    uint8_t body = lvl->getBlockId(bx, by + 1, bz); // head block
-    uint8_t feet = lvl->getBlockId(bx, by - 1, bz); // stand-on block
+    uint8_t body = lvl->getBlockId(bx, by + 1, bz); // Block at head height.
+    uint8_t feet = lvl->getBlockId(bx, by - 1, bz); // Block beneath the player.
 
-    // ---------- 1. Drowning (Infinity Living::entityBaseTick) ----------
-    // Air drains ONLY when the HEAD is submerged: Infinity checks the
-    // block at y + getEyeHeight() (isInsideOfWater), NOT the block at the
-    // feet. Using the feet block made the server drain air while the
-    // client (which shows bubbles by camera height) still had full ones,
-    // and kept drowning the player in the surface — so diving again
-    // hurt as if the air was already spent.
-    int eye_y = (int)std::floor(pos_.y + kEyeHeight); // player eye height (0.15)
+    // ---------- 1. Drowning ----------
+    // Drain air only when the player's head is submerged, matching the reference server's eye-height check.
+    int eye_y = (int)std::floor(pos_.y + kEyeHeight); // Player eye height.
     uint8_t eye = lvl->getBlockId(bx, eye_y, bz);
     bool in_water = (eye == block::WATER || eye == block::FLOWING_WATER);
     if (in_water) {
-        if (air_ticks_ > 0)
+        // Water breathing prevents air loss.
+        if (hasEffect(entity::EFF_WATER_BREATHING)) {
+            air_ticks_ = 300;
+        } else if (air_ticks_ > 0) {
             --air_ticks_;
-        else if (!creative && difficulty > 0 && now_ms - last_drown_dmg_ms_ >= 1000) {
+        } else if (!creative && difficulty > 0 && now_ms - last_drown_dmg_ms_ >= 1000) {
             last_drown_dmg_ms_ = now_ms;
-            damage(2.0f, event::entity::DamageCause::DROWNING); // 1 heart/s
+            damage(2.0f, event::entity::DamageCause::DROWNING); // One heart per second.
         }
-        // Water extinguishes fire (vanilla) and cancels pending fall damage.
+        // Water extinguishes fire and cancels pending fall damage.
         if (fire_ticks_ > 0) {
             fire_ticks_ = 0;
-            broadcastPoseFlags(); // burn ended: clear the ON_FIRE flag
+            broadcastPoseFlags(); // Clear the burning flag.
         }
         was_on_fire_ = false;
         fall_distance_ = 0.0f;
     } else {
-        air_ticks_ = 300; // 15s of air (vanilla)
+        air_ticks_ = 300; // Restore 15 seconds of air.
     }
-    // Un jugador que acaba de morir (p.ej. ahogado) no debe seguir
-    // procesando el resto del tick de vida: Genisys Player::onUpdate
-    // salta TODO el bloque cuando !isAlive(). Sin esto, la regeneracion
-    // de la seccion 4c volvia a curar a un muerto en el mismo tick.
+    // Stop processing if drowning killed the player.
     if (isDead())
         return;
-    // Burn timer: set to 160 ticks (8s) on fire/lava contact; when it
-    // reaches 0 the player stops burning (vanilla setOnFire semantics).
+    // Extinguish the player when the burn timer expires.
     if (fire_ticks_ > 0 && --fire_ticks_ == 0) {
         was_on_fire_ = false;
-        broadcastPoseFlags(); // burn ended: clear the ON_FIRE flag
+        broadcastPoseFlags(); // Clear the burning flag.
     }
 
-    // ---------- 2. Fall damage (Infinity processMovement) ----------
-    // Distance is accumulated in handleMovePlayer(); here the damage is
-    // applied exactly once when the client reports ground contact with
-    // >= 3 blocks of accumulated fall (vanilla: damage = fall - 3), and
-    // the accumulator resets so it can start over on the next fall.
+    // ---------- 2. Fall damage ----------
+    // Apply damage once on landing after a fall of at least three blocks.
     if (!creative && difficulty > 0 && fall_distance_ >= 3.0 && on_ground_fall_check_ &&
         !in_water) {
         damage((float)(fall_distance_ - 3.0), event::entity::DamageCause::FALL);
-        fall_distance_ = 0.0f; // landing resets the fall
+        fall_distance_ = 0.0f; // Reset fall distance after landing.
     }
-    // Si el golpe de caida mato, terminar el tick aca: nada de lo que
-    // sigue (fuego/lava/hambre/regen) debe tocar a un jugador muerto.
+    // Stop processing if fall damage killed the player.
     if (isDead())
         return;
 
-    // ---------- 3. Fire / lava / cactus contact (Infinity checkBlockCollision) ----------
+    // ---------- 3. Fire, lava, and cactus contact ----------
     if (at == block::LAVA || at == block::FLOWING_LAVA) {
         if (now_ms - last_lava_dmg_ms_ >= 500) {
             last_lava_dmg_ms_ = now_ms;
             if (!creative)
-                damage(4.0f, event::entity::DamageCause::LAVA); // 2 hearts
+                damage(4.0f, event::entity::DamageCause::LAVA); // Two hearts.
         }
         was_in_lava_ = true;
         if (!creative) {
             was_on_fire_ = true;
-            setOnFire(8); // 8s of burning (vanilla); raises the ON_FIRE flag
+            setOnFire(8); // Apply eight seconds of burning.
         }
     } else {
         was_in_lava_ = false;
         if (was_on_fire_ && !creative) {
-            // Fire-tick damage while burning (0.5s interval, 1 dmg vanilla).
+            // Apply periodic damage while burning.
             if (now_ms - last_fire_tick_dmg_ms_ >= 500) {
                 last_fire_tick_dmg_ms_ = now_ms;
                 damage(1.0f, event::entity::DamageCause::FIRE_TICK);
@@ -291,31 +385,30 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
         }
         if (!creative) {
             was_on_fire_ = true;
-            setOnFire(8); // 8s of burning (vanilla); raises the ON_FIRE flag
+            setOnFire(8); // Apply eight seconds of burning.
         }
     }
     if (at == block::CACTUS) {
         if (now_ms - last_cactus_dmg_ms_ >= 500) {
             last_cactus_dmg_ms_ = now_ms;
             if (!creative)
-                damage(1.0f, event::entity::DamageCause::CACTUS); // half heart
+                damage(1.0f, event::entity::DamageCause::CACTUS); // Half a heart.
         }
     }
-    // Lava/fuego/cactus pueden haber matado: no seguir con hambre/regen.
+    // Stop processing if environmental damage killed the player.
     if (isDead())
         return;
 
-    // ---------- 4. Hunger (exhaustion model) ----------
+    // ---------- 4. Hunger ----------
     if (!creative) {
-        // Movement exhaustion: sprint 0.1 per meter, swimming 0.01.
+        // Movement exhaustion: sprinting costs 0.1 per meter; swimming costs 0.01.
         if (moved_this_tick_ && tick_move_dist_ > 0.0f) {
             if (sprinting_)
                 addExhaustion(0.1f * tick_move_dist_);
             else if (in_water)
                 addExhaustion(0.01f * tick_move_dist_);
         }
-        // 4b. Regen when well fed (>= 18 food): 1 HP every 4 s, costs
-        // 3.0 exhaustion (vanilla).
+        // Regenerate one health point every four seconds when food is at least 18.
         if (foodLevel() >= 18 && health() < maxHealth() && now_ms - last_regen_ms_ >= 4000) {
             last_regen_ms_ = now_ms;
             heal(1.0f);
@@ -323,8 +416,7 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
             sendAllAttributes();
             food_attrs_dirty_ = false;
         }
-        // 4c. Starvation at 0 food (1 dmg every 4s). Vanilla floors:
-        // easy stops at 10 HP, normal at 1 HP, hard can kill.
+        // Starvation deals damage every four seconds, subject to difficulty limits.
         if (difficulty >= 1 && foodLevel() <= 0 && ++starve_ticks_ >= 80) {
             starve_ticks_ = 0;
             float floor_hp = (difficulty >= 3) ? 0.0f : (difficulty == 2) ? 1.0f : 10.0f;
@@ -332,13 +424,13 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
                 damage(1.0f, event::entity::DamageCause::STARVATION);
             }
         }
-        // 4d. Sprinting needs more than 6 food (vanilla gate).
+        // Sprinting requires more than six food points.
         if (foodLevel() <= 6 && sprinting_) {
             sprinting_ = false;
             broadcastPoseFlags();
         }
     } else {
-        // Creative: food is pinned at max, no drain, no starvation.
+        // Creative mode keeps food full and disables hunger drain and starvation.
         if (foodLevel() != 20) {
             setFoodLevel(20);
             sendFoodLevel();
@@ -348,9 +440,7 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
         food_exhaustion_ = 0.0f;
         starve_ticks_ = 0;
     }
-    // Push the hunger/saturation/exhaustion attributes once per tick at
-    // most, only when something changed (mining/attack/damage hooks set
-    // the dirty flag from outside the tick loop).
+    // Synchronize hunger attributes once per tick when they change.
     if (food_attrs_dirty_) {
         food_attrs_dirty_ = false;
         sendFoodLevel();
@@ -374,37 +464,38 @@ void Player::sendExperienceLevel(int level) {
     (void)level;
 }
 void Player::setHealth(int h) {
-    // PMMP Player::setHealth semantics (used by the Lua binding
-    // player.setHealth too):
-    //   * clamped to [0, maxHealth] — no negative/wrapped values can
-    //     ever reach the wire (a negative generic.health attribute is
-    //     exactly the kind of packet that hard-crashes 0.15 clients),
-    //   * the hearts attribute syncs on EVERY call (Infinity
-    //     Player::setHealth does the attribute sync here),
-    //   * setHealth(0) on a live player kills through the regular
-    //     pipeline (onDeath → PlayerDeathEvent, drops, death screen)
-    //     so it behaves exactly like /kill.
+    // Clamp health, synchronize client hearts, and route lethal changes through normal death handling.
     if (h < 0)
         h = 0;
     if (h > (int)maxHealth())
         h = (int)maxHealth();
     if (h <= 0) {
         if (!isDead()) {
-            // Subtract everything that is left: applyDamage runs the
-            // death transition once (and skips onHealthChanged).
+            // Apply remaining health as damage to trigger the death transition once.
             applyDamage(health_ > 0.0f ? health_ : 0.0f);
         }
         return;
     }
     if (isDead())
-        return; // dead players only come back via respawn()
+        return; // Dead players can only return through respawn().
     entity::Living::setHealth((float)h);
     if (spawned_.load(std::memory_order_relaxed))
         sendHealthAttribute();
 }
 
 void Player::setMovementSpeed(float speed) {
-    (void)speed;
+    // Update the base speed used by speed and slowness effects.
+    if (speed <= 0.0f)
+        return;
+    movement_speed_base_ = speed;
+    sendMovementSpeedAttribute();
+}
+
+// Synchronize health after healing outside the hunger tick loop.
+void Player::heal(float amount) {
+    entity::Living::heal(amount);
+    if (spawned_.load(std::memory_order_relaxed) && !isDead())
+        sendHealthAttribute();
 }
 void Player::setAttribute(int attrId, float value) {
     (void)attrId;

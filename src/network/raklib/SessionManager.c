@@ -22,8 +22,8 @@
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // SessionManager.c — Full RakNet handshake + dispatch loop. Pure C.
-// Ported from raklib/server/Session.php + SessionManager.php
-// (PocketMine-MP 0.15.x / Protocol 84 compatible)
+// Ported from raklib/server/Session + SessionManager
+// (the reference server 0.15.x / Protocol 84 compatible)
 //
 // Handshake flow implemented:
 //   CLIENT                         SERVER
@@ -197,7 +197,7 @@ bool mcp_rak_session_manager_send_encapsulated(mcp_rak_session_manager_t* sm, co
     // still active. Without this, if the client stops sending game packets
     // (because it's overwhelmed by chunk data) but the server is actively
     // sending chunks TO the client, the server still times out the session.
-    // PMMP updates last_activity on both send AND receive.
+    // The reference server updates last_activity on both send AND receive.
     //
     // NOTE (audit finding, left as-is — not part of the requested fixes):
     // this means a session's timeout clock resets on every outbound send,
@@ -418,7 +418,7 @@ static size_t build_ack_pkt(uint8_t* out, size_t cap, const uint32_t* mins, cons
 // =========================================================================
 // Build UNCONNECTED_PONG (0x1c)
 // Format: [0x1c][time u64 LE][serverID u64 BE][magic 16][name rakstring]
-// PMMP writes ping_time as LE (getLong = LE), server_id as BE (getLong = BE
+// The reference server writes ping_time as LE (getLong = LE), server_id as BE (getLong = BE
 // only for server fields). Mirror that exactly.
 // =========================================================================
 static size_t build_unconnected_pong(uint8_t* out, size_t cap, uint64_t ping_time,
@@ -475,7 +475,7 @@ static size_t build_server_handshake(uint8_t* out, size_t cap, const uint8_t cli
     size_t oi = 0;
     out[oi++] = 0x10;
     write_address(out, &oi, client_ip, client_port);
-    write_u16_be(out, &oi, 0); // short = 0 (unknown field, PMMP writes 0)
+    write_u16_be(out, &oi, 0); // short = 0 (unknown field, the reference server writes 0)
     // 10 system addresses (127.0.0.1:0 + 9x 0.0.0.0:0)
     static const uint8_t loopback[4] = {127, 0, 0, 1};
     write_address(out, &oi, loopback, 0);
@@ -1242,7 +1242,7 @@ static void handle_encapsulated(mcp_rak_session_manager_t* sm, mcp_rak_session_t
             (void)srv_port;
 
             // portChecking: srv_port must match bind_port (or disabled)
-            // PMMP default: portChecking enabled
+            // The reference server default: portChecking enabled
             if (srv_port == sm->bind_port || true /* portChecking off for MCPE */) {
                 s->state = MCP_SESSION_STATE_CONNECTED;
                 // Notify upper layer
@@ -1363,7 +1363,7 @@ static void handle_data_packet(mcp_rak_session_manager_t* sm, mcp_rak_session_t*
     if (!decode_data_header(data, len, &seq, &payload_off))
         return;
 
-    // Sequence-number / window logic (mirrors PMMP Session.php).
+    // Sequence-number / window logic (mirrors the reference server Session).
     // FIX (priority 4): use wrap-safe circular comparison instead of
     // plain int32_t relational operators — see seq24_* above for why
     // the old comparisons broke exactly at the 24-bit wrap boundary.
@@ -1894,7 +1894,7 @@ static void handle_unconnected(mcp_rak_session_manager_t* sm, const uint8_t* dat
 
         // Protocol check: MCPE 0.15.10 uses RakNet protocol 6
         // We accept 6 and also 8 (some clients send 8).
-        // If wrong protocol we could reject, but PMMP just ignores; we accept.
+        // If wrong protocol we could reject, but the reference server just ignores; we accept.
 
         mcp_rak_session_t* s = mcp_rak_session_manager_find(sm, ip, port);
         if (s && s->state > MCP_SESSION_STATE_CONNECTING_1) {
@@ -1968,7 +1968,7 @@ static void handle_unconnected(mcp_rak_session_manager_t* sm, const uint8_t* dat
             return;
         }
 
-        // Clamp MTU like PMMP, then cap it by the server's own configured
+        // Clamp MTU like the reference server, then cap it by the server's own configured
         // MTU (see the OCR1 handler for why): the client asking for 1492
         // does not make 1492 safe on every path.
         if (mtu > RAKLIB_MAX_MTU)
@@ -2182,7 +2182,7 @@ void mcp_rak_session_manager_tick(mcp_rak_session_manager_t* sm) {
 
         s->is_active = false;
 
-        // Timeout (30s, RakLib/PMMP default — see MCP_SESSION_TIMEOUT_MS).
+        // Timeout (30s, RakLib/the reference server default — see MCP_SESSION_TIMEOUT_MS).
         // last_activity_ms is refreshed by EVERY received datagram — game
         // packets, keepalive PINGs and ACK/NACKs alike — so the sweep only
         // removes sessions whose connection is genuinely dead (no datagram

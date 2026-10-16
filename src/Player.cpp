@@ -345,6 +345,18 @@ void Player::saveData() {
     mcp_compound_tag_set_short(root, "Hunger", (int16_t)foodLevel());
     mcp_compound_tag_set_float(root, "FoodSaturation", food_saturation_);
     mcp_compound_tag_set_float(root, "FoodExhaustion", food_exhaustion_);
+    // Active potion effects (vanilla ActiveEffects list).
+    mcp_tag_t* fx_list = mcp_list_tag_new_named("ActiveEffects", MCP_TAG_COMPOUND);
+    if (fx_list) {
+        for (const auto& e : effects()) {
+            mcp_tag_t* entry = mcp_compound_tag_new_named("");
+            mcp_compound_tag_set_byte(entry, "Id", (int8_t)e->id());
+            mcp_compound_tag_set_byte(entry, "Amplifier", (int8_t)e->amplifier());
+            mcp_compound_tag_set_int(entry, "Duration", e->duration());
+            mcp_list_tag_append(fx_list, entry);
+        }
+    }
+    mcp_compound_tag_set(root, "ActiveEffects", fx_list);
     mcp_compound_tag_set_short(root, "Air", 300);
     mcp_compound_tag_set_long(root, "RuntimeId", runtimeId());
     mcp_compound_tag_set_long(root, "lastPlayed", (int64_t)mcp_utils_time_ms());

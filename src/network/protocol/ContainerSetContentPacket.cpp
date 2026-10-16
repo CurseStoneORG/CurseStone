@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // ContainerSetContentPacket.cpp — encode (server→client).
 //
-// PMMP encode (verbatim):
+// The reference server encode (verbatim):
 //   putByte(windowid)
 //   putShort(count(slots))
 //   foreach slot: putSlot(slot)        <- see header for full slot format
@@ -44,7 +44,7 @@ void ContainerSetContentPacket::encode(std::vector<uint8_t>& out) const {
     w.writeU8(windowid);
     w.writeU16BE(static_cast<uint16_t>(slots.size()));
     for (const auto& s : slots) {
-        // PMMP putSlot:
+        // The reference server putSlot:
         //   if id == 0: putShort(0) ONLY (2 bytes).
         //   else: putShort(id) + putByte(count) + putShort(damage) +
         //         putLShort(nbtLen) [+ nbt bytes]

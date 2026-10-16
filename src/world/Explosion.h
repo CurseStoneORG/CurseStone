@@ -22,7 +22,7 @@
  */
 // Explosion — block-tnt/creeper blast. Damages nearby entities and
 // destroys blocks in a sphere of `size` blocks. Implements the same
-// block-impact pattern as PocketMine (sphere raymarch + finite block
+// block-impact pattern as the reference server (sphere raymarch + finite block
 // resistance). TNT damage = 4f * power (capped by maxResistance).
 #pragma once
 #include "math/Vector3.h"

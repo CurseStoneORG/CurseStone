@@ -325,7 +325,7 @@ void mcp_chunk_recalculate_height_map(mcp_chunk_t* c) {
     // resultado: pasto renderizado negro cerca de cualquier árbol.
     //
     // Fix: solo cuenta como "techo" un bloque cuya opacidad de luz
-    // (mcp_block_light_opacity) sea > 0, igual que Minecraft/PMMP
+    // (mcp_block_light_opacity) sea > 0, igual que Minecraft/reference server
     // (Block::getLightFilter() > 0). Hojas, agua, vidrio, flores,
     // etc. son transparentes a la luz (opacidad 0) y ya no cuentan.
     for (int col = 0; col < 256; ++col)
@@ -836,7 +836,7 @@ uint8_t* mcp_chunk_network_serialize(const mcp_chunk_t* c, size_t* out_len) {
     size_t off = 0;
 
     // --- Block IDs: convert from sections (XZY, 256-height) to columns (128-height) ---
-    // PMMP column index: (x << 11) | (z << 7) | y, where y = 0..127
+    // The reference server column index: (x << 11) | (z << 7) | y, where y = 0..127
     // Our section index: section[y>>4].blocks[(x&15) | ((z&15)<<4) | ((y&15)<<8)]
     for (int x = 0; x < 16; ++x) {
         for (int z = 0; z < 16; ++z) {
@@ -951,7 +951,7 @@ uint8_t* mcp_chunk_network_serialize(const mcp_chunk_t* c, size_t* out_len) {
     //
     // Fix: además del ID de bioma en el byte alto (se mantiene, no hace
     // daño y sirve para IO/leveldb), escribir el RGB real de "grasscolor"
-    // de cada bioma en los 3 bytes bajos — igual que hacía PMMP antes de
+    // de cada bioma en los 3 bytes bajos — igual que hacía el servidor de referencia antes de
     // API 3.0.0-ALPHA1 (ver World::setBiomeColor(), que sí llegaba a
     // pintar la textura). Tabla aproximada de colores clásicos de
     // Minecraft por bioma; se puede afinar más adelante por temperatura/

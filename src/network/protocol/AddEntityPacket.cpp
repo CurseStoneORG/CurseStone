@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// AddEntityPacket.cpp — encoder per Infinity AddEntityPacket.php.
+// AddEntityPacket.cpp — encoder per the reference server AddEntityPacket.
 #include "AddEntityPacket.h"
 
 namespace cursestone::network::protocol {
@@ -36,7 +36,7 @@ void AddEntityPacket::encode(std::vector<uint8_t>& out) const {
     w.writeF32BE(speedX);
     w.writeF32BE(speedY);
     w.writeF32BE(speedZ);
-    // Infinity: $this->putFloat($this->yaw * 0.71111) — the 0.15.x
+    // Reference encoder: yaw written as float(yaw * 0.71111) — the 0.15.x
     // client expects the packed 0..255 rotation representation.
     constexpr float kRotScale = 0.71111f;
     w.writeF32BE(yawPitchScaled ? yaw * kRotScale : yaw);
@@ -46,7 +46,7 @@ void AddEntityPacket::encode(std::vector<uint8_t>& out) const {
         // Empty metadata: single 0 byte (same convention as AddPlayerPacket).
         w.writeU8(0);
     } else {
-        // Infinity Binary::writeMetadata: key byte (type << 5) | index,
+        // The reference server Binary::writeMetadata: key byte (type << 5) | index,
         // then the value — INT is LITTLE-endian (writeLInt) on protocol
         // 84 — then the 0x7F terminator.
         for (const SetEntityDataPacket::Entry& e : metadata) {

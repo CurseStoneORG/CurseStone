@@ -26,7 +26,7 @@
 // Genisys AnimatePacket (0.15.10) field order:
 //   putVarInt(action) | putEntityId(eid)
 //
-// Actions (PMMP AnimatePacket): 1 = swing arm.
+// Actions (the reference server AnimatePacket): 1 = swing arm.
 #include "AnimatePacket.h"
 
 namespace cursestone::network::protocol {

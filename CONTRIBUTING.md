@@ -53,7 +53,7 @@ For anything larger than a small fix, open an issue first so the approach can be
 
 ## 3. Architecture rules: the C / C++ split
 
-CurseStone is a strict **C core plus a C++ layer**, modeled on PocketMine 0.15.10 / protocol 84.
+CurseStone is a strict **C core plus a C++ layer**, modeled on a legacy 0.15.10 server / protocol 84.
 
 | Layer | Language | Contains |
 |---|---|---|

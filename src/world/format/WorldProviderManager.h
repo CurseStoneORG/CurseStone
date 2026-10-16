@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // WorldProviderManager — registry of on-disk world formats. C++.
 //
-// PocketMine's WorldProviderManager is a static registry that maps a
+// The reference server's WorldProviderManager is a static registry that maps a
 // format identifier string (e.g. "anvil", "leveldb") to a concrete
 // WorldProvider class. We mirror that pattern, but the C++ version is
 // a non-static class so test code can inject a fresh registry per

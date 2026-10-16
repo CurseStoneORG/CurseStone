@@ -25,7 +25,7 @@
 // cartel (al salir de la pantalla de texto). El servidor también lo usa
 // para re-sincronizar el tile.
 //
-// Wire format (protocolo 84, mirrors Genisys BlockEntityDataPacket.php):
+// Wire format (protocolo 84, mirrors Genisys BlockEntityDataPacket):
 //   [Int BE] x
 //   [Int BE] y
 //   [Int BE] z

@@ -21,7 +21,7 @@
  *
  */
 // CommandSender — anything that can issue commands (console,
-// players, RCON clients). Mirrors pocketmine/command/CommandSender.
+// players, RCON clients). Mirrors command/CommandSender.
 #pragma once
 #include <string>
 #include <memory>

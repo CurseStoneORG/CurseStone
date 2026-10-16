@@ -27,7 +27,7 @@
 //   [1 byte ID 0x02]
 //   [Int32 BE] status
 //
-// Status constants (mirror PMMP):
+// Status constants (mirror the reference server):
 //   LOGIN_SUCCESS        = 0
 //   LOGIN_FAILED_CLIENT  = 1  (client outdated)
 //   LOGIN_FAILED_SERVER  = 2  (server outdated)
@@ -46,7 +46,7 @@ class PlayStatusPacket : public DataPacket {
         return PLAY_STATUS_PACKET;
     }
 
-    // Status enum (PMMP constants).
+    // Status enum (the reference server constants).
     static constexpr int32_t LOGIN_SUCCESS = 0;
     static constexpr int32_t LOGIN_FAILED_CLIENT = 1;
     static constexpr int32_t LOGIN_FAILED_SERVER = 2;

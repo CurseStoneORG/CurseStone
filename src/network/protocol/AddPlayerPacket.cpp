@@ -23,14 +23,14 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // AddPlayerPacket.cpp — encode/decode.
 //
-// PMMP putUUID writes 16 raw bytes from UUID::toBinary (LE for MCPE).
-// PMMP putSlot when item id == 0 writes ONLY [Int16 BE 0] and returns.
-//   See pocketmine Item::writeSlot / Binary::writeSlot in mcpe 0.15.x.
-// PMMP AddPlayerPacket::encode writes yaw TWICE (the second putFloat is
-//   tagged "//TODO headrot" in PMMP) — headYaw was never implemented in
+// The reference server putUUID writes 16 raw bytes from UUID::toBinary (LE for MCPE).
+// The reference server putSlot when item id == 0 writes ONLY [Int16 BE 0] and returns.
+//   See the reference server Item::writeSlot / Binary::writeSlot in mcpe 0.15.x.
+// The reference server AddPlayerPacket::encode writes yaw TWICE (the second putFloat is
+//   tagged "//TODO headrot" in the reference server) — headYaw was never implemented in
 //   protocol 84. Sending a different headYaw value misaligns the field
 //   on the client side.
-// PMMP Binary::writeMetadata for empty: [Uint8 0]  (count = 0).
+// The reference server Binary::writeMetadata for empty: [Uint8 0]  (count = 0).
 #include "AddPlayerPacket.h"
 
 #include <cstring>
@@ -49,12 +49,12 @@ void AddPlayerPacket::encode(std::vector<uint8_t>& out) const {
     w.writeF32BE(speedY);
     w.writeF32BE(speedZ);
     w.writeF32BE(yaw);
-    // headYaw was never implemented in protocol 84 — PMMP writes yaw twice
+    // headYaw was never implemented in protocol 84 — the reference server writes yaw twice
     // with a "//TODO headrot" comment. Mirror that exactly so the client
     // doesn't receive a desynced head rotation field.
-    w.writeF32BE(yaw); // headYaw = yaw (PMMP TODO headrot)
+    w.writeF32BE(yaw); // headYaw = yaw (the reference server TODO headrot)
     w.writeF32BE(pitch);
-    // Empty putSlot: PMMP emits ONLY putShort(0) when item id == 0
+    // Empty putSlot: The reference server emits ONLY putShort(0) when item id == 0
     // (2 bytes total). The previous code wrote two Int16 BE (4 bytes),
     // shifting every subsequent field by 2 bytes and corrupting metadata.
     w.writeI16BE(0); // putSlot with id==0: only 2 bytes

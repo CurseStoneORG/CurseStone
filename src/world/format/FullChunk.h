@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // FullChunk — abstract "chunk ready to be sent" interface. C++.
 //
-// PocketMine's `FullChunk` interface sits between the storage layer
+// The reference server's `FullChunk` interface sits between the storage layer
 // (WorldProvider) and the runtime World. A FullChunk has enough state
 // to be serialized into a `FullChunkDataPacket` (protocol 0x34) and
 // broadcast to players.

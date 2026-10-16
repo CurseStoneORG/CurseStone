@@ -77,7 +77,7 @@ void sendBatchWire(cursestone::network::AdvancedSourceInterface* iface, const st
     if (batchBody.empty())
         return;
 
-    // MCPE game packets must start with 0xFE, as required by PMMP's RakLibInterface.
+    // MCPE game packets must start with 0xFE, as required by the reference server's RakLibInterface.
     std::vector<uint8_t> wire;
     wire.push_back(0xFE);                                        // Game packet marker
     wire.push_back(cursestone::network::protocol::BATCH_PACKET); // 0x06

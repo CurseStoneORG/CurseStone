@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // EntityEventPacket — clientbound. Dispara animaciones/eventos
 // cliente-side atados a una entidad (golpe recibido, muerte, etc).
-// Wire format (protocol 84, mirrors PMMP EntityEventPacket):
+// Wire format (protocol 84, mirrors the reference server EntityEventPacket):
 //   [Int64 BE] eid
 //   [Byte]     event
 #pragma once

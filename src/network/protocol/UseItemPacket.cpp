@@ -23,18 +23,18 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // UseItemPacket.cpp — encode/decode.
 //
-// PMMP: putInt(x)+putInt(y)+putInt(z)+putByte(face)
+// The reference server: putInt(x)+putInt(y)+putInt(z)+putByte(face)
 //       +putFloat(fx)+putFloat(fy)+putFloat(fz)
 //       +putFloat(posX)+putFloat(posY)+putFloat(posZ)
 //       +putInt(slot)+Slot item
 // All multi-byte fields are big-endian EXCEPT the nbtLen inside the Slot
-// which is little-endian (PMMP putLShort = pack("v", …)).
+// which is little-endian (16-bit little-endian).
 #include "UseItemPacket.h"
 
 namespace cursestone::network::protocol {
 
 namespace {
-// PMMP Slot decoder (BinaryStream::getSlot).
+// The reference server Slot decoder (BinaryStream::getSlot).
 //   id (Int16 BE); if id <= 0 → done. Otherwise:
 //   count (Uint8), damage (Int16 BE), nbtLen (Uint16 LE), nbt (nbtLen bytes)
 bool readSlot(PacketReader& r, int16_t& id, uint8_t& count, int16_t& damage) {

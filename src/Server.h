@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// server — singleton. Mirrors pocketmine/server.php.
+// server — singleton. Mirrors server.
 //
 // Responsibilities:
 //   1. Boot: load cursestone.yml, init logger, register blocks/items,
@@ -90,7 +90,7 @@ using NbtPtr = std::shared_ptr<::mcp_tag>;
 /**
  * @brief server singleton: boot, tick loop, and coordinated shutdown.
  *
- * Mirrors pocketmine/server.php. The file comment above lists the full
+ * Mirrors server. The file comment above lists the full
  * responsibilities (boot sequence, tick phases, shutdown, roster and
  * broadcast handling, command processing).
  */
@@ -174,7 +174,7 @@ class Server {
      * @brief Allocates to fresh unique runtime entity id.
      *
      * Used for spawning item drops and other world entities (mirrors
-     * PMMP Entity::$entityCount).
+     * The reference server the entity counter).
      */
     int64_t allocateEid();
 
@@ -259,10 +259,10 @@ class Server {
 
     // ---- World behaviour flags (used by BlockFire propagation) ----
     // Both default to TRUE so the fire-spread + Nether portal logic in
-    // BlockFire.cpp / ItemFlintSteel.cpp behaves like vanilla PMMP. They
+    // BlockFire.cpp / ItemFlintSteel.cpp behaves like vanilla reference server. They
     // are exposed as getters so to future server.properties can override
     // them without touching call sites.
-    // mirrors PMMP server::isFireSpreadEnabled() / isNetherEnabled()
+    // mirrors the reference isFireSpreadEnabled() / isNetherEnabled()
     bool fireSpreadEnabled() const {
         return fire_spread_enabled_;
     }
@@ -410,7 +410,7 @@ class Server {
     bool fire_spread_enabled_ = true;
     bool nether_enabled_ = true;
     int async_workers_ = 4;
-    int autosave_ticks_ = 6000; // 5 minutes at 20 TPS (PMMP default)
+    int autosave_ticks_ = 6000; // 5 minutes at 20 TPS (the reference server default)
 
     // state of the autosave incremental (ver beginAutosaveDrain).
     bool autosave_draining_ = false;

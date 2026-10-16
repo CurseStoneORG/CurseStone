@@ -1,7 +1,7 @@
 # General development instructions
 
 ## Purpose
-CurseStone is a lightweight server for Minecraft: Pocket Edition 0.15.x (protocol 84), modeled on PocketMine 0.15.10. It is intentionally not a vanilla server (for example, entities have no pathfinding or mob AI; see `README.md`).
+CurseStone is a lightweight server for Minecraft: Pocket Edition 0.15.x (protocol 84), modeled on a legacy 0.15.10 server. It is intentionally not a vanilla server (for example, entities have no pathfinding or mob AI; see `README.md`).
 
 ## Before modifying code
 1. Read the file and its header, then its callers and callees. Use `grep -rn` for symbols; do not rely on file names.

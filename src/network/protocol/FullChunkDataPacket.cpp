@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // FullChunkDataPacket.cpp — encode/decode.
 //
-// PMMP: putInt(chunkX) + putInt(chunkZ) + putByte(order) + putInt(strlen(data)) + put(data)
+// The reference server: putInt(chunkX) + putInt(chunkZ) + putByte(order) + putInt(strlen(data)) + put(data)
 // All ints are BE.
 #include "FullChunkDataPacket.h"
 

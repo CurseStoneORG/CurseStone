@@ -22,7 +22,7 @@
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // SessionManager.h — RakNet session manager, Protocol 84 / MCPE 0.15.10
-// Ported from raklib/server/SessionManager.php
+// Ported from raklib/server/SessionManager
 #pragma once
 
 #include "Session.h"

@@ -25,7 +25,8 @@
 #include "entity/Effect.h"
 namespace cursestone::item {
 // Regen V (30 s), Absorption (2 min), Resistance + Fire Resistance (5 min).
-void ItemEnchantedGoldenApple::applyEatEffects(Player& eater) const {
+void ItemEnchantedGoldenApple::applyEatEffects(Player& eater, uint8_t meta) const {
+    (void)meta;
     eater.addEffect(std::make_shared<entity::Effect>(entity::EFF_REGENERATION, "Regeneration", 600, 4));
     eater.addEffect(std::make_shared<entity::Effect>(entity::EFF_ABSORPTION, "Absorption", 2400, 0));
     eater.addEffect(std::make_shared<entity::Effect>(entity::EFF_RESISTANCE, "Resistance", 6000, 0));

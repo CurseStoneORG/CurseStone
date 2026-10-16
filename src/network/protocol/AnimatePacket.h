@@ -24,8 +24,8 @@
 // AnimatePacket.h — client→server arm swing / animation trigger.
 //
 // MCPE protocol 84 (MCPE 0.15.10) wire format — Genisys
-// AnimatePacket::decode (iTXTech/Genisys, src/pocketmine/network/
-// protocol/AnimatePacket.php):
+// AnimatePacket::decode (iTXTech/Genisys, network/
+// protocol/AnimatePacket):
 //
 //   [1 byte   ID 0x27]
 //   [VarInt]  action — getVarInt() (1 = swing arm)
@@ -43,9 +43,9 @@
 
 namespace cursestone::network::protocol {
 
-// PMMP AnimatePacket action constants.
+// The reference server AnimatePacket action constants.
 constexpr uint32_t ANIMATE_ACTION_SWING_ARM = 1;
-// WAKE_UP = 3 (Infinity event/player/PlayerAnimationEvent.php) — sent to
+// WAKE_UP = 3 (the reference server event/player/PlayerAnimationEvent) — sent to
 // the player itself by Player::stopSleep() so the 0.15.10 client leaves
 // the bed view.
 constexpr uint32_t ANIMATE_ACTION_WAKE_UP = 3;

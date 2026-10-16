@@ -23,8 +23,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // ContainerOpenPacket — server->client "show this container UI" packet.
 //
-// PMMP wire format (protocol 84) — ContainerOpenPacket::encode
-// (PocketMine-MP-4.0.0/src/pocketmine/network/protocol/ContainerOpenPacket.php,
+// The reference server wire format (protocol 84) — ContainerOpenPacket::encode
+// (network/protocol/ContainerOpenPacket,
 // the legacy protocol-84 variant attached as design reference):
 //   putByte(windowid)
 //   putByte(type)        // container "window type" (0 = chest)
@@ -54,7 +54,7 @@ class ContainerOpenPacket : public DataPacket {
         return CONTAINER_OPEN_PACKET;
     }
 
-    // Window "type" byte — PMMP's WindowTypes table. Only the ones this
+    // Window "type" byte — the reference server's WindowTypes table. Only the ones this
     // project actually opens are named here; add more as they're needed.
     static constexpr uint8_t TYPE_CONTAINER = 0;
     static constexpr uint8_t TYPE_FURNACE = 2; // WORKBENCH=1, FURNACE=2

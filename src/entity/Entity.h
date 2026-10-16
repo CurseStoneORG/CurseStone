@@ -22,7 +22,7 @@
  */
 // Entity — base class for any world entity (player, item-drop, mob,
 // projectile). Holds the unique runtime id, position, motion, AABB
-// and the level reference. Mirrors pocketmine/entity/Entity.php.
+// and the level reference. Mirrors entity/Entity.
 #pragma once
 #include "CurseStone.h" // brings in the `using World = world::World;` alias
 #include <cstdint>
@@ -91,10 +91,10 @@ class Entity {
     // fully-formed Entity API. The damage / fire-on-entity systems are
     // not implemented yet in CurseStone — the bodies are intentional no-ops
     // and marked with TODO so they're easy to find later.
-    // mirrors PMMP Entity::attack(EntityDamageEvent)
+    // mirrors the reference server Entity::attack(EntityDamageEvent)
     virtual void attack(float /*damage*/) { /* TODO: damage event pipeline */
     }
-    // mirrors PMMP Entity::setOnFire(int $seconds)
+    // mirrors the reference server Entity::setOnFire(int seconds)
     virtual void setOnFire(int /*seconds*/) { /* TODO: fire tick tracking */
     }
 

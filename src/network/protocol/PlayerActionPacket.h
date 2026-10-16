@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // PlayerActionPacket.h — client→server action notification (start/abort/stop break).
 //
-// Wire format (protocol 84) — PMMP PlayerActionPacket::decode:
+// Wire format (protocol 84) — the reference server PlayerActionPacket::decode:
 //   [1 byte ID 0x20]
 //   [Int64 BE] eid       (legacy entity id; client echoes its own)
 //   [Int32 BE] action    (0=START_BREAK, 1=ABORT_BREAK, 2=STOP_BREAK, ...)
@@ -45,33 +45,33 @@ class PlayerActionPacket : public DataPacket {
         return PLAYER_ACTION_PACKET;
     }
 
-    // Action constants (subset of PMMP PlayerAction:: constants relevant
+    // Action constants (subset of the reference server PlayerAction:: constants relevant
     // for block breaking on protocol 84).
     static constexpr int32_t ACTION_START_BREAK = 0;
     static constexpr int32_t ACTION_ABORT_BREAK = 1;
     static constexpr int32_t ACTION_STOP_BREAK = 2;
-    // ACTION_RELEASE_ITEM = 5 — releasing a drawn bow (Infinity
-    // PlayerActionPacket.php:35 — protocol 84 value; the 22 that later
+    // ACTION_RELEASE_ITEM = 5 — releasing a drawn bow (the reference server
+    // PlayerActionPacket — protocol 84 value; the 22 that later
     // protocol versions use is WRONG here and the client never sends it).
-    // Infinity Player.php maps this action to the bow release → Arrow
+    // The reference server Player maps this action to the bow release → Arrow
     // spawn flow.
     static constexpr int32_t ACTION_RELEASE_ITEM = 5;
-    // ACTION_STOP_SLEEPING = 6 (Infinity PlayerActionPacket.php:36) — the
+    // ACTION_STOP_SLEEPING = 6 (the reference server PlayerActionPacket) — the
     // 0.15.10 client sends this when the player taps "Leave bed" (or the
     // screen/jump button) while sleeping in a bed. Maps to
-    // Player::stopSleep() exactly like Infinity Player.php:2839.
+    // Player::stopSleep() exactly like the reference server Player.
     static constexpr int32_t ACTION_STOP_SLEEPING = 6;
     // El cliente manda esto cuando el jugador toca el boton de
-    // "Respawn" en la pantalla de muerte (Infinity:
+    // "Respawn" en la pantalla de muerte (the reference server:
     // ACTION_SPAWN_SAME_DIMENSION = 7).
     static constexpr int32_t ACTION_SPAWN_SAME_DIMENSION = 7;
-    // Sprint toggle (protocol 84 — Infinity PlayerActionPacket.php:
+    // Sprint toggle (protocol 84 — the reference server PlayerActionPacket:
     // ACTION_START_SPRINT = 9, ACTION_STOP_SPRINT = 10. Values 5/6 are
     // RELEASE_ITEM/STOP_SLEEPING in this protocol — using them here made
     // the server misread those actions and never see real sprints).
     static constexpr int32_t ACTION_START_SPRINT = 9;
     static constexpr int32_t ACTION_STOP_SPRINT = 10;
-    // Crouch toggle (protocol 84 — Genisys 0.15.0 PlayerActionPacket.php:
+    // Crouch toggle (protocol 84 — Genisys 0.15.0 PlayerActionPacket:
     // ACTION_START_SNEAK = 11, ACTION_STOP_SNEAK = 12). This is what the
     // 0.15.10 client sends when the player taps the sneak button or holds
     // shift on a touch device; the server has to mirror the pose to every

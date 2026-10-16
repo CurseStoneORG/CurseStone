@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // CommandReader — runs a background thread that reads stdin line by
 // line. When a line is received, it forwards it to the Server's
-// CommandMap. Mirrors pocketmine/command/CommandReader.
+// CommandMap. Mirrors command/CommandReader.
 //
 // CRITICAL: this uses a raw pthread + fgets() instead of std::cin
 // because the async logger writes to stdout from a different thread.

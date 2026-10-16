@@ -23,12 +23,12 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // AdventureSettingsPacket.h — flight/pvp/world-builder flags.
 //
-// Wire format (protocol 84) — PMMP AdventureSettingsPacket::encode:
+// Wire format (protocol 84) — the reference server AdventureSettingsPacket::encode:
 //   [1 byte ID 0x31]
 //   [Int32 BE] flags            (bitmask: bit 0 = worldImmutable,
 //                                          bit 1 = noPvP, bit 2 = noMobs,
 //                                          bit 3 = worldBuilder? — we send 0)
-//                                          PMMP: ACTION_PERMISSION = bit 0x1 (worldImmutable)
+//                                          The reference server: ACTION_PERMISSION = bit 0x1 (worldImmutable)
 //                                          PERMISSION_NORMAL = 0, PERMISSION_VISITOR = 0x1F
 //   [Int32 BE] userPermission   (PERMISSION_NORMAL=0, OPERATOR=1, HOST=2)
 //   [Int32 BE] globalPermission (same constants)
@@ -46,7 +46,7 @@ class AdventureSettingsPacket : public DataPacket {
         return ADVENTURE_SETTINGS_PACKET;
     }
 
-    // Common flag bits (PMMP Player::sendSettings).
+    // Common flag bits (the reference server Player::sendSettings).
     static constexpr uint32_t FLAG_WORLD_IMMUTABLE = 0x01;
     static constexpr uint32_t FLAG_NO_PVP = 0x02;
     static constexpr uint32_t FLAG_NO_MOBS = 0x04;

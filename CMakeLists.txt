@@ -24,7 +24,7 @@
 ]]
 
 cmake_minimum_required(VERSION 3.20)
-project(CurseStone VERSION 1.0.0 LANGUAGES C CXX)
+project(CurseStone VERSION 1.0.2 LANGUAGES C CXX)
 
 # ---- Language standards ----
 # C20/C23 (c2x) for RakLib / NBT / Binary / math / chunk data structs.

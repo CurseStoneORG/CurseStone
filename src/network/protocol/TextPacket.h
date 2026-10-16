@@ -30,7 +30,7 @@
 //   if (type != TRANSLATION):   [BE String] message
 //   if (type == TRANSLATION):   [BE String] message, [Uint8] count, [BE String]*count
 //
-// Type constants (mirror PMMP):
+// Type constants (mirror the reference server):
 //   TYPE_RAW        = 0
 //   TYPE_CHAT       = 1   (requires `source`)
 //   TYPE_TRANSLATION= 2

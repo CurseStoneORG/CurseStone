@@ -36,7 +36,7 @@
 // packets, then posts any responses to outbound_queue_. The RakLib
 // thread drains outbound_queue_ before each mcp_raklib_server_tick().
 //
-// This mirrors PMMP's RakLibServer (which extends Thread) and
+// This mirrors the reference server's RakLibServer (which extends Thread) and
 // communicates via ThreadSafeArray.
 #pragma once
 

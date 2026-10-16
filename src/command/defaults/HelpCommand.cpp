@@ -33,7 +33,7 @@ namespace cursestone {
 // real (SimpleCommandMap::allCommands()), NO desde una tabla fija. Así
 // aparecen solos los comandos que registren los plugins, y solo los que
 // el emisor puede usar (Command::canUse). Los alias (gm, tp, ?...) son
-// comandos propios y aparecen como tales. Paginación estilo PMMP.
+// comandos propios y aparecen como tales. Paginación estilo the reference server.
 bool HelpCommand::execute(CommandSender* sender, const std::string&,
                           const std::vector<std::string>& args) {
     // Parse page number from args
@@ -64,7 +64,7 @@ bool HelpCommand::execute(CommandSender* sender, const std::string&,
         return a.name < b.name;
     });
 
-    // Paginate: 7 commands per page (like PMMP)
+    // Paginate: 7 commands per page (like the reference server)
     int perPage = 7;
     int totalPages = (int)((commands.size() + perPage - 1) / perPage);
     if (totalPages < 1)
@@ -72,7 +72,7 @@ bool HelpCommand::execute(CommandSender* sender, const std::string&,
     if (pageNumber > totalPages)
         pageNumber = totalPages;
 
-    // Header (PMMP style: "--- Showing help page X/Y ---")
+    // Header (the reference server style: "--- Showing help page X/Y ---")
     sender->sendMessage("--- Showing help page " + std::to_string(pageNumber) + "/" +
                         std::to_string(totalPages) + " ---");
 

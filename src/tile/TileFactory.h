@@ -23,8 +23,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // TileFactory — which block entity a legacy block id implies.
 //
-// PMMP builds these on the fly in Tile::createTile() from the same kind
-// of switch (Infinity/pocketmine/tile/Tile.php + level/format/io
+// The reference server builds these on the fly in Tile::createTile() from the same kind
+// of switch (the reference server/tile/Tile + level/format/io
 // chunk init). We need it in one place because a chest or furnace that
 // arrives with the WORLD (a village piece, a dungeon, a structure) has
 // no tile entity behind it until somebody asks for one — and in

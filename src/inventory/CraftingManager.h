@@ -22,7 +22,7 @@
  */
 // CraftingManager — registra las recetas de crafteo y responde "qué
 // produce esta grilla 3x3?" a partir de CraftingEventPacket.
-// Espeja pocketmine/inventory/CraftingManager.
+// Espeja inventory/CraftingManager.
 #pragma once
 #include "Recipe.h"
 #include <vector>
@@ -47,7 +47,7 @@ class CraftingManager {
     // que cargar. Antes se leia uno externo que no se empaqueta con el
     // binario, asi que una release limpia arrancaba con 0 recetas y el
     // crafting quedaba dead. Estilo alineado con
-    // Dr1xyDev/Nukkit-InfinityEdition, que declara todas las recetas en
+    // Nukkit, que declara todas las recetas en
     // su CraftingManager.
     //
     // Para agregar o cambiar una receta se edita registerBuiltinRecipes()

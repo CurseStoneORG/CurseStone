@@ -38,36 +38,38 @@
 namespace cursestone {
 
 // ============================================================
-// Damage pipeline — entity::Living overrides.
-//
-// CREATIVE IMMUNITY, ported from Infinity/PMMP Player::attack():
-// the victim's gamemode is checked BEFORE the damage event fires, so an
-// immune hit never produces an EntityDamage event, never touches health
-// and never emits a single packet (no hurt animation, no health sync, no
-// knockback). This is the vanilla behavior AND the crash fix: the 0.15.10
-// client does not expect a creative player to receive damage sync at all
-// ("players can attack me in creative and my game closes" — the victim's
-// client died on the unexpected damage traffic; now that traffic simply
-// does not exist).
+// Damage handling overrides for living entities.
+// Creative immunity follows  behavior: check the victim's
+// gamemode before firing damage events or sending damage-related packets.
+// This prevents unexpected damage synchronization from crashing 0.15.10.
 // ============================================================
 entity::DamageApply Player::damage(float amount) {
-    // 1-arg damage() is cause CUSTOM — the server-initiated slot (the
-    // CAUSE_MAGIC/CAUSE_SUICIDE of Infinity: kill flows, console/plugin
-    // damage). Infinity lets those through creative, so do we.
+    // Custom damage from server-side operations remains allowed in creative.
     return entity::Living::damage(amount);
 }
 
 entity::DamageApply Player::damage(float amount, event::entity::DamageCause cause) {
-    // Creative: immune to every environmental cause. VOID still kills
-    // (falling out of the world is fatal in creative — vanilla), and
-    // CUSTOM (server-initiated) stays allowed, mirroring Infinity's
-    // MAGIC/SUICIDE exemption.
+    // Creative players ignore all damage except void and custom damage.
     if (isCreative() && cause != event::entity::DamageCause::VOID &&
         cause != event::entity::DamageCause::CUSTOM) {
         return entity::DamageApply::CANCELLED;
     }
+    // Fire Resistance blocks all fire-related damage.
+    if (hasEffect(entity::EFF_FIRE_RESISTANCE) &&
+        (cause == event::entity::DamageCause::FIRE ||
+         cause == event::entity::DamageCause::FIRE_TICK ||
+         cause == event::entity::DamageCause::LAVA)) {
+        return entity::DamageApply::CANCELLED;
+    }
+    // Resistance reduces damage by 20% per level, except void and starvation.
+    if (const entity::Effect* res = getEffect(entity::EFF_RESISTANCE)) {
+        if (cause != event::entity::DamageCause::VOID &&
+            cause != event::entity::DamageCause::STARVATION) {
+            amount *= 1.0f - 0.2f * (res->amplifier() + 1);
+        }
+    }
     auto applied = entity::Living::damage(amount, cause);
-    // Taking damage costs 0.3 exhaustion (vanilla).
+    // Taking damage adds 0.3 exhaustion.
     if (applied != entity::DamageApply::CANCELLED)
         addExhaustion(0.3f);
     return applied;
@@ -75,14 +77,14 @@ entity::DamageApply Player::damage(float amount, event::entity::DamageCause caus
 
 entity::DamageApply Player::damageByEntity(float amount, entity::Entity* damager,
                                            event::entity::DamageCause cause) {
-    // Melee (ENTITY_ATTACK) and arrows (PROJECTILE): creative players are
-    // flat-out immune — no magic/projectile-with-potion cause exists on
-    // this server yet, so there is no exception (Infinity would only let
-    // MAGIC through, which this server cannot produce).
+    // Creative players are immune to entity attacks and projectiles.
     if (isCreative())
         return entity::DamageApply::CANCELLED;
+    // Resistance reduces damage by 20% per level.
+    if (const entity::Effect* res = getEffect(entity::EFF_RESISTANCE))
+        amount *= 1.0f - 0.2f * (res->amplifier() + 1);
     auto applied = entity::Living::damageByEntity(amount, damager, cause);
-    // Taking damage costs 0.3 exhaustion (vanilla).
+    // Taking damage adds 0.3 exhaustion.
     if (applied != entity::DamageApply::CANCELLED)
         addExhaustion(0.3f);
     return applied;
@@ -90,8 +92,7 @@ entity::DamageApply Player::damageByEntity(float amount, entity::Entity* damager
 
 namespace {
 constexpr double kPi = 3.14159265358979323846;
-// Infinity Tool::DURABILITY ... Bow durability (PMMP Item::BOW uses the
-// bow tool durability 385 — Player.php: `$bow->getDamage() >= 385`).
+// uses a maximum bow durability of 385.
 constexpr int kBowMaxDurability = 385;
 } // namespace
 
@@ -103,12 +104,7 @@ void Player::handleUseItemAir(int16_t heldItemId) {
     if (!srv_)
         return;
 
-    // PlayerInteractEvent (RIGHT_CLICK_AIR) — the item-use-in-air branch
-    // of the UseItemPacket path (face 0xFF). Fired for EVERY held item
-    // before the per-item logic, so plugins can gate item use; face is
-    // 255 and the block fields are 0 because no block was clicked.
-    // Cancel resyncs the held slot (client prediction rollback) and
-    // drops the use, matching the rejected-use handling elsewhere.
+    // Fire RIGHT_CLICK_AIR before item-specific handling so plugins can cancel use.
     {
         item::ItemStack held{};
         if (inv_)
@@ -122,19 +118,21 @@ void Player::handleUseItemAir(int16_t heldItemId) {
         }
     }
 
-    if (heldItemId != (int16_t)item::ITEM_BOW)
-        return; // only the bow uses air
+    if (heldItemId == (int16_t)item::ITEM_SPLASH_POTION) {
+        throwSplashPotion();
+        return;
+    }
 
-    // Infinity: setDataFlag(DATA_FLAGS, DATA_FLAG_ACTION, true);
-    //           $this->startAction = $this->server->getTick();
+    if (heldItemId != (int16_t)item::ITEM_BOW)
+        return; // Only bows use the air interaction path.
+
+    // Record the tick when the bow draw begins.
     bow_start_action_ = (int64_t)srv_->getCurrentTick();
 
-    // Raise the ACTION pose bit for the OTHER clients (the shooter's own
-    // client runs the draw animation locally — same split as sneaking).
-    // The whole flag byte goes out so the sneak/sprint bits survive.
+    // Broadcast the action pose to other players while preserving other flags.
     auto pk = std::make_shared<network::protocol::SetEntityDataPacket>();
     pk->eid = runtimeId();
-    pk->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_, true, isOnFire()));
+    pk->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_, true, isOnFire(), invisible_));
     for (auto& other : srv_->playersSnapshot()) {
         if (!other || other.get() == this)
             continue;
@@ -148,20 +146,103 @@ void Player::handleUseItemAir(int16_t heldItemId) {
     }
 }
 
+void Player::throwSplashPotion() {
+    if (!srv_ || !inv_)
+        return;
+    if (isDead())
+        return;
+    item::ItemStack held = inv_->getHeldItem();
+    if (held.id != item::ITEM_SPLASH_POTION || held.count <= 0)
+        return;
+
+    // Calculate the throw direction and apply the projectile speed.
+    double yawRad = (double)yaw_ * kPi / 180.0;
+    double pitchRad = (double)pitch_ * kPi / 180.0;
+    double dx = -std::sin(yawRad) * std::cos(pitchRad);
+    double dy = -std::sin(pitchRad);
+    double dz = std::cos(yawRad) * std::cos(pitchRad);
+    constexpr double kThrowPower = 1.1;
+
+    int64_t eid = srv_->allocateEid();
+
+    // Spawn the thrown potion for all players in the same world, including the thrower.
+    auto add = std::make_shared<network::protocol::AddEntityPacket>();
+    add->eid = eid;
+    add->type = network::protocol::AddEntityPacket::TYPE_THROWN_POTION;
+    add->x = (float)(pos_.x);
+    add->y = (float)(pos_.y + kEyeHeight);
+    add->z = (float)(pos_.z);
+    add->speedX = (float)(dx * kThrowPower);
+    add->speedY = (float)(dy * kThrowPower);
+    add->speedZ = (float)(dz * kThrowPower);
+    // Set the projectile orientation from its direction.
+    double flat = std::sqrt(dx * dx + dz * dz);
+    add->yaw = (float)(std::atan2(dx, dz) * 180.0 / kPi);
+    add->pitch = (float)(std::atan2(dy, flat) * 180.0 / kPi);
+
+    // Set metadata index 16 to the potion's metadata value.
+    auto meta = std::make_shared<network::protocol::SetEntityDataPacket>();
+    meta->eid = eid;
+    network::protocol::SetEntityDataPacket::Entry me;
+    me.index = 16;
+    me.type = network::protocol::SetEntityDataPacket::TYPE_SHORT;
+    me.ival = held.meta;
+    meta->entries.push_back(me);
+
+    // Send motion separately so the client can animate the projectile.
+    auto motion = std::make_shared<network::protocol::SetEntityMotionPacket>();
+    motion->entities.push_back(
+        {eid, (float)(dx * kThrowPower), (float)(dy * kThrowPower), (float)(dz * kThrowPower)});
+    for (auto& other : srv_->playersSnapshot()) {
+        if (!other || !other->spawned())
+            continue;
+        if (other->getWorld() != getWorld())
+            continue;
+        other->sendPacket(add);
+        other->sendPacket(meta);
+        other->sendPacket(motion);
+    }
+
+    // Register the projectile for server-side physics.
+    world::SplashPotionEntity p;
+    p.eid = eid;
+    p.shooter_eid = runtimeId();
+    p.x = pos_.x;
+    p.y = pos_.y + kEyeHeight;
+    p.z = pos_.z;
+    p.vx = dx * kThrowPower;
+    p.vy = dy * kThrowPower;
+    p.vz = dz * kThrowPower;
+    p.meta = held.meta;
+    p.spawn_tick = srv_->getCurrentTick();
+    p.taken = false;
+    if (getWorld())
+        getWorld()->addSplashPotion(p);
+
+    // Survival consumes one potion; creative preserves the stack.
+    if (!isCreative()) {
+        if (held.count > 1) {
+            held.count -= 1;
+            inv_->setItemInHand(held);
+        } else {
+            inv_->setItemInHand(item::ItemStack::EMPTY());
+        }
+        sendInventory();
+    }
+}
+
 void Player::releaseBow() {
     if (!srv_)
         return;
 
-    // One-shot: the draw state is consumed on the first release packet,
-    // and the ACTION pose bit is lowered for the others no matter what
-    // (Infinity clears the flag through the inventory resync paths).
+    // Consume the draw state once and clear the action pose for other players.
     bool drawing = bow_start_action_ >= 0;
     int64_t startTick = bow_start_action_;
     bow_start_action_ = -1;
 
     auto clearPk = std::make_shared<network::protocol::SetEntityDataPacket>();
     clearPk->eid = runtimeId();
-    clearPk->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_, false, isOnFire()));
+    clearPk->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_, false, isOnFire(), invisible_));
     for (auto& other : srv_->playersSnapshot()) {
         if (!other || other.get() == this)
             continue;
@@ -184,27 +265,24 @@ void Player::releaseBow() {
         return;
     auto held = inv->getHeldItem();
     if (held.id != item::ITEM_BOW)
-        return; // swapped items mid-draw
+        return; // The held item changed during the draw.
 
     auto* lvl = getWorld();
     if (!lvl)
         return;
 
-    // $diff = ($this->server->getTick() - $this->startAction);
-    // $p = $diff / 20; $f = min((($p ** 2) + $p * 2) / 3, 1) * 2;
+    // Calculate the draw duration and resulting arrow power.
     int64_t diff = (int64_t)srv_->getCurrentTick() - startTick;
     if (diff < 0)
         diff = 0;
     double p = (double)diff / 20.0;
     double f = std::min((p * p + p * 2.0) / 3.0, 1.0) * 2.0;
 
-    // if($f < 0.1 or $diff < 5) cancelled — a tap is a dry release: no
-    // arrow, no durability, no sound.
+    // Ignore taps that do not charge the bow long enough.
     if (f < 0.1 || diff < 5)
         return;
 
-    // An arrow is required in SURVIVAL (Infinity scans the inventory and
-    // resyncs it when missing; creative always has one).
+    // Survival requires an arrow; creative does not.
     item::ItemStack arrowStock;
     bool hasArrow = false;
     if (!isCreative()) {
@@ -217,12 +295,12 @@ void Player::releaseBow() {
             }
         }
         if (!hasArrow) {
-            inv->sendContents(this); // Infinity: sendContents($this); break;
+            inv->sendContents(this);
             return;
         }
     }
 
-    // Shot direction (Infinity arrow NBT Motion) — yaw/pitch are degrees.
+    // Calculate the arrow's launch direction from the player's yaw and pitch.
     double yawRad = (double)yaw_ * kPi / 180.0;
     double pitchRad = (double)pitch_ * kPi / 180.0;
     double dx = -std::sin(yawRad) * std::cos(pitchRad);
@@ -231,26 +309,24 @@ void Player::releaseBow() {
 
     int64_t eid = srv_->allocateEid();
 
-    // AddEntityPacket type 80 with the shot motion — every spawned player
-    // of the same world INCLUDING the shooter (the client does not predict
-    // its own arrows; without this the shooter never sees them).
+    // Spawn the arrow for all players in the same world, including the shooter.
     auto add = std::make_shared<network::protocol::AddEntityPacket>();
     add->eid = eid;
     add->type = network::protocol::AddEntityPacket::TYPE_ARROW;
     add->x = (float)(pos_.x);
-    add->y = (float)(pos_.y + kEyeHeight); // Infinity: $this->y + getEyeHeight()
+    add->y = (float)(pos_.y + kEyeHeight);
     add->z = (float)(pos_.z);
     add->speedX = (float)(dx * f);
     add->speedY = (float)(dy * f);
     add->speedZ = (float)(dz * f);
-    // Arrow orientation follows its motion (not the player's yaw/pitch).
+    // Derive the arrow's orientation from its trajectory.
     double flat = std::sqrt(dx * dx + dz * dz);
     float arrowYaw = (float)(std::atan2(dx, dz) * 180.0 / kPi);
     float arrowPitch = (float)(std::atan2(dy, flat) * 180.0 / kPi);
     add->yaw = arrowYaw;
     add->pitch = arrowPitch;
 
-    // The client needs the motion as its own packet to fly the arrow.
+    // Send motion separately so the client can animate the arrow.
     auto motion = std::make_shared<network::protocol::SetEntityMotionPacket>();
     motion->entities.push_back({eid, (float)(dx * f), (float)(dy * f), (float)(dz * f)});
     for (auto& other : srv_->playersSnapshot()) {
@@ -262,7 +338,7 @@ void Player::releaseBow() {
         other->sendPacket(motion);
     }
 
-    // Launch sound (Infinity: new LaunchSound($this) → EVENT_SOUND_SHOOT).
+    // Broadcast the arrow launch sound.
     auto snd = std::make_shared<network::protocol::LevelEventPacket>();
     snd->evid = network::protocol::LevelEventPacket::EVENT_SOUND_SHOOT;
     snd->x = (float)pos_.x;
@@ -277,7 +353,7 @@ void Player::releaseBow() {
         other->sendPacket(snd);
     }
 
-    // Server-side physics record — tickArrows() takes it from here.
+    // Register the arrow for server-side physics.
     world::ArrowEntity a;
     a.eid = eid;
     a.shooter_eid = runtimeId();
@@ -299,13 +375,13 @@ void Player::releaseBow() {
     a.lmz = a.vz;
     a.spawn_tick = srv_->getCurrentTick();
     a.flight_ticks = 0;
-    a.damage = 2.0f;         // Infinity Arrow: protected $damage = 2
-    a.critical = (f >= 2.0); // Infinity: createEntity(..., $f == 2)
+    a.damage = 2.0f;         // Base arrow damage.
+    a.critical = (f >= 2.0); // Fully charged arrows are critical.
     a.stuck = false;
     a.taken = false;
     lvl->addArrow(a);
 
-    // Survival costs: 1 arrow + 1 bow durability point (Infinity).
+    // Survival consumes one arrow and one bow durability point.
     if (!isCreative()) {
         if (hasArrow) {
             item::ItemStack one;

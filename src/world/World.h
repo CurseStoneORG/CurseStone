@@ -74,6 +74,18 @@ struct ArrowEntity {
     bool taken = false;        // True after being claimed for pickup.
 };
 
+// Server-side record of a thrown splash potion (entity type 86).
+// Physics mirror the reference ThrownPotion: gravity 0.1, drag 0.05.
+struct SplashPotionEntity {
+    int64_t eid = 0;
+    int64_t shooter_eid = -1; // Thrower runtime ID; -1 means none.
+    double x = 0.0, y = 0.0, z = 0.0;
+    double vx = 0.0, vy = 0.0, vz = 0.0;
+    uint8_t meta = 0;        // Potion data value.
+    uint64_t spawn_tick = 0; // Server tick when thrown.
+    bool taken = false;      // True after the splash consumed it.
+};
+
 // Tracks a dropped item, its position, motion, and pickup state.
 struct DroppedItem {
     int64_t eid = 0; // Runtime entity ID.
@@ -331,6 +343,10 @@ class World {
     void addArrow(ArrowEntity a);
     std::vector<ArrowEntity*> arrows();
 
+    // Splash potion flight, block/player impact, and area effects.
+    void tickSplashPotions(uint64_t current_tick);
+    void addSplashPotion(SplashPotionEntity p);
+
     // Atomically claims an arrow for pickup.
     bool tryClaimArrow(int64_t eid);
 
@@ -452,6 +468,10 @@ class World {
     mutable std::mutex dropped_items_mtx_;
     std::unordered_map<int64_t, std::unique_ptr<ArrowEntity>> arrows_;
     mutable std::mutex arrows_mtx_;
+
+    // Thrown splash potions indexed by runtime entity ID.
+    std::unordered_map<int64_t, std::unique_ptr<SplashPotionEntity>> splash_potions_;
+    mutable std::mutex splash_potions_mtx_;
 
     // Falling blocks indexed by runtime entity ID.
     std::unordered_map<int64_t, std::unique_ptr<FallingBlockEntity>> falling_blocks_;

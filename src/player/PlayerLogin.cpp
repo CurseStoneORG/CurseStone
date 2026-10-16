@@ -222,6 +222,25 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
             food_saturation_ = mcp_compound_tag_get_float(named_tag_.get(), "FoodSaturation", 5.0f);
             food_exhaustion_ = mcp_compound_tag_get_float(named_tag_.get(), "FoodExhaustion", 0.0f);
 
+            // Restore persisted potion effects (no packets yet — the client
+            // gets them at first spawn via sendActiveEffects()).
+            const mcp_tag_t* fx_tag = mcp_compound_tag_get(named_tag_.get(), "ActiveEffects");
+            if (fx_tag && mcp_tag_get_type(fx_tag) == MCP_TAG_LIST) {
+                const mcp_list_tag_t* fx_list = (const mcp_list_tag_t*)fx_tag;
+                for (size_t i = 0; i < fx_list->count; ++i) {
+                    const mcp_tag_t* entry = mcp_list_tag_get(fx_tag, i);
+                    if (!entry || mcp_tag_get_type(entry) != MCP_TAG_COMPOUND)
+                        continue;
+                    int8_t id = mcp_compound_tag_get_byte(entry, "Id", 0);
+                    int8_t amp = mcp_compound_tag_get_byte(entry, "Amplifier", 0);
+                    int32_t dur = mcp_compound_tag_get_int(entry, "Duration", 0);
+                    if (id <= 0 || dur <= 0)
+                        continue;
+                    addEffect(std::make_shared<entity::Effect>(
+                        entity::Effect::create((uint8_t)id, dur, amp)));
+                }
+            }
+
             // Restore the last position or use the saved spawn.
             const double sentinel = -99999.999;
 
@@ -556,6 +575,8 @@ void Player::doFirstSpawn() {
 
     sendCreativeInventory();
     sendAllAttributes();
+    // Re-sync effects restored from the .dat so the client shows them.
+    sendActiveEffects();
     sendInventory();
 
     // Send player-list entries for online players.
@@ -748,7 +769,7 @@ void Player::announceTo(Player* viewer) {
 
     pose->eid = runtimeId();
 
-    pose->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_, false, isOnFire()));
+    pose->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_, false, isOnFire(), invisible_));
 
     viewer->sendPacket(pose);
 }
@@ -869,6 +890,10 @@ void Player::respawn() {
 
 // Handle player death.
 void Player::onDeath() {
+    // Vanilla clears potion effects on death (before the death flow so
+    // the removal packets reach a still-connected client).
+    removeAllEffects();
+
     std::string msg = cfg_.username + " died";
 
     auto ev = event::EventManager::get().fire<event::player::PlayerDeathEvent>(this, msg);

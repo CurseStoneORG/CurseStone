@@ -75,7 +75,7 @@ class Tile {
     // the caller — World::syncTilesToChunks() creates it, hands it here,
     // then hands it to mcp_chunk_add_tile_entity()). Base implementation
     // writes the fields every tile needs regardless of subclass: block
-    // position (x/y/z) and the "id" string PMMP/Nukkit-style loaders key
+    // position (x/y/z) and the "id" string the reference server/Nukkit-style loaders key
     // on ("Chest", "Furnace", "Sign", ...). Subclasses override, call
     // Tile::writeNBT() first, then add their own fields.
     virtual void writeNBT(mcp_tag_t* tag) const;

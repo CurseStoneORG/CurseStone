@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // PlayerActionPacket.cpp — encode/decode.
 //
-// PMMP: putLong(eid) + putInt(action) + putInt(x) + putInt(y) + putInt(z) + putInt(face)
+// The reference server: putLong(eid) + putInt(action) + putInt(x) + putInt(y) + putInt(z) + putInt(face)
 // All multi-byte fields are big-endian.
 #include "PlayerActionPacket.h"
 

@@ -28,13 +28,13 @@ namespace cursestone::world {
 
 // Explosion::explode — minimal blast: removes blocks inside a sphere.
 //
-// TODO (explosion): bring this up to the vanilla/Infinity behavior:
+// TODO (explosion): bring this up to the vanilla/reference behavior:
 //   1. Broadcast the explosion itself — LevelEventPacket EVENT_SOUND_EXPLODE
 //      (3501) at the blast center + EVENT_PARTICLE_DESTROY (2001) for every
 //      removed block, so players actually SEE and HEAR it (a silent invisible
 //      crater is the #1 "the explosion does not work" report).
 //   2. Entity damage + knockback — hurt every Living whose bounding box
-//      touches the blast sphere, force scaled by distance (Infinity
+//      touches the blast sphere, force scaled by distance (the reference server
 //      Explosion::explodeB), with per-entity damage events for plugins.
 //   3. Drops — destroy ~30% of the removed blocks into item entities
 //      (vanilla explosion drop chance; today everything just vanishes).

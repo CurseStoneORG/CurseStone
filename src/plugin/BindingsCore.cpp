@@ -262,7 +262,7 @@ int l_player_getHealth(lua_State* L) {
     return 1;
 }
 
-// player.setHealth(name, hp): PMMP Player::setHealth semantics — clamped
+// player.setHealth(name, hp): Player::setHealth semantics — clamped
 // to [0, max], the hearts bar syncs to the client in the same tick and
 // setHealth(0) kills through the regular damage pipeline (death screen,
 // drops, PlayerDeathEvent) exactly like /kill. On a dead player it is a
@@ -294,7 +294,7 @@ int l_player_hasPermission(lua_State* L) {
     return 1;
 }
 
-// ---------- items + names (API 1.0.1 — ranks / custom items) ----------
+// ---------- items + names (API 1.0.2 — ranks / custom items) ----------
 // giveItem(name, id, count, meta, customName): adds an item stack to the
 // player's inventory. count defaults to 1, meta to 0. `customName` is the
 // VISIBLE item name the 0.15.10 client renders (anvil-style); it rides
@@ -332,7 +332,7 @@ int l_player_giveItem(lua_State* L) {
     return 1;
 }
 // setNameTag(name, tag): the name ABOVE THE HEAD and in the server list
-// tab (PMMP Player::setNameTag). Accepts §-color codes — this is the
+// tab ( Player::setNameTag). Accepts §-color codes — this is the
 // rank-prefix surface. Re-broadcasts REMOVE+ADD PlayerListPacket to
 // everyone. resetNameTag == setNameTag(name, playerName).
 int l_player_setNameTag(lua_State* L) {
@@ -355,7 +355,7 @@ int l_player_getNameTag(lua_State* L) {
     lua_pushstring(L, p->getNameTag().c_str());
     return 1;
 }
-// setDisplayName(name, dn): chat-only alias (PMMP Player::setDisplayName);
+// setDisplayName(name, dn): chat-only alias Player::setDisplayName);
 // the chat line uses it, the tag above the head does not.
 int l_player_setDisplayName(lua_State* L) {
     Player* p = findPlayer(L, 1);
