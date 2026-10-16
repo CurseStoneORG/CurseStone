@@ -42,6 +42,8 @@ On first run, a setup wizard creates the configuration and a fresh world. The se
 ## Configuration
 CurseStone reads `server.properties` and `cursestone.yml` from the working directory. Both are created with built-in defaults on first run. `server.properties` holds the basic settings; `cursestone.yml` holds the advanced ones. Plugin data is stored in `data_pl/` at the server root.
 
+Lua plugins are guarded against infinite loops and heavy code by three `cursestone.yml` keys under `settings` (`0` disables each one): `plugin-instruction-limit` (VM instructions per plugin call, default 1000000), `plugin-time-limit-ms` (milliseconds per plugin call, default 100) and `plugin-max-errors` (consecutive failed calls before a plugin is disabled automatically, default 10). Existing `cursestone.yml` files without these keys use the defaults.
+
 The most common settings are `server-port`, `max-players`, `view-distance`, `gamemode`, `difficulty`, `world-format` and `autosave-ticks`. The auto-generated files document every option.
 
 ## Developing Plugins

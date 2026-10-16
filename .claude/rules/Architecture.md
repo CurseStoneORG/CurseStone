@@ -44,12 +44,13 @@ Everything here was read from sources, build files or CI. Items marked **Unverif
 - Scan: only folders under `<data>/plugins/` that contain `plugin.yml` are plugins; a lone `main.lua` is ignored with a warning. Manifest fields read in `LuaPlugin.cpp`: `name`, `version`, `author`, `api`, `main`. Entry callbacks: `onEnable`, `onDisable`. Plugins load and enable alphabetically; duplicate names/folders leave all duplicates disabled with a warning.
 - Per-plugin data: `<data>/data_pl/<pluginFolder>/` at the server root, reachable only through the `data.*` API (`PathSafe.h` guards relative paths). `resourcesDir_` is `<plugin>/resources` (plugin-owned, unrelated to the repo-root `resources/`).
 - Lua globals registered in `Bindings*.cpp`: `log`, `server` (including `server.worlds`), `player`, `plugin`, `events`, `commands`, `data`, `import`. Event names exposed to Lua are strings such as `PlayerJoin`, `PlayerQuit`, `PlayerChat`, `BlockBreak`, `BlockPlace`, `EntityDamage`, `EntityDamageByEntity`, `PlayerDeath`, `PlayerRespawn`, bed events (list continues in `BindingsEvents.cpp`).
+- Execution limits: every Lua call goes through `LuaPlugin::pcall`. A VM count hook (`LuaPlugin::checkLimits`) enforces `settings.plugin-instruction-limit` and `settings.plugin-time-limit-ms` per outermost call and keeps raising until that call ends, so a Lua-side `pcall` cannot swallow it. `settings.plugin-max-errors` consecutive failed outermost calls refuse further calls and disable the plugin on the next tick. Limits are read once in `Server::loadConfig`; C functions such as `string.rep` are not interruptible by the hook.
 - Any change to a Lua binding is a public API change; the external docs live in `CurseStoneTeam/cursestone-docs`.
 
 ## 7. Configuration
 - Read from the working directory by `Server::loadConfig()`; defaults live in `utils/DefaultConfig.cpp` and are written when files are missing.
 - `server.properties` (INI): `server-ip`, `server-port`, `motd`, `max-players`, `gamemode`, `difficulty`, `white-list`, `online-mode`, `view-distance`, `world-name`, `world-seed`.
-- `cursestone.yml` (YAML): sections `settings` (`async-workers`, `autosave-ticks`, `advanced-log`), `world` (`format`, `generator`), `memory` (`max-mb`, `gc-interval-ticks`); network/logging keys in the repo-root sample are **not** read by `loadConfig` (grep-based).
+- `cursestone.yml` (YAML): sections `settings` (`async-workers`, `autosave-ticks`, `advanced-log`, `plugin-instruction-limit`, `plugin-time-limit-ms`, `plugin-max-errors`), `world` (`format`, `generator`), `memory` (`max-mb`, `gc-interval-ticks`); network/logging keys in the repo-root sample are **not** read by `loadConfig` (grep-based).
 - Language strings: `wizard/InstallerLang` holds built-in installer text.
 
 ## 8. Threads
