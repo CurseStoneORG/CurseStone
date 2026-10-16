@@ -55,6 +55,9 @@ Contributions are welcome. The following resources will help you get started.
 
 For anything larger than a small fix, please open an issue first so the approach can be agreed.
 
+## AI development tools
+Instructions and documentation for AI coding assistants (Claude Code) live in the [`.claude/`](.claude/) folder. Start with [`.claude/README.md`](.claude/README.md).
+
 ## Licensing information
 This project is licensed under LGPL-3.0-or-later. Please see the [license text](https://www.gnu.org/licenses/lgpl-3.0.html) for details.
 

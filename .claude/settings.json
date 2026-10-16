@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 tools/lint_comments.py:*)",
+      "Bash(python3 tools/comment_inventory.py:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)"
+    ],
+    "deny": [
+      "Edit(third_party/**)",
+      "Write(third_party/**)"
+    ]
+  }
+}

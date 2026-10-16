@@ -7,6 +7,10 @@
 #
 # Never run a whole-tree reformat in the same commit as comment edits:
 # keep formatting commits isolated and list them in .git-blame-ignore-revs.
+#
+# Multiline policy: every function, method, lambda and block body is laid
+# out on its own lines, even when it would fit on one line. Only empty
+# bodies ({}) may stay on a single line.
 
 Language: Cpp
 BasedOnStyle: LLVM
@@ -22,10 +26,12 @@ AlignConsecutiveAssignments: false
 AlignConsecutiveDeclarations: false
 AlignTrailingComments: true
 AllowAllParametersOfDeclarationOnNextLine: true
-AllowShortBlocksOnASingleLine: true
-AllowShortFunctionsOnASingleLine: Inline
+AllowShortBlocksOnASingleLine: Empty
+AllowShortFunctionsOnASingleLine: None
 AllowShortIfStatementsOnASingleLine: Never
+AllowShortLambdasOnASingleLine: Empty
 AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
 AlwaysBreakAfterReturnType: None
 AlwaysBreakTemplateDeclarations: true
 BinPackArguments: true
@@ -41,7 +47,13 @@ SpaceBeforeParens: ControlStatements
 SpacesInParentheses: false
 SortIncludes: false
 IncludeBlocks: Preserve
-FixNamespaceComments: true
+# Conservative guard-rails for formatting-only commits: the formatter must
+# never rewrite comment text, merge comment lines, replace namespace-closing
+# comments (FixNamespaceComments swaps unrelated trailing comments) or split
+# string literals. Everything else keeps the style declared above.
+FixNamespaceComments: false
+ReflowComments: false
+BreakStringLiterals: false
 
 # Keep existing license banners and file headers intact.
 CommentPragmas: '^ (SPDX|License|Copyright|KEEP)'
