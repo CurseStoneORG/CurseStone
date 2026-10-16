@@ -6,7 +6,7 @@
 | \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
  \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
 
- * CurseStone | Open Source Server Software
+ * CurseStone | Open Source server Software
  *
  * Copyright (C) 2026 CurseStoneTeam
  *
@@ -20,7 +20,6 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-
 #include "Player.h"
 #include "player/PlayerInternal.h"
 
@@ -69,13 +68,7 @@
 
 namespace cursestone {
 
-// ============================================================
-// Phase 3 — handleLogin: validate the LoginPacket
-// ============================================================
-
-// Defined further down next to parseUuidBytes (they belong with the
-// PlayerListPacket/AddPlayerPacket helpers); declared here because the
-// login path is what fills them in.
+// Validate the login packet.
 static const char* defaultSkinData();
 static const char* defaultSkinId();
 
@@ -84,7 +77,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
         return;
     }
 
-    // 1. Protocol version check.
+    // Check protocol compatibility.
     if (pk.protocol != network::protocol::CURRENT_PROTOCOL) {
         auto resp = std::make_shared<network::protocol::PlayStatusPacket>();
 
@@ -102,15 +95,12 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
         return;
     }
 
-    // 2. Pull username/UUID/clientId from the parsed LoginPacket fields.
+    // Store login identity.
     cfg_.username = pk.username;
     cfg_.uuid = pk.clientUUID;
     cfg_.client_id = std::to_string(pk.clientId);
 
-    // Skin for the PlayerListPacket entries the other players get when
-    // this one joins. The 0.15.10 client ALWAYS ships its skin in its
-    // login JWT; forward it verbatim (that is exactly what Genisys
-    // does), and never let the field go out empty.
+    // Store the client's skin for player-list entries.
     cfg_.skin_id = pk.skinId;
     cfg_.skin_data.assign(pk.skinData.begin(), pk.skinData.end());
 
@@ -123,7 +113,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
                             "default one (an empty skin blob crashes the 0.15.10 client)");
     }
 
-    // 3. Username validation: [a-zA-Z0-9_]{3,16}, disallow "rcon"/"console".
+    // Validate username length and allowed characters.
     if (cfg_.username.size() < 3 || cfg_.username.size() > 16) {
         close("disconnectionScreen.invalidName");
         return;
@@ -141,9 +131,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
 
     std::string lower = cfg_.username;
 
-    // Cast to unsigned char: ::tolower with a negative value (char is
-    // signed on x86 Linux, unsigned on ARM/Android) is undefined
-    // behaviour and can index outside glibc's ctype table.
+    // Convert safely to lowercase.
     std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
         return (char)::tolower(c);
     });
@@ -153,25 +141,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
         return;
     }
 
-    // 4. Skin sanity check (PMMP requires 64*32*4 or 64*64*4 bytes for
-    // the LEGACY skin format used by MCPE 0.15.x). Any client sending a
-    // skin outside those two exact sizes — which in practice is most
-    // modern MCPE-compatible clients/launchers, since they default to
-    // newer Persona/geometry-based skin formats or re-encoded PNGs of
-    // other dimensions — used to hit this branch and just `return;`
-    // here without ever finishing the login handshake.
-    //
-    // ROOT CAUSE of "connects but gets kicked/times out immediately":
-    // that early return skipped EVERYTHING after it — logged_in_ was
-    // never set to true, no PlayStatusPacket was ever sent, and
-    // close()/kick() were never called either. The client was left
-    // waiting forever for the server response to its LoginPacket that
-    // was simply never coming. RakLib's own session-timeout logic
-    // eventually killed the connection from the outside.
-    //
-    // Fix: a non-standard skin size is not a reason to abort the
-    // handshake. Fall back to the safe default skin, then continue
-    // through the normal login flow below.
+    // Replace unsupported legacy skin sizes with the default skin.
     size_t sl = pk.skinData.size();
 
     if (sl != 64 * 32 * 4 && sl != 64 * 64 * 4) {
@@ -181,18 +151,16 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
         pk.skinData.assign(64 * 32 * 4, 0);
     }
 
-    // 5. Server full?
+    // Reject connections when the server is full.
     if (srv_ && srv_->playersSnapshot().size() >= (size_t)srv_->maxPlayers()) {
         kick("disconnectionScreen.serverFull");
         return;
     }
 
-    // 6. Hand off to processLogin for whitelist/ban/NBT/spawn.
-    // processLogin is folded into handleLogin here because the C++ player
-    // owns its own state machine (not a separate async step like PMMP).
+    // Continue with whitelist, bans, NBT, and spawning.
     logged_in_.store(true, std::memory_order_relaxed);
 
-    // Whitelist + bans.
+    // Check whitelist and bans.
     if (!isWhitelisted()) {
         close("Server is white-listed");
         return;
@@ -204,7 +172,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
         return;
     }
 
-    // Duplicate-session kick (same username or UUID).
+    // Kick duplicate sessions by username or UUID.
     if (srv_) {
         for (auto& other : srv_->playersSnapshot()) {
             if (other.get() == this) {
@@ -230,7 +198,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
         }
     }
 
-    // Load NBT (player.dat).
+    // Load player data from NBT.
     if (srv_) {
         named_tag_ = srv_->getOfflinePlayerData(cfg_.username);
 
@@ -250,14 +218,11 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
             int16_t hunger = mcp_compound_tag_get_short(named_tag_.get(), "Hunger", 20);
 
             setFoodLevel(hunger);
-            // Restore the hidden saturation/exhaustion part of the hunger
-            // state (missing tag = fresh defaults).
+            // Restore hunger saturation and exhaustion.
             food_saturation_ = mcp_compound_tag_get_float(named_tag_.get(), "FoodSaturation", 5.0f);
             food_exhaustion_ = mcp_compound_tag_get_float(named_tag_.get(), "FoodExhaustion", 0.0f);
 
-            // Last known position — prefer PosX/PosY/PosZ (saved on every
-            // auto-save and on disconnect). Falls back to the bed spawn
-            // if PosX is missing.
+            // Restore the last position or use the saved spawn.
             const double sentinel = -99999.999;
 
             double px = mcp_compound_tag_get_double(named_tag_.get(), "PosX", sentinel);
@@ -285,13 +250,13 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
                     pos_.z = (double)sz + 0.5;
                 }
 
-                // Otherwise, leave the world-spawn position set in the ctor.
+                // Use the safe world spawn when no position is saved.
                 if (getWorld()) {
                     pos_ = getServerSpawnSafe();
                 }
             }
 
-            // Personal spawn point (Infinity Human::saveNBT: SpawnX/Y/Z).
+            // Restore the personal spawn point.
             {
                 int32_t sx = mcp_compound_tag_get_int(named_tag_.get(), "SpawnX", INT32_MIN);
 
@@ -307,7 +272,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
                 }
             }
 
-            // Restore inventory from the NBT ListTag.
+            // Restore inventory items from NBT.
             const mcp_tag_t* inv_tag = mcp_compound_tag_get(named_tag_.get(), "Inventory");
 
             if (inv_tag && mcp_tag_get_type(inv_tag) == MCP_TAG_LIST) {
@@ -333,18 +298,17 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
                     int dest_slot = -1;
 
                     if (nbt_slot >= 0 && nbt_slot < 36) {
-                        // Main inventory + hotbar (slots 0..35).
+                        // Main inventory and hotbar slots.
                         dest_slot = nbt_slot;
                     } else if (nbt_slot >= 100 && nbt_slot <= 103) {
-                        // Armor: 100=helmet, 101=chest, 102=legs, 103=boots.
+                        // Map legacy armor slots to inventory slots.
                         dest_slot = inventory::PlayerInventory::ARMOR_OFFSET + (nbt_slot - 100);
                     } else if (nbt_slot >= 36 && nbt_slot < 45) {
-                        // Legacy CurseStone layout (armor at 36..39).
+                        // Support legacy CurseStone inventory slots.
                         dest_slot = nbt_slot;
                     }
 
-                    // Armor occupies slots 36..39. PLAYER_INV_TOTAL includes
-                    // these slots, whereas SIZE excludes them.
+                    // Validate the destination inventory slot.
                     if (dest_slot >= 0 && dest_slot < inventory::PLAYER_INV_TOTAL) {
                         inv_->setItem(dest_slot, it);
                         ++loaded;
@@ -355,7 +319,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
                                               std::to_string(loaded) + " items)");
             }
 
-            // Restore held hotbar slot.
+            // Restore the selected hotbar slot.
             int32_t held = mcp_compound_tag_get_int(named_tag_.get(), "SelectedItemSlot", -1);
 
             if (held >= 0 && held <= 8) {
@@ -364,13 +328,13 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
         }
     }
 
-    // Tell the client "login OK".
+    // Confirm successful login.
     auto ps = std::make_shared<network::protocol::PlayStatusPacket>();
 
     ps->status = network::protocol::PlayStatusPacket::LOGIN_SUCCESS;
     sendPacket(ps, true);
 
-    // Send StartGamePacket so the client can render the loading screen.
+    // Initialize the game session.
     auto sg = std::make_shared<network::protocol::StartGamePacket>();
 
     if (getWorld()) {
@@ -397,7 +361,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
 
     sendPacket(sg, true);
 
-    // SetTimePacket.
+    // Synchronize world time.
     if (getWorld()) {
         auto st = std::make_shared<network::protocol::SetTimePacket>();
 
@@ -407,12 +371,12 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
         sendPacket(st, true);
     }
 
-    // Weather sync.
+    // Synchronize weather.
     if (getWorld()) {
         getWorld()->sendWeatherTo(this);
     }
 
-    // SetSpawnPosition.
+    // Send the world spawn position.
     if (getWorld()) {
         auto sp = getWorld()->spawn();
 
@@ -425,7 +389,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
         sendPacket(ssp, true);
     }
 
-    // SetDifficulty.
+    // Synchronize server difficulty.
     if (srv_) {
         auto sd = std::make_shared<network::protocol::SetDifficultyPacket>();
 
@@ -434,7 +398,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
         sendPacket(sd, true);
     }
 
-    // SetHealth.
+    // Synchronize player health.
     {
         auto sh = std::make_shared<network::protocol::SetHealthPacket>();
 
@@ -446,15 +410,11 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
     utils::MainLogger::get().info("Player " + cfg_.username + " logged in (" + cfg_.ip + ":" +
                                   std::to_string(cfg_.port) + ")");
 
-    // Stream chunks and trigger first spawn.
+    // Load chunks around the spawn point.
     sendChunksAroundSpawn();
 }
 
-// ============================================================
-// Phase 6 — doFirstSpawn
-// ============================================================
-
-// Default skin data for clients that did not send one.
+// Initialize the first player spawn.
 static const char* defaultSkinData() {
     static const std::string kData =
         "{\"skinId\":\"Standard_Custom\",\"data\":\""
@@ -470,7 +430,7 @@ static const char* defaultSkinId() {
     return "Standard_Custom";
 }
 
-// Helper: parse UUID string into 16 raw bytes.
+// Convert a UUID string into 16 bytes.
 static void parseUuidBytes(const std::string& s, std::array<uint8_t, 16>& out) {
     out.fill(0);
 
@@ -541,7 +501,7 @@ void Player::doFirstSpawn() {
 
     last_activity_ms_ = start_time_ms_;
 
-    // AdventureSettings (flight/pvp flags).
+    // Configure adventure settings and permissions.
     {
         auto as = std::make_shared<network::protocol::AdventureSettingsPacket>();
 
@@ -571,7 +531,7 @@ void Player::doFirstSpawn() {
         sendPacket(as);
     }
 
-    // CraftingDataPacket.
+    // Send available crafting recipes.
     if (srv_) {
         auto cd = std::make_shared<network::protocol::CraftingDataPacket>();
 
@@ -585,7 +545,7 @@ void Player::doFirstSpawn() {
         sendPacket(cd);
     }
 
-    // PLAYER_SPAWN.
+    // Notify the client that the player spawned.
     {
         auto ps = std::make_shared<network::protocol::PlayStatusPacket>();
 
@@ -598,7 +558,7 @@ void Player::doFirstSpawn() {
     sendAllAttributes();
     sendInventory();
 
-    // Broadcast player-list entries for currently-online players.
+    // Send player-list entries for online players.
     if (srv_) {
         auto plp = std::make_shared<network::protocol::PlayerListPacket>();
 
@@ -628,7 +588,7 @@ void Player::doFirstSpawn() {
         sendPacket(plp);
     }
 
-    // Spawn other online players to this client.
+    // Spawn other online players for this client.
     if (srv_) {
         for (auto& other : srv_->playersSnapshot()) {
             if (other.get() == this) {
@@ -664,7 +624,7 @@ void Player::doFirstSpawn() {
 
     announceSelfToOthers();
 
-    // Broadcast join message.
+    // Broadcast the join event message.
     if (srv_) {
         auto ev = event::EventManager::get().fire<event::player::PlayerJoinEvent>(
             this, cfg_.username + " joined the game");
@@ -677,10 +637,7 @@ void Player::doFirstSpawn() {
     utils::MainLogger::get().info("First spawn for " + cfg_.username);
 }
 
-// ============================================================
-// Visibility helpers — player-list entry + AddPlayerPacket
-// ============================================================
-
+// Manage player visibility and spawn packets.
 void Player::announceSelfToOthers() {
     if (!srv_) {
         return;
@@ -786,7 +743,7 @@ void Player::announceTo(Player* viewer) {
 
     viewer->sendPacket(ap);
 
-    // Forward the current pose.
+    // Send the player's current pose.
     auto pose = std::make_shared<network::protocol::SetEntityDataPacket>();
 
     pose->eid = runtimeId();
@@ -796,10 +753,7 @@ void Player::announceTo(Player* viewer) {
     viewer->sendPacket(pose);
 }
 
-// ============================================================
-// Respawn
-// ============================================================
-
+// Respawn a dead player.
 void Player::respawn() {
     if (!isDead()) {
         return;
@@ -829,7 +783,7 @@ void Player::respawn() {
     pos_.y = ev.respawnY;
     pos_.z = ev.respawnZ;
 
-    // Reset per-life state.
+    // Reset state for the new life.
     air_ticks_ = 300;
     fall_distance_ = 0.0f;
     was_on_fire_ = false;
@@ -913,10 +867,7 @@ void Player::respawn() {
     }
 }
 
-// ============================================================
-// onDeath
-// ============================================================
-
+// Handle player death.
 void Player::onDeath() {
     std::string msg = cfg_.username + " died";
 
@@ -926,7 +877,7 @@ void Player::onDeath() {
         srv_->broadcastMessage(ev.message);
     }
 
-    // Death sequence (protocol 84).
+    // Send the death animation and health update.
     {
         auto ee = std::make_shared<network::protocol::EntityEventPacket>();
 
@@ -953,6 +904,7 @@ void Player::onDeath() {
 
         sendHealthAttribute();
 
+        // Send the respawn position.
         {
             math::Vector3 sp = getSpawn();
 
@@ -966,8 +918,10 @@ void Player::onDeath() {
         }
     }
 
-    // Drop inventory items on death in non-creative mode.
+    // Drop inventory items outside creative mode.
     if (inv_ && !isCreative()) {
+        // Drop cursor-held items too.
+        returnFloatingItems();
         for (int i = 0; i < inv_->getSize(); ++i) {
             item::ItemStack it = inv_->getItem(i);
 
@@ -978,7 +932,7 @@ void Player::onDeath() {
             dropItem(pos_.x, pos_.y, pos_.z, it.id, (uint8_t)it.count, it.meta);
         }
 
-        // Armor slots.
+        // Drop armor items.
         for (int i = inv_->getSize(); i < inv_->getSize() + 4; ++i) {
             item::ItemStack it = inv_->getItem(i);
 
@@ -992,7 +946,7 @@ void Player::onDeath() {
         inv_->clearAll();
     }
 
-    // Cleanup at death.
+    // Reset state after death.
     was_on_fire_ = false;
     fire_ticks_ = 0;
     was_in_lava_ = false;

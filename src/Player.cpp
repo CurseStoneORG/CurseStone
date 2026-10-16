@@ -46,24 +46,22 @@
 
 namespace cursestone {
 
-// ============================================================
-// Phase 0 — player construction / destruction
-// ============================================================
+// Phase 0: Player construction and destruction.
 Player::Player(Server* srv, PlayerConfig cfg)
     : entity::Human(cfg.runtime_eid, nullptr), srv_(srv), cfg_(std::move(cfg)) {
     inv_ = std::make_shared<inventory::PlayerInventory>();
-    inv_->setOwner(this); // so onSlotChange can send packets back to us
+    inv_->setOwner(this); // Enables slot-change packets.
     connected_.store(true, std::memory_order_relaxed);
     setMaxHealth(20);
     setHealth(20);
-    // Hunger state defaults: saturation 5, no exhaustion, full food.
+    // Initialize hunger.
     food_saturation_ = 5.0f;
     food_exhaustion_ = 0.0f;
     last_eat_ms_ = 0;
     last_pos_set_ = false;
     was_in_lava_ = false;
     was_on_fire_ = false;
-    // Position defaults to world spawn; overridden by processLogin if NBT had Pos.
+    // Use world spawn unless login data overrides it.
     if (getWorld()) {
         auto sp = getWorld()->spawn();
         pos_.x = sp.x + 0.5;
@@ -72,15 +70,9 @@ Player::Player(Server* srv, PlayerConfig cfg)
     }
 }
 Player::~Player() {
-    // CRITICAL: Do NOT call close() here. close() uses shared_from_this()
-    // which throws std::bad_weak_ptr in to destructor (the control block's
-    // weak ref is already expired). That exception calls std::terminate()
-    // → segfault. This was the root cause of the crash on player disconnect.
-    //
-    // By the time the destructor runs, close() has already been called
-    // (via call_once from the network or main thread) and connected_ is
-    // false. If for some reason it wasn't (e.g., server crash during
-    // shutdown), we do to minimal inline save here WITHOUT shared_from_this.
+    // Never call close() here: shared_from_this() may throw during destruction.
+    // close() normally saves data before the object is destroyed.
+    // Perform a minimal save if shutdown bypassed close().
     if (connected_.load(std::memory_order_relaxed)) {
         try {
             if (named_tag_ && srv_ && !cfg_.username.empty()) {
@@ -98,8 +90,7 @@ Player::~Player() {
 }
 
 bool Player::isOp() const {
-    // PMMP reads ops.txt; we delegate to server's in-memory op set which is
-    // loaded from <dataPath>/ops.txt on startup and updated by /op and /deop.
+    // Read the server's in-memory operator list.
     return srv_ && srv_->isOp(cfg_.username);
 }
 void Player::setOp(bool v) {
@@ -123,56 +114,30 @@ void Player::setBanned(bool v) {
 bool Player::isWhitelisted() const {
     if (!srv_ || !srv_->whitelistEnabled())
         return true;
-    // not whitelist file yet: treat all as whitelisted.
+    // No whitelist file support yet.
     return true;
 }
 void Player::setWhitelisted(bool /*v*/) {
 }
 
-// ============================================================
-// Phase 9 — close (clean shutdown; idempotent + thread-safe)
-// ============================================================
-// close() may be called from:
-//   - The main server thread (player quit via /quit, server shutdown)
-//   - The RakLib network thread (session timeout, client disconnect)
-//
-// CRITICAL: close() must NOT call adv_iface_->closeSession(). When
-// close() is called from Network::onSessionClose() (the RakLib
-// timeout path), the RakNet session is ALREADY being torn down.
-// Calling closeSession() again from within that callback causes to
-// re-entrant call into RakLib's C code while its internal state is
-// mid-teardown → segfault. This was the root cause of the 100%
-// reproducible crash when to player disconnected.
-//
-// For proactive kicks, player::kick() calls closeSession() itself
-// BEFORE close(), so the RakLib layer handles the disconnect.
-// ============================================================
+// Phase 9: Thread-safe player shutdown.
 void Player::close(const std::string& reason) {
-    // Keep this player alive for the entire duration of close(), even
-    // if server::tick() concurrently erases its shared_ptr from players_.
-    // Without this, the cleanup body below could touch freed memory.
-    // We wrap in try-catch because shared_from_this() can throw
-    // std::bad_weak_ptr if the control block is already expired (rare
-    // edge case during server shutdown). If it throws, we proceed
-    // without the safety net — close() is still protected by call_once.
+    // Keep the player alive throughout cleanup.
+    // Continue safely if shared_from_this() fails during shutdown.
     std::shared_ptr<Player> self;
     try {
         self = shared_from_this();
     } catch (...) {
-        // shared_from_this() failed — proceed without the safety net.
+        // Continue without the shared ownership safeguard.
     }
 
     std::call_once(close_once_, [this, &reason]() {
-        // Vuelca any packet pending of the buffer per tick before
-        // marcar connected_=false: the player is va, but everything what the
-        // server already it envió this tick (p.ej. its own
-        // RemoveEntityPacket broadcast) must leaving of truth — after of the
-        // flip sendPacket()/flushPendingPackets() already not enviarían nothing.
+        // Flush queued packets before marking the player disconnected.
         flushPendingPackets();
 
         bool expected = true;
         if (!connected_.compare_exchange_strong(expected, false)) {
-            // Already closed — just flag for removal (defensive).
+            // Already closed; ensure removal.
             pending_removal_.store(true, std::memory_order_release);
             return;
         }
@@ -180,23 +145,13 @@ void Player::close(const std::string& reason) {
         utils::MainLogger::get().info("Closing player " + cfg_.username + " (" + cfg_.ip + ":" +
                                       std::to_string(cfg_.port) + "): " + reason);
 
-        // Release any chest this player still had open. connected_ is
-        // already false at this point, so closeOpenChest()'s
-        // ContainerClosePacket send is to safe not-op (sendPacket() bails
-        // out when !connected_) — what actually matters here is
-        // decrementing the TileChest's viewer count and dropping our
-        // reference to it, so the chest doesn't think to disconnected
-        // player is still looking at it.
+        // Release the player's open chest and update its viewer count.
         closeOpenChest();
 
-        // Wake the player up if it quit while sleeping: the bed must not
-        // stay "occupied" for the next sleeper and the other clients must
-        // see the flag byte clear before the RemoveEntityPacket despawns
-        // the entity anyway. Infinity effectively does the same via
-        // close() → stopSleep() in its player close pipeline.
+        // Clear the sleeping state before despawning the player.
         stopSleep();
 
-        // Workbench: capture disconnect state for diagnostics.
+        // Record session statistics for diagnostics.
         {
             uint64_t now_ms = (uint64_t)(std::chrono::duration_cast<std::chrono::milliseconds>(
                                              std::chrono::system_clock::now().time_since_epoch())
@@ -212,7 +167,8 @@ void Player::close(const std::string& reason) {
                                                  chunk_q);
         }
 
-        // 1. Save NBT + inventory to disk (if we ever loaded NBT).
+        // Return cursor items before saving player data.
+        returnFloatingItems();
         try {
             if (named_tag_ && srv_ && !cfg_.username.empty()) {
                 saveData();
@@ -221,18 +177,9 @@ void Player::close(const std::string& reason) {
             utils::MainLogger::get().warn("[CLOSE] " + cfg_.username + " saveData threw exception");
         }
 
-        // 2. Tell other players to despawn this entity.
-        // CRITICAL: iterate to COPY of the snapshot. The snapshot returns
-        // shared_ptrs by value, which keeps each player alive for the
-        // duration of sendPacket. Without this, to concurrent reap in
-        // server::tick() could destroy to player mid-sendPacket.
-        //
-        // bug FIX (same mechanism that the of MoveEntityPacket in
-        // handleMovePlayer/EntityEventPacket in the combate): if `other`
-        // still is in its own window of streaming of chunks (without
-        // spawned() still), never arrived to receive the AddPlayerPacket of
-        // this entity — mandarle igual the RemoveEntityPacket it does
-        // referenciar a eid that its client never knew.
+        // Despawn this entity for other players.
+        // Use a snapshot to keep recipients alive during packet delivery.
+        // Skip players who never received this entity's spawn packet.
         try {
             if (srv_) {
                 auto snapshot = srv_->playersSnapshot();
@@ -248,7 +195,7 @@ void Player::close(const std::string& reason) {
                     if (!other->spawned())
                         continue;
                     if (other->getWorld() != getWorld())
-                        continue; // same world
+                        continue; // Same world.
                     try {
                         other->sendPacket(pk);
                     } catch (...) {}
@@ -256,10 +203,7 @@ void Player::close(const std::string& reason) {
             }
         } catch (...) {}
 
-        // 3. Broadcast quit message. PlayerQuitEvent can reescribir or
-        // silenciar the message. Envuelto in try/catch as the rest of
-        // close(): a listener with a bug jamás must impedir that the
-        // limpieza of the desconexión continúe.
+        // Broadcast the quit message while allowing event cancellation.
         try {
             if (srv_ && !cfg_.username.empty()) {
                 auto ev = event::EventManager::get().fire<event::player::PlayerQuitEvent>(
@@ -270,7 +214,7 @@ void Player::close(const std::string& reason) {
             }
         } catch (...) {}
 
-        // 4. Release chunks loaded for this player.
+        // Release loaded chunks and pending chunk requests.
         {
             std::lock_guard<std::mutex> lk(chunks_mtx_);
             used_chunks_.clear();
@@ -280,12 +224,8 @@ void Player::close(const std::string& reason) {
             chunk_queue_.clear();
         }
 
-        // 5. DO NOT call closeSession() here — see the comment at the
-        //    top of this function. The session is either already closed
-        //    (timeout path) or will be closed by the caller (kick path).
-
-        // 6. Flag for removal — server::tick() will erase this player
-        //    from players_ on the next tick (main thread).
+        // Do not call closeSession() here; see the shutdown notes above.
+        // Mark for removal on the next server tick.
         pending_removal_.store(true, std::memory_order_release);
     });
 }
@@ -295,12 +235,7 @@ void Player::kick(const std::string& reason) {
 }
 
 void Player::kick(const std::string& reason, const std::string& detail) {
-    // Send to DisconnectPacket first, then close the RakNet session.
-    //
-    // Nukkit parity: the disconnect screen the client renders carries the
-    // full message, so server-side errors that lead to to kick are shown to
-    // the player instead of vanishing into the console. `detail` is the
-    // extra diagnostic line (e.g. the exception message).
+    // Include optional diagnostic details in the disconnect message.
     std::string message = reason;
     if (!detail.empty()) {
         message += "\n";
@@ -310,16 +245,10 @@ void Player::kick(const std::string& reason, const std::string& detail) {
         auto dp = std::make_shared<network::protocol::DisconnectPacket>();
         dp->message = message;
         sendPacket(dp);
-        // the DisconnectPacket va in the buffer per tick: there is that volcarlo
-        // now, before close the sesion RakNet, or the client never it
-        // veria (with the envio individual historico salia to the instante).
+        // Flush the disconnect packet before closing the session.
         flushPendingPackets();
     }
-    // Force-close the RakLib session so the client disconnects promptly.
-    // This must happen BEFORE close() because close() not longer calls
-    // closeSession() (to avoid re-entrant crashes when called from the
-    // RakLib timeout path). closeSession() will trigger RakLib to fire
-    // onCloseSession() → close(), but call_once() makes that to not-op.
+    // Close the session before close() to avoid re-entrant shutdown crashes.
     if (adv_iface_ && !cfg_.ip.empty()) {
         adv_iface_->closeSession(cfg_.ip, cfg_.port, message);
     }
@@ -327,12 +256,7 @@ void Player::kick(const std::string& reason, const std::string& detail) {
 }
 
 void Player::teleport(double x, double y, double z) {
-    // PlayerTeleportEvent — a listener can cancelarlo (p.ej. a
-    // command /tp bloqueado by permisos, or a zona that prohibe
-    // teletransportarse hacia adentro) for impedir the movement without
-    // that the llamador tenga that chequear a valor of retorno: as
-    // teleport() not devolvia nothing before this change, ningun place
-    // of the code depende of that "always is mueva".
+    // Allow teleport events to cancel the operation.
     auto ev = event::EventManager::get().fire<event::player::PlayerTeleportEvent>(
         this, pos_.x, pos_.y, pos_.z, x, y, z);
     if (ev.isCancelled())
@@ -346,21 +270,8 @@ void Player::teleport(double x, double y, double z) {
     int32_t new_cx = (int)pos_.x >> 4;
     int32_t new_cz = (int)pos_.z >> 4;
 
-    // CHUNK FIX ("chunks missing after /tp or respawn"): the client
-    // renders nothing around the destination until we send it there, and
-    // the streaming loop in onUpdate() only reacts to CROSSING to chunk
-    // boundary via its `moved` detection. That detection compares against
-    // chunk_queue_'s front entry — after to teleport the queue still held
-    // the OLD center, so the very next tick recorded "moved" once, then
-    // recentered; but every chunk in the new radius that had already been
-    // marked in used_chunks_ by an earlier pass through that area (or by
-    // the spawn-ACK re-stream) was SKIPPED as "already sent" even though
-    // the client teleported away and may not longer have them loaded.
-    // Clearing the per-player sent-set + re-queuing the new spiral makes
-    // the destination stream exactly like to fresh spawn: chunks the
-    // client still holds arrive as duplicates it ignores, missing ones
-    // now render. Only do this when the teleport actually crossed into
-    // another chunk — to 2-block hop inside the same chunk needs nothing.
+    // Reset chunk streaming when teleporting to another chunk.
+    // Previously sent chunks may no longer be loaded by the client.
     if (new_cx != old_cx || new_cz != old_cz) {
         {
             std::lock_guard<std::mutex> lk(chunks_mtx_);
@@ -373,12 +284,12 @@ void Player::teleport(double x, double y, double z) {
         }
     }
 
-    // Optionally broadcast to MovePlayerPacket to confirm position to the client.
+    // Send a position reset packet if the player has spawned.
     if (spawned_.load(std::memory_order_relaxed)) {
         auto pk = std::make_shared<network::protocol::MovePlayerPacket>();
         pk->eid = runtimeId();
         pk->x = (float)pos_.x;
-        pk->y = (float)(pos_.y + kEyeHeight); // wire and is the eye
+        pk->y = (float)(pos_.y + kEyeHeight); // Eye position.
         pk->z = (float)pos_.z;
         pk->yaw = yaw_;
         pk->bodyYaw = yaw_;
@@ -393,59 +304,26 @@ void Player::setGamemode(int gm) {
     bool was_creative = (cfg_.gamemode & 1) != 0;
     bool is_creative = (new_gm & 1) != 0;
     cfg_.gamemode = new_gm;
-    // A mode switch cancels any fall in progress: distance accumulated
-    // before the switch must never land as damage in the other mode.
+    // Cancel fall damage when switching between creative and survival.
     if (was_creative != is_creative)
         fall_distance_ = 0.0f;
-    // Re-send creative inventory when creative state changes (PMMP
-    // player.php:1461 sends it on every gamemode change).
+    // Refresh the creative catalog when needed.
     if (was_creative != is_creative || new_gm == 3) {
         sendCreativeInventory();
     }
-    // bug FIX ("items disappear when switching gamemode"): the block
-    // above only refreshes the read-only creative CATALOG (windowid
-    // SPECIAL_CREATIVE) — it never touches the player's current
-    // inventory (main/hotbar/armor). Every actual item move (dragging
-    // from the creative catalog, moving items around) is confirmed
-    // one slot at to time via ContainerSetSlotPacket on the same
-    // unordered channel that SetPlayerGameTypePacket/
-    // AdventureSettingsPacket go out on right after this call (see
-    // GamemodeCommand.cpp). If any of those land out of order or the
-    // client's UI rebuild (triggered by the mode-switch packet) races
-    // ahead of the last slot confirmation, the client is left
-    // displaying to stale picture — some slots got their confirmation,
-    // others didn't, so to handful of items appear to "vanish" while
-    // the rest survive. Forcing to full, authoritative resync of main
-    // inventory + armor + hotbar right here — same as what already
-    // happens once at doFirstSpawn() — guarantees the client always
-    // ends to mode switch showing exactly what the server has, instead
-    // of whatever partial state survived the race.
-    // Guarded on spawned_: setGamemode() also runs during handleLogin()
-    // (loading playerGameType from NBT) BEFORE StartGamePacket/
-    // PlayStatus have even been sent — sending inventory packets that
-    // early, ahead of the login handshake, would confuse the client
-    // the same way the ordered=true fixes elsewhere in this file exist
-    // to prevent.
+    // Resync inventory to prevent stale client slots after mode changes.
+    // Avoid sending inventory packets before the login handshake completes.
     if (spawned_.load(std::memory_order_relaxed)) {
         sendInventory();
     }
 }
 
-// ============================================================
-// Save this player's NBT + inventory to disk (PMMP player::saveNBT)
-// ============================================================
-// Mirrors cn.nukkit.player.saveNBT(): the NBT root contains to flat
-// "Inventory" ListTag<CompoundTag> with one entry per non-empty slot.
-// Each entry is { Slot:byte, id:Short, Count:byte, Damage:Short }.
-// Armor uses the same list with Slot in [100..103] (helmet..boots).
-// On load we iterate the list and route by Slot range — mirroring
-// Nukkit's player.loadNBT() exactly so worlds are interchangeable.
-// ============================================================
+// Save player NBT and inventory data.
 void Player::saveData() {
     if (!srv_ || cfg_.username.empty())
         return;
     if (!named_tag_) {
-        // Construct to fresh NBT root if none exists.
+        // Create an NBT root if none exists.
         named_tag_ = std::shared_ptr<::mcp_tag>(mcp_compound_tag_new(), [](::mcp_tag* t) {
             if (t)
                 mcp_tag_destroy(t);
@@ -455,7 +333,7 @@ void Player::saveData() {
     if (!root)
         return;
 
-    // --- Position / rotation / stats ---
+    // Save position, rotation, health, and hunger.
     mcp_compound_tag_set_double(root, "PosX", pos_.x);
     mcp_compound_tag_set_double(root, "PosY", pos_.y);
     mcp_compound_tag_set_double(root, "PosZ", pos_.z);
@@ -471,26 +349,15 @@ void Player::saveData() {
     mcp_compound_tag_set_long(root, "RuntimeId", runtimeId());
     mcp_compound_tag_set_long(root, "lastPlayed", (int64_t)mcp_utils_time_ms());
 
-    // --- Personal spawn point (Infinity Human::saveNBT: SpawnX/Y/Z) ---
-    // Only meaningful once a bed was used; read back on login by
-    // PlayerLogin.cpp so the bed spawn survives restarts.
+    // Save the player's personal spawn point if set.
     if (has_spawn_override_) {
         mcp_compound_tag_set_int(root, "SpawnX", spawn_x_);
         mcp_compound_tag_set_int(root, "SpawnY", spawn_y_);
         mcp_compound_tag_set_int(root, "SpawnZ", spawn_z_);
     }
 
-    // --- Inventory + Armor as to single ListTag<CompoundTag> ---
-    // bug FIX: this loop used to stop at PlayerInventory::SIZE (36),
-    // which by design EXCLUDES the 4 armor slots (see the comment on
-    // PlayerInventory::getSize() — "NOT including armor. The underlying
-    // storage has 40 slots"). Armor lives at indices SIZE..SIZE+3
-    // (36..39) in the same underlying slots_ map, so the `if (slot >=
-    // ARMOR_OFFSET ...)` remap right below was dead code — the loop
-    // never reached that range, so equipped armor was silently dropped
-    // on every save (disconnect, autosave, /gamemode-triggered save)
-    // and players would come back with an empty armor slot every time.
-    // Loop over the full 40-slot storage (PLAYER_INV_TOTAL) instead.
+    // Save inventory and armor in a single list.
+    // Include all 40 slots so equipped armor is preserved.
     mcp_tag_t* inv_list = mcp_list_tag_new_named("Inventory", MCP_TAG_COMPOUND);
     if (inv_list && inv_) {
         for (int slot = 0; slot < inventory::PLAYER_INV_TOTAL; ++slot) {
@@ -504,11 +371,7 @@ void Player::saveData() {
             }
             mcp_tag_t* entry = mcp_compound_tag_new_named("");
             mcp_compound_tag_set_byte(entry, "Slot", (int8_t)nbt_slot);
-            // id / Count / Damage + the "ench" enchantment list, from the
-            // shared definition in src/item/ItemNbt.h — the three
-            // hand-copied setters that used to sit here never wrote
-            // enchantments, which is why to sharpness sword came back
-            // unenchanted after every reconnect.
+            // Serialize item data, including enchantments.
             item::itemStackToNbt(it, entry);
             mcp_list_tag_append(inv_list, entry);
         }
@@ -522,11 +385,9 @@ void Player::saveData() {
     }
 }
 
-// --- Nukkit-compat: getSpawn ---
+// Return the player's personal spawn or the world spawn.
 math::Vector3 Player::getSpawn() const {
-    // Personal spawn point (the bed this player last slept in) wins over
-    // the world spawn — Infinity Player::getSpawn() reads
-    // $this->spawnPosition once setSpawn() has been called.
+    // Prefer the last bed spawn when available.
     if (has_spawn_override_) {
         return math::Vector3{(double)spawn_x_, (double)spawn_y_, (double)spawn_z_};
     }
@@ -535,21 +396,7 @@ math::Vector3 Player::getSpawn() const {
     return math::Vector3{0, 64, 0};
 }
 
-// getServerSpawnSafe — server spawn with and snapped to the actual terrain
-// surface of the column (Infinity getSafeSpawn semantics).
-//
-// FIX ("the spawn is in the sky the first time that entro"): the Normal
-// generator's getSpawn() returns Nukkit's static (127.5, 128, 127.5) — to
-// and that is only correct by luck. On most seeds the actual surface at that
-// column is several blocks lower (or higher), so to first-time player
-// started the session floating in the air and fell for seconds.
-//
-// The fix scans the spawn column top-down for the first block you can
-// actually stand on (solid + nothing solid directly above), exactly like
-// Infinity's getSafeSpawn: and = highest solid block + 1. If the chunk is
-// not loaded (or is all air/void), fall back to the vanilla cloud level.
-// X/Z (+0.5 centering) stay exactly as the generator/level.dat defined
-// them, so the spawn is deterministic across restarts.
+// Find a safe position at the server spawn.
 math::Vector3 Player::getServerSpawnSafe() const {
     math::Vector3 sp = getSpawn();
     auto* lvl = getWorld();
@@ -558,29 +405,26 @@ math::Vector3 Player::getServerSpawnSafe() const {
     int32_t bx = (int32_t)std::floor(sp.x);
     int32_t bz = (int32_t)std::floor(sp.z);
     auto& chunks = lvl->chunks();
-    // getChunk (not getChunkIfLoaded): at respawn-from-afar the spawn
-    // chunk may have been unloaded by the view-distance sweep — generate
-    // it synchronously (one chunk, boot-class cost) so the safe-and scan
-    // always sees actual terrain instead of falling back to and=64.
+    // Load the spawn chunk if necessary.
     mcp_chunk_t* c = chunks.getChunk(bx >> 4, bz >> 4);
     if (c) {
         for (int y = 127; y > 0; --y) {
             uint8_t id = mcp_chunk_get_block_id(c, bx & 15, y, bz & 15);
             if (id == 0)
-                continue; // air
+                continue; // Air.
             if (id == block::LEAVES || id == block::LEAVES_2)
-                continue; // canopy
-            // First non-air, non-leaves block: stand on top of it.
+                continue; // Leaves.
+            // Find the first block with space above it.
             uint8_t above = mcp_chunk_get_block_id(c, bx & 15, y + 1, bz & 15);
             if (above == 0 || above == block::WATER || above == block::FLOWING_WATER) {
                 sp.y = (double)y + 1.0;
                 return sp;
             }
-            // Solid-with-solid-above (tree/overhang): keep scanning down.
+            // Continue searching below obstructed blocks.
         }
     }
     if (sp.y < 1.0)
-        sp.y = 64.0; // vanilla fallback
+        sp.y = 64.0; // Default fallback height.
     return sp;
 }
 

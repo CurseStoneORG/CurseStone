@@ -209,12 +209,18 @@ class Client:
         return joined
 
     def handle_payload(self, payload: bytes):
-        """Record one fully reassembled game packet, unwrapping the batch.
+        """Record fully reassembled game packets, unwrapping the batch.
 
         The server wraps every game packet as
             [0xFE][0x06][u32be compressedLen][zlib([u32be subLen][sub])]
         (see Player::sendPacket), so a real client must strip the batch
         before it can even read the packet id.
+
+        The zlib blob can carry SEVERAL sub-packets — the whole login
+        handshake (PlayStatus + StartGame + SetTime + ...) rides in one
+        batch because the server flushes it in a single ordered send.
+        Only reading the first sub-packet made StartGame invisible and
+        failed this check with "no spawn" forever.
         """
         if not payload:
             return
@@ -227,12 +233,14 @@ class Client:
                     raw = zlib.decompress(comp)
                 except zlib.error:
                     return
-                if len(raw) < 5:
-                    return
-                sublen = int.from_bytes(raw[0:4], "big")
-                payload = raw[4:4 + sublen]
-                if not payload:
-                    return
+                i = 0
+                while i + 4 <= len(raw):
+                    sublen = int.from_bytes(raw[i:i + 4], "big")
+                    if sublen <= 0 or i + 4 + sublen > len(raw):
+                        break
+                    self.handle_payload(raw[i + 4:i + 4 + sublen])
+                    i += 4 + sublen
+                return
         gp = payload[0]
         self.recv_ids.append(gp)
         if gp == SERVER_HANDSHAKE:
