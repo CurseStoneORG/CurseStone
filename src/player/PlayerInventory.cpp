@@ -526,10 +526,12 @@ void Player::consumeHeldItem() {
     }
     last_eat_ms_ = now_ms;
 
-    // Broadcast the eating completion animation.
+    // Broadcast the eating completion animation. The reference
+    // Potion::onConsume addresses the drinking player with its real
+    // entity id (the 0.15.10 client resolves the gulp against it).
     {
         auto self_pk = std::make_shared<network::protocol::EntityEventPacket>();
-        self_pk->eid = 0;
+        self_pk->eid = runtimeId();
         self_pk->event = network::protocol::EntityEventPacket::USE_ITEM;
         sendPacket(self_pk);
         if (srv_) {

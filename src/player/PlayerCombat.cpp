@@ -180,14 +180,16 @@ void Player::throwSplashPotion() {
     add->yaw = (float)(std::atan2(dx, dz) * 180.0 / kPi);
     add->pitch = (float)(std::atan2(dy, flat) * 180.0 / kPi);
 
-    // Set metadata index 16 to the potion's metadata value.
-    auto meta = std::make_shared<network::protocol::SetEntityDataPacket>();
-    meta->eid = eid;
+    // Set metadata index 16 to the potion's metadata value. The
+    // reference ThrownPotion::spawnTo ships DATA_POTION_ID inside the
+    // AddEntityPacket itself; the 0.15.10 client reads it from that
+    // spawn packet to render the bottle (a later SetEntityData alone
+    // leaves the bottle invisible).
     network::protocol::SetEntityDataPacket::Entry me;
-    me.index = 16;
+    me.index = network::protocol::SetEntityDataPacket::PROP_POTION_ID;
     me.type = network::protocol::SetEntityDataPacket::TYPE_SHORT;
     me.ival = held.meta;
-    meta->entries.push_back(me);
+    add->metadata.push_back(me);
 
     // Send motion separately so the client can animate the projectile.
     auto motion = std::make_shared<network::protocol::SetEntityMotionPacket>();
@@ -199,7 +201,6 @@ void Player::throwSplashPotion() {
         if (other->getWorld() != getWorld())
             continue;
         other->sendPacket(add);
-        other->sendPacket(meta);
         other->sendPacket(motion);
     }
 

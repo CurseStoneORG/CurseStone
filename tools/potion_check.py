@@ -58,6 +58,7 @@ TEXT_PACKET = 0x07
 ADD_PLAYER = 0x0A
 ADD_ENTITY = 0x0B
 REMOVE_ENTITY = 0x0C
+START_GAME = 0x09
 MOVE_PLAYER = 0x10
 ENTITY_EVENT = 0x18
 MOB_EFFECT = 0x19
@@ -66,8 +67,12 @@ MOB_EQUIPMENT = 0x1B
 INTERACT = 0x1E
 USE_ITEM = 0x1F
 PLAYER_ACTION = 0x20
+SET_ENTITY_DATA = 0x22
 CONTAINER_SET_SLOT = 0x2C
 CONTAINER_SET_CONTENT = 0x2E
+META_IDX_POTION_ID = 16   # DATA_POTION_ID (short) on the thrown bottle
+META_IDX_POTION_COLOR = 7 # DATA_POTION_COLOR (int RGB tint)
+META_IDX_POTION_AMBIENT = 8
 ACTION_START_SPRINT = 9
 EYE = 1.62
 
@@ -94,6 +99,43 @@ def bestr(s: str) -> bytes:
     return struct.pack(">H", len(raw)) + raw
 
 
+def parse_metadata(payload: bytes, off: int):
+    """Decodes a Binary::writeMetadata blob: {index: (type, value)}.
+
+    Metadata VALUES are little-endian on protocol 84 (writeLShort /
+    writeLInt / writeLFloat / writeLLong); strings carry an
+    little-endian length. Parsing stops safely at the 0x7F terminator
+    or at an unknown type.
+    """
+    out = {}
+    while off < len(payload):
+        key = payload[off]
+        off += 1
+        if key == 0x7F:
+            return out, off
+        t = key >> 5
+        idx = key & 0x1F
+        if t == 0:
+            out[idx] = (t, payload[off])
+            off += 1
+        elif t in (1, 2, 3):
+            n = 2 if t == 1 else 4
+            out[idx] = (t, int.from_bytes(payload[off:off + n], "little"))
+            off += n
+        elif t == 4:
+            n = int.from_bytes(payload[off:off + 2], "little")
+            out[idx] = (t, payload[off + 2:off + 2 + n])
+            off += 2 + n
+        elif t == 6:
+            off += 12
+        elif t == 8:
+            out[idx] = (t, int.from_bytes(payload[off:off + 8], "little"))
+            off += 8
+        else:
+            return out, off  # rotation/slot/...: not needed here
+    return out, off
+
+
 class PotionClient(FallClient):
     """FallClient + potion effect/attribute/inventory observers."""
 
@@ -108,13 +150,24 @@ class PotionClient(FallClient):
         self.other_eids = {}     # username -> eid (ADD_PLAYER announce)
         self.eat_echoes = 0
         self.inv_counts = {}     # item id -> units (window-0 pushes)
+        self.eid = None          # own runtime id (START_GAME)
+        self.effect_eids = []    # eid field of every MobEffectPacket (1:1 with effect_pkts)
+        self.attr_eids = []      # eid field of every UpdateAttributesPacket
+        self.eat_echo_eids = []  # eid of every eat-completion echo (event 9)
+        self.potion_meta = None  # DATA_POTION_ID seen in the type-86 ADD metadata
+        self.color_meta = {}     # eid -> latest (color, ambient) tint metadata
 
     def classify(self, payload: bytes):
+        if payload and payload[0] == START_GAME and len(payload) >= 22:
+            # [pid][seed i32][dim u8][gen i32][gamemode i32][eid i64BE]
+            self.eid = struct.unpack(">q", payload[14:22])[0]
         if payload and payload[0] == MOB_EFFECT and len(payload) >= 17:
             # eid[1:9] eventId[9] effectId[10] amp[11] particles[12] dur[13:17]
+            self.effect_eids.append(struct.unpack(">q", payload[1:9])[0])
             self.effect_pkts.append((payload[9], payload[10], payload[11],
                                       struct.unpack(">i", payload[13:17])[0]))
         elif payload and payload[0] == UPDATE_ATTRIBUTES and len(payload) >= 11:
+            self.attr_eids.append(struct.unpack(">q", payload[1:9])[0])
             count = struct.unpack(">H", payload[9:11])[0]
             off = 11
             for _ in range(count):
@@ -130,6 +183,19 @@ class PotionClient(FallClient):
             if etype == 86:
                 self.entity86 += 1
                 self.entity86_eid = struct.unpack(">q", payload[1:9])[0]
+                # Fixed prefix ends at byte 49; the potion id rides in
+                # the ADD metadata itself (reference ThrownPotion).
+                if len(payload) >= 49:
+                    meta, _ = parse_metadata(payload, 49)
+                    if META_IDX_POTION_ID in meta:
+                        self.potion_meta = meta[META_IDX_POTION_ID][1]
+        elif payload and payload[0] == SET_ENTITY_DATA and len(payload) >= 9:
+            seid = struct.unpack(">q", payload[1:9])[0]
+            meta, _ = parse_metadata(payload, 9)
+            if META_IDX_POTION_COLOR in meta or META_IDX_POTION_AMBIENT in meta:
+                color = meta.get(META_IDX_POTION_COLOR, (0, 0))[1]
+                ambient = meta.get(META_IDX_POTION_AMBIENT, (0, 0))[1]
+                self.color_meta[seid] = (color, ambient)
         elif payload and payload[0] == REMOVE_ENTITY and len(payload) >= 9:
             self.removed.append(struct.unpack(">q", payload[1:9])[0])
         elif payload and payload[0] == ADD_PLAYER and len(payload) > 40:
@@ -145,6 +211,7 @@ class PotionClient(FallClient):
         elif payload and payload[0] == ENTITY_EVENT and len(payload) >= 10:
             if payload[9] == 9:
                 self.eat_echoes += 1
+                self.eat_echo_eids.append(struct.unpack(">q", payload[1:9])[0])
         elif payload and payload[0] == CONTAINER_SET_CONTENT and len(payload) >= 3:
             self.parse_inventory(payload)
         elif payload and payload[0] == MOVE_PLAYER and len(payload) >= 34:
@@ -412,6 +479,15 @@ def run(host: str, port: int) -> int:
     spd = c.attrs.get("generic.movementSpeed")
     check("swiftness movementSpeed = 0.12",
           spd is not None and abs(spd - 0.12) < 0.001, f"speed={spd}")
+    check("MobEffect self packets use eid 0 (reference convention)",
+          all(e == 0 for e in c.effect_eids[since:]),
+          f"eids={c.effect_eids[since:]}")
+    check("UpdateAttributes self packets use eid 0 (reference convention)",
+          c.attr_eids and all(e == 0 for e in c.attr_eids),
+          f"eids={c.attr_eids[-4:]}")
+    check("eat echo addressed to the real entity id",
+          c.eid is not None and c.eat_echo_eids and c.eat_echo_eids[-1] == c.eid,
+          f"eid={c.eid} echo={c.eat_echo_eids[-1:]}")
     # Cooldown: the second drink lands within the 1.6 s window.
     since = drink(1, META_SLOWNESS, wait_after=0.6)
     check("drink cooldown blocks the second drink",
@@ -479,6 +555,8 @@ def run(host: str, port: int) -> int:
           c.entity86_eid is not None and c.entity86_eid in c.removed)
     check("splash catches swiftness II (amp 1 add/modify)", caught,
           f"pkts={c.effect_pkts[since_pkts:]}")
+    check("splash ADD carries DATA_POTION_ID = thrown meta",
+          c.potion_meta == META_SWIFTNESS_TWO, f"meta={c.potion_meta}")
     spd = c.attrs.get("generic.movementSpeed")
     check("swiftness II movementSpeed = 0.119",
           caught and spd is not None and abs(spd - 0.119) < 0.002, f"speed={spd}")
@@ -593,6 +671,17 @@ def run(host: str, port: int) -> int:
         atk.entity_event(9)
         atk.watch(1.2)
         check("strength ADD packet", len(atk.effect_pkts_for(5)) >= 1)
+        # The victim (a viewer) must receive the tint metadata for the
+        # attacker — the properties the client draws swirl particles
+        # from. The attacker's eid comes from its own START_GAME (the
+        # late-joiner ADD_PLAYER can be refused by the reliable window
+        # while the harness client is not draining).
+        atk_eid_on_vic = atk.eid
+        ok = wait_pred(lambda: atk_eid_on_vic is not None and
+                       vic.color_meta.get(atk_eid_on_vic, (0, 0))[0] != 0, 4.0,
+                       client=vic)
+        check("viewer receives DATA_POTION_COLOR tint for the attacker", ok,
+              f"atk_eid={atk.eid} tint={vic.color_meta}")
         hp_before = vic.attrs.get("generic.health") or 20.0
         atk.interact(2, victim_eid)
         ok = wait_pred(lambda: (vic.attrs.get("generic.health") or 99) < hp_before, 3.0,

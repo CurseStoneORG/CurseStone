@@ -98,6 +98,18 @@ class SetEntityDataPacket : public DataPacket {
     // the property the 0.15.10 client reads to draw the falling block).
     static constexpr uint8_t PROP_BLOCK_INFO = 20; // int
 
+    // Thrown-potion render property (the reference server ThrownPotion:
+    // `const DATA_POTION_ID = 16` — short potion meta, the property the
+    // 0.15.10 client reads to draw the thrown bottle).
+    static constexpr uint8_t PROP_POTION_ID = 16; // short
+
+    // Effect particle tint (the reference server Entity:
+    // DATA_POTION_COLOR = 7 int packed RGB, DATA_POTION_AMBIENT = 8
+    // byte — the properties the 0.15.10 client reads to draw the
+    // swirling potion particles around an affected entity).
+    static constexpr uint8_t PROP_POTION_COLOR = 7;   // int
+    static constexpr uint8_t PROP_POTION_AMBIENT = 8; // byte
+
     struct Entry {
         uint8_t index = 0;
         uint8_t type = TYPE_BYTE;

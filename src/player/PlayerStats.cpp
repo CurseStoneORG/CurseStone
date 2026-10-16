@@ -27,6 +27,7 @@
 #include "network/protocol/UpdateAttributesPacket.h"
 #include "network/protocol/MobEffectPacket.h"
 #include "network/protocol/EntityEventPacket.h"
+#include "network/protocol/SetEntityDataPacket.h"
 #include "event/entity/EntityDamageEvent.h"
 #include <algorithm>
 #include <chrono>
@@ -40,7 +41,9 @@ void Player::sendHealthAttribute() {
     if (!connected_.load(std::memory_order_relaxed))
         return;
     auto pk = std::make_shared<network::protocol::UpdateAttributesPacket>();
-    pk->eid = runtimeId();
+    // The reference sendAttributes addresses own attributes with entity
+    // id 0; the client maps that to the local player.
+    pk->eid = 0;
     network::protocol::UpdateAttributesPacket::Entry h;
     h.name = "generic.health";
     h.min = 0.0f;
@@ -56,7 +59,7 @@ void Player::sendFoodLevel() {
     if (!connected_.load(std::memory_order_relaxed))
         return;
     auto pk = std::make_shared<network::protocol::UpdateAttributesPacket>();
-    pk->eid = runtimeId();
+    pk->eid = 0; // Own attributes ride entity id 0 (reference sendAttributes).
     network::protocol::UpdateAttributesPacket::Entry e;
     e.name = "player.hunger";
     e.min = 0.0f;
@@ -86,7 +89,7 @@ void Player::sendAllAttributes() {
     if (!connected_.load(std::memory_order_relaxed))
         return;
     auto pk = std::make_shared<network::protocol::UpdateAttributesPacket>();
-    pk->eid = runtimeId();
+    pk->eid = 0; // Own attributes ride entity id 0 (reference sendAttributes).
     network::protocol::UpdateAttributesPacket::Entry h;
     h.name = "generic.health";
     h.min = 0.0f;
@@ -200,8 +203,58 @@ void Player::sendEffectPacket(const entity::Effect& e, uint8_t eventId) {
     }
 }
 
+// Recompute the blended effect tint (the reference
+// Entity::recalculateEffectColor: per-effect RGB weighted by
+// amplifier+1) and broadcast it to same-world viewers as
+// DATA_POTION_COLOR / DATA_POTION_AMBIENT metadata — the properties
+// the 0.15.10 client reads to draw the swirling potion particles
+// around an affected entity. An empty effect list sends the zero
+// color so lingering particles clear.
+void Player::broadcastPotionColor() {
+    if (!spawned_.load(std::memory_order_relaxed))
+        return;
+    uint32_t r = 0, g = 0, b = 0;
+    int count = 0;
+    for (const auto& e : effects()) {
+        uint32_t c = entity::Effect::colorOf(e->id());
+        int weight = e->amplifier() + 1;
+        r += ((c >> 16) & 0xFF) * (uint32_t)weight;
+        g += ((c >> 8) & 0xFF) * (uint32_t)weight;
+        b += (c & 0xFF) * (uint32_t)weight;
+        count += weight;
+    }
+    uint32_t color = 0;
+    if (count > 0) {
+        color = ((r / (uint32_t)count) << 16) | ((g / (uint32_t)count) << 8) | (b / (uint32_t)count);
+    }
+    auto pk = std::make_shared<network::protocol::SetEntityDataPacket>();
+    pk->eid = runtimeId(); // Viewers resolve the tint against the real entity id.
+    network::protocol::SetEntityDataPacket::Entry col;
+    col.index = network::protocol::SetEntityDataPacket::PROP_POTION_COLOR;
+    col.type = network::protocol::SetEntityDataPacket::TYPE_INT;
+    col.ival = (int32_t)color;
+    pk->entries.push_back(col);
+    network::protocol::SetEntityDataPacket::Entry amb;
+    amb.index = network::protocol::SetEntityDataPacket::PROP_POTION_AMBIENT;
+    amb.type = network::protocol::SetEntityDataPacket::TYPE_BYTE;
+    amb.ival = 0; // No ambient concept on this server yet.
+    pk->entries.push_back(amb);
+    if (!srv_)
+        return;
+    for (auto& other : srv_->playersSnapshot()) {
+        if (!other || other.get() == this)
+            continue;
+        if (other->isPendingRemoval() || !other->spawned())
+            continue;
+        if (other->getWorld() != getWorld())
+            continue;
+        other->sendPacket(pk);
+    }
+}
+
 void Player::onEffectAdded(const entity::Effect& e) {
     sendEffectPacket(e, network::protocol::MobEffectPacket::EVENT_ADD);
+    broadcastPotionColor();
     switch (e.id()) {
         case entity::EFF_SPEED:
         case entity::EFF_SLOWNESS:
@@ -220,12 +273,14 @@ void Player::onEffectAdded(const entity::Effect& e) {
 
 void Player::onEffectModified(const entity::Effect& e) {
     sendEffectPacket(e, network::protocol::MobEffectPacket::EVENT_MODIFY);
+    broadcastPotionColor();
     if (e.id() == entity::EFF_SPEED || e.id() == entity::EFF_SLOWNESS)
         sendMovementSpeedAttribute();
 }
 
 void Player::onEffectRemoved(const entity::Effect& e) {
     sendEffectPacket(e, network::protocol::MobEffectPacket::EVENT_REMOVE);
+    broadcastPotionColor();
     if (e.id() == entity::EFF_SPEED || e.id() == entity::EFF_SLOWNESS)
         sendMovementSpeedAttribute();
     if (e.id() == entity::EFF_INVISIBILITY && invisible_) {
@@ -257,7 +312,7 @@ void Player::sendMovementSpeedAttribute() {
     if (const entity::Effect* sl = getEffect(entity::EFF_SLOWNESS))
         speed *= std::max(0.0f, 1.0f - 0.15f * (sl->amplifier() + 1));
     auto pk = std::make_shared<network::protocol::UpdateAttributesPacket>();
-    pk->eid = runtimeId();
+    pk->eid = 0; // Own attributes ride entity id 0 (reference sendAttributes).
     network::protocol::UpdateAttributesPacket::Entry e;
     e.name = "generic.movementSpeed";
     e.min = 0.0f;
@@ -274,6 +329,10 @@ void Player::sendActiveEffects() {
         return;
     for (const auto& e : effects())
         sendPacket(makeEffectPacket(0, *e, network::protocol::MobEffectPacket::EVENT_ADD));
+    // Viewers need the tint metadata too, or the restored effects run
+    // particle-less until the next add/modify/remove.
+    if (!effects().empty())
+        broadcastPotionColor();
     if (hasEffect(entity::EFF_INVISIBILITY))
         invisible_ = true;
     if (invisible_)
