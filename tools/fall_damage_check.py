@@ -27,6 +27,8 @@ TEXT_PACKET = 0x07
 ENTITY_EVENT = 0x18
 UPDATE_ATTRIBUTES = 0x1A
 HURT_ANIMATION = 2
+PLAYER_ACTION = 0x20
+ACTION_SPAWN_SAME_DIMENSION = 7
 
 EYE = 1.62
 GROUND_EYE = 66.0 + EYE   # matches the spawn-area surface other tools use
@@ -46,9 +48,17 @@ class FallClient(Client):
         self.health = 20.0
         self.min_health = 20.0
         self.hurts = 0
+        self.server_pos = None  # (x, y, z) from a server MovePlayer RESET
+        self.ground_y = 66.0    # measured after respawn (spawn snap - EYE)
 
     # ---- plumbing (same as plugin_api_check) ----
     def handle_payload(self, payload: bytes):
+        """drain()/expect() path — route through classify() so every
+        observer (health, hunger attributes, inventory, drops) also sees
+        the packets that arrive OUTSIDE watch() windows. The spawn-time
+        attribute push rides exactly there: doFirstSpawn fires while the
+        login helper is still in expect(chunks), and parsing it only in
+        watch() meant the first attribute push was always missed."""
         if payload and payload[0] == 0xFE and len(payload) > 5:
             body = payload[1:]
             if body[0] == 0x06 and len(body) > 5:
@@ -58,13 +68,14 @@ class FallClient(Client):
                 except zlib.error:
                     return
                 i = 0
-                while i + 4 < len(raw):
+                while i + 4 <= len(raw):
                     sublen = int.from_bytes(raw[i:i + 4], "big")
-                    sub = raw[i + 4:i + 4 + sublen]
-                    Client.handle_payload(self, sub)
+                    if sublen <= 0 or i + 4 + sublen > len(raw):
+                        break
+                    self.classify(raw[i + 4:i + 4 + sublen])
                     i += 4 + sublen
                 return
-        Client.handle_payload(self, payload)
+        self.classify(payload)
 
     def send_game(self, inner: bytes):
         self.send_raw(self.send_encapsulated(inner, reliability=3))
@@ -102,13 +113,24 @@ class FallClient(Client):
                 except zlib.error:
                     return
                 i = 0
-                while i + 4 < len(raw):
+                while i + 4 <= len(raw):
                     sublen = int.from_bytes(raw[i:i + 4], "big")
-                    sub = raw[i + 4:i + 4 + sublen]
-                    self.classify(sub)
+                    if sublen <= 0 or i + 4 + sublen > len(raw):
+                        break
+                    self.classify(raw[i + 4:i + 4 + sublen])
                     i += 4 + sublen
                 return
-        if payload[0] == ENTITY_EVENT and len(payload) >= 10:
+        # Stage bookkeeping for BOTH receive paths (watch() lands here
+        # directly, drain()/expect() via handle_payload).
+        Client.handle_payload(self, payload)
+        if payload[0] == MOVE_PLAYER and len(payload) >= 34:
+            # A server-initiated RESET reveals the true server-side
+            # position (respawn, snap-backs) — the ground reference the
+            # scenarios fall from.
+            if payload[33] == 1:
+                x, y, z = struct.unpack(">fff", payload[9:21])
+                self.server_pos = (x, y, z)
+        elif payload[0] == ENTITY_EVENT and len(payload) >= 10:
             eid = struct.unpack(">q", payload[1:9])[0]
             if payload[9] == HURT_ANIMATION:
                 self.hurts += 1
@@ -152,6 +174,62 @@ class FallClient(Client):
     def say(self, msg):
         self.send_game(bytes([TEXT_PACKET, 1]) + bestr(self.name) + bestr(msg))
 
+    def player_action(self, action):
+        pa = bytes([PLAYER_ACTION])
+        pa += struct.pack(">q", 1)               # eid (server re-stamps it)
+        pa += struct.pack(">i", action)
+        pa += struct.pack(">iii", 0, 0, 0)
+        pa += struct.pack(">i", 0)
+        self.send_game(pa)
+
+    def reset_state(self, timeout=8.0):
+        """Kill + respawn for a deterministic 20 hp / world-spawn start.
+
+        Player .dat files persist across runs (health, position, food),
+        which used to make the scenarios depend on whatever the previous
+        run left behind: a saved low health read as a lower min_health
+        and failed the check even when the fall math was right. /kill
+        needs op — the tester names are pre-listed in the data path's
+        ops.txt (documented prerequisite).
+        """
+        # /kill takes a target argument ("Usage: /kill <player>") — kill
+        # ourselves by name. Survival first: playerGameType persists in
+        # the .dat, and a leftover creative flag would silently void the
+        # whole scenario (creative never accumulates fall distance).
+        self.say("/gamemode 0")
+        time.sleep(0.6)
+        self.watch(0.4)
+        self.say(f"/kill {self.name}")
+        deadline = time.time() + 5.0
+        died = False
+        while time.time() < deadline:
+            self.watch(0.4)
+            if self.health <= 1.0:
+                died = True
+                break
+        if not died:
+            print(f"[reset] /kill had no effect (health={self.health:.1f}) — "
+                  f"is {self.name} in ops.txt?")
+            return False
+        self.health = 0.0
+        self.player_action(ACTION_SPAWN_SAME_DIMENSION)
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            self.watch(0.5)
+            if self.health >= 19.0:
+                # The respawn snap carries the true spawn eye position —
+                # derive the ground level from it instead of assuming the
+                # historic y=66 surface (worlds get regenerated; the test
+                # must not care).
+                if self.server_pos is not None:
+                    self.ground_y = self.server_pos[1] - EYE
+                self.min_health = self.health
+                self.hurts = 0
+                self.recv_ids = []
+                return True
+        print(f"[reset] respawn never restored health (health={self.health:.1f})")
+        return False
+
 
 def spawn(c: FallClient, name: str) -> bool:
     if c.handshake():
@@ -172,17 +250,17 @@ def scenario_pure_survival(host, port) -> bool:
     c = FallClient(host, port, name)
     if not spawn(c, name):
         return False
-    print(f"[{name}] login OK; falling 15 blocks in survival...")
+    if not c.reset_state():
+        return False
+    g = c.ground_y
+    print(f"[{name}] clean state (20 hp, ground y={g:.1f}); "
+          f"falling 15 blocks in survival...")
 
-    c.watch(1.0)   # settle; baseline health 20
-    c.min_health = 20.0
-    c.hurts = 0
-
-    c.move(129.0, GROUND_EYE, 128.4, True)
+    c.move(129.0, g + EYE, 128.4, True)
     time.sleep(0.2)
-    c.vertical(GROUND_EYE, HIGH_EYE)            # climb (rising: baseline reset)
-    c.vertical(HIGH_EYE, 75.0 + EYE)            # descend 15 blocks
-    c.move(129.0, GROUND_EYE, 128.4, True)      # land
+    c.vertical(g + EYE, g + 24.0 + EYE)      # climb (rising: baseline reset)
+    c.vertical(g + 24.0 + EYE, g + 9.0 + EYE)  # descend 15 blocks
+    c.move(129.0, g + EYE, 128.4, True)      # land
     c.watch(2.5)
 
     # vanilla: damage = 15 - 3 = 12  ->  health 20 -> 8
@@ -198,22 +276,22 @@ def scenario_creative_midair_switch(host, port) -> bool:
     c = FallClient(host, port, name)
     if not spawn(c, name):
         return False
-    print(f"[{name}] login OK; creative fall + mid-air switch to survival...")
+    if not c.reset_state():
+        return False
+    g = c.ground_y
+    print(f"[{name}] clean state (20 hp, ground y={g:.1f}); "
+          f"creative fall + mid-air switch...")
 
-    c.watch(1.0)
-    c.min_health = 20.0
-    c.hurts = 0
-
-    c.move(129.0, GROUND_EYE, 128.4, True)
+    c.move(129.0, g + EYE, 128.4, True)
     time.sleep(0.2)
     c.say("/gamemode 1")                        # creative
     time.sleep(0.8)
-    c.vertical(GROUND_EYE, HIGH_EYE)            # climb while flying
-    c.vertical(HIGH_EYE, 75.0 + EYE)            # fall 15 blocks in creative
+    c.vertical(g + EYE, g + 24.0 + EYE)      # climb while flying
+    c.vertical(g + 24.0 + EYE, g + 9.0 + EYE)  # fall 15 blocks in creative
     c.say("/gamemode 0")                        # switch mid-air
     time.sleep(0.8)
-    c.vertical(75.0 + EYE, 70.0 + EYE)          # survival descent: 5 blocks
-    c.move(129.0, GROUND_EYE, 128.4, True)      # land
+    c.vertical(g + 9.0 + EYE, g + 4.0 + EYE)   # survival descent: 5 blocks
+    c.move(129.0, g + EYE, 128.4, True)        # land
     c.watch(2.5)
 
     # The creative part must not count: only the 5 survival blocks apply
