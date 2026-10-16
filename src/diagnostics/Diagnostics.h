@@ -108,6 +108,8 @@ class Diagnostics {
     // ---- Configuration (called once at startup) ----
     void setDumpDir(const std::string& dir); // where error reports are written
     void setUptimeStart(uint64_t wall_ms);   // epoch ms when the server started
+    /// @brief Seconds since setUptimeStart(), or 0 when it was never set.
+    uint64_t uptimeSeconds() const;
 
     // ---- Hot-path recording (always on, cheap) ----
     void recordPacket(bool out, const std::string& who, uint8_t pid, size_t size);

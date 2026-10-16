@@ -221,6 +221,12 @@ void Diagnostics::setUptimeStart(uint64_t wall_ms) {
     start_ms_ = wall_ms;
 }
 
+uint64_t Diagnostics::uptimeSeconds() const {
+    std::lock_guard<std::mutex> lk(mtx_);
+    uint64_t now = nowWallMs();
+    return (start_ms_ > 0 && now > start_ms_) ? (now - start_ms_) / 1000 : 0;
+}
+
 void Diagnostics::recordPacket(bool out, const std::string& who, uint8_t pid, size_t size) {
     std::lock_guard<std::mutex> lk(mtx_);
     char buf[200];

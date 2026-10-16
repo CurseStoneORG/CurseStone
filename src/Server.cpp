@@ -3,7 +3,7 @@
 /  __ \                   /  ___| |
 | /  \/_   _ _ __ ___  ___\ `--.| |_ ___  _ __   ___
 | |   | | | | '__/ __|/ _ \`--. \ __/ _ \| '_ \ / _ \
-| \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
+| \__/\ |_| | |  | \__ \  __/\__/ / || (_) | | | |  __/
  \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
 
  * CurseStone | Open Source server Software
@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// server singleton implementation (Phase 21 completion).
+// Server singleton implementation.
 #include "Server.h"
 #include "MemoryManager.h"
 #include "workbench/WorkbenchManager.h"
@@ -72,7 +72,7 @@
 #include "nbt/tag/ListTag.h"
 #include "utils/BinaryStream.h"
 #include "permission/BanList.h"
-#include "plugin/PluginManager.h" // plugins Lua (fase 3)
+#include "plugin/PluginManager.h" // Lua plugin support
 #include "utils/Config.h"
 #include "utils/DefaultConfig.h"
 
@@ -94,7 +94,7 @@ Server::~Server() = default;
 
 namespace {
 
-// Reads to boolean accepting true/on/yes/and/1 (case-insensitive).
+// Reads a boolean value, accepting true/on/yes/y/1 case-insensitively.
 bool readBool(const utils::Config& cfg, const char* key, bool def) {
     std::string v = cfg.getString(key, std::string());
     if (v.empty())
@@ -109,8 +109,8 @@ bool readBool(const utils::Config& cfg, const char* key, bool def) {
 
 void Server::loadConfig() {
     using utils::Config;
-    Config props; // server.properties: basic settings
-    Config adv;   // cursestone.yml: advanced settings
+    Config props; // Basic server.properties settings.
+    Config adv;   // Advanced cursestone.yml settings.
 
     const std::string props_path = dataPath_ + "/server.properties";
     const std::string yaml_path = dataPath_ + "/cursestone.yml";
@@ -125,7 +125,7 @@ void Server::loadConfig() {
         utils::MainLogger::get().warn("Missing " + yaml_path + "; using defaults");
     }
 
-    // server.properties
+    // Load server.properties settings.
     ip_ = props.getString("server-ip", "0.0.0.0");
     port_ = (uint16_t)props.getInt("server-port", 19132);
     motd_ = props.getString("motd", "CurseStone");
@@ -136,18 +136,17 @@ void Server::loadConfig() {
     online_mode_ = readBool(props, "online-mode", false);
     view_distance_ = (int)props.getInt("view-distance", 8);
 
-    // cursestone.yml
+    // Load cursestone.yml settings.
     async_workers_ = (int)adv.getInt("settings.async-workers", 4);
     autosave_ticks_ = (int)adv.getInt("settings.autosave-ticks", 6000);
     advanced_log_ = readBool(adv, "settings.advanced-log", true);
 
-    // Both values must be set before the tick loop so the first GC pass
-    // already honors the configured budget.
+    // Apply memory limits before the tick loop starts.
     MemoryManager::get().setLimitMB((int)adv.getInt("memory.max-mb", 512));
     MemoryManager::get().setGcIntervalTicks(
         (uint64_t)std::max<int64_t>(20, adv.getInt("memory.gc-interval-ticks", 200)));
 
-    // Plugin limits: 0 disables a limit. Root-level keys are accepted as a fallback.
+    // Plugin limits support zero to disable each limit and root-level fallbacks.
     plugin::PluginLimits pluginLimits;
     pluginLimits.instructions = adv.getInt("settings.plugin-instruction-limit",
                                            adv.getInt("plugin-instruction-limit", 1000000));
@@ -172,8 +171,7 @@ void Server::loadConfig() {
 }
 
 void Server::initLogger() {
-    // Open server.log in the data directory so all log lines are written
-    // to disk in actual time (PMMP-equivalent: pocketmine.log).
+    // Write server.log to the data directory in real time.
     std::string log_path = dataPath_ + "/server.log";
     mcp_main_logger_init(log_path.c_str(), /*colored=*/true);
     utils::MainLogger::get().info(std::string(CURSESTONE_NAME) + " v" + CURSESTONE_API +
@@ -192,10 +190,7 @@ void Server::registerBlocksAndItems() {
 void Server::openNetwork() {
     network_ = std::make_shared<network::Network>(this);
     auto rli = std::make_unique<network::RakLibInterface>(this);
-    // Keep to raw pointer so we can call start() after the unique_ptr is moved
-    // into the Network (which takes ownership). start() opens the UDP socket
-    // and registers the MOTD; without it, the server binds nothing and clients
-    // cannot connect.
+    // Keep a raw pointer to start the interface after transferring ownership.
     auto* rli_ptr = rli.get();
     network_->registerInterface(std::move(rli));
     rli_ptr->start();
@@ -203,8 +198,7 @@ void Server::openNetwork() {
 }
 
 void Server::loadDefaultWorld() {
-    // World name and seed come from server.properties; format and generator
-    // from cursestone.yml.
+    // Read the world name and seed from server.properties and format/generator from cursestone.yml.
     using utils::Config;
     Config props;
     Config adv;
@@ -225,11 +219,10 @@ void Server::loadDefaultWorld() {
     lc.spawn_y = 64;
     lc.spawn_z = 0;
     lc.view_distance = view_distance_;
-    lc.dataPath = dataPath_; // so World can compute absolute world paths
+    lc.dataPath = dataPath_; // Allows World to resolve absolute world paths.
 
-    // Create the world directory structure BEFORE constructing the World,
-    // so the WorldProvider can open the region/ subdirectory on init().
-    // Mirrors Nukkit's Anvil.generate(): worlds/<name>/ + worlds/<name>/region/
+    // Create world directories before constructing the WorldProvider.
+    // This mirrors Nukkit's Anvil directory layout.
     std::string worldsDir = dataPath_ + "/worlds";
     std::string worldDir = worldsDir + "/" + lc.name;
     std::string regionDir = worldDir + "/region";
@@ -237,9 +230,7 @@ void Server::loadDefaultWorld() {
     ::mkdir(worldDir.c_str(), 0755);
     ::mkdir(regionDir.c_str(), 0755);
 
-    // Construct the World — this instantiates the WorldProvider (Anvil by
-    // default) and calls provider->init(worldDir). The provider creates the
-    // region/ subdir if missing and reads level.dat if it exists.
+    // Construct the World and initialize its provider.
     world_ = std::make_shared<world::World>(std::move(lc));
     worlds_.push_back(world_);
 
@@ -248,16 +239,14 @@ void Server::loadDefaultWorld() {
 }
 
 // ---------------------------------------------------------------------
-// Multiworld: load and unloads of worlds in time of execution.
+// Multiworld loading and unloading during runtime.
 // ---------------------------------------------------------------------
-// the world by default vive in world_ (and also in worlds_[0]); the
-// worlds extra that crean the plugins is add to worlds_ and is
-// tick/are stored in the same fases that the main.
+// The default world is stored in world_ and worlds_[0]; plugin worlds are stored in worlds_ too.
 
 World* Server::loadWorld(const std::string& name, const std::string& generator) {
     if (name.empty())
         return nullptr;
-    // already loaded: return the existente without touch nothing.
+    // Return the existing world without modifying it.
     if (World* existing = getWorldByName(name))
         return existing;
 
@@ -269,8 +258,7 @@ World* Server::loadWorld(const std::string& name, const std::string& generator) 
     lc.view_distance = view_distance_;
     lc.dataPath = dataPath_;
 
-    // same estructura of folders that loadDefaultWorld(): the provider
-    // needs worlds/<name>/region/ before init().
+    // Create the required directories before provider initialization.
     std::string worldsDir = dataPath_ + "/worlds";
     std::string worldDir = worldsDir + "/" + lc.name;
     std::string regionDir = worldDir + "/region";
@@ -302,8 +290,7 @@ bool Server::unloadWorld(const std::string& name) {
         if (ev.isCancelled())
             return false;
 
-        // moves to the players of this world in the spawn of the world
-        // by default before soltar the shared_ptr.
+        // Move players to the default world's spawn before releasing the world.
         for (auto& p : playersSnapshot()) {
             if (p && p->getWorld() == w) {
                 auto sp = world_ ? world_->spawn() : mcp_v3(0, 64, 0);
@@ -330,8 +317,9 @@ std::vector<World*> Server::getWorlds() const {
 
 std::shared_ptr<World> Server::getWorldShared(const std::string& name) const {
     for (auto& w : worlds_) {
-        if (w && w->name() == name)
+        if (w && w->name() == name) {
             return w;
+        }
     }
     return nullptr;
 }
@@ -348,27 +336,26 @@ void Server::startCommandReader() {
 }
 
 void Server::start(const std::string& dataPath) {
-    // Record the boot start time so we can log "server started in N.Ns"
-    // at the end. Mirrors PMMP's startup timing log.
+    // Record startup time for the server startup log.
     auto boot_start = std::chrono::steady_clock::now();
 
     dataPath_ = dataPath;
     running_.store(true, std::memory_order_relaxed);
 
-    // Diagnostics: mark the server start so crashdumps can report uptime.
+    // Record startup time for crash diagnostics.
     diagnostics::Diagnostics::get().setUptimeStart(
         (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch())
             .count());
 
-    // Ensure the data dir exists.
+    // Ensure the data directory exists.
     std::error_code ec;
     std::filesystem::create_directories(dataPath_, ec);
 
-    // Initialize logger first so we can see config-loading messages.
+    // Initialize logging before loading configuration.
     initLogger();
 
-    // Seed any missing config file from the built-in defaults.
+    // Create any missing configuration files from built-in defaults.
     std::vector<std::string> created;
     if (!utils::writeDefaultConfigs(dataPath_, &created)) {
         utils::MainLogger::get().warn("Could not create default config files in " + dataPath_);
@@ -385,10 +372,7 @@ void Server::start(const std::string& dataPath) {
     command_map_ = std::make_shared<SimpleCommandMap>();
     registerDefaultCommands(*command_map_);
     crafting_ = std::make_shared<inventory::CraftingManager>();
-    // Recipes live IN CODE (CraftingManager::registerBuiltinRecipes):
-    // there is not recipe file to load. An older build read an external
-    // file that was not packaged with the binary, so to clean release
-    // ended up with not recipes at all.
+    // Built-in recipes are registered in CraftingManager::registerBuiltinRecipes().
     int recipeCount = crafting_->registerBuiltinRecipes();
     utils::MainLogger::get().info("Loaded " + std::to_string(recipeCount) + " crafting recipes");
     async_pool_ = std::make_shared<scheduler::AsyncPool>(async_workers_);
@@ -396,16 +380,13 @@ void Server::start(const std::string& dataPath) {
     openNetwork();
     utils::MainLogger::get().info("Loading default world...");
     loadDefaultWorld();
-    // Lua plugins: loaded between the world and the console reader. The
-    // world already exists (plugins can touch it) and the console does
-    // not receive commands yet (not command arrives while plugins
-    // register).
+    // Load Lua plugins after the world exists and before console input starts.
     utils::MainLogger::get().info("Loading plugins...");
     plugin::PluginManager::get().loadAll(dataPath_ + "/plugins", dataPath_ + "/data_pl");
     utils::MainLogger::get().info("Starting console command reader...");
     startCommandReader();
 
-    // Compute total boot time.
+    // Calculate total startup time.
     auto boot_end = std::chrono::steady_clock::now();
     auto boot_ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(boot_end - boot_start).count();
@@ -413,37 +394,18 @@ void Server::start(const std::string& dataPath) {
     utils::MainLogger::get().info("Server ready Tick loop starting...");
     utils::MainLogger::get().info("Server started in " + std::to_string(boot_sec) + "s");
 
-    // Give the OS to brief moment to flush filesystem buffers after the
-    // world directory + level.dat + provider init writes. Without this,
-    // the tick loop can race with filesystem sync on slow devices
-    // (Android especially). 200ms is plenty for any reasonable storage.
+    // Allow filesystem buffers to flush before the tick loop starts.
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
 }
 
 void Server::runTickLoop() {
     uint64_t last_tick_count = 0;
     auto last_tps_time = std::chrono::steady_clock::now();
-    //
-    // tick pacing uses an ABSOLUTE calendar (sleep_until) so drift
-    // cannot accumulate. The old relative sleep (50 - trunc(elapsed_ms))
-    // dropped the fraction of every tick (30.9ms elapsed slept 20ms ->
-    // to 50.9ms tick) and added 1-3ms of Linux scheduler overshoot on
-    // top: the error compounded until the server fell below 20 TPS.
-    // Below 20 TPS the server's item simulation runs slower than the
-    // client's (which integrates at its own 20fps): to dropped item rests
-    // in one place on the server and another on the client, particle
-    // packets go out late, and everything visibly drags behind.
-    //
-    // next_tick advances by exactly 50ms every tick - overshoot is paid
-    // back on the next tick instead of accumulating, exactly like
-    // PMMP/Genisys do with their checkTick.
+    // Use absolute tick deadlines to prevent timing drift.
+    // Advance by 50 ms per tick and compensate for overruns on the next tick.
     auto next_tick = std::chrono::steady_clock::now();
     while (running_.load(std::memory_order_relaxed)) {
-        // Poll the external stop flag (set by CurseStone.cpp's SIGINT/SIGTERM
-        // handler) on the main thread, in normal — not signal — context.
-        // This is the only place that flag is ever acted on; see
-        // setExternalStopFlag()'s comment for why the handler itself
-        // can't call shutdown() directly.
+        // Handle external stop requests on the main thread.
         if (external_stop_flag_ && *external_stop_flag_ &&
             running_.load(std::memory_order_relaxed)) {
             shutdown();
@@ -457,13 +419,11 @@ void Server::runTickLoop() {
         if (std::chrono::steady_clock::now() < next_tick) {
             std::this_thread::sleep_until(next_tick);
         } else {
-            // Overrun tick (slow frame): re-anchor the calendar to the
-            // present so to run of late ticks does not chain (rage
-            // catch-up) - to PMMP server does the same.
+            // Re-anchor after an overrun to prevent chained catch-up ticks.
             next_tick = std::chrono::steady_clock::now();
         }
         (void)elapsed_ms;
-        // Compute TPS once per second.
+        // Update TPS once per second.
         if (currentTick_ - last_tick_count >= 20) {
             auto now = std::chrono::steady_clock::now();
             auto elapsed_sec =
@@ -476,37 +436,19 @@ void Server::runTickLoop() {
     }
     utils::MainLogger::get().info("Tick loop exited.");
     tick_loop_exited_.store(true, std::memory_order_relaxed);
-    // Lua plugins: the tick loop has exited (nothing fires events)
-    // and the world can still be saved - disable all plugins here.
+    // Disable plugins after the tick loop exits.
     plugin::PluginManager::get().disableAll();
 
-    // Cleanup — runs on the main thread, AFTER the tick loop exits.
-    // This is critical: /stop is dispatched from the CommandReader
-    // thread, so doing saveAll() inside server::shutdown() would race
-    // with the main thread destroying server members (mutexes, world_,
-    // players_). By deferring all cleanup to here, we guarantee that
-    // saveAll() runs single-threaded before any destructor fires.
+    // Run cleanup on the main thread after the tick loop exits.
     if (network_)
-        network_->tick(); // graceful RakLib close
-    // end global GC pass BEFORE saveAll(): flushes tile/entities, saves
-    // out-of-view chunks as part of the chunk sweep, and drops picked-up
-    // item records so nothing stale is written back to disk. Forced —
-    // rate limiting must not eat the last pass.
+        network_->tick(); // Gracefully close RakLib.
+    // Force a final GC pass before saving all worlds.
     MemoryManager::get().collect(/*force=*/true);
     saveAll();
     if (console_reader_)
         console_reader_->stop();
 
-    // Stop and JOIN the chunk-generation pool here, on the main thread,
-    // while the process is still fully alive. The pool is owned by this
-    // server singleton, and the order in which static destructors run is
-    // not guaranteed: if to worker is still inside GenerationTask::run()
-    // when the global block registry / chunk tables are destroyed, it dies
-    // in mcp_block_light_opacity() reading to table that not longer exists —
-    // to SIGSEGV logged right AFTER "Shutdown complete." (reproducible
-    // whenever to player had chunks in flight at stop time). stop() joins
-    // every worker and is idempotent, so the pool's own destructor stays to
-    // not-op and nothing can be generating once we return.
+    // Stop and join chunk-generation workers before global data is destroyed.
     if (async_pool_)
         async_pool_->stop();
 
@@ -516,14 +458,14 @@ void Server::runTickLoop() {
 void Server::tick() {
     ++currentTick_;
 
-    // Diagnostics: keep the current tick visible to crashdumps.
+    // Update the current tick for crash diagnostics.
     diagnostics::Diagnostics::get().setTick(currentTick_);
 
-    // --- Workbench: tick start hook ---
+    // Run the Workbench tick-start hook.
     auto wb_start = std::chrono::steady_clock::now();
     WorkbenchManager::get().onTickStart();
 
-    // --- Reap players flagged for removal by player::close() ---
+    // Remove players marked for deletion.
     {
         std::lock_guard<std::mutex> lk(players_mtx_);
         players_.erase(std::remove_if(players_.begin(), players_.end(),
@@ -533,16 +475,7 @@ void Server::tick() {
                        players_.end());
     }
 
-    // --- Phase: scheduler ---
-    // FIX: previously this only called tick() when there were pending
-    // SYNC handlers (size() > 0). But ServerScheduler::tick() also
-    // drains the ASYNC completion queue (onCompletion() callbacks for
-    // finished AsyncTasks) — with the old guard, if every sync task
-    // had finished but an AsyncTask (e.g. to chunk save) completed on
-    // to worker thread, its onCompletion() would never run because
-    // tick() itself was being skipped. Now we always call tick(); the
-    // cost when there's genuinely nothing to do is two cheap
-    // near-empty lock/unlock pairs, not worth special-casing away.
+    // Tick the scheduler to process synchronous tasks and async completions.
     auto t0 = std::chrono::steady_clock::now();
     scheduler::ServerScheduler::get().tick(currentTick_);
     auto t1 = std::chrono::steady_clock::now();
@@ -550,47 +483,44 @@ void Server::tick() {
         "scheduler",
         (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
 
-    // --- Phase: world ---
+    // Tick all loaded worlds.
     t0 = std::chrono::steady_clock::now();
     for (auto& w : worlds_) {
-        if (w)
+        if (w) {
+            auto w0 = std::chrono::steady_clock::now();
             w->tick(currentTick_);
+            w->beginTickSample(std::chrono::duration<double, std::milli>(
+                                   std::chrono::steady_clock::now() - w0)
+                                   .count());
+        }
     }
     t1 = std::chrono::steady_clock::now();
     WorkbenchManager::get().onTickPhase(
         "level", (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
 
-    // --- Phase: block entities (furnaces) ---
-    // Runs outside World::tick to keep that phase free of packet
-    // sends (furnaces send progress/content to viewers here).
+    // Tick block entities separately to isolate packet sends.
     t0 = std::chrono::steady_clock::now();
     for (auto& w : worlds_) {
-        if (w)
+        if (w) {
+            auto w0 = std::chrono::steady_clock::now();
             w->tickTiles(currentTick_);
+            w->addTickSample(std::chrono::duration<double, std::milli>(
+                                 std::chrono::steady_clock::now() - w0)
+                                 .count());
+        }
     }
     t1 = std::chrono::steady_clock::now();
     WorkbenchManager::get().onTickPhase(
         "tiles", (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
 
-    // --- Phase: global GC ---
-    // THE single GarbageCollector pass for the whole server. Everything
-    // that reclaims shared world memory funnels through here:
-    // chunk unload sweep (was to separate 100-tick schedule in this very
-    // function) + dropped-item despawn/taken sweep (was to per-tick sweep
-    // inside World::tick) + heap trim. Centralizing matters: independent
-    // reclaimer schedules were freeing world state (dropped items, tiles,
-    // chunks) in the middle of player actions — the "player actions
-    // desyncing from the server" symptom. Rate limiting inside
-    // MemoryManager::collect() keeps the pass off every tick; it prices
-    // like the old chunk sweep (occasional maintenance, may hit disk).
+    // Run the centralized garbage collection pass.
     t0 = std::chrono::steady_clock::now();
     MemoryManager::get().collect();
     t1 = std::chrono::steady_clock::now();
     WorkbenchManager::get().onTickPhase(
         "gc", (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
 
-    // --- Phase: network (first pass) ---
-    // CRITICAL: process network BEFORE player updates.
+    // Process network input before updating players.
     t0 = std::chrono::steady_clock::now();
     if (network_)
         network_->tick();
@@ -599,14 +529,14 @@ void Server::tick() {
         "network",
         (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
 
-    // Update watchdog: main thread is alive
+    // Record the main thread's latest activity time.
     WorkbenchManager::get().last_drain_time_ms.store(
         (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now().time_since_epoch())
             .count(),
         std::memory_order_relaxed);
 
-    // --- Phase: player updates ---
+    // Update online players.
     auto snap = playersSnapshot();
     for (auto& p : snap) {
         if (!p)
@@ -621,10 +551,7 @@ void Server::tick() {
             (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(pt1 - pt0).count());
     }
 
-    // Diagnostics: refresh the online-player snapshot (twice per second).
-    // It is captured here, on the main thread, so the SIGSEGV handler can
-    // read to ready-made snapshot instead of touching server state while
-    // the process is dying.
+    // Refresh the player snapshot for crash diagnostics twice per second.
     if (currentTick_ % 10 == 0) {
         uint64_t now_wall = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
                                 std::chrono::system_clock::now().time_since_epoch())
@@ -657,11 +584,7 @@ void Server::tick() {
         diagnostics::Diagnostics::get().updatePlayers(std::move(ps));
     }
 
-    // --- Phase: batched packet flush ---
-    // Flushes each player's per-tick buffer as ONE compressed
-    // BatchPacket per channel. Everything this tick produced - the
-    // network handlers, the world tick, and the player updates - goes
-    // out here, grouped (see the note in player::sendPacket).
+    // Flush each player's queued packets as a compressed batch.
     {
         auto bpf0 = std::chrono::steady_clock::now();
         for (auto& p : snap) {
@@ -677,35 +600,23 @@ void Server::tick() {
             (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(bpf1 - bpf0).count());
     }
 
-    // --- Phase: network (second pass — flush outbound) ---
+    // Flush outbound network traffic.
     if (network_)
         network_->tick();
 
-    // --- Phase: auto-save (incremental) ---
-    // Previously this block called world_->save(), which serializes ALL
-    // dirty chunks in the same tick. With the world running that is
-    // hundreds of chunks (everything generated since the last autosave),
-    // i.e. several hundred ms of blocked main thread: measured ~495 ms
-    // for 350 chunks and ~759 ms in the reported case, ~90% of it zlib
-    // compression of the chunks (see kChunkCompressionLevel in Anvil).
-    // to live client experiences that as to freeze/disconnect.
-    // Now the autosave tick saves the cheap data (player data +
-    // level.dat) and OPENS the drain; on the following ticks the queue
-    // is written to few chunks per tick under to time budget, so the
-    // per-tick cost stays bounded and the world still ends up fully
-    // flushed to disk.
+    // Save player data and drain dirty chunks incrementally.
     if (autosave_ticks_ > 0 && currentTick_ % autosave_ticks_ == 0) {
         auto psnap = playersSnapshot();
         for (auto& p : psnap) {
             if (p)
-                p->saveData(); // NBT of player: barato, not is I/or of chunks
+                p->saveData(); // Save player NBT data.
         }
         beginAutosaveDrain();
     }
     if (autosave_draining_)
         tickAutosaveDrain();
 
-    // --- Workbench: tick end hook ---
+    // Run the Workbench tick-end hook.
     auto wb_end = std::chrono::steady_clock::now();
     uint64_t total_ms =
         (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(wb_end - wb_start).count();
@@ -713,35 +624,19 @@ void Server::tick() {
 }
 
 void Server::shutdown() {
-    // Signal the tick loop to exit. The current cleanup (saveAll,
-    // console_reader stop) is deferred to AFTER the tick loop exits
-    // in runTickLoop(), because /stop may be dispatched from the
-    // CommandReader thread. Doing saveAll() here would race with the
-    // main thread's destructors (mutexes, world_, players_) — causing
-    // "pthread_mutex_lock called on to destroyed mutex" and lost chunks.
-    //
-    // EMERGENCY WATCHDOG: if the main tick loop is frozen (e.g. by to
-    // runaway synchronous operation), running_ is set to false but the
-    // tick loop never gets to check it. /stop then hangs forever with
-    // "Stopping the server..." printed and not exit. We spawn to short
-    // watcher thread that gives the main loop 5 seconds to exit
-    // gracefully; if it doesn't, we _exit() the process so the user
-    // at least gets to prompt back. Data loss is acceptable in this
-    // scenario — the alternative is to permanently hung server.
+    // Defer cleanup until the tick loop exits to avoid cross-thread races.
     if (running_.exchange(false, std::memory_order_relaxed)) {
         utils::MainLogger::get().info("Server shutting down...");
         std::thread([this]() {
-            // Give the main loop 5 seconds to exit cleanly.
+            // Allow five seconds for the main loop to exit cleanly.
             for (int i = 0; i < 50; ++i) {
                 if (!running_.load(std::memory_order_relaxed) &&
                     tick_loop_exited_.load(std::memory_order_relaxed)) {
-                    return; // main loop exited cleanly
+                    return; // Main loop exited cleanly.
                 }
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
-            // Timeout — force exit. We can't call ~server() safely here
-            // because we're on to different thread and the destructors
-            // may race, but _exit() bypasses destructors entirely.
+            // Force process exit if the main loop remains stuck.
             utils::MainLogger::get().error("Shutdown watchdog: tick loop did not exit within 5s — "
                                            "forcing process exit (unsaved chunks may be lost).");
             std::_Exit(1);
@@ -777,23 +672,17 @@ void Server::broadcastMessage(const std::string& msg) {
     for (auto& p : snap)
         if (p)
             p->sendMessage(msg);
-    // Every broadcast (player chat, join/quit/death messages, server
-    // say) is mirrored to the server console with the §-codes stripped -
-    // exactly like PMMP's server::broadcastMessage logging behaviour, so
-    // an admin watching the console sees the same chat the players see
-    // in-game.
+    // Mirror broadcasts to the console without formatting codes.
     utils::MainLogger::get().info("[CHAT] " + TC::clean(msg));
 }
 void Server::broadcastPacket(void* /*p*/) {
-    // send to each player's source interface
+    // Send packets through each player's source interface.
 }
 int64_t Server::allocateEid() {
     return next_eid_.fetch_add(1, std::memory_order_relaxed);
 }
 void Server::saveAll() {
-    // 1. Save every online player's NBT + inventory FIRST, so any
-    //    chunk-modifications they triggered (block place/break) get
-    //    marked dirty on the chunks before the world save runs.
+    // Save player data first so world changes are marked dirty.
     auto snap = playersSnapshot();
     for (auto& p : snap) {
         if (p)
@@ -801,8 +690,7 @@ void Server::saveAll() {
     }
     utils::MainLogger::get().info("[SAVE] " + std::to_string(snap.size()) + " player(s) saved.");
 
-    // 2. Save every loaded world — flushes dirty chunks to .mca files
-    //    AND writes level.dat (seed/spawn/time) via the provider.
+    // Save all loaded worlds and their dirty chunks.
     for (auto& w : worlds_) {
         if (!w)
             continue;
@@ -812,25 +700,10 @@ void Server::saveAll() {
     }
 }
 
-// Autosave incremental
-//
-// PocketMine-style pipeline: the drain on the MAIN thread only serializes
-// dirty chunks (Anvil NBT encode, ~0.1 ms/chunk) and hands the snapshots
-// to the provider's background writer, which does the ZLIB compression
-// and the .mca region I/O off-thread. That moved the expensive half of
-// the old synchronous path (compression + disk, the source of the 12 ms
-// ticks users saw while exploring) out of the tick entirely.
-//
-// Budget: the encode-only cost lets us enqueue a much bigger batch per
-// tick than before while keeping the main-thread cap at 3 ms. A 469-chunk
-// backlog now drains in ~10-15 ticks with a worst-case main-thread tick
-// of ~3 ms (was 8 chunks/tick with 12 ms spikes), and the disk work
-// overlaps gameplay on the worker thread.
+// Incremental autosave pipeline.
 static constexpr size_t kAutosaveChunksPerTick = 64;
 static constexpr uint64_t kAutosaveMsPerTick = 3;
-// If the flush writes nothing for this many ticks in to row (e.g. to
-// provider that always fails), the drain is closed instead of
-// retrying the same dirty chunk forever.
+// Stop retrying after this many consecutive idle ticks.
 static constexpr int kAutosaveIdleTicksMax = 40;
 
 static uint64_t nowSteadyMs() {
@@ -850,9 +723,7 @@ void Server::beginAutosaveDrain() {
     autosave_drain_max_tick_ms_ = 0;
     autosave_drain_idle_ticks_ = 0;
 
-    // level.dat (world time + spawn) is written HERE, once, with to
-    // zero-chunk budget: it is to tiny file and we do not want to
-    // rewrite it on every drain tick.
+    // Write level.dat once without processing chunks.
     auto t0 = std::chrono::steady_clock::now();
     for (auto& w : worlds_) {
         if (w)
@@ -870,7 +741,7 @@ void Server::beginAutosaveDrain() {
             pending += w->unsavedChunkCount();
     }
     if (pending == 0)
-        return; // nothing sucio: ni abrimos the drenaje
+        return; // No dirty chunks to drain.
 
     autosave_draining_ = true;
     if (advanced_log_) {
@@ -888,8 +759,7 @@ void Server::tickAutosaveDrain() {
     }
 
     auto t0 = std::chrono::steady_clock::now();
-    // the presupuesto is reparte between the worlds with chunks sucios:
-    // each uno drena with the part that it quede of chunks and time.
+    // Distribute the chunk and time budgets across worlds with dirty chunks.
     int saved = 0;
     size_t chunk_budget = kAutosaveChunksPerTick;
     for (auto& w : worlds_) {
@@ -964,33 +834,19 @@ permission::BanList& Server::getIPBans() {
     return *ip_bans_;
 }
 
-// Operator list — backed by <dataPath>/ops.txt (one name per line)
+// Operator list stored in <dataPath>/ops.txt.
 namespace {
-// Normalizes to player name to the canonical comparison form:
-//   - drops the 3 bytes of to UTF-8 BOM and ANY non-ASCII byte
-//     (NBSP, zero-width, to misinterpreted UTF-16 sequence, ...),
-//   - removes NULs and control characters (\r, \n, \t, of the),
-//   - trims whitespace from both ends,
-//   - lowercases the result.
-//
-// The SAME function is used to LOAD ops.txt and to LOOK UP from
-// isOp()/setOp(). That way garbage from wherever it comes - an
-// Android editor that leaves BOM/NBSP, to CRLF or UTF-16 file, or to
-// name with one stray byte glued on - ends up in the same shape on
-// both sides and matches. Previously only the data coming from the
-// file was cleaned while the queried name was merely lowercased: if
-// the query carried any invisible extra byte, isOp() failed to find
-// it and the op silently kept not permissions.
+// Normalize operator names for consistent comparisons.
 std::string normalizeOpName(std::string s) {
     std::string out;
     out.reserve(s.size());
     for (unsigned char c : s) {
         if (c == 0)
-            continue; // NUL (UTF-16 leido as text)
+            continue; // Remove NUL bytes.
         if (c >= 0x80)
-            continue; // BOM, NBSP, zero ancho, acentos
+            continue; // Remove non-ASCII bytes.
         if (c < 0x20 || c == 0x7F)
-            continue; // \r \n \t and other control
+            continue; // Remove control characters.
         out.push_back((char)c);
     }
     size_t b = 0, e = out.size();
@@ -1004,9 +860,7 @@ std::string normalizeOpName(std::string s) {
     });
     return out;
 }
-// Same rule PlayerLogin.cpp accepts for joining: [to-zA-Z0-9_]{3,16}.
-// to name outside that rule can NEVER match to connected player, so we
-// warn (instead of staying silent) to make it visible in the log.
+// Check whether a name matches the player login format.
 bool looksLikeValidOpName(const std::string& s) {
     if (s.size() < 3 || s.size() > 16)
         return false;
@@ -1021,16 +875,11 @@ bool looksLikeValidOpName(const std::string& s) {
 } // namespace
 void Server::loadOps() {
     ops_.clear();
-    // Binary read: to UTF-8 BOM would arrive in text mode too, but this
-    // way the file is read byte by byte and we can strip it ourselves.
+    // Read bytes directly to handle UTF-8 and UTF-16 BOMs.
     const std::string ops_path = dataPath_ + "/ops.txt";
     std::ifstream in(ops_path, std::ios::binary);
     if (!in.is_open()) {
-        // Explicit diagnostic: the symptom "I add myself to ops.txt / run
-        // /op and the server does not make me an op" almost always means
-        // THIS file is not being read (to different path on Android, not
-        // permissions, or it does not exist yet). Previously the code
-        // returned silently and the server started with zero ops.
+        // Log missing or inaccessible operator files instead of failing silently.
         const int e = errno;
         const std::string why = (e == ENOENT || e == 0)
                                     ? std::string("file not found")
@@ -1042,21 +891,12 @@ void Server::loadOps() {
     }
     std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 
-    // An editor that saves as "UTF-8 with BOM" (Notepad on Windows,
-    // several Android editors) leaves the 3 bytes 0xEF 0xBB 0xBF at the
-    // start. Without stripping them the FIRST stored entry is
-    // "\xEF\xBB\xBFdr1xy" and it NEVER matches the player's name: the
-    // file looks perfect, the log says "Loaded 1 operator(s)" and still
-    // that op cannot use commands.
-    // UTF-16: several Android editors store text as UTF-16 (BOM FF FE /
-    // FE FF, or not BOM but to NUL in every odd byte). Without decoding,
-    // "Dr1xy" reads as "D\0r\0..." and NEVER matches the player's name
-    // even though the file looks perfect.
+    // Strip UTF-8 BOMs commonly added by editors.
     auto utf16_to_8 = [](const std::string& raw, bool big_endian) {
         std::string s;
         s.reserve(raw.size() / 2);
         for (size_t i = 0; i + 1 < raw.size(); i += 2) {
-            // it: even byte = low, odd byte = high. BE: the other way around.
+            // Decode UTF-16 byte pairs according to endianness.
             unsigned lo = (unsigned char)raw[big_endian ? i + 1 : i];
             unsigned hi = (unsigned char)raw[big_endian ? i : i + 1];
             if (hi == 0 && lo != 0)
@@ -1074,15 +914,13 @@ void Server::loadOps() {
                content[3] == '\0') {
         content = utf16_to_8(content, false);
     }
-    // BOM UTF-8 (Notepad in Windows, several editores of Android).
+    // Remove a UTF-8 BOM if present.
     if (content.size() >= 3 && (unsigned char)content[0] == 0xEF &&
         (unsigned char)content[1] == 0xBB && (unsigned char)content[2] == 0xBF) {
         content.erase(0, 3);
     }
 
-    // Trims whitespace (including tabs) from BOTH ends of every line.
-    // Previously only the tail was trimmed, so to line " Dr1xy" did not
-    // match either.
+    // Normalize whitespace and names on every line.
     size_t pos = 0;
     size_t weird = 0;
     while (pos <= content.size()) {
@@ -1092,12 +930,10 @@ void Server::loadOps() {
         pos = (nl == std::string::npos) ? content.size() + 1 : nl + 1;
         std::string line = normalizeOpName(raw);
         if (line.empty())
-            continue; // lineas in blanco / only basura
+            continue; // Skip blank or invalid-only lines.
         if (!looksLikeValidOpName(line)) {
             ++weird;
-            // Loaded anyway (to user entry is never dropped) but warned
-            // about: to name PlayerLogin would reject can never match
-            // anyone joining the server.
+            // Keep invalid entries but warn that they cannot match login names.
             utils::MainLogger::get().warn("ops.txt entry cannot match any "
                                           "player name (kept anyway): '" +
                                           line + "' in " + ops_path);
@@ -1105,9 +941,7 @@ void Server::loadOps() {
         ops_.insert(std::move(line));
     }
 
-    // The log lists the recognized names: this is how you tell "my name
-    // is in ops.txt but the server did not read it" apart from "the
-    // server does have me as op and the problem is elsewhere".
+    // Log recognized names to help diagnose operator lookup problems.
     std::string names;
     for (const auto& n : ops_) {
         if (!names.empty())
@@ -1143,9 +977,7 @@ void Server::saveOps() {
 }
 
 bool Server::isOp(const std::string& name) const {
-    // Same normalization as when loading the file: any stray byte in the
-    // queried name (\r, NBSP, NUL, uppercase) is discarded before
-    // comparing instead of being allowed to break the lookup.
+    // Normalize the queried name before comparing it with stored names.
     const std::string key = normalizeOpName(name);
     if (key.empty())
         return false;
@@ -1164,22 +996,20 @@ void Server::setOp(const std::string& name, bool op) {
     }
     if (changed)
         saveOps();
-    // Records in the log WHAT was saved and WHERE: if the player still
-    // cannot use commands, the next log line shows whether the stored
-    // name differs from the one queried later.
+    // Log the operator change and the file location.
     utils::MainLogger::get().info(std::string("/") + (op ? "op " : "deop ") + key +
                                   (op ? " -> operator" : " -> not operator") + " (" +
                                   std::to_string(ops_.size()) + " in " + dataPath_ + "/ops.txt)");
 }
 
-// Helper: ensure "<dataPath>/players/" exists.
+// Ensure the player data directory exists.
 static void ensurePlayersDir(const std::string& dataPath) {
     std::string dir = dataPath + "/players";
-    // Create if missing (best-effort; ignores EEXIST).
+    // Create the directory if needed.
     ::mkdir(dir.c_str(), 0755);
 }
 
-// Helper: build to default NBT compound for to new player.
+// Build the default NBT compound for a new player.
 static NbtPtr buildDefaultPlayerNbt(Server* srv, const std::string& name) {
     mcp_tag_t* root = mcp_compound_tag_new_named("");
     mcp_compound_tag_set_long(root, "firstPlayed", (int64_t)(mcp_utils_time_ms()));
@@ -1215,11 +1045,11 @@ NbtPtr Server::getOfflinePlayerData(const std::string& name) {
     if (buf.empty())
         return buildDefaultPlayerNbt(this, name);
 
-    // Nukkit-style player.dat: GZIP-compressed big-endian NBT.
-    // Fall back to plain little-endian for legacy CurseStone files.
+    // Read Nukkit-compatible GZIP-compressed big-endian NBT first.
+    // Fall back to uncompressed formats used by legacy CurseStone files.
     mcp_tag_t* root = nullptr;
     {
-        // Try GZIP + big-endian first.
+        // Try GZIP-compressed data first.
         z_stream zs{};
         if (inflateInit2(&zs, 15 | 16) == Z_OK) {
             zs.next_in = (Bytef*)buf.data();
@@ -1246,11 +1076,11 @@ NbtPtr Server::getOfflinePlayerData(const std::string& name) {
         }
     }
     if (!root) {
-        // Legacy: try plain big-endian (uncompressed).
+        // Try uncompressed big-endian NBT.
         root = mcp_nbt_read_bytes(buf.data(), buf.size(), /*little_endian=*/false);
     }
     if (!root) {
-        // Legacy: try plain little-endian (uncompressed, old CurseStone).
+        // Try legacy uncompressed little-endian NBT.
         root = mcp_nbt_read_bytes(buf.data(), buf.size(), /*little_endian=*/true);
     }
     if (!root) {
@@ -1276,7 +1106,7 @@ void Server::saveOfflinePlayerData(const std::string& name, NbtPtr nbt) {
             free(bytes);
         return;
     }
-    // GZIP-compress to match Nukkit player.dat layout.
+    // Compress player data using GZIP for Nukkit compatibility.
     z_stream zs{};
     if (deflateInit2(&zs, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 15 | 16, 8, Z_DEFAULT_STRATEGY) !=
         Z_OK) {
@@ -1308,7 +1138,7 @@ void Server::saveOfflinePlayerData(const std::string& name, NbtPtr nbt) {
     out.close();
 }
 
-// Nukkit-compat method implementations
+// Nukkit-compatible method implementations.
 Player* Server::getPlayerExact(const std::string& name) const {
     auto snap = playersSnapshot();
     for (const auto& p : snap) {
@@ -1348,7 +1178,7 @@ std::vector<Player*> Server::matchPlayer(const std::string& partialName) const {
     return result;
 }
 
-// --- Nukkit-compat: World management ---
+// Nukkit-compatible world management.
 World* Server::getWorld(int worldId) const {
     if (worldId >= 1 && worldId <= (int)worlds_.size()) {
         return worlds_[worldId - 1].get();
@@ -1365,13 +1195,12 @@ World* Server::getWorldByName(const std::string& name) const {
 }
 
 void Server::onPlayerLogin(Player* /*player*/) {
-    // Nukkit: called when to player successfully logs in.
-    // Used to broadcast join message + update player list.
-    // We handle this in player::handleLogin already.
+    // Nukkit callback for successful player login.
+    // Login handling and broadcasts are implemented in player::handleLogin.
 }
 
 std::string Server::getConfigString(const std::string& key, const std::string& def) const {
-    // Stub — full config accessor would read from server.properties
+    // Stub for a future server.properties accessor.
     (void)key;
     return def;
 }
@@ -1408,19 +1237,19 @@ int Server::broadcast(const std::string& message, const std::string& /*permissio
 
 void Server::broadcastPacketsCallback(const std::vector<uint8_t>& /*data*/,
                                       const std::vector<std::string>& /*identifiers*/) {
-    // Stub — would batch-send to pre-encoded packet to specific players.
+    // Stub for sending encoded packets to selected players in batches.
 }
 
 void Server::addWhitelist(const std::string& /*name*/) {
-    // Stub — whitelist not implemented yet.
+    // Stub: whitelist support is not implemented.
 }
 
 void Server::removeWhitelist(const std::string& /*name*/) {
-    // Stub
+    // Stub: whitelist support is not implemented.
 }
 
 void Server::reloadWhitelist() {
-    // Stub
+    // Stub: whitelist support is not implemented.
 }
 
 void Server::saveOfflinePlayerData(const std::string& name, NbtPtr nbt, bool /*async*/) {
@@ -1428,13 +1257,13 @@ void Server::saveOfflinePlayerData(const std::string& name, NbtPtr nbt, bool /*a
 }
 
 void Server::titleTick() {
-    // Update MOTD with player count + TPS (like Nukkit does)
+    // Update the MOTD with player count and TPS.
     if (network_) {
         std::string motd = "MCPE;" + motd_ + ";" + std::to_string(PROTOCOL_VERSION) + ";" +
                            std::string(MINECRAFT_VERSION) + ";" +
                            std::to_string(playersSnapshot().size()) + ";" +
                            std::to_string(max_players_);
-        // Cast to RakLibInterface to access setServerName
+        // Access setServerName through the RakLib interface.
         auto* raklib = dynamic_cast<network::RakLibInterface*>(network_->getRakLib());
         if (raklib)
             raklib->setServerName(motd);
@@ -1442,11 +1271,7 @@ void Server::titleTick() {
 }
 
 void Server::sendRecipeList(Player* player) {
-    // Nukkit: sends the full crafting recipe list to to player.
-    // current implementation: builds to CraftingDataPacket with ALL
-    // loaded recipes and sends it to this player (doFirstSpawn already
-    // sends it on its own; this method remains for manual re-syncs,
-    // just like Nukkit's sendRecipeList()).
+    // Send all loaded crafting recipes to the player.
     if (!player || !crafting_)
         return;
     auto cd = std::make_shared<network::protocol::CraftingDataPacket>();
@@ -1456,18 +1281,15 @@ void Server::sendRecipeList(Player* player) {
 
 void Server::updatePlayerListData(const std::string& /*uuid*/, const std::string& /*name*/,
                                   int64_t /*eid*/, const std::string& /*skin*/) {
-    // Nukkit: broadcasts PlayerListPacket ADD to all online players.
-    // We handle this in player::doFirstSpawn already.
+    // Player list additions are handled by player::doFirstSpawn.
 }
 
 void Server::removePlayerListData(const std::string& /*uuid*/) {
-    // Nukkit: broadcasts PlayerListPacket REMOVE to all online players.
-    // We handle this in player::close already.
+    // Player list removals are handled by player::close.
 }
 
 void Server::sendFullPlayerListData(Player* /*target*/) {
-    // Nukkit: sends the full player list to to specific player.
-    // We handle this in player::doFirstSpawn already.
+    // Initial player list synchronization is handled by player::doFirstSpawn.
 }
 
 } // namespace cursestone
