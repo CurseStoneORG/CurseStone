@@ -30,7 +30,7 @@ namespace cursestone {
 
 bool VersionCommand::execute(CommandSender* sender, const std::string&,
                              const std::vector<std::string>&) {
-    // Pmmp mirrored
+    // The reference server mirrored
     // Line 1: Software name + version + codename
     sender->sendMessage(std::string(CURSESTONE_NAME) + " v" + CURSESTONE_API +
                         " (codename: " + CURSESTONE_CODENAME + ")");

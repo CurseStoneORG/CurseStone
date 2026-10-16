@@ -20,7 +20,7 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// BlockFire.h — Portado de pocketmine/block/Fire.php (PMMP)
+// BlockFire.h — Portado de block/Fire (the reference server)
 //
 // Implementa:
 //   - Luz nivel 15
@@ -30,9 +30,9 @@
 //   - Fuego eterno sobre Netherrack
 //   - Extinción por lluvia, edad > 3 sin suelo sólido, etc.
 //
-// Diferencias con el PHP original (adaptadas a la arquitectura C++ de CurseStone):
+// Diferencias con el original (adaptadas a la arquitectura C++ de CurseStone):
 //   - scheduleUpdate() usa ServerScheduler::scheduleSync() en vez de
-//     la cola interna de PMMP.
+//     la cola interna del servidor de referencia.
 //   - World no expone getBlockData() todavía; se accede via chunks() directamente.
 //     Agrega `uint8_t getBlockData(int32_t x, int32_t y, int32_t z)` a World.h
 //     (ver parche incluido abajo en Level_patch.h).
@@ -75,7 +75,7 @@ class BlockFire : public BlockTransparent {
     }
     bool canBeReplaced() const override {
         return true;
-    } // PMMP: return true
+    } // The reference server: return true
     bool canWalkThrough() const override {
         return true;
     }
@@ -84,26 +84,26 @@ class BlockFire : public BlockTransparent {
     }
     uint8_t getLightLevel() const override {
         return 15;
-    } // PMMP: return 15
+    } // The reference server: return 15
 
     // ---- Interacción con entidades ----
     // Llama el entity-tick loop por cada entidad que se superpone con este bloque.
-    // Mirrors PMMP Fire::onEntityCollide($entity)
+    // Mirrors the reference server Fire::onEntityCollide(entity)
     static void onEntityCollide(world::World* world, int32_t bx, int32_t by, int32_t bz,
                                 entity::Entity* entity);
 
     // ---- Tick programado ----
     // Encola el siguiente update de propagación/extinción para (x,y,z).
-    // delay = TICK_RATE + rand(0..10)  — idéntico a PMMP scheduleUpdate.
+    // delay = TICK_RATE + rand(0..10)  — idéntico a the reference server scheduleUpdate.
     static void scheduleUpdate(world::World* world, int32_t x, int32_t y, int32_t z);
 
     // Lógica de propagación + extinción, llamada por FireUpdateTask::onRun().
-    // Mirrors PMMP Fire::onUpdate(BLOCK_UPDATE_SCHEDULED)
+    // Mirrors the reference server Fire::onUpdate(BLOCK_UPDATE_SCHEDULED)
     static void onScheduledUpdate(world::World* world, int32_t x, int32_t y, int32_t z);
 
     static constexpr int TICK_RATE = 30; // ticks (= 1.5 s a 20 TPS)
 
-    // ---- Tablas de flamabilidad (PMMP verbatim) ----
+    // ---- Tablas de flamabilidad (the reference server verbatim) ----
     // Retornan 0 si el bloque no es inflamable.
     static int getBurnAbility(uint8_t blockId); // probabilidad de consumirse
     static int getBurnChance(uint8_t blockId);  // probabilidad de propagarse

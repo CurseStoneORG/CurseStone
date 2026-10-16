@@ -25,7 +25,7 @@
 // per 200 ticks. The state of the burn/cook progress is sent to
 // clients via ContainerSetDataPacket.
 //
-// Implementación completa (PMMP Tile/Furnace.php):
+// Implementación completa (the reference server Tile/Furnace):
 //   - tick() avanza burn_time_/cook_time_, consume 1 input por
 //     fundición completa, consume fuel cuando se acaba el burn y
 //     escribe el resultado en el slot 2.

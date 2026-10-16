@@ -23,8 +23,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // CraftingEventPacket — implementación (decode client→server).
 //
-// Formato verificado contra el CraftingEventPacket.php de
-// Dr1xyDev/Infinity (protocolo 84) + Nukkit 2016 — p84 usa getInt BE y
+// Formato verificado contra el CraftingEventPacket de
+// the reference implementation (protocolo 84) + Nukkit 2016 — p84 usa getInt BE y
 // slots de shorts BE, NO varints:
 //   getByte()      windowId
 //   getInt(BE)     type
@@ -32,13 +32,13 @@
 //   getInt(BE) size; getSlot() × size    (input, máx 128)
 //   getInt(BE) size; getSlot() × size    (output, máx 128)
 //
-// getSlot p84 (Infinity, simétrico al putSlot de CraftingDataPacket):
+// getSlot p84 (the reference server, simétrico al putSlot de CraftingDataPacket):
 //   id = getShort BE; si id <= 0 → slot vacío y NO se lee nada más;
 //   si no → getByte count + getShort BE damage + getLShort LE nbtLen
 //   + nbt.
 //
 // Las listas de items están acotadas a 128 entradas por lado, igual
-// que PMMP/Nukkit, para que un packet malicioso no fuerce un vector
+// que el servidor de referencia/Nukkit, para que un packet malicioso no fuerce un vector
 // gigante.
 #include "CraftingEventPacket.h"
 
@@ -76,7 +76,7 @@ bool readSlot(PacketReader& r, cursestone::item::ItemStack& out) {
 } // namespace
 
 void CraftingEventPacket::encode(std::vector<uint8_t>&) const {
-    // No-op — igual que PMMP/Infinity: el server nunca manda este packet.
+    // No-op — igual que el servidor de referencia: el server nunca manda este packet.
 }
 
 bool CraftingEventPacket::decode(const uint8_t* data, size_t len) {

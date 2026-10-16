@@ -81,7 +81,7 @@ int16_t mcp_binary_read_i16_le(const void* p);
 - **Decorative separators**: runs of `=`, `-`, `~`, or ASCII-art rules inside
   comments. One blank comment line is enough.
 - **Redundant restatements** of the code.
-- **Obsolete references** to external source lines (e.g. "see Server.php
+- **Obsolete references** to external source lines (e.g. "see Server
   line 1234") when the referenced file has drifted; replace with the stable
   upstream symbol or document the behavior directly.
 - **Duplicate SPDX identifiers** (a file must carry exactly one

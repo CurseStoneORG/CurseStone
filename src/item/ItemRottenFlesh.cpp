@@ -25,7 +25,8 @@
 #include "entity/Effect.h"
 #include <cstdlib>
 namespace cursestone::item {
-void ItemRottenFlesh::applyEatEffects(Player& eater) const {
+void ItemRottenFlesh::applyEatEffects(Player& eater, uint8_t meta) const {
+    (void)meta;
     if (std::rand() % 100 < 80)
         eater.addEffect(std::make_shared<entity::Effect>(entity::EFF_HUNGER, "Hunger", 600, 0));
 }

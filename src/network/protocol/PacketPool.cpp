@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // PacketPool.cpp — instantiate the right DataPacket subclass by ID.
 //
-// This is the central switch that mirrors Player.php::handleDataPacket's
+// This is the central switch that mirrors Player::handleDataPacket's
 // switch over NETWORK_ID constants. Each case instantiates a fresh packet
 // of the requested type; the caller (Network::dispatchSingle) is then
 // responsible for invoking decode() and dispatching to the Player.
@@ -135,7 +135,7 @@ std::shared_ptr<DataPacket> PacketPool::create(uint8_t pid) const {
         return std::make_shared<InteractPacket>();
     // La lista de abajo cubre EXACTAMENTE el conjunto de paquetes
     // cliente→servidor que maneja el switch de Genisys 0.15.10
-    // (PocketMine\Player::handleDataPacket, protocolo 84). Sin el case
+    // (Player::handleDataPacket, protocolo 84). Sin el case
     // correspondiente, un paquete legítimo del cliente se descartaba
     // como "ID desconocido" y el estado se desincronizaba.
     case DROP_ITEM_PACKET:

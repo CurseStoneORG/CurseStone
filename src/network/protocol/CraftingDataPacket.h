@@ -23,11 +23,11 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // CraftingDataPacket — server→client recipe list (MCPE protocol 84).
 //
-// Wire format verificado BYTE A BYTE contra Dr1xyDev/Infinity
-// (pocketmine/network/protocol/CraftingDataPacket.php, protocolo 84 /
+// Wire format verificado BYTE A BYTE contra the reference implementation
+// (network/protocol/CraftingDataPacket, protocolo 84 /
 // MCPE 0.15.10) y cross-checkeado con Nukkit 2016 (mismo formato):
 //
-//   putInt(BE)   count(entries)          <- Binary::writeInt = pack("N")
+//   putInt(BE)   count(entries)          <- 32-bit big-endian
 //   foreach entry:
 //     putInt(BE)   entryType
 //     putInt(BE)   strlen(body)          <- LENGTH-PREFIX por entrada
@@ -47,7 +47,7 @@
 //   ENTRY_SHAPED (1):
 //     putInt(BE) width; putInt(BE) height;
 //     putSlot(width*height celdas, fila-por-fila: z<Height exterior,
-//             x<Width interior — idéntico a Genisys/Infinity, y el
+//             x<Width interior — idéntico a Genisys/the reference server, y el
 //             patrón es fila-major anclado arriba-izquierda, como
 //             Recipe::grid)
 //     putInt(BE) 1; putSlot(result);
@@ -63,8 +63,8 @@
 //            + putLShort(nbtLen) + nbt   (nbtLen=0 acá; LShort sí es LE)
 //   damage -1 ("any damage") viaja como 0xFFFF en el short BE.
 //
-// cleanRecipes: Infinity/Genisys lo mandan en true (generateRecipeList
-// hace $pk->cleanRecipes = true). El cliente borra sus recetas por
+// cleanRecipes: The reference server/Genisys lo mandan en true (generateRecipeList
+// pone cleanRecipes = true). El cliente borra sus recetas por
 // defecto y usa SOLO las nuestras — con la lista completa que manda el
 // CraftingManager es lo correcto.
 #pragma once

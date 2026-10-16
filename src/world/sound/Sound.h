@@ -21,7 +21,7 @@
  *
  */
 // Sound — wrapper around level sound events. Sent via LevelEventPacket
-// to nearby players. PocketMine's hierarchy maps block/lava/etc.
+// to nearby players. The reference server's hierarchy maps block/lava/etc.
 // sounds to an integer ID; we use the same numeric IDs.
 #pragma once
 #include "world/Position.h"

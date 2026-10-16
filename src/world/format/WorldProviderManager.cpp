@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // WorldProviderManager — implementation.
 //
-// PocketMine's WorldProviderManager is essentially a static map; we
+// The reference server's WorldProviderManager is essentially a static map; we
 // mirror that with a singleton + a std::unordered_map. The actual
 // registration happens in each provider's .cpp file via a static
 // initializer (e.g. anvil/Anvil.cpp has a `static bool

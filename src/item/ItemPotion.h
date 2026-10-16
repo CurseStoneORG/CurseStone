@@ -1,0 +1,52 @@
+/*
+ _____                     _____ _
+/  __ \                   /  ___| |
+| /  \/_   _ _ __ ___  ___\ `--.| |_ ___  _ __   ___
+| |   | | | | '__/ __|/ _ \`--. \ __/ _ \| '_ \ / _ \
+| \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
+ \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
+
+ * CurseStone | Open Source Server Software
+ *
+ * Copyright (C) 2026 CurseStoneTeam
+ *
+ * Developed by CurseStoneTeam.
+ * Built for an open and extensible Minecraft server ecosystem.
+ *
+ * Licensed under the GNU Lesser General Public License v3.0 or later.
+ * You may study, modify, and redistribute this software under its license.
+ *
+ * License: https://www.gnu.org/licenses/lgpl-3.0.html
+ * Repository: https://github.com/CurseStoneTeam/CurseStone
+ *
+ */
+// ItemPotion — drinkable potion (id 373). The data value selects the
+// variant; the effect table mirrors the reference drinkable-potion set
+// (metas 0..35, normal/extended/II variants).
+#pragma once
+#include "ItemFood.h"
+#include <string>
+namespace cursestone::item {
+class ItemPotion : public ItemFood {
+  public:
+    ItemPotion()
+        : ItemFood(373, 0 /* no hunger */, 0.0f /* no saturation */,
+                   true /* gate decided per meta */, 374 /* glass bottle */) {
+    }
+    std::string name() const override {
+        return "Potion";
+    }
+    // Bottles never stack.
+    int maxStackSize() const override {
+        return 1;
+    }
+    // Only real potions (meta > 0) are drinkable; a water bottle is not.
+    bool alwaysEdible(uint8_t meta) const override {
+        return meta > 0;
+    }
+    // Applies the effect carried by the potion meta.
+    void applyEatEffects(Player& eater, uint8_t meta) const override;
+    // Resolves the effect a potion meta carries (false = plain bottle).
+    static bool effectForMeta(uint8_t meta, uint8_t& effect_id, int& duration, int& amplifier);
+};
+} // namespace

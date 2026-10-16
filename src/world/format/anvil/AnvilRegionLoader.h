@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // AnvilRegionLoader.h — single .mca region file (32x32 chunks).
 //
-// Ported from Nukkit InfinityEdition's
+// Ported from Nukkit's
 // `cn.nukkit.level.format.anvil.RegionLoader` and
 // `cn.nukkit.level.format.generic.BaseRegionLoader` to C++.
 //

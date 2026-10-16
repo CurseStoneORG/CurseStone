@@ -45,7 +45,7 @@
 // isSlim, skin", but the code that actually writes it — and every server
 // built on it — puts the skin ID and the skin data there:
 //     Server::updatePlayerListData() builds
-//       [$uuid, $entityId, $name, $skinId, $skinData]
+//       [uuid, entityId, name, skinId, skinData]
 // and Human::spawnTo() refuses to spawn an entity whose skin is shorter
 // than 64*32*4 bytes. Sending "false" + "" here makes the 0.15.10 client
 // try to load a skin from an empty blob and DIE on it, which is exactly

@@ -20,41 +20,33 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// EntityDamageEvent — se dispara cada vez que una entidad va a
-// recibir dano, ANTES de aplicarlo a health(). Un listener puede
-// reescribir `amount` (para armadura/resistencia, por ejemplo) o
-// cancelar el evento para anular el dano por completo.
-//
-// `cause` es deliberadamente un subconjunto minimo de las causas de
-// PMMP/Nukkit — solo lo que el pipeline de combate actual de CurseStone
-// puede producir de verdad (ver entity/CombatUtils.h). Se puede
-// ampliar cuando se implementen caida, fuego programado, ahogamiento,
-// etc.
 #pragma once
+
 #include "event/Event.h"
 #include <string>
 #include "event/Cancellable.h"
+
 namespace cursestone::entity {
 class Entity;
 }
+
 namespace cursestone::event::entity {
 
+// Fired before damage is applied; listeners can modify the amount or cancel it.
 enum class DamageCause {
     CUSTOM = 0,
     ENTITY_ATTACK = 1,
-    CONTACT = 2, // p.ej. tocar fuego (BlockFire::onEntityCollide)
-    // Causas ambientales (protocolo 84 / Infinity EntityDamageEvent):
-    FALL = 3,        // dano de caida
-    LAVA = 4,        // tocar lava
-    FIRE = 5,        // estar en fuego
-    FIRE_TICK = 6,   // dano de arder
-    DROWNING = 7,    // quedarse sin aire bajo el agua
-    CACTUS = 8,      // tocar cactus
-    STARVATION = 9,  // hambre en 0 (mata salvo en dificultades bajas)
-    VOID = 10,       // caer al vacio
-    PROJECTILE = 11, // golpeado por un proyectil (flecha del arco) —
-                     // Infinity EntityDamageEvent::CAUSE_PROJECTILE. Se usa
-                     // como fallback cuando el tirador ya no está online.
+    CONTACT = 2,     // Contact damage, such as touching fire.
+    FALL = 3,        // Fall damage.
+    LAVA = 4,        // Lava contact.
+    FIRE = 5,        // Contact with fire.
+    FIRE_TICK = 6,   // Ongoing fire damage.
+    DROWNING = 7,    // Suffocation underwater.
+    CACTUS = 8,      // Cactus contact.
+    STARVATION = 9,  // Damage caused by an empty hunger bar.
+    VOID = 10,       // Falling into the void.
+    PROJECTILE = 11, // Projectile damage; used as a fallback if the shooter is offline.
+    MAGIC = 12,      // Potion damage, such as poison, wither, or harming.
 };
 
 class EntityDamageEvent : public Event, public Cancellable {
@@ -62,13 +54,16 @@ class EntityDamageEvent : public Event, public Cancellable {
     cursestone::entity::Entity* entity;
     float amount = 0.0f;
     DamageCause cause = DamageCause::CUSTOM;
+
     EntityDamageEvent(cursestone::entity::Entity* e = nullptr, float amt = 0.0f,
                       DamageCause c = DamageCause::CUSTOM)
         : entity(e), amount(amt), cause(c) {
     }
+
     const std::string& eventName() const override {
         static std::string n = "EntityDamageEvent";
         return n;
     }
 };
-} // namespace
+
+} // namespace cursestone::event::entity

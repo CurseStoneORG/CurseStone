@@ -28,7 +28,7 @@
 // archivo de recetas que cargar: antes se leia uno externo que no se
 // empaqueta con el binario, asi que una release limpia arrancaba sin
 // ninguna receta y el crafting quedaba dead sin que nadie lo notara. El
-// estilo sigue a Dr1xyDev/Nukkit-InfinityEdition, que tambien declara
+// estilo sigue a Nukkit, que tambien declara
 // todas las suyas en el CraftingManager.
 #include "CraftingManager.h"
 #include "item/ItemConstants.h"
@@ -141,7 +141,7 @@ int CraftingManager::registerBuiltinRecipes() {
     recipes_.clear();
     using namespace cursestone;
     // Recetas registradas EN CODIGO, sin ningun archivo externo.
-    // Estilo alineado con Dr1xyDev/Nukkit-InfinityEdition, que las
+    // Estilo alineado con Nukkit, que las
     // registra todas en el constructor de su CraftingManager.
 
     // ---- Shaped: grilla 3x3 (0 = celda vacia, -1 = cualquier

@@ -22,7 +22,7 @@
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // PacketReliability — RakNet encapsulated packet reliability levels.
-// Values match raklib/protocol/PacketReliability.php (PMMP)
+// Values match raklib/protocol/PacketReliability (the reference server)
 #pragma once
 #include <stdint.h>
 

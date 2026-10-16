@@ -25,7 +25,7 @@
 //
 // A `WorldProvider` owns the I/O of a world: reading chunks from
 // disk, writing them back, generating missing ones via a Generator,
-// and exposing metadata (spawn point, seed, time). PocketMine splits
+// and exposing metadata (spawn point, seed, time). The reference server splits
 // this into `WorldProvider` + `WorldProviderManager` (the registry);
 // we mirror that here.
 //

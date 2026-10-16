@@ -22,8 +22,8 @@
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // AdvancedSourceInterface — adds per-player directDataPacket / putPacket
-// / close to the base SourceInterface. Mirrors PocketMine's
-// AdvancedSourceInterface.php.
+// / close to the base SourceInterface. Mirrors the reference server's
+// AdvancedSourceInterface.
 #pragma once
 
 #include "SourceInterface.h"

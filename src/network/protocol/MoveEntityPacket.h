@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // MoveEntityPacket.h — server→clients entity teleport/movement broadcast.
 //
-// Wire format (protocol 84) — PMMP MoveEntityPacket:
+// Wire format (protocol 84) — the reference server MoveEntityPacket:
 //   [1 byte ID 0x0f]
 //   [Int64 BE] eid
 //   [Float BE] x

@@ -27,16 +27,16 @@
 
 // /weather <clear|rain|thunder> [duration]
 //
-// Ported from Dr1xyDev/Infinity WeatherCommand.php (the reference for
+// Ported from the reference implementation WeatherCommand (the reference for
 // MCPE 0.15.10): state ids are 0=clear, 1=rain, 2=rainy_thunder,
-// 3=thunder, and the duration argument is in SECONDS (Infinity sends
+// 3=thunder, and the duration argument is in SECONDS (the reference server sends
 // it in ticks, but seconds is what vanilla /weather uses and what a
 // human types). Without a duration the state lasts until changed
-// again — Infinity would instead roll a random 6000-12000 tick cycle;
+// again — the reference server would instead roll a random 6000-12000 tick cycle;
 // we only do that for the auto-clear below, not for manual use.
 //
 // NOTE: we accept this command from BOTH the console and players. The
-// console variant ignores the optional world-name argument Infinity
+// console variant ignores the optional world-name argument the reference server
 // supports because CurseStone currently has exactly one world.
 namespace cursestone {
 
@@ -92,7 +92,7 @@ bool WeatherCommand::execute(CommandSender* sender, const std::string& label,
                                             ? " (" + std::to_string(duration_ticks / 20) + "s)"
                                             : ""));
     } else if (w == "thunder" || w == "3") {
-        // Infinity's bare "thunder" is state 3: thunder WITHOUT rain.
+        // The reference server's bare "thunder" is state 3: thunder WITHOUT rain.
         lvl->setWeather(world::World::WEATHER_THUNDER, duration_ticks);
         sender->sendMessage("Thunder started" +
                             std::string(duration_ticks > 0

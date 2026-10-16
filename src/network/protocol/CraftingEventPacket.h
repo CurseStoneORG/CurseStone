@@ -24,7 +24,7 @@
 // CraftingEventPacket — client→server "el jugador crafteó esto" (MCPE
 // protocol 84).
 //
-// Formato p84 verificado contra Dr1xyDev/Infinity + Nukkit 2016 —
+// Formato p84 verificado contra the reference implementation + Nukkit 2016 —
 // getInt BE y slots de shorts BE (NO varints, NO putString):
 //   getByte()      windowId
 //   getInt(BE)     type
@@ -62,7 +62,7 @@ class CraftingEventPacket : public DataPacket {
     std::vector<cursestone::item::ItemStack> input;
     std::vector<cursestone::item::ItemStack> output;
 
-    void encode(std::vector<uint8_t>& out) const override; // no-op (PMMP)
+    void encode(std::vector<uint8_t>& out) const override; // no-op (the reference server)
     bool decode(const uint8_t* data, size_t len) override;
 };
 

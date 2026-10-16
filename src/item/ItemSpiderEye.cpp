@@ -24,7 +24,8 @@
 #include "Player.h"
 #include "entity/Effect.h"
 namespace cursestone::item {
-void ItemSpiderEye::applyEatEffects(Player& eater) const {
+void ItemSpiderEye::applyEatEffects(Player& eater, uint8_t meta) const {
+    (void)meta;
     eater.addEffect(std::make_shared<entity::Effect>(entity::EFF_POISON, "Poison", 80, 0));
 }
 } // namespace cursestone::item

@@ -26,7 +26,7 @@
 namespace cursestone::network::protocol {
 
 // Wire format must match what the MCPE 0.15.10 client expects (protocol
-// 84, same encoding PMMP/Genisys used): one BYTE for the dimension, three
+// 84, same encoding the reference server/Genisys used): one BYTE for the dimension, three
 // big-endian floats and a trailing zero byte. Encoding the dimension as
 // an Int32 shifts every later field and the client silently drops the
 // packet, which keeps the overworld sky/fog over nether terrain.

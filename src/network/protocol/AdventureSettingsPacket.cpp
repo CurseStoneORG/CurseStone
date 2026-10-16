@@ -22,7 +22,7 @@
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // AdventureSettingsPacket.cpp — encode/decode.
-// PMMP: putInt x 3 (BE).
+// The reference server: putInt x 3 (BE).
 #include "AdventureSettingsPacket.h"
 
 namespace cursestone::network::protocol {

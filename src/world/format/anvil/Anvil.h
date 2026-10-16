@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // Anvil.h — Nukkit Anvil WorldProvider, ported to CurseStone's C++ core.
 //
-// This is the on-disk world format used by Nukkit InfinityEdition:
+// This is the on-disk world format used by Nukkit:
 //   worlds/<name>/level.dat      (GZIP-compressed big-endian NBT, root → "Data")
 //   worlds/<name>/region/r.X.Z.mca  (region files, 32x32 chunks each)
 //
@@ -144,7 +144,7 @@ class Anvil : public WorldProvider {
     void evictOldestRegion();
 
     // ------------------------------------------------------------------
-    // Async chunk writer — the PocketMine-style autosave pipeline.
+    // Async chunk writer — the reference-style autosave pipeline.
     //
     // saveChunk() runs on the MAIN thread but only does the part that
     // must be there: anvil_chunk_encode() reads the live mcp_chunk_t

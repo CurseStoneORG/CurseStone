@@ -22,7 +22,7 @@
  */
 // InstallerLang — localized strings for the first-run wizard.
 // Built-in English strings (no external locale file). Mirrors
-// pocketmine/wizard/InstallerLang.php.
+// wizard/InstallerLang.
 #pragma once
 #include <string>
 #include <unordered_map>

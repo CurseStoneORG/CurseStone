@@ -46,7 +46,7 @@ typedef struct mcp_main_logger {
     // Implicit singleton: mcp_main_logger_get_instance() returns &g_logger
 } mcp_main_logger_t;
 
-// Singleton accessors (mirror PocketMine's MainLogger::getInstance()).
+// Singleton accessors (mirror the reference server's MainLogger::getInstance()).
 mcp_main_logger_t* mcp_main_logger_get_instance(void);
 
 // Initialize the singleton. Call once at startup. `log_path` may be NULL

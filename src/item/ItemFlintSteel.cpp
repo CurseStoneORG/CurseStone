@@ -22,7 +22,7 @@
  */
 // ItemFlintSteel — flint and steel: places fire and lights nether portals.
 //
-// onActivate() ports the frame measurement of PMMP 0.15 (Infinity
+// onActivate() ports the frame measurement of the reference server 0.15 (the reference server
 // FlintSteel::onActivate), the reference real 0.15.10 clients work with:
 //   - Measure the obsidian runs anchored on the clicked obsidian block,
 //     X axis first, then Z axis. The side-column walk STARTS ON the base
@@ -33,13 +33,13 @@
 //     filled with portal blocks (id 90, meta = axis: 0 X / 1 Z) and
 //     every filled cell is broadcast to the viewers, otherwise the
 //     client only renders the single cell the click landed on.
-//   - Extra over Infinity: if the click lands on a SIDE column (mid
+//   - Extra over the reference server: if the click lands on a SIDE column (mid
 //     height), the frame measurement from the clicked row cannot work
 //     (the row run is only one block), so the detection walks DOWN the
 //     column to the lowest obsidian and retries. This makes lighting
 //     work from any frame block, closer to vanilla.
-//   - Any other solid target: place a fire block (classic PMMP behavior;
-//     also reached when the obsidian frame is incomplete, like PMMP).
+//   - Any other solid target: place a fire block (classic reference server behavior;
+//     also reached when the obsidian frame is incomplete, like the reference server).
 // In survival each use costs 2 durability points.
 #include "ItemFlintSteel.h"
 #include "ItemStack.h"
@@ -60,7 +60,7 @@ namespace cursestone::item {
 
 using namespace cursestone::block;
 
-/// @brief Outer size limits of a portal frame, per axis (PMMP 0.15:
+/// @brief Outer size limits of a portal frame, per axis (the reference server 0.15:
 ///        4..23 wide, 5..23 tall, measured on the obsidian outline).
 static constexpr int kPortalOuterMin = 4;
 static constexpr int kPortalOuterMax = 23;
@@ -79,7 +79,7 @@ static bool isPortalInterior(world::World* w, int32_t x, int32_t y, int32_t z) {
 
 /// @brief Detects and lights a portal on the XY plane (opening running
 ///        along the X axis, Z fixed). (tx, ty, tz) is the clicked
-///        obsidian block. The frame measurement follows Infinity/PMMP:
+///        obsidian block. The frame measurement follows the reference server:
 ///        the side-column walk starts ON the base row and counts every
 ///        obsidian cell (so it ends one block ABOVE the highest
 ///        obsidian), and "- 1" lands on the top frame row. On success
@@ -100,7 +100,7 @@ static bool tryPortalPlaneX(world::World* w, int32_t tx, int32_t ty, int32_t tz,
         return false;
 
     // Side-column heights, counted from the base row (base included) —
-    // exactly how the Infinity/PMMP for-loop counts them, so topL/topR
+    // exactly how the reference server for-loop counts them, so topL/topR
     // end one block ABOVE the highest obsidian and yMax lands on the top
     // frame row. Using the topmost obsidian directly and then subtracting
     // one (the previous port) skipped the top row and made the top-row
@@ -261,13 +261,13 @@ bool ItemFlintSteel::onActivate(world::World* world, Player* player, int32_t bx,
     uint8_t airId = world->getBlockId(bx, by, bz);
 
     // Portal: the click landed on obsidian. The detection is anchored on
-    // the TARGET obsidian (PMMP 0.15 semantics), X plane first, then Z
+    // the TARGET obsidian (the reference server 0.15 semantics), X plane first, then Z
     // plane; every filled cell is broadcast so the client renders the
     // whole portal, not just the cell next to the click.
     if (targetId == OBSIDIAN) {
         std::vector<FilledCell> filled;
 
-        // 1) Infinity-faithful pass: measure the frame using the clicked
+        // 1) reference-faithful pass: measure the frame using the clicked
         //    row as the base row. This lights the portal when the player
         //    clicks the bottom row of the frame.
         if (tryPortalPlaneX(world, tx, ty, tz, filled) ||
@@ -299,7 +299,7 @@ bool ItemFlintSteel::onActivate(world::World* world, Player* player, int32_t bx,
             return true;
         }
 
-        // Incomplete frame: fall through and place fire, like PMMP does.
+        // Incomplete frame: fall through and place fire, like the reference server does.
     }
 
     // Fire: the placement cell must be air and the clicked target must

@@ -22,7 +22,7 @@
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // SetTimePacket.cpp — encode/decode.
-// PMMP: putInt(time) + putByte(started ? 1 : 0).
+// The reference server: putInt(time) + putByte(started ? 1 : 0).
 #include "SetTimePacket.h"
 
 namespace cursestone::network::protocol {

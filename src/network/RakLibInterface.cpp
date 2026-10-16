@@ -197,7 +197,7 @@ void RakLibInterface::raklibThreadLoop() {
                         // packet to RELIABLE (unordered) on channel 0 to
                         // avoid one lost reliable-ordered packet blocking
                         // all later ones on that channel. That avoided the
-                        // deadlock, but it broke something else: PMMP/real
+                        // deadlock, but it broke something else: The reference server/real
                         // MCPE servers rely on the login/spawn sequence
                         // (PlayStatus → StartGame → SetTime →
                         // SetSpawnPosition → SetDifficulty → SetHealth,

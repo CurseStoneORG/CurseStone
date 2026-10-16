@@ -24,11 +24,11 @@
 /**
  * @brief Defines Minecraft §-color/format codes and ANSI terminal colors.
  *
- * Mirrors PMMP TextFormat + Terminal in a single C++ header.
+ * Mirrors the reference server TextFormat + Terminal in a single C++ header.
  */
 //
 // IMPORTANT: § in MCPE 0.15.x TextPacket is encoded as UTF-8 = 0xC2 0xA7
-// (two bytes). PMMP uses this encoding throughout. Using the Latin-1
+// (two bytes). The reference server uses this encoding throughout. Using the Latin-1
 // single-byte 0xA7 causes the client's UTF-8 decoder to fail and the
 // whole message becomes INVISIBLE in-game.
 #pragma once

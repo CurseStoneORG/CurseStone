@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // RemoveBlockPacket.cpp — encode/decode.
 //
-// PMMP: putLong(eid) + putInt(x) + putInt(z) + putByte(y)
+// The reference server: putLong(eid) + putInt(x) + putInt(z) + putByte(y)
 // All multi-byte fields are big-endian. Note that y is a single byte
 // (0..255), which is fine because the world is 256 blocks tall.
 #include "RemoveBlockPacket.h"

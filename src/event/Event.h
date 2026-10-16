@@ -21,8 +21,8 @@
  *
  */
 // Event — base class for all server events. Players, command
-// senders and plugins listen on HandlerLists. Mirrors pocketmine
-// /event/Event.php. (No plugin API yet — handler dispatch is internal.)
+// senders and plugins listen on HandlerLists. Mirrors the reference server
+// /event/Event. (No plugin API yet — handler dispatch is internal.)
 #pragma once
 #include <string>
 namespace cursestone::event {

@@ -25,7 +25,7 @@
 //
 // Wire format (protocol 84):
 //   [1 byte ID 0x3e]
-//   [Int32 BE] radius   (PMMP putInt)
+//   [Int32 BE] radius   (the reference server putInt)
 #pragma once
 
 #include "DataPacket.h"

@@ -24,8 +24,8 @@
 // MobEquipmentPacket — client→server hotbar selection / item equip.
 //
 // MCPE protocol 84 (MCPE 0.15.10) wire format — Genisys
-// MobEquipmentPacket::decode (iTXTech/Genisys, src/pocketmine/network/
-// protocol/MobEquipmentPacket.php):
+// MobEquipmentPacket::decode (iTXTech/Genisys, network/
+// protocol/MobEquipmentPacket):
 //
 //   [1 byte  ID 0x1b]
 //   [Long BE] eid           — getEntityId()
@@ -35,7 +35,7 @@
 //                             hotbar UI (0..8)
 //
 // NOTE: Genisys (0.15.10, protocol 84) reads NO "unknown1" int32 here —
-// that extra int32 only exists in the old pre-0.15 PocketMine packet,
+// that extra int32 only exists in the old pre-0.15 the reference server packet,
 // which is exactly why the previous decoder failed with
 // "decode() fallo para ID 0x1b".
 #pragma once
@@ -63,7 +63,7 @@ class MobEquipmentPacket : public DataPacket {
     std::string itemNbt;
     // Hotbar slot the player is now holding (0..8).
     uint8_t hotbarSlot = 0;
-    // Second byte sent by the client (selectedSlot in PMMP). Kept for
+    // Second byte sent by the client (selectedSlot in the reference server). Kept for
     // protocol fidelity; the server only acts on hotbarSlot.
     uint8_t selectedSlot = 0;
 

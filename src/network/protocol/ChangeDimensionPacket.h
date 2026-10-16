@@ -34,7 +34,7 @@ namespace cursestone::network::protocol {
 /// Sent right before moving a player into a world of another dimension
 /// (0 Overworld, 1 Nether). The client shows its dimension loading
 /// screen and leaves it once the new chunks and the final position
-/// arrive. Body layout (same bytes PMMP/Genisys send on protocol 84):
+/// arrive. Body layout (same bytes the reference server/Genisys send on protocol 84):
 ///
 ///   [Uint8   ] dimension
 ///   [Float BE] x

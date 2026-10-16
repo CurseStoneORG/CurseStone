@@ -22,7 +22,7 @@
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // SERVER_HANDSHAKE_DataPacket (0x10)
-// Ported from raklib/protocol/SERVER_HANDSHAKE_DataPacket.php
+// Ported from raklib/protocol/SERVER_HANDSHAKE_DataPacket
 #include "SERVER_HANDSHAKE_DataPacket.h"
 #include "../RakLib.h"
 #include <stdlib.h>

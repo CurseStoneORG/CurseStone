@@ -44,12 +44,12 @@ void TileChest::removeItem(int slot) {
     dirty_ = true;
 }
 
-// Items serialize as PMMP/Nukkit legacy do: an "Items" ListTag of
+// Items serialize as the reference server/Nukkit legacy do: an "Items" ListTag of
 // per-slot compounds {Slot (byte), id (short), Damage (short),
 // Count (byte), ench (list)} — the item fields themselves come from
 // item::itemStackToNbt()/itemStackFromNbt(), see src/item/ItemNbt.h.
 // Empty slots are skipped entirely (not written as
-// zeroed entries) — that's what PMMP legacy does, and it keeps the
+// zeroed entries) — that's what the reference server legacy does, and it keeps the
 // list from growing to 27 entries for a chest that only has 2 items
 // in it. On read, any slot not present in the list is left empty,
 // which is already Container::clear()'s default state.

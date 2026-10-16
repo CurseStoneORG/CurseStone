@@ -36,7 +36,7 @@ class EntityDamageByEntityEvent : public EntityDamageEvent {
 
     // `cause` defaults to ENTITY_ATTACK (melee). World::tickArrows passes
     // DamageCause::PROJECTILE so Lua listeners can tell bow hits from
-    // punches (PMMP keeps the cause from the source event too).
+    // punches (the reference server keeps the cause from the source event too).
     EntityDamageByEntityEvent(cursestone::entity::Entity* e, float amount,
                               cursestone::entity::Entity* d,
                               DamageCause c = DamageCause::ENTITY_ATTACK)

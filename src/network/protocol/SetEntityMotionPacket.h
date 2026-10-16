@@ -26,16 +26,15 @@
 // Wire format (protocol 84) — Genisys 0.15.0
 // SetEntityMotionPacket::encode:
 //
-//     foreach($this->entities as $d){
-//         $this->putLong($d[0]);   // eid
-//         $this->putFloat($d[1]);  // motionX
-//         $this->putFloat($d[2]);  // motionY
-//         $this->putFloat($d[3]);  // motionZ
-//     }
+//     for each entity:
+//         [Int64 BE] eid
+//         [Float BE] motionX
+//         [Float BE] motionY
+//         [Float BE] motionZ
 //
-// No count field, no terminator — just the flat run of records. PMMP
+// No count field, no terminator — just the flat run of records. The reference server
 // accumulates per-entity motion into this packet each tick
-// (World::tick() -> `$this->motionToSend`), which is how knockback
+// (World::tick() -> the per-tick motion queue), which is how knockback
 // (Living::knockBack() -> setMotion()) reaches other clients: without
 // it a hit only ever moved the victim's own client and everyone else
 // watched them stand still.

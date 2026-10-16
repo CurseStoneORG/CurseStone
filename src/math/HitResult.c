@@ -25,7 +25,7 @@
 #include "HitResult.h"
 
 // AABB::clip() — ported from net.minecraft.world.phys.AABB::clip (2013
-// MCPE client) and its PHP descendant AxisAlignedBB::clip().
+// MCPE client) and its descendant AxisAlignedBB::clip().
 //
 // For each of the box's six planes, find where the segment crosses it
 // (Vec3::clipX/clipY/clipZ). A crossing only counts if the point lies

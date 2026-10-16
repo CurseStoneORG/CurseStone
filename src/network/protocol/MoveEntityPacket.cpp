@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // MoveEntityPacket.cpp — encode/decode.
 //
-// PMMP: putLong (BE) + 3× putFloat (BE) + 3× putByte (scaled rotation).
+// The reference server: putLong (BE) + 3× putFloat (BE) + 3× putByte (scaled rotation).
 // Rotation encoding: byte = angle_deg / (360.0 / 256) = angle_deg * 256.0 / 360.0.
 #include "MoveEntityPacket.h"
 #include <cmath>

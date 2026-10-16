@@ -21,7 +21,7 @@
  *
  */
 // ChunkManager — caches chunks in memory and routes load/save
-// requests to the active WorldProvider. Mirrors pocketmine's
+// requests to the active WorldProvider. Mirrors the reference server's
 // ChunkManager role. The World owns one of these. Generators run
 // on the AsyncPool and post completed chunks back via setChunk().
 #pragma once

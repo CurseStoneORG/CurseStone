@@ -32,6 +32,6 @@ class ItemEnchantedGoldenApple : public ItemFood {
     std::string name() const override {
         return "Enchanted Golden Apple";
     }
-    void applyEatEffects(Player& eater) const override;
+    void applyEatEffects(Player& eater, uint8_t meta) const override;
 };
 } // namespace

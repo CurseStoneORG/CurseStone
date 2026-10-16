@@ -400,6 +400,9 @@ class Player : public IPlayer,
 
     // --- Health and food ---
     void setHealth(int h);
+    // Heals and syncs the hearts attribute right away (potion effects
+    // heal outside the hunger tick loop, which otherwise never pushes).
+    void heal(float amount) override;
     // Synchronizes hunger, saturation, and exhaustion attributes.
     void sendFoodLevel();
     // Adds exhaustion; hunger drains after the exhaustion threshold.
@@ -522,6 +525,16 @@ class Player : public IPlayer,
     void setAttribute(int attrId, float value);
     void sendSettings();
 
+    // --- Potion effects (protocol 84 MobEffectPacket) ---
+    // Sends the movement-speed attribute derived from the walk speed
+    // base and the active speed/slowness effects.
+    void sendMovementSpeedAttribute();
+    // Re-sends every active effect as an ADD packet (used at first spawn
+    // after a login that restored persisted effects).
+    void sendActiveEffects();
+    // Throws the held splash potion as entity type 86 and consumes it.
+    void throwSplashPotion();
+
     // --- Killer ---
     Entity* getKiller() const {
         return nullptr;
@@ -556,6 +569,20 @@ class Player : public IPlayer,
     void onDeath() override;
     // Broadcasts the hurt animation and updates health attributes.
     void onHealthChanged() override;
+
+    // Effect lifecycle hooks (entity::Living): sync the effect to the
+    // owner's client and to viewers, and refresh derived client state.
+    void onEffectAdded(const entity::Effect& e) override;
+    void onEffectModified(const entity::Effect& e) override;
+    void onEffectRemoved(const entity::Effect& e) override;
+    // Hunger effect interval: drains exhaustion like vanilla.
+    void onHungerEffectTick(int amplifier) override;
+    // Saturation effect interval: restores food and saturation.
+    void onSaturationEffectTick(int amplifier) override;
+
+  private:
+    // Sends one MobEffectPacket (self eid=0 + same-world viewers).
+    void sendEffectPacket(const entity::Effect& e, uint8_t eventId);
 
   public:
     // --- Damage pipeline ---
@@ -604,7 +631,9 @@ class Player : public IPlayer,
     // --- Hunger and environmental damage ---
     float food_saturation_ = 5.0f;   // Saturation drains before food.
     float food_exhaustion_ = 0.0f;   // Exhaustion accumulator.
-    uint64_t last_eat_ms_ = 0;       // Eating cooldown.
+    uint64_t last_eat_ms_ = 0;       // Eating/drinking cooldown.
+    float movement_speed_base_ = 0.1f; // Walk speed before effect multipliers.
+    bool invisible_ = false;         // Invisibility effect pose bit.
     float tick_move_dist_ = 0.0f;    // Horizontal distance moved this tick.
     bool food_attrs_dirty_ = false;  // Food attributes need syncing.
     uint64_t last_pos_y_ = 0;        // Previous Y position.

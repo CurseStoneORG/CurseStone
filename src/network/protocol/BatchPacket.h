@@ -57,7 +57,7 @@ class BatchPacket : public DataPacket {
     bool decode(const uint8_t* data, size_t len) override;
 
     // Add a complete (already-encoded with leading ID byte) sub-packet.
-    // Length prefix is BE int32 (matches PMMP BatchPacket::encode -> putInt).
+    // Length prefix is BE int32 (matches the reference server BatchPacket::encode -> putInt).
     void addSubPacket(const std::vector<uint8_t>& sub) {
         uint32_t n = static_cast<uint32_t>(sub.size());
         payload_.push_back((uint8_t)(n >> 24));

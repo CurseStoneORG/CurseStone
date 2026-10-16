@@ -68,7 +68,7 @@ bool GamemodeCommand::execute(CommandSender* sender, const std::string&,
     auto sg = std::make_shared<network::protocol::SetPlayerGameTypePacket>();
     sg->gamemode = gm & 0x01;
     target->sendPacket(sg);
-    // Send AdventureSettings with correct flags (mirror PMMP sendSettings)
+    // Send AdventureSettings with correct flags (mirror the reference server sendSettings)
     auto as = std::make_shared<network::protocol::AdventureSettingsPacket>();
     uint32_t flags = 0;
     if (gm == 2 || gm == 3)

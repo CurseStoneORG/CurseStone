@@ -23,8 +23,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // CraftingDataPacket — implementación (encode server→client).
 //
-// Formato verificado BYTE A BYTE contra el CraftingDataPacket.php real
-// de Dr1xyDev/Infinity (protocolo 84, MCPE 0.15.10), cross-checkeado
+// Formato verificado BYTE A BYTE contra el CraftingDataPacket real
+// de the reference implementation (protocolo 84, MCPE 0.15.10), cross-checkeado
 // con Nukkit 2016 (mismo formato de la era) y Genisys para la
 // orientación de datos de las recetas (fila-por-fila, anclado
 // arriba-izquierda).
@@ -46,12 +46,12 @@
 namespace cursestone::network::protocol {
 namespace {
 
-// BinaryStream::putSlot fiel a protocolo 84 (Infinity putSlot):
+// BinaryStream::putSlot fiel a protocolo 84 (the reference server putSlot):
 //   id == 0            → putShort(0) y nada más
 //   resto              → putShort(id) + putByte(count) + putShort(damage)
 //                        + putLShort(nbtLen) + nbt
 // damage negativo (receta "any damage", -1) viaja como 0xFFFF en el
-// short BE — exactamente lo que Item::get(id, -1) produce en PMMP.
+// short BE — exactamente lo que Item::get(id, -1) produce en the reference server.
 void putSlotRaw(PacketWriter& w, uint16_t id, int16_t meta, uint8_t count) {
     if (id == 0) {
         w.writeI16BE(0);
@@ -59,11 +59,11 @@ void putSlotRaw(PacketWriter& w, uint16_t id, int16_t meta, uint8_t count) {
     }
     w.writeI16BE(static_cast<int16_t>(id));
     w.writeU8(count);
-    w.writeI16BE(meta); // -1 → 0xFFFF, igual que PMMP
+    w.writeI16BE(meta); // -1 → 0xFFFF, igual que el servidor de referencia
     w.writeU16LE(0);    // nbtLen = 0 (putLShort = LE)
 }
 
-// BinaryStream::putInt — 4 bytes BIG-endian con signo (pack("N")).
+// BinaryStream::putInt — 4 bytes BIG-endian con signo (32-bit big-endian).
 void putIntBE(PacketWriter& w, int32_t v) {
     w.writeI32BE(v);
 }
@@ -96,8 +96,8 @@ void CraftingDataPacket::encode(std::vector<uint8_t>& out) const {
     putIntBE(w, static_cast<int32_t>(entries_.size()));
 
     // Body de una entrada — se escribe a un stream temporal para poder
-    // anteponer (type, length) por entrada, igual que el $writer
-    // temporal del encode() de Infinity.
+    // anteponer (type, length) por entrada, igual que el writer
+    // temporal del encode() del servidor de referencia.
     std::vector<uint8_t> body;
 
     for (const auto& rec : entries_) {
@@ -115,12 +115,12 @@ void CraftingDataPacket::encode(std::vector<uint8_t>& out) const {
             putIntBE(bw, rec.width);
             putIntBE(bw, rec.height);
             // Celdas fila-por-fila: z<Height exterior, x<Width
-            // interior (Genisys/Infinity). Recipe::grid está anclado
+            // interior (Genisys/the reference server). Recipe::grid está anclado
             // arriba-izquierda en fila-major (row*3+col), así que el
             // índice lineal es exactamente row*width + col SIN
             // padding — Width x Height celdas exactas. Requirement
             // por celda = 1 (el "Count: 9" del JSON legacy de Nukkit
-            // es un artefacto del generador; PMMP también fuerza 1).
+            // es un artefacto del generador; The reference server también fuerza 1).
             const auto& grid = rec.grid;
             const auto& meta = rec.gridMeta;
             for (int row = 0; row < rec.height; ++row) {
@@ -155,7 +155,7 @@ void CraftingDataPacket::encode(std::vector<uint8_t>& out) const {
             if (rec.furnaceInputMeta >= 0) {
                 entryType = ENTRY_FURNACE_DATA;
                 // ENTRY_FURNACE_DATA: (id << 16) | damage como UN
-                // solo int BE (writeFurnaceRecipe de Infinity).
+                // solo int BE (writeFurnaceRecipe del servidor de referencia).
                 putIntBE(bw, (static_cast<int32_t>(inputId) << 16) |
                                  static_cast<int32_t>(rec.furnaceInputMeta));
             } else {

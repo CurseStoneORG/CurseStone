@@ -20,7 +20,8 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// Effect — potion effect flyweight (speed, slowness, jump boost, etc.).
+// Effect — potion effect instance (speed, slowness, jump boost, etc.)
+// plus the protocol-84 effect registry (display color, bad/instant flags).
 #pragma once
 #include <cstdint>
 #include <string>
@@ -55,6 +56,17 @@ class Effect {
     Effect(EffectId id, std::string name, int duration_ticks, int amplifier)
         : id_(id), name_(std::move(name)), duration_(duration_ticks), amplifier_(amplifier) {
     }
+    // Builds an effect from the registry (display name included).
+    static Effect create(uint8_t id, int duration_ticks, int amplifier);
+    // Registry color as 0xRRGGBB (particle tint); 0 when the id is unknown.
+    static uint32_t colorOf(uint8_t id);
+    // Registry display name, or "" when the id is unknown.
+    static const char* nameOf(uint8_t id);
+    // True when the registry marks the effect harmful.
+    static bool isBad(uint8_t id);
+    // True for instant effects (healing, harming) applied on add.
+    static bool isInstant(uint8_t id);
+
     EffectId id() const {
         return id_;
     }
@@ -74,6 +86,9 @@ class Effect {
     bool isExpired() const {
         return duration_ <= 0;
     }
+    // Periodic effects only fire on their interval ticks; every other
+    // effect is passive and only the client visual matters.
+    bool canTick() const;
 
   private:
     EffectId id_;

@@ -13,7 +13,7 @@ Referenced manually (read on demand, not auto-loaded): `docs/STYLE_COMMENTS.md`,
 - Doxygen scope: the style guide covers public and protected declarations, the requested rule says public. The stricter one is used.
 - `docs/STYLE_COMMENTS.md` forbids AI rewriting or translating existing comments. This matches "do not translate unrelated comments" but means legacy Spanish and diary-style comments (baseline: `lint_comments.py src` reported 1120 findings in 1211 files, 792 of them Spanish) need human review.
 - The uploaded zip has no `.git`, so Git workflow rules could only be taken from `CONTRIBUTING.md` (which mentions a `.git-blame-ignore-revs` file that is not present).
-- Version drift: CMake `1.0.0` vs `CURSESTONE_API "1.0.1"` (see `Architecture.md`).
+- Version drift: CMake `1.0.2` vs `CURSESTONE_API "1.0.2"` (see `Architecture.md`).
 - Registered blocks: 47 `registerBlock` calls versus about 184 `Block*.h` headers; the rest are possibly unused (**Unverified**).
 
 ## Maintenance

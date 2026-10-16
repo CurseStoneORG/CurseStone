@@ -23,10 +23,6 @@
 
 // SPDX-License-Identifier: LGPL-3.0-or-later
 
-// CurseStone — umbrella header for the server core: version constants,
-// tick tuning, build flags, and common forward declarations.
-// Inspired by PocketMine-MP 4.0.0; mirrors its module layout.
-
 #pragma once
 
 // Standard C++ headers.
@@ -50,7 +46,7 @@
 #include "math/AxisAlignedBB.h"
 
 // CurseStone version information.
-#define CURSESTONE_API "1.0.1"
+#define CURSESTONE_API "1.0.2"
 #define CURSESTONE_NAME "CurseStone"
 #define CURSESTONE_CODENAME "Obsidian"
 

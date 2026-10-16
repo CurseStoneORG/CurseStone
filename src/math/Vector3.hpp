@@ -22,7 +22,7 @@
  */
 // Vector3.hpp — C++ wrapper around mcp_vector3_t with operator overloads.
 // Use this in C++ files; C files use Vector3.h directly.
-// Protocol 84 (PocketMine 0.15.10): positions are doubles (float on wire).
+// Protocol 84 (the reference server 0.15.10): positions are doubles (float on wire).
 #pragma once
 #include "Vector3.h"
 #include <cmath>

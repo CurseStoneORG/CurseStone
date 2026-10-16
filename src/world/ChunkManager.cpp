@@ -22,7 +22,7 @@
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // ChunkManager.cpp — caches chunks in memory and routes load/save
-// requests to the active WorldProvider. Mirrors pocketmine's
+// requests to the active WorldProvider. Mirrors the reference server's
 // ChunkManager role.
 //
 // CRITICAL: When a chunk is not on disk, ChunkManager asks the

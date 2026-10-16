@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // AddPlayerPacket.h — server→clients broadcast when a player enters view.
 //
-// Wire format (protocol 84) — PMMP AddPlayerPacket::encode:
+// Wire format (protocol 84) — the reference server AddPlayerPacket::encode:
 //   [1 byte ID 0x0a]
 //   [16 bytes] uuid           (putUUID — raw 128-bit UUID bytes, LE for MCPE)
 //   [BE String] username
@@ -34,7 +34,7 @@
 //   [Slot]    item    (we send an empty slot for now: id=0)
 //   [Metadata] metadata  (we send an empty metadata blob: count=0)
 //
-// Note: PMMP writes UUID as the raw 16 bytes from UUID::toBinary().
+// Note: The reference server writes UUID as the raw 16 bytes from UUID::toBinary().
 // MCPE uses little-endian byte order for the UUID, so we store the
 // 16 bytes from the string-form UUID accordingly.
 #pragma once

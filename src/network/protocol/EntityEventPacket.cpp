@@ -22,7 +22,7 @@
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // EntityEventPacket.cpp — encode/decode.
-// PMMP: putLong(eid) + putByte(event). Clientbound only in CurseStone
+// The reference server: putLong(eid) + putByte(event). Clientbound only in CurseStone
 // (server never needs to parse this coming FROM the client), but
 // decode() is still implemented for symmetry/tests.
 #include "EntityEventPacket.h"

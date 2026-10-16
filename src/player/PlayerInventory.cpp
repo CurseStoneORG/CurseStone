@@ -511,8 +511,10 @@ void Player::consumeHeldItem() {
     // Limit consumption to once per eating animation.
     if (last_eat_ms_ != 0 && now_ms - last_eat_ms_ < 1600)
         return;
-    // Require hunger unless the food is always edible.
-    if (foodLevel() >= 20 && !def->alwaysEdible()) {
+    // Require hunger unless the item is edible at full hunger (the
+    // meta-aware gate lets drinkable potions in while keeping a water
+    // bottle undrinkable).
+    if (foodLevel() >= 20 && !def->alwaysEdible(held.meta)) {
         sendInventory();
         return;
     }
@@ -551,7 +553,15 @@ void Player::consumeHeldItem() {
         int h = foodLevel() + restored;
         setFoodLevel(h > 20 ? 20 : h);
     }
-    def->applyEatEffects(*this);
+    def->applyEatEffects(*this, held.meta);
+
+    // Creative keeps the potion and returns no bottle (reference: the
+    // drink effects land but the stack is never consumed).
+    if (isCreative()) {
+        sendInventory();
+        sendFoodLevel();
+        return;
+    }
 
     // Consume one item and return any residue.
     uint16_t residue = def->eatResidueId();

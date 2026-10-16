@@ -38,7 +38,7 @@ bool Player::isTrackingChunk(int32_t cx, int32_t cz) const {
 }
 
 // ============================================================
-// Phase 5 — sendChunksAroundSpawn (spiral order, like PMMP)
+// Phase 5 — sendChunksAroundSpawn (spiral order, like the reference server)
 // ============================================================
 // Fix #3: Spiral algorithm extracted to buildChunkSpiral() — single
 // source of truth shared by sendChunksAroundSpawn() and onUpdate().
@@ -50,7 +50,7 @@ bool Player::isTrackingChunk(int32_t cx, int32_t cz) const {
 // Vanilla-style square spiral: `radius` is now to actual per-axis radius,
 // not the old "vd*vd total points" size. This produces every offset in
 // [-radius, radius] on both axes — (2*radius+1)^2 points total — same
-// shape vanilla/PMMP use for view-distance, ordered center-outward so
+// shape vanilla/reference use for view-distance, ordered center-outward so
 // the closest (most important) chunks are generated/sent first.
 //
 // FIX (see chat diagnosis): the previous version took `vd` as the total
@@ -145,8 +145,8 @@ void Player::sendChunksAroundSpawn() {
     // doFirstSpawn() lands on to client that's already loaded) but the
     // client never rendered the confirmation the first time.
     //
-    // actual PMMP never has this race: doFirstSpawn() there is only
-    // called once chunkLoadCount >= spawnThreshold (see player.php's
+    // actual reference server never has this race: doFirstSpawn() there is only
+    // called once chunkLoadCount >= spawnThreshold (see player's
     // orderChunks()) — i.e. once to handful of chunks around the player
     // have actually reached the client. We replicate that gate instead
     // of spawning immediately: onUpdate() now streams chunks BEFORE
@@ -157,7 +157,7 @@ void Player::sendChunksAroundSpawn() {
 
 // ============================================================
 // sendChunkTiles — forwards the BlockEntityData of all the tiles of the
-// chunk to this player. PMMP takes precedence the tiles next to with the chunk; without
+// chunk to this player. The reference server takes precedence the tiles next to with the chunk; without
 // esto, when reconnecting the client receives the block of the sign but not its
 // NBT, this way that the text not is renders until someone it edit again.
 // ============================================================

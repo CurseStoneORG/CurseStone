@@ -37,7 +37,7 @@ namespace cursestone {
 using network::protocol::SetEntityDataPacket;
 
 // Sends the bed position and sleep flag to the viewers (runtime id) and to
-// the player itself, like Infinity Player::setDataProperty(). StartGame
+// the player itself, like the reference server Player::setDataProperty(). StartGame
 // tells the client its own id is the runtime id, so the self copy uses it;
 // the eid 0 copy covers clients that treat 0 as "me".
 static void broadcastSleepMetadata(Player* self, bool sleeping, int bx, int by, int bz) {
@@ -82,7 +82,7 @@ static void broadcastSleepMetadata(Player* self, bool sleeping, int bx, int by, 
 }
 
 // ============================================================
-// Player::sleepOn — Infinity Player::sleepOn() (Player.php:1250)
+// Player::sleepOn — the reference server Player::sleepOn() (Player)
 // ============================================================
 // Returns true when the player went to sleep. False = occupied bed or a
 // plugin cancelled PlayerBedEnterEvent; the caller (the bed interact
@@ -95,7 +95,7 @@ bool Player::sleepOn(int bx, int by, int bz) {
     if (!srv_)
         return false;
 
-    // Occupancy check — Infinity scans the entities near the player's
+    // Occupancy check — the reference server scans the entities near the player's
     // bounding box (grow 2,1,2) for ANOTHER player already sleeping at
     // this exact bed (distance <= 0.1). We keep the same semantics but
     // resolve it directly against the player list: two players can never
@@ -118,7 +118,7 @@ bool Player::sleepOn(int bx, int by, int bz) {
 
     // PlayerBedEnterEvent — cancellable. A cancelled event aborts the
     // sleep (and the caller reports the bed as occupied, same message
-    // flow Infinity uses for any sleepOn() == false).
+    // flow the reference server uses for any sleepOn() == false).
     {
         auto ev =
             event::EventManager::get().fire<event::player::PlayerBedEnterEvent>(this, bx, by, bz);
@@ -136,8 +136,8 @@ bool Player::sleepOn(int bx, int by, int bz) {
     // Sleeping re-binds the personal spawn point to the bed.
     setSpawn(bx, by, bz, /*save*/ true);
 
-    // Arm the level's skip-the-night countdown (Infinity
-    // Player.php:1280 `$this->level->sleepTicks = 60;`): after 3 seconds
+    // Arm the level's skip-the-night countdown (the reference server
+    // Player `level.sleepTicks = 60`): after 3 seconds
     // of everyone sleeping, World::checkSleep() cuts the night.
     if (World* lvl = getWorld())
         lvl->setSleepTicks(60);
@@ -151,7 +151,7 @@ bool Player::sleepOn(int bx, int by, int bz) {
 }
 
 // ============================================================
-// Player::stopSleep — Infinity Player::stopSleep() (Player.php:1301)
+// Player::stopSleep — the reference server Player::stopSleep() (Player)
 // ============================================================
 void Player::stopSleep() {
     if (!sleeping_)
@@ -166,13 +166,13 @@ void Player::stopSleep() {
     // Clear the bed position and the sleep flag.
     broadcastSleepMetadata(this, false, 0, 0, 0);
 
-    // Cancel the pending night-skip vote (Infinity: sleepTicks = 0).
+    // Cancel the pending night-skip vote (the reference server: sleepTicks = 0).
     if (World* lvl = getWorld())
         lvl->setSleepTicks(0);
 
-    // WAKE_UP animation to the player itself (Infinity
-    // Player.php:1235-1238 sends AnimatePacket with action 3 via
-    // $this->dataPacket — self only; the other clients already saw the
+    // WAKE_UP animation to the player itself (the reference server
+    // Player sends AnimatePacket with action 3 via
+    // dataPacket — self only; the other clients already saw the
     // flag byte clear).
     for (int64_t eid : {(int64_t)runtimeId(), (int64_t)0}) {
         auto anim = std::make_shared<network::protocol::AnimatePacket>();
@@ -187,7 +187,7 @@ void Player::stopSleep() {
 }
 
 // ============================================================
-// Player::wakeSleepersOnBed — vanilla nicety Infinity's bed onBreak
+// Player::wakeSleepersOnBed — vanilla nicety the reference server's bed onBreak
 // doesn't do explicitly (the sleeper just keeps a dead bed reference).
 // Breaking either half of a bed wakes everyone sleeping in it, so the
 // sleeper is never stuck "sleeping" in a bed that no longer exists.
@@ -220,11 +220,11 @@ void Player::wakeSleepersOnBed(Server* srv, world::World* lvl, int bx, int by, i
 }
 
 // ============================================================
-// Player::setSpawn — Infinity Player::setSpawn() (Player.php:1283)
+// Player::setSpawn — the reference server Player::setSpawn() (Player)
 // ============================================================
 // Stores the personal spawn point and pushes SetSpawnPositionPacket so
 // the client's compass/respawn agree with the server. `save` also
-// persists it into the player NBT (Infinity Human::saveNBT writes
+// persists it into the player NBT (the reference server Human::saveNBT writes
 // SpawnX/SpawnY/SpawnZ).
 void Player::setSpawn(int x, int y, int z, bool save) {
     has_spawn_override_ = true;

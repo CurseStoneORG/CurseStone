@@ -23,12 +23,12 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // LevelEventPacket.cpp — encode (server→client) / decode (client→server, unused).
 //
-// PMMP encode (verbatim):
-//   $this->putShort($this->evid);   // 2-byte BE signed short
-//   $this->putFloat($this->x);      // 4-byte BE float
-//   $this->putFloat($this->y);
-//   $this->putFloat($this->z);
-//   $this->putInt($this->data);     // 4-byte BE signed int
+// The reference server encode (verbatim):
+//   [Int16 BE] evid     // 2-byte BE signed short
+//   [Float BE] x        // 4-byte BE float
+//   [Float BE] y
+//   [Float BE] z
+//   [Int32 BE] data     // 4-byte BE signed int
 //
 // Total body size: 2 + 4 + 4 + 4 + 4 = 18 bytes.
 #include "LevelEventPacket.h"
@@ -37,7 +37,7 @@ namespace cursestone::network::protocol {
 
 void LevelEventPacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
-    w.writeI16BE(evid); // PMMP putShort -> 2-byte BE signed short
+    w.writeI16BE(evid); // The reference server putShort -> 2-byte BE signed short
     w.writeF32BE(x);
     w.writeF32BE(y);
     w.writeF32BE(z);

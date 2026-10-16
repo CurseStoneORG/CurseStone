@@ -239,7 +239,7 @@ void Player::openFurnaceAt(int x, int y, int z) {
 // openContainerWindow — assign the next window id to the container this
 // player just opened and return it.
 //
-// Infinity hands container ids out from 2 upward in to cycle
+// The reference server hands container ids out from 2 upward in to cycle
 // (player::addWindow: max(2, ++windowCnt % 99)), because 0 is the
 // client's own inventory and 0x78/0x79/0x7a are armor/creative/hotbar.
 // We copy that range exactly: the old fixed id 1 is never sent by the
@@ -299,7 +299,7 @@ void Player::handleSignEdit(network::protocol::BlockEntityDataPacket& pk) {
     mcp_tag_destroy(root);
 
     // Genisys compares the Creator contra the NBT of the tile of the server
-    // (`$t->namedtag["Creator"]`), not contra the packet — the client never
+    // (the sign's stored creator), not contra the packet — the client never
     // takes precedence Creator in its BlockEntityData, this way that leerlo of the packet haría
     // that all editing is cancelara (bug). the dueño is who colocó the
     // sign (player::handleBlockPlace setea the Creator of the tile).
@@ -309,7 +309,7 @@ void Player::handleSignEdit(network::protocol::BlockEntityDataPacket& pk) {
     if (creator.empty() || creator != cfg_.uuid)
         ev.setCancelled(true);
     if (ev.isCancelled()) {
-        // Genisys: `$t->spawnTo($this)` — forwards the NBT current of the sign
+        // Genisys: spawnTo(player) — forwards the NBT current of the sign
         // to the editor for revertir the text that the client already mostró.
         sendBlockEntityData(pk.x, pk.y, pk.z, *sign, this);
         return;
@@ -317,7 +317,7 @@ void Player::handleSignEdit(network::protocol::BlockEntityDataPacket& pk) {
 
     for (int i = 0; i < 4; ++i)
         sign->setLine(i, ev.getLine(i));
-    // Genisys: Sign::setText() termina in `$this->spawnToAll()` — the sign
+    // Genisys: Sign::setText() termina in spawnToAll() — the sign
     // is respawns to all its viewers so that vean the text new without
     // recargar the chunk.
     sendBlockEntityData(pk.x, pk.y, pk.z, *sign, nullptr);

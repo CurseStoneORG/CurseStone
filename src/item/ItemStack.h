@@ -35,7 +35,7 @@ struct ItemStack {
     int count = 0;
     // Raw little-endian network NBT compound of this stack (the exact
     // bytes the 0.15.10 client expects after the slot's nbtLen short —
-    // Genisys Item::$tags). Empty string = no NBT. A custom item name is
+    // Genisys Item tags). Empty string = no NBT. A custom item name is
     // stored as the compound {display:{Name:"..."}}; build it with
     // item::buildDisplayNbt(). The blob travels verbatim in every packet
     // that carries a slot (ContainerSetSlot / ContainerSetContent /
@@ -61,7 +61,7 @@ struct ItemStack {
     }
     // Two stacks merge only when their NBT blobs are identical —
     // otherwise a named item would silently lose its name by merging
-    // into an unnamed pile (PMMP Item::equals compares the compound tag).
+    // into an unnamed pile (the reference server Item::equals compares the compound tag).
     bool sameItem(const ItemStack& o) const {
         return id == o.id && meta == o.meta && nbt == o.nbt;
     }

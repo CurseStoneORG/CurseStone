@@ -265,7 +265,7 @@ void Anvil::init(const std::string& path) {
     }
     utils::MainLogger::get().info("[Anvil] Initialized at " + path_);
 
-    // Background chunk writer — the PocketMine-style autosave pipeline.
+    // Background chunk writer — the reference-style autosave pipeline.
     // Main thread only ever encodes; compression + region I/O live here.
     startWorker();
 }
@@ -377,7 +377,7 @@ std::optional<std::shared_ptr<FullChunk>> Anvil::loadChunk(int32_t x, int32_t z)
 }
 
 // ============================================================================
-// saveChunk — ASYNC (PocketMine-style autosave pipeline).
+// saveChunk — ASYNC (reference-style autosave pipeline).
 //
 // Split by thread:
 //   * MAIN thread (here): anvil_chunk_encode() walks the live

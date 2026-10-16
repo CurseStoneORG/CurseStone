@@ -32,6 +32,6 @@ class ItemSpiderEye : public ItemFood {
     std::string name() const override {
         return "Spider Eye";
     }
-    void applyEatEffects(Player& eater) const override;
+    void applyEatEffects(Player& eater, uint8_t meta) const override;
 };
 } // namespace

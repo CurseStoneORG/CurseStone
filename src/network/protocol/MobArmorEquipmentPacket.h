@@ -23,15 +23,15 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // MobArmorEquipmentPacket.h — client→server armor equip notification.
 //
-// PMMP wire format (protocol 84) — MobArmorEquipmentPacket::decode:
+// The reference server wire format (protocol 84) — MobArmorEquipmentPacket::decode:
 //   [1 byte ID 0x1c]
 //   [Int64 BE] eid       entity ID (player's runtime ID)
-//   [Slot]     helmet     PMMP Slot format
+//   [Slot]     helmet     the reference server Slot format
 //   [Slot]     chestplate
 //   [Slot]     leggings
 //   [Slot]     boots
 //
-// PMMP ignores this packet server-side (the actual armor slot change is
+// The reference server ignores this packet server-side (the actual armor slot change is
 // sent via ContainerSetSlotPacket with windowid=0x78); we register it
 // just so PacketPool returns a non-null pointer and the network logger
 // stops warning "unknown packet".

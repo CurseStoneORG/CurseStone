@@ -21,7 +21,7 @@
  *
  */
 // Timings — lightweight timing collector. Tracks tick time for
-// server subsystems (network, level, entities, plugins). PocketMine
+// server subsystems (network, level, entities, plugins). The reference server
 // has a full Timings system with one timing per "section"; we keep
 // a flat map of name→total_ns for later printing.
 #pragma once

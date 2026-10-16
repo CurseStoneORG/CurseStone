@@ -26,8 +26,8 @@
 // layered crown, and vines hanging off the wood.
 //
 // Ported 1:1 from Aquamarine-Team/Aquamarine
-// (src/world/generator/normal/object/BigJungleTree.php, by MaruselPlay),
-// which is itself the PocketMine-MP HugeTree algorithm. The PHP hierarchy is
+// (src/world/generator/normal/object/BigJungleTree, by MaruselPlay),
+// which is itself the reference server HugeTree algorithm. The original hierarchy is
 // flattened into this one class because CurseStone's tree base
 // (GenericTree) is not a HugeTree:
 //
@@ -42,13 +42,13 @@
 //                                unconditionally, clipped to the chunk)
 //   * placeVine()             -> placeVine()
 //
-// Two deliberate, documented deviations from the PHP:
+// Two deliberate, documented deviations from the original:
 //   1. The reference passes plain Block::LOG / Block::LEAVES with no
 //      metadata. CurseStone's protocol stores the wood/leaf VARIANT in the
 //      block data byte, so this uses data 3 (jungle) — the same pair
 //      JungleTree uses — otherwise the client would draw an oak tree.
 //   2. The reference's first pair of assignments inside the branch loop
-//      (0.5 + cos*f*4.0) is dead: the inner i1 loop overwrites $k/$l before
+//      (0.5 + cos*f*4.0) is dead: the inner i1 loop overwrites k/l before
 //      anything reads them. It is dropped here; the value it computed is
 //      unchanged.
 #pragma once

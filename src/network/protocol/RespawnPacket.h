@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // RespawnPacket — clientbound. Le dice al cliente "reaparecé en esta
 // posicion" (dispara la transicion fuera de la pantalla de muerte).
-// Wire format (protocol 84, mirrors PMMP legacy RespawnPacket):
+// Wire format (protocol 84, mirrors the reference server legacy RespawnPacket):
 //   [Float BE] x
 //   [Float BE] y
 //   [Float BE] z

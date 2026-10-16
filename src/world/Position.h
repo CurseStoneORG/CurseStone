@@ -21,7 +21,7 @@
  *
  */
 // Position — a level-relative location with x,y,z + World reference.
-// Mirrors pocketmine/level/Position.php. Used by blocks, entities,
+// Mirrors level/Position. Used by blocks, entities,
 // tile-entities and players to know "where am I, in which world?".
 // Uses composition with mcp_vector3_t instead of C struct inheritance.
 #pragma once

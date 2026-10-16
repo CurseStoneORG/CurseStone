@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """End-to-end login check for a local CurseStone server (Linux).
 
-Talks real RakNet (PocketMine-MP / RakLib, MCPE 0.15.10, protocol 84) over
+Talks real RakNet (RakLib, MCPE 0.15.10, protocol 84) over
 UDP instead of spraying raw datagrams, so it exercises the exact path a
 real client takes:
 
@@ -30,7 +30,7 @@ import zlib
 
 MAGIC = b"\x00\xff\xff\x00\xfe\xfe\xfe\xfe\xfd\xfd\xfd\xfd\x12\x34\x56\x78"
 
-# RakLib packet ids (PMMP/RakLib numbering, NOT generic RakNet).
+# RakLib packet ids (RakLib numbering, NOT generic RakNet).
 UNCONNECTED_PING = 0x01
 UNCONNECTED_PONG = 0x1C
 OCR1 = 0x05

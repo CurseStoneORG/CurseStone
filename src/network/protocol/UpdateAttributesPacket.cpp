@@ -23,8 +23,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // UpdateAttributesPacket.cpp — encode/decode (protocol 84).
 //
-// Wire format mirrors Infinity (PMMP 0.15.10 lineage) BYTE-FOR-BYTE:
-//   [Long BE]  entityId    — 8 bytes (Binary::writeLong = pack("NN", hi, lo))
+// Wire format mirrors the reference server (the reference server 0.15.10 lineage) BYTE-FOR-BYTE:
+//   [Long BE]  entityId    — 8 bytes (64-bit big-endian)
 //   [Short BE] entry count — 2 bytes
 //   per entry:
 //     [Float BE] min

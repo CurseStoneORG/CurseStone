@@ -25,7 +25,7 @@
 //
 // Wire format (protocol 84):
 //   [1 byte ID 0x05]
-//   [BE String] message   (PMMP putString = putShort BE length + bytes)
+//   [BE String] message   (the reference server putString = putShort BE length + bytes)
 #pragma once
 
 #include "DataPacket.h"

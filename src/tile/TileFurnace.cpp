@@ -20,7 +20,7 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// TileFurnace.cpp — horno completo (PMMP Tile/Furnace.php):
+// TileFurnace.cpp — horno completo (the reference server Tile/Furnace):
 // consume fuel, funde el input según el CraftingManager, escribe el
 // resultado en el slot 2 y sincroniza progreso/contenido con el
 // cliente mientras haya alguien mirando.
@@ -70,7 +70,7 @@ void TileFurnace::removeViewer(void* player) {
     viewers_.erase(std::remove(viewers_.begin(), viewers_.end(), player), viewers_.end());
 }
 // ============================================================
-// Fuel — valores vanilla de PMMP/Genisys (Fuel.php).
+// Fuel — valores vanilla del servidor de referencia/Genisys (Fuel).
 // Nota MCPE 0.15: lava bucket = id 327 (ItemIds::LAVA_BUCKET);
 // bucket vacío = 325. El cubo de lava rinde 20000 ticks y al
 // consumirse deja un cubo vacío en el slot de fuel.
@@ -161,7 +161,7 @@ void TileFurnace::tick(uint64_t) {
     // La llama del bloque sigue al fuego real.
     setFlame(burn_time_ > 0);
     // Encender fuel si: no hay burn activo, se puede fundir, y hay
-    // fuel consumible (PMMP: checkUsedFuel).
+    // fuel consumible (the reference server: checkUsedFuel).
     if (burn_time_ <= 0 && canSmelt && !fuel.isEmpty()) {
         int ticks = fuelBurnTicks(fuel.id);
         if (ticks > 0) {
@@ -170,7 +170,7 @@ void TileFurnace::tick(uint64_t) {
             fuel.count -= 1;
             if (fuel.count <= 0) {
                 // El cubo de lava deja un cubo vacío al consumirse
-                // (PMMP Furnace.php: "checkUsedFuel").
+                // (the reference server Furnace: "checkUsedFuel").
                 if (fuel.id == 327) {
                     fuel.id = 325;
                     fuel.count = 1;
@@ -189,7 +189,7 @@ void TileFurnace::tick(uint64_t) {
         ++cook_time_;
         if (cook_time_ >= maxCookTime()) {
             cook_time_ = 0;
-            // 1 input → 1 result (PMMP: onContentsChange).
+            // 1 input → 1 result (the reference server: onContentsChange).
             input.count -= 1;
             if (input.count <= 0)
                 input = cursestone::item::ItemStack::EMPTY();

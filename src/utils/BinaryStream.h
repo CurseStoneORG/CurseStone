@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // BinaryStream — dynamic byte buffer with read/write cursor.
 // Used by RakLib packets, NBT, and the MCPE protocol packets.
-// Pure C; mirrors BinaryStream.h in old PocketMine/Aquamarine.
+// Pure C; mirrors BinaryStream.h in old Aquamarine.
 #pragma once
 
 #include <stdint.h>

@@ -32,7 +32,7 @@ MotionResult sweep(mcp_aabb_t box, mcp_vector3_t motion, const std::vector<Block
     mcp_aabb_t bb = box;
 
     // Y first, then X, then Z — Entity::move()'s order, and each pass
-    // works on the box as the previous pass left it (the PHP original
+    // works on the box as the previous pass left it (the original
     // mutates the receiver in place). Skipping that intermediate offset
     // made the port clip the last two axes against coordinates the box
     // no longer had: items sank into floors and stopped short of walls.

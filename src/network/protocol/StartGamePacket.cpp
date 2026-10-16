@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // StartGamePacket.cpp — encode/decode.
 //
-// PMMP encode() uses putInt (BE), putByte, putLong (BE), putFloat (BE), putString (BE).
+// The reference server encode() uses putInt (BE), putByte, putLong (BE), putFloat (BE), putString (BE).
 #include "StartGamePacket.h"
 
 namespace cursestone::network::protocol {

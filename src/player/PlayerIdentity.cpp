@@ -22,10 +22,10 @@
  */
 // PlayerIdentity — nametag + display name (the "ranks" surface).
 //
-// PMMP 0.15 split a player's names in two, and this file ports exactly
+// The reference server 0.15 split a player's names in two, and this file ports exactly
 // that split:
 //
-//   - setNameTag($name)  (Genisys Player.php + Server::updatePlayerListData):
+//   - setNameTag(name)  (Genisys Player + Server::updatePlayerListData):
 //     on protocol 84 the name rendered ABOVE THE HEAD and the one shown in
 //     the SERVER LIST TAB both come from the PlayerListPacket ADD entry —
 //     the tab is global (server-wide), and the overhead name of a player
@@ -34,7 +34,7 @@
 //     ADD(uuid, eid, newTag, skinId, skinData) to every spawned player,
 //     self included. §-color codes ride along untouched, which is how
 //     0.15 rank plugins (PurePerms-style) paint prefixes over heads.
-//   - setDisplayName($name): chat-only alias, no packets; handleChat()
+//   - setDisplayName(name): chat-only alias, no packets; handleChat()
 //     reads getDisplayName() so rank plugins can restyle the chat line.
 //
 // AddPlayerPacket sites keep using getNameTag() too (PlayerLogin.cpp), so
@@ -94,7 +94,7 @@ void Player::setNameTag(const std::string& tag) {
         return;
 
     // Server::updatePlayerListData() / removePlayerListData() (Genisys
-    // Server.php): one REMOVE + one ADD broadcast over the global player
+    // Server): one REMOVE + one ADD broadcast over the global player
     // list. The 0.15.10 client refreshes both the tab entry and the
     // overhead name from this pair.
     std::array<uint8_t, 16> uuid{};

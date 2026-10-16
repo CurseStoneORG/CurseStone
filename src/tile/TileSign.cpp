@@ -23,7 +23,7 @@
 #include "TileSign.h"
 #include "nbt/tag/CompoundTag.h"
 namespace cursestone::tile {
-// PMMP/Nukkit legacy key each line as "Text1".."Text4" (plain strings,
+// The reference server/Nukkit legacy key each line as "Text1".."Text4" (plain strings,
 // not JSON — that's a Bedrock-modern-protocol thing this legacy-84
 // project doesn't use).
 void TileSign::writeNBT(mcp_tag_t* tag) const {

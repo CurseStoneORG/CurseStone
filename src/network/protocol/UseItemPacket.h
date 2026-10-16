@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // UseItemPacket.h — client→server block placement / item use.
 //
-// PMMP wire format (protocol 84) — UseItemPacket::decode:
+// The reference server wire format (protocol 84) — UseItemPacket::decode:
 //   [1 byte ID 0x1f]
 //   [Int32 BE] x         block being clicked
 //   [Int32 BE] y
@@ -36,9 +36,9 @@
 //   [Float BE] posY
 //   [Float BE] posZ
 //   [Int32 BE] slot       inventory slot index of the used item
-//   [Slot]     item       PMMP Slot (see below)
+//   [Slot]     item       the reference server Slot (see below)
 //
-// PMMP Slot (BinaryStream::getSlot):
+// The reference server Slot (BinaryStream::getSlot):
 //   [Int16 BE] id       — if id <= 0, slot is EMPTY and the field ends here.
 //   [Uint8]    count    — only present if id != 0.
 //   [Int16 BE] damage   — only present if id != 0.

@@ -20,7 +20,7 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// Location — Position + yaw + pitch. Mirrors pocketmine/level/Location.
+// Location — Position + yaw + pitch. Mirrors level/Location.
 #pragma once
 #include "Position.h"
 

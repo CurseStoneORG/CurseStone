@@ -23,10 +23,10 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // AddItemEntityPacket.h — server→client spawn of a dropped item entity.
 //
-// PMMP wire format (protocol 84) — AddItemEntityPacket::encode:
+// The reference server wire format (protocol 84) — AddItemEntityPacket::encode:
 //   [1 byte ID 0x0d]
 //   [Int64 BE] eid        runtime entity ID
-//   [Slot]     item       PMMP Slot: id BE + count + damage BE + nbtLen LE + nbt
+//   [Slot]     item       the reference server Slot: id BE + count + damage BE + nbtLen LE + nbt
 //   [Float BE] x
 //   [Float BE] y
 //   [Float BE] z

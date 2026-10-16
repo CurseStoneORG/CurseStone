@@ -27,7 +27,7 @@
 //     putInt(x); putInt(z); putByte(y); putByte(blockId);
 //     putByte((flags << 4) | blockData);   // <-- flags+data, ONE byte
 //
-// All ints are big-endian (PMMP Binary::writeInt -> pack("N", ...)).
+// All ints are big-endian (32-bit big-endian writes).
 #include "UpdateBlockPacket.h"
 
 namespace cursestone::network::protocol {
@@ -38,7 +38,7 @@ void UpdateBlockPacket::encode(std::vector<uint8_t>& out) const {
     w.writeI32BE(z);
     w.writeU8(y);
     w.writeU8(blockId);
-    // Genisys: putByte(($r[5] << 4) | $r[4]) — flags in the HIGH nibble,
+    // Genisys: byte = (flags << 4) | blockData — flags in the HIGH nibble,
     // block data in the LOW nibble, both in one byte.
     w.writeU8((uint8_t)(((flags & 0x0F) << 4) | (blockData & 0x0F)));
 }

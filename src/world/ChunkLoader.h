@@ -23,7 +23,7 @@
 // ChunkLoader — abstract consumer of chunk updates.
 // A Player is the canonical ChunkLoader: it asks the World to load
 // chunks within view distance and the World pushes FullChunkDataPacket
-// to it. Mirrors pocketmine/level/ChunkLoader interface.
+// to it. Mirrors level/ChunkLoader interface.
 #pragma once
 #include "world/format/Chunk.h"
 namespace cursestone::world {

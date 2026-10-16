@@ -23,7 +23,7 @@
 // BlockFire.cpp — Fire block, simplified.
 //
 // DESIGN DECISION (v6):
-//   The PMMP-accurate fire propagation system from v5 caused severe
+//   The reference-accurate fire propagation system from v5 caused severe
 //   tick-loop stalls (88s freeze in workbench222274838282bdjsj.zip).
 //   Even with the anti-cascade dedup + cap, the fire-spread logic
 //   itself does too much work per tick when there are multiple fires.
@@ -71,7 +71,7 @@ void BlockFire::scheduleUpdate(world::World* /*world*/, int32_t /*x*/, int32_t /
 }
 
 // ============================================================
-// Tablas de flamabilidad — valores PMMP verbatim (sin uso en v6
+// Tablas de flamabilidad — valores the reference server verbatim (sin uso en v6
 // más allá de canNeighborBurn, que a su vez solo se usa desde
 // ItemFlintSteel para el check "has_support"). Se mantienen para
 // que el código compile sin cambios en los headers.
@@ -205,7 +205,7 @@ void BlockFire::tryToCatchBlockOnFire(world::World* /*world*/, int32_t /*tx*/, i
 }
 
 // ============================================================
-// onEntityCollide — mirrors PMMP Fire::onEntityCollide.
+// onEntityCollide — mirrors the reference server Fire::onEntityCollide.
 // Players/mobs walking into a fire still take damage. This is the
 // one piece of "fire logic" that runs OUTSIDE the scheduler (it's
 // invoked by the entity-tick loop directly), so it doesn't contribute

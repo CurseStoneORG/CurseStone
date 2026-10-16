@@ -62,13 +62,13 @@ void Player::broadcastPoseFlags() {
         return;
     auto pk = std::make_shared<network::protocol::SetEntityDataPacket>();
     pk->eid = runtimeId();
-    pk->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_, false, isOnFire()));
+    pk->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_, false, isOnFire(), invisible_));
 
     // Send eid=0 to update the local player's pose.
     {
         auto self = std::make_shared<network::protocol::SetEntityDataPacket>();
         self->eid = 0;
-        self->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_, false, isOnFire()));
+        self->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_, false, isOnFire(), invisible_));
         sendPacket(self);
     }
 
@@ -405,8 +405,18 @@ void Player::handleInteract(int action, int64_t targetEid) {
 
     last_attack_ms_ = now_ms;
 
+    // Melee damage with Strength (+3 per level) and Weakness (-4 per
+    // level) applied, clamped at zero (vanilla).
+    float melee = BASE_ATTACK_DAMAGE;
+    if (const entity::Effect* str = getEffect(entity::EFF_STRENGTH))
+        melee += 3.0f * (str->amplifier() + 1);
+    if (const entity::Effect* weak = getEffect(entity::EFF_WEAKNESS))
+        melee -= 4.0f * (weak->amplifier() + 1);
+    if (melee < 0.0f)
+        melee = 0.0f;
+
     // Apply damage and allow the damage event to modify or cancel it.
-    auto applied = target->damageByEntity(BASE_ATTACK_DAMAGE, this);
+    auto applied = target->damageByEntity(melee, this);
     bool died = (applied == entity::DamageApply::KILLED);
     bool hurt = (applied == entity::DamageApply::HURT);
 
@@ -481,7 +491,7 @@ void Player::handleInteract(int action, int64_t targetEid) {
 
     if (srv_->advancedLog()) {
         utils::MainLogger::get().info("[COMBAT] " + cfg_.username + " hit " + target->getName() +
-                                      " for " + std::to_string(BASE_ATTACK_DAMAGE) +
+                                      " for " + std::to_string(melee) +
                                       " (health now " + std::to_string((int)target->health()) +
                                       ")" + (died ? " — killed" : "") +
                                       (applied == entity::DamageApply::CANCELLED

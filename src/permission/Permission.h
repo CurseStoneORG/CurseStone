@@ -22,7 +22,7 @@
  */
 // Permission — a single permission node (e.g. "cursestone.command.stop").
 // Permissions form a tree with wildcards ("cursestone.command.*").
-// Mirrors pocketmine/permission/Permission.php.
+// Mirrors permission/Permission.
 #pragma once
 #include <string>
 namespace cursestone::permission {

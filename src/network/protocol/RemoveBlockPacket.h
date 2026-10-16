@@ -23,11 +23,11 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // RemoveBlockPacket.h — client→server block break confirmation.
 //
-// Wire format (protocol 84) — PMMP RemoveBlockPacket::decode:
+// Wire format (protocol 84) — the reference server RemoveBlockPacket::decode:
 //   [1 byte ID 0x12]
 //   [Int64 BE] eid
 //   [Int32 BE] x
-//   [Int32 BE] z         (note: z, not y — see PMMP order)
+//   [Int32 BE] z         (note: z, not y — see the reference server order)
 //   [Uint8]    y
 //
 // Yes, MCPE protocol 84 quirks: x and z are Int32 BE, y is a single byte.

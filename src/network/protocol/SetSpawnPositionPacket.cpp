@@ -22,7 +22,7 @@
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // SetSpawnPositionPacket.cpp — encode/decode.
-// PMMP: putInt x 3 (BE).
+// The reference server: putInt x 3 (BE).
 #include "SetSpawnPositionPacket.h"
 
 namespace cursestone::network::protocol {

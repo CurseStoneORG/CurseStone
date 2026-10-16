@@ -38,19 +38,19 @@ extern "C" {
 // Forward declaration — full definition in SessionManager.h
 typedef struct mcp_rak_session_manager mcp_rak_session_manager_t;
 
-// ---- Session states (mirrors PMMP Session.php) ----
+// ---- Session states (mirrors the reference server Session) ----
 #define MCP_SESSION_STATE_UNCONNECTED 0
 #define MCP_SESSION_STATE_CONNECTING_1 1 // after OCR1 → waiting OCR2
 #define MCP_SESSION_STATE_CONNECTING_2 2 // after OCR2 → waiting CLIENT_CONNECT (0x09)
 #define MCP_SESSION_STATE_CONNECTED 3    // fully established
 
-// Maximum encapsulated packet size inside one DataPacket datagram (per PMMP).
+// Maximum encapsulated packet size inside one DataPacket datagram (per the reference server).
 #define MCP_SESSION_MAX_SPLIT_SIZE 128
 #define MCP_SESSION_MAX_SPLIT_COUNT 4
 #define MCP_SESSION_WINDOW_SIZE 2048
 
 // Connection timeout for the session sweep, in milliseconds (30s — the
-// RakLib/PMMP default). The timeout clock means "no datagram received at
+// RakLib/the reference server default). The timeout clock means "no datagram received at
 // all": keepalive PINGs and ACK/NACK traffic both count as activity, so
 // a player who stays idle (AFK) with the game open is never kicked; only
 // a genuinely dead connection (app closed, network lost) is reaped.

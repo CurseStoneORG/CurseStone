@@ -22,7 +22,7 @@
  */
 // AsyncPool — N worker threads that drain a thread-safe task queue.
 // Chunk generation, file I/O and packet compression post tasks here.
-// Mirrors pocketmine/scheduler/AsyncPool.
+// Mirrors scheduler/AsyncPool.
 //
 // STABILITY FIXES applied here (see also ServerScheduler.cpp, which
 // already wraps its own scheduleAsync() lambdas in try/catch — the

@@ -26,7 +26,7 @@
 // spawn por equipo).
 //
 // A diferencia de la mayoria de los eventos de este proyecto, este
-// NO es Cancellable — mirrors PMMP PlayerRespawnEvent (extends
+// NO es Cancellable — mirrors the reference server PlayerRespawnEvent (extends
 // PlayerEvent, no Cancellable). Cancelar un respawn dejaria al
 // jugador permanentemente muerto sin ningun otro disparador para
 // salir de ese estado, asi que la unica forma de influir en el

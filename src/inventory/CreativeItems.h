@@ -30,10 +30,10 @@
 //
 // Total items: 566
 //
-// Each entry is {itemId, damage}; count is always 1 (PMMP default).
+// Each entry is {itemId, damage}; count is always 1 (the reference server default).
 // El ORDEN importa: el cliente categorize el catalogo por posicion
 // (Construction / Nature / Equipment / Items), asi que esta tabla sigue
-// el mismo orden que el catalogo de PMMP para MCPE 0.15.x
+// el mismo orden que el catalogo del servidor de referencia para MCPE 0.15.x
 // (protocolo 84) y la categorizacion queda igual que en vanilla.
 //
 // Ojo con `damage`: no siempre es un color de 4 bits. En los spawn eggs

@@ -118,7 +118,7 @@ static inline mcp_aabb_t mcp_aabb_expand(mcp_aabb_t b, double dx, double dy, dou
     return mcp_aabb_make(x0, y0, z0, x1, y1, z1);
 }
 
-// `cloneMove` (the client's AABB::cloneMove / PHP's offset()): plain
+// `cloneMove` (the client's AABB::cloneMove / the original's offset()): plain
 // translation of the whole box. This — not expand() — is what the
 // collision-cube lookup is fed today, matching the existing item
 // physics exactly; expand() is kept for callers that want the full
@@ -128,7 +128,7 @@ static inline mcp_aabb_t mcp_aabb_clone_move(mcp_aabb_t b, double dx, double dy,
                          b.maxZ + dz);
 }
 
-// `move` — same thing, as an in-place mutation (the PHP original
+// `move` — same thing, as an in-place mutation (the original
 // mutates the receiver and returns it, which is why the caller's Y
 // offset is already visible to the X pass).
 static inline mcp_aabb_t mcp_aabb_move(mcp_aabb_t b, double dx, double dy, double dz) {

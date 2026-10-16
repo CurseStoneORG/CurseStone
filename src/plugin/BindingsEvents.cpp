@@ -20,46 +20,39 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// BindingsEvents — Fase 6: API de eventos para los plugins Lua.
+// Lua event bindings and supported event names.
 //
-//   events.on("PlayerJoin", function(e) ... end)
-//   events.on("PlayerQuit", function(e) ... end)
-//   events.on("PlayerChat", function(e) ... end)
-//   events.on("PlayerMove", function(e) ... end)           -- cada movimiento
-//                                                         -- aceptado; e.cancel()
-//                                                         -- lo revierte
-//   events.on("PlayerDropItem", function(e) ... end)       -- tirar item (Q)
-//   events.on("PlayerItemHeld", function(e) ... end)       -- cambia de slot
-//   events.on("BlockBreak", function(e) ... end)
-//   events.on("BlockPlace", function(e) ... end)
-//   events.on("EntityDamage", function(e) ... end)          -- dano (cualquier causa)
-//   events.on("EntityDamageByEntity", function(e) ... end)  -- PvP: golpe/flecha
-//   events.on("PlayerDeath", function(e) ... end)
-//   events.on("PlayerRespawn", function(e) ... end)
-//   events.on("PlayerBedEnter", function(e) ... end)        -- se acuesta
-//     ("PlayerSleepInBed" funciona como alias del mismo evento)
-//   events.on("PlayerBedLeave", function(e) ... end)        -- se levanta
-//   events.on("DoorToggle", function(e) ... end)            -- puerta abierta/cerrada
-//   events.on("PlayerInteract", function(e) ... end)        -- clic en bloque/aire
-//                                                         -- con el item en mano
+// events.on("PlayerJoin", function(e) ... end)
+// events.on("PlayerQuit", function(e) ... end)
+// events.on("PlayerChat", function(e) ... end)
+// events.on("PlayerMove", function(e) ... end)
+// events.on("PlayerDropItem", function(e) ... end)
+// events.on("PlayerItemHeld", function(e) ... end)
+// events.on("BlockBreak", function(e) ... end)
+// events.on("BlockPlace", function(e) ... end)
+// events.on("EntityDamage", function(e) ... end)
+// events.on("EntityDamageByEntity", function(e) ... end)
+// events.on("PlayerDeath", function(e) ... end)
+// events.on("PlayerRespawn", function(e) ... end)
+// events.on("PlayerBedEnter", function(e) ... end)
+// events.on("PlayerSleepInBed", function(e) ... end) -- Alias for PlayerBedEnter.
+// events.on("PlayerBedLeave", function(e) ... end)
+// events.on("DoorToggle", function(e) ... end)
+// events.on("PlayerInteract", function(e) ... end)
 //
-// `e` es una tabla simple por invocación:
-//   - eventos de jugador: e.player (NOMBRE, string), e.message
-//   - PlayerMove: e.player, e.fromX/fromY/fromZ, e.toX/toY/toZ (números)
-//   - eventos de item (DropItem/ItemHeld/Interact): e.item_id, e.item_meta,
-//     e.item_count reflejan el stack implicado (0/nil si la mano está vacía)
-//   - eventos de bloque:  e.player, e.x, e.y, e.z, e.block_id
-//   - eventos de dano:    e.entity (víctima), e.amount (ESCRIBIBLE — la
-//     cantidad leída de vuelta se aplica), e.cause (string: "entity_attack",
-//     "projectile", "fall", ...), y en ByEntity además e.damager (el
-//     atacante). e.cancel() anula el dano por completo.
+// Event fields:
+// - Player events: e.player and e.message.
+// - PlayerMove: e.player and fromX/fromY/fromZ/toX/toY/toZ.
+// - Item events: e.item_id, e.item_meta, and e.item_count.
+// - Block events: e.player, e.x, e.y, e.z, and e.block_id.
+// - Damage events: e.entity, writable e.amount, and e.cause.
+// - EntityDamageByEntity also provides e.damager.
+// - Call e.cancel() to cancel cancellable events.
 //
-// Prioridad fija NORMAL. El owner del listener es el propio LuaPlugin,
-// así que disable() -> unlistenAll(this) los quita todos sin dejar
-// callbacks colgantes.
+// Listeners use NORMAL priority and are removed when their plugin is disabled.
 #include "LuaBindings.h"
 #include "LuaPlugin.h"
-#include "Player.h" // definición completa de Player (getName)
+#include "Player.h" // Complete Player definition.
 #include "event/EventManager.h"
 #include "event/player/PlayerJoinEvent.h"
 #include "event/player/PlayerQuitEvent.h"
@@ -85,48 +78,40 @@ namespace cursestone::plugin {
 
 namespace {
 
-// Cierre C para e.cancel(): marca e.cancelled = true en la propia tabla e
-// (guardada como upvalue). El wrapper lee `cancelled` DESPUÉS del pcall.
+// Marks the event table as cancelled.
 int l_cancel(lua_State* L) {
     lua_pushboolean(L, 1);
     lua_setfield(L, lua_upvalueindex(1), "cancelled");
     return 0;
 }
 
-// Patrón genérico que se repite para los 5 eventos:
-//   1. construir la tabla e (con e.cancel como closure),
-//   2. llenar los campos con `fill`,
-//   3. llamar al handler Lua con pcall,
-//   4. leer de vuelta `cancelled` y los campos escribibles con readBack,
-//   5. restaurar la pila exactamente como estaba.
+// Creates the event table, calls the Lua handler, and applies writable fields.
 template <typename EventT>
 void hook(LuaPlugin* pl, int fnRef, std::function<void(lua_State*, int /*eIdx*/, EventT&)> fill,
           std::function<void(lua_State*, int /*eIdx*/, EventT&)> readBack) {
     event::EventManager::get().listen<EventT>(
-        pl, // owner = el plugin (unlistenAll(this) lo quita)
+        pl, // The plugin owns the listener.
         [pl, fnRef, fill, readBack](EventT& ev) {
             if (!pl->isEnabled())
                 return;
             lua_State* L = pl->L();
             int base = lua_gettop(L);
 
-            lua_newtable(L); // e
+            lua_newtable(L); // Event table.
             int eIdx = lua_gettop(L);
 
-            // e.cancel: closure con 1 upvalue (la propia tabla e).
+            // Bind cancel() to the event table.
             lua_pushvalue(L, eIdx);
             lua_pushcclosure(L, l_cancel, 1);
             lua_setfield(L, eIdx, "cancel");
 
             fill(L, eIdx, ev);
 
-            // Primero la función, luego el argumento (el orden importa).
+            // Push the handler before its argument.
             lua_rawgeti(L, LUA_REGISTRYINDEX, fnRef);
             lua_pushvalue(L, eIdx);
             if (pl->pcall(1, 0)) {
-                // Leer de vuelta: ¿cancelaron el evento? Solo los eventos
-                // Cancellable (if constexpr: PlayerRespawnEvent, p.ej.,
-                // NO es cancelable a propósito y no tiene setCancelled).
+                // Apply cancellation only to cancellable event types.
                 lua_getfield(L, eIdx, "cancelled");
                 if (lua_toboolean(L, -1)) {
                     if constexpr (std::is_base_of_v<event::Cancellable, EventT>) {
@@ -136,19 +121,18 @@ void hook(LuaPlugin* pl, int fnRef, std::function<void(lua_State*, int /*eIdx*/,
                 lua_pop(L, 1);
                 readBack(L, eIdx, ev);
             }
-            lua_settop(L, base); // la pila queda como estaba
+            lua_settop(L, base); // Restore the Lua stack.
         });
 }
 
-// fill común de los eventos de jugador: e.player es el NOMBRE (string).
-// Si ev.player es null, no explotar: string vacío.
+// Sets the player name, using an empty string for null players.
 template <typename EventT>
 void fillPlayer(lua_State* L, int eIdx, EventT& ev) {
     lua_pushstring(L, ev.player ? ev.player->getName().c_str() : "");
     lua_setfield(L, eIdx, "player");
 }
 
-// readBack de Join/Quit/Chat: si e.message es string, reescribir el mensaje.
+// Applies a modified message from the event table.
 template <typename EventT>
 void readBackMessage(lua_State* L, int eIdx, EventT& ev) {
     lua_getfield(L, eIdx, "message");
@@ -157,7 +141,7 @@ void readBackMessage(lua_State* L, int eIdx, EventT& ev) {
     lua_pop(L, 1);
 }
 
-// fill común de los eventos de bloque: posición + id de bloque.
+// Adds the player and block coordinates to the event table.
 template <typename EventT>
 void fillBlock(lua_State* L, int eIdx, EventT& ev) {
     lua_pushstring(L, ev.player ? ev.player->getName().c_str() : "");
@@ -172,8 +156,7 @@ void fillBlock(lua_State* L, int eIdx, EventT& ev) {
     lua_setfield(L, eIdx, "block_id");
 }
 
-// fill del stack de item compartido por los eventos PlayerDropItem,
-// PlayerItemHeld y PlayerInteract: id/meta/count del stack implicado.
+// Adds the item stack fields using the given prefix.
 void fillItemStack(lua_State* L, int eIdx, const char* prefix,
                    const cursestone::item::ItemStack& st) {
     lua_pushfstring(L, "%s_id", prefix);
@@ -187,11 +170,7 @@ void fillItemStack(lua_State* L, int eIdx, const char* prefix,
     lua_settable(L, eIdx);
 }
 
-// ---- helpers de los eventos de daño ----
-
-// Nombre legible de una entidad para los plugins: los jugadores (el único
-// tipo de entidad dañable hoy) por su nombre; cualquier otra cosa como
-// "eid:<n>". Nunca nil, para que el handler pueda comparar sin tocarse.
+// Adds a readable entity identifier to the event table.
 void fillEntityField(lua_State* L, int eIdx, const char* field, cursestone::entity::Entity* e) {
     if (!e) {
         lua_pushstring(L, "unknown");
@@ -206,8 +185,7 @@ void fillEntityField(lua_State* L, int eIdx, const char* field, cursestone::enti
     lua_setfield(L, eIdx, field);
 }
 
-// DamageCause -> string PMMP-style (misma familia de nombres que los
-// eventos de PocketMine/Nukkit, minúsculas con guion bajo).
+// Converts damage causes to lowercase event names.
 const char* damageCauseName(event::entity::DamageCause c) {
     using event::entity::DamageCause;
     switch (c) {
@@ -233,13 +211,15 @@ const char* damageCauseName(event::entity::DamageCause c) {
         return "void";
     case DamageCause::PROJECTILE:
         return "projectile";
+    case DamageCause::MAGIC:
+        return "magic";
     case DamageCause::CUSTOM:
         return "custom";
     }
     return "custom";
 }
 
-// e.entity (víctima) + e.amount (escribible) + e.cause.
+// Adds the victim, damage amount, and cause to the event table.
 void fillDamage(lua_State* L, int eIdx, event::entity::EntityDamageEvent& ev) {
     fillEntityField(L, eIdx, "entity", ev.entity);
     lua_pushnumber(L, (lua_Number)ev.amount);
@@ -248,10 +228,7 @@ void fillDamage(lua_State* L, int eIdx, event::entity::EntityDamageEvent& ev) {
     lua_setfield(L, eIdx, "cause");
 }
 
-// Leer de vuelta e.amount: el plugin puede reescribir la cantidad (para
-// armadura, multiplicadores de PvP, zonas sin dano, etc.). Se satura a
-// >= 0 — el pipeline ya satura la salud a 0, así que números negativos
-// no tienen sentido y jamás deben llegar al cable.
+// Applies the modified damage amount, clamped to zero or greater.
 void readBackAmount(lua_State* L, int eIdx, event::entity::EntityDamageEvent& ev) {
     lua_getfield(L, eIdx, "amount");
     if (lua_isnumber(L, -1)) {
@@ -261,13 +238,13 @@ void readBackAmount(lua_State* L, int eIdx, event::entity::EntityDamageEvent& ev
     lua_pop(L, 1);
 }
 
-// EntityDamageByEntity: igual + e.damager (atacante).
+// Adds the attacker to the damage event table.
 void fillDamageByEntity(lua_State* L, int eIdx, event::entity::EntityDamageByEntityEvent& ev) {
     fillDamage(L, eIdx, ev);
     fillEntityField(L, eIdx, "damager", ev.damager);
 }
 
-// events.on(nombre, fn)
+// Registers a Lua event listener.
 int l_events_on(lua_State* L) {
     LuaPlugin* pl = LuaPlugin::from(L);
     std::string name = luaL_checkstring(L, 1);
@@ -303,7 +280,7 @@ int l_events_on(lua_State* L) {
         auto f = [](lua_State* L, int eIdx, event::entity::EntityDamageByEntityEvent& ev) {
             fillDamageByEntity(L, eIdx, ev);
         };
-        // Same read-back: e.amount is writable, e.cancel() voids the hit.
+        // Applies writable damage and cancellation changes.
         hook<event::entity::EntityDamageByEntityEvent>(
             pl, ref, f,
             std::function<void(lua_State*, int, event::entity::EntityDamageByEntityEvent&)>(
@@ -328,16 +305,10 @@ int l_events_on(lua_State* L) {
             lua_pushnumber(L, (lua_Number)ev.respawnZ);
             lua_setfield(L, eIdx, "z");
         };
-        // Not cancellable on purpose (a cancelled respawn would strand the
-        // player dead): listeners may only observe.
+        // Respawn events are intentionally not cancellable.
         hook<event::player::PlayerRespawnEvent>(pl, ref, f, {});
     } else if (name == "PlayerBedEnter" || name == "PlayerSleepInBed") {
-        // The sleep-in-bed event (cursestone port of
-        // cn.nukkit.event.player.PlayerBedEnterEvent). "PlayerSleepInBed"
-        // is accepted as an alias because some plugins use that name for
-        // the same moment; both fire the identical C++ event.
-        //   e.player, e.x, e.y, e.z  (bed HEAD half), e.cancel() refuses
-        //   the sleep (Bed.php then reports the bed as occupied).
+        // PlayerSleepInBed is an alias for PlayerBedEnter.
         auto f = [](lua_State* L, int eIdx, event::player::PlayerBedEnterEvent& ev) {
             fillPlayer<event::player::PlayerBedEnterEvent>(L, eIdx, ev);
             lua_pushnumber(L, (lua_Number)ev.x);
@@ -349,8 +320,7 @@ int l_events_on(lua_State* L) {
         };
         hook<event::player::PlayerBedEnterEvent>(pl, ref, f, {});
     } else if (name == "PlayerBedLeave") {
-        // Woke up (naturally via stopSleep, morning skip, bed broken,
-        // quit or teleport). e.player, e.x, e.y, e.z of the bed head.
+        // Fired when a player stops sleeping.
         auto f = [](lua_State* L, int eIdx, event::player::PlayerBedLeaveEvent& ev) {
             fillPlayer<event::player::PlayerBedLeaveEvent>(L, eIdx, ev);
             lua_pushnumber(L, (lua_Number)ev.x);
@@ -362,9 +332,7 @@ int l_events_on(lua_State* L) {
         };
         hook<event::player::PlayerBedLeaveEvent>(pl, ref, f, {});
     } else if (name == "DoorToggle") {
-        // Wooden door opened/closed by hand (iron doors only react to
-        // redstone, vanilla). e.player (the clicker), e.x, e.y, e.z of
-        // the door's LOWER half, e.cancel() blocks the swing.
+        // Fired when a wooden door is toggled by a player.
         auto f = [](lua_State* L, int eIdx, event::block::DoorToggleEvent& ev) {
             lua_pushstring(L, ev.player ? ev.player->getName().c_str() : "");
             lua_setfield(L, eIdx, "player");
@@ -377,13 +345,7 @@ int l_events_on(lua_State* L) {
         };
         hook<event::block::DoorToggleEvent>(pl, ref, f, {});
     } else if (name == "PlayerInteract") {
-        // Right/left click against a block, or an item use in the air
-        // (face 255 = no block). Fired for EVERY interaction attempt
-        // before any specific branch (chests, doors, beds, placement...)
-        // reacts. e.player, e.x, e.y, e.z, e.face (0=bottom..5=east, 255
-        // = in-air), e.action ("right_click_block", "left_click_block",
-        // "right_click_air"), the held stack as e.item_id/e.item_meta/
-        // e.item_count, e.cancel() blocks the whole interaction.
+        // Fired before a block or item interaction is processed.
         auto f = [](lua_State* L, int eIdx, event::player::PlayerInteractEvent& ev) {
             fillPlayer<event::player::PlayerInteractEvent>(L, eIdx, ev);
             lua_pushnumber(L, (lua_Number)ev.blockX);
@@ -409,11 +371,7 @@ int l_events_on(lua_State* L) {
         };
         hook<event::player::PlayerInteractEvent>(pl, ref, f, {});
     } else if (name == "PlayerMove") {
-        // Fired for every accepted MovePlayerPacket (~20/s per moving
-        // player). e.player, e.fromX/fromY/fromZ, e.toX/toY/toZ (feet
-        // coordinates). e.cancel() reverts the client to the from
-        // position — the same protection-zones pattern the server
-        // already uses internally.
+        // Fired for each accepted player movement packet.
         auto f = [](lua_State* L, int eIdx, event::player::PlayerMoveEvent& ev) {
             lua_pushstring(L, ev.player ? ev.player->getName().c_str() : "");
             lua_setfield(L, eIdx, "player");
@@ -432,10 +390,7 @@ int l_events_on(lua_State* L) {
         };
         hook<event::player::PlayerMoveEvent>(pl, ref, f, {});
     } else if (name == "PlayerDropItem") {
-        // Q / Ctrl+Q drop attempt, fired BEFORE the stack leaves the
-        // inventory. e.player, e.item_id, e.item_meta, e.item_count (the
-        // stack as it sits in the slot), e.cancel() keeps the item in
-        // the inventory and resyncs the slot to the client.
+        // Fired before the item leaves the inventory.
         auto f = [](lua_State* L, int eIdx, event::player::PlayerDropItemEvent& ev) {
             lua_pushstring(L, ev.player ? ev.player->getName().c_str() : "");
             lua_setfield(L, eIdx, "player");
@@ -443,10 +398,7 @@ int l_events_on(lua_State* L) {
         };
         hook<event::player::PlayerDropItemEvent>(pl, ref, f, {});
     } else if (name == "PlayerItemHeld") {
-        // Hotbar switch (MobEquipmentPacket). e.player, e.item_id,
-        // e.item_meta (what the new slot holds), e.slot (hotbar index
-        // 0..8), e.cancel() keeps the previous slot selected and resyncs
-        // the inventory to the client.
+        // Fired when the player selects a hotbar slot.
         auto f = [](lua_State* L, int eIdx, event::player::PlayerItemHeldEvent& ev) {
             lua_pushstring(L, ev.player ? ev.player->getName().c_str() : "");
             lua_setfield(L, eIdx, "player");
@@ -469,8 +421,7 @@ void bindEvents(lua_State* L) {
     lua_newtable(L);
     luaL_setfuncs(L, evF, 0);
 
-    // events.CAUSE: constants of damage cause (same values as the
-    // server enum; the strings of e.cause are the lowercase versions).
+    // Export damage cause constants to Lua.
     lua_createtable(L, 0, 12);
     int ci = lua_gettop(L);
     auto setCause = [L, ci](const char* n, event::entity::DamageCause c) {

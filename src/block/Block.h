@@ -22,7 +22,7 @@
  */
 // Block — abstract base class for all placed blocks. Each subclass
 // is a singleton flyweight (one instance per block id). Mirrors
-// pocketmine/block/Block.php in spirit.
+// block/Block in spirit.
 #pragma once
 #include "CurseStone.h" // math::Vector3 alias
 #include <cstdint>

@@ -21,21 +21,36 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// MobEffectPacket implementation (stub).
+// MobEffectPacket implementation (protocol 84).
 #include "MobEffectPacket.h"
 
 namespace cursestone::network::protocol {
 
 void MobEffectPacket::encode(std::vector<uint8_t>& out) const {
-    (void)out;
-    // TODO: Phase 6 stub — implement when packets are wired into Player handlers.
+    PacketWriter w(out);
+    w.writeU64BE(eid);
+    w.writeU8(eventId);
+    w.writeU8(effectId);
+    w.writeU8(amplifier);
+    w.writeU8(particles ? 1 : 0);
+    w.writeI32BE(duration);
 }
 
 bool MobEffectPacket::decode(const uint8_t* data, size_t len) {
-    (void)data;
-    (void)len;
-    // TODO: Phase 6 stub.
-    return true;
+    PacketReader r(data, len);
+    if (!r.readU64BE(eid))
+        return false;
+    if (!r.readU8(eventId))
+        return false;
+    if (!r.readU8(effectId))
+        return false;
+    if (!r.readU8(amplifier))
+        return false;
+    uint8_t particles_byte = 1;
+    if (!r.readU8(particles_byte))
+        return false;
+    particles = particles_byte != 0;
+    return r.readI32BE(duration);
 }
 
 } // namespace cursestone::network::protocol

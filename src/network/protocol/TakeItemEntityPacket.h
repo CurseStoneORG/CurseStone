@@ -25,7 +25,7 @@
 // client to play "entity target flies into entity entityId" animation.
 // Used to visualize a player picking up a dropped item.
 //
-// PMMP wire format (protocol 84) — TakeItemEntityPacket::encode:
+// The reference server wire format (protocol 84) — TakeItemEntityPacket::encode:
 //   [1 byte ID 0x11]
 //   [Int64 BE] target     entity being picked up (the dropped item)
 //   [Int64 BE] entityId   entity picking up (the player)

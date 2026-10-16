@@ -34,7 +34,7 @@
 // On MCPE 0.15.10 the client shows its loading screen when it receives
 // ChangeDimensionPacket and closes it only when the new chunks AND
 // PlayStatus(PLAYER_SPAWN) arrive — in that order. This file replicates
-// the sequence PMMP/Genisys 0.15 used: SetTime, ChangeDimension,
+// the sequence the reference server/Genisys 0.15 used: SetTime, ChangeDimension,
 // weather, then the chunk stream, then PlayStatus(PLAYER_SPAWN) and the
 // position reset once the whole view has been sent.
 #include "Player.h"
@@ -91,7 +91,7 @@ bool Player::switchWorld(World* target, double x, double y, double z, bool throu
     // The open container belongs to the previous world.
     closeOpenChest();
 
-    // Sleeping belongs to the previous world too (Infinity Player.php:4188
+    // Sleeping belongs to the previous world too (the reference server Player
     // calls stopSleep() inside teleport()): a player dragged out of their
     // bed by a portal/plugin teleport stops sleeping, cancels their
     // skip-the-night vote and drops the sleeping pose for the viewers.
@@ -125,7 +125,7 @@ bool Player::switchWorld(World* target, double x, double y, double z, bool throu
     }
 
     if (dimension_change) {
-        // PMMP 0.15 switchLevel() order: SetTime first, then
+        // The reference server 0.15 switchLevel() order: SetTime first, then
         // ChangeDimensionPacket (dimension as one BYTE — an Int32 here
         // shifts the whole body and the client drops the packet, which
         // kept the overworld sky/fog over nether terrain), then the
@@ -170,7 +170,7 @@ bool Player::switchWorld(World* target, double x, double y, double z, bool throu
 // The 0.15.10 client leaves its dimension loading screen only when
 // PlayStatus(PLAYER_SPAWN) arrives AFTER the new chunks; the position
 // reset right after it gives the client its final coordinates, exactly
-// like PMMP's checkTeleportPosition() flow.
+// like the reference server's checkTeleportPosition() flow.
 void Player::finishDimensionSwitch() {
     dimension_spawn_pending_ = false;
 

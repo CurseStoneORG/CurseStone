@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // MovePlayerPacket.h — client→server player movement.
 //
-// Wire format (protocol 84) — PMMP MovePlayerPacket:
+// Wire format (protocol 84) — the reference server MovePlayerPacket:
 //   [1 byte ID 0x10]
 //   [Int64 BE] eid
 //   [Float BE] x

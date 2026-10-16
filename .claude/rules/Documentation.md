@@ -18,4 +18,4 @@
 | New subsystem or registration point | `.claude/rules/Architecture.md` and `Extension-points.md` |
 | Comment/Doxygen conventions | `docs/STYLE_COMMENTS.md` only when the maintainers ask for a convention change |
 
-Additional discrepancies found in the audit (report, do not silently fix): `CMakeLists.txt` `VERSION 1.0.0` vs `CURSESTONE_API "1.0.1"`; `CurseStone.h` says "Inspired by PocketMine-MP 4.0.0" while the other docs say 0.15.10; `Build.yml` triggers on `main/master/dev` while `docs.yml` triggers on `stable`; README Doxygen link (`CurseStoneTeam.github.com`) vs the docs repo link used elsewhere.
+Additional discrepancies found in the audit (report, do not silently fix): `CMakeLists.txt` `VERSION 1.0.2` vs `CURSESTONE_API "1.0.2"`; `CurseStone.h` says "Inspired by a 4.0.0 legacy server" while the other docs say 0.15.10; `Build.yml` triggers on `main/master/dev` while `docs.yml` triggers on `stable`; README Doxygen link (`CurseStoneTeam.github.com`) vs the docs repo link used elsewhere.

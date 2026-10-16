@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // AddItemEntityPacket.cpp — encode (server→client).
 //
-// PMMP encode:
+// The reference server encode:
 //   putLong(eid)  + putSlot(item) + 6 * putFloat
 // All multi-byte values are big-endian EXCEPT nbtLen which is LE.
 #include "AddItemEntityPacket.h"
@@ -33,7 +33,7 @@ namespace cursestone::network::protocol {
 void AddItemEntityPacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
     w.writeI64BE(eid);
-    // PMMP putSlot
+    // The reference server putSlot
     if (itemId <= 0) {
         w.writeI16BE(0); // empty slot
     } else {

@@ -32,6 +32,6 @@ class ItemRottenFlesh : public ItemFood {
     std::string name() const override {
         return "Rotten Flesh";
     }
-    void applyEatEffects(Player& eater) const override;
+    void applyEatEffects(Player& eater, uint8_t meta) const override;
 };
 } // namespace
