@@ -583,6 +583,10 @@ class Player : public IPlayer,
   private:
     // Sends one MobEffectPacket (self eid=0 + same-world viewers).
     void sendEffectPacket(const entity::Effect& e, uint8_t eventId);
+    // Recomputes the blended effect tint and broadcasts it as
+    // DATA_POTION_COLOR / DATA_POTION_AMBIENT metadata to same-world
+    // viewers (the reference Entity::recalculateEffectColor).
+    void broadcastPotionColor();
 
   public:
     // --- Damage pipeline ---

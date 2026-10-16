@@ -44,19 +44,28 @@ void SetEntityDataPacket::encode(std::vector<uint8_t>& out) const {
             w.writeU8((uint8_t)(e.ival & 0xFF));
             break;
         case TYPE_SHORT:
-            w.writeU16BE((uint16_t)(e.ival & 0xFFFF));
+            // Metadata values are little-endian on protocol 84
+            // (Binary::writeLShort); a big-endian short reaches the
+            // client byte-swapped (the thrown potion rendered invisible).
+            w.writeU16LE((uint16_t)(e.ival & 0xFFFF));
             break;
         case TYPE_INT:
-            w.writeI32BE((int32_t)e.ival);
+            // Binary::writeLInt.
+            w.writeU32LE((uint32_t)e.ival);
             break;
         case TYPE_LONG:
-            w.writeI64BE(e.ival);
+            // Binary::writeLLong.
+            w.writeU64LE((uint64_t)e.ival);
             break;
         case TYPE_FLOAT:
-            w.writeF32BE(e.fval);
+            // Binary::writeLFloat.
+            w.writeF32LE(e.fval);
             break;
         case TYPE_STRING:
-            w.writeBEString(e.sval);
+            // Binary::writeMetadata strings carry a little-endian
+            // length prefix, unlike packet putString.
+            w.writeU16LE((uint16_t)e.sval.size());
+            w.writeBytes(reinterpret_cast<const uint8_t*>(e.sval.data()), e.sval.size());
             break;
         case TYPE_POS:
             // Block position: three little-endian int32 (Binary::writeLInt).

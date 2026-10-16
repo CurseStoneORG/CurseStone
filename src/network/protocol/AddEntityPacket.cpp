@@ -62,13 +62,18 @@ void AddEntityPacket::encode(std::vector<uint8_t>& out) const {
                 w.writeU32LE((uint32_t)e.ival);
                 break;
             case SetEntityDataPacket::TYPE_LONG:
-                w.writeI64BE(e.ival);
+                // Binary::writeLLong — little-endian like every other
+                // metadata value.
+                w.writeU64LE((uint64_t)e.ival);
                 break;
             case SetEntityDataPacket::TYPE_FLOAT:
-                w.writeF32BE(e.fval);
+                // Binary::writeLFloat.
+                w.writeF32LE(e.fval);
                 break;
             case SetEntityDataPacket::TYPE_STRING:
-                w.writeBEString(e.sval);
+                // Binary::writeMetadata string: little-endian length.
+                w.writeU16LE((uint16_t)e.sval.size());
+                w.writeBytes(reinterpret_cast<const uint8_t*>(e.sval.data()), e.sval.size());
                 break;
             case SetEntityDataPacket::TYPE_POS:
                 w.writeU32LE((uint32_t)e.px);
