@@ -147,6 +147,16 @@ void Server::loadConfig() {
     MemoryManager::get().setGcIntervalTicks(
         (uint64_t)std::max<int64_t>(20, adv.getInt("memory.gc-interval-ticks", 200)));
 
+    // Plugin limits: 0 disables a limit. Root-level keys are accepted as a fallback.
+    plugin::PluginLimits pluginLimits;
+    pluginLimits.instructions = adv.getInt("settings.plugin-instruction-limit",
+                                           adv.getInt("plugin-instruction-limit", 1000000));
+    pluginLimits.timeMs =
+        adv.getInt("settings.plugin-time-limit-ms", adv.getInt("plugin-time-limit-ms", 100));
+    pluginLimits.maxErrors =
+        (int)adv.getInt("settings.plugin-max-errors", adv.getInt("plugin-max-errors", 10));
+    plugin::LuaPlugin::setLimits(pluginLimits);
+
     utils::MainLogger::get().info("Server port: " + std::to_string(port_));
     utils::MainLogger::get().info("Server IP: " + ip_);
     utils::MainLogger::get().info("MOTD: " + motd_);
@@ -155,6 +165,10 @@ void Server::loadConfig() {
                                   " (0=survival, 1=creative, 2=adventure, 3=spectator)");
     utils::MainLogger::get().info("World generator: " + adv.getString("world.generator", "normal"));
     utils::MainLogger::get().info("World format: " + adv.getString("world.format", "anvil"));
+    utils::MainLogger::get().info(
+        "Plugin limits: instructions=" + std::to_string(plugin::LuaPlugin::limits().instructions) +
+        ", time-ms=" + std::to_string(plugin::LuaPlugin::limits().timeMs) +
+        ", max-errors=" + std::to_string(plugin::LuaPlugin::limits().maxErrors) + " (0 = off)");
 }
 
 void Server::initLogger() {

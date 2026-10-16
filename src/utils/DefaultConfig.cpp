@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Embedded default configuration files and the helper that writes them.
+// Default configuration templates and file initialization.
 #include "DefaultConfig.h"
 
 #include <filesystem>
@@ -42,30 +42,32 @@ const char* const kDefaultServerProperties = "# CurseStone server properties (ba
                                              "online-mode=false\n"
                                              "view-distance=8\n"
                                              "world-name=world\n"
-                                             "# Empty or 0 picks a random seed.\n"
+                                             "# Empty or 0 selects a random seed.\n"
                                              "world-seed=\n";
 
 const char* const kDefaultCursestoneYml =
     "# CurseStone advanced configuration.\n"
-    "# Basic settings (port, MOTD, players, world name) live in server.properties.\n"
+    "# Basic settings are defined in server.properties.\n"
     "\n"
     "settings:\n"
-    "  async-workers: 4       # threads in the async task pool\n"
-    "  autosave-ticks: 6000   # 6000 ticks = 5 min at 20 TPS\n"
-    "  advanced-log: true     # verbose session/packet logging\n"
+    "  async-workers: 4       # Async task pool threads.\n"
+    "  autosave-ticks: 6000   # 6000 ticks = 5 minutes at 20 TPS.\n"
+    "  advanced-log: true     # Enable verbose session and packet logging.\n"
+    "  plugin-instruction-limit: 1000000 # Lua instructions per call (0 = unlimited).\n"
+    "  plugin-time-limit-ms: 100         # Milliseconds per call (0 = unlimited).\n"
+    "  plugin-max-errors: 10             # Consecutive errors before disabling (0 = never).\n"
     "\n"
     "world:\n"
     "  format: \"anvil\"        # anvil | leveldb\n"
     "  generator: \"normal\"    # normal | flat | nether | void\n"
     "\n"
     "memory:\n"
-    "  max-mb: 512            # RSS budget (MB) for the garbage collector\n"
-    "  gc-interval-ticks: 200 # ticks between GC passes (200 = 10 s at 20 TPS)\n";
+    "  max-mb: 512            # Garbage collector memory budget in MB.\n"
+    "  gc-interval-ticks: 200 # GC interval in ticks (200 = 10 seconds at 20 TPS).\n";
 
 namespace {
 
-// Writes `content` to `path` unless the file already exists.
-// Returns true if the file exists afterwards.
+// Creates a file only if it does not exist.
 bool seedFile(const std::filesystem::path& path, const char* content,
               std::vector<std::string>* created) {
     std::error_code ec;

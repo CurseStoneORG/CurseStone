@@ -104,6 +104,9 @@ bool Installer::runWizard() {
     adv.setInt("settings.async-workers", 4);
     adv.setInt("settings.autosave-ticks", 6000);
     adv.setBool("settings.advanced-log", true);
+    adv.setInt("settings.plugin-instruction-limit", 1000000);
+    adv.setInt("settings.plugin-time-limit-ms", 100);
+    adv.setInt("settings.plugin-max-errors", 10);
     adv.setString("world.format", "anvil");
     adv.setString("world.generator", world_type);
     adv.setInt("memory.max-mb", 512);
