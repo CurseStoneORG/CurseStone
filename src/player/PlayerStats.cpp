@@ -36,14 +36,14 @@
 namespace cursestone {
 
 // Synchronize health attributes whenever Player::setHealth() is called.
-// The reference server updates the health attribute immediately, keeping client hearts responsive.
+// The client updates the hearts the instant this packet arrives.
 void Player::sendHealthAttribute() {
     if (!connected_.load(std::memory_order_relaxed))
         return;
     auto pk = std::make_shared<network::protocol::UpdateAttributesPacket>();
-    // The reference sendAttributes addresses own attributes with entity
-    // id 0; the client maps that to the local player.
-    pk->eid = 0;
+    // The client resolves attribute packets against the runtime entity
+    // registry; eid 0 does not reach the local player here.
+    pk->eid = runtimeId();
     network::protocol::UpdateAttributesPacket::Entry h;
     h.name = "generic.health";
     h.min = 0.0f;
@@ -59,7 +59,8 @@ void Player::sendFoodLevel() {
     if (!connected_.load(std::memory_order_relaxed))
         return;
     auto pk = std::make_shared<network::protocol::UpdateAttributesPacket>();
-    pk->eid = 0; // Own attributes ride entity id 0 (reference sendAttributes).
+    // Attribute packets must carry the real runtime id to reach the local player.
+    pk->eid = runtimeId();
     network::protocol::UpdateAttributesPacket::Entry e;
     e.name = "player.hunger";
     e.min = 0.0f;
@@ -89,7 +90,8 @@ void Player::sendAllAttributes() {
     if (!connected_.load(std::memory_order_relaxed))
         return;
     auto pk = std::make_shared<network::protocol::UpdateAttributesPacket>();
-    pk->eid = 0; // Own attributes ride entity id 0 (reference sendAttributes).
+    // Attribute packets must carry the real runtime id to reach the local player.
+    pk->eid = runtimeId();
     network::protocol::UpdateAttributesPacket::Entry h;
     h.name = "generic.health";
     h.min = 0.0f;
@@ -318,7 +320,8 @@ void Player::sendMovementSpeedAttribute() {
     if (const entity::Effect* sl = getEffect(entity::EFF_SLOWNESS))
         speed *= std::max(0.0f, 1.0f - 0.15f * (sl->amplifier() + 1));
     auto pk = std::make_shared<network::protocol::UpdateAttributesPacket>();
-    pk->eid = 0; // Own attributes ride entity id 0 (reference sendAttributes).
+    // Attribute packets must carry the real runtime id to reach the local player.
+    pk->eid = runtimeId();
     network::protocol::UpdateAttributesPacket::Entry e;
     e.name = "generic.movementSpeed";
     e.min = 0.0f;

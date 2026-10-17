@@ -491,8 +491,9 @@ def run(host: str, port: int) -> int:
           c.eid is not None and c.effect_eids[since:] and
           all(e == c.eid for e in c.effect_eids[since:]),
           f"eids={c.effect_eids[since:]}")
-    check("UpdateAttributes self packets use eid 0 (reference convention)",
-          c.attr_eids and all(e == 0 for e in c.attr_eids),
+    check("UpdateAttributes self packets carry the real runtime id",
+          c.eid is not None and c.attr_eids and
+          all(e == c.eid for e in c.attr_eids),
           f"eids={c.attr_eids[-4:]}")
     check("eat echo addressed to the real entity id",
           c.eid is not None and c.eat_echo_eids and c.eat_echo_eids[-1] == c.eid,
