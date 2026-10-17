@@ -132,6 +132,14 @@ void fillPlayer(lua_State* L, int eIdx, EventT& ev) {
     lua_setfield(L, eIdx, "player");
 }
 
+// Sets the player name and the event message (join/quit/chat).
+template <typename EventT>
+void fillPlayerMessage(lua_State* L, int eIdx, EventT& ev) {
+    fillPlayer<EventT>(L, eIdx, ev);
+    lua_pushstring(L, ev.message.c_str());
+    lua_setfield(L, eIdx, "message");
+}
+
 // Applies a modified message from the event table.
 template <typename EventT>
 void readBackMessage(lua_State* L, int eIdx, EventT& ev) {
@@ -253,13 +261,13 @@ int l_events_on(lua_State* L) {
     int ref = luaL_ref(L, LUA_REGISTRYINDEX);
 
     if (name == "PlayerJoin") {
-        hook<event::player::PlayerJoinEvent>(pl, ref, fillPlayer<event::player::PlayerJoinEvent>,
+        hook<event::player::PlayerJoinEvent>(pl, ref, fillPlayerMessage<event::player::PlayerJoinEvent>,
                                              readBackMessage<event::player::PlayerJoinEvent>);
     } else if (name == "PlayerQuit") {
-        hook<event::player::PlayerQuitEvent>(pl, ref, fillPlayer<event::player::PlayerQuitEvent>,
+        hook<event::player::PlayerQuitEvent>(pl, ref, fillPlayerMessage<event::player::PlayerQuitEvent>,
                                              readBackMessage<event::player::PlayerQuitEvent>);
     } else if (name == "PlayerChat") {
-        hook<event::player::PlayerChatEvent>(pl, ref, fillPlayer<event::player::PlayerChatEvent>,
+        hook<event::player::PlayerChatEvent>(pl, ref, fillPlayerMessage<event::player::PlayerChatEvent>,
                                              readBackMessage<event::player::PlayerChatEvent>);
     } else if (name == "BlockBreak") {
         auto f = [](lua_State* L, int eIdx, event::block::BlockBreakEvent& ev) {
