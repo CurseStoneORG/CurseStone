@@ -185,10 +185,13 @@ std::shared_ptr<network::protocol::MobEffectPacket> makeEffectPacket(uint64_t ei
 } // namespace
 
 // Send effect updates to the owner and other spawned players in the same world.
+// MobEffectPacket is resolved against the client's entity registry, so every
+// packet carries the real runtime id (eid 0 is only special-cased for
+// UpdateAttributesPacket, never for effects).
 void Player::sendEffectPacket(const entity::Effect& e, uint8_t eventId) {
     if (!spawned_.load(std::memory_order_relaxed))
         return;
-    sendPacket(makeEffectPacket(0, e, eventId)); // Protocol 84 uses eid 0 for the local player.
+    sendPacket(makeEffectPacket(runtimeId(), e, eventId));
     if (!srv_)
         return;
     auto others = makeEffectPacket(runtimeId(), e, eventId);
@@ -239,6 +242,9 @@ void Player::broadcastPotionColor() {
     amb.type = network::protocol::SetEntityDataPacket::TYPE_BYTE;
     amb.ival = 0; // No ambient concept on this server yet.
     pk->entries.push_back(amb);
+    // The owner needs the tint too: the client draws the swirl around the
+    // local player from this metadata, not from MobEffectPacket.
+    sendPacket(pk);
     if (!srv_)
         return;
     for (auto& other : srv_->playersSnapshot()) {
@@ -328,7 +334,8 @@ void Player::sendActiveEffects() {
     if (!spawned_.load(std::memory_order_relaxed))
         return;
     for (const auto& e : effects())
-        sendPacket(makeEffectPacket(0, *e, network::protocol::MobEffectPacket::EVENT_ADD));
+        sendPacket(makeEffectPacket(runtimeId(), *e,
+                                    network::protocol::MobEffectPacket::EVENT_ADD));
     // Viewers need the tint metadata too, or the restored effects run
     // particle-less until the next add/modify/remove.
     if (!effects().empty())
