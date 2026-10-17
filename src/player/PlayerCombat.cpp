@@ -26,6 +26,7 @@
 #include "world/World.h"
 #include "inventory/PlayerInventory.h"
 #include "item/ItemIds.h"
+#include "item/Item.h"
 #include "network/protocol/AddEntityPacket.h"
 #include "network/protocol/LevelEventPacket.h"
 #include "network/protocol/MobEquipmentPacket.h"
@@ -122,6 +123,23 @@ void Player::handleUseItemAir(int16_t heldItemId) {
     if (heldItemId == (int16_t)item::ITEM_SPLASH_POTION) {
         throwSplashPotion();
         return;
+    }
+
+    // Eating/drinking in the air raises the same using-item pose the bow
+    // uses, so other players actually see the eat/drink animation while it
+    // happens. The completion EntityEvent(USE_ITEM) relay only covers the
+    // final gulp; this covers the whole 1.6s hold. Repeated air-use packets
+    // while the pose is up are deduplicated by bow_pose_active_.
+    if (inv_) {
+        item::ItemStack held = inv_->getHeldItem();
+        item::Item* heldDef = item::Item::get(held.id);
+        if (heldDef && heldDef->isFood(held.meta)) {
+            if (!bow_pose_active_) {
+                bow_start_action_ = (int64_t)srv_->getCurrentTick();
+                broadcastBowPose(true);
+            }
+            return;
+        }
     }
 
     if (heldItemId != (int16_t)item::ITEM_BOW)

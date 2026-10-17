@@ -24,6 +24,7 @@
 #include "player/PlayerInternal.h"
 #include "world/World.h"
 #include "item/ItemIds.h"
+#include "item/Item.h"
 #include "world/format/Chunk.h"
 #include "network/protocol/MovePlayerPacket.h"
 #include "network/protocol/MoveEntityPacket.h"
@@ -650,6 +651,19 @@ void Player::onUpdate(uint64_t current_tick) {
     // Check whether the player should travel through a Nether portal.
     checkPortal();
 
+    // Food/drink pose safety net: a client that releases the use button
+    // mid-bite sends no packet, so the using-item pose raised by the
+    // air/block-use path would otherwise stick for viewers. Eating takes
+    // 1.6s, so a 3s ceiling is generous; the bow draw keeps its manual
+    // release path and is never expired here.
+    if (srv_ && inv_ && bow_pose_active_ &&
+        (int64_t)current_tick - bow_start_action_ > 60) {
+        item::ItemStack held = inv_->getHeldItem();
+        item::Item* heldDef = item::Item::get(held.id);
+        if (heldDef && heldDef->isFood(held.meta))
+            broadcastBowPose(false);
+    }
+
     // Pick up nearby dropped items using the vanilla MCPE 0.15.10 pickup volume.
     if (spawned_.load(std::memory_order_relaxed) && getWorld() && inv_) {
         auto* lvl = getWorld();
@@ -838,6 +852,79 @@ void Player::onUpdate(uint64_t current_tick) {
             srv_->saveOfflinePlayerData(cfg_.username, named_tag_);
         }
     }
+}
+
+// Client-initiated pickup claim: the real 0.15.10 client adds a dropped
+// item to its inventory the moment the entity touches its pickup volume
+// and reports the new slot with a ContainerSetSlotPacket — it knows
+// nothing about the server's own pickup delay (40 ticks by default). For
+// ~2 seconds after every drop the client's slot write used to be rejected
+// by the survival floating-buffer validation (the item is not in the
+// cursor buffer), the server re-asserted the slot as EMPTY, the client
+// saw its freshly picked item vanish and picked the still-visible drop
+// up again — the reported "stuck drinking in a loop, milk never
+// consumed" fight. When the written stack exactly matches a dropped item
+// inside this player's pickup volume, claim that entity (the same atomic
+// claim the scan uses, so two clients cannot both take it) and accept the
+// write instead of wiping the slot.
+bool Player::tryClaimNearbyDrop(const item::ItemStack& want) {
+    if (!spawned_.load(std::memory_order_relaxed) || !getWorld() || !inv_ || !srv_)
+        return false;
+    if (want.id == 0 || want.count <= 0)
+        return false;
+    auto* lvl = getWorld();
+    for (world::DroppedItem* di : lvl->droppedItems()) {
+        if (!di || di->taken)
+            continue;
+        // Ignore pickup_delay_ticks on purpose: this write is the client
+        // reporting a pickup it already performed locally.
+        if (di->itemId != want.id || di->count != (uint8_t)want.count)
+            continue;
+        if ((uint8_t)(di->damage & 0xFF) != want.meta)
+            continue;
+        if (!want.nbt.empty() && di->nbt != want.nbt)
+            continue;
+        if (!world::itemWithinPickupVolume(*di, pos_.x, pos_.y, pos_.z))
+            continue;
+        if (!lvl->tryClaimDroppedItem(di->eid))
+            continue; // Another player claimed it first.
+
+        // Same viewer notification the server-side pickup scan sends.
+        int32_t cx = (int32_t)std::floor(di->x) >> 4;
+        int32_t cz = (int32_t)std::floor(di->z) >> 4;
+        auto tk = std::make_shared<network::protocol::TakeItemEntityPacket>();
+        tk->target = di->eid;
+        tk->entityId = runtimeId();
+        auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
+        rm->eid = di->eid;
+        int viewers = 0;
+        for (auto& other : srv_->playersSnapshot()) {
+            if (!other)
+                continue;
+            if (other.get() == this)
+                continue;
+            if (other->isPendingRemoval() || !other->spawned())
+                continue;
+            if (!other->canSeeBlock(cx, cz))
+                continue;
+            other->sendPacket(tk);
+            other->sendPacket(rm);
+            ++viewers;
+        }
+        tk->entityId = 0;
+        sendPacket(tk); // Pickup animation for the collector.
+        sendPacket(rm);
+        lvl->removeDroppedItem(di->eid);
+        if (srv_->advancedLog()) {
+            utils::MainLogger::get().info(
+                "[PICKUP] " + cfg_.username + " picked up eid=" +
+                std::to_string(di->eid) + " at chunk " + std::to_string(cx) + "," +
+                std::to_string(cz) + " -> viewers_notified=" + std::to_string(viewers) +
+                " (client-initiated)");
+        }
+        return true;
+    }
+    return false;
 }
 
 void Player::sendPosition(double x, double y, double z, double yaw, double pitch, uint8_t mode) {

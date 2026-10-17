@@ -22,6 +22,7 @@
  */
 #include "Player.h"
 #include "item/ItemIds.h"
+#include "item/Item.h"
 #include "world/World.h"
 #include "world/format/Chunk.h"
 #include "network/protocol/UpdateBlockPacket.h"
@@ -491,10 +492,17 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
         return;
     }
 
-    // Drawing the bow while aiming at a block is the common case: broadcast
-    // the same action pose as the air-use path so other players see the
-    // tension animation (previously only the face 0xFF path did).
-    if (heldItemId == (int16_t)item::ITEM_BOW && face <= 5 && srv_) {
+    // Drawing the bow or eating/drinking while aiming at a block is the
+    // common case: broadcast the same action pose as the air-use path so
+    // other players see the tension/eat animation (previously only the
+    // face 0xFF path did).
+    bool heldIsFood = false;
+    if (inv_) {
+        item::ItemStack heldNow = inv_->getHeldItem();
+        item::Item* heldDef = item::Item::get(heldNow.id);
+        heldIsFood = heldDef && heldDef->isFood(heldNow.meta);
+    }
+    if ((heldItemId == (int16_t)item::ITEM_BOW || heldIsFood) && face <= 5 && srv_) {
         if (!bow_pose_active_) {
             bow_start_action_ = (int64_t)srv_->getCurrentTick();
             broadcastBowPose(true);

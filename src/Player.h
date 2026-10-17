@@ -210,6 +210,10 @@ class Player : public IPlayer,
     // Validates survival-mode slot changes against the floating buffer.
     bool beginSurvivalSlotWrite(inventory::Inventory* inv, int absSlot,
                                 const item::ItemStack& target);
+    // Honors a client-side pickup write: claims the matching dropped item
+    // inside the pickup volume so the write is accepted instead of wiped
+    // (the real client picks up drops before the server pickup delay ends).
+    bool tryClaimNearbyDrop(const item::ItemStack& want);
     // Returns cursor items to inventory and drops any overflow.
     void returnFloatingItems();
 
