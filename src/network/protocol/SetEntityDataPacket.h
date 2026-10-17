@@ -93,6 +93,13 @@ class SetEntityDataPacket : public DataPacket {
     static constexpr uint8_t PROP_PLAYER_BED_POSITION = 17; // pos (3 x int32 LE)
     static constexpr uint8_t PLAYER_FLAG_SLEEP = 1 << 1;    // mask inside PROP_PLAYER_FLAGS
 
+    // Projectile shooter link (the reference server Projectile:
+    // DATA_SHOOTER_ID = 17 — long shooter entity id; arrows and thrown
+    // potions carry it inside their AddEntityPacket metadata).
+    // NOTE: index 17 doubles as PROP_PLAYER_BED_POSITION for players —
+    // the semantics are per entity type, exactly like index 16 above.
+    static constexpr uint8_t PROP_SHOOTER_ID = 17; // long
+
     // Falling-block render property (the reference server FallingSand:
     // `const DATA_BLOCK_INFO = 20` — int `blockId | (damage << 8)`,
     // the property the 0.15.10 client reads to draw the falling block).

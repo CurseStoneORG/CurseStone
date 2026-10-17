@@ -266,6 +266,7 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                     int selected = (int)me->selectedSlot;
                     if (selected > 8)
                         selected = (int)me->hotbarSlot;
+                    bool changed = false;
                     if (selected >= 0 && selected <= 8 && selected != inv_->getHeldItemIndex()) {
                         // Plugins can cancel the hotbar change and trigger an inventory resync.
                         auto ev =
@@ -276,7 +277,17 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                             sendInventory();
                         } else {
                             inv_->setHeldItemIndex(selected);
+                            changed = true;
                         }
+                    }
+                    if (changed) {
+                        // Switching items cancels an in-progress bow pose for
+                        // viewers (the reference clears DATA_FLAG_ACTION on equip).
+                        if (bow_pose_active_)
+                            broadcastBowPose(false);
+                        // Remote clients only render the hand item from
+                        // MobEquipmentPacket — re-broadcast it after every equip.
+                        broadcastHeldItemToViewers();
                     }
                     if (srv_ && srv_->advancedLog()) {
                         utils::MainLogger::get().info("[INV] " + cfg_.username +

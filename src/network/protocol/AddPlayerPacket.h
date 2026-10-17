@@ -31,8 +31,10 @@
 //   [Float BE] x, y, z
 //   [Float BE] speedX, speedY, speedZ
 //   [Float BE] yaw, headYaw (= yaw), pitch
-//   [Slot]    item    (we send an empty slot for now: id=0)
-//   [Metadata] metadata  (we send an empty metadata blob: count=0)
+//   [Slot]    item    — the player's currently held item, so viewers
+//                     render it from the very first spawn packet (an
+//                     empty slot serialises as just the zeroed id)
+//   [Metadata] metadata  (empty blob = the 0x7f terminator byte)
 //
 // Note: The reference server writes UUID as the raw 16 bytes from UUID::toBinary().
 // MCPE uses little-endian byte order for the UUID, so we store the
@@ -65,6 +67,11 @@ class AddPlayerPacket : public DataPacket {
     float yaw = 0.0f;
     float headYaw = 0.0f;
     float pitch = 0.0f;
+    // Held item carried in the spawn packet (id 0 = empty slot).
+    int16_t itemId = 0;
+    uint8_t itemCount = 0;
+    int16_t itemDamage = 0;
+    std::string itemNbt;
 
     void encode(std::vector<uint8_t>& out) const override;
     bool decode(const uint8_t* data, size_t len) override;

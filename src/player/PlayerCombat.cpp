@@ -28,6 +28,7 @@
 #include "item/ItemIds.h"
 #include "network/protocol/AddEntityPacket.h"
 #include "network/protocol/LevelEventPacket.h"
+#include "network/protocol/MobEquipmentPacket.h"
 #include "network/protocol/SetEntityDataPacket.h"
 #include "network/protocol/SetEntityMotionPacket.h"
 #include "event/EventManager.h"
@@ -126,19 +127,61 @@ void Player::handleUseItemAir(int16_t heldItemId) {
     if (heldItemId != (int16_t)item::ITEM_BOW)
         return; // Only bows use the air interaction path.
 
-    // Record the tick when the bow draw begins.
-    bow_start_action_ = (int64_t)srv_->getCurrentTick();
+    // Repeated air-use packets while already drawing must not restart the
+    // draw (the 0.15.10 client re-sends them during the charge).
+    if (bow_pose_active_)
+        return;
 
-    // Broadcast the action pose to other players while preserving other flags.
+    // Record the tick when the bow draw begins and broadcast the action
+    // pose so other players see the tension animation.
+    bow_start_action_ = (int64_t)srv_->getCurrentTick();
+    broadcastBowPose(true);
+}
+
+// Broadcasts the bow-use pose (Entity::DATA_FLAG_ACTION) to other players.
+// Mirrors the reference server's setDataFlag(DATA_FLAGS, DATA_FLAG_ACTION)
+// propagation, which turns into a SetEntityDataPacket per viewer.
+void Player::broadcastBowPose(bool drawing) {
+    if (!srv_)
+        return;
+    if (bow_pose_active_ == drawing)
+        return; // Nothing changed — avoid duplicate metadata updates.
+    bow_pose_active_ = drawing;
     auto pk = std::make_shared<network::protocol::SetEntityDataPacket>();
     pk->eid = runtimeId();
-    pk->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_, true, isOnFire(), invisible_));
+    pk->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_, drawing, isOnFire(), invisible_));
     for (auto& other : srv_->playersSnapshot()) {
         if (!other || other.get() == this)
             continue;
-        if (other->isPendingRemoval())
+        if (other->isPendingRemoval() || !other->spawned())
             continue;
-        if (!other->spawned())
+        if (other->getWorld() != getWorld())
+            continue;
+        other->sendPacket(pk);
+    }
+}
+
+// Sends the currently held item to every other client. Remote clients only
+// render another player's hand item from MobEquipmentPacket, so every held
+// item change (hotbar switch, consumption, durability, commands) has to be
+// re-broadcast — this mirrors the reference PlayerInventory::sendHeldItem()
+// call that targets the holder's viewers.
+void Player::broadcastHeldItemToViewers() {
+    if (!srv_ || !inv_)
+        return;
+    auto held = inv_->getHeldItem();
+    auto pk = std::make_shared<network::protocol::MobEquipmentPacket>();
+    pk->eid = runtimeId();
+    pk->itemId = (int16_t)held.id;
+    pk->itemCount = held.count;
+    pk->itemDamage = (int16_t)held.meta;
+    pk->itemNbt = held.nbt;
+    pk->hotbarSlot = (uint8_t)inv_->getHeldItemIndex();
+    pk->selectedSlot = (uint8_t)inv_->getHeldItemIndex();
+    for (auto& other : srv_->playersSnapshot()) {
+        if (!other || other.get() == this)
+            continue;
+        if (other->isPendingRemoval() || !other->spawned())
             continue;
         if (other->getWorld() != getWorld())
             continue;
@@ -191,6 +234,14 @@ void Player::throwSplashPotion() {
     me.ival = held.meta;
     add->metadata.push_back(me);
 
+    // Projectile shooter link (reference Projectile::DATA_SHOOTER_ID) so
+    // the client can associate the thrown bottle with its thrower.
+    network::protocol::SetEntityDataPacket::Entry shooter;
+    shooter.index = network::protocol::SetEntityDataPacket::PROP_SHOOTER_ID;
+    shooter.type = network::protocol::SetEntityDataPacket::TYPE_LONG;
+    shooter.ival = runtimeId();
+    add->metadata.push_back(shooter);
+
     // Send motion separately so the client can animate the projectile.
     auto motion = std::make_shared<network::protocol::SetEntityMotionPacket>();
     motion->entities.push_back(
@@ -241,20 +292,7 @@ void Player::releaseBow() {
     int64_t startTick = bow_start_action_;
     bow_start_action_ = -1;
 
-    auto clearPk = std::make_shared<network::protocol::SetEntityDataPacket>();
-    clearPk->eid = runtimeId();
-    clearPk->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_, false, isOnFire(), invisible_));
-    for (auto& other : srv_->playersSnapshot()) {
-        if (!other || other.get() == this)
-            continue;
-        if (other->isPendingRemoval())
-            continue;
-        if (!other->spawned())
-            continue;
-        if (other->getWorld() != getWorld())
-            continue;
-        other->sendPacket(clearPk);
-    }
+    broadcastBowPose(false);
 
     if (!drawing)
         return;
@@ -326,6 +364,14 @@ void Player::releaseBow() {
     float arrowPitch = (float)(std::atan2(dy, flat) * 180.0 / kPi);
     add->yaw = arrowYaw;
     add->pitch = arrowPitch;
+
+    // Projectile shooter link (reference Projectile::DATA_SHOOTER_ID) — the
+    // property the 0.15.10 client expects inside the arrow spawn packet.
+    network::protocol::SetEntityDataPacket::Entry shooter;
+    shooter.index = network::protocol::SetEntityDataPacket::PROP_SHOOTER_ID;
+    shooter.type = network::protocol::SetEntityDataPacket::TYPE_LONG;
+    shooter.ival = runtimeId();
+    add->metadata.push_back(shooter);
 
     // Send motion separately so the client can animate the arrow.
     auto motion = std::make_shared<network::protocol::SetEntityMotionPacket>();

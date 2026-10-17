@@ -30,12 +30,33 @@
 //   tagged "//TODO headrot" in the reference server) — headYaw was never implemented in
 //   protocol 84. Sending a different headYaw value misaligns the field
 //   on the client side.
-// The reference server Binary::writeMetadata for empty: [Uint8 0]  (count = 0).
+// The reference server Binary::writeMetadata always appends the 0x7f
+//   terminator — even with no entries, so an empty blob is [Uint8 0x7f].
 #include "AddPlayerPacket.h"
+#include "SetEntityDataPacket.h"
 
 #include <cstring>
 
 namespace cursestone::network::protocol {
+
+namespace {
+
+// Same slot serialisation as MobEquipmentPacket: id/count/damage plus the
+// raw little-endian NBT blob, with an empty slot shortened to the zeroed id.
+void writeSlot(PacketWriter& w, int16_t id, uint8_t count, int16_t damage, const std::string& nbt) {
+    if (id <= 0) {
+        w.writeI16BE(0); // air: just the zeroed id
+        return;
+    }
+    w.writeI16BE(id);
+    w.writeU8(count);
+    w.writeI16BE(damage);
+    w.writeU16LE((uint16_t)nbt.size()); // nbtLen (LE)
+    if (!nbt.empty())
+        w.writeBytes((const uint8_t*)nbt.data(), nbt.size());
+}
+
+} // namespace
 
 void AddPlayerPacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
@@ -54,12 +75,12 @@ void AddPlayerPacket::encode(std::vector<uint8_t>& out) const {
     // doesn't receive a desynced head rotation field.
     w.writeF32BE(yaw); // headYaw = yaw (the reference server TODO headrot)
     w.writeF32BE(pitch);
-    // Empty putSlot: The reference server emits ONLY putShort(0) when item id == 0
-    // (2 bytes total). The previous code wrote two Int16 BE (4 bytes),
-    // shifting every subsequent field by 2 bytes and corrupting metadata.
-    w.writeI16BE(0); // putSlot with id==0: only 2 bytes
-    // Empty metadata: [Uint8 0].
-    w.writeU8(0);
+    // Held item: viewers draw the hand item straight from the spawn packet.
+    writeSlot(w, itemId, itemCount, itemDamage, itemNbt);
+    // Empty metadata: the reference server Binary::writeMetadata always
+    // appends the 0x7f terminator (a plain 0 byte parses as a BYTE/FLAGS
+    // entry and corrupts the stream tail).
+    w.writeU8(SetEntityDataPacket::TERMINATOR);
 }
 
 bool AddPlayerPacket::decode(const uint8_t* data, size_t len) {
@@ -90,13 +111,14 @@ bool AddPlayerPacket::decode(const uint8_t* data, size_t len) {
         return false;
     if (!r.readF32BE(pitch))
         return false;
-    // Empty slot is only 2 bytes (Int16 BE 0).
+    // Held slot (2 bytes when the id is 0; full slot otherwise).
     int16_t slotId;
     if (!r.readI16BE(slotId))
         return false;
     (void)slotId;
-    uint8_t metaCount;
-    return r.readU8(metaCount);
+    // Metadata: single 0x7f terminator for the empty blob.
+    uint8_t metaTerm;
+    return r.readU8(metaTerm);
 }
 
 } // namespace cursestone::network::protocol
