@@ -1236,6 +1236,25 @@ void World::tickSplashPotions(uint64_t current_tick) {
         bool has_effect = item::ItemPotion::effectForMeta(p->meta, effect_id, duration, amplifier);
         uint32_t color = entity::Effect::colorOf(
             has_effect ? effect_id : (uint8_t)entity::EFF_WATER_BREATHING);
+        // Break event first: the client plays the glass smash and draws the
+        // splash swirl from this one packet (data = opaque ARGB color).
+        {
+            auto shatter = std::make_shared<network::protocol::LevelEventPacket>();
+            shatter->evid = network::protocol::LevelEventPacket::EVENT_PARTICLE_SPLASH;
+            shatter->x = (float)p->x;
+            shatter->y = (float)p->y;
+            shatter->z = (float)p->z;
+            shatter->data = (int32_t)(0xFF000000u | (color & 0x00FFFFFFu));
+            int32_t scx = (int32_t)std::floor(p->x) >> 4;
+            int32_t scz = (int32_t)std::floor(p->z) >> 4;
+            for (auto& pl : Server::getInstance().playersSnapshot()) {
+                if (!pl || !pl->spawned() || pl->isPendingRemoval() || pl->getWorld() != this)
+                    continue;
+                if (!pl->canSeeBlock(scx, scz))
+                    continue;
+                pl->sendPacket(shatter);
+            }
+        }
         for (int i = 0; i < 8; ++i) {
             double ox = ((std::rand() % 21) - 10) / 20.0;
             double oy = ((std::rand() % 21) - 10) / 20.0;

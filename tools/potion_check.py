@@ -60,6 +60,7 @@ ADD_ENTITY = 0x0B
 REMOVE_ENTITY = 0x0C
 START_GAME = 0x09
 MOVE_PLAYER = 0x10
+LEVEL_EVENT = 0x16
 ENTITY_EVENT = 0x18
 MOB_EFFECT = 0x19
 UPDATE_ATTRIBUTES = 0x1A
@@ -156,6 +157,7 @@ class PotionClient(FallClient):
         self.eat_echo_eids = []  # eid of every eat-completion echo (event 9)
         self.potion_meta = None  # DATA_POTION_ID seen in the type-86 ADD metadata
         self.color_meta = {}     # eid -> latest (color, ambient) tint metadata
+        self.splash_events = []  # (x, y, z, data) of every shatter event (evid 2002)
 
     def classify(self, payload: bytes):
         if payload and payload[0] == START_GAME and len(payload) >= 22:
@@ -198,6 +200,12 @@ class PotionClient(FallClient):
                 self.color_meta[seid] = (color, ambient)
         elif payload and payload[0] == REMOVE_ENTITY and len(payload) >= 9:
             self.removed.append(struct.unpack(">q", payload[1:9])[0])
+        elif payload and payload[0] == LEVEL_EVENT and len(payload) >= 19:
+            evid = struct.unpack(">h", payload[1:3])[0]
+            if evid == 2002:
+                fx, fy, fz = struct.unpack(">fff", payload[3:15])
+                data = struct.unpack(">i", payload[15:19])[0]
+                self.splash_events.append((fx, fy, fz, data))
         elif payload and payload[0] == ADD_PLAYER and len(payload) > 40:
             # [pid][uuid 16B][username str][eid i64BE] — uuid ends at 17.
             nlen = struct.unpack(">H", payload[17:19])[0]
@@ -479,8 +487,9 @@ def run(host: str, port: int) -> int:
     spd = c.attrs.get("generic.movementSpeed")
     check("swiftness movementSpeed = 0.12",
           spd is not None and abs(spd - 0.12) < 0.001, f"speed={spd}")
-    check("MobEffect self packets use eid 0 (reference convention)",
-          all(e == 0 for e in c.effect_eids[since:]),
+    check("MobEffect self packets carry the real runtime id",
+          c.eid is not None and c.effect_eids[since:] and
+          all(e == c.eid for e in c.effect_eids[since:]),
           f"eids={c.effect_eids[since:]}")
     check("UpdateAttributes self packets use eid 0 (reference convention)",
           c.attr_eids and all(e == 0 for e in c.attr_eids),
@@ -488,6 +497,9 @@ def run(host: str, port: int) -> int:
     check("eat echo addressed to the real entity id",
           c.eid is not None and c.eat_echo_eids and c.eat_echo_eids[-1] == c.eid,
           f"eid={c.eid} echo={c.eat_echo_eids[-1:]}")
+    check("self receives the potion tint metadata",
+          c.eid is not None and c.color_meta.get(c.eid, (0, 0))[0] != 0,
+          f"tint={c.color_meta.get(c.eid)}")
     # Cooldown: the second drink lands within the 1.6 s window.
     since = drink(1, META_SLOWNESS, wait_after=0.6)
     check("drink cooldown blocks the second drink",
@@ -557,6 +569,14 @@ def run(host: str, port: int) -> int:
           f"pkts={c.effect_pkts[since_pkts:]}")
     check("splash ADD carries DATA_POTION_ID = thrown meta",
           c.potion_meta == META_SWIFTNESS_TWO, f"meta={c.potion_meta}")
+    check("splash break sends the shatter event (glass smash + swirl)",
+          len(c.splash_events) >= 1,
+          f"events={c.splash_events[:2]}")
+    if c.splash_events:
+        check("shatter event carries an opaque ARGB color",
+              (c.splash_events[-1][3] & 0xFF000000) == 0xFF000000 and
+              (c.splash_events[-1][3] & 0x00FFFFFF) != 0,
+              f"data=0x{c.splash_events[-1][3] & 0xFFFFFFFF:08x}")
     spd = c.attrs.get("generic.movementSpeed")
     check("swiftness II movementSpeed = 0.119",
           caught and spd is not None and abs(spd - 0.119) < 0.002, f"speed={spd}")
@@ -622,6 +642,12 @@ def run(host: str, port: int) -> int:
     ok = wait_pred(lambda: c2.effect_pkts_for(19), 6.0, client=c2)
     check("poison restored after reconnect (ADD re-sent)", ok,
           f"pkts={c2.effect_pkts_for(19)}")
+    restored_eids = [c2.effect_eids[i] for i, p in enumerate(c2.effect_pkts)
+                     if p[0] == 1 and p[1] in (19, 1)]
+    check("restored ADDs carry the real entity id",
+          c2.eid is not None and restored_eids and
+          all(e == c2.eid for e in restored_eids),
+          f"eids={restored_eids}")
     check("speed II restored after reconnect", wait_pred(
         lambda: any(p[2] == 1 for p in c2.effect_pkts_for(1)), 3.0, client=c2))
 

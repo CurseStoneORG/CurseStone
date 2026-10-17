@@ -74,6 +74,10 @@ class LevelEventPacket : public DataPacket {
     static constexpr int16_t EVENT_SOUND_DOOR = 1003;
     // ---- Particle event ids (the reference server LevelEventPacket::EVENT_PARTICLE_*) ----
     static constexpr int16_t EVENT_PARTICLE_DESTROY = 2001; // break particle + sound
+    // Splash potion shatter: this single event makes the 0.15.10 client play
+    // the glass smash sound and draw the colored splash swirl at the position.
+    // data = ARGB with a full alpha byte (0xFF000000 | RGB).
+    static constexpr int16_t EVENT_PARTICLE_SPLASH = 2002;
     // Generic particle events: evid = EVENT_ADD_PARTICLE_MASK | type, with
     // the type in the low 12 bits (protocol 84 — e.g. critical particles
     // are 0x4000 | 2). data carries the particle payload (scale / color).
