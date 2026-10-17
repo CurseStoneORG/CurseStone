@@ -46,6 +46,7 @@ sys.path.insert(0, __file__.rsplit("/", 1)[0])
 from fall_damage_check import FallClient, GROUND_EYE  # noqa: E402
 
 TEXT_PACKET = 0x07
+START_GAME = 0x09
 ENTITY_EVENT = 0x18
 UPDATE_ATTRIBUTES = 0x1A
 MOB_EQUIPMENT = 0x1B
@@ -113,6 +114,8 @@ class HungerClient(FallClient):
     def __init__(self, host, port, name):
         super().__init__(host, port, name)
         self.attrs = {}          # latest attribute values by name
+        self.eid = None          # own runtime id (START_GAME)
+        self.attr_eids = []      # eid field of every UpdateAttributesPacket
         self.eat_echoes = 0      # EntityEvent USE_ITEM(9) seen (eat echo)
         self.inv_counts = {}     # item id -> total units (window-0 pushes)
         self.slot_writes = []    # server slot confirms/reverts (win 0)
@@ -120,7 +123,11 @@ class HungerClient(FallClient):
         self.server_pos = None   # (x, y, z) learned from a snap-back
 
     def classify(self, payload: bytes):
-        if payload and payload[0] == UPDATE_ATTRIBUTES and len(payload) >= 11:
+        if payload and payload[0] == START_GAME and len(payload) >= 22:
+            # [pid][seed i32][dim u8][gen i32][gamemode i32][eid i64BE]
+            self.eid = struct.unpack(">q", payload[14:22])[0]
+        elif payload and payload[0] == UPDATE_ATTRIBUTES and len(payload) >= 11:
+            self.attr_eids.append(struct.unpack(">q", payload[1:9])[0])
             count = struct.unpack(">H", payload[9:11])[0]
             off = 11
             for _ in range(count):
@@ -398,6 +405,10 @@ def run(host: str, port: int) -> int:
     exh = c.attrs.get("player.exhaustion")
     check("hunger attributes pushed", hunger is not None and sat is not None,
           f"hunger={hunger} saturation={sat} exhaustion={exh}")
+    check("attribute packets carry the local player runtime id",
+          c.eid is not None and c.attr_eids and
+          all(e == c.eid for e in c.attr_eids),
+          f"eid={c.eid} attr_eids={c.attr_eids[-4:]}")
     check("sprint drains food to 0", hunger == 0.0, f"hunger={hunger}")
     check("exhaustion display clamp <= 5.0",
           exh is not None and 0.0 <= exh <= 5.0, f"exhaustion={exh}")
