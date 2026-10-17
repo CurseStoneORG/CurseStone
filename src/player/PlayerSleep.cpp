@@ -2,8 +2,8 @@
  _____                     _____ _
 /  __ \                   /  ___| |
 | /  \/_   _ _ __ ___  ___\ `--.| |_ ___  _ __   ___
-| |   | | | '__/ __|/ _ \`--. \ __/ _ \| '_ \ / _ \
-| \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
+| |   | | | | '__/ __|/ _ \`--. \ __/ _ \| '_ \ / _ \
+| |__/| |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
  \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
 
  * CurseStone | Open Source Server Software
@@ -36,10 +36,8 @@ namespace cursestone {
 
 using network::protocol::SetEntityDataPacket;
 
-// Sends the bed position and sleep flag to the viewers (runtime id) and to
-// the player itself, like the reference server Player::setDataProperty(). StartGame
-// tells the client its own id is the runtime id, so the self copy uses it;
-// the eid 0 copy covers clients that treat 0 as "me".
+// Sends sleep metadata to the player and nearby viewers.
+// Runtime ID and entity ID 0 are both sent for client compatibility.
 static void broadcastSleepMetadata(Player* self, bool sleeping, int bx, int by, int bz) {
     if (!self || !self->server())
         return;
@@ -81,12 +79,7 @@ static void broadcastSleepMetadata(Player* self, bool sleeping, int bx, int by, 
     }
 }
 
-// ============================================================
-// Player::sleepOn — the reference server Player::sleepOn() (Player)
-// ============================================================
-// Returns true when the player went to sleep. False = occupied bed or a
-// plugin cancelled PlayerBedEnterEvent; the caller (the bed interact
-// branch of handleBlockPlace) then shows "This bed is occupied".
+// Returns false if the player cannot sleep or the enter event is cancelled.
 bool Player::sleepOn(int bx, int by, int bz) {
     if (!spawned_.load(std::memory_order_relaxed))
         return false;
@@ -95,11 +88,7 @@ bool Player::sleepOn(int bx, int by, int bz) {
     if (!srv_)
         return false;
 
-    // Occupancy check — the reference server scans the entities near the player's
-    // bounding box (grow 2,1,2) for ANOTHER player already sleeping at
-    // this exact bed (distance <= 0.1). We keep the same semantics but
-    // resolve it directly against the player list: two players can never
-    // sleep in the same bed.
+    // Prevent multiple players from sleeping in the same bed.
     for (auto& other : srv_->playersSnapshot()) {
         if (!other || other.get() == this)
             continue;
@@ -116,9 +105,7 @@ bool Player::sleepOn(int bx, int by, int bz) {
             return false;
     }
 
-    // PlayerBedEnterEvent — cancellable. A cancelled event aborts the
-    // sleep (and the caller reports the bed as occupied, same message
-    // flow the reference server uses for any sleepOn() == false).
+    // Allow plugins to cancel entering a bed.
     {
         auto ev =
             event::EventManager::get().fire<event::player::PlayerBedEnterEvent>(this, bx, by, bz);
@@ -133,12 +120,11 @@ bool Player::sleepOn(int bx, int by, int bz) {
 
     broadcastSleepMetadata(this, true, bx, by, bz);
 
-    // Sleeping re-binds the personal spawn point to the bed.
-    setSpawn(bx, by, bz, /*save*/ true);
+    // Set the personal spawn point if bed spawning is enabled.
+    if (!srv_ || srv_->bedSpawnEnabled())
+        setSpawn(bx, by, bz, /*save*/ true);
 
-    // Arm the level's skip-the-night countdown (the reference server
-    // Player `level.sleepTicks = 60`): after 3 seconds
-    // of everyone sleeping, World::checkSleep() cuts the night.
+    // Start the 60-tick countdown used to skip the night.
     if (World* lvl = getWorld())
         lvl->setSleepTicks(60);
 
@@ -150,30 +136,24 @@ bool Player::sleepOn(int bx, int by, int bz) {
     return true;
 }
 
-// ============================================================
-// Player::stopSleep — the reference server Player::stopSleep() (Player)
-// ============================================================
 void Player::stopSleep() {
     if (!sleeping_)
         return;
 
-    // PlayerBedLeaveEvent (not cancellable — you cannot refuse to wake up).
+    // Notify plugins that the player is leaving the bed.
     (void)event::EventManager::get().fire<event::player::PlayerBedLeaveEvent>(this, sleep_x_,
                                                                               sleep_y_, sleep_z_);
 
     sleeping_ = false;
 
-    // Clear the bed position and the sleep flag.
+    // Clear the bed position and sleep flag.
     broadcastSleepMetadata(this, false, 0, 0, 0);
 
-    // Cancel the pending night-skip vote (the reference server: sleepTicks = 0).
+    // Cancel the night-skip countdown.
     if (World* lvl = getWorld())
         lvl->setSleepTicks(0);
 
-    // WAKE_UP animation to the player itself (the reference server
-    // Player sends AnimatePacket with action 3 via
-    // dataPacket — self only; the other clients already saw the
-    // flag byte clear).
+    // Send the wake-up animation to the player.
     for (int64_t eid : {(int64_t)runtimeId(), (int64_t)0}) {
         auto anim = std::make_shared<network::protocol::AnimatePacket>();
         anim->eid = eid;
@@ -186,17 +166,9 @@ void Player::stopSleep() {
     }
 }
 
-// ============================================================
-// Player::wakeSleepersOnBed — vanilla nicety the reference server's bed onBreak
-// doesn't do explicitly (the sleeper just keeps a dead bed reference).
-// Breaking either half of a bed wakes everyone sleeping in it, so the
-// sleeper is never stuck "sleeping" in a bed that no longer exists.
-//
-// sleepOn() stores the HEAD half. The broken half (bx,by,bz) may be the
-// head itself or the foot: the foot is always one of the four horizontal
-// neighbours of the head, so matching (bx,by,bz) plus its four
-// horizontal neighbours covers both cases without touching bed meta.
-// ============================================================
+// Wake players sleeping in a bed when either half is broken.
+// The stored sleep position is the head, so check the broken block
+// and its four horizontal neighbors.
 void Player::wakeSleepersOnBed(Server* srv, world::World* lvl, int bx, int by, int bz) {
     if (!srv || !lvl)
         return;
@@ -209,23 +181,62 @@ void Player::wakeSleepersOnBed(Server* srv, world::World* lvl, int bx, int by, i
             continue;
         int ox, oy, oz;
         other->sleepPos(ox, oy, oz);
-        bool onThisBed = (ox == bx && oy == by && oz == bz) ||     // broken the head
-                         (ox == bx + 1 && oy == by && oz == bz) || // broken the foot (east)
-                         (ox == bx - 1 && oy == by && oz == bz) || // broken the foot (west)
-                         (ox == bx && oy == by && oz == bz + 1) || // broken the foot (south)
-                         (ox == bx && oy == by && oz == bz - 1);   // broken the foot (north)
+        bool onThisBed = (ox == bx && oy == by && oz == bz) ||
+                         (ox == bx + 1 && oy == by && oz == bz) ||
+                         (ox == bx - 1 && oy == by && oz == bz) ||
+                         (ox == bx && oy == by && oz == bz + 1) ||
+                         (ox == bx && oy == by && oz == bz - 1);
         if (onThisBed)
             other->stopSleep();
     }
 }
 
-// ============================================================
-// Player::setSpawn — the reference server Player::setSpawn() (Player)
-// ============================================================
-// Stores the personal spawn point and pushes SetSpawnPositionPacket so
-// the client's compass/respawn agree with the server. `save` also
-// persists it into the player NBT (the reference server Human::saveNBT writes
-// SpawnX/SpawnY/SpawnZ).
+// Clear the personal spawn override and restore the world spawn.
+void Player::resetSpawnToDefault() {
+    has_spawn_override_ = false;
+    spawn_x_ = 0;
+    spawn_y_ = 0;
+    spawn_z_ = 0;
+
+    if (named_tag_) {
+        mcp_compound_tag_remove(named_tag_.get(), "SpawnX");
+        mcp_compound_tag_remove(named_tag_.get(), "SpawnY");
+        mcp_compound_tag_remove(named_tag_.get(), "SpawnZ");
+    }
+
+    math::Vector3 sp = getWorld() ? getWorld()->spawn() : math::Vector3{0, 64, 0};
+
+    auto pk = std::make_shared<network::protocol::SetSpawnPositionPacket>();
+    pk->x = (int)sp.x;
+    pk->y = (int)sp.y;
+    pk->z = (int)sp.z;
+    sendPacket(pk);
+}
+
+// Reset spawn points that reference a bed when either half is broken.
+void Player::clearSpawnsOnBed(Server* srv, world::World* lvl, int bx, int by, int bz) {
+    if (!srv || !lvl)
+        return;
+    for (auto& other : srv->playersSnapshot()) {
+        if (!other || other->isPendingRemoval())
+            continue;
+        if (!other->hasSpawnOverride())
+            continue;
+        if (other->getWorld() != lvl)
+            continue;
+        int sx, sy, sz;
+        other->spawnPos(sx, sy, sz);
+        bool onThisBed = (sx == bx && sy == by && sz == bz) ||
+                         (sx == bx + 1 && sy == by && sz == bz) ||
+                         (sx == bx - 1 && sy == by && sz == bz) ||
+                         (sx == bx && sy == by && sz == bz + 1) ||
+                         (sx == bx && sy == by && sz == bz - 1);
+        if (onThisBed)
+            other->resetSpawnToDefault();
+    }
+}
+
+// Store the personal spawn point, update the client, and optionally save it to NBT.
 void Player::setSpawn(int x, int y, int z, bool save) {
     has_spawn_override_ = true;
     spawn_x_ = x;

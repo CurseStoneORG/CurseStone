@@ -69,6 +69,7 @@
 #include "ItemEgg.h"
 #include "ItemSign.h"
 #include "ItemBucket.h"
+#include "ItemMilkBucket.h"
 #include "ItemWheat.h"
 #include "ItemWheatSeeds.h"
 #include "ItemSugarcane.h"
@@ -166,6 +167,7 @@ void Item::registerAll() {
     registerItem(std::make_unique<ItemEgg>());
     registerItem(std::make_unique<ItemSign>());
     registerItem(std::make_unique<ItemBucket>());
+    registerItem(std::make_unique<ItemMilkBucket>());
     registerItem(std::make_unique<ItemWheat>());
     registerItem(std::make_unique<ItemWheatSeeds>());
     registerItem(std::make_unique<ItemSugarcane>());

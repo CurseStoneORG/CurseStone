@@ -535,14 +535,18 @@ def main() -> int:
         check(len(snd) >= 1, "bed place sound LevelEvent 1052")
 
         # ---------------- bed use during the DAY ----------------
-        print("stage: bed use by day (must be rejected)")
+        print("stage: bed use by day (spawn binds, sleep refused)")
         console("time set 1000")
         c.drain(0.8)
         c.events.clear()
         c.use_item(bed_x, 4, bed_z, 1, item_id=0)
         c.drain(1.0)
         spawn_pk = [e for e in c.events if e[0] == "set_spawn"]
-        check(len(spawn_pk) == 0, "day use does NOT set spawn")
+        check(len(spawn_pk) >= 1 and spawn_pk[0][2] == 4 and
+              abs(spawn_pk[0][1] - bed_x) + abs(spawn_pk[0][3] - bed_z) == 1,
+              "day use binds the spawn to the bed head")
+        check(not [e for e in c.events if e[0] == "set_time"],
+              "day use does not skip the night")
 
         # /time set night must land on TIME_NIGHT (14000) — the same
         # threshold the bed's sleep check uses (PMMP/Infinity alias the
@@ -582,6 +586,10 @@ def main() -> int:
         c.drain(1.2)
         ups = [e for e in c.events if e[0] == "update_block" and e[4] == 0 and e[2] == 4]
         check(len(ups) >= 2, f"both bed halves removed ({len(ups)} air updates)")
+        restored = [e for e in c.events if e[0] == "set_spawn" and
+                    tuple(e[1:4]) == c.spawn]
+        check(len(restored) >= 1,
+              f"breaking the bed restores the world spawn point (spawn={c.spawn})")
 
         # Also verify the world state persisted the removal: re-place a
         # door in the same cells must succeed (cells were freed).

@@ -460,8 +460,24 @@ class Player : public IPlayer,
         by = sleep_y_;
         bz = sleep_z_;
     }
+    // True while the personal spawn point overrides the world spawn (bed spawn).
+    bool hasSpawnOverride() const {
+        return has_spawn_override_;
+    }
+    // Returns the personal spawn coordinates (bed head when set).
+    void spawnPos(int& sx, int& sy, int& sz) const {
+        sx = spawn_x_;
+        sy = spawn_y_;
+        sz = spawn_z_;
+    }
     // Wakes players sleeping in or near the specified bed.
     static void wakeSleepersOnBed(Server* srv, world::World* lvl, int bx, int by, int bz);
+    // Clears the personal spawn of every player whose respawn point is the
+    // specified bed (any of its halves) and points them back at the world spawn.
+    static void clearSpawnsOnBed(Server* srv, world::World* lvl, int bx, int by, int bz);
+    // Drops the personal spawn override back to the world spawn (bed broken
+    // or missing, or bed spawn disabled) and informs the client.
+    void resetSpawnToDefault();
 
     // --- Interaction ---
     bool canInteract(math::Vector3 pos, double maxDistance) const;

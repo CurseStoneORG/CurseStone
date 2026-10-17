@@ -218,6 +218,9 @@ void Player::handleBlockBreak(int x, int y, int z) {
             hasPair = true;
             // Wake players sleeping in this bed.
             Player::wakeSleepersOnBed(srv_, lvl, x, y, z);
+            // A broken bed can no longer be a respawn point: every player
+            // whose spawn was this bed falls back to the world spawn.
+            Player::clearSpawnsOnBed(srv_, lvl, x, y, z);
             break;
         }
         default:
@@ -577,14 +580,6 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
             return;
         }
 
-        // Beds can only be used at night.
-        int32_t t = lvl->time() % world::World::TIME_FULL;
-        bool isNight = (t >= world::World::TIME_NIGHT && t < world::World::TIME_SUNRISE);
-        if (!isNight) {
-            sendMessage(TC::GRAY + "You can only sleep at night");
-            return;
-        }
-
         // Find the head half of the bed.
         uint8_t meta = lvl->getBlockData(x, y, z);
         int headX = x, headY = y, headZ = z;
@@ -607,6 +602,22 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
                 sendMessage(TC::GRAY + "This bed is incomplete");
                 return;
             }
+        }
+
+        // Touching a bed binds the respawn point to it even during the
+        // day (sleeping below re-binds it too); the rule can be turned
+        // off with gameplay.bed-spawn in cursestone.yml.
+        if (!srv_ || srv_->bedSpawnEnabled()) {
+            setSpawn(headX, headY, headZ, /*save*/ true);
+            sendMessage(TC::GRAY + "Respawn point set");
+        }
+
+        // Sleeping itself is a night-only affordance.
+        int32_t t = lvl->time() % world::World::TIME_FULL;
+        bool isNight = (t >= world::World::TIME_NIGHT && t < world::World::TIME_SUNRISE);
+        if (!isNight) {
+            sendMessage(TC::GRAY + "You can only sleep at night");
+            return;
         }
 
         // Attempt to sleep and report occupied beds.

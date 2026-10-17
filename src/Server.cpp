@@ -140,6 +140,8 @@ void Server::loadConfig() {
     async_workers_ = (int)adv.getInt("settings.async-workers", 4);
     autosave_ticks_ = (int)adv.getInt("settings.autosave-ticks", 6000);
     advanced_log_ = readBool(adv, "settings.advanced-log", true);
+    keep_inventory_ = readBool(adv, "gameplay.keep-inventory", false);
+    bed_spawn_enabled_ = readBool(adv, "gameplay.bed-spawn", true);
 
     // Apply memory limits before the tick loop starts.
     MemoryManager::get().setLimitMB((int)adv.getInt("memory.max-mb", 512));
@@ -164,6 +166,10 @@ void Server::loadConfig() {
                                   " (0=survival, 1=creative, 2=adventure, 3=spectator)");
     utils::MainLogger::get().info("World generator: " + adv.getString("world.generator", "normal"));
     utils::MainLogger::get().info("World format: " + adv.getString("world.format", "anvil"));
+    utils::MainLogger::get().info(std::string("Keep inventory: ") +
+                                  (keep_inventory_ ? "on" : "off"));
+    utils::MainLogger::get().info(std::string("Bed spawn: ") +
+                                  (bed_spawn_enabled_ ? "on" : "off"));
     utils::MainLogger::get().info(
         "Plugin limits: instructions=" + std::to_string(plugin::LuaPlugin::limits().instructions) +
         ", time-ms=" + std::to_string(plugin::LuaPlugin::limits().timeMs) +
