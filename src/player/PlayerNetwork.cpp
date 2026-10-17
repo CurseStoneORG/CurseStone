@@ -453,6 +453,17 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                                 }
                             } else if (beginSurvivalSlotWrite(inv_.get(), cs->slot, it)) {
                                 inv_->setItem(cs->slot, it);
+                            } else if (inv_->getItem(cs->slot).isEmpty() &&
+                                       tryClaimNearbyDrop(it)) {
+                                // The client picked a dropped item up locally
+                                // before the server's pickup scan allowed it
+                                // (2s drop delay) and reported the new slot.
+                                // The drop is now claimed, so honor the write
+                                // instead of wiping the slot back to empty —
+                                // the wipe is what made the client re-pick the
+                                // still-visible drop in a loop and restart the
+                                // drink/eat animation forever.
+                                inv_->setItem(cs->slot, it);
                             } else {
                                 // Reject invalid writes and resync the affected slot.
                                 sendSlot(cs->slot);
@@ -514,6 +525,10 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
             // Consume the held item when the spawned player sends the eating event.
             if (auto* ee = dynamic_cast<network::protocol::EntityEventPacket*>(&p)) {
                 if (spawned() && ee->event == 9 /*Eating*/) {
+                    // The eating/drinking pose goes down the moment the
+                    // client finishes (or aborts) the consumption.
+                    if (bow_pose_active_)
+                        broadcastBowPose(false);
                     consumeHeldItem();
                 }
             }

@@ -192,25 +192,17 @@ bool mcp_rak_session_manager_send_encapsulated(mcp_rak_session_manager_t* sm, co
         }
         return false;
     }
-    // BUG FIX: Update last_activity_ms when we SEND data to the client.
-    // The timeout check uses last_activity_ms to decide if the player is
-    // still active. Without this, if the client stops sending game packets
-    // (because it's overwhelmed by chunk data) but the server is actively
-    // sending chunks TO the client, the server still times out the session.
-    // The reference server updates last_activity on both send AND receive.
-    //
-    // NOTE (audit finding, left as-is — not part of the requested fixes):
-    // this means a session's timeout clock resets on every outbound send,
-    // including routine world upkeep the server sends regardless of
-    // whether the player is doing anything (entity ticks, etc). Combined
-    // with the "only non-PING game packets reset the timer" comment on
-    // the receive side elsewhere in this file, the two send/receive paths
-    // don't actually agree on what counts as activity. Not changing this
-    // now since it makes timeouts more lenient, not the cause of the
-    // reported early disconnects — but it's worth knowing about if
-    // timeout behavior is revisited later.
-    s->last_activity_ms = mcp_utils_time_ms();
-    s->last_packet_sent_ms = s->last_activity_ms;
+    // The session timeout is a RECEIVE clock: last_activity_ms is only
+    // stamped by datagrams/ACKs/NACKs arriving FROM the client (and by
+    // the handshake), never by our own sends. Stamping it here used to
+    // keep a half-dead session alive FOREVER: the client stops sending,
+    // but the server keeps broadcasting world updates (other players'
+    // movement, block sync, entity events) to it, and every one of those
+    // outbound sends reset the 30s sweep — the exact "player frozen, not
+    // moving, still takes damage, other players still see the ghost"
+    // report. last_packet_sent_ms stays send-stamped because it drives
+    // the keepalive PING cadence and the health line.
+    s->last_packet_sent_ms = mcp_utils_time_ms();
     s->diag_sent_packets++;
     return mcp_rak_session_send_payload(s, sm, payload, plen, reliability, order_channel);
 }
