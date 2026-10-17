@@ -337,7 +337,6 @@ constexpr int SIGN = 323;
 constexpr int WOODEN_DOOR = 324;
 constexpr int WOOD_DOOR = 324;
 constexpr int BUCKET = 325;
-constexpr int MILK_BUCKET = 335;
 constexpr int MINECART = 328;
 constexpr int SADDLE = 329;
 constexpr int IRON_DOOR = 330;

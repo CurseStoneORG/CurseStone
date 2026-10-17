@@ -77,6 +77,13 @@ class Item {
     virtual bool isFood() const {
         return false;
     }
+    // Return whether a specific item variant is edible. Some items
+    // carry their food behavior in the meta (a milk bucket is
+    // BUCKET with aux 1 on the 0.15 wire — id 335 never appears), so
+    // the consume path always asks with the held stack's meta.
+    virtual bool isFood(uint8_t) const {
+        return isFood();
+    }
     virtual int foodPoints() const {
         return 0;
     }
@@ -98,6 +105,11 @@ class Item {
     // Return the item left after eating, or 0 if there is none.
     virtual uint16_t eatResidueId() const {
         return 0;
+    }
+    // Variant-aware residue (milk leaves an empty bucket, potions a
+    // glass bottle); the consume path passes the held stack's meta.
+    virtual uint16_t eatResidueId(uint8_t) const {
+        return eatResidueId();
     }
     // Apply eating effects for the specified item variant.
     virtual void applyEatEffects(Player&, uint8_t) const {}

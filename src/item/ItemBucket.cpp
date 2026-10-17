@@ -2,9 +2,8 @@
  _____                     _____ _
 /  __ \                   /  ___| |
 | /  \/_   _ _ __ ___  ___\ `--.| |_ ___  _ __   ___
-| |   | | | | '__/ __|/ _ \`--. \ __/ _ \| '_ \ / _ \
-| \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
- \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
+| | | | | | | '__/ __|/ _ \`--. \ __/ _ \| '_ \ / _ \
+| \__/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
 
  * CurseStone | Open Source Server Software
  *
@@ -21,4 +20,14 @@
  *
  */
 #include "ItemBucket.h"
-namespace cursestone::item {}
+#include "Player.h"
+namespace cursestone::item {
+// Milk carries no buff: its only job is stripping every active effect
+// (each one leaves through its MobEffect removal hook). Only called on
+// the milk variant — the consume path gates on isFood(meta) first.
+void ItemBucket::applyEatEffects(Player& eater, uint8_t meta) const {
+    if (meta != META_MILK)
+        return;
+    eater.removeAllEffects();
+}
+} // namespace cursestone::item
