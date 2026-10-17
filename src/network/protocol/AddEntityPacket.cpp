@@ -43,8 +43,12 @@ void AddEntityPacket::encode(std::vector<uint8_t>& out) const {
     w.writeF32BE(yawPitchScaled ? pitch * kRotScale : pitch);
     w.writeI32BE(modifiers);
     if (metadata.empty()) {
-        // Empty metadata: single 0 byte (same convention as AddPlayerPacket).
-        w.writeU8(0);
+        // Empty metadata: the reference server Binary::writeMetadata always
+        // appends the 0x7f terminator, even with zero entries. A plain 0
+        // byte parses as a BYTE/FLAGS entry and the client then consumes
+        // the trailing link bytes as garbage (this glitched the arrow
+        // spawn on other clients).
+        w.writeU8(SetEntityDataPacket::TERMINATOR);
     } else {
         // The reference server Binary::writeMetadata: key byte (type << 5) | index,
         // then the value — INT is LITTLE-endian (writeLInt) on protocol

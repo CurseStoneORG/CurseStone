@@ -491,9 +491,18 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
         return;
     }
 
-    // Start bow drawing when the client targets a block.
-    if (heldItemId == (int16_t)item::ITEM_BOW && face <= 5 && bow_start_action_ < 0 && srv_) {
-        bow_start_action_ = (int64_t)srv_->getCurrentTick();
+    // Drawing the bow while aiming at a block is the common case: broadcast
+    // the same action pose as the air-use path so other players see the
+    // tension animation (previously only the face 0xFF path did).
+    if (heldItemId == (int16_t)item::ITEM_BOW && face <= 5 && srv_) {
+        if (!bow_pose_active_) {
+            bow_start_action_ = (int64_t)srv_->getCurrentTick();
+            broadcastBowPose(true);
+        }
+    } else if (face <= 5 && bow_pose_active_ && srv_) {
+        // Using a different item cancels the bow-use pose for viewers.
+        bow_start_action_ = -1;
+        broadcastBowPose(false);
     }
 
     // Throw splash potions when targeting a block.

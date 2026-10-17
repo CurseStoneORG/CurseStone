@@ -161,6 +161,15 @@ class Player : public IPlayer,
     // Broadcasts this player's sneaking and sprinting flags.
     void broadcastPoseFlags();
 
+    // Broadcasts the bow-use pose (DATA_FLAG_ACTION) to other players;
+    // drawing = true raises the flag, false clears it. Deduplicated via
+    // bow_pose_active_ so repeated air-use packets cannot spam viewers.
+    void broadcastBowPose(bool drawing);
+
+    // Sends the currently held item to every other client (MobEquipment
+    // broadcast) so remote players render the item in this player's hand.
+    void broadcastHeldItemToViewers();
+
     // Adds this player to the lists and entity views of other players.
     void announceSelfToOthers();
 
@@ -647,6 +656,7 @@ class Player : public IPlayer,
     std::string display_name_; // Empty means username.
     // --- Bow draw state ---
     int64_t bow_start_action_ = -1; // Start tick; -1 means inactive.
+    bool bow_pose_active_ = false;  // Action pose currently broadcast to viewers.
 
     // --- Hunger and environmental damage ---
     float food_saturation_ = 5.0f;   // Saturation drains before food.

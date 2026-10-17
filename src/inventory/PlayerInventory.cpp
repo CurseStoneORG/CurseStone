@@ -132,6 +132,13 @@ void PlayerInventory::onSlotChange(int index, const item::ItemStack& before) {
     // the "can't take items from creative" bug.
     if (owner_) {
         sendSlot(index, owner_);
+        // A change to the held slot must reach other clients too: remote
+        // players render the owner's hand item only from MobEquipmentPacket
+        // (reference PlayerInventory::sendHeldItem(holder viewers)). This
+        // covers every server-side change — consumed food/potions, milk
+        // buckets, bow durability, creative grants, commands.
+        if (index == heldSlot())
+            owner_->broadcastHeldItemToViewers();
     }
 }
 

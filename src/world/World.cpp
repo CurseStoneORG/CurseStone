@@ -901,7 +901,11 @@ void World::tickArrows(uint64_t current_tick) {
                 continue;
             if (p->getWorld() != this)
                 continue;
-            if (p->runtimeId() == a->shooter_eid && a->flight_ticks < 5)
+            // The shooter is immune to their own arrow: the projectile
+            // spawns inside the shooter's own hitbox, so a freshly released
+            // (slow or steep) shot would self-hit and show every other
+            // player a phantom hurt animation on the shooter.
+            if (p->runtimeId() == a->shooter_eid)
                 continue;
             const auto& pp = p->getNextPosition();
             // Player AABB [x-0.3, y, z-0.3]..[x+0.3, y+1.8, z+0.3], grown 0.3.

@@ -640,6 +640,16 @@ void Player::doFirstSpawn() {
             ap->headYaw = other->yaw();
             ap->pitch = other->pitch();
 
+            // Carry the other player's held item so this client renders it
+            // from the first spawn packet.
+            if (auto oinv = other->getInventory()) {
+                auto oheld = oinv->getHeldItem();
+                ap->itemId = (int16_t)oheld.id;
+                ap->itemCount = oheld.count;
+                ap->itemDamage = (int16_t)oheld.meta;
+                ap->itemNbt = oheld.nbt;
+            }
+
             sendPacket(ap);
         }
     }
@@ -696,6 +706,15 @@ void Player::announceSelfToOthers() {
     ap_self->yaw = yaw_;
     ap_self->headYaw = yaw_;
     ap_self->pitch = pitch_;
+
+    // Carry the held item so existing players render it on first view.
+    if (inv_) {
+        auto held = inv_->getHeldItem();
+        ap_self->itemId = (int16_t)held.id;
+        ap_self->itemCount = held.count;
+        ap_self->itemDamage = (int16_t)held.meta;
+        ap_self->itemNbt = held.nbt;
+    }
 
     for (auto& other : srv_->playersSnapshot()) {
         if (!other || other.get() == this) {
@@ -762,6 +781,15 @@ void Player::announceTo(Player* viewer) {
     ap->yaw = yaw_;
     ap->headYaw = yaw_;
     ap->pitch = pitch_;
+
+    // Carry the held item so the viewer renders it on first sight.
+    if (inv_) {
+        auto held = inv_->getHeldItem();
+        ap->itemId = (int16_t)held.id;
+        ap->itemCount = held.count;
+        ap->itemDamage = (int16_t)held.meta;
+        ap->itemNbt = held.nbt;
+    }
 
     viewer->sendPacket(ap);
 
@@ -1022,6 +1050,15 @@ void Player::spawnTo(Player* player) {
     ap->yaw = yaw_;
     ap->headYaw = yaw_;
     ap->pitch = pitch_;
+
+    // Carry the held item so the viewer renders it on first sight.
+    if (inv_) {
+        auto held = inv_->getHeldItem();
+        ap->itemId = (int16_t)held.id;
+        ap->itemCount = held.count;
+        ap->itemDamage = (int16_t)held.meta;
+        ap->itemNbt = held.nbt;
+    }
 
     player->sendPacket(ap);
 }

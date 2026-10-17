@@ -52,7 +52,10 @@ MOB_EQUIPMENT = 0x1B
 ITEM_BED = 355
 ITEM_DIAMOND = 264
 ITEM_POTION = 373
-ITEM_MILK = 335
+# Milk reaches the server as BUCKET(325) aux/meta 1 (the 0.15.10 creative
+# catalog entry) — the standalone 335 id is unreachable on the wire.
+ITEM_MILK = 325
+MILK_META = 1
 META_SWIFTNESS = 14
 
 WORLD_SPAWN = (128, 4, 128)
@@ -362,7 +365,7 @@ def main() -> int:
 
         # ---- A3. milk clears every effect ----
         ok_stock = c.stock_items([(2, ITEM_POTION, 1, META_SWIFTNESS),
-                                  (3, ITEM_MILK, 1)])
+                                  (3, ITEM_MILK, 1, MILK_META)])
         check(ok_stock, "stock swiftness potion + milk bucket")
         c.drink(2, ITEM_POTION, META_SWIFTNESS)
         speed = None
@@ -376,7 +379,7 @@ def main() -> int:
               "swiftness raises movementSpeed to 0.12 (got %s)" % speed)
         time.sleep(1.7)  # drink cooldown
         slots_before = len(c.slot_writes)
-        since = c.drink(3, ITEM_MILK, 0)
+        since = c.drink(3, ITEM_MILK, MILK_META)
         removes = [p for p in c.effect_pkts[since:] if p[0] == 3]
         check(len(removes) >= 1, "milk sends MobEffect REMOVE (%d)" % len(removes))
         speed = None
