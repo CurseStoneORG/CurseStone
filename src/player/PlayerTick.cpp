@@ -58,18 +58,23 @@
 namespace cursestone {
 
 // Broadcasts sneaking and sprinting flags to all clients.
+// The action bit mirrors bow_pose_active_ so a flag refresh sent while the
+// player is drawing a bow or eating never wipes the using-item pose the
+// viewers are supposed to keep seeing.
 void Player::broadcastPoseFlags() {
     if (!srv_)
         return;
     auto pk = std::make_shared<network::protocol::SetEntityDataPacket>();
     pk->eid = runtimeId();
-    pk->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_, false, isOnFire(), invisible_));
+    pk->entries.push_back(
+        makePoseFlagEntry(sneaking_, sprinting_, bow_pose_active_, isOnFire(), invisible_));
 
     // Send eid=0 to update the local player's pose.
     {
         auto self = std::make_shared<network::protocol::SetEntityDataPacket>();
         self->eid = 0;
-        self->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_, false, isOnFire(), invisible_));
+        self->entries.push_back(
+            makePoseFlagEntry(sneaking_, sprinting_, bow_pose_active_, isOnFire(), invisible_));
         sendPacket(self);
     }
 
@@ -654,10 +659,11 @@ void Player::onUpdate(uint64_t current_tick) {
     // Food/drink pose safety net: a client that releases the use button
     // mid-bite sends no packet, so the using-item pose raised by the
     // air/block-use path would otherwise stick for viewers. Eating takes
-    // 1.6s, so a 3s ceiling is generous; the bow draw keeps its manual
-    // release path and is never expired here.
+    // 1.6s and re-sent use packets refresh the timer, so a 5s ceiling is
+    // generous; the bow draw keeps its manual release path and is never
+    // expired here.
     if (srv_ && inv_ && bow_pose_active_ &&
-        (int64_t)current_tick - bow_start_action_ > 60) {
+        (int64_t)current_tick - bow_start_action_ > 100) {
         item::ItemStack held = inv_->getHeldItem();
         item::Item* heldDef = item::Item::get(held.id);
         if (heldDef && heldDef->isFood(held.meta))
@@ -665,7 +671,12 @@ void Player::onUpdate(uint64_t current_tick) {
     }
 
     // Pick up nearby dropped items using the vanilla MCPE 0.15.10 pickup volume.
-    if (spawned_.load(std::memory_order_relaxed) && getWorld() && inv_) {
+    // Dead players are excluded: the body keeps lying at the death spot
+    // while the death screen is open, and without this guard it would
+    // re-absorb its own death drops once the pickup delay expires — the
+    // drops would vanish for everyone else and the respawned player would
+    // find the "dropped" inventory back in its slots.
+    if (spawned_.load(std::memory_order_relaxed) && getWorld() && inv_ && !isDead()) {
         auto* lvl = getWorld();
         bool any_picked_up = false;
 
@@ -811,10 +822,15 @@ void Player::onUpdate(uint64_t current_tick) {
                 inv_->addItem({arrowIt});
             }
 
-            // Notify viewers and remove the collected arrow entity.
+            // Notify viewers and remove the collected arrow entity. The
+            // collector gets the eid=0 form (the reference server's
+            // self-addressed TakeItemEntityPacket), viewers the real id.
             auto tk = std::make_shared<network::protocol::TakeItemEntityPacket>();
             tk->target = a->eid;
             tk->entityId = runtimeId();
+            auto tk_self = std::make_shared<network::protocol::TakeItemEntityPacket>();
+            tk_self->target = a->eid;
+            tk_self->entityId = 0;
             auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
             rm->eid = a->eid;
             for (auto& other : srv_->playersSnapshot()) {
@@ -826,8 +842,13 @@ void Player::onUpdate(uint64_t current_tick) {
                     other->sendPacket(tk);
                 other->sendPacket(rm);
             }
-            sendPacket(tk); // Show the pickup animation to the collector.
+            sendPacket(tk_self); // Show the pickup animation to the collector.
             sendInventory();
+            if (srv_ && srv_->advancedLog()) {
+                utils::MainLogger::get().info("[ARROW] " + cfg_.username +
+                                              " collected stuck arrow eid=" +
+                                              std::to_string(a->eid));
+            }
             break; // Collect at most one arrow per tick.
         }
     }

@@ -129,7 +129,8 @@ void Player::handleUseItemAir(int16_t heldItemId) {
     // uses, so other players actually see the eat/drink animation while it
     // happens. The completion EntityEvent(USE_ITEM) relay only covers the
     // final gulp; this covers the whole 1.6s hold. Repeated air-use packets
-    // while the pose is up are deduplicated by bow_pose_active_.
+    // while the pose is up refresh the pose timer instead of restarting
+    // it, so continuous eating never trips the expired-pose safety net.
     if (inv_) {
         item::ItemStack held = inv_->getHeldItem();
         item::Item* heldDef = item::Item::get(held.id);
@@ -137,6 +138,8 @@ void Player::handleUseItemAir(int16_t heldItemId) {
             if (!bow_pose_active_) {
                 bow_start_action_ = (int64_t)srv_->getCurrentTick();
                 broadcastBowPose(true);
+            } else {
+                bow_start_action_ = (int64_t)srv_->getCurrentTick();
             }
             return;
         }
@@ -150,10 +153,32 @@ void Player::handleUseItemAir(int16_t heldItemId) {
     if (bow_pose_active_)
         return;
 
+    // The tension pose is only broadcast when the bow can actually fire:
+    // survival players without a single arrow in the inventory must not
+    // show other players a drawing animation (the reference server only
+    // reaches the armed state from a release that carries an arrow).
+    if (!isCreative() && !hasArrowInStock())
+        return;
+
     // Record the tick when the bow draw begins and broadcast the action
     // pose so other players see the tension animation.
     bow_start_action_ = (int64_t)srv_->getCurrentTick();
     broadcastBowPose(true);
+}
+
+// True when the inventory holds at least one arrow. Creative players do
+// not consume arrows, so the check treats them as always stocked.
+bool Player::hasArrowInStock() const {
+    if (!inv_)
+        return false;
+    if (isCreative())
+        return true;
+    for (int i = 0; i < inv_->getSize(); ++i) {
+        item::ItemStack it = inv_->getItem(i);
+        if (it.id == item::ITEM_ARROW && it.count > 0)
+            return true;
+    }
+    return false;
 }
 
 // Broadcasts the bow-use pose (Entity::DATA_FLAG_ACTION) to other players.

@@ -166,6 +166,11 @@ class Player : public IPlayer,
     // bow_pose_active_ so repeated air-use packets cannot spam viewers.
     void broadcastBowPose(bool drawing);
 
+    // True when the inventory holds at least one arrow (creative players
+    // are always considered stocked). Gates the bow-use pose so viewers
+    // never see a draw animation a bow without ammo cannot back up.
+    bool hasArrowInStock() const;
+
     // Sends the currently held item to every other client (MobEquipment
     // broadcast) so remote players render the item in this player's hand.
     void broadcastHeldItemToViewers();

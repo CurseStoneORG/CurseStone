@@ -503,7 +503,20 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
         heldIsFood = heldDef && heldDef->isFood(heldNow.meta);
     }
     if ((heldItemId == (int16_t)item::ITEM_BOW || heldIsFood) && face <= 5 && srv_) {
-        if (!bow_pose_active_) {
+        if (heldItemId != (int16_t)item::ITEM_BOW) {
+            // Food/drink keeps the same raise-or-refresh rule as the air
+            // path: repeated use packets keep the pose timer fresh.
+            if (!bow_pose_active_) {
+                bow_start_action_ = (int64_t)srv_->getCurrentTick();
+                broadcastBowPose(true);
+            } else {
+                bow_start_action_ = (int64_t)srv_->getCurrentTick();
+            }
+            return; // Food items never continue into block placement.
+        }
+        // Bow draws need the same ammo gate as the air path: no arrow,
+        // no draw pose for viewers.
+        if (!bow_pose_active_ && (isCreative() || hasArrowInStock())) {
             bow_start_action_ = (int64_t)srv_->getCurrentTick();
             broadcastBowPose(true);
         }
