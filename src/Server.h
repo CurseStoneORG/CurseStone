@@ -21,24 +21,19 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// server — singleton. Mirrors server.
+// Server singleton for startup, ticking, and shutdown.
 //
 // Responsibilities:
-//   1. Boot: load cursestone.yml, init logger, register blocks/items,
-//      create CommandMap + register default commands, create the
-//      default World (overworld), open the RakLibInterface.
-//   2. tick (every 50ms): advance scheduler, tick world(s), tick
-//      players, drain RakLib→main FIFO, advance time.
-//   3. Shutdown: disconnect all players, save world(s), close network.
+// - Initialize configuration, logging, registries, commands, worlds, and networking.
+// - Run the main tick loop for the scheduler, network, worlds, players, and time.
+// - Disconnect players, save data, and close networking during shutdown.
 //
-// player roster + broadcasting:
-//   - players() returns the list of online Players (read-only).
-//   - broadcastMessage() sends to TextPacket to every player.
-//   - removePlayer() unregisters to closed player.
+// Player management:
+// - players() returns the online player list.
+// - broadcastMessage() sends a message to all players.
+// - removePlayer() unregisters a disconnected player.
 //
-// Command processing:
-//   - console input via CommandReader thread → SimpleCommandMap::dispatch.
-//   - player chat /slash via player::handleChat → SimpleCommandMap::dispatch.
+// Commands are dispatched from the console or player chat.
 #pragma once
 #include "CurseStone.h"
 #include "nbt/tag/Tag.h" // mcp_tag_t / ::mcp_tag
@@ -58,7 +53,7 @@ class CommandMap;
 class CommandReader;
 namespace world {
 class World;
-} // resolved via `using World = world::World;` in CurseStone.h
+} // World alias is defined in CurseStone.h.
 namespace network {
 class Network;
 }
@@ -75,7 +70,7 @@ namespace nbt {
 namespace tag {
 class CompoundTag;
 }
-} // C++ class (matches CurseStone.h declaration)
+} // NBT class declaration.
 namespace block {
 void register_all_blocks();
 }
@@ -83,16 +78,11 @@ namespace item {
 class Item;
 }
 
-// Owning shared pointer for an NBT root tag (mcp_tag_t*). Frees via
-// mcp_tag_destroy when the refcount drops to zero. Defined in server.cpp.
+// Shared owner for an NBT root tag; releases it when the reference count reaches zero.
 using NbtPtr = std::shared_ptr<::mcp_tag>;
 
 /**
- * @brief server singleton: boot, tick loop, and coordinated shutdown.
- *
- * Mirrors server. The file comment above lists the full
- * responsibilities (boot sequence, tick phases, shutdown, roster and
- * broadcast handling, command processing).
+ * @brief Server singleton for startup, ticking, and shutdown.
  */
 class Server {
   public:
@@ -101,38 +91,26 @@ class Server {
         return instance;
     }
 
-    /** @brief Boots the server. Called from CurseStone.cpp. */
+    /** @brief Starts the server. Called from CurseStone.cpp. */
     void start(const std::string& dataPath);
 
-    /** @brief Runs the main tick loop (blocks until shutdown()). */
+    /** @brief Runs the main tick loop until shutdown. */
     void runTickLoop();
 
-    /** @brief Advances one tick. Dispatches to scheduler, network, world, players. */
+    /** @brief Advances one tick across the scheduler, network, world, and players. */
     void tick();
 
-    /** @brief Shuts down cleanly: disconnects players, saves world, closes sockets. */
+    /** @brief Disconnects players, saves worlds, and closes networking. */
     void shutdown();
 
     /**
-     * Registers an external "stop requested" flag for runTickLoop() to
-     * poll once per iteration on the main thread. CurseStone.cpp points this
-     * at to volatile sig_atomic_t that its SIGINT/SIGTERM handler sets.
+     * Registers a stop flag for runTickLoop() to poll on the main thread.
+     * The caller must keep the flag alive until the tick loop exits.
      *
-     * This indirection exists because the signal handler itself must
-     * never call shutdown() directly - shutdown() logs (malloc + mutex
-     * via the async logger) and spawns to watchdog std::thread
-     * (pthread_create), neither of which is async-signal-safe. Doing
-     * that inside the handler can deadlock the process if the signal
-     * interrupts to thread already holding an internal libc lock (e.g.
-     * mid-malloc) - deterministic on Linux/glibc, which is why this
-     * only ever showed up there: the server would appear to never
-     * finish starting, or /stop would hang forever with the process
-     * still alive. Polling to plain flag from ordinary (non-signal)
-     * code on the main thread keeps shutdown() itself unchanged and
-     * safe to call from here.
+     * Signal handlers must not call shutdown() directly because logging,
+     * allocation, mutexes, and thread creation are not async-signal-safe.
      *
-     * @param flag  address of to volatile sig_atomic_t owned by the caller;
-     *               must outlive runTickLoop().
+     * @param flag Pointer to a volatile sig_atomic_t owned by the caller.
      */
     void setExternalStopFlag(const volatile std::sig_atomic_t* flag) {
         external_stop_flag_ = flag;
@@ -151,45 +129,31 @@ class Server {
         return tps_;
     }
 
-    // player roster.
+    // Online player list.
     std::vector<std::shared_ptr<Player>>& players() {
         return players_;
     }
     const std::vector<std::shared_ptr<Player>>& players() const {
         return players_;
     }
-    /**
-     * @brief Returns to thread-safe copy of the player list.
-     *
-     * Callers iterate this copy WITHOUT holding the mutex, so add/remove
-     * from other threads does not invalidate iterators (fixes the
-     * segfault on concurrent broadcasts).
-     */
+
+    /** @brief Returns a thread-safe snapshot of the online player list. */
     std::vector<std::shared_ptr<Player>> playersSnapshot() const;
     Player* getPlayer(const std::string& name) const;
     void addPlayer(std::shared_ptr<Player> p);
     void removePlayer(Player* p);
 
-    /**
-     * @brief Allocates to fresh unique runtime entity id.
-     *
-     * Used for spawning item drops and other world entities (mirrors
-     * The reference server the entity counter).
-     */
+    /** @brief Allocates a unique runtime entity ID. */
     int64_t allocateEid();
 
-    /**
-     * @brief Saves ALL players plus every loaded world.
-     *
-     * Called periodically from the tick loop (auto-save) and on shutdown.
-     */
+    /** @brief Saves all players and loaded worlds. */
     void saveAll();
 
     // Broadcast helpers.
     void broadcastMessage(const std::string& msg);
     void broadcastPacket(/* DataPacket */ void* p);
 
-    // World + scheduler + network accessors.
+    // World, scheduler, and network accessors.
     World* getDefaultWorld() const {
         return world_.get();
     }
@@ -203,29 +167,23 @@ class Server {
         return network_.get();
     }
 
-    // --- Gestión of worlds (multiworld) ---
-    //
-    // the server keeps a list of worlds loaded; the first is
-    // the world by default (spawn of the players). the worlds extra
-    // is crean with loadWorld() (from plugins vía the API server.worlds)
-    // and all is tick and are stored as the main.
-    //
-    /// @brief load (or returns if already existed) the world `name` with the
-    ///        generador indicado: "normal", "flat", "Nether" or "void".
-    ///        creates the folder worlds/<name> if needed.
-    /// @return pointer borrowed to the world, or nullptr if fails.
+    // Multiworld management.
+    // The first loaded world is the default world; additional worlds can be loaded by plugins.
+
+    /// @brief Loads a world or returns the existing world with the given name.
+    /// @return A borrowed world pointer, or nullptr on failure.
     World* loadWorld(const std::string& name, const std::string& generator);
-    /// @brief unloads the world `name`: moves to its players in the
-    ///        world by default, saves its chunks and it removes of the list.
-    ///        the world by default not is can unload.
+
+    /// @brief Unloads a world after moving its players to the default world and saving its chunks.
     bool unloadWorld(const std::string& name);
-    /// @brief list of pointers borrowed to all the worlds loaded.
+
+    /// @brief Returns borrowed pointers to all loaded worlds.
     std::vector<World*> getWorlds() const;
-    /// @brief copy of the shared_ptr of the world `name` (so that a player
-    ///        can retain the world while changes of dimension).
+
+    /// @brief Returns shared ownership of the named world.
     std::shared_ptr<World> getWorldShared(const std::string& name) const;
 
-    // Settings convenience accessors.
+    // Configuration accessors.
     int maxPlayers() const {
         return max_players_;
     }
@@ -257,12 +215,7 @@ class Server {
         return motd_;
     }
 
-    // ---- World behaviour flags (used by BlockFire propagation) ----
-    // Both default to TRUE so the fire-spread + Nether portal logic in
-    // BlockFire.cpp / ItemFlintSteel.cpp behaves like vanilla reference server. They
-    // are exposed as getters so to future server.properties can override
-    // them without touching call sites.
-    // mirrors the reference isFireSpreadEnabled() / isNetherEnabled()
+    // World behavior flags used by fire and Nether portal mechanics.
     bool fireSpreadEnabled() const {
         return fire_spread_enabled_;
     }
@@ -270,35 +223,41 @@ class Server {
         return nether_enabled_;
     }
 
-    // Ban lists (lazily-initialized singletons).
+    // Gameplay rules from cursestone.yml.
+    bool keepInventory() const {
+        return keep_inventory_;
+    }
+    bool bedSpawnEnabled() const {
+        return bed_spawn_enabled_;
+    }
+
+    // Ban lists.
     permission::BanList& getNameBans();
     permission::BanList& getIPBans();
 
-    // Operator list (backed by <dataPath>/ops.txt).
+    // Operator list stored in <dataPath>/ops.txt.
     bool isOp(const std::string& name) const;
     void setOp(const std::string& name, bool op);
 
-    // Offline player data: load/save NBT blobs from "<dataPath>/players/<name>.dat".
-    // Returns nullptr if the player has never played before.
+    // Offline player data stored as NBT.
     NbtPtr getOfflinePlayerData(const std::string& name);
     void saveOfflinePlayerData(const std::string& name, NbtPtr nbt);
 
-    // --- Nukkit-compat: World management ---
-    // index 1-based about the list of worlds loaded (1 = by default).
+    // Nukkit-compatible world management.
+    // World IDs are 1-based; ID 1 represents the default world.
     World* getWorld(int worldId) const;
     World* getWorldByName(const std::string& name) const;
     void setDefaultWorld(std::shared_ptr<World> l) {
         world_ = std::move(l);
     }
 
-    // --- Nukkit-compat: player management ---
+    // Nukkit-compatible player management.
     Player* getPlayerExact(const std::string& name) const;
     std::vector<Player*> matchPlayer(const std::string& partialName) const;
     void onPlayerLogin(Player* player);
 
-    // --- Nukkit-compat: Config accessors ---
-    // getConfig / getProperty / getAdvancedConfig — we delegate to
-    // server.properties which is already loaded. These are stubs.
+    // Nukkit-compatible configuration accessors.
+    // These methods currently delegate to server.properties or act as stubs.
     std::string getConfigString(const std::string& key, const std::string& def) const;
     int getConfigInt(const std::string& key, int def) const;
     bool getConfigBool(const std::string& key, bool def) const;
@@ -306,12 +265,12 @@ class Server {
     void setPropertyInt(const std::string& key, int val);
     void setPropertyBoolean(const std::string& key, bool val);
 
-    // --- Nukkit-compat: Broadcasting ---
+    // Nukkit-compatible broadcasting.
     int broadcast(const std::string& message, const std::string& permissions);
     void broadcastPacketsCallback(const std::vector<uint8_t>& data,
                                   const std::vector<std::string>& identifiers);
 
-    // --- Nukkit-compat: ops / Whitelist ---
+    // Nukkit-compatible operators and whitelist.
     void addOp(const std::string& name) {
         setOp(name, true);
     }
@@ -322,7 +281,7 @@ class Server {
     void removeWhitelist(const std::string& name);
     void reloadWhitelist();
 
-    // --- Nukkit-compat: Auto-save ---
+    // Nukkit-compatible autosave.
     bool isAutoSaveEnabled() const {
         return autosave_ticks_ > 0;
     }
@@ -333,37 +292,28 @@ class Server {
         saveAll();
     }
 
-    // --- Autosave incremental ---
-    // The autosave does NOT write the world in one go. The autosave tick
-    // (every autosave_ticks_) saves the cheap data (player data +
-    // level.dat) and opens the drain; from then on each tick writes to few
-    // dirty chunks until the queue is empty. to full world_->save() in to
-    // single tick used to block the main thread for ~500-760 ms
-    // (measured) with to loaded world - the same freeze to live client
-    // ends up reading as to disconnect, the one behind the warning
-    // "[SAVE] Autosave took 759ms — this may cause disconnects!".
-    // Per-tick cost is bounded by kAutosaveChunksPerTick /
-    // kAutosaveMsPerTick.
+    // Incremental autosave spreads chunk writes across multiple ticks.
+    // This avoids blocking the main thread with a full world save.
+    // Per-tick work is bounded by kAutosaveChunksPerTick and kAutosaveMsPerTick.
     void beginAutosaveDrain();
     void tickAutosaveDrain();
 
-    // --- Nukkit-compat: Offline player ---
+    // Nukkit-compatible offline player data.
     void saveOfflinePlayerData(const std::string& name, NbtPtr nbt, bool async);
 
-    // --- Nukkit-compat: Title tick (updates MOTD/TPS display) ---
+    // Nukkit-compatible title updates.
     void titleTick();
 
-    // --- Nukkit-compat: Recipe list ---
+    // Nukkit-compatible recipe list.
     void sendRecipeList(Player* player);
 
-    // global CraftingManager (recipes registered in code at startup).
-    // Consumed by player::handleCraftingEvent and TileFurnace::tick.
-    // May be nullptr before start().
+    // Shared crafting manager used by player crafting and furnace updates.
+    // May be nullptr before startup.
     inventory::CraftingManager* craftingManager() const {
         return crafting_.get();
     }
 
-    // --- Nukkit-compat: player list data (PlayerListPacket broadcast) ---
+    // Nukkit-compatible player list data.
     void updatePlayerListData(const std::string& uuid, const std::string& name, int64_t eid,
                               const std::string& skin = "");
     void removePlayerListData(const std::string& uuid);
@@ -389,13 +339,12 @@ class Server {
     std::string dataPath_;
     std::atomic<bool> running_{false};
     uint64_t currentTick_{0};
-    std::atomic<bool> tick_loop_exited_{false}; // set true when runTickLoop returns
-    // See setExternalStopFlag() above. Read only from runTickLoop() on
-    // the main thread — never dereferenced from signal context here.
+    std::atomic<bool> tick_loop_exited_{false}; // Set when runTickLoop() exits.
+    // Read only by runTickLoop() on the main thread.
     const volatile std::sig_atomic_t* external_stop_flag_ = nullptr;
     int tps_ = 20;
 
-    // Config (server.properties and cursestone.yml).
+    // Configuration from server.properties and cursestone.yml.
     std::string ip_ = "0.0.0.0";
     uint16_t port_ = 19132;
     std::string motd_ = "CurseStone";
@@ -406,13 +355,18 @@ class Server {
     bool whitelist_ = false;
     bool online_mode_ = false;
     bool advanced_log_ = false;
-    // Fire spread + Nether portal behaviour (see fireSpreadEnabled / netherEnabled).
+
+    // Fire spread and Nether portal behavior.
     bool fire_spread_enabled_ = true;
     bool nether_enabled_ = true;
-    int async_workers_ = 4;
-    int autosave_ticks_ = 6000; // 5 minutes at 20 TPS (the reference server default)
 
-    // state of the autosave incremental (ver beginAutosaveDrain).
+    // Gameplay rules.
+    bool keep_inventory_ = false;
+    bool bed_spawn_enabled_ = true;
+    int async_workers_ = 4;
+    int autosave_ticks_ = 6000; // Five minutes at 20 TPS.
+
+    // Incremental autosave state.
     bool autosave_draining_ = false;
     uint64_t autosave_drain_start_ms_ = 0;
     size_t autosave_drain_written_ = 0;
@@ -420,22 +374,21 @@ class Server {
     uint64_t autosave_drain_max_tick_ms_ = 0;
     int autosave_drain_idle_ticks_ = 0;
 
-    // Subsystems (lazily populated in start()).
+    // Subsystems initialized during startup.
     std::shared_ptr<network::Network> network_;
-    std::shared_ptr<World> world_;               // world by default (spawn)
-    std::vector<std::shared_ptr<World>> worlds_; // all the worlds loaded; worlds_[0] == world_
+    std::shared_ptr<World> world_;               // Default world and spawn.
+    std::vector<std::shared_ptr<World>> worlds_; // All loaded worlds; worlds_[0] is the default.
     std::shared_ptr<CommandMap> command_map_;
     std::shared_ptr<inventory::CraftingManager> crafting_;
     std::shared_ptr<scheduler::AsyncPool> async_pool_;
     std::unique_ptr<CommandReader> console_reader_;
     std::vector<std::shared_ptr<Player>> players_;
-    mutable std::mutex players_mtx_; // guards players_
+    mutable std::mutex players_mtx_; // Protects players_.
 
-    // Runtime entity-id allocator (atomic, monotonic from 2 — 0 and 1 are
-    // reserved for "not entity" and "host player" respectively).
+    // Monotonic runtime entity ID allocator; IDs 0 and 1 are reserved.
     std::atomic<int64_t> next_eid_{2};
 
-    // Lazy-init ban lists.
+    // Lazily initialized ban lists.
     std::unique_ptr<permission::BanList> name_bans_;
     std::unique_ptr<permission::BanList> ip_bans_;
 };

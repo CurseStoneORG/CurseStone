@@ -56,6 +56,7 @@
 #include "nbt/tag/CompoundTag.h"
 #include "nbt/tag/ListTag.h"
 #include "nbt/tag/Tag.h"
+#include "block/BlockIds.h"
 
 #include "item/ItemNbt.h"
 
@@ -780,6 +781,17 @@ void Player::respawn() {
         return;
     }
 
+    // A saved bed spawn only survives while the bed still exists: the
+    // stored point is the bed head, so anything that is not a bed block
+    // there (broken, replaced) falls back to the world spawn.
+    if (has_spawn_override_) {
+        if ((srv_ && !srv_->bedSpawnEnabled()) ||
+            !getWorld() ||
+            getWorld()->getBlockId(spawn_x_, spawn_y_, spawn_z_) != block::BED_BLOCK) {
+            resetSpawnToDefault();
+        }
+    }
+
     math::Vector3 sp = getSpawn();
 
     auto ev =
@@ -833,6 +845,11 @@ void Player::respawn() {
         sendPacket(sh);
 
         sendAllAttributes();
+
+        // Authoritative inventory resync: the client clears its local
+        // inventory on death, so keep-inventory runs need the push to
+        // see their items again (and drop deaths confirm the empty state).
+        sendInventory();
 
         auto mp = std::make_shared<network::protocol::MovePlayerPacket>();
 
@@ -943,32 +960,35 @@ void Player::onDeath() {
         }
     }
 
-    // Drop inventory items outside creative mode.
+    // Drop inventory items outside creative mode unless keep-inventory is on.
     if (inv_ && !isCreative()) {
-        // Drop cursor-held items too.
         returnFloatingItems();
-        for (int i = 0; i < inv_->getSize(); ++i) {
-            item::ItemStack it = inv_->getItem(i);
+        if (srv_ && srv_->keepInventory()) {
+            // Cursor items were returned above; the whole inventory stays.
+        } else {
+            for (int i = 0; i < inv_->getSize(); ++i) {
+                item::ItemStack it = inv_->getItem(i);
 
-            if (it.isEmpty() || it.id == 0 || it.count <= 0) {
-                continue;
+                if (it.isEmpty() || it.id == 0 || it.count <= 0) {
+                    continue;
+                }
+
+                dropItem(pos_.x, pos_.y, pos_.z, it.id, (uint8_t)it.count, it.meta);
             }
 
-            dropItem(pos_.x, pos_.y, pos_.z, it.id, (uint8_t)it.count, it.meta);
-        }
+            // Drop armor items.
+            for (int i = inv_->getSize(); i < inv_->getSize() + 4; ++i) {
+                item::ItemStack it = inv_->getItem(i);
 
-        // Drop armor items.
-        for (int i = inv_->getSize(); i < inv_->getSize() + 4; ++i) {
-            item::ItemStack it = inv_->getItem(i);
+                if (it.isEmpty() || it.id == 0 || it.count <= 0) {
+                    continue;
+                }
 
-            if (it.isEmpty() || it.id == 0 || it.count <= 0) {
-                continue;
+                dropItem(pos_.x, pos_.y, pos_.z, it.id, (uint8_t)it.count, it.meta);
             }
 
-            dropItem(pos_.x, pos_.y, pos_.z, it.id, (uint8_t)it.count, it.meta);
+            inv_->clearAll();
         }
-
-        inv_->clearAll();
     }
 
     // Reset state after death.
