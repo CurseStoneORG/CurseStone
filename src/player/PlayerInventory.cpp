@@ -502,7 +502,11 @@ void Player::consumeHeldItem() {
         return;
 
     item::Item* def = item::Item::get(held.id);
-    if (!def || !def->isFood())
+    // The meta decides edibility for variant items: a milk bucket is
+    // BUCKET aux 1 on the 0.15 wire, so the plain isFood() would turn
+    // every real client's milk drink into a silent no-op (the client
+    // would loop the drinking animation forever).
+    if (!def || !def->isFood(held.meta))
         return;
 
     uint64_t now_ms = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -566,7 +570,7 @@ void Player::consumeHeldItem() {
     }
 
     // Consume one item and return any residue.
-    uint16_t residue = def->eatResidueId();
+    uint16_t residue = def->eatResidueId(held.meta);
     if (held.count > 1) {
         held.count -= 1;
         inv_->setItemInHand(held);

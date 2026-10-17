@@ -24,6 +24,7 @@
 #include "world/World.h"
 #include "world/Position.h"
 #include "network/protocol/BlockEntityDataPacket.h"
+#include "network/protocol/BlockEventPacket.h"
 #include "network/protocol/ContainerOpenPacket.h"
 #include "network/protocol/ContainerClosePacket.h"
 #include "network/protocol/ContainerSetContentPacket.h"
@@ -44,6 +45,46 @@
 #include <string>
 
 namespace cursestone {
+
+// ============================================================
+// broadcastChestBlockEvent — the chest lid animation + open/close
+// sounds. The 0.15.10 client animates the chest block (and plays the
+// wooden-open/wooden-close sound) ONLY off a BlockEventPacket aimed at
+// the chest's block coordinates: case1 1 opens the lid, case1 0 closes
+// it. Without it the chest opens its UI but stays visually shut and
+// silent. Sent to everyone who tracks the chest's chunk (including the
+// acting player), mirroring how the reference server spreads block
+// events to chunk viewers.
+// ============================================================
+static void broadcastChestBlockEvent(cursestone::Player* actor,
+                                     const cursestone::tile::TileChest& chest,
+                                     int case1) {
+    if (!actor || !actor->server())
+        return;
+    const auto& pos = chest.position();
+    int32_t x = (int32_t)pos.x;
+    int32_t y = (int32_t)pos.y;
+    int32_t z = (int32_t)pos.z;
+
+    auto pk = std::make_shared<network::protocol::BlockEventPacket>();
+    pk->x = x;
+    pk->y = y;
+    pk->z = z;
+    pk->case1 = case1;
+    pk->case2 = 0;
+
+    int32_t cx = x >> 4;
+    int32_t cz = z >> 4;
+    for (auto& viewer : actor->server()->playersSnapshot()) {
+        if (!viewer)
+            continue;
+        if (viewer->getWorld() != actor->getWorld())
+            continue;
+        if (viewer.get() != actor && !viewer->canSeeBlock(cx, cz))
+            continue;
+        viewer->sendPacket(pk);
+    }
+}
 
 // ============================================================
 // openChestAt / closeOpenChest — the actual chest flow.
@@ -108,6 +149,12 @@ void Player::openChestAt(int x, int y, int z) {
     op->entityId = -1; // block-based container, not entity-based
     sendPacket(op);
 
+    // Lid up + open sound. Only when this opener is the FIRST viewer:
+    // the lid must open once per open session, and it must stay up
+    // while any other player still holds the chest open.
+    if (chest->viewerCount() == 1)
+        broadcastChestBlockEvent(this, *chest, 1);
+
     // The client can only draw and open to chest THROUGH its block
     // actor: if the chunk went out before the tile existed (to chest
     // from to village or to structure is just to block until somebody
@@ -148,6 +195,10 @@ void Player::closeOpenChest() {
         sendPacket(cp);
 
         open_chest_->removeViewer();
+        // Lid down + close sound, but only for the LAST viewer leaving:
+        // with another player still inside the chest stays visibly open.
+        if (open_chest_->viewerCount() == 0)
+            broadcastChestBlockEvent(this, *open_chest_, 0);
         open_chest_.reset();
     }
     if (open_furnace_) {

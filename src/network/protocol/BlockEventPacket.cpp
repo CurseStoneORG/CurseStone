@@ -21,20 +21,26 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// BlockEventPacket implementation (stub).
+// BlockEventPacket implementation. Server->client only in practice, so
+// decode() stays a permissive no-op like the other outbound-only
+// packets in this project — it just needs to not crash if a broken
+// client ever sends bytes on this id.
 #include "BlockEventPacket.h"
 
 namespace cursestone::network::protocol {
 
 void BlockEventPacket::encode(std::vector<uint8_t>& out) const {
-    (void)out;
-    // TODO: Phase 6 stub — implement when packets are wired into Player handlers.
+    PacketWriter w(out);
+    w.writeI32BE(x);
+    w.writeI32BE(y);
+    w.writeI32BE(z);
+    w.writeI32BE(case1);
+    w.writeI32BE(case2);
 }
 
 bool BlockEventPacket::decode(const uint8_t* data, size_t len) {
     (void)data;
     (void)len;
-    // TODO: Phase 6 stub.
     return true;
 }
 
