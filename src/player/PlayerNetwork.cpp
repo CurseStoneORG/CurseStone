@@ -447,9 +447,15 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                             if ((cfg_.gamemode & 1) != 0) {
                                 // Creative mode applies the item directly.
                                 inv_->setItem(cs->slot, it);
-                                // Link valid hotbar slots so the item appears in hand.
+                                // A creative write into a hotbar position
+                                // selects that position so the item appears
+                                // in hand. setHeldSlot() would instead re-map
+                                // the CURRENT held position's link to the
+                                // written slot, silently swapping whatever
+                                // the player was holding (bow releases then
+                                // saw the arrow stack as the held item).
                                 if (it.id != 0 && cs->slot >= 0 && cs->slot < 9) {
-                                    inv_->setHeldSlot(cs->slot);
+                                    inv_->setHeldItemIndex(cs->slot);
                                 }
                             } else if (beginSurvivalSlotWrite(inv_.get(), cs->slot, it)) {
                                 inv_->setItem(cs->slot, it);
