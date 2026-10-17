@@ -23,13 +23,14 @@
 #pragma once
 #include "ItemConstants.h"
 #include "ItemFood.h"
+#include "ItemIds.h"
 #include <string>
 namespace cursestone::item {
 // Drinking milk clears every status effect and leaves an empty bucket.
 class ItemMilkBucket : public ItemFood {
   public:
     ItemMilkBucket()
-        : ItemFood(MILK_BUCKET, 0 /* no hunger */, 0.0f /* no saturation */,
+        : ItemFood(ITEM_MILK_BUCKET, 0 /* no hunger */, 0.0f /* no saturation */,
                    true /* drinkable at any hunger */, BUCKET /* empty bucket */) {
     }
     std::string name() const override {
