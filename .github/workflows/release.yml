@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       body:
-        description: 'Descripción / notas del release'
+        description: 'Descripción / notas del release (usa \n para saltos de línea)'
         required: true
         type: string
       prerelease:
@@ -68,10 +68,11 @@ jobs:
 
       - name: Package ZIP Archives
         shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
 
-          VERSION='${{ inputs.version }}'
           mkdir -p out
 
           # Verify the expected binaries and scripts exist
@@ -124,12 +125,47 @@ jobs:
           echo "Windows archive contents:"
           unzip -l "out/CurseStone-${VERSION}-windows-x86_64.zip"
 
+      - name: Prepare Release Notes
+        id: release_notes
+        shell: bash
+        env:
+          BODY: ${{ inputs.body }}
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import os
+
+          body = os.environ["BODY"]
+
+          # Convert escaped newline sequences into real line breaks.
+          body = body.replace("\\r\\n", "\n")
+          body = body.replace("\\n", "\n")
+          body = body.replace("\\r", "\n")
+
+          # Write a multiline GitHub Actions output safely.
+          delimiter = "RELEASE_NOTES_EOF"
+
+          while delimiter in body:
+              delimiter += "_"
+
+          with open(
+              os.environ["GITHUB_OUTPUT"],
+              "a",
+              encoding="utf-8"
+          ) as output:
+              output.write(f"body<<{delimiter}\n")
+              output.write(body)
+              output.write("\n")
+              output.write(f"{delimiter}\n")
+          PY
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.version }}
           name: ${{ inputs.version }}
-          body: ${{ inputs.body }}
+          body: ${{ steps.release_notes.outputs.body }}
           prerelease: ${{ inputs.prerelease }}
           files: |
             out/CurseStone-${{ inputs.version }}-linux-x86_64.zip
