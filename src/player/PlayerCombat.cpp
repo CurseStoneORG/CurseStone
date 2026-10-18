@@ -331,7 +331,11 @@ void Player::releaseBow() {
         return;
 
     // Consume the draw state once and clear the action pose for other players.
-    bool drawing = bow_start_action_ >= 0;
+    // Both conditions mirror the reference release gate (startAction > -1
+    // AND the ACTION flag up): a stale start tick left by an aborted draw
+    // (equipment switch, death, entity event) must not fire an arrow on a
+    // later release packet.
+    bool drawing = bow_start_action_ >= 0 && bow_pose_active_;
     int64_t startTick = bow_start_action_;
     bow_start_action_ = -1;
 

@@ -25,6 +25,7 @@
 #include "BaseInventory.h"
 #include "InventoryHolder.h"
 #include "../item/ItemStack.h"
+#include "../item/Item.h"
 #include "../Player.h"
 #include "../network/protocol/ContainerSetContentPacket.h"
 #include "../network/protocol/ContainerSetSlotPacket.h"
@@ -91,6 +92,25 @@ bool BaseInventory::setItem(int index, const item::ItemStack& item) {
     return true;
 }
 
+// ---- per-item max stack ----
+// The reference inventory's addItem/canAddItem consult the ITEM's own
+// max stack size (Tool::getMaxStackSize() returns 1 for bows, swords,
+// pickaxes, ...), clamped by the inventory's cap. Using the flat
+// inventory cap alone let two bows merge into one count=2 slot — an
+// illegal state for the 0.15.10 client that broke held-item rendering
+// and the bow release handshake.
+namespace {
+int effectiveMaxStack(const cursestone::item::ItemStack& s, int inventoryMax) {
+    const cursestone::item::Item* def = cursestone::item::Item::get(s.id);
+    int m = def ? def->maxStackSize() : 64;
+    if (m < 1)
+        m = 1;
+    if (m > inventoryMax)
+        m = inventoryMax;
+    return m;
+}
+} // namespace
+
 // ---- canAddItem ----
 bool BaseInventory::canAddItem(const item::ItemStack& item) {
     if (item.isEmpty())
@@ -109,11 +129,14 @@ bool BaseInventory::canAddItem(const item::ItemStack& item) {
         // sameItem (not bare id+meta): a custom-named stack must never
         // merge with an unnamed one, otherwise the name would disappear.
         if (slot.sameItem(item) && slot.count > 0) {
-            int diff = max_stack - slot.count;
+            // The existing slot's own max stack decides how much more
+            // fits into it (reference: item->getCount() <
+            // item->getMaxStackSize()).
+            int diff = effectiveMaxStack(slot, max_stack) - slot.count;
             if (diff > 0)
                 remaining -= diff;
         } else if (slot.id == 0) {
-            remaining -= max_stack;
+            remaining -= effectiveMaxStack(item, max_stack);
         }
         if (remaining <= 0)
             return true;
@@ -145,8 +168,13 @@ std::vector<item::ItemStack> BaseInventory::addItem(std::vector<item::ItemStack>
         for (auto it = itemSlots.begin(); it != itemSlots.end();) {
             auto& slot = *it;
             // sameItem: merge only id+meta+NBT-equal stacks (see canAddItem).
-            if (slot.sameItem(item) && item.count < max_stack) {
-                int amount = std::min(max_stack - item.count, slot.count);
+            // The merge ceiling is the ITEM's own max stack size (reference:
+            // item->getCount() < item->getMaxStackSize()), so durability
+            // tools such as bows land in separate slots instead of fusing
+            // into an illegal count=2 stack.
+            int slotMax = effectiveMaxStack(item, max_stack);
+            if (slot.sameItem(item) && item.count < slotMax) {
+                int amount = std::min(slotMax - item.count, slot.count);
                 amount = std::min(amount, max_stack);
                 if (amount > 0) {
                     slot.count -= amount;
@@ -169,7 +197,13 @@ std::vector<item::ItemStack> BaseInventory::addItem(std::vector<item::ItemStack>
             if (itemSlots.empty())
                 break;
             auto& slot = itemSlots.front();
-            int amount = std::min(max_stack, slot.count);
+            // Fresh slots are capped by the item's max stack too
+            // (reference: min(slot->getMaxStackSize(),
+            // slot->getCount(), $this->getMaxStackSize())). A legacy
+            // count=2 bow pickup therefore splits across slots instead
+            // of re-creating the illegal stack.
+            int amount = std::min(effectiveMaxStack(slot, max_stack), slot.count);
+            amount = std::min(amount, max_stack);
             slot.count -= amount;
             item::ItemStack newItem = slot;
             newItem.count = amount;
