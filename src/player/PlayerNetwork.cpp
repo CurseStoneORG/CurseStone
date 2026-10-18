@@ -21,6 +21,7 @@
  *
  */
 #include "Player.h"
+#include "item/Item.h"
 #include "workbench/WorkbenchManager.h"
 #include "diagnostics/Diagnostics.h"
 #include "network/protocol/Info.h"
@@ -337,6 +338,22 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                         it.count = 1;
                     }
 
+                    // Clamp every client-sent stack to the item's own max
+                    // stack size. A client that picked up a legacy oversized
+                    // drop (two bows fused into count=2 before the max-stack
+                    // fix) would otherwise write the illegal stack straight
+                    // into the server's inventory — the state that made the
+                    // bow invisible to viewers and unshootable for the holder.
+                    int raw_count = it.count;
+                    if (it.id != 0) {
+                        const item::Item* itDef = item::Item::get(it.id);
+                        int itemMax = itDef ? itDef->maxStackSize() : 64;
+                        if (itemMax < 1)
+                            itemMax = 1;
+                        if (it.count > itemMax)
+                            it.count = itemMax;
+                    }
+
                     // Log inventory slot updates when advanced logging is enabled.
                     if (srv_ && srv_->advancedLog()) {
                         utils::MainLogger::get().info("[INV] " + cfg_.username +
@@ -457,6 +474,13 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                                 if (it.id != 0 && cs->slot >= 0 && cs->slot < 9) {
                                     inv_->setHeldItemIndex(cs->slot);
                                 }
+                                // A clamped write (legacy oversized stack)
+                                // keeps its overflow instead of deleting it.
+                                if (raw_count > it.count && it.id != 0) {
+                                    item::ItemStack extra = it;
+                                    extra.count = raw_count - it.count;
+                                    inv_->addItem({extra});
+                                }
                             } else if (beginSurvivalSlotWrite(inv_.get(), cs->slot, it)) {
                                 inv_->setItem(cs->slot, it);
                             } else if (inv_->getItem(cs->slot).isEmpty() &&
@@ -470,6 +494,13 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                                 // still-visible drop in a loop and restart the
                                 // drink/eat animation forever.
                                 inv_->setItem(cs->slot, it);
+                                // A claimed legacy oversized drop keeps its
+                                // overflow bows in separate slots.
+                                if (raw_count > it.count && it.id != 0) {
+                                    item::ItemStack extra = it;
+                                    extra.count = raw_count - it.count;
+                                    inv_->addItem({extra});
+                                }
                             } else {
                                 // Reject invalid writes and resync the affected slot.
                                 sendSlot(cs->slot);
@@ -530,11 +561,13 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
         case network::protocol::ENTITY_EVENT_PACKET:
             // Consume the held item when the spawned player sends the eating event.
             if (auto* ee = dynamic_cast<network::protocol::EntityEventPacket*>(&p)) {
+                // The reference clears the ACTION pose on EVERY client
+                // entity event, not only on the eat-complete one: any
+                // client-side event ends the current bow draw / eating
+                // gesture, so the pose must go down for viewers too.
+                if (spawned() && bow_pose_active_)
+                    broadcastBowPose(false);
                 if (spawned() && ee->event == 9 /*Eating*/) {
-                    // The eating/drinking pose goes down the moment the
-                    // client finishes (or aborts) the consumption.
-                    if (bow_pose_active_)
-                        broadcastBowPose(false);
                     consumeHeldItem();
                 }
             }

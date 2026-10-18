@@ -21,6 +21,7 @@
  *
  */
 #include "Player.h"
+#include "item/Item.h"
 #include "player/PlayerInternal.h"
 
 #include "world/World.h"
@@ -330,6 +331,19 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
 
                     // Validate the destination inventory slot.
                     if (dest_slot >= 0 && dest_slot < inventory::PLAYER_INV_TOTAL) {
+                        // Clamp legacy stacks to the item's own max stack
+                        // size. A player file written before the max-stack
+                        // fix can carry a count=2 bow — feeding it into the
+                        // inventory unclamped would re-seed the illegal
+                        // stack that broke held-item rendering and shooting.
+                        {
+                            const item::Item* def = item::Item::get(it.id);
+                            int itemMax = def ? def->maxStackSize() : 64;
+                            if (itemMax < 1)
+                                itemMax = 1;
+                            if (it.count > itemMax)
+                                it.count = itemMax;
+                        }
                         inv_->setItem(dest_slot, it);
                         ++loaded;
                     }
@@ -855,6 +869,12 @@ void Player::respawn() {
     sneaking_ = false;
     sprinting_ = false;
 
+    // Defensive pose reset for the new life (a draw in progress when the
+    // previous life ended must not leak into this one).
+    bow_start_action_ = -1;
+    if (bow_pose_active_)
+        broadcastBowPose(false);
+
     if (spawned_.load(std::memory_order_relaxed)) {
         spawn_ack_done_.store(false, std::memory_order_relaxed);
 
@@ -1001,7 +1021,21 @@ void Player::onDeath() {
                     continue;
                 }
 
-                dropItem(pos_.x, pos_.y, pos_.z, it.id, (uint8_t)it.count, it.meta);
+                // Split oversized stacks per the item's max stack size and
+                // carry the stack's NBT (custom names) into the drop — the
+                // missing nbt argument here is what made a named item hit
+                // the ground nameless after death.
+                const item::Item* dropDef = item::Item::get(it.id);
+                int itemMax = dropDef ? dropDef->maxStackSize() : 64;
+                if (itemMax < 1)
+                    itemMax = 1;
+                int remaining = it.count;
+                while (remaining > 0) {
+                    int chunk = remaining > itemMax ? itemMax : remaining;
+                    remaining -= chunk;
+                    dropItem(pos_.x, pos_.y, pos_.z, it.id, (uint8_t)chunk, it.meta, 0.0, 0.0,
+                             0.0, 10, it.nbt);
+                }
             }
 
             // Drop armor items.
@@ -1012,7 +1046,17 @@ void Player::onDeath() {
                     continue;
                 }
 
-                dropItem(pos_.x, pos_.y, pos_.z, it.id, (uint8_t)it.count, it.meta);
+                const item::Item* dropDef = item::Item::get(it.id);
+                int itemMax = dropDef ? dropDef->maxStackSize() : 64;
+                if (itemMax < 1)
+                    itemMax = 1;
+                int remaining = it.count;
+                while (remaining > 0) {
+                    int chunk = remaining > itemMax ? itemMax : remaining;
+                    remaining -= chunk;
+                    dropItem(pos_.x, pos_.y, pos_.z, it.id, (uint8_t)chunk, it.meta, 0.0, 0.0,
+                             0.0, 10, it.nbt);
+                }
             }
 
             inv_->clearAll();
@@ -1029,6 +1073,14 @@ void Player::onDeath() {
     last_eat_ms_ = 0;
     starve_ticks_ = 0;
     air_ticks_ = 300;
+
+    // A death mid-draw (very common while shooting) must not leave the
+    // drawing pose up for viewers nor a stale draw-start tick behind:
+    // the next release would otherwise fire from a tick counted before
+    // the death, or the stuck flag would swallow the next draw.
+    bow_start_action_ = -1;
+    if (bow_pose_active_)
+        broadcastBowPose(false);
 }
 
 void Player::spawnTo(Player* player) {

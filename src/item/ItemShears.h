@@ -31,5 +31,10 @@ class ItemShears : public Item {
     std::string name() const override {
         return "Shears";
     }
+    // Shears are a durability tool (the reference's Tool family), so
+    // they never stack — same rule the bow now follows.
+    int maxStackSize() const override {
+        return 1;
+    }
 };
 } // namespace

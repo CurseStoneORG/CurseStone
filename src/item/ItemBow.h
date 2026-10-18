@@ -31,5 +31,15 @@ class ItemBow : public Item {
     std::string name() const override {
         return "Bow";
     }
+    // The bow carries durability in its damage value, so it can never
+    // stack (the reference server's Bow extends Tool, whose max stack
+    // is 1). Without this a pickup of two bows merged them into one
+    // illegal count=2 slot — a state the 0.15.10 client treats as
+    // invalid: the stack stopped rendering in other players' hands and
+    // the client aborted the draw/release handshake, so no arrow ever
+    // spawned.
+    int maxStackSize() const override {
+        return 1;
+    }
 };
 } // namespace
