@@ -45,7 +45,18 @@ class EntityEventPacket : public DataPacket {
     // eat animation ends; the server answers with the same event).
     static constexpr uint8_t HURT_ANIMATION = 2;
     static constexpr uint8_t DEATH_ANIMATION = 3;
+    static constexpr uint8_t TAME_FAIL = 6;
+    static constexpr uint8_t TAME_SUCCESS = 7;
+    static constexpr uint8_t SHAKE_WET = 8;
     static constexpr uint8_t USE_ITEM = 9; // finished eating
+    static constexpr uint8_t EAT_GRASS_ANIMATION = 10;
+    static constexpr uint8_t FISH_HOOK_BUBBLE = 11;
+    static constexpr uint8_t FISH_HOOK_POSITION = 12;
+    static constexpr uint8_t FISH_HOOK_HOOK = 13;
+    static constexpr uint8_t FISH_HOOK_TEASE = 14;
+    static constexpr uint8_t SQUID_INK_CLOUD = 15;
+    static constexpr uint8_t AMBIENT_SOUND = 16;
+    static constexpr uint8_t RESPAWN = 17;
 
     int64_t eid = 0;
     uint8_t event = 0;

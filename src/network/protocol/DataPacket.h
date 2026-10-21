@@ -107,6 +107,7 @@ class PacketReader {
     bool skipBytes(size_t n);
     bool readString(std::string& out);   // VarUInt length + bytes
     bool readBEString(std::string& out); // 2-byte BE length + bytes
+    bool readLEString(std::string& out); // 2-byte LE length + bytes
     bool readVarU32(uint32_t& v);
     bool readVarU64(uint64_t& v);
     bool readVarI32(int32_t& v);

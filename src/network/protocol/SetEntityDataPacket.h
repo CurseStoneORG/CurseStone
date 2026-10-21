@@ -70,6 +70,7 @@ class SetEntityDataPacket : public DataPacket {
     static constexpr uint8_t TYPE_INT = 2;
     static constexpr uint8_t TYPE_FLOAT = 3;
     static constexpr uint8_t TYPE_STRING = 4;
+    static constexpr uint8_t TYPE_SLOT = 5;
     static constexpr uint8_t TYPE_POS = 6;
     static constexpr uint8_t TYPE_LONG = 7;
 
@@ -84,6 +85,16 @@ class SetEntityDataPacket : public DataPacket {
     static constexpr uint8_t FLAG_BIT_SPRINTING = 3;
     static constexpr uint8_t FLAG_BIT_ACTION = 4;
     static constexpr uint8_t FLAG_BIT_INVISIBLE = 5;
+
+    // Generic entity properties (Genisys Entity, protocol 84).
+    static constexpr uint8_t PROP_AIR = 1;           // short, 300 = full
+    static constexpr uint8_t PROP_NAMETAG = 2;       // string
+    static constexpr uint8_t PROP_SHOW_NAMETAG = 3;  // byte, 1 = visible
+    static constexpr uint8_t PROP_SILENT = 4;        // byte
+    static constexpr uint8_t PROP_AGEABLE_FLAGS = 14; // byte, bit 0 = baby
+    static constexpr uint8_t PROP_NO_AI = 15;        // byte
+    static constexpr uint8_t PROP_LEAD_HOLDER = 23;  // long, -1 = no leash
+    static constexpr uint8_t PROP_LEAD = 24;         // byte
 
     // Player-specific metadata (the reference server entity/Human,
     // protocol 84 — note these indices DIFFER from the newer Genisys

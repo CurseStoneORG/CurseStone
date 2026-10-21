@@ -46,13 +46,16 @@ class AdventureSettingsPacket : public DataPacket {
         return ADVENTURE_SETTINGS_PACKET;
     }
 
-    // Common flag bits (the reference server Player::sendSettings).
-    static constexpr uint32_t FLAG_WORLD_IMMUTABLE = 0x01;
+    // Flag bits (the reference server Player::sendSettings bitmask).
+    static constexpr uint32_t FLAG_WORLD_IMMUTABLE = 0x01; // adventure
     static constexpr uint32_t FLAG_NO_PVP = 0x02;
-    static constexpr uint32_t FLAG_NO_MOBS = 0x04;
-    static constexpr uint32_t FLAG_WORLD_BUILDER = 0x08;
-    static constexpr uint32_t FLAG_ALLOW_FLIGHT = 0x40;
-    static constexpr uint32_t FLAG_FLYING = 0x80;
+    static constexpr uint32_t FLAG_NO_PVM = 0x04;
+    static constexpr uint32_t FLAG_NO_MVP = 0x08;
+    static constexpr uint32_t FLAG_STATIC_TIME = 0x10;
+    static constexpr uint32_t FLAG_NAMETAGS_VISIBLE = 0x20;
+    static constexpr uint32_t FLAG_AUTO_JUMP = 0x40;
+    static constexpr uint32_t FLAG_ALLOW_FLIGHT = 0x80;
+    static constexpr uint32_t FLAG_NO_CLIP = 0x100; // spectator
 
     // Permission constants.
     static constexpr int32_t PERMISSION_VISITOR = 0x1F;

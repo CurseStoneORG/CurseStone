@@ -225,9 +225,8 @@ void Player::sendEffectPacket(const entity::Effect& e, uint8_t eventId) {
 // the 0.15.10 client reads to draw the swirling potion particles
 // around an affected entity. An empty effect list sends the zero
 // color so lingering particles clear.
-void Player::broadcastPotionColor() {
-    if (!spawned_.load(std::memory_order_relaxed))
-        return;
+// Blended potion-effect particle color; 0 when no effect is active.
+uint32_t Player::blendedEffectColor() const {
     uint32_t r = 0, g = 0, b = 0;
     int count = 0;
     for (const auto& e : effects()) {
@@ -238,10 +237,16 @@ void Player::broadcastPotionColor() {
         b += (c & 0xFF) * (uint32_t)weight;
         count += weight;
     }
-    uint32_t color = 0;
-    if (count > 0) {
-        color = ((r / (uint32_t)count) << 16) | ((g / (uint32_t)count) << 8) | (b / (uint32_t)count);
-    }
+    if (count == 0)
+        return 0;
+    return ((r / (uint32_t)count) << 16) | ((g / (uint32_t)count) << 8) |
+           (b / (uint32_t)count);
+}
+
+void Player::broadcastPotionColor() {
+    if (!spawned_.load(std::memory_order_relaxed))
+        return;
+    uint32_t color = blendedEffectColor();
     auto pk = std::make_shared<network::protocol::SetEntityDataPacket>();
     pk->eid = runtimeId(); // Viewers resolve the tint against the real entity id.
     network::protocol::SetEntityDataPacket::Entry col;
@@ -267,6 +272,38 @@ void Player::broadcastPotionColor() {
         if (other->getWorld() != getWorld())
             continue;
         other->sendPacket(pk);
+    }
+}
+
+// Push the underwater air property (Entity DATA_AIR, protocol 84 short) to
+// the owner and every same-world viewer. The 0.15.10 client reads it to
+// draw the remote bubble state; the local client also resolves eid 0.
+void Player::sendAir() {
+    if (!connected_.load(std::memory_order_relaxed))
+        return;
+    auto build = [&](int64_t eid) {
+        auto pk = std::make_shared<network::protocol::SetEntityDataPacket>();
+        pk->eid = eid;
+        network::protocol::SetEntityDataPacket::Entry air;
+        air.index = network::protocol::SetEntityDataPacket::PROP_AIR;
+        air.type = network::protocol::SetEntityDataPacket::TYPE_SHORT;
+        air.ival = air_ticks_;
+        pk->entries.push_back(air);
+        return pk;
+    };
+    sendPacket(build(0));
+    sendPacket(build(runtimeId()));
+    if (!srv_)
+        return;
+    auto viewerPk = build(runtimeId());
+    for (auto& other : srv_->playersSnapshot()) {
+        if (!other || other.get() == this)
+            continue;
+        if (other->isPendingRemoval() || !other->spawned())
+            continue;
+        if (other->getWorld() != getWorld())
+            continue;
+        other->sendPacket(viewerPk);
     }
 }
 
@@ -397,9 +434,13 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
     if (in_water) {
         // Water breathing prevents air loss.
         if (hasEffect(entity::EFF_WATER_BREATHING)) {
-            air_ticks_ = 300;
+            if (air_ticks_ != 300) {
+                air_ticks_ = 300;
+                sendAir();
+            }
         } else if (air_ticks_ > 0) {
             --air_ticks_;
+            sendAir(); // Remote viewers track the shrinking bubble state.
         } else if (!creative && difficulty > 0 && now_ms - last_drown_dmg_ms_ >= 1000) {
             last_drown_dmg_ms_ = now_ms;
             damage(2.0f, event::entity::DamageCause::DROWNING); // One heart per second.
@@ -411,8 +452,9 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
         }
         was_on_fire_ = false;
         fall_distance_ = 0.0f;
-    } else {
+    } else if (air_ticks_ != 300) {
         air_ticks_ = 300; // Restore 15 seconds of air.
+        sendAir();
     }
     // Stop processing if drowning killed the player.
     if (isDead())
@@ -532,15 +574,50 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
     (void)last_pos_set_;
     (void)was_in_lava_;
 }
-void Player::setExperience(int exp, int level) {
-    (void)exp;
-    (void)level;
-}
+// Sync the XP bar attributes (protocol 84: player.experience 0..1 and
+// player.level). Like health and hunger these ride UpdateAttributesPacket
+// with the real runtime id and only target the owning client.
 void Player::sendExperience(int exp) {
-    (void)exp;
+    if (exp < 0)
+        exp = 0;
+    if (exp > 100)
+        exp = 100;
+    xp_progress_ = exp / 100.0f;
+    if (!connected_.load(std::memory_order_relaxed))
+        return;
+    auto pk = std::make_shared<network::protocol::UpdateAttributesPacket>();
+    pk->eid = runtimeId();
+    network::protocol::UpdateAttributesPacket::Entry e;
+    e.name = "player.experience";
+    e.min = 0.0f;
+    e.max = 1.0f;
+    e.value = xp_progress_;
+    e.defaultValue = 0.0f;
+    pk->entries.push_back(e);
+    sendPacket(pk);
 }
+
 void Player::sendExperienceLevel(int level) {
-    (void)level;
+    if (level < 0)
+        level = 0;
+    xp_level_ = level;
+    if (!connected_.load(std::memory_order_relaxed))
+        return;
+    auto pk = std::make_shared<network::protocol::UpdateAttributesPacket>();
+    pk->eid = runtimeId();
+    network::protocol::UpdateAttributesPacket::Entry e;
+    e.name = "player.level";
+    e.min = 0.0f;
+    e.max = 2147483647.0f;
+    e.value = (float)level;
+    e.defaultValue = 0.0f;
+    pk->entries.push_back(e);
+    sendPacket(pk);
+}
+
+void Player::setExperience(int exp, int level) {
+    sendExperience(exp);
+    sendExperienceLevel(level);
 }
 void Player::setHealth(int h) {
     // Clamp health, synchronize client hearts, and route lethal changes through normal death handling.

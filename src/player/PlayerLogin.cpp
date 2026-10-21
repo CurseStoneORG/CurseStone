@@ -224,6 +224,18 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
             food_saturation_ = mcp_compound_tag_get_float(named_tag_.get(), "FoodSaturation", 5.0f);
             food_exhaustion_ = mcp_compound_tag_get_float(named_tag_.get(), "FoodExhaustion", 0.0f);
 
+            // Restore underwater air and the saved XP bar state.
+            air_ticks_ = mcp_compound_tag_get_short(named_tag_.get(), "Air", (int16_t)300);
+            if (air_ticks_ < 0 || air_ticks_ > 300)
+                air_ticks_ = 300;
+            xp_level_ = mcp_compound_tag_get_int(named_tag_.get(), "XpLevel", 0);
+            if (xp_level_ < 0)
+                xp_level_ = 0;
+            xp_progress_ = mcp_compound_tag_get_float(named_tag_.get(), "XpP", 0.0f);
+            if (xp_progress_ < 0.0f || xp_progress_ > 1.0f)
+                xp_progress_ = 0.0f;
+            (void)0;
+
             // Restore persisted potion effects (no packets yet — the client
             // gets them at first spawn via sendActiveEffects()).
             const mcp_tag_t* fx_tag = mcp_compound_tag_get(named_tag_.get(), "ActiveEffects");
@@ -590,6 +602,18 @@ void Player::doFirstSpawn() {
 
     sendCreativeInventory();
     sendAllAttributes();
+    // Reference parity: after login the client receives a self metadata
+    // packet clearing the leash holder (eid 0, DATA_LEAD_HOLDER = -1).
+    {
+        auto lead = std::make_shared<network::protocol::SetEntityDataPacket>();
+        lead->eid = 0;
+        network::protocol::SetEntityDataPacket::Entry lh;
+        lh.index = network::protocol::SetEntityDataPacket::PROP_LEAD_HOLDER;
+        lh.type = network::protocol::SetEntityDataPacket::TYPE_LONG;
+        lh.ival = -1;
+        lead->entries.push_back(lh);
+        sendPacket(lead);
+    }
     // Re-sync effects restored from the .dat so the client shows them.
     sendActiveEffects();
     sendInventory();
@@ -665,6 +689,11 @@ void Player::doFirstSpawn() {
             }
 
             sendPacket(ap);
+
+            // Full spawn metadata from the other player (flags, air,
+            // nametag, leash, tint, sleep) — the reference spawn packet
+            // carries the complete dataProperties.
+            other->sendFullEntityData(this);
         }
     }
 
@@ -750,7 +779,101 @@ void Player::announceSelfToOthers() {
         }
 
         other->sendPacket(ap_self);
+
+        // Existing players also get the full metadata, exactly like the
+        // reference spawn packet carries the complete dataProperties.
+        sendFullEntityData(other.get());
     }
+}
+
+// Build and send the complete spawn metadata for this player to one viewer.
+// Mirrors the reference spawn dataProperties: pose flags, air, nametag,
+// show-nametag, silent, no-ai, leash holder, potion tint, and the sleeping
+// state — so a viewer that spawns an already-affected player renders it
+// exactly like players that were present when the state changed.
+void Player::sendFullEntityData(Player* viewer) {
+    if (!viewer || viewer == this)
+        return;
+
+    auto pose = std::make_shared<network::protocol::SetEntityDataPacket>();
+    pose->eid = runtimeId();
+
+    pose->entries.push_back(
+        makePoseFlagEntry(sneaking_, sprinting_, bow_pose_active_, isOnFire(), invisible_));
+
+    network::protocol::SetEntityDataPacket::Entry air;
+    air.index = network::protocol::SetEntityDataPacket::PROP_AIR;
+    air.type = network::protocol::SetEntityDataPacket::TYPE_SHORT;
+    air.ival = air_ticks_;
+    pose->entries.push_back(air);
+
+    network::protocol::SetEntityDataPacket::Entry nametag;
+    nametag.index = network::protocol::SetEntityDataPacket::PROP_NAMETAG;
+    nametag.type = network::protocol::SetEntityDataPacket::TYPE_STRING;
+    nametag.sval = getNameTag();
+    pose->entries.push_back(nametag);
+
+    network::protocol::SetEntityDataPacket::Entry showTag;
+    showTag.index = network::protocol::SetEntityDataPacket::PROP_SHOW_NAMETAG;
+    showTag.type = network::protocol::SetEntityDataPacket::TYPE_BYTE;
+    showTag.ival = 1;
+    pose->entries.push_back(showTag);
+
+    network::protocol::SetEntityDataPacket::Entry silent;
+    silent.index = network::protocol::SetEntityDataPacket::PROP_SILENT;
+    silent.type = network::protocol::SetEntityDataPacket::TYPE_BYTE;
+    silent.ival = 0;
+    pose->entries.push_back(silent);
+
+    network::protocol::SetEntityDataPacket::Entry noAi;
+    noAi.index = network::protocol::SetEntityDataPacket::PROP_NO_AI;
+    noAi.type = network::protocol::SetEntityDataPacket::TYPE_BYTE;
+    noAi.ival = 0;
+    pose->entries.push_back(noAi);
+
+    network::protocol::SetEntityDataPacket::Entry leadHolder;
+    leadHolder.index = network::protocol::SetEntityDataPacket::PROP_LEAD_HOLDER;
+    leadHolder.type = network::protocol::SetEntityDataPacket::TYPE_LONG;
+    leadHolder.ival = -1;
+    pose->entries.push_back(leadHolder);
+
+    network::protocol::SetEntityDataPacket::Entry lead;
+    lead.index = network::protocol::SetEntityDataPacket::PROP_LEAD;
+    lead.type = network::protocol::SetEntityDataPacket::TYPE_BYTE;
+    lead.ival = 0;
+    pose->entries.push_back(lead);
+
+    if (uint32_t color = blendedEffectColor()) {
+        network::protocol::SetEntityDataPacket::Entry col;
+        col.index = network::protocol::SetEntityDataPacket::PROP_POTION_COLOR;
+        col.type = network::protocol::SetEntityDataPacket::TYPE_INT;
+        col.ival = (int32_t)color;
+        pose->entries.push_back(col);
+
+        network::protocol::SetEntityDataPacket::Entry amb;
+        amb.index = network::protocol::SetEntityDataPacket::PROP_POTION_AMBIENT;
+        amb.type = network::protocol::SetEntityDataPacket::TYPE_BYTE;
+        amb.ival = 0;
+        pose->entries.push_back(amb);
+    }
+
+    if (sleeping_) {
+        network::protocol::SetEntityDataPacket::Entry bedPos;
+        bedPos.index = network::protocol::SetEntityDataPacket::PROP_PLAYER_BED_POSITION;
+        bedPos.type = network::protocol::SetEntityDataPacket::TYPE_POS;
+        bedPos.px = sleep_x_;
+        bedPos.py = sleep_y_;
+        bedPos.pz = sleep_z_;
+        pose->entries.push_back(bedPos);
+
+        network::protocol::SetEntityDataPacket::Entry flags;
+        flags.index = network::protocol::SetEntityDataPacket::PROP_PLAYER_FLAGS;
+        flags.type = network::protocol::SetEntityDataPacket::TYPE_BYTE;
+        flags.ival = network::protocol::SetEntityDataPacket::PLAYER_FLAG_SLEEP;
+        pose->entries.push_back(flags);
+    }
+
+    viewer->sendPacket(pose);
 }
 
 void Player::announceTo(Player* viewer) {
@@ -807,14 +930,8 @@ void Player::announceTo(Player* viewer) {
 
     viewer->sendPacket(ap);
 
-    // Send the player's current pose.
-    auto pose = std::make_shared<network::protocol::SetEntityDataPacket>();
-
-    pose->eid = runtimeId();
-
-    pose->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_, false, isOnFire(), invisible_));
-
-    viewer->sendPacket(pose);
+    // Send the player's complete spawn metadata (flags, air, tint, sleep).
+    sendFullEntityData(viewer);
 }
 
 // Respawn a dead player.
@@ -1113,6 +1230,8 @@ void Player::spawnTo(Player* player) {
     }
 
     player->sendPacket(ap);
+
+    sendFullEntityData(player);
 }
 
 } // namespace cursestone

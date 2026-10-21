@@ -103,40 +103,42 @@ bool SetEntityDataPacket::decode(const uint8_t* data, size_t len) {
             break;
         }
         case TYPE_SHORT: {
+            // Metadata values are little-endian on protocol 84, mirroring
+            // encode() and the reference readMetadata.
             uint16_t v = 0;
-            if (!r.readU16BE(v))
+            if (!r.readU16LE(v))
                 return false;
             e.ival = v;
             break;
         }
         case TYPE_INT: {
-            int32_t v = 0;
-            if (!r.readI32BE(v))
+            uint32_t v = 0;
+            if (!r.readU32LE(v))
                 return false;
-            e.ival = v;
+            e.ival = (int32_t)v;
             break;
         }
         case TYPE_LONG: {
-            int64_t v = 0;
-            if (!r.readI64BE(v))
+            uint64_t v = 0;
+            if (!r.readU64LE(v))
                 return false;
-            e.ival = v;
+            e.ival = (int64_t)v;
             break;
         }
         case TYPE_FLOAT: {
             float v = 0.0f;
-            if (!r.readF32BE(v))
+            if (!r.readF32LE(v))
                 return false;
             e.fval = v;
             break;
         }
         case TYPE_STRING: {
-            if (!r.readBEString(e.sval))
+            if (!r.readLEString(e.sval))
                 return false;
             break;
         }
         case TYPE_POS: {
-            // Mirror of the encode() branch: three packed int32 BE.
+            // Mirror of the encode() branch: three packed int32 LE.
             uint32_t vx = 0, vy = 0, vz = 0;
             if (!r.readU32LE(vx) || !r.readU32LE(vy) || !r.readU32LE(vz))
                 return false;
