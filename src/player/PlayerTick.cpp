@@ -431,12 +431,15 @@ void Player::handleInteract(int action, int64_t targetEid) {
         addExhaustion(0.3f);
 
     if (hurt) {
-        // Send the hurt animation to viewers, including the victim itself.
+        // Send the hurt animation to the viewers. The victim's own client
+        // gets its flash from onHealthChanged.
         auto hurtEv = std::make_shared<network::protocol::EntityEventPacket>();
         hurtEv->eid = target->runtimeId();
         hurtEv->event = network::protocol::EntityEventPacket::HURT_ANIMATION;
         for (auto& other : srv_->playersSnapshot()) {
             if (!other)
+                continue;
+            if (other.get() == target.get())
                 continue;
             if (!other->spawned())
                 continue;
@@ -453,8 +456,8 @@ void Player::handleInteract(int action, int64_t targetEid) {
     // Cancelled attacks produce no damage or knockback.
 
     // Apply the default Genisys knockback to successful, non-cancelled hits.
-    // Creative attackers do not push the target.
-    if (applied != entity::DamageApply::CANCELLED && !isCreative()) {
+    // The attacker's gamemode does not matter, only the victim's immunity.
+    if (applied != entity::DamageApply::CANCELLED) {
         const double dx = target->position().x - pos_.x;
         const double dz = target->position().z - pos_.z;
         double f = std::sqrt(dx * dx + dz * dz);
