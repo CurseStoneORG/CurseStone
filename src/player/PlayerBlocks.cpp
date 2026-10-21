@@ -492,39 +492,24 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
         return;
     }
 
-    // Drawing the bow or eating/drinking while aiming at a block is the
-    // common case: broadcast the same action pose as the air-use path so
-    // other players see the tension/eat animation (previously only the
-    // face 0xFF path did).
+    // A block-targeted use never starts the bow or eat pose: the client
+    // sends this packet for a plain tap on a block too, and a tap must not
+    // show the tension animation to other players. The pose only starts
+    // from the air-use path (face 0xFF); any block use clears it.
     bool heldIsFood = false;
     if (inv_) {
         item::ItemStack heldNow = inv_->getHeldItem();
         item::Item* heldDef = item::Item::get(heldNow.id);
         heldIsFood = heldDef && heldDef->isFood(heldNow.meta);
     }
-    if ((heldItemId == (int16_t)item::ITEM_BOW || heldIsFood) && face <= 5 && srv_) {
-        if (heldItemId != (int16_t)item::ITEM_BOW) {
-            // Food/drink keeps the same raise-or-refresh rule as the air
-            // path: repeated use packets keep the pose timer fresh.
-            if (!bow_pose_active_) {
-                bow_start_action_ = (int64_t)srv_->getCurrentTick();
-                broadcastBowPose(true);
-            } else {
-                bow_start_action_ = (int64_t)srv_->getCurrentTick();
-            }
-            return; // Food items never continue into block placement.
-        }
-        // Bow draws need the same ammo gate as the air path: no arrow,
-        // no draw pose for viewers.
-        if (!bow_pose_active_ && (isCreative() || hasArrowInStock())) {
-            bow_start_action_ = (int64_t)srv_->getCurrentTick();
-            broadcastBowPose(true);
-        }
-    } else if (face <= 5 && bow_pose_active_ && srv_) {
-        // Using a different item cancels the bow-use pose for viewers.
+    if (face <= 5 && bow_pose_active_ && srv_) {
         bow_start_action_ = -1;
         broadcastBowPose(false);
     }
+
+    // Food/drink never continues into block placement.
+    if (heldIsFood && face <= 5)
+        return;
 
     // Throw splash potions when targeting a block.
     if (heldItemId == (int16_t)item::ITEM_SPLASH_POTION) {
