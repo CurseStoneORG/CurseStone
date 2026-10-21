@@ -892,70 +892,103 @@ void World::tickArrows(uint64_t current_tick) {
         double ny = a->y + a->vy;
         double nz = a->z + a->vz;
 
-        Player* hit = nullptr;
-        double bestT = 2.0; // t in [0,1] along the segment
-        for (auto& p : Server::getInstance().playersSnapshot()) {
-            if (!p || !p->spawned() || p->isDead())
-                continue;
-            if (p->isPendingRemoval())
-                continue;
-            if (p->getWorld() != this)
-                continue;
-            // The shooter is immune to their own arrow: the projectile
-            // spawns inside the shooter's own hitbox, so a freshly released
-            // (slow or steep) shot would self-hit and show every other
-            // player a phantom hurt animation on the shooter.
-            if (p->runtimeId() == a->shooter_eid)
-                continue;
-            const auto& pp = p->getNextPosition();
-            // Player AABB [x-0.3, y, z-0.3]..[x+0.3, y+1.8, z+0.3], grown 0.3.
-            double minx = pp.x - 0.6, maxx = pp.x + 0.6;
-            double miny = pp.y - 0.3, maxy = pp.y + 2.1;
-            double minz = pp.z - 0.6, maxz = pp.z + 0.6;
-            if (nx < minx && a->x < minx)
-                continue;
-            if (nx > maxx && a->x > maxx)
-                continue;
-            if (ny < miny && a->y < miny)
-                continue;
-            if (ny > maxy && a->y > maxy)
-                continue;
-            if (nz < minz && a->z < minz)
-                continue;
-            if (nz > maxz && a->z > maxz)
-                continue;
-            // Slab method: t interval where the segment is inside the box.
-            double tmin = 0.0, tmax = 1.0;
-            bool miss = false;
-            const double so[3] = {a->x, a->y, a->z};
-            const double sd[3] = {nx - a->x, ny - a->y, nz - a->z};
-            const double blo[3] = {minx, miny, minz};
-            const double bhi[3] = {maxx, maxy, maxz};
-            for (int ax = 0; ax < 3; ++ax) {
-                if (std::fabs(sd[ax]) < 1e-12) {
-                    if (so[ax] < blo[ax] || so[ax] > bhi[ax]) {
+        // Finds the nearest player whose grown hitbox the given segment
+        // enters; nullptr when the segment misses everyone. When outT is
+        // given it receives the entry t of the nearest hit.
+        auto pickHit = [&](double sx, double sy, double sz, double ex, double ey,
+                           double ez, double* outT = nullptr) -> Player* {
+            Player* best = nullptr;
+            double bestT = 2.0; // t in [0,1] along the segment
+            for (auto& p : Server::getInstance().playersSnapshot()) {
+                if (!p || !p->spawned() || p->isDead())
+                    continue;
+                if (p->isPendingRemoval())
+                    continue;
+                if (p->getWorld() != this)
+                    continue;
+                // The shooter is immune to their own arrow: the projectile
+                // spawns inside the shooter's own hitbox, so a freshly released
+                // (slow or steep) shot would self-hit and show every other
+                // player a phantom hurt animation on the shooter.
+                if (p->runtimeId() == a->shooter_eid)
+                    continue;
+                const auto& pp = p->getNextPosition();
+                // Player AABB [x-0.3, y, z-0.3]..[x+0.3, y+1.8, z+0.3], grown 0.3.
+                double minx = pp.x - 0.6, maxx = pp.x + 0.6;
+                double miny = pp.y - 0.3, maxy = pp.y + 2.1;
+                double minz = pp.z - 0.6, maxz = pp.z + 0.6;
+                if (ex < minx && sx < minx)
+                    continue;
+                if (ex > maxx && sx > maxx)
+                    continue;
+                if (ey < miny && sy < miny)
+                    continue;
+                if (ey > maxy && sy > maxy)
+                    continue;
+                if (ez < minz && sz < minz)
+                    continue;
+                if (ez > maxz && sz > maxz)
+                    continue;
+                // Slab method: t interval where the segment is inside the box.
+                double tmin = 0.0, tmax = 1.0;
+                bool miss = false;
+                const double so[3] = {sx, sy, sz};
+                const double sd[3] = {ex - sx, ey - sy, ez - sz};
+                const double blo[3] = {minx, miny, minz};
+                const double bhi[3] = {maxx, maxy, maxz};
+                for (int ax = 0; ax < 3; ++ax) {
+                    if (std::fabs(sd[ax]) < 1e-12) {
+                        if (so[ax] < blo[ax] || so[ax] > bhi[ax]) {
+                            miss = true;
+                            break;
+                        }
+                        continue;
+                    }
+                    double t1 = (blo[ax] - so[ax]) / sd[ax];
+                    double t2 = (bhi[ax] - so[ax]) / sd[ax];
+                    if (t1 > t2)
+                        std::swap(t1, t2);
+                    if (t1 > tmin)
+                        tmin = t1;
+                    if (t2 < tmax)
+                        tmax = t2;
+                    if (tmin > tmax) {
                         miss = true;
                         break;
                     }
+                }
+                if (miss || tmin > bestT)
                     continue;
-                }
-                double t1 = (blo[ax] - so[ax]) / sd[ax];
-                double t2 = (bhi[ax] - so[ax]) / sd[ax];
-                if (t1 > t2)
-                    std::swap(t1, t2);
-                if (t1 > tmin)
-                    tmin = t1;
-                if (t2 < tmax)
-                    tmax = t2;
-                if (tmin > tmax) {
-                    miss = true;
-                    break;
-                }
+                bestT = tmin;
+                best = p.get();
+                if (outT)
+                    *outT = tmin;
             }
-            if (miss || tmin > bestT)
-                continue;
-            bestT = tmin;
-            hit = p.get();
+            return best;
+        };
+
+        // ---- Yaw/pitch from motion (needed by the final burst below) ----
+        if (!a->stuck) {
+            double fh = std::sqrt(a->vx * a->vx + a->vz * a->vz);
+            a->yaw = (float)(std::atan2(a->vx, a->vz) * 180.0 / 3.14159265358979323846);
+            a->pitch = (float)(std::atan2(a->vy, fh) * 180.0 / 3.14159265358979323846);
+        }
+
+        Player* hit = pickHit(a->x, a->y, a->z, nx, ny, nz);
+        bool lookaheadHit = false;
+        double entryT = 1.0;
+        if (!hit) {
+            // One-tick lookahead: clients advance the arrow one step past
+            // the last streamed position while the removal packet is still
+            // in flight, and that local step renders a phantom hurt flash
+            // on (creative) targets. Ending the flight as soon as the NEXT
+            // step would touch a player keeps every client-known position
+            // plus one motion step clear of the hitbox.
+            double lx = nx + a->vx;
+            double ly = ny + a->vy - 0.05;
+            double lz = nz + a->vz;
+            hit = pickHit(nx, ny, nz, lx, ly, lz, &entryT);
+            lookaheadHit = hit != nullptr;
         }
         if (hit) {
             double speed = std::sqrt(a->vx * a->vx + a->vy * a->vy + a->vz * a->vz);
@@ -996,6 +1029,38 @@ void World::tickArrows(uint64_t current_tick) {
             }
 
             a->taken = true;
+            if (lookaheadHit) {
+                // Final burst: the last client-visible position and motion
+                // go out in the SAME packet burst as the removal (nx is
+                // always outside the grown hitbox), so the client's own
+                // next simulation step can never land inside the victim
+                // between packets.
+                int32_t fcx = (int32_t)std::floor(nx) >> 4;
+                int32_t fcz = (int32_t)std::floor(nz) >> 4;
+                auto mv = std::make_shared<network::protocol::MoveEntityPacket>();
+                mv->eid = a->eid;
+                mv->x = (float)nx;
+                mv->y = (float)ny;
+                mv->z = (float)nz;
+                mv->yaw = a->yaw;
+                mv->headYaw = a->yaw;
+                mv->pitch = a->pitch;
+                auto mo = std::make_shared<network::protocol::SetEntityMotionPacket>();
+                // Cap the burst motion short of the hitbox entry so even a
+                // client tick squeezed between the burst packets cannot
+                // carry the arrow inside the victim.
+                double cap = entryT * 0.95;
+                mo->entities.push_back({a->eid, (float)(a->vx * cap),
+                                        (float)(a->vy * cap), (float)(a->vz * cap)});
+                for (auto& p : Server::getInstance().playersSnapshot()) {
+                    if (!p || !p->spawned() || p->getWorld() != this)
+                        continue;
+                    if (!p->canSeeBlock(fcx, fcz))
+                        continue;
+                    p->sendPacket(mv);
+                    p->sendPacket(mo);
+                }
+            }
             auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
             rm->eid = a->eid;
             for (auto& p : Server::getInstance().playersSnapshot()) {
@@ -1061,13 +1126,6 @@ void World::tickArrows(uint64_t current_tick) {
                     p->sendPacket(rm);
             }
             continue;
-        }
-
-        // ---- Yaw/pitch from motion ----
-        if (!a->stuck) {
-            double fh = std::sqrt(a->vx * a->vx + a->vz * a->vz);
-            a->yaw = (float)(std::atan2(a->vx, a->vz) * 180.0 / 3.14159265358979323846);
-            a->pitch = (float)(std::atan2(a->vy, fh) * 180.0 / 3.14159265358979323846);
         }
 
         if (a->critical && !a->stuck) {

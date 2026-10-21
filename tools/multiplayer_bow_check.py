@@ -7,8 +7,10 @@ multiplayer sync paths that other clients depend on:
 
   0. AddPlayerPacket carries the shooter's held bow on first view
   1. hotbar switches re-broadcast MobEquipmentPacket to the watcher
-  2. drawing the bow at a BLOCK raises DATA_FLAG_ACTION for the watcher
-     (the pose previously only existed on the face 0xFF air path)
+  2. a plain block TAP with a bow raises NO action pose for the watcher
+     (block-use packets must never start the tension animation, they can
+     only cancel it); the real draw-at-block flow (touch-down use packet
+     + air charge packets) still raises the pose
   3. releasing spawns the arrow for the watcher: AddEntityPacket(type 80)
      + SetEntityMotionPacket, and NO phantom EntityEvent(HURT) on the
      shooter (the shooter is immune to their own arrow)
@@ -394,16 +396,28 @@ def main() -> int:
               "watcher sees MobEquipment(bow) after switching back",
               f"equip={b.equip_pkts[mark:]}")
 
-        # -------- 2: block-targeted draw raises the action pose ----------
+        # -------- 2: block tap raises NO pose; draw-at-block still works --
         mark = len(b.data_flags)
         a.draw_block(*DRAW_TARGET_BLOCK, BOW)
         time.sleep(0.8)
         b.drain(1.0)
         pose_on = [f for (eid, f) in b.data_flags[mark:]
                    if eid == a.eid and (f & FLAG_ACTION_BIT)]
-        check(bool(pose_on),
-              "block-targeted bow draw raises DATA_FLAG_ACTION for the watcher",
+        check(not pose_on,
+              "plain block tap with a bow raises NO action pose for the watcher",
               f"flags={b.data_flags[mark:]}")
+
+        # The real draw-at-block flow: touch-down use packet on the block,
+        # then the air-use charge packets, must raise the pose.
+        a.draw_block(*DRAW_TARGET_BLOCK, BOW)
+        a.draw_air(BOW)
+        time.sleep(0.8)
+        b.drain(1.0)
+        pose_on = [f for (eid, f) in b.data_flags
+                   if eid == a.eid and (f & FLAG_ACTION_BIT)]
+        check(bool(pose_on),
+              "block-targeted bow draw (touch + air charge) raises DATA_FLAG_ACTION",
+              f"flags={b.data_flags}")
 
         # -------- 3: release spawns the arrow, no phantom hurt -----------
         b.add_entities.clear()
