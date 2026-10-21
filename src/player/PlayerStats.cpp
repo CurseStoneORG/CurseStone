@@ -132,10 +132,17 @@ void Player::onHealthChanged() {
         return;
 
     if (!isCreative()) {
+        // Self flash: the real entity id (self events resolve against it,
+        // like the death animation) plus the eid 0 alias packet.
         auto ee = std::make_shared<network::protocol::EntityEventPacket>();
-        ee->eid = 0; // Protocol 84 uses eid 0 for the local player.
+        ee->eid = runtimeId();
         ee->event = network::protocol::EntityEventPacket::HURT_ANIMATION;
         sendPacket(ee);
+
+        auto alias = std::make_shared<network::protocol::EntityEventPacket>();
+        alias->eid = 0;
+        alias->event = network::protocol::EntityEventPacket::HURT_ANIMATION;
+        sendPacket(alias);
     }
 
     sendHealthAttribute();

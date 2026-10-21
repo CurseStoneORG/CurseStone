@@ -977,11 +977,13 @@ void World::tickArrows(uint64_t current_tick) {
 
             if (applied != cursestone::entity::DamageApply::CANCELLED) {
                 if (applied == cursestone::entity::DamageApply::HURT) {
+                    // Viewers only; the victim's own flash comes from
+                    // onHealthChanged.
                     auto hurtEv = std::make_shared<network::protocol::EntityEventPacket>();
                     hurtEv->eid = hit->runtimeId();
                     hurtEv->event = network::protocol::EntityEventPacket::HURT_ANIMATION;
                     for (auto& other : Server::getInstance().playersSnapshot()) {
-                        if (!other)
+                        if (!other || other.get() == hit)
                             continue;
                         if (!other->spawned())
                             continue;
