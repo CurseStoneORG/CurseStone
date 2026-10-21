@@ -981,7 +981,7 @@ void World::tickArrows(uint64_t current_tick) {
                     hurtEv->eid = hit->runtimeId();
                     hurtEv->event = network::protocol::EntityEventPacket::HURT_ANIMATION;
                     for (auto& other : Server::getInstance().playersSnapshot()) {
-                        if (!other || other.get() == hit)
+                        if (!other)
                             continue;
                         if (!other->spawned())
                             continue;
