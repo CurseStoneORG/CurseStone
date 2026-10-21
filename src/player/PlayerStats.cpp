@@ -124,16 +124,19 @@ void Player::sendAllAttributes() {
 }
 
 // Apply the hurt animation and synchronize health after non-fatal damage.
+// Creative players never show the hurt animation.
 void Player::onHealthChanged() {
     if (!spawned_.load(std::memory_order_relaxed))
         return;
     if (isDead())
         return;
 
-    auto ee = std::make_shared<network::protocol::EntityEventPacket>();
-    ee->eid = 0; // Protocol 84 uses eid 0 for the local player.
-    ee->event = network::protocol::EntityEventPacket::HURT_ANIMATION;
-    sendPacket(ee);
+    if (!isCreative()) {
+        auto ee = std::make_shared<network::protocol::EntityEventPacket>();
+        ee->eid = 0; // Protocol 84 uses eid 0 for the local player.
+        ee->event = network::protocol::EntityEventPacket::HURT_ANIMATION;
+        sendPacket(ee);
+    }
 
     sendHealthAttribute();
 }
