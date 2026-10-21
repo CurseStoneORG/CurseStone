@@ -357,7 +357,10 @@ void Player::saveData() {
         }
     }
     mcp_compound_tag_set(root, "ActiveEffects", fx_list);
-    mcp_compound_tag_set_short(root, "Air", 300);
+    mcp_compound_tag_set_short(root, "Air", (int16_t)air_ticks_);
+    // Experience (same keys as the reference Human::saveNBT).
+    mcp_compound_tag_set_int(root, "XpLevel", xp_level_);
+    mcp_compound_tag_set_float(root, "XpP", xp_progress_);
     mcp_compound_tag_set_long(root, "RuntimeId", runtimeId());
     mcp_compound_tag_set_long(root, "lastPlayed", (int64_t)mcp_utils_time_ms());
 

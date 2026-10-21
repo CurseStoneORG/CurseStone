@@ -175,6 +175,16 @@ bool PacketReader::readBEString(std::string& out) {
     off_ += len;
     return true;
 }
+bool PacketReader::readLEString(std::string& out) {
+    uint16_t len;
+    if (!readU16LE(len))
+        return false;
+    if (off_ + len > len_)
+        return false;
+    out.assign(reinterpret_cast<const char*>(data_ + off_), len);
+    off_ += len;
+    return true;
+}
 bool PacketReader::readVarU32(uint32_t& v) {
     uint32_t result = 0;
     size_t shift = 0;

@@ -412,9 +412,16 @@ class Player : public IPlayer,
     void sendTranslation(const std::string& key);
 
     // --- Experience ---
+    // exp: 0..100 progress percent within the level (attribute carries 0..1).
     void setExperience(int exp, int level);
     void sendExperience(int exp);
     void sendExperienceLevel(int level);
+    int experienceLevel() const {
+        return xp_level_;
+    }
+    int experienceProgressPercent() const {
+        return (int)(xp_progress_ * 100.0f + 0.5f);
+    }
 
     // --- Health and food ---
     void setHealth(int h);
@@ -435,6 +442,13 @@ class Player : public IPlayer,
     void sendHealthAttribute();
     // Sends health and hunger attributes.
     void sendAllAttributes();
+    // Broadcasts the underwater air property (DATA_AIR) to self and viewers.
+    void sendAir();
+    // Blended potion-effect particle color, 0 when no effect is active.
+    uint32_t blendedEffectColor() const;
+    // Full spawn metadata block (flags, air, nametag, silent, no-ai, lead,
+    // potion tint, sleep state) — mirrors the reference spawn dataProperties.
+    void sendFullEntityData(Player* viewer);
     bool isFoodEnabled() const {
         return cfg_.gamemode == 0;
     }
@@ -688,6 +702,10 @@ class Player : public IPlayer,
     int starve_ticks_ = 0;           // Starvation damage accumulator.
     int air_ticks_ = 300;            // Remaining underwater air.
     int fire_ticks_ = 0;             // Remaining burn time.
+
+    // --- Experience state ---
+    int xp_level_ = 0;               // Displayed level (player.level).
+    float xp_progress_ = 0.0f;       // 0..1 progress within the level.
     bool moved_this_tick_ = false;   // Movement flag for hunger updates.
     bool sprinting_ = false;         // Client sprint state.
     bool sneaking_ = false;          // Client crouch state.
