@@ -15,6 +15,16 @@ shooter) and V (victim standing in the line of fire). Verifies:
      victim - the shooter sees the HURT event, the victim flashes itself
      (real eid + eid 0 alias), its health drops, and the arrow stream
      still never enters the hitbox.
+  spawn freeze (both scenarios): near-target arrows spawn with zero
+     client velocity and no launch motion packet, and every motion packet
+     seen during the flight is zero - the client can never dead-reckon
+     the arrow into a hitbox between packet bursts.
+  scenario 3 (point-blank, creative): a shot from 1.5 blocks ends the
+     flight as a direct hit with no damage traffic at all and no client
+     state anywhere near the victim.
+  scenario 4 (point-blank, survival): the same shot still damages a
+     survival victim (HURT + self flash + health drop) with the same
+     frozen client stream.
 
 Usage:
     python3 tools/arrow_creative_flash_check.py [--server /path/to/CurseStone]
@@ -41,6 +51,7 @@ DEATH_ANIMATION = 3
 # Flat world layout (grass surface at y=3, spawn 128,4,128).
 SHOOTER = (128.5, 4, 128.5)
 VICTIM = (128.5, 4, 132.5)  # 4 blocks south, straight ahead of yaw=0
+SHOOTER_CLOSE = (128.5, 4, 131.0)  # 1.5 blocks from VICTIM: direct-hit range
 
 # Victim grown hitbox used by the server scan: [x-0.6, y-0.3, z-0.6]..
 # [x+0.6, y+2.1, z+0.6].
@@ -204,9 +215,9 @@ def main() -> int:
         time.sleep(0.4)
         s.drain(0.4)
 
-        def shoot():
+        def shoot(from_pos=SHOOTER):
             """Full draw + release aimed straight at the victim."""
-            s.move_to(SHOOTER[0], SHOOTER[1], SHOOTER[2], yaw=0.0, pitch=0.0)
+            s.move_to(from_pos[0], from_pos[1], from_pos[2], yaw=0.0, pitch=0.0)
             time.sleep(0.3)
             s.drain(0.3)
             s.draw_air(BOW)
@@ -264,6 +275,24 @@ def main() -> int:
                   f"removes={client.removes[-4:]}")
             return aeid
 
+        def spawn_freeze_checks(client, aeid, tag):
+            """Near-target spawn contract: the arrow is born with zero
+            client velocity and no motion packet ever carries a real
+            launch speed, so a client tick between bursts cannot advance
+            the arrow model on its own."""
+            adds = [e for e in client.stream
+                    if e[0] == "add" and e[1] == aeid]
+            check(bool(adds) and all(abs(e[6]) < 1e-6 and abs(e[7]) < 1e-6
+                                     and abs(e[8]) < 1e-6 for e in adds),
+                  f"{tag}: near-target AddEntity spawn speed is zeroed",
+                  f"adds={adds[-2:]}")
+            mos = [e for e in client.stream if e[0] == "mo" and e[1] == aeid]
+            nonzero = [e for e in mos if abs(e[2]) > 1e-6 or
+                       abs(e[3]) > 1e-6 or abs(e[4]) > 1e-6]
+            check(not nonzero,
+                  f"{tag}: every streamed motion for the arrow is zero",
+                  f"nonzero={nonzero[-3:]}")
+
         # ================= Scenario 1: creative victim ==================
         print("stage: scenario 1 - arrow lands on a CREATIVE victim")
         v.say("/gamemode 1")
@@ -287,6 +316,8 @@ def main() -> int:
         v.drain(3.5)
 
         aeid1 = flight_checks(s, "creative")
+        if aeid1 is not None:
+            spawn_freeze_checks(s, aeid1, "creative")
         hurt_to_shooter = [e for e in s.entity_events
                            if e[0] == v.eid and e[1] == HURT_ANIMATION]
         check(not hurt_to_shooter,
@@ -342,6 +373,8 @@ def main() -> int:
         v.drain(1.0)
 
         aeid2 = flight_checks(s, "survival")
+        if aeid2 is not None:
+            spawn_freeze_checks(s, aeid2, "survival")
         hurt_to_shooter = [e for e in s.entity_events
                            if e[0] == v.eid and e[1] == HURT_ANIMATION]
         check(bool(hurt_to_shooter),
@@ -359,6 +392,116 @@ def main() -> int:
         check(not v_death,
               "survival victim: one arrow does not kill from full health",
               f"events={v.entity_events[-6:]}")
+
+        # ============ Scenario 3: point-blank, creative victim ===========
+        print("stage: scenario 3 - point-blank shot at a CREATIVE victim")
+        v.say("/gamemode 1")
+        time.sleep(0.8)
+        v.drain(0.8)
+
+        s.move_to(*SHOOTER_CLOSE)
+        time.sleep(0.4)
+        s.drain(0.4)
+
+        for c in (s, v):
+            c.add_entities.clear()
+            c.motions.clear()
+            c.move_entities.clear()
+            c.entity_events.clear()
+            c.healths.clear()
+            c.removes.clear()
+            c.stream.clear()
+        time.sleep(0.3)
+        s.drain(0.3)
+        v.drain(0.3)
+
+        shoot(SHOOTER_CLOSE)
+        s.drain(3.5)
+        v.drain(3.5)
+
+        aeid3 = arrow_of(s)
+        check(aeid3 is not None,
+              "point-blank creative: shooter observed the arrow spawn")
+        if aeid3 is not None:
+            spawn_freeze_checks(s, aeid3, "point-blank creative")
+            moves3 = [m for m in s.move_entities if m[0] == aeid3]
+            inside3 = [m for m in moves3 if in_grown_box(m[1], m[2], m[3])]
+            check(not inside3,
+                  "point-blank creative: no streamed arrow position enters "
+                  "the victim hitbox",
+                  f"inside={inside3[-3:]}")
+            check(aeid3 in s.removes,
+                  "point-blank creative: arrow removed after the hit",
+                  f"removes={s.removes[-4:]}")
+        pb_hurt = [e for e in s.entity_events
+                   if e[0] == v.eid and e[1] == HURT_ANIMATION]
+        check(not pb_hurt,
+              "point-blank creative: shooter receives NO HURT event",
+              f"events={s.entity_events[-6:]}")
+        pb_self = [e for e in v.entity_events
+                   if e[0] in (v.eid, 0) and e[1] == HURT_ANIMATION]
+        check(not pb_self,
+              "point-blank creative: victim's own client shows no hurt flash",
+              f"events={v.entity_events[-6:]}")
+        check(not v.healths,
+              "point-blank creative: victim's health untouched",
+              f"healths={v.healths}")
+
+        # ============ Scenario 4: point-blank, survival victim ===========
+        print("stage: scenario 4 - point-blank shot at a SURVIVAL victim")
+        v.say("/gamemode 0")
+        time.sleep(0.8)
+        v.drain(0.8)
+        v.move_to(VICTIM[0], VICTIM[1], VICTIM[2] + 1.0)
+        time.sleep(0.3)
+        v.drain(0.3)
+        v.move_to(*VICTIM)
+        time.sleep(0.4)
+        v.drain(0.4)
+
+        for c in (s, v):
+            c.add_entities.clear()
+            c.motions.clear()
+            c.move_entities.clear()
+            c.entity_events.clear()
+            c.healths.clear()
+            c.removes.clear()
+            c.stream.clear()
+        time.sleep(0.3)
+        s.drain(0.3)
+        v.drain(0.3)
+
+        shoot(SHOOTER_CLOSE)
+        s.drain(3.0)
+        v.drain(1.0)
+
+        aeid4 = arrow_of(s)
+        check(aeid4 is not None,
+              "point-blank survival: shooter observed the arrow spawn")
+        if aeid4 is not None:
+            spawn_freeze_checks(s, aeid4, "point-blank survival")
+            moves4 = [m for m in s.move_entities if m[0] == aeid4]
+            inside4 = [m for m in moves4 if in_grown_box(m[1], m[2], m[3])]
+            check(not inside4,
+                  "point-blank survival: no streamed arrow position enters "
+                  "the victim hitbox",
+                  f"inside={inside4[-3:]}")
+            check(aeid4 in s.removes,
+                  "point-blank survival: arrow removed after the hit",
+                  f"removes={s.removes[-4:]}")
+        pb_hurt = [e for e in s.entity_events
+                   if e[0] == v.eid and e[1] == HURT_ANIMATION]
+        check(bool(pb_hurt),
+              "point-blank survival: shooter sees the HURT flash",
+              f"events={s.entity_events[-6:]}")
+        pb_self = [e for e in v.entity_events
+                   if e[0] in (v.eid, 0) and e[1] == HURT_ANIMATION]
+        check(bool(pb_self),
+              "point-blank survival: victim flashes itself (real eid + eid 0)",
+              f"events={v.entity_events[-6:]}")
+        check(any(h < 20 for h in v.healths),
+              "point-blank survival: victim's health dropped",
+              f"healths={v.healths}")
 
     finally:
         try:

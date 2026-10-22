@@ -420,16 +420,49 @@ void Player::releaseBow() {
     shooter.ival = runtimeId();
     add->metadata.push_back(shooter);
 
+    // Near-target spawn freeze (world::kArrowClientFreezeDist): when the
+    // arrow is born next to another player, the client would dead-reckon
+    // it from the launch velocity into that hitbox before the first
+    // server correction lands, and the touch renders a phantom hurt
+    // flash the server cannot mask on creative targets. Spawn with zero
+    // client velocity and let MoveEntity packets drive the flight.
+    bool nearPlayer = false;
+    double ex = pos_.x, ey = pos_.y + kEyeHeight, ez = pos_.z;
+    for (auto& other : srv_->playersSnapshot()) {
+        if (!other || !other->spawned() || other.get() == this)
+            continue;
+        if (other->isPendingRemoval() || other->isDead())
+            continue;
+        if (other->getWorld() != lvl)
+            continue;
+        const auto& pp = other->getNextPosition();
+        if (ex >= pp.x - 0.6 - world::kArrowClientFreezeDist &&
+            ex <= pp.x + 0.6 + world::kArrowClientFreezeDist &&
+            ey >= pp.y - 0.3 - world::kArrowClientFreezeDist &&
+            ey <= pp.y + 2.1 + world::kArrowClientFreezeDist &&
+            ez >= pp.z - 0.6 - world::kArrowClientFreezeDist &&
+            ez <= pp.z + 0.6 + world::kArrowClientFreezeDist) {
+            nearPlayer = true;
+            break;
+        }
+    }
+    if (nearPlayer)
+        add->speedX = add->speedY = add->speedZ = 0.0f;
+
     // Send motion separately so the client can animate the arrow.
-    auto motion = std::make_shared<network::protocol::SetEntityMotionPacket>();
-    motion->entities.push_back({eid, (float)(dx * f), (float)(dy * f), (float)(dz * f)});
+    std::shared_ptr<network::protocol::SetEntityMotionPacket> motion;
+    if (!nearPlayer) {
+        motion = std::make_shared<network::protocol::SetEntityMotionPacket>();
+        motion->entities.push_back({eid, (float)(dx * f), (float)(dy * f), (float)(dz * f)});
+    }
     for (auto& other : srv_->playersSnapshot()) {
         if (!other || !other->spawned())
             continue;
         if (other->getWorld() != lvl)
             continue;
         other->sendPacket(add);
-        other->sendPacket(motion);
+        if (motion)
+            other->sendPacket(motion);
     }
 
     // Broadcast the arrow launch sound.
