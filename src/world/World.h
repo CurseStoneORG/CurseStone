@@ -54,6 +54,14 @@ namespace particle {
 class Particle;
 }
 
+// Distance beyond a player's grown hitbox where an arrow's client-known
+// velocity is frozen to zero. Clients dead-reckon projectiles between
+// packet bursts; near a player that drift can carry the arrow model into
+// the hitbox and render a phantom hurt flash on creative targets. The
+// radius guarantees at least one full client step of clearance at the
+// moment the freeze takes effect.
+constexpr double kArrowClientFreezeDist = 5.0;
+
 // Represents a flying or stuck arrow and tracks its server-side physics.
 struct ArrowEntity {
     int64_t eid = 0;
@@ -72,6 +80,7 @@ struct ArrowEntity {
     bool critical = false;     // True for fully charged shots.
     bool stuck = false;        // True after hitting a block.
     bool taken = false;        // True after being claimed for pickup.
+    bool client_hold = false;  // Near a player: client velocity frozen to zero.
 };
 
 // Server-side record of a thrown splash potion (entity type 86).

@@ -885,6 +885,34 @@ void World::tickArrows(uint64_t current_tick) {
             continue;
         ++a->flight_ticks;
 
+        // Client motion freeze: once the arrow comes near a player, the
+        // client's known velocity is forced to zero so a client tick
+        // between packet bursts can never dead-reckon the arrow model
+        // into a hitbox. A touch renders a local hurt flash the server
+        // cannot mask on creative targets, so the client must only ever
+        // see server-streamed positions from here on (sticky for the
+        // rest of the flight; visually identical, positions are the same).
+        if (!a->client_hold) {
+            for (auto& p : Server::getInstance().playersSnapshot()) {
+                if (!p || !p->spawned() || p->isDead() || p->isPendingRemoval())
+                    continue;
+                if (p->getWorld() != this)
+                    continue;
+                if (p->runtimeId() == a->shooter_eid)
+                    continue;
+                const auto& pp = p->getNextPosition();
+                if (a->x >= pp.x - 0.6 - kArrowClientFreezeDist &&
+                    a->x <= pp.x + 0.6 + kArrowClientFreezeDist &&
+                    a->y >= pp.y - 0.3 - kArrowClientFreezeDist &&
+                    a->y <= pp.y + 2.1 + kArrowClientFreezeDist &&
+                    a->z >= pp.z - 0.6 - kArrowClientFreezeDist &&
+                    a->z <= pp.z + 0.6 + kArrowClientFreezeDist) {
+                    a->client_hold = true;
+                    break;
+                }
+            }
+        }
+
         // motionY -= gravity (Arrow: 0.05)
         a->vy -= 0.05;
 
@@ -1034,7 +1062,9 @@ void World::tickArrows(uint64_t current_tick) {
                 // go out in the SAME packet burst as the removal (nx is
                 // always outside the grown hitbox), so the client's own
                 // next simulation step can never land inside the victim
-                // between packets.
+                // between packets. Motion is frozen to zero: with no
+                // client-known velocity there is nothing to dead-reckon
+                // with, under any packet gap.
                 int32_t fcx = (int32_t)std::floor(nx) >> 4;
                 int32_t fcz = (int32_t)std::floor(nz) >> 4;
                 auto mv = std::make_shared<network::protocol::MoveEntityPacket>();
@@ -1046,18 +1076,26 @@ void World::tickArrows(uint64_t current_tick) {
                 mv->headYaw = a->yaw;
                 mv->pitch = a->pitch;
                 auto mo = std::make_shared<network::protocol::SetEntityMotionPacket>();
-                // Cap the burst motion short of the hitbox entry so even a
-                // client tick squeezed between the burst packets cannot
-                // carry the arrow inside the victim.
-                double cap = entryT * 0.95;
-                mo->entities.push_back({a->eid, (float)(a->vx * cap),
-                                        (float)(a->vy * cap), (float)(a->vz * cap)});
+                mo->entities.push_back({a->eid, 0.0f, 0.0f, 0.0f});
                 for (auto& p : Server::getInstance().playersSnapshot()) {
                     if (!p || !p->spawned() || p->getWorld() != this)
                         continue;
                     if (!p->canSeeBlock(fcx, fcz))
                         continue;
                     p->sendPacket(mv);
+                    p->sendPacket(mo);
+                }
+            } else {
+                // Direct hit: the segment entered a box this tick (victim
+                // stepped into the flight path, or a point-blank spawn).
+                // No safe position exists ahead to stream, so freeze the
+                // client velocity in the removal burst; a client tick
+                // between packets then cannot advance the arrow deeper.
+                auto mo = std::make_shared<network::protocol::SetEntityMotionPacket>();
+                mo->entities.push_back({a->eid, 0.0f, 0.0f, 0.0f});
+                for (auto& p : Server::getInstance().playersSnapshot()) {
+                    if (!p || !p->spawned() || p->getWorld() != this)
+                        continue;
                     p->sendPacket(mo);
                 }
             }
@@ -1150,6 +1188,13 @@ void World::tickArrows(uint64_t current_tick) {
         bool sendMove =
             collided || dpos > 0.04 || (drot > 2.25 && dmot > 0.0001 && vlen2 <= 0.00001);
         bool sendMotion = collided || dmot > 0.0025 || (dmot > 0.0001 && vlen2 <= 0.0001);
+        // Frozen flight: near a player the client velocity stays zero and
+        // MoveEntity positions become the only motion source, so both
+        // packets must stream every tick.
+        if (a->client_hold) {
+            sendMove = true;
+            sendMotion = true;
+        }
         if (!sendMove && !sendMotion)
             continue;
 
@@ -1181,12 +1226,17 @@ void World::tickArrows(uint64_t current_tick) {
         }
 
         if (sendMotion) {
-            a->lmx = a->vx;
-            a->lmy = a->vy;
-            a->lmz = a->vz;
+            // Near a player the client must never hold a real velocity:
+            // dead-reckoning from it could touch a hitbox between bursts.
+            double smx = a->client_hold ? 0.0 : a->vx;
+            double smy = a->client_hold ? 0.0 : a->vy;
+            double smz = a->client_hold ? 0.0 : a->vz;
+            a->lmx = smx;
+            a->lmy = smy;
+            a->lmz = smz;
 
             auto mo = std::make_shared<network::protocol::SetEntityMotionPacket>();
-            mo->entities.push_back({a->eid, (float)a->vx, (float)a->vy, (float)a->vz});
+            mo->entities.push_back({a->eid, (float)smx, (float)smy, (float)smz});
             for (auto& p : Server::getInstance().playersSnapshot()) {
                 if (!p || !p->spawned() || p->getWorld() != this)
                     continue;
