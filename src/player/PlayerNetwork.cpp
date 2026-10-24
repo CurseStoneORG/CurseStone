@@ -263,37 +263,58 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
             // The client reports its held hotbar slot; inventory-screen packets may use a different slot field.
             if (auto* me = dynamic_cast<network::protocol::MobEquipmentPacket*>(&p)) {
                 if (inv_) {
-                    // Use selectedSlot when valid, otherwise fall back to hotbarSlot.
+                    // Wire byte order (Genisys 0.15 / the reference server):
+                    // byte 1 (hotbarSlot) is the PADDED ABSOLUTE inventory
+                    // slot the position now links to (position + 9; 255 =
+                    // blank selection), byte 2 (selectedSlot) is the hotbar
+                    // position 0..8. The reference applies the link remap
+                    // exactly here: setHeldItemIndex(selectedSlot, false,
+                    // slot) — "the only time and place hotbar mapping should
+                    // ever be changed".
                     int selected = (int)me->selectedSlot;
                     if (selected > 8)
                         selected = (int)me->hotbarSlot;
-                    bool changed = false;
-                    if (selected >= 0 && selected <= 8 && selected != inv_->getHeldItemIndex()) {
-                        // Plugins can cancel the hotbar change and trigger an inventory resync.
-                        auto ev =
-                            event::EventManager::get().fire<event::player::PlayerItemHeldEvent>(
-                                this, inv_->getItem(inv_->getHotbarSlotIndex(selected)), selected,
-                                (int)me->hotbarSlot);
-                        if (ev.isCancelled()) {
-                            sendInventory();
-                        } else {
-                            inv_->setHeldItemIndex(selected);
-                            changed = true;
+                    if (selected >= 0 && selected <= 8) {
+                        int mapping =
+                            (int)me->hotbarSlot - inventory::PLAYER_INV_HOTBAR_SIZE;
+                        if (mapping < 0 || mapping >= inventory::PlayerInventory::SIZE)
+                            mapping = -1; // blank/invalid: unlink the position
+                        // A creative take re-sends MobEquipment with the SAME
+                        // position only to push the new link, so the remap
+                        // must also fire when the link alone changed.
+                        bool positionChanged = selected != inv_->getHeldItemIndex();
+                        bool linkChanged = mapping != inv_->getHotbarSlotIndex(selected);
+                        if (positionChanged || linkChanged) {
+                            // Plugins see the item the player will hold AFTER
+                            // the remap (the reference resolves it from the
+                            // incoming mapping before applying the change).
+                            item::ItemStack heldAfter;
+                            if (mapping >= 0)
+                                heldAfter = inv_->getItem(mapping);
+                            // Plugins can cancel the hotbar change and trigger an inventory resync.
+                            auto ev =
+                                event::EventManager::get().fire<event::player::PlayerItemHeldEvent>(
+                                    this, heldAfter, selected, (int)me->hotbarSlot);
+                            if (ev.isCancelled()) {
+                                sendInventory();
+                            } else {
+                                inv_->setHeldItemIndex(selected, mapping);
+                                // Switching items cancels an in-progress bow pose for
+                                // viewers (the reference clears DATA_FLAG_ACTION on equip).
+                                if (positionChanged && bow_pose_active_)
+                                    broadcastBowPose(false);
+                                // Remote clients only render the hand item from
+                                // MobEquipmentPacket — re-broadcast it after every equip.
+                                broadcastHeldItemToViewers();
+                            }
                         }
-                    }
-                    if (changed) {
-                        // Switching items cancels an in-progress bow pose for
-                        // viewers (the reference clears DATA_FLAG_ACTION on equip).
-                        if (bow_pose_active_)
-                            broadcastBowPose(false);
-                        // Remote clients only render the hand item from
-                        // MobEquipmentPacket — re-broadcast it after every equip.
-                        broadcastHeldItemToViewers();
-                    }
-                    if (srv_ && srv_->advancedLog()) {
-                        utils::MainLogger::get().info("[INV] " + cfg_.username +
-                                                      " switched to hotbar slot " +
-                                                      std::to_string(inv_->getHeldItemIndex()));
+                        if (srv_ && srv_->advancedLog()) {
+                            utils::MainLogger::get().info(
+                                "[INV] " + cfg_.username + " switched to hotbar slot " +
+                                std::to_string(inv_->getHeldItemIndex()) +
+                                " (inventory slot " +
+                                std::to_string(inv_->heldSlot()) + ")");
+                        }
                     }
                 }
             }

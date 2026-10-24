@@ -133,7 +133,7 @@ class RulesClient(HungerClient):
         me += bytes([1])                      # count
         me += struct.pack(">h", meta)         # damage/meta
         me += struct.pack("<H", 0)            # no nbt
-        me += bytes([hotbar])                 # hotbarSlot
+        me += bytes([hotbar + 9])                 # hotbarSlot
         me += bytes([hotbar])                 # selectedSlot
         self.send_game(me)
 

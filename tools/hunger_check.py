@@ -228,7 +228,7 @@ class HungerClient(FallClient):
         me += bytes([count])                # count
         me += struct.pack(">h", 0)          # damage
         me += struct.pack("<H", 0)          # no nbt
-        me += bytes([hotbar])               # hotbarSlot
+        me += bytes([hotbar + 9])               # hotbarSlot
         me += bytes([hotbar])               # selectedSlot
         self.send_game(me)
 

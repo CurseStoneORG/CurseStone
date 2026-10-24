@@ -219,7 +219,12 @@ void Player::broadcastHeldItemToViewers() {
     pk->itemCount = held.count;
     pk->itemDamage = (int16_t)held.meta;
     pk->itemNbt = held.nbt;
-    pk->hotbarSlot = (uint8_t)inv_->getHeldItemIndex();
+    // Reference sendHeldItem(): byte 1 carries the LINK-RESOLVED inventory
+    // slot (getHeldItemSlot(), -1 wraps to the wire's blank byte 255) and
+    // byte 2 the hotbar position. Sending the position in both bytes made
+    // clients that honor the slot byte render the wrong hand item after a
+    // hotbar relink.
+    pk->hotbarSlot = (uint8_t)inv_->heldSlot();
     pk->selectedSlot = (uint8_t)inv_->getHeldItemIndex();
     for (auto& other : srv_->playersSnapshot()) {
         if (!other || other.get() == this)
