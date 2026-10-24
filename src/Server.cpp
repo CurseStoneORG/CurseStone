@@ -51,6 +51,7 @@
 #include "network/protocol/CraftingDataPacket.h"
 #include "scheduler/AsyncPool.h"
 #include "scheduler/ServerScheduler.h"
+#include "scheduler/CallbackTask.h"
 #include "world/World.h"
 #include "world/ChunkManager.h"
 #include "world/format/WorldProviderManager.h"
@@ -305,6 +306,20 @@ bool Server::unloadWorld(const std::string& name) {
         }
 
         w->save();
+
+        // The generation-completion callback captures the ChunkManager, so
+        // destroying the world while tasks are still in flight would be a
+        // use-after-free. Wait (bounded) for them to drain, otherwise refuse.
+        auto genDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (w->chunks().pendingCount() > 0) {
+            if (std::chrono::steady_clock::now() > genDeadline) {
+                utils::MainLogger::get().warn("World '" + name +
+                                              "' still has chunks generating; unload refused.");
+                return false;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+
         worlds_.erase(it);
         utils::MainLogger::get().info("World '" + name + "' unloaded.");
         return true;
@@ -334,9 +349,15 @@ void Server::startCommandReader() {
     console_reader_ = std::make_unique<CommandReader>([this](const std::string& line) {
         if (line.empty())
             return;
-        ConsoleCommandSender sender;
-        if (command_map_)
-            command_map_->dispatch(&sender, line);
+        // Dispatch on the main tick thread: commands mutate players, worlds
+        // and plugin VMs that the tick loop also touches. Running them on
+        // the console thread raced every one of those subsystems.
+        auto task = std::make_shared<scheduler::CallbackTask>([this, line]() {
+            ConsoleCommandSender sender;
+            if (command_map_)
+                command_map_->dispatch(&sender, line);
+        });
+        scheduler::ServerScheduler::get().scheduleSync(task);
     });
     console_reader_->start();
 }
@@ -448,6 +469,11 @@ void Server::runTickLoop() {
     // Run cleanup on the main thread after the tick loop exits.
     if (network_)
         network_->tick(); // Gracefully close RakLib.
+    // Stop and join the network thread now, not at static destruction: it
+    // still logs while draining, and anything it logs after main() destroys
+    // the async logger would silently respawn the logger mid-shutdown.
+    if (network_)
+        network_->shutdown();
     // Force a final GC pass before saving all worlds.
     MemoryManager::get().collect(/*force=*/true);
     saveAll();
@@ -1063,6 +1089,9 @@ NbtPtr Server::getOfflinePlayerData(const std::string& name) {
             std::vector<uint8_t> inflated;
             inflated.reserve(buf.size() * 4);
             uint8_t chunk[65536];
+            // Ceiling for decompressed player data: a corrupt/hostile
+            // players/<name>.dat must not expand unbounded.
+            static const size_t kMaxInflated = 16u << 20; // 16 MiB
             int rc = Z_OK;
             do {
                 zs.next_out = chunk;
@@ -1071,8 +1100,13 @@ NbtPtr Server::getOfflinePlayerData(const std::string& name) {
                 if (rc != Z_OK && rc != Z_STREAM_END)
                     break;
                 size_t produced = sizeof(chunk) - zs.avail_out;
-                if (produced > 0)
+                if (produced > 0) {
+                    if (inflated.size() + produced > kMaxInflated) {
+                        rc = 0; // force the "not a gzip NBT" fallback below
+                        break;
+                    }
                     inflated.insert(inflated.end(), chunk, chunk + produced);
+                }
             } while (rc != Z_STREAM_END && zs.avail_in > 0);
             inflateEnd(&zs);
             if (rc == Z_STREAM_END && !inflated.empty()) {

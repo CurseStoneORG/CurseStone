@@ -38,6 +38,12 @@ extern "C" {
 
 #define MCP_SM_PACKET_LIMIT 250 // max packets per IP per tick (anti-flood)
 #define MCP_SM_PORT_CHECKING true
+// Hard cap on live sessions. Each mcp_rak_session_t is a few hundred KB of
+// fixed arrays (recv/reliable windows, recovery ring, split slots, order
+// holds); without a cap, unauthenticated 0x05/0x07 traffic from many source
+// ports allocates memory faster than the 30 s timeout sweep can reap it.
+// 512 covers max-players plus handshake overlap comfortably.
+#define MCP_SM_MAX_SESSIONS 512
 
 typedef struct mcp_rak_session_manager {
     mcp_udp_socket_t socket;

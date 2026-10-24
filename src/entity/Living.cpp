@@ -185,14 +185,13 @@ void Living::tickEffects() {
     if (effects_.empty())
         return;
 
-    // Snapshot effect pointers because callbacks may modify the effect list.
-    std::vector<Effect*> snapshot;
-    snapshot.reserve(effects_.size());
-    for (auto& e : effects_)
-        snapshot.push_back(e.get());
+    // Snapshot effect OWNERSHIP (shared_ptr, not raw pointers): a callback
+    // fired by applyEffectBehavior may remove effects, destroying them while
+    // this loop is still iterating.
+    std::vector<std::shared_ptr<Effect>> snapshot(effects_.begin(), effects_.end());
 
     std::vector<uint8_t> expired;
-    for (Effect* e : snapshot) {
+    for (auto& e : snapshot) {
         e->tick();
         if (e->isExpired()) {
             expired.push_back((uint8_t)e->id());

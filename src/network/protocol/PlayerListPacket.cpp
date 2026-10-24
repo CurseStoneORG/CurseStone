@@ -52,6 +52,11 @@ bool PlayerListPacket::decode(const uint8_t* data, size_t len) {
         return false;
     if (count < 0)
         return false;
+    // A hostile count must not reach reserve(): up to 2^31-1 here would ask
+    // for a multi-GB allocation (std::bad_alloc escapes decode and kills the
+    // process). Legit lists never exceed the u16 player-id space.
+    if (count > 65535)
+        return false;
     entries.clear();
     entries.reserve(count);
     for (int32_t i = 0; i < count; ++i) {

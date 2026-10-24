@@ -175,6 +175,9 @@ bool LoginPacket::decode(const uint8_t* data, size_t len) {
             inflated.reserve(compressed.size() * 4);
             uint8_t buf[16 * 1024];
             int ret;
+            // Same ceiling as BatchPacket: pre-auth input, ~1000:1 expansion
+            // possible, no output cap means an OOM-kill flood.
+            static const size_t kMaxInflated = 8u << 20; // 8 MiB
             do {
                 zs.next_out = buf;
                 zs.avail_out = sizeof(buf);
@@ -186,7 +189,14 @@ bool LoginPacket::decode(const uint8_t* data, size_t len) {
                         std::string("zlib inflate error: ") + (zs.msg ? zs.msg : "unknown");
                     return false;
                 }
-                inflated.insert(inflated.end(), buf, buf + (sizeof(buf) - zs.avail_out));
+                size_t produced = sizeof(buf) - zs.avail_out;
+                if (produced > 0) {
+                    if (inflated.size() + produced > kMaxInflated) {
+                        inflateEnd(&zs);
+                        return fail("inflated login payload too large");
+                    }
+                    inflated.insert(inflated.end(), buf, buf + produced);
+                }
             } while (ret != Z_STREAM_END);
             inflateEnd(&zs);
         }

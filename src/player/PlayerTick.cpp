@@ -584,8 +584,12 @@ void Player::onUpdate(uint64_t current_tick) {
 
             size_t outLen = 0;
             uint8_t* buf = mcp_chunk_network_serialize(ch, &outLen);
-            if (!buf || outLen == 0)
+            if (!buf)
                 continue;
+            if (outLen == 0) {
+                free(buf);
+                continue;
+            }
             auto pk = std::make_shared<network::protocol::FullChunkDataPacket>();
             pk->chunkX = chX;
             pk->chunkZ = chZ;

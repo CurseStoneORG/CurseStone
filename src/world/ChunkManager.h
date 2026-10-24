@@ -117,6 +117,13 @@ class ChunkManager {
     // Numero de chunks en memoria con cambios sin escribir. El autosave
     // lo usa para saber si tiene que seguir drenando el flush.
     size_t dirtyCount() const;
+    // Number of chunk-generation requests currently in flight. unloadWorld
+    // waits on this before destroying the world: the completion callback
+    // runs on a worker thread and captures this ChunkManager.
+    size_t pendingCount() const {
+        std::lock_guard<std::mutex> lk(pending_mtx_);
+        return pending_.size();
+    }
     void setProvider(std::shared_ptr<format::WorldProvider> p) {
         provider_ = std::move(p);
     }

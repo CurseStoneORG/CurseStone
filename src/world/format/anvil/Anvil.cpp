@@ -145,6 +145,10 @@ static bool gzip_compress(const uint8_t* src, size_t src_len, std::vector<uint8_
 
 // GZIP-decompress `src` → `out`. Returns false on inflate error.
 static bool gzip_decompress(const uint8_t* src, size_t src_len, std::vector<uint8_t>* out) {
+    // Ceiling per record: chunk payloads are at most ~1 MiB compressed and
+    // a few MB inflated; a corrupt/hostile region file must not be able to
+    // ask for gigabytes.
+    static const size_t kMaxDecompressed = 64u << 20; // 64 MiB
     z_stream zs{};
     if (inflateInit2(&zs, 15 | 16) != Z_OK)
         return false; // gzip
@@ -166,6 +170,10 @@ static bool gzip_decompress(const uint8_t* src, size_t src_len, std::vector<uint
         }
         size_t produced = sizeof(chunk) - zs.avail_out;
         if (produced > 0) {
+            if (out->size() + produced > kMaxDecompressed) {
+                inflateEnd(&zs);
+                return false;
+            }
             out->insert(out->end(), chunk, chunk + produced);
         }
     } while (rc != Z_STREAM_END && zs.avail_in > 0);
@@ -207,6 +215,7 @@ static bool zlib_compress(const uint8_t* src, size_t src_len, std::vector<uint8_
 
 // ZLIB-decompress (raw inflate).
 static bool zlib_decompress(const uint8_t* src, size_t src_len, std::vector<uint8_t>* out) {
+    static const size_t kMaxDecompressed = 64u << 20; // 64 MiB (see gzip_decompress)
     z_stream zs{};
     if (inflateInit(&zs) != Z_OK)
         return false;
@@ -226,6 +235,10 @@ static bool zlib_decompress(const uint8_t* src, size_t src_len, std::vector<uint
         }
         size_t produced = sizeof(chunk) - zs.avail_out;
         if (produced > 0) {
+            if (out->size() + produced > kMaxDecompressed) {
+                inflateEnd(&zs);
+                return false;
+            }
             out->insert(out->end(), chunk, chunk + produced);
         }
     } while (rc != Z_STREAM_END && zs.avail_in > 0);

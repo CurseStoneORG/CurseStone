@@ -107,6 +107,9 @@ bool BatchPacket::decode(const uint8_t* data, size_t len) {
     // Try 3: streaming zlib inflate (handles larger batches and partial failures)
 try_streaming_zlib:
     {
+        // Hard ceiling on inflated output: a zlib bomb can otherwise expand
+        // ~1000:1 and the request is answered before any session exists.
+        static const size_t kMaxInflated = 8u << 20; // 8 MiB
         z_stream zs;
         std::memset(&zs, 0, sizeof(zs));
         if (inflateInit(&zs) != Z_OK)
@@ -126,7 +129,14 @@ try_streaming_zlib:
                 inflateEnd(&zs);
                 return false;
             }
-            inflated.insert(inflated.end(), buf, buf + (sizeof(buf) - zs.avail_out));
+            size_t produced = sizeof(buf) - zs.avail_out;
+            if (produced > 0) {
+                if (inflated.size() + produced > kMaxInflated) {
+                    inflateEnd(&zs);
+                    return false;
+                }
+                inflated.insert(inflated.end(), buf, buf + produced);
+            }
         } while (ret != Z_STREAM_END);
         inflateEnd(&zs);
         payload_ = std::move(inflated);

@@ -405,7 +405,12 @@ void Normal::generate(GenerationContext& ctx) {
                     // depths the way vanilla mixes stone into the
                     // subsurface.
                     if (id == (uint8_t)BlockId::STONE && y < h - 1 && y > 4) {
-                        if (((unsigned)(wx * 73856093 ^ wz * 19349663 ^ y * 83492791)) % 23u == 0u)
+                        // Hash in uint32_t: the multiply-const mix intends
+                        // 32-bit wraparound, signed int overflow is UB.
+                        if (((uint32_t)wx * 73856093u ^ (uint32_t)wz * 19349663u ^
+                             (uint32_t)y * 83492791u) %
+                                23u ==
+                            0u)
                             id = (uint8_t)BlockId::DIRT;
                     }
                     const int sy = (unsigned)y >> 4;

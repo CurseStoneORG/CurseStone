@@ -81,8 +81,11 @@ int wrapRegion(int value) {
 // (seed, regionX, regionZ) — copied from StructurePopulator so both
 // structure types share the exact same rigid placement math.
 void regionCandidate(int64_t seed, int regionX, int regionZ, int salt, int& chunkX, int& chunkZ) {
-    MersenneRandom rng(seed * 341873128712LL + (int64_t)regionX * 341873128712LL +
-                       (int64_t)regionZ * 132897987541LL + (int64_t)salt);
+    // 64-bit wraparound is the intended seed mix; signed overflow is UB.
+    MersenneRandom rng((int64_t)((uint64_t)seed * 341873128712ULL +
+                                 (uint64_t)(int64_t)regionX * 341873128712ULL +
+                                 (uint64_t)(int64_t)regionZ * 132897987541ULL +
+                                 (uint64_t)(int64_t)salt));
     const int span = kSpacing - kSeparation;
     chunkX =
         regionX * kSpacing + wrapRegion(regionX * kSpacing + kSeparation + (int)rng.nextInt(span));
@@ -279,8 +282,11 @@ void buildLayout(int64_t seed, int regionX, int regionZ, int anchorChunkX, int a
 
     // The layout rng is mixed differently from regionCandidate's so the
     // well offset and the anchor chunk cannot correlate.
-    MersenneRandom rng(seed * 341873128712LL + (int64_t)regionX * 132897987541LL +
-                       (int64_t)regionZ * 341873128712LL + kSalt * 2 + 0x5F3759DFLL);
+    // 64-bit wraparound is the intended mix; signed overflow is UB.
+    MersenneRandom rng((int64_t)((uint64_t)seed * 341873128712ULL +
+                                 (uint64_t)(int64_t)regionX * 132897987541ULL +
+                                 (uint64_t)(int64_t)regionZ * 341873128712ULL +
+                                 (uint64_t)(kSalt * 2) + 0x5F3759DFULL));
 
     // Well: inside the anchor chunk, nudged so the roads leave from a
     // spot near its middle instead of a corner.

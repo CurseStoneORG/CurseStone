@@ -197,8 +197,12 @@ void Player::sendChunk(int cx, int cz) {
         return;
     size_t outLen = 0;
     uint8_t* buf = mcp_chunk_network_serialize(ch, &outLen);
-    if (!buf || outLen == 0)
+    if (!buf)
         return;
+    if (outLen == 0) {
+        free(buf);
+        return;
+    }
     auto pk = std::make_shared<network::protocol::FullChunkDataPacket>();
     pk->chunkX = cx;
     pk->chunkZ = cz;

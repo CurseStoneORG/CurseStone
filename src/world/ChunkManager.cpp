@@ -46,6 +46,10 @@ namespace cursestone::world {
 ChunkManager::ChunkManager() {
 }
 ChunkManager::~ChunkManager() {
+    // Generation workers may still be running while the destructor runs
+    // (process shutdown drains the pool first, but be robust); hold the
+    // same lock the workers take when they install chunks.
+    std::lock_guard<std::mutex> lk(mtx_);
     for (auto& kv : chunks_)
         if (kv.second)
             mcp_chunk_destroy(kv.second);

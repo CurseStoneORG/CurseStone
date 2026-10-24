@@ -2065,20 +2065,26 @@ namespace {
 
 class LightningRemovalTask : public scheduler::Task {
   public:
-    LightningRemovalTask(int64_t eid, World* world) : eid_(eid), world_(world) {
+    LightningRemovalTask(int64_t eid, std::string worldName)
+        : eid_(eid), world_name_(std::move(worldName)) {
     }
     void onRun() override {
         auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
         rm->eid = eid_;
         for (auto& p : Server::getInstance().playersSnapshot()) {
-            if (p && p->spawned() && p->getWorld() == world_)
+            if (!p || !p->spawned())
+                continue;
+            world::World* w = p->getWorld();
+            // Match by name: holding a World* here dangles when the world is
+            // unloaded during the 20-tick delay.
+            if (w && w->name() == world_name_)
                 p->sendPacket(rm);
         }
     }
 
   private:
     int64_t eid_;
-    World* world_; // World where the lightning struck.
+    std::string world_name_; // Survives a world unload without dangling.
 };
 
 } // namespace
@@ -2106,7 +2112,7 @@ void World::spawnLightning(double x, double y, double z, bool withFire) {
 
     // Despawn (: age > 20 ticks).
     scheduler::ServerScheduler::get().scheduleSync(
-        std::make_shared<LightningRemovalTask>(eid, this), 20);
+        std::make_shared<LightningRemovalTask>(eid, name()), 20);
 
     if (Server::getInstance().difficulty() > 0) {
         for (auto& p : Server::getInstance().playersSnapshot()) {

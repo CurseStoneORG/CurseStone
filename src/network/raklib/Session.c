@@ -355,7 +355,8 @@ size_t mcp_rak_session_build_datagram(mcp_rak_session_t* s, uint8_t* out, size_t
     // be confirmed and might actually need a resend.
     if (is_reliable) {
         uint32_t slot = (seq & MCP_SEQ24_MASK) % MCP_RECOVERY_CAP;
-        if (s->recovery[slot].data) {
+        bool overwrite = s->recovery[slot].data != NULL;
+        if (overwrite) {
             // FIX: this slot still holds an un-ACKed datagram — we're about
             // to overwrite (permanently lose) it before the client ever
             // confirmed receipt. This used to happen silently; now it's
@@ -367,10 +368,6 @@ size_t mcp_rak_session_build_datagram(mcp_rak_session_t* s, uint8_t* out, size_t
             // occupancy unchanged: freeing an old occupant and storing a
             // new one in the same slot is a like-for-like replacement,
             // not growth
-        } else {
-            s->diag_recovery_occupied++;
-            if (s->diag_recovery_occupied > s->diag_recovery_peak)
-                s->diag_recovery_peak = s->diag_recovery_occupied;
         }
         s->recovery[slot].data = (uint8_t*)malloc(i);
         if (s->recovery[slot].data) {
@@ -380,6 +377,14 @@ size_t mcp_rak_session_build_datagram(mcp_rak_session_t* s, uint8_t* out, size_t
             s->recovery[slot].send_time_ms = mcp_utils_time_ms();
             s->recovery[slot].retries = 0;
             s->diag_bytes_sent += i;
+            // Count the new occupant only after the allocation succeeded:
+            // this counter gates reliable-send backpressure, so a failed
+            // malloc must not consume capacity forever.
+            if (!overwrite) {
+                s->diag_recovery_occupied++;
+                if (s->diag_recovery_occupied > s->diag_recovery_peak)
+                    s->diag_recovery_peak = s->diag_recovery_occupied;
+            }
             if (s->diag_recovery_occupied > s->diag_inflight_peak)
                 s->diag_inflight_peak = s->diag_recovery_occupied;
         }
@@ -500,10 +505,15 @@ bool mcp_rak_session_enqueue(mcp_rak_session_t* s, const uint8_t* data, size_t l
     if (s->send_queue_count == s->send_queue_cap) {
         size_t nc = s->send_queue_cap == 0 ? 8 : s->send_queue_cap * 2;
         uint8_t** nb = (uint8_t**)realloc(s->send_queue_bufs, nc * sizeof(uint8_t*));
-        size_t* nl = (size_t*)realloc(s->send_queue_lens, nc * sizeof(size_t));
-        if (!nb || !nl)
+        if (!nb)
             return false;
+        // Commit the first array before touching the second: if the second
+        // realloc fails, the struct must never keep a pointer realloc may
+        // have already freed.
         s->send_queue_bufs = nb;
+        size_t* nl = (size_t*)realloc(s->send_queue_lens, nc * sizeof(size_t));
+        if (!nl)
+            return false;
         s->send_queue_lens = nl;
         s->send_queue_cap = nc;
     }

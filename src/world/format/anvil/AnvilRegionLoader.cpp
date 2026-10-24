@@ -284,6 +284,12 @@ bool AnvilRegionLoader::writeChunk(int32_t lx, int32_t lz, uint8_t compression,
     long needed_end = byte_off + (long)sectors * (long)kSectorSize;
     if (cur_end < needed_end) {
         long pad = needed_end - cur_end;
+        // A corrupt location table (e.g. offset 0xFFFFFF) can demand an
+        // absurd zero-pad; refuse instead of allocating it (and dying in
+        // std::bad_alloc) or writing gigabytes of zeros.
+        if (pad > (long)(64 * 1024 * 1024)) {
+            return false;
+        }
         std::vector<uint8_t> zero(pad, 0);
         std::fseek(fp_, cur_end, SEEK_SET);
         if (std::fwrite(zero.data(), 1, zero.size(), fp_) != zero.size())
