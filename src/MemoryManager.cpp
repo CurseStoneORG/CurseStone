@@ -88,7 +88,9 @@ void MemoryManager::collect(bool force) {
     // 1) Chunk GC — free chunks no viewer can see, flushed + saved.
     //    Runs here INSTEAD of Server::tick's own 100-tick sweep: same
     //    amount of work, but on the single coordinated GC schedule.
-    if (world::World* lvl = Server::getInstance().getDefaultWorld()) {
+    //    Every world is swept: chunks in non-default worlds were never
+    //    evicted before (unbounded growth on Nether/plugin worlds).
+    {
         std::vector<world::World::ChunkViewer> viewers;
         {
             auto snap = Server::getInstance().playersSnapshot();
@@ -100,10 +102,15 @@ void MemoryManager::collect(bool force) {
             }
         }
         if (!viewers.empty()) {
-            int unloaded = lvl->unloadDistantChunks(viewers);
-            if (unloaded > 0 && Server::getInstance().advancedLog()) {
-                utils::MainLogger::get().info("[GC] Unloaded " + std::to_string(unloaded) +
-                                              " chunk(s) out of view.");
+            for (world::World* lvl : Server::getInstance().getWorlds()) {
+                if (!lvl)
+                    continue;
+                int unloaded = lvl->unloadDistantChunks(viewers);
+                if (unloaded > 0 && Server::getInstance().advancedLog()) {
+                    utils::MainLogger::get().info("[GC] Unloaded " + std::to_string(unloaded) +
+                                                  " chunk(s) out of view in '" + lvl->name() +
+                                                  "'.");
+                }
             }
         }
     }
@@ -111,9 +118,12 @@ void MemoryManager::collect(bool force) {
     // 2) Dropped-item GC — despawn items by AGE (5 min like vanilla),
     //    then drop taken entries. The removal happens on the GC's own
     //    schedule, never mid-pickup inside a player's update handler:
-    //    this is what fixes the pickup/rollback desync.
-    if (world::World* lvl = Server::getInstance().getDefaultWorld()) {
-        lvl->collectDroppedItems(tick);
+    //    this is what fixes the pickup/rollback desync. Sweeps every
+    //    world; items dropped outside the default world were never
+    //    erased before (permanent per-entry leak).
+    for (world::World* lvl : Server::getInstance().getWorlds()) {
+        if (lvl)
+            lvl->collectDroppedItems(tick);
     }
 
 #ifdef __GLIBC__

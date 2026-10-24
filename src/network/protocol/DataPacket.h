@@ -197,8 +197,11 @@ class PacketWriter {
 
     // BE-prefixed string: 2-byte BE length + bytes. Mirrors the reference server putString.
     void writeBEString(const std::string& s) {
-        writeU16BE(static_cast<uint16_t>(s.size()));
-        out_.insert(out_.end(), s.data(), s.data() + s.size());
+        // The 0.15 field carries a u16 length; truncate oversized strings
+        // instead of wrapping the length while writing every byte.
+        size_t n = s.size() > 65535 ? 65535 : s.size();
+        writeU16BE(static_cast<uint16_t>(n));
+        out_.insert(out_.end(), s.data(), s.data() + n);
     }
     // VarInt-prefixed string (used by some newer fields).
     void writeString(const std::string& s) {

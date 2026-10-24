@@ -58,6 +58,10 @@
 // Singleton
 static mcp_async_logger_t g_async;
 static bool g_async_initialized = false;
+// Once explicitly destroyed (process shutdown), the async logger must never
+// be respawned: a lazy re-init would spawn a fresh joinable worker thread
+// mid-teardown whose FILE* and mutex are never cleaned up.
+static bool g_async_destroyed = false;
 
 // Helpers — format timestamp, level name, ANSI color
 static void format_timestamp(char* buf, size_t bufsz) {
@@ -368,7 +372,7 @@ static void* async_worker_fn(void* arg) {
 
 // Public API
 void mcp_main_logger_async_init(const char* log_path, bool colored) {
-    if (g_async_initialized)
+    if (g_async_initialized || g_async_destroyed)
         return;
 
     mcp_terminal_init(colored);
@@ -438,10 +442,11 @@ void mcp_main_logger_async_destroy(void) {
     mcp_cond_destroy(&g_async.cond);
 
     g_async_initialized = false;
+    g_async_destroyed = true;
 }
 
 mcp_async_logger_t* mcp_async_logger_get_instance(void) {
-    if (!g_async_initialized) {
+    if (!g_async_initialized && !g_async_destroyed) {
         mcp_main_logger_async_init(NULL, true);
     }
     return &g_async;

@@ -66,8 +66,12 @@ int wrapRegion(int value) {
 // The chunk a region would put its structure in, plus which region that
 // chunk belongs to. Pure function of (seed, regionX, regionZ).
 void regionCandidate(int64_t seed, int regionX, int regionZ, int salt, int& chunkX, int& chunkZ) {
-    MersenneRandom rng(seed * 341873128712LL + (int64_t)regionX * 341873128712LL +
-                       (int64_t)regionZ * 132897987541LL + (int64_t)salt);
+    // 64-bit wraparound is the intended seed mix; signed overflow is UB.
+    // Must stay bit-identical to VillagePopulator::regionCandidate.
+    MersenneRandom rng((int64_t)((uint64_t)seed * 341873128712ULL +
+                                 (uint64_t)(int64_t)regionX * 341873128712ULL +
+                                 (uint64_t)(int64_t)regionZ * 132897987541ULL +
+                                 (uint64_t)(int64_t)salt));
     const int span = kSpacing - kSeparation;
     chunkX =
         regionX * kSpacing + wrapRegion(regionX * kSpacing + kSeparation + (int)rng.nextInt(span));

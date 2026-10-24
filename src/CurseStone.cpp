@@ -79,6 +79,7 @@
 #else
 // write() lives in <unistd.h> on POSIX platforms.
 #include <unistd.h>
+#include <sys/wait.h> // waitpid for the forked crash-dump child
 #endif
 
 namespace {
@@ -272,7 +273,23 @@ void handleSignal(int sig) {
     write(STDERR_FILENO, trace.c_str(), trace.size());
 
     if (g_crashDump) {
+#if !defined(_WIN32)
+        // Write the dump from a forked child: the crashing process may hold
+        // malloc arena locks or the logger mutex, so doing the malloc-heavy
+        // dump work in-process can deadlock before a single byte is written.
+        // fork() and waitpid() are async-signal-safe.
+        pid_t child = fork();
+        if (child == 0) {
+            g_crashDump->crash(reason, trace);
+            _exit(0);
+        }
+        if (child > 0) {
+            int st = 0;
+            waitpid(child, &st, 0);
+        }
+#else
         g_crashDump->crash(reason, trace);
+#endif
     }
 
     // Restore default handler and re-raise so the OS still reports

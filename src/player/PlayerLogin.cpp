@@ -91,8 +91,11 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
 
         sendPacket(resp);
 
-        close("disconnectionScreen.outdated" +
-              std::string(pk.protocol < network::protocol::CURRENT_PROTOCOL ? "Client" : "Server"));
+        // kick(), not close(): close() leaves the RakNet session open, so an
+        // outdated client that answers keepalives keeps a session (and a
+        // potential player slot) alive indefinitely.
+        kick("disconnectionScreen.outdated" +
+             std::string(pk.protocol < network::protocol::CURRENT_PROTOCOL ? "Client" : "Server"));
 
         return;
     }
@@ -104,6 +107,10 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
 
     // Store the client's skin for player-list entries.
     cfg_.skin_id = pk.skinId;
+    // skinId is an arbitrary client string echoed to every player via
+    // PlayerList/AddPlayer; clamp it so list packets stay well-formed.
+    if (cfg_.skin_id.size() > 128)
+        cfg_.skin_id.resize(128);
     cfg_.skin_data.assign(pk.skinData.begin(), pk.skinData.end());
 
     if (cfg_.skin_data.empty()) {
@@ -117,7 +124,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
 
     // Validate username length and allowed characters.
     if (cfg_.username.size() < 3 || cfg_.username.size() > 16) {
-        close("disconnectionScreen.invalidName");
+        kick("disconnectionScreen.invalidName");
         return;
     }
 
@@ -126,7 +133,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
             (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
 
         if (!ok) {
-            close("disconnectionScreen.invalidName");
+            kick("disconnectionScreen.invalidName");
             return;
         }
     }
@@ -139,7 +146,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
     });
 
     if (lower == "rcon" || lower == "console") {
-        close("disconnectionScreen.invalidName");
+        kick("disconnectionScreen.invalidName");
         return;
     }
 
@@ -164,13 +171,13 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
 
     // Check whitelist and bans.
     if (!isWhitelisted()) {
-        close("Server is white-listed");
+        kick("Server is white-listed");
         return;
     }
 
     if (srv_ &&
         (srv_->getNameBans().isBanned(cfg_.username) || srv_->getIPBans().isBanned(cfg_.ip))) {
-        close("You are banned");
+        kick("You are banned");
         return;
     }
 

@@ -75,6 +75,10 @@ void mcp_server_handler_close_session(mcp_server_handler_t* h, const uint8_t ip[
     mcp_rak_session_manager_t* m = h->manager;
     for (size_t i = 0; i < m->session_count; ++i) {
         if (memcmp(m->sessions[i]->ip, ip, 4) == 0 && m->sessions[i]->port == port) {
+            // Release the session-owned buffers (recovery, split segments,
+            // order holds) before freeing the struct, like every other
+            // teardown path does.
+            mcp_rak_session_destroy(m->sessions[i]);
             free(m->sessions[i]);
             m->sessions[i] = m->sessions[--m->session_count];
             return;

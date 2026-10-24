@@ -140,10 +140,12 @@ void Player::handleBlockBreak(int x, int y, int z) {
     if (y < 0 || y >= 256)
         return;
 
-    // Get the chunk containing this block.
+    // Get the chunk containing this block. Use the loaded-chunk lookup:
+    // getChunk() here would synchronously generate (and later save) chunks
+    // at any attacker-chosen coordinate from a RemoveBlockPacket.
     int32_t cx = x >> 4;
     int32_t cz = z >> 4;
-    mcp_chunk_t* ch = lvl->chunks().getChunk(cx, cz);
+    mcp_chunk_t* ch = lvl->chunks().getChunkIfLoaded(cx, cz);
     if (!ch)
         return;
 

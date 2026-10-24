@@ -66,7 +66,20 @@ static char* read_name(mcp_bstream_t* s, bool le, size_t* out_len) {
     return buf;
 }
 
+// Maximum nesting depth accepted by the parser. Vanilla NBT stays far below
+// this; the cap turns a wire-controlled recursion (stack exhaustion) into a
+// normal parse failure.
+#define MCP_NBT_MAX_DEPTH 128
+
+static mcp_tag_t* read_payload_depth(mcp_bstream_t* s, mcp_tag_type_t type, bool le, int depth);
+
 mcp_tag_t* mcp_nbt_read_payload(mcp_bstream_t* s, mcp_tag_type_t type, bool le) {
+    return read_payload_depth(s, type, le, 0);
+}
+
+static mcp_tag_t* read_payload_depth(mcp_bstream_t* s, mcp_tag_type_t type, bool le, int depth) {
+    if (depth > MCP_NBT_MAX_DEPTH)
+        return NULL;
     switch (type) {
     case MCP_TAG_BYTE: {
         int8_t v;
@@ -148,7 +161,7 @@ mcp_tag_t* mcp_nbt_read_payload(mcp_bstream_t* s, mcp_tag_type_t type, bool le) 
             return list;
         }
         for (uint32_t i = 0; i < count; ++i) {
-            mcp_tag_t* child = mcp_nbt_read_payload(s, (mcp_tag_type_t)et, le);
+            mcp_tag_t* child = read_payload_depth(s, (mcp_tag_type_t)et, le, depth + 1);
             if (!child) {
                 mcp_tag_destroy(list);
                 return NULL;
@@ -177,7 +190,7 @@ mcp_tag_t* mcp_nbt_read_payload(mcp_bstream_t* s, mcp_tag_type_t type, bool le) 
                 mcp_tag_destroy(comp);
                 return NULL;
             }
-            mcp_tag_t* child = mcp_nbt_read_payload(s, (mcp_tag_type_t)childType, le);
+            mcp_tag_t* child = read_payload_depth(s, (mcp_tag_type_t)childType, le, depth + 1);
             if (!child) {
                 free(name);
                 mcp_tag_destroy(comp);
@@ -192,6 +205,10 @@ mcp_tag_t* mcp_nbt_read_payload(mcp_bstream_t* s, mcp_tag_type_t type, bool le) 
     case MCP_TAG_INT_ARRAY: {
         uint32_t count;
         if (le ? mcp_bstream_read_u32_le(s, &count) : mcp_bstream_read_u32_be(s, &count))
+            return NULL;
+        // The wire must actually carry `count` ints. Division (not count*4)
+        // so the check itself cannot overflow on 32-bit size_t.
+        if (count > mcp_bstream_remaining(s) / sizeof(int32_t))
             return NULL;
         int32_t* data = (int32_t*)malloc((count ? count : 1) * sizeof(int32_t));
         if (!data)

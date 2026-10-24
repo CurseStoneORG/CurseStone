@@ -50,6 +50,7 @@ static void pkt_decode(void* self, mcp_bstream_t* in) {
     mcp_bstream_read_bytes(in, p->server_id_str, 8);
     char* motd = mcp_bstream_read_string(in);
     if (motd) {
+        free(p->motd);
         p->motd = motd;
         p->motd_len = strlen(motd);
     }
@@ -59,9 +60,11 @@ static size_t pkt_size(const void* self) {
     return 256;
 }
 static void pkt_destroy(void* self) {
-    if (!self)
+    mcp_pkt_unconnected_pong_t* p = (mcp_pkt_unconnected_pong_t*)self;
+    if (!p)
         return;
-    free(self);
+    free(p->motd);
+    free(p);
 }
 static const mcp_packet_vtable_t VT = {pkt_id, pkt_encode, pkt_decode, pkt_size, pkt_destroy};
 

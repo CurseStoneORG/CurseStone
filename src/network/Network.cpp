@@ -245,7 +245,25 @@ std::shared_ptr<protocol::DataPacket> Network::decodePacketById(uint8_t pid, con
                                                /*console=*/false);
         return nullptr;
     }
-    bool ok = pkt->decode(body, bodyLen);
+    bool ok = false;
+    // A decode-time allocation failure (std::bad_alloc) must not escape into
+    // the tick loop: there is no try/catch up the stack, so it would reach
+    // std::terminate and kill the whole server.
+    try {
+        ok = pkt->decode(body, bodyLen);
+    } catch (const std::exception& e) {
+        char pidHex[4];
+        snprintf(pidHex, sizeof(pidHex), "%02x", pid);
+        utils::MainLogger::get().error(std::string("decode() threw for id 0x") + pidHex +
+                                       " from " + who + ": " + e.what());
+        return nullptr;
+    } catch (...) {
+        char pidHex[4];
+        snprintf(pidHex, sizeof(pidHex), "%02x", pid);
+        utils::MainLogger::get().error(std::string("decode() threw for id 0x") + pidHex +
+                                       " from " + who);
+        return nullptr;
+    }
     if (!ok) {
         // Decode failed — record it ALWAYS (a malformed packet is exactly the
         // kind of thing that must show up in the crashdump).
@@ -353,6 +371,12 @@ void Network::removePlayer(Player* p) {
 void Network::tick() {
     for (auto& iface : interfaces_) {
         iface->tick();
+    }
+}
+
+void Network::shutdown() {
+    for (auto& iface : interfaces_) {
+        iface->shutdown();
     }
 }
 

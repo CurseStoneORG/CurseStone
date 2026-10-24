@@ -134,6 +134,8 @@ mcp_rak_session_t* mcp_rak_session_manager_get_or_create(mcp_rak_session_manager
     mcp_rak_session_t* s = mcp_rak_session_manager_find(sm, ip, port);
     if (s)
         return s;
+    if (sm->session_count >= MCP_SM_MAX_SESSIONS)
+        return NULL;
     if (sm->session_count == sm->session_capacity) {
         size_t nc = sm->session_capacity == 0 ? 8 : sm->session_capacity * 2;
         mcp_rak_session_t** arr =
@@ -1582,6 +1584,16 @@ static void handle_data_packet(mcp_rak_session_manager_t* sm, mcp_rak_session_t*
                 memset(slot, 0, sizeof(*slot));
             }
 
+            // A fragment whose declared split_count disagrees with the count
+            // the slot was created with would let segments land at indexes
+            // past the bound every free path walks (all of them stop at
+            // slot->count). Drop the fragment instead.
+            if (slot->in_use && slot->count != split_count) {
+                ptr += consumed;
+                rem -= consumed;
+                continue;
+            }
+
             if (!slot->in_use) {
                 // Freshly claimed slot — initialize for this split_id.
                 memset(slot, 0, sizeof(*slot));
@@ -1674,8 +1686,10 @@ static void handle_data_packet(mcp_rak_session_manager_t* sm, mcp_rak_session_t*
                 s->diag_split_completed++;
 
                 // Clean up this slot only — every other in-flight split_id
-                // for this session is untouched.
-                for (uint32_t k = 0; k < slot->count; ++k) {
+                // for this session is untouched. The array bound guards the
+                // walk in case slot->count ever disagrees with the stored
+                // segment indexes.
+                for (uint32_t k = 0; k < slot->count && k < MCP_MAX_SPLIT_SEGMENTS; ++k) {
                     if (slot->segments[k]) {
                         free(slot->segments[k]);
                         slot->segments[k] = NULL;
@@ -1942,6 +1956,17 @@ static void handle_unconnected(mcp_rak_session_manager_t* sm, const uint8_t* dat
     // ---- OPEN_CONNECTION_REQUEST_2 (0x07) ----
     if (pid == 0x07) {
         mcp_rak_session_t* s = mcp_rak_session_manager_find(sm, ip, port);
+        uint16_t mtu;
+        int64_t client_id;
+        uint16_t srv_port;
+        // Decode BEFORE creating anything: a malformed request must not
+        // leave a ~hundreds-of-KB session behind (they are only reaped by
+        // the 30 s timeout sweep).
+        if (!decode_ocr2(data, len, &mtu, &client_id, &srv_port)) {
+            note_handshake_drop(data, len, ip, port,
+                                "OPEN_CONNECTION_REQUEST_2 too short to parse");
+            return;
+        }
         if (!s) {
             // Can create fresh if state was lost
             s = mcp_rak_session_manager_get_or_create(sm, ip, port);
@@ -1950,14 +1975,6 @@ static void handle_unconnected(mcp_rak_session_manager_t* sm, const uint8_t* dat
                                     "no free session slot for OPEN_CONNECTION_REQUEST_2");
                 return;
             }
-        }
-        uint16_t mtu;
-        int64_t client_id;
-        uint16_t srv_port;
-        if (!decode_ocr2(data, len, &mtu, &client_id, &srv_port)) {
-            note_handshake_drop(data, len, ip, port,
-                                "OPEN_CONNECTION_REQUEST_2 too short to parse");
-            return;
         }
 
         // Clamp MTU like the reference server, then cap it by the server's own configured
