@@ -71,6 +71,36 @@ class PlayerInventory : public BaseInventory {
     }
     void setHeldItemIndex(int index);
 
+    // Reference (Genisys/PMMP 0.15) setHeldItemIndex(index, sendToHolder,
+    // slotMapping): MobEquipmentPacket is the ONLY client-driven place a
+    // hotbar-position -> inventory-slot link may change. slotMapping is the
+    // position's new inventory slot (the wire's padded absolute byte minus
+    // the hotbar size), or -1 for a blank selection. Without this remap a
+    // creative take that the client links to a non-default hotbar position
+    // desyncs the held item: the server keeps the identity link, so the
+    // holder reads an empty stack (bow unshootable) and viewers see no item.
+    void setHeldItemIndex(int index, int slotMapping) {
+        if (index < 0 || index >= PLAYER_INV_HOTBAR_SIZE)
+            return;
+        itemInHandIndex_ = index;
+        if (slotMapping < 0 || slotMapping >= SIZE) {
+            // Client selected a blank slot (wire byte 255): unlink the
+            // position so it renders as an empty hand.
+            hotbar_[index] = -1;
+            return;
+        }
+        // If another position already links the mapped slot, swap the two
+        // links: the client already performed the same swap client-side, so
+        // no inventory packets need to be sent.
+        for (int i = 0; i < PLAYER_INV_HOTBAR_SIZE; ++i) {
+            if (i != index && hotbar_[i] == slotMapping) {
+                hotbar_[i] = hotbar_[index];
+                break;
+            }
+        }
+        hotbar_[index] = slotMapping;
+    }
+
     int heldSlot() const {
         return getHotbarSlotIndex(itemInHandIndex_);
     }

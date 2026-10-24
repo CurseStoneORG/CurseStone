@@ -200,7 +200,7 @@ class MilkClient(Client):
         me += bytes([1])
         me += struct.pack(">h", meta)
         me += struct.pack("<H", 0)
-        me += bytes([hotbar, hotbar])
+        me += bytes([hotbar + 9, hotbar])
         self.send_game(me)
 
     def entity_event(self, event):
