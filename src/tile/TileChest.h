@@ -66,11 +66,10 @@ class TileChest : public Tile, public Container, public Nameable, public Spawnab
     }
 
     // How many players currently have this chest open. Player::openChestAt/
-    // closeOpenChest keep this in sync. Not used to gate concurrent access
-    // yet (this project's chest flow is single-viewer per player, not
-    // single-viewer per chest — two players CAN open the same chest at
-    // once, they just don't see each other's live changes; see
-    // PROMPT_CONTINUACION.md item 2 for the deliberately-small scope).
+    // closeOpenChest keep this in sync (drives the lid open/close events).
+    // Multiple players CAN hold this chest open at once — slot changes are
+    // resynced to every co-viewer via Player::broadcastChestSlotToViewers,
+    // so all of them see the same live content.
     int viewerCount() const {
         return viewer_count_;
     }
