@@ -25,6 +25,7 @@
 #include "item/ItemNbt.h"
 #include "nbt/tag/CompoundTag.h"
 #include "nbt/tag/ListTag.h"
+#include "utils/CRaii.h"
 namespace cursestone::tile {
 void TileChest::setItem(int slot, const cursestone::item::ItemStack& it) {
     if (slot < 0 || slot >= SIZE)
@@ -57,19 +58,25 @@ void TileChest::writeNBT(mcp_tag_t* tag) const {
     if (!tag)
         return;
     Tile::writeNBT(tag); // writes id/x/y/z
-    mcp_tag_t* items = mcp_list_tag_new_named("Items", MCP_TAG_COMPOUND);
+    utils::TagGuard items(mcp_list_tag_new_named("Items", MCP_TAG_COMPOUND));
+    if (!items)
+        return;
     auto contents = inventory_->getContents();
     for (const auto& [slot, stack] : contents) {
         if (stack.isEmpty())
             continue;
         if (slot < 0 || slot >= SIZE)
             continue;
-        mcp_tag_t* entry = mcp_compound_tag_new();
-        mcp_compound_tag_set_byte(entry, "Slot", static_cast<int8_t>(slot));
-        item::itemStackToNbt(stack, entry);
-        mcp_list_tag_append(items, entry);
+        utils::TagGuard entry(mcp_compound_tag_new());
+        if (!entry)
+            continue;
+        mcp_compound_tag_set_byte(entry.get(), "Slot", static_cast<int8_t>(slot));
+        item::itemStackToNbt(stack, entry.get());
+        if (mcp_list_tag_append(items.get(), entry.get()) == 0)
+            entry.release();
     }
-    mcp_compound_tag_set(tag, "Items", items);
+    if (mcp_compound_tag_set(tag, "Items", items.get()) == 0)
+        items.release();
 }
 
 void TileChest::readNBT(const mcp_tag_t* tag) {

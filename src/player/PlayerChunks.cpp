@@ -25,6 +25,7 @@
 #include "world/format/Chunk.h"
 #include "network/protocol/FullChunkDataPacket.h"
 #include "tile/Tile.h"
+#include "utils/CRaii.h"
 #include <cstdlib>
 #include <utility>
 #include <vector>
@@ -196,18 +197,15 @@ void Player::sendChunk(int cx, int cz) {
     if (!ch)
         return;
     size_t outLen = 0;
-    uint8_t* buf = mcp_chunk_network_serialize(ch, &outLen);
+    utils::BufferPtr buf(mcp_chunk_network_serialize(ch, &outLen));
     if (!buf)
         return;
-    if (outLen == 0) {
-        free(buf);
+    if (outLen == 0)
         return;
-    }
     auto pk = std::make_shared<network::protocol::FullChunkDataPacket>();
     pk->chunkX = cx;
     pk->chunkZ = cz;
-    pk->data.assign(buf, buf + outLen);
-    free(buf);
+    pk->data.assign(buf.get(), buf.get() + outLen);
     sendPacket(pk);
     sendChunkTiles(cx, cz);
     int64_t hash = ((int64_t)cx << 32) | ((uint32_t)cz);

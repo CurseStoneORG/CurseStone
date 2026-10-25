@@ -103,8 +103,15 @@ mcp_chunk_t* ChunkManager::getChunk(int32_t x, int32_t z) {
             ctx.chunk_z = z;
             ctx.biomes_in = nullptr;
             ctx.chunk = c;
-            generator_->generate(ctx);
-            generator_->populate(ctx);
+            // A throw here must not strand the half-built chunk (mirrors
+            // the async task's own cleanup).
+            try {
+                generator_->generate(ctx);
+                generator_->populate(ctx);
+            } catch (...) {
+                mcp_chunk_destroy(c);
+                throw;
+            }
 
             // Mark as populated + dirty (so it gets saved to disk).
             c->terrain_populated = true;

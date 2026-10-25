@@ -26,6 +26,7 @@
 #include "nbt/tag/CompoundTag.h"
 #include "nbt/tag/ListTag.h"
 #include "nbt/NBT.h"
+#include "utils/CRaii.h"
 
 namespace cursestone::item {
 
@@ -84,16 +85,15 @@ void itemStackToNbt(const ItemStack& stack, mcp_tag_t* entry) {
     // it little-endian on load rebuilds the exact wire format regardless
     // of how the player.dat itself is encoded.
     if (!stack.nbt.empty()) {
-        mcp_tag_t* tag = mcp_nbt_read_bytes(reinterpret_cast<const uint8_t*>(stack.nbt.data()),
-                                            stack.nbt.size(), /*little_endian=*/true);
-        if (tag && mcp_tag_get_type(tag) == MCP_TAG_COMPOUND) {
-            // Ownership transfers to `entry` (mcp_compound_tag_set stores
+        utils::TagGuard tag(mcp_nbt_read_bytes(reinterpret_cast<const uint8_t*>(stack.nbt.data()),
+                                               stack.nbt.size(), /*little_endian=*/true));
+        if (tag && mcp_tag_get_type(tag.get()) == MCP_TAG_COMPOUND &&
+            mcp_compound_tag_set(entry, kNbtTag, tag.get()) == 0) {
+            // Ownership transferred to `entry` (mcp_compound_tag_set stores
             // the pointer and destroys it together with the parent).
-            mcp_compound_tag_set(entry, kNbtTag, tag);
-        } else {
-            // Malformed blob — drop it rather than persist garbage.
-            mcp_tag_destroy(tag);
+            tag.release();
         }
+        // else: malformed blob — the guard drops it rather than persist garbage.
     } else {
         // An unnamed item must not drag a stale "tag" from a previous
         // incarnation of this entry along.
@@ -109,19 +109,20 @@ void itemStackToNbt(const ItemStack& stack, mcp_tag_t* entry) {
         return;
     }
 
-    mcp_tag_t* list = mcp_list_tag_new_named(kNbtEnch, MCP_TAG_COMPOUND);
+    utils::TagGuard list(mcp_list_tag_new_named(kNbtEnch, MCP_TAG_COMPOUND));
     if (!list)
         return;
     for (const auto& e : entries) {
-        mcp_tag_t* c = mcp_compound_tag_new();
+        utils::TagGuard c(mcp_compound_tag_new());
         if (!c)
             continue;
-        mcp_compound_tag_set_short(c, kNbtId, static_cast<int16_t>(e.id));
-        mcp_compound_tag_set_short(c, kNbtEnchLvl, static_cast<int16_t>(e.level));
-        if (mcp_list_tag_append(list, c) != 0)
-            mcp_tag_destroy(c);
+        mcp_compound_tag_set_short(c.get(), kNbtId, static_cast<int16_t>(e.id));
+        mcp_compound_tag_set_short(c.get(), kNbtEnchLvl, static_cast<int16_t>(e.level));
+        if (mcp_list_tag_append(list.get(), c.get()) == 0)
+            c.release(); // list owns it now; the guard only covers append failure.
     }
-    mcp_compound_tag_set(entry, kNbtEnch, list);
+    if (mcp_compound_tag_set(entry, kNbtEnch, list.get()) == 0)
+        list.release();
 }
 
 bool itemStackFromNbt(const mcp_tag_t* entry, ItemStack& out) {
@@ -156,7 +157,7 @@ bool itemStackFromNbt(const mcp_tag_t* entry, ItemStack& out) {
     const mcp_tag_t* tag = mcp_compound_tag_get(entry, kNbtTag);
     if (tag && mcp_tag_get_type(tag) == MCP_TAG_COMPOUND) {
         size_t raw_len = 0;
-        uint8_t* raw = mcp_nbt_write_bytes(tag, /*little_endian=*/true, &raw_len);
+        utils::BufferPtr raw(mcp_nbt_write_bytes(tag, /*little_endian=*/true, &raw_len));
         if (raw && raw_len >= 3) {
             const uint16_t name_len = (uint16_t)raw[1] | ((uint16_t)raw[2] << 8);
             const size_t payload_off = 3u + name_len; // type + len + name
@@ -165,11 +166,10 @@ bool itemStackFromNbt(const mcp_tag_t* entry, ItemStack& out) {
                 out.nbt.push_back((char)0x0A); // TAG_Compound root
                 out.nbt.push_back('\0');       // empty root name
                 out.nbt.push_back('\0');
-                out.nbt.append(reinterpret_cast<const char*>(raw) + payload_off,
+                out.nbt.append(reinterpret_cast<const char*>(raw.get()) + payload_off,
                                raw_len - payload_off);
             }
         }
-        free(raw);
         // Vanilla-authored data keeps "ench" INSIDE the tag compound; if
         // the entry-level list (CurseStone's own layout) was absent, read
         // it from there too so external player files keep their enchants.
