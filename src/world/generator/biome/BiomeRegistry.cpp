@@ -32,6 +32,7 @@ using namespace cursestone::world::generator::biome; // (Biome.h ids)
 const BiomeConfig& BiomeRegistry::forId(uint8_t id) {
     switch (id) {
     case BIOME_OCEAN:
+    case BIOME_FROZEN_OCEAN:
         return oceanBiome();
     // Rivers share the ocean's surface (sand/gravel bed, no trees).
     case BIOME_RIVER:

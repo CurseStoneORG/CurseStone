@@ -170,11 +170,11 @@ void plantChunkTrees(const TerrainNoise& noise, GenerationContext& ctx, int atte
         if (!isGroveBiome(cBiome))
             continue;
 
-        // 2-4 trees. The user asked for 3-4 blocks between trunks, which is
-        // also roughly what vanilla does, so that is the hard minimum. It is
-        // enforced against every trunk already placed in this chunk (see
-        // PlantedList), not just against the ones in this grove — otherwise
-        // two groves seeded in neighbouring chunks still land a block apart.
+        // 2-4 trees. Trunks keep a hard minimum of 4 blocks between them
+        // (roughly the vanilla grove look). It is enforced against every
+        // trunk already placed in this chunk (see PlantedList), not just
+        // against the ones in this grove — otherwise two groves seeded in
+        // neighbouring chunks still land a block apart.
         constexpr int kMinSpacing = 4;
         const int want = 2 + (int)rng.nextInt(3);
         std::vector<ClusterMember> placed;

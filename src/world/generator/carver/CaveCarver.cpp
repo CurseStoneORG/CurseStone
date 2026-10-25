@@ -275,8 +275,8 @@ void CaveCarver::digBlock(mcp_chunk_t* chunk, int8_t x, int16_t y, int8_t z) con
         // How tall is the opening we have just carved in this column? Walk
         // up and down from the block we hollowed out while the neighbours
         // are already air. A tall opening (a tunnel breaking out of a
-        // hillside, or a big room) is exactly the "carved 10+ blocks of
-        // height" case the player asked about.
+        // hillside, or a big room) is the case where fall-healing matters:
+        // 10+ blocks of headroom read as a real cave, not a crack.
         int upAir = 0;
         for (int yy = y + 1; yy <= 127 && bid(chunk, x, yy, z) == (uint8_t)BlockId::AIR; ++yy)
             ++upAir;

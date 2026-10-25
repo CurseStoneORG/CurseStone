@@ -230,35 +230,28 @@ inline double landMask(double cont) {
 
 // ---- River cross-section -----------------------------------------------
 // Ground height of a river as a function of the BLOCK distance `d` to the
-// centre line of the channel. Four tiers, and together they are what gives
-// a river its read from the bank:
+// centre line of the channel. Tiers, and together they are what gives a
+// river its read from the bank:
 //   * a flat bed, well under the water surface,
 //   * a short lip climbing to the water line,
-//   * a flat grass bank AT the water line, 2-3 blocks wide,
-//   * then a steady climb that terraces into the surrounding land.
+//   * a flat bank AT the water line, 2-3 blocks wide,
+//   * then a SHORT rise that blends into the surrounding land.
 //
-// The river used to be cut with a mask that dropped straight from untouched
-// ground to a fixed bed, which is why every reach ended in a sheer vertical
-// wall ("tan caido") with no bank and no steps. A smooth distance profile
-// cannot produce that: the ground only ever descends 1.1 blocks per block
-// outwards, so the smoothing kernel turns it into the stepped dirt/stone
-// banks the reference rivers have.
-// WIDER RIVERS (user request: "rios amplios, navegantes, mas vanilla").
-// The water half width is kRiverEdge * riverWidthScale, so these numbers
-// give ~8-15 blocks of open water on every reach (the old 2.4/3.2 gave
-// 4-8, too narrow to boat down comfortably and nothing like the broad
-// vanilla rivers). The bed stays a flat kSeaLevel-4 across the whole
-// kRiverBed half width, so the deep part is boat-worthy end to end.
-constexpr double kRiverBed = 3.8;   // half width carved to full depth
-constexpr double kRiverEdge = 5.2;  // where the bed reaches sea level
-constexpr double kRiverShore = 2.6; // flat grass bank at water level
-constexpr double kRiverClimb = 1.2; // lowland: gentle terraced banks
-constexpr double kCliffClimb = 5.0; // eroded gorge wall, ~65-75 deg once smoothed
-// How hard the river network is pulled towards the jungle belt, as a
-// fraction of the river field's own range. Roughly this many blocks of
-// sideways deflection across the gradient — big enough to visibly steer the
-// network, small enough that no reach is ever torn in two.
-constexpr double kRiverJungleBias = 0.24;
+// The profile is distance-based, so the carve only ever LOWERS the ground:
+// no mask blend, no blend towards a fixed bed that could raise low ground
+// back up and leave a dry channel.
+constexpr double kRiverBed = 2.9;   // half width carved to full depth
+constexpr double kRiverEdge = 4.0;  // where the bed reaches sea level
+constexpr double kRiverShore = 2.2; // flat bank at water level
+constexpr double kRiverClimb = 1.1; // lowland: gentle terraced banks
+constexpr double kCliffClimb = 2.0; // high ground: steeper but still walkable
+// The rise past the bank stops after this many blocks and lets the
+// surrounding terrain stand on its own. Vanilla rivers cut a channel, not
+// a ramp across the landscape: anything further out keeps its natural
+// height. (An uncapped ramp imposed the climb on every nearby column, and
+// where two meander bends ran close the ramps between them left thin
+// 1-block-wide ridge walls standing.)
+constexpr double kRiverRamp = 12.0;
 
 inline double riverProfile(double d, double climb, double width) {
     const double bed = (double)kSeaLevel - 4.0;
@@ -271,55 +264,43 @@ inline double riverProfile(double d, double climb, double width) {
         const double t = (d - kBed) / (kEdge - kBed);
         return bed + ((double)kSeaLevel - bed) * t;
     }
-    // Flat bank at the water line, then the climb. The flat tier has to be an
-    // explicit clamp, not just the start of the climb: without it the
+    // Flat bank at the water line, then the short rise. The flat tier has to
+    // be an explicit clamp, not just the start of the climb: without it the
     // profile keeps rising straight through sea level and the "bank" ends
     // up under the water instead of being a flat shelf beside it.
     if (d <= kEdge + kShr)
         return (double)kSeaLevel;
-    // Capped so a mountain cannot be cut into a bottomless trench; past the
-    // cap the broad valley terms take over.
-    const double dc = std::min(d, kEdge + kShr + 40.0);
+    const double dc = std::min(d, kEdge + kShr + kRiverRamp);
     return (double)kSeaLevel + (dc - kEdge - kShr) * climb;
 }
 
-// How steeply a river bank climbs. `cliff` is the erosion regime of the
+// How steeply a river bank climbs. `cliff` is the relief regime of the
 // reach, in [0,1] — see where it is computed in rawColumnHeight.
 //
-// This is what separates a lowland river from a high-country one. Down in
-// the plains a river meanders across a gentle slope, so its banks stay
-// softly terraced. High up — a savanna plateau, a mountain — the same water
-// has to fall the same height over a much shorter run, and it cuts a CLIFF:
-// the gradient steepens towards 80 degrees, which is what an eroded gorge
-// through high ground actually looks like.
-//
-// kCliffClimb sits above the raw tangent on purpose. The (1,4,1) smoothing
-// kernel averages every column with its eight neighbours, so a raw wall
-// rising R blocks per column comes out as roughly R/2.4 — there is a factor
-// between this constant and the slope you actually walk up. Measured on the
-// carved world: 17.0 came out at a median 76-82 degree wall, which was too
-// sheer; 5.0 measures a median near 70 degrees, inside the 65-75 band that
-// was asked for. The tail above the band is the mountain's OWN relief, not
-// the river profile — the lowland band sits at 63 degrees on the same
-// measurement.
+// Down in the plains a river meanders across a gentle slope, so its banks
+// stay softly terraced. High ground stands well above the water, and the
+// same 12-block rise has to absorb more height, so the bank steepens —
+// but it stays a bank, not a gorge: vanilla rivers never cut vertical
+// walls, and the (1,4,1) smoothing kernel turns even the steep end into
+// 2-3 block steps.
 inline double riverClimbRate(double cliff) {
     return kRiverClimb + cliff * (kCliffClimb - kRiverClimb);
 }
 
 // How wide this reach of river is, as a scale on kRiverBed/kRiverEdge.
 //
-// riverDistance() divides the river field by its gradient precisely so the
-// water keeps a constant width whether the field is steep or nearly flat —
-// that is what stops a flat spot from inflating the river into a lake. But
-// it is also exactly why every single reach came out the same width, which
-// is not how a river behaves: real ones run narrow and quick in one stretch
-// and broad and slow in the next. This slow field (roughly 900-block
-// wavelength) restores that variation without reintroducing the ponds,
-// because it scales a distance threshold rather than a field threshold.
+// riverDistance() divides the river field by its gradient so the water
+// keeps a constant width whether the field is steep or nearly flat — that
+// is what stops a flat spot from inflating the river into a lake. The
+// width field restores the variation vanilla has: narrow, quick stretches
+// and broad, slow ones. It is deliberately low-frequency (wavelength over
+// a thousand blocks) so the width changes gradually along a reach, and it
+// scales a distance threshold rather than a field threshold, so it cannot
+// reintroduce the ponds.
 inline double riverWidthScale(const TerrainNoise& n, double wx, double wz) {
     const double w =
-        noiseFbm2d(n.surface, wx * 0.0011 + 61000.0, wz * 0.0011 - 27000.0, 2, 0.5, 2.0);
-    return 0.75 + 0.68 * (w * 0.5 + 0.5); // 0.75 .. 1.43
+        noiseFbm2d(n.surface, wx * 0.0007 + 61000.0, wz * 0.0007 - 27000.0, 2, 0.5, 2.0);
+    return 0.55 + 1.05 * (w * 0.5 + 0.5); // 0.55 .. 1.60
 }
 
 // Half width of the water at this column. riverMask, the terrain carve and
@@ -336,13 +317,13 @@ double continentField(const TerrainNoise& n, double wx, double wz) {
 }
 
 // ---- Climate/relief factors, memoized ------------------------------------
-// These four are asked MANY times per column: savannaCanyon probes
-// savannaFactor at the centre and four +/- 6 neighbours (each of which
-// re-asks tempAt/humidAt), plainsPlateau re-asks plainsFactor after
-// rawColumnHeight already did, and the biome decision asks everything
-// again at its lattice points. All four are pure functions of the world
-// coordinates, so the memo returns exactly what the computation would —
-// it just stops the same octaves from being evaluated five times over.
+// These four are asked MANY times per column: plainsPlateau re-asks
+// plainsFactor after rawColumnHeight already did, the lattice points of the
+// biome vote share their evaluations across every voting column, and the
+// river functions ask tempAt/humidAt on top. All four are pure functions of
+// the world coordinates, so the memo returns exactly what the computation
+// would — it just stops the same octaves from being evaluated five times
+// over.
 static double tempAtUncached(const TerrainNoise& n, double wx, double wz) {
     return noiseFbm2d(n.temp, wx * 0.0004, wz * 0.0004, 2, 0.5, 2.0);
 }
@@ -472,82 +453,6 @@ static double desertFlatFactor(const TerrainNoise& n, double wx, double wz) {
     return smoothstep(-0.20, -0.42, hu) * smoothstep(0.50, 0.58, t);
 }
 
-// Desert proximity in [0,1]: how close this climate is to the hot/dry
-// desert side of the savanna band. The savanna/desert boundary is the
-// humid = -0.20 cut inside the temp > 0.5 band (see BiomeRegistry::select),
-// so this ramps up smoothly as the humidity drops towards that cut and is
-// exactly 1 for a genuine desert. The player wants savanna plateaus to
-// always form next to the desert, which is what this drives below.
-static double desertNearby(const TerrainNoise& n, double wx, double wz) {
-    const double t = tempAt(n, wx, wz);
-    const double hu = humidAt(n, wx, wz);
-    // A desert exists ONLY in the hot band (temp > 0.5). In the cooler
-    // savanna band (0.30 < temp <= 0.5) there is no desert to be next to,
-    // so this must stay 0 there or every warm savanna would be forced into
-    // a plateau.
-    if (t <= 0.50)
-        return 0.0;
-    // hu = -0.20 is the desert cut; ramp over ~0.30 of humidity so a plateau
-    // starts to favour the desert side well before the biome actually flips.
-    return smoothstep(-0.50, -0.20, hu);
-}
-
-double savannaCanyon(const TerrainNoise& n, double wx, double wz) {
-    // Hard-gated to the CORE of a savanna, so a canyon can never appear in
-    // (or next to) the plains, the desert or the jungle. The ramp starts a
-    // little below the savanna threshold (0.45) so the table covers a wide,
-    // contiguous share of the savanna instead of only its deepest core — a
-    // higher threshold is what made the tables come out as thin ribbons.
-    const double sf = savannaFactor(n, wx, wz);
-    const double core = smoothstep(0.40, 0.55, sf);
-    if (core <= 0.0)
-        return 0.0;
-
-    // Desert neighbourhood. When a savanna touches a desert the player wants
-    // the raised table to ALWAYS show up: it is the classic warm-country
-    // skyline. `desert` is high as the climate nears the desert cut.
-    const double desert = desertNearby(n, wx, wz);
-
-    // How far INSIDE the savanna we are. The old code vetoed the column
-    // outright unless ALL eight neighbours 6 blocks out were still savanna,
-    // which chopped the table into thin fingers along every boundary. Here
-    // the four cardinal neighbours are combined with min() and turned into a
-    // smooth interior weight, so the table keeps a clean edge but stays one
-    // solid blob instead of a fringe.
-    constexpr double kM = 6.0;
-    double m = sf;
-    m = std::min(m, savannaFactor(n, wx - kM, wz));
-    m = std::min(m, savannaFactor(n, wx + kM, wz));
-    m = std::min(m, savannaFactor(n, wx, wz - kM));
-    m = std::min(m, savannaFactor(n, wx, wz + kM));
-    const double interior = smoothstep(0.42, 0.60, m);
-    if (interior <= 0.0)
-        return 0.0;
-
-    // ...and inland: a canyon never overlooks a shoreline, so no beach or
-    // ocean can end up sitting next to one. `continentField` is the cheap
-    // proxy for "is there land here" — it is the same field the coast is
-    // built from, and it cannot recurse back into the terrain height the
-    // way a rawColumnHeight() probe would.
-    constexpr double kInland = -0.10; // the shoreline/beach band sits below this
-    if (continentField(n, wx - kM, wz) < kInland || continentField(n, wx + kM, wz) < kInland ||
-        continentField(n, wx, wz - kM) < kInland || continentField(n, wx, wz + kM) < kInland)
-        return 0.0;
-    const double notPlains = 1.0 - smoothstep(0.35, 0.55, plainsFactor(n, wx, wz));
-    if (notPlains <= 0.0)
-        return 0.0;
-    // Broad, low-frequency table mask: the tables come out as big blobs
-    // hundreds of blocks across rather than as small mounds or ribbons.
-    double patch =
-        smoothstep(-0.22, 0.14,
-                   noiseFbm2d(n.surface, wx * 0.0016 + 15500.0, wz * 0.0016 + 7300.0, 2, 0.5, 2.0));
-    // Near the desert the table is wanted on essentially every savanna
-    // column, so the patch mask is lifted towards 1 there.
-    if (desert > 0.0)
-        patch = std::max(patch, desert);
-    return core * interior * notPlains * patch;
-}
-
 TerrainNoise::TerrainNoise(int64_t seed)
     : vanilla(seed),
       // Cada campo del generador sobre una capa del juego completo vanilla.
@@ -615,8 +520,7 @@ static double rawColumnHeightUncached(const TerrainNoise& n, double wx, double w
     // the same flat thing in both places.
     //
     // The savanna plains use the very same damping (savannaFactor), so a
-    // savanna comes out as long, level ground a couple of blocks high, and
-    // the canyon table below rides on top of that.
+    // savanna comes out as long, level ground a couple of blocks high.
     const double plains = plainsFactor(n, wx, wz);
     const double savanna = savannaFactor(n, wx, wz);
     // 0.90 rather than 0.78: at full plains the relief was still 22% of the
@@ -627,10 +531,10 @@ static double rawColumnHeightUncached(const TerrainNoise& n, double wx, double w
     // The savanna is damped a little less (0.78) so its surface keeps the
     // 2-3 block roll the plains deliberately shave off.
     //
-    // The desert is damped at 0.86 — SEMI-flat, the user asked for vanilla
-    // desert ground: broad gentle sand with a shallow roll, no hill country
-    // inside the dry band. Taking the max of the three dampings keeps the
-    // old behaviour wherever the desert factor is 0.
+    // The desert is damped at 0.86 — SEMI-flat: broad gentle sand with a
+    // shallow roll, no hill country inside the dry band. Taking the max of
+    // the three dampings keeps the old behaviour wherever the desert factor
+    // is 0.
     const double desertFlat = desertFlatFactor(n, wx, wz);
     const double damp =
         std::max(std::max(plains * 0.90, savanna * 0.78), desertFlat * 0.86);
@@ -685,14 +589,6 @@ static double rawColumnHeightUncached(const TerrainNoise& n, double wx, double w
     // it was cut out of, and BEFORE the river carve so a river still cuts
     // straight through it instead of running around it.
     h += 3.2 * plainsPlateau(n, wx, wz);
-
-    // ---- Savanna canyons ------------------------------------------------
-    // A broad table ~25 blocks above the savanna plain (measured: ~20-25 in
-    // game). The gate is steep, so the step from the plain up onto the table
-    // is a canyon wall; the top itself inherits the savanna's damped relief
-    // (1-2 block steps), and the river carve right below this runs through
-    // it.
-    h += 24.0 * savannaCanyon(n, wx, wz);
 
     // ---- Rivers ---------------------------------------------------------
     // The height the land stands at before ANY river term runs. The gorge
@@ -865,39 +761,16 @@ inline void riverWarp(const TerrainNoise& n, double wx, double wz, double& ox, d
     oz = noiseFbm2d(n.surface, wx * kWarpFreq - 7300.0, wz * kWarpFreq + 9100.0, 2, 0.45, 2.8);
 }
 
-inline double riverFieldAt(const TerrainNoise& n, double wx, double wz, double bias, double ox,
-                           double oz) {
-    const double f =
-        noiseFbm2d(n.river, (wx + ox * kAmp) * 0.0014, (wz + oz * kAmp) * 0.0014, 4, 0.5, 2.0);
-    // Subtracting the bias moves the zero contour towards the jungle belt.
-    return f - bias;
+inline double riverFieldAt(const TerrainNoise& n, double wx, double wz, double ox, double oz) {
+    return noiseFbm2d(n.river, (wx + ox * kAmp) * 0.0014, (wz + oz * kAmp) * 0.0014, 4, 0.5, 2.0);
 }
 
 // riverField at (wx, wz) with its own warp — for the single-evaluation
 // callers (riverValley, riverShoulder).
-inline double riverField(const TerrainNoise& n, double wx, double wz, double bias) {
+inline double riverField(const TerrainNoise& n, double wx, double wz) {
     double ox, oz;
     riverWarp(n, wx, wz, ox, oz);
-    return riverFieldAt(n, wx, wz, bias, ox, oz);
-}
-
-// How strongly this column is pulled towards the jungle belt, as a fraction
-// of the river field's own range. Rivers are wanted to run mostly through
-// jungle, and the way to do that without wrecking the network is to DEFLECT
-// the existing contour rather than to draw new rivers: the climate fields
-// change over thousands of blocks, far more slowly than the river field
-// itself, so adding a small smooth term shifts each reach towards the wet
-// hot country while leaving every reach connected. The contour sits where
-// field == bias, so subtracting the bias walks it into the jungle.
-inline double riverJungleBias(const TerrainNoise& n, double wx, double wz) {
-    // One octave each: this is a very slow field, so the extra octave the
-    // public tempAt()/humidAt() use buys nothing here and this runs for
-    // every column of the world.
-    const double t = noiseFbm2d(n.temp, wx * 0.0004, wz * 0.0004, 1, 0.5, 2.0);
-    const double hu = noiseFbm2d(n.humid, wx * 0.0005, wz * 0.0005, 1, 0.5, 2.0);
-    // The jungle band of BiomeRegistry::select(): hot AND genuinely wet.
-    const double lush = smoothstep(0.34, 0.60, t) * smoothstep(0.18, 0.45, hu);
-    return kRiverJungleBias * lush;
+    return riverFieldAt(n, wx, wz, ox, oz);
 }
 
 // Distance in BLOCKS from the river's zero contour, estimated as
@@ -912,16 +785,15 @@ inline double riverJungleBias(const TerrainNoise& n, double wx, double wz) {
 } // namespace
 
 static double riverDistanceUncached(const TerrainNoise& n, double wx, double wz) {
-    const double bias = riverJungleBias(n, wx, wz);
     // The warp is sampled ONCE: across the +/- 1 gradient taps the warp
     // field moves the sampling point by ~0.02 blocks (see riverFieldAt).
     double ox, oz;
     riverWarp(n, wx, wz, ox, oz);
-    const double v = riverFieldAt(n, wx, wz, bias, ox, oz);
-    const double gx = riverFieldAt(n, wx + 1.0, wz, bias, ox, oz) -
-                      riverFieldAt(n, wx - 1.0, wz, bias, ox, oz);
-    const double gz = riverFieldAt(n, wx, wz + 1.0, bias, ox, oz) -
-                      riverFieldAt(n, wx, wz - 1.0, bias, ox, oz);
+    const double v = riverFieldAt(n, wx, wz, ox, oz);
+    const double gx = riverFieldAt(n, wx + 1.0, wz, ox, oz) -
+                      riverFieldAt(n, wx - 1.0, wz, ox, oz);
+    const double gz = riverFieldAt(n, wx, wz + 1.0, ox, oz) -
+                      riverFieldAt(n, wx, wz - 1.0, ox, oz);
     const double g = 0.5 * std::sqrt(gx * gx + gz * gz); // field per block
     if (g < 1e-9)
         return 1e9; // no contour here
@@ -961,7 +833,7 @@ double riverMask(const TerrainNoise& n, double wx, double wz) {
 }
 
 double riverValley(const TerrainNoise& n, double wx, double wz) {
-    const double d = std::fabs(riverField(n, wx, wz, riverJungleBias(n, wx, wz)));
+    const double d = std::fabs(riverField(n, wx, wz));
     // Much wider than riverMask(): this is the valley the river runs along,
     // and its edges fade out over a long distance so the banks slope
     // instead of dropping off a cliff. Note this is still the raw FIELD
@@ -975,14 +847,13 @@ double riverValley(const TerrainNoise& n, double wx, double wz) {
 }
 
 double riverShoulder(const TerrainNoise& n, double wx, double wz) {
-    const double bias = riverJungleBias(n, wx, wz);
     // A very wide, shallow skirt around the valley. One wide valley on its
     // own was measured to make the banks STEEPER, not gentler: widening the
     // mask just moved the same drop further out, so the step from valley
     // floor to untouched ground stayed abrupt. Adding this second, much
     // broader and shallower tier on top spreads the remaining drop over a
     // long distance, which is what actually flattens the transition.
-    const double d = std::fabs(riverField(n, wx, wz, bias));
+    const double d = std::fabs(riverField(n, wx, wz));
     constexpr double kShoulder = 0.78;
     if (d >= kShoulder)
         return 0.0;
@@ -1037,7 +908,7 @@ bool isOceanShore(const TerrainNoise& n, double wx, double wz, int h, int radius
             // is what painted every river bank as a sand beach. The water
             // has to be a good way clear of the channel profile before it
             // counts as sea. The threshold is above the WIDEST river half
-            // width (kRiverEdge * 1.43 ~= 7.4) plus the smoothing wobble,
+            // width (kRiverEdge * 1.60 ~= 6.4) plus the smoothing wobble,
             // so no column of a wide river can ever be mistaken for sea.
             if (riverDistance(n, wx + dx, wz + dz) > 10.0)
                 return true;
@@ -1131,16 +1002,6 @@ double treeFreeMask(const TerrainNoise& n, double wx, double wz, int h) {
 // blocks is absorbed into whichever neighbour outvotes it, so no inland
 // biome can stay thinner than roughly a dozen blocks: the wide biomes push
 // the thin ones out instead of leaving ribbons between them.
-//
-// Water, river channels and beaches are NOT filtered: they are decided
-// below from the river field and the real smoothed height of the column,
-// and they must line up with the carved terrain exactly.
-//
-// Determinism: every vote is a pure function of world coordinates, the
-// lattice anchor (2 mod 4) is the same for every chunk, so neighbouring
-// chunks always agree; the centre vote is counted FIRST, so ties keep the
-// column's own unfiltered decision and boundaries stay where the climate
-// put them.
 constexpr int kBiomeVoteStep = 12;   // vote offsets are 0 and +/- this
 constexpr int kBiomeLattice = 4;     // lattice spacing, blocks
 constexpr int kBiomeLatticeAnchor = 2; // lattice points sit at anchor (mod step)
@@ -1158,7 +1019,7 @@ constexpr int kBiomeLatticeAnchor = 2; // lattice points sit at anchor (mod step
 // below can never fix (a long stripe is its own local majority). The
 // 12-block average keeps every genuine ridge above the line while
 // flattening the salt, the same way the (1,4,1)/36 kernel smooths the
-// terrain the player walks on.
+// terrain.
 static uint8_t inlandClimateBiomeUncached(const TerrainNoise& n, double wx, double wz) {
     using namespace biome;
 
@@ -1187,11 +1048,8 @@ static uint8_t inlandClimateBiomeUncached(const TerrainNoise& n, double wx, doub
     }
 
     const double sf = savannaFactor(n, wx, wz);
-    if (sf > 0.55 && h < kSeaLevel + 45) {
-        if (savannaCanyon(n, wx, wz) > 0.45)
-            return BIOME_SAVANNA_PLATEAU;
+    if (sf > 0.55 && h < kSeaLevel + 45)
         return BIOME_SAVANNA;
-    }
 
     uint8_t b = BiomeRegistry::select(t, hu, h, kSeaLevel);
     if (b == BIOME_OCEAN)
@@ -1265,13 +1123,19 @@ static uint8_t columnBiomeUncached(const TerrainNoise& n, double wx, double wz, 
     // channel profile the terrain carve uses, so the biome, the water and
     // the bank all agree on where the river ends. The height band keeps the
     // river tag on the channel bed only: deeper water is real ocean.
+    //
+    // The channel is the FROZEN variant only inside the ice-plains climate
+    // band — the same cut BiomeRegistry::select uses for BIOME_ICE_PLAINS,
+    // the only biomes where it snows. Rivers elsewhere stay liquid all
+    // year, the way vanilla colours them.
     const double rd = riverDistance(n, wx, wz);
     if (rd <= riverHalfWidth(n, wx, wz) + 1.6 && h < kSeaLevel && h >= kSeaLevel - 6)
-        return (t < -0.25) ? BIOME_FROZEN_RIVER : BIOME_RIVER;
+        return (t < -0.55) ? BIOME_FROZEN_RIVER : BIOME_RIVER;
 
-    // Below sea level minus a shallow margin: open ocean.
+    // Below sea level minus a shallow margin: open ocean. Cold ocean water
+    // freezes over, same climate cut as the frozen river.
     if (h < kSeaLevel - 2)
-        return BIOME_OCEAN;
+        return (t < -0.55) ? BIOME_FROZEN_OCEAN : BIOME_OCEAN;
 
     // Beach: only along the OCEAN. A river bank is normally grass, so
     // giving river columns BIOME_BEACH (whose top block is sand) is what
@@ -1282,9 +1146,7 @@ static uint8_t columnBiomeUncached(const TerrainNoise& n, double wx, double wz, 
         return BIOME_BEACH;
 
     // Inland: the MAJORITY-FILTERED climate biome (see filteredInlandBiome
-    // above). This replaces the old per-column override + select() tail,
-    // which is what produced the thin biome ribbons the player kept
-    // finding. The filter's lattice is world-aligned, so the result is
+    // above). The filter's lattice is world-aligned, so the result is
     // identical no matter which chunk asks for the column.
     return filteredInlandBiome(n, wx, wz);
 }
