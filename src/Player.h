@@ -761,6 +761,11 @@ class Player : public IPlayer,
     // Chunks already sent to this player, protected by chunks_mtx_.
     std::unordered_set<int64_t> used_chunks_;
     mutable std::mutex chunks_mtx_;
+    // View radius the client last requested, already clamped to
+    // cfg_.view_distance. 0 until the first RequestChunkRadiusPacket
+    // arrives; chunk streaming then falls back to cfg_.view_distance.
+    // Written by the network thread, read by the tick thread.
+    std::atomic<int32_t> client_chunk_radius_{0};
     // Ensures the spawn acknowledgment triggers re-streaming only once.
     std::atomic<bool> spawn_ack_done_{false};
 

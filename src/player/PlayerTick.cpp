@@ -552,8 +552,14 @@ void Player::onUpdate(uint64_t current_tick) {
         }
         bool moved = (cx != last_cx || cz != last_cz);
 
-        // Build the chunk order for the current view distance.
-        int vd = cfg_.view_distance;
+        // Build the chunk order for the radius the client last asked for
+        // (falls back to the configured distance until the first radius
+        // packet arrives). Streaming beyond the client radius would waste
+        // bandwidth and let used_chunks_ drift away from what the client
+        // actually keeps, so both sides must agree on the same square.
+        int vd = client_chunk_radius_.load(std::memory_order_relaxed);
+        if (vd <= 0 || vd > cfg_.view_distance)
+            vd = cfg_.view_distance;
         auto order = buildChunkSpiral(vd);
         auto& chunks = getWorld()->chunks();
         std::unordered_set<int64_t> still_in_view;
