@@ -1,7 +1,7 @@
 // tools/biome_width_check.cpp
 //
-// Measures how THIN the generated land biomes are, so the "biomas muy
-// delgados" complaint can be checked with numbers instead of by eye.
+// Measures how THIN the generated land biomes are, so biome width can be
+// checked with numbers instead of by eye.
 //
 // For every land column the thickness metric is the minimum, over the four
 // cardinal directions, of the run length of its own biome until a different

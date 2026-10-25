@@ -158,8 +158,8 @@ int main() {
     check(minTop >= 4, "crown always reaches at least 4 blocks above the ground");
     check(maxTop <= 24, "crown never explodes past the vanilla height band");
 
-    // Re-run the TALLEST roll and dump it: that is the tree the player
-    // actually sees as a "big oak".
+    // Re-run the TALLEST roll and dump it: that is the biggest variant the
+    // generator produces.
     int tallSeed = 0, tallH = 0;
     for (int seed = 1; seed <= 40; ++seed) {
         mcp_chunk_t* c = mcp_chunk_new(0, 0);

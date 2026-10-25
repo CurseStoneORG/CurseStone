@@ -74,7 +74,7 @@ int main() {
                     riv[i] = riverMask(noise, wx, wz);
                     if (h < kSeaLevel) ++water;
                     // Sand is what matters ABOVE the water line: that is the
-                    // bank the player walks on. Sand on the sea floor is
+                    // dry bank. Sand on the sea floor is
                     // normal vanilla and would drown the signal here.
                     if (t == (uint8_t)blk::BlockId::SAND) {
                         ++sandTop;

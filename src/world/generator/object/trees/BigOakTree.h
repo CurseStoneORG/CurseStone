@@ -22,8 +22,7 @@
 // the reference implementation (FancyTrunkPlacer + FancyFoliagePlacer) and
 // adapted to this generator's single-chunk clipped writer.
 //
-// The previous shape was hand-rolled (a small blob + 2-4 straight diagonal
-// branches) and the player found it "muy feo". The vanilla tree instead:
+// The shape follows the vanilla tree:
 //   * trunk rising to floor(height * 0.618), height = 5..16,
 //   * one branch cluster PER trunk level above 0.3 * height: each cluster
 //     picks a polar offset (radius from the treeShape profile, random

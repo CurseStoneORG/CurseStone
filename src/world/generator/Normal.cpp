@@ -83,11 +83,9 @@ Normal::Normal(int64_t seed) : seed_(seed), noise_(seed) {
     // candidate slots per chunk; the actual density comes from each biome's
     // BiomeConfig amounts, so their ctor argument only sets the slot count.
     //
-    // NOTE: the water/lava lake populators that used to sit between caves
-    // and trees are gone on purpose — the user reported small pools
-    // ("charcos") appearing all over the surface. Rivers are now part of
-    // the terrain shape itself (see TerrainShape), so no lake pass is
-    // needed.
+    // NOTE: no water-lake populator — rivers (and other surface water) are
+    // part of the terrain shape itself (see TerrainShape), so a lake pass
+    // would only carve duplicate pools over the same ground.
     populators_.push_back(std::make_unique<populator::PopulatorOre>(std::move(ores)));
     populators_.push_back(std::make_unique<populator::PopulatorCave>(16));
 
@@ -99,10 +97,9 @@ Normal::Normal(int64_t seed) : seed_(seed), noise_(seed) {
     populators_.push_back(std::make_unique<populator::PopulatorTree>(16));
     populators_.push_back(std::make_unique<populator::PopulatorTallGrass>(16));
     populators_.push_back(std::make_unique<populator::PopulatorDoublePlant>(16, 2)); // large grass
-    // NOTE: no flower populators (dandelion/poppy and the like are gone on
-    // purpose — the user asked for grass-only ground cover: tall grass,
-    // ferns and double tallgrass. PopulatorTallGrass and the double-plant
-    // pass above (data 2 = double tallgrass) are the whole plant layer.
+    // NOTE: no flower populators — the plant layer is PopulatorTallGrass
+    // (tall grass / ferns) plus the double-plant pass above (data 2 =
+    // double tallgrass).
     populators_.push_back(std::make_unique<populator::PopulatorCactus>(16));
     populators_.push_back(std::make_unique<populator::PopulatorDeadBush>(16));
     populators_.push_back(std::make_unique<populator::PopulatorSugarCane>(16));
@@ -206,8 +203,13 @@ void Normal::generate(GenerationContext& ctx) {
             uint8_t top = cfg.topBlock;
             uint8_t filler = cfg.fillerBlock;
 
+            // Cold surface: snow layer / ice. Frozen rivers and frozen
+            // ocean share the water biomes' surface rules below.
+            const bool snowy =
+                cfg.snowy || b == BIOME_FROZEN_RIVER || b == BIOME_FROZEN_OCEAN;
+
             // Vanilla-ish surface extras per biome.
-            if (b == BIOME_OCEAN) {
+            if (b == BIOME_OCEAN || b == BIOME_FROZEN_OCEAN) {
                 // Deep floor: gravel. Shallow shelf near the shore: sand on
                 // top with gravel underneath. surfaceDepth is raised below so
                 // the bottom of an ocean is always 3-4 layers of gravel the
@@ -238,13 +240,11 @@ void Normal::generate(GenerationContext& ctx) {
                     filler = (uint8_t)BlockId::DIRT;
                 }
             } else if (b == BIOME_EXTREME_HILLS) {
-                // Rocky tops above the tree line, grass/dirt below. The
-                // threshold used to be y=86, which painted a huge share of
-                // the hills — including the shoulders a river or a carver
-                // cuts through — as solid grey stone (measured up to 11% of
-                // the whole surface on some seeds). The player asked for
-                // green hills, so rock is now reserved for the genuine high
-                // peaks only.
+                // Rocky tops above the tree line, grass/dirt below. Rock is
+                // reserved for the genuine high peaks: the old y=86
+                // threshold painted the shoulders a river cuts through as
+                // solid grey stone (measured up to 11% of the biome's
+                // surface on some seeds).
                 if (h >= 100) {
                     top = (uint8_t)BlockId::STONE;
                     filler = (uint8_t)BlockId::STONE;
@@ -256,8 +256,9 @@ void Normal::generate(GenerationContext& ctx) {
             // the water — not only on the submerged block itself.
             // isOceanShore() is the same predicate that picks BIOME_BEACH,
             // so the beach biome and the sand agree, and it deliberately
-            // ignores river channels: river banks are green.
-            const bool shore = (b != BIOME_OCEAN) && isOceanShore(noise, wx, wz, h);
+            // ignores river channels: river banks get their own rule below.
+            const bool shore = (b != BIOME_OCEAN && b != BIOME_FROZEN_OCEAN) &&
+                               isOceanShore(noise, wx, wz, h);
             // Does this land column touch water on any side? The raw grid
             // has a one-block margin all round (GW = 18, world offsets
             // -1..16), so all four neighbours are available even on the
@@ -273,35 +274,44 @@ void Normal::generate(GenerationContext& ctx) {
                     filler = (uint8_t)BlockId::SAND;
             }
 
-            // ---- River bank: grass, with one sand block at the water -------
-            // The reference rivers are ringed by a flat GRASS bank 2-3
-            // blocks wide, and exactly one sand block sits on the
-            // innermost column, practically touching the water. The rest of
-            // the bank keeps whatever the biome put there, which in plains,
-            // savanna and forest country is grass.
+            // ---- River bank: the vanilla waterline --------------------------
+            // Land that touches water gets a one-block shoreline strip, and
+            // its material follows the biome the way vanilla builds shores:
+            // sand in temperate country, plain grass in the jungle (no sand
+            // beaches there), gravel where it snows. The rest of the bank
+            // keeps whatever the biome put on top.
             //
-            // "Innermost column" is tested directly — it is the land column
-            // that touches water — rather than by a distance threshold. The
-            // river profile is smoothed by the height kernel, so the block
-            // distance at which the water actually stops drifts by one or
-            // two columns depending on the terrain, and any fixed
-            // threshold put the sand either underwater or one block too far
-            // up the bank. The neighbour test is exact everywhere, and it
-            // automatically covers every land biome the bank runs through.
-            if (!shore && h >= kSeaLevel && b != BIOME_OCEAN && top != (uint8_t)BlockId::STONE &&
-                touchesWater) {
-                top = (uint8_t)BlockId::SAND;
-                if (filler == (uint8_t)BlockId::GRASS || filler == (uint8_t)BlockId::DIRT)
-                    filler = (uint8_t)BlockId::SAND;
+            // "Touches water" is tested directly on the neighbour columns
+            // rather than by a distance threshold. The river profile is
+            // smoothed by the height kernel, so the block distance at which
+            // the water actually stops drifts by one or two columns
+            // depending on the terrain, and any fixed threshold put the
+            // strip either underwater or one block too far up the bank.
+            // The neighbour test is exact everywhere, and it automatically
+            // covers every land biome the bank runs through.
+            if (!shore && h >= kSeaLevel && b != BIOME_OCEAN && b != BIOME_FROZEN_OCEAN &&
+                top != (uint8_t)BlockId::STONE && touchesWater) {
+                if (b == BIOME_JUNGLE || b == BIOME_JUNGLE_HILLS)
+                    top = (uint8_t)BlockId::GRASS;
+                else if (snowy)
+                    top = (uint8_t)BlockId::GRAVEL;
+                else
+                    top = (uint8_t)BlockId::SAND;
+                if (top != (uint8_t)BlockId::GRASS &&
+                    (filler == (uint8_t)BlockId::GRASS || filler == (uint8_t)BlockId::DIRT))
+                    filler = top;
             }
 
             // ---- Rare but long sand banks along rivers --------------------
-            // Every so often a river does run past a proper sandy stretch.
+            // Every so often a river runs past a proper sandy stretch.
             // The mask is low-frequency on purpose, so when it fires it
             // follows the river for hundreds of blocks rather than making
             // round patches — and it stays rare because it is gated on the
-            // river valley AND thresholded hard.
-            if (!shore && h >= kSeaLevel && riverSandBank(noise, wx, wz) > 0.62) {
+            // river valley AND thresholded hard. Jungle keeps its grass
+            // banks and snowy country its gravel, so this is skipped there
+            // like vanilla.
+            if (!shore && h >= kSeaLevel && !snowy && b != BIOME_JUNGLE &&
+                b != BIOME_JUNGLE_HILLS && riverSandBank(noise, wx, wz) > 0.62) {
                 top = (uint8_t)BlockId::SAND;
                 filler = (uint8_t)BlockId::SAND;
             }
@@ -314,21 +324,14 @@ void Normal::generate(GenerationContext& ctx) {
                 top = (uint8_t)BlockId::GRAVEL;
             }
 
-            // ---- Steep ground stays green ----------------------------------
-            // This used to strip the grass off any slope whose neighbouring
-            // column was 4+ blocks different and put bare STONE on top
-            // instead. On the naturally craggy terrain that rule fired
-            // constantly, so every river-cut canyon, every savanna canyon
-            // wall and most hill shoulders came out as a checkerboard of
-            // grey stone sitting on top of the grass — exactly the "stone
-            // canyon" the player kept seeing. The player asked for those
-            // walls to be grass, so the surface now keeps whatever the
-            // biome put there (grass/dirt/sand). Rock is still visible on
-            // the vertical face of a cliff, because the fill below the top
-            // layers is stone — that is how a cut bank reads naturally —
-            // but the ground itself is no longer painted grey.
-
-            const bool snowy = cfg.snowy || b == BIOME_FROZEN_RIVER;
+            // ---- Steep ground keeps the biome surface -----------------------
+            // No stone-striping on slopes: the ground keeps whatever the
+            // biome put there (grass/dirt/sand). A slope rule that swapped
+            // steep columns to STONE covered every river-cut bank and hill
+            // shoulder in a grey checkerboard sitting on top of the grass.
+            // Rock still shows on the vertical face of a cut, because the
+            // fill below the top layers is stone — that is how a cut bank
+            // reads naturally.
 
             // How many layers (top + filler) the biome's soil occupies
             // before the solid stone begins.
@@ -362,15 +365,16 @@ void Normal::generate(GenerationContext& ctx) {
             // exposed face is a cut rock wall, and that is what a river gorge
             // through high country looks like: a green lip on top and then
             // bare stone, showing the hillside's own layers, exactly like the
-            // mountain faces. Only applied inside the river's own cut, so the
-            // terraced lowland banks and the savanna plateau walls keep the
-            // soil the player asked for there.
-            if (b != BIOME_OCEAN && b != BIOME_RIVER && b != BIOME_FROZEN_RIVER && h - lowN >= 5 &&
+            // mountain faces. Only applied inside the river's own cut, so
+            // the terraced lowland banks keep their soil layers.
+            if (b != BIOME_OCEAN && b != BIOME_FROZEN_OCEAN && b != BIOME_RIVER &&
+                b != BIOME_FROZEN_RIVER && h - lowN >= 5 &&
                 riverDistance(noise, wx, wz) < 26.0)
                 filler = (uint8_t)BlockId::STONE;
             // Oceans and submerged river beds keep 4 gravel layers at the
             // bottom regardless of the surrounding relief.
-            if (b == BIOME_OCEAN || b == BIOME_RIVER || b == BIOME_FROZEN_RIVER)
+            if (b == BIOME_OCEAN || b == BIOME_FROZEN_OCEAN || b == BIOME_RIVER ||
+                b == BIOME_FROZEN_RIVER)
                 surfaceDepth = std::max(surfaceDepth, 5);
 
             // ---- Fast path de columnas --------------------------------

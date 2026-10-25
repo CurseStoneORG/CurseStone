@@ -185,13 +185,6 @@ double plainsForest(const TerrainNoise& n, double wx, double wz);
 // low-relief ground instead of a thin climate stripe.
 double savannaFactor(const TerrainNoise& n, double wx, double wz);
 
-// Savanna canyon gate in [0,1]: a broad raised table ~25 blocks above the
-// savanna plain, with steep canyon walls. Gated hard on the CORE of a
-// savanna (savannaFactor), so it can never leak into plains, desert or
-// jungle, and its own mask is thresholded sharply so the transition to the
-// surrounding savanna reads as a canyon wall.
-double savannaCanyon(const TerrainNoise& n, double wx, double wz);
-
 // Gravel patch mask in [0,1]: rare patches of gravel on the surface,
 // clustered around rivers and coastlines the way vanilla scatters them.
 double gravelPatch(const TerrainNoise& n, double wx, double wz, int h);
