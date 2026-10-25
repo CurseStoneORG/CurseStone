@@ -237,9 +237,36 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                     r = 1;
                 if (r > cfg_.view_distance)
                     r = cfg_.view_distance;
+                client_chunk_radius_.store(r, std::memory_order_relaxed);
                 auto resp = std::make_shared<network::protocol::ChunkRadiusUpdatedPacket>();
                 resp->radius = r;
                 sendPacket(resp);
+
+                // The client applies the new radius immediately and discards
+                // every stored chunk beyond it, while this side keeps marking
+                // them as sent. A later radius increase would then find
+                // nothing to re-stream and the terrain would stay invisible
+                // until relogin. Drop the out-of-radius chunks here so the
+                // streaming loop in onUpdate() re-sends them when the radius
+                // comes back.
+                int32_t pcx = (int32_t)pos_.x >> 4;
+                int32_t pcz = (int32_t)pos_.z >> 4;
+                {
+                    std::lock_guard<std::mutex> lk(chunks_mtx_);
+                    for (auto it = used_chunks_.begin(); it != used_chunks_.end();) {
+                        int64_t h = *it;
+                        int32_t dx = (int32_t)(h >> 32) - pcx;
+                        int32_t dz = (int32_t)(h & 0xffffffffLL) - pcz;
+                        if (dx < 0)
+                            dx = -dx;
+                        if (dz < 0)
+                            dz = -dz;
+                        if (dx > r || dz > r)
+                            it = used_chunks_.erase(it);
+                        else
+                            ++it;
+                    }
+                }
             }
             break;
         case network::protocol::PLAYER_ACTION_PACKET:
