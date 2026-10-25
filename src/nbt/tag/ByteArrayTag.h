@@ -21,20 +21,26 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// ByteArrayTag — NBT byte array (signed int32 length prefix + raw bytes).
+// ByteArrayTag — NBT TAG_Byte_Array (uint32 length prefix + bytes).
 #pragma once
-#include "Tag.h"
+
 #include <stddef.h>
+#include <stdint.h>
+
+#include "Tag.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-typedef struct mcp_byte_array_tag {
-    mcp_tag_t header;
-    uint8_t* data;
-    size_t length;
-} mcp_byte_array_tag_t;
+
 mcp_tag_t* mcp_byte_array_tag_new(const uint8_t* data, size_t len);
 mcp_tag_t* mcp_byte_array_tag_new_named(const char* name, const uint8_t* data, size_t len);
+
+// Returns the payload bytes and stores their count in *out_len. Returns
+// NULL when the tag is missing or not a byte array. A valid empty array
+// yields a non-NULL pointer and *out_len == 0.
+const uint8_t* mcp_byte_array_tag_data(const mcp_tag_t* tag, size_t* out_len);
+
 #ifdef __cplusplus
-}
+} // extern "C"
 #endif

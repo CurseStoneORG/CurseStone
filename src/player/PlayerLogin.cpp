@@ -247,8 +247,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
             // gets them at first spawn via sendActiveEffects()).
             const mcp_tag_t* fx_tag = mcp_compound_tag_get(named_tag_.get(), "ActiveEffects");
             if (fx_tag && mcp_tag_get_type(fx_tag) == MCP_TAG_LIST) {
-                const mcp_list_tag_t* fx_list = (const mcp_list_tag_t*)fx_tag;
-                for (size_t i = 0; i < fx_list->count; ++i) {
+                for (size_t i = 0, n = mcp_list_tag_size(fx_tag); i < n; ++i) {
                     const mcp_tag_t* entry = mcp_list_tag_get(fx_tag, i);
                     if (!entry || mcp_tag_get_type(entry) != MCP_TAG_COMPOUND)
                         continue;
@@ -316,11 +315,9 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
             const mcp_tag_t* inv_tag = mcp_compound_tag_get(named_tag_.get(), "Inventory");
 
             if (inv_tag && mcp_tag_get_type(inv_tag) == MCP_TAG_LIST) {
-                const mcp_list_tag_t* inv_list = (const mcp_list_tag_t*)inv_tag;
-
                 int loaded = 0;
 
-                for (size_t i = 0; i < inv_list->count; ++i) {
+                for (size_t i = 0, n = mcp_list_tag_size(inv_tag); i < n; ++i) {
                     const mcp_tag_t* entry = mcp_list_tag_get(inv_tag, i);
 
                     if (!entry || mcp_tag_get_type(entry) != MCP_TAG_COMPOUND) {

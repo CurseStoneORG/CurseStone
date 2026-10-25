@@ -21,37 +21,26 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// CompoundTag — unordered map of name→tag. The most common NBT
-// container: every chunk's "Level" root, every block entity, every
-// player.dat file is a CompoundTag.
+// CompoundTag — ordered map of name→tag. The most common NBT container:
+// every chunk's "Level" root, every block entity, every player.dat file
+// is a CompoundTag.
 #pragma once
 
-#include "Tag.h"
 #include <stddef.h>
 #include <stdbool.h>
+#include <stdint.h>
+
+#include "Tag.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-typedef struct mcp_compound_entry {
-    char* name; // owned UTF-8 buffer, NUL-terminated
-    size_t name_len;
-    mcp_tag_t* tag; // owned
-} mcp_compound_entry_t;
-
-typedef struct mcp_compound_tag {
-    mcp_tag_t header;
-    mcp_compound_entry_t* entries;
-    size_t count;
-    size_t capacity;
-} mcp_compound_tag_t;
-
 mcp_tag_t* mcp_compound_tag_new(void);
 mcp_tag_t* mcp_compound_tag_new_named(const char* name);
 
-// Insert or replace a child. The compound takes ownership of `child`.
-// Returns 0 on success.
+// Insert or replace a child. The compound takes ownership of `child` on
+// success (returns 0); on failure the caller keeps ownership.
 int mcp_compound_tag_set(mcp_tag_t* self, const char* name, mcp_tag_t* child);
 
 // Convenience wrappers for primitives.
@@ -66,7 +55,7 @@ int mcp_compound_tag_set_string(mcp_tag_t* self, const char* name, const char* v
 // Lookup. Returns NULL if missing.
 const mcp_tag_t* mcp_compound_tag_get(const mcp_tag_t* self, const char* name);
 
-// Convenience getters (NULL/0 if missing or wrong type).
+// Convenience getters (default if missing or wrong type).
 int8_t mcp_compound_tag_get_byte(const mcp_tag_t* self, const char* name, int8_t def);
 int16_t mcp_compound_tag_get_short(const mcp_tag_t* self, const char* name, int16_t def);
 int32_t mcp_compound_tag_get_int(const mcp_tag_t* self, const char* name, int32_t def);
