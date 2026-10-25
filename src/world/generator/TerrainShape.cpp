@@ -107,10 +107,15 @@ inline MemoEntry& memoSlot(MemoTable<N>& t, uint64_t uid, uint64_t kx, uint64_t 
 }
 
 // Tablas por funcion y por hilo (cada una ~64-128 KB).
-inline thread_local MemoTable<4096> t_rawMemo;    // rawColumnHeight
-inline thread_local MemoTable<4096> t_colHMemo;   // columnHeight
-inline thread_local MemoTable<4096> t_riverDMemo; // riverDistance
+inline thread_local MemoTable<8192> t_rawMemo;    // rawColumnHeight
+inline thread_local MemoTable<8192> t_colHMemo;   // columnHeight
+inline thread_local MemoTable<8192> t_riverDMemo; // riverDistance
 inline thread_local MemoTable<4096> t_biomeMemo;  // columnBiome
+inline thread_local MemoTable<4096> t_inlandMemo; // inlandClimateBiome (lattice)
+inline thread_local MemoTable<4096> t_tempMemo;   // tempAt
+inline thread_local MemoTable<4096> t_humidMemo;  // humidAt
+inline thread_local MemoTable<8192> t_plainsMemo; // plainsFactor
+inline thread_local MemoTable<8192> t_savMemo;    // savannaFactor
 
 // Contador de instancias de TerrainNoise (invalidacion de las tablas).
 inline uint64_t nextTerrainNoiseUid() {
@@ -238,9 +243,15 @@ inline double landMask(double cont) {
 // cannot produce that: the ground only ever descends 1.1 blocks per block
 // outwards, so the smoothing kernel turns it into the stepped dirt/stone
 // banks the reference rivers have.
-constexpr double kRiverBed = 2.4;   // half width carved to full depth
-constexpr double kRiverEdge = 3.2;  // where the bed reaches sea level
-constexpr double kRiverShore = 3.0; // flat grass bank at water level
+// WIDER RIVERS (user request: "rios amplios, navegantes, mas vanilla").
+// The water half width is kRiverEdge * riverWidthScale, so these numbers
+// give ~8-15 blocks of open water on every reach (the old 2.4/3.2 gave
+// 4-8, too narrow to boat down comfortably and nothing like the broad
+// vanilla rivers). The bed stays a flat kSeaLevel-4 across the whole
+// kRiverBed half width, so the deep part is boat-worthy end to end.
+constexpr double kRiverBed = 3.8;   // half width carved to full depth
+constexpr double kRiverEdge = 5.2;  // where the bed reaches sea level
+constexpr double kRiverShore = 2.6; // flat grass bank at water level
 constexpr double kRiverClimb = 1.2; // lowland: gentle terraced banks
 constexpr double kCliffClimb = 5.0; // eroded gorge wall, ~65-75 deg once smoothed
 // How hard the river network is pulled towards the jungle belt, as a
@@ -308,7 +319,7 @@ inline double riverClimbRate(double cliff) {
 inline double riverWidthScale(const TerrainNoise& n, double wx, double wz) {
     const double w =
         noiseFbm2d(n.surface, wx * 0.0011 + 61000.0, wz * 0.0011 - 27000.0, 2, 0.5, 2.0);
-    return 0.70 + 0.60 * (w * 0.5 + 0.5); // 0.70 .. 1.30
+    return 0.75 + 0.68 * (w * 0.5 + 0.5); // 0.75 .. 1.43
 }
 
 // Half width of the water at this column. riverMask, the terrain carve and
@@ -324,7 +335,45 @@ double continentField(const TerrainNoise& n, double wx, double wz) {
     return noiseFbm2d(n.height, wx * 0.0010, wz * 0.0010, 3, 0.5, 2.0);
 }
 
-double plainsFactor(const TerrainNoise& n, double wx, double wz) {
+// ---- Climate/relief factors, memoized ------------------------------------
+// These four are asked MANY times per column: savannaCanyon probes
+// savannaFactor at the centre and four +/- 6 neighbours (each of which
+// re-asks tempAt/humidAt), plainsPlateau re-asks plainsFactor after
+// rawColumnHeight already did, and the biome decision asks everything
+// again at its lattice points. All four are pure functions of the world
+// coordinates, so the memo returns exactly what the computation would —
+// it just stops the same octaves from being evaluated five times over.
+static double tempAtUncached(const TerrainNoise& n, double wx, double wz) {
+    return noiseFbm2d(n.temp, wx * 0.0004, wz * 0.0004, 2, 0.5, 2.0);
+}
+
+static double humidAtUncached(const TerrainNoise& n, double wx, double wz) {
+    return noiseFbm2d(n.humid, wx * 0.0005 + 512.0, wz * 0.0005 - 256.0, 2, 0.5, 2.0);
+}
+
+double tempAt(const TerrainNoise& n, double wx, double wz) {
+    if (wx != std::floor(wx) || wz != std::floor(wz))
+        return tempAtUncached(n, wx, wz);
+    const uint64_t kx = memoBits(wx), kz = memoBits(wz);
+    if (const MemoEntry* e = memoFind(t_tempMemo, n.uid, kx, kz, 0))
+        return e->dv;
+    const double v = tempAtUncached(n, wx, wz);
+    memoSlot(t_tempMemo, n.uid, kx, kz, 0).dv = v;
+    return v;
+}
+
+double humidAt(const TerrainNoise& n, double wx, double wz) {
+    if (wx != std::floor(wx) || wz != std::floor(wz))
+        return humidAtUncached(n, wx, wz);
+    const uint64_t kx = memoBits(wx), kz = memoBits(wz);
+    if (const MemoEntry* e = memoFind(t_humidMemo, n.uid, kx, kz, 0))
+        return e->dv;
+    const double v = humidAtUncached(n, wx, wz);
+    memoSlot(t_humidMemo, n.uid, kx, kz, 0).dv = v;
+    return v;
+}
+
+static double plainsFactorUncached(const TerrainNoise& n, double wx, double wz) {
     const double cont = continentField(n, wx, wz);
     // Two terms. A biome-scale patch noise so plains also occur well inland,
     // and a coastal band keyed off `cont` so that the shelf of land just
@@ -337,12 +386,15 @@ double plainsFactor(const TerrainNoise& n, double wx, double wz) {
     return std::clamp(std::max(inland * 0.85, coast * 0.95), 0.0, 1.0);
 }
 
-double tempAt(const TerrainNoise& n, double wx, double wz) {
-    return noiseFbm2d(n.temp, wx * 0.0004, wz * 0.0004, 2, 0.5, 2.0);
-}
-
-double humidAt(const TerrainNoise& n, double wx, double wz) {
-    return noiseFbm2d(n.humid, wx * 0.0005 + 512.0, wz * 0.0005 - 256.0, 2, 0.5, 2.0);
+double plainsFactor(const TerrainNoise& n, double wx, double wz) {
+    if (wx != std::floor(wx) || wz != std::floor(wz))
+        return plainsFactorUncached(n, wx, wz);
+    const uint64_t kx = memoBits(wx), kz = memoBits(wz);
+    if (const MemoEntry* e = memoFind(t_plainsMemo, n.uid, kx, kz, 0))
+        return e->dv;
+    const double v = plainsFactorUncached(n, wx, wz);
+    memoSlot(t_plainsMemo, n.uid, kx, kz, 0).dv = v;
+    return v;
 }
 
 double plainsPlateau(const TerrainNoise& n, double wx, double wz) {
@@ -371,7 +423,7 @@ double plainsForest(const TerrainNoise& n, double wx, double wz) {
     return patch * smoothstep(0.45, 0.70, plainsFactor(n, wx, wz));
 }
 
-double savannaFactor(const TerrainNoise& n, double wx, double wz) {
+static double savannaFactorUncached(const TerrainNoise& n, double wx, double wz) {
     const double t = tempAt(n, wx, wz);
     const double hu = humidAt(n, wx, wz);
     // Ask the biome selection directly whether this climate is a savanna.
@@ -391,6 +443,33 @@ double savannaFactor(const TerrainNoise& n, double wx, double wz) {
     return smoothstep(
         -0.24, 0.20,
         noiseFbm2d(n.surface, wx * 0.0024 + 4200.0, wz * 0.0024 - 8800.0, 2, 0.5, 2.0));
+}
+
+double savannaFactor(const TerrainNoise& n, double wx, double wz) {
+    if (wx != std::floor(wx) || wz != std::floor(wz))
+        return savannaFactorUncached(n, wx, wz);
+    const uint64_t kx = memoBits(wx), kz = memoBits(wz);
+    if (const MemoEntry* e = memoFind(t_savMemo, n.uid, kx, kz, 0))
+        return e->dv;
+    const double v = savannaFactorUncached(n, wx, wz);
+    memoSlot(t_savMemo, n.uid, kx, kz, 0).dv = v;
+    return v;
+}
+
+// Vanilla deserts are SEMI-FLAT: gently rolling sand without the hill
+// country the rest of the continent gets. This measures how deep inside
+// the hot/dry desert band the column sits, in [0,1]. It ramps over the
+// humidity instead of cutting at the biome border, so the flattening
+// blends into the savanna without a step at the boundary.
+static double desertFlatFactor(const TerrainNoise& n, double wx, double wz) {
+    const double t = tempAt(n, wx, wz);
+    if (t <= 0.50)
+        return 0.0; // not the hot band: no desert to flatten
+    const double hu = humidAt(n, wx, wz);
+    // Dry side of the desert cut (humid = -0.20), fully flat past -0.42.
+    // The temp ramp keeps the first blocks inside the hot band undamped so
+    // the transition from savanna stays smooth.
+    return smoothstep(-0.20, -0.42, hu) * smoothstep(0.50, 0.58, t);
 }
 
 // Desert proximity in [0,1]: how close this climate is to the hot/dry
@@ -547,8 +626,15 @@ static double rawColumnHeightUncached(const TerrainNoise& n, double wx, double w
     //
     // The savanna is damped a little less (0.78) so its surface keeps the
     // 2-3 block roll the plains deliberately shave off.
-    const double damp = (savanna > plains) ? 0.78 : 0.90;
-    const double relief = 1.0 - damp * std::max(plains, savanna);
+    //
+    // The desert is damped at 0.86 — SEMI-flat, the user asked for vanilla
+    // desert ground: broad gentle sand with a shallow roll, no hill country
+    // inside the dry band. Taking the max of the three dampings keeps the
+    // old behaviour wherever the desert factor is 0.
+    const double desertFlat = desertFlatFactor(n, wx, wz);
+    const double damp =
+        std::max(std::max(plains * 0.90, savanna * 0.78), desertFlat * 0.86);
+    const double relief = std::max(0.0, 1.0 - damp);
 
     double h = 70.0 + cont * 31.0; // 39 .. 101 base
     // The broad swell is damped too. It was the one layer still at full
@@ -758,22 +844,41 @@ namespace {
 // field could have right at zero. On a flat spot the zero contour is
 // ill-defined, the block distance blows up or collapses and the river used
 // to vanish or flood the whole flat.
-inline double riverField(const TerrainNoise& n, double wx, double wz, double bias) {
-    // Irregular, crooked meandering. One very broad octave (~1700-block
-    // wavelength) gives the reach its overall sweep, and a second octave at
-    // 45% amplitude on a 2.8x shorter wavelength bends it the other way
-    // often enough to give the reach kinks and short reaches of different
-    // length instead of one long smooth drawn arc.
-    constexpr double kWarpFreq = 0.00060;
-    constexpr double kAmp = 30.0; // blocks of sideways displacement
-    const double ox =
-        noiseFbm2d(n.surface, wx * kWarpFreq + 12000.0, wz * kWarpFreq - 3100.0, 2, 0.45, 2.8);
-    const double oz =
-        noiseFbm2d(n.surface, wx * kWarpFreq - 7300.0, wz * kWarpFreq + 9100.0, 2, 0.45, 2.8);
+//
+// The warp offsets are passed IN rather than sampled here: riverDistance
+// evaluates this field five times (the centre and the four +/- 1 gradient
+// taps), and the warp field's wavelength is ~1700 blocks — across one block
+// it moves the sampling point by ~0.02 blocks, far below anything the
+// contour can feel. Sampling the warp once per riverDistance call instead
+// of five times cuts the most expensive per-column call by ~40% with a
+// bit-identical-looking network (same contour, same meanders).
+// Domain-warp sampling for the river field: the sideways displacement of
+// the sampling point. Irregular, crooked meandering. One very broad octave
+// (~1700-block wavelength) gives the reach its overall sweep, and a second
+// octave at 45% amplitude on a 2.8x shorter wavelength bends it the other
+// way often enough to give the reach kinks and short reaches of different
+// length instead of one long smooth drawn arc.
+constexpr double kWarpFreq = 0.00060;
+constexpr double kAmp = 30.0; // blocks of sideways displacement
+inline void riverWarp(const TerrainNoise& n, double wx, double wz, double& ox, double& oz) {
+    ox = noiseFbm2d(n.surface, wx * kWarpFreq + 12000.0, wz * kWarpFreq - 3100.0, 2, 0.45, 2.8);
+    oz = noiseFbm2d(n.surface, wx * kWarpFreq - 7300.0, wz * kWarpFreq + 9100.0, 2, 0.45, 2.8);
+}
+
+inline double riverFieldAt(const TerrainNoise& n, double wx, double wz, double bias, double ox,
+                           double oz) {
     const double f =
         noiseFbm2d(n.river, (wx + ox * kAmp) * 0.0014, (wz + oz * kAmp) * 0.0014, 4, 0.5, 2.0);
     // Subtracting the bias moves the zero contour towards the jungle belt.
     return f - bias;
+}
+
+// riverField at (wx, wz) with its own warp — for the single-evaluation
+// callers (riverValley, riverShoulder).
+inline double riverField(const TerrainNoise& n, double wx, double wz, double bias) {
+    double ox, oz;
+    riverWarp(n, wx, wz, ox, oz);
+    return riverFieldAt(n, wx, wz, bias, ox, oz);
 }
 
 // How strongly this column is pulled towards the jungle belt, as a fraction
@@ -808,9 +913,15 @@ inline double riverJungleBias(const TerrainNoise& n, double wx, double wz) {
 
 static double riverDistanceUncached(const TerrainNoise& n, double wx, double wz) {
     const double bias = riverJungleBias(n, wx, wz);
-    const double v = riverField(n, wx, wz, bias);
-    const double gx = riverField(n, wx + 1.0, wz, bias) - riverField(n, wx - 1.0, wz, bias);
-    const double gz = riverField(n, wx, wz + 1.0, bias) - riverField(n, wx, wz - 1.0, bias);
+    // The warp is sampled ONCE: across the +/- 1 gradient taps the warp
+    // field moves the sampling point by ~0.02 blocks (see riverFieldAt).
+    double ox, oz;
+    riverWarp(n, wx, wz, ox, oz);
+    const double v = riverFieldAt(n, wx, wz, bias, ox, oz);
+    const double gx = riverFieldAt(n, wx + 1.0, wz, bias, ox, oz) -
+                      riverFieldAt(n, wx - 1.0, wz, bias, ox, oz);
+    const double gz = riverFieldAt(n, wx, wz + 1.0, bias, ox, oz) -
+                      riverFieldAt(n, wx, wz - 1.0, bias, ox, oz);
     const double g = 0.5 * std::sqrt(gx * gx + gz * gz); // field per block
     if (g < 1e-9)
         return 1e9; // no contour here
@@ -925,8 +1036,10 @@ bool isOceanShore(const TerrainNoise& n, double wx, double wz, int h, int radius
             // this test is what tells the two apart — and getting it wrong
             // is what painted every river bank as a sand beach. The water
             // has to be a good way clear of the channel profile before it
-            // counts as sea.
-            if (riverDistance(n, wx + dx, wz + dz) > 8.0)
+            // counts as sea. The threshold is above the WIDEST river half
+            // width (kRiverEdge * 1.43 ~= 7.4) plus the smoothing wobble,
+            // so no column of a wide river can ever be mistaken for sea.
+            if (riverDistance(n, wx + dx, wz + dz) > 10.0)
                 return true;
         }
     }
@@ -998,6 +1111,147 @@ double treeFreeMask(const TerrainNoise& n, double wx, double wz, int h) {
     return t * t * (3.0 - 2.0 * t) * bias;
 }
 
+// ---- Inland climate biome, MAJORITY-FILTERED -----------------------------
+//
+// The inland biome used to be decided per column from smoothstep cuts on
+// independent noise fields (the plainsFactor / savannaFactor overrides and
+// the climate bands of select()). Wherever one of those cuts ran close and
+// parallel to another, or a mask peak barely crossed its threshold, the
+// losing strip came out 1-8 blocks wide: biomas "muy delgados" squeezed
+// between two bigger ones. Measured over 784x784 columns, ~1.8% of all
+// land columns belonged to a biome that never got wider than 8 blocks
+// (desert ~9%, jungle ~11%, savanna plateau ~12%); on seed 777 it was 4%
+// overall and 29% of the desert.
+//
+// The fix is a MAJORITY FILTER — the same thing vanilla's biome "zoom"
+// layers effectively apply: the inland decision is evaluated on a coarse,
+// WORLD-ALIGNED lattice (one point every 4 blocks) and every column takes
+// the most common result of the 9 lattice points around it at +/- 12
+// blocks. A land biome that cannot gather a local majority across ~24
+// blocks is absorbed into whichever neighbour outvotes it, so no inland
+// biome can stay thinner than roughly a dozen blocks: the wide biomes push
+// the thin ones out instead of leaving ribbons between them.
+//
+// Water, river channels and beaches are NOT filtered: they are decided
+// below from the river field and the real smoothed height of the column,
+// and they must line up with the carved terrain exactly.
+//
+// Determinism: every vote is a pure function of world coordinates, the
+// lattice anchor (2 mod 4) is the same for every chunk, so neighbouring
+// chunks always agree; the centre vote is counted FIRST, so ties keep the
+// column's own unfiltered decision and boundaries stay where the climate
+// put them.
+constexpr int kBiomeVoteStep = 12;   // vote offsets are 0 and +/- this
+constexpr int kBiomeLattice = 4;     // lattice spacing, blocks
+constexpr int kBiomeLatticeAnchor = 2; // lattice points sit at anchor (mod step)
+
+// The unfiltered inland decision — the tail of the old
+// columnBiomeUncached, evaluated at lattice points (and memoized there).
+//
+// The height this reads is a 5-tap average over the lattice point and its
+// four +/- 4 neighbours. All five points are lattice points themselves, so
+// the average costs NO extra raw evaluations (memo hits across the grid).
+// It exists because the raw height salted the EXTREME_HILLS cut: the
+// outcrop/crag layers make h cross the height >= sea+26 line back and
+// forth every few blocks, which stamped the mountains as alternating
+// 2-4 block stripes of hills / taiga / ice plains — thin biomes the vote
+// below can never fix (a long stripe is its own local majority). The
+// 12-block average keeps every genuine ridge above the line while
+// flattening the salt, the same way the (1,4,1)/36 kernel smooths the
+// terrain the player walks on.
+static uint8_t inlandClimateBiomeUncached(const TerrainNoise& n, double wx, double wz) {
+    using namespace biome;
+
+    const double t = tempAt(n, wx, wz);
+    const double hu = humidAt(n, wx, wz);
+    const double s = (double)kBiomeLattice;
+    const double hRaw = (rawColumnHeight(n, wx, wz) + rawColumnHeight(n, wx - s, wz) +
+                         rawColumnHeight(n, wx + s, wz) + rawColumnHeight(n, wx, wz - s) +
+                         rawColumnHeight(n, wx, wz + s)) /
+                        5.0;
+    const int h = (int)std::lround(hRaw);
+
+    // The plains override must not punch grassland islands into the hot/dry
+    // desert band: the desert is its own flat country now (desertFlatFactor
+    // flattens it through the same relief term the plains use), and a
+    // plains patch stranded inside a desert was one more source of thin
+    // biomes. The savanna override needs no extra gate — savannaFactor
+    // already asks select() for the savanna climate.
+    if (plainsFactor(n, wx, wz) > 0.55 && h < kSeaLevel + 16 &&
+        !(t > 0.50 && hu < -0.20)) {
+        if (plainsForest(n, wx, wz) > 0.55)
+            return BIOME_FOREST;
+        if (plainsPlateau(n, wx, wz) > 0.55)
+            return BIOME_PLAINS_PLATEAU;
+        return BIOME_PLAINS;
+    }
+
+    const double sf = savannaFactor(n, wx, wz);
+    if (sf > 0.55 && h < kSeaLevel + 45) {
+        if (savannaCanyon(n, wx, wz) > 0.45)
+            return BIOME_SAVANNA_PLATEAU;
+        return BIOME_SAVANNA;
+    }
+
+    uint8_t b = BiomeRegistry::select(t, hu, h, kSeaLevel);
+    if (b == BIOME_OCEAN)
+        b = BIOME_PLAINS; // an inland vote must never be water
+    return b;
+}
+
+// Nearest lattice point to v (ties resolve deterministically).
+inline double snapLattice(double v) {
+    const double a = (double)kBiomeLatticeAnchor;
+    const double s = (double)kBiomeLattice;
+    return a + std::floor((v - a + s * 0.5) / s) * s;
+}
+
+// Memoized at lattice points: callers snap coordinates first, so one
+// evaluation is shared by every column that votes with that point (about
+// 120 points per chunk instead of one per column).
+static uint8_t inlandClimateBiome(const TerrainNoise& n, double wx, double wz) {
+    const uint64_t kx = memoBits(wx), kz = memoBits(wz);
+    if (const MemoEntry* e = memoFind(t_inlandMemo, n.uid, kx, kz, 0))
+        return (uint8_t)e->iv;
+    const uint8_t v = inlandClimateBiomeUncached(n, wx, wz);
+    memoSlot(t_inlandMemo, n.uid, kx, kz, 0).iv = v;
+    return v;
+}
+
+// Majority vote of the inland decision over the 3x3 vote stencil.
+// votes[0] is the column's own lattice point, so on a tie the column keeps
+// its own decision (no systematic drift of the boundary either way).
+static uint8_t filteredInlandBiome(const TerrainNoise& n, double wx, double wz) {
+    static const int ox[9] = {0, 1, 0, -1, 0, 1, -1, 1, -1};
+    static const int oz[9] = {0, 0, 1, 0, -1, 1, -1, -1, 1};
+    uint8_t cand[9];
+    int count[9];
+    int nv = 0;
+    for (int i = 0; i < 9; ++i) {
+        const double sx = snapLattice(wx + ox[i] * (double)kBiomeVoteStep);
+        const double sz = snapLattice(wz + oz[i] * (double)kBiomeVoteStep);
+        const uint8_t b = inlandClimateBiome(n, sx, sz);
+        int* hit = nullptr;
+        for (int j = 0; j < nv; ++j)
+            if (cand[j] == b) {
+                hit = &count[j];
+                break;
+            }
+        if (hit)
+            ++*hit;
+        else {
+            cand[nv] = b;
+            count[nv] = 1;
+            ++nv;
+        }
+    }
+    int best = 0;
+    for (int i = 1; i < nv; ++i)
+        if (count[i] > count[best])
+            best = i;
+    return cand[best];
+}
+
 static uint8_t columnBiomeUncached(const TerrainNoise& n, double wx, double wz, int h) {
     using namespace biome;
 
@@ -1027,34 +1281,12 @@ static uint8_t columnBiomeUncached(const TerrainNoise& n, double wx, double wz, 
     if (isOceanShore(n, wx, wz, h))
         return BIOME_BEACH;
 
-    // Where the terrain has actually been flattened into open grassland,
-    // the biome has to agree with the shape of the ground, otherwise you
-    // get forests and jungles standing on open plains and vice versa — and
-    // the plains themselves end up full of trees the terrain was flattened
-    // to make room for. The two variants read the SAME masks the terrain
-    // uses, so the raised table and the woodland patches line up exactly.
-    if (plainsFactor(n, wx, wz) > 0.55 && h < kSeaLevel + 16) {
-        if (plainsForest(n, wx, wz) > 0.55)
-            return BIOME_FOREST;
-        if (plainsPlateau(n, wx, wz) > 0.55)
-            return BIOME_PLAINS_PLATEAU;
-        return BIOME_PLAINS;
-    }
-
-    // Savanna: the low-relief plains and, inside their core, the raised
-    // canyon tables. The height cap is generous because the canyon table
-    // itself stands ~22 blocks above the plain.
-    const double sf = savannaFactor(n, wx, wz);
-    if (sf > 0.55 && h < kSeaLevel + 45) {
-        if (savannaCanyon(n, wx, wz) > 0.45)
-            return BIOME_SAVANNA_PLATEAU;
-        return BIOME_SAVANNA;
-    }
-
-    uint8_t b = BiomeRegistry::select(t, hu, h, kSeaLevel);
-    if (b == BIOME_OCEAN)
-        b = BIOME_PLAINS;
-    return b;
+    // Inland: the MAJORITY-FILTERED climate biome (see filteredInlandBiome
+    // above). This replaces the old per-column override + select() tail,
+    // which is what produced the thin biome ribbons the player kept
+    // finding. The filter's lattice is world-aligned, so the result is
+    // identical no matter which chunk asks for the column.
+    return filteredInlandBiome(n, wx, wz);
 }
 
 uint8_t columnBiome(const TerrainNoise& n, double wx, double wz, int h) {

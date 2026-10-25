@@ -4,17 +4,17 @@
 //
 //   g++ -std=c++20 -Isrc tools/biome_check.cpp \
 //       src/level/generator/biome/Biome.cpp -o /tmp/biome_check
-#include "level/generator/biome/BiomeOcean.h"
-#include "level/generator/biome/BiomePlains.h"
-#include "level/generator/biome/BiomeDesert.h"
-#include "level/generator/biome/BiomeForest.h"
-#include "level/generator/biome/BiomeMountains.h"
+#include "world/generator/biome/BiomeOcean.h"
+#include "world/generator/biome/BiomePlains.h"
+#include "world/generator/biome/BiomeDesert.h"
+#include "world/generator/biome/BiomeForest.h"
+#include "world/generator/biome/BiomeMountains.h"
 
 #include <cstdio>
 #include <string>
 #include <vector>
 
-using namespace cursestone::level::generator::biome;
+using namespace cursestone::world::generator::biome;
 
 static int failures = 0;
 
