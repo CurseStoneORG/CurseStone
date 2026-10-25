@@ -47,7 +47,6 @@ const BiomeConfig& savannaBiome() {
         .deadBushAmount = 1,
         .sugarCaneAmount = 2,
         .mushroomAmount = 0,
-        .pumpkinAmount = 0,
         .melonAmount = 0,
         .waterLilyAmount = 0,
     };

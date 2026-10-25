@@ -41,14 +41,17 @@ const BiomeConfig& taigaBiome() {
                 {object::TREE_SPRUCE, 4},
                 {object::TREE_OAK, 1},
             },
-        .grassAmount = 4,
+        // The taiga floor is fern country: vanilla covers it densely with
+        // ferns (and large ferns), not with the sparse grass the old amount
+        // grew. The tall-grass pass places data 2 (fern) here, so this
+        // amount is the fern density.
+        .grassAmount = 10,
         .flowerAmount = 0,
         .doublePlantAmount = 3,
         .cactusAmount = 0,
         .deadBushAmount = 1,
         .sugarCaneAmount = 1,
         .mushroomAmount = 1,
-        .pumpkinAmount = 0,
         .melonAmount = 0,
         .waterLilyAmount = 0,
     };

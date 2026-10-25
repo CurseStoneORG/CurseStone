@@ -82,19 +82,6 @@ class PopulatorMushroom : public Populator {
     uint8_t id_;
 };
 
-class PopulatorPumpkin : public Populator {
-  public:
-    explicit PopulatorPumpkin(int attempts) : attempts_(attempts) {
-    }
-    const char* name() const override {
-        return "pumpkin";
-    }
-    void populate(GenerationContext& ctx) override;
-
-  private:
-    int attempts_;
-};
-
 class PopulatorMelon : public Populator {
   public:
     explicit PopulatorMelon(int attempts) : attempts_(attempts) {

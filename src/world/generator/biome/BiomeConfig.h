@@ -65,7 +65,6 @@ struct BiomeConfig {
     int deadBushAmount = 0;
     int sugarCaneAmount = 0;
     int mushroomAmount = 0;
-    int pumpkinAmount = 0;
     int melonAmount = 0;
     int waterLilyAmount = 0;
 };

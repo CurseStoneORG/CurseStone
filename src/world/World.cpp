@@ -138,6 +138,14 @@ World::World(WorldConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
         if (provider->getSeed() != 0) {
             // Existing world: level.dat is the authority.
             cfg_.seed = provider->getSeed();
+            // The day cycle is world state too: resume the stored time so a
+            // world that was saved at night does not come back at dawn on
+            // the next boot. The value is kept in the [0, 24000) tick band
+            // the rest of the server works in.
+            int64_t stored = provider->getCurrentTime() % 24000;
+            if (stored < 0)
+                stored += 24000;
+            cfg_.time = (int32_t)stored;
         } else {
             provider->setSeed(cfg_.seed);
         }

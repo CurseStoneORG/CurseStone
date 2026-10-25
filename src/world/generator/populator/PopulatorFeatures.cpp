@@ -38,6 +38,15 @@ inline const biome::BiomeConfig& cfgAt(const mcp_chunk_t* c, int x, int z) {
     return biome::BiomeRegistry::forId(mcp_chunk_get_biome(c, x, z));
 }
 
+// The cold forest floor grows large ferns; everywhere else keeps the
+// double tallgrass the populator was configured with. Same biome set the
+// tall-grass pass uses for its fern variant.
+inline bool coldFernFloor(uint8_t b) {
+    return b == biome::BIOME_TAIGA || b == biome::BIOME_TAIGA_HILLS ||
+           b == biome::BIOME_ICE_PLAINS || b == biome::BIOME_ICE_MOUNTAINS ||
+           b == biome::BIOME_EXTREME_HILLS;
+}
+
 // ---- Lava pools on the plains -------------------------------------------
 
 inline bool inXZ(int v) {
@@ -168,22 +177,6 @@ void PopulatorMushroom::populate(GenerationContext& ctx) {
     ctx.chunk->dirty = true;
 }
 
-void PopulatorPumpkin::populate(GenerationContext& ctx) {
-    MersenneRandom rng = chunkRandom(ctx.seed, ctx.chunk_x, ctx.chunk_z, 0x9011);
-    for (int i = 0; i < attempts_; ++i) {
-        int x = (int)rng.nextInt(16);
-        int z = (int)rng.nextInt(16);
-        const auto& cfg = cfgAt(ctx.chunk, x, z);
-        if (cfg.pumpkinAmount <= 0 || rng.nextInt(16) >= cfg.pumpkinAmount)
-            continue;
-        int y = surfaceY(ctx.chunk, x, z);
-        if (y < 0)
-            continue;
-        object::ObjectDecorators::pumpkin(ctx.chunk, x, y, z, rng);
-    }
-    ctx.chunk->dirty = true;
-}
-
 void PopulatorMelon::populate(GenerationContext& ctx) {
     MersenneRandom rng = chunkRandom(ctx.seed, ctx.chunk_x, ctx.chunk_z, 0x3E10);
     for (int i = 0; i < attempts_; ++i) {
@@ -205,13 +198,15 @@ void PopulatorDoublePlant::populate(GenerationContext& ctx) {
     for (int i = 0; i < attempts_; ++i) {
         int x = (int)rng.nextInt(16);
         int z = (int)rng.nextInt(16);
+        const uint8_t biome = mcp_chunk_get_biome(ctx.chunk, x, z);
         const auto& cfg = cfgAt(ctx.chunk, x, z);
         if (cfg.doublePlantAmount <= 0 || rng.nextInt(16) >= cfg.doublePlantAmount)
             continue;
         int y = surfaceY(ctx.chunk, x, z);
         if (y < 0)
             continue;
-        object::ObjectDecorators::doublePlant(ctx.chunk, x, y, z, data_);
+        object::ObjectDecorators::doublePlant(ctx.chunk, x, y, z,
+                                              coldFernFloor(biome) ? 3 : data_);
     }
     ctx.chunk->dirty = true;
 }

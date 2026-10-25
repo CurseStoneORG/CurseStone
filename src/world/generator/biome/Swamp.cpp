@@ -47,7 +47,6 @@ const BiomeConfig& swampBiome() {
         .deadBushAmount = 0,
         .sugarCaneAmount = 3,
         .mushroomAmount = 1,
-        .pumpkinAmount = 0,
         .melonAmount = 0,
         .waterLilyAmount = 8,
     };
