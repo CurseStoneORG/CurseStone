@@ -430,17 +430,15 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                     if (cs->windowid == container_window_id_ && open_furnace_) {
                         if (open_furnace_ && cs->slot >= 0 && cs->slot < 3) {
                             auto f = open_furnace_;
-                            inventory::Inventory* fInvRaw =
-                                static_cast<inventory::Inventory*>(f->inventory().get());
                             auto cev = event::EventManager::get()
                                            .fire<event::inventory::InventoryClickEvent>(
-                                               std::shared_ptr<inventory::Inventory>(
-                                                   std::shared_ptr<void>(), fInvRaw),
+                                               std::static_pointer_cast<inventory::Inventory>(
+                                                   f->inventory()),
                                                this, (int)cs->slot, it);
                             if (!cev.isCancelled()) {
                                 // Apply the same floating-buffer validation used for chests.
                                 if (isCreative() ||
-                                    beginSurvivalSlotWrite(fInvRaw, cs->slot, it)) {
+                                    beginSurvivalSlotWrite(f->inventory().get(), cs->slot, it)) {
                                     f->setItem(cs->slot, it);
                                     // Same co-viewer sync as the chest.
                                     broadcastFurnaceSlotToViewers(cs->slot);
@@ -563,15 +561,27 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
         // Genisys ignores this health confirmation packet.
         case network::protocol::SET_HEALTH_PACKET:
             break;
-        case network::protocol::CONTAINER_CLOSE_PACKET:
-            // Close the open container and return any items left on the cursor.
-            if (!open_chest_ && !open_furnace_) {
+        case network::protocol::CONTAINER_CLOSE_PACKET: {
+            // Vanilla honors the closing window id: window 0 (the player's
+            // own inventory screen) and unknown ids never tear a container
+            // window down, so a stale or bogus close cannot rip an open
+            // chest/furnace away from a chest-UI flow.
+            bool container_open = open_chest_ || open_furnace_;
+            uint8_t close_wid = container_window_id_;
+            if (auto* cc = dynamic_cast<network::protocol::ContainerClosePacket*>(&p))
+                close_wid = cc->windowid;
+            bool matched = container_open && close_wid == container_window_id_;
+            if (matched) {
+                // InventoryCloseEvent + the window close echo to the client.
+                closeOpenChest();
+            } else if (!container_open) {
                 handleInventoryCraft();
             }
-            closeOpenChest();
-            // Return floating items to the inventory to prevent item loss.
-            returnFloatingItems();
+            // Return cursor items only when a window actually ended.
+            if (matched || !container_open)
+                returnFloatingItems();
             break;
+        }
         case network::protocol::CRAFTING_EVENT_PACKET: {
             // Validate crafting requests, consume ingredients, and grant the recipe output.
             if (auto* ce = dynamic_cast<network::protocol::CraftingEventPacket*>(&p)) {
