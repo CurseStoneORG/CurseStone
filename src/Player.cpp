@@ -39,6 +39,7 @@
 #include "nbt/tag/ListTag.h"
 #include "nbt/tag/Tag.h"
 #include "item/ItemNbt.h"
+#include "utils/CRaii.h"
 #include "utils/MainLogger.hpp"
 #include "utils/Utils.h"
 #include <chrono>
@@ -324,10 +325,7 @@ void Player::saveData() {
         return;
     if (!named_tag_) {
         // Create an NBT root if none exists.
-        named_tag_ = std::shared_ptr<::mcp_tag>(mcp_compound_tag_new(), [](::mcp_tag* t) {
-            if (t)
-                mcp_tag_destroy(t);
-        });
+        named_tag_ = adoptNbt(mcp_compound_tag_new());
     }
     ::mcp_tag* root = named_tag_.get();
     if (!root)
@@ -346,17 +344,21 @@ void Player::saveData() {
     mcp_compound_tag_set_float(root, "FoodSaturation", food_saturation_);
     mcp_compound_tag_set_float(root, "FoodExhaustion", food_exhaustion_);
     // Active potion effects (vanilla ActiveEffects list).
-    mcp_tag_t* fx_list = mcp_list_tag_new_named("ActiveEffects", MCP_TAG_COMPOUND);
+    utils::TagGuard fx_list(mcp_list_tag_new_named("ActiveEffects", MCP_TAG_COMPOUND));
     if (fx_list) {
         for (const auto& e : effects()) {
-            mcp_tag_t* entry = mcp_compound_tag_new_named("");
-            mcp_compound_tag_set_byte(entry, "Id", (int8_t)e->id());
-            mcp_compound_tag_set_byte(entry, "Amplifier", (int8_t)e->amplifier());
-            mcp_compound_tag_set_int(entry, "Duration", e->duration());
-            mcp_list_tag_append(fx_list, entry);
+            utils::TagGuard entry(mcp_compound_tag_new_named(""));
+            if (!entry)
+                continue;
+            mcp_compound_tag_set_byte(entry.get(), "Id", (int8_t)e->id());
+            mcp_compound_tag_set_byte(entry.get(), "Amplifier", (int8_t)e->amplifier());
+            mcp_compound_tag_set_int(entry.get(), "Duration", e->duration());
+            if (mcp_list_tag_append(fx_list.get(), entry.get()) == 0)
+                entry.release();
         }
     }
-    mcp_compound_tag_set(root, "ActiveEffects", fx_list);
+    if (mcp_compound_tag_set(root, "ActiveEffects", fx_list.get()) == 0)
+        fx_list.release();
     mcp_compound_tag_set_short(root, "Air", (int16_t)air_ticks_);
     // Experience (same keys as the reference Human::saveNBT).
     mcp_compound_tag_set_int(root, "XpLevel", xp_level_);
@@ -373,7 +375,7 @@ void Player::saveData() {
 
     // Save inventory and armor in a single list.
     // Include all 40 slots so equipped armor is preserved.
-    mcp_tag_t* inv_list = mcp_list_tag_new_named("Inventory", MCP_TAG_COMPOUND);
+    utils::TagGuard inv_list(mcp_list_tag_new_named("Inventory", MCP_TAG_COMPOUND));
     if (inv_list && inv_) {
         for (int slot = 0; slot < inventory::PLAYER_INV_TOTAL; ++slot) {
             auto it = inv_->getItem(slot);
@@ -384,15 +386,19 @@ void Player::saveData() {
                 slot < inventory::PlayerInventory::ARMOR_OFFSET + 4) {
                 nbt_slot = 100 + (slot - inventory::PlayerInventory::ARMOR_OFFSET);
             }
-            mcp_tag_t* entry = mcp_compound_tag_new_named("");
-            mcp_compound_tag_set_byte(entry, "Slot", (int8_t)nbt_slot);
+            utils::TagGuard entry(mcp_compound_tag_new_named(""));
+            if (!entry)
+                continue;
+            mcp_compound_tag_set_byte(entry.get(), "Slot", (int8_t)nbt_slot);
             // Serialize item data, including enchantments.
-            item::itemStackToNbt(it, entry);
-            mcp_list_tag_append(inv_list, entry);
+            item::itemStackToNbt(it, entry.get());
+            if (mcp_list_tag_append(inv_list.get(), entry.get()) == 0)
+                entry.release();
         }
         mcp_compound_tag_set_int(root, "SelectedItemSlot", inv_->heldSlot());
     }
-    mcp_compound_tag_set(root, "Inventory", inv_list);
+    if (mcp_compound_tag_set(root, "Inventory", inv_list.get()) == 0)
+        inv_list.release();
 
     srv_->saveOfflinePlayerData(cfg_.username, named_tag_);
     if (srv_->advancedLog()) {

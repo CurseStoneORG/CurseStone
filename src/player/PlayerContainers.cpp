@@ -28,6 +28,7 @@
 #include "network/protocol/ContainerOpenPacket.h"
 #include "network/protocol/ContainerClosePacket.h"
 #include "network/protocol/ContainerSetContentPacket.h"
+#include "utils/CRaii.h"
 #include "tile/Tile.h"
 #include "tile/TileChest.h"
 #include "tile/TileFurnace.h"
@@ -332,22 +333,19 @@ void Player::handleSignEdit(network::protocol::BlockEntityDataPacket& pk) {
     if (pk.namedtag.empty())
         return;
 
-    mcp_tag_t* root = mcp_nbt_read_bytes(pk.namedtag.data(), pk.namedtag.size(),
-                                         /*little_endian=*/true);
+    utils::TagGuard root(mcp_nbt_read_bytes(pk.namedtag.data(), pk.namedtag.size(),
+                                            /*little_endian=*/true));
     if (!root)
         return;
 
-    std::string id = mcp_compound_tag_get_string(root, "id", "");
-    if (id != "Sign") {
-        mcp_tag_destroy(root);
+    std::string id = mcp_compound_tag_get_string(root.get(), "id", "");
+    if (id != "Sign")
         return;
-    }
 
-    std::array<std::string, 4> lines = {mcp_compound_tag_get_string(root, "Text1", ""),
-                                        mcp_compound_tag_get_string(root, "Text2", ""),
-                                        mcp_compound_tag_get_string(root, "Text3", ""),
-                                        mcp_compound_tag_get_string(root, "Text4", "")};
-    mcp_tag_destroy(root);
+    std::array<std::string, 4> lines = {mcp_compound_tag_get_string(root.get(), "Text1", ""),
+                                        mcp_compound_tag_get_string(root.get(), "Text2", ""),
+                                        mcp_compound_tag_get_string(root.get(), "Text3", ""),
+                                        mcp_compound_tag_get_string(root.get(), "Text4", "")};
 
     // Genisys compares the Creator contra the NBT of the tile of the server
     // (the sign's stored creator), not contra the packet — the client never
@@ -384,24 +382,20 @@ void Player::sendBlockEntityData(int32_t x, int32_t y, int32_t z, tile::Tile& t,
     if (!srv_)
         return;
 
-    mcp_tag_t* tag = mcp_compound_tag_new();
+    utils::TagGuard tag(mcp_compound_tag_new());
     if (!tag)
         return;
-    t.writeNBT(tag);
+    t.writeNBT(tag.get());
     size_t blen = 0;
-    uint8_t* bbuf = mcp_nbt_write_bytes(tag, /*little_endian=*/true, &blen);
-    mcp_tag_destroy(tag);
-    if (!bbuf || blen == 0) {
-        free(bbuf);
+    utils::BufferPtr bbuf(mcp_nbt_write_bytes(tag.get(), /*little_endian=*/true, &blen));
+    if (!bbuf || blen == 0)
         return;
-    }
 
     auto pk = std::make_shared<network::protocol::BlockEntityDataPacket>();
     pk->x = x;
     pk->y = y;
     pk->z = z;
-    pk->namedtag.assign(bbuf, bbuf + blen);
-    free(bbuf);
+    pk->namedtag.assign(bbuf.get(), bbuf.get() + blen);
 
     if (only) {
         only->sendPacket(pk);

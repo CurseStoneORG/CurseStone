@@ -27,6 +27,7 @@
 #include "workbench/WorkbenchManager.h"
 #include "diagnostics/Diagnostics.h"
 #include "Player.h"
+#include "utils/CRaii.h"
 #include "utils/MainLogger.h"
 #include "utils/MainLogger.hpp"
 #include "utils/Config.h"
@@ -1059,10 +1060,7 @@ static NbtPtr buildDefaultPlayerNbt(Server* srv, const std::string& name) {
         mcp_compound_tag_set_int(root, "SpawnY", (int32_t)sp.y);
         mcp_compound_tag_set_int(root, "SpawnZ", (int32_t)sp.z);
     }
-    return NbtPtr(root, [](mcp_tag_t* t) {
-        if (t)
-            mcp_tag_destroy(t);
-    });
+    return adoptNbt(root);
 }
 
 NbtPtr Server::getOfflinePlayerData(const std::string& name) {
@@ -1127,10 +1125,7 @@ NbtPtr Server::getOfflinePlayerData(const std::string& name) {
         utils::MainLogger::get().warn("Corrupt player data: " + path);
         return buildDefaultPlayerNbt(this, name);
     }
-    return NbtPtr(root, [](mcp_tag_t* t) {
-        if (t)
-            mcp_tag_destroy(t);
-    });
+    return adoptNbt(root);
 }
 
 void Server::saveOfflinePlayerData(const std::string& name, NbtPtr nbt) {
@@ -1139,30 +1134,26 @@ void Server::saveOfflinePlayerData(const std::string& name, NbtPtr nbt) {
     ensurePlayersDir(dataPath_);
     std::string path = dataPath_ + "/players/" + name + ".dat";
     size_t outLen = 0;
-    uint8_t* bytes = mcp_nbt_write_bytes(nbt.get(), /*little_endian=*/false, &outLen);
+    utils::BufferPtr bytes(mcp_nbt_write_bytes(nbt.get(), /*little_endian=*/false, &outLen));
     if (!bytes || outLen == 0) {
         utils::MainLogger::get().warn("Failed to serialize NBT for " + name);
-        if (bytes)
-            free(bytes);
         return;
     }
     // Compress player data using GZIP for Nukkit compatibility.
     z_stream zs{};
     if (deflateInit2(&zs, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 15 | 16, 8, Z_DEFAULT_STRATEGY) !=
         Z_OK) {
-        free(bytes);
         utils::MainLogger::get().warn("Failed to gzip player data for " + name);
         return;
     }
     size_t bound = deflateBound(&zs, (uLong)outLen);
     std::vector<uint8_t> gz(bound);
-    zs.next_in = (Bytef*)bytes;
+    zs.next_in = (Bytef*)bytes.get();
     zs.avail_in = (uInt)outLen;
     zs.next_out = (Bytef*)gz.data();
     zs.avail_out = (uInt)gz.size();
     int rc = deflate(&zs, Z_FINISH);
     deflateEnd(&zs);
-    free(bytes);
     if (rc != Z_STREAM_END) {
         utils::MainLogger::get().warn("Failed to compress player data for " + name);
         return;

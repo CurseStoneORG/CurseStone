@@ -26,6 +26,7 @@
 #include "item/ItemIds.h"
 #include "item/Item.h"
 #include "world/format/Chunk.h"
+#include "utils/CRaii.h"
 #include "network/protocol/MovePlayerPacket.h"
 #include "network/protocol/MoveEntityPacket.h"
 #include "network/protocol/FullChunkDataPacket.h"
@@ -583,18 +584,15 @@ void Player::onUpdate(uint64_t current_tick) {
                 continue; // The network send limit has been reached.
 
             size_t outLen = 0;
-            uint8_t* buf = mcp_chunk_network_serialize(ch, &outLen);
+            utils::BufferPtr buf(mcp_chunk_network_serialize(ch, &outLen));
             if (!buf)
                 continue;
-            if (outLen == 0) {
-                free(buf);
+            if (outLen == 0)
                 continue;
-            }
             auto pk = std::make_shared<network::protocol::FullChunkDataPacket>();
             pk->chunkX = chX;
             pk->chunkZ = chZ;
-            pk->data.assign(buf, buf + outLen);
-            free(buf);
+            pk->data.assign(buf.get(), buf.get() + outLen);
             sendPacket(pk);
             sendChunkTiles(chX, chZ);
             {

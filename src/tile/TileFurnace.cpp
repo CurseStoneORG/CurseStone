@@ -37,6 +37,7 @@
 #include "nbt/tag/CompoundTag.h"
 #include "nbt/tag/ListTag.h"
 #include "item/ItemNbt.h"
+#include "utils/CRaii.h"
 #include <algorithm>
 namespace cursestone::tile {
 TileFurnace::TileFurnace(cursestone::world::Position pos,
@@ -265,17 +266,23 @@ void TileFurnace::writeNBT(mcp_tag_t* tag) const {
     mcp_compound_tag_set_short(tag, "BurnDuration", static_cast<int16_t>(max_burn_time_));
     mcp_compound_tag_set_short(tag, "BurnTicks", static_cast<int16_t>(burn_time_));
     mcp_compound_tag_set_short(tag, "CookTicks", static_cast<int16_t>(cook_time_));
-    mcp_tag_t* items = mcp_list_tag_new_named("Items", MCP_TAG_COMPOUND);
+    utils::TagGuard items(mcp_list_tag_new_named("Items", MCP_TAG_COMPOUND));
+    if (!items)
+        return;
     for (int slot = 0; slot < 3; ++slot) {
         auto stack = inv_->getItem(slot);
         if (stack.isEmpty())
             continue;
-        mcp_tag_t* entry = mcp_compound_tag_new();
-        mcp_compound_tag_set_byte(entry, "Slot", static_cast<int8_t>(slot));
-        item::itemStackToNbt(stack, entry);
-        mcp_list_tag_append(items, entry);
+        utils::TagGuard entry(mcp_compound_tag_new());
+        if (!entry)
+            continue;
+        mcp_compound_tag_set_byte(entry.get(), "Slot", static_cast<int8_t>(slot));
+        item::itemStackToNbt(stack, entry.get());
+        if (mcp_list_tag_append(items.get(), entry.get()) == 0)
+            entry.release();
     }
-    mcp_compound_tag_set(tag, "Items", items);
+    if (mcp_compound_tag_set(tag, "Items", items.get()) == 0)
+        items.release();
 }
 void TileFurnace::readNBT(const mcp_tag_t* tag) {
     if (!tag)

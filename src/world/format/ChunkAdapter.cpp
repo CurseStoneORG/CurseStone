@@ -27,6 +27,7 @@
 // surface small (the heavy lifting lives in C).
 #include "ChunkAdapter.h"
 
+#include "utils/CRaii.h"
 #include <utility>
 
 namespace cursestone::world::format {
@@ -151,12 +152,10 @@ std::vector<uint8_t> ChunkAdapter::networkSerialize() const {
     if (!chunk_)
         return {};
     size_t len = 0;
-    uint8_t* buf = mcp_chunk_network_serialize(chunk_, &len);
+    utils::BufferPtr buf(mcp_chunk_network_serialize(chunk_, &len));
     if (!buf)
         return {};
-    std::vector<uint8_t> out(buf, buf + len);
-    free(buf);
-    return out;
+    return std::vector<uint8_t>(buf.get(), buf.get() + len);
 }
 
 } // namespace cursestone::world::format

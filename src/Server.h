@@ -81,6 +81,14 @@ class Item;
 // Shared owner for an NBT root tag; releases it when the reference count reaches zero.
 using NbtPtr = std::shared_ptr<::mcp_tag>;
 
+// Adopt a raw tag returned by the C NBT API; destroys it on last reference.
+inline NbtPtr adoptNbt(mcp_tag_t* t) {
+    return NbtPtr(t, [](mcp_tag_t* p) {
+        if (p)
+            mcp_tag_destroy(p);
+    });
+}
+
 /**
  * @brief Server singleton for startup, ticking, and shutdown.
  */

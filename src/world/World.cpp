@@ -32,6 +32,7 @@
 #include "world/generator/Flat.h"
 #include "world/generator/Nether.h"
 #include "world/generator/EmptyGenerator.h"
+#include "utils/CRaii.h"
 #include "utils/MainLogger.hpp"
 #include "tile/Tile.h"
 #include "tile/TileChest.h"
@@ -1810,14 +1811,14 @@ void World::ensureTilesLoaded(int32_t cx, int32_t cz) {
             size_t blen = c->tile_entity_lens ? c->tile_entity_lens[i] : 0;
             if (!blob || blen == 0)
                 continue;
-            mcp_tag_t* tag = mcp_nbt_read_bytes(blob, blen, /*little_endian=*/true);
+            utils::TagGuard tag(mcp_nbt_read_bytes(blob, blen, /*little_endian=*/true));
             if (!tag)
                 continue;
 
-            const char* id = mcp_compound_tag_get_string(tag, "id", "");
-            int32_t tx = mcp_compound_tag_get_int(tag, "x", 0);
-            int32_t ty = mcp_compound_tag_get_int(tag, "y", 0);
-            int32_t tz = mcp_compound_tag_get_int(tag, "z", 0);
+            const char* id = mcp_compound_tag_get_string(tag.get(), "id", "");
+            int32_t tx = mcp_compound_tag_get_int(tag.get(), "x", 0);
+            int32_t ty = mcp_compound_tag_get_int(tag.get(), "y", 0);
+            int32_t tz = mcp_compound_tag_get_int(tag.get(), "z", 0);
 
             std::shared_ptr<cursestone::tile::Tile> tile;
             cursestone::world::Position pos(tx, ty, tz);
@@ -1829,11 +1830,10 @@ void World::ensureTilesLoaded(int32_t cx, int32_t cz) {
                 tile = std::make_shared<cursestone::tile::TileFurnace>(pos);
             }
             if (tile) {
-                tile->readNBT(tag);
+                tile->readNBT(tag.get());
                 std::lock_guard<std::mutex> lk(tiles_mtx_);
                 tiles_[packTilePos(tx, ty, tz)] = std::move(tile);
             }
-            mcp_tag_destroy(tag);
         }
     }
 
@@ -1918,16 +1918,16 @@ void World::syncTilesToChunks() {
 
         mcp_chunk_clear_tile_entities(c);
         for (auto& t : tilesInChunk) {
-            mcp_tag_t* tag = mcp_compound_tag_new();
-            t->writeNBT(tag);
+            utils::TagGuard tag(mcp_compound_tag_new());
+            if (!tag)
+                continue;
+            t->writeNBT(tag.get());
             size_t blen = 0;
-            uint8_t* bbuf = mcp_nbt_write_bytes(tag, /*little_endian=*/true, &blen);
+            utils::BufferPtr bbuf(mcp_nbt_write_bytes(tag.get(), /*little_endian=*/true, &blen));
             if (bbuf && blen > 0) {
-                mcp_chunk_add_tile_entity(c, bbuf, blen);
+                mcp_chunk_add_tile_entity(c, bbuf.get(), blen);
                 t->clearDirty(); // Clear only after writing to the chunk.
             }
-            free(bbuf);
-            mcp_tag_destroy(tag);
         }
         c->dirty = true; // Ensure flushDirty() saves this chunk.
         if (emptied) {
@@ -1977,15 +1977,15 @@ void World::evictTilesForChunk(int32_t cx, int32_t cz) {
 
     mcp_chunk_clear_tile_entities(c);
     for (auto& t : tilesInChunk) {
-        mcp_tag_t* tag = mcp_compound_tag_new();
-        t->writeNBT(tag);
+        utils::TagGuard tag(mcp_compound_tag_new());
+        if (!tag)
+            continue;
+        t->writeNBT(tag.get());
         size_t blen = 0;
-        uint8_t* bbuf = mcp_nbt_write_bytes(tag, /*little_endian=*/true, &blen);
+        utils::BufferPtr bbuf(mcp_nbt_write_bytes(tag.get(), /*little_endian=*/true, &blen));
         if (bbuf && blen > 0) {
-            mcp_chunk_add_tile_entity(c, bbuf, blen);
+            mcp_chunk_add_tile_entity(c, bbuf.get(), blen);
         }
-        free(bbuf);
-        mcp_tag_destroy(tag);
     }
     c->dirty = true; // Ensure ChunkManager saves this chunk.
 }

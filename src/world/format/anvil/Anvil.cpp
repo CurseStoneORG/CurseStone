@@ -33,6 +33,7 @@
 #include "../ChunkAdapter.h"
 #include "../Chunk.h"
 #include "../../../nbt/NBT.h"
+#include "../../../utils/CRaii.h"
 #include "../../../nbt/tag/CompoundTag.h"
 #include "../../../nbt/tag/ByteArrayTag.h"
 #include "../../../nbt/tag/IntArrayTag.h"
@@ -425,7 +426,7 @@ void Anvil::saveChunk(const std::shared_ptr<FullChunk>& chunk) {
 
     // Encode NBT big-endian (main thread — reads the live chunk).
     size_t nbt_len = 0;
-    uint8_t* nbt_buf = anvil_chunk_encode(raw, &nbt_len);
+    utils::BufferPtr nbt_buf(anvil_chunk_encode(raw, &nbt_len));
     if (!nbt_buf || nbt_len == 0) {
         utils::MainLogger::get().warn("[Anvil] Failed to encode chunk " + std::to_string(raw->x) +
                                       "," + std::to_string(raw->z));
@@ -435,8 +436,7 @@ void Anvil::saveChunk(const std::shared_ptr<FullChunk>& chunk) {
     SaveJob job;
     job.x = raw->x;
     job.z = raw->z;
-    job.nbt.assign(nbt_buf, nbt_buf + nbt_len);
-    free(nbt_buf);
+    job.nbt.assign(nbt_buf.get(), nbt_buf.get() + nbt_len);
     enqueueSave(std::move(job));
 }
 
@@ -612,18 +612,13 @@ void Anvil::loadMetadata() {
         return;
     }
 
-    mcp_tag_t* root = mcp_nbt_read_bytes(inflated.data(), inflated.size(),
-                                         /*little_endian=*/false);
-    if (!root || mcp_tag_get_type(root) != MCP_TAG_COMPOUND) {
-        if (root)
-            mcp_tag_destroy(root);
+    utils::TagGuard root(mcp_nbt_read_bytes(inflated.data(), inflated.size(),
+                                            /*little_endian=*/false));
+    if (!root || mcp_tag_get_type(root.get()) != MCP_TAG_COMPOUND)
         return;
-    }
-    const mcp_tag_t* data = mcp_compound_tag_get_compound(root, "Data");
-    if (!data) {
-        mcp_tag_destroy(root);
+    const mcp_tag_t* data = mcp_compound_tag_get_compound(root.get(), "Data");
+    if (!data)
         return;
-    }
 
     seed_ = mcp_compound_tag_get_long(data, "RandomSeed", 0);
     time_ = mcp_compound_tag_get_long(data, "Time", 0);
@@ -637,31 +632,27 @@ void Anvil::loadMetadata() {
     const char* gen = mcp_compound_tag_get_string(data, "generatorName", "normal");
     if (gen)
         generator_name_ = gen;
-
-    mcp_tag_destroy(root);
 }
 
 void Anvil::saveMetadata() {
     // Build root compound "".
-    mcp_tag_t* root = mcp_compound_tag_new_named("");
+    utils::TagGuard root(mcp_compound_tag_new_named(""));
     if (!root)
         return;
 
     // Build "Data" compound (mirrors Nukkit's Anvil.generate()).
-    mcp_tag_t* data = mcp_compound_tag_new_named("Data");
-    if (!data) {
-        mcp_tag_destroy(root);
+    utils::TagGuard data(mcp_compound_tag_new_named("Data"));
+    if (!data)
         return;
-    }
 
-    mcp_compound_tag_set_long(data, "DayTime", time_);
-    mcp_compound_tag_set_int(data, "GameType", 0);
-    mcp_compound_tag_set_string(data, "generatorName", generator_name_.c_str());
-    mcp_compound_tag_set_string(data, "generatorOptions", "");
-    mcp_compound_tag_set_int(data, "generatorVersion", 1);
-    mcp_compound_tag_set_byte(data, "hardcore", 0);
-    mcp_compound_tag_set_byte(data, "initialized", 1);
-    mcp_compound_tag_set_long(data, "LastPlayed", current_unix_seconds());
+    mcp_compound_tag_set_long(data.get(), "DayTime", time_);
+    mcp_compound_tag_set_int(data.get(), "GameType", 0);
+    mcp_compound_tag_set_string(data.get(), "generatorName", generator_name_.c_str());
+    mcp_compound_tag_set_string(data.get(), "generatorOptions", "");
+    mcp_compound_tag_set_int(data.get(), "generatorVersion", 1);
+    mcp_compound_tag_set_byte(data.get(), "hardcore", 0);
+    mcp_compound_tag_set_byte(data.get(), "initialized", 1);
+    mcp_compound_tag_set_long(data.get(), "LastPlayed", current_unix_seconds());
     // LevelName = last path component (e.g. "worlds/world" → "world").
     {
         std::string lname;
@@ -672,37 +663,35 @@ void Anvil::saveMetadata() {
             else
                 lname = path_.substr(pos + 1);
         }
-        mcp_compound_tag_set_string(data, "LevelName", lname.c_str());
+        mcp_compound_tag_set_string(data.get(), "LevelName", lname.c_str());
     }
-    mcp_compound_tag_set_byte(data, "raining", 0);
-    mcp_compound_tag_set_int(data, "rainTime", 0);
-    mcp_compound_tag_set_long(data, "RandomSeed", seed_);
-    mcp_compound_tag_set_int(data, "SpawnX", (int32_t)spawn_.x);
-    mcp_compound_tag_set_int(data, "SpawnY", (int32_t)spawn_.y);
-    mcp_compound_tag_set_int(data, "SpawnZ", (int32_t)spawn_.z);
-    mcp_compound_tag_set_byte(data, "thundering", 0);
-    mcp_compound_tag_set_int(data, "thunderTime", 0);
-    mcp_compound_tag_set_int(data, "version", 19133);
-    mcp_compound_tag_set_long(data, "Time", time_);
-    mcp_compound_tag_set_long(data, "SizeOnDisk", 0);
+    mcp_compound_tag_set_byte(data.get(), "raining", 0);
+    mcp_compound_tag_set_int(data.get(), "rainTime", 0);
+    mcp_compound_tag_set_long(data.get(), "RandomSeed", seed_);
+    mcp_compound_tag_set_int(data.get(), "SpawnX", (int32_t)spawn_.x);
+    mcp_compound_tag_set_int(data.get(), "SpawnY", (int32_t)spawn_.y);
+    mcp_compound_tag_set_int(data.get(), "SpawnZ", (int32_t)spawn_.z);
+    mcp_compound_tag_set_byte(data.get(), "thundering", 0);
+    mcp_compound_tag_set_int(data.get(), "thunderTime", 0);
+    mcp_compound_tag_set_int(data.get(), "version", 19133);
+    mcp_compound_tag_set_long(data.get(), "Time", time_);
+    mcp_compound_tag_set_long(data.get(), "SizeOnDisk", 0);
 
     // GameRules (empty compound).
-    mcp_tag_t* game_rules = mcp_compound_tag_new_named("GameRules");
-    mcp_compound_tag_set(data, "GameRules", game_rules);
+    utils::TagGuard game_rules(mcp_compound_tag_new_named("GameRules"));
+    mcp_compound_tag_set(data.get(), "GameRules", game_rules.release());
 
-    mcp_compound_tag_set(root, "Data", data);
+    mcp_compound_tag_set(root.get(), "Data", data.release());
 
     // Serialize big-endian.
     size_t nbt_len = 0;
-    uint8_t* nbt_buf = mcp_nbt_write_bytes(root, /*little_endian=*/false, &nbt_len);
-    mcp_tag_destroy(root);
+    utils::BufferPtr nbt_buf(mcp_nbt_write_bytes(root.get(), /*little_endian=*/false, &nbt_len));
     if (!nbt_buf || nbt_len == 0)
         return;
 
     // GZIP-compress.
     std::vector<uint8_t> gz;
-    bool ok = gzip_compress(nbt_buf, nbt_len, &gz);
-    free(nbt_buf);
+    bool ok = gzip_compress(nbt_buf.get(), nbt_len, &gz);
     if (!ok) {
         utils::MainLogger::get().warn("[Anvil] gzip compress failed for level.dat");
         return;
@@ -754,45 +743,43 @@ bool Anvil::generate(const std::string& path, const std::string& name, int64_t s
         return false;
 
     // Build Data compound.
-    mcp_tag_t* data = mcp_compound_tag_new_named("Data");
+    utils::TagGuard data(mcp_compound_tag_new_named("Data"));
     if (!data)
         return false;
-    mcp_tag_t* game_rules = mcp_compound_tag_new_named("GameRules");
-    mcp_compound_tag_set(data, "GameRules", game_rules);
+    utils::TagGuard game_rules(mcp_compound_tag_new_named("GameRules"));
+    mcp_compound_tag_set(data.get(), "GameRules", game_rules.release());
 
-    mcp_compound_tag_set_long(data, "DayTime", 0);
-    mcp_compound_tag_set_int(data, "GameType", 0);
-    mcp_compound_tag_set_string(data, "generatorName", generatorName.c_str());
-    mcp_compound_tag_set_string(data, "generatorOptions", "");
-    mcp_compound_tag_set_int(data, "generatorVersion", 1);
-    mcp_compound_tag_set_byte(data, "hardcore", 0);
-    mcp_compound_tag_set_byte(data, "initialized", 1);
-    mcp_compound_tag_set_long(data, "LastPlayed", current_unix_seconds());
-    mcp_compound_tag_set_string(data, "LevelName", name.c_str());
-    mcp_compound_tag_set_byte(data, "raining", 0);
-    mcp_compound_tag_set_int(data, "rainTime", 0);
-    mcp_compound_tag_set_long(data, "RandomSeed", seed);
-    mcp_compound_tag_set_int(data, "SpawnX", 128);
-    mcp_compound_tag_set_int(data, "SpawnY", 70);
-    mcp_compound_tag_set_int(data, "SpawnZ", 128);
-    mcp_compound_tag_set_byte(data, "thundering", 0);
-    mcp_compound_tag_set_int(data, "thunderTime", 0);
-    mcp_compound_tag_set_int(data, "version", 19133);
-    mcp_compound_tag_set_long(data, "Time", 0);
-    mcp_compound_tag_set_long(data, "SizeOnDisk", 0);
+    mcp_compound_tag_set_long(data.get(), "DayTime", 0);
+    mcp_compound_tag_set_int(data.get(), "GameType", 0);
+    mcp_compound_tag_set_string(data.get(), "generatorName", generatorName.c_str());
+    mcp_compound_tag_set_string(data.get(), "generatorOptions", "");
+    mcp_compound_tag_set_int(data.get(), "generatorVersion", 1);
+    mcp_compound_tag_set_byte(data.get(), "hardcore", 0);
+    mcp_compound_tag_set_byte(data.get(), "initialized", 1);
+    mcp_compound_tag_set_long(data.get(), "LastPlayed", current_unix_seconds());
+    mcp_compound_tag_set_string(data.get(), "LevelName", name.c_str());
+    mcp_compound_tag_set_byte(data.get(), "raining", 0);
+    mcp_compound_tag_set_int(data.get(), "rainTime", 0);
+    mcp_compound_tag_set_long(data.get(), "RandomSeed", seed);
+    mcp_compound_tag_set_int(data.get(), "SpawnX", 128);
+    mcp_compound_tag_set_int(data.get(), "SpawnY", 70);
+    mcp_compound_tag_set_int(data.get(), "SpawnZ", 128);
+    mcp_compound_tag_set_byte(data.get(), "thundering", 0);
+    mcp_compound_tag_set_int(data.get(), "thunderTime", 0);
+    mcp_compound_tag_set_int(data.get(), "version", 19133);
+    mcp_compound_tag_set_long(data.get(), "Time", 0);
+    mcp_compound_tag_set_long(data.get(), "SizeOnDisk", 0);
 
-    mcp_tag_t* root = mcp_compound_tag_new_named("");
-    mcp_compound_tag_set(root, "Data", data);
+    utils::TagGuard root(mcp_compound_tag_new_named(""));
+    mcp_compound_tag_set(root.get(), "Data", data.release());
 
     size_t nbt_len = 0;
-    uint8_t* nbt_buf = mcp_nbt_write_bytes(root, /*little_endian=*/false, &nbt_len);
-    mcp_tag_destroy(root);
+    utils::BufferPtr nbt_buf(mcp_nbt_write_bytes(root.get(), /*little_endian=*/false, &nbt_len));
     if (!nbt_buf || nbt_len == 0)
         return false;
 
     std::vector<uint8_t> gz;
-    bool ok = gzip_compress(nbt_buf, nbt_len, &gz);
-    free(nbt_buf);
+    bool ok = gzip_compress(nbt_buf.get(), nbt_len, &gz);
     if (!ok)
         return false;
 
