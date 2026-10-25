@@ -25,16 +25,21 @@
 // line. When a line is received, it forwards it to the Server's
 // CommandMap. Mirrors command/CommandReader.
 //
-// CRITICAL: this uses a raw pthread + fgets() instead of std::cin
-// because the async logger writes to stdout from a different thread.
-// Mixing C stdio (fputs) with C++ streams (std::cin/std::cout) on
-// the same FILE causes data corruption. Using fgets() on stdin keeps
-// all I/O on the C stdio layer, which is thread-safe per-FILE.
+// CRITICAL: this reads fd 0 with poll()+read() instead of fgets() for
+// two reasons. First, stdio fgets holds the stdin FILE lock for the
+// whole call, including the blocking read — a detached reader blocked
+// on an idle terminal keeps that lock forever, and glibc's exit-time
+// _IO_cleanup then deadlocks trying to lock every open FILE, so the
+// process never actually leaves exit() after "Shutdown complete".
+// Second, mixing C stdio (fputs) with C++ streams on the same FILE
+// causes data corruption; poll+read keeps stdin entirely off stdio.
 #pragma once
-#include <thread>
+#include <poll.h>
+#include <unistd.h>
 #include <atomic>
 #include <functional>
 #include <string>
+#include <thread>
 namespace cursestone {
 class CommandReader {
   public:
@@ -53,30 +58,35 @@ class CommandReader {
     void stop() {
         if (!running_.exchange(false))
             return;
-        // The thread may be blocked on fgets(stdin). We can't
-        // interrupt fgets, so we detach and let it die when stdin
-        // closes (process exit).
+        // The poll loop wakes every 200 ms and re-checks the flag, so
+        // the thread is gone shortly after the flag drops.
         if (thread_.joinable())
-            thread_.detach();
+            thread_.join();
     }
 
   private:
     void loop() {
+        std::string pending;
         char buf[1024];
         while (running_.load()) {
-            // Use fgets instead of std::getline to avoid mixing C and
-            // C++ I/O on the same stream (async logger uses fputs).
-            if (fgets(buf, sizeof(buf), stdin) == nullptr) {
-                // EOF or error — stdin closed (likely during shutdown).
-                break;
-            }
-            std::string line(buf);
-            // Strip trailing newline.
-            while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
-                line.pop_back();
-            }
-            if (!line.empty() && cb_) {
-                cb_(line);
+            struct pollfd pfd {0, POLLIN, 0};
+            int pr = ::poll(&pfd, 1, 200);
+            if (pr <= 0)
+                continue; // Timeout or interrupt — re-check the flag.
+            ssize_t n = ::read(0, buf, sizeof(buf));
+            if (n <= 0)
+                break; // EOF or error — stdin closed.
+            pending.append(buf, (size_t)n);
+            size_t pos;
+            while ((pos = pending.find('\n')) != std::string::npos) {
+                std::string line = pending.substr(0, pos);
+                pending.erase(0, pos + 1);
+                while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
+                    line.pop_back();
+                }
+                if (!line.empty() && cb_) {
+                    cb_(line);
+                }
             }
         }
     }
