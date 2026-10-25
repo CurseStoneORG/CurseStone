@@ -38,7 +38,6 @@ void ContainerOpenPacket::encode(std::vector<uint8_t>& out) const {
     w.writeI32BE(x);
     w.writeI32BE(y);
     w.writeI32BE(z);
-    w.writeI64BE(entityId);
 }
 
 bool ContainerOpenPacket::decode(const uint8_t* data, size_t len) {

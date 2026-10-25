@@ -133,7 +133,7 @@ class MilkClient(Client):
             x, y, z, c1, c2 = struct.unpack(">iiiii", p[1:21])
             self.block_events.append((x, y, z, c1, c2))
             return
-        if pid == CONTAINER_OPEN and len(p) >= 24:
+        if pid == CONTAINER_OPEN and len(p) >= 17:
             win = p[1]
             typ = p[2]
             x, y, z = struct.unpack(">iii", p[5:17])

@@ -145,6 +145,14 @@ void Player::openChestAt(int x, int y, int z) {
     open_chest_ = chest;
     openContainerWindow(); // sets container_window_id_ for every packet below
 
+    // The client binds the container UI to the block actor at these
+    // coords, so the BlockEntityData must exist client-side BEFORE the
+    // ContainerOpen record arrives — same order a chunk stream produces
+    // (chunk data, then tile NBTs). Inside the open batch the wrong order
+    // leaves the 0.15.10 client binding a UI to a block entity it has
+    // not seen yet.
+    sendBlockEntityData(x, y, z, *chest, nullptr);
+
     auto op = std::make_shared<network::protocol::ContainerOpenPacket>();
     op->windowid = container_window_id_;
     op->type = network::protocol::ContainerOpenPacket::TYPE_CONTAINER;
@@ -152,7 +160,6 @@ void Player::openChestAt(int x, int y, int z) {
     op->x = x;
     op->y = y;
     op->z = z;
-    op->entityId = -1; // block-based container, not entity-based
     sendPacket(op);
 
     // Lid up + open sound. Only when this opener is the FIRST viewer:
@@ -160,17 +167,6 @@ void Player::openChestAt(int x, int y, int z) {
     // while any other player still holds the chest open.
     if (chest->viewerCount() == 1)
         broadcastChestBlockEvent(this, *chest, 1);
-
-    // The client can only draw and open to chest THROUGH its block
-    // actor: if the chunk went out before the tile existed (to chest
-    // from to village or to structure is just to block until somebody
-    // asks for it), the client has not block entity at these
-    // coordinates, shows an unknown-but-solid block and refuses to
-    // open the UI. Send it now — to everyone looking at the chunk, not
-    // just the opener. World::ensureTilesLoaded covers the normal
-    // path (tiles exist before the chunk is sent); this covers the
-    // ones created after the fact.
-    sendBlockEntityData(x, y, z, *chest, nullptr);
 
     // Full slot dump so the client actually shows the contents. Can't
     // reuse BaseInventory::sendContents() — it hardcodes windowid=0
@@ -315,6 +311,14 @@ void Player::openFurnaceAt(int x, int y, int z) {
     open_furnace_ = furnace;
     openContainerWindow(); // sets container_window_id_ for every packet below
 
+    // BlockEntityData BEFORE the open record — the furnace screen binds
+    // to the block actor at these coords and dies when it is missing
+    // (a village/structure furnace is just a block until a tile exists,
+    // and a chunk streamed before the tile was created never carried
+    // the NBT). Same order the reference produces: tile spawn, then
+    // ContainerOpen, then the content dump.
+    sendBlockEntityData(x, y, z, *furnace, nullptr);
+
     auto op = std::make_shared<network::protocol::ContainerOpenPacket>();
     op->windowid = container_window_id_;
     op->type = network::protocol::ContainerOpenPacket::TYPE_FURNACE;
@@ -322,14 +326,7 @@ void Player::openFurnaceAt(int x, int y, int z) {
     op->x = x;
     op->y = y;
     op->z = z;
-    op->entityId = -1;
     sendPacket(op);
-
-    // same motivo that in the chest: without block entity the client 0.15.x
-    // not has about what montar the UI of the furnace (and abrirla without él it
-    // breaks), this way that to it takes precedence before any other packet
-    // of the window.
-    sendBlockEntityData(x, y, z, *furnace, nullptr);
 
     // dump complete of the 3 slots — same motivo that the chest:
     // BaseInventory::sendContents() hardcodea windowid=0.
@@ -340,9 +337,11 @@ void Player::openFurnaceAt(int x, int y, int z) {
         content->slots.push_back(furnace->getItem(i));
     sendPacket(content);
 
-    // state initial of arrow/flame so that the UI not startup in a
-    // state ghost (ContainerSetDataPacket property 0/1).
-    furnace->sendProgressToViewers();
+    // NO immediate ContainerSetData here: the reference server pushes
+    // furnace progress only from the tile update tick, in a batch the
+    // client processes after the window is fully open. Firing the
+    // property packets inside the same open batch is off-reference and
+    // the tile tick delivers fresh values one tick later anyway.
 
     if (srv_ && srv_->advancedLog()) {
         utils::MainLogger::get().info("[FURNACE] " + cfg_.username + " opened furnace at " +
