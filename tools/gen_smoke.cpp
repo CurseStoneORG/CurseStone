@@ -3,8 +3,8 @@
 // and vegetation are actually produced (and that generation does not crash).
 //
 //   g++ -std=c++20 -Isrc tools/gen_smoke.cpp <generator sources> ... -o /tmp/gen_smoke
-#include "level/generator/Normal.h"
-#include "level/format/Chunk.h"
+#include "world/generator/Normal.h"
+#include "world/format/Chunk.h"
 #include "block/BlockIds.h"
 
 #include <cstdio>
@@ -12,7 +12,7 @@
 #include <map>
 #include <string>
 
-using namespace cursestone::level::generator;
+using namespace cursestone::world::generator;
 using cursestone::block::BlockId;
 
 int main() {

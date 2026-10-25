@@ -11,10 +11,10 @@
 //   * whether rare tree-less patches exist near rivers and plains
 //
 //   g++ -std=c++20 -Isrc tools/river_check.cpp <generator objects> -lz -o river_check
-#include "level/generator/Normal.h"
-#include "level/generator/TerrainShape.h"
-#include "level/generator/biome/Biome.h"
-#include "level/format/Chunk.h"
+#include "world/generator/Normal.h"
+#include "world/generator/TerrainShape.h"
+#include "world/generator/biome/Biome.h"
+#include "world/format/Chunk.h"
 #include "block/BlockIds.h"
 
 #include <cstdio>
@@ -23,10 +23,10 @@
 #include <algorithm>
 #include <cmath>
 
-using namespace cursestone::level::generator;
+using namespace cursestone::world::generator;
 using cursestone::block::BlockId;
 namespace blk = cursestone::block;
-namespace biome = cursestone::level::generator::biome;
+namespace biome = cursestone::world::generator::biome;
 
 int main() {
     TerrainNoise noise(12345);

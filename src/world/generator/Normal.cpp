@@ -25,7 +25,6 @@
 #include "world/generator/populator/PopulatorOre.h"
 #include "world/generator/populator/PopulatorTree.h"
 #include "world/generator/populator/PopulatorTallGrass.h"
-#include "world/generator/populator/PopulatorFlower.h"
 #include "world/generator/populator/PopulatorCave.h"
 #include "world/generator/populator/PopulatorFeatures.h"
 #include "world/generator/populator/StructurePopulator.h"
@@ -100,8 +99,10 @@ Normal::Normal(int64_t seed) : seed_(seed), noise_(seed) {
     populators_.push_back(std::make_unique<populator::PopulatorTree>(16));
     populators_.push_back(std::make_unique<populator::PopulatorTallGrass>(16));
     populators_.push_back(std::make_unique<populator::PopulatorDoublePlant>(16, 2)); // large grass
-    populators_.push_back(std::make_unique<populator::PopulatorFlower>(37, 16));     // dandelion
-    populators_.push_back(std::make_unique<populator::PopulatorFlower>(38, 16));     // poppy
+    // NOTE: no flower populators (dandelion/poppy and the like are gone on
+    // purpose — the user asked for grass-only ground cover: tall grass,
+    // ferns and double tallgrass. PopulatorTallGrass and the double-plant
+    // pass above (data 2 = double tallgrass) are the whole plant layer.
     populators_.push_back(std::make_unique<populator::PopulatorCactus>(16));
     populators_.push_back(std::make_unique<populator::PopulatorDeadBush>(16));
     populators_.push_back(std::make_unique<populator::PopulatorSugarCane>(16));
