@@ -23,23 +23,17 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // ContainerOpenPacket — server->client "show this container UI" packet.
 //
-// The reference server wire format (protocol 84) — ContainerOpenPacket::encode
-// (network/protocol/ContainerOpenPacket,
-// the legacy protocol-84 variant attached as design reference):
+// Wire format (protocol 84, PocketMine-MP 1.6dev ContainerOpenPacket::encode):
 //   putByte(windowid)
-//   putByte(type)        // container "window type" (0 = chest)
-//   putShort(slots)      // slot count (27 for a single chest)
+//   putByte(type)        // container "window type" (0 = chest, 2 = furnace)
+//   putShort(slots)      // slot count (27 for a single chest, 3 furnace)
 //   putInt(x)
 //   putInt(y)
 //   putInt(z)
-//   putLong(entityId)    // -1 when the container is block-based, not
-//                        // entity-based (a chest, not e.g. a horse)
 //
-// This project only opens chests today, so `type`/`entityId` have a
-// single real value in practice (TYPE_CONTAINER / -1), but both are
-// left as real fields (not hardcoded constants inside encode()) so a
-// future furnace/hopper/entity-inventory packet can reuse this class
-// without another rewrite.
+// There is NO trailing entityId long in protocol 84 — an extra 8 bytes
+// at the end of this record is exactly the kind of unexpected payload
+// the 0.15.10 client is strict about on the furnace path.
 #pragma once
 
 #include "DataPacket.h"
@@ -63,7 +57,6 @@ class ContainerOpenPacket : public DataPacket {
     uint8_t type = TYPE_CONTAINER;
     int16_t slots = 0;
     int32_t x = 0, y = 0, z = 0;
-    int64_t entityId = -1;
 
     void encode(std::vector<uint8_t>& out) const override;
     bool decode(const uint8_t* data, size_t len) override;
