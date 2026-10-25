@@ -480,66 +480,6 @@ static const char* defaultSkinId() {
     return "Standard_Custom";
 }
 
-// Convert a UUID string into 16 bytes.
-static void parseUuidBytes(const std::string& s, std::array<uint8_t, 16>& out) {
-    out.fill(0);
-
-    if (s.empty()) {
-        return;
-    }
-
-    size_t bi = 0;
-
-    auto hexVal = [](char c) -> int {
-        if (c >= '0' && c <= '9') {
-            return c - '0';
-        }
-
-        if (c >= 'a' && c <= 'f') {
-            return c - 'a' + 10;
-        }
-
-        if (c >= 'A' && c <= 'F') {
-            return c - 'A' + 10;
-        }
-
-        return -1;
-    };
-
-    for (size_t i = 0; i + 1 < s.size() && bi < 16; ++i) {
-        char c = s[i];
-
-        if (c == '-') {
-            continue;
-        }
-
-        int hi = hexVal(c);
-
-        if (hi < 0) {
-            continue;
-        }
-
-        size_t j = i + 1;
-
-        while (j < s.size() && s[j] == '-') {
-            ++j;
-        }
-
-        if (j >= s.size()) {
-            break;
-        }
-
-        int lo = hexVal(s[j]);
-
-        if (lo < 0) {
-            continue;
-        }
-
-        out[bi++] = (uint8_t)((hi << 4) | lo);
-        i = j;
-    }
-}
-
 void Player::doFirstSpawn() {
     if (spawned_.exchange(true)) {
         return;

@@ -49,43 +49,6 @@
 
 namespace cursestone {
 
-namespace {
-
-// Same parser as PlayerLogin.cpp's local helper: "xxxxxxxx-xxxx-..." hex
-// uuid string -> the 16 raw bytes PlayerListPacket::putUUID writes.
-void parseUuid(const std::string& s, std::array<uint8_t, 16>& out) {
-    out.fill(0);
-    if (s.empty())
-        return;
-    size_t bi = 0;
-    auto hexVal = [](char c) -> int {
-        if (c >= '0' && c <= '9')
-            return c - '0';
-        if (c >= 'a' && c <= 'f')
-            return c - 'a' + 10;
-        if (c >= 'A' && c <= 'F')
-            return c - 'A' + 10;
-        return -1;
-    };
-    for (size_t i = 0; i + 1 < s.size() && bi < 16; ++i) {
-        int hi = hexVal(s[i]);
-        if (hi < 0)
-            continue; // dashes (and anything non-hex) are skipped
-        size_t j = i + 1;
-        while (j < s.size() && s[j] == '-')
-            ++j;
-        if (j >= s.size())
-            break;
-        int lo = hexVal(s[j]);
-        if (lo < 0)
-            continue;
-        out[bi++] = (uint8_t)((hi << 4) | lo);
-        i = j;
-    }
-}
-
-} // namespace
-
 void Player::setNameTag(const std::string& tag) {
     nametag_ = tag;
     if (!spawned())
@@ -98,7 +61,7 @@ void Player::setNameTag(const std::string& tag) {
     // list. The 0.15.10 client refreshes both the tab entry and the
     // overhead name from this pair.
     std::array<uint8_t, 16> uuid{};
-    parseUuid(cfg_.uuid, uuid);
+    parseUuidBytes(cfg_.uuid, uuid);
 
     auto rm = std::make_shared<network::protocol::PlayerListPacket>();
     rm->type = network::protocol::PlayerListPacket::TYPE_REMOVE;
