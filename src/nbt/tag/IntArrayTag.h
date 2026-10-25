@@ -21,20 +21,26 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// IntArrayTag — NBT int array (signed int32 length prefix + int32 values).
+// IntArrayTag — NBT TAG_Int_Array (uint32 count prefix + int32s).
 #pragma once
-#include "Tag.h"
+
 #include <stddef.h>
+#include <stdint.h>
+
+#include "Tag.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-typedef struct mcp_int_array_tag {
-    mcp_tag_t header;
-    int32_t* data;
-    size_t count;
-} mcp_int_array_tag_t;
+
 mcp_tag_t* mcp_int_array_tag_new(const int32_t* data, size_t count);
 mcp_tag_t* mcp_int_array_tag_new_named(const char* name, const int32_t* data, size_t count);
+
+// Returns the payload ints and stores their count in *out_count. Returns
+// NULL when the tag is missing or not an int array. A valid empty array
+// yields a non-NULL pointer and *out_count == 0.
+const int32_t* mcp_int_array_tag_data(const mcp_tag_t* tag, size_t* out_count);
+
 #ifdef __cplusplus
-}
+} // extern "C"
 #endif

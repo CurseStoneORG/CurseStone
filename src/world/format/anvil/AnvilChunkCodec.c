@@ -52,27 +52,17 @@ static const mcp_tag_t* get_compound(const mcp_tag_t* root, const char* name) {
 // Helper: get a byte-array child's data + length. Returns NULL if missing.
 static const uint8_t* get_byte_array(const mcp_tag_t* root, const char* name, size_t* out_len) {
     const mcp_tag_t* t = mcp_compound_tag_get(root, name);
-    if (!t)
+    if (!t || mcp_tag_get_type(t) != MCP_TAG_BYTE_ARRAY)
         return NULL;
-    if (mcp_tag_get_type(t) != MCP_TAG_BYTE_ARRAY)
-        return NULL;
-    const mcp_byte_array_tag_t* ba = (const mcp_byte_array_tag_t*)t;
-    if (out_len)
-        *out_len = ba->length;
-    return ba->data;
+    return mcp_byte_array_tag_data(t, out_len);
 }
 
 // Helper: get an int-array child's data + count.
 static const int32_t* get_int_array(const mcp_tag_t* root, const char* name, size_t* out_count) {
     const mcp_tag_t* t = mcp_compound_tag_get(root, name);
-    if (!t)
+    if (!t || mcp_tag_get_type(t) != MCP_TAG_INT_ARRAY)
         return NULL;
-    if (mcp_tag_get_type(t) != MCP_TAG_INT_ARRAY)
-        return NULL;
-    const mcp_int_array_tag_t* ia = (const mcp_int_array_tag_t*)t;
-    if (out_count)
-        *out_count = ia->count;
-    return ia->data;
+    return mcp_int_array_tag_data(t, out_count);
 }
 
 // =====================================================================
@@ -287,8 +277,7 @@ mcp_chunk_t* anvil_chunk_decode(const uint8_t* data, size_t len) {
     // Sections list.
     const mcp_tag_t* sections = mcp_compound_tag_get(level, "Sections");
     if (sections && mcp_tag_get_type(sections) == MCP_TAG_LIST) {
-        const mcp_list_tag_t* lt = (const mcp_list_tag_t*)sections;
-        for (size_t i = 0; i < lt->count; ++i) {
+        for (size_t i = 0, n = mcp_list_tag_size(sections); i < n; ++i) {
             const mcp_tag_t* sec = mcp_list_tag_get(sections, i);
             if (!sec || mcp_tag_get_type(sec) != MCP_TAG_COMPOUND)
                 continue;
@@ -369,8 +358,7 @@ mcp_chunk_t* anvil_chunk_decode(const uint8_t* data, size_t len) {
     // Tile entities.
     const mcp_tag_t* tiles_list = mcp_compound_tag_get(level, "TileEntities");
     if (tiles_list && mcp_tag_get_type(tiles_list) == MCP_TAG_LIST) {
-        const mcp_list_tag_t* lt = (const mcp_list_tag_t*)tiles_list;
-        for (size_t i = 0; i < lt->count; ++i) {
+        for (size_t i = 0, n = mcp_list_tag_size(tiles_list); i < n; ++i) {
             const mcp_tag_t* t = mcp_list_tag_get(tiles_list, i);
             if (!t)
                 continue;
@@ -386,8 +374,7 @@ mcp_chunk_t* anvil_chunk_decode(const uint8_t* data, size_t len) {
     // Entities.
     const mcp_tag_t* entities_list = mcp_compound_tag_get(level, "Entities");
     if (entities_list && mcp_tag_get_type(entities_list) == MCP_TAG_LIST) {
-        const mcp_list_tag_t* lt = (const mcp_list_tag_t*)entities_list;
-        for (size_t i = 0; i < lt->count; ++i) {
+        for (size_t i = 0, n = mcp_list_tag_size(entities_list); i < n; ++i) {
             const mcp_tag_t* t = mcp_list_tag_get(entities_list, i);
             if (!t)
                 continue;

@@ -25,6 +25,7 @@
 #include "nbt/tag/IntArrayTag.h"
 #include "nbt/tag/IntTag.h"
 #include "nbt/tag/ListTag.h"
+#include "nbt/tag/TagDefs.h"
 #include "item/ItemNbt.h"
 
 #include <array>
@@ -146,7 +147,7 @@ int main() {
         check(root != nullptr, "the fixture parses");
         if (!root) return;
         check(mcp_tag_get_type(root) == MCP_TAG_COMPOUND, "the root is a compound");
-        check(root->name && std::string(root->name) == "Root", "the root name survives");
+        check(root->name == "Root", "the root name survives");
 
         check(mcp_compound_tag_get_byte  (root, "B",  0) == 127,    "BYTE   = 127");
         check(mcp_compound_tag_get_short (root, "S",  0) == 12345,  "SHORT  = 12345");
@@ -161,27 +162,27 @@ int main() {
         const mcp_tag_t* ba = mcp_compound_tag_get(root, "BA");
         check(ba && mcp_tag_get_type(ba) == MCP_TAG_BYTE_ARRAY, "BYTE_ARRAY is a byte array");
         if (ba) {
-            const auto* arr = (const mcp_byte_array_tag_t*)ba;
-            check(arr->length == 2 && arr->data[0] == 0xAA && arr->data[1] == 0xBB,
+            const auto* arr = static_cast<const mcp_byte_array_tag*>(ba);
+            check(arr->data.size() == 2 && arr->data[0] == 0xAA && arr->data[1] == 0xBB,
                   "BYTE_ARRAY bytes = {0xAA,0xBB}");
         }
 
         const mcp_tag_t* ia = mcp_compound_tag_get(root, "IA");
         check(ia && mcp_tag_get_type(ia) == MCP_TAG_INT_ARRAY, "INT_ARRAY is an int array");
         if (ia) {
-            const auto* arr = (const mcp_int_array_tag_t*)ia;
-            check(arr->count == 2 && arr->data[0] == 7 && arr->data[1] == 8,
+            const auto* arr = static_cast<const mcp_int_array_tag*>(ia);
+            check(arr->data.size() == 2 && arr->data[0] == 7 && arr->data[1] == 8,
                   "INT_ARRAY values = {7,8}");
         }
 
         const mcp_tag_t* li = mcp_compound_tag_get(root, "Li");
         check(li && mcp_tag_get_type(li) == MCP_TAG_LIST, "LIST is a list");
-        check(li && ((const mcp_list_tag_t*)li)->element_type == MCP_TAG_INT,
+        check(li && static_cast<const mcp_list_tag*>(li)->element_type == MCP_TAG_INT,
               "LIST remembers its element type");
         check(li && mcp_list_tag_size(li) == 2, "LIST has 2 elements");
         if (li && mcp_list_tag_size(li) == 2) {
-            const auto* e0 = (const mcp_int_tag_t*)mcp_list_tag_get(li, 0);
-            const auto* e1 = (const mcp_int_tag_t*)mcp_list_tag_get(li, 1);
+            const auto* e0 = static_cast<const mcp_int_tag*>(mcp_list_tag_get(li, 0));
+            const auto* e1 = static_cast<const mcp_int_tag*>(mcp_list_tag_get(li, 1));
             check(e0 && e1 && e0->value == 1 && e1->value == -1,
                   "LIST elements are NOT named and keep their values (1, -1)");
         }
