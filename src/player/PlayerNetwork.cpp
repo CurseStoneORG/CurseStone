@@ -404,6 +404,9 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                                 if (isCreative() ||
                                     beginSurvivalSlotWrite(chestInv.get(), cs->slot, it)) {
                                     chestInv->setItem(cs->slot, it);
+                                    // Vanilla co-viewer sync: everyone else with
+                                    // this chest open sees the new slot content.
+                                    broadcastChestSlotToViewers(cs->slot);
                                 }
                             }
                             // Confirm the chest slot even when the event cancels the change.
@@ -439,6 +442,8 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                                 if (isCreative() ||
                                     beginSurvivalSlotWrite(fInvRaw, cs->slot, it)) {
                                     f->setItem(cs->slot, it);
+                                    // Same co-viewer sync as the chest.
+                                    broadcastFurnaceSlotToViewers(cs->slot);
                                 }
                             }
                             auto confirm =

@@ -28,6 +28,7 @@
 #include "network/protocol/ContainerOpenPacket.h"
 #include "network/protocol/ContainerClosePacket.h"
 #include "network/protocol/ContainerSetContentPacket.h"
+#include "network/protocol/ContainerSetSlotPacket.h"
 #include "utils/CRaii.h"
 #include "tile/Tile.h"
 #include "tile/TileChest.h"
@@ -184,6 +185,59 @@ void Player::openChestAt(int x, int y, int z) {
         utils::MainLogger::get().info("[CHEST] " + cfg_.username + " opened chest at " +
                                       std::to_string(x) + "," + std::to_string(y) + "," +
                                       std::to_string(z));
+    }
+}
+
+// broadcastChestSlotToViewers / broadcastFurnaceSlotToViewers — the
+// vanilla co-viewer sync for open containers. Every player who has the
+// SAME tile instance open (World::getTile hands everyone the identical
+// shared_ptr, so a shared_ptr compare is the viewer check) receives a
+// ContainerSetSlotPacket with the slot's current content, built with
+// THAT viewer's own window id — window ids are per-player, reusing the
+// sender's would hit a window the viewer never opened. Without this the
+// second viewer keeps the stale content and its next click silently
+// overwrites the first viewer's change (the placed item then "returns"
+// through the cursor buffer when someone closes the container).
+void Player::broadcastChestSlotToViewers(int slot) {
+    if (!srv_ || !open_chest_ || slot < 0 ||
+        slot >= open_chest_->inventory()->getSize())
+        return;
+    auto cur = open_chest_->inventory()->getItem(slot);
+    for (auto& other : srv_->playersSnapshot()) {
+        if (!other || other.get() == this)
+            continue;
+        if (other->open_chest_ != open_chest_)
+            continue;
+        auto pk = std::make_shared<network::protocol::ContainerSetSlotPacket>();
+        pk->windowid = other->container_window_id_;
+        pk->slot = (int16_t)slot;
+        pk->hotbarSlot = (int16_t)slot;
+        pk->itemId = (int16_t)cur.id;
+        pk->itemCount = cur.count;
+        pk->itemDamage = (int16_t)cur.meta;
+        pk->itemNbt = cur.nbt;
+        other->sendPacket(pk);
+    }
+}
+
+void Player::broadcastFurnaceSlotToViewers(int slot) {
+    if (!srv_ || !open_furnace_ || slot < 0 || slot >= open_furnace_->size())
+        return;
+    auto cur = open_furnace_->getItem(slot);
+    for (auto& other : srv_->playersSnapshot()) {
+        if (!other || other.get() == this)
+            continue;
+        if (other->open_furnace_ != open_furnace_)
+            continue;
+        auto pk = std::make_shared<network::protocol::ContainerSetSlotPacket>();
+        pk->windowid = other->container_window_id_;
+        pk->slot = (int16_t)slot;
+        pk->hotbarSlot = (int16_t)slot;
+        pk->itemId = (int16_t)cur.id;
+        pk->itemCount = cur.count;
+        pk->itemDamage = (int16_t)cur.meta;
+        pk->itemNbt = cur.nbt;
+        other->sendPacket(pk);
     }
 }
 

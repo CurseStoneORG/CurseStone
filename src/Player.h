@@ -191,6 +191,13 @@ class Player : public IPlayer,
     // Closes the currently open chest or furnace.
     void closeOpenChest();
 
+    // Resyncs a container slot on every OTHER player who has the same
+    // tile open — each viewer with its own window id. Vanilla co-viewer
+    // sync: without it the second viewer keeps the stale content and its
+    // next click overwrites the first one's change.
+    void broadcastChestSlotToViewers(int slot);
+    void broadcastFurnaceSlotToViewers(int slot);
+
     // Opens a furnace and synchronizes its inventory and progress.
     void openFurnaceAt(int x, int y, int z);
 
