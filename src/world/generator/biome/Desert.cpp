@@ -44,7 +44,6 @@ const BiomeConfig& desertBiome() {
         .deadBushAmount = 3,
         .sugarCaneAmount = 6, // oases along rare water pockets
         .mushroomAmount = 0,
-        .pumpkinAmount = 0,
         .melonAmount = 0,
         .waterLilyAmount = 0,
     };

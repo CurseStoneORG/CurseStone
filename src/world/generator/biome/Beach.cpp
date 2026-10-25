@@ -44,7 +44,6 @@ const BiomeConfig& beachBiome() {
         .deadBushAmount = 0,
         .sugarCaneAmount = 1, // grows right at the waterline
         .mushroomAmount = 0,
-        .pumpkinAmount = 0,
         .melonAmount = 0,
         .waterLilyAmount = 0,
     };

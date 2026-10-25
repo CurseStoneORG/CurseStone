@@ -49,7 +49,6 @@ const BiomeConfig& forestBiome() {
         .deadBushAmount = 0,
         .sugarCaneAmount = 1,
         .mushroomAmount = 1,
-        .pumpkinAmount = 1,
         .melonAmount = 0,
         .waterLilyAmount = 0,
     };

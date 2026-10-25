@@ -48,7 +48,6 @@ const BiomeConfig& plainsBiome() {
         .deadBushAmount = 0,
         .sugarCaneAmount = 2,
         .mushroomAmount = 0,
-        .pumpkinAmount = 1,
         .melonAmount = 0,
         .waterLilyAmount = 0,
     };

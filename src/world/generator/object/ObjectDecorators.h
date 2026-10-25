@@ -44,7 +44,6 @@ class ObjectDecorators {
     static void flower(mcp_chunk_t* c, int x, int y, int z, uint8_t id);
     static void doublePlant(mcp_chunk_t* c, int x, int y, int z, uint8_t data);
     static void mushroom(mcp_chunk_t* c, int x, int y, int z, uint8_t id);
-    static void pumpkin(mcp_chunk_t* c, int x, int y, int z, MersenneRandom& rng);
     static void melon(mcp_chunk_t* c, int x, int y, int z);
     static void waterLily(mcp_chunk_t* c, int x, int y, int z);
     static void sapling(mcp_chunk_t* c, int x, int y, int z, uint8_t data);

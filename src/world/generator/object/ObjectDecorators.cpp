@@ -139,11 +139,6 @@ void ObjectDecorators::mushroom(mcp_chunk_t* c, int x, int y, int z, uint8_t id)
         put(c, x, y + 1, z, id, 0);
 }
 
-void ObjectDecorators::pumpkin(mcp_chunk_t* c, int x, int y, int z, MersenneRandom& rng) {
-    if (isSoil(mcp_chunk_get_block_id(c, x, y, z)) && isAir(c, x, y + 1, z))
-        put(c, x, y + 1, z, (uint8_t)BlockId::PUMPKIN, (uint8_t)rng.nextInt(4));
-}
-
 void ObjectDecorators::melon(mcp_chunk_t* c, int x, int y, int z) {
     if (isSoil(mcp_chunk_get_block_id(c, x, y, z)) && isAir(c, x, y + 1, z))
         put(c, x, y + 1, z, (uint8_t)BlockId::MELON_BLOCK, 0);

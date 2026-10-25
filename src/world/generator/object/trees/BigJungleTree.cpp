@@ -24,6 +24,7 @@
 #include "BigJungleTree.h"
 #include "block/BlockIds.h"
 #include <cmath>
+#include <cstdlib>
 
 namespace cursestone::world::generator::object::trees {
 
@@ -79,7 +80,11 @@ void BigJungleTree::growLeavesLayer(mcp_chunk_t* c, int x, int y, int z, int rad
                                     MersenneRandom& rng) {
     for (int dx = radius; dx >= -radius; --dx) {
         for (int dz = radius; dz >= -radius; --dz) {
-            if (dx != 0 && dz != 0 && rng.nextBoolean())
+            // Only the four corner blocks of the layer are subject to the
+            // coin flip; every inner cell is always placed. Culling every
+            // diagonal cell (both coordinates non-zero) left radius-2
+            // clusters looking moth-eaten instead of round.
+            if (std::abs(dx) == radius && std::abs(dz) == radius && rng.nextBoolean())
                 continue; // cull corner
             setForced(c, x + dx, y, z + dz, leafId_, leafData_);
         }
@@ -88,8 +93,16 @@ void BigJungleTree::growLeavesLayer(mcp_chunk_t* c, int x, int y, int z, int rad
 
 void BigJungleTree::growLeavesLayerStrict(mcp_chunk_t* c, int x, int y, int z, int radius) {
     for (int dx = -radius; dx <= radius; ++dx)
-        for (int dz = -radius; dz <= radius; ++dz)
+        for (int dz = -radius; dz <= radius; ++dz) {
+            // The crown layers never place their corner blocks. Filling the
+            // full square is what made the crown read as a cube: three
+            // stacked corner-filled squares of radius 3/2/1 show a hard
+            // vertical edge at each corner. Without them the top of the
+            // crown is a plus, the middle an octagon — the vanilla shape.
+            if (std::abs(dx) == radius && std::abs(dz) == radius)
+                continue;
             setForced(c, x + dx, y, z + dz, leafId_, leafData_);
+        }
 }
 
 void BigJungleTree::placeVine(mcp_chunk_t* c, MersenneRandom& rng, int x, int y, int z,

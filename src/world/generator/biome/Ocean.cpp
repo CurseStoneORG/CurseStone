@@ -44,7 +44,6 @@ const BiomeConfig& oceanBiome() {
         .deadBushAmount = 0,
         .sugarCaneAmount = 0,
         .mushroomAmount = 0,
-        .pumpkinAmount = 0,
         .melonAmount = 0,
         .waterLilyAmount = 0,
     };

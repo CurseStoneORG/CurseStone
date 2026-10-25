@@ -49,7 +49,6 @@ const BiomeConfig& mountainsBiome() {
         .deadBushAmount = 1,
         .sugarCaneAmount = 0,
         .mushroomAmount = 0,
-        .pumpkinAmount = 0,
         .melonAmount = 0,
         .waterLilyAmount = 0,
     };

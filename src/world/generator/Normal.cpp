@@ -99,13 +99,12 @@ Normal::Normal(int64_t seed) : seed_(seed), noise_(seed) {
     populators_.push_back(std::make_unique<populator::PopulatorDoublePlant>(16, 2)); // large grass
     // NOTE: no flower populators — the plant layer is PopulatorTallGrass
     // (tall grass / ferns) plus the double-plant pass above (data 2 =
-    // double tallgrass).
+    // double tallgrass; the cold forest floor swaps it for the large fern).
     populators_.push_back(std::make_unique<populator::PopulatorCactus>(16));
     populators_.push_back(std::make_unique<populator::PopulatorDeadBush>(16));
     populators_.push_back(std::make_unique<populator::PopulatorSugarCane>(16));
     populators_.push_back(std::make_unique<populator::PopulatorMushroom>(16, 39)); // brown
     populators_.push_back(std::make_unique<populator::PopulatorMushroom>(16, 40)); // red
-    populators_.push_back(std::make_unique<populator::PopulatorPumpkin>(16));
     populators_.push_back(std::make_unique<populator::PopulatorMelon>(16));
     populators_.push_back(std::make_unique<populator::PopulatorWaterLily>(16));
 

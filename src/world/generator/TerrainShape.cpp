@@ -364,7 +364,24 @@ static double plainsFactorUncached(const TerrainNoise& n, double wx, double wz) 
     const double p = noiseFbm2d(n.surface, wx * 0.0017 + 3300.0, wz * 0.0017 - 1700.0, 2, 0.5, 2.0);
     const double inland = smoothstep(0.02, 0.40, p);
     const double coast = smoothstep(-0.12, 0.10, cont) * (1.0 - smoothstep(0.14, 0.38, cont));
-    return std::clamp(std::max(inland * 0.85, coast * 0.95), 0.0, 1.0);
+    double factor = std::clamp(std::max(inland * 0.85, coast * 0.95), 0.0, 1.0);
+    // Jungle climate (hot/wet) must not inherit the grassland flattening.
+    // The relief damping used to reach across the whole hot band, but the
+    // biome filter only overrides those patches to PLAINS below the jungle
+    // humidity cut — so hot/wet ground kept the damped height field and the
+    // jungle painted itself onto flat country. Fading the factor out across
+    // the same climate cuts BiomeRegistry::select uses keeps the flattened
+    // ground, the plains override and the jungle biome in agreement: where
+    // this factor dies, select() answers jungle and the terrain keeps the
+    // full relief. The ramp starts below the cut and completes at it, so
+    // the boundary blends instead of stepping. Deserts (humid far below the
+    // band) and temperate country are untouched.
+    const double t = tempAt(n, wx, wz);
+    if (t > 0.30) {
+        const double hu = humidAt(n, wx, wz);
+        factor *= 1.0 - smoothstep(0.20, 0.35, hu);
+    }
+    return factor;
 }
 
 double plainsFactor(const TerrainNoise& n, double wx, double wz) {
@@ -528,8 +545,9 @@ static double rawColumnHeightUncached(const TerrainNoise& n, double wx, double w
     // out no flatter than the rest of the world, which is the opposite of
     // what makes a plain read as a plain.
     //
-    // The savanna is damped a little less (0.78) so its surface keeps the
-    // 2-3 block roll the plains deliberately shave off.
+    // The savanna is damped a good deal less than the plains (0.62) so its
+    // surface keeps the 2-4 block roll vanilla savanna country shows; at
+    // 0.78 the whole biome read as one level sheet.
     //
     // The desert is damped at 0.86 — SEMI-flat: broad gentle sand with a
     // shallow roll, no hill country inside the dry band. Taking the max of
@@ -537,7 +555,7 @@ static double rawColumnHeightUncached(const TerrainNoise& n, double wx, double w
     // is 0.
     const double desertFlat = desertFlatFactor(n, wx, wz);
     const double damp =
-        std::max(std::max(plains * 0.90, savanna * 0.78), desertFlat * 0.86);
+        std::max(std::max(plains * 0.90, savanna * 0.62), desertFlat * 0.86);
     const double relief = std::max(0.0, 1.0 - damp);
 
     double h = 70.0 + cont * 31.0; // 39 .. 101 base
@@ -654,11 +672,23 @@ static double rawColumnHeightUncached(const TerrainNoise& n, double wx, double w
     // LOWERS the ground — blending to a fixed bed used to RAISE low ground
     // back up and leave the river dry — and because the profile descends
     // gently the banks come out as steps rather than as a sheer drop.
+    //
+    // The cut also eases OFF across the top of the ramp. The profile's
+    // climb distance is capped, so past the ramp its target plateaus at one
+    // constant height; carrying the cut at full strength out there dragged
+    // the river's whole far field down onto that line — every hill and
+    // mountain in the region stood on one flat slab (the world used to top
+    // out at exactly sea + kRiverRamp * climb, and the high-altitude biomes
+    // never fired). Past the ramp the surrounding terrain keeps its own
+    // height, blended over a few blocks so the bank still lands softly.
     if (land > 0.02) {
         const double fade = std::min(1.0, land / 0.30);
-        const double target = riverProfile(riverDistance(n, wx, wz), riverClimbRate(cliff),
-                                           riverWidthScale(n, wx, wz));
-        h -= std::max(0.0, h - target) * fade;
+        const double d = riverDistance(n, wx, wz);
+        const double width = riverWidthScale(n, wx, wz);
+        const double target = riverProfile(d, riverClimbRate(cliff), width);
+        const double rampEnd = (kRiverEdge + kRiverShore) * width + kRiverRamp;
+        const double cutFade = 1.0 - smoothstep(rampEnd, rampEnd + 6.0, d);
+        h -= std::max(0.0, h - target) * fade * cutFade;
     }
 
     return std::clamp(h, 10.0, 122.0);
