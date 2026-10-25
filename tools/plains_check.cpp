@@ -230,7 +230,7 @@ int main() {
             ++treesTotal;
             if (hgt[i] < kSeaLevel) ++treesInWater;
             if (riv[i] > 0.05) ++treesInWater;
-            // The bug the user reported: a trunk rooted under the water.
+            // A trunk rooted under water is a generation defect.
             if (hasTrunk[i] && (hgt[i] < kSeaLevel || riv[i] > 0.05)) ++trunksInWater;
             if (isShore(noise, x - R * 16, z - R * 16, hgt[i])) ++treesOnShore;
             if (bio[i] == biome::BIOME_PLAINS) ++plainsTrees;

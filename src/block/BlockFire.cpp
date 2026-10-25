@@ -28,8 +28,7 @@
 //   Even with the anti-cascade dedup + cap, the fire-spread logic
 //   itself does too much work per tick when there are multiple fires.
 //
-//   Per user request: "no tenga vejez ni pueda abrir un portal por
-//   ahora solo te dije q funcionara ... que no se propague".
+//   Fire must not spread or catch blocks for now; keep it display-only.
 //
 //   So this version is INTENTIONALLY minimal:
 //     - scheduleUpdate() is a no-op. No tasks are ever queued.
