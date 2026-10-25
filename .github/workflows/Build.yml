@@ -2,77 +2,58 @@ name: Build CurseStone
 
 on:
   push:
-    branches: [main, master, dev]
+    branches: [stable, main, master, dev]
   pull_request:
-    branches: [main, master]
+    branches: [stable, main, master]
   workflow_dispatch:
-  # Permite que release.yml llame a estos builds reutilizando los binarios.
+  # release.yml reuses these builds through workflow_call.
   workflow_call:
     inputs:
       version:
-        description: "Versión del release (ej. CurseStone-alpha-v1.0)"
+        description: "Release version (e.g. CurseStone-alpha-v1.0)"
         required: false
         type: string
       body:
-        description: "Descripción / notas del release"
+        description: "Release notes"
         required: false
         type: string
       prerelease:
-        description: "Marcar como pre-release"
+        description: "Mark as pre-release"
         required: false
         type: boolean
 
 jobs:
-  # ─────────────────────────────────────────────
-  # Job 1: Linux x86_64 (Ubuntu) — más rápido, sirve para verificar que compila
-  # ─────────────────────────────────────────────
+  # Linux x86_64 — compile check plus the reference binary.
   build-linux:
     name: Linux x86_64
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Instalar dependencias
+      - name: Install dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y \
-            cmake ninja-build \
-            gcc-12 g++-12 \
-            zlib1g-dev \
-            libleveldb-dev \
-            libsnappy-dev
-
-      - name: Seleccionar GCC 12
-        run: |
-          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100
-          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100
+          sudo apt-get install -y ninja-build zlib1g-dev
 
       - name: Configure (Release)
-        run: |
-          cmake -B build/linux-release \
-            -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_STANDARD=23 \
-            -DCMAKE_CXX_STANDARD=20
+        run: cmake -B build/linux-release -G Ninja -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
         run: cmake --build build/linux-release --parallel
 
-      - name: Subir binario Linux
+      - name: Upload Linux binary
         uses: actions/upload-artifact@v4
         with:
           name: CurseStone-linux-x86_64
           path: build/linux-release/CurseStone
           retention-days: 7
 
-  # ─────────────────────────────────────────────
-  # Job 2: Android ARM64 (NDK r26c) — el que te sirve en Termux/Android
-  # ─────────────────────────────────────────────
+  # Android ARM64 (NDK) — for Termux/Android hosting.
   build-android-arm64:
     name: Android ARM64
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
 
     env:
       NDK_VERSION: r26c
@@ -82,60 +63,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Instalar dependencias del host
+      - name: Install host tools
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y cmake ninja-build unzip wget
+          sudo apt-get install -y ninja-build unzip wget
 
-      - name: Descargar Android NDK ${{ env.NDK_VERSION }}
+      - name: Download Android NDK ${{ env.NDK_VERSION }}
         run: |
           wget -q "https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip" \
             -O /tmp/ndk.zip
           unzip -q /tmp/ndk.zip -d /opt
           echo "NDK_HOME=/opt/android-ndk-${NDK_VERSION}" >> $GITHUB_ENV
 
-      - name: Compilar zlib para ARM64
+      - name: Cross-compile zlib for ARM64
         run: |
           cd /tmp
-          # zlib.net a veces bloquea o cambia URLs; usamos GitHub releases que es estable.
           wget -q https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz
           tar xf zlib-1.3.1.tar.gz
           cd zlib-1.3.1
-
-          # Cross-compile con el toolchain del NDK
           TOOLCHAIN=$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64
           AR=$TOOLCHAIN/bin/llvm-ar \
           CC=$TOOLCHAIN/bin/aarch64-linux-android${ANDROID_API}-clang \
-          ./configure \
-            --prefix=/opt/zlib-arm64 \
-            --static \
-            --archs="-arch arm64"
+          ./configure --prefix=/opt/zlib-arm64 --static
           make -j$(nproc) install
 
-      - name: Compilar LevelDB para ARM64
-        run: |
-          cd /tmp
-          git clone --depth=1 https://github.com/google/leveldb.git
-          cd leveldb
-          git submodule update --init --recursive
-
-          TOOLCHAIN=$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64
-
-          cmake -B build-arm64 \
-            -G Ninja \
-            -DCMAKE_TOOLCHAIN_FILE=$NDK_HOME/build/cmake/android.toolchain.cmake \
-            -DANDROID_ABI=arm64-v8a \
-            -DANDROID_PLATFORM=android-${ANDROID_API} \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DLEVELDB_BUILD_TESTS=OFF \
-            -DLEVELDB_BUILD_BENCHMARKS=OFF \
-            -DBUILD_SHARED_LIBS=OFF \
-            -DCMAKE_INSTALL_PREFIX=/opt/leveldb-arm64
-
-          cmake --build build-arm64 --parallel
-          cmake --install build-arm64
-
-      - name: Configure CurseStone para ARM64
+      - name: Configure CurseStone for ARM64
         run: |
           cmake -B build/android-arm64 \
             -G Ninja \
@@ -143,35 +95,26 @@ jobs:
             -DANDROID_ABI=arm64-v8a \
             -DANDROID_PLATFORM=android-${{ env.ANDROID_API }} \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_STANDARD=23 \
-            -DCMAKE_CXX_STANDARD=20 \
             -DZLIB_ROOT=/opt/zlib-arm64 \
             -DZLIB_INCLUDE_DIR=/opt/zlib-arm64/include \
-            -DZLIB_LIBRARY=/opt/zlib-arm64/lib/libz.a \
-            -DLEVELDB_INCLUDE_DIRS=/opt/leveldb-arm64/include \
-            -DLEVELDB_LIBRARIES=/opt/leveldb-arm64/lib/libleveldb.a
+            -DZLIB_LIBRARY=/opt/zlib-arm64/lib/libz.a
 
       - name: Build
         run: cmake --build build/android-arm64 --parallel
 
-      - name: Subir binario ARM64
+      - name: Upload ARM64 binary
         uses: actions/upload-artifact@v4
         with:
           name: CurseStone-android-arm64
           path: build/android-arm64/CurseStone
           retention-days: 14
 
-  # ─────────────────────────────────────────────
-  # Job 3: Windows x86_64 (MSVC + Ninja)
-  # ─────────────────────────────────────────────
+  # Windows x86_64 (MSVC + Ninja).
   build-windows:
     name: Windows x86_64
     runs-on: windows-latest
 
-    # CAMBIO: shell bash para TODO el job. El shell por defecto en
-    # windows-latest es PowerShell, donde la barra invertida \ NO continua
-    # lineas (eso causaba "The term '-G' is not recognized"). Con bash,
-    # la sintaxis es identica a los jobs de Linux y \ vuelve a funcionar.
+    # bash for every step: backslash line continuations break in PowerShell.
     defaults:
       run:
         shell: bash
@@ -180,28 +123,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Instalar Ninja
+      - name: Install Ninja
         run: choco install ninja -y
 
-      # CAMBIO: setup-msbuild@v2 solo ponia MSBuild en el PATH; no exponia
-      # cl.exe ni las variables INCLUDE/LIB, por lo que CMake con el
-      # generador Ninja no encontraba un compilador de MSVC.
-      # msvc-dev-cmd si configura el entorno completo de desarrollador.
-      - name: Configurar entorno MSVC (cl.exe, INCLUDE, LIB)
+      # Exposes cl.exe plus INCLUDE/LIB so Ninja can drive MSVC.
+      - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
 
-      # CAMBIO: paso comentado como referencia. El toolchain de vcpkg
-      # resuelve las dependencias en modo clasico solo. Si tu repo tiene
-      # un vcpkg.json (modo manifest), este paso FALLA y hay que quitarlo.
-      - name: Instalar dependencias con vcpkg (modo clasico)
-        run: vcpkg install zlib:x64-windows-static-md leveldb:x64-windows-static-md
+      - name: Install dependencies with vcpkg (classic mode)
+        run: vcpkg install zlib:x64-windows-static-md
 
-      # CAMBIO: la ruta del toolchain ya no usa $env:VCPKG_INSTALLATION_ROOT
-      # pegado dentro del argumento de CMake (sintaxis PowerShell dentro de
-      # un comando que ahora corre en bash). VCPKG_INSTALLATION_ROOT es una
-      # variable predefinida del runner, asi que bash la expande directamente.
-      # CAMBIO: C_STANDARD 23 -> 17 solo en Windows. MSVC no implementa C23
-      # de forma completa (features faltan incluso con /std:clatest).
+      # C stays at 17 on Windows: MSVC does not implement C23 fully yet.
       - name: Configure (Release)
         run: |
           cmake -B build/windows-release \
@@ -215,19 +147,17 @@ jobs:
       - name: Build
         run: cmake --build build/windows-release --parallel
 
-      - name: Subir binario Windows
+      - name: Upload Windows binary
         uses: actions/upload-artifact@v4
         with:
           name: CurseStone-windows-x86_64
           path: build/windows-release/CurseStone.exe
           retention-days: 7
 
-  # ─────────────────────────────────────────────
-  # Job 4: Release automatico cuando pushas un tag vX.X.X
-  # ─────────────────────────────────────────────
+  # Automatic release when a v* tag is pushed.
   release:
-    name: Crear Release
-    runs-on: ubuntu-22.04
+    name: Create Release
+    runs-on: ubuntu-latest
     needs: [build-linux, build-android-arm64, build-windows]
     if: startsWith(github.ref, 'refs/tags/v')
 
@@ -235,22 +165,19 @@ jobs:
       contents: write
 
     steps:
-      - name: Descargar artefactos
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: dist/
 
-      # CAMBIO: antes los mv movian los binarios DENTRO de los directorios
-      # que download-artifact crea con el nombre del artefacto (no-ops en
-      # Linux/Android). Ahora se aplanan a dist/out/ con nombres finales.
-      - name: Renombrar binarios
+      - name: Flatten binaries
         run: |
           mkdir -p dist/out
           mv dist/CurseStone-linux-x86_64/CurseStone       dist/out/CurseStone-linux-x86_64
           mv dist/CurseStone-android-arm64/CurseStone     dist/out/CurseStone-android-arm64
           mv dist/CurseStone-windows-x86_64/CurseStone.exe dist/out/CurseStone-windows-x86_64.exe
 
-      - name: Publicar Release en GitHub
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
@@ -258,6 +185,5 @@ jobs:
             dist/out/CurseStone-android-arm64
             dist/out/CurseStone-windows-x86_64.exe
           generate_release_notes: true
-          # CAMBIO: se usan los inputs del workflow_call si estan definidos.
           body: ${{ inputs.body || '' }}
           prerelease: ${{ inputs.prerelease || false }}
