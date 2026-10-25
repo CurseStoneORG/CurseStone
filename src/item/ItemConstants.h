@@ -23,8 +23,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // ItemConstants.h — item id constants.
 //
-// Mirrors cn.nukkit.item.item (the file the user uploaded) which itself
-// mirrors item/item. All Block IDs are also here (since
+// Mirrors cn.nukkit.item.item, which itself mirrors item/item.
+// All Block IDs are also here (since
 // MCPE 0.15 uses item IDs < 256 for block items).
 //
 // Usage:

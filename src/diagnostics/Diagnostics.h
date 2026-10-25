@@ -23,10 +23,6 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // Diagnostics.h — always-on diagnostic recorder for crashdumps and errors.
 //
-// Why this exists (feedback from the user):
-//   "nuestro crashdump system es muy cerrado y no muestra cosas reveladoras
-//    ... mejoralo y que los crashdumps o errores muestren como el de Nukkit".
-//
 // The old CrashDump only wrote {version, reason, backtrace}. That is useless
 // to debug a crash that happens while a player is opening a chest or while a
 // malformed packet is being handled: you cannot tell WHICH player, WHAT
