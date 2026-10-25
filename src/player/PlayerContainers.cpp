@@ -37,6 +37,7 @@
 #include "inventory/FurnaceInventory.h"
 #include "inventory/Inventory.h"
 #include "event/EventManager.h"
+#include "event/inventory/InventoryCloseEvent.h"
 #include "event/inventory/InventoryOpenEvent.h"
 #include "event/block/SignChangeEvent.h"
 #include "nbt/NBT.h"
@@ -103,8 +104,11 @@ void Player::openChestAt(int x, int y, int z) {
     if (!lvl)
         return;
 
-    // Only one container open at to time per player (see openContainerWindow).
-    if (open_chest_) {
+    // Only one container open at a time per player (see openContainerWindow).
+    // The furnace counts too: both windows share the single container window
+    // id, and leaving open_furnace_ set would keep a half-open window whose
+    // clicks the server can no longer route.
+    if (open_chest_ || open_furnace_) {
         closeOpenChest();
     }
 
@@ -245,6 +249,10 @@ void Player::closeOpenChest() {
     // Cubre ambos contenedores (chest or furnace) — only UNO can estar
     // abierto to the time, this way that basta with close that which is seteado.
     if (open_chest_) {
+        // InventoryCloseEvent fires for every window teardown (client close,
+        // replaced window, disconnect) — chest-UI plugins react here.
+        event::EventManager::get().fire<event::inventory::InventoryCloseEvent>(
+            std::static_pointer_cast<inventory::Inventory>(open_chest_->inventory()), this);
         auto cp = std::make_shared<network::protocol::ContainerClosePacket>();
         cp->windowid = container_window_id_;
         sendPacket(cp);
@@ -257,6 +265,8 @@ void Player::closeOpenChest() {
         open_chest_.reset();
     }
     if (open_furnace_) {
+        event::EventManager::get().fire<event::inventory::InventoryCloseEvent>(
+            std::static_pointer_cast<inventory::Inventory>(open_furnace_->inventory()), this);
         auto cp = std::make_shared<network::protocol::ContainerClosePacket>();
         cp->windowid = container_window_id_;
         sendPacket(cp);
@@ -294,10 +304,10 @@ void Player::openFurnaceAt(int x, int y, int z) {
     }
 
     // InventoryOpenEvent — cancelable (protección of zona, etc.), igual
-    // that in openChestAt().
-    inventory::Inventory* fInvRaw = static_cast<inventory::Inventory*>(furnace->inventory().get());
+    // that in openChestAt(). The shared_ptr is owning: listeners may outlive
+    // this call and must never dangle on the tile's inventory.
     auto ev = event::EventManager::get().fire<event::inventory::InventoryOpenEvent>(
-        std::shared_ptr<inventory::Inventory>(std::shared_ptr<void>(), fInvRaw), this);
+        std::static_pointer_cast<inventory::Inventory>(furnace->inventory()), this);
     if (ev.isCancelled())
         return;
 

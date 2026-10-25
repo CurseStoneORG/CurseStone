@@ -43,7 +43,7 @@ namespace cursestone::tile {
 TileFurnace::TileFurnace(cursestone::world::Position pos,
                          const cursestone::inventory::CraftingManager* recipes)
     : Tile("Furnace", pos), recipes_(recipes),
-      inv_(std::make_unique<cursestone::inventory::FurnaceInventory>()) {
+      inv_(std::make_shared<cursestone::inventory::FurnaceInventory>()) {
 }
 TileFurnace::~TileFurnace() = default;
 void TileFurnace::setItem(int slot, const cursestone::item::ItemStack& it) {

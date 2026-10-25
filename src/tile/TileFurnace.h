@@ -88,9 +88,9 @@ class TileFurnace : public Tile, public Container, public Nameable, public Spawn
 
     // El backing inventory (misma arquitectura que TileChest::inventory
     // → ChestInventory): único lugar donde viven los 3 slots para que
-    // inventario, NBT y UI no diverjan. Player::openFurnaceAt lo usa
-    // para InventoryOpenEvent.
-    const std::unique_ptr<cursestone::inventory::FurnaceInventory>& inventory() const {
+    // inventario, NBT y UI no diverjan. Se devuelve como shared_ptr
+    // propietario para que los eventos de inventario nunca cuelguen.
+    std::shared_ptr<cursestone::inventory::FurnaceInventory> inventory() const {
         return inv_;
     }
 
@@ -108,7 +108,7 @@ class TileFurnace : public Tile, public Container, public Nameable, public Spawn
     bool smeltResult(const cursestone::item::ItemStack& in, cursestone::item::ItemStack& out) const;
     // El backing inventory real. Los métodos Container delegan acá
     // para que player-inventory y NBT vivan en un solo lugar.
-    std::unique_ptr<cursestone::inventory::FurnaceInventory> inv_;
+    std::shared_ptr<cursestone::inventory::FurnaceInventory> inv_;
     int burn_time_ = 0;            // ticks restantes del fuel actual
     int max_burn_time_ = 0;        // total ticks del último fuel encendido (escala UI)
     int cook_time_ = 0;            // progreso de la fundición actual (0..200)

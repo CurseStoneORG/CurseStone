@@ -39,6 +39,9 @@
 // events.on("PlayerBedLeave", function(e) ... end)
 // events.on("DoorToggle", function(e) ... end)
 // events.on("PlayerInteract", function(e) ... end)
+// events.on("InventoryOpen", function(e) ... end)
+// events.on("InventoryClick", function(e) ... end)
+// events.on("InventoryClose", function(e) ... end)
 //
 // Event fields:
 // - Player events: e.player and e.message.
@@ -47,6 +50,8 @@
 // - Block events: e.player, e.x, e.y, e.z, and e.block_id.
 // - Damage events: e.entity, writable e.amount, and e.cause.
 // - EntityDamageByEntity also provides e.damager.
+// - Inventory events: e.player and e.inventory; InventoryClick also
+//   provides e.slot with e.item_id/e.item_meta/e.item_count.
 // - Call e.cancel() to cancel cancellable events.
 //
 // Listeners use NORMAL priority and are removed when their plugin is disabled.
@@ -70,6 +75,9 @@
 #include "event/block/DoorToggleEvent.h"
 #include "event/entity/EntityDamageEvent.h"
 #include "event/entity/EntityDamageByEntityEvent.h"
+#include "event/inventory/InventoryCloseEvent.h"
+#include "event/inventory/InventoryClickEvent.h"
+#include "event/inventory/InventoryOpenEvent.h"
 #include <functional>
 #include <string>
 #include <type_traits>
@@ -415,6 +423,36 @@ int l_events_on(lua_State* L) {
             lua_setfield(L, eIdx, "slot");
         };
         hook<event::player::PlayerItemHeldEvent>(pl, ref, f, {});
+    } else if (name == "InventoryOpen") {
+        // Fired when a player opens a chest/furnace window (cancellable).
+        auto f = [](lua_State* L, int eIdx, event::inventory::InventoryOpenEvent& ev) {
+            lua_pushstring(L, ev.who ? ev.who->getName().c_str() : "");
+            lua_setfield(L, eIdx, "player");
+            lua_pushstring(L, ev.inv ? ev.inv->getName().c_str() : "");
+            lua_setfield(L, eIdx, "inventory");
+        };
+        hook<event::inventory::InventoryOpenEvent>(pl, ref, f, {});
+    } else if (name == "InventoryClick") {
+        // Fired for container and player inventory slot clicks (cancellable).
+        auto f = [](lua_State* L, int eIdx, event::inventory::InventoryClickEvent& ev) {
+            lua_pushstring(L, ev.who ? ev.who->getName().c_str() : "");
+            lua_setfield(L, eIdx, "player");
+            lua_pushstring(L, ev.inv ? ev.inv->getName().c_str() : "");
+            lua_setfield(L, eIdx, "inventory");
+            lua_pushinteger(L, (lua_Integer)ev.slot);
+            lua_setfield(L, eIdx, "slot");
+            fillItemStack(L, eIdx, "item", ev.item);
+        };
+        hook<event::inventory::InventoryClickEvent>(pl, ref, f, {});
+    } else if (name == "InventoryClose") {
+        // Fired when a container window closes (client close, replaced window, quit).
+        auto f = [](lua_State* L, int eIdx, event::inventory::InventoryCloseEvent& ev) {
+            lua_pushstring(L, ev.who ? ev.who->getName().c_str() : "");
+            lua_setfield(L, eIdx, "player");
+            lua_pushstring(L, ev.inv ? ev.inv->getName().c_str() : "");
+            lua_setfield(L, eIdx, "inventory");
+        };
+        hook<event::inventory::InventoryCloseEvent>(pl, ref, f, {});
     } else {
         luaL_unref(L, LUA_REGISTRYINDEX, ref);
         return luaL_error(L, "unknown event: %s", name.c_str());
