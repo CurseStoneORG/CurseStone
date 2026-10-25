@@ -469,6 +469,10 @@ class Player : public IPlayer,
     }
     void spawnTo(Player* player);
     void announceTo(Player* viewer);
+    // uuid string -> the 16 raw bytes the player-list and AddPlayer
+    // encoders write. Lenient: dashes and non-hex characters are skipped,
+    // so every login UUID form lands on the same 16 bytes.
+    static void parseUuidBytes(const std::string& s, std::array<uint8_t, 16>& out);
 
     // --- Sneaking ---
     // Reports whether the client is sneaking.

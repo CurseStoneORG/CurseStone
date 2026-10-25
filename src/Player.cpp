@@ -28,6 +28,7 @@
 #include "block/BlockIds.h"
 #include "network/protocol/DisconnectPacket.h"
 #include "network/protocol/MovePlayerPacket.h"
+#include "network/protocol/PlayerListPacket.h"
 #include "network/protocol/RemoveEntityPacket.h"
 #include "inventory/PlayerInventory.h"
 #include "permission/BanEntry.h"
@@ -121,6 +122,40 @@ bool Player::isWhitelisted() const {
 void Player::setWhitelisted(bool /*v*/) {
 }
 
+// uuid string -> the 16 raw bytes the player-list and AddPlayer encoders
+// write. Lenient: dashes and non-hex characters are skipped, so both the
+// dashed and the packed login UUID forms land on the same 16 bytes.
+void Player::parseUuidBytes(const std::string& s, std::array<uint8_t, 16>& out) {
+    out.fill(0);
+    if (s.empty())
+        return;
+    size_t bi = 0;
+    auto hexVal = [](char c) -> int {
+        if (c >= '0' && c <= '9')
+            return c - '0';
+        if (c >= 'a' && c <= 'f')
+            return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F')
+            return c - 'A' + 10;
+        return -1;
+    };
+    for (size_t i = 0; i + 1 < s.size() && bi < 16; ++i) {
+        int hi = hexVal(s[i]);
+        if (hi < 0)
+            continue; // dashes (and anything non-hex) are skipped
+        size_t j = i + 1;
+        while (j < s.size() && s[j] == '-')
+            ++j;
+        if (j >= s.size())
+            break;
+        int lo = hexVal(s[j]);
+        if (lo < 0)
+            continue;
+        out[bi++] = (uint8_t)((hi << 4) | lo);
+        i = j;
+    }
+}
+
 // Phase 9: Thread-safe player shutdown.
 void Player::close(const std::string& reason) {
     // Keep the player alive throughout cleanup.
@@ -199,6 +234,30 @@ void Player::close(const std::string& reason) {
                         continue; // Same world.
                     try {
                         other->sendPacket(pk);
+                    } catch (...) {}
+                }
+            }
+        } catch (...) {}
+
+        // Drop this player from the other clients' player list. The tab
+        // entry only disappears when an explicit REMOVE reaches the client
+        // — without it the name lingers there until the viewer reconnects.
+        // The list is global (doFirstSpawn announces every spawned player),
+        // so the removal is broadcast to everyone still listed.
+        try {
+            if (srv_ && !cfg_.uuid.empty()) {
+                auto rm = std::make_shared<network::protocol::PlayerListPacket>();
+                rm->type = network::protocol::PlayerListPacket::TYPE_REMOVE;
+                network::protocol::PlayerListPacket::Entry re;
+                parseUuidBytes(cfg_.uuid, re.uuid);
+                rm->entries.push_back(std::move(re));
+                for (auto& other : srv_->playersSnapshot()) {
+                    if (!other || other.get() == this)
+                        continue;
+                    if (other->isPendingRemoval() || !other->spawned())
+                        continue;
+                    try {
+                        other->sendPacket(rm);
                     } catch (...) {}
                 }
             }
