@@ -44,6 +44,7 @@
 #include "../utils/Terminal.h"
 #include "../utils/TextFormat.h"
 #include "../utils/Logger.h"
+#include "../utils/DebugFlag.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -142,6 +143,14 @@ static void async_log_fn(void* self, mcp_log_level_t lvl, const char* msg) {
     async_push((mcp_async_logger_t*)self, lvl, msg);
 }
 static void async_debug_fn(void* self, const char* msg) {
+    // debug() lines are part of the scattered debug output the
+    // debug-mode switch owns (cursestone.yml settings.debug-mode).
+    // Without the switch they printed on every boot by default and the
+    // console became unreadable; with it they are collected behind ONE
+    // key like the [NET]/[PKT] traces. Errors and warnings are NOT
+    // affected — they always print.
+    if (!mcp_debug_enabled())
+        return;
     async_push((mcp_async_logger_t*)self, MCP_LOG_DEBUG, msg);
 }
 static void async_info_fn(void* self, const char* msg) {

@@ -1569,7 +1569,7 @@ void World::tickFallingBlocks(uint64_t current_tick) {
         if (fb->age > kFallingBlockMaxAge) {
             fb->taken = true;
             sendRemoveEntity(this, fb->eid);
-            if (cursestone::Server::getInstance().advancedLog()) {
+            if (cursestone::Server::getInstance().debugMode()) {
                 utils::MainLogger::get().info(
                     "[FALLING] eid=" + std::to_string(fb->eid) +
                     " despawned at age cap (chunk unloaded?) — block lost");

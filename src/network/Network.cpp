@@ -228,13 +228,13 @@ std::shared_ptr<protocol::DataPacket> Network::decodePacketById(uint8_t pid, con
         // paquete que este server no tiene registrado en
         // PacketPool::create() (por ejemplo InventoryTransactionPacket
         // o CraftingEventPacket, ninguno de los dos existe hoy acá),
-        // no había NINGUNA forma de saberlo. Gateado en advancedLog()
+        // no había NINGUNA forma de saberlo. Gateado en debugMode()
         // para no ensuciar el log en uso normal.
         char pidHex[4];
         snprintf(pidHex, sizeof(pidHex), "%02x", pid);
         const std::string detail =
             "len=" + std::to_string(bodyLen) + " bytes=" + hexDump(body, bodyLen);
-        if (server_ && server_->advancedLog()) {
+        if (server_ && server_->debugMode()) {
             utils::MainLogger::get().warn(std::string("[PKT] ID desconocido 0x") + pidHex + " " +
                                           detail);
         }
@@ -279,8 +279,8 @@ std::shared_ptr<protocol::DataPacket> Network::decodePacketById(uint8_t pid, con
     // que llegue uno (éxito o fallo de decode), para poder comparar
     // los bytes reales que manda el cliente contra el formato que
     // este server asume (ver el comentario de formato en
-    // ContainerSetSlotPacket.h). Gateado en advancedLog().
-    if (pid == protocol::CONTAINER_SET_SLOT_PACKET && server_ && server_->advancedLog()) {
+    // ContainerSetSlotPacket.h). Gateado en debugMode().
+    if (pid == protocol::CONTAINER_SET_SLOT_PACKET && server_ && server_->debugMode()) {
         utils::MainLogger::get().info(std::string("[PKT] CONTAINER_SET_SLOT_PACKET decode=") +
                                       (ok ? "OK" : "FALLO") + " len=" + std::to_string(bodyLen) +
                                       " bytes=" + hexDump(body, bodyLen));
@@ -301,7 +301,7 @@ std::shared_ptr<protocol::DataPacket> Network::decodePacketById(uint8_t pid, con
                 " — no session created");
         }
         // Decode failed — silently drop (log above already covered it
-        // when advancedLog() is on).
+        // when debugMode() is on).
         return nullptr;
     }
     return pkt;

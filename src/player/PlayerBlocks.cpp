@@ -372,7 +372,7 @@ void Player::handleBlockBreak(int x, int y, int z) {
         }
     }
 
-    if (srv_ && srv_->advancedLog()) {
+    if (srv_ && srv_->debugMode()) {
         utils::MainLogger::get().info("[BLOCK] " + cfg_.username + " broke block at " +
                                       std::to_string(x) + "," + std::to_string(y) + "," +
                                       std::to_string(z) + " (was id=" + std::to_string(blockId) +
@@ -645,7 +645,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
     }
 
     if (!sneakLocked && lvl->getBlockId(x, y, z) == block::WORKBENCH && srv_ &&
-        srv_->advancedLog()) {
+        srv_->debugMode()) {
         utils::MainLogger::get().info("[CRAFT] " + cfg_.username + " opened crafting table at " +
                                       std::to_string(x) + "," + std::to_string(y) + "," +
                                       std::to_string(z));
@@ -698,7 +698,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
         }
         // Resync the target when using an empty hand.
         resyncUseTarget(this, lvl, x, y, z, face);
-        if (srv_ && srv_->advancedLog()) {
+        if (srv_ && srv_->debugMode()) {
             utils::MainLogger::get().info("[BLOCK] " + cfg_.username +
                                           " attempted place with empty hand — ignored");
         }
@@ -950,7 +950,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
         return;
     } else if (sneakLocked && heldItemId > 255) {
         // Prevent item use while sneaking.
-        if (srv_ && srv_->advancedLog()) {
+        if (srv_ && srv_->debugMode()) {
             utils::MainLogger::get().info("[SNEAK] " + cfg_.username +
                                           " tried to use item id=" + std::to_string(heldItemId) +
                                           " while crouching — blocked (vanilla)");
@@ -979,7 +979,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
     } else {
         // Reject items that cannot place blocks.
         resyncUseTarget(this, lvl, x, y, z, face);
-        if (srv_ && srv_->advancedLog()) {
+        if (srv_ && srv_->debugMode()) {
             utils::MainLogger::get().info("[BLOCK] " + cfg_.username + " used non-block item id=" +
                                           std::to_string(heldItemId) + " — no placement");
         }
@@ -992,7 +992,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
 
     mcp_chunk_t* ch = lvl->chunks().getChunkIfLoaded(cx, cz);
     if (!ch) {
-        if (srv_ && srv_->advancedLog()) {
+        if (srv_ && srv_->debugMode()) {
             utils::MainLogger::get().info(
                 "[BLOCK] " + cfg_.username + " tried to place block in unloaded chunk (" +
                 std::to_string(cx) + "," + std::to_string(cz) + ") — ignored");
@@ -1098,7 +1098,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
 
     lvl->checkFallingSupport(placeX, placeY, placeZ);
 
-    if (srv_ && srv_->advancedLog()) {
+    if (srv_ && srv_->debugMode()) {
         utils::MainLogger::get().info(
             "[BLOCK] " + cfg_.username + " placed block at " + std::to_string(placeX) + "," +
             std::to_string(placeY) + "," + std::to_string(placeZ) +

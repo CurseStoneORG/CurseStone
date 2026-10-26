@@ -39,6 +39,7 @@
 #include "RakLib.h"
 #include "../../utils/Utils.h"
 #include "../../utils/BinaryStream.h"
+#include "../../utils/DebugFlag.h"
 #include <stdio.h>
 
 // RakNet protocol packets
@@ -163,6 +164,67 @@ ssize_t mcp_rak_session_manager_send(mcp_rak_session_manager_t* sm, const uint8_
     return mcp_udp_socket_send(&sm->socket, data, len, ip, port);
 }
 
+// ---- Congestion backlog (see the long comment on `backlog` in
+// Session.h). Push/flush run only on the RakLib thread.
+static bool session_backlog_push(mcp_rak_session_t* s, const uint8_t* payload, size_t plen,
+                                 uint8_t reliability, uint8_t order_channel) {
+    if (!s || !payload || plen == 0)
+        return false;
+    if (s->backlog_count >= MCP_BACKLOG_MAX_ENTRIES)
+        return false;
+    if (s->backlog_bytes + plen > MCP_BACKLOG_MAX_BYTES)
+        return false;
+    uint8_t* copy = (uint8_t*)malloc(plen);
+    if (!copy)
+        return false;
+    memcpy(copy, payload, plen);
+    uint32_t idx = s->backlog_tail;
+    s->backlog[idx].data = copy;
+    s->backlog[idx].len = plen;
+    s->backlog[idx].reliability = reliability;
+    s->backlog[idx].order_channel = order_channel;
+    s->backlog_tail = (idx + 1) % MCP_BACKLOG_MAX_ENTRIES;
+    s->backlog_count++;
+    s->backlog_bytes += plen;
+    s->diag_backlog_queued++;
+    if (s->backlog_count > s->diag_backlog_peak)
+        s->diag_backlog_peak = s->backlog_count;
+    if (s->backlog_bytes > s->diag_backlog_bytes_peak)
+        s->diag_backlog_bytes_peak = s->backlog_bytes;
+    return true;
+}
+
+// Replays queued payloads (oldest first) while the session has recovered
+// enough capacity. Called after ACK handling and once per RakLib tick.
+static void session_backlog_flush(mcp_rak_session_manager_t* sm, mcp_rak_session_t* s) {
+    if (!sm || !s || s->backlog_count == 0)
+        return;
+    if (s->state < MCP_SESSION_STATE_CONNECTING_2)
+        return;
+    while (s->backlog_count > 0 &&
+           s->diag_recovery_occupied < MCP_BACKLOG_FLUSH_WATERMARK) {
+        uint32_t idx = s->backlog_head;
+        uint8_t* data = s->backlog[idx].data;
+        size_t len = s->backlog[idx].len;
+        uint8_t reliability = s->backlog[idx].reliability;
+        uint8_t channel = s->backlog[idx].order_channel;
+        s->backlog[idx].data = NULL;
+        s->backlog_head = (idx + 1) % MCP_BACKLOG_MAX_ENTRIES;
+        s->backlog_count--;
+        s->backlog_bytes -= len;
+        if (data) {
+            // Replay through the normal send path so the payload is
+            // fragmented, message-indexed and recovery-tracked exactly
+            // like a fresh send. A false return here means the datagrams
+            // could not go out (UDP failure / dead session) — dropping
+            // the entry matches what a direct send would have done.
+            if (mcp_rak_session_send_payload(s, sm, data, len, reliability, channel))
+                s->diag_backlog_flushed++;
+            free(data);
+        }
+    }
+}
+
 bool mcp_rak_session_manager_send_encapsulated(mcp_rak_session_manager_t* sm, const uint8_t ip[4],
                                                uint16_t port, const uint8_t* payload, size_t plen,
                                                uint8_t reliability, uint8_t order_channel) {
@@ -182,8 +244,14 @@ bool mcp_rak_session_manager_send_encapsulated(mcp_rak_session_manager_t* sm, co
     // players that are actually still there (a healthy client sits in the
     // tens, so this never fires in normal play).
     if (s->diag_recovery_occupied >= MCP_MAX_INFLIGHT_RELIABLE) {
+        // Congestion backlog first: a healthy-but-slow client (phone over
+        // Wi-Fi/mobile data during heavy chunk streaming) only needs the
+        // payload DELAYED, not lost. Only when the backlog itself is full
+        // is the session genuinely not draining — drop and count it.
+        if (session_backlog_push(s, payload, plen, reliability, order_channel))
+            return true; // accepted, deferred
         s->diag_backpressure_drops++;
-        if (!s->diag_backpressure_logged) {
+        if (mcp_debug_enabled() && !s->diag_backpressure_logged) {
             s->diag_backpressure_logged = true;
             fprintf(stderr,
                     "[NET] %u.%u.%u.%u:%u is not acknowledging: %u reliable "
@@ -504,10 +572,12 @@ static void note_handshake_drop(const uint8_t* data, size_t len, const uint8_t i
     hex[0] = '\0';
     for (size_t i = 0; i < cap && o + 4 < sizeof(hex); ++i)
         o += (size_t)snprintf(hex + o, sizeof(hex) - o, "%02x ", data[i]);
+    if (mcp_debug_enabled()) {
     fprintf(stderr,
             "[NET] DROPPED 0x%02x packet from %u.%u.%u.%u:%u (%zu bytes)"
             " -- %s | first bytes: %s\n",
             data[0], ip[0], ip[1], ip[2], ip[3], port, len, why, hex);
+    }
 }
 
 static bool decode_ocr1(const uint8_t* data, size_t len, uint8_t* out_protocol, uint16_t* out_mtu) {
@@ -798,7 +868,7 @@ static bool reliable_index_accept(mcp_rak_session_t* s, uint32_t message_index,
                 // would drown the console. The running total is surfaced in
                 // the disconnect dump instead.
                 s->diag_duplicate_dropped++;
-                if (!s->diag_duplicate_logged) {
+                if (mcp_debug_enabled() && !s->diag_duplicate_logged) {
                     s->diag_duplicate_logged = true;
                     fprintf(stderr,
                             "[NET] Duplicate reliable message dropped "
@@ -933,7 +1003,7 @@ static void deliver_ordered(mcp_rak_session_manager_t* sm, mcp_rak_session_t* s,
                 s->diag_order_duplicate++;
                 return;
             }
-            if (!s->diag_order_index_reuse_logged) {
+            if (mcp_debug_enabled() && !s->diag_order_index_reuse_logged) {
                 s->diag_order_index_reuse_logged = true;
                 fprintf(stderr,
                         "[NET] WARNING: %u.%u.%u.%u:%u reuses ordered-channel "
@@ -1218,7 +1288,7 @@ static void handle_encapsulated(mcp_rak_session_manager_t* sm, mcp_rak_session_t
         // which would explain recv_packets climbing to 17 while the
         // server stays completely silent — every retry silently missing
         // the 0x09 branch above.
-        if (pid != 0x13 && pid != 0x15) {
+        if (mcp_debug_enabled() && pid != 0x13 && pid != 0x15) {
             fprintf(stderr,
                     "[RakLib][diag] Unhandled packet in CONNECTING_2: pid=0x%02x "
                     "plen=%zu from %u.%u.%u.%u:%u\n",
@@ -2134,8 +2204,12 @@ void mcp_rak_session_manager_tick(mcp_rak_session_manager_t* sm) {
         } else if (pid == 0xc0 || pid == 0xc1 || pid == 0xc2 || pid == 0xc3) {
             // ACK
             mcp_rak_session_t* s = mcp_rak_session_manager_find(sm, ip, port);
-            if (s)
+            if (s) {
                 handle_ack(s, buf, (size_t)r);
+                // ACKs freed recovery slots — replay anything the
+                // inflight ceiling deferred.
+                session_backlog_flush(sm, s);
+            }
         } else if (pid == 0xa0 || pid == 0xa1 || pid == 0xa2 || pid == 0xa3) {
             // NACK
             mcp_rak_session_t* s = mcp_rak_session_manager_find(sm, ip, port);
@@ -2156,6 +2230,10 @@ void mcp_rak_session_manager_tick(mcp_rak_session_manager_t* sm) {
 
         flush_ack_nack(sm, s);
         retransmit_stale(sm, s, &retransmit_budget);
+        // Safety-net replay: covers capacity freed outside the ACK branch
+        // (e.g. retransmit-path bookkeeping) and sessions whose ACKs are
+        // coalesced into datagrams processed before this sweep.
+        session_backlog_flush(sm, s);
 
         // FIX: evict an incomplete split-packet reassembly buffer that's
         // been waiting more than 10s for a missing fragment. Without this,
@@ -2238,8 +2316,9 @@ void mcp_rak_session_manager_tick(mcp_rak_session_manager_t* sm) {
             // "No ACK for 5s" on its own is normal for an idle player
             // (it has nothing reliable in flight to acknowledge), so it
             // is printed, not treated as a fault.
-            if (s->diag_recovery_occupied > 0 ||
-                (now - s->last_activity_ms) > MCP_KEEPALIVE_PING_MS) {
+            if ((s->diag_recovery_occupied > 0 ||
+                 (now - s->last_activity_ms) > MCP_KEEPALIVE_PING_MS) &&
+                mcp_debug_enabled()) {
                 fprintf(stderr,
                         "[NET] health %u.%u.%u.%u:%u inflight=%u/%u "
                         "backpressure_drops=%u since_last_datagram=%llums "

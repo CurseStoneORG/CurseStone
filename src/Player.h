@@ -304,7 +304,7 @@ class Player : public IPlayer,
             chunk_queue_.clear();
             chunk_queue_.emplace_back(cx, cz);
         }
-        if (srv_ && srv_->advancedLog()) {
+        if (srv_ && srv_->debugMode()) {
             utils::MainLogger::get().info("[CHUNKS] Client spawn ACK for " + cfg_.username +
                                           " - re-streaming view radius " +
                                           std::to_string(cfg_.view_distance));

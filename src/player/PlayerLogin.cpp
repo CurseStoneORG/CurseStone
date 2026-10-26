@@ -1007,7 +1007,7 @@ void Player::respawn() {
         sendPacket(ps);
     }
 
-    if (srv_ && srv_->advancedLog()) {
+    if (srv_ && srv_->debugMode()) {
         utils::MainLogger::get().info(
             "[RESPAWN] " + cfg_.username + " respawned at " + std::to_string((int)pos_.x) + "," +
             std::to_string((int)pos_.y) + "," + std::to_string((int)pos_.z));

@@ -181,7 +181,7 @@ void Player::openChestAt(int x, int y, int z) {
     }
     sendPacket(content);
 
-    if (srv_ && srv_->advancedLog()) {
+    if (srv_ && srv_->debugMode()) {
         utils::MainLogger::get().info("[CHEST] " + cfg_.username + " opened chest at " +
                                       std::to_string(x) + "," + std::to_string(y) + "," +
                                       std::to_string(z));
@@ -343,7 +343,7 @@ void Player::openFurnaceAt(int x, int y, int z) {
     // property packets inside the same open batch is off-reference and
     // the tile tick delivers fresh values one tick later anyway.
 
-    if (srv_ && srv_->advancedLog()) {
+    if (srv_ && srv_->debugMode()) {
         utils::MainLogger::get().info("[FURNACE] " + cfg_.username + " opened furnace at " +
                                       std::to_string(x) + "," + std::to_string(y) + "," +
                                       std::to_string(z));

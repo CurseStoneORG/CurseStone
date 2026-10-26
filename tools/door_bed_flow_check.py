@@ -404,7 +404,7 @@ def main() -> int:
                 "advanced-log=true\n" % args.port)
     with open(os.path.join(runtime, "cursestone.yml"), "w") as f:
         f.write("settings:\n  async-workers: 2\n  autosave-ticks: 6000\n"
-                "  advanced-log: true\nworld:\n  format: \"anvil\"\n"
+                "  debug-mode: true\nworld:\n  format: \"anvil\"\n"
                 "  generator: \"flat\"\nmemory:\n  max-mb: 512\n"
                 "  gc-interval-ticks: 200\n")
 

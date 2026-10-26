@@ -128,7 +128,7 @@ bool Player::sleepOn(int bx, int by, int bz) {
     if (World* lvl = getWorld())
         lvl->setSleepTicks(60);
 
-    if (srv_ && srv_->advancedLog()) {
+    if (srv_ && srv_->debugMode()) {
         utils::MainLogger::get().info("[SLEEP] " + cfg_.username + " is sleeping at " +
                                       std::to_string(bx) + "," + std::to_string(by) + "," +
                                       std::to_string(bz));
@@ -161,7 +161,7 @@ void Player::stopSleep() {
         sendPacket(anim);
     }
 
-    if (srv_ && srv_->advancedLog()) {
+    if (srv_ && srv_->debugMode()) {
         utils::MainLogger::get().info("[SLEEP] " + cfg_.username + " stopped sleeping");
     }
 }

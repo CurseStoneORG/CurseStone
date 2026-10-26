@@ -235,7 +235,7 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int face) {
     if (action == network::protocol::PlayerActionPacket::ACTION_START_BREAK ||
         action == network::protocol::PlayerActionPacket::ACTION_ABORT_BREAK ||
         action == network::protocol::PlayerActionPacket::ACTION_STOP_BREAK) {
-        if (srv_ && srv_->advancedLog()) {
+        if (srv_ && srv_->debugMode()) {
             utils::MainLogger::get().info(
                 "[ACTION] " + cfg_.username + " break action=" + std::to_string(action) + " at " +
                 std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(z));
@@ -320,7 +320,7 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int face) {
             other->sendPacket(pa);
             ++sent;
         }
-        if (srv_ && srv_->advancedLog() &&
+        if (srv_ && srv_->debugMode() &&
             action == network::protocol::PlayerActionPacket::ACTION_START_BREAK) {
             utils::MainLogger::get().info("[BREAK-ANIM] " + cfg_.username + " started crack at " +
                                           std::to_string(x) + "," + std::to_string(y) + "," +
@@ -368,7 +368,7 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int face) {
     }
 
     // Log crafting table interactions when advanced logging is enabled.
-    if (srv_ && srv_->advancedLog() && x != 0 && y != 0 && z != 0) {
+    if (srv_ && srv_->debugMode() && x != 0 && y != 0 && z != 0) {
         auto* lvl = getWorld();
         if (lvl && lvl->getBlockId(x, y, z) == block::WORKBENCH) {
             utils::MainLogger::get().info("[CRAFT] " + cfg_.username + " used crafting table at " +
@@ -498,7 +498,7 @@ void Player::handleInteract(int action, int64_t targetEid) {
         }
     }
 
-    if (srv_->advancedLog()) {
+    if (srv_->debugMode()) {
         utils::MainLogger::get().info("[COMBAT] " + cfg_.username + " hit " + target->getName() +
                                       " for " + std::to_string(melee) +
                                       " (health now " + std::to_string((int)target->health()) +
@@ -565,8 +565,22 @@ void Player::onUpdate(uint64_t current_tick) {
         std::unordered_set<int64_t> still_in_view;
 
         // Limit network sends while requesting generation for all visible chunks.
+        // Two caps per tick: a chunk COUNT (so one slow generator can never
+        // starve the client of variety) and a chunk BYTE budget. The byte
+        // budget is the anti-congestion half: an unpaced stream can push
+        // several MB/s of reliable datagrams at the client, which overwhelms
+        // a real phone link, drives the RakLib inflight window into its
+        // ceiling and (before the congestion backlog existed) silently
+        // discarded chunk payloads — terrain holes while exploring. Pacing
+        // the feed keeps the window under the ceiling on any link that can
+        // sustain ~5 MB/s, and the congestion backlog absorbs the rest.
+        // Sizing note: a full overworld column serializes to ~83 KB on the
+        // wire, so 256 KB still lets the per-tick count cap (3) go through
+        // unimpeded — the budget only bites on extreme payloads.
         constexpr int MAX_CHUNKS_PER_TICK = 3;
+        constexpr size_t MAX_CHUNK_BYTES_PER_TICK = 256 * 1024;
         int chunks_sent_this_tick = 0;
+        size_t chunk_bytes_this_tick = 0;
 
         // Generate missing chunks asynchronously to avoid blocking the main thread.
         auto* pool = srv_ ? srv_->getAsyncPool() : nullptr;
@@ -588,6 +602,9 @@ void Player::onUpdate(uint64_t current_tick) {
                 continue; // Generation is pending.
             if (chunks_sent_this_tick >= MAX_CHUNKS_PER_TICK)
                 continue; // The network send limit has been reached.
+            if (chunk_bytes_this_tick >= MAX_CHUNK_BYTES_PER_TICK && chunks_sent_this_tick > 0)
+                break; // Byte budget spent — the spiral is center-out, so
+                       // what follows is farther away; resume next tick.
 
             size_t outLen = 0;
             utils::BufferPtr buf(mcp_chunk_network_serialize(ch, &outLen));
@@ -606,6 +623,7 @@ void Player::onUpdate(uint64_t current_tick) {
                 used_chunks_.insert(hash);
             }
             chunks_sent_this_tick++;
+            chunk_bytes_this_tick += outLen;
         }
 
         // Start the player once enough chunks have reached the client.
@@ -771,7 +789,7 @@ void Player::onUpdate(uint64_t current_tick) {
                     sendPacket(pk_picker);
                     lvl->removeDroppedItem(di->eid);
                     sendPacket(rm_pk);
-                    if (srv_ && srv_->advancedLog()) {
+                    if (srv_ && srv_->debugMode()) {
                         utils::MainLogger::get().info(
                             "[PICKUP] " + cfg_.username +
                             " picked up eid=" + std::to_string(di->eid) + " at chunk " +
@@ -854,7 +872,7 @@ void Player::onUpdate(uint64_t current_tick) {
             }
             sendPacket(tk_self); // Show the pickup animation to the collector.
             sendInventory();
-            if (srv_ && srv_->advancedLog()) {
+            if (srv_ && srv_->debugMode()) {
                 utils::MainLogger::get().info("[ARROW] " + cfg_.username +
                                               " collected stuck arrow eid=" +
                                               std::to_string(a->eid));
@@ -946,7 +964,7 @@ bool Player::tryClaimNearbyDrop(const item::ItemStack& want) {
         sendPacket(tk); // Pickup animation for the collector.
         sendPacket(rm);
         lvl->removeDroppedItem(di->eid);
-        if (srv_->advancedLog()) {
+        if (srv_->debugMode()) {
             utils::MainLogger::get().info(
                 "[PICKUP] " + cfg_.username + " picked up eid=" +
                 std::to_string(di->eid) + " at chunk " + std::to_string(cx) + "," +

@@ -210,8 +210,14 @@ class Server {
     bool onlineMode() const {
         return online_mode_;
     }
-    bool advancedLog() const {
-        return advanced_log_;
+    // The ONE switch that gates every debug/diagnostic line in the
+    // console: the RakLib [NET] traces, packet hexdumps, verbose gameplay
+    // traces and MainLogger::debug() output. Driven by the
+    // `settings.debug-mode` key in cursestone.yml (default false) and
+    // mirrored into the C-shared flag (utils/DebugFlag.h) so the RakLib
+    // thread and the async logger see the same value.
+    bool debugMode() const {
+        return debug_mode_;
     }
     const std::string& ip() const {
         return ip_;
@@ -362,7 +368,9 @@ class Server {
     int difficulty_ = 1;
     bool whitelist_ = false;
     bool online_mode_ = false;
-    bool advanced_log_ = false;
+    // Master switch for every debug/diagnostic console line
+    // (settings.debug-mode in cursestone.yml, default false).
+    bool debug_mode_ = false;
 
     // Fire spread and Nether portal behavior.
     bool fire_spread_enabled_ = true;
