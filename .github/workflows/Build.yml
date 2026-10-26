@@ -50,6 +50,53 @@ jobs:
           path: build/linux-release/CurseStone
           retention-days: 7
 
+  # Linux ARM64 (aarch64) — for ARM Linux hosts (Azure Cobalt 100 VMs, etc.).
+  build-linux-arm64:
+    name: Linux ARM64 (Cobalt 100)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ninja-build gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+      - name: Cross-compile zlib for ARM64
+        run: |
+          cd /tmp
+          wget -q https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz
+          tar xf zlib-1.3.1.tar.gz
+          cd zlib-1.3.1
+          CC=aarch64-linux-gnu-gcc AR=aarch64-linux-gnu-ar \
+          ./configure --prefix=/opt/zlib-arm64-linux --static
+          make -j$(nproc) install
+
+      - name: Configure (Release, aarch64 cross)
+        run: |
+          cmake -B build/linux-arm64-release \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_SYSTEM_NAME=Linux \
+            -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+            -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
+            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
+            -DZLIB_ROOT=/opt/zlib-arm64-linux \
+            -DZLIB_INCLUDE_DIR=/opt/zlib-arm64-linux/include \
+            -DZLIB_LIBRARY=/opt/zlib-arm64-linux/lib/libz.a
+
+      - name: Build
+        run: cmake --build build/linux-arm64-release --parallel
+
+      - name: Upload Linux ARM64 binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: CurseStone-linux-arm64
+          path: build/linux-arm64-release/CurseStone
+          retention-days: 7
+
   # Android ARM64 (NDK) — for Termux/Android hosting.
   build-android-arm64:
     name: Android ARM64
@@ -158,7 +205,7 @@ jobs:
   release:
     name: Create Release
     runs-on: ubuntu-latest
-    needs: [build-linux, build-android-arm64, build-windows]
+    needs: [build-linux, build-linux-arm64, build-android-arm64, build-windows]
     if: startsWith(github.ref, 'refs/tags/v')
 
     permissions:
@@ -174,6 +221,7 @@ jobs:
         run: |
           mkdir -p dist/out
           mv dist/CurseStone-linux-x86_64/CurseStone       dist/out/CurseStone-linux-x86_64
+          mv dist/CurseStone-linux-arm64/CurseStone        dist/out/CurseStone-linux-arm64
           mv dist/CurseStone-android-arm64/CurseStone     dist/out/CurseStone-android-arm64
           mv dist/CurseStone-windows-x86_64/CurseStone.exe dist/out/CurseStone-windows-x86_64.exe
 
@@ -182,6 +230,7 @@ jobs:
         with:
           files: |
             dist/out/CurseStone-linux-x86_64
+            dist/out/CurseStone-linux-arm64
             dist/out/CurseStone-android-arm64
             dist/out/CurseStone-windows-x86_64.exe
           generate_release_notes: true

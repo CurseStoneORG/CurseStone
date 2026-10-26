@@ -55,6 +55,9 @@ jobs:
           # Linux x86_64
           cp start.sh dist/CurseStone-linux-x86_64/start.sh
 
+          # Linux ARM64 (Cobalt 100)
+          cp start.sh dist/CurseStone-linux-arm64/start.sh
+
           # Android ARM64
           cp start.sh dist/CurseStone-android-arm64/start.sh
 
@@ -64,6 +67,7 @@ jobs:
           # Preserve executable permissions for Unix scripts
           chmod +x \
             dist/CurseStone-linux-x86_64/start.sh \
+            dist/CurseStone-linux-arm64/start.sh \
             dist/CurseStone-android-arm64/start.sh
 
       - name: Package ZIP Archives
@@ -79,6 +83,9 @@ jobs:
           test -f dist/CurseStone-linux-x86_64/CurseStone
           test -f dist/CurseStone-linux-x86_64/start.sh
 
+          test -f dist/CurseStone-linux-arm64/CurseStone
+          test -f dist/CurseStone-linux-arm64/start.sh
+
           test -f dist/CurseStone-android-arm64/CurseStone
           test -f dist/CurseStone-android-arm64/start.sh
 
@@ -89,6 +96,8 @@ jobs:
           chmod +x \
             dist/CurseStone-linux-x86_64/CurseStone \
             dist/CurseStone-linux-x86_64/start.sh \
+            dist/CurseStone-linux-arm64/CurseStone \
+            dist/CurseStone-linux-arm64/start.sh \
             dist/CurseStone-android-arm64/CurseStone \
             dist/CurseStone-android-arm64/start.sh
 
@@ -96,6 +105,13 @@ jobs:
           (
             cd dist/CurseStone-linux-x86_64
             zip -9 "$GITHUB_WORKSPACE/out/CurseStone-${VERSION}-linux-x86_64.zip" \
+              CurseStone start.sh
+          )
+
+          # Linux ARM64 ZIP (Cobalt 100)
+          (
+            cd dist/CurseStone-linux-arm64
+            zip -9 "$GITHUB_WORKSPACE/out/CurseStone-${VERSION}-linux-arm64.zip" \
               CurseStone start.sh
           )
 
@@ -116,8 +132,11 @@ jobs:
           echo "Generated release archives:"
           ls -lh out/
 
-          echo "Linux archive contents:"
+          echo "Linux x86_64 archive contents:"
           unzip -l "out/CurseStone-${VERSION}-linux-x86_64.zip"
+
+          echo "Linux ARM64 archive contents:"
+          unzip -l "out/CurseStone-${VERSION}-linux-arm64.zip"
 
           echo "Android archive contents:"
           unzip -l "out/CurseStone-${VERSION}-android-arm64.zip"
@@ -169,6 +188,7 @@ jobs:
           prerelease: ${{ inputs.prerelease }}
           files: |
             out/CurseStone-${{ inputs.version }}-linux-x86_64.zip
+            out/CurseStone-${{ inputs.version }}-linux-arm64.zip
             out/CurseStone-${{ inputs.version }}-android-arm64.zip
             out/CurseStone-${{ inputs.version }}-windows-x86_64.zip
           fail_on_unmatched_files: true
