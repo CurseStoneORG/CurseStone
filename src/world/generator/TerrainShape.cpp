@@ -235,23 +235,26 @@ inline double landMask(double cont) {
 //   * a flat bed, well under the water surface,
 //   * a short lip climbing to the water line,
 //   * a flat bank AT the water line, 2-3 blocks wide,
-//   * then a SHORT rise that blends into the surrounding land.
+//   * then a SHORT climb that stops at the ramp end.
 //
 // The profile is distance-based, so the carve only ever LOWERS the ground:
 // no mask blend, no blend towards a fixed bed that could raise low ground
 // back up and leave a dry channel.
-constexpr double kRiverBed = 2.9;   // half width carved to full depth
-constexpr double kRiverEdge = 4.0;  // where the bed reaches sea level
-constexpr double kRiverShore = 2.2; // flat bank at water level
-constexpr double kRiverClimb = 1.1; // lowland: gentle terraced banks
-constexpr double kCliffClimb = 2.0; // high ground: steeper but still walkable
-// The rise past the bank stops after this many blocks and lets the
-// surrounding terrain stand on its own. Vanilla rivers cut a channel, not
-// a ramp across the landscape: anything further out keeps its natural
-// height. (An uncapped ramp imposed the climb on every nearby column, and
-// where two meander bends ran close the ramps between them left thin
-// 1-block-wide ridge walls standing.)
-constexpr double kRiverRamp = 12.0;
+//
+// The distance estimate |field| / |gradient| is only well conditioned near
+// the contour; out in the flat reaches it oscillates wildly between
+// neighbouring columns (measured 9 -> 38 -> 11 within 4 blocks). So the
+// profile deliberately owns only the channel and the first blocks of bank,
+// where the estimate is exact, and the broad valley masks (riverValley /
+// riverShoulder, plain smooth functions of the field) carry the rest of
+// the drop. The ramp stop and the valley floor are tuned to meet, so the
+// hand-off between the two regimes eases out instead of leaving a wall.
+constexpr double kRiverBed = 2.9;     // half width carved to full depth
+constexpr double kRiverEdge = 4.0;    // where the bed reaches sea level
+constexpr double kRiverShore = 2.2;   // flat bank at water level
+constexpr double kRiverClimb = 0.75;  // lowland: gentle terraced banks
+constexpr double kCliffClimb = 1.2;   // high ground: steeper but still walkable
+constexpr double kRiverRamp = 12.0;   // bank climb length past the shore
 
 inline double riverProfile(double d, double climb, double width) {
     const double bed = (double)kSeaLevel - 4.0;
@@ -279,10 +282,10 @@ inline double riverProfile(double d, double climb, double width) {
 //
 // Down in the plains a river meanders across a gentle slope, so its banks
 // stay softly terraced. High ground stands well above the water, and the
-// same 12-block rise has to absorb more height, so the bank steepens —
-// but it stays a bank, not a gorge: vanilla rivers never cut vertical
-// walls, and the (1,4,1) smoothing kernel turns even the steep end into
-// 2-3 block steps.
+// climb has to absorb more height per block, so the bank steepens — but
+// it stays a bank, not a gorge: vanilla rivers never cut vertical walls,
+// and the (1,4,1) smoothing kernel turns even the steep end into 2-3
+// block steps spread over a long slope.
 inline double riverClimbRate(double cliff) {
     return kRiverClimb + cliff * (kCliffClimb - kRiverClimb);
 }
@@ -639,16 +642,15 @@ static double rawColumnHeightUncached(const TerrainNoise& n, double wx, double w
         // up under the water line and the entire valley fills up — the wide
         // rivers the transect check kept catching on some seeds.
         const double above = std::max(0.0, h - (double)kSeaLevel);
-        const double depth = std::min(std::min(5.0 + above * 0.40, 13.0),
+        const double depth = std::min(std::min(5.0 + above * 0.40, 13.0 + 14.0 * cliff),
                                       std::max(0.0, h - (double)(kSeaLevel + 1)));
-        // EROSION: in high country the same water cuts a narrow GORGE
-        // rather than laying out a broad valley, so the valley is damped out
-        // as `cliff` rises. This is what actually makes the cliff appear —
-        // with the valley left at full strength it pre-lowered the ground
-        // across the whole width of the gorge, and the cliff profile below
-        // then had almost nothing left to cut, which measured as a gentle
-        // slope no matter how steep the profile constant was.
-        h -= rv * rv * (3.0 - 2.0 * rv) * depth * (1.0 - 0.85 * cliff);
+        // EROSION: the valley is what carries the outer drop of the river
+        // valley, in the mountains too, so it is only lightly damped as
+        // `cliff` rises. Its depth cap grows with the cliff regime so the
+        // valley floor lands near the profile's ramp top — the two regimes
+        // have to meet for the hand-off to stay wall-free (see the river
+        // cross-section note above riverProfile).
+        h -= rv * rv * (3.0 - 2.0 * rv) * depth * (1.0 - 0.30 * cliff);
     }
 
     // The wide, shallow skirt: same idea, spread much further out so the
@@ -662,8 +664,9 @@ static double rawColumnHeightUncached(const TerrainNoise& n, double wx, double w
         // from.
         const double above = std::max(0.0, h - (double)kSeaLevel);
         const double depth =
-            std::min(std::min(0.8 + above * 0.38, 9.0), std::max(0.0, h - (double)(kSeaLevel + 1)));
-        h -= rs * rs * (3.0 - 2.0 * rs) * depth * (1.0 - 0.85 * cliff);
+            std::min(std::min(0.8 + above * 0.38, 9.0 + 9.0 * cliff),
+                     std::max(0.0, h - (double)(kSeaLevel + 1)));
+        h -= rs * rs * (3.0 - 2.0 * rs) * depth * (1.0 - 0.30 * cliff);
     }
 
     // ---- River channel ---------------------------------------------------
@@ -673,14 +676,11 @@ static double rawColumnHeightUncached(const TerrainNoise& n, double wx, double w
     // back up and leave the river dry — and because the profile descends
     // gently the banks come out as steps rather than as a sheer drop.
     //
-    // The cut also eases OFF across the top of the ramp. The profile's
-    // climb distance is capped, so past the ramp its target plateaus at one
-    // constant height; carrying the cut at full strength out there dragged
-    // the river's whole far field down onto that line — every hill and
-    // mountain in the region stood on one flat slab (the world used to top
-    // out at exactly sea + kRiverRamp * climb, and the high-altitude biomes
-    // never fired). Past the ramp the surrounding terrain keeps its own
-    // height, blended over a few blocks so the bank still lands softly.
+    // The cut eases OFF across the top of the ramp. Past the ramp the
+    // broad valley masks have already carried the ground most of the way
+    // down to the ramp-top line, so the eased leftover is a few blocks —
+    // that hand-off is what keeps highland rivers free of canyon walls
+    // (the distance estimate is too noisy out there to carve with).
     if (land > 0.02) {
         const double fade = std::min(1.0, land / 0.30);
         const double d = riverDistance(n, wx, wz);
