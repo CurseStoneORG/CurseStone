@@ -145,6 +145,12 @@ void Server::loadConfig() {
     keep_inventory_ = readBool(adv, "gameplay.keep-inventory", false);
     bed_spawn_enabled_ = readBool(adv, "gameplay.bed-spawn", true);
 
+    // The motd in cursestone.yml defines the server name when set;
+    // server.properties is only the fallback.
+    const std::string ymlMotd = adv.getString("settings.motd", "");
+    if (!ymlMotd.empty())
+        motd_ = ymlMotd;
+
     // Apply memory limits before the tick loop starts.
     MemoryManager::get().setLimitMB((int)adv.getInt("memory.max-mb", 512));
     MemoryManager::get().setGcIntervalTicks(

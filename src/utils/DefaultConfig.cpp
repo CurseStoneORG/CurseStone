@@ -47,9 +47,11 @@ const char* const kDefaultServerProperties = "# CurseStone server properties (ba
 
 const char* const kDefaultCursestoneYml =
     "# CurseStone advanced configuration.\n"
-    "# Basic settings are defined in server.properties.\n"
+    "# Basic settings live in server.properties; the motd below overrides\n"
+    "# the one defined there when it is set.\n"
     "\n"
     "settings:\n"
+    "  motd: \"pon tu motd\"    # The server name shown in the client list.\n"
     "  async-workers: 4       # Async task pool threads.\n"
     "  autosave-ticks: 6000   # 6000 ticks = 5 minutes at 20 TPS.\n"
     "  advanced-log: true     # Enable verbose session and packet logging.\n"
