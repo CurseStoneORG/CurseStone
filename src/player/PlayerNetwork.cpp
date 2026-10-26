@@ -335,7 +335,7 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                                 broadcastHeldItemToViewers();
                             }
                         }
-                        if (srv_ && srv_->advancedLog()) {
+                        if (srv_ && srv_->debugMode()) {
                             utils::MainLogger::get().info(
                                 "[INV] " + cfg_.username + " switched to hotbar slot " +
                                 std::to_string(inv_->getHeldItemIndex()) +
@@ -403,7 +403,7 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                     }
 
                     // Log inventory slot updates when advanced logging is enabled.
-                    if (srv_ && srv_->advancedLog()) {
+                    if (srv_ && srv_->debugMode()) {
                         utils::MainLogger::get().info("[INV] " + cfg_.username +
                                                       " ContainerSetSlot: wid=0x" + ([](uint8_t v) {
                                                           char b[4];

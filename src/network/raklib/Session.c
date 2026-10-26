@@ -113,6 +113,18 @@ void mcp_rak_session_destroy(mcp_rak_session_t* s) {
             }
         }
     }
+    // Free the congestion backlog — payloads queued while the session was
+    // over its inflight ceiling are dead once the session is gone.
+    while (s->backlog_count > 0) {
+        uint32_t idx = s->backlog_head;
+        if (s->backlog[idx].data)
+            free(s->backlog[idx].data);
+        s->backlog[idx].data = NULL;
+        s->backlog_head = (idx + 1) % MCP_BACKLOG_MAX_ENTRIES;
+        s->backlog_count--;
+    }
+    s->backlog_tail = 0;
+    s->backlog_bytes = 0;
     memset(s, 0, sizeof(*s));
 }
 

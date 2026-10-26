@@ -106,7 +106,7 @@ void MemoryManager::collect(bool force) {
                 if (!lvl)
                     continue;
                 int unloaded = lvl->unloadDistantChunks(viewers);
-                if (unloaded > 0 && Server::getInstance().advancedLog()) {
+                if (unloaded > 0 && Server::getInstance().debugMode()) {
                     utils::MainLogger::get().info("[GC] Unloaded " + std::to_string(unloaded) +
                                                   " chunk(s) out of view in '" + lvl->name() +
                                                   "'.");

@@ -389,6 +389,47 @@ typedef struct mcp_rak_session {
     // MCP_MAX_INFLIGHT_RELIABLE un-ACKed ones (stalled client).
     uint32_t diag_backpressure_drops;
     bool diag_backpressure_logged;
+
+    // ---- Congestion backlog (chunk-hole fix, "some chunks never render
+    // while exploring"): past the inflight ceiling the old code REFUSED
+    // the new reliable payload outright — but the game layer had already
+    // marked the chunk as sent, so the client simply never received it
+    // and the terrain stayed invisible until the player wandered far
+    // enough for the chunk to leave and re-enter the view square (or
+    // relogged). A slow-ACKing client (real phone over Wi-Fi/mobile
+    // data) sits at that ceiling during normal exploring, so chunks
+    // were being thrown away in normal play, not just for stalled
+    // sessions.
+    //
+    // Now a payload refused by the inflight ceiling is QUEUED here
+    // (FIFO) and replayed as ACKs free recovery slots — a transient
+    // burst becomes a delay instead of silent data loss. The queue is
+    // bounded both by entries and bytes: when it is full the session is
+    // genuinely not draining (crashed client, dead link), the payload
+    // is dropped and counted exactly as before, so the stalled-session
+    // protection this ceiling was built for still holds.
+    //
+    // Touched only from the RakLib thread (sends, ACK handling and the
+    // tick sweep all run there), so there is no locking.
+#define MCP_BACKLOG_MAX_ENTRIES 512
+#define MCP_BACKLOG_MAX_BYTES (4u * 1024 * 1024)
+    // Hysteresis: backlog replay waits until un-ACKed datagrams drop
+    // below this so we do not refill the ceiling one datagram at a time.
+#define MCP_BACKLOG_FLUSH_WATERMARK (MCP_MAX_INFLIGHT_RELIABLE * 3 / 4)
+    struct {
+        uint8_t* data;
+        size_t len;
+        uint8_t reliability;
+        uint8_t order_channel;
+    } backlog[MCP_BACKLOG_MAX_ENTRIES];
+    uint32_t backlog_head; // next pop
+    uint32_t backlog_tail; // next push
+    uint32_t backlog_count;
+    size_t backlog_bytes;
+    uint32_t diag_backlog_queued;     // payloads accepted into the backlog
+    uint32_t diag_backlog_peak;       // most entries queued at once
+    size_t diag_backlog_bytes_peak;   // most bytes queued at once
+    uint32_t diag_backlog_flushed;    // payloads replayed to the wire
     // Server keepalive: last ping we sent, its id, the RTT it got back
     // (0 = never answered) and how many were sent/answered.
     uint64_t keepalive_ping_sent_ms;

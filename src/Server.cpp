@@ -77,6 +77,7 @@
 #include "plugin/PluginManager.h" // Lua plugin support
 #include "utils/Config.h"
 #include "utils/DefaultConfig.h"
+#include "utils/DebugFlag.h"
 
 #include <iostream>
 #include <fstream>
@@ -141,7 +142,13 @@ void Server::loadConfig() {
     // Load cursestone.yml settings.
     async_workers_ = (int)adv.getInt("settings.async-workers", 4);
     autosave_ticks_ = (int)adv.getInt("settings.autosave-ticks", 6000);
-    advanced_log_ = readBool(adv, "settings.advanced-log", true);
+    // debug-mode is THE switch for all debug/diagnostic console output.
+    // The legacy `advanced-log` key is still accepted so existing
+    // cursestone.yml files load cleanly, but it no longer turns anything
+    // on: verbose output follows debug-mode only.
+    debug_mode_ = readBool(adv, "settings.debug-mode", false);
+    (void)readBool(adv, "settings.advanced-log", false);
+    mcp_debug_mode_set(debug_mode_); // C-shared flag (utils/DebugFlag.h)
     keep_inventory_ = readBool(adv, "gameplay.keep-inventory", false);
     bed_spawn_enabled_ = readBool(adv, "gameplay.bed-spawn", true);
 
@@ -166,6 +173,9 @@ void Server::loadConfig() {
         (int)adv.getInt("settings.plugin-max-errors", adv.getInt("plugin-max-errors", 10));
     plugin::LuaPlugin::setLimits(pluginLimits);
 
+    utils::MainLogger::get().info("Debug mode: " +
+                                  std::string(debug_mode_ ? "enabled" : "disabled") +
+                                  " (settings.debug-mode in cursestone.yml)");
     utils::MainLogger::get().info("Server port: " + std::to_string(port_));
     utils::MainLogger::get().info("Server IP: " + ip_);
     utils::MainLogger::get().info("MOTD: " + motd_);
@@ -783,7 +793,7 @@ void Server::beginAutosaveDrain() {
         return; // No dirty chunks to drain.
 
     autosave_draining_ = true;
-    if (advanced_log_) {
+    if (debug_mode_) {
         utils::MainLogger::get().info("[SAVE] Autosave: " + std::to_string(pending) +
                                       " chunk(s) en cola -> drenando " +
                                       std::to_string(kAutosaveChunksPerTick) + "/tick (max " +

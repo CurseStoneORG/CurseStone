@@ -71,8 +71,13 @@ def chebyshev(ax, az, bx, bz):
     return max(abs(ax - bx), abs(az - bz))
 
 
-def wait_settled(c, min_unique, quiet=2.0, cap=14.0):
-    """Drain until no new unique chunk arrives for `quiet` seconds."""
+def wait_settled(c, min_unique, quiet=2.0, cap=30.0):
+    """Drain until no new unique chunk arrives for `quiet` seconds.
+
+    quiet is deliberately longer than a single tick gap: a full ring
+    re-stream is a multi-second burst of ~83 KB chunk payloads and any
+    transient pause (GC pass, log flush) shorter than `quiet` must not
+    be mistaken for completion."""
     start = time.time()
     last_new = time.time()
     seen = set(c.chunk_sends)

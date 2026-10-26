@@ -460,7 +460,7 @@ void Player::saveData() {
         inv_list.release();
 
     srv_->saveOfflinePlayerData(cfg_.username, named_tag_);
-    if (srv_->advancedLog()) {
+    if (srv_->debugMode()) {
         utils::MainLogger::get().info("[SAVE] Player " + cfg_.username + " data saved.");
     }
 }

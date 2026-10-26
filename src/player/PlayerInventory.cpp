@@ -179,7 +179,7 @@ void Player::handleCraftingEvent(const std::array<uint8_t, 16>& recipe_uuid,
     }
     sendInventory();
 
-    if (srv_ && srv_->advancedLog()) {
+    if (srv_ && srv_->debugMode()) {
         utils::MainLogger::get().info("[CRAFT] " + cfg_.username +
                                       " crafted id=" + std::to_string(result.id) +
                                       " count=" + std::to_string(result.count));
@@ -307,7 +307,7 @@ int64_t Player::dropItem(double x, double y, double z, uint16_t itemId, uint8_t 
         getWorld()->addDroppedItem(di);
     }
 
-    if (srv_->advancedLog()) {
+    if (srv_->debugMode()) {
         utils::MainLogger::get().info(
             "[DROP] eid=" + std::to_string(eid) + " item=" + std::to_string(itemId) + " x" +
             std::to_string(count) + " dmg=" + std::to_string(damage) + " at " + std::to_string(x) +
