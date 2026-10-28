@@ -284,6 +284,27 @@ void TileFurnace::writeNBT(mcp_tag_t* tag) const {
     if (mcp_compound_tag_set(tag, "Items", items.get()) == 0)
         items.release();
 }
+// ============================================================
+// Client spawn compound — the 0.15.10 furnace screen binds the
+// BurnTime/CookTime keys when the BlockEntityData lands; a compound
+// without them is a null read inside the client and takes the game
+// down the moment the window opens (the village-furnace crash: every
+// furnace sent the disk keys BurnDuration/BurnTicks/CookTicks, which
+// the client does not know). Mirrors the reference tile
+// getSpawnCompound: id/x/y/z + BurnTime + CookTime (+CustomName when
+// the tile has one). The Items list is deliberately absent — the
+// reference does not send it either; slot contents travel via
+// ContainerSetContent.
+// ============================================================
+void TileFurnace::writeSpawnNBT(mcp_tag_t* tag) const {
+    if (!tag)
+        return;
+    Tile::writeNBT(tag); // id/x/y/z
+    mcp_compound_tag_set_short(tag, "BurnTime", static_cast<int16_t>(burn_time_));
+    mcp_compound_tag_set_short(tag, "CookTime", static_cast<int16_t>(cook_time_));
+    if (!getName().empty())
+        mcp_compound_tag_set_string(tag, "CustomName", getName().c_str());
+}
 void TileFurnace::readNBT(const mcp_tag_t* tag) {
     if (!tag)
         return;

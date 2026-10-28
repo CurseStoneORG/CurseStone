@@ -54,7 +54,7 @@ typedef struct mcp_rak_session_manager mcp_rak_session_manager_t;
 // all": keepalive PINGs and ACK/NACK traffic both count as activity, so
 // a player who stays idle (AFK) with the game open is never kicked; only
 // a genuinely dead connection (app closed, network lost) is reaped.
-#define MCP_SESSION_TIMEOUT_MS 30000
+#define MCP_SESSION_TIMEOUT_MS 5000
 
 // FIX (audit priority 4/12): RakNet's 24-bit index spaces (datagram
 // sequence number, reliable message index, ordering index) all wrap at
@@ -185,7 +185,7 @@ typedef struct mcp_split_store {
 // session for this long it pings it and measures the round trip. That
 // RTT is what tells "the client is gone" apart from "the client is alive
 // but its uplink is drowning in our chunk data".
-#define MCP_KEEPALIVE_PING_MS 5000
+#define MCP_KEEPALIVE_PING_MS 2000
 #define MCP_KEEPALIVE_PING_ID_BASE 0x4353000000000000LL
 
 // Per-session send queue slot.

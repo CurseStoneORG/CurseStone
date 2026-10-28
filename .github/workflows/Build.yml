@@ -198,7 +198,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: CurseStone-windows-x86_64
-          path: build/windows-release/CurseStone.exe
+          path: |
+            build/windows-release/CurseStone.exe
+            build/windows-release/CurseStone.pdb
           retention-days: 7
 
   # Automatic release when a v* tag is pushed.
@@ -224,6 +226,7 @@ jobs:
           mv dist/CurseStone-linux-arm64/CurseStone        dist/out/CurseStone-linux-arm64
           mv dist/CurseStone-android-arm64/CurseStone     dist/out/CurseStone-android-arm64
           mv dist/CurseStone-windows-x86_64/CurseStone.exe dist/out/CurseStone-windows-x86_64.exe
+          mv dist/CurseStone-windows-x86_64/CurseStone.pdb dist/out/CurseStone-windows-x86_64.pdb
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -233,6 +236,7 @@ jobs:
             dist/out/CurseStone-linux-arm64
             dist/out/CurseStone-android-arm64
             dist/out/CurseStone-windows-x86_64.exe
+            dist/out/CurseStone-windows-x86_64.pdb
           generate_release_notes: true
           body: ${{ inputs.body || '' }}
           prerelease: ${{ inputs.prerelease || false }}

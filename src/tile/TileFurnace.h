@@ -63,6 +63,7 @@ class TileFurnace : public Tile, public Container, public Nameable, public Spawn
     }
     void tick(uint64_t /*t*/) override;
     void writeNBT(mcp_tag_t* tag) const override;
+    void writeSpawnNBT(mcp_tag_t* tag) const override;
     void readNBT(const mcp_tag_t* tag) override;
     int burnTime() const {
         return burn_time_;

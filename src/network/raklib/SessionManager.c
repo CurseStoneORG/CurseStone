@@ -2269,12 +2269,14 @@ void mcp_rak_session_manager_tick(mcp_rak_session_manager_t* sm) {
 
         s->is_active = false;
 
-        // Timeout (30s, RakLib/the reference server default — see MCP_SESSION_TIMEOUT_MS).
+        // Timeout (5s — user request, see MCP_SESSION_TIMEOUT_MS).
         // last_activity_ms is refreshed by EVERY received datagram — game
         // packets, keepalive PINGs and ACK/NACKs alike — so the sweep only
         // removes sessions whose connection is genuinely dead (no datagram
-        // at all for the whole window). An AFK player keeps sending
-        // keepalives, so they are never kicked for being idle.
+        // at all for the whole window). The 2s keepalive ping keys off the
+        // client's receive-silence, so an AFK player answering pongs
+        // refreshes last_activity_ms twice per window and is never kicked;
+        // a dead client answers nothing and is reaped at 5s.
         //
         // (Historical note: this used to fire on "no non-PING game packet
         // for 15s/30s", which force-disconnected healthy idle players —
@@ -2290,9 +2292,9 @@ void mcp_rak_session_manager_tick(mcp_rak_session_manager_t* sm) {
         // ambiguity behind every "the second player joins and then the
         // game closes for everybody" report. The health line prints while
         // it is happening, not 30 seconds later in a disconnect dump.
-        if (!should_remove && s->state == MCP_SESSION_STATE_CONNECTED &&
-            (now - s->last_packet_sent_ms) >= MCP_KEEPALIVE_PING_MS &&
-            s->diag_recovery_occupied == 0) {
+        if (s->state == MCP_SESSION_STATE_CONNECTED &&
+            (now - s->last_activity_ms) >= MCP_KEEPALIVE_PING_MS &&
+            (now - s->keepalive_ping_sent_ms) >= MCP_KEEPALIVE_PING_MS) {
             const int64_t ping_id =
                 (int64_t)now ^ ((int64_t)s->port << 32) ^ (int64_t)MCP_KEEPALIVE_PING_ID_BASE;
             uint8_t dgram[32];
@@ -2302,11 +2304,11 @@ void mcp_rak_session_manager_tick(mcp_rak_session_manager_t* sm) {
             uint8_t dp[64];
             size_t dp_len = mcp_rak_session_build_datagram(
                 s, dp, sizeof(dp), dgram, oi, MCP_RELIABILITY_UNRELIABLE, 0, false, 0, 0, 0);
-            if (dp_len > 0) {
+            if (dp_len > 0 &&
+                sm_send_reply(sm, s, dp, dp_len, s->ip, s->port) > 0) {
                 s->diag_keepalive_pings++;
                 s->keepalive_ping_sent_ms = now;
                 s->keepalive_ping_id = ping_id;
-                sm_send_reply(sm, s, dp, dp_len, s->ip, s->port);
             }
         }
         if (!should_remove && (now - s->last_health_log_ms) >= MCP_KEEPALIVE_PING_MS) {

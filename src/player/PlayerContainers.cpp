@@ -448,7 +448,11 @@ void Player::sendBlockEntityData(int32_t x, int32_t y, int32_t z, tile::Tile& t,
     utils::TagGuard tag(mcp_compound_tag_new());
     if (!tag)
         return;
-    t.writeNBT(tag.get());
+    // Client compound, not the disk compound: tiles whose client reads
+    // different keys than the save format (furnace BurnTime/CookTime)
+    // override writeSpawnNBT — sending the disk layout instead is what
+    // crashed the client on furnace open.
+    t.writeSpawnNBT(tag.get());
     size_t blen = 0;
     utils::BufferPtr bbuf(mcp_nbt_write_bytes(tag.get(), /*little_endian=*/true, &blen));
     if (!bbuf || blen == 0)

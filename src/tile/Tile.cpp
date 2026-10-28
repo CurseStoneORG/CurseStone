@@ -37,4 +37,8 @@ void Tile::readNBT(const mcp_tag_t* /*tag*/) {
     // where to construct the Tile, before construction happens) — nothing
     // left to do at the base-class level.
 }
+void Tile::writeSpawnNBT(mcp_tag_t* tag) const {
+    // Default: the wire compound equals the disk compound.
+    writeNBT(tag);
+}
 } // namespace
