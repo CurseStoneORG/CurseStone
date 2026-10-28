@@ -249,7 +249,7 @@ def main() -> int:
     with open(os.path.join(runtime, "ops.txt"), "w") as f:
         f.write("DropOne\nDropTwo\nDropThree\n")
     with open(os.path.join(runtime, "cursestone.yml"), "w") as f:
-        f.write("settings:\n  async-workers: 2\n  autosave-ticks: 6000\n"
+        f.write("settings:\n  debug-mode: true\n  async-workers: 2\n  autosave-ticks: 6000\n"
                 "  advanced-log: true\nworld:\n  format: \"anvil\"\n"
                 "  generator: \"flat\"\nmemory:\n  max-mb: 512\n"
                 "  gc-interval-ticks: 200\n")
@@ -260,7 +260,7 @@ def main() -> int:
 
     proc = subprocess.Popen([args.server], cwd=runtime, env=env,
                             stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL)
+                            stderr=open(os.path.join(runtime, "stderr.log"), "wb"))
     server_log = os.path.join(runtime, "server.log")
 
     def console(cmd: str):
@@ -323,9 +323,16 @@ def main() -> int:
         if not b.handshake() or not b.login():
             print("FAIL: B handshake/login")
             return 1
-        b.drain(4.0)
+        # Keep A's session alive while B loads in: the 5s session timeout
+        # reaps a client that stops answering keepalive pings, and A only
+        # answers while its own drain loop runs. Interleave both drains.
+        for _ in range(20):
+            b.drain(0.2)
+            a.drain(0.2)
         b.player_action(PLAYER_ACTION_SPAWN_SAME_DIMENSION)
-        b.drain(1.5)
+        for _ in range(8):
+            b.drain(0.2)
+            a.drain(0.2)
         if b.eid == 0:
             print("FAIL: B never received StartGame")
             return 1
@@ -517,6 +524,7 @@ def main() -> int:
             c.player_action(PLAYER_ACTION_SPAWN_SAME_DIMENSION)
             c.drain(1.0)
             c_eid = c.eid
+            c.stop_keepalive()
             print(f"  C eid={c_eid} — going silent (no ACKs, no datagrams)")
             a.removed.clear()
             # C simply stops draining: no ACKs, no pings, nothing. The

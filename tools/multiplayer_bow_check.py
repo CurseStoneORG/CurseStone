@@ -361,10 +361,16 @@ def main() -> int:
         if not b.handshake() or not b.login():
             print("FAIL: B handshake/login")
             return 1
-        b.drain(4.0)
+        # Keep A's session alive while B loads in (5s session timeout —
+        # A only answers keepalive pings while its own drain loop runs).
+        for _ in range(20):
+            b.drain(0.2)
+            a.drain(0.2)
         b.player_action(PLAYER_ACTION_SPAWN_SAME_DIMENSION)
         b.move_to(WATCHER[0] + 0.5, WATCHER[1], WATCHER[2] + 0.5)
-        b.drain(1.5)
+        for _ in range(8):
+            b.drain(0.2)
+            a.drain(0.2)
         if b.eid == 0:
             print("FAIL: B never received StartGame (no eid)")
             return 1

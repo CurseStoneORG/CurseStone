@@ -90,6 +90,7 @@ jobs:
           test -f dist/CurseStone-android-arm64/start.sh
 
           test -f dist/CurseStone-windows-x86_64/CurseStone.exe
+          test -f dist/CurseStone-windows-x86_64/CurseStone.pdb
           test -f dist/CurseStone-windows-x86_64/start.bat
 
           # Set executable permissions
@@ -122,11 +123,11 @@ jobs:
               CurseStone start.sh
           )
 
-          # Windows x86_64 ZIP
+          # Windows x86_64 ZIP (exe + PDB: the PDB carries the debug symbols)
           (
             cd dist/CurseStone-windows-x86_64
             zip -9 "$GITHUB_WORKSPACE/out/CurseStone-${VERSION}-windows-x86_64.zip" \
-              CurseStone.exe start.bat
+              CurseStone.exe CurseStone.pdb start.bat
           )
 
           echo "Generated release archives:"

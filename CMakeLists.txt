@@ -39,13 +39,19 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
-# ---- Warning level ----
+# ---- Warning level + debug symbols ----
+# -g stays on in every build type (Release included): the shipped binary
+# keeps its debug symbols, so a crash backtrace or core dump symbolizes
+# without extra tooling. MSVC equivalent: /Zi + /DEBUG (PDB next to exe).
 add_compile_options(
     $<$<C_COMPILER_ID:GNU,Clang,AppleClang>:-Wall>
     $<$<C_COMPILER_ID:GNU,Clang,AppleClang>:-Wextra>
+    $<$<C_COMPILER_ID:GNU,Clang,AppleClang>:-g>
     $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall>
     $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wextra>
+    $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-g>
     $<$<CXX_COMPILER_ID:MSVC>:/W3>
+    $<$<CXX_COMPILER_ID:MSVC>:/Zi>
 )
 
 # ---- Platform detection ----
@@ -116,6 +122,12 @@ target_link_libraries(CurseStone PRIVATE
 set_target_properties(CurseStone PROPERTIES
     ENABLE_EXPORTS ON
 )
+
+if(MSVC)
+    # Emit the PDB in Release too (default Release links without /DEBUG,
+    # which would throw the /Zi compile info away at link time).
+    target_link_options(CurseStone PRIVATE /DEBUG)
+endif()
 
 if(APPLE)
     target_link_options(CurseStone PRIVATE -Wl,-export_dynamic)

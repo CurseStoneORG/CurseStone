@@ -79,6 +79,13 @@ class Tile {
     // on ("Chest", "Furnace", "Sign", ...). Subclasses override, call
     // Tile::writeNBT() first, then add their own fields.
     virtual void writeNBT(mcp_tag_t* tag) const;
+    // Client-facing spawn compound (the reference Spawnable::getSpawnCompound
+    // split): what BlockEntityDataPacket carries on the wire. Defaults to
+    // the disk layout; a tile whose client reads different keys than the
+    // save format overrides it. The 0.15 furnace screen binds BurnTime/
+    // CookTime at open time, so TileFurnace must send THOSE keys even
+    // though the save format keeps the legacy Nukkit ones.
+    virtual void writeSpawnNBT(mcp_tag_t* tag) const;
     // Read tile state back from `tag`. Base implementation is a no-op
     // (x/y/z/id are already known from how the tile was constructed —
     // World::ensureTilesLoaded() reads x/y/z itself to decide which

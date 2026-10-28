@@ -367,6 +367,8 @@ def main() -> int:
                 _, tags = nbt_parse_compound(fb)
                 check(tags.get("id") == "Furnace",
                       f"stream furnace NBT has id=Furnace (fields={sorted(tags)})")
+                check("BurnTime" in tags and "CookTime" in tags,
+                      "stream furnace NBT carries client keys BurnTime/CookTime")
             except Exception as exc:
                 check(False, f"stream furnace NBT parses ({exc})")
 
@@ -399,6 +401,16 @@ def main() -> int:
                 _, tags = nbt_parse_compound(be_bytes)
                 check(tags.get("id") == "Furnace",
                       "pre-open furnace NBT parses with id=Furnace")
+                # The 0.15.10 furnace screen binds BurnTime/CookTime when
+                # the BlockEntityData lands; a compound without them is a
+                # null read inside the client and crashes the game — the
+                # village-furnace crash. The disk keys (BurnDuration/
+                # BurnTicks/CookTicks) must never leak to the wire.
+                check("BurnTime" in tags and "CookTime" in tags,
+                      f"pre-open furnace NBT carries client keys "
+                      f"BurnTime/CookTime (fields={sorted(tags)})")
+                check("BurnDuration" not in tags and "BurnTicks" not in tags,
+                      "pre-open furnace NBT has no disk-only keys")
             except Exception as exc:
                 check(False, f"pre-open furnace NBT parses ({exc})")
 

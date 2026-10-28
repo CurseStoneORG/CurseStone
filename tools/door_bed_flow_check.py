@@ -28,6 +28,8 @@ import json
 import os
 import shutil
 import socket
+import threading
+import collections
 import struct
 import subprocess
 import sys
@@ -120,6 +122,19 @@ class Client:
         self.events = []          # decoded server packets we care about
         self.eid = 0
         self.spawn = (128, 4, 128)
+        # Background network thread — mirrors the real 0.15 client, whose
+        # network thread answers RakNet keepalive pings no matter what the
+        # game thread is doing. Wire-level only: it ACKs reliable datagrams
+        # and pongs server pings, then queues every raw datagram for the
+        # main thread, which does ALL the parsing in drain(). That keeps
+        # the pong latency independent of Python GIL scheduling while the
+        # heavy work (zlib, event capture) stays on one thread.
+        self._send_lock = threading.RLock()
+        self._rx_queue = collections.deque()
+        self._rx_lock = threading.Lock()
+        self._ka_stop = threading.Event()
+        self._ka_thread = threading.Thread(target=self._net_loop, daemon=True)
+        self._ka_thread_started = False
 
     # ---- send ----------------------------------------------------------
     def send_raw(self, payload: bytes):
@@ -127,20 +142,25 @@ class Client:
 
     def send_encapsulated(self, inner: bytes, reliability: int = 3,
                           order_channel: int = 0):
-        seq = self.send_seq
-        self.send_seq += 1
-        flags = (reliability & 0x07) << 5
-        bit_len = len(inner) * 8
-        rec = bytes([flags, (bit_len >> 8) & 0xFF, bit_len & 0xFF])
-        if reliability in (2, 3, 4, 6, 7):
-            mi = self.message_index
-            self.message_index += 1
-            rec += struct.pack("<I", mi)[:3]
-        if reliability in (3, 7):
-            ch = order_channel & 0x1F
-            oi = self.order_index[ch]
-            self.order_index[ch] = oi + 1
-            rec += struct.pack("<I", oi)[:3] + bytes([ch])
+        # The net thread (pongs) and the main thread (game packets) both
+        # send; the sequence/message/order counters must stay unique or the
+        # server drops the colliding datagram as a duplicate. RLock: the
+        # pong path runs on the same thread that already holds the lock.
+        with self._send_lock:
+            seq = self.send_seq
+            self.send_seq += 1
+            flags = (reliability & 0x07) << 5
+            bit_len = len(inner) * 8
+            rec = bytes([flags, (bit_len >> 8) & 0xFF, bit_len & 0xFF])
+            if reliability in (2, 3, 4, 6, 7):
+                mi = self.message_index
+                self.message_index += 1
+                rec += struct.pack("<I", mi)[:3]
+            if reliability in (3, 7):
+                ch = order_channel & 0x1F
+                oi = self.order_index[ch]
+                self.order_index[ch] = oi + 1
+                rec += struct.pack("<I", oi)[:3] + bytes([ch])
         return bytes([0x84, seq & 0xFF, (seq >> 8) & 0xFF,
                       (seq >> 16) & 0xFF]) + rec + inner
 
@@ -193,8 +213,70 @@ class Client:
         del self.splits[sid]
         return joined
 
+    def _net_loop(self):
+        """Wire-level network thread: ACKs reliable datagrams and pongs
+        server keepalive pings immediately (like the real client's network
+        thread), queues every raw datagram for the main thread's drain().
+        Never parses game payloads — all heavy work stays on the main
+        thread, so this loop's GIL slices stay tiny."""
+        while not self._ka_stop.is_set():
+            try:
+                data, _ = self.sock.recvfrom(65536)
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            if not data:
+                continue
+            if data[0] in (ACK, NACK):
+                continue
+            with self._rx_lock:
+                self._rx_queue.append(data)
+            if DATA_FIRST <= data[0] <= DATA_LAST and len(data) >= 4:
+                rel = (data[4] >> 5) & 0x07
+                if rel in (2, 3, 4, 6, 7):
+                    self.send_raw(bytes([ACK]) + struct.pack(">H", 1) + b"\x01" +
+                                  bytes([data[1], data[2], data[3]]))
+                # Wire-level pong: the server's keepalive ping rides an
+                # UNRELIABLE datagram (rel 0: 0x84+seq(3)+flags(1)+len(2),
+                # payload at offset 7 — 0x00 + 8-byte ping id).
+                if rel == 0 and len(data) >= 16 and data[7] == 0x00:
+                    self.send_raw(self.send_encapsulated(
+                        bytes([0x03]) + data[8:16], reliability=2))
+
+    def start_keepalive(self):
+        if not self._ka_thread_started:
+            self._ka_thread_started = True
+            self._ka_thread.start()
+
+    def stop_keepalive(self):
+        """Simulate a dead client: stop the network thread — no ACKs, no
+        pongs — which is exactly the server-side signature of a crashed
+        client."""
+        self._ka_stop.set()
+        try:
+            self._ka_thread.join(timeout=1.0)
+        except RuntimeError:
+            pass
+        with self._rx_lock:
+            self._rx_queue.clear()
+
     def handle_payload(self, payload: bytes):
         if not payload:
+            return
+        # RakNet-level connected PING (0x00): a real client answers with a
+        # connected PONG (0x03). The server's keepalive pings every 2s of
+        # send silence rely on that pong to refresh the 5s session
+        # timeout — without it an idle but healthy fake client gets
+        # reaped. Batch sub-packets go to on_game_packet, never back into
+        # this method, so game-layer keepalives cannot be mistaken for
+        # the RakNet ping.
+        if payload[0] == 0x00 and len(payload) >= 9:
+            # Echo the ping's 8-byte id straight back (connected PONG,
+            # reliable). The datagram sequence and reliable indexes stay
+            # unique because everything on this client runs on one thread.
+            self.send_raw(self.send_encapsulated(
+                bytes([0x03]) + payload[1:9], reliability=2))
             return
         # Unwrap 0xFE batch: [0xFE][0x06][u32be clen][zlib(stream)] where
         # stream = any number of [u32be len][packet] records.
@@ -258,12 +340,19 @@ class Client:
     def drain(self, seconds: float, ack=True):
         deadline = time.time() + seconds
         while time.time() < deadline:
-            try:
-                data, _ = self.sock.recvfrom(65536)
-            except socket.timeout:
-                continue
-            if not data:
-                continue
+            # Raw datagrams the net thread queued go first; anything the
+            # background thread has not picked up yet is read here.
+            data = None
+            with self._rx_lock:
+                if self._rx_queue:
+                    data = self._rx_queue.popleft()
+            if data is None:
+                try:
+                    data, _ = self.sock.recvfrom(65536)
+                except socket.timeout:
+                    continue
+                if not data:
+                    continue
             if data[0] in (ACK, NACK):
                 continue
             if ack and DATA_FIRST <= data[0] <= DATA_LAST and len(data) >= 4:
@@ -349,6 +438,7 @@ class Client:
             self.drain(0.2)
             if any(ev[0] in ("update_block", "set_time", "text") for ev in self.events) \
                or self.eid != 0:
+                self.start_keepalive()
                 return True
         return self.eid != 0
 

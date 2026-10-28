@@ -101,6 +101,7 @@ class Client:
         self.fragments = 0
         self.splits = {}
         self.acked = set()
+        self._in_batch = False
         self.client_ip = "127.0.0.1"
         self.client_port = 0  # filled in once we see a reply
 
@@ -224,6 +225,16 @@ class Client:
         """
         if not payload:
             return
+        # RakNet-level connected PING (0x00): a real client answers with a
+        # connected PONG. The server's keepalive pings every 2s of send
+        # silence rely on that pong to refresh the 5s session timeout —
+        # without the reply an idle but healthy fake client gets reaped.
+        # Game-layer keepalives ride INSIDE a batch (0xFE-wrapped), so the
+        # batch recursion must not answer those.
+        if payload[0] == 0x00 and len(payload) >= 9 and not self._in_batch:
+            self.send_raw(self.send_encapsulated(
+                bytes([0x03]) + payload[1:9], reliability=2))
+            return
         if payload[0] == 0xFE and len(payload) > 5:
             body = payload[1:]
             if body[0] == BATCH_PACKET_ID and len(body) > 5:
@@ -234,12 +245,14 @@ class Client:
                 except zlib.error:
                     return
                 i = 0
+                self._in_batch = True
                 while i + 4 <= len(raw):
                     sublen = int.from_bytes(raw[i:i + 4], "big")
                     if sublen <= 0 or i + 4 + sublen > len(raw):
                         break
                     self.handle_payload(raw[i + 4:i + 4 + sublen])
                     i += 4 + sublen
+                self._in_batch = False
                 return
         gp = payload[0]
         self.recv_ids.append(gp)
