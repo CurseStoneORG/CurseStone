@@ -276,9 +276,13 @@ mcp_chunk_t* ChunkManager::getChunkOrRequestAsync(int32_t x, int32_t z,
             // real edits, which are strictly newer information.
             bool installed = false;
             if (c) {
-                std::lock_guard<std::mutex> lk(mtx_);
+                std::scoped_lock lk(mtx_, pending_mtx_);
                 auto it = chunks_.find(key);
                 if (it == chunks_.end() || !it->second) {
+                    // Replay neighbor writes queued while this chunk was
+                    // generating, then install it.
+                    if (spillQueue_)
+                        spillQueue_->drainSpills(key.x, key.z, c);
                     chunks_[key] = c;
                     installed = true;
                 }
@@ -305,18 +309,52 @@ mcp_chunk_t* ChunkManager::getChunkOrRequestAsync(int32_t x, int32_t z,
 
 void ChunkManager::setChunk(int32_t x, int32_t z, mcp_chunk_t* chunk) {
     {
-        std::lock_guard<std::mutex> lk(mtx_);
+        std::scoped_lock lk(mtx_, pending_mtx_);
         auto key = ChunkKey{x, z};
         auto it = chunks_.find(key);
         if (it != chunks_.end() && it->second && it->second != chunk)
             mcp_chunk_destroy(it->second);
         chunks_[key] = chunk;
+        // Replay generation-time writes that were queued for this chunk
+        // while it was absent (neighbors populated first). Done under the
+        // same locks the generator's commitNeighborWrite() uses, so a
+        // write can never land between "queued" and "live".
+        if (spillQueue_)
+            spillQueue_->drainSpills(x, z, chunk);
     }
-    // Fuera del lock: el callback (World) solo encola el chunk para un
-    // barrido de luz posterior. Llamarlo con mtx_ cogido lo dejaria
-    // esperando justo el mutex que ChunkManager necesita.
+    // Outside the lock: the callback (World) only enqueues the chunk for a
+    // later light sweep. Calling it with mtx_ held would deadlock on the
+    // very mutex ChunkManager needs.
     if (on_chunk_added_)
         on_chunk_added_(x, z);
+}
+
+void ChunkManager::commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t id, uint8_t data) {
+    mcp_chunk_t* live = nullptr;
+    {
+        std::scoped_lock lk(mtx_, pending_mtx_);
+        auto it = chunks_.find(ChunkKey{cx, cz});
+        if (it != chunks_.end() && it->second) {
+            live = it->second;
+        } else if (spillQueue_) {
+            // Chunk not live yet: park the write for its populate/install.
+            // Holding both locks here makes the queue-vs-live decision
+            // atomic against the installer (drainSpills in setChunk and in
+            // the async callback), so the write cannot be swallowed.
+            spillQueue_->queueSpill(cx, cz, index, id, data);
+        }
+    }
+    if (live) {
+        uint32_t y = index % 128;
+        uint32_t rest = index / 128;
+        uint32_t z = rest % 16;
+        uint32_t x = rest / 16;
+        mcp_chunk_set_block_full(live, (int)x, (int)y, (int)z, id, data);
+        // The new blocks change the sky light the same way a player edit
+        // would — requeue the light sweep for the chunk.
+        if (on_chunk_added_)
+            on_chunk_added_(cx, cz);
+    }
 }
 
 void ChunkManager::markDirty(int32_t x, int32_t z) {

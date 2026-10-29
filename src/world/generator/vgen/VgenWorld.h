@@ -63,9 +63,11 @@ public:
         // Terrain-only chunk for (cx,cz); may come from the cache or be
         // generated on demand. The pointer stays owned by the feed.
         virtual LevelChunk* acquireTerrain(int cx, int cz) = 0;
-        // Record a write aimed outside the center chunk so the owning chunk
-        // can replay it when it populates.
-        virtual void recordSpill(int cx, int cz, uint32_t index, uint8_t id, uint8_t data) = 0;
+        // Deliver a write aimed outside the center chunk: applied to the
+        // live chunk when one exists, queued for that chunk's populate /
+        // install otherwise. Keeps cross-chunk features (trees, lakes,
+        // structure pieces) whole no matter what order chunks generate in.
+        virtual void commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t id, uint8_t data) = 0;
         // Replay every spill recorded for (cx,cz) into `center`.
         virtual void applySpill(LevelChunk& center, int cx, int cz) = 0;
         virtual Level& getLevel() = 0;

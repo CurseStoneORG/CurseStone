@@ -193,6 +193,15 @@ World::World(WorldConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
 
     chunks_.setProvider(provider);
     chunks_.setGenerator(generator_);
+    // Give the vanilla generator a live-chunk sink: feature writes that
+    // cross a chunk border reach chunks that are already generated/loaded
+    // directly, and only wait in the spill queue for chunks still pending.
+    // Without this, a tree whose canopy lands in an earlier-populated
+    // neighbor loses those blocks (half trees).
+    if (auto* vgen = dynamic_cast<generator::VgenSource*>(generator_.get())) {
+        vgen->setNeighborSink(&chunks_);
+        chunks_.setSpillQueue(vgen);
+    }
     provider_ = provider;
     chunks_.setOnChunkAdded([this](int32_t cx, int32_t cz) {
         onChunkAdded(cx, cz);

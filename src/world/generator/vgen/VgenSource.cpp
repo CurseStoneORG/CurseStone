@@ -374,9 +374,40 @@ vgen::LevelChunk* VgenSource::acquireTerrain(int cx, int cz) {
         return e.chunk;
 }
 
-void VgenSource::recordSpill(int cx, int cz, uint32_t index, uint8_t id, uint8_t data) {
+void VgenSource::commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t id, uint8_t data) {
+        if (mNeighborSink) {
+                mNeighborSink->commitNeighborWrite(cx, cz, index, id, data);
+                return;
+        }
+        // No live-chunk sink wired (offline tools): fall back to the plain
+        // spill queue, which still serves later populations.
+        queueSpill(cx, cz, index, id, data);
+}
+
+void VgenSource::queueSpill(int cx, int cz, uint32_t index, uint8_t id, uint8_t data) {
         std::lock_guard<std::mutex> l(mSpillMutex);
         mSpill[vgenKey(cx, cz)].push_back({index, id, data});
+}
+
+void VgenSource::drainSpills(int cx, int cz, mcp_chunk_t* chunk) {
+        std::vector<SpillEntry> pending;
+        {
+                std::lock_guard<std::mutex> l(mSpillMutex);
+                auto it = mSpill.find(vgenKey(cx, cz));
+                if (it == mSpill.end())
+                        return;
+                pending = std::move(it->second);
+                mSpill.erase(it);
+        }
+        if (!chunk)
+                return;
+        for (const SpillEntry& e : pending) {
+                uint32_t y = e.index % 128;
+                uint32_t rest = e.index / 128;
+                uint32_t z = rest % 16;
+                uint32_t x = rest / 16;
+                mcp_chunk_set_block_full(chunk, (int)x, (int)y, (int)z, e.id, e.data);
+        }
 }
 
 void VgenSource::applySpill(vgen::LevelChunk& center, int cx, int cz) {
