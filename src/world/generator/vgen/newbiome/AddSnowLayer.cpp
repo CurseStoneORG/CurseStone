@@ -1,6 +1,6 @@
 /********************************************************
-*   (c) Mojang. All rights reserved                     *
-*   (c) Microsoft. All rights reserved.                 *
+*  CurseStone Server — vanilla terrain generator port   *
+*         (c) CurseStone. All rights reserved.          *
 *********************************************************/
 
 #include "vgen/newbiome/AddSnowLayer.h"
