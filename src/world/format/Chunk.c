@@ -629,17 +629,15 @@ void mcp_chunk_propagate_sky_light(mcp_chunk_t* c) {
 // FullChunkDataPacket (protocolo 84 / MCPE 0.15.x — ver el comentario
 // dentro de mcp_chunk_network_serialize).
 //
-// IMPORTANTE: los ids de este switch son EXACTAMENTE los del enum
-// BiomeId de level/generator/biome/Biome.h, que es el byte que viaja en
-// el chunk. Antes este switch seguia la tabla clasica de grasscolor
-// (0=ocean, 1=plains, 2=desert, 3=forest, 4=mountains, 5=beach,
-// 6=taiga, 7=swampland, 8=hell), que NO coincide con BiomeId a partir
-// del 5 (ahi BiomeId tiene 5=TAIGA, 6=SWAMPLAND, 7=RIVER). Ademas
-// todos los biomas con id >= 9 (frozen, ice plains, beach=16, jungle,
-// savanna=35, mesa=37, plains_plateau=129, ...) caian en el default y
-// salian con el verde de plains. Ese desalineamiento es la razon de
-// que el pasto NO cambiara de tono segun el bioma: savana, jungla,
-// tundra y pantano salian todos del mismo color.
+// IMPORTANTE: los ids de este switch son los ids de vanilla que el
+// generador vgen escribe en el byte de bioma del chunk (mismos ids que
+// Java: 3=EXTREME_HILLS, 4=FOREST, 5=TAIGA, 6=SWAMPLAND, 7=RIVER,
+// 16=BEACH, ...). Antes este switch seguia la tabla clasica de
+// grasscolor (0=ocean, 1=plains, 2=desert, 3=forest, 4=mountains...),
+// que NO coincide: los cases 3/4 quedaron intercambiados mucho despues
+// de corregir los ids >= 5, y el pasto de las montanas de piedra
+// (extreme hills) salia teñido con el verde brillante de bosque —
+// los "parches de pasto antinaturales en biomas de piedra".
 //
 // Ahora cada bioma tiene su tono, agrupado por clima: frio = verde
 // palido azulado, taiga = verde grisaceo de conifera, pantano = oliva
@@ -658,16 +656,23 @@ static void mcp_biome_grass_color(uint8_t biomeId, uint8_t* r, uint8_t* g, uint8
         *g = 0xBD;
         *b = 0x59;
         break; // PLAINS
+    // ATENCION (CurseStone): el byte de bioma del chunk sigue la
+    // convencion de ids de vanilla (vgen): 3 = EXTREME_HILLS,
+    // 4 = FOREST. Antes estos dos cases estaban intercambiados (seguian
+    // el orden de la tabla clasica de grasscolor), asi que los parches
+    // de pasto de las montanas de piedra salian teñidos con el verde
+    // brillante de bosque — el bug de "parches de pasto antinaturales
+    // en biomas de piedra".
     case 3:
+        *r = 0x8A;
+        *g = 0xB6;
+        *b = 0x89;
+        break; // EXTREME_HILLS (verde grisaceo de montana)
+    case 4:
         *r = 0x79;
         *g = 0xC0;
         *b = 0x5A;
         break; // FOREST
-    case 4:
-        *r = 0x8A;
-        *g = 0xB6;
-        *b = 0x89;
-        break; // EXTREME_HILLS
     case 7:
         *r = 0x8E;
         *g = 0xB9;
@@ -687,7 +692,7 @@ static void mcp_biome_grass_color(uint8_t biomeId, uint8_t* r, uint8_t* g, uint8
         *r = 0x8A;
         *g = 0xB6;
         *b = 0x89;
-        break; // MOUNTAINS
+        break; // EXTREME_HILLS_EDGE (id 20 vanilla)
     case 129:
         *r = 0x91;
         *g = 0xBD;

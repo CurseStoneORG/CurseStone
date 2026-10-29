@@ -326,18 +326,45 @@ const Material& Block::getMaterial() const {
 }
 
 bool Block::mayPlaceOn(const Block& below) const {
-        return below.mID == 2 || below.mID == 3;
+        // vanilla BushBlock::mayPlaceOn — grass, dirt, farmland, podzol.
+        // (used by TreeFeature::_prepareSpawn through the sapling and by
+        // the double-plant feature; the generator's soil set.)
+        return below.mID == 2 || below.mID == 3 || below.mID == 60 || below.mID == 88;
 }
 
 bool Block::mayPlaceOn(BlockSource& region, const BlockPos& pos) const {
         // "on" = pos is the block ABOVE the support; sapling-style check.
         BlockID below = region.getBlockID(pos.below());
-        return below == 2 || below == 3; // grass or dirt
+        return below == 2 || below == 3 || below == 60 || below == 88; // grass/dirt/farmland/podzol
 }
 
 bool Block::canSurvive(BlockSource& region, const BlockPos& pos) const {
+        // Downport of the vanilla per-block survival checks the decoration
+        // features rely on (BushBlock/TallGrass/DeadBush/MushroomBlock/
+        // ReedBlock/CactusBlock/WaterlilyBlock::canSurvive). Without these
+        // the decorators happily float grass, flowers and dead bushes in
+        // mid-air wherever the random Y landed.
         switch (mID) {
-                case 81: { // cactus — needs sand/cactus below and free sides
+                case 6:  // sapling — BushBlock
+                case 31: // tall grass — BushBlock
+                case 37: // yellow flower — BushBlock
+                case 38: // red flower — BushBlock
+                case 175: // double plant — BushBlock
+                        return mayPlaceOn(region, pos);
+                case 32: { // dead bush — sand / hardened clay / stained clay / podzol
+                        BlockID below = region.getBlockID(pos.below());
+                        return below == 12 || below == 172 || below == 159 || below == 88;
+                }
+                case 39: // mushrooms — podzol/mycelium, or dark spot over solid ground
+                case 40: {
+                        if (pos.y < 0 || pos.y >= region.getMaxHeight())
+                                return false;
+                        BlockID below = region.getBlockID(pos.below());
+                        if (below == 88 || below == 110) // podzol or mycelium
+                                return true;
+                        return region.getBrightness(pos) < 13 && Block::mSolid[below & 0xFF];
+                }
+                case 81: { // cactus — sand/cactus below, free sides
                         BlockID below = region.getBlockID(pos.below());
                         if (below != 12 && below != 81) return false; // sand or cactus
                         for (int face = 2; face <= 5; ++face) {
@@ -347,6 +374,23 @@ bool Block::canSurvive(BlockSource& region, const BlockPos& pos) const {
                                         return false;
                         }
                         return true;
+                }
+                case 83: { // reeds — vanilla ReedBlock::mayPlace
+                        BlockID below = region.getBlockID(pos.below());
+                        if (below == mID)
+                                return true;
+                        if (below != 2 && below != 3 && below != 12) // grass/dirt/sand
+                                return false;
+                        const Material& water = Material::getMaterial(MaterialType::Water);
+                        if (region.getMaterial(pos.offset(-1, -1, 0)) == water) return true;
+                        if (region.getMaterial(pos.offset(1, -1, 0)) == water) return true;
+                        if (region.getMaterial(pos.offset(0, -1, -1)) == water) return true;
+                        if (region.getMaterial(pos.offset(0, -1, 1)) == water) return true;
+                        return false;
+                }
+                case 111: { // waterlily — floats on still/flowing water
+                        BlockID below = region.getBlockID(pos.below());
+                        return below == 8 || below == 9;
                 }
                 default:
                         return true;
