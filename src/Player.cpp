@@ -23,6 +23,7 @@
 #include "Player.h"
 #include "player/PlayerInternal.h"
 #include "workbench/WorkbenchManager.h"
+#include "diagnostics/Diagnostics.h"
 #include "world/World.h"
 #include "world/format/Chunk.h"
 #include "block/BlockIds.h"
@@ -181,6 +182,28 @@ void Player::close(const std::string& reason) {
         utils::MainLogger::get().info("Closing player " + cfg_.username + " (" + cfg_.ip + ":" +
                                       std::to_string(cfg_.port) + "): " + reason);
 
+        // Client-crash diagnostics: a clean quit carries the client's own
+        // disconnect packet ("client disconnect"), the quit path uses the
+        // default reason and kicks are prefixed. Anything else means the
+        // session died from silence (client crash, dead uplink) or a
+        // server-side error — preserve the last wire traffic so the
+        // client's final moments can be reconstructed. writeReport also
+        // prints one console line and drops a report under crashdumps/.
+        if (reason != "client disconnect" && reason != "disconnect.quitting" &&
+            reason.rfind("kicked: ", 0) != 0) {
+            try {
+                diagnostics::Diagnostics::get().writeReport(
+                    "client-lost",
+                    "Player " + cfg_.username + " lost connection (" + reason +
+                        ") — no clean disconnect from the client",
+                    "recent_packets lists the last packets the server exchanged; "
+                    "the last batch sent to this client is what the client "
+                    "processed right before it died");
+            } catch (...) {
+                // Never let diagnostics fail the close path.
+            }
+        }
+
         // Release the player's open chest and update its viewer count.
         closeOpenChest();
 
@@ -312,7 +335,9 @@ void Player::kick(const std::string& reason, const std::string& detail) {
     if (adv_iface_ && !cfg_.ip.empty()) {
         adv_iface_->closeSession(cfg_.ip, cfg_.port, message);
     }
-    close(reason);
+    // Prefix so Player::close can tell a server-side kick from a client
+    // that died in silence (the client-lost report must not fire here).
+    close("kicked: " + reason);
 }
 
 void Player::teleport(double x, double y, double z) {
