@@ -54,12 +54,23 @@ typedef struct mcp_chunk_section {
 
 // XZY coordinate packing: idx = (x&15) | ((z&15)<<4) | ((y&15)<<8).
 // Range 0..4095 for blocks, 0..2047 for nibble arrays.
+//
+// NOTE (CurseStone): the nibble index MUST use the same shift-8 packing
+// as Chunk.c's nibble_index()/get_nibble()/set_nibble() — byte =
+// 128*y + 8*z + x/2, low nibble for even x, high nibble for odd x.
+// An earlier revision used (y<<7) here, which overlaps with the z bits
+// ((x=1,z=8,y=0) and (x=1,z=0,y=1) both map to 129) and desynchronizes
+// the whole data array for every y >= 1: blocks written through these
+// helpers came back with the wrong data (or none) when read through
+// mcp_chunk_get_block_data, the save path and mcp_chunk_network_serialize.
+// Visible effect: spruce/leaves/snow data nibbles above the first
+// section row read back as 0 — e.g. taiga trees with oak trunks.
 static inline uint32_t mcp_section_block_index(int x, int y, int z) {
     return (uint32_t)((x & 15) | ((z & 15) << 4) | ((y & 15) << 8));
 }
 
 static inline uint32_t mcp_section_nibble_index(int x, int y, int z) {
-    return (uint32_t)((x & 15) | ((z & 15) << 4) | ((y & 15) << 7));
+    return (uint32_t)((x & 15) | ((z & 15) << 4) | ((y & 15) << 8));
 }
 
 static inline uint8_t mcp_section_get_nibble(const uint8_t* arr, int x, int y, int z) {
