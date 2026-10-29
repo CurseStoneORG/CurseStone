@@ -39,14 +39,20 @@ class BlockSource;
 class VgenSource;
 class Biome;
 class BlockEntity { public: virtual ~BlockEntity() = default; };
-struct Entity;
-struct Player;
+class Entity;
+class Player;
 
-// opaque stubs — the generator never touches real entities
-struct Entity {
+// opaque stubs — the generator never touches real entities.
+// Spell these as `class` (like every upstream forward declaration does):
+// MSVC mangles class and struct differently (V vs U), so a struct spelling
+// here splits the symbol set between translation units that saw the shim
+// first and ones that saw an upstream header first (LNK2019 on the feature
+// constructors).
+class Entity {
+public:
         virtual ~Entity() = default;
 };
-struct Player : Entity {};
+class Player : public Entity {};
 
 // ---------------------------------------------------------------------------
 // Terrain feed — implemented by VgenSource.
