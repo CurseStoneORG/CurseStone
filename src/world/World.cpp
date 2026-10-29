@@ -28,10 +28,10 @@
 #include "world/format/WorldProviderManager.h"
 #include "world/format/ChunkAdapter.h"
 #include "world/generator/Generator.h"
-#include "world/generator/Normal.h"
 #include "world/generator/Flat.h"
 #include "world/generator/Nether.h"
 #include "world/generator/EmptyGenerator.h"
+#include "world/generator/vgen/VgenSource.h"
 #include "utils/CRaii.h"
 #include "utils/MainLogger.hpp"
 #include "tile/Tile.h"
@@ -164,8 +164,10 @@ World::World(WorldConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
     } else if (cfg_.generator == "void" || cfg_.generator == "empty") {
         generator_ = std::make_shared<generator::EmptyGenerator>();
     } else {
-        // "normal" is the default generator.
-        generator_ = std::make_shared<generator::Normal>(cfg_.seed);
+        // "normal" is the default generator: the vanilla overworld
+        // generator ported from the restored MCPE 1.0.0 sources
+        // (downported to 0.15).
+        generator_ = std::make_shared<generator::VgenSource>(cfg_.seed);
     }
 
     // Get the spawn position from the generator.
