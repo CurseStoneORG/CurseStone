@@ -27,6 +27,7 @@
 #pragma once
 #include "world/format/Chunk.h"
 #include "world/format/WorldProvider.h"
+#include "world/generator/NeighborChunkIO.h"
 #include <unordered_map>
 #include <unordered_set>
 #include <memory>
@@ -42,7 +43,7 @@ class AsyncPool;
 
 namespace cursestone::world {
 
-class ChunkManager {
+class ChunkManager : public generator::INeighborBlockSink {
   public:
     ChunkManager();
     ~ChunkManager();
@@ -136,6 +137,16 @@ class ChunkManager {
     void setGenerator(std::shared_ptr<generator::Generator> g) {
         generator_ = std::move(g);
     }
+    // Wire the generator's spill queue. Neighbor-aimed generation writes
+    // for chunks that are not live yet are parked there and replayed the
+    // moment the chunk becomes live (populate or install).
+    void setSpillQueue(generator::ISpillQueue* q) {
+        spillQueue_ = q;
+    }
+    // generator::INeighborBlockSink — target of the generator's
+    // cross-chunk block writes (trees/lakes/structures that spill over a
+    // chunk border).
+    void commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t id, uint8_t data) override;
     size_t count() const;
 
   private:
@@ -155,6 +166,7 @@ class ChunkManager {
     std::unordered_map<ChunkKey, mcp_chunk_t*, ChunkKeyHash> chunks_;
     std::shared_ptr<format::WorldProvider> provider_;
     std::shared_ptr<generator::Generator> generator_;
+    generator::ISpillQueue* spillQueue_ = nullptr;
 
     // Coordinates currently being generated on an AsyncPool worker,
     // so getChunkOrRequestAsync() doesn't submit the same chunk twice

@@ -296,6 +296,12 @@ void LightEngine::onChunkAdded(int32_t cx, int32_t cz) {
     // here would hold up generation, and touching ChunkManager from
     // inside setChunk() would deadlock on its mutex.
     std::lock_guard<std::mutex> lk(mtx_);
+    // Skip duplicates: a single cross-border tree can trigger several
+    // onChunkAdded calls for the same chunk in one tick.
+    for (const auto& p : pending_) {
+        if (p.first == cx && p.second == cz)
+            return;
+    }
     pending_.emplace_back(cx, cz);
 }
 
