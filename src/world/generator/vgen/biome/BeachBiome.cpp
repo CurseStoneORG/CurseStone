@@ -1,0 +1,21 @@
+#include "vgen/biome/BeachBiome.h"
+#include "vgen/Blocks.h"
+#include "vgen/biome/BiomeDecorator.h"
+
+namespace vgen {
+
+BeachBiome::BeachBiome(int id) :
+	Biome(id, Biome::BiomeType::Beach) {
+	// remove default mob spawn settings
+	_friendlies.clear();
+	mTopMaterial = Block::mSand->mID;
+	mMaterial = Block::mSand->mID;
+
+	decorator->treeCount = -999;
+	decorator->deadBushCount = 0;
+	decorator->reedsCount = 0;
+	decorator->cactusCount = 0;
+}
+
+} // namespace vgen
+
