@@ -79,8 +79,15 @@ struct BlockID {
         BlockID& operator=(uint8_t v) { value = v; return *this; }
         bool operator==(const BlockID& o) const { return value == o.value; }
         bool operator!=(const BlockID& o) const { return value != o.value; }
-        bool operator==(uint8_t v) const { return value == v; }
-        bool operator!=(uint8_t v) const { return value != v; }
+        // int overloads only: an exact-match right operand keeps expressions
+        // like `mID == 53` unambiguous against the built-in operator==(int,
+        // int). With an extra uint8_t overload clang (C2666-style ambiguity)
+        // and MSVC both reject the mix of implicit BlockID/uint8_t/int
+        // conversions; every integral operand reaches the int overload via
+        // promotion or a single standard conversion, which always beats the
+        // user-defined conversion route of the built-in candidate.
+        bool operator==(int v) const { return value == (uint8_t)v; }
+        bool operator!=(int v) const { return value != (uint8_t)v; }
         static const BlockID AIR;
         bool hasProperty(BlockProperty prop) const;
 };
