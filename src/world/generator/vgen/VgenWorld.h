@@ -218,8 +218,14 @@ public:
                              Entity* placer = nullptr);
         bool setBlockAndData(const BlockPos& pos, BlockID id, DataID data, int flags,
                              Entity* placer = nullptr);
+        // No default on flags (matches upstream BlockSource.h): a 5-argument
+        // call like setBlockAndData(x, y, z, id, FLAGS) must resolve to the
+        // (x, y, z, FullBlock, flags) overload — the upstream meaning — not
+        // silently turn the flag into block data. The default made both
+        // overloads viable for that shape and clang/MSVC (C2666) reject the
+        // resulting similar-conversions tie.
         bool setBlockAndData(int x, int y, int z, BlockID id, DataID data,
-                             int flags = 0) {
+                             int flags) {
                 return setBlockAndData(BlockPos(x, y, z), id, data, flags);
         }
         bool setBlockAndData(const BlockPos& pos, const FullBlock& block, int flags,
