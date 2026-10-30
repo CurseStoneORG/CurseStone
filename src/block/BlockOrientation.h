@@ -30,23 +30,23 @@
 //
 //   Escaleras        BlockStairs.place      faces {2,1,3,0} sobre el cuadrante E,W,S,N + bit 0x04 invertida
 //   Puerta           BlockDoor.place        faces {1,2,3,0} + bit bisagra 0x01 en la mitad superior
-//   Pistón           (uso previo del proyecto) {3,4,2,5}
+//   Piston           (project's earlier scheme) {3,4,2,5}
 //   Horno/Cofre      BlockFurnaceBurning / BlockChest  faces {2,5,3,4}
 //   Dispensador      BlockDispenser         cara opuesta a la de click (index 0..5)
 //   Hopper           BlockHopper            cara opuesta; UP colapsa a DOWN (0)
-//   Troncos/Cuarzo   BlockWood / BlockQuartz  eje: Y=0/4, Z=8, X=4 según la cara de click
+//   Logs/Quartz      BlockWood / BlockQuartz  axis: Y=0/4, Z=8, X=4 per clicked face
 //   Calabaza         BlockPumpkin           cuadrante OPUESTO al del jugador (dan asco)
 //   Repeater         BlockRedstoneDiode     cuadrante OPUESTO al del jugador
 //   Trampilla        BlockTrapdoor.place    faces {2,1,3,0} + bit 0x04 (arriba)
 //   Escalera de mano BlockLadder.place      metadata = cara clickeada (2..5)
 //   Antorcha         BlockTorch.place       top→5; N:4, S:3, W:2, E:1
-//   Botón            BlockButton.place      metadata = cara clickeada (2..5)
+//   Button           BlockButton.place      metadata = clicked face (2..5)
 //   Palanca          BlockLever (LeverOrientation.forFacings)
 //   Cartel de pared  BlockSignPost.place    metadata = cara clickeada (2..5)
 //   Vid              BlockVine.place        bit por cara: N=1, S=4, E=8, W=2
 //   Yunque           BlockAnvil.place       faces {1,2,3,0} (eje este-oeste por defecto)
 //
-// Para el índice de cuadrante se usa la misma formula yaw→cuadrante que
+// The quadrant index uses the same yaw→quadrant formula as
 // ya aplicaba el proyecto para puertas y pistones, asi ambos sistemas
 // quedan alineados y los mapeos son consistentes entre si.
 #pragma once
@@ -75,7 +75,7 @@ struct BlockOrientation {
 
     // Cara clickeada (0..5) → metadata "de cara" para bloques pegados a
     // paredes: 2=norte, 3=sur, 4=oeste, 5=este. Cara arriba/abajo → 0
-    // (aunque en la práctica el caller ya filtra esas caras).
+    // (although in practice the caller already filters those faces).
     static uint8_t faceIndexToMeta(uint8_t face) {
         static const uint8_t m[6] = {0, 0, 2, 3, 4, 5};
         return (face < 6) ? m[face] : 0;
@@ -88,26 +88,26 @@ struct BlockOrientation {
         return (face < 6) ? m[face] : 5;
     }
 
-    // Vid: cara de click → bit de orientación. N→0x01, S→0x04, E→0x08, W→0x02.
+    // Vine: clicked face → orientation bit. N→0x01, S→0x04, E→0x08, W→0x02.
     static uint8_t vineMeta(uint8_t face) {
         static const uint8_t m[6] = {0, 0, 1, 4, 2, 8};
         return (face < 6) ? m[face] : 0;
     }
 
-    // Escalera/botón/cartel-pared: metadata = cara clickeada tal cual.
+    // Ladder/button/wall sign: metadata = clicked face as-is.
     static uint8_t ladderMeta(uint8_t face) {
         return (face >= 2 && face <= 5) ? face : 2;
     }
 
-    // Troncos / cuarzo / heno: eje según la cara de click.
-    // Y (cara up/down) = sin rotación, Z (caras N/S) = 0x08, X (E/W) = 0x04.
+    // Logs / quartz / hay: axis per clicked face.
+    // Y (up/down face) = no rotation, Z (N/S faces) = 0x08, X (E/W) = 0x04.
     // `meta` conserva los bits bajos (tipo de madera/variante).
     static uint8_t axisMeta(uint8_t face, uint8_t meta) {
         static const uint8_t bits[6] = {0, 0, 0x08, 0x08, 0x04, 0x04};
         return (uint8_t)((meta & 0x03) | ((face < 6) ? bits[face] : 0));
     }
 
-    // Escalera (stairs): cuadrante del jugador → 2 bits de orientación.
+    // Stairs: player quadrant → 2 orientation bits.
     static uint8_t stairsMeta(uint8_t quadrantBits) {
         static const uint8_t m[4] = {2, 1, 3, 0}; // E,W,S,N
         return m[quadrantBits & 0x03];
@@ -119,13 +119,13 @@ struct BlockOrientation {
         return m[quadrantBits & 0x03];
     }
 
-    // Puerta: cuadrante → orientación {1,2,3,0} (Nukkit BlockDoor).
+    // Door: quadrant → orientation {1,2,3,0} (Nukkit BlockDoor).
     static uint8_t doorMeta(uint8_t quadrantBits) {
         static const uint8_t m[4] = {1, 2, 3, 0};
         return m[quadrantBits & 0x03];
     }
 
-    // Pistón: cuadrante → facing {3,4,2,5} (esquema propio ya usado).
+    // Piston: quadrant → facing {3,4,2,5} (the project's earlier scheme).
     static uint8_t pistonMeta(uint8_t quadrantBits) {
         static const uint8_t m[4] = {3, 4, 2, 5};
         return m[quadrantBits & 0x03];

@@ -20,17 +20,17 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// PluginsCommand — implementación.
+// PluginsCommand — implementation.
 //
-//   /plugins            -> lista los plugins (solo op/consola)
-//   /plugins reload     -> recarga TODOS los plugins (solo op/consola)
+//   /plugins            -> list plugins (op/console only)
+//   /plugins reload     -> reload ALL plugins (op/console only)
 //
-// HILOS: los comandos de consola corren en el hilo del CommandReader y
-// Lua NO es thread-safe, así que el reload NO toca los lua_States aquí:
-// se copian los datos del sender (el puntero NO sobrevive: en consola es
-// una variable local del CommandReader), se encola un CallbackTask con
-// ServerScheduler::scheduleSync y PluginManager::reloadAll() corre en el
-// próximo tick, en el hilo principal. El resultado se reporta en el log.
+// THREADS: console commands run on the CommandReader thread and Lua is
+// not thread-safe, so the reload never touches lua_States here: the
+// sender data is copied (the pointer does NOT survive — on console it is
+// a CommandReader local), a CallbackTask is queued via
+// ServerScheduler::scheduleSync and PluginManager::reloadAll() runs next
+// tick on the main thread. The result is reported through the log.
 #include "PluginsCommand.h"
 #include "plugin/PluginManager.h"
 #include "plugin/LuaBindings.h" // CURSESTONE_API
@@ -64,7 +64,7 @@ bool PluginsCommand::execute(CommandSender* sender, const std::string&,
             std::string senderName = sender->getName();
             auto task = std::make_shared<scheduler::CallbackTask>([senderName]() {
                 size_t n = plugin::PluginManager::get().reloadAll();
-                // Si lo pidió un jugador conectado, confirmarle por chat
+                // If a connected player asked, confirm via chat
                 // (la consola ya ve todo el log del reload).
                 if (Player* p = Server::getInstance().getPlayerExact(senderName))
                     p->sendMessage("Reloaded " + std::to_string(n) + " plugin(s).");

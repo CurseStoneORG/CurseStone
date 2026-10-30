@@ -95,7 +95,7 @@ size_t HandlerList::size() const {
 
 void HandlerList::dispatch(Event& event) const {
     // Snapshot de cada slot bajo el lock, en orden de prioridad, y
-    // luego se ejecutan los callbacks fuera de él. Esto permite que un
+    // then the callbacks run outside of it. This lets a
     // handler registre/desregistre listeners (incluso para este mismo
     // tipo de evento) desde dentro de su propio callback sin deadlock
     // contra mtx_.
@@ -112,8 +112,8 @@ void HandlerList::dispatch(Event& event) const {
         }
     }
 
-    // dynamic_cast funciona aquí porque tanto Event como Cancellable
-    // tienen destructor virtual (son polimórficos).
+    // dynamic_cast works here because both Event and Cancellable have
+    // virtual destructors (they are polymorphic).
     Cancellable* cancellable = dynamic_cast<Cancellable*>(&event);
 
     for (auto& rl : due) {

@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// ContainerSetDataPacket — server→client "cambió una propiedad de un
+// ContainerSetDataPacket — server->client "a container property
 // contenedor abierto" (MCPE protocol 84).
 //
 // Formato p84 verificado contra the reference implementation + Nukkit 2016:
@@ -33,7 +33,7 @@
 // Se usa para la UI del horno: flecha de progreso (property 0) y
 // llama de fuego (property 1), solo mientras el jugador lo tiene
 // abierto. Sin este packet el cliente NO muestra el progreso de
-// fundición aunque el horno esté trabajando.
+// smelting even while the furnace is working.
 #pragma once
 
 #include "DataPacket.h"
@@ -48,7 +48,7 @@ class ContainerSetDataPacket : public DataPacket {
         return CONTAINER_SET_DATA_PACKET;
     }
 
-    // Properties (vanilla): 0 = progreso de fundición (0..200),
+    // Properties (vanilla): 0 = smelt progress (0..200),
     // 1 = remaining fuel burn (0..200). El cliente escala ambos a su
     // barra/llama visual.
     static constexpr int PROPERTY_FURNACE_TICKS = 0;

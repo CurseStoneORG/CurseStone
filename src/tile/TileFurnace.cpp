@@ -20,10 +20,10 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// TileFurnace.cpp — horno completo (the reference server Tile/Furnace):
-// consume fuel, funde el input según el CraftingManager, escribe el
-// resultado en el slot 2 y sincroniza progreso/contenido con el
-// cliente mientras haya alguien mirando.
+// TileFurnace.cpp — full furnace (reference Tile/Furnace): consumes
+// fuel, smelts the input through CraftingManager, writes the result to
+// slot 2 and syncs progress/content with the client while anyone is
+// viewing it.
 #include "TileFurnace.h"
 #include "Player.h"
 #include "inventory/FurnaceInventory.h"
@@ -72,9 +72,9 @@ void TileFurnace::removeViewer(void* player) {
 }
 // ============================================================
 // Fuel — valores vanilla del servidor de referencia/Genisys (Fuel).
-// Nota MCPE 0.15: lava bucket = id 327 (ItemIds::LAVA_BUCKET);
-// bucket vacío = 325. El cubo de lava rinde 20000 ticks y al
-// consumirse deja un cubo vacío en el slot de fuel.
+// MCPE 0.15 note: lava bucket = id 327 (ItemIds::LAVA_BUCKET); empty
+// bucket = 325. Lava fuel lasts 20000 ticks and leaves an empty bucket
+// in the fuel slot when consumed.
 // ============================================================
 namespace {
 constexpr int COAL_BURN = 1600;         // coal/charcoal (id 263, any meta)
@@ -98,7 +98,7 @@ int TileFurnace::fuelBurnTicks(uint16_t id) {
     }
 }
 // ============================================================
-// Fundición — delega en CraftingManager (recetas RECIPE_FURNACE).
+// Smelting — delegated to CraftingManager (RECIPE_FURNACE recipes).
 // ============================================================
 bool TileFurnace::smeltResult(const cursestone::item::ItemStack& in,
                               cursestone::item::ItemStack& out) const {
@@ -121,7 +121,7 @@ bool TileFurnace::smeltResult(const cursestone::item::ItemStack& in,
 // setFlame — el fuego se ve cambiando el bloque (vanilla: 61 apagado /
 // 62 encendido), no solo la barra de la UI. El cambio de id se hace en
 // el World (sin broadcast) y el UpdateBlock solo se manda si el bloque
-// cambió de verdad.
+// actually changed.
 void TileFurnace::setFlame(bool lit) {
     if (lit == lit_)
         return;
@@ -145,7 +145,7 @@ void TileFurnace::setFlame(bool lit) {
             p->sendPacket(pk);
 }
 // ============================================================
-// tick — el corazón del horno.
+// tick — the heart of the furnace.
 // ============================================================
 void TileFurnace::tick(uint64_t) {
     auto input = inv_->getItem(SLOT_INPUT);
@@ -170,8 +170,8 @@ void TileFurnace::tick(uint64_t) {
             max_burn_time_ = ticks;
             fuel.count -= 1;
             if (fuel.count <= 0) {
-                // El cubo de lava deja un cubo vacío al consumirse
-                // (the reference server Furnace: "checkUsedFuel").
+                // A lava bucket leaves an empty bucket behind
+                // (reference Furnace: "checkUsedFuel").
                 if (fuel.id == 327) {
                     fuel.id = 325;
                     fuel.count = 1;
@@ -185,7 +185,7 @@ void TileFurnace::tick(uint64_t) {
             dirty_ = true;
         }
     }
-    // Fundición propiamente dicha.
+    // The smelting itself.
     if (burn_time_ > 0 && canSmelt) {
         ++cook_time_;
         if (cook_time_ >= maxCookTime()) {
@@ -207,16 +207,16 @@ void TileFurnace::tick(uint64_t) {
     } else {
         cook_time_ = 0;
     }
-    // Reenviar contenido solo cuando cambió y hay viewers.
+    // Resend content only when it changed and viewers exist.
     if (dirty_inventory_ && !viewers_.empty()) {
         auto content = std::make_shared<network::protocol::ContainerSetContentPacket>();
         content->slots.resize(3);
         for (int i = 0; i < 3; ++i)
             content->slots[i] = inv_->getItem(i);
         for (void* v : viewers_) {
-            // v es un Player* — el cast estático es válido porque solo
-            // Player::openFurnaceAt registra viewers y Player nunca es
-            // otra cosa. sendPacket es virtual via Player.
+            // v is a Player* — the static cast is valid because only
+            // Player::openFurnaceAt registers viewers. sendPacket is
+            // virtual via Player.
             auto* p = static_cast<cursestone::Player*>(v);
             content->windowid = p->containerWindowId();
             p->sendPacket(content);

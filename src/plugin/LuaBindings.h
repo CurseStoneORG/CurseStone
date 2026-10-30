@@ -47,7 +47,7 @@ namespace cursestone::plugin {
 //   - true  : compatible (is can load; can emit warn if not is exact)
 //   - false : incompatible (the plugin is descarta)
 // returns in `exact` if the version matches exactly (for the warn).
-// Implementación in LuaBindings.cpp.
+// Implementation in LuaBindings.cpp.
 bool apiCompatible(const std::string& pluginApi, bool* exact);
 
 // registers all the API in the state. the binds add its calls here.

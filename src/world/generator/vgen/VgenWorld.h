@@ -1,25 +1,27 @@
+/*
+ _____                     _____ _
+/  __ \                   /  ___| |
+| /  \/_   _ _ __ ___  ___\ `--.| |_ ___  _ __   ___
+| |   | | | | '__/ __|/ _ \`--. \ __/ _ \| '_ \ / _ \
+| \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
+ \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
+
+ * CurseStone | Open Source Server Software
+ *
+ * Copyright (C) 2026 CurseStoneTeam
+ *
+ * Developed by CurseStoneTeam.
+ * Built for an open and extensible Minecraft server ecosystem.
+ *
+ * Licensed under the GNU Lesser General Public License v3.0 or later.
+ * You may study, modify, and redistribute this software under its license.
+ *
+ * License: https://www.gnu.org/licenses/lgpl-3.0.html
+ * Repository: https://github.com/CurseStoneTeam/CurseStone
+ *
+ */
 // CurseStone | vgen — world-surface shim (LevelChunk / Level / Dimension /
-// BlockSource) over a 3x3 virtual neighborhood.
-//
-// The vanilla population step (RandomLevelSource::postProcess) runs against
-// a 3x3 chunk neighborhood reached through a BlockSource. CurseStone
-// generates and populates one chunk at a time on AsyncPool workers, so
-// this shim materializes the neighborhood virtually:
-//
-//   * the CENTER chunk is a working copy of the real sink chunk;
-//   * the 8 neighbors are deterministic terrain-only chunks pulled from
-//     VgenSource's terrain cache (generated on demand — the vanilla
-//     terrain pipeline is seed-deterministic per chunk);
-//   * every write aimed at a NON-center chunk is also recorded as a
-//     "spill" on the source; when that neighbor populates later it
-//     replays the spill before running its own features, which gives the
-//     exact vanilla cross-chunk feature behavior (trees spanning chunk
-//     borders, lake edges, structure pieces) without the engine ever
-//     having to hold 9 real chunks.
-//
-// Heightmap semantics stay vanilla: mHeightmap = topmost light-blocking
-// block, getTopRainBlockPos = first y whose material blocks motion or is
-// liquid, plus one.
+
 #pragma once
 #include "vgen/Vanilla.h"
 #include "vgen/Blocks.h"

@@ -20,7 +20,7 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// CraftingManager — registra las recetas de crafteo y responde "qué
+// CraftingManager — registers crafting recipes and answers "what
 // produce esta grilla 3x3?" a partir de CraftingEventPacket.
 // Espeja inventory/CraftingManager.
 #pragma once

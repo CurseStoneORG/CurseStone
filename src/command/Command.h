@@ -53,17 +53,17 @@ class Command {
     const std::string& usage() const {
         return usage_;
     }
-    // Nodo requerido, o "" si es público.
+    // Required permission node, or "" for public.
     const std::string& permission() const {
         return permission_;
     }
     bool isPublic() const {
         return permission_.empty();
     }
-    // ¿Puede este emisor usar el comando? SimpleCommandMap::dispatch() lo
-    // consulta ANTES de execute() y /help lo usa para filtrar la lista.
-    // Por defecto: público, o el emisor tiene el nodo de permiso pedido.
-    // (LuaCommand lo sobreescribe: op / nodo custom con fallback a op.)
+    // Can this sender use the command? SimpleCommandMap::dispatch()
+    // checks it BEFORE execute() and /help filters with it.
+    // Default: public, or the sender holds the requested node.
+    // (LuaCommand overrides: op / custom node with op fallback.)
     virtual bool canUse(CommandSender* sender) const {
         return isPublic() || sender->hasPermission(permission_);
     }

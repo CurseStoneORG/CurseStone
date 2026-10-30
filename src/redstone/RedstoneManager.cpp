@@ -35,13 +35,7 @@ namespace cursestone::redstone {
 
 using cursestone::world::World;
 
-// ============================================================
-// broadcastBlock — avisa a todos los jugadores que estén viendo el
-// chunk de (x,y,z) que el bloque ahí cambió, para que lo vean SIN
-// tener que reconectar. Mismo patrón exacto que ya usa Player.cpp al
-// romper/colocar bloques (mismo paquete, mismo criterio de a quién
-// mandárselo).
-// ============================================================
+// broadcastBlock — push a block update to every player viewing chunk (x,z).
 static void broadcastBlock(cursestone::Server* server, int32_t x, int32_t y, int32_t z,
                            uint8_t blockId, uint8_t blockData) {
     if (!server)
@@ -101,20 +95,15 @@ static void playDoorSound(cursestone::Server* server, int32_t x, int32_t y, int3
                         (float)y, (float)z);
 }
 
-// ============================================================
-// getEmittedPower — cuánta señal aporta este bloque hacia afuera.
-// ============================================================
+// getEmittedPower — signal strength this block feeds outward.
 int getEmittedPower(World* world, int32_t x, int32_t y, int32_t z) {
     if (!world)
         return 0;
     if (y < 0 || y >= 256)
         return 0;
-    // CRÍTICO: no leer bloques en chunks no cargados. World::getBlockId
-    // puede disparar generación síncrona de chunk si el chunk no está
-    // en memoria — exactamente el patrón que causó el freeze de 88s en
-    // BlockFire v5 (propagación tocando vecinos sin este chequeo). Un
-    // vecino en un chunk no cargado se trata simplemente como "sin
-    // señal", nunca se fuerza su carga.
+    // Never read blocks in unloaded chunks: World::getBlockId would
+    // trigger synchronous generation (the BlockFire v5 freeze pattern).
+    // An unloaded neighbor counts as "no signal".
     if (!world->isChunkLoaded(x, z))
         return 0;
     uint8_t id = world->getBlockId(x, y, z);
@@ -122,14 +111,13 @@ int getEmittedPower(World* world, int32_t x, int32_t y, int32_t z) {
 
     switch (id) {
     case block::REDSTONE_TORCH_ON:
-        // Antorcha encendida: potencia máxima hacia los vecinos
-        // laterales y hacia arriba (no hacia el bloque que la
-        // sostiene — comportamiento real de Minecraft).
+        // Lit torch: full power sideways and up, never into the
+        // supporting block below (vanilla behavior).
         return 15;
     case block::REDSTONE_BLOCK:
         return 15;
     case block::LEVER:
-        // Bit 0x8 = encendida (convención the reference server/vanilla para lever).
+        // Bit 0x8 = lit (vanilla lever convention).
         return (data & 0x08) ? 15 : 0;
     case block::STONE_BUTTON:
         return (data & 0x08) ? 15 : 0;
@@ -145,11 +133,9 @@ int getEmittedPower(World* world, int32_t x, int32_t y, int32_t z) {
     }
 }
 
-// ============================================================
-// isPowered — ¿este bloque está recibiendo señal de algún vecino?
-// (No es lo mismo que getEmittedPower: una palanca apagada no emite
-// nada, pero un bloque JUNTO a una palanca encendida sí está powered.)
-// ============================================================
+// isPowered — does this block receive signal from a neighbor? Not the
+// inverse of getEmittedPower: an off lever emits nothing, but a block
+// NEXT TO a lit lever is powered.
 bool isPowered(World* world, int32_t x, int32_t y, int32_t z) {
     if (!world)
         return false;
@@ -166,8 +152,8 @@ bool isPowered(World* world, int32_t x, int32_t y, int32_t z) {
         if (getEmittedPower(world, nx, ny, nz) > 0)
             return true;
     }
-    // El propio bloque, si es wire con potencia > 0, cuenta como
-    // "powered" para sí mismo (lo consultan cosas colocadas sobre él).
+    // A wire with power > 0 counts as powered itself (blocks on top
+    // of it query this).
     if (!world->isChunkLoaded(x, z))
         return false;
     uint8_t id = world->getBlockId(x, y, z);
@@ -177,13 +163,9 @@ bool isPowered(World* world, int32_t x, int32_t y, int32_t z) {
     return false;
 }
 
-// ============================================================
-// tryInteract — palanca y botón. Convención vanilla: bits 0-2 (o 0-5
-// según variante) guardan la orientación/cara de colocación, y el bit
-// 0x08 guarda el estado encendido (1) / apagado (0). Alternar el
-// estado preserva los demás bits intactos, así la orientación visual
-// del bloque no cambia al accionarlo.
-// ============================================================
+// tryInteract — lever and button. Vanilla layout: bits 0-2 (or 0-5 by
+// variant) hold the placement face, bit 0x08 the on/off state. Toggling
+// keeps the other bits intact so the visual orientation never changes.
 bool tryInteract(World* world, cursestone::Server* server, int32_t x, int32_t y, int32_t z,
                  cursestone::Player* player) {
     if (!world)
@@ -196,29 +178,22 @@ bool tryInteract(World* world, cursestone::Server* server, int32_t x, int32_t y,
     uint8_t data = world->getBlockData(x, y, z);
 
     if (id == block::LEVER || id == block::STONE_BUTTON) {
-        // El botón "ideal" se auto-apaga solo tras un tiempo (vanilla
-        // real); eso requiere el scheduler, que se deja como extensión
-        // futura documentada — por ahora ambos funcionan como toggle
-        // manual, simple y sin riesgo de tareas recurrentes.
+        // A vanilla button auto-releases after a moment; that needs the
+        // scheduler (future work). Both act as manual toggles for now.
         uint8_t newData = data ^ 0x08;
         world->setBlock(x, y, z, id, newData);
-        broadcastBlock(server, x, y, z, id, newData); // FIX: se veía solo al reconectar
+        broadcastBlock(server, x, y, z, id, newData); // FIX: was only visible after reconnecting
         notifyNeighbors(world, server, x, y, z);
         return true;
     }
 
     if (id == block::WOODEN_DOOR) {
-        // La puerta de madera (a diferencia de la de hierro) se abre
-        // con clic directo del jugador en vanilla real, además de con
-        // redstone. La de hierro (IRON_DOOR) NO reacciona a clic —
-        // sólo a redstone — así que se excluye aquí a propósito.
+        // Wooden doors open on click as well as redstone; iron doors
+        // deliberately never do (vanilla).
         //
-        // Igual que en updateDoorAt: sólo la mitad INFERIOR guarda el
-        // bit 0x04 de abierta (ver esquema de bits documentado en
-        // updateDoorAt más abajo). Si el jugador clickea la mitad
-        // superior, hay que localizar la inferior para saber cuál
-        // bit alternar — el cliente ya envía clicks contra cualquiera
-        // de las dos mitades indistintamente.
+        // Only the LOWER half stores the 0x04 open bit (see updateDoorAt);
+        // clicks may arrive against either half, so resolve the lower one
+        // before toggling.
         bool isTopHalf = (data & 0x08) != 0;
         int32_t lowerY = isTopHalf ? (y - 1) : y;
         if (lowerY < 0 || lowerY >= 256)
@@ -252,33 +227,23 @@ bool tryInteract(World* world, cursestone::Server* server, int32_t x, int32_t y,
         // LevelEventPacket (the reference server DoorSound), played for every viewer
         // including the clicker.
         playDoorSound(server, x, lowerY, z);
-        // No se llama a notifyNeighbors aquí: abrir/cerrar la puerta a
-        // mano no debería re-disparar su propia reevaluación por
-        // redstone en el mismo instante (causaría que, si hay señal
-        // activa, el clic manual se revierta inmediatamente sin que el
-        // jugador perciba haber logrado nada). El siguiente evento de
-        // redstone real en la zona sí la recalculará con normalidad.
+        // No notifyNeighbors here: a manual toggle must not immediately
+        // re-evaluate against active signal (the click would undo itself).
+        // The next real redstone event recalculates normally.
         return true;
     }
     return false;
 }
 
-// ============================================================
-// updateWireAt — recalcula la potencia de UN wire y, si cambió,
-// propaga a los wires vecinos. Acotado: cada llamada recalcula un
-// único bloque; la "cascada" ocurre por llamadas recursivas directas,
-// nunca por tareas re-encoladas, y el valor de potencia solo puede
-// bajar 1 por paso desde una fuente — con 15 niveles posibles, la
-// cadena de llamadas recursivas está matemáticamente acotada a un
-// máximo de 15 bloques de wire consecutivos antes de que la potencia
-// llegue a 0 y la recursión se detenga por sí sola.
-// ============================================================
+// updateWireAt — recompute one wire and propagate to neighbor wires.
+// Strictly bounded: signal drops 1 per step over 15 levels, so the
+// recursion can never run past 15 consecutive wire blocks.
 static void updateWireInternal(World* world, cursestone::Server* server, int32_t x, int32_t y,
                                int32_t z, int depth) {
     if (!world)
         return;
     if (depth > 16)
-        return; // guarda de seguridad extra (nunca debería alcanzarse)
+        return; // extra safety guard (never reached)
     if (y < 0 || y >= 256)
         return;
     if (!world->isChunkLoaded(x, z))
@@ -290,10 +255,10 @@ static void updateWireInternal(World* world, cursestone::Server* server, int32_t
     uint8_t oldData = world->getBlockData(x, y, z);
     int oldPower = oldData & 0x0F;
 
-    // La potencia de este wire es el máximo entre:
-    //  - la señal directa más fuerte de un vecino no-wire (antorcha,
-    //    bloque de redstone, palanca, etc.), sin decaer
-    //  - la potencia del wire vecino más fuerte, menos 1 (decaimiento)
+    // Wire power = max of:
+    //  - the strongest direct non-wire neighbor signal (torch, redstone
+    //    block, lever...), undecayed
+    //  - the strongest neighbor wire power minus 1
     int best = 0;
     static const int32_t dx[6] = {1, -1, 0, 0, 0, 0};
     static const int32_t dy[6] = {0, 0, 1, -1, 0, 0};
@@ -316,26 +281,18 @@ static void updateWireInternal(World* world, cursestone::Server* server, int32_t
     best = std::max(0, std::min(15, best));
 
     if (best == oldPower)
-        return; // sin cambio, no propagar más
+        return; // unchanged — stop propagating
 
     world->setBlock(x, y, z, block::REDSTONE_WIRE, (uint8_t)best);
-    // FIX (reportado por el usuario): sin esto, el cambio de potencia
-    // del wire solo se veía al reconectar, porque nunca se avisaba a
-    // los jugadores ya conectados de que este bloque específico cambió.
+    // FIX: without this broadcast the wire update was only visible
+    // after reconnecting.
     broadcastBlock(server, x, y, z, block::REDSTONE_WIRE, (uint8_t)best);
 
-    // Cualquier vecino no-wire que dependa de recibir señal DESDE este
-    // wire (lámparas, antorchas de redstone vía su soporte, puertas,
-    // pistones) también debe re-evaluarse, porque su potencia
-    // disponible acaba de cambiar. IMPORTANTE: esta lista debe
-    // mantenerse en sincronía con la de notifyNeighbors() más abajo —
-    // un wire es la ÚNICA vía por la que un cambio de señal puede
-    // llegar a un vecino sin pasar por notifyNeighbors del bloque
-    // origen (porque el wire re-propaga en cascada por sí mismo, no
-    // sólo hacia sus 6 vecinos inmediatos del bloque que cambió
-    // primero). Sin este bloque, un circuito palanca→wire→pistón (con
-    // al menos 1 bloque de wire de por medio) nunca activaría el
-    // pistón, porque el pistón no es vecino directo de la palanca.
+    // Non-wire consumers fed by this wire (lamps, torches via their
+    // support, doors, pistons) must re-evaluate too. Keep this list in
+    // sync with notifyNeighbors(): the wire cascade is the only path a
+    // signal change reaches a block that is not adjacent to the source.
+    // Without it, lever→wire→piston circuits never fire.
     for (int i = 0; i < 6; ++i) {
         int32_t nx = x + dx[i], ny = y + dy[i], nz = z + dz[i];
         if (ny < 0 || ny >= 256)
@@ -353,8 +310,8 @@ static void updateWireInternal(World* world, cursestone::Server* server, int32_t
             updatePistonAt(world, server, nx, ny, nz);
         } else if ((nid == block::REDSTONE_TORCH_ON || nid == block::REDSTONE_TORCH_OFF) &&
                    nx == x && nz == z && ny == y + 1) {
-            // Misma restricción que en notifyNeighbors: sólo si el
-            // wire ES el soporte de esa antorcha (está justo debajo).
+            // Same rule as notifyNeighbors: only if this wire IS the
+            // torch's support (directly below it).
             updateRedstoneTorchAt(world, server, nx, ny, nz);
         }
     }
@@ -364,13 +321,8 @@ void updateWireAt(World* world, cursestone::Server* server, int32_t x, int32_t y
     updateWireInternal(world, server, x, y, z, 0);
 }
 
-// ============================================================
-// updateLampAt — la lámpara de redstone es sólida+oscura (id 123)
-// cuando no recibe señal, y sólida+con luz (id 124) cuando sí. A
-// diferencia del wire, no propaga nada más allá de sí misma — es un
-// consumidor de señal, no un conductor — así que no hay riesgo de
-// cascada aquí en absoluto.
-// ============================================================
+// updateLampAt — the redstone lamp is solid+dark (123) unpowered and
+// solid+lit (124) powered. It only consumes signal, so no cascade.
 void updateLampAt(World* world, cursestone::Server* server, int32_t x, int32_t y, int32_t z) {
     if (!world)
         return;
@@ -385,27 +337,18 @@ void updateLampAt(World* world, cursestone::Server* server, int32_t x, int32_t y
     bool powered = isPowered(world, x, y, z);
     uint8_t wantId = powered ? block::LIT_REDSTONE_LAMP : block::REDSTONE_LAMP;
     if (wantId == id)
-        return; // ya está en el estado correcto
+        return; // already in the right state
 
     world->setBlock(x, y, z, wantId, 0);
     broadcastBlock(server, x, y, z, wantId, 0);
 }
 
-// ============================================================
-// updateRedstoneTorchAt — la antorcha de redstone es un INVERSOR: se
-// apaga cuando su bloque de soporte está powered, se enciende cuando
-// no lo está. Solo se maneja la orientación "hacia abajo" (antorcha
-// sobre un bloque, soporte = vecino de abajo), que es el caso que
-// notifyNeighbors puede disparar hoy sin conocer la orientación real
-// guardada en `data` (antorchas de pared quedan pendientes: requieren
-// leer el bit de cara en `data`, que este motor no interpreta aún para
-// torches — ver BlockIds.h, no hay constantes de cara para torch).
-// No propaga más allá de sí misma en cascada — a diferencia del wire,
-// cambiar una antorcha requiere que notifyNeighbors visite de nuevo
-// sus vecinos wire/lámpara, cosa que ya ocurre porque quien llama a
-// esta función (notifyNeighbors) también notifica al resto de vecinos
-// del bloque que originó el cambio.
-// ============================================================
+// updateRedstoneTorchAt — the redstone torch is an inverter: off when
+// its support block is powered, on otherwise. Only the standing
+// orientation is handled (support = block below); wall torches need the
+// face bits in `data`, which this engine does not interpret yet. The
+// torch does not cascade by itself — its neighbors are revisited by the
+// caller (notifyNeighbors).
 void updateRedstoneTorchAt(World* world, cursestone::Server* server, int32_t x, int32_t y,
                            int32_t z) {
     if (!world)
@@ -418,26 +361,16 @@ void updateRedstoneTorchAt(World* world, cursestone::Server* server, int32_t x, 
     if (id != block::REDSTONE_TORCH_ON && id != block::REDSTONE_TORCH_OFF)
         return;
 
-    // NOTA DE ALCANCE: esta función sólo decide ON vs OFF por señal.
-    // No comprueba si el bloque de soporte fue removido por completo
-    // (ej. alguien rompió el bloque de abajo) — en ese caso vanilla
-    // real destruiría la antorcha y la dropearía como ítem. Ningún
-    // bloque de este proyecto implementa hoy "destruirse al perder
-    // soporte" (ni torch normal, ni carteles, ni placas de presión),
-    // así que añadirlo sólo aquí sería inconsistente con el resto del
-    // motor de bloques — se deja como extensión futura transversal
-    // (física de soporte), no específica de redstone.
+    // Scope: this function only decides ON vs OFF from signal. Support
+    // removal (breaking the block below) would drop the torch as an item
+    // in vanilla — no block in this project implements support physics
+    // yet; that is a cross-cutting future feature, not redstone-specific.
 
-    // Soporte = el bloque inmediatamente debajo (x, y-1, z). Necesitamos
-    // saber si ESE bloque recibe señal de sus vecinos — pero SIN contar
-    // a la antorcha misma como uno de esos vecinos: la antorcha vive
-    // justo encima del soporte, así que isPowered(soporte) la vería a
-    // ella misma emitiendo 15 y la antorcha jamás podría apagarse (se
-    // "auto-sostendría" encendida). Por eso este chequeo se escribe a
-    // mano en vez de reusar isPowered() tal cual: revisamos los 5
-    // vecinos del soporte que NO son la antorcha (los 4 laterales + el
-    // de más abajo), exactamente igual que isPowered pero excluyendo
-    // el vecino de arriba.
+    // Support = the block directly below (x, y-1, z). Its powered state
+    // must exclude the torch itself: isPowered(support) would see the
+    // torch's own emission of 15 and the torch could never turn off.
+    // So this check is inlined: scan the support's 5 other neighbors
+    // (4 sides + below), exactly like isPowered minus the up neighbor.
     int32_t sx = x, sy = y - 1, sz = z;
     if (!world->isChunkLoaded(sx, sz))
         return;
@@ -456,8 +389,8 @@ void updateRedstoneTorchAt(World* world, cursestone::Server* server, int32_t x, 
             break;
         }
     }
-    // El soporte también puede ser él mismo un wire con potencia
-    // (mismo caso que contempla isPowered para wire).
+    // The support itself may be a powered wire (same case isPowered
+    // covers for wires).
     if (!supportPowered) {
         uint8_t supportId = world->getBlockId(sx, sy, sz);
         if (supportId == block::REDSTONE_WIRE && (world->getBlockData(sx, sy, sz) & 0x0F) > 0) {
@@ -474,29 +407,22 @@ void updateRedstoneTorchAt(World* world, cursestone::Server* server, int32_t x, 
 }
 
 // ============================================================
-// updateDoorAt — localiza la mitad inferior y decide el nuevo estado
-// según isPowered(). Se puede llamar pasando cualquiera de las dos
-// mitades — notifyNeighbors no sabe (ni necesita saber) cuál de las
-// dos es.
+// updateDoorAt — locates the lower half and decides the new state from
+// isPowered(). May be called with either half — notifyNeighbors does
+// not need to know which one.
 //
-// FORMATO DE `data` DE ESTE MOTOR (esquema propio, NO el legado de
-// Java "5 bits en 4" — ver investigación: en vanilla Java el bit que
-// marca mitad superior/inferior es ambiguo entre versiones y fue
-// fuente de bugs históricos en puertas dobles. Como este servidor no
-// necesita ser compatible con saves de Java, se define un esquema
-// simple y sin ambigüedad):
-//   - Bit 0x08: SIEMPRE "es mitad superior" — presente en AMBAS
-//     mitades, nunca reutilizado para otra cosa. 0 = inferior,
-//     1 = superior. Así, leer el bit 0x08 de un bloque de puerta dice
-//     inequívocamente cuál mitad es, sin depender de en qué mitad se
-//     está mirando.
-//   - Bit 0x04: "abierta/cerrada" — sólo tiene significado en la
-//     mitad INFERIOR (donde 0x08=0); es el mismo bit que ya usan
-//     BlockDoor::isOpen()/toggle() en block/BlockDoor.h, así que
-//     ambas piezas del proyecto están de acuerdo. En la mitad superior
-//     este bit no se define ni se lee.
-//   - Bits 0x01-0x02: orientación/bisagra, fijados al colocar
-//     (Player.cpp) y nunca tocados por este motor.
+// `data` FORMAT OF THIS ENGINE (own scheme, NOT Java's legacy layout —
+// Java packs 5 door bits into 4 and the top/bottom flag is ambiguous
+// across versions (historical double-door bugs). This server does not
+// need Java save compatibility, so it defines an unambiguous scheme):
+//   - Bit 0x08: ALWAYS "is the upper half" — present on BOTH halves,
+//     never reused for anything else. 0 = lower, 1 = upper. Reading
+//     bit 0x08 always tells which half is which.
+//   - Bit 0x04: "open/closed" — only meaningful on the LOWER half
+//     (where 0x08=0); BlockDoor::isOpen()/toggle() agree on it.
+//     Undefined on the upper half.
+//   - Bits 0x01-0x02: hinge orientation, set at placement and never
+//     touched by this engine.
 // ============================================================
 void updateDoorAt(World* world, cursestone::Server* server, int32_t x, int32_t y, int32_t z) {
     if (!world)
@@ -522,7 +448,7 @@ void updateDoorAt(World* world, cursestone::Server* server, int32_t x, int32_t y
 
     uint8_t lowerData = world->getBlockData(x, lowerY, z);
     if ((lowerData & 0x08) != 0)
-        return; // salvaguarda: lo que creíamos "inferior" también trae el bit de superior — datos corruptos, no tocar
+        return; // safeguard: "lower" half carries the upper bit — corrupt data, leave it
 
     bool currentlyOpen = (lowerData & 0x04) != 0;
     bool shouldBeOpen = isPowered(world, x, lowerY, z);
@@ -538,19 +464,16 @@ void updateDoorAt(World* world, cursestone::Server* server, int32_t x, int32_t y
     playDoorSound(server, x, lowerY, z);
 
     // La mitad superior de este motor solo guarda el bit 0x08 (es
-    // superior) + orientación/bisagra en 0x01-0x02 — nunca guarda el
-    // bit de abierta (ver esquema documentado arriba), así que
-    // visualmente no necesita cambiar su `data` al abrir/cerrar. El
-    // cliente MCPE anima la puerta completa a partir del cambio de la
-    // mitad inferior únicamente. No se reescribe la mitad superior
-    // aquí para no arriesgar perder su bit de bisagra por descuido.
+    // The upper half stores only 0x08 + hinge bits, never the open bit,
+    // so it needs no data change on toggle: the MCPE client animates the
+    // whole door from the lower half. Leaving it untouched also keeps
+    // its hinge bits safe.
 }
 
 // ============================================================
-// updatePistonAt — extiende/retrae según isPowered(). Direcciones
-// (bits 0-2 de `data`, convención vanilla real confirmada): 0=abajo,
-// 1=arriba, 2=norte(-Z), 3=sur(+Z), 4=oeste(-X), 5=este(+X). Bit 0x08
-// = extendido.
+// updatePistonAt — extend/retract from isPowered(). Facing bits 0-2 of
+// `data` (vanilla): 0=down, 1=up, 2=north(-Z), 3=south(+Z), 4=west(-X),
+// 5=east(+X). Bit 0x08 = extended.
 // ============================================================
 static void pistonDirOffset(uint8_t dirBits, int32_t& ox, int32_t& oy, int32_t& oz) {
     ox = oy = oz = 0;
@@ -574,7 +497,7 @@ static void pistonDirOffset(uint8_t dirBits, int32_t& ox, int32_t& oy, int32_t& 
         ox = 1;
         break; // este
     default:
-        break; // 6/7 no son direcciones válidas en vanilla — no-op seguro
+        break; // 6/7 are not valid vanilla facings — safe no-op
     }
 }
 
@@ -599,24 +522,19 @@ void updatePistonAt(World* world, cursestone::Server* server, int32_t x, int32_t
     pistonDirOffset(data, ox, oy, oz);
     int32_t headX = x + ox, headY = y + oy, headZ = z + oz;
     if (headY < 0 || headY >= 256)
-        return; // el cabezal caería fuera del mundo — no-op seguro
+        return; // the head would leave the world — safe no-op
     if (!world->isChunkLoaded(headX, headZ))
         return;
 
     if (shouldExtend) {
-        // Sólo empuja si el destino es aire puro. Empujar fluidos u
-        // otros bloques "reemplazables" (fuego, wire, etc.) requiere
-        // reglas propias por tipo que este motor no cubre aún — se
-        // deja documentado como extensión futura en vez de arriesgar
-        // un comportamiento incorrecto (dropear algo que en vanilla no
-        // dropea, o mover un fluido como si fuera sólido).
+        // Push only into pure air. Fluids and other replaceables need
+        // per-type rules this engine does not cover yet (documented
+        // future work instead of wrong behavior).
         uint8_t destId = world->getBlockId(headX, headY, headZ);
-        // Bloqueado — el pistón no se extiende, igual que en vanilla. No
-        // hace falta recordar "señal pendiente": si luego alguien rompe
-        // el bloque que bloquea, esa rotura llama a notifyNeighbors en
-        // (headX,headY,headZ), que revisa SUS 6 vecinos — y el pistón
-        // en (x,y,z) es uno de ellos — así que se re-evalúa solo, sin
-        // necesitar un scheduler ni un estado extra.
+        // Blocked — the piston stays retracted, like vanilla. No pending
+        // signal bookkeeping needed: breaking the blocker notifies its
+        // neighbors, which includes this piston, so it re-evaluates on
+        // its own.
         if (destId != 0)
             return;
 
@@ -626,30 +544,24 @@ void updatePistonAt(World* world, cursestone::Server* server, int32_t x, int32_t
 
         world->setBlock(headX, headY, headZ, block::PISTON_HEAD, data & 0x07);
         broadcastBlock(server, headX, headY, headZ, block::PISTON_HEAD, data & 0x07);
-        // No se llama a notifyNeighbors sobre el cabezal: en vanilla
-        // real el piston head es un bloque técnico que no interactúa
-        // con redstone (no es fuente ni conductor). Un wire detrás del
-        // cabezal quedaría sin recalcular hasta el próximo evento que
-        // lo toque directamente — caso extremadamente raro en
-        // circuitos reales y documentado aquí en vez de ampliar el
-        // alcance de esta función sin necesidad.
+        // No notifyNeighbors on the head: the piston head is a technical
+        // block that neither sources nor conducts redstone. A wire behind
+        // it waits for the next event touching it (rare in practice,
+        // documented rather than widening this function's scope).
     } else {
         uint8_t newData = data & ~0x08;
         world->setBlock(x, y, z, id, newData);
         broadcastBlock(server, x, y, z, id, newData);
 
-        // Retraer: el cabezal vuelve a aire. Un pistón pegajoso en
-        // vanilla intentaría además arrastrar de vuelta el bloque que
-        // había empujado — no implementado aquí (requiere recordar qué
-        // se empujó, no solo dónde quedó el cabezal); queda como
-        // extensión futura documentada.
+        // Retract: the head returns to air. A sticky piston would also
+        // pull the pushed block back — not implemented (needs push
+        // memory); documented future work.
         uint8_t headId = world->getBlockId(headX, headY, headZ);
         if (headId == block::PISTON_HEAD) {
             world->setBlock(headX, headY, headZ, 0, 0);
             broadcastBlock(server, headX, headY, headZ, 0, 0);
-            // NOTE: el chequeo de soporte de bloques con gravedad vive
-            // DENTRO de World::setBlock — vaciar el cabezal re-evalúa el
-            // bloque de encima (arena/grava/yunque caen).
+            // Gravity checks live inside World::setBlock — clearing the
+            // head re-evaluates the block above (sand/gravel/anvils fall).
         }
     }
 }
@@ -657,7 +569,7 @@ void updatePistonAt(World* world, cursestone::Server* server, int32_t x, int32_t
 // ============================================================
 // notifyNeighbors — punto de entrada principal. Se llama tras romper o
 // colocar un bloque en (x,y,z); revisa los 6 vecinos y dispara su
-// actualización si son componentes de redstone.
+// update if they are redstone components.
 // ============================================================
 void notifyNeighbors(World* world, cursestone::Server* server, int32_t x, int32_t y, int32_t z) {
     if (!world)
@@ -667,8 +579,7 @@ void notifyNeighbors(World* world, cursestone::Server* server, int32_t x, int32_
     static const int32_t dz[6] = {0, 0, 0, 0, 1, -1};
 
     // El propio bloque, si es wire (por ejemplo se acaba de colocar
-    // sobre una fuente), lámpara, antorcha, puerta o pistón, también
-    // necesita recalcularse.
+    // source), lamp, torch, door or piston, also needs recomputing.
     if (y >= 0 && y < 256 && world->isChunkLoaded(x, z)) {
         uint8_t selfId = world->getBlockId(x, y, z);
         if (selfId == block::REDSTONE_WIRE) {
@@ -698,8 +609,8 @@ void notifyNeighbors(World* world, cursestone::Server* server, int32_t x, int32_
         } else if (nid == block::REDSTONE_TORCH_ON || nid == block::REDSTONE_TORCH_OFF) {
             // La antorcha reacciona a cambios en su SOPORTE (el bloque
             // de abajo), no a cualquier vecino lateral — en vanilla
-            // real un cambio de señal lateral no la afecta. Sólo la
-            // recalculamos aquí si el vecino modificado ES su soporte,
+            // vanilla: a lateral signal change does not affect it. Only
+            // recompute when the modified neighbor IS its support
             // es decir, si estamos mirando "hacia arriba" desde (x,y,z)
             // hacia la antorcha (nx,ny,nz) = (x,y+1,z).
             if (nx == x && nz == z && ny == y + 1) {
@@ -710,9 +621,8 @@ void notifyNeighbors(World* world, cursestone::Server* server, int32_t x, int32_
         } else if (nid == block::PISTON_ID || nid == block::STICKY_PISTON) {
             updatePistonAt(world, server, nx, ny, nz);
         }
-        // Palancas, botones, placas de presión no necesitan
-        // recalcularse a sí mismas por un cambio de vecino — su estado
-        // lo cambia directamente la interacción del jugador.
+        // Levers, buttons and pressure plates never recompute from
+        // neighbor changes — player interaction drives their state.
     }
 }
 

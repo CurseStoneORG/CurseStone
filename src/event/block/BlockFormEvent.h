@@ -32,9 +32,9 @@
 namespace cursestone::event::block {
 
 // NOTA: no hereda Cancellable directamente — BlockGrowEvent ya lo hace.
-// Heredarlo de nuevo aquí crearía un diamante no-virtual (dos
+// Inheriting it again here would create a non-virtual diamond (two
 // subobjetos Cancellable), lo que vuelve ambiguos isCancelled()/
-// setCancelled() en tiempo de compilación.
+// setCancelled() at compile time.
 class BlockFormEvent : public BlockGrowEvent {
   public:
     BlockFormEvent(int32_t bx, int32_t by, int32_t bz, int32_t nsx, int32_t nsy, int32_t nsz)

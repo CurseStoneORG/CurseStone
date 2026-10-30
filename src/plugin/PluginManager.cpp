@@ -20,7 +20,7 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// PluginManager — implementación.
+// PluginManager — implementation.
 #include "PluginManager.h"
 #include "LuaBindings.h" // CURSESTONE_API
 #include "MiniYaml.h"    // leer the field `name` of plugin.yml
@@ -113,7 +113,7 @@ void PluginManager::loadAll(const std::string& pluginsDir, const std::string& da
 
     // ---- 1. scan. only is accepts plugin.yml as manifest: a
     //         main.lua loose (format old) not load already as plugin.
-    //         therefore, if two folders traen "the same" plugin, the válido
+    //         therefore, if two folders carry "the same" plugin, the valid
     //         is directamente that which has plugin.yml — the other ni
     //         entran to the list.
     struct Cand {
@@ -157,9 +157,9 @@ void PluginManager::loadAll(const std::string& pluginsDir, const std::string& da
     // ---- 2. duplicates. is marks for disable (not load) all the
     //         implicados, with warning claro. two claves:
     //         to) same name of plugin in plugin.yml (case-insensitive to
-    //            mayúsculas/minúsculas),
+    //            uppercase/lowercase),
     //         b) same name of folder (also case-insensitive), because
-    //            chocarían its folders of data in data_pl/.
+    //            their data folders in data_pl/ would collide.
     std::map<std::string, std::vector<size_t>> byName;
     std::map<std::string, std::vector<size_t>> byFolder;
     for (size_t i = 0; i < cands.size(); ++i) {
@@ -239,7 +239,7 @@ size_t PluginManager::reloadAll() {
 void PluginManager::unloadAll() {
     // the LuaCommand are stored refs to the registry of the lua_State that estamos to
     // point of close: salirlos of the CommandMap first, or a /<cmd> tras
-    // the reload tocaría a state dead.
+    // the reload would touch a dead state.
     if (CommandMap* map = Server::getInstance().getCommandMap()) {
         for (auto& p : plugins_)
             map->unregisterByOwner(p.get());

@@ -207,7 +207,7 @@ void Network::dispatchSingle(const std::string& ip, uint16_t port, const uint8_t
 std::shared_ptr<protocol::DataPacket> Network::decodePacketById(uint8_t pid, const uint8_t* body,
                                                                 size_t bodyLen,
                                                                 const std::string& who) {
-    // Helper local: primeros N bytes en hex, para diagnóstico.
+    // Local helper: first N bytes in hex, for diagnostics.
     auto hexDump = [](const uint8_t* b, size_t n) {
         size_t cap = n < 40 ? n : 40;
         std::string out;
@@ -222,13 +222,13 @@ std::shared_ptr<protocol::DataPacket> Network::decodePacketById(uint8_t pid, con
     // Instantiate the right subclass via the PacketPool registry.
     auto pkt = protocol::PacketPool::get().create(pid);
     if (!pkt) {
-        // DIAGNÓSTICO (bug "tocar un item del creativo no llega al
+        // DIAGNOSTIC (bug "tapping a creative item never reaches the
         // inventario"): antes esto se ignoraba en silencio TOTAL —
-        // ni un log — así que si el cliente real manda un tipo de
+        // or a log — so if the real client sends a kind of
         // paquete que este server no tiene registrado en
         // PacketPool::create() (por ejemplo InventoryTransactionPacket
-        // o CraftingEventPacket, ninguno de los dos existe hoy acá),
-        // no había NINGUNA forma de saberlo. Gateado en debugMode()
+        // or CraftingEventPacket — neither exists here today), there was
+        // NO way to know. Gated behind debugMode()
         // para no ensuciar el log en uso normal.
         char pidHex[4];
         snprintf(pidHex, sizeof(pidHex), "%02x", pid);
@@ -274,9 +274,9 @@ std::shared_ptr<protocol::DataPacket> Network::decodePacketById(uint8_t pid, con
         diagnostics::Diagnostics::get().report(
             "packet", std::string("decode() failed for id 0x") + pidHex, detail);
     }
-    // DIAGNÓSTICO extra específico para CONTAINER_SET_SLOT_PACKET
+    // Extra diagnostic specific to CONTAINER_SET_SLOT_PACKET
     // (0x2c) — el sospechoso del bug de creativo. Se loguea SIEMPRE
-    // que llegue uno (éxito o fallo de decode), para poder comparar
+    // whether one arrives (decode success or failure), to compare
     // los bytes reales que manda el cliente contra el formato que
     // este server asume (ver el comentario de formato en
     // ContainerSetSlotPacket.h). Gateado en debugMode().

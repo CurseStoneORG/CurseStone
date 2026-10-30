@@ -30,8 +30,8 @@
 //   data.folder                  ruta de la carpeta de datos (string)
 //   data.read(archivo)           contenido crudo (binario seguro) o nil+err
 //   data.write(archivo, txt)     escribe crudo (crea/sobrescribe); ok|nil+err
-//   data.exists(archivo)         ¿existe?
-//   data.delete(archivo)         borra (false si no existía)
+//   data.exists(file)            exists?
+//   data.delete(file)            deletes (false if it did not exist)
 //   data.list()                  nombres de las entradas de la carpeta
 //   data.loadYml(archivo)        parsea YAML -> tabla | nil+err
 //   data.saveYml(archivo, tbl)   tabla -> YAML (sobrescribe); ok|nil+err
@@ -40,7 +40,7 @@
 //
 // Con read/write se guardan .dat binarios (el string Lua 5.4 es binario-
 // seguro: puede contener \0). Con loadYml/saveYml/loadJson/saveJson se
-// guardan configs y datos estructurados con cualquier extensión.
+// store configs and structured data with any extension.
 #include "LuaBindings.h"
 #include "LuaPlugin.h"
 #include "PathSafe.h"
@@ -56,7 +56,7 @@ namespace {
 namespace fs = std::filesystem;
 
 // Resuelve <dataDir>/<rel> de forma segura. Error de Lua si la ruta es
-// inválida (absoluta, con "..", con backslash o vacía).
+// invalid (absolute, containing "..", a backslash, or empty).
 std::string resolveDataPath(lua_State* L, int idx) {
     const char* req = luaL_checkstring(L, idx);
     std::string rel;
@@ -83,7 +83,7 @@ bool readWholeFile(const std::string& path, std::string& out, std::string& err) 
 
 bool writeWholeFile(const std::string& path, const std::string& data, std::string& err) {
     // Subcarpetas dentro de data_pl: crear la ruta padre si falta
-    // (la ruta ya fue sanitizada, así que no puede salir de dataDir).
+    // (the path was already sanitized, so it cannot escape dataDir).
     std::error_code ec;
     fs::create_directories(fs::path(path).parent_path(), ec);
     ec.clear();
@@ -133,7 +133,7 @@ int l_data_exists(lua_State* L) {
     return 1;
 }
 
-// data.delete(archivo) -> bool (false si no existía o no se pudo)
+// data.delete(file) -> bool (false if it did not exist or failed)
 int l_data_delete(lua_State* L) {
     std::error_code ec;
     bool ok = fs::remove(resolveDataPath(L, 1), ec);
@@ -174,7 +174,7 @@ int l_data_loadYml(lua_State* L) {
 }
 
 // data.saveYml(archivo, valor) -> true | nil, err
-// (acepta tabla anidada o escalar raíz; las claves no-string dan error)
+// (accepts a nested table or a root scalar; non-string keys error out)
 int l_data_saveYml(lua_State* L) {
     resolveDataPath(L, 1); // valida la ruta primero
     std::string text, err;

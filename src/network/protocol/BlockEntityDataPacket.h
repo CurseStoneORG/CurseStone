@@ -22,14 +22,14 @@
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // BlockEntityDataPacket — cliente→servidor cuando el jugador edita un
-// cartel (al salir de la pantalla de texto). El servidor también lo usa
+// sign (when leaving the text screen). The server also uses it
 // para re-sincronizar el tile.
 //
 // Wire format (protocolo 84, mirrors Genisys BlockEntityDataPacket):
 //   [Int BE] x
 //   [Int BE] y
 //   [Int BE] z
-//   [rest]   namedtag      // árbol NBT little-endian del block entity
+//   [rest]   namedtag      // little-endian NBT tree of the block entity
 #pragma once
 
 #include "DataPacket.h"

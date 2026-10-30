@@ -1487,7 +1487,7 @@ static void handle_data_packet(mcp_rak_session_manager_t* sm, mcp_rak_session_t*
         }
     }
     if (diff >= 1) {
-        // BUG CRÍTICO CONFIRMADO (evidencia: dos server.log reales
+        // CONFIRMED CRITICAL BUG (evidence: two real server.log
         // distintos, ambos con recv_packets=2048 exactos antes del
         // silencio total). recv_window[] marks a slot true on receipt
         // (line above) but — unlike reliable_recv_window, which DOES
@@ -1575,10 +1575,10 @@ static void handle_data_packet(mcp_rak_session_manager_t* sm, mcp_rak_session_t*
         if (consumed == 0 || done)
             break;
 
-        // BUG CRÍTICO CONFIRMADO (server.log real: split_completed=1 pero
-        // el resto de la sesión sospechosamente silenciosa en tráfico
+        // CONFIRMED CRITICAL BUG (real server.log: split_completed=1 but
+        // the rest of the session suspiciously silent on traffic
         // fiable — ver el hallazgo completo en el comentario de
-        // reliable_index_accept() más abajo). In RakNet's real reference
+        // reliable_index_accept() below). In RakNet's real reference
         // implementation, a fragmented message gets exactly ONE
         // reliableMessageNumber for the whole logical message — every
         // physical fragment on the wire carries that SAME index (fixed

@@ -23,15 +23,15 @@
 // ItemFlintSteel.h — portado of item/FlintSteel (the reference server)
 //
 // Implementa:
-//   - Colocación of fire in blocks solids (onActivate)
+//   - Placing fire on solid blocks (onActivate)
 //   - lit of the portal of the Nether about a frame of obsidian
 //     (interior of 2x3 until 21x21, in the axis X or in the axis Z)
-//   - Degradación of durability (2 points by use in survival)
+//   - Durability loss (2 points per use in survival)
 //
 // Diferencias with the original:
 //   - onActivate() receives World* + player* + coordinates enteras instead of
 //     objetos Block with position embebida.
-//   - the inserción of blocks portal uses World::setBlock(x,and,z, portal, meta).
+//   - Portal block insertion uses World::setBlock(x,y,z, portal, meta).
 //     BlockPortal (id=90 in MCPE 0.15.x) must estar registrado in
 //     Block::registry().
 //   - the durability is saves in the field `meta` of the ItemStack (mirrors the reference server
@@ -66,7 +66,7 @@ class ItemFlintSteel : public Item {
         return 1;
     }
 
-    // durability máxima: 65 usos (just like the reference server MCPE 0.15.x)
+    // max durability: 65 uses (like the reference MCPE 0.15.x)
     static constexpr uint8_t MAX_DURABILITY = 64;
 
     // point of entrada main — call from player::handleBlockPlace()
@@ -74,21 +74,21 @@ class ItemFlintSteel : public Item {
     //
     // Mirrors: FlintSteel::onActivate(level, player, block, target, face, ...)
     //
-    // Parámetros:
+    // Parameters:
     //   level         — world activo
-    //   player        — player that activó the ítem
+    //   player        — player who activated the item
     //   bx,by,bz      — coordinates of the block AIR in the cara clicked
-    //   tx,ty,tz      — coordinates of the block TARGET (that which recibió the click)
+    //   tx,ty,tz      — coordinates of the TARGET block (the clicked one)
     //   face          — cara of the target (0=below, 1=above, 2-5=laterales)
     //
-    // returns true if is realizó some action (propagando the respuesta to the client).
+    // returns true when some action was performed (the response is sent to the client).
     static bool onActivate(world::World* world, Player* player, int32_t bx, int32_t by,
                            int32_t bz,                         // block AIR
                            int32_t tx, int32_t ty, int32_t tz, // block target
                            uint8_t face);
 
   private:
-    // applies 2 points of damage to the ítem in mano of the player (survival only).
+    // applies 2 damage points to the player's held item (survival only).
     // mirrors: useOn(block, 2)
     static void applyDurability(Player* player);
 };

@@ -51,7 +51,7 @@ size_t EventManager::unlistenAll(void* owner) {
         return 0;
     // Snapshot de los HandlerList* bajo map_mtx_, y luego se llama a
     // unregisterOwner() en cada uno FUERA de ese lock — cada
-    // HandlerList tiene su propio mutex, así que no hace falta
+    // HandlerList has its own mutex, so there is no need
     // mantener map_mtx_ tomado mientras tanto, y evita anidar los dos
     // dominios de lock.
     std::vector<HandlerList*> all;
@@ -68,8 +68,8 @@ size_t EventManager::unlistenAll(void* owner) {
 }
 
 void EventManager::call(Event& event) {
-    // typeid(event) resuelve el tipo DINÁMICO (la subclase concreta)
-    // porque Event es polimórfico (tiene destructor virtual).
+    // typeid(event) resolves the DYNAMIC type (the concrete subclass)
+    // because Event is polymorphic (virtual destructor).
     HandlerList* list = findList(std::type_index(typeid(event)));
     if (!list)
         return; // nadie escucha este tipo concreto todavia.

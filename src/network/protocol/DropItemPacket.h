@@ -26,7 +26,7 @@
 //
 // Wire format (protocolo 84, mirrors Genisys DropItemPacket):
 //   [Byte] type                     // 0 = drop, 1 = drop all (Q vs Ctrl+Q)
-//   [Slot] item                     // id/daño/count del item soltado
+//   [Slot] item                     // id/damage/count of the dropped item
 #pragma once
 
 #include "DataPacket.h"

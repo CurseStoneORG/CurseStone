@@ -384,7 +384,7 @@ PortalSpot buildPortalAt(world::World* w, int x, int z) {
 } // namespace
 
 // ---------------------------------------------------------------------
-// checkPortal — detección per tick of the block of portal.
+// checkPortal — per-tick portal block detection.
 // ---------------------------------------------------------------------
 // the travel dispara a sola time by entrada to the portal: in_portal_ prevents
 // re-disparos while the player siga inside, and last_portal_ms_ applies

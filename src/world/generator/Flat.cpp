@@ -46,14 +46,12 @@ void Flat::generate(GenerationContext& ctx) {
     for (int x = 0; x < 16; ++x)
         for (int z = 0; z < 16; ++z)
             mcp_chunk_set_biome(c, x, z, 1);
-    // El generador Flat conoce exactamente dónde termina la superficie
-    // (el tope de las capas), así que puede setear el heightmap a
-    // mano sin recorrer bloques — sigue siendo válido. Lo que faltaba
-    // era el pase real de luz: antes solo se marcaba light_populated
-    // sin calcular ningún valor, dejando lo que hubiera por defecto
-    // en sky_light (potencialmente todo en 0 → mundo negro). Fix:
-    // correr mcp_chunk_propagate_sky_light, que ya deja
-    // light_populated=true por su cuenta.
+    // Flat knows exactly where its surface ends, so setting the
+    // heightmap by hand stays valid. What was missing was the real light
+    // pass: light_populated was flagged without computing anything,
+    // leaving default sky_light (potentially all 0 = black world). Fix:
+    // run mcp_chunk_propagate_sky_light, which sets light_populated
+    // itself.
     for (int x = 0; x < 16; ++x)
         for (int z = 0; z < 16; ++z)
             mcp_chunk_set_height_map(c, x, z, y);

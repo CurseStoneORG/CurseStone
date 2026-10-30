@@ -27,7 +27,7 @@
 //   2. La API data.loadYml / data.saveYml (configs de los plugins).
 //
 // El resultado se apila DIRECTAMENTE como valores Lua (tablas anidadas,
-// strings, números, booleanos, nil): sin tipos intermedios.
+// strings, numbers, booleans, nil): no intermediate types.
 //
 // SUBCONJUNTO SOPORTADO (documentado en PLUGINS.md):
 //
@@ -41,16 +41,16 @@
 //   lista:                  # lista de escalares
 //     - uno
 //     - "dos: con dos puntos"
-//   mapa:                   # mapa anidado por indentación (2+ espacios)
+//   map:                    # nested map via indentation (2+ spaces)
 //     sub: valor
 //   items:                  # lista de mapas:
 //     - nombre: a           #   primera clave pegada al "-"
 //       extra: 1            #   claves siguientes alineadas
 //
-//   {} -> tabla vacía, [] -> lista vacía
+//   {} -> empty table, [] -> empty list
 //
-// NO soportado: anchors (&/*), multi-línea (| >), flow anidado completo,
-// tabs de indentación (error claro).
+// NOT supported: anchors (&/*), multi-line (| >), full nested flow,
+// indentation tabs (clear error).
 #pragma once
 #include <lua.hpp>
 #include <string>
@@ -61,8 +61,8 @@ namespace cursestone::plugin::yaml {
 // Devuelve false y llena `err` si hay error de sintaxis.
 bool parseToLua(lua_State* L, const std::string& text, std::string& err);
 
-// Serializa la tabla en `idx` a texto YAML. Acepta también escalares en
-// la raíz (documento de un solo valor). Devuelve false y llena `err` si
+// Serializes the table at `idx` to YAML text. Also accepts scalars at
+// the root (single-value document). Returns false and fills `err` when
 // el valor no es serializable (tabla mixta rara, funciones, etc.).
 bool fromLua(lua_State* L, int idx, std::string& out, std::string& err);
 

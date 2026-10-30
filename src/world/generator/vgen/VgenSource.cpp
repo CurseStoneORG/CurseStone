@@ -1,8 +1,27 @@
+/*
+ _____                     _____ _
+/  __ \                   /  ___| |
+| /  \/_   _ _ __ ___  ___\ `--.| |_ ___  _ __   ___
+| |   | | | | '__/ __|/ _ \`--. \ __/ _ \| '_ \ / _ \
+| \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
+ \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
+
+ * CurseStone | Open Source Server Software
+ *
+ * Copyright (C) 2026 CurseStoneTeam
+ *
+ * Developed by CurseStoneTeam.
+ * Built for an open and extensible Minecraft server ecosystem.
+ *
+ * Licensed under the GNU Lesser General Public License v3.0 or later.
+ * You may study, modify, and redistribute this software under its license.
+ *
+ * License: https://www.gnu.org/licenses/lgpl-3.0.html
+ * Repository: https://github.com/CurseStoneTeam/CurseStone
+ *
+ */
 // CurseStone | vgen — VgenSource implementation.
-// Terrain pipeline ported verbatim from RandomLevelSource.cpp (vanilla
-// 1.0.0, MCPE-1.0.0-Restored); population is the vanilla postProcess
-// sequence downported to 0.15 (no strongholds, no ocean monuments, no
-// savanna/snowy villages) and driven over the 3x3 virtual neighborhood.
+
 #include "world/generator/vgen/VgenSource.h"
 #include "world/generator/vgen/Blocks.h"
 #include "world/generator/vgen/material/Material.h"

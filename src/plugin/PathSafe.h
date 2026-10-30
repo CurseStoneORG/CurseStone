@@ -20,15 +20,14 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// PathSafe — normalización de rutas relativas usada por TODO el sistema
-// de plugins (plugin.include(), data.*). Viva en un header inline para que
-// LuaPlugin y los bindings de datos compartan EXACTAMENTE las mismas
-// reglas de seguridad:
+// PathSafe — relative-path normalization used by the WHOLE plugin
+// system (plugin.include(), data.*). Lives in an inline header so
+// LuaPlugin and the data bindings share EXACTLY the same rules:
 //
-//   - Rechaza cadenas vacías.
+//   - Rejects empty strings.
 //   - Rechaza rutas absolutas (empiezan con '/').
-//   - Rechaza backslashes (separador no portable; en Windows confundiría
-//     el chequeo de ".." — se prohíbe de raíz).
+//   - Rejects backslashes (non-portable separator; on Windows it would
+//     confuse the ".." check — banned outright).
 //   - Rechaza cualquier componente "..": NUNCA se puede salir de la
 //     carpeta base (data_pl/<plugin> o la carpeta del plugin).
 //   - Normaliza "./src//x.lua" -> "src/x.lua" (colapsa '/' y '.').

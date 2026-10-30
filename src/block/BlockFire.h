@@ -25,20 +25,18 @@
 // Implementa:
 //   - Luz nivel 15
 //   - canBeReplaced / canWalkThrough / hardness 0
-//   - Daño a entidades (onEntityCollide)
-//   - Propagación por ticks programados (scheduleUpdate / onScheduledUpdate)
+//   - Entity damage (onEntityCollide)
+//   - Scheduled-tick spread (scheduleUpdate / onScheduledUpdate)
 //   - Fuego eterno sobre Netherrack
-//   - Extinción por lluvia, edad > 3 sin suelo sólido, etc.
+//   - Rain extinguishing, age > 3 without solid ground, etc.
 //
-// Diferencias con el original (adaptadas a la arquitectura C++ de CurseStone):
-//   - scheduleUpdate() usa ServerScheduler::scheduleSync() en vez de
-//     la cola interna del servidor de referencia.
-//   - World no expone getBlockData() todavía; se accede via chunks() directamente.
-//     Agrega `uint8_t getBlockData(int32_t x, int32_t y, int32_t z)` a World.h
-//     (ver parche incluido abajo en Level_patch.h).
-//   - fireSpreadEnabled() y netherEnabled() son métodos nuevos en Server.h
-//     (ver parche Server_patch.h).
-//   - La detección de portal de obsidiana pertenece a ItemFlintSteel.
+// Differences from the original (adapted to CurseStone's C++ layout):
+//   - scheduleUpdate() uses ServerScheduler::scheduleSync() instead of
+//     the reference server's internal queue.
+//   - World does not expose getBlockData() yet; accessed via chunks()
+//     directly.
+//   - fireSpreadEnabled() and netherEnabled() are new Server.h methods.
+//   - Obsidian portal detection belongs to ItemFlintSteel.
 #pragma once
 #include "BlockTransparent.h"
 #include "BlockIds.h"
@@ -66,7 +64,7 @@ class BlockFire : public BlockTransparent {
         return "Fire Block";
     }
 
-    // ---- Propiedades físicas / de render ----
+    // ---- Physical / render properties ----
     bool isSolid() const override {
         return false;
     }
@@ -86,18 +84,18 @@ class BlockFire : public BlockTransparent {
         return 15;
     } // The reference server: return 15
 
-    // ---- Interacción con entidades ----
+    // ---- Entity interaction ----
     // Llama el entity-tick loop por cada entidad que se superpone con este bloque.
     // Mirrors the reference server Fire::onEntityCollide(entity)
     static void onEntityCollide(world::World* world, int32_t bx, int32_t by, int32_t bz,
                                 entity::Entity* entity);
 
     // ---- Tick programado ----
-    // Encola el siguiente update de propagación/extinción para (x,y,z).
-    // delay = TICK_RATE + rand(0..10)  — idéntico a the reference server scheduleUpdate.
+    // Queues the next spread/extinguish update for (x,y,z).
+    // delay = TICK_RATE + rand(0..10) — identical to the reference scheduleUpdate.
     static void scheduleUpdate(world::World* world, int32_t x, int32_t y, int32_t z);
 
-    // Lógica de propagación + extinción, llamada por FireUpdateTask::onRun().
+    // Spread + extinguish logic, called by FireUpdateTask::onRun().
     // Mirrors the reference server Fire::onUpdate(BLOCK_UPDATE_SCHEDULED)
     static void onScheduledUpdate(world::World* world, int32_t x, int32_t y, int32_t z);
 
@@ -108,7 +106,7 @@ class BlockFire : public BlockTransparent {
     static int getBurnAbility(uint8_t blockId); // probabilidad de consumirse
     static int getBurnChance(uint8_t blockId);  // probabilidad de propagarse
 
-    // ---- Helpers de geometría ----
+    // ---- Geometry helpers ----
     static bool isTopFacingSurfaceSolid(world::World* world, int32_t x, int32_t y, int32_t z);
     static bool canNeighborBurn(world::World* world, int32_t x, int32_t y, int32_t z);
 

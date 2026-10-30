@@ -20,19 +20,19 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// EventManager — bus de eventos de todo el servidor. Es dueño de UN
+// EventManager — the server-wide event bus. Owns ONE
 // HandlerList por cada subclase concreta de Event (indexado por
-// std::type_index vía RTTI sobre el Event base, que es polimórfico) y
-// es el único punto de entrada que el resto del código usa para
+// std::type_index via RTTI on the polymorphic Event base) and is the
+// only entry point the rest of the code uses
 // disparar eventos y escucharlos.
 //
 // Esta es la pieza que hace que las ~120 subclases de Event bajo
 // src/event/ hagan algo de verdad. Antes de esto:
-//   - Ninguna de esas ~120 clases se instanciaba en ningún lugar del
-//     código fuera de su propia carpeta.
-//   - HandlerList::dispatch() recibía el evento por const-ref, así que
-//     ningún listener podía cancelar nada aunque quisiera.
-//   - EventPriority.h ni siquiera existía como archivo.
+//   - None of those ~120 classes were ever instantiated outside their
+//     own folder.
+//   - HandlerList::dispatch() took the event by const-ref, so no
+//     listener could ever cancel anything.
+//   - EventPriority.h did not even exist as a file.
 //
 // USO — escuchar un evento:
 //     EventManager::get().listen<event::block::BlockBreakEvent>(this,
@@ -53,9 +53,9 @@
 //
 // HILOS: listen()/unlisten()/call() pueden invocarse desde cualquier
 // hilo — cada HandlerList protege sus propios registros con un mutex.
-// Dicho esto, por convención (igual que el resto del tick loop) los
-// eventos de juego deben dispararse desde el hilo principal: nada acá
-// lo impide, pero World/Player no son thread-safe por sí mismos, así
+// That said, by convention (like the rest of the tick loop) gameplay
+// events should fire on the main thread: nothing here prevents it, but
+// World/Player are not thread-safe by themselves, so
 // que un callback que los toque debe seguir corriendo en el hilo
 // principal.
 #pragma once
@@ -78,7 +78,7 @@ class EventManager {
 
     // Registra `handler` para EventT en la prioridad dada. `owner` es
     // una etiqueta opaca (normalmente `this`) que solo sirve para que
-    // unlistenAll(owner) pueda encontrar y quitar esta suscripción más
+    // unlistenAll(owner) can find and remove this subscription later
     // adelante — nunca se desreferencia. Devuelve un id de registro
     // utilizable con unlisten<EventT>().
     template <typename EventT>
@@ -92,7 +92,7 @@ class EventManager {
         });
     }
 
-    // Quita un único registro de EventT por id.
+    // Removes a single EventT registration by id.
     template <typename EventT>
     bool unlisten(uint64_t id) {
         static_assert(std::is_base_of<Event, EventT>::value,
@@ -103,13 +103,13 @@ class EventManager {
 
     // Quita TODOS los registros (de cualquier tipo de evento) que
     // pertenezcan a `owner`. Llamar esto cuando un objeto Listener se
-    // destruye, para que jamás quede un callback colgante apuntando a
+    // destroyed, so a dangling callback never survives
     // memoria liberada.
     size_t unlistenAll(void* owner);
 
     // Despacha `event` a cada listener registrado para su tipo
-    // DINÁMICO exacto, en orden de prioridad. No hace nada (aparte del
-    // lookup) si nadie se registró jamás para ese tipo concreto.
+    // DYNAMIC type, in priority order. No-op (beyond the lookup) when
+    // nobody ever registered for that concrete type.
     void call(Event& event);
 
     // Construye un EventT con `args`, lo despacha y lo devuelve por
@@ -125,7 +125,7 @@ class EventManager {
     }
 
     // Cantidad de listeners registrados actualmente para EventT.
-    // Principalmente para diagnóstico/tests.
+    // Mostly for diagnostics/tests.
     template <typename EventT>
     size_t listenerCount() const {
         HandlerList* list = findList(std::type_index(typeid(EventT)));

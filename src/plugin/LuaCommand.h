@@ -22,7 +22,7 @@
  */
 // LuaCommand — un comando registrado desde Lua via commands.register().
 //
-// PERMISOS: el campo `permission` de commands.register decide QUIÉN puede
+// PERMISSIONS: the `permission` field of commands.register decides WHO can
 // ejecutarlo y se chequea en canUse() (llamado por SimpleCommandMap::
 // dispatch() ANTES de execute(), y por /help para filtrar la lista):
 //
@@ -32,11 +32,11 @@
 //                                   (player.setPermission) o un op
 //
 // ⚠️ HILOS: execute() puede correr en el hilo del CommandReader (consola)
-// o en el hilo principal (jugador). Lua NO es thread-safe, así que
+// or on the main thread (players). Lua is NOT thread-safe, so
 // execute() NUNCA llama a Lua directamente: copia los datos del sender
 // (el puntero NO sobrevive: en consola es una variable local del
 // CommandReader), encola un CallbackTask con ServerScheduler::scheduleSync
-// y el callback corre en el próximo tick, en el hilo principal.
+// and the callback runs next tick, on the main thread.
 #pragma once
 #include "command/Command.h"
 #include "LuaPlugin.h"

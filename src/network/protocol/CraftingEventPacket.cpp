@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// CraftingEventPacket — implementación (decode client→server).
+// CraftingEventPacket — implementation (decode client->server).
 //
 // Formato verificado contra el CraftingEventPacket de
 // the reference implementation (protocolo 84) + Nukkit 2016 — p84 usa getInt BE y
@@ -29,15 +29,16 @@
 //   getByte()      windowId
 //   getInt(BE)     type
 //   get(16)        id (UUID binario de la receta)
-//   getInt(BE) size; getSlot() × size    (input, máx 128)
-//   getInt(BE) size; getSlot() × size    (output, máx 128)
+//   getInt(BE) size; getSlot() x size    (input, max 128)
+//   getInt(BE) size; getSlot() x size    (output, max 128)
 //
-// getSlot p84 (the reference server, simétrico al putSlot de CraftingDataPacket):
-//   id = getShort BE; si id <= 0 → slot vacío y NO se lee nada más;
+// p84 getSlot (reference server, symmetric to CraftingDataPacket's
+// putSlot): id = getShort BE; id <= 0 -> empty slot and nothing else is
+// read;
 //   si no → getByte count + getShort BE damage + getLShort LE nbtLen
 //   + nbt.
 //
-// Las listas de items están acotadas a 128 entradas por lado, igual
+// The item lists are capped at 128 entries per side, like
 // que el servidor de referencia/Nukkit, para que un packet malicioso no fuerce un vector
 // gigante.
 #include "CraftingEventPacket.h"
@@ -51,8 +52,8 @@ bool readSlot(PacketReader& r, cursestone::item::ItemStack& out) {
     if (!r.readI16BE(id))
         return false;
     if (id <= 0) {
-        // Slot vacío: solo los 2 bytes del short — el cliente tampoco
-        // escribe count/damage/nbt para slots vacíos.
+        // Empty slot: only the 2 short bytes — the client does not
+        // write count/damage/nbt for empty slots either.
         out = cursestone::item::ItemStack::EMPTY();
         return true;
     }

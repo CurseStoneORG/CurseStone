@@ -48,8 +48,9 @@ class TileSign : public Tile, public Spawnable {
         lines_[idx] = std::move(text);
         dirty_ = true;
     }
-    // UUID del jugador que colocó el cartel (NBT "Creator"). handleSignEdit
-    // lo compara contra el UUID del jugador para autorizar la edición,
+    // UUID of the player who placed the sign (NBT "Creator").
+    // handleSignEdit compares it against the player's UUID to authorize
+    // the edit,
     // igual que Genisys (the sign's stored creator id is compared with the player's unique id).
     const std::string& creator() const {
         return creator_;

@@ -20,7 +20,7 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// MiniYaml — implementación. Ver MiniYaml.h para el subconjunto soportado.
+// MiniYaml — implementation. See MiniYaml.h for the supported subset.
 #include "MiniYaml.h"
 #include <cmath>
 #include <cstdio>
@@ -43,8 +43,8 @@ std::string trim(const std::string& s) {
     return s.substr(a, b - a + 1);
 }
 
-// Quita el comentario de una línea: '#' al inicio o precedido de espacio,
-// SIEMPRE que no esté dentro de comillas.
+// Strips a line comment: '#' at line start or preceded by whitespace,
+// but NEVER inside quotes.
 std::string stripComment(const std::string& in) {
     bool inDq = false, inSq = false;
     for (size_t i = 0; i < in.size(); ++i) {
@@ -161,7 +161,7 @@ bool unquote(const std::string& raw, std::string& out, std::string& err) {
     return true;
 }
 
-// ¿Es un número YAML (entero o flotante, base 10)? Apila el número.
+// Is it a YAML number (int or float, base 10)? Pushes the number.
 bool scalarToNumber(lua_State* L, const std::string& s) {
     if (s.empty())
         return false;
@@ -181,7 +181,7 @@ bool scalarToNumber(lua_State* L, const std::string& s) {
 }
 
 // Parsea un escalar YAML y apila su valor Lua. `raw` ya viene recortado y
-// sin comentario. `pushedNil` avisa si el valor es nil (null/~/vacío).
+// without comment. `pushedNil` reports a nil value (null/~/empty).
 bool parseScalar(lua_State* L, const std::string& raw, bool& pushedNil, std::string& err) {
     pushedNil = false;
     if (raw.empty()) {
@@ -222,7 +222,7 @@ bool parseScalar(lua_State* L, const std::string& raw, bool& pushedNil, std::str
 }
 
 // ---------------------------------------------------------------------------
-// Parser de bloques por indentación
+// Indentation-based block parser
 // ---------------------------------------------------------------------------
 struct YLine {
     int indent;
@@ -256,7 +256,7 @@ bool splitLines(const std::string& text, std::vector<YLine>& out, std::string& e
 }
 
 // Localiza los ':' que separan "clave: valor" (respetando comillas; YAML
-// exige espacio o fin de línea tras los ':' de mapeo).
+// requires whitespace or end of line after mapping ':'s).
 bool findKeyColon(const std::string& s, size_t& colon) {
     bool inDq = false, inSq = false;
     for (size_t i = 0; i < s.size(); ++i) {
@@ -286,7 +286,7 @@ bool isListLine(const std::string& text) {
 }
 
 // Parsea el bloque que empieza en lines[idx] al nivel `indent` y apila UNA
-// tabla (mapa o lista) en la pila. Avanza idx más allá del bloque.
+// table (map or list) on the stack. Advances idx past the block.
 bool parseBlock(lua_State* L, std::vector<YLine>& lines, size_t& idx, int indent,
                 std::string& err) {
     bool isList = isListLine(lines[idx].text);
@@ -311,7 +311,7 @@ bool parseBlock(lua_State* L, std::vector<YLine>& lines, size_t& idx, int indent
             std::string rest = (ln.text == "-") ? "" : trim(ln.text.substr(2));
             size_t colon;
             if (rest.empty()) {
-                // "-" solo: el valor es un bloque anidado más profundo.
+                // bare "-": the value is a deeper nested block.
                 ++idx;
                 if (idx >= lines.size() || lines[idx].indent <= indent) {
                     err = "list item '-' with no content";
@@ -322,8 +322,8 @@ bool parseBlock(lua_State* L, std::vector<YLine>& lines, size_t& idx, int indent
             } else if (rest[0] != '"' && rest[0] != '\'' && rest != "{}" && rest != "[]" &&
                        (isListLine(rest) || findKeyColon(rest, colon))) {
                 // "- clave: valor" o "- - item" (mapa / sub-lista inline):
-                // reescribir la línea como bloque en la columna interior y
-                // reciclar parseBlock (así funcionan las claves siguientes
+                // rewrite the line as a block at the inner column and
+                // reuse parseBlock (that is how the following keys
                 // alineadas tras el "- ").
                 lines[idx] = YLine{indent + 2, rest};
                 if (!parseBlock(L, lines, idx, indent + 2, err))
@@ -363,7 +363,7 @@ bool parseBlock(lua_State* L, std::vector<YLine>& lines, size_t& idx, int indent
         }
 
         if (valPart.empty()) {
-            // Valor en las líneas siguientes (o vacío -> la clave se omite).
+            // Value on the following lines (or empty -> the key is skipped).
             ++idx;
             if (idx < lines.size() && lines[idx].indent > indent) {
                 if (!parseBlock(L, lines, idx, lines[idx].indent, err))
@@ -391,15 +391,15 @@ bool parseBlock(lua_State* L, std::vector<YLine>& lines, size_t& idx, int indent
 // ---------------------------------------------------------------------------
 // Serializador: tabla Lua -> YAML
 // ---------------------------------------------------------------------------
-// Normaliza un índice de pila (puede ser relativo) a ABSOLUTO. CRÍTICO:
-// estas funciones apilan valores al trabajar; un -1 guardado dejaría de
+// Normalizes a stack index (possibly relative) to ABSOLUTE. CRITICAL:
+// these functions push values while working; a stored -1 would stop
 // apuntar al valor original tras el primer push (y lua_next sobre la pila
 // desplazada = crash). Normalizar al entrar evita toda la clase de bug.
 inline int absIndex(lua_State* L, int idx) {
     return (idx < 0) ? lua_gettop(L) + 1 + idx : idx;
 }
 
-// ¿Tabla "array pura": claves exactamente 1..n sin huecos ni extras?
+// Is this a "pure array" table: keys exactly 1..n without gaps or extras?
 bool isArrayTable(lua_State* L, int abs, lua_Integer& n) {
     n = (lua_Integer)lua_rawlen(L, abs);
     if (n == 0)
@@ -438,7 +438,7 @@ bool safeBare(const std::string& s) {
     for (char c : s)
         if (!(std::isalnum((unsigned char)c) || c == '_' || c == '.' || c == '-' || c == '/'))
             return false;
-    // No confundir con booleanos / null / números.
+    // Do not confuse with booleans / null / numbers.
     if (s == "true" || s == "false" || s == "null" || s == "~" || s == "True" || s == "False" ||
         s == "Null" || s == "NULL")
         return false;
@@ -481,7 +481,7 @@ std::string quoteDouble(const std::string& s) {
     return out;
 }
 
-// Representación YAML de un escalar Lua.
+// YAML representation of a Lua scalar.
 std::string scalarRepr(lua_State* L, int idx) {
     switch (lua_type(L, idx)) {
     case LUA_TBOOLEAN:
@@ -511,10 +511,10 @@ std::string scalarRepr(lua_State* L, int idx) {
     }
 }
 
-// Pre-declaración mutua.
+// Mutual forward declaration.
 bool emitValue(lua_State* L, int abs, int indent, std::string& out, std::string& err);
 
-// Emite una tabla en modo lista. `abs` = índice de la tabla (normalizado).
+// Emits a table in list mode. `abs` = the table's index (normalized).
 bool emitList(lua_State* L, int idx, lua_Integer n, int indent, std::string& out,
               std::string& err) {
     int abs = absIndex(L, idx);
@@ -528,7 +528,7 @@ bool emitList(lua_State* L, int idx, lua_Integer n, int indent, std::string& out
                 continue;
             }
             // Cualquier tabla (mapa o sub-lista): emitir el bloque a
-            // indent+2 y "pegar" el guion a la primera línea:
+            // indent+2 and "glue" the dash onto the first line:
             //   body  = "    k: v\n    k2: v2\n"      (indent+2 = 4)
             //   out  += "  -" + body.substr(3)  ->  "  - k: v\n    k2: v2\n"
             std::string body;
@@ -592,18 +592,18 @@ bool emitValue(lua_State* L, int idx, int indent, std::string& out, std::string&
 } // namespace
 
 // ---------------------------------------------------------------------------
-// API pública
+// Public API
 // ---------------------------------------------------------------------------
 bool parseToLua(lua_State* L, const std::string& text, std::string& err) {
     std::vector<YLine> lines;
     if (!splitLines(text, lines, err))
         return false;
-    if (lines.empty()) { // documento vacío == tabla vacía
+    if (lines.empty()) { // empty document == empty table
         lua_newtable(L);
         return true;
     }
 
-    // Documento escalar de una línea (ni mapa ni lista).
+    // One-line scalar document (neither map nor list).
     size_t colon;
     if (!isListLine(lines[0].text) && !findKeyColon(lines[0].text, colon)) {
         if (lines.size() > 1) {

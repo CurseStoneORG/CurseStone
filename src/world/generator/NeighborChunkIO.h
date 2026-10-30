@@ -20,7 +20,6 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// SPDX-License-Identifier: LGPL-3.0-or-later
 // NeighborChunkIO — contracts for generation-time block writes that are
 // aimed at a chunk other than the one being populated.
 //

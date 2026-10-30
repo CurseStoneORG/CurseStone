@@ -25,7 +25,7 @@
 // FurnaceInventory).
 //
 // Es el backing store real de TileFurnace (misma arquitectura que
-// ChestInventory para TileChest): un único lugar donde viven los 3
+// ChestInventory for TileChest): one place where the 3 slots live
 // slots (0=INPUT, 1=FUEL, 2=RESULT) para que inventario, NBT y UI no
 // puedan divergir.
 #pragma once
@@ -38,7 +38,7 @@ class FurnaceInventory : public BaseInventory {
     FurnaceInventory() : BaseInventory(nullptr, InventoryType::get(InventoryType::FURNACE)) {
     }
 
-    // Índices de slot (convención Nukkit).
+    // Slot indices (Nukkit convention).
     static constexpr int INPUT = 0;
     static constexpr int FUEL = 1;
     static constexpr int RESULT = 2;
