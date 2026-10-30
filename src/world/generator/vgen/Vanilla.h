@@ -36,6 +36,7 @@
 #include <array>
 #include <algorithm>
 #include <limits>
+#include <type_traits>
 
 namespace vgen {
 
@@ -186,12 +187,18 @@ struct Math {
                 if (input < 0.0f) input += 360.0f;
                 return input - 180.0f;
         }
+        // Return by value on purpose: for same-type arguments the
+        // conditional yields an lvalue, so a plain decltype would make
+        // these return a reference to a parameter that dies on return
+        // and optimizers turn the result into garbage.
         template <typename T1, typename T2>
-        static auto max(T1 a, T2 b) -> decltype(a > b ? a : b) {
+        static auto max(T1 a, T2 b) ->
+                typename std::decay<decltype(a > b ? a : b)>::type {
                 return a > b ? a : b;
         }
         template <typename T1, typename T2>
-        static auto min(T1 a, T2 b) -> decltype(a < b ? a : b) {
+        static auto min(T1 a, T2 b) ->
+                typename std::decay<decltype(a < b ? a : b)>::type {
                 return a < b ? a : b;
         }
 };
