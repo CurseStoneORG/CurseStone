@@ -32,7 +32,26 @@
 #include "vgen/material/Material.h"
 #include "vgen/Vanilla.h"
 
+#include <cmath>
+#include <cstring>
+
 namespace vgen {
+
+namespace {
+
+// Stained-clay aux values (0.15 metadata layout).
+constexpr DataID CLAY_WHITE  = 0;
+constexpr DataID CLAY_ORANGE = 1;
+constexpr DataID CLAY_YELLOW = 4;
+constexpr DataID CLAY_SILVER = 8;
+constexpr DataID CLAY_BROWN  = 12;
+constexpr DataID CLAY_RED    = 14;
+
+// Band-table marker: a band at or above this value paints as plain
+// hardened clay instead of a stained color.
+constexpr DataID CLAY_NO_COLOR = 16;
+
+} // namespace
 
 MesaBiome::MesaBiome(int id, bool brycePillars, bool hasForest) :
 	Biome(id, Biome::BiomeType::Mesa, make_unique<Decorator>())
@@ -84,209 +103,198 @@ void MesaBiome::refreshBiome(RandomSeed levelSeed) {
 	pillarRoofNoise = make_unique<PerlinSimplexNoise>(r, 1);
 }
 
+// ---------------------------------------------------------------------------
+// Mesa surface: hardened-clay body with colored stained-clay bands, a red
+// sand cover near sea level and grass / coarse dirt on the forest plateau
+// tops. The band sequence repeats vertically every 64 blocks, shifted by a
+// slow noise field so neighboring columns slide the stripes up and down.
+// ---------------------------------------------------------------------------
 void MesaBiome::buildSurfaceAt(Random& random, BlockVolume& blocks, const BlockPos& pos, float depthValue, Height seaLevel) {
 
-	//_placeBedrock(random, blocks, pos);
+	_placeBedrock(random, blocks, pos);
 
-	//float minPillar = 0;
-	//if(brycePillars) {
-	//	const int noiseX = pos.x;
-	//	const int noiseZ = pos.z;
+	// Bryce pillar shaping stays disabled; the surrounding terrain pass
+	// already delivers the plateau heights this surface expects.
+	auto p = (ChunkBlockPos)pos;
 
-	//	float pillarBuffer = Math::min(std::abs(depthValue), pillarNoise->getValue(noiseX * 0.25f, noiseZ * 0.25f));
-	//	if (pillarBuffer > 0) {
-	//		float floorScale = 1.0f / 512.0f;
-	//		float pillarFloor = std::abs(pillarRoofNoise->getValue(noiseX * floorScale, noiseZ * floorScale));
-	//		minPillar = pillarBuffer * pillarBuffer * 2.5f;
-	//		float max = static_cast<float>(Math::ceil(pillarFloor * 50.0f) + 14.0f);
-	//		if (minPillar > max) {
-	//			minPillar = max;
-	//		}
-	//		minPillar += 64.0f;
-	//	}
-	//}
-	//auto p = (ChunkBlockPos)pos;
+	const BlockID clay = Block::mStainedClay->mID;
+	const BlockID hardClay = Block::mHardenedClay->mID;
+	BlockID top = clay;
+	BlockID material = mMaterial;
 
-	//auto clay = Block::mStainedClay->mID;
-	//auto hardClay = Block::mHardenedClay->mID;
-	//BlockID top = clay;
-	//BlockID material = mMaterial;
+	int runDepth = (int)(depthValue / 3 + 3 + random.nextFloat() * 0.25f);
+	bool claySurface = std::cos(depthValue / 3.0f * Math::PI) > 0.0f;
+	int run = -1;
+	bool sandRun = false;
+	int clayDepth = 0;
 
-	//int runDepth = (int)(depthValue / 3 + 3 + random.nextFloat() * 0.25f);
-	//bool claySurface = std::cos(depthValue/3.0f * Math::PI) > 0.0f;
-	//int run = -1;
-	//bool sandRun = false;
-	//int clayDepth = 0;
+	for(p.y = blocks.getHeight() - 1; p.y > 0; p.y--) {
 
-	//for(p.y = (LEVEL_GEN_HEIGHT - 1); p.y > 0; p.y--) {
+		auto old = blocks.block(p);
 
-	//	auto old = blocks.block(p);
+		if (old == Block::mBedrock->mID) {
+			break;
+		}
 
-	//	if (old == Block::mBedrock->mID) {
-	//		break;
-	//	}
+		if (clayDepth < 15) {
+			if(old == 0) {
+				run = -1;
+			}
+			else if (old == Block::mStone->mID) {
+				if (run == -1) {
+					sandRun = false;
+					if (runDepth <= 0) {
+						top = BlockID::AIR;
+						material = Block::mStone->mID;
+					}
+					else if (p.y >= seaLevel - 4 && p.y <= seaLevel + 1) {
+						top = clay;
+						material = mMaterial;
+					}
 
-	//	auto& oldMaterial = Block::mBlocks[old]->getMaterial();
-	//	if((oldMaterial.isType(MaterialType::Air) || oldMaterial.isType(MaterialType::Water)) && p.y < (int)minPillar) {
-	//		blocks.setBlock(p, Block::mStone->mID);
-	//		old = Block::mStone->mID;
-	//	}
+					if (p.y < seaLevel && top == 0) {
+						top = Block::mStillWater->mID;
+					}
 
-	//	if (clayDepth < 15) {
-	//		if(old == 0) {
-	//			run = -1;
-	//		}
-	//		else if (old == Block::mStone->mID) {
-	//			if (run == -1) {
-	//				sandRun = false;
-	//				if (runDepth <= 0) {
-	//					top = BlockID::AIR;
-	//					material = Block::mStone->mID;
-	//				}
-	//				else if (p.y >= seaLevel - 4 && p.y <= seaLevel + 1) {
-	//					top = clay;
-	//					material = mMaterial;
-	//				}
+					run = runDepth + std::max(0, p.y - seaLevel);
 
-	//				if (p.y < seaLevel && top == 0) {
-	//					top = Block::mStillWater->mID;
-	//				}
+					if (p.y >= seaLevel - 1) {
+						if (hasForest && p.y > 86 + runDepth * 2) {
+							if (claySurface) {
+								// coarse dirt caps the forest plateaus
+								blocks.setBlock(p, Block::mDirt->mID);
 
-	//				run = runDepth + std::max(0, p.y - seaLevel);
+								DataID data = 0;
+								Block::mDirt->getBlockState(BlockState::MappedType).set(data, DirtBlock::TYPE_NO_GRASS_SPREAD);
+								blocks.setData(p, data);
+							}
+							else {
+								blocks.setBlock(p, Block::mGrass->mID);
+							}
+						}
+						else if (p.y > seaLevel + 3 + runDepth) {
+							DataID d = CLAY_NO_COLOR;
+							if (p.y < 64 || p.y > 127) {
+								d = CLAY_ORANGE;
+							}
+							else if (claySurface) {
+								// bands suppressed on clay-surface columns
+							}
+							else {
+								d = getBand(pos.x, p.y, pos.z);
+							}
+							if (d < CLAY_NO_COLOR) {
+								blocks.setBlock(p, clay);
+								blocks.setData(p, d);
+							}
+							else {
+								blocks.setBlock(p, hardClay);
+							}
+						}
+						else {
+							blocks.setBlock(p, mTopMaterial);
+							blocks.setData(p, mTopMaterialData);
+							sandRun = true;
+						}
+					}
+					else {
+						blocks.setBlock(p, material);
+						if (material == clay) {
+							blocks.setData(p, CLAY_ORANGE);
+						}
+					}
+				}
+				else if (run > 0) {
+					run--;
 
-	//				if (p.y >= seaLevel - 1) {
-	//					if (hasForest && p.y > 86 + runDepth * 2) {
-	//						if (claySurface) {
-	//							blocks.setBlock(p, Block::mDirt->mID); //TODO: Make this coarse dirt
+					if (sandRun) {
+						blocks.setBlock(p, clay);
+						blocks.setData(p, CLAY_ORANGE);
+					}
+					else {
+						DataID d = getBand(pos.x, p.y, pos.z);
+						if (d < CLAY_NO_COLOR) {
+							blocks.setBlock(p, clay);
+							blocks.setData(p, d);
+						}
+						else {
+							blocks.setBlock(p, hardClay);
+						}
+					}
+				}
 
-	//							DataID data = 0;
-	//							Block::mDirt->getBlockState(BlockState::MappedType).set(data, DirtBlock::TYPE_NO_GRASS_SPREAD);
-	//							blocks.setData(p, data);
-	//						}
-	//						else {
-	//							blocks.setBlock(p, Block::mGrass->mID);
-	//						}
-	//					}
-	//					else if (p.y > seaLevel + 3 + runDepth) {
-	//						DataID d = 16;
-	//						if (p.y < 64 || p.y > 127) {
-	//							d = (byte)(~DyePowderItem::ORANGE & 0xf);
-	//						}
-	//						else if (claySurface) {
-	//						}
-	//						else {
-	//							d = getBand(pos.x, p.y, pos.z);
-	//						}
-	//						if (d < 16) {
-	//							blocks.setBlock(p, clay);
-	//							blocks.setData(p, d);
-	//						}
-	//						else {
-	//							blocks.setBlock(p, hardClay);
-	//						}
-	//					}
-	//					else {
-	//						blocks.setBlock(p, mTopMaterial);
-	//						blocks.setData(p, mTopMaterialData);
-	//						sandRun = true;
-	//					}
-	//				}
-	//				else {
-	//					blocks.setBlock(p, material);
-	//					if (material == clay) {
-	//						blocks.setData(p, (~DyePowderItem::ORANGE & 0xf));
-	//					}
-	//				}
-	//			}
-	//			else if (run > 0) {
-	//				run--;
-
-	//				if (sandRun) {
-	//					blocks.setBlock(p, clay);
-	//					blocks.setData(p, (~DyePowderItem::ORANGE & 0xf));
-	//				}
-	//				else {
-	//					DataID d = getBand(pos.x, p.y, pos.z);
-	//					if (d < 16) {
-	//						blocks.setBlock(p, clay);
-	//						blocks.setData(p, d);
-	//					}
-	//					else {
-	//						blocks.setBlock(p, hardClay);
-	//					}
-	//				}
-	//			}
-
-	//			++clayDepth;
-	//		}
-	//	}
-	//}
+				++clayDepth;
+			}
+		}
+	}
 }
 
-// TODO: rherlitz
 void MesaBiome::generateBands(RandomSeed seed) {
-	//memset(clayBands, 16, sizeof(clayBands));
-	//Random random(seed);
-	//clayBandsOffsetNoise = make_unique<PerlinSimplexNoise>(random, 1);
+	memset(clayBands, CLAY_NO_COLOR, sizeof(clayBands));
+	Random random(seed);
+	clayBandsOffsetNoise = make_unique<PerlinSimplexNoise>(random, 1);
 
-	//for (int i = 0; i < 64; ++i) {
-	//	i += random.nextInt(5) + 1;
-	//	if(i < 64) {
-	//		clayBands[i] = (unsigned char)(~DyePowderItem::ORANGE & 0xf);
-	//	}
-	//}
+	for (int i = 0; i < 64; ++i) {
+		i += random.nextInt(5) + 1;
+		if(i < 64) {
+			clayBands[i] = CLAY_ORANGE;
+		}
+	}
 
-	//int yellowBands = random.nextInt(4) + 2;
+	int yellowBands = random.nextInt(4) + 2;
 
-	//for (auto i : range(yellowBands)) {
-	//	UNUSED_VARIABLE(i);
-	//	int w = random.nextInt(3) + 1;
-	//	int s = random.nextInt(64);
+	for (auto i : range(yellowBands)) {
+		UNUSED_VARIABLE(i);
+		int w = random.nextInt(3) + 1;
+		int s = random.nextInt(64);
 
-	//	for(int p = 0; (s + p) < 64 && p < w; p++) {
-	//		clayBands[s + p] = (unsigned char)(~DyePowderItem::YELLOW & 0xf);
-	//	}
-	//}
-	//int brownBands = random.nextInt(4) + 2;
+		for(int p = 0; (s + p) < 64 && p < w; p++) {
+			clayBands[s + p] = CLAY_YELLOW;
+		}
+	}
 
-	//for (auto i : range(brownBands)) {
-	//	UNUSED_VARIABLE(i);
-	//	int w = random.nextInt(3) + 2;
-	//	int s = random.nextInt(64);
+	int brownBands = random.nextInt(4) + 2;
 
-	//	for(int p = 0; (s + p) < 64 && p < w; p++) {
-	//		clayBands[s + p] = (unsigned char)(~DyePowderItem::BROWN & 0xf);
-	//	}
-	//}
-	//int redBands = random.nextInt(4) + 2;
+	for (auto i : range(brownBands)) {
+		UNUSED_VARIABLE(i);
+		int w = random.nextInt(3) + 2;
+		int s = random.nextInt(64);
 
-	//for (auto i : range(redBands)) {
-	//	UNUSED_VARIABLE(i);
-	//	int w = random.nextInt(3) + 1;
-	//	int s = random.nextInt(64);
+		for(int p = 0; (s + p) < 64 && p < w; p++) {
+			clayBands[s + p] = CLAY_BROWN;
+		}
+	}
 
-	//	for(int p = 0; (s + p) < 64 && p < w; p++) {
-	//		clayBands[s + p] = (unsigned char)(~DyePowderItem::RED & 0xf);
-	//	}
-	//}
-	//int whiteBands = random.nextInt(3) + 3;
-	//int s = 0;
+	int redBands = random.nextInt(4) + 2;
 
-	//for (auto i : range(whiteBands)) {
-	//	UNUSED_VARIABLE(i);
-	//	int w = 1;
-	//	s += random.nextInt(16) + 4;
+	for (auto i : range(redBands)) {
+		UNUSED_VARIABLE(i);
+		int w = random.nextInt(3) + 1;
+		int s = random.nextInt(64);
 
-	//	for(int p = 0; (s + p) < 64 && p < w; p++) {
-	//		clayBands[s + p] = (unsigned char)(~DyePowderItem::WHITE & 0xf);
-	//		if(s + p > 1 && random.nextBoolean()) {
-	//			clayBands[s + p - 1] = (unsigned char)(~DyePowderItem::SILVER & 0xf);
-	//		}
-	//		if(s + p < 63 && random.nextBoolean()) {
-	//			clayBands[s + p + 1] = (unsigned char)(~DyePowderItem::SILVER & 0xf);
-	//		}
-	//	}
-	//}
+		for(int p = 0; (s + p) < 64 && p < w; p++) {
+			clayBands[s + p] = CLAY_RED;
+		}
+	}
+
+	int whiteBands = random.nextInt(3) + 3;
+	int s = 0;
+
+	for (auto i : range(whiteBands)) {
+		UNUSED_VARIABLE(i);
+		int w = 1;
+		s += random.nextInt(16) + 4;
+
+		for(int p = 0; (s + p) < 64 && p < w; p++) {
+			clayBands[s + p] = CLAY_WHITE;
+			if(s + p > 1 && random.nextBoolean()) {
+				clayBands[s + p - 1] = CLAY_SILVER;
+			}
+			if(s + p < 63 && random.nextBoolean()) {
+				clayBands[s + p + 1] = CLAY_SILVER;
+			}
+		}
+	}
 }
 
 unsigned char MesaBiome::getBand(int worldX, int y, int worldZ) {

@@ -61,6 +61,9 @@ VgenSource::VgenSource(int64_t seed)
       mBiomeSource((vgen::RandomSeed)(uint64_t)seed, vgen::GeneratorType::Overworld),
       mDimension(mLevel, &mBiomeSource) {
 
+        // Seed-dependent biome state (mesa clay band layout).
+        vgen::Biome::refreshBiomes((vgen::RandomSeed)(uint64_t)seed);
+
         vgen::Random random((vgen::RandomSeed)(uint64_t)seed);
         minLimitPerlinNoise.reset(new vgen::PerlinNoise(random, 16));
         maxLimitPerlinNoise.reset(new vgen::PerlinNoise(random, 16));
