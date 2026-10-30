@@ -130,6 +130,43 @@ static void resyncUseTarget(Player* self, world::World* lvl, int32_t x, int32_t 
     }
 }
 
+// The collision volume a freshly placed block would fill, in world
+// space. Blocks without an entity collision volume (air, liquids,
+// plants, torches, rails...) come back empty and never refuse a
+// placement, matching the collision cubes movement runs on.
+static mcp_aabb_t placementCollisionBox(int x, int y, int z, uint8_t blockId) {
+    if (!world::World::entityCollidable(blockId))
+        return mcp_aabb_make(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+    mcp_aabb_t local = mcp_aabb_make(0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
+    if (block::Block* def = block::Block::get(blockId)) {
+        mcp_aabb_t bb = def->getBoundingBox();
+        if (bb.maxX > bb.minX && bb.maxY > bb.minY && bb.maxZ > bb.minZ)
+            local = bb;
+    }
+    return mcp_aabb_make(x + local.minX, y + local.minY, z + local.minZ,
+                         x + local.maxX, y + local.maxY, z + local.maxZ);
+}
+
+// A placement whose collision volume overlaps the hitbox of an entity
+// that blocks building is refused. Players count with their full body
+// (0.6 wide, 1.8 tall) — not just the feet cell — so no block can end
+// up inside the space a player or mob occupies.
+static bool placementOverlapsEntity(world::World* lvl, Server* srv, const mcp_aabb_t& box) {
+    if (!(box.maxX > box.minX && box.maxY > box.minY && box.maxZ > box.minZ))
+        return false; // No collision volume, nothing to overlap.
+    if (!srv)
+        return false;
+    for (auto& other : srv->playersSnapshot()) {
+        if (!other || !other->spawned() || other->isClosed())
+            continue;
+        if (other->getWorld() != lvl)
+            continue;
+        if (mcp_aabb_intersects(other->getBoundingBox(), box))
+            return true;
+    }
+    return false;
+}
+
 void Player::handleBlockBreak(int x, int y, int z) {
     if (!spawned_.load(std::memory_order_relaxed))
         return;
@@ -733,6 +770,13 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
             !cursestone::block::LiquidFlow::isReplaceableId(existingUpper))
             return; // The upper cell is occupied.
 
+        // Neither door half may appear inside an entity hitbox.
+        if (placementOverlapsEntity(lvl, srv_,
+                                    placementCollisionBox(placeX, placeY, placeZ, doorId)) ||
+            placementOverlapsEntity(lvl, srv_,
+                                    placementCollisionBox(placeX, placeY + 1, placeZ, doorId)))
+            return;
+
         uint8_t doorFacing =
             block::BlockOrientation::doorMeta(block::BlockOrientation::quadrant(yaw()));
 
@@ -830,6 +874,13 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
                 return;
         }
 
+        // The foot and head cells may not appear inside an entity hitbox.
+        if (placementOverlapsEntity(
+                lvl, srv_, placementCollisionBox(placeX, placeY, placeZ, block::BED_BLOCK)) ||
+            placementOverlapsEntity(
+                lvl, srv_, placementCollisionBox(headX, placeY, headZ, block::BED_BLOCK)))
+            return;
+
         // Allow plugins to cancel bed placement.
         {
             auto ev = event::EventManager::get().fire<event::block::BlockPlaceEvent>(
@@ -897,6 +948,11 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
         int localXP = placeX & 15, localZP = placeZ & 15;
         uint8_t existingP = mcp_chunk_get_block_id(chP, localXP, placeY, localZP);
         if (existingP != 0 && !cursestone::block::LiquidFlow::isReplaceableId(existingP))
+            return;
+
+        // A piston may not appear inside an entity hitbox.
+        if (placementOverlapsEntity(lvl, srv_,
+                                    placementCollisionBox(placeX, placeY, placeZ, pistonId)))
             return;
 
         float pitchDeg = pitch();
@@ -1053,6 +1109,17 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
         !cursestone::block::LiquidFlow::isReplaceableId(existing)) {
         // Vanilla mayPlace: the cell must be air or a replaceable block
         // (water, lava, tall grass, fire...) to accept the placement.
+        resyncUseTarget(this, lvl, x, y, z, face);
+        return;
+    }
+
+    // Vanilla mayPlace also refuses cells whose collision volume would
+    // intersect an entity hitbox — the player's own body included, feet
+    // and head cells alike. Blocks without a collision volume (liquids,
+    // plants, torches...) stay placeable, so a bucket still pours onto
+    // the pourer.
+    if (placementOverlapsEntity(lvl, srv_,
+                                placementCollisionBox(placeX, placeY, placeZ, placedBlockId))) {
         resyncUseTarget(this, lvl, x, y, z, face);
         return;
     }
