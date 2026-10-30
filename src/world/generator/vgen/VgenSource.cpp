@@ -308,8 +308,12 @@ void VgenSource::prepareHeights(BlockVolume& blocks, int xOffs, int zOffs, Threa
 
 void VgenSource::buildSurfaces(ThreadData& td, BlockVolume& blocks,
                                LevelChunk& levelChunk, const ChunkPos& chunkPos) {
-        // y is zero (not used)
-        vgen::Vec3 chunkBlockPos((float)chunkPos.x, 0.f, (float)chunkPos.z);
+        // Vanilla widens the chunk position to world block coordinates
+        // (Vec3 chunkBlockPos(chunkPos) goes through BlockPos, which scales
+        // by CHUNK_WIDTH); the depth noise must be sampled in block space
+        // or every chunk reuses an overlapping noise window.
+        vgen::Vec3 chunkBlockPos((float)(chunkPos.x * Gen::CHUNK_WIDTH), 0.f,
+                                 (float)(chunkPos.z * Gen::CHUNK_WIDTH));
         surfaceNoise->getRegion(td.depthBuffer, vgen::Vec2(chunkBlockPos.x, chunkBlockPos.z), 16, 16,
                                 vgen::Vec2(1.f / 8, 1.f / 8), 1.0f);
 
