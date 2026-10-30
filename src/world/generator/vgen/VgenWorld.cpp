@@ -118,13 +118,32 @@ BlockSource::BlockSource(ITerrainFeed& feed, LevelChunk& center)
                                 mNeighbors[1][1] = &mCenter;
                                 continue;
                         }
-                        mNeighbors[dx][dz] = mFeed.acquireTerrain(mCenter.mPos.x + dx - 1,
+                        LevelChunk* cached = mFeed.acquireTerrain(mCenter.mPos.x + dx - 1,
                                                                   mCenter.mPos.z + dz - 1);
+                        // Private copy per populate. The cache chunks are
+                        // SHARED between threads: writing this populate's
+                        // feature blocks straight into them would leak into
+                        // another worker's copy-out (terrain freshly copied
+                        // to its sink would contain our trees/lakes/ores)
+                        // and race the terrain build itself. Each populate
+                        // therefore works on its own neighborhood snapshot;
+                        // cross-populate propagation goes through the spill
+                        // queue / live-chunk sink.
+                        mNeighbors[dx][dz] = new LevelChunk(*cached);
                 }
         }
 }
 
-BlockSource::~BlockSource() = default;
+BlockSource::~BlockSource() {
+        for (int dx = 0; dx < 3; ++dx) {
+                for (int dz = 0; dz < 3; ++dz) {
+                        if (dx == 1 && dz == 1)
+                                continue;
+                        delete mNeighbors[dx][dz];
+                        mNeighbors[dx][dz] = nullptr;
+                }
+        }
+}
 
 Level& BlockSource::getLevel() const { return mFeed.getLevel(); }
 Dimension& BlockSource::getDimension() const { return mFeed.getDimension(); }
