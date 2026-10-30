@@ -660,6 +660,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
     uint8_t placedBlockData = 0;
     bool consumeItem = false;    // Whether to consume one item.
     bool skipPlaceSound = false; // Whether to skip the placement sound.
+    bool swapBucket = false;     // Whether the held bucket turns empty (pour).
     (void)heldCount;             // Kept for API compatibility.
     (void)fx;
     (void)fz; // Only fy affects placement orientation.
@@ -952,39 +953,57 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
         placedBlockId = 55;
         placedBlockData = 0;
         consumeItem = !(cfg_.gamemode & 1);
-    } else if (heldItemId == 325) {
-        // Vanilla ItemBucket: scoop a source liquid cell (draining it).
-        int32_t scoopX = x, scoopY = y, scoopZ = z;
-        uint8_t scoopId = lvl->getBlockId(scoopX, scoopY, scoopZ);
-        if (!cursestone::block::LiquidFlow::isLiquidId(scoopId)) {
-            scoopX = placeX;
-            scoopY = placeY;
-            scoopZ = placeZ;
-            scoopId = lvl->getBlockId(scoopX, scoopY, scoopZ);
-        }
-        if (cursestone::block::LiquidFlow::isLiquidId(scoopId) &&
-            lvl->getBlockData(scoopX, scoopY, scoopZ) == 0) {
-            bool scoopWater = cursestone::block::LiquidFlow::isWaterId(scoopId);
-            lvl->setBlock(scoopX, scoopY, scoopZ, 0, 0);
-            broadcastBlockChange(srv_, lvl, scoopX, scoopY, scoopZ, 0, 0);
-            if (inv_) {
-                int held = inv_->heldSlot();
-                auto cur = inv_->getItem(held);
-                if (cur.count <= 1) {
-                    item::ItemStack filled;
-                    filled.id = scoopWater ? 326 : 327;
-                    filled.meta = 0;
-                    filled.count = 1;
-                    inv_->setItem(held, filled);
-                } else {
-                    cur.count -= 1;
-                    inv_->setItem(held, cur);
-                }
+    } else if (heldItemId == item::ITEM_BUCKET) {
+        // Vanilla ItemBucket on the 0.15 wire: one item id, the aux value
+        // picks the variant — 0 empty, 8 water, 10 lava, 1 milk.
+        uint8_t bucketAux = heldDamage & 0xFF;
+        if (bucketAux == 8 || bucketAux == 10) {
+            // Pour: place the liquid block; the shared path's onBlockChanged
+            // runs the vanilla onPlace pass (lava solidifies against water)
+            // and schedules the first flow tick.
+            placedBlockId = (bucketAux == 8) ? 8 : 10;
+            placedBlockData = 0;
+            skipPlaceSound = true;
+            swapBucket = !(cfg_.gamemode & 1);
+        } else if (bucketAux == 0) {
+            // Scoop a source liquid cell (draining it).
+            int32_t scoopX = x, scoopY = y, scoopZ = z;
+            uint8_t scoopId = lvl->getBlockId(scoopX, scoopY, scoopZ);
+            if (!cursestone::block::LiquidFlow::isLiquidId(scoopId)) {
+                scoopX = placeX;
+                scoopY = placeY;
+                scoopZ = placeZ;
+                scoopId = lvl->getBlockId(scoopX, scoopY, scoopZ);
             }
+            if (cursestone::block::LiquidFlow::isLiquidId(scoopId) &&
+                lvl->getBlockData(scoopX, scoopY, scoopZ) == 0) {
+                bool scoopWater = cursestone::block::LiquidFlow::isWaterId(scoopId);
+                lvl->setBlock(scoopX, scoopY, scoopZ, 0, 0);
+                broadcastBlockChange(srv_, lvl, scoopX, scoopY, scoopZ, 0, 0);
+                if (inv_) {
+                    int held = inv_->heldSlot();
+                    auto cur = inv_->getItem(held);
+                    if (cur.count <= 1) {
+                        item::ItemStack filled;
+                        filled.id = item::ITEM_BUCKET;
+                        filled.meta = scoopWater ? 8 : 10;
+                        filled.count = 1;
+                        inv_->setItem(held, filled);
+                    } else {
+                        cur.count -= 1;
+                        cur.meta = scoopWater ? 8 : 10;
+                        inv_->setItem(held, cur);
+                    }
+                }
+            } else {
+                resyncUseTarget(this, lvl, x, y, z, face);
+            }
+            return;
         } else {
+            // Milk drinks through the air-use path only.
             resyncUseTarget(this, lvl, x, y, z, face);
+            return;
         }
-        return;
     } else if (sneakLocked && heldItemId > 255) {
         // Prevent item use while sneaking.
         if (srv_ && srv_->debugMode()) {
@@ -994,18 +1013,6 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
         }
         resyncUseTarget(this, lvl, x, y, z, face);
         return;
-    } else if (heldItemId == 326) {
-        // Place flowing water.
-        placedBlockId = 8;
-        placedBlockData = 0;
-        consumeItem = !(cfg_.gamemode & 1);
-        skipPlaceSound = true;
-    } else if (heldItemId == 327) {
-        // Place flowing lava.
-        placedBlockId = 10;
-        placedBlockData = 0;
-        consumeItem = !(cfg_.gamemode & 1);
-        skipPlaceSound = true;
     } else if (heldItemId == 259 && !sneakLocked) {
         // Handle flint and steel activation.
         item::ItemFlintSteel::onActivate(lvl, this, placeX, placeY,
@@ -1078,12 +1085,25 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
     // Update neighboring redstone components.
     cursestone::redstone::notifyNeighbors(lvl, srv_, placeX, placeY, placeZ);
 
-    // Consume one item in survival mode.
-    if (consumeItem && inv_) {
+    // Consume one item in survival mode; a poured bucket swaps to an
+    // empty one instead of being destroyed (vanilla ItemBucket swap).
+    if (inv_ && !(cfg_.gamemode & 1) && (consumeItem || swapBucket)) {
         int held = inv_->heldSlot();
         auto cur = inv_->getItem(held);
         if (!cur.isEmpty()) {
-            if (cur.count > 1) {
+            if (swapBucket) {
+                if (cur.count > 1) {
+                    cur.count -= 1;
+                    cur.meta = 0;
+                    inv_->setItem(held, cur);
+                } else {
+                    item::ItemStack empty;
+                    empty.id = item::ITEM_BUCKET;
+                    empty.meta = 0;
+                    empty.count = 1;
+                    inv_->setItem(held, empty);
+                }
+            } else if (cur.count > 1) {
                 cur.count -= 1;
                 inv_->setItem(held, cur);
             } else {

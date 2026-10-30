@@ -4,11 +4,14 @@
 Drives a real RakNet client against a freshly booted flat-world server and
 asserts the vanilla MCPE 1.0.0 liquid behavior:
 
-  pour      a water bucket pour flows outward (id 8 with rising meta),
-            then settles into still sources (id 9).
+  pour      a water bucket pour (item 325 aux 8, the 0.15 wire form)
+            flows outward (id 8 with rising meta), then settles into
+            still sources (id 9).
   replace   a solid block can be placed INTO a water cell (vanilla mayPlace).
   drain     removing the source drains the flow back to air.
   lava      lava meeting water solidifies to cobblestone/obsidian.
+  scoop     an empty bucket (item 325 aux 0) fills from a source cell
+            and the surrounding flow drains.
   regress   a plain block still places on plain grass.
 """
 
@@ -110,7 +113,7 @@ def main() -> int:
         # ---------------- pour: bucket water flows and settles ----------------
         print("stage: water bucket pour")
         c.events.clear()
-        c.use_item(pour_x, 3, pour_z, 1, item_id=326)
+        c.use_item(pour_x, 3, pour_z, 1, item_id=325, damage=8)
         c.drain(4.0)
         flowed = cells(c.events, FLOWING_WATER)
         settled = cells(c.events, STILL_WATER)
@@ -145,10 +148,10 @@ def main() -> int:
         print("stage: lava meets water")
         lx, lz = 144, 128
         c.events.clear()
-        c.use_item(lx, 3, lz, 1, item_id=326)  # water first, let it settle
+        c.use_item(lx, 3, lz, 1, item_id=325, damage=8)  # water first, let it settle
         c.drain(4.0)
         c.events.clear()
-        c.use_item(lx + 2, 3, lz, 1, item_id=327)  # lava two cells east
+        c.use_item(lx + 2, 3, lz, 1, item_id=325, damage=10)  # lava two cells east
         c.drain(7.0)
         solid = [e for e in cells(c.events)
                  if e[4] in (COBBLESTONE, OBSIDIAN) and e[2] == 4
@@ -164,6 +167,21 @@ def main() -> int:
         plain = [e for e in cells(c.events, STONE)
                  if e[1] == 152 and e[2] == 4 and e[3] == 128]
         check(len(plain) >= 1, "stone still places on plain grass")
+
+        # ---------------- scoop: empty bucket fills from a source ----------------
+        print("stage: empty bucket scoop")
+        sx, sz = 160, 128
+        c.events.clear()
+        c.use_item(sx, 3, sz, 1, item_id=325, damage=8)
+        c.drain(4.0)
+        check(any(e[1] == sx and e[2] == 4 and e[3] == sz for e in cells(c.events, STILL_WATER)),
+              "fresh source present for the scoop")
+        c.events.clear()
+        c.use_item(sx, 4, sz, 1, item_id=325, damage=0)
+        c.drain(5.0)
+        scooped = {(e[1], e[2], e[3]) for e in cells(c.events, 0)}
+        check((sx, 4, sz) in scooped, "scooping removed the source cell (air)")
+        check(len(scooped) >= 3, f"flow around the scoop drained too (got {len(scooped)})")
 
     finally:
         try:
