@@ -41,6 +41,9 @@
 namespace cursestone {
 class Player;
 class Entity;
+namespace block {
+class LiquidFlow;
+}
 namespace tile {
 class Tile;
 }
@@ -213,7 +216,10 @@ class World {
     // Returns block metadata, or 0 when the chunk is unloaded.
     uint8_t getBlockData(int32_t x, int32_t y, int32_t z);
 
-    void setBlock(int32_t x, int32_t y, int32_t z, uint8_t id, uint8_t data);
+    // notifyLiquid=false is for the liquid engine's own writes (vanilla
+    // UPDATE_CLIENTS): skips the liquid neighbor wake-up to avoid re-entry.
+    void setBlock(int32_t x, int32_t y, int32_t z, uint8_t id, uint8_t data,
+                  bool notifyLiquid = true);
 
     // Returns world-space collision boxes within the requested region.
     std::vector<physics::BlockBox> collisionBoxes(mcp_aabb_t region);
@@ -513,4 +519,7 @@ class World {
         return (ux << 36) | (uz << 8) | uy;
     }
 };
+
+// Broadcasts a single block update to every viewer of the chunk.
+void sendUpdateBlock(World* w, int32_t x, int32_t y, int32_t z, uint8_t id, uint8_t data);
 } // namespace

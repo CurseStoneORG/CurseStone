@@ -46,6 +46,7 @@
 #include "block/BlockIds.h"
 #include "block/Block.h"
 #include "block/BlockFire.h"
+#include "block/LiquidFlow.h"
 #include "network/protocol/LevelEventPacket.h"
 #include "network/protocol/UpdateBlockPacket.h"
 #include "network/protocol/AddEntityPacket.h"
@@ -314,7 +315,8 @@ bool World::setFurnaceFlame(int32_t x, int32_t y, int32_t z, bool lit) {
     return true;
 }
 
-void World::setBlock(int32_t x, int32_t y, int32_t z, uint8_t id, uint8_t data) {
+void World::setBlock(int32_t x, int32_t y, int32_t z, uint8_t id, uint8_t data,
+                     bool notifyLiquid) {
     int32_t cx = x >> 4, cz = z >> 4;
     if (mcp_chunk_t* c = chunks_.getChunkIfLoaded(cx, cz)) {
         mcp_chunk_set_block_full(c, x & 15, y, z & 15, id, data);
@@ -329,6 +331,10 @@ void World::setBlock(int32_t x, int32_t y, int32_t z, uint8_t id, uint8_t data) 
                 checkFallingSupport(x, y, z);
             }
         }
+
+        // Vanilla UPDATE_NEIGHBORS: wake/solidify the liquid neighbors.
+        if (notifyLiquid && y >= 0 && y < 256)
+            block::LiquidFlow::onBlockChanged(this, x, y, z);
     }
 }
 
@@ -495,26 +501,6 @@ bool liquidForFalling(uint8_t id) {
     }
 }
 
-void sendUpdateBlock(World* w, int32_t x, int32_t y, int32_t z, uint8_t id, uint8_t data) {
-    auto pk = std::make_shared<network::protocol::UpdateBlockPacket>();
-    pk->x = x;
-    pk->z = z;
-    pk->y = (uint8_t)y;
-    pk->blockId = id;
-    pk->blockData = data;
-    pk->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
-    int32_t cx = x >> 4, cz = z >> 4;
-    for (auto& p : cursestone::Server::getInstance().playersSnapshot()) {
-        if (!p || !p->spawned())
-            continue;
-        if (p->getWorld() != w)
-            continue; // Same world.
-        if (!p->canSeeBlock(cx, cz))
-            continue;
-        p->sendPacket(pk);
-    }
-}
-
 void sendToChunkViewers(World* w, int32_t cx, int32_t cz,
                         const std::shared_ptr<network::protocol::DataPacket>& pk) {
     for (auto& p : cursestone::Server::getInstance().playersSnapshot()) {
@@ -576,6 +562,26 @@ void anvilLandingEffects(World* w, int32_t bx, int32_t by, int32_t bz, float fal
 }
 
 } // namespace
+
+void sendUpdateBlock(World* w, int32_t x, int32_t y, int32_t z, uint8_t id, uint8_t data) {
+    auto pk = std::make_shared<network::protocol::UpdateBlockPacket>();
+    pk->x = x;
+    pk->z = z;
+    pk->y = (uint8_t)y;
+    pk->blockId = id;
+    pk->blockData = data;
+    pk->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
+    int32_t cx = x >> 4, cz = z >> 4;
+    for (auto& p : cursestone::Server::getInstance().playersSnapshot()) {
+        if (!p || !p->spawned())
+            continue;
+        if (p->getWorld() != w)
+            continue; // Same world.
+        if (!p->canSeeBlock(cx, cz))
+            continue;
+        p->sendPacket(pk);
+    }
+}
 
 void World::tickDroppedItems(uint64_t current_tick) {
     std::vector<DroppedItem*> snapshot;

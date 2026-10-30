@@ -33,8 +33,7 @@ class BlockLava : public BlockLiquid {
     std::string name() const override {
         return "Lava";
     }
-    // La lava ilumina (BlockLavaStill hereda de aqui). Sin esto una
-    // cueva con un lago de lava quedaba negra al lado.
+    // Lava emits light; without this a cave beside a lava lake stayed dark.
     uint8_t getLightLevel() const override {
         return 15;
     }
