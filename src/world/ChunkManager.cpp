@@ -117,14 +117,10 @@ mcp_chunk_t* ChunkManager::getChunk(int32_t x, int32_t z) {
             c->terrain_populated = true;
             c->dirty = true;
 
-            // BUG REAL (mundo/pasto negro): antes de este fix, acá se
-            // hacía memset(sky_light, 0xFF) en las 16 secciones ANTES
-            // de generar terreno, y luego nunca se recalculaba luz de
-            // verdad — solo se marcaba light_populated=true. Fix:
-            // primero heightmap (ya corregido para ignorar hojas/
-            // flores), luego el pase real de propagación de luz, que
-            // reemplaza por completo al memset viejo y deja
-            // light_populated=true por su cuenta.
+            // REAL BUG (black world/grass): sky_light used to be
+            // memset to 0xFF before terrain existed and light was never
+            // really computed. Fix: heightmap first, then the real light
+            // pass (which sets light_populated itself).
             mcp_chunk_recalculate_height_map(c);
             mcp_chunk_propagate_sky_light(c);
 
@@ -262,7 +258,7 @@ mcp_chunk_t* ChunkManager::getChunkOrRequestAsync(int32_t x, int32_t z,
             // marker.
             //
             // RACE FIX ("a veces los chunks no se renderizan" + ediciones
-            // que desaparecían): while this task ran on a worker, the MAIN
+            // disappearing edits): while this task ran on a worker, the MAIN
             // thread could have loaded the same chunk from disk or had it
             // created/edited synchronously (getChunk() fallback, block
             // place/break, tile hydration). setChunk() blindly REPLACED
@@ -389,21 +385,16 @@ int ChunkManager::flushDirty() {
 }
 
 // Flush acotado: el que usa el autosave. La diferencia con flushDirty()
-// es el PRESUPUESTO: escribe un puñado de chunks por llamada y corta
-// cuando se agota el tiempo, así que guardar el mundo deja de ser un
-// pico de cientos de ms en un tick (medido: ~304 ms para 400 chunks de
-// terreno real, y 759 ms en el caso reportado) y pasa a ser <6 ms
-// repartidos entre los ticks que haga falta.
+// is the BUDGET: write a handful of chunks per call and stop when the
+// time budget runs out, so saving the world no longer spikes hundreds
+// of ms into one tick (measured: ~304 ms for 400 real chunks) and is
+// spread across ticks instead (<6 ms each).
 //
-// mtx_ SÍ se mantiene durante el I/O, igual que en flushDirty(): el hilo
-// de la consola despacha comandos en su propio hilo, así que un /save
-// (SaveCommand -> World::save()) puede entrar mientras el drenaje está a
-// medio escribir, y AnvilRegionLoader (FILE* + tabla de posiciones
-// compartida, y el mapa regions_ del provider) no es seguro entre hilos.
-// Con el lock, los dos escritores se serializan como hasta ahora; lo que
-// cambió es que ahora el lock se suelta en pocos ms en vez de quedarse
-// cientos. Los workers del AsyncPool que hacen setChunk() esperan a lo
-// sumo ese presupuesto.
+// mtx_ IS held during the I/O, like flushDirty(): console commands run
+// on their own thread, so /save can enter mid-drain and the anvil
+// provider is not thread-safe; the lock serializes both writers. The
+// difference is that the lock is now released within a few ms, which is
+// the most an AsyncPool worker waiting on setChunk() can lose.
 int ChunkManager::flushDirtyBudget(size_t max_chunks, uint64_t max_ms) {
     if (max_chunks == 0)
         return 0;
@@ -420,10 +411,9 @@ int ChunkManager::flushDirtyBudget(size_t max_chunks, uint64_t max_ms) {
                 continue;
             provider_->saveChunk(adapter);
         }
-        // Ojo: se limpia el flag pase lo que pase, igual que flushDirty()
-        // — saveChunk() no devuelve si falló, y el provider ya loguea el
-        // error. Si un chunk no llega ni a prepararse (no se puede
-        // envolver en ChunkAdapter) se salta sin contar: por eso Server
+        // Note: the flag is cleared either way, like flushDirty() —
+        // saveChunk() failures are already logged by the provider. Chunks
+        // that cannot be wrapped in a ChunkAdapter are skipped uncounted
         // corta el drenaje tras 40 ticks sin progreso, para no
         // reintentarlo eternamente.
         kv.second->dirty = false;

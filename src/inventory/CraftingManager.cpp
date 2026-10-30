@@ -2601,14 +2601,13 @@ int CraftingManager::registerBuiltinRecipes() {
 }
 
 // ============================================================
-// Búsquedas
+// Searches
 // ============================================================
 namespace {
-// ¿La caja W x H de la receta calza en la grilla 3x3 del jugador si la
-// trasladamos al offset (dy, dx)? FUERA de la caja todo debe estar
-// vacío; DENTRO, cada celda debe ser igual (ids) y pasar el chequeo de
-// meta si aplica. Devuelve true si calza. `check_meta` puede ser null
-// para comparar solo ids (matchShaped).
+// Does the recipe's W x H box fit the player's 3x3 grid when translated
+// to offset (dy, dx)? Everything OUTSIDE the box must be empty; INSIDE,
+// every cell must match (ids) and pass the meta check when applicable.
+// `check_meta` may be null to compare ids only (matchShaped).
 bool shapedFitsAt(const std::array<uint16_t, 9>& rg, const std::array<int16_t, 9>& rm, int w, int h,
                   const std::array<uint16_t, 9>& grid, const std::array<uint16_t, 9>* grid_meta,
                   int dy, int dx) {
@@ -2639,9 +2638,9 @@ const Recipe* CraftingManager::matchShaped(const std::array<uint16_t, 9>& grid) 
     for (const auto& r : recipes_) {
         if (r->type() != RECIPE_SHAPED)
             continue;
-        // "any damage" en alguna celda → match exacto por ids puede ser
-        // un falso negativo si el jugador usó meta != 0; esas recetas
-        // las resuelve matchShapedWithMeta.
+        // "any damage" in some cell → id-only matching can false-negative
+        // when the player used meta != 0; matchShapedWithMeta resolves
+        // those recipes.
         bool anyMeta = false;
         for (int16_t m : r->gridMeta())
             if (m < 0) {
@@ -2650,8 +2649,8 @@ const Recipe* CraftingManager::matchShaped(const std::array<uint16_t, 9>& grid) 
             }
         if (anyMeta)
             continue;
-        // Búsqueda traslacional: la receta está escrita arriba-izquierda,
-        // pero el jugador puede ponerla en cualquier posición del 3x3.
+        // Translational search: the recipe is written top-left but the
+        // player can place it anywhere in the 3x3.
         for (int dy = 0; dy + r->height() <= 3; ++dy) {
             for (int dx = 0; dx + r->width() <= 3; ++dx) {
                 if (shapedFitsAt(r->grid(), r->gridMeta(), r->width(), r->height(), grid, nullptr,

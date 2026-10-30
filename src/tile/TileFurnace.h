@@ -25,10 +25,10 @@
 // per 200 ticks. The state of the burn/cook progress is sent to
 // clients via ContainerSetDataPacket.
 //
-// Implementación completa (the reference server Tile/Furnace):
-//   - tick() avanza burn_time_/cook_time_, consume 1 input por
-//     fundición completa, consume fuel cuando se acaba el burn y
-//     escribe el resultado en el slot 2.
+// Full implementation (reference Tile/Furnace):
+//   - tick() advances burn_time_/cook_time_, consumes 1 input per
+//     completed smelt, consumes fuel when burn runs out and writes the
+//     result to slot 2.
 //   - El progreso se transmite SOLO a los jugadores con el horno
 //     abierto (ContainerSetDataPacket property 0/1, escala 0..200).
 //   - Persistencia NBT legacy de Nukkit: { BurnDuration, BurnTicks,
@@ -77,19 +77,19 @@ class TileFurnace : public Tile, public Container, public Nameable, public Spawn
     int maxCookTime() const {
         return 200;
     }
-    // Índices de slot (Nukkit FurnaceInventory).
+    // Slot indices (Nukkit FurnaceInventory).
     static constexpr int SLOT_INPUT = 0;
     static constexpr int SLOT_FUEL = 1;
     static constexpr int SLOT_RESULT = 2;
     // Register/unregister viewers (Player::openFurnaceAt/closeOpenChest
-    // los llaman) — el progreso se manda solo a éstos.
+    // them) — progress is sent only to those.
     void addViewer(void* player);
     void removeViewer(void* player);
     void sendProgressToViewers();
 
-    // El backing inventory (misma arquitectura que TileChest::inventory
-    // → ChestInventory): único lugar donde viven los 3 slots para que
-    // inventario, NBT y UI no diverjan. Se devuelve como shared_ptr
+    // The backing inventory (same architecture as TileChest::inventory
+    // -> ChestInventory): the single place the 3 slots live so the
+    // inventory, NBT and UI never diverge. Returned as shared_ptr
     // propietario para que los eventos de inventario nunca cuelguen.
     std::shared_ptr<cursestone::inventory::FurnaceInventory> inventory() const {
         return inv_;
@@ -107,14 +107,14 @@ class TileFurnace : public Tile, public Container, public Nameable, public Spawn
     // Resultado de fundir `in` (receta de horno del CraftingManager).
     // Devuelve false si ese input no se puede fundir.
     bool smeltResult(const cursestone::item::ItemStack& in, cursestone::item::ItemStack& out) const;
-    // El backing inventory real. Los métodos Container delegan acá
-    // para que player-inventory y NBT vivan en un solo lugar.
+    // The real backing inventory. Container methods delegate here so
+    // the player inventory and NBT live in one place.
     std::shared_ptr<cursestone::inventory::FurnaceInventory> inv_;
-    int burn_time_ = 0;            // ticks restantes del fuel actual
-    int max_burn_time_ = 0;        // total ticks del último fuel encendido (escala UI)
-    int cook_time_ = 0;            // progreso de la fundición actual (0..200)
-    bool dirty_inventory_ = false; // el tick debe reenviar contenido
-    bool lit_ = false;             // el bloque ya está en BURNING_FURNACE
-    std::vector<void*> viewers_;   // Player* crudos, NO desreferenciar (solo comparar)
+    int burn_time_ = 0;            // remaining ticks of the current fuel
+    int max_burn_time_ = 0;        // total ticks of the last lit fuel (UI scale)
+    int cook_time_ = 0;            // current smelt progress (0..200)
+    bool dirty_inventory_ = false; // the tick must resend content
+    bool lit_ = false;             // the block is already BURNING_FURNACE
+    std::vector<void*> viewers_;   // raw Player*, NEVER dereference (compare only)
 };
 } // namespace

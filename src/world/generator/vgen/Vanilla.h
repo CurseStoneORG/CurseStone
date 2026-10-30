@@ -1,18 +1,27 @@
+/*
+ _____                     _____ _
+/  __ \                   /  ___| |
+| /  \/_   _ _ __ ___  ___\ `--.| |_ ___  _ __   ___
+| |   | | | | '__/ __|/ _ \`--. \ __/ _ \| '_ \ / _ \
+| \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
+ \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
+
+ * CurseStone | Open Source Server Software
+ *
+ * Copyright (C) 2026 CurseStoneTeam
+ *
+ * Developed by CurseStoneTeam.
+ * Built for an open and extensible Minecraft server ecosystem.
+ *
+ * Licensed under the GNU Lesser General Public License v3.0 or later.
+ * You may study, modify, and redistribute this software under its license.
+ *
+ * License: https://www.gnu.org/licenses/lgpl-3.0.html
+ * Repository: https://github.com/CurseStoneTeam/CurseStone
+ *
+ */
 // CurseStone | vgen — vanilla 1.0.0 overworld generator support layer.
-//
-// This header is the ONLY glue between the verbatim-ported Mojang
-// generator code (synth / newbiome / biome / feature / structure / v1)
-// and the rest of the port. It re-implements the tiny slice of the
-// Mojang runtime the generator touches: common types, math, ranges,
-// positions, the BlockVolume scratch buffer and the debug stub macros.
-// Everything here mirrors the restored 1.0.0 sources semantically so
-// the ported files could stay byte-for-byte identical wherever the
-// 0.15 downport did not force a change.
-//
-// Downport notes (1.0.0 -> 0.15):
-//   * LEVEL_GEN_HEIGHT stays 128 (0.15 world height).
-//   * No content above 0.15 is declared here (no templates, no End
-//     pieces, no mutated biomes beyond what initBiomes registers).
+
 #pragma once
 #include <stdint.h>
 #include <string.h>

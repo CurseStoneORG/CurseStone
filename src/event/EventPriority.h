@@ -21,18 +21,18 @@
  *
  */
 // EventPriority.h — orden en que se llama a los listeners de un mismo
-// evento. Las prioridades más bajas se ejecutan primero, dejando a las
-// más altas la última palabra sobre el resultado del evento.
+// event. Lower priorities run first, letting higher ones have the last
+// word on the event's outcome.
 //
-// Antes de este cambio este archivo NO EXISTÍA aunque EventHandler.h
-// ya lo incluía (`#include "EventPriority.h"`) — es decir, el sistema
+// Before this change this file DID NOT EXIST even though EventHandler.h
+// already included it — meaning the system
 // de eventos no compilaba en cuanto algo incluyera EventHandler.h.
 //
 // Orden de llamada: LOWEST -> LOW -> NORMAL -> HIGH -> HIGHEST -> MONITOR
 //
 // Los listeners MONITOR se usan solo para observar el resultado final:
-// se ejecutan últimos, después de que cualquier otra prioridad haya
-// tenido oportunidad de cancelar o modificar el evento, y no deberían
+// run last, after every other priority had a chance to cancel or modify
+// the event, and should not
 // alterar el estado del evento ellos mismos.
 #pragma once
 #include <cstdint>
@@ -48,7 +48,7 @@ enum class EventPriority : uint8_t {
     MONITOR = 5,
 };
 
-// Número de slots de prioridad — usado por HandlerList para tamañar
+// Number of priority slots — used by HandlerList to size
 // su array de buckets. Mantener en sync con el enum de arriba.
 constexpr int kEventPriorityCount = 6;
 

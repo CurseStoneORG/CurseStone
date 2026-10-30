@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // DropItemPacket implementation (cliente→servidor).
 // Genisys: type = getByte(); item = getSlot(). El servidor no manda este
-// paquete, así que encode() queda vacío (igual que en Genisys).
+// packet, so encode() stays empty (same as Genisys).
 #include "DropItemPacket.h"
 
 namespace cursestone::network::protocol {
@@ -38,7 +38,7 @@ bool DropItemPacket::decode(const uint8_t* buf, size_t len) {
         return false;
     if (!r.readI16BE(itemId))
         return false;
-    if (itemId <= 0) { // slot vacío
+    if (itemId <= 0) { // empty slot
         itemId = 0;
         itemCount = 0;
         itemDamage = 0;

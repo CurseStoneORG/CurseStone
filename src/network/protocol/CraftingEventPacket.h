@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// CraftingEventPacket — client→server "el jugador crafteó esto" (MCPE
+// CraftingEventPacket — client->server "the player crafted this" (MCPE
 // protocol 84).
 //
 // Formato p84 verificado contra the reference implementation + Nukkit 2016 —
@@ -29,11 +29,11 @@
 //   getByte()      windowId
 //   getInt(BE)     type
 //   get(16)        id (UUID binario de la receta — el mismo que el
-//                  server escribió en CraftingDataPacket)
-//   getInt(BE) size; getSlot() × size    (input, máx 128)
-//   getInt(BE) size; getSlot() × size    (output, máx 128)
+//                  server wrote in CraftingDataPacket)
+//   getInt(BE) size; getSlot() x size    (input, max 128)
+//   getInt(BE) size; getSlot() x size    (output, max 128)
 //
-// El server NUNCA encodea este packet (encode() de Genisys es vacío) —
+// The server NEVER encodes this packet (Genisys encode() is empty) —
 // el flujo se cierra con ContainerSetContentPacket windowid=0.
 #pragma once
 

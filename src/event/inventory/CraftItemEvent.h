@@ -25,7 +25,7 @@
 //
 // Se dispara cuando un jugador completa un crafteo (CraftingEventPacket
 // validado, o fallback del close del inventario). Un listener puede
-// cancelarlo para impedir el craft (p. ej. región protegida); el server
+// cancel it to block the craft (e.g. protected region); the server
 // entonces NO consume ingredientes NI da resultado, y re-sincroniza el
 // inventario del jugador.
 #pragma once

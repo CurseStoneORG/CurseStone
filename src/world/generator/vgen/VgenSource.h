@@ -1,15 +1,27 @@
+/*
+ _____                     _____ _
+/  __ \                   /  ___| |
+| /  \/_   _ _ __ ___  ___\ `--.| |_ ___  _ __   ___
+| |   | | | | '__/ __|/ _ \`--. \ __/ _ \| '_ \ / _ \
+| \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
+ \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
+
+ * CurseStone | Open Source Server Software
+ *
+ * Copyright (C) 2026 CurseStoneTeam
+ *
+ * Developed by CurseStoneTeam.
+ * Built for an open and extensible Minecraft server ecosystem.
+ *
+ * Licensed under the GNU Lesser General Public License v3.0 or later.
+ * You may study, modify, and redistribute this software under its license.
+ *
+ * License: https://www.gnu.org/licenses/lgpl-3.0.html
+ * Repository: https://github.com/CurseStoneTeam/CurseStone
+ *
+ */
 // CurseStone | vgen — VgenSource: the vanilla 1.0.0 overworld generator
-// (RandomLevelSource) wired onto CurseStone's Generator interface.
-//
-// The terrain pipeline is the verbatim port — prepareHeights/getHeights
-// run the exact vanilla noise stack (min/max/main Perlin limits, surface
-// simplex, scale + depth noise, 5x5 gaussian biome-height smoothing) and
-// buildSurfaces uses the per-biome vanilla surface builders, so the
-// smoothness and shape of the terrain is the vanilla one. Population
-// replays the vanilla postProcess over a 3x3 virtual neighborhood
-// (lakes -> village/mineshaft/scattered structures -> dungeons -> ice ->
-// biome decoration -> snow -> edge-water fix), with the >0.15 content
-// (strongholds, ocean monuments, savanna/snowy villages) cut.
+
 #pragma once
 #include "world/generator/Generator.h"
 #include "world/generator/NeighborChunkIO.h"

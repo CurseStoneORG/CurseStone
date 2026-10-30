@@ -85,11 +85,11 @@ bool SimpleCommandMap::dispatch(CommandSender* sender, const std::string& cmd_li
     }
     // --- CONTROL DE PERMISOS ---
     //
-    // Punto único por el que pasan todos los comandos. El chequeo vive en
+    // Single funnel for every command. The permission check lives in
     // Command::canUse() (virtual): los comandos normales usan el nodo de
     // permiso declarado, y los comandos de plugins (LuaCommand) pueden
-    // definir su propio criterio (op / nodo custom / público). Un comando
-    // sin nodo declarado (permission_ vacío) sigue siendo público:
+    // define its own rule (op / custom node / public). A command with no
+    // declared node (empty permission_) stays public:
     // help, list, version.
     Command& cmd = *it->second;
     if (!cmd.canUse(sender)) {

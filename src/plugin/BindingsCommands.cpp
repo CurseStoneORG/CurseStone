@@ -28,34 +28,34 @@
 //         usage        uso ("/cmd <algo>")
 //         override     true -> PISA un comando existente (ej. /kick del
 //                      nucleo): el original se CANCELA al instante (deja
-//                      de ejecutarse para siempre mientras el plugin esté
+//                      running forever while the plugin stays
 //                      habilitado) y la funcion del plugin lo reemplaza.
 //                      Cuando el plugin se descarga / /plugins reload, el
 //                      comando original del nucleo se RESTAURA solo.
-//         permission   QUIÉN puede ejecutarlo:
+//         permission   WHO can run it:
 //                        "default"/"all"/"public"/ausente -> todos
 //                        "op"/"admin"                     -> solo ops y consola
 //                        cualquier otro string            -> nodo custom:
 //                          lo tienen ops, consola, y jugadores a los que
-//                          otro plugin les concedió el nodo con
+//                          another plugin granted them the node via
 //                          player.setPermission(nombre, nodo, true)
-//       devuelve true si se registró, false si el nombre ya estaba tomado.
+//       returns true when registered, false if the name was taken.
 //   commands.reply(sender, msg)
-//       responde a quien ejecutó el comando (consola -> log, jugador ->
-//       sendMessage). `sender` es la tabla simple que entregó el propio
+//       answers whoever ran the command (console -> log, player ->
+//       sendMessage). `sender` is the plain table handed out by the
 //       comando: { name, isConsole, isOp }.
 //
 // Los comandos registrados aparecen en /help (con su description) si el
 // emisor tiene permiso para usarlos.
 //
 // Nota: SimpleCommandMap busca el comando por nombre EXACTO, sin
-// normalizar — por eso aquí pasamos el nombre a minúsculas antes de
+// normalize — that is why the name is lowercased here before
 // registrarlo.
 #include "LuaBindings.h"
 #include "LuaPlugin.h"
 #include "LuaCommand.h"
 #include "Server.h"
-#include "command/SimpleCommandMap.h" // definición completa de CommandMap
+#include "command/SimpleCommandMap.h" // full CommandMap definition
 #include "Player.h"
 #include "utils/MainLogger.hpp"
 #include <algorithm>
@@ -68,7 +68,7 @@ namespace {
 
 // commands.register(name, opts, fn) -> boolean
 int l_commands_register(lua_State* L) {
-    // 1. Nombre (obligatorio) a minúsculas.
+    // 1. Name (required), lowercased.
     std::string name = luaL_checkstring(L, 1);
     std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) {
         return (char)std::tolower(c);
@@ -104,12 +104,12 @@ int l_commands_register(lua_State* L) {
                 mode = LuaCommand::PermMode::NODE;
                 node = s; // el nodo se respeta tal cual (sin bajar)
             }
-            // default/all/public/everyone/todos -> PUBLIC (ya está por defecto)
+            // default/all/public/everyone -> PUBLIC (already the default)
         }
         lua_pop(L, 1);
     }
 
-    // 3. fn (arg 3) debe ser función -> guardar como ref en el registry.
+    // 3. fn (arg 3) must be a function -> store as a ref in the registry.
     luaL_checktype(L, 3, LUA_TFUNCTION);
     lua_pushvalue(L, 3);
     int fnRef = luaL_ref(L, LUA_REGISTRYINDEX);

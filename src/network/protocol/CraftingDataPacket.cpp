@@ -21,12 +21,12 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// CraftingDataPacket — implementación (encode server→client).
+// CraftingDataPacket — implementation (encode server->client).
 //
 // Formato verificado BYTE A BYTE contra el CraftingDataPacket real
 // de the reference implementation (protocolo 84, MCPE 0.15.10), cross-checkeado
 // con Nukkit 2016 (mismo formato de la era) y Genisys para la
-// orientación de datos de las recetas (fila-por-fila, anclado
+// recipe data orientation (row by row, anchored
 // arriba-izquierda).
 //
 // Resumen del wire format (ver CraftingDataPacket.h):
@@ -34,10 +34,10 @@
 //   putInt BE(bodyLen), body crudo — putByte(cleanRecipes).
 //   putSlot usa shorts BE: id, count (byte), damage, nbtLen (LE).
 //
-// BUG FIX (crash del APK al unirse): la versión anterior escribía
-// varints y omitía el length-prefix por entrada — un formato que no
+// BUG FIX (APK crash on join): the previous version wrote varints and
+// omitted the per-entry length prefix — a format
 // existe en el protocolo 84. El cliente delimitaba cada entrada con
-// su longitud real, leía el primer campo del body como si fuera el
+// its real length, read the first body field as if it were the
 // type de la siguiente entrada y el packet entero se parseaba como
 // basura → kick/crash total del APK al llegar el packet en el spawn.
 #include "CraftingDataPacket.h"
@@ -47,7 +47,7 @@ namespace cursestone::network::protocol {
 namespace {
 
 // BinaryStream::putSlot fiel a protocolo 84 (the reference server putSlot):
-//   id == 0            → putShort(0) y nada más
+//   id == 0            -> putShort(0) and nothing else
 //   resto              → putShort(id) + putByte(count) + putShort(damage)
 //                        + putLShort(nbtLen) + nbt
 // damage negativo (receta "any damage", -1) viaja como 0xFFFF en el
@@ -104,9 +104,9 @@ void CraftingDataPacket::encode(std::vector<uint8_t>& out) const {
         body.clear();
         PacketWriter bw(body);
 
-        // OJO: el enum interno RecipeType (SHAPED=0/SHAPELESS=1) está
+        // CAREFUL: the internal RecipeType enum (SHAPED=0/SHAPELESS=1) is
         // INVERTIDO respecto a las constantes del wire (ENTRY_SHAPELESS=0/
-        // ENTRY_SHAPED=1) — mapear explícitamente, nunca cast directo.
+        // ENTRY_SHAPED=1) — map explicitly, never a direct cast.
         int32_t entryType = -1;
 
         switch (rec.type) {
@@ -115,12 +115,12 @@ void CraftingDataPacket::encode(std::vector<uint8_t>& out) const {
             putIntBE(bw, rec.width);
             putIntBE(bw, rec.height);
             // Celdas fila-por-fila: z<Height exterior, x<Width
-            // interior (Genisys/the reference server). Recipe::grid está anclado
-            // arriba-izquierda en fila-major (row*3+col), así que el
-            // índice lineal es exactamente row*width + col SIN
+            // interior (Genisys/reference server). Recipe::grid is
+            // anchored top-left in row-major order (row*3+col), so the
+            // linear index is exactly row*width + col WITHOUT
             // padding — Width x Height celdas exactas. Requirement
             // por celda = 1 (el "Count: 9" del JSON legacy de Nukkit
-            // es un artefacto del generador; The reference server también fuerza 1).
+            // it is a generator artifact; the reference server forces 1 too).
             const auto& grid = rec.grid;
             const auto& meta = rec.gridMeta;
             for (int row = 0; row < rec.height; ++row) {
@@ -179,7 +179,7 @@ void CraftingDataPacket::encode(std::vector<uint8_t>& out) const {
 }
 
 bool CraftingDataPacket::decode(const uint8_t* data, size_t len) {
-    // El server nunca decodifica este packet, pero PacketPool sí llama
+    // The server never decodes this packet, but PacketPool still calls
     // decode() al recibirlo — parsear el conteo y descartar el resto
     // sin fallar.
     (void)data;

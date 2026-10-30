@@ -58,19 +58,14 @@ static inline uint32_t block_index(int x, int y, int z) {
 // Nibble index for the 2048-byte data/sky/blocklight arrays (4096
 // nibbles packed 2-per-byte).
 //
-// BUG REAL (chunks/luz corrupta): esto desplazaba `y` solo 7 bits en
-// vez de 8. z ocupa los bits 4-7 (4 bits, z=0..15) y con el shift de
-// y en 7, el bit más alto de z (que marca z>=8) y el bit más bajo de
-// y&15 (que marca "y impar dentro de la sección") caían en el MISMO
-// bit del índice. Resultado: (x, z=0, y) y (x, z=8, y) con el mismo
-// y&15 impar colisionaban en el mismo byte físico — una escritura
-// legítima en una celda pisaba silenciosamente el valor de otra
-// celda completamente distinta, dependiendo del orden de escritura.
-// Esto se veía como luz de cielo "corrupta" (15 recién escrito que
-// aparecía en 0 poco después) y como franjas negras alineadas con
-// z=8 (la mitad del chunk) en el render. block_index() de arriba ya
-// hace esto bien (shift de 8, sin solapamiento) — nibble_index solo
-// necesita el mismo esquema, reservando 4 bits limpios por eje.
+// REAL BUG (corrupted chunks/light): `y` used to shift only 7 bits.
+// With z in bits 4-7, a y-shift of 7 made the top z bit (z>=8) and the
+// lowest y&15 bit (odd y within the section) collide on the same index
+// bit, so (x, z=0, y) and (x, z=8, y) with odd y&15 mapped to the same
+// physical byte and silently overwrote each other. Visible as corrupt
+// sky light and black stripes aligned with z=8. block_index() above
+// already packs 4 clean bits per axis; nibble_index just needed the
+// same scheme.
 static inline uint32_t nibble_index(int x, int y, int z) {
     return (uint32_t)((x & 15) | ((z & 15) << 4) | ((y & 15) << 8));
 }
@@ -226,13 +221,11 @@ uint8_t mcp_chunk_get_sky_light(const mcp_chunk_t* c, int x, int y, int z) {
     const mcp_chunk_section_t* s = c->sections[y >> 4];
     if (s)
         return get_nibble(s->sky_light, x, y, z);
-    // Sección no alocada: en la práctica esto solo pasa para aire
-    // puro por encima de la superficie más alta del chunk. Cualquier
-    // sección que tenga un bloque real ya fue alocada al colocarlo
-    // (mcp_chunk_set_block_id/_full), y mcp_chunk_propagate_sky_light
-    // aloca explícitamente toda sección dentro de [0, maxTop] del
-    // chunk — así que "sección NULL" siempre implica cielo abierto,
-    // nunca terreno sin iluminar. Cielo abierto = luz plena.
+    // Un unallocated section only happens for pure air above the
+    // chunk's highest surface: any section holding a real block was
+    // allocated when the block was placed, and the light pass allocates
+    // every section in [0, maxTop]. So "NULL section" always means open
+    // sky — full brightness.
     return 15;
 }
 
@@ -312,22 +305,14 @@ void mcp_chunk_recalculate_height_map_column(mcp_chunk_t* c, int x, int z) {
 void mcp_chunk_recalculate_height_map(mcp_chunk_t* c) {
     if (!c || !c->height_map)
         return;
-    // BUG REAL (pasto/mundo negro): esta función marcaba como "techo"
-    // cualquier bloque NO-AIRE (`!= 0`), incluyendo hojas, flores,
-    // hierba alta, carteles, etc. — bloques que en Minecraft NO
-    // bloquean luz de cielo. El heightmap resultante quedaba más alto
-    // de lo real bajo cualquier árbol/planta, y el pase de luz de
-    // cielo (mcp_chunk_propagate_sky_light) usa este heightmap como
-    // punto de partida para saber desde qué Y empieza a decrementar
-    // la luz. Con el heightmap inflado, columnas con cielo
-    // prácticamente abierto (solo una hoja o una flor de por medio)
-    // se calculaban como si estuvieran bajo un techo sólido —
-    // resultado: pasto renderizado negro cerca de cualquier árbol.
+    // REAL BUG (black grass/world): every non-air block used to count
+    // as a "ceiling", including leaves, flowers, tall grass and signs,
+    // which do NOT block sky light in Minecraft. The inflated heightmap
+    // made the sky light pass treat near-open columns as roofed, so
+    // grass rendered black near any tree.
     //
-    // Fix: solo cuenta como "techo" un bloque cuya opacidad de luz
-    // (mcp_block_light_opacity) sea > 0, igual que Minecraft/reference server
-    // (Block::getLightFilter() > 0). Hojas, agua, vidrio, flores,
-    // etc. son transparentes a la luz (opacidad 0) y ya no cuentan.
+    // Fix: only blocks with light opacity > 0 (like vanilla's
+    // Block::getLightFilter() > 0) count as a ceiling now.
     for (int col = 0; col < 256; ++col)
         mcp_chunk_recalculate_height_map_column(c, col & 15, (col >> 4) & 15);
 }
@@ -434,17 +419,11 @@ void mcp_chunk_recompute_section_flags(mcp_chunk_t* c) {
 
 // ---------------------------------------------------------------- sky light propagation
 //
-// BUG REAL (mundo/pasto negro): hasta ahora ningún generador calculaba
-// luz de verdad — todos hacían `memset(sky_light, 0xFF, ...)` en cada
-// sección alocada y marcaban light_populated=true. Eso pone luz PLENA
-// (15) en cada bloque de cada sección, incluso bajo piedra sólida o
-// bajo el dosel de un árbol. El cliente MCPE 0.15.x no re-calcula la
-// oclusión por sí solo a partir de sky_light — usa exactamente lo que
-// el servidor le manda. Con luz uniforme en vez de un degradado real,
-// cualquier columna donde el heightmap (ya corregido arriba) todavía
-// marcara "techo" cerca de superficie, y varias combinaciones de
-// vecinos sin luz calculada, terminaban rindiendo negro sólido — el
-// patrón exacto de la screenshot (pasto oscuro pegado a los árboles).
+// REAL BUG (black world/grass): no generator computed real light —
+// they memset sky_light to 0xFF per section and set light_populated.
+// MCPE 0.15.x clients do not recompute occlusion from sky_light; they
+// render exactly what the server sends, so full-brightness sections
+// plus neighbor combinations rendered solid black.
 //
 // Fix: pase real de dos fases, mismo enfoque que
 // ------------------------------------------------------------- light pass
@@ -541,25 +520,15 @@ void mcp_chunk_propagate_sky_light(mcp_chunk_t* c) {
     if (!c)
         return;
 
-    // BUG REAL (chunks que no renderizan): la versión anterior barría
-    // y de 255 a 0 para las 256 columnas, en las tres fases (columna,
-    // semilla del BFS y el propio BFS). Eso fuerza
-    // mcp_chunk_get_or_alloc_section() a alocar las 16 secciones de
-    // CADA chunk generado, incluidas las que están completamente
-    // vacías (puro cielo muy por encima de cualquier bloque) — solo
-    // para volver a escribirles el mismo 15 que ya traen por defecto
-    // (mcp_section_new ya inicializa sky_light a 0xFF). Multiplicado
-    // por todos los chunks visibles generándose a la vez, esto
-    // encarece tanto la generación async que algunos chunks llegan
-    // tarde o ni llegan al cliente — que los pinta como huecos negros.
+    // REAL BUG (chunks that never render): scanning y=255..0 for all
+    // 256 columns allocated all 16 sections of EVERY chunk (even empty
+    // sky-only ones) just to rewrite the default 15 — expensive enough
+    // under concurrent generation that some chunks arrived late and
+    // rendered as black holes.
     //
-    // Fix: acotar las tres fases a [0, maxTop], donde maxTop es la
-    // columna más alta de TODO el chunk (no la de cada columna
-    // individual — necesitamos ese margen para que la sombra lateral
-    // bajo un árbol/estructura vecina se calcule bien). Por encima de
-    // maxTop no hay un solo bloque en ningún (x,z) de este chunk, así
-    // que ninguna sección de ahí necesita existir: mcp_chunk_get_sky_light
-    // ya devuelve 15 para una sección no alocada.
+    // Fix: all three phases are bounded to [0, maxTop] (the tallest
+    // column of the whole chunk, with margin for side shadows). Nothing
+    // exists above maxTop and unallocated sections already read 15.
     int32_t maxTop = 0;
     for (int col = 0; col < 256; ++col) {
         int32_t h = c->height_map ? c->height_map[col] : 0;
@@ -582,9 +551,8 @@ void mcp_chunk_propagate_sky_light(mcp_chunk_t* c) {
                 }
                 uint8_t id = mcp_chunk_get_block_id(c, x, y, z);
                 uint8_t op = mcp_block_light_opacity(id);
-                // Minecraft resta (opacidad, mínimo 1 para que la luz
-                // siga bajando algo incluso a través de "transparentes")
-                // salvo que sea aire puro (opacidad 0 real → no resta).
+                // Minecraft subtracts opacity (min 1 so light still
+                // decays through "transparent" blocks) except pure air.
                 if (id != 0) {
                     int dec = op > 0 ? op : 1;
                     light -= dec;
@@ -593,10 +561,8 @@ void mcp_chunk_propagate_sky_light(mcp_chunk_t* c) {
                 }
                 mcp_chunk_set_sky_light(c, x, y, z, (uint8_t)light);
                 if (light <= 0) {
-                    // ya no hay luz de cielo posible más abajo en esta
-                    // columna por esta fase vertical — la fase 2
-                    // (horizontal) se encarga de rellenar por los
-                    // costados si corresponde.
+                    // no sky light can exist lower in this column from
+                    // the vertical phase; phase 2 fills from the sides.
                 }
             }
         }
@@ -625,24 +591,20 @@ void mcp_chunk_propagate_sky_light(mcp_chunk_t* c) {
 
 // ---------------------------------------------------------------- network serialization
 
-// Color de "grasscolor" por bioma, para el array de biome colors del
-// FullChunkDataPacket (protocolo 84 / MCPE 0.15.x — ver el comentario
-// dentro de mcp_chunk_network_serialize).
+// Per-biome "grasscolor" for the biome color array of the
+// FullChunkDataPacket (protocol 84 / MCPE 0.15.x).
 //
-// IMPORTANTE: los ids de este switch son los ids de vanilla que el
-// generador vgen escribe en el byte de bioma del chunk (mismos ids que
-// Java: 3=EXTREME_HILLS, 4=FOREST, 5=TAIGA, 6=SWAMPLAND, 7=RIVER,
-// 16=BEACH, ...). Antes este switch seguia la tabla clasica de
-// grasscolor (0=ocean, 1=plains, 2=desert, 3=forest, 4=mountains...),
-// que NO coincide: los cases 3/4 quedaron intercambiados mucho despues
-// de corregir los ids >= 5, y el pasto de las montanas de piedra
-// (extreme hills) salia teñido con el verde brillante de bosque —
-// los "parches de pasto antinaturales en biomas de piedra".
+// The switch uses the vanilla biome ids the vgen generator writes into
+// the chunk's biome byte (same ids as Java: 3=EXTREME_HILLS, 4=FOREST,
+// 5=TAIGA, 6=SWAMPLAND, 7=RIVER, 16=BEACH...). The classic grasscolor
+// table (0=ocean, 1=plains, 2=desert, 3=forest, 4=mountains...) does
+// NOT match — cases 3/4 were swapped, tinting stone-mountains grass
+// with forest green (the "unnatural grass patches on stone" bug).
 //
-// Ahora cada bioma tiene su tono, agrupado por clima: frio = verde
-// palido azulado, taiga = verde grisaceo de conifera, pantano = oliva
-// oscuro, sabana/desierto = verde amarillento seco, jungla = verde
-// intenso y saturado, meseta/hell = marron. Bioma desconocido -> plains.
+// Every biome now has its own tone grouped by climate: cold = pale
+// bluish green, taiga = gray conifer green, swamp = dark olive,
+// savanna/desert = dry yellowish green, jungle = deep saturated green,
+// plateau/hell = brown. Unknown biome -> plains.
 static void mcp_biome_grass_color(uint8_t biomeId, uint8_t* r, uint8_t* g, uint8_t* b) {
     switch (biomeId) {
     // --- Templado ---
@@ -656,13 +618,9 @@ static void mcp_biome_grass_color(uint8_t biomeId, uint8_t* r, uint8_t* g, uint8
         *g = 0xBD;
         *b = 0x59;
         break; // PLAINS
-    // ATENCION (CurseStone): el byte de bioma del chunk sigue la
-    // convencion de ids de vanilla (vgen): 3 = EXTREME_HILLS,
-    // 4 = FOREST. Antes estos dos cases estaban intercambiados (seguian
-    // el orden de la tabla clasica de grasscolor), asi que los parches
-    // de pasto de las montanas de piedra salian teñidos con el verde
-    // brillante de bosque — el bug de "parches de pasto antinaturales
-    // en biomas de piedra".
+    // NOTE (CurseStone): the chunk biome byte uses vanilla ids (vgen):
+    // 3 = EXTREME_HILLS, 4 = FOREST. These two cases used to be swapped,
+    // which tinted stone-mountain grass like forest.
     case 3:
         *r = 0x8A;
         *g = 0xB6;
@@ -886,16 +844,10 @@ uint8_t* mcp_chunk_network_serialize(const mcp_chunk_t* c, size_t* out_len) {
     off += kData;
 
     // --- Sky light: real per-column values from mcp_chunk_propagate_sky_light. ---
-    // BUG REAL (mundo/pasto negro): antes esto era un memset(0xFF) fijo
-    // que ignoraba por completo la luz calculada — pisaba cualquier
-    // sombra real con "luz plena en todo". Si el pase de propagación
-    // nunca corrió (light_populated era true sin haber calculado nada
-    // real), el resultado visual dependía de cómo el cliente
-    // interpretaba ese 0xFF uniforme combinado con el heightmap
-    // (antes también roto — ver mcp_chunk_recalculate_height_map),
-    // produciendo negro sólido bajo cualquier dosel de hojas.
-    // Fix: leer mcp_chunk_get_sky_light() real, mismo empaquetado de
-    // nibbles que usa el bloque de "Block data" de arriba.
+    // REAL BUG (black world/grass): this used to be a fixed memset(0xFF)
+    // that ignored the computed light entirely. Fix: read the real
+    // mcp_chunk_get_sky_light() values, same nibble packing as the
+    // "Block data" section above.
     for (int x = 0; x < 16; ++x) {
         for (int z = 0; z < 16; ++z) {
             for (int y = 0; y < 128; y += 2) {
@@ -941,26 +893,16 @@ uint8_t* mcp_chunk_network_serialize(const mcp_chunk_t* c, size_t* out_len) {
     off += kHeightMap;
 
     // --- Biome colors: BE uint32 por columna = (biomeId<<24)|(R<<16)|(G<<8)|B.
-    // BUG REAL (pasto negro global): el fix anterior de esta sección asumía
-    // el comportamiento del cliente MODERNO (1.0+), donde el cliente ignora
-    // el RGB que manda el servidor y calcula el tinte de pasto/hojas él
-    // mismo a partir del ID de bioma (byte alto), usando su propia tabla
-    // interna. Esto NO es así en protocolo 84 (MCPE 0.15.x, lo que este
-    // servidor targetea — ver docs/PROTOCOL_84.md): ese cambio de
-    // comportamiento llegó recién con la actualización a 1.0.0. En 0.15.x
-    // el cliente sigue usando literalmente el RGB que le mandamos para
-    // teñir el pasto — el byte alto (ID de bioma) es solo para que el
-    // servidor lo reconstruya al releer del disco, el cliente no lo mira
-    // para pintar. Mandar R=G=B=0 pinta el pasto directamente negro, que
-    // es exactamente el bug reportado.
+    // REAL BUG (global black grass): an earlier fix assumed the MODERN
+    // (1.0+) client behavior where the client computes grass tint from
+    // the biome id. Protocol 84 clients (MCPE 0.15.x) render exactly
+    // the RGB the server sends — R=G=B=0 paints grass black, the exact
+    // reported bug.
     //
-    // Fix: además del ID de bioma en el byte alto (se mantiene, no hace
-    // daño y sirve para IO/leveldb), escribir el RGB real de "grasscolor"
-    // de cada bioma en los 3 bytes bajos — igual que hacía el servidor de referencia antes de
-    // API 3.0.0-ALPHA1 (ver World::setBiomeColor(), que sí llegaba a
-    // pintar la textura). Tabla aproximada de colores clásicos de
-    // Minecraft por bioma; se puede afinar más adelante por temperatura/
-    // humedad si hace falta más variedad.
+    // Fix: keep the biome id in the high byte (harmless, used for
+    // IO/leveldb) and write the real per-biome grasscolor RGB into the
+    // low 3 bytes, like the reference server did before API
+    // 3.0.0-ALPHA1 (see World::setBiomeColor()).
     for (int x = 0; x < 16; ++x) {
         for (int z = 0; z < 16; ++z) {
             int idx = (x & 15) + (z & 15) * 16;

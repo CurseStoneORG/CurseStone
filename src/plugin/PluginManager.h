@@ -75,9 +75,9 @@ class PluginManager {
     std::vector<Info> list() const;
 
     /// @brief returns the plugin with that name, or nullptr if not exists.
-    ///        Resolución in CALIENTE: prevents retain pointers of LuaPlugin
-    ///        more allá of the tick in that is obtuvieron (a /plugins reload
-    ///        destroys and recrea the objetos).
+    ///        Live resolution: never retain the returned LuaPlugin pointer
+    ///        beyond the tick it was obtained in (a /plugins reload
+    ///        destroys and recreates the objects).
     LuaPlugin* find(const std::string& name) const;
 
   private:

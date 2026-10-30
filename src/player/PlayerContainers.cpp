@@ -299,7 +299,7 @@ void Player::openFurnaceAt(int x, int y, int z) {
         lvl->setTile(x, y, z, furnace);
     }
 
-    // InventoryOpenEvent — cancelable (protección of zona, etc.), igual
+    // InventoryOpenEvent — cancellable (region protection etc.), just
     // that in openChestAt(). The shared_ptr is owning: listeners may outlive
     // this call and must never dangle on the tile's inventory.
     auto ev = event::EventManager::get().fire<event::inventory::InventoryOpenEvent>(
@@ -374,7 +374,7 @@ uint8_t Player::openContainerWindow() {
 //   - descarta ediciones to more of 100 blocks;
 //   - requires that the tile is a Sign and that the NBT "id" is "Sign";
 //   - only the Creator (UUID of the player) can edit;
-//   - dispara SignChangeEvent (cancelable) and applies the líneas.
+//   - fires SignChangeEvent (cancellable) and applies the lines.
 // ============================================================
 void Player::handleSignEdit(network::protocol::BlockEntityDataPacket& pk) {
     if (!spawned() || !srv_)
@@ -412,8 +412,9 @@ void Player::handleSignEdit(network::protocol::BlockEntityDataPacket& pk) {
 
     // Genisys compares the Creator contra the NBT of the tile of the server
     // (the sign's stored creator), not contra the packet — the client never
-    // takes precedence Creator in its BlockEntityData, this way that leerlo of the packet haría
-    // that all editing is cancelara (bug). the dueño is who colocó the
+    // the Creator takes precedence in its BlockEntityData, so reading it
+    // from the packet would cancel every edit (bug). The owner is whoever
+    // placed the
     // sign (player::handleBlockPlace setea the Creator of the tile).
     auto ev = event::EventManager::get().fire<event::block::SignChangeEvent>(pk.x, pk.y, pk.z, this,
                                                                              lines);
@@ -422,7 +423,7 @@ void Player::handleSignEdit(network::protocol::BlockEntityDataPacket& pk) {
         ev.setCancelled(true);
     if (ev.isCancelled()) {
         // Genisys: spawnTo(player) — forwards the NBT current of the sign
-        // to the editor for revertir the text that the client already mostró.
+        // to the editor to revert the text the client already showed.
         sendBlockEntityData(pk.x, pk.y, pk.z, *sign, this);
         return;
     }

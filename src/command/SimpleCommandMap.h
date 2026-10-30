@@ -43,7 +43,7 @@ class SimpleCommandMap : public CommandMap {
     // Borra todos los comandos cuyo Command::owner() == owner (los
     // LuaCommand de un plugin, antes de que /plugins reload destruya su
     // lua_State). Si un comando borrado habia pisado a otro (override),
-    // el desplazado se restaura en su lugar. Devuelve cuántos borró.
+    // the displaced one is restored in place. Returns how many were removed.
     size_t unregisterByOwner(void* owner) override;
     size_t size() const {
         return commands_.size();

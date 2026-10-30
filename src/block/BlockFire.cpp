@@ -70,10 +70,9 @@ void BlockFire::scheduleUpdate(world::World* /*world*/, int32_t /*x*/, int32_t /
 }
 
 // ============================================================
-// Tablas de flamabilidad — valores the reference server verbatim (sin uso en v6
-// más allá de canNeighborBurn, que a su vez solo se usa desde
-// ItemFlintSteel para el check "has_support"). Se mantienen para
-// que el código compile sin cambios en los headers.
+// Flammability tables — reference-server values verbatim (unused in v6
+// beyond canNeighborBurn, which only ItemFlintSteel's has_support check
+// reaches). Kept so the code compiles without header changes.
 // ============================================================
 int BlockFire::getBurnAbility(uint8_t id) {
     switch (id) {

@@ -20,7 +20,7 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// MiniJson — implementación. Ver MiniJson.h.
+// MiniJson — implementation. See MiniJson.h.
 #include "MiniJson.h"
 #include <cmath>
 #include <cstdio>
@@ -190,7 +190,7 @@ struct Parser {
         std::string num = src.substr(start, pos - start);
         if (num.empty())
             return fail("expected a number");
-        // ¿Entero sin punto ni exponente? -> lua_Integer (evita 1.0 feo).
+        // Integer without '.' or exponent? -> lua_Integer (avoids 1.0).
         if (num.find('.') == std::string::npos && num.find('e') == std::string::npos &&
             num.find('E') == std::string::npos) {
             char* end = nullptr;
@@ -209,7 +209,7 @@ struct Parser {
         return true;
     }
 
-    lua_State* luaState; // (declarado aquí para parseNumber)
+    lua_State* luaState; // (declared here for parseNumber)
 
     bool parseValue() {
         char c;
@@ -390,9 +390,10 @@ std::string quote(const std::string& s) {
 }
 
 bool emitValue(lua_State* L, int idx, std::string& out, std::string& err) {
-    // Normalizar a índice ABSOLUTO antes de apilar nada: esta función
+    // Normalize to an ABSOLUTE index before pushing anything: this
+    // function
     // recibe -1 en las llamadas recursivas y luego hace lua_pushnil /
-    // lua_rawgeti — un -1 "congelado" dejaría de apuntar al valor.
+    // lua_rawgeti — a frozen -1 would stop pointing at the value.
     int abs = (idx < 0) ? lua_gettop(L) + 1 + idx : idx;
     switch (lua_type(L, abs)) {
     case LUA_TNIL:

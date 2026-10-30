@@ -29,11 +29,10 @@
 
 namespace cursestone {
 
-// /help — lista DINÁMICA de comandos: se construye desde el CommandMap
-// real (SimpleCommandMap::allCommands()), NO desde una tabla fija. Así
-// aparecen solos los comandos que registren los plugins, y solo los que
-// el emisor puede usar (Command::canUse). Los alias (gm, tp, ?...) son
-// comandos propios y aparecen como tales. Paginación estilo the reference server.
+// /help — DYNAMIC command list built from the real CommandMap
+// (SimpleCommandMap::allCommands()), NOT a fixed table, so plugin
+// commands show up on their own and only if the sender can use them
+// (Command::canUse). Aliases are commands too and show as such.
 bool HelpCommand::execute(CommandSender* sender, const std::string&,
                           const std::vector<std::string>& args) {
     // Parse page number from args
@@ -46,7 +45,7 @@ bool HelpCommand::execute(CommandSender* sender, const std::string&,
         } catch (...) {}
     }
 
-    // Recolectar los comandos que ESTE emisor puede usar, con descripción.
+    // Collect the commands THIS sender can use, with description.
     struct CmdEntry {
         std::string name;
         std::string description;
@@ -57,7 +56,7 @@ bool HelpCommand::execute(CommandSender* sender, const std::string&,
             continue; // ocultar los que no puede usar
         std::string desc = cmd->description();
         if (desc.empty())
-            desc = "(sin descripción)";
+            desc = "(no description)";
         commands.push_back(CmdEntry{cmd->name(), desc});
     }
     std::sort(commands.begin(), commands.end(), [](const CmdEntry& a, const CmdEntry& b) {

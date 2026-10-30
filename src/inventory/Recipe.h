@@ -51,14 +51,14 @@ class Recipe {
         return result_;
     }
     // Shaped recipe: 3x3 grid of item ids (0 = no requirement),
-    // zero-padded alrededor del patrón Width x Height real.
+    // zero-padded around the real Width x Height pattern.
     void setGrid(const std::array<uint16_t, 9>& g) {
         grid_ = g;
     }
     const std::array<uint16_t, 9>& grid() const {
         return grid_;
     }
-    // Meta/damage requerido por celda (-1 = cualquier damage). Índices
+    // Required meta/damage per cell (-1 = any damage). Indices
     // alineados 1:1 con grid().
     void setGridMeta(const std::array<int16_t, 9>& m) {
         grid_meta_ = m;
@@ -81,9 +81,9 @@ class Recipe {
     const std::vector<int16_t>& ingredientMeta() const {
         return ingredient_meta_;
     }
-    // Bounding box del patrón shaped tal como se registro (1..3). Para
+    // Bounding box of the shaped pattern as registered (1..3). For
     // matchShaped basta grid(); width/height se guardan para el
-    // CraftingDataPacket (que serializa el patrón SIN padding,
+    // CraftingDataPacket (which serializes the pattern WITHOUT padding,
     // Width x Height celdas exactas).
     void setSize(int w, int h) {
         width_ = w;
@@ -111,7 +111,7 @@ class Recipe {
     }
     // Los 16 bytes crudos del UUID de receta que viaja en
     // CraftingDataPacket y vuelve en CraftingEventPacket (mismo orden
-    // que el servidor de referencia UUID::toBinary). El cliente lo ecoa tal cual, así que el
+    // the reference server's UUID::toBinary). The client echoes it back verbatim, so the
     // match contra recetas se hace por estos bytes, no por uuid().
     void setUuidBytes(const std::array<uint8_t, 16>& b) {
         uuid_bytes_ = b;

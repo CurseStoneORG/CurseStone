@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// FurnaceInventory — la implementación vive íntegramente en BaseInventory
-// (3 slots vía InventoryType::get(FURNACE)); no hace falta nada extra.
+// FurnaceInventory — the implementation lives entirely in BaseInventory
+// (3 slots via InventoryType::get(FURNACE)); nothing extra needed.
 #include "FurnaceInventory.h"
 namespace cursestone::inventory {}

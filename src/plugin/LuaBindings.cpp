@@ -20,9 +20,9 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// LuaBindings — implementación of the registro of the API.
+// LuaBindings — implementation of the API registration.
 // registerApi() is flame from LuaPlugin::load() justo after abrir
-// the librerías estándar allowed and before execute main.lua, of
+// the allowed standard libraries and before running main.lua,
 // modo that the script already finds everything the entorno montado.
 #include "LuaBindings.h"
 #include <cstdio>
@@ -32,7 +32,7 @@ namespace cursestone::plugin {
 
 // ---- Compatibilidad of versions of API ("X.and.Z") ----
 // Reglas:
-//   - format invalid (not are 3 números)            -> incompatible.
+//   - invalid format (not 3 numbers)               -> incompatible.
 //   - Major different                                  -> incompatible (breaks).
 //   - minor of the server < minor of the plugin           -> incompatible
 //     (the plugin needs a API more new that this).

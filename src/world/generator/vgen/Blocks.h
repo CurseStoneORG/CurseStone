@@ -1,16 +1,27 @@
+/*
+ _____                     _____ _
+/  __ \                   /  ___| |
+| /  \/_   _ _ __ ___  ___\ `--.| |_ ___  _ __   ___
+| |   | | | | '__/ __|/ _ \`--. \ __/ _ \| '_ \ / _ \
+| \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
+ \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
+
+ * CurseStone | Open Source Server Software
+ *
+ * Copyright (C) 2026 CurseStoneTeam
+ *
+ * Developed by CurseStoneTeam.
+ * Built for an open and extensible Minecraft server ecosystem.
+ *
+ * Licensed under the GNU Lesser General Public License v3.0 or later.
+ * You may study, modify, and redistribute this software under its license.
+ *
+ * License: https://www.gnu.org/licenses/lgpl-3.0.html
+ * Repository: https://github.com/CurseStoneTeam/CurseStone
+ *
+ */
 // CurseStone | vgen — block table shim.
-//
-// The restored vanilla generator references Mojang's Block registry
-// (`Block::mStone->mID`, `Block::mBlocks[id]->getMaterial()`...). This
-// header re-declares that registry surface on top of the MCPE 0.15
-// (protocol 84) block palette, so the ported generator code needed no
-// changes: every constant keeps its vanilla name and stores the 0.15
-// numeric id it maps to.
-//
-// Downport notes (1.0.0 -> 0.15): the 1.0 BlockState model is emulated
-// for the handful of states the generator writes (log axis/type, dirt
-// coarse bit, vine growth, tripwire attach) — each maps onto plain
-// 0.15 metadata bits.
+
 #pragma once
 #include "vgen/Vanilla.h"
 #include "vgen/Random.h"

@@ -41,31 +41,31 @@
 //   player.getWorld(name)             handle world of the player (nil if not)
 //   player.isOp(name)                 true if is op (false if not exists)
 //   player.giveItem(name, id, count, meta, customName)
-//                                     añade un stack al inventario;
+//                                     adds a stack to the inventory;
 //                                     customName (opcional) = nombre
 //                                     visible del item (§ soportado)
-//   player.setNameTag(name, tag)      nametag sobre la cabeza + pestaña
-//                                     del servidor (códigos § = rangos)
+//   player.setNameTag(name, tag)      nametag above the head + in the
+//                                     server tab list (§ codes = ranks)
 //   player.getNameTag(name)           nametag actual (nil si no existe)
 //   player.setDisplayName(name, dn)   nombre SOLO para el chat
 //   player.getDisplayName(name)       display name actual (nil si no)
 //   player.setPermission(name, node, v) concede/niega a node of permiso
 //                                     in memory (false if not exists the player)
-//   player.hasPermission(name, node)  ¿has that node? (false if not exists)
+//   player.hasPermission(name, node)  has that node? (false if missing)
 //   player.getPosition(name)          x, y, z (pies) | nil si no existe
 //   player.kill(name)                 mata por el pipeline normal de muerte
 //                                     (pantalla de muerte, drops, evento);
-//                                     false si no existe o ya está muerto
+//                                     false if missing or already dead
 //   player.getRotation(name)          yaw, pitch | nil si no existe
-//   player.setRotation(name, yaw, pitch) gira la CÁMARA del jugador: fija
-//                                     la rotación en el server y re-sincroniza
+//   player.setRotation(name, yaw, pitch) turns the player's CAMERA:
+//                                     sets rotation server-side and re-syncs
 //                                     al cliente con un MovePlayerPacket RESET
-//                                     (mismo patrón que el revert anti-cheat y
+//                                     (same pattern as the anti-cheat revert and
 //                                     el teleport; el cliente 0.15 gira la vista
 //                                     con ese paquete). false si no existe.
-//   player.setMotion(name, x, y, z)   impulso al jugador (empujón/lanza):
+//   player.setMotion(name, x, y, z)   pushes the player (knockback/launch):
 //                                     SetEntityMotionPacket con eid=0 al
-//                                     propio cliente (convención del protocolo
+//                                     own client (protocol convention
 //                                     84 para el self-motion). false si no existe.
 //   scheduler.later(ticks, fn)        runs fn a time; returns id
 //   scheduler.every(ticks, fn)        runs fn each ticks; returns id
@@ -799,7 +799,7 @@ void bindCore(lua_State* L) {
     bindPlayerHandle(L); // metatable CS.Player for server.getPlayer
     bindPluginTable(L);  // plugin.api / .name / .author / .version / .include
 
-    // import("module"): load of módulos Lua of the own plugin (the way
+    // import("module"): loads Lua modules of the plugin itself (the way
     // recommended; looks for in src/ and not requires extension). global, as requires
     // the flujo natural: local Example = import("core/Example").
     lua_pushcfunction(L, l_plugin_import);

@@ -34,8 +34,8 @@ class Player;
 namespace cursestone::event::block {
 
 // NOTA: no hereda Cancellable directamente — BlockUpdateEvent ya lo
-// hace. Repetirlo aquí crearía un diamante no-virtual, ambiguo en
-// tiempo de compilación para isCancelled()/setCancelled().
+// does. Repeating it here would create an ambiguous non-virtual diamond
+// at compile time for isCancelled()/setCancelled().
 class DoorToggleEvent : public BlockUpdateEvent {
   public:
     cursestone::Player* player;

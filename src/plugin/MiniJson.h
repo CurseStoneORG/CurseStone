@@ -32,7 +32,7 @@
 //   number  -> integer si no tiene parte fraccional, number si no
 //   true/false/null -> booleano / nil
 //
-// Soporta TODO el estándar: escapes \uXXXX con surrogate pairs -> UTF-8.
+// Supports the FULL standard: \uXXXX escapes with surrogate pairs -> UTF-8.
 #pragma once
 #include <lua.hpp>
 #include <string>
@@ -40,7 +40,7 @@
 namespace cursestone::plugin::json {
 
 // Parsea `text` y apila UN valor. Devuelve false y llena `err` si el JSON
-// es inválido (con offset aproximado).
+// is invalid (with an approximate offset).
 bool parseToLua(lua_State* L, const std::string& text, std::string& err);
 
 // Serializa el valor en `idx` a JSON. Las tablas con parte de array

@@ -20,7 +20,7 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// LuaCommand — implementación of the puente thread-consola → thread main.
+// LuaCommand — implementation of the console-thread -> main-thread bridge.
 #include "LuaCommand.h"
 #include "PluginManager.h"
 #include "scheduler/ServerScheduler.h"
@@ -110,7 +110,7 @@ bool LuaCommand::execute(CommandSender* sender, const std::string&,
         });
 
     // 4. schedule with delay 0 (runs in the next tick) and return true:
-    //    the command "is aceptó", although the efecto is asíncrono.
+    //    the command "was accepted", although the effect is asynchronous.
     scheduler::ServerScheduler::get().scheduleSync(task, 0, 0);
     return true;
 }

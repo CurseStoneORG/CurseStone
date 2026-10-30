@@ -34,8 +34,8 @@
 //     <body crudo>
 //   putByte     cleanRecipes
 //
-// El length-prefix por entrada es CRÍTICO: el cliente lo usa para
-// delimitar cada cuerpo y saltar entradas desconocidas. Sin él, el
+// The per-entry length prefix is CRITICAL: the client uses it to
+// delimit each body and skip unknown entries. Without it, the
 // primer campo del cuerpo se interpreta como el type de la siguiente
 // entrada y todo el packet se parsea como basura (kick/crash del APK).
 //
@@ -47,8 +47,8 @@
 //   ENTRY_SHAPED (1):
 //     putInt(BE) width; putInt(BE) height;
 //     putSlot(width*height celdas, fila-por-fila: z<Height exterior,
-//             x<Width interior — idéntico a Genisys/the reference server, y el
-//             patrón es fila-major anclado arriba-izquierda, como
+//             inner x<Width — identical to Genisys/the reference server,
+//             and the pattern is row-major anchored top-left, like
 //             Recipe::grid)
 //     putInt(BE) 1; putSlot(result);
 //     putUUID(16 raw bytes)
@@ -58,9 +58,9 @@
 //     putSlot(result);
 //
 // putSlot (BinaryStream::putSlot p84 — shorts BIG-endian, no varints):
-//   id==0  → putShort(0)                       (2 bytes, nada más)
+//   id==0  -> putShort(0)                       (2 bytes, nothing else)
 //   resto  → putShort(id) + putByte(count) + putShort(damage)
-//            + putLShort(nbtLen) + nbt   (nbtLen=0 acá; LShort sí es LE)
+//            + putLShort(nbtLen) + nbt   (nbtLen=0 here; LShort is LE)
 //   damage -1 ("any damage") viaja como 0xFFFF en el short BE.
 //
 // cleanRecipes: The reference server/Genisys lo mandan en true (generateRecipeList
@@ -83,7 +83,7 @@ namespace cursestone::network::protocol {
 
 // Una entrada de receta lista para serializar — copia ligera de
 // inventory::Recipe (el manager puede recargarse mientras el packet
-// está en cola de salida, así que el packet tiene su propia copia).
+// queued for output, so the packet owns its own copy).
 struct CraftingEntry {
     inventory::RecipeType type = inventory::RECIPE_SHAPED;
     cursestone::item::ItemStack result;

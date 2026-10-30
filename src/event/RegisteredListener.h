@@ -20,15 +20,15 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// RegisteredListener.h — una suscripción individual de un listener a
+// RegisteredListener.h — a single listener subscription to
 // un HandlerList (es decir, a UN tipo concreto de evento). Guarda el
 // callback type-erased junto con los metadatos necesarios para el
 // despacho ordenado por prioridad y para poder darse de baja en bloque.
 //
-// `owner` identifica quién registró este callback (normalmente el
+// `owner` identifies who registered this callback (usually the
 // puntero `this` de un objeto que implementa Listener, pero puede ser
-// cualquier dirección estable que el llamador controle). El sistema de
-// eventos NUNCA lo desreferencia: solo lo usa como clave de comparación
+// any stable address the caller controls. The event system NEVER
+// dereferences it: it is only used as a comparison key
 // para unregisterOwner()/unlistenAll(), de modo que cuando un objeto se
 // destruye pueda limpiar todas sus suscripciones sin dejar callbacks
 // colgantes que apunten a memoria liberada.

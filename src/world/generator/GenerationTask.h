@@ -40,30 +40,20 @@ class GenerationTask {
         : gen_(std::move(gen)), x_(x), z_(z), seed_(seed), done_(std::move(done)) {
     }
     void run() {
-        // FIX (chunks que nunca se renderizan): TODO el cuerpo de abajo
-        // corre en un worker thread de AsyncPool. Si generate()/populate()
-        // del generador lanza una excepción en ALGÚN chunk puntual (ej.
-        // un populator de árboles/cuevas/minerales que se sale de rango
-        // en un borde de chunk), AsyncPool::runOne() atrapa esa excepción
-        // para no tumbar el proceso — pero eso corta run() ANTES de
-        // llegar a done_(c). Y done_ es el ÚNICO lugar donde
-        // ChunkManager::getChunkOrRequestAsync() borra la entrada
-        // 'pending_' de ese chunk. Sin ese erase, pending_.count(key)
-        // sigue devolviendo true para siempre → ese chunk nunca se
-        // vuelve a pedir → agujero permanente en el mundo, solo en los
-        // chunks donde el generador falló (por eso "a veces" y no
-        // siempre). Fix: atrapar la excepción ACÁ, generar un chunk
-        // plano de emergencia (mismo patrón que el fallback síncrono de
-        // ChunkManager::getChunk) y garantizar que done_() se llame
-        // siempre, éxito o no, para que pending_ se libere y el chunk
-        // deje de estar "en vuelo" para siempre.
+        // FIX (chunks that never render): everything below runs on an
+        // AsyncPool worker. If generate()/populate() throws for some
+        // chunk, runOne() swallows the exception but run() never reaches
+        // done_(c) — the only place that clears pending_. The chunk would
+        // stay "in flight" forever and the world would keep a permanent
+        // hole. Fix: catch here, build an emergency flat chunk (same
+        // pattern as the synchronous fallback) and guarantee done_() runs
+        // either way.
         mcp_chunk_t* partial = nullptr;
         try {
             runInner(partial);
         } catch (const std::exception& e) {
-            // 'partial' es el chunk que runInner ya había allocado antes
-            // de que generate()/populate() explotara — liberarlo para no
-            // perder esa memoria en cada reintento del chunk.
+            // 'partial' is the chunk runInner had already allocated
+            // before generate()/populate() threw — free it.
             if (partial)
                 mcp_chunk_destroy(partial);
             done_(makeEmergencyChunk(e.what()));
@@ -92,7 +82,7 @@ class GenerationTask {
         c->dirty = true;
         mcp_chunk_recalculate_height_map(c);
         mcp_chunk_propagate_sky_light(c);
-        (void)reason; // motivo queda solo para logging futuro si se agrega logger aquí
+        (void)reason; // kept for future logging if a logger ever lands here
         return c;
     }
     void runInner(mcp_chunk_t*& partial_out) {
@@ -109,19 +99,13 @@ class GenerationTask {
         // on the worker thread — Generator is documented stateless
         // w.r.t. the main thread, so this is safe.
         //
-        // BUG REAL (mundo/pasto negro) — esta función ANTES rellenaba
-        // sky_light con 0xFF en las 16 secciones ANTES de que el
-        // generador pusiera un solo bloque, y después nunca corría
-        // ningún cálculo real de luz — solo marcaba light_populated
-        // en true. Eso dejaba luz plena en cada bloque de cada
-        // sección sin importar qué tan enterrado estuviera, y el
-        // heightmap (además roto — contaba hojas/flores como techo)
-        // desalineaba lo que el cliente esperaba ver. Resultado:
-        // negro sólido bajo cualquier dosel de árbol.
-        // Fix: primero generar terreno, LUEGO recalcular heightmap,
-        // y recién ahí correr el pase real de propagación de luz
-        // (mcp_chunk_propagate_sky_light), que reemplaza por completo
-        // al viejo memset(0xFF).
+        // REAL BUG (black world/grass): this used to fill sky_light with
+        // 0xFF before a single block existed and never computed real
+        // light — full brightness everywhere plus a broken heightmap that
+        // counted leaves/flowers as ceiling, rendering solid black under
+        // any tree canopy.
+        // Fix: generate terrain first, THEN recalc the heightmap, then
+        // run the real light pass (which replaces the old memset).
         for (int bx = 0; bx < 16; ++bx)
             for (int bz = 0; bz < 16; ++bz)
                 mcp_chunk_set_biome(c, bx, bz, 1);

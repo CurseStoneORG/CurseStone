@@ -31,10 +31,11 @@
 #include <cstdint>
 namespace cursestone::event::block {
 
-// NOTA: no hereda Cancellable directamente — llega vía BlockFormEvent
-// -> BlockGrowEvent. Repetirlo aquí crearía un tercer subobjeto
+// NOTE: does not inherit Cancellable directly — it arrives via
+// BlockFormEvent -> BlockGrowEvent. Repeating it here would create a
+// third subobject
 // Cancellable en el mismo objeto (diamante no-virtual), ambiguo en
-// tiempo de compilación para isCancelled()/setCancelled().
+// at compile time for isCancelled()/setCancelled().
 class BlockSpreadEvent : public BlockFormEvent {
   public:
     int32_t sourceX, sourceY, sourceZ;

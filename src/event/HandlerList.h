@@ -25,32 +25,27 @@
 // tipo de evento tiene su propio HandlerList, administrado por
 // EventManager (ver EventManager.h).
 //
-// CONTRATO DE ESTABILIDAD (esto reemplaza una versión anterior que
-// nunca llegó a conectarse al resto del código y tenía dos bugs
-// latentes: dispatch() recibía el evento como `const Event&`, por lo
-// que ningún listener podía llamar jamás a setCancelled(); y los
-// campos priority/ignoreCancelled de EventHandler.h no se consultaban
-// en ningún lado):
+// STABILITY CONTRACT (this replaces an earlier version that never got
+// wired to the rest of the code and had two latent bugs: dispatch()
+// took the event as `const Event&`, so no listener could ever call
+// setCancelled(); and EventHandler.h's priority/ignoreCancelled fields
+// were never consulted anywhere):
 //
-//   - dispatch() recibe una Event& NO const, para que los listeners
-//     puedan leer Y modificar el evento (cancelarlo, reescribir un
-//     mensaje de chat, etc).
-//   - Los listeners corren en orden de EventPriority (LOWEST primero,
-//     MONITOR último), así que las prioridades altas ven el resultado
-//     de las bajas, y los listeners MONITOR siempre ven el estado final.
-//   - Un listener registrado con ignoreCancelled=true se salta en
-//     cuanto el evento ya fue cancelado por un listener anterior —
+//   - dispatch() takes a non-const Event& so listeners can both read
+//     and modify the event (cancel it, rewrite a chat message, etc).
+//   - Listeners run in EventPriority order (LOWEST first, MONITOR
+//     last), so higher priorities see what lower ones produced and
+//     MONITOR listeners always see the final state.
+//   - A listener registered with ignoreCancelled=true is skipped as
+//     soon as the event was already cancelled by an earlier listener —
 //     replica RegisteredListener::callEvent() del servidor de referencia.
-//   - Un listener que lanza una excepción se captura, se loguea y se
-//     salta: un handler roto jamás puede tumbar el tick loop ni
-//     bloquear al resto de los handlers (misma doctrina de estabilidad
-//     que ServerScheduler post-incidente del fire-cascade).
-//   - Todas las mutaciones (registrar/desregistrar) están protegidas
-//     por mutex, así que puede usarse desde cualquier hilo. dispatch()
-//     toma una copia (snapshot) bajo el lock y ejecuta los callbacks
-//     fuera de él, para que un handler pueda registrar/desregistrar
-//     listeners (incluso para este mismo tipo de evento) sin causar
-//     un deadlock contra sí mismo.
+//   - A listener that throws is caught, logged and skipped: a broken
+//     handler can never take down the tick loop nor block the rest
+//     (same stability doctrine as the post-fire-cascade scheduler).
+//   - All mutations (register/unregister) are mutex-protected, so it
+//     can be used from any thread. dispatch() snapshots under the lock
+//     and runs callbacks outside of it, so a handler can (un)register
+//     listeners without deadlocking against itself.
 #pragma once
 #include "Event.h"
 #include "EventPriority.h"
@@ -67,22 +62,22 @@ class HandlerList {
   public:
     // Registra `callback` en la prioridad dada. Devuelve un id de
     // registro utilizable con unregister(). Devuelve 0 si callback
-    // está vacío (nada que registrar).
+    // is empty (nothing to register).
     uint64_t registerListener(void* owner, EventPriority priority, bool ignoreCancelled,
                               std::function<void(Event&)> callback);
 
-    // Elimina un único registro por id. true si se encontró.
+    // Removes a single registration by id. true if found.
     bool unregister(uint64_t id);
 
     // Elimina todos los registros cuyo `owner` coincida. Devuelve
-    // cuántos se eliminaron. Se usa cuando un Listener se destruye.
+    // how many were removed. Used when a Listener is destroyed.
     size_t unregisterOwner(void* owner);
 
     // Elimina absolutamente todos los registros.
     void unregisterAll();
 
     // Ejecuta cada listener registrado para `event`, en orden de
-    // prioridad, saltando los ignoreCancelled una vez el evento está
+    // priority, skipping ignoreCancelled handlers once the event is
     // cancelado. Segura de llamar mientras otros hilos registran o
     // desregistran listeners concurrentemente.
     void dispatch(Event& event) const;

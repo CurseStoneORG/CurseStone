@@ -32,10 +32,10 @@ class BlockRedstoneTorch : public BlockTorch {
     // bloques con id distinto (igual que MCPE/vanilla los modelan:
     // encender/apagar una antorcha de redstone cambia su id de bloque,
     // no solo su `data`). Esta clase representa el estado apagado —
-    // BlockRedstoneTorchOn (si se necesita como clase aparte) usaría
-    // REDSTONE_TORCH_ON. La lógica de encendido/apagado real la maneja
+    // BlockRedstoneTorchOn (if ever needed as its own class) would use
+    // REDSTONE_TORCH_ON. The actual on/off logic lives in
     // RedstoneManager operando directamente sobre el id del mundo, no
-    // esta jerarquía (que actualmente no está conectada al flujo de
+    // this hierarchy (currently not wired into the
     // juego — ver BlockRegistry.cpp, donde nada llama a Block::get()).
     uint8_t id() const override {
         return REDSTONE_TORCH_OFF;

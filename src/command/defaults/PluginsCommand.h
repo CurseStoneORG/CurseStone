@@ -21,14 +21,14 @@
  *
  */
 // PluginsCommand — /plugins: lista los plugins Lua cargados con su
-// versión y estado. Sigue el mismo patrón que /version o /list.
+// version and state. Follows the same pattern as /version or /list.
 //
-// Solo para OPs y consola: el nodo "cursestone.command.plugins" lo
-// comprueba SimpleCommandMap::dispatch() ANTES de llamar a execute(),
-// así que un jugador sin op ni siquiera llega a la lista (y /help se la
-// oculta, porque filtra con canUse()). Los ops cubren el nodo por el
-// subárbol "cursestone.*" que Player::hasPermission() les da por defecto.
-// El subcomando /plugins reload sigue además con su propio chequeo isOp().
+// OPs and console only: SimpleCommandMap::dispatch() checks the
+// "cursestone.command.plugins" node BEFORE execute(), so a non-op player
+// never reaches the list (and /help hides it through canUse()). Ops
+// cover the node via the "cursestone.*" subtree Player::hasPermission()
+// grants them by default. /plugins reload additionally keeps its own
+// isOp() check.
 #pragma once
 #include "command/Command.h"
 
