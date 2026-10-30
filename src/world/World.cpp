@@ -435,14 +435,10 @@ void World::checkSleep() {
     }
 }
 
-namespace {
-
-constexpr double kItemGravity = 0.04;  // item entity gravity
-constexpr double kItemDrag = 0.02;     // item entity drag
-constexpr double kBlockFriction = 0.6; // Block::getFrictionFactor()
-
-// the block solidity table — see the forward declaration above.
-bool dropBlockSolid(uint8_t id) {
+// Whether the block id carries an entity collision volume. The
+// movement collision cubes run on this same table, so block placement
+// refuses exactly the cells an entity could not share.
+bool World::entityCollidable(uint8_t id) {
     switch (id) {
     case block::AIR:
     case block::FLOWING_WATER:
@@ -475,6 +471,17 @@ bool dropBlockSolid(uint8_t id) {
     default:
         return true;
     }
+}
+
+namespace {
+
+constexpr double kItemGravity = 0.04;  // item entity gravity
+constexpr double kItemDrag = 0.02;     // item entity drag
+constexpr double kBlockFriction = 0.6; // Block::getFrictionFactor()
+
+// the block solidity table — see the forward declaration above.
+bool dropBlockSolid(uint8_t id) {
+    return World::entityCollidable(id);
 }
 
 

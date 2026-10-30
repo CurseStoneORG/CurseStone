@@ -224,6 +224,11 @@ class World {
     // Returns world-space collision boxes within the requested region.
     std::vector<physics::BlockBox> collisionBoxes(mcp_aabb_t region);
 
+    // Whether the block id carries an entity collision volume. The
+    // movement collision cubes run on this same table, so block
+    // placement refuses exactly the cells an entity could not share.
+    static bool entityCollidable(uint8_t id);
+
     // Queues lighting updates for newly added chunks.
     void onChunkAdded(int32_t cx, int32_t cz);
 
