@@ -34,6 +34,7 @@
 #include "block/BlockIds.h"
 #include "block/BlockOrientation.h"
 #include "block/Block.h"
+#include "block/LiquidFlow.h"
 #include "tile/TileSign.h"
 #include "inventory/PlayerInventory.h"
 #include "event/EventManager.h"
@@ -244,6 +245,9 @@ void Player::handleBlockBreak(int x, int y, int z) {
 
     // Update neighboring redstone components.
     cursestone::redstone::notifyNeighbors(lvl, srv_, x, y, z);
+
+    // Wake liquid neighbors so the removed cell floods vanilla-style.
+    cursestone::block::LiquidFlow::onBlockChanged(lvl, x, y, z);
 
     // Update falling blocks above the removed block.
     lvl->checkFallingSupport(x, y + 1, z);
@@ -717,13 +721,15 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
             return; // Do not generate chunks synchronously.
         int localXLower = placeX & 15, localZLower = placeZ & 15;
         uint8_t existingLower = mcp_chunk_get_block_id(chLower, localXLower, placeY, localZLower);
-        if (existingLower != 0)
+        if (existingLower != 0 &&
+            !cursestone::block::LiquidFlow::isReplaceableId(existingLower))
             return; // The lower cell is occupied.
 
         // Chunks span the full vertical world height.
         uint8_t existingUpper =
             mcp_chunk_get_block_id(chLower, localXLower, placeY + 1, localZLower);
-        if (existingUpper != 0)
+        if (existingUpper != 0 &&
+            !cursestone::block::LiquidFlow::isReplaceableId(existingUpper))
             return; // The upper cell is occupied.
 
         uint8_t doorFacing =
@@ -811,7 +817,9 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
             (headCx == cxB && headCz == czB) ? chB : lvl->chunks().getChunkIfLoaded(headCx, headCz);
         if (!chHead)
             return;
-        if (lvl->getBlockId(headX, placeY, headZ) != 0)
+        if (lvl->getBlockId(headX, placeY, headZ) != 0 &&
+            !cursestone::block::LiquidFlow::isReplaceableId(
+                lvl->getBlockId(headX, placeY, headZ)))
             return;
         {
             if (placeY == 0)
@@ -887,7 +895,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
             return;
         int localXP = placeX & 15, localZP = placeZ & 15;
         uint8_t existingP = mcp_chunk_get_block_id(chP, localXP, placeY, localZP);
-        if (existingP != 0)
+        if (existingP != 0 && !cursestone::block::LiquidFlow::isReplaceableId(existingP))
             return;
 
         float pitchDeg = pitch();
@@ -945,8 +953,37 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
         placedBlockData = 0;
         consumeItem = !(cfg_.gamemode & 1);
     } else if (heldItemId == 325) {
-        // Empty buckets do not place blocks.
-        resyncUseTarget(this, lvl, x, y, z, face);
+        // Vanilla ItemBucket: scoop a source liquid cell (draining it).
+        int32_t scoopX = x, scoopY = y, scoopZ = z;
+        uint8_t scoopId = lvl->getBlockId(scoopX, scoopY, scoopZ);
+        if (!cursestone::block::LiquidFlow::isLiquidId(scoopId)) {
+            scoopX = placeX;
+            scoopY = placeY;
+            scoopZ = placeZ;
+            scoopId = lvl->getBlockId(scoopX, scoopY, scoopZ);
+        }
+        if (cursestone::block::LiquidFlow::isLiquidId(scoopId) &&
+            lvl->getBlockData(scoopX, scoopY, scoopZ) == 0) {
+            bool scoopWater = cursestone::block::LiquidFlow::isWaterId(scoopId);
+            lvl->setBlock(scoopX, scoopY, scoopZ, 0, 0);
+            broadcastBlockChange(srv_, lvl, scoopX, scoopY, scoopZ, 0, 0);
+            if (inv_) {
+                int held = inv_->heldSlot();
+                auto cur = inv_->getItem(held);
+                if (cur.count <= 1) {
+                    item::ItemStack filled;
+                    filled.id = scoopWater ? 326 : 327;
+                    filled.meta = 0;
+                    filled.count = 1;
+                    inv_->setItem(held, filled);
+                } else {
+                    cur.count -= 1;
+                    inv_->setItem(held, cur);
+                }
+            }
+        } else {
+            resyncUseTarget(this, lvl, x, y, z, face);
+        }
         return;
     } else if (sneakLocked && heldItemId > 255) {
         // Prevent item use while sneaking.
@@ -1005,8 +1042,10 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
 
     uint8_t existing = mcp_chunk_get_block_id(ch, localX, placeY, localZ);
     constexpr uint8_t FIRE_ID = 51;
-    if (existing != 0 && existing != FIRE_ID) {
-        // Reject placement into occupied cells.
+    if (existing != 0 && existing != FIRE_ID &&
+        !cursestone::block::LiquidFlow::isReplaceableId(existing)) {
+        // Vanilla mayPlace: the cell must be air or a replaceable block
+        // (water, lava, tall grass, fire...) to accept the placement.
         resyncUseTarget(this, lvl, x, y, z, face);
         return;
     }
@@ -1023,6 +1062,10 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
     // Update the chunk with the placed block.
     mcp_chunk_set_block_full(ch, localX, placeY, localZ, placedBlockId, placedBlockData);
     ch->dirty = true;
+
+    // Vanilla UPDATE_ALL onPlace + neighbor pass for the placed block
+    // (liquid placement starts flowing; neighbors of water wake up).
+    cursestone::block::LiquidFlow::onBlockChanged(lvl, placeX, placeY, placeZ);
 
     // Register signs so their text persists after reloading.
     if (placedBlockId == block::SIGN_POST || placedBlockId == block::WALL_SIGN) {

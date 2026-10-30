@@ -48,6 +48,7 @@
 #include "BlockIronOre.h"
 #include "BlockLapisOre.h"
 #include "BlockLava.h"
+#include "BlockLavaFlowing.h"
 #include "BlockLeaves.h"
 #include "BlockLog.h"
 #include "BlockMagmaBlock.h"
@@ -68,6 +69,7 @@
 #include "BlockTNT.h"
 #include "BlockTorch.h"
 #include "BlockWater.h"
+#include "BlockWaterFlowing.h"
 #include "BlockWheat.h"
 #include "BlockWood.h"
 #include "BlockWoodStairs.h"
@@ -124,7 +126,9 @@ void register_all_blocks() {
     Block::registerBlock(std::make_unique<BlockChest>());
     Block::registerBlock(std::make_unique<BlockFurnace>());
     Block::registerBlock(std::make_unique<BlockLava>());
+    Block::registerBlock(std::make_unique<BlockLavaFlowing>());
     Block::registerBlock(std::make_unique<BlockWater>());
+    Block::registerBlock(std::make_unique<BlockWaterFlowing>());
     Block::registerBlock(std::make_unique<BlockWood>());
     Block::registerBlock(std::make_unique<BlockWoodStairs>());
     Block::registerBlock(std::make_unique<BlockStoneBricks>());
