@@ -795,7 +795,7 @@ void Server::beginAutosaveDrain() {
     autosave_draining_ = true;
     if (debug_mode_) {
         utils::MainLogger::get().info("[SAVE] Autosave: " + std::to_string(pending) +
-                                      " chunk(s) en cola -> drenando " +
+                                      " chunk(s) queued -> draining " +
                                       std::to_string(kAutosaveChunksPerTick) + "/tick (max " +
                                       std::to_string(kAutosaveMsPerTick) + "ms/tick).");
     }
