@@ -425,9 +425,8 @@ void Anvil::saveChunk(const std::shared_ptr<FullChunk>& chunk) {
     raw->last_update = current_millis();
 
     // Encode NBT big-endian (main thread — reads the live chunk).
-    size_t nbt_len = 0;
-    utils::BufferPtr nbt_buf(anvil_chunk_encode(raw, &nbt_len));
-    if (!nbt_buf || nbt_len == 0) {
+    std::vector<uint8_t> nbt_buf = anvil_chunk_encode(raw);
+    if (nbt_buf.empty()) {
         utils::MainLogger::get().warn("[Anvil] Failed to encode chunk " + std::to_string(raw->x) +
                                       "," + std::to_string(raw->z));
         return;
@@ -436,7 +435,7 @@ void Anvil::saveChunk(const std::shared_ptr<FullChunk>& chunk) {
     SaveJob job;
     job.x = raw->x;
     job.z = raw->z;
-    job.nbt.assign(nbt_buf.get(), nbt_buf.get() + nbt_len);
+    job.nbt.assign(nbt_buf.begin(), nbt_buf.end());
     enqueueSave(std::move(job));
 }
 
@@ -612,47 +611,46 @@ void Anvil::loadMetadata() {
         return;
     }
 
-    utils::TagGuard root(mcp_nbt_read_bytes(inflated.data(), inflated.size(),
-                                            /*little_endian=*/false));
-    if (!root || mcp_tag_get_type(root.get()) != MCP_TAG_COMPOUND)
+    utils::TagGuard root(cursestone::nbt::read(inflated.data(), inflated.size(), /*little_endian=*/false));
+    if (!root || cursestone::nbt::type_of(root.get()) != cursestone::nbt::TAG_COMPOUND)
         return;
-    const mcp_tag_t* data = mcp_compound_tag_get_compound(root.get(), "Data");
+    const cursestone::nbt::Tag* data = cursestone::nbt::get_compound(root.get(), "Data");
     if (!data)
         return;
 
-    seed_ = mcp_compound_tag_get_long(data, "RandomSeed", 0);
-    time_ = mcp_compound_tag_get_long(data, "Time", 0);
-    int64_t day = mcp_compound_tag_get_long(data, "DayTime", 0);
+    seed_ = cursestone::nbt::get_long(data, "RandomSeed", 0);
+    time_ = cursestone::nbt::get_long(data, "Time", 0);
+    int64_t day = cursestone::nbt::get_long(data, "DayTime", 0);
     if (time_ == 0 && day != 0)
         time_ = day;
-    int32_t sx = mcp_compound_tag_get_int(data, "SpawnX", 0);
-    int32_t sy = mcp_compound_tag_get_int(data, "SpawnY", 64);
-    int32_t sz = mcp_compound_tag_get_int(data, "SpawnZ", 0);
+    int32_t sx = cursestone::nbt::get_int(data, "SpawnX", 0);
+    int32_t sy = cursestone::nbt::get_int(data, "SpawnY", 64);
+    int32_t sz = cursestone::nbt::get_int(data, "SpawnZ", 0);
     spawn_ = math::Vector3{(double)sx, (double)sy, (double)sz};
-    const char* gen = mcp_compound_tag_get_string(data, "generatorName", "normal");
+    const char* gen = cursestone::nbt::get_string(data, "generatorName", "normal");
     if (gen)
         generator_name_ = gen;
 }
 
 void Anvil::saveMetadata() {
     // Build root compound "".
-    utils::TagGuard root(mcp_compound_tag_new_named(""));
+    utils::TagGuard root(new cursestone::nbt::CompoundTag(""));
     if (!root)
         return;
 
     // Build "Data" compound (mirrors Nukkit's Anvil.generate()).
-    utils::TagGuard data(mcp_compound_tag_new_named("Data"));
+    utils::TagGuard data(new cursestone::nbt::CompoundTag("Data"));
     if (!data)
         return;
 
-    mcp_compound_tag_set_long(data.get(), "DayTime", time_);
-    mcp_compound_tag_set_int(data.get(), "GameType", 0);
-    mcp_compound_tag_set_string(data.get(), "generatorName", generator_name_.c_str());
-    mcp_compound_tag_set_string(data.get(), "generatorOptions", "");
-    mcp_compound_tag_set_int(data.get(), "generatorVersion", 1);
-    mcp_compound_tag_set_byte(data.get(), "hardcore", 0);
-    mcp_compound_tag_set_byte(data.get(), "initialized", 1);
-    mcp_compound_tag_set_long(data.get(), "LastPlayed", current_unix_seconds());
+    cursestone::nbt::set_long(data.get(), "DayTime", time_);
+    cursestone::nbt::set_int(data.get(), "GameType", 0);
+    cursestone::nbt::set_string(data.get(), "generatorName", generator_name_.c_str());
+    cursestone::nbt::set_string(data.get(), "generatorOptions", "");
+    cursestone::nbt::set_int(data.get(), "generatorVersion", 1);
+    cursestone::nbt::set_byte(data.get(), "hardcore", 0);
+    cursestone::nbt::set_byte(data.get(), "initialized", 1);
+    cursestone::nbt::set_long(data.get(), "LastPlayed", current_unix_seconds());
     // LevelName = last path component (e.g. "worlds/world" → "world").
     {
         std::string lname;
@@ -663,35 +661,35 @@ void Anvil::saveMetadata() {
             else
                 lname = path_.substr(pos + 1);
         }
-        mcp_compound_tag_set_string(data.get(), "LevelName", lname.c_str());
+        cursestone::nbt::set_string(data.get(), "LevelName", lname.c_str());
     }
-    mcp_compound_tag_set_byte(data.get(), "raining", 0);
-    mcp_compound_tag_set_int(data.get(), "rainTime", 0);
-    mcp_compound_tag_set_long(data.get(), "RandomSeed", seed_);
-    mcp_compound_tag_set_int(data.get(), "SpawnX", (int32_t)spawn_.x);
-    mcp_compound_tag_set_int(data.get(), "SpawnY", (int32_t)spawn_.y);
-    mcp_compound_tag_set_int(data.get(), "SpawnZ", (int32_t)spawn_.z);
-    mcp_compound_tag_set_byte(data.get(), "thundering", 0);
-    mcp_compound_tag_set_int(data.get(), "thunderTime", 0);
-    mcp_compound_tag_set_int(data.get(), "version", 19133);
-    mcp_compound_tag_set_long(data.get(), "Time", time_);
-    mcp_compound_tag_set_long(data.get(), "SizeOnDisk", 0);
+    cursestone::nbt::set_byte(data.get(), "raining", 0);
+    cursestone::nbt::set_int(data.get(), "rainTime", 0);
+    cursestone::nbt::set_long(data.get(), "RandomSeed", seed_);
+    cursestone::nbt::set_int(data.get(), "SpawnX", (int32_t)spawn_.x);
+    cursestone::nbt::set_int(data.get(), "SpawnY", (int32_t)spawn_.y);
+    cursestone::nbt::set_int(data.get(), "SpawnZ", (int32_t)spawn_.z);
+    cursestone::nbt::set_byte(data.get(), "thundering", 0);
+    cursestone::nbt::set_int(data.get(), "thunderTime", 0);
+    cursestone::nbt::set_int(data.get(), "version", 19133);
+    cursestone::nbt::set_long(data.get(), "Time", time_);
+    cursestone::nbt::set_long(data.get(), "SizeOnDisk", 0);
 
     // GameRules (empty compound).
-    utils::TagGuard game_rules(mcp_compound_tag_new_named("GameRules"));
-    mcp_compound_tag_set(data.get(), "GameRules", game_rules.release());
+    utils::TagGuard game_rules(new cursestone::nbt::CompoundTag("GameRules"));
+    cursestone::nbt::set(data.get(), "GameRules", game_rules.release());
 
-    mcp_compound_tag_set(root.get(), "Data", data.release());
+    cursestone::nbt::set(root.get(), "Data", data.release());
 
     // Serialize big-endian.
-    size_t nbt_len = 0;
-    utils::BufferPtr nbt_buf(mcp_nbt_write_bytes(root.get(), /*little_endian=*/false, &nbt_len));
-    if (!nbt_buf || nbt_len == 0)
+    std::vector<uint8_t> nbt_buf;
+    cursestone::nbt::write(root.get(), /*little_endian=*/false, nbt_buf);
+    if (nbt_buf.empty())
         return;
 
     // GZIP-compress.
     std::vector<uint8_t> gz;
-    bool ok = gzip_compress(nbt_buf.get(), nbt_len, &gz);
+    bool ok = gzip_compress(nbt_buf.data(), nbt_buf.size(), &gz);
     if (!ok) {
         utils::MainLogger::get().warn("[Anvil] gzip compress failed for level.dat");
         return;
@@ -743,43 +741,43 @@ bool Anvil::generate(const std::string& path, const std::string& name, int64_t s
         return false;
 
     // Build Data compound.
-    utils::TagGuard data(mcp_compound_tag_new_named("Data"));
+    utils::TagGuard data(new cursestone::nbt::CompoundTag("Data"));
     if (!data)
         return false;
-    utils::TagGuard game_rules(mcp_compound_tag_new_named("GameRules"));
-    mcp_compound_tag_set(data.get(), "GameRules", game_rules.release());
+    utils::TagGuard game_rules(new cursestone::nbt::CompoundTag("GameRules"));
+    cursestone::nbt::set(data.get(), "GameRules", game_rules.release());
 
-    mcp_compound_tag_set_long(data.get(), "DayTime", 0);
-    mcp_compound_tag_set_int(data.get(), "GameType", 0);
-    mcp_compound_tag_set_string(data.get(), "generatorName", generatorName.c_str());
-    mcp_compound_tag_set_string(data.get(), "generatorOptions", "");
-    mcp_compound_tag_set_int(data.get(), "generatorVersion", 1);
-    mcp_compound_tag_set_byte(data.get(), "hardcore", 0);
-    mcp_compound_tag_set_byte(data.get(), "initialized", 1);
-    mcp_compound_tag_set_long(data.get(), "LastPlayed", current_unix_seconds());
-    mcp_compound_tag_set_string(data.get(), "LevelName", name.c_str());
-    mcp_compound_tag_set_byte(data.get(), "raining", 0);
-    mcp_compound_tag_set_int(data.get(), "rainTime", 0);
-    mcp_compound_tag_set_long(data.get(), "RandomSeed", seed);
-    mcp_compound_tag_set_int(data.get(), "SpawnX", 128);
-    mcp_compound_tag_set_int(data.get(), "SpawnY", 70);
-    mcp_compound_tag_set_int(data.get(), "SpawnZ", 128);
-    mcp_compound_tag_set_byte(data.get(), "thundering", 0);
-    mcp_compound_tag_set_int(data.get(), "thunderTime", 0);
-    mcp_compound_tag_set_int(data.get(), "version", 19133);
-    mcp_compound_tag_set_long(data.get(), "Time", 0);
-    mcp_compound_tag_set_long(data.get(), "SizeOnDisk", 0);
+    cursestone::nbt::set_long(data.get(), "DayTime", 0);
+    cursestone::nbt::set_int(data.get(), "GameType", 0);
+    cursestone::nbt::set_string(data.get(), "generatorName", generatorName.c_str());
+    cursestone::nbt::set_string(data.get(), "generatorOptions", "");
+    cursestone::nbt::set_int(data.get(), "generatorVersion", 1);
+    cursestone::nbt::set_byte(data.get(), "hardcore", 0);
+    cursestone::nbt::set_byte(data.get(), "initialized", 1);
+    cursestone::nbt::set_long(data.get(), "LastPlayed", current_unix_seconds());
+    cursestone::nbt::set_string(data.get(), "LevelName", name.c_str());
+    cursestone::nbt::set_byte(data.get(), "raining", 0);
+    cursestone::nbt::set_int(data.get(), "rainTime", 0);
+    cursestone::nbt::set_long(data.get(), "RandomSeed", seed);
+    cursestone::nbt::set_int(data.get(), "SpawnX", 128);
+    cursestone::nbt::set_int(data.get(), "SpawnY", 70);
+    cursestone::nbt::set_int(data.get(), "SpawnZ", 128);
+    cursestone::nbt::set_byte(data.get(), "thundering", 0);
+    cursestone::nbt::set_int(data.get(), "thunderTime", 0);
+    cursestone::nbt::set_int(data.get(), "version", 19133);
+    cursestone::nbt::set_long(data.get(), "Time", 0);
+    cursestone::nbt::set_long(data.get(), "SizeOnDisk", 0);
 
-    utils::TagGuard root(mcp_compound_tag_new_named(""));
-    mcp_compound_tag_set(root.get(), "Data", data.release());
+    utils::TagGuard root(new cursestone::nbt::CompoundTag(""));
+    cursestone::nbt::set(root.get(), "Data", data.release());
 
-    size_t nbt_len = 0;
-    utils::BufferPtr nbt_buf(mcp_nbt_write_bytes(root.get(), /*little_endian=*/false, &nbt_len));
-    if (!nbt_buf || nbt_len == 0)
+    std::vector<uint8_t> nbt_buf;
+    cursestone::nbt::write(root.get(), /*little_endian=*/false, nbt_buf);
+    if (nbt_buf.empty())
         return false;
 
     std::vector<uint8_t> gz;
-    bool ok = gzip_compress(nbt_buf.get(), nbt_len, &gz);
+    bool ok = gzip_compress(nbt_buf.data(), nbt_buf.size(), &gz);
     if (!ok)
         return false;
 

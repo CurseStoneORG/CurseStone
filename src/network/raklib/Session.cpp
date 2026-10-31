@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Session.c — per-client RakNet state machine, Protocol 84 / MCPE 0.15.10
+// Session.cpp — per-client RakNet state machine, Protocol 84 / MCPE 0.15.10
 // Ported from raklib/server/Session (the reference server 4.0.0 legacy branch)
 #include "Session.h"
 #include "SessionManager.h"
@@ -324,7 +324,7 @@ size_t mcp_rak_session_build_datagram(mcp_rak_session_t* s, uint8_t* out, size_t
     // with any latency/reordering, more fragments end up in flight at
     // once, making the corruption worse until the client's RakNet
     // layer gives up and disconnects. This was the read side
-    // (parse_encap_record in SessionManager.c) all along — that one
+    // (parse_encap_record in SessionManager.cpp) all along — that one
     // already used the correct count/id/index order — so only the
     // write side needed fixing to match it.
     if (has_split) {

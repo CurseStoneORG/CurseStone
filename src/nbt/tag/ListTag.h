@@ -24,24 +24,36 @@
 // ListTag — NBT TAG_List (homogeneous children, no per-child names).
 #pragma once
 
-#include <stddef.h>
+#include <cstddef>
+#include <vector>
 
 #include "Tag.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+namespace cursestone::nbt {
 
-mcp_tag_t* mcp_list_tag_new(mcp_tag_type_t element_type);
-mcp_tag_t* mcp_list_tag_new_named(const char* name, mcp_tag_type_t element_type);
+class ListTag : public Tag {
+  public:
+    explicit ListTag(TagType element_type) : Tag(TAG_LIST), element_type(element_type) {}
+    ListTag(const char* name, TagType element_type) : Tag(TAG_LIST), element_type(element_type) {
+        if (name)
+            this->name = name;
+    }
+    ~ListTag() override;
+
+    TagType element_type;
+    std::vector<Tag*> children; // owned, destroyed together with the list
+
+    void write_payload(mcp_bstream_t* s, bool le) const override;
+};
 
 // Append a child. The list takes ownership of `child` on success
-// (returns 0); on failure the caller keeps ownership.
-int mcp_list_tag_append(mcp_tag_t* self, mcp_tag_t* child);
+// (returns true); on failure the caller keeps ownership.
+bool append(Tag* list, Tag* child);
 
-size_t mcp_list_tag_size(const mcp_tag_t* self);
-const mcp_tag_t* mcp_list_tag_get(const mcp_tag_t* self, size_t index);
+// Number of children (0 for a non-list or missing tag).
+size_t size(const Tag* list);
 
-#ifdef __cplusplus
-} // extern "C"
-#endif
+// Child at `index`, nullptr when out of range or not a list.
+const Tag* at(const Tag* list, size_t index);
+
+} // namespace cursestone::nbt

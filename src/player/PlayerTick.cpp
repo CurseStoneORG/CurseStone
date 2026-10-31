@@ -941,17 +941,17 @@ void Player::onUpdate(uint64_t current_tick) {
         last_save_tick_ = current_tick;
         if (named_tag_) {
             // Update position and rotation before saving player data.
-            mcp_compound_tag_set_double(named_tag_.get(), "PosX", pos_.x);
-            mcp_compound_tag_set_double(named_tag_.get(), "PosY", pos_.y);
-            mcp_compound_tag_set_double(named_tag_.get(), "PosZ", pos_.z);
-            mcp_compound_tag_set_float(named_tag_.get(), "Yaw", yaw_);
-            mcp_compound_tag_set_float(named_tag_.get(), "Pitch", pitch_);
-            mcp_compound_tag_set_short(named_tag_.get(), "Health", (int16_t)health());
-            mcp_compound_tag_set_short(named_tag_.get(), "Hunger", (int16_t)foodLevel());
-            mcp_compound_tag_set_float(named_tag_.get(), "FoodSaturation", food_saturation_);
-            mcp_compound_tag_set_float(named_tag_.get(), "FoodExhaustion", food_exhaustion_);
-            mcp_compound_tag_set_int(named_tag_.get(), "playerGameType", cfg_.gamemode);
-            mcp_compound_tag_set_long(named_tag_.get(), "lastPlayed", (int64_t)mcp_utils_time_ms());
+            cursestone::nbt::set_double(named_tag_.get(), "PosX", pos_.x);
+            cursestone::nbt::set_double(named_tag_.get(), "PosY", pos_.y);
+            cursestone::nbt::set_double(named_tag_.get(), "PosZ", pos_.z);
+            cursestone::nbt::set_float(named_tag_.get(), "Yaw", yaw_);
+            cursestone::nbt::set_float(named_tag_.get(), "Pitch", pitch_);
+            cursestone::nbt::set_short(named_tag_.get(), "Health", (int16_t)health());
+            cursestone::nbt::set_short(named_tag_.get(), "Hunger", (int16_t)foodLevel());
+            cursestone::nbt::set_float(named_tag_.get(), "FoodSaturation", food_saturation_);
+            cursestone::nbt::set_float(named_tag_.get(), "FoodExhaustion", food_exhaustion_);
+            cursestone::nbt::set_int(named_tag_.get(), "playerGameType", cfg_.gamemode);
+            cursestone::nbt::set_long(named_tag_.get(), "lastPlayed", (int64_t)mcp_utils_time_ms());
             srv_->saveOfflinePlayerData(cfg_.username, named_tag_);
         }
     }

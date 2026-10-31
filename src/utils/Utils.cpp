@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Utils.c — misc helpers. Pure C.
+// Utils.cpp — misc helpers.
 #define _POSIX_C_SOURCE 199309L
 #include "Utils.h"
 

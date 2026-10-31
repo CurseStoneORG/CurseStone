@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Random.c — Mersenne Twister. Pure C.
+// Random.cpp — Mersenne Twister.
 #include "Random.h"
 #include "Utils.h"
 

@@ -21,33 +21,17 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// IntTag.cpp — NBT MCP_TAG_INT value.
+// IntTag.cpp — NBT TAG_INT payload.
 #include "IntTag.h"
-#include "TagDefs.h"
 
-mcp_tag_t* mcp_int_tag_new(int32_t v) {
-    try {
-        return new mcp_int_tag(v);
-    } catch (...) {
-        return NULL;
-    }
-}
+namespace cursestone::nbt {
 
-mcp_tag_t* mcp_int_tag_new_named(const char* name, int32_t v) {
-    try {
-        auto* t = new mcp_int_tag(v);
-        if (name)
-            t->name = name;
-        return t;
-    } catch (...) {
-        return NULL;
-    }
-}
-
-void mcp_int_tag::write_payload(mcp_bstream_t* s, bool le) const {
+void IntTag::write_payload(mcp_bstream_t* s, bool le) const {
     (void)le;
     if (le)
         mcp_bstream_write_u32_le(s, (uint32_t)value);
     else
         mcp_bstream_write_u32_be(s, (uint32_t)value);
 }
+
+} // namespace cursestone::nbt

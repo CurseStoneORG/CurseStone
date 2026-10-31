@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// UDPServerSocket — cross-platform UDP socket abstraction. Pure C.
+// UDPServerSocket — cross-platform UDP socket abstraction.
 // Hides POSIX <sys/socket.h> vs Winsock2 behind a uniform interface.
 #pragma once
 

@@ -136,11 +136,11 @@ void TileChest::removeItem(int slot) {
 // list from growing to 27 entries for a chest that only has 2 items
 // in it. On read, any slot not present in the list is left empty,
 // which is already Container::clear()'s default state.
-void TileChest::writeNBT(mcp_tag_t* tag) const {
+void TileChest::writeNBT(cursestone::nbt::Tag* tag) const {
     if (!tag)
         return;
     Tile::writeNBT(tag); // writes id/x/y/z
-    utils::TagGuard items(mcp_list_tag_new_named("Items", MCP_TAG_COMPOUND));
+    utils::TagGuard items(new cursestone::nbt::ListTag("Items", cursestone::nbt::TAG_COMPOUND));
     if (!items)
         return;
     auto contents = inventory_->getContents();
@@ -149,38 +149,38 @@ void TileChest::writeNBT(mcp_tag_t* tag) const {
             continue;
         if (slot < 0 || slot >= SIZE)
             continue;
-        utils::TagGuard entry(mcp_compound_tag_new());
+        utils::TagGuard entry(new cursestone::nbt::CompoundTag());
         if (!entry)
             continue;
-        mcp_compound_tag_set_byte(entry.get(), "Slot", static_cast<int8_t>(slot));
+        cursestone::nbt::set_byte(entry.get(), "Slot", static_cast<int8_t>(slot));
         item::itemStackToNbt(stack, entry.get());
-        if (mcp_list_tag_append(items.get(), entry.get()) == 0)
+        if (!cursestone::nbt::append(items.get(), entry.get()))
             entry.release();
     }
-    if (mcp_compound_tag_set(tag, "Items", items.get()) == 0)
+    if (!cursestone::nbt::set(tag, "Items", items.get()))
         items.release();
     // Vanilla pairing persists as the two int tags every client reads:
     // without them a saved-and-reloaded double chest would render and
     // open as two single chests again.
     if (has_pair_) {
-        mcp_compound_tag_set_int(tag, "pairx", pair_x_);
-        mcp_compound_tag_set_int(tag, "pairz", pair_z_);
+        cursestone::nbt::set_int(tag, "pairx", pair_x_);
+        cursestone::nbt::set_int(tag, "pairz", pair_z_);
     }
 }
 
-void TileChest::readNBT(const mcp_tag_t* tag) {
+void TileChest::readNBT(const cursestone::nbt::Tag* tag) {
     if (!tag)
         return;
     Tile::readNBT(tag);
-    const mcp_tag_t* items = mcp_compound_tag_get(tag, "Items");
-    if (!items || mcp_tag_get_type(items) != MCP_TAG_LIST)
+    const cursestone::nbt::Tag* items = cursestone::nbt::get(tag, "Items");
+    if (!items || cursestone::nbt::type_of(items) != cursestone::nbt::TAG_LIST)
         return;
-    size_t count = mcp_list_tag_size(items);
+    size_t count = cursestone::nbt::size(items);
     for (size_t i = 0; i < count; ++i) {
-        const mcp_tag_t* entry = mcp_list_tag_get(items, i);
-        if (!entry || mcp_tag_get_type(entry) != MCP_TAG_COMPOUND)
+        const cursestone::nbt::Tag* entry = cursestone::nbt::at(items, i);
+        if (!entry || cursestone::nbt::type_of(entry) != cursestone::nbt::TAG_COMPOUND)
             continue;
-        int slot = mcp_compound_tag_get_byte(entry, "Slot", -1);
+        int slot = cursestone::nbt::get_byte(entry, "Slot", -1);
         if (slot < 0 || slot >= SIZE)
             continue;
         // id / Count / Damage + enchantments, shared with every other
@@ -193,8 +193,8 @@ void TileChest::readNBT(const mcp_tag_t* tag) {
     // Vanilla pairing tags (see writeNBT). INT_MIN as the sentinel — no
     // real chest block ever sits at that coordinate.
     constexpr int32_t kNoPair = (-2147483647 - 1);
-    int32_t px = mcp_compound_tag_get_int(tag, "pairx", kNoPair);
-    int32_t pz = mcp_compound_tag_get_int(tag, "pairz", kNoPair);
+    int32_t px = cursestone::nbt::get_int(tag, "pairx", kNoPair);
+    int32_t pz = cursestone::nbt::get_int(tag, "pairz", kNoPair);
     if (px != kNoPair && pz != kNoPair) {
         pair_x_ = px;
         pair_z_ = pz;

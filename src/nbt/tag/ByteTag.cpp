@@ -21,30 +21,14 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// ByteTag.cpp — NBT MCP_TAG_BYTE value.
+// ByteTag.cpp — NBT TAG_BYTE payload.
 #include "ByteTag.h"
-#include "TagDefs.h"
 
-mcp_tag_t* mcp_byte_tag_new(int8_t v) {
-    try {
-        return new mcp_byte_tag(v);
-    } catch (...) {
-        return NULL;
-    }
-}
+namespace cursestone::nbt {
 
-mcp_tag_t* mcp_byte_tag_new_named(const char* name, int8_t v) {
-    try {
-        auto* t = new mcp_byte_tag(v);
-        if (name)
-            t->name = name;
-        return t;
-    } catch (...) {
-        return NULL;
-    }
-}
-
-void mcp_byte_tag::write_payload(mcp_bstream_t* s, bool le) const {
+void ByteTag::write_payload(mcp_bstream_t* s, bool le) const {
     (void)le;
     mcp_bstream_write_i8(s, value);
 }
+
+} // namespace cursestone::nbt

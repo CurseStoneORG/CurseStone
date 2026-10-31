@@ -25,7 +25,6 @@
 #include "nbt/tag/IntArrayTag.h"
 #include "nbt/tag/IntTag.h"
 #include "nbt/tag/ListTag.h"
-#include "nbt/tag/TagDefs.h"
 #include "item/ItemNbt.h"
 
 #include <array>
@@ -53,17 +52,15 @@ static bool near(double a, double b, double eps = 1e-4) {
 // RAII-free helper: parse a fixture, hand the tag to `fn`, always destroy it.
 template <typename Fn>
 static void withRoot(const uint8_t* data, size_t len, bool le, Fn fn) {
-    mcp_tag_t* root = mcp_nbt_read_bytes(data, len, le);
+    cursestone::nbt::Tag* root = cursestone::nbt::read(data, len, le);
     fn(root);
-    if (root) mcp_tag_destroy(root);
+    if (root) delete root;
 }
 
 // Serialize any tag and compare with a byte fixture.
-static std::vector<uint8_t> serialize(const mcp_tag_t* tag, bool le) {
-    size_t n = 0;
-    uint8_t* p = mcp_nbt_write_bytes(tag, le, &n);
-    std::vector<uint8_t> out(p, p + n);
-    free(p);
+static std::vector<uint8_t> serialize(const cursestone::nbt::Tag* tag, bool le) {
+    std::vector<uint8_t> out;
+    cursestone::nbt::write(tag, le, out);
     return out;
 }
 static bool bytesEqual(const std::vector<uint8_t>& a, const uint8_t* b, size_t n) {
@@ -143,71 +140,71 @@ int main() {
     // 1. Little-endian: read every type back
     // ================================================================
     printf("\n-- format: little-endian fixture --\n");
-    withRoot(kLeRoot, sizeof(kLeRoot), true, [](mcp_tag_t* root) {
+    withRoot(kLeRoot, sizeof(kLeRoot), true, [](cursestone::nbt::Tag* root) {
         check(root != nullptr, "the fixture parses");
         if (!root) return;
-        check(mcp_tag_get_type(root) == MCP_TAG_COMPOUND, "the root is a compound");
+        check(cursestone::nbt::type_of(root) == cursestone::nbt::TAG_COMPOUND, "the root is a compound");
         check(root->name == "Root", "the root name survives");
 
-        check(mcp_compound_tag_get_byte  (root, "B",  0) == 127,    "BYTE   = 127");
-        check(mcp_compound_tag_get_short (root, "S",  0) == 12345,  "SHORT  = 12345");
-        check(mcp_compound_tag_get_int   (root, "I",  0) == 0x12345678, "INT = 0x12345678");
-        check(mcp_compound_tag_get_long  (root, "L",  0) == 0x0102030405060708LL,
+        check(cursestone::nbt::get_byte(root, "B", 0) == 127,    "BYTE   = 127");
+        check(cursestone::nbt::get_short(root, "S", 0) == 12345,  "SHORT  = 12345");
+        check(cursestone::nbt::get_int(root, "I", 0) == 0x12345678, "INT = 0x12345678");
+        check(cursestone::nbt::get_long(root, "L", 0) == 0x0102030405060708LL,
               "LONG   = 0x0102030405060708");
-        check(near(mcp_compound_tag_get_float (root, "F", 0.0f), 1.0), "FLOAT = 1.0");
-        check(near(mcp_compound_tag_get_double(root, "D", 0.0), 1.5), "DOUBLE = 1.5");
-        check(std::string(mcp_compound_tag_get_string(root, "St", "")) == "hi",
+        check(near(cursestone::nbt::get_float(root, "F", 0.0f), 1.0), "FLOAT = 1.0");
+        check(near(cursestone::nbt::get_double(root, "D", 0.0), 1.5), "DOUBLE = 1.5");
+        check(std::string(cursestone::nbt::get_string(root, "St", "")) == "hi",
               "STRING = \"hi\"");
 
-        const mcp_tag_t* ba = mcp_compound_tag_get(root, "BA");
-        check(ba && mcp_tag_get_type(ba) == MCP_TAG_BYTE_ARRAY, "BYTE_ARRAY is a byte array");
+        const cursestone::nbt::Tag* ba = cursestone::nbt::get(root, "BA");
+        check(ba && cursestone::nbt::type_of(ba) == cursestone::nbt::TAG_BYTE_ARRAY, "BYTE_ARRAY is a byte array");
         if (ba) {
-            const auto* arr = static_cast<const mcp_byte_array_tag*>(ba);
+            const auto* arr = static_cast<const cursestone::nbt::ByteArrayTag*>(ba);
             check(arr->data.size() == 2 && arr->data[0] == 0xAA && arr->data[1] == 0xBB,
                   "BYTE_ARRAY bytes = {0xAA,0xBB}");
         }
 
-        const mcp_tag_t* ia = mcp_compound_tag_get(root, "IA");
-        check(ia && mcp_tag_get_type(ia) == MCP_TAG_INT_ARRAY, "INT_ARRAY is an int array");
+        const cursestone::nbt::Tag* ia = cursestone::nbt::get(root, "IA");
+        check(ia && cursestone::nbt::type_of(ia) == cursestone::nbt::TAG_INT_ARRAY, "INT_ARRAY is an int array");
         if (ia) {
-            const auto* arr = static_cast<const mcp_int_array_tag*>(ia);
+            const auto* arr = static_cast<const cursestone::nbt::IntArrayTag*>(ia);
             check(arr->data.size() == 2 && arr->data[0] == 7 && arr->data[1] == 8,
                   "INT_ARRAY values = {7,8}");
         }
 
-        const mcp_tag_t* li = mcp_compound_tag_get(root, "Li");
-        check(li && mcp_tag_get_type(li) == MCP_TAG_LIST, "LIST is a list");
-        check(li && static_cast<const mcp_list_tag*>(li)->element_type == MCP_TAG_INT,
+        const cursestone::nbt::Tag* li = cursestone::nbt::get(root, "Li");
+        check(li && cursestone::nbt::type_of(li) == cursestone::nbt::TAG_LIST, "LIST is a list");
+        check(li && static_cast<const cursestone::nbt::ListTag*>(li)->element_type == cursestone::nbt::TAG_INT,
               "LIST remembers its element type");
-        check(li && mcp_list_tag_size(li) == 2, "LIST has 2 elements");
-        if (li && mcp_list_tag_size(li) == 2) {
-            const auto* e0 = static_cast<const mcp_int_tag*>(mcp_list_tag_get(li, 0));
-            const auto* e1 = static_cast<const mcp_int_tag*>(mcp_list_tag_get(li, 1));
+        check(li && cursestone::nbt::size(li) == 2, "LIST has 2 elements");
+        if (li && cursestone::nbt::size(li) == 2) {
+            const auto* e0 = static_cast<const cursestone::nbt::IntTag*>(cursestone::nbt::at(li, 0));
+            const auto* e1 = static_cast<const cursestone::nbt::IntTag*>(cursestone::nbt::at(li, 1));
             check(e0 && e1 && e0->value == 1 && e1->value == -1,
                   "LIST elements are NOT named and keep their values (1, -1)");
         }
 
-        const mcp_tag_t* c = mcp_compound_tag_get_compound(root, "C");
+        const cursestone::nbt::Tag* c = cursestone::nbt::get_compound(root, "C");
         check(c != nullptr, "the nested compound is reachable");
-        check(c && mcp_compound_tag_get_byte(c, "X", 0) == 1, "the nested compound's field reads");
+        check(c && cursestone::nbt::get_byte(c, "X", 0) == 1, "the nested compound's field reads");
     });
 
     // ================================================================
     // 2. The writer reproduces the fixture byte for byte
     // ================================================================
     printf("\n-- format: byte-exact round trip --\n");
-    withRoot(kLeRoot, sizeof(kLeRoot), true, [](mcp_tag_t* root) {
+    withRoot(kLeRoot, sizeof(kLeRoot), true, [](cursestone::nbt::Tag* root) {
         if (!root) return;
         check(bytesEqual(serialize(root, true), kLeRoot, sizeof(kLeRoot)),
               "re-serializing the little-endian fixture is byte-identical");
     });
-    withRoot(kBeRoot, sizeof(kBeRoot), false, [](mcp_tag_t* root) {
+    withRoot(kBeRoot, sizeof(kBeRoot), false, [](cursestone::nbt::Tag* root) {
         check(root != nullptr, "the big-endian fixture parses");
-        check(root && mcp_compound_tag_get_int(root, "I", 0) == 0x12345678,
+        check(root && cursestone::nbt::get_int(root, "I", 0) == 0x12345678,
               "big-endian INT = 0x12345678");
-        check(root && mcp_compound_tag_get_long(root, "L", 0) == 0x0102030405060708LL,
+        check(root && cursestone::nbt::get_long(root, "L", 0) == 0x0102030405060708LL,
               "big-endian LONG = 0x0102030405060708");
-        check(root && std::string(mcp_compound_tag_get_string(root, "St", "")) == "hi",
+        check(root && std::string(cursestone::nbt::get_string(root, "St", "")) == "hi",
               "big-endian STRING = \"hi\"");
         if (root) {
             check(bytesEqual(serialize(root, false), kBeRoot, sizeof(kBeRoot)),
@@ -224,7 +221,7 @@ int main() {
         // past the end. The interesting ones (mid-payload) must fail.
         int parsed = 0, failed = 0;
         for (size_t n = 0; n < sizeof(kLeRoot); ++n) {
-            withRoot(kLeRoot, n, true, [&](mcp_tag_t* t) {
+            withRoot(kLeRoot, n, true, [&](cursestone::nbt::Tag* t) {
                 if (t) ++parsed; else ++failed;
             });
         }
@@ -237,17 +234,17 @@ int main() {
         // error: a reader must stop at the end of the root, not demand EOF.
         std::vector<uint8_t> padded(kLeRoot, kLeRoot + sizeof(kLeRoot));
         padded.insert(padded.end(), 8, 0xAB);
-        withRoot(padded.data(), padded.size(), true, [](mcp_tag_t* t) {
-            check(t != nullptr && mcp_compound_tag_get_int(t, "I", 0) == 0x12345678,
+        withRoot(padded.data(), padded.size(), true, [](cursestone::nbt::Tag* t) {
+            check(t != nullptr && cursestone::nbt::get_int(t, "I", 0) == 0x12345678,
                   "trailing bytes after the root are ignored");
         });
         // A type byte the format does not define.
         const uint8_t bogus[] = { 0x0D, 0x01, 0x00, 'x', 0x00 };
         withRoot(bogus, sizeof(bogus), true,
-                 [](mcp_tag_t* t) { check(t == nullptr, "an undefined tag type is rejected"); });
+                 [](cursestone::nbt::Tag* t) { check(t == nullptr, "an undefined tag type is rejected"); });
         // An empty buffer.
         withRoot(nullptr, 0, true,
-                 [](mcp_tag_t* t) { check(t == nullptr, "an empty buffer is rejected"); });
+                 [](cursestone::nbt::Tag* t) { check(t == nullptr, "an empty buffer is rejected"); });
     }
 
     // ================================================================
@@ -255,19 +252,19 @@ int main() {
     // ================================================================
     printf("\n-- format: CompoundTag::remove --\n");
     {
-        mcp_tag_t* c = mcp_compound_tag_new();
-        mcp_compound_tag_set_byte(c, "a", 1);
-        mcp_compound_tag_set_byte(c, "b", 2);
-        mcp_compound_tag_set_byte(c, "c", 3);
-        check(mcp_compound_tag_remove(c, "b"), "removing an existing key reports true");
-        check(!mcp_compound_tag_contains(c, "b"), "the removed key is gone");
-        check(mcp_compound_tag_size(c) == 2, "the size shrank");
-        check(mcp_compound_tag_get_byte(c, "a", 0) == 1 &&
-              mcp_compound_tag_get_byte(c, "c", 0) == 3, "the other keys survive");
-        check(!mcp_compound_tag_remove(c, "zz"), "removing a missing key reports false");
+        cursestone::nbt::Tag* c = new cursestone::nbt::CompoundTag();
+        cursestone::nbt::set_byte(c, "a", 1);
+        cursestone::nbt::set_byte(c, "b", 2);
+        cursestone::nbt::set_byte(c, "c", 3);
+        check(cursestone::nbt::remove(c, "b"), "removing an existing key reports true");
+        check(!cursestone::nbt::contains(c, "b"), "the removed key is gone");
+        check(static_cast<const cursestone::nbt::CompoundTag*>(c)->entries.size() == 2, "the size shrank");
+        check(cursestone::nbt::get_byte(c, "a", 0) == 1 &&
+              cursestone::nbt::get_byte(c, "c", 0) == 3, "the other keys survive");
+        check(!cursestone::nbt::remove(c, "zz"), "removing a missing key reports false");
         // The survivors keep their insertion order in the serialized bytes
         // (a hole would reorder them).
-        mcp_tag_set_name_cstr(c, "");
+        cursestone::nbt::set_name(c, "");
         const std::vector<uint8_t> out = serialize(c, true);
         check(out.size() > 0 && out[out.size() - 1] == 0x00, "the compound still ends with TAG_End");
         auto idxOf = [&out](char k) {
@@ -276,7 +273,7 @@ int main() {
             return (size_t)-1;
         };
         check(idxOf('a') < idxOf('c'), "the remaining entries keep their order");
-        mcp_tag_destroy(c);
+        delete c;
     }
 
     // ================================================================
@@ -284,7 +281,7 @@ int main() {
     // ================================================================
     printf("\n-- item NBT: reading the fixture --\n");
     {
-        mcp_tag_t* entry = mcp_nbt_read_bytes(kItemEntry, sizeof(kItemEntry), true);
+        cursestone::nbt::Tag* entry = cursestone::nbt::read(kItemEntry, sizeof(kItemEntry), true);
         check(entry != nullptr, "the item entry parses");
         ItemStack stack;
         check(cursestone::item::itemStackFromNbt(entry, stack), "the stack is read");
@@ -297,7 +294,7 @@ int main() {
               "\"ench\" -> Knockback II (spelled \"level\")");
         check(stack.enchantmentLevel(EnchantmentId::ENCH_FIRE_ASPECT) == 0,
               "an enchantment the item does not have reads 0");
-        if (entry) mcp_tag_destroy(entry);
+        if (entry) delete entry;
     }
 
     // ================================================================
@@ -312,11 +309,11 @@ int main() {
         s.ench.add(EnchantmentId::ENCH_PROTECTION, 4);
         s.ench.add(EnchantmentId::ENCH_THORNS, 2);
 
-        mcp_tag_t* entry = mcp_compound_tag_new();
+        cursestone::nbt::Tag* entry = new cursestone::nbt::CompoundTag();
         cursestone::item::itemStackToNbt(s, entry);
-        check(mcp_compound_tag_get_short(entry, "id", 0) == 310, "id is written as a short");
-        check(mcp_compound_tag_get_byte(entry, "Count", 0) == 1, "Count is written as a byte");
-        check(mcp_compound_tag_get_short(entry, "Damage", 0) == 7, "Damage is written as a short");
+        check(cursestone::nbt::get_short(entry, "id", 0) == 310, "id is written as a short");
+        check(cursestone::nbt::get_byte(entry, "Count", 0) == 1, "Count is written as a byte");
+        check(cursestone::nbt::get_short(entry, "Damage", 0) == 7, "Damage is written as a short");
 
         ItemStack back;
         check(cursestone::item::itemStackFromNbt(entry, back), "the written entry reads back");
@@ -331,9 +328,9 @@ int main() {
         ItemStack plain;
         plain.id = 1; plain.count = 64;
         cursestone::item::itemStackToNbt(plain, entry);
-        check(!mcp_compound_tag_contains(entry, "ench"),
+        check(!cursestone::nbt::contains(entry, "ench"),
               "a plain stack clears a stale \"ench\" from the entry");
-        mcp_tag_destroy(entry);
+        delete entry;
     }
 
     // ================================================================
@@ -344,20 +341,20 @@ int main() {
         ItemStack plain;
         plain.id = 5; plain.count = 12; plain.meta = 3;
 
-        mcp_tag_t* viaModule = mcp_compound_tag_new();
+        cursestone::nbt::Tag* viaModule = new cursestone::nbt::CompoundTag();
         cursestone::item::itemStackToNbt(plain, viaModule);
-        mcp_tag_set_name_cstr(viaModule, "");
+        cursestone::nbt::set_name(viaModule, "");
         const std::vector<uint8_t> a = serialize(viaModule, true);
-        mcp_tag_destroy(viaModule);
+        delete viaModule;
 
         // The exact three setters every loader used before this module.
-        mcp_tag_t* legacy = mcp_compound_tag_new();
-        mcp_compound_tag_set_short(legacy, "id", (int16_t)5);
-        mcp_compound_tag_set_byte (legacy, "Count", (int8_t)12);
-        mcp_compound_tag_set_short(legacy, "Damage", (int16_t)3);
-        mcp_tag_set_name_cstr(legacy, "");
+        cursestone::nbt::Tag* legacy = new cursestone::nbt::CompoundTag();
+        cursestone::nbt::set_short(legacy, "id", (int16_t)5);
+        cursestone::nbt::set_byte(legacy, "Count", (int8_t)12);
+        cursestone::nbt::set_short(legacy, "Damage", (int16_t)3);
+        cursestone::nbt::set_name(legacy, "");
         const std::vector<uint8_t> b = serialize(legacy, true);
-        mcp_tag_destroy(legacy);
+        delete legacy;
 
         check(!a.empty() && a == b, "an unenchanted item serializes exactly as before");
     }
@@ -370,45 +367,45 @@ int main() {
         ItemStack out;
         out.id = 99; out.count = 5;   // a failed read must clear this
 
-        mcp_tag_t* idZero = mcp_compound_tag_new();
-        mcp_compound_tag_set_short(idZero, "id", 0);
-        mcp_compound_tag_set_byte (idZero, "Count", 4);
+        cursestone::nbt::Tag* idZero = new cursestone::nbt::CompoundTag();
+        cursestone::nbt::set_short(idZero, "id", 0);
+        cursestone::nbt::set_byte(idZero, "Count", 4);
         // A failed read leaves `out` EMPTY (see the header contract), so a
         // caller that reused a stack cannot keep the old item.
         check(!cursestone::item::itemStackFromNbt(idZero, out) && out.isEmpty(),
               "id = 0 is not an item, and the output is cleared");
-        mcp_tag_destroy(idZero);
+        delete idZero;
 
-        mcp_tag_t* countZero = mcp_compound_tag_new();
-        mcp_compound_tag_set_short(countZero, "id", 5);
-        mcp_compound_tag_set_byte (countZero, "Count", 0);
+        cursestone::nbt::Tag* countZero = new cursestone::nbt::CompoundTag();
+        cursestone::nbt::set_short(countZero, "id", 5);
+        cursestone::nbt::set_byte(countZero, "Count", 0);
         check(!cursestone::item::itemStackFromNbt(countZero, out), "Count = 0 is not an item");
-        mcp_tag_destroy(countZero);
+        delete countZero;
 
-        mcp_tag_t* empty = mcp_compound_tag_new();
+        cursestone::nbt::Tag* empty = new cursestone::nbt::CompoundTag();
         check(!cursestone::item::itemStackFromNbt(empty, out), "an empty compound is not an item");
-        mcp_tag_destroy(empty);
+        delete empty;
 
         check(!cursestone::item::itemStackFromNbt(nullptr, out), "a null entry is not an item");
 
-        mcp_tag_t* notCompound = mcp_byte_tag_new(1);
+        cursestone::nbt::Tag* notCompound = new cursestone::nbt::ByteTag(1);
         check(!cursestone::item::itemStackFromNbt(notCompound, out),
               "a non-compound entry is not an item");
-        mcp_tag_destroy(notCompound);
+        delete notCompound;
 
         // A garbage "ench" (wrong element type / missing keys / level 0)
         // must not produce phantom enchantments.
-        mcp_tag_t* junk = mcp_compound_tag_new();
-        mcp_compound_tag_set_short(junk, "id", 5);
-        mcp_compound_tag_set_byte (junk, "Count", 1);
-        mcp_tag_t* badList = mcp_list_tag_new_named("ench", MCP_TAG_INT);
-        mcp_list_tag_append(badList, mcp_int_tag_new(9));
-        mcp_compound_tag_set(junk, "ench", badList);
+        cursestone::nbt::Tag* junk = new cursestone::nbt::CompoundTag();
+        cursestone::nbt::set_short(junk, "id", 5);
+        cursestone::nbt::set_byte(junk, "Count", 1);
+        cursestone::nbt::Tag* badList = new cursestone::nbt::ListTag("ench", cursestone::nbt::TAG_INT);
+        cursestone::nbt::append(badList, new cursestone::nbt::IntTag(9));
+        cursestone::nbt::set(junk, "ench", badList);
         ItemStack junkStack;
         check(cursestone::item::itemStackFromNbt(junk, junkStack) &&
               junkStack.ench.entries().empty(),
               "a non-compound 'ench' list yields no enchantments");
-        mcp_tag_destroy(junk);
+        delete junk;
     }
 
     // ================================================================
@@ -425,27 +422,26 @@ int main() {
         stored.ench.add(EnchantmentId::ENCH_PROTECTION, 2);
         stored.ench.add(EnchantmentId::ENCH_FIRE_PROTECTION, 1);
 
-        mcp_tag_t* root = mcp_compound_tag_new_named("Chest");
-        mcp_tag_t* items = mcp_list_tag_new_named("Items", MCP_TAG_COMPOUND);
-        mcp_tag_t* entry = mcp_compound_tag_new();
-        mcp_compound_tag_set_byte(entry, "Slot", (int8_t)13);
+        cursestone::nbt::Tag* root = new cursestone::nbt::CompoundTag("Chest");
+        cursestone::nbt::Tag* items = new cursestone::nbt::ListTag("Items", cursestone::nbt::TAG_COMPOUND);
+        cursestone::nbt::Tag* entry = new cursestone::nbt::CompoundTag();
+        cursestone::nbt::set_byte(entry, "Slot", (int8_t)13);
         cursestone::item::itemStackToNbt(stored, entry);
-        mcp_list_tag_append(items, entry);
-        mcp_compound_tag_set(root, "Items", items);
+        cursestone::nbt::append(items, entry);
+        cursestone::nbt::set(root, "Items", items);
 
-        size_t n = 0;
-        uint8_t* bytes = mcp_nbt_write_bytes(root, true, &n);
-        mcp_tag_destroy(root);
-        check(bytes && n > 0, "the container root serializes");
+        std::vector<uint8_t> bytes;
+        cursestone::nbt::write(root, true, bytes);
+        delete root;
+        check(!bytes.empty(), "the container root serializes");
 
-        mcp_tag_t* back = mcp_nbt_read_bytes(bytes, n, true);
-        free(bytes);
+        cursestone::nbt::Tag* back = cursestone::nbt::read(bytes.data(), bytes.size(), true);
         check(back != nullptr, "the container root parses back");
         if (back) {
-            const mcp_tag_t* list = mcp_compound_tag_get(back, "Items");
-            check(list && mcp_list_tag_size(list) == 1, "the Items list has one entry");
-            const mcp_tag_t* e = mcp_list_tag_get(list, 0);
-            check(mcp_compound_tag_get_byte(e, "Slot", -1) == 13, "the slot number survives");
+            const cursestone::nbt::Tag* list = cursestone::nbt::get(back, "Items");
+            check(list && cursestone::nbt::size(list) == 1, "the Items list has one entry");
+            const cursestone::nbt::Tag* e = cursestone::nbt::at(list, 0);
+            check(cursestone::nbt::get_byte(e, "Slot", -1) == 13, "the slot number survives");
             ItemStack read;
             check(cursestone::item::itemStackFromNbt(e, read), "the stored stack reads back");
             check(read.id == 310 && read.count == 1 && read.meta == 12,
@@ -453,7 +449,7 @@ int main() {
             check(read.enchantmentLevel(EnchantmentId::ENCH_PROTECTION) == 2 &&
                   read.enchantmentLevel(EnchantmentId::ENCH_FIRE_PROTECTION) == 1,
                   "both enchantments survive a real save/load cycle");
-            mcp_tag_destroy(back);
+            delete back;
         }
     }
 
@@ -472,58 +468,57 @@ int main() {
         named.nbt = cursestone::item::buildDisplayNbt("\xc2\xa7 6Espada VIP");
         check(!named.nbt.empty(), "buildDisplayNbt produces a blob");
 
-        mcp_tag_t* root = mcp_compound_tag_new_named("Player");
-        mcp_tag_t* items = mcp_list_tag_new_named("Inventory", MCP_TAG_COMPOUND);
-        mcp_tag_t* entry = mcp_compound_tag_new();
-        mcp_compound_tag_set_byte(entry, "Slot", (int8_t)0);
+        cursestone::nbt::Tag* root = new cursestone::nbt::CompoundTag("Player");
+        cursestone::nbt::Tag* items = new cursestone::nbt::ListTag("Inventory", cursestone::nbt::TAG_COMPOUND);
+        cursestone::nbt::Tag* entry = new cursestone::nbt::CompoundTag();
+        cursestone::nbt::set_byte(entry, "Slot", (int8_t)0);
         cursestone::item::itemStackToNbt(named, entry);
-        mcp_list_tag_append(items, entry);
-        mcp_compound_tag_set(root, "Inventory", items);
+        cursestone::nbt::append(items, entry);
+        cursestone::nbt::set(root, "Inventory", items);
 
         // The blob landed as a real "tag" compound child of the entry.
-        const mcp_tag_t* tag = mcp_compound_tag_get(entry, "tag");
-        check(tag && mcp_tag_get_type(tag) == MCP_TAG_COMPOUND,
+        const cursestone::nbt::Tag* tag = cursestone::nbt::get(entry, "tag");
+        check(tag && cursestone::nbt::type_of(tag) == cursestone::nbt::TAG_COMPOUND,
               "the network NBT is stored as the vanilla \"tag\" compound");
-        const mcp_tag_t* display = tag ? mcp_compound_tag_get(tag, "display") : nullptr;
-        check(display && mcp_tag_get_type(display) == MCP_TAG_COMPOUND,
+        const cursestone::nbt::Tag* display = tag ? cursestone::nbt::get(tag, "display") : nullptr;
+        check(display && cursestone::nbt::type_of(display) == cursestone::nbt::TAG_COMPOUND,
               "\"tag\" holds the \"display\" compound");
-        check(display && std::string(mcp_compound_tag_get_string(display, "Name", "")) ==
+        check(display && std::string(cursestone::nbt::get_string(display, "Name", "")) ==
                             "\xc2\xa7 6Espada VIP",
               "\"display.Name\" carries the custom name");
 
         // Full save/load cycle: serialize the root the way the storage
         // does, parse it back, read the stack.
-        size_t n = 0;
-        uint8_t* bytes = mcp_nbt_write_bytes(root, true, &n);
-        mcp_tag_destroy(root);
-        check(bytes && n > 0, "the player root serializes");
-        mcp_tag_t* back = mcp_nbt_read_bytes(bytes, n, true);
-        free(bytes);
+        std::vector<uint8_t> bytes;
+        cursestone::nbt::write(root, true, bytes);
+        delete root;
+        check(!bytes.empty(), "the player root serializes");
+        cursestone::nbt::Tag* back = cursestone::nbt::read(bytes.data(), bytes.size(), true);
         check(back != nullptr, "the player root parses back");
         if (back) {
-            const mcp_tag_t* list = mcp_compound_tag_get(back, "Inventory");
-            const mcp_tag_t* e = (list && mcp_list_tag_size(list) > 0)
-                                     ? mcp_list_tag_get(list, 0) : nullptr;
+            const cursestone::nbt::Tag* list = cursestone::nbt::get(back, "Inventory");
+            const cursestone::nbt::Tag* e = (list && cursestone::nbt::size(list) > 0)
+                                     ? cursestone::nbt::at(list, 0) : nullptr;
             check(e != nullptr, "the inventory entry is present after reload");
             ItemStack read;
             check(cursestone::item::itemStackFromNbt(e, read), "the named stack reads back");
             check(read.id == 276, "the item fields survive");
             check(read.nbt == named.nbt,
                   "the display-name blob survives a real save/load cycle byte-identically");
-            mcp_tag_destroy(back);
+            delete back;
         }
 
         // Rewriting the entry with a plain stack must clear the stale
         // "tag" (otherwise a renamed-over item would keep the old name).
-        mcp_tag_t* entry2 = mcp_compound_tag_new();
+        cursestone::nbt::Tag* entry2 = new cursestone::nbt::CompoundTag();
         cursestone::item::itemStackToNbt(named, entry2);
-        check(mcp_compound_tag_contains(entry2, "tag"), "the entry now has a tag");
+        check(cursestone::nbt::contains(entry2, "tag"), "the entry now has a tag");
         ItemStack plain;
         plain.id = 1; plain.count = 64;
         cursestone::item::itemStackToNbt(plain, entry2);
-        check(!mcp_compound_tag_contains(entry2, "tag"),
+        check(!cursestone::nbt::contains(entry2, "tag"),
               "a plain stack clears a stale \"tag\" from the entry");
-        mcp_tag_destroy(entry2);
+        delete entry2;
     }
 
     printf("\n%s (%d failure(s))\n",

@@ -21,20 +21,22 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// FloatTag — NBT MCP_TAG_FLOAT value.
+// FloatTag — NBT TAG_FLOAT value.
 #pragma once
-
-#include <stdint.h>
 
 #include "Tag.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+namespace cursestone::nbt {
 
-mcp_tag_t* mcp_float_tag_new(float v);
-mcp_tag_t* mcp_float_tag_new_named(const char* name, float v);
+class FloatTag : public Tag {
+  public:
+    explicit FloatTag(float v) : Tag(TAG_FLOAT), value(v) {}
+    FloatTag(const char* name, float v) : Tag(TAG_FLOAT), value(v) {
+        if (name)
+            this->name = name;
+    }
+    float value;
+    void write_payload(mcp_bstream_t* s, bool le) const override;
+};
 
-#ifdef __cplusplus
-} // extern "C"
-#endif
+} // namespace cursestone::nbt

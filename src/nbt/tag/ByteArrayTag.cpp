@@ -21,39 +21,22 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// ByteArrayTag.cpp — NBT TAG_Byte_Array.
+// ByteArrayTag.cpp — NBT TAG_Byte_Array payload.
 #include "ByteArrayTag.h"
-#include "TagDefs.h"
 
-mcp_tag_t* mcp_byte_array_tag_new(const uint8_t* data, size_t len) {
-    try {
-        auto* t = new mcp_byte_array_tag();
-        if (len)
-            t->data.assign(data, data + len);
-        return t;
-    } catch (...) {
-        return NULL;
-    }
-}
+namespace cursestone::nbt {
 
-mcp_tag_t* mcp_byte_array_tag_new_named(const char* name, const uint8_t* data, size_t len) {
-    mcp_tag_t* t = mcp_byte_array_tag_new(data, len);
-    if (t)
-        mcp_tag_set_name_cstr(t, name);
-    return t;
-}
-
-const uint8_t* mcp_byte_array_tag_data(const mcp_tag_t* tag, size_t* out_len) {
-    if (!tag || tag->type != MCP_TAG_BYTE_ARRAY)
-        return NULL;
-    const auto* t = static_cast<const mcp_byte_array_tag*>(tag);
+const uint8_t* byte_array_data(const Tag* tag, size_t* out_len) {
+    if (!tag || tag->type != TAG_BYTE_ARRAY)
+        return nullptr;
+    const auto* t = static_cast<const ByteArrayTag*>(tag);
     if (out_len)
         *out_len = t->data.size();
-    // Keep the non-NULL promise for empty arrays.
+    // Keep the non-null promise for empty arrays.
     return t->data.empty() ? reinterpret_cast<const uint8_t*>("") : t->data.data();
 }
 
-void mcp_byte_array_tag::write_payload(mcp_bstream_t* s, bool le) const {
+void ByteArrayTag::write_payload(mcp_bstream_t* s, bool le) const {
     if (le)
         mcp_bstream_write_u32_le(s, (uint32_t)data.size());
     else
@@ -61,3 +44,5 @@ void mcp_byte_array_tag::write_payload(mcp_bstream_t* s, bool le) const {
     if (!data.empty())
         mcp_bstream_write_bytes(s, data.data(), data.size());
 }
+
+} // namespace cursestone::nbt

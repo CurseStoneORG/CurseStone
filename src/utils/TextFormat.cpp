@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// TextFormat.c — §-code to ANSI conversion. Pure C.
+// TextFormat.cpp — §-code to ANSI conversion.
 #include "TextFormat.h"
 #include "Terminal.h"
 

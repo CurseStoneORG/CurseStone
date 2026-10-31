@@ -33,7 +33,7 @@
 //      Every covered area stayed pitch black — the "black patches
 //      under a ceiling" the player reported.
 //
-//   2. Block light was never computed at all. mcp_block_light_emission()
+//   2. Block light was never computed at all. Block::lightEmission()
 //      existed and was dead code, so a torch or a glowstone emitted
 //      nothing into the chunk's block_light array and a cave lit only by
 //      torches was black.

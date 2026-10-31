@@ -21,20 +21,22 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// DoubleTag — NBT MCP_TAG_DOUBLE value.
+// DoubleTag — NBT TAG_DOUBLE value.
 #pragma once
-
-#include <stdint.h>
 
 #include "Tag.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+namespace cursestone::nbt {
 
-mcp_tag_t* mcp_double_tag_new(double v);
-mcp_tag_t* mcp_double_tag_new_named(const char* name, double v);
+class DoubleTag : public Tag {
+  public:
+    explicit DoubleTag(double v) : Tag(TAG_DOUBLE), value(v) {}
+    DoubleTag(const char* name, double v) : Tag(TAG_DOUBLE), value(v) {
+        if (name)
+            this->name = name;
+    }
+    double value;
+    void write_payload(mcp_bstream_t* s, bool le) const override;
+};
 
-#ifdef __cplusplus
-} // extern "C"
-#endif
+} // namespace cursestone::nbt

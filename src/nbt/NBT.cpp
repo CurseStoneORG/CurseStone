@@ -35,18 +35,17 @@
 #include "tag/LongTag.h"
 #include "tag/ShortTag.h"
 #include "tag/StringTag.h"
-#include "tag/TagDefs.h"
 
-#include <cstdlib>
-#include <cstring>
+namespace cursestone::nbt {
+namespace {
 
 // Maximum nesting depth accepted by the parser. Vanilla NBT stays far below
 // this; the cap turns a wire-controlled recursion (stack exhaustion) into a
 // normal parse failure.
-static constexpr int MCP_NBT_MAX_DEPTH = 128;
+constexpr int MAX_DEPTH = 128;
 
 // Read a uint16 length + bytes for a name field.
-static bool read_name(mcp_bstream_t* s, bool le, std::string& out) {
+bool read_name(mcp_bstream_t* s, bool le, std::string& out) {
     uint16_t len;
     if (le ? mcp_bstream_read_u16_le(s, &len) : mcp_bstream_read_u16_be(s, &len))
         return false;
@@ -58,176 +57,172 @@ static bool read_name(mcp_bstream_t* s, bool le, std::string& out) {
     return true;
 }
 
-static mcp_tag_t* read_payload_depth(mcp_bstream_t* s, mcp_tag_type_t type, bool le, int depth) {
-    if (depth > MCP_NBT_MAX_DEPTH)
-        return NULL;
+Tag* read_payload_depth(mcp_bstream_t* s, TagType type, bool le, int depth) {
+    if (depth > MAX_DEPTH)
+        return nullptr;
     switch (type) {
-    case MCP_TAG_BYTE: {
+    case TAG_BYTE: {
         int8_t v;
         if (mcp_bstream_read_i8(s, &v) != 0)
-            return NULL;
-        return mcp_byte_tag_new(v);
+            return nullptr;
+        return new ByteTag(v);
     }
-    case MCP_TAG_SHORT: {
+    case TAG_SHORT: {
         uint16_t v;
         if (le ? mcp_bstream_read_u16_le(s, &v) : mcp_bstream_read_u16_be(s, &v))
-            return NULL;
-        return mcp_short_tag_new((int16_t)v);
+            return nullptr;
+        return new ShortTag((int16_t)v);
     }
-    case MCP_TAG_INT: {
+    case TAG_INT: {
         uint32_t v;
         if (le ? mcp_bstream_read_u32_le(s, &v) : mcp_bstream_read_u32_be(s, &v))
-            return NULL;
-        return mcp_int_tag_new((int32_t)v);
+            return nullptr;
+        return new IntTag((int32_t)v);
     }
-    case MCP_TAG_LONG: {
+    case TAG_LONG: {
         uint64_t v;
         if (le ? mcp_bstream_read_u64_le(s, &v) : mcp_bstream_read_u64_be(s, &v))
-            return NULL;
-        return mcp_long_tag_new((int64_t)v);
+            return nullptr;
+        return new LongTag((int64_t)v);
     }
-    case MCP_TAG_FLOAT: {
+    case TAG_FLOAT: {
         float v;
         if (le ? mcp_bstream_read_f32_le(s, &v) : mcp_bstream_read_f32_be(s, &v))
-            return NULL;
-        return mcp_float_tag_new(v);
+            return nullptr;
+        return new FloatTag(v);
     }
-    case MCP_TAG_DOUBLE: {
+    case TAG_DOUBLE: {
         double v;
         if (le ? mcp_bstream_read_f64_le(s, &v) : mcp_bstream_read_f64_be(s, &v))
-            return NULL;
-        return mcp_double_tag_new(v);
+            return nullptr;
+        return new DoubleTag(v);
     }
-    case MCP_TAG_BYTE_ARRAY: {
+    case TAG_BYTE_ARRAY: {
         uint32_t len;
         if (le ? mcp_bstream_read_u32_le(s, &len) : mcp_bstream_read_u32_be(s, &len))
-            return NULL;
+            return nullptr;
         if (mcp_bstream_remaining(s) < len)
-            return NULL;
-        auto* t = new mcp_byte_array_tag();
+            return nullptr;
+        auto* t = new ByteArrayTag();
         t->data.resize(len);
         if (len && mcp_bstream_read_bytes(s, t->data.data(), len) != 0) {
             delete t;
-            return NULL;
+            return nullptr;
         }
         return t;
     }
-    case MCP_TAG_STRING: {
+    case TAG_STRING: {
         uint16_t len;
         if (le ? mcp_bstream_read_u16_le(s, &len) : mcp_bstream_read_u16_be(s, &len))
-            return NULL;
+            return nullptr;
         if (mcp_bstream_remaining(s) < len)
-            return NULL;
-        auto* t = new mcp_string_tag();
+            return nullptr;
+        auto* t = new StringTag("");
         t->value.resize(len);
         if (len && mcp_bstream_read_bytes(s, &t->value[0], len) != 0) {
             delete t;
-            return NULL;
+            return nullptr;
         }
         return t;
     }
-    case MCP_TAG_LIST: {
+    case TAG_LIST: {
         uint8_t et;
         if (mcp_bstream_read_u8(s, &et) != 0)
-            return NULL;
+            return nullptr;
         uint32_t count;
         if (le ? mcp_bstream_read_u32_le(s, &count) : mcp_bstream_read_u32_be(s, &count))
-            return NULL;
-        mcp_tag_t* list = mcp_list_tag_new((mcp_tag_type_t)et);
-        if (!list)
-            return NULL;
-        if (et == MCP_TAG_END || count == 0) {
+            return nullptr;
+        auto* list = new ListTag((TagType)et);
+        if (et == TAG_END || count == 0) {
             // Empty list; nothing more to read.
             return list;
         }
         for (uint32_t i = 0; i < count; ++i) {
-            mcp_tag_t* child = read_payload_depth(s, (mcp_tag_type_t)et, le, depth + 1);
-            if (!child || mcp_list_tag_append(list, child) != 0) {
-                delete child; // list keeps it when append succeeded
+            Tag* child = read_payload_depth(s, (TagType)et, le, depth + 1);
+            if (!child || !append(list, child)) {
+                delete child; // the list keeps it when append succeeded
                 delete list;
-                return NULL;
+                return nullptr;
             }
         }
         return list;
     }
-    case MCP_TAG_COMPOUND: {
-        mcp_tag_t* comp = mcp_compound_tag_new();
-        if (!comp)
-            return NULL;
+    case TAG_COMPOUND: {
+        auto* comp = new CompoundTag();
         while (true) {
             uint8_t childType;
             if (mcp_bstream_read_u8(s, &childType) != 0) {
                 delete comp;
-                return NULL;
+                return nullptr;
             }
-            if (childType == MCP_TAG_END)
+            if (childType == TAG_END)
                 break;
             std::string name;
             if (!read_name(s, le, name)) {
                 delete comp;
-                return NULL;
+                return nullptr;
             }
-            mcp_tag_t* child = read_payload_depth(s, (mcp_tag_type_t)childType, le, depth + 1);
+            Tag* child = read_payload_depth(s, (TagType)childType, le, depth + 1);
             if (!child) {
                 delete comp;
-                return NULL;
+                return nullptr;
             }
             if (!name.empty())
-                mcp_tag_set_name(child, name.data(), name.size());
-            if (mcp_compound_tag_set(comp, name.c_str(), child) != 0) {
+                set_name(child, name.data(), name.size());
+            if (!set(comp, name.c_str(), child)) {
                 delete child;
                 delete comp;
-                return NULL;
+                return nullptr;
             }
         }
         return comp;
     }
-    case MCP_TAG_INT_ARRAY: {
+    case TAG_INT_ARRAY: {
         uint32_t count;
         if (le ? mcp_bstream_read_u32_le(s, &count) : mcp_bstream_read_u32_be(s, &count))
-            return NULL;
+            return nullptr;
         // The wire must actually carry `count` ints. Division (not count*4)
         // so the check itself cannot overflow on 32-bit size_t.
         if (count > mcp_bstream_remaining(s) / sizeof(int32_t))
-            return NULL;
-        auto* t = new mcp_int_array_tag();
+            return nullptr;
+        auto* t = new IntArrayTag();
         t->data.resize(count);
         for (uint32_t i = 0; i < count; ++i) {
             uint32_t v;
             if (le ? mcp_bstream_read_u32_le(s, &v) : mcp_bstream_read_u32_be(s, &v)) {
                 delete t;
-                return NULL;
+                return nullptr;
             }
             t->data[i] = (int32_t)v;
         }
         return t;
     }
-    case MCP_TAG_END:
+    case TAG_END:
     default:
-        return NULL;
+        return nullptr;
     }
 }
 
-static mcp_tag_t* read_root(mcp_bstream_t* s, bool le) {
+Tag* read_root(mcp_bstream_t* s, bool le) {
     uint8_t type;
     if (mcp_bstream_read_u8(s, &type) != 0)
-        return NULL;
-    if (type == MCP_TAG_END)
-        return mcp_end_tag_new();
+        return nullptr;
+    if (type == TAG_END)
+        return new EndTag();
     std::string name;
     if (!read_name(s, le, name))
-        return NULL;
-    mcp_tag_t* t = read_payload_depth(s, (mcp_tag_type_t)type, le, 0);
+        return nullptr;
+    Tag* t = read_payload_depth(s, (TagType)type, le, 0);
     if (!t)
-        return NULL;
+        return nullptr;
     if (!name.empty())
-        mcp_tag_set_name(t, name.data(), name.size());
+        set_name(t, name.data(), name.size());
     return t;
 }
 
-static void write_root(mcp_bstream_t* s, const mcp_tag_t* root, bool le) {
+void write_root(mcp_bstream_t* s, const Tag* root, bool le) {
     if (!root) {
-        mcp_bstream_write_u8(s, (uint8_t)MCP_TAG_END);
+        mcp_bstream_write_u8(s, (uint8_t)TAG_END);
         return;
     }
     mcp_bstream_write_u8(s, (uint8_t)root->type);
@@ -240,35 +235,32 @@ static void write_root(mcp_bstream_t* s, const mcp_tag_t* root, bool le) {
     root->write_payload(s, le);
 }
 
-mcp_tag_t* mcp_nbt_read_bytes(const uint8_t* data, size_t len, bool le) {
+} // namespace
+
+Tag* read(const uint8_t* data, size_t len, bool le) {
     try {
         mcp_bstream_t s;
         mcp_bstream_init_read(&s, data, len);
-        mcp_tag_t* t = read_root(&s, le);
+        Tag* t = read_root(&s, le);
         mcp_bstream_free(&s);
         return t;
     } catch (...) {
-        return NULL;
+        return nullptr;
     }
 }
 
-uint8_t* mcp_nbt_write_bytes(const mcp_tag_t* root, bool le, size_t* out_len) {
+void write(const Tag* root, bool le, std::vector<uint8_t>& out) {
+    out.clear();
     try {
         mcp_bstream_t s;
         mcp_bstream_init(&s);
         write_root(&s, root, le);
-        uint8_t* out = (uint8_t*)malloc(s.size ? s.size : 1);
-        if (!out) {
-            mcp_bstream_free(&s);
-            return NULL;
-        }
         if (s.size)
-            memcpy(out, s.data, s.size);
-        if (out_len)
-            *out_len = s.size;
+            out.assign(s.data, s.data + s.size);
         mcp_bstream_free(&s);
-        return out;
     } catch (...) {
-        return NULL;
+        out.clear();
     }
 }
+
+} // namespace cursestone::nbt

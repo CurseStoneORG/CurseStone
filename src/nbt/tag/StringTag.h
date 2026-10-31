@@ -24,18 +24,31 @@
 // StringTag — NBT TAG_String (uint16 length prefix + UTF-8 bytes).
 #pragma once
 
-#include <stddef.h>
+#include <cstddef>
+#include <string>
 
 #include "Tag.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+namespace cursestone::nbt {
 
-mcp_tag_t* mcp_string_tag_new(const char* value, size_t len);
-mcp_tag_t* mcp_string_tag_new_cstr(const char* value);
-mcp_tag_t* mcp_string_tag_new_named_cstr(const char* name, const char* value);
+class StringTag : public Tag {
+  public:
+    StringTag(const char* value, size_t len) : Tag(TAG_STRING) {
+        if (len)
+            this->value.assign(value, len);
+    }
+    explicit StringTag(const char* value) : Tag(TAG_STRING) {
+        if (value)
+            this->value = value;
+    }
+    StringTag(const char* name, const char* value) : Tag(TAG_STRING) {
+        if (name)
+            this->name = name;
+        if (value)
+            this->value = value;
+    }
+    std::string value;
+    void write_payload(mcp_bstream_t* s, bool le) const override;
+};
 
-#ifdef __cplusplus
-} // extern "C"
-#endif
+} // namespace cursestone::nbt

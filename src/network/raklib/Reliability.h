@@ -15,7 +15,7 @@
 // Reliability — RakNet encapsulated packet reliability levels.
 // Values match the RakNet wire format (3 bits in the encapsulated
 // header flags, shifted >> 5). Kept as plain #defines so both the C
-// raklib core (Session.c / SessionManager.c) and the C++ interface
+// raklib core (Session.cpp / SessionManager.cpp) and the C++ interface
 // (RakLibInterface.cpp) can use them.
 #pragma once
 #include <stdint.h>

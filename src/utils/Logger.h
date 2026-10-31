@@ -24,7 +24,7 @@
 /**
  * @brief Declares the abstract logger interface.
  *
- * Pure C function-pointer vtable. Concrete implementations:
+ * Function-pointer vtable. Concrete implementations:
  * MainLogger (stdout+file), NullLogger.
  */
 #pragma once

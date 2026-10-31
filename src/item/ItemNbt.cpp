@@ -33,25 +33,25 @@ namespace cursestone::item {
 using enchantment::EnchantmentId;
 using enchantment::EnchantmentList;
 
-void enchantmentsFromNbt(const mcp_tag_t* entry, EnchantmentList& out) {
-    const mcp_tag_t* list = mcp_compound_tag_get(entry, kNbtEnch);
-    if (!list || mcp_tag_get_type(list) != MCP_TAG_LIST)
+void enchantmentsFromNbt(const cursestone::nbt::Tag* entry, EnchantmentList& out) {
+    const cursestone::nbt::Tag* list = cursestone::nbt::get(entry, kNbtEnch);
+    if (!list || cursestone::nbt::type_of(list) != cursestone::nbt::TAG_LIST)
         return;
 
-    const size_t n = mcp_list_tag_size(list);
+    const size_t n = cursestone::nbt::size(list);
     for (size_t i = 0; i < n; ++i) {
-        const mcp_tag_t* c = mcp_list_tag_get(list, i);
-        if (!c || mcp_tag_get_type(c) != MCP_TAG_COMPOUND)
+        const cursestone::nbt::Tag* c = cursestone::nbt::at(list, i);
+        if (!c || cursestone::nbt::type_of(c) != cursestone::nbt::TAG_COMPOUND)
             continue;
 
-        const int id = mcp_compound_tag_get_short(c, kNbtId, -1);
+        const int id = cursestone::nbt::get_short(c, kNbtId, -1);
         // "lvl" is what Bedrock/Genisys write; accept the spelled-out
         // "level" for Nukkit-era data. A missing/zero level is not an
         // enchantment at all (it would never change a lookup), so it is
         // dropped rather than stored as a no-op entry.
-        int lvl = mcp_compound_tag_get_short(c, kNbtEnchLvl, 0);
-        if (lvl == 0 && mcp_compound_tag_contains(c, kNbtEnchLvlAlt)) {
-            lvl = mcp_compound_tag_get_short(c, kNbtEnchLvlAlt, 0);
+        int lvl = cursestone::nbt::get_short(c, kNbtEnchLvl, 0);
+        if (lvl == 0 && cursestone::nbt::contains(c, kNbtEnchLvlAlt)) {
+            lvl = cursestone::nbt::get_short(c, kNbtEnchLvlAlt, 0);
         }
         if (id < 0 || lvl <= 0)
             continue;
@@ -67,13 +67,13 @@ void enchantmentsFromNbt(const mcp_tag_t* entry, EnchantmentList& out) {
     }
 }
 
-void itemStackToNbt(const ItemStack& stack, mcp_tag_t* entry) {
-    if (!entry || mcp_tag_get_type(entry) != MCP_TAG_COMPOUND)
+void itemStackToNbt(const ItemStack& stack, cursestone::nbt::Tag* entry) {
+    if (!entry || cursestone::nbt::type_of(entry) != cursestone::nbt::TAG_COMPOUND)
         return;
 
-    mcp_compound_tag_set_short(entry, kNbtId, static_cast<int16_t>(stack.id));
-    mcp_compound_tag_set_byte(entry, kNbtCount, static_cast<int8_t>(stack.count));
-    mcp_compound_tag_set_short(entry, kNbtDamage, static_cast<int16_t>(stack.meta));
+    cursestone::nbt::set_short(entry, kNbtId, static_cast<int16_t>(stack.id));
+    cursestone::nbt::set_byte(entry, kNbtCount, static_cast<int8_t>(stack.count));
+    cursestone::nbt::set_short(entry, kNbtDamage, static_cast<int16_t>(stack.meta));
 
     // ---- Persist the stack's raw network NBT under the vanilla "tag"
     // compound ----
@@ -85,11 +85,10 @@ void itemStackToNbt(const ItemStack& stack, mcp_tag_t* entry) {
     // it little-endian on load rebuilds the exact wire format regardless
     // of how the player.dat itself is encoded.
     if (!stack.nbt.empty()) {
-        utils::TagGuard tag(mcp_nbt_read_bytes(reinterpret_cast<const uint8_t*>(stack.nbt.data()),
-                                               stack.nbt.size(), /*little_endian=*/true));
-        if (tag && mcp_tag_get_type(tag.get()) == MCP_TAG_COMPOUND &&
-            mcp_compound_tag_set(entry, kNbtTag, tag.get()) == 0) {
-            // Ownership transferred to `entry` (mcp_compound_tag_set stores
+        utils::TagGuard tag(cursestone::nbt::read(reinterpret_cast<const uint8_t*>(stack.nbt.data()), stack.nbt.size(), /*little_endian=*/true));
+        if (tag && cursestone::nbt::type_of(tag.get()) == cursestone::nbt::TAG_COMPOUND &&
+            !cursestone::nbt::set(entry, kNbtTag, tag.get())) {
+            // Ownership transferred to `entry` (nbt::set stores
             // the pointer and destroys it together with the parent).
             tag.release();
         }
@@ -97,7 +96,7 @@ void itemStackToNbt(const ItemStack& stack, mcp_tag_t* entry) {
     } else {
         // An unnamed item must not drag a stale "tag" from a previous
         // incarnation of this entry along.
-        mcp_compound_tag_remove(entry, kNbtTag);
+        cursestone::nbt::remove(entry, kNbtTag);
     }
 
     const auto& entries = stack.ench.entries();
@@ -105,34 +104,34 @@ void itemStackToNbt(const ItemStack& stack, mcp_tag_t* entry) {
         // Keep a plain item's layout identical to the pre-enchantment one:
         // no empty "ench" list, and no stale one either if this entry is
         // being rewritten.
-        mcp_compound_tag_remove(entry, kNbtEnch);
+        cursestone::nbt::remove(entry, kNbtEnch);
         return;
     }
 
-    utils::TagGuard list(mcp_list_tag_new_named(kNbtEnch, MCP_TAG_COMPOUND));
+    utils::TagGuard list(new cursestone::nbt::ListTag(kNbtEnch, cursestone::nbt::TAG_COMPOUND));
     if (!list)
         return;
     for (const auto& e : entries) {
-        utils::TagGuard c(mcp_compound_tag_new());
+        utils::TagGuard c(new cursestone::nbt::CompoundTag());
         if (!c)
             continue;
-        mcp_compound_tag_set_short(c.get(), kNbtId, static_cast<int16_t>(e.id));
-        mcp_compound_tag_set_short(c.get(), kNbtEnchLvl, static_cast<int16_t>(e.level));
-        if (mcp_list_tag_append(list.get(), c.get()) == 0)
+        cursestone::nbt::set_short(c.get(), kNbtId, static_cast<int16_t>(e.id));
+        cursestone::nbt::set_short(c.get(), kNbtEnchLvl, static_cast<int16_t>(e.level));
+        if (!cursestone::nbt::append(list.get(), c.get()))
             c.release(); // list owns it now; the guard only covers append failure.
     }
-    if (mcp_compound_tag_set(entry, kNbtEnch, list.get()) == 0)
+    if (!cursestone::nbt::set(entry, kNbtEnch, list.get()))
         list.release();
 }
 
-bool itemStackFromNbt(const mcp_tag_t* entry, ItemStack& out) {
+bool itemStackFromNbt(const cursestone::nbt::Tag* entry, ItemStack& out) {
     out = ItemStack::EMPTY();
-    if (!entry || mcp_tag_get_type(entry) != MCP_TAG_COMPOUND)
+    if (!entry || cursestone::nbt::type_of(entry) != cursestone::nbt::TAG_COMPOUND)
         return false;
 
-    const uint16_t id = static_cast<uint16_t>(mcp_compound_tag_get_short(entry, kNbtId, 0));
-    const int count = mcp_compound_tag_get_byte(entry, kNbtCount, 0);
-    const uint8_t meta = static_cast<uint8_t>(mcp_compound_tag_get_short(entry, kNbtDamage, 0));
+    const uint16_t id = static_cast<uint16_t>(cursestone::nbt::get_short(entry, kNbtId, 0));
+    const int count = cursestone::nbt::get_byte(entry, kNbtCount, 0);
+    const uint8_t meta = static_cast<uint8_t>(cursestone::nbt::get_short(entry, kNbtDamage, 0));
 
     if (id == 0 || count <= 0)
         return false;
@@ -149,25 +148,25 @@ bool itemStackFromNbt(const mcp_tag_t* entry, ItemStack& out) {
     // instead of coming back nameless.
     //
     // Header fix-up: after a save/load cycle the parsed "tag" child
-    // carries its own key name ("tag"), and mcp_nbt_write_bytes() writes
+    // carries its own key name ("tag"), and nbt::write() emits
     // the root's name field. The network format always has an EMPTY root
     // name, so strip the emitted name header (type byte + u16 LE length
     // + name) and re-emit just type + zero length + payload. Avoids
     // mutating the caller's tree through a const pointer.
-    const mcp_tag_t* tag = mcp_compound_tag_get(entry, kNbtTag);
-    if (tag && mcp_tag_get_type(tag) == MCP_TAG_COMPOUND) {
-        size_t raw_len = 0;
-        utils::BufferPtr raw(mcp_nbt_write_bytes(tag, /*little_endian=*/true, &raw_len));
-        if (raw && raw_len >= 3) {
+    const cursestone::nbt::Tag* tag = cursestone::nbt::get(entry, kNbtTag);
+    if (tag && cursestone::nbt::type_of(tag) == cursestone::nbt::TAG_COMPOUND) {
+        std::vector<uint8_t> raw;
+        cursestone::nbt::write(tag, /*little_endian=*/true, raw);
+        if (raw.size() >= 3) {
             const uint16_t name_len = (uint16_t)raw[1] | ((uint16_t)raw[2] << 8);
             const size_t payload_off = 3u + name_len; // type + len + name
-            if (payload_off <= raw_len) {
-                out.nbt.reserve(3 + (raw_len - payload_off));
+            if (payload_off <= raw.size()) {
+                out.nbt.reserve(3 + (raw.size() - payload_off));
                 out.nbt.push_back((char)0x0A); // TAG_Compound root
                 out.nbt.push_back('\0');       // empty root name
                 out.nbt.push_back('\0');
-                out.nbt.append(reinterpret_cast<const char*>(raw.get()) + payload_off,
-                               raw_len - payload_off);
+                out.nbt.append(reinterpret_cast<const char*>(raw.data()) + payload_off,
+                               raw.size() - payload_off);
             }
         }
         // Vanilla-authored data keeps "ench" INSIDE the tag compound; if

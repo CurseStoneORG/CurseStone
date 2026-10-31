@@ -39,23 +39,22 @@ static void check(bool ok, const char* what) {
 static void testEmptyStringNbt() {
     printf("1. empty sign line must not decode to NULL\n");
 
-    mcp_tag_t* root = mcp_compound_tag_new();
-    mcp_compound_tag_set_string(root, "id", "Sign");
-    mcp_compound_tag_set_string(root, "Text1", "hola");
-    mcp_compound_tag_set_string(root, "Text2", "");
-    mcp_compound_tag_set_string(root, "Text3", "");
-    mcp_compound_tag_set_string(root, "Text4", "");
-    size_t blen = 0;
-    uint8_t* buf = mcp_nbt_write_bytes(root, true, &blen);
-    mcp_tag_destroy(root);
+    cursestone::nbt::Tag* root = new cursestone::nbt::CompoundTag();
+    cursestone::nbt::set_string(root, "id", "Sign");
+    cursestone::nbt::set_string(root, "Text1", "hola");
+    cursestone::nbt::set_string(root, "Text2", "");
+    cursestone::nbt::set_string(root, "Text3", "");
+    cursestone::nbt::set_string(root, "Text4", "");
+    std::vector<uint8_t> buf;
+    cursestone::nbt::write(root, true, buf);
+    delete root;
 
-    mcp_tag_t* parsed = mcp_nbt_read_bytes(buf, blen, true);
-    free(buf);
+    cursestone::nbt::Tag* parsed = cursestone::nbt::read(buf.data(), buf.size(), true);
     check(parsed != nullptr, "NBT round-trips");
 
-    const char* t1 = mcp_compound_tag_get_string(parsed, "Text1", "");
-    const char* t2 = mcp_compound_tag_get_string(parsed, "Text2", "");
-    const char* missing = mcp_compound_tag_get_string(parsed, "Nope", "dflt");
+    const char* t1 = cursestone::nbt::get_string(parsed, "Text1", "");
+    const char* t2 = cursestone::nbt::get_string(parsed, "Text2", "");
+    const char* missing = cursestone::nbt::get_string(parsed, "Nope", "dflt");
     check(t1 != nullptr, "filled line is non-NULL");
     check(t2 != nullptr, "EMPTY line is non-NULL (this was the SIGSEGV)");
     check(missing != nullptr && std::string(missing) == "dflt",
@@ -63,15 +62,15 @@ static void testEmptyStringNbt() {
 
     // The exact expression that used to kill the server.
     std::string lines[4] = {
-        mcp_compound_tag_get_string(parsed, "Text1", ""),
-        mcp_compound_tag_get_string(parsed, "Text2", ""),
-        mcp_compound_tag_get_string(parsed, "Text3", ""),
-        mcp_compound_tag_get_string(parsed, "Text4", "")
+        cursestone::nbt::get_string(parsed, "Text1", ""),
+        cursestone::nbt::get_string(parsed, "Text2", ""),
+        cursestone::nbt::get_string(parsed, "Text3", ""),
+        cursestone::nbt::get_string(parsed, "Text4", "")
     };
     check(lines[1].empty() && lines[2].empty() && lines[3].empty(),
           "empty lines survive as empty strings");
     check(lines[0] == "hola", "filled line keeps its text");
-    mcp_tag_destroy(parsed);
+    delete parsed;
 }
 
 // ---- 2. tile NBT round trip with blank lines and no creator --------------
@@ -88,18 +87,17 @@ static void testTileRoundTrip() {
     sign.setLine(42, "nope");          // must be ignored, not written OOB
     check(sign.line(3) == "line four", "out-of-range setLine is ignored");
 
-    mcp_tag_t* tag = mcp_compound_tag_new();
+    cursestone::nbt::Tag* tag = new cursestone::nbt::CompoundTag();
     sign.writeNBT(tag);
-    size_t blen = 0;
-    uint8_t* buf = mcp_nbt_write_bytes(tag, true, &blen);
-    mcp_tag_destroy(tag);
+    std::vector<uint8_t> buf;
+    cursestone::nbt::write(tag, true, buf);
+    delete tag;
 
     TileSign back(level::Position(10.0, 68.0, 20.0));
-    mcp_tag_t* parsed = mcp_nbt_read_bytes(buf, blen, true);
+    cursestone::nbt::Tag* parsed = cursestone::nbt::read(buf.data(), buf.size(), true);
     check(parsed != nullptr, "tile NBT parses back");
     back.readNBT(parsed);
-    mcp_tag_destroy(parsed);
-    free(buf);
+    delete parsed;
 
     check(back.line(0) == "line one", "line 0 survives the round trip");
     check(back.line(1).empty(), "blank line 1 survives");

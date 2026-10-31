@@ -60,11 +60,12 @@
 #include "nbt/tag/Tag.h"
 #include <stdint.h>
 #include <stddef.h>
+#include <vector>
 
 
-// Encode a chunk to NBT big-endian bytes (NOT compressed). Caller frees.
-// Returns NULL on failure. *out_len receives the byte count.
-uint8_t* anvil_chunk_encode(const mcp_chunk_t* chunk, size_t* out_len);
+// Encode a chunk to NBT big-endian bytes (NOT compressed). Returns an
+// empty vector on failure.
+std::vector<uint8_t> anvil_chunk_encode(const mcp_chunk_t* chunk);
 
 // Decode NBT big-endian bytes (already inflated — NOT compressed) into a
 // fresh mcp_chunk_t*. Caller must mcp_chunk_destroy() the result.

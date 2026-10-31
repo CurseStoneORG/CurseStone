@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// SessionManager.c — Full RakNet handshake + dispatch loop. Pure C.
+// SessionManager.cpp — full RakNet handshake + dispatch loop.
 // Ported from raklib/server/Session + SessionManager
 // (the reference server 0.15.x / Protocol 84 compatible)
 //

@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// UDPServerSocket.c — POSIX + Winsock2 implementation. Pure C.
+// UDPServerSocket.cpp — POSIX + Winsock2 implementation.
 #include "UDPServerSocket.h"
 
 #include <string.h>

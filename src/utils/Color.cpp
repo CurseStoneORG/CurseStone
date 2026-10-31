@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Color.c — small color helpers. Pure C.
+// Color.cpp — small color helpers.
 #include "Color.h"
 
 

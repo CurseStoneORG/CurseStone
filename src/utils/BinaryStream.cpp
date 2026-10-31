@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// BinaryStream implementation. Pure C.
+// BinaryStream implementation.
 #include "BinaryStream.h"
 #include "Binary.h"
 
