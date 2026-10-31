@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Byte-order utilities. Pure C (compiles with -std=c2x).
+// Byte-order utilities.
 // MCPE protocol 84 uses little-endian for most fields; NBT uses big-endian
 // (Java-style) or little-endian (MCPE-style) depending on context.
 #pragma once
@@ -30,9 +30,6 @@
 #include <string.h>
 #include <stdbool.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 // ---- Read big-endian primitives ----
 static inline uint8_t mcp_binary_read_u8(const void* p) {
@@ -253,6 +250,3 @@ static inline int64_t mcp_varint_unzigzag_i64(uint64_t v) {
     return (int64_t)((v >> 1) ^ -(int64_t)(v & 1));
 }
 
-#ifdef __cplusplus
-} // extern "C"
-#endif

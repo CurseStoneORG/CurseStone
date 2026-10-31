@@ -175,11 +175,6 @@ const mcp_tag_t* mcp_compound_tag_get_compound(const mcp_tag_t* s, const char* n
     return t;
 }
 
-size_t mcp_compound_tag_size(const mcp_tag_t* self) {
-    if (!self || self->type != MCP_TAG_COMPOUND)
-        return 0;
-    return static_cast<const mcp_compound_tag*>(self)->entries.size();
-}
 
 bool mcp_compound_tag_contains(const mcp_tag_t* self, const char* name) {
     return mcp_compound_tag_get(self, name) != NULL;

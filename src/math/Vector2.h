@@ -21,15 +21,12 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Vector2 — 2D vector. Pure C struct + helper functions.
+// Vector2 — 2D vector. POD struct + helper functions.
 #pragma once
 
 #include <math.h>
 #include <stdbool.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 typedef struct mcp_vector2 {
     double x, y;
@@ -68,6 +65,3 @@ static inline bool mcp_v2_eq(mcp_vector2_t a, mcp_vector2_t b) {
     return a.x == b.x && a.y == b.y;
 }
 
-#ifdef __cplusplus
-} // extern "C"
-#endif

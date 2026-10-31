@@ -119,26 +119,3 @@ bool mcp_textformat_to_terminal(const char* in, char* out, size_t out_size) {
     return true;
 }
 
-char* mcp_textformat_clean(const char* in) {
-    if (!in)
-        return NULL;
-    size_t len = strlen(in);
-    char* out = (char*)malloc(len + 1);
-    if (!out)
-        return NULL;
-    size_t oi = 0;
-    for (size_t i = 0; i < len; ++i) {
-        unsigned char c = (unsigned char)in[i];
-        if (c == 0xC2 && i + 1 < len && (unsigned char)in[i + 1] == 0xA7) {
-            i += 2; // skip the § byte pair
-            if (i < len) {
-                // Skip the format code itself.
-                continue;
-            }
-            break;
-        }
-        out[oi++] = (char)c;
-    }
-    out[oi] = '\0';
-    return out;
-}

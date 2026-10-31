@@ -27,9 +27,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 // Minecraft § color/format codes (Minecraft BE). The reference server uses these
 // for chat formatting; CurseStone will use them in player-facing messages.
@@ -69,8 +66,4 @@ const char* mcp_textformat_to_ansi(char code);
 bool mcp_textformat_to_terminal(const char* in, char* out, size_t out_size);
 
 // Strip all §-codes from `in`. Caller frees the result.
-char* mcp_textformat_clean(const char* in);
 
-#ifdef __cplusplus
-} // extern "C"
-#endif

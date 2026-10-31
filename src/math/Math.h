@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Math — small math helpers. Pure C.
+// Math — small math helpers.
 #pragma once
 
 #include <math.h>
@@ -32,9 +32,6 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 // Linear interpolation.
 static inline double mcp_math_lerp(double a, double b, double t) {
@@ -94,6 +91,3 @@ static inline int64_t mcp_math_floor_mod(int64_t a, int64_t b) {
     return r;
 }
 
-#ifdef __cplusplus
-} // extern "C"
-#endif

@@ -32,9 +32,6 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 #define MCP_SM_PACKET_LIMIT 250 // max packets per IP per tick (anti-flood)
 #define MCP_SM_PORT_CHECKING true
@@ -44,6 +41,10 @@ extern "C" {
 // ports allocates memory faster than the 30 s timeout sweep can reap it.
 // 512 covers max-players plus handshake overlap comfortably.
 #define MCP_SM_MAX_SESSIONS 512
+
+// Endpoint index size (must stay a power of two; >= 2x MAX_SESSIONS).
+#define MCP_SM_MAP_BITS 10
+#define MCP_SM_MAP_SIZE (1u << MCP_SM_MAP_BITS)
 
 typedef struct mcp_rak_session_manager {
     mcp_udp_socket_t socket;
@@ -63,6 +64,15 @@ typedef struct mcp_rak_session_manager {
     uint8_t ip_sec_buf[64][4]; // last 64 IPs seen this tick
     uint32_t ip_sec_cnt[64];
     size_t ip_sec_n;
+
+    // O(1) endpoint -> session index (open addressing, linear probe).
+    // Plain arrays keep the struct memset()-able. Slots hold
+    // (endpoint_key, session*); key 0 with ptr NULL means empty.
+    // 1024 slots for at most MCP_SM_MAX_SESSIONS (512) sessions keeps the
+    // load factor at 0.5, so probes stay short; the previous find() was a
+    // linear scan over every session on every datagram.
+    uint64_t map_key[MCP_SM_MAP_SIZE];
+    mcp_rak_session_t* map_ptr[MCP_SM_MAP_SIZE];
 } mcp_rak_session_manager_t;
 
 void mcp_rak_session_manager_init(mcp_rak_session_manager_t* sm, int64_t server_id, uint16_t mtu,
@@ -94,6 +104,3 @@ bool mcp_rak_session_manager_send_encapsulated(mcp_rak_session_manager_t* sm, co
                                                uint16_t port, const uint8_t* payload, size_t plen,
                                                uint8_t reliability, uint8_t order_channel);
 
-#ifdef __cplusplus
-} // extern "C"
-#endif

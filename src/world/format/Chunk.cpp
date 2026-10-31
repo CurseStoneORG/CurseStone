@@ -203,15 +203,6 @@ void mcp_chunk_set_block_id(mcp_chunk_t* c, int x, int y, int z, uint8_t id) {
     c->dirty = true;
 }
 
-void mcp_chunk_set_block_data(mcp_chunk_t* c, int x, int y, int z, uint8_t data) {
-    if (!c || y < 0 || y > 255)
-        return;
-    mcp_chunk_section_t* s = mcp_chunk_get_or_alloc_section(c, (uint8_t)(y >> 4));
-    if (!s)
-        return;
-    set_nibble(s->data, x, y, z, data);
-    c->dirty = true;
-}
 
 // ---------------------------------------------------------------- lighting
 

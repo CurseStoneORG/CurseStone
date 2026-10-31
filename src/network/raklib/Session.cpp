@@ -511,33 +511,6 @@ bool mcp_rak_session_send_payload(mcp_rak_session_t* s, mcp_rak_session_manager_
 // --------------------------------------------------------------------------
 // Enqueue for deferred send
 // --------------------------------------------------------------------------
-bool mcp_rak_session_enqueue(mcp_rak_session_t* s, const uint8_t* data, size_t len) {
-    if (!s || !data || len == 0)
-        return false;
-    if (s->send_queue_count == s->send_queue_cap) {
-        size_t nc = s->send_queue_cap == 0 ? 8 : s->send_queue_cap * 2;
-        uint8_t** nb = (uint8_t**)realloc(s->send_queue_bufs, nc * sizeof(uint8_t*));
-        if (!nb)
-            return false;
-        // Commit the first array before touching the second: if the second
-        // realloc fails, the struct must never keep a pointer realloc may
-        // have already freed.
-        s->send_queue_bufs = nb;
-        size_t* nl = (size_t*)realloc(s->send_queue_lens, nc * sizeof(size_t));
-        if (!nl)
-            return false;
-        s->send_queue_lens = nl;
-        s->send_queue_cap = nc;
-    }
-    uint8_t* copy = (uint8_t*)malloc(len);
-    if (!copy)
-        return false;
-    memcpy(copy, data, len);
-    s->send_queue_bufs[s->send_queue_count] = copy;
-    s->send_queue_lens[s->send_queue_count] = len;
-    s->send_queue_count++;
-    return true;
-}
 
 // --------------------------------------------------------------------------
 // Timeout

@@ -24,13 +24,7 @@
 
 #include <stdbool.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 void mcp_debug_mode_set(bool enabled);
 bool mcp_debug_enabled(void);
 
-#ifdef __cplusplus
-} // extern "C"
-#endif

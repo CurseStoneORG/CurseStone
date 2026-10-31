@@ -32,9 +32,6 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 typedef enum mcp_log_level {
     MCP_LOG_DEBUG = 0,
@@ -72,6 +69,3 @@ typedef struct mcp_logger {
 
 const char* mcp_log_level_name(mcp_log_level_t lvl);
 
-#ifdef __cplusplus
-} // extern "C"
-#endif

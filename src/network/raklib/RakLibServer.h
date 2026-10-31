@@ -33,9 +33,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 typedef struct mcp_raklib_server {
     mcp_rak_session_manager_t manager;
@@ -58,6 +55,3 @@ void mcp_raklib_server_tick(mcp_raklib_server_t* s);
 // Shutdown.
 void mcp_raklib_server_stop(mcp_raklib_server_t* s);
 
-#ifdef __cplusplus
-} // extern "C"
-#endif

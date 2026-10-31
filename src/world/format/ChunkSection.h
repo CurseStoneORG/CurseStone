@@ -28,7 +28,7 @@
 // sky light, and block light. Chunk.h includes this header so
 // Chunk can stack 16 of these on Y.
 //
-// Pure C, no global state. Small index/nibble helpers are inlined;
+// No global state. Small index/nibble helpers are inlined;
 // larger allocators live in ChunkSection.c.
 #pragma once
 
@@ -36,9 +36,6 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 // Opaque struct — the layout is defined in ChunkSection.c.
 // `mcp_chunk_section_t` is the public alias; users go through
@@ -102,16 +99,10 @@ void mcp_section_destroy(mcp_chunk_section_t* s);
 
 // Fill `s->blocks` with `id` for the entire 4096-byte array.
 // Used by the Flat generator and the Void generator's bedrock floor.
-void mcp_section_fill_blocks(mcp_chunk_section_t* s, uint8_t id);
 
 // True if the section has no non-air block anywhere (s == NULL or
 // every byte of `blocks` is zero). Used by the network serializer
 // to decide whether to skip the section.
-bool mcp_section_is_empty(const mcp_chunk_section_t* s);
 
 // Count non-air blocks in the section (debug + light-populated flag).
-size_t mcp_section_count_non_air(const mcp_chunk_section_t* s);
 
-#ifdef __cplusplus
-} // extern "C"
-#endif

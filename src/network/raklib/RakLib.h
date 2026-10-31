@@ -26,9 +26,6 @@
 #pragma once
 #include <stdint.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 #define RAKLIB_VERSION "0.8.0"
 #define RAKLIB_PROTOCOL 6 // RakNet handshake protocol used by MCPE 0.15.10
@@ -43,6 +40,3 @@ extern const uint8_t RAKLIB_MAGIC[RAKLIB_MAGIC_LEN];
 #define MCPE_PROTOCOL 84
 #define MCPE_MINECRAFT_VERSION "0.15.10"
 
-#ifdef __cplusplus
-} // extern "C"
-#endif

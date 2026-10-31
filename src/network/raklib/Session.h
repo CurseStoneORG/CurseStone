@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Session.h — per-client RakNet state machine. Pure C.
+// Session.h — per-client RakNet state machine (C++; POD state).
 // Compatible with MCPE 0.15.10 / protocol 84 / RakLib 0.8.x
 #pragma once
 
@@ -31,9 +31,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 // Forward declaration — full definition in SessionManager.h
 typedef struct mcp_rak_session_manager mcp_rak_session_manager_t;
@@ -533,11 +530,7 @@ bool mcp_rak_session_send_payload(mcp_rak_session_t* s, mcp_rak_session_manager_
                                   uint8_t order_channel);
 
 // Enqueue a datagram for sending; flushed by tick.
-bool mcp_rak_session_enqueue(mcp_rak_session_t* s, const uint8_t* data, size_t len);
 
 // Timeout check
 bool mcp_rak_session_is_timed_out(const mcp_rak_session_t* s, uint64_t now_ms, uint64_t timeout_ms);
 
-#ifdef __cplusplus
-} // extern "C"
-#endif

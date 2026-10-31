@@ -29,9 +29,6 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 typedef struct mcp_server_instance {
     void* impl; // C++ side casts to a concrete class
@@ -49,6 +46,3 @@ typedef struct mcp_server_instance {
     void (*on_tick)(void* impl);
 } mcp_server_instance_t;
 
-#ifdef __cplusplus
-} // extern "C"
-#endif

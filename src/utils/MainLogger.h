@@ -25,7 +25,7 @@
  * @brief Writes log records to stdout (with ANSI colors) and
  * optionally to a log file.
  *
- * Pure C, but exposes a mcp_logger_t vtable so C++ callers can use it
+ * Free functions over a POD logger struct; callable from any C++ TU
  * polymorphically.
  */
 #pragma once
@@ -34,9 +34,6 @@
 #include <stdbool.h>
 #include <stdio.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 typedef struct mcp_main_logger {
     mcp_logger_t vtable; // must be first
@@ -56,6 +53,3 @@ void mcp_main_logger_init(const char* log_path, bool colored);
 // Cleanup. Call once at shutdown.
 void mcp_main_logger_destroy(void);
 
-#ifdef __cplusplus
-} // extern "C"
-#endif
