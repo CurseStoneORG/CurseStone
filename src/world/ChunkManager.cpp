@@ -280,6 +280,7 @@ mcp_chunk_t* ChunkManager::getChunkOrRequestAsync(int32_t x, int32_t z,
                     if (spillQueue_)
                         spillQueue_->drainSpills(key.x, key.z, c);
                     chunks_[key] = c;
+                    count_.store(chunks_.size(), std::memory_order_relaxed);
                     installed = true;
                 }
             }
@@ -319,6 +320,7 @@ void ChunkManager::setChunk(int32_t x, int32_t z, mcp_chunk_t* chunk) {
         if (it != chunks_.end() && it->second && it->second != chunk)
             mcp_chunk_destroy(it->second);
         chunks_[key] = chunk;
+        count_.store(chunks_.size(), std::memory_order_relaxed);
         // Replay generation-time writes that were queued for this chunk
         // while it was absent (neighbors populated first). Done under the
         // same locks the generator's commitNeighborWrite() uses, so a
@@ -452,8 +454,7 @@ size_t ChunkManager::dirtyCount() const {
 }
 
 size_t ChunkManager::count() const {
-    std::lock_guard<std::mutex> lk(mtx_);
-    return chunks_.size();
+    return count_.load(std::memory_order_relaxed);
 }
 
 bool ChunkManager::unloadChunk(int32_t x, int32_t z, bool save) {
@@ -465,6 +466,7 @@ bool ChunkManager::unloadChunk(int32_t x, int32_t z, bool save) {
             return false;
         c = it->second;
         chunks_.erase(it);
+        count_.store(chunks_.size(), std::memory_order_relaxed);
     }
     if (!c)
         return false;

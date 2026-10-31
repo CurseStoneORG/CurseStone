@@ -763,6 +763,9 @@ class Player : public IPlayer,
 
     // Shared chunk spiral algorithm.
     static std::vector<std::pair<int32_t, int32_t>> buildChunkSpiral(int vd);
+    // Spiral for the radius onUpdate() used last; main thread only.
+    int spiral_cache_radius_ = -1;
+    std::vector<std::pair<int32_t, int32_t>> spiral_cache_;
 
     // Chunks already sent to this player, protected by chunks_mtx_.
     std::unordered_set<int64_t> used_chunks_;

@@ -28,6 +28,7 @@
 #include "world/format/Chunk.h"
 #include "world/format/WorldProvider.h"
 #include "world/generator/NeighborChunkIO.h"
+#include <atomic>
 #include <unordered_map>
 #include <unordered_set>
 #include <memory>
@@ -175,6 +176,8 @@ class ChunkManager : public generator::INeighborBlockSink {
     std::function<void(int32_t, int32_t)> on_chunk_added_;
     std::function<void(int32_t, int32_t)> on_chunk_installed_;
     std::unordered_map<ChunkKey, mcp_chunk_t*, ChunkKeyHash> chunks_;
+    // Mirrors chunks_.size(); written under mtx_, read lock-free by count().
+    std::atomic<size_t> count_{0};
     std::shared_ptr<format::WorldProvider> provider_;
     std::shared_ptr<generator::Generator> generator_;
     generator::ISpillQueue* spillQueue_ = nullptr;

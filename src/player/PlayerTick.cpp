@@ -593,9 +593,12 @@ void Player::onUpdate(uint64_t current_tick) {
         int vd = client_chunk_radius_.load(std::memory_order_relaxed);
         if (vd <= 0 || vd > cfg_.view_distance)
             vd = cfg_.view_distance;
-        auto order = buildChunkSpiral(vd);
+        if (spiral_cache_radius_ != vd) {
+            spiral_cache_ = buildChunkSpiral(vd);
+            spiral_cache_radius_ = vd;
+        }
+        const auto& order = spiral_cache_;
         auto& chunks = getWorld()->chunks();
-        std::unordered_set<int64_t> still_in_view;
 
         // Limit network sends while requesting generation for all visible chunks.
         // Two caps per tick: a chunk COUNT (so one slow generator can never
@@ -617,17 +620,21 @@ void Player::onUpdate(uint64_t current_tick) {
 
         // Generate missing chunks asynchronously to avoid blocking the main thread.
         auto* pool = srv_ ? srv_->getAsyncPool() : nullptr;
-        for (auto& pr : order) {
-            int32_t chX = cx + pr.first, chZ = cz + pr.second;
-            int64_t hash = ((int64_t)chX << 32) | ((uint32_t)chZ);
-            still_in_view.insert(hash);
-            bool already_sent;
-            {
-                std::lock_guard<std::mutex> lk(chunks_mtx_);
-                already_sent = used_chunks_.count(hash) > 0;
+
+        // Find the unsent chunks under a single lock; the steady state has none.
+        std::vector<std::pair<int32_t, int32_t>> pending;
+        {
+            std::lock_guard<std::mutex> lk(chunks_mtx_);
+            for (const auto& pr : order) {
+                int32_t chX = cx + pr.first, chZ = cz + pr.second;
+                int64_t hash = ((int64_t)chX << 32) | ((uint32_t)chZ);
+                if (used_chunks_.count(hash) == 0)
+                    pending.emplace_back(chX, chZ);
             }
-            if (already_sent)
-                continue;
+        }
+        for (const auto& pc : pending) {
+            int32_t chX = pc.first, chZ = pc.second;
+            int64_t hash = ((int64_t)chX << 32) | ((uint32_t)chZ);
 
             // Request chunk generation even when the send limit has been reached.
             mcp_chunk_t* ch = chunks.getChunkOrRequestAsync(chX, chZ, pool);
@@ -692,6 +699,11 @@ void Player::onUpdate(uint64_t current_tick) {
 
         // Remove out-of-view chunks only after crossing a chunk boundary.
         if (moved) {
+            std::unordered_set<int64_t> still_in_view;
+            still_in_view.reserve(order.size());
+            for (const auto& pr : order)
+                still_in_view.insert(((int64_t)(cx + pr.first) << 32) |
+                                     ((uint32_t)(cz + pr.second)));
             {
                 std::lock_guard<std::mutex> lk(chunks_mtx_);
                 for (auto it = used_chunks_.begin(); it != used_chunks_.end();) {

@@ -235,7 +235,7 @@ void Diagnostics::recordPacket(bool out, const std::string& who, uint8_t pid, si
     action_ = buf;
     packets_.push_back(PacketRecord{nowWallMs(), out, who, pid, size});
     if (packets_.size() > kMaxPacketRecords)
-        packets_.erase(packets_.begin());
+        packets_.pop_front();
 }
 
 void Diagnostics::setAction(const std::string& action) {
