@@ -347,50 +347,82 @@ void World::onChunkAdded(int32_t cx, int32_t cz) {
 }
 
 // How many freshly installed chunks get their dynamic-liquid scan per
-// tick. A scan is one pass over a chunk's block array; the budget keeps
-// the cost flat during rapid exploration flights.
+// tick, and how many dynamic cells those scans may hand to the scheduler
+// per tick. Every wake cell is one scheduled block tick, and the
+// scheduler runs a hard-capped 64 tasks per tick: feeding it a few dozen
+// cells per tick keeps the queue short during rapid exploration flights,
+// exactly like the reference block ticking queue that drains gradually
+// once a chunk goes live. Chunks with more wake cells than the budget
+// resume from their scan cursor on the next tick.
 constexpr int32_t kLiquidWakeBudget = 6;
+constexpr int32_t kWakeSchedulePerTick = 32;
 
 void World::queueLiquidWake(int32_t cx, int32_t cz) {
     // Called from the generation worker thread: queue only, exactly like
     // LightEngine::onChunkAdded. Skip duplicates — one cross-border
     // structure can install the same chunk twice in one tick.
+    const uint64_t key = packChunkPos(cx, cz);
     std::lock_guard<std::mutex> lk(liquid_wake_mtx_);
-    for (const auto& p : liquid_wake_) {
-        if (p.first == cx && p.second == cz)
-            return;
-    }
-    liquid_wake_.emplace_back(cx, cz);
+    if (!liquid_wake_keys_.insert(key).second)
+        return;
+    liquid_wake_.push_back({cx, cz, 0});
 }
 
 void World::processLiquidWakes(int32_t budget) {
-    std::deque<std::pair<int32_t, int32_t>> work;
+    if (liquid_wake_.empty())
+        return;
+
+    std::vector<LiquidWake> resume;
     {
         std::lock_guard<std::mutex> lk(liquid_wake_mtx_);
-        while (!liquid_wake_.empty() && (int32_t)work.size() < budget) {
-            work.push_back(liquid_wake_.front());
+        int32_t schedules = kWakeSchedulePerTick;
+        int32_t scanned = 0;
+        while (!liquid_wake_.empty() && scanned < budget && schedules > 0) {
+            LiquidWake w = liquid_wake_.front();
             liquid_wake_.pop_front();
-        }
-    }
-    for (const auto& [cx, cz] : work) {
-        mcp_chunk_t* c = chunks_.getChunkIfLoaded(cx, cz);
-        if (!c)
-            continue; // Unloaded again before its turn; harmless.
-        // One pass over the chunk's cells: every dynamic liquid block the
-        // generator or a structure left behind receives its vanilla tick,
-        // so springs spill as soon as the chunk is live. Cells already at
-        // rest settle into their still id on that first tick and never
-        // come back here.
-        const int32_t bx = cx << 4, bz = cz << 4;
-        for (int y = 0; y < 128; ++y) {
-            for (int x = 0; x < 16; ++x) {
-                for (int z = 0; z < 16; ++z) {
-                    uint8_t id = mcp_chunk_get_block_id(c, x, y, z);
-                    if (block::LiquidFlow::isDynamicLiquidId(id))
-                        block::LiquidFlow::scheduleTick(this, bx + x, y, bz + z);
-                }
+            mcp_chunk_t* c = chunks_.getChunkIfLoaded(w.cx, w.cz);
+            if (!c) {
+                // Unloaded again before its turn; harmless.
+                liquid_wake_keys_.erase(packChunkPos(w.cx, w.cz));
+                continue;
             }
+            // Every dynamic liquid block the generator or a structure left
+            // behind receives its vanilla tick, so springs spill as soon as
+            // the chunk is live. Cells already at rest settle into their
+            // still id on that first tick and never come back here. The
+            // scan walks each section's block array linearly from the
+            // cursor; unallocated sections are pure air and skip in one
+            // step.
+            const int32_t bx = w.cx << 4, bz = w.cz << 4;
+            uint32_t cell = w.next_cell;
+            while (cell < 16 * 16 * 128 && schedules > 0) {
+                const uint8_t secY = (uint8_t)(cell >> 12);
+                const mcp_chunk_section_t* s = mcp_chunk_get_section(c, secY);
+                if (!s || !s->blocks) {
+                    cell = (cell & ~0xFFFu) + 0x1000u; // empty section
+                    continue;
+                }
+                const uint32_t si = cell & 0xFFFu;
+                if (block::LiquidFlow::isDynamicLiquidId(s->blocks[si])) {
+                    block::LiquidFlow::scheduleTick(
+                        this, bx + (int32_t)(si & 15),
+                        (int32_t)(secY << 4) + (int32_t)(si >> 8),
+                        bz + (int32_t)((si >> 4) & 15));
+                    --schedules;
+                }
+                ++cell;
+            }
+            if (cell >= 16 * 16 * 128)
+                liquid_wake_keys_.erase(packChunkPos(w.cx, w.cz));
+            else {
+                w.next_cell = cell;
+                resume.push_back(w);
+            }
+            ++scanned;
         }
+        // Partially scanned chunks keep their place in the rotation.
+        for (const LiquidWake& w : resume)
+            liquid_wake_.push_back(w);
     }
 }
 

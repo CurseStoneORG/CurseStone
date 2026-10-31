@@ -240,7 +240,10 @@ class World {
     // that queue as soon as the chunk goes live — that is what makes
     // generated springs spill and structure pools settle. Without the
     // scan those cells never receive their first tick and sit still
-    // forever.
+    // forever. The drain hands out only a few scheduled ticks per tick
+    // and remembers a per-chunk scan cursor, so a freshly loading world
+    // feeds the shared scheduler gradually instead of queueing one
+    // callback per liquid cell in a single burst.
     void queueLiquidWake(int32_t cx, int32_t cz);
     void processLiquidWakes(int32_t budget);
 
@@ -536,8 +539,16 @@ class World {
     LightEngine light_;
 
     // Dynamic-liquid wake queue (see queueLiquidWake). Chunks are queued
-    // from the generation worker thread and drained on the main thread.
-    std::deque<std::pair<int32_t, int32_t>> liquid_wake_;
+    // from the generation worker thread and drained on the main thread;
+    // next_cell_ is the scan cursor so a chunk whose liquid cells exceed
+    // one tick's submission budget resumes where it stopped.
+    struct LiquidWake {
+        int32_t cx;
+        int32_t cz;
+        uint32_t next_cell;
+    };
+    std::deque<LiquidWake> liquid_wake_;
+    std::unordered_set<uint64_t> liquid_wake_keys_;
     mutable std::mutex liquid_wake_mtx_;
 
     static uint64_t packChunkPos(int32_t cx, int32_t cz) {
