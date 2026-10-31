@@ -347,7 +347,7 @@ void World::onChunkAdded(int32_t cx, int32_t cz) {
 }
 
 // How many freshly installed chunks get their dynamic-liquid scan per
-// tick, and how many dynamic cells those scans may hand to the scheduler
+// tick, and how many liquid cells those scans may hand to the scheduler
 // per tick. Every wake cell is one scheduled block tick, and the
 // scheduler runs a hard-capped 64 tasks per tick: feeding it a few dozen
 // cells per tick keeps the queue short during rapid exploration flights,
@@ -386,13 +386,16 @@ void World::processLiquidWakes(int32_t budget) {
                 liquid_wake_keys_.erase(packChunkPos(w.cx, w.cz));
                 continue;
             }
-            // Every dynamic liquid block the generator or a structure left
-            // behind receives its vanilla tick, so springs spill as soon as
-            // the chunk is live. Cells already at rest settle into their
-            // still id on that first tick and never come back here. The
-            // scan walks each section's block array linearly from the
-            // cursor; unallocated sections are pure air and skip in one
-            // step.
+            // Every liquid block the generator or an old save left behind
+            // receives its vanilla tick, so springs spill as soon as the
+            // chunk is live: dynamic cells tick directly, and still cells
+            // with somewhere to go turn back dynamic first (the reference
+            // restores the chunk's ticking queue on load — without this,
+            // water saved by an older build would sit frozen forever).
+            // Cells already at rest settle into their still id on that
+            // first tick and never come back here. The scan walks each
+            // section's block array linearly from the cursor; unallocated
+            // sections are pure air and skip in one step.
             const int32_t bx = w.cx << 4, bz = w.cz << 4;
             uint32_t cell = w.next_cell;
             while (cell < 16 * 16 * 128 && schedules > 0) {
@@ -403,18 +406,57 @@ void World::processLiquidWakes(int32_t budget) {
                     continue;
                 }
                 const uint32_t si = cell & 0xFFFu;
-                if (block::LiquidFlow::isDynamicLiquidId(s->blocks[si])) {
+                const uint8_t id = s->blocks[si];
+                if (block::LiquidFlow::isDynamicLiquidId(id)) {
                     block::LiquidFlow::scheduleTick(
                         this, bx + (int32_t)(si & 15),
                         (int32_t)(secY << 4) + (int32_t)(si >> 8),
                         bz + (int32_t)((si >> 4) & 15));
                     --schedules;
+                } else if (block::LiquidFlow::isStillLiquidId(id)) {
+                    if (block::LiquidFlow::wakeSettledLiquid(
+                            this, bx + (int32_t)(si & 15),
+                            (int32_t)(secY << 4) + (int32_t)(si >> 8),
+                            bz + (int32_t)((si >> 4) & 15)))
+                        --schedules;
                 }
                 ++cell;
             }
-            if (cell >= 16 * 16 * 128)
+            if (cell >= 16 * 16 * 128) {
                 liquid_wake_keys_.erase(packChunkPos(w.cx, w.cz));
-            else {
+
+                // Neighbour border strips: liquid on the edge of an already
+                // live chunk gains (or loses) a face when this chunk goes
+                // live, so a sealed wall can open up next door. Small fixed
+                // sweep, best effort within the same schedule budget.
+                static constexpr struct {
+                    int32_t dx, dz;
+                    int lx, lz;
+                } kRims[4] = {{1, 0, 0, -1}, {-1, 0, 15, -1}, {0, 1, -1, 0}, {0, -1, -1, 15}};
+                for (const auto& r : kRims) {
+                    if (schedules <= 0)
+                        break;
+                    mcp_chunk_t* nc = chunks_.getChunkIfLoaded(w.cx + r.dx, w.cz + r.dz);
+                    if (!nc)
+                        continue;
+                    const int32_t nbx = (w.cx + r.dx) << 4, nbz = (w.cz + r.dz) << 4;
+                    for (int t = 0; t < 16 && schedules > 0; ++t) {
+                        const int lx = r.lx >= 0 ? r.lx : t;
+                        const int lz = r.lz >= 0 ? r.lz : t;
+                        for (int y = 0; y < 128 && schedules > 0; ++y) {
+                            const uint8_t id = mcp_chunk_get_block_id(nc, lx, y, lz);
+                            if (block::LiquidFlow::isDynamicLiquidId(id)) {
+                                block::LiquidFlow::scheduleTick(this, nbx | lx, y, nbz | lz);
+                                --schedules;
+                            } else if (block::LiquidFlow::isStillLiquidId(id)) {
+                                if (block::LiquidFlow::wakeSettledLiquid(this, nbx | lx, y,
+                                                                         nbz | lz))
+                                    --schedules;
+                            }
+                        }
+                    }
+                }
+            } else {
                 w.next_cell = cell;
                 resume.push_back(w);
             }
