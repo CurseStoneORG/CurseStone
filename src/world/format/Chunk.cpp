@@ -38,7 +38,7 @@
 //   byte   = nibbles[index >> 1]
 //   low    = (byte & 0x0F) when index is even, high nibble when odd.
 #include "Chunk.h"
-#include "../../block/BlockLightC.h"
+#include "../../block/Block.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -284,7 +284,7 @@ void mcp_chunk_recalculate_height_map_column(mcp_chunk_t* c, int x, int z) {
     int32_t h = 0;
     for (int y = 255; y >= 0; --y) {
         uint8_t id = mcp_chunk_get_block_id(c, x, y, z);
-        if (id != 0 && mcp_block_light_opacity(id) > 0) {
+        if (id != 0 && cursestone::block::Block::lightOpacity(id) > 0) {
             h = y + 1;
             break;
         }
@@ -447,7 +447,7 @@ static void layer_set(mcp_chunk_t* c, int x, int y, int z, uint8_t v, int isSky)
 static int light_cost(uint8_t id) {
     if (id == 0)
         return 1;
-    const uint8_t op = mcp_block_light_opacity(id);
+    const uint8_t op = cursestone::block::Block::lightOpacity(id);
     return op > 0 ? (int)op : 1;
 }
 
@@ -541,7 +541,7 @@ void mcp_chunk_propagate_sky_light(mcp_chunk_t* c) {
                     continue;
                 }
                 uint8_t id = mcp_chunk_get_block_id(c, x, y, z);
-                uint8_t op = mcp_block_light_opacity(id);
+                uint8_t op = cursestone::block::Block::lightOpacity(id);
                 // Minecraft subtracts opacity (min 1 so light still
                 // decays through "transparent" blocks) except pure air.
                 if (id != 0) {
@@ -571,7 +571,7 @@ void mcp_chunk_propagate_sky_light(mcp_chunk_t* c) {
     for (int x = 0; x < 16; ++x)
         for (int z = 0; z < 16; ++z)
             for (int y = 0; y <= maxTop; ++y) {
-                const uint8_t e = mcp_block_light_emission(mcp_chunk_get_block_id(c, x, y, z));
+                const uint8_t e = cursestone::block::Block::lightEmission(mcp_chunk_get_block_id(c, x, y, z));
                 mcp_chunk_set_block_light(c, x, y, z, e);
             }
     propagate_layer(c, maxTop, /*isSky=*/0);

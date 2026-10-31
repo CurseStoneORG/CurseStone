@@ -53,6 +53,12 @@ class Block {
     virtual uint8_t getLightLevel() const {
         return 0;
     }
+    // Light queries used by the chunk light passes: how much light a
+    // block eats per step (0 = transparent .. 15 = opaque) and how much
+    // it emits (0 .. 15, torch/glowstone/lava). Unknown ids fall back to
+    // the same values Block::get() would hand out.
+    static uint8_t lightOpacity(uint8_t block_id);
+    static uint8_t lightEmission(uint8_t block_id);
     // Mining hardness (time in seconds, doubled for proper tools).
     virtual float getHardness() const {
         return 1.5f;

@@ -24,7 +24,7 @@
 // ChunkSection — implementation of standalone sub-chunk helpers.
 //
 // The struct layout lives in ChunkSection.h. Here we provide the
-// allocator + bulk operations. See Chunk.c for the per-block access
+// allocator + bulk operations. See Chunk.cpp for the per-block access
 // that operates on a full Chunk (16 sections + biome + heightmap).
 #include "ChunkSection.h"
 
