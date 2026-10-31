@@ -43,23 +43,6 @@
 #include <stdio.h>
 
 // RakNet protocol packets
-#include "protocol/Packet.h"
-#include "protocol/UNCONNECTED_PING.h"
-#include "protocol/UNCONNECTED_PING_OPEN_CONNECTIONS.h"
-#include "protocol/UNCONNECTED_PONG.h"
-#include "protocol/OPEN_CONNECTION_REQUEST_1.h"
-#include "protocol/OPEN_CONNECTION_REPLY_1.h"
-#include "protocol/OPEN_CONNECTION_REQUEST_2.h"
-#include "protocol/OPEN_CONNECTION_REPLY_2.h"
-#include "protocol/CLIENT_CONNECT_DataPacket.h"
-#include "protocol/SERVER_HANDSHAKE_DataPacket.h"
-#include "protocol/CLIENT_HANDSHAKE_DataPacket.h"
-#include "protocol/CLIENT_DISCONNECT_DataPacket.h"
-#include "protocol/PING_DataPacket.h"
-#include "protocol/PONG_DataPacket.h"
-#include "protocol/ACK.h"
-#include "protocol/NACK.h"
-#include "protocol/PacketReliability.h"
 
 #include <stdlib.h>
 #include <string.h>

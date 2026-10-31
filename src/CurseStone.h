@@ -69,7 +69,6 @@ namespace cursestone {
 class Server;
 class Player;
 class IPlayer;
-class OfflinePlayer;
 class Block;
 class Item;
 class Entity;

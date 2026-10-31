@@ -26,7 +26,7 @@
 #pragma once
 
 #include "UDPServerSocket.h"
-#include "protocol/PacketReliability.h"
+#include "Reliability.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>

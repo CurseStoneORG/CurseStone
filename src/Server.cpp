@@ -724,9 +724,6 @@ void Server::broadcastMessage(const std::string& msg) {
     // Mirror broadcasts to the console without formatting codes.
     utils::MainLogger::get().info("[CHAT] " + TC::clean(msg));
 }
-void Server::broadcastPacket(void* /*p*/) {
-    // Send packets through each player's source interface.
-}
 int64_t Server::allocateEid() {
     return next_eid_.fetch_add(1, std::memory_order_relaxed);
 }
@@ -1280,23 +1277,6 @@ void Server::setPropertyBoolean(const std::string& key, bool val) {
 int Server::broadcast(const std::string& message, const std::string& /*permissions*/) {
     broadcastMessage(message);
     return 0;
-}
-
-void Server::broadcastPacketsCallback(const std::vector<uint8_t>& /*data*/,
-                                      const std::vector<std::string>& /*identifiers*/) {
-    // Stub for sending encoded packets to selected players in batches.
-}
-
-void Server::addWhitelist(const std::string& /*name*/) {
-    // Stub: whitelist support is not implemented.
-}
-
-void Server::removeWhitelist(const std::string& /*name*/) {
-    // Stub: whitelist support is not implemented.
-}
-
-void Server::reloadWhitelist() {
-    // Stub: whitelist support is not implemented.
 }
 
 void Server::saveOfflinePlayerData(const std::string& name, NbtPtr nbt, bool /*async*/) {
