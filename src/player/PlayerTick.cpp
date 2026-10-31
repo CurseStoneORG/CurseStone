@@ -254,6 +254,15 @@ void Player::handleChat(const std::string& message) {
         return;
     }
 
+    // Chat anti-spam: at most one message every 500 ms per player.
+    // Commands above bypass this; extra messages are dropped silently.
+    int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                         std::chrono::steady_clock::now().time_since_epoch())
+                         .count();
+    if (now_ms - last_chat_ms_ < 500)
+        return;
+    last_chat_ms_ = now_ms;
+
     // Fire the chat event before broadcasting the original message.
     if (srv_) {
         auto ev = event::EventManager::get().fire<event::player::PlayerChatEvent>(this, message);

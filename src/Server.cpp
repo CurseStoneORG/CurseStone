@@ -50,6 +50,7 @@
 #include "item/Item.h"
 #include "inventory/CraftingManager.h"
 #include "network/protocol/CraftingDataPacket.h"
+#include "network/protocol/TextPacket.h"
 #include "scheduler/AsyncPool.h"
 #include "scheduler/ServerScheduler.h"
 #include "scheduler/CallbackTask.h"
@@ -717,10 +718,19 @@ std::vector<std::shared_ptr<Player>> Server::playersSnapshot() const {
     return players_;
 }
 void Server::broadcastMessage(const std::string& msg) {
-    auto snap = playersSnapshot();
-    for (auto& p : snap)
-        if (p)
-            p->sendMessage(msg);
+    // Serialize the chat TextPacket once and reuse the encoded bytes for
+    // every player instead of re-encoding the same payload per recipient.
+    network::protocol::TextPacket pk;
+    pk.type = network::protocol::TextPacket::TYPE_RAW;
+    pk.message = msg;
+    std::vector<uint8_t> body;
+    pk.writePacket(body);
+    if (!body.empty()) {
+        auto snap = playersSnapshot();
+        for (auto& p : snap)
+            if (p)
+                p->sendEncodedBody(body, pk.pid());
+    }
     // Mirror broadcasts to the console without formatting codes.
     utils::MainLogger::get().info("[CHAT] " + TC::clean(msg));
 }

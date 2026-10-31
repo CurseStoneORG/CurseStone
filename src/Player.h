@@ -264,6 +264,10 @@ class Player : public IPlayer,
     // --- Server-to-player packets ---
     // Sends a packet, optionally using the ordered channel.
     void sendPacket(std::shared_ptr<network::protocol::DataPacket> p, bool ordered = false);
+    // Broadcast fast path: the caller encodes once and hands each player a
+    // copy of the encoded [pid][body] bytes; queueing/flushing is shared
+    // with sendPacket().
+    void sendEncodedBody(std::vector<uint8_t> body, uint8_t pid, bool ordered = false);
     // Flushes pending packets into batches.
     void flushPendingPackets();
     void sendMessage(const std::string& msg) override;
@@ -766,6 +770,8 @@ class Player : public IPlayer,
     // Spiral for the radius onUpdate() used last; main thread only.
     int spiral_cache_radius_ = -1;
     std::vector<std::pair<int32_t, int32_t>> spiral_cache_;
+    // Steady-clock ms of the last accepted chat message (anti-spam).
+    int64_t last_chat_ms_ = 0;
 
     // Chunks already sent to this player, protected by chunks_mtx_.
     std::unordered_set<int64_t> used_chunks_;
