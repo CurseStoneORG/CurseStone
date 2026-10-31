@@ -434,6 +434,19 @@ class World {
     // Returns all tile entities in a chunk for client synchronization.
     std::vector<std::shared_ptr<cursestone::tile::Tile>> getTilesInChunk(int32_t cx, int32_t cz);
 
+    // Drops the "tiles hydrated" marker of a chunk so its blocks are
+    // rescanned on the next tile access. The chunk stream must carry the
+    // CURRENT tile set every time it goes out (chunk data, then tile NBTs):
+    // a client can drop and re-request a chunk at any moment (render-radius
+    // changes, leaving and coming back), and blocks that became tile blocks
+    // after the first hydration — structure population writing into a
+    // resident chunk, plugin setBlock, a furnace placed before a round
+    // trip — would otherwise reach that client WITHOUT their block actor.
+    // The 0.15.10 client only binds a container UI to an actor it already
+    // holds; a furnace screen opened against a missing actor takes the
+    // game down.
+    void invalidateTileHydration(int32_t cx, int32_t cz);
+
     // ----- Chunk memory eviction -----
     // Stores a player's current chunk and configured view radius.
     struct ChunkViewer {
