@@ -23,8 +23,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // ChunkAdapter — implementation.
 //
-// Thin pass-through to the C functions in Chunk.c. Keeps the C++
-// surface small (the heavy lifting lives in C).
+// Thin pass-through to the chunk helpers in Chunk.cpp. Keeps the C++
+// surface small (the heavy lifting lives there).
 #include "ChunkAdapter.h"
 
 #include "utils/CRaii.h"

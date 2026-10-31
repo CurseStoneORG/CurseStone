@@ -53,7 +53,7 @@ typedef struct mcp_chunk_section {
 // Range 0..4095 for blocks, 0..2047 for nibble arrays.
 //
 // NOTE (CurseStone): the nibble index MUST use the same shift-8 packing
-// as Chunk.c's nibble_index()/get_nibble()/set_nibble() — byte =
+// as Chunk's nibble_index()/get_nibble()/set_nibble() helpers — byte =
 // 128*y + 8*z + x/2, low nibble for even x, high nibble for odd x.
 // An earlier revision used (y<<7) here, which overlaps with the z bits
 // ((x=1,z=8,y=0) and (x=1,z=0,y=1) both map to 129) and desynchronizes

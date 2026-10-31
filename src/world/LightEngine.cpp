@@ -25,7 +25,7 @@
 
 #include "ChunkManager.h"
 #include "World.h"
-#include "block/BlockLightC.h"
+#include "block/Block.h"
 #include "world/format/Chunk.h"
 
 #include <algorithm>
@@ -55,7 +55,7 @@ inline uint64_t chunkKey(int32_t cx, int32_t cz) {
 inline int costThrough(uint8_t blockId) {
     if (blockId == 0)
         return 1;
-    const uint8_t op = mcp_block_light_opacity(blockId);
+    const uint8_t op = cursestone::block::Block::lightOpacity(blockId);
     return op > 0 ? static_cast<int>(op) : 1;
 }
 
@@ -204,7 +204,7 @@ void LightEngine::relight(int32_t x0, int32_t y0, int32_t z0, int32_t x1, int32_
                 const uint8_t id = mcp_chunk_get_block_id(c, x & 15, y, z & 15);
 
                 int sky = (y >= h) ? static_cast<int>(kMaxLight) : 0;
-                int blk = static_cast<int>(mcp_block_light_emission(id));
+                int blk = static_cast<int>(cursestone::block::Block::lightEmission(id));
 
                 for (int d = 0; d < 6; ++d) {
                     const int32_t nx = x + kDX[d];

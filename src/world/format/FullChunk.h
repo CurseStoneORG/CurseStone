@@ -28,9 +28,9 @@
 // to be serialized into a `FullChunkDataPacket` (protocol 0x34) and
 // broadcast to players.
 //
-// Concrete implementers: Chunk (level/format/Chunk.h, pure C struct
-// wrapped by ChunkManager), and any future custom chunk type. The
-// interface itself is pure-virtual C++ so the rest of the engine
+// Concrete implementers: Chunk (level/format/Chunk.h), and any future
+// custom chunk type. The interface itself is pure-virtual C++ so the
+// rest of the engine
 // (World, Player chunk-sender) can hold a `FullChunk*` without
 // caring which on-disk format produced it.
 #pragma once
