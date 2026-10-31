@@ -6,7 +6,7 @@
 
   **A new foundation for Minecraft: Pocket Edition 0.15.10 servers.**
 
-  Open-source server software built with C and C++20.
+  Open-source server software built with C++20.
 
   <p>
     <a href="https://github.com/CurseStoneORG/CurseStone/actions/workflows/Build.yml">
@@ -32,7 +32,7 @@
 
 **CurseStone** is an open-source server software project built specifically for **Minecraft: Pocket Edition 0.15.10**.
 
-Developed in C and C++20, it aims to provide an independent, extensible and customizable server implementation for one of the most recognizable eras of Minecraft: Pocket Edition.
+Developed in C++20, it aims to provide an independent, extensible and customizable server implementation for one of the most recognizable eras of Minecraft: Pocket Edition.
 
 The project focuses on preserving compatibility with the original game while providing a foundation for server owners and developers to build their own multiplayer experiences.
 
@@ -56,8 +56,7 @@ Rather than following modern Bedrock Edition development, the project remains fo
 
 | Technology | Purpose |
 |---|---|
-| C | Core systems and low-level functionality |
-| C++20 | Gameplay and server implementation |
+| C++20 | Entire server core: networking, gameplay and low-level systems |
 | Lua 5.4 | Plugin scripting |
 | CMake | Build configuration |
 | Ninja | Build system |
