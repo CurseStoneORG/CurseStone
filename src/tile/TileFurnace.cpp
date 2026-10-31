@@ -223,8 +223,15 @@ void TileFurnace::tick(uint64_t) {
         }
     }
     dirty_inventory_ = false;
-    // Progreso de UI (solo con viewers; barato: 2 varints por viewer).
-    if (!viewers_.empty())
+    // Progreso de UI — solo mientras el fuego está vivo, como el tile
+    // de referencia: su Level solo re-tickea los tiles cuyo update
+    // devuelve true, así que un horno apagado sale de la lista y deja
+    // de mandar 0x2D. Repetir (0,0) cada tick sobre la ventana abierta
+    // es un flood de ~40 paquetes/s que el cliente 0.15.10 procesa
+    // hasta morir (el crash del horno de aldea). Al apagarse se manda
+    // UN par final en ceros para que la UI se reinicie y después
+    // silencio hasta que vuelva a arder.
+    if (burn_time_ > 0 || progress_active_)
         sendProgressToViewers();
 }
 void TileFurnace::sendProgressToViewers() {
@@ -237,18 +244,37 @@ void TileFurnace::sendProgressToViewers() {
                                       return !p || !p->isConnected();
                                   }),
                    viewers_.end());
+    if (viewers_.empty())
+        return;
+
+    const int cook = std::clamp(cook_time_, 0, 200);
+    const int fuel =
+        max_burn_time_ > 0 ? std::clamp((burn_time_ * 200) / max_burn_time_, 0, 200) : 0;
+    // Silencio mientras nada se haya movido desde el ultimo envio: el
+    // tile de referencia solo emite valores que acaban de cambiar, asi
+    // que un horno idle no genera trafico aunque alguien lo mire.
+    if (progress_active_ && cook == last_sent_cook_ && fuel == last_sent_fuel_)
+        return;
+    progress_active_ = true;
+    last_sent_cook_ = cook;
+    last_sent_fuel_ = fuel;
 
     auto pk = std::make_shared<network::protocol::ContainerSetDataPacket>();
     pk->property = network::protocol::ContainerSetDataPacket::PROPERTY_FURNACE_TICKS;
-    pk->value = std::clamp(cook_time_, 0, 200);
+    pk->value = cook;
     auto pk2 = std::make_shared<network::protocol::ContainerSetDataPacket>();
     pk2->property = network::protocol::ContainerSetDataPacket::PROPERTY_FURNACE_FUEL;
-    pk2->value = max_burn_time_ > 0 ? std::clamp((burn_time_ * 200) / max_burn_time_, 0, 200) : 0;
+    pk2->value = fuel;
     // Un paquete por viewer: cada jugador tiene SU propio window id de
     // contenedor (Player::openContainerWindow), asi que un paquete
-    // compartido llevaria el id equivocado al segundo que mire.
+    // compartido llevaria el id equivocado al segundo que mire. Como el
+    // servidor de referencia, saltar cualquier viewer sin window real
+    // (>0): un 0x2D con windowid 0 aplicaria propiedades de horno sobre
+    // la ventana de inventario propia del cliente.
     for (void* v : viewers_) {
         auto* p = static_cast<cursestone::Player*>(v);
+        if (p->containerWindowId() == 0)
+            continue;
         pk->windowid = p->containerWindowId();
         p->sendPacket(pk);
         pk2->windowid = p->containerWindowId();
