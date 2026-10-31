@@ -92,6 +92,17 @@ mcp_rak_session_t* mcp_rak_session_manager_get_or_create(mcp_rak_session_manager
 mcp_rak_session_t* mcp_rak_session_manager_find(mcp_rak_session_manager_t* sm, const uint8_t ip[4],
                                                 uint16_t port);
 
+// Tear down the session for (ip, port), if any, keeping the owner array and
+// the O(1) endpoint index coherent: the index entry is erased with the exact
+// (key, pointer) pair, the session is destroyed and freed, and the owner
+// array is compacted with a swap-remove. The session is located by scanning
+// the owner array — never the endpoint index — so a stale index entry can
+// never cause the wrong (or a reused) session to be destroyed.
+// Returns true if a session was found and torn down; false if there was no
+// session for that endpoint (safe no-op).
+bool mcp_rak_session_manager_close(mcp_rak_session_manager_t* sm, const uint8_t ip[4],
+                                   uint16_t port);
+
 ssize_t mcp_rak_session_manager_send(mcp_rak_session_manager_t* sm, const uint8_t* data, size_t len,
                                      const uint8_t ip[4], uint16_t port);
 
