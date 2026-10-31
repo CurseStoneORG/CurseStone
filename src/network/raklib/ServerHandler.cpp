@@ -72,16 +72,8 @@ bool mcp_server_handler_send_encapsulated(mcp_server_handler_t* h, const uint8_t
 void mcp_server_handler_close_session(mcp_server_handler_t* h, const uint8_t ip[4], uint16_t port) {
     if (!h || !h->manager)
         return;
-    mcp_rak_session_manager_t* m = h->manager;
-    for (size_t i = 0; i < m->session_count; ++i) {
-        if (memcmp(m->sessions[i]->ip, ip, 4) == 0 && m->sessions[i]->port == port) {
-            // Release the session-owned buffers (recovery, split segments,
-            // order holds) before freeing the struct, like every other
-            // teardown path does.
-            mcp_rak_session_destroy(m->sessions[i]);
-            free(m->sessions[i]);
-            m->sessions[i] = m->sessions[--m->session_count];
-            return;
-        }
-    }
+    // Delegate to the owner: the session manager is the only place that
+    // keeps the owner array and the O(1) endpoint index coherent
+    // (index erase + destroy + free + swap-remove, in one place).
+    mcp_rak_session_manager_close(h->manager, ip, port);
 }

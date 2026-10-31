@@ -193,6 +193,36 @@ mcp_rak_session_t* mcp_rak_session_manager_get_or_create(mcp_rak_session_manager
     return ns;
 }
 
+// Single teardown sequence shared by every close path. `idx` must be a valid
+// index into sm->sessions. Erases the endpoint-index entry with the exact
+// (key, pointer) pair, releases the session-owned buffers, frees the struct
+// and compacts the owner array with a swap-remove.
+static void sm_teardown_at(mcp_rak_session_manager_t* sm, size_t idx) {
+    mcp_rak_session_t* s = sm->sessions[idx];
+    sm_map_erase(sm, sm_ep_key(s->ip, s->port), s);
+    mcp_rak_session_destroy(s);
+    free(s);
+    sm->sessions[idx] = sm->sessions[--sm->session_count];
+}
+
+bool mcp_rak_session_manager_close(mcp_rak_session_manager_t* sm, const uint8_t ip[4],
+                                   uint16_t port) {
+    if (!sm || !ip)
+        return false;
+    // Locate by scanning the owner array, never the endpoint index: the
+    // index is non-owning, and after any past or future incoherence a
+    // map-guided lookup could alias a live session of another player that
+    // reused the same memory block.
+    for (size_t i = 0; i < sm->session_count; ++i) {
+        mcp_rak_session_t* s = sm->sessions[i];
+        if (memcmp(s->ip, ip, 4) == 0 && s->port == port) {
+            sm_teardown_at(sm, i);
+            return true;
+        }
+    }
+    return false;
+}
+
 // =========================================================================
 // Send helpers
 // =========================================================================
@@ -2383,10 +2413,7 @@ void mcp_rak_session_manager_tick(mcp_rak_session_manager_t* sm) {
                          s->ip[3]);
                 sm->instance->on_close_session(sm->instance->impl, ipStr, s->port, "timeout");
             }
-            sm_map_erase(sm, sm_ep_key(s->ip, s->port), s);
-            mcp_rak_session_destroy(s);
-            free(s);
-            sm->sessions[i] = sm->sessions[--sm->session_count];
+            sm_teardown_at(sm, i);
         } else {
             ++i;
         }
