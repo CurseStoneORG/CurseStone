@@ -304,10 +304,10 @@ void TileFurnace::writeNBT(cursestone::nbt::Tag* tag) const {
             continue;
         cursestone::nbt::set_byte(entry.get(), "Slot", static_cast<int8_t>(slot));
         item::itemStackToNbt(stack, entry.get());
-        if (!cursestone::nbt::append(items.get(), entry.get()))
+        if (cursestone::nbt::append(items.get(), entry.get()))
             entry.release();
     }
-    if (!cursestone::nbt::set(tag, "Items", items.get()))
+    if (cursestone::nbt::set(tag, "Items", items.get()))
         items.release();
 }
 // ============================================================

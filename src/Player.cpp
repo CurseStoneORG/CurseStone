@@ -437,11 +437,11 @@ void Player::saveData() {
             cursestone::nbt::set_byte(entry.get(), "Id", (int8_t)e->id());
             cursestone::nbt::set_byte(entry.get(), "Amplifier", (int8_t)e->amplifier());
             cursestone::nbt::set_int(entry.get(), "Duration", e->duration());
-            if (!cursestone::nbt::append(fx_list.get(), entry.get()))
+            if (cursestone::nbt::append(fx_list.get(), entry.get()))
                 entry.release();
         }
     }
-    if (!cursestone::nbt::set(root, "ActiveEffects", fx_list.get()))
+    if (cursestone::nbt::set(root, "ActiveEffects", fx_list.get()))
         fx_list.release();
     cursestone::nbt::set_short(root, "Air", (int16_t)air_ticks_);
     // Experience (same keys as the reference Human::saveNBT).
@@ -476,12 +476,12 @@ void Player::saveData() {
             cursestone::nbt::set_byte(entry.get(), "Slot", (int8_t)nbt_slot);
             // Serialize item data, including enchantments.
             item::itemStackToNbt(it, entry.get());
-            if (!cursestone::nbt::append(inv_list.get(), entry.get()))
+            if (cursestone::nbt::append(inv_list.get(), entry.get()))
                 entry.release();
         }
         cursestone::nbt::set_int(root, "SelectedItemSlot", inv_->heldSlot());
     }
-    if (!cursestone::nbt::set(root, "Inventory", inv_list.get()))
+    if (cursestone::nbt::set(root, "Inventory", inv_list.get()))
         inv_list.release();
 
     srv_->saveOfflinePlayerData(cfg_.username, named_tag_);
