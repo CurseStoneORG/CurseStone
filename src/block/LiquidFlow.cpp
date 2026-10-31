@@ -340,6 +340,28 @@ void LiquidFlow::onBlockChanged(world::World* world, int32_t x, int32_t y, int32
     }
 }
 
+bool LiquidFlow::wakeSettledLiquid(world::World* world, int32_t x, int32_t y, int32_t z) {
+    if (!world || y < 0 || y >= 256)
+        return false;
+    uint8_t id = world->getBlockId(x, y, z);
+    if (!isStillLiquidId(id))
+        return false;
+    // Only cells with somewhere to go: one of the four sides or the cell
+    // below must accept the flow. Open sky alone is not enough, so ocean
+    // and river surfaces stay at rest instead of churning every load.
+    static constexpr int kOff[5][3] = {{-1, 0, 0}, {1, 0, 0}, {0, 0, -1}, {0, 0, 1}, {0, -1, 0}};
+    for (const auto& o : kOff) {
+        if (!canSpreadTo(world, x + o[0], y + o[1], z + o[2], id))
+            continue;
+        uint8_t data = world->getBlockData(x, y, z);
+        // LiquidBlockStatic::_setDynamic (UPDATE_CLIENTS, no re-notify).
+        writeLiquid(world, x, y, z, (uint8_t)(id - 1), data);
+        scheduleTick(world, x, y, z);
+        return true;
+    }
+    return false;
+}
+
 void LiquidFlow::scheduleTick(world::World* world, int32_t x, int32_t y, int32_t z) {
     if (!world)
         return;

@@ -46,6 +46,13 @@ class LiquidFlow {
     // Vanilla LiquidBlock::onPlace — lava solidifies against water neighbors.
     static void onLiquidPlaced(world::World* world, int32_t x, int32_t y, int32_t z);
 
+    // Vanilla BlockTickingQueue restore for loaded chunks: a still liquid
+    // cell that has somewhere to go (a loaded neighbour it can flow into)
+    // turns back dynamic and queues its first tick, so saved terrain
+    // resumes flowing exactly like freshly generated terrain. Returns true
+    // when the cell woke up.
+    static bool wakeSettledLiquid(world::World* world, int32_t x, int32_t y, int32_t z);
+
     static bool isLiquidId(uint8_t id);
     static bool isDynamicLiquidId(uint8_t id);
     static bool isStillLiquidId(uint8_t id);
