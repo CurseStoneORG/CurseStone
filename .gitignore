@@ -3,3 +3,5 @@ build/
 
 # Refactor helper scripts (not part of the build)
 .renamework/
+__pycache__/
+*.pyc
