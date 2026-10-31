@@ -159,7 +159,6 @@ class Server {
 
     // Broadcast helpers.
     void broadcastMessage(const std::string& msg);
-    void broadcastPacket(/* DataPacket */ void* p);
 
     // World, scheduler, and network accessors.
     World* getDefaultWorld() const {
@@ -281,8 +280,6 @@ class Server {
 
     // Nukkit-compatible broadcasting.
     int broadcast(const std::string& message, const std::string& permissions);
-    void broadcastPacketsCallback(const std::vector<uint8_t>& data,
-                                  const std::vector<std::string>& identifiers);
 
     // Nukkit-compatible operators and whitelist.
     void addOp(const std::string& name) {
@@ -291,9 +288,6 @@ class Server {
     void removeOp(const std::string& name) {
         setOp(name, false);
     }
-    void addWhitelist(const std::string& name);
-    void removeWhitelist(const std::string& name);
-    void reloadWhitelist();
 
     // Nukkit-compatible autosave.
     bool isAutoSaveEnabled() const {

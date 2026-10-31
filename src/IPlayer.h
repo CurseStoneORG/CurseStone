@@ -20,7 +20,7 @@
  * Repository: https://github.com/CurseStoneTeam/CurseStone
  *
  */
-// IPlayer — interface implemented by Player and OfflinePlayer.
+// IPlayer — interface implemented by Player.
 // Mirrors IPlayer.
 #pragma once
 #include <string>
