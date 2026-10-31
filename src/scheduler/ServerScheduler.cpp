@@ -32,6 +32,7 @@
 #include "../Server.h"
 #include "../utils/MainLogger.hpp"
 #include <algorithm>
+#include <chrono>
 #include <exception>
 #include <string>
 
@@ -230,6 +231,8 @@ void ServerScheduler::tick(uint64_t current_tick) {
     // immediately, which is what actually prevents a cascade from
     // freezing the tick loop.
     std::vector<TaskHandler*> due;
+    const std::chrono::steady_clock::time_point drain_start =
+        std::chrono::steady_clock::now();
     {
         std::lock_guard<std::mutex> lk(mtx_);
         for (auto& h : handlers_) {
@@ -257,6 +260,16 @@ void ServerScheduler::tick(uint64_t current_tick) {
     for (auto* h : due) {
         if (h->tick(current_tick)) {
             finished_task_ids_.push_back(h->taskId());
+        }
+        // Wall-clock budget: same contract as the task-count cap above.
+        // Slow handlers (liquid settling, fire-style chains) defer their
+        // remainder to later ticks instead of overrunning the tick loop,
+        // which is what keeps chunk streaming responsive while a world
+        // loads.
+        if (std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - drain_start)
+                .count() >= SYNC_DRAIN_BUDGET_MS) {
+            break;
         }
     }
 

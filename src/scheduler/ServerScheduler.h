@@ -86,6 +86,12 @@ class ServerScheduler {
 
   private:
     static constexpr size_t MAX_TASKS_PER_TICK = 64;
+    // Wall-clock ceiling for the sync drain phase, next to the task-count
+    // cap. A burst of due tasks (e.g. the generated-liquid wake settling a
+    // freshly loaded world) must never eat the whole 50 ms tick: whatever
+    // is still due when the budget runs out simply runs next tick, exactly
+    // like the MAX_TASKS_PER_TICK remainder.
+    static constexpr double SYNC_DRAIN_BUDGET_MS = 10.0;
     static constexpr size_t MAX_PENDING_COMPLETIONS = 512;
 
     std::vector<std::unique_ptr<TaskHandler>> handlers_;
