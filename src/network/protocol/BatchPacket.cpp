@@ -31,6 +31,11 @@
 
 namespace cursestone::network::protocol {
 
+namespace {
+// Low zlib level: encode() runs on the tick thread for every player each tick.
+constexpr int kBatchCompressionLevel = 2;
+} // namespace
+
 void BatchPacket::encode(std::vector<uint8_t>& out) const {
     if (!compressed_.empty()) {
         uint32_t n = static_cast<uint32_t>(compressed_.size());
@@ -45,7 +50,7 @@ void BatchPacket::encode(std::vector<uint8_t>& out) const {
     uLong bound = compressBound(srcLen) + 64;
     std::vector<uint8_t> tmp(bound);
     uLongf dstLen = bound;
-    int r = compress2(tmp.data(), &dstLen, payload_.data(), srcLen, 7);
+    int r = compress2(tmp.data(), &dstLen, payload_.data(), srcLen, kBatchCompressionLevel);
     if (r != Z_OK) {
         for (int i = 0; i < 4; ++i)
             out.push_back(0);

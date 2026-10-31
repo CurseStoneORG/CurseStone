@@ -48,6 +48,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <deque>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -159,7 +160,7 @@ class Diagnostics {
     std::atomic<uint64_t> tick_{0};
 
     std::string action_ = "(idle)";
-    std::vector<PacketRecord> packets_;
+    std::deque<PacketRecord> packets_;
     std::vector<ErrorRecord> errors_;
     std::vector<PlayerSnapshot> players_;
 

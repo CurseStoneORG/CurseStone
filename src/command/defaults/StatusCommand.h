@@ -30,8 +30,9 @@ namespace cursestone {
 /**
  * @brief Prints a server health summary. Restricted to operators and the console.
  *
- * Data is collected on the main thread (scheduled), because the console runs commands
- * on the CommandReader thread and world/player state must not be read from there.
+ * Data is collected on the main thread: console commands are scheduled onto it because the
+ * console runs on the CommandReader thread; player commands already run there.
+ * Players are limited to one use every 2 seconds.
  */
 class StatusCommand : public Command {
   public:
