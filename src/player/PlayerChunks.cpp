@@ -165,6 +165,17 @@ void Player::sendChunksAroundSpawn() {
 void Player::sendChunkTiles(int32_t cx, int32_t cz) {
     if (!getWorld())
         return;
+    // Every stream must carry the chunk's CURRENT tile set: the client may
+    // have dropped this chunk earlier (render-radius change, leaving and
+    // coming back) and taken its block actors with it, and tile-needing
+    // blocks can appear at any time (structure population writing into a
+    // resident chunk, a furnace placed before the round trip). Re-scan the
+    // resident blocks so tiles created after the first hydration still get
+    // their BlockEntityData out — in the chunk-data-then-tile-NBTs order
+    // the client binds actors in. Without this, a re-streamed furnace block
+    // reaches the client with no actor and opening its screen crashes the
+    // game (the village-furnace crash).
+    getWorld()->invalidateTileHydration(cx, cz);
     auto tiles = getWorld()->getTilesInChunk(cx, cz);
     for (auto& t : tiles) {
         if (!t)

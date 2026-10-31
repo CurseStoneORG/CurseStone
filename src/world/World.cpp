@@ -1864,12 +1864,23 @@ void World::ensureTilesLoaded(int32_t cx, int32_t cz) {
             if (tile) {
                 tile->readNBT(tag.get());
                 std::lock_guard<std::mutex> lk(tiles_mtx_);
+                // Re-hydration (a chunk streamed again after the client
+                // dropped it) must never clobber a LIVE tile with the
+                // stored blob — the in-memory instance holds the current
+                // state, the blob only what the last sync saw.
+                if (tiles_.count(packTilePos(tx, ty, tz)))
+                    continue;
                 tiles_[packTilePos(tx, ty, tz)] = std::move(tile);
             }
         }
     }
 
     hydrateTilesFromBlocks(cx, cz, c);
+}
+
+void World::invalidateTileHydration(int32_t cx, int32_t cz) {
+    std::lock_guard<std::mutex> lk(tiles_mtx_);
+    tiles_hydrated_chunks_.erase(packChunkPos(cx, cz));
 }
 
 void World::hydrateTilesFromBlocks(int32_t cx, int32_t cz, mcp_chunk_t* c) {
