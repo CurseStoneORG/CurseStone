@@ -87,7 +87,7 @@ void itemStackToNbt(const ItemStack& stack, cursestone::nbt::Tag* entry) {
     if (!stack.nbt.empty()) {
         utils::TagGuard tag(cursestone::nbt::read(reinterpret_cast<const uint8_t*>(stack.nbt.data()), stack.nbt.size(), /*little_endian=*/true));
         if (tag && cursestone::nbt::type_of(tag.get()) == cursestone::nbt::TAG_COMPOUND &&
-            !cursestone::nbt::set(entry, kNbtTag, tag.get())) {
+            cursestone::nbt::set(entry, kNbtTag, tag.get())) {
             // Ownership transferred to `entry` (nbt::set stores
             // the pointer and destroys it together with the parent).
             tag.release();
@@ -117,10 +117,10 @@ void itemStackToNbt(const ItemStack& stack, cursestone::nbt::Tag* entry) {
             continue;
         cursestone::nbt::set_short(c.get(), kNbtId, static_cast<int16_t>(e.id));
         cursestone::nbt::set_short(c.get(), kNbtEnchLvl, static_cast<int16_t>(e.level));
-        if (!cursestone::nbt::append(list.get(), c.get()))
+        if (cursestone::nbt::append(list.get(), c.get()))
             c.release(); // list owns it now; the guard only covers append failure.
     }
-    if (!cursestone::nbt::set(entry, kNbtEnch, list.get()))
+    if (cursestone::nbt::set(entry, kNbtEnch, list.get()))
         list.release();
 }
 
