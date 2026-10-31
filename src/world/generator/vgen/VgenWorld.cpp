@@ -65,15 +65,6 @@ void LevelChunk::recalcHeightmap() {
         }
 }
 
-void LevelChunk::_touchColumn(int x, int z) {
-        int y = kHeight;
-        while (y > 0 && Block::mLightBlock[(uint8_t)mBlocks[(uint32_t)(y - 1) + ((uint32_t)z + (uint32_t)x * 16) * 128]] == 0) {
-                --y;
-        }
-        mHeightmap[x + (z << 4)] = y;
-        mRainHeights[x + (z << 4)] = -999;
-}
-
 static bool _isTopSolid(const Material* material, bool includeWater, bool includeLeaves) {
         if (material == nullptr) {
                 return false;
