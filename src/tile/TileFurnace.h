@@ -30,7 +30,10 @@
 //     completed smelt, consumes fuel when burn runs out and writes the
 //     result to slot 2.
 //   - El progreso se transmite SOLO a los jugadores con el horno
-//     abierto (ContainerSetDataPacket property 0/1, escala 0..200).
+//     abierto y SOLO mientras arde (ContainerSetDataPacket property
+//     0/1, escala 0..200). Un horno apagado manda a lo sumo un par
+//     final en ceros y se calla: replicar (0,0) cada tick es un flood
+//     de 0x2D que tumba al cliente.
 //   - Persistencia NBT legacy de Nukkit: { BurnDuration, BurnTicks,
 //     CookTicks, Items: [{Slot,id,Damage,Count}] }.
 #pragma once
@@ -115,6 +118,11 @@ class TileFurnace : public Tile, public Container, public Nameable, public Spawn
     int cook_time_ = 0;            // current smelt progress (0..200)
     bool dirty_inventory_ = false; // the tick must resend content
     bool lit_ = false;             // the block is already BURNING_FURNACE
+    // Last furnace-property values pushed to the open window, so the
+    // tick can stay silent while nothing moved. -1 = never sent yet.
+    int last_sent_cook_ = -1;
+    int last_sent_fuel_ = -1;
+    bool progress_active_ = false; // a property pair went out at least once
     std::vector<void*> viewers_;   // raw Player*, NEVER dereference (compare only)
 };
 } // namespace
