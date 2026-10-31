@@ -285,8 +285,16 @@ mcp_chunk_t* ChunkManager::getChunkOrRequestAsync(int32_t x, int32_t z,
             }
             if (c && !installed)
                 mcp_chunk_destroy(c);
-            std::lock_guard<std::mutex> lk(pending_mtx_);
-            pending_.erase(key);
+            {
+                std::lock_guard<std::mutex> lk(pending_mtx_);
+                pending_.erase(key);
+            }
+            // Outside every lock (same contract as setChunk): the World
+            // only queues work — here the dynamic-liquid wake scan, so a
+            // chunk that was generated on a worker also starts its liquid
+            // ticking queue the moment it goes live.
+            if (installed && on_chunk_installed_)
+                on_chunk_installed_(key.x, key.z);
         });
 
     if (pool->submit([task] {
@@ -323,6 +331,8 @@ void ChunkManager::setChunk(int32_t x, int32_t z, mcp_chunk_t* chunk) {
     // very mutex ChunkManager needs.
     if (on_chunk_added_)
         on_chunk_added_(x, z);
+    if (on_chunk_installed_)
+        on_chunk_installed_(x, z);
 }
 
 void ChunkManager::commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t id, uint8_t data) {

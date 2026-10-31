@@ -33,5 +33,10 @@ class BlockSnowLayer : public BlockFlowable {
     std::string name() const override {
         return "Snow Layer";
     }
+    // Vanilla TopSnowBlock: a light layer that yields quickly when mined
+    // but is not an instant-break plant.
+    float getHardness() const override {
+        return 0.1f;
+    }
 };
 } // namespace

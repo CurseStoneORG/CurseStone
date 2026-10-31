@@ -63,6 +63,7 @@
 #include "BlockSign.h"
 #include "BlockSlab.h"
 #include "BlockSnow.h"
+#include "BlockSnowLayer.h"
 #include "BlockSoulSand.h"
 #include "BlockStone.h"
 #include "BlockStoneBricks.h"
@@ -101,6 +102,11 @@ void register_all_blocks() {
     Block::registerBlock(std::make_unique<BlockGlassPane>());
     Block::registerBlock(std::make_unique<BlockIce>());
     Block::registerBlock(std::make_unique<BlockSnow>());
+    // Snow layer (78) — without a registered flyweight every Block::get(78)
+    // came back null: the layer read as a full opaque block to the light
+    // pass, refused placements into itself, and the vanilla replaceable-
+    // target rule could never fire for it.
+    Block::registerBlock(std::make_unique<BlockSnowLayer>());
     Block::registerBlock(std::make_unique<BlockGlowstone>());
     Block::registerBlock(std::make_unique<BlockNetherrack>());
     Block::registerBlock(std::make_unique<BlockSoulSand>());
