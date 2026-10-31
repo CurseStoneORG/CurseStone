@@ -104,11 +104,66 @@ int mcp_rak_session_manager_bind(mcp_rak_session_manager_t* sm, const char* host
 // =========================================================================
 // Session lookup / creation
 // =========================================================================
+// Endpoint key: (ip big-endian u32 << 16) | port, stored +1 so that a key
+// of 0 always means "empty slot" in the open-addressing map.
+static inline uint64_t sm_ep_key(const uint8_t ip[4], uint16_t port) {
+    uint64_t k = ((uint64_t)ip[0] << 24) | ((uint64_t)ip[1] << 16) | ((uint64_t)ip[2] << 8) |
+                 (uint64_t)ip[3];
+    return ((k << 16) | port) + 1;
+}
+
+static inline size_t sm_map_home(uint64_t key) {
+    return (size_t)((key * 0x9E3779B97F4A7C15ULL) >> (64 - MCP_SM_MAP_BITS));
+}
+
+static void sm_map_insert(mcp_rak_session_manager_t* sm, uint64_t key, mcp_rak_session_t* s) {
+    const size_t mask = MCP_SM_MAP_SIZE - 1;
+    size_t i = sm_map_home(key) & mask;
+    while (sm->map_ptr[i])
+        i = (i + 1) & mask;
+    sm->map_key[i] = key;
+    sm->map_ptr[i] = s;
+}
+
+// Backward-shift deletion so probe chains stay intact without tombstones.
+static void sm_map_erase(mcp_rak_session_manager_t* sm, uint64_t key, const mcp_rak_session_t* s) {
+    const size_t mask = MCP_SM_MAP_SIZE - 1;
+    size_t i = sm_map_home(key) & mask;
+    while (sm->map_ptr[i] && !(sm->map_key[i] == key && sm->map_ptr[i] == s))
+        i = (i + 1) & mask;
+    if (!sm->map_ptr[i])
+        return; // not present (should not happen)
+    for (;;) {
+        size_t j = (i + 1) & mask;
+        while (sm->map_ptr[j]) {
+            size_t home = sm_map_home(sm->map_key[j]) & mask;
+            // Can slot j legally move into the hole at i?
+            bool can_move = (i <= j) ? (home <= i || home > j) : (home <= i && home > j);
+            if (can_move)
+                break;
+            j = (j + 1) & mask;
+        }
+        if (!sm->map_ptr[j])
+            break;
+        sm->map_key[i] = sm->map_key[j];
+        sm->map_ptr[i] = sm->map_ptr[j];
+        sm->map_key[j] = 0;
+        sm->map_ptr[j] = NULL;
+        i = j;
+    }
+    sm->map_key[i] = 0;
+    sm->map_ptr[i] = NULL;
+}
+
 mcp_rak_session_t* mcp_rak_session_manager_find(mcp_rak_session_manager_t* sm, const uint8_t ip[4],
                                                 uint16_t port) {
-    for (size_t i = 0; i < sm->session_count; ++i) {
-        if (memcmp(sm->sessions[i]->ip, ip, 4) == 0 && sm->sessions[i]->port == port)
-            return sm->sessions[i];
+    const uint64_t key = sm_ep_key(ip, port);
+    const size_t mask = MCP_SM_MAP_SIZE - 1;
+    size_t i = sm_map_home(key) & mask;
+    while (sm->map_ptr[i]) {
+        if (sm->map_key[i] == key)
+            return sm->map_ptr[i];
+        i = (i + 1) & mask;
     }
     return NULL;
 }
@@ -134,6 +189,7 @@ mcp_rak_session_t* mcp_rak_session_manager_get_or_create(mcp_rak_session_manager
         return NULL;
     mcp_rak_session_init(ns, ip, port, 0, sm->server_id);
     sm->sessions[sm->session_count++] = ns;
+    sm_map_insert(sm, sm_ep_key(ip, port), ns);
     return ns;
 }
 
@@ -2327,6 +2383,7 @@ void mcp_rak_session_manager_tick(mcp_rak_session_manager_t* sm) {
                          s->ip[3]);
                 sm->instance->on_close_session(sm->instance->impl, ipStr, s->port, "timeout");
             }
+            sm_map_erase(sm, sm_ep_key(s->ip, s->port), s);
             mcp_rak_session_destroy(s);
             free(s);
             sm->sessions[i] = sm->sessions[--sm->session_count];

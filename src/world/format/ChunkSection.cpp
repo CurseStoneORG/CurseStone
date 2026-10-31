@@ -68,30 +68,5 @@ void mcp_section_destroy(mcp_chunk_section_t* s) {
     free(s);
 }
 
-void mcp_section_fill_blocks(mcp_chunk_section_t* s, uint8_t id) {
-    if (!s || !s->blocks)
-        return;
-    memset(s->blocks, id, 4096);
-    s->non_air_top = (id != 0);
-}
 
-bool mcp_section_is_empty(const mcp_chunk_section_t* s) {
-    if (!s || !s->blocks)
-        return true;
-    for (size_t i = 0; i < 4096; ++i) {
-        if (s->blocks[i] != 0)
-            return false;
-    }
-    return true;
-}
 
-size_t mcp_section_count_non_air(const mcp_chunk_section_t* s) {
-    if (!s || !s->blocks)
-        return 0;
-    size_t n = 0;
-    for (size_t i = 0; i < 4096; ++i) {
-        if (s->blocks[i] != 0)
-            ++n;
-    }
-    return n;
-}

@@ -36,9 +36,6 @@ typedef SSIZE_T ssize_t;
 #include <sys/types.h> // ssize_t on POSIX and MinGW
 #endif
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 typedef struct mcp_udp_socket {
     int fd; // POSIX int / Win32 SOCKET cast to int
@@ -64,6 +61,3 @@ ssize_t mcp_udp_socket_recv(mcp_udp_socket_t* s, void* buf, size_t cap, uint8_t*
 ssize_t mcp_udp_socket_send(mcp_udp_socket_t* s, const void* buf, size_t len, const uint8_t* dst_ip,
                             uint16_t dst_port);
 
-#ifdef __cplusplus
-} // extern "C"
-#endif

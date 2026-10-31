@@ -26,9 +26,6 @@
 
 #include <stdbool.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 // ANSI escape codes (foreground)
 #define MCP_TERM_BLACK "\x1b[30m"
@@ -64,6 +61,3 @@ bool mcp_terminal_has_color(void);
 // calls to mcp_terminal_has_color() read a cached result.
 void mcp_terminal_init(bool force_color);
 
-#ifdef __cplusplus
-} // extern "C"
-#endif

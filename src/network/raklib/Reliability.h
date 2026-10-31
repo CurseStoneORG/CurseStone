@@ -20,9 +20,6 @@
 #pragma once
 #include <stdint.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 #define MCP_RELIABILITY_UNRELIABLE 0
 #define MCP_RELIABILITY_UNRELIABLE_SEQUENCED 1
@@ -34,6 +31,3 @@ extern "C" {
 
 typedef uint8_t mcp_reliability_t;
 
-#ifdef __cplusplus
-}
-#endif

@@ -48,9 +48,6 @@
 #include <stdio.h>
 #include <stdint.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 // Ring buffer dimensions.
 #define ASYNC_LOG_RING_SIZE 8192  // entries
@@ -111,6 +108,3 @@ mcp_async_logger_t* mcp_async_logger_get_instance(void);
 // Check if the async logger has been initialized.
 bool mcp_async_logger_is_initialized(void);
 
-#ifdef __cplusplus
-} // extern "C"
-#endif

@@ -21,16 +21,13 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// AxisAlignedBB — 3D axis-aligned bounding box. Pure C struct + helpers.
+// AxisAlignedBB — 3D axis-aligned bounding box. POD struct + helpers.
 // Used for entity collision, block hit-testing, projectile ray-casts.
 #pragma once
 
 #include "Vector3.h"
 #include <stdbool.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 typedef struct mcp_aabb {
     double minX, minY, minZ;
@@ -76,7 +73,6 @@ static inline bool mcp_aabb_contains_point(mcp_aabb_t b, mcp_vector3_t p) {
 }
 // Compute the intersection ratio (0..1) of `t*p0 + (1-t)*p1` with `b`,
 // or -1 if no intersection. Used for ray-cast hits.
-double mcp_aabb_ray_intersect(mcp_aabb_t b, mcp_vector3_t p0, mcp_vector3_t p1);
 
 // Grow the box by `pad` in all directions.
 static inline mcp_aabb_t mcp_aabb_grow(mcp_aabb_t b, double pad) {
@@ -234,6 +230,3 @@ static inline double mcp_aabb_clip_z_collide(mcp_aabb_t b, mcp_aabb_t c, double 
     return d;
 }
 
-#ifdef __cplusplus
-} // extern "C"
-#endif

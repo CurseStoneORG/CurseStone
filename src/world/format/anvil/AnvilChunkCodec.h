@@ -61,9 +61,6 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 // Encode a chunk to NBT big-endian bytes (NOT compressed). Caller frees.
 // Returns NULL on failure. *out_len receives the byte count.
@@ -74,6 +71,3 @@ uint8_t* anvil_chunk_encode(const mcp_chunk_t* chunk, size_t* out_len);
 // Returns NULL on parse error.
 mcp_chunk_t* anvil_chunk_decode(const uint8_t* data, size_t len);
 
-#ifdef __cplusplus
-} // extern "C"
-#endif

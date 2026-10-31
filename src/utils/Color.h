@@ -26,9 +26,6 @@
 
 #include <stdint.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 typedef struct mcp_color {
     uint8_t r, g, b, a;
@@ -47,12 +44,6 @@ typedef struct mcp_color {
 #define MCP_COLOR_STONE_GRAY ((mcp_color_t){128, 128, 128, 255})
 
 // Pack to/from 0xAARRGGBB uint32.
-uint32_t mcp_color_to_argb(const mcp_color_t* c);
-mcp_color_t mcp_color_from_argb(uint32_t argb);
 
 // Linear interpolation; t=0 → a, t=1 → b.
-mcp_color_t mcp_color_lerp(mcp_color_t a, mcp_color_t b, float t);
 
-#ifdef __cplusplus
-} // extern "C"
-#endif

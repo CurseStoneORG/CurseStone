@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Vector3 — 3D vector. Pure C struct + helpers. Heavily used by
+// Vector3 — 3D vector. POD struct + helpers. Heavily used by
 // entity position, level coordinates, particle spawning, and
 // packet fields (MoveEntityPacket, MovePlayerPacket, etc.).
 #pragma once
@@ -33,9 +33,6 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 typedef struct mcp_vector3 {
     double x, y, z;
@@ -147,6 +144,3 @@ static inline mcp_vector3_t mcp_v3_lerp(mcp_vector3_t a, mcp_vector3_t b, double
     return mcp_v3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t);
 }
 
-#ifdef __cplusplus
-} // extern "C"
-#endif

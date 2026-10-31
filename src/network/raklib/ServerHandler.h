@@ -31,9 +31,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 typedef struct mcp_server_handler {
     mcp_rak_session_manager_t* manager; // not owned
@@ -55,6 +52,3 @@ bool mcp_server_handler_send_encapsulated(mcp_server_handler_t* h, const uint8_t
 // Close a session immediately (no goodbye packet).
 void mcp_server_handler_close_session(mcp_server_handler_t* h, const uint8_t ip[4], uint16_t port);
 
-#ifdef __cplusplus
-} // extern "C"
-#endif

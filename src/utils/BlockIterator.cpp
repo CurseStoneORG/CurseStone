@@ -24,9 +24,7 @@
 // BlockIterator implementation (Amanatides & Woo's voxel traversal).
 #include "BlockIterator.h"
 
-extern "C" {
 #include "../math/Vector3.h"
-}
 
 #include <cmath>
 

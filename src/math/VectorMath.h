@@ -22,7 +22,7 @@
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // VectorMath — higher-level vector operations (rotation, looking at a target).
-// Pure C; complements Vector2.h / Vector3.h.
+// Plain functions; complements Vector2.h / Vector3.h.
 #pragma once
 
 #include "Vector3.h"
@@ -32,9 +32,6 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 // Spherical → cartesian direction (yaw, pitch in degrees).
 static inline mcp_vector3_t mcp_vm_direction_from_yaw_pitch(double yawDeg, double pitchDeg) {
@@ -72,6 +69,3 @@ static inline int mcp_vm_face_from_yaw(double yawDeg) {
     return 2;     // north
 }
 
-#ifdef __cplusplus
-} // extern "C"
-#endif

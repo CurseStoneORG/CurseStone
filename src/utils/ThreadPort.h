@@ -46,9 +46,6 @@
 #include <pthread.h>
 #endif
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /// Wait argument that blocks until the condition is signalled.
 #define MCP_WAIT_FOREVER 0xFFFFFFFFu
@@ -163,6 +160,3 @@ bool mcp_thread_start(mcp_thread_t* t, mcp_thread_fn fn, void* arg);
  */
 void mcp_thread_join(mcp_thread_t* t);
 
-#ifdef __cplusplus
-} /* extern "C" */
-#endif

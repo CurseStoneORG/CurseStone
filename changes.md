@@ -1,5 +1,37 @@
 # Changes
 
+## 2026-11-01 — src/ is now 100% C++; O(1) session lookup
+
+### Improved
+- Every first-party `.c` file (29) is now `.cpp` compiled as C++: raklib
+  (Binary, RakLib, RakLibServer, ServerHandler, Session, SessionManager,
+  UDPServerSocket), world/format (Chunk, ChunkSection, AnvilChunkCodec),
+  logger/AsyncMainLogger, math/* and utils/*. The state structs stay POD and
+  memset()-able on purpose — the RakNet wire logic is byte-identical.
+- `SessionManager`: sessions are now found through an embedded open-addressing
+  hash index (1024 slots, endpoint key = ip:port, backward-shift deletion, no
+  allocations). `find()` used to be a linear scan over every session and ran
+  on every received datagram, every send and every handshake retry.
+- The `extern "C"` guards are gone from the migrated headers; `BlockIterator`
+  no longer re-wraps `Vector3.h` in C linkage.
+- CMake keeps the C language only for the vendored `third_party/lua`.
+
+### Removed
+- 33 dead functions with their prototypes (~470 lines): unused BinaryStream
+  read/write helpers, Color conversions, Random conveniences, UUID
+  parse/compare, Utils file/trim/split helpers, TextFormat::clean,
+  AxisAlignedBB ray intersect, Chunk/ChunkSection bulk helpers,
+  Session::enqueue and CompoundTag::size.
+
+### Tests
+- Full Release rebuild clean (Ninja, C++20) with `LANGUAGES C CXX` (C only for
+  third_party/lua).
+- Runtime harnesses on the rebuilt binary, all passing:
+  `furnace_natural_wire_check.py`, `chunk_explore_check.py`,
+  `chunk_radius_reload_check.py`, `container_open_wire_check.py`,
+  `session_timeout_check.py` (exercises the reaping path that now erases the
+  hash entry before freeing the session).
+
 ## 2026-11-01 — Dead code out of the tree; chat encoded once and rate-limited
 
 ### Improved

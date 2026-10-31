@@ -67,7 +67,6 @@ const char* mcp_compound_tag_get_string(const mcp_tag_t* self, const char* name,
 // Returns the named child as a CompoundTag (NULL if not a compound).
 const mcp_tag_t* mcp_compound_tag_get_compound(const mcp_tag_t* self, const char* name);
 
-size_t mcp_compound_tag_size(const mcp_tag_t* self);
 bool mcp_compound_tag_contains(const mcp_tag_t* self, const char* name);
 
 // Remove `name` and destroy its tag. Returns true when something was

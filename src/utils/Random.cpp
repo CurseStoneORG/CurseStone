@@ -67,9 +67,6 @@ void mcp_random_seed(mcp_random_t* r, uint32_t seed) {
     r->index = MCP_MT_N;
 }
 
-void mcp_random_auto_seed(mcp_random_t* r) {
-    mcp_random_seed(r, (uint32_t)mcp_utils_time_ms());
-}
 
 uint32_t mcp_random_next_u32(mcp_random_t* r) {
     if (!r)
@@ -85,27 +82,5 @@ uint32_t mcp_random_next_u32(mcp_random_t* r) {
     return y;
 }
 
-int mcp_random_next_int_range(mcp_random_t* r, int range) {
-    if (range <= 0)
-        return 0;
-    // Avoid modulo bias by rejection sampling the high bits.
-    uint32_t mask = ~0u;
-    uint32_t lim = (uint32_t)range;
-    --lim;
-    mask >>= mcp_clz32(lim | 1);
-    uint32_t v;
-    do {
-        v = mcp_random_next_u32(r) & mask;
-    } while (v > (uint32_t)range - 1);
-    return (int)v;
-}
 
-float mcp_random_next_float(mcp_random_t* r) {
-    return (float)(mcp_random_next_u32(r) >> 8) / (float)(1u << 24);
-}
 
-double mcp_random_next_double(mcp_random_t* r) {
-    uint64_t a = mcp_random_next_u32(r) >> 5;
-    uint64_t b = mcp_random_next_u32(r) >> 6;
-    return (double)(a << 27 | b) / (double)(1ULL << 53);
-}

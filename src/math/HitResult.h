@@ -44,9 +44,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 typedef enum mcp_hit_type {
     MCP_HIT_NONE = 0,  // the client's NO_HIT
@@ -93,6 +90,3 @@ static inline bool mcp_hit_is_hit(const mcp_hit_result_t* h) {
 // see the note at the top of this header.
 mcp_hit_result_t mcp_aabb_clip(mcp_aabb_t box, mcp_vector3_t from, mcp_vector3_t to);
 
-#ifdef __cplusplus
-} // extern "C"
-#endif

@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Chunk — raw in-memory chunk, pure C struct.
+// Chunk — raw in-memory chunk, POD struct.
 //
 // A Chunk holds 16 ChunkSections stacked on Y (0..15), giving 16*16*256
 // = 65536 blocks total. Each section is 16*16*16 = 4096 blocks. This
@@ -29,7 +29,7 @@
 // serialize (only the lower 8 sections are persisted, since MCPE 0.15.x
 // is 128-tall).
 //
-// Pure C (not C++): the storage layer is C so it can be used from
+// POD (not RAII): the storage layer stays memcpy/memset-able so it can be used from
 // the RakLib thread and from generators without dragging C++ runtime
 // overhead. The FullChunk C++ interface wraps this struct.
 //
@@ -44,9 +44,6 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 // 256-byte per-column biome array + 256-int heightmap live on the
 // Chunk (not on the Section). A "column" is (x, z); the per-section
@@ -94,7 +91,6 @@ uint8_t mcp_chunk_get_block_id(const mcp_chunk_t* c, int x, int y, int z);
 uint8_t mcp_chunk_get_block_data(const mcp_chunk_t* c, int x, int y, int z);
 void mcp_chunk_set_block_full(mcp_chunk_t* c, int x, int y, int z, uint8_t block_id, uint8_t data);
 void mcp_chunk_set_block_id(mcp_chunk_t* c, int x, int y, int z, uint8_t id);
-void mcp_chunk_set_block_data(mcp_chunk_t* c, int x, int y, int z, uint8_t data);
 
 // Lighting.
 uint8_t mcp_chunk_get_sky_light(const mcp_chunk_t* c, int x, int y, int z);
@@ -148,6 +144,3 @@ void mcp_chunk_recompute_section_flags(mcp_chunk_t* c);
 // Caller frees. *out_len receives size.
 uint8_t* mcp_chunk_network_serialize(const mcp_chunk_t* c, size_t* out_len);
 
-#ifdef __cplusplus
-} // extern "C"
-#endif
