@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Local build without CMake (the sandbox does not ship it). Same sources and
 # flags as CMakeLists.txt: C23 for .c, C++20 for .cpp, -Isrc,
+# -Isrc/world/generator (vgen headers include "vgen/..." relative to it),
 # -Ithird_party/lua (bundled Lua 5.4 headers), -g debug symbols in every
 # build type (crash backtraces symbolize to source lines), and link with
 # -lpthread -lz -ldl -rdynamic.
@@ -10,8 +11,8 @@ cd "$(dirname "$0")"
 OUT="${OUT:-/tmp/cs_build}"
 mkdir -p "$OUT/obj"
 
-CFLAGS="-std=c2x -O2 -g -w -Isrc -Ithird_party/lua"
-CXXFLAGS="-std=c++20 -O2 -g -w -Isrc -Ithird_party/lua -pthread"
+CFLAGS="-std=c2x -O2 -g -w -Isrc -Isrc/world/generator -Ithird_party/lua"
+CXXFLAGS="-std=c++20 -O2 -g -w -Isrc -Isrc/world/generator -Ithird_party/lua -pthread"
 
 rm -f "$OUT/.fail"
 pids=()
