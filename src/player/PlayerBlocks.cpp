@@ -37,6 +37,8 @@
 #include "block/LiquidFlow.h"
 #include "tile/TileSign.h"
 #include "tile/TileChest.h"
+#include "tile/TileFurnace.h"
+#include "inventory/FurnaceInventory.h"
 #include "inventory/PlayerInventory.h"
 #include "event/EventManager.h"
 #include "event/block/BlockBreakEvent.h"
@@ -168,6 +170,21 @@ static bool placementOverlapsEntity(world::World* lvl, Server* srv, const mcp_aa
     return false;
 }
 
+// Vanilla item-entity spawn scatter (handheld Entity::drop: a uniform
+// direction over the full circle with speed nextFloat() * 0.2 + 0.1, and
+// the standard 0.2 upward pop). Container spills use it so every stack
+// lands as its own entity instead of stacking in one column.
+static void scatterDropMotion(double& mx, double& my, double& mz) {
+    auto lcg = []() {
+        return (double)std::rand() / (double)RAND_MAX;
+    };
+    const double angle = lcg() * 2.0 * 3.14159265358979323846;
+    const double speed = lcg() * 0.2 + 0.1;
+    mx = -std::sin(angle) * speed;
+    my = 0.2;
+    mz = std::cos(angle) * speed;
+}
+
 void Player::handleBlockBreak(int x, int y, int z) {
     if (!spawned_.load(std::memory_order_relaxed))
         return;
@@ -275,8 +292,6 @@ void Player::handleBlockBreak(int x, int y, int z) {
     mcp_chunk_recalculate_height_map(ch);
     ch->dirty = true;
 
-    const bool creativeBreak = (cfg_.gamemode & 1) != 0;
-
     // Remove associated block entities to prevent stale data. A broken
     // chest first releases its vanilla pairing and hands out its OWN 27
     // slots as item entities — the paired half keeps its items (no
@@ -295,17 +310,19 @@ void Player::handleBlockBreak(int x, int y, int z) {
                     }
                 }
             }
-            if (!creativeBreak) {
-                // Vanilla ChestBlock::onRemove — scatter the broken half's
-                // slots as item entities at the block position.
-                auto contents = chestTile->inventory()->getContents();
-                for (const auto& entry : contents) {
-                    const auto& stack = entry.second;
-                    if (stack.isEmpty())
-                        continue;
-                    dropItem(x + 0.5, y + 0.5, z + 0.5, stack.id, (uint8_t)stack.count,
-                             stack.meta, 0.0, 0.2, 0.0, 10, stack.nbt);
-                }
+            // Vanilla ContainerBlock::breakBlock — the container's slots
+            // spill as item entities in EVERY game mode. Creative only
+            // suppresses the block item itself (the generic drop at the
+            // end of this handler), never the contents.
+            auto contents = chestTile->inventory()->getContents();
+            for (const auto& entry : contents) {
+                const auto& stack = entry.second;
+                if (stack.isEmpty())
+                    continue;
+                double mx, my, mz;
+                scatterDropMotion(mx, my, mz);
+                dropItem(x + 0.5, y + 0.5, z + 0.5, stack.id, (uint8_t)stack.count,
+                         stack.meta, mx, my, mz, 10, stack.nbt);
             }
             if (chestPair) {
                 chestPair->clearPair();
@@ -320,6 +337,23 @@ void Player::handleBlockBreak(int x, int y, int z) {
         }
     } else if (blockId == block::FURNACE || blockId == block::BURNING_FURNACE ||
                blockId == block::SIGN_POST || blockId == block::WALL_SIGN) {
+        // Vanilla FurnaceBlock::breakBlock — input, fuel and output spill
+        // in every game mode, like every other container.
+        if (blockId == block::FURNACE || blockId == block::BURNING_FURNACE) {
+            if (auto furnaceTile =
+                    std::dynamic_pointer_cast<tile::TileFurnace>(lvl->getTile(x, y, z))) {
+                auto contents = furnaceTile->inventory()->getContents();
+                for (const auto& entry : contents) {
+                    const auto& stack = entry.second;
+                    if (stack.isEmpty())
+                        continue;
+                    double mx, my, mz;
+                    scatterDropMotion(mx, my, mz);
+                    dropItem(x + 0.5, y + 0.5, z + 0.5, stack.id, (uint8_t)stack.count,
+                             stack.meta, mx, my, mz, 10, stack.nbt);
+                }
+            }
+        }
         lvl->removeTile(x, y, z);
     }
 

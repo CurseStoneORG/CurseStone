@@ -685,46 +685,11 @@ void World::tickDroppedItems(uint64_t current_tick) {
             }
         }
 
-        if (di->on_ground) {
-            constexpr double kAttractRadius = 2.0;
-            constexpr double kAttractSpeed = 0.35;
-            double best_dist = kAttractRadius;
-            double bdx = 0.0, bdy = 0.0, bdz = 0.0;
-            bool attracted = false;
-            for (auto& p : Server::getInstance().playersSnapshot()) {
-                if (!p || !p->spawned() || p->isDead())
-                    continue;
-                if (p->getWorld() != this)
-                    continue; // Same world.
-                math::Vector3 pp = p->getNextPosition();
-                if (itemWithinPickupVolume(*di, pp.x, pp.y, pp.z))
-                    continue;
-                double adx = pp.x - di->x;
-                double ady = (pp.y + 0.9) - di->y; // converge at the chest
-                double adz = pp.z - di->z;
-                double dist = std::sqrt(adx * adx + ady * ady + adz * adz);
-                if (dist <= 0.0001 || dist >= best_dist)
-                    continue;
-                best_dist = dist;
-                bdx = adx;
-                bdy = ady;
-                bdz = adz;
-                attracted = true;
-            }
-            if (attracted) {
-                double pull = 0.12 * (1.0 - best_dist / kAttractRadius) + 0.03;
-                di->vx += bdx / best_dist * pull;
-                di->vy += bdy / best_dist * pull;
-                di->vz += bdz / best_dist * pull;
-                double sp = std::sqrt(di->vx * di->vx + di->vy * di->vy + di->vz * di->vz);
-                if (sp > kAttractSpeed) {
-                    double k = kAttractSpeed / sp;
-                    di->vx *= k;
-                    di->vy *= k;
-                    di->vz *= k;
-                }
-            }
-        }
+        // No magnet pull: vanilla item entities are only moved by physics
+        // and get collected through the pickup volume overlap. Pulling
+        // items toward players made them hop in place at the pickup
+        // boundary (attraction acted on the ground only, aimed above the
+        // item, and outranged the pickup volume) — the "trembling drop".
 
         const double movX = di->vx, movY = di->vy, movZ = di->vz;
         {
