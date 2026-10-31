@@ -35,6 +35,7 @@
 #include "tile/TileFurnace.h"
 #include "tile/TileSign.h"
 #include "inventory/FurnaceInventory.h"
+#include "inventory/DoubleChestInventory.h"
 #include "inventory/Inventory.h"
 #include "event/EventManager.h"
 #include "event/inventory/InventoryCloseEvent.h"
@@ -132,17 +133,31 @@ void Player::openChestAt(int x, int y, int z) {
         lvl->setTile(x, y, z, chest);
     }
 
+    // Vanilla double chest: when this half is paired, the open window is
+    // the 54-slot InventoryLargeChest shared by BOTH halves (TileChest::
+    // getOrCreateDouble caches one wrapper per pair), so opening from
+    // either side yields the same slot space and the same co-viewer sync.
+    std::shared_ptr<tile::TileChest> chestPair = chest->pairTile(lvl);
+    std::shared_ptr<inventory::DoubleChestInventory> doubleInv;
+    if (chestPair)
+        doubleInv = tile::TileChest::getOrCreateDouble(chest, chestPair);
+    std::shared_ptr<inventory::Inventory> openInv =
+        doubleInv ? std::static_pointer_cast<inventory::Inventory>(doubleInv)
+                  : chest->inventory();
+    const int slotCount = openInv->getSize();
+
     // InventoryOpenEvent — to listener can cancel (e.g. zone protection,
     // to chest mid-trade) to block opening even though PlayerInteractEvent
     // already passed. Nothing is sent to the client and not viewer is
     // registered if this is cancelled.
-    auto ev = event::EventManager::get().fire<event::inventory::InventoryOpenEvent>(
-        std::static_pointer_cast<inventory::Inventory>(chest->inventory()), this);
+    auto ev = event::EventManager::get().fire<event::inventory::InventoryOpenEvent>(openInv,
+                                                                                    this);
     if (ev.isCancelled())
         return;
 
     chest->addViewer();
     open_chest_ = chest;
+    open_double_ = doubleInv;
     openContainerWindow(); // sets container_window_id_ for every packet below
 
     // The client binds the container UI to the block actor at these
@@ -150,23 +165,32 @@ void Player::openChestAt(int x, int y, int z) {
     // ContainerOpen record arrives — same order a chunk stream produces
     // (chunk data, then tile NBTs). Inside the open batch the wrong order
     // leaves the 0.15.10 client binding a UI to a block entity it has
-    // not seen yet.
+    // not seen yet. A paired chest refreshes BOTH halves: the pair tags
+    // (pairx/pairz) are what makes the client render the large chest.
     sendBlockEntityData(x, y, z, *chest, nullptr);
+    if (chestPair) {
+        const auto& pp = chestPair->position();
+        sendBlockEntityData((int32_t)pp.x, (int32_t)pp.y, (int32_t)pp.z, *chestPair, nullptr);
+    }
 
     auto op = std::make_shared<network::protocol::ContainerOpenPacket>();
     op->windowid = container_window_id_;
     op->type = network::protocol::ContainerOpenPacket::TYPE_CONTAINER;
-    op->slots = (int16_t)chest->inventory()->getSize();
+    op->slots = (int16_t)slotCount;
     op->x = x;
     op->y = y;
     op->z = z;
     sendPacket(op);
 
-    // Lid up + open sound. Only when this opener is the FIRST viewer:
-    // the lid must open once per open session, and it must stay up
-    // while any other player still holds the chest open.
-    if (chest->viewerCount() == 1)
+    // Lid up + open sound. Vanilla animates both halves of a double
+    // chest, driven by the combined viewer count of the pair: the lid
+    // opens once per open session and stays up while ANY player still
+    // holds either half open.
+    if (chest->viewerCount() + (chestPair ? chestPair->viewerCount() : 0) == 1) {
         broadcastChestBlockEvent(this, *chest, 1);
+        if (chestPair)
+            broadcastChestBlockEvent(this, *chestPair, 1);
+    }
 
     // Full slot dump so the client actually shows the contents. Can't
     // reuse BaseInventory::sendContents() — it hardcodes windowid=0
@@ -175,9 +199,9 @@ void Player::openChestAt(int x, int y, int z) {
     // inventory update instead of the chest window).
     auto content = std::make_shared<network::protocol::ContainerSetContentPacket>();
     content->windowid = container_window_id_;
-    content->slots.reserve(chest->inventory()->getSize());
-    for (int i = 0; i < chest->inventory()->getSize(); ++i) {
-        content->slots.push_back(chest->inventory()->getItem(i));
+    content->slots.reserve(slotCount);
+    for (int i = 0; i < slotCount; ++i) {
+        content->slots.push_back(openInv->getItem(i));
     }
     sendPacket(content);
 
@@ -199,15 +223,28 @@ void Player::openChestAt(int x, int y, int z) {
 // overwrites the first viewer's change (the placed item then "returns"
 // through the cursor buffer when someone closes the container).
 void Player::broadcastChestSlotToViewers(int slot) {
-    if (!srv_ || !open_chest_ || slot < 0 ||
-        slot >= open_chest_->inventory()->getSize())
+    if (!srv_ || !open_chest_)
         return;
-    auto cur = open_chest_->inventory()->getItem(slot);
+    // The slot space the click went through: the 54-slot double window
+    // for paired chests, the plain 27-slot inventory otherwise.
+    std::shared_ptr<inventory::Inventory> openInv =
+        open_double_ ? std::static_pointer_cast<inventory::Inventory>(open_double_)
+                     : open_chest_->inventory();
+    if (slot < 0 || slot >= openInv->getSize())
+        return;
+    auto cur = openInv->getItem(slot);
     for (auto& other : srv_->playersSnapshot()) {
         if (!other || other.get() == this)
             continue;
-        if (other->open_chest_ != open_chest_)
+        // Co-viewer match: for a double chest the pair is the shared
+        // window instance, so viewers who opened the OTHER half are
+        // included (their open_chest_ differs but open_double_ matches).
+        if (open_double_) {
+            if (other->open_double_ != open_double_)
+                continue;
+        } else if (other->open_chest_ != open_chest_) {
             continue;
+        }
         auto pk = std::make_shared<network::protocol::ContainerSetSlotPacket>();
         pk->windowid = other->container_window_id_;
         pk->slot = (int16_t)slot;
@@ -246,9 +283,12 @@ void Player::closeOpenChest() {
     // abierto to the time, this way that basta with close that which is seteado.
     if (open_chest_) {
         // InventoryCloseEvent fires for every window teardown (client close,
-        // replaced window, disconnect) — chest-UI plugins react here.
-        event::EventManager::get().fire<event::inventory::InventoryCloseEvent>(
-            std::static_pointer_cast<inventory::Inventory>(open_chest_->inventory()), this);
+        // replaced window, disconnect) — chest-UI plugins react here. A
+        // double-chest window hands the shared 54-slot wrapper to the event.
+        auto openInv = open_double_
+                           ? std::static_pointer_cast<inventory::Inventory>(open_double_)
+                           : open_chest_->inventory();
+        event::EventManager::get().fire<event::inventory::InventoryCloseEvent>(openInv, this);
         auto cp = std::make_shared<network::protocol::ContainerClosePacket>();
         cp->windowid = container_window_id_;
         sendPacket(cp);
@@ -256,10 +296,17 @@ void Player::closeOpenChest() {
         open_chest_->removeViewer();
         // Lid down + close sound, but only for the LAST viewer leaving:
         // with another player still inside the chest stays visibly open.
-        if (open_chest_->viewerCount() == 0)
+        // Vanilla drives both halves of a double chest from the combined
+        // viewer count of the pair.
+        auto chestPair = open_chest_->pairTile(getWorld());
+        if (open_chest_->viewerCount() + (chestPair ? chestPair->viewerCount() : 0) == 0) {
             broadcastChestBlockEvent(this, *open_chest_, 0);
+            if (chestPair)
+                broadcastChestBlockEvent(this, *chestPair, 0);
+        }
         open_chest_.reset();
     }
+    open_double_.reset();
     if (open_furnace_) {
         event::EventManager::get().fire<event::inventory::InventoryCloseEvent>(
             std::static_pointer_cast<inventory::Inventory>(open_furnace_->inventory()), this);
