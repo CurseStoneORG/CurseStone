@@ -137,6 +137,7 @@ void Player::handleMovePlayer(double x, double y, double z, float yaw, float pit
     }
 
     // Store the client's ground state for fall-damage checks.
+    bool wasOnGround = on_ground_fall_check_;
     on_ground_fall_check_ = mp_onGround;
 
     // Fire a movement event so plugins can cancel movement.
@@ -165,14 +166,46 @@ void Player::handleMovePlayer(double x, double y, double z, float yaw, float pit
     yaw_ = yaw;
     pitch_ = pitch;
 
-    // Track downward movement while airborne.
+    // Track downward movement while airborne. Vanilla accumulates the
+    // fall distance for every gamemode — creative only skips the damage,
+    // the landing dust still fires from the same distance.
     if (!mp_onGround) {
-        if (isCreative())
-            fall_distance_ = 0.0f; // Creative mode is immune to fall damage.
-        else if (dy < 0.0)
+        if (dy < 0.0)
             fall_distance_ += (float)(-dy); // Accumulate falling distance.
         else
             fall_distance_ = 0.0f; // Reset the baseline while rising.
+    } else if (!wasOnGround && fall_distance_ > 3.0f) {
+        // Landing (vanilla Entity::checkFallDamage): a mob that hits a
+        // block after a fall over three blocks broadcasts GROUND_DUST, and
+        // every client draws the dust burst at the entity's feet with the
+        // ground block's texture. The landing cell must not be air (the
+        // feet cell, or the surface directly below it), like the vanilla
+        // onBlock check. The distance itself stays for the hunger/damage
+        // tick, which applies fall damage and clears it.
+        auto* lvl = getWorld();
+        if (lvl) {
+            int bx = (int)std::floor(pos_.x);
+            int by = (int)std::floor(pos_.y);
+            int bz = (int)std::floor(pos_.z);
+            uint8_t ground = lvl->getBlockId(bx, by, bz);
+            if (ground == 0 && by > 0)
+                ground = lvl->getBlockId(bx, by - 1, bz);
+            if (ground != 0 && srv_) {
+                auto dust = std::make_shared<network::protocol::EntityEventPacket>();
+                dust->eid = runtimeId();
+                dust->event = network::protocol::EntityEventPacket::GROUND_DUST;
+                int32_t dcx = bx >> 4, dcz = bz >> 4;
+                for (auto& other : srv_->playersSnapshot()) {
+                    if (!other || !other->spawned())
+                        continue;
+                    if (other->getWorld() != lvl)
+                        continue;
+                    if (!other->canSeeBlock(dcx, dcz))
+                        continue;
+                    other->sendPacket(dust);
+                }
+            }
+        }
     }
 
     // Track horizontal distance for sprint and swim exhaustion.

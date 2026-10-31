@@ -471,6 +471,12 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
         !in_water) {
         damage((float)(fall_distance_ - 3.0), event::entity::DamageCause::FALL);
         fall_distance_ = 0.0f; // Reset fall distance after landing.
+    } else if (on_ground_fall_check_ && fall_distance_ > 0.0f) {
+        // Vanilla clears the fall distance on every landing; the branch
+        // above handled the damaging cases, this one the rest — creative
+        // landings, peaceful difficulty, short drops — so the distance
+        // never leaks into a later fall (stale landing dust or damage).
+        fall_distance_ = 0.0f;
     }
     // Stop processing if fall damage killed the player.
     if (isDead())

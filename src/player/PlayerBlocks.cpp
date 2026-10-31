@@ -482,11 +482,19 @@ void Player::handleBlockBreak(int x, int y, int z) {
     if (!creative) {
         // Apply block-breaking exhaustion.
         addExhaustion(0.025f);
-        // Use the item ID for doors and beds.
-        auto drop = (forcedDropId != 0) ? std::make_pair(forcedDropId, forcedDropMeta)
-                                        : lookupBlockDrop(blockId, blockData);
-        if (drop.first != 0) {
-            dropItem(x + 0.5, y + 0.5, z + 0.5, drop.first, 1, drop.second);
+        if (blockId == block::SNOW_LAYER) {
+            // Vanilla TopSnowBlock::getResourceCount — a mined layer
+            // spills one snowball per two layers, at least one.
+            int layers = (blockData & 0x07) + 1;
+            int count = layers / 2 > 1 ? layers / 2 : 1;
+            dropItem(x + 0.5, y + 0.5, z + 0.5, item::SNOWBALL, (uint8_t)count, 0);
+        } else {
+            // Use the item ID for doors and beds.
+            auto drop = (forcedDropId != 0) ? std::make_pair(forcedDropId, forcedDropMeta)
+                                            : lookupBlockDrop(blockId, blockData);
+            if (drop.first != 0) {
+                dropItem(x + 0.5, y + 0.5, z + 0.5, drop.first, 1, drop.second);
+            }
         }
     }
 
@@ -714,6 +722,24 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
         return;
 
     auto* lvl = getWorld();
+
+    // Vanilla placement target: when the tapped block itself is
+    // replaceable (snow layer, tall grass, dead bush...), the placement
+    // goes INTO the tapped cell instead of the face neighbor. The touch
+    // client predicts exactly this, so placing next to the target left
+    // every tap on a snow layer desynced — the client showed the new
+    // block inside the layer while the server stacked it on top, and the
+    // layer looked wiped by a plain tap. Liquids stay out: buckets and
+    // scoops resolve their own target cell below.
+    {
+        uint8_t targetId = lvl->getBlockId(x, y, z);
+        if (!cursestone::block::LiquidFlow::isLiquidId(targetId) &&
+            cursestone::block::LiquidFlow::isReplaceableId(targetId)) {
+            placeX = x;
+            placeY = y;
+            placeZ = z;
+        }
+    }
 
     // Handle redstone interactions before placement.
     if (!sneaking_ && cursestone::redstone::tryInteract(lvl, srv_, x, y, z, this)) {

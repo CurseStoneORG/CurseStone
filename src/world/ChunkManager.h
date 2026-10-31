@@ -74,6 +74,16 @@ class ChunkManager : public generator::INeighborBlockSink {
     void setOnChunkAdded(std::function<void(int32_t, int32_t)> cb) {
         on_chunk_added_ = std::move(cb);
     }
+    // Fired once per chunk that enters the level through ANY install
+    // path — disk load, synchronous generation, async generation — after
+    // every lock is released (same rules as setOnChunkAdded). World uses
+    // it to queue the dynamic-liquid wake scan: the reference engine
+    // fills each chunk's block ticking queue with the flowing water and
+    // lava the generator wrote, and that queue starts running the moment
+    // the chunk goes live, which is what makes generated springs spill.
+    void setOnChunkInstalled(std::function<void(int32_t, int32_t)> cb) {
+        on_chunk_installed_ = std::move(cb);
+    }
     void markDirty(int32_t x, int32_t z);
     // Escribe TODO lo sucio de golpe, con mtx_ cogido de principio a fin.
     // Bloquea al que llama (y a los workers de generacion que esperan ese
@@ -163,6 +173,7 @@ class ChunkManager : public generator::INeighborBlockSink {
     };
     mutable std::mutex mtx_;
     std::function<void(int32_t, int32_t)> on_chunk_added_;
+    std::function<void(int32_t, int32_t)> on_chunk_installed_;
     std::unordered_map<ChunkKey, mcp_chunk_t*, ChunkKeyHash> chunks_;
     std::shared_ptr<format::WorldProvider> provider_;
     std::shared_ptr<generator::Generator> generator_;

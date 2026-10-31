@@ -26,6 +26,7 @@
 #include <string>
 #include <memory>
 #include <vector>
+#include <deque>
 #include <unordered_map>
 #include <unordered_set>
 #include <cstdint>
@@ -231,6 +232,17 @@ class World {
 
     // Queues lighting updates for newly added chunks.
     void onChunkAdded(int32_t cx, int32_t cz);
+
+    // Queues a dynamic-liquid scan for a chunk that just entered the
+    // level (queueLiquidWake) and drains it on the main-thread tick
+    // (processLiquidWakes). Vanilla fills each chunk's block ticking
+    // queue with the flowing water and lava the generator wrote and runs
+    // that queue as soon as the chunk goes live — that is what makes
+    // generated springs spill and structure pools settle. Without the
+    // scan those cells never receive their first tick and sit still
+    // forever.
+    void queueLiquidWake(int32_t cx, int32_t cz);
+    void processLiquidWakes(int32_t budget);
 
     // Updates the furnace's lit state and reports whether it changed.
     bool setFurnaceFlame(int32_t x, int32_t y, int32_t z, bool lit);
@@ -522,6 +534,11 @@ class World {
 
     // Manages sky and block light propagation.
     LightEngine light_;
+
+    // Dynamic-liquid wake queue (see queueLiquidWake). Chunks are queued
+    // from the generation worker thread and drained on the main thread.
+    std::deque<std::pair<int32_t, int32_t>> liquid_wake_;
+    mutable std::mutex liquid_wake_mtx_;
 
     static uint64_t packChunkPos(int32_t cx, int32_t cz) {
         uint64_t ux = static_cast<uint64_t>(static_cast<uint32_t>(cx));

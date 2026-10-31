@@ -47,6 +47,7 @@
 #include "block/Block.h"
 #include "block/BlockFire.h"
 #include "block/LiquidFlow.h"
+#include "item/ItemConstants.h"
 #include "network/protocol/LevelEventPacket.h"
 #include "network/protocol/UpdateBlockPacket.h"
 #include "network/protocol/AddEntityPacket.h"
@@ -207,6 +208,9 @@ World::World(WorldConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
     chunks_.setOnChunkAdded([this](int32_t cx, int32_t cz) {
         onChunkAdded(cx, cz);
     });
+    chunks_.setOnChunkInstalled([this](int32_t cx, int32_t cz) {
+        queueLiquidWake(cx, cz);
+    });
 
     {
         int32_t sbx = (int32_t)std::floor(spawn_.x);
@@ -342,6 +346,54 @@ void World::onChunkAdded(int32_t cx, int32_t cz) {
     light_.onChunkAdded(cx, cz);
 }
 
+// How many freshly installed chunks get their dynamic-liquid scan per
+// tick. A scan is one pass over a chunk's block array; the budget keeps
+// the cost flat during rapid exploration flights.
+constexpr int32_t kLiquidWakeBudget = 6;
+
+void World::queueLiquidWake(int32_t cx, int32_t cz) {
+    // Called from the generation worker thread: queue only, exactly like
+    // LightEngine::onChunkAdded. Skip duplicates — one cross-border
+    // structure can install the same chunk twice in one tick.
+    std::lock_guard<std::mutex> lk(liquid_wake_mtx_);
+    for (const auto& p : liquid_wake_) {
+        if (p.first == cx && p.second == cz)
+            return;
+    }
+    liquid_wake_.emplace_back(cx, cz);
+}
+
+void World::processLiquidWakes(int32_t budget) {
+    std::deque<std::pair<int32_t, int32_t>> work;
+    {
+        std::lock_guard<std::mutex> lk(liquid_wake_mtx_);
+        while (!liquid_wake_.empty() && (int32_t)work.size() < budget) {
+            work.push_back(liquid_wake_.front());
+            liquid_wake_.pop_front();
+        }
+    }
+    for (const auto& [cx, cz] : work) {
+        mcp_chunk_t* c = chunks_.getChunkIfLoaded(cx, cz);
+        if (!c)
+            continue; // Unloaded again before its turn; harmless.
+        // One pass over the chunk's cells: every dynamic liquid block the
+        // generator or a structure left behind receives its vanilla tick,
+        // so springs spill as soon as the chunk is live. Cells already at
+        // rest settle into their still id on that first tick and never
+        // come back here.
+        const int32_t bx = cx << 4, bz = cz << 4;
+        for (int y = 0; y < 128; ++y) {
+            for (int x = 0; x < 16; ++x) {
+                for (int z = 0; z < 16; ++z) {
+                    uint8_t id = mcp_chunk_get_block_id(c, x, y, z);
+                    if (block::LiquidFlow::isDynamicLiquidId(id))
+                        block::LiquidFlow::scheduleTick(this, bx + x, y, bz + z);
+                }
+            }
+        }
+    }
+}
+
 int World::save() {
     // Portal registry: tiny text file, rewritten on every full save.
     portals_.save(portals_path_);
@@ -379,6 +431,7 @@ void World::tick(uint64_t current_tick) {
         checkSleep();
     }
     light_.processPending(LightEngine::kPendingBudget);
+    processLiquidWakes(kLiquidWakeBudget);
     tickDroppedItems(current_tick);
     tickArrows(current_tick);
     tickSplashPotions(current_tick);
@@ -1427,6 +1480,24 @@ void World::checkFallingSupport(int32_t x, int32_t y, int32_t z) {
     if (chunks_.getChunkIfLoaded(x >> 4, z >> 4) == nullptr)
         return;
     uint8_t id = getBlockId(x, y, z);
+    // Vanilla TopSnowBlock::neighborChanged — a snow layer with no ground
+    // under it pops off right away and spills its snowballs. setBlock
+    // re-runs this check one cell up, so a stacked column collapses from
+    // the bottom like the reference engine.
+    if (id == block::SNOW_LAYER) {
+        uint8_t below = (y > 0) ? getBlockId(x, y - 1, z) : (uint8_t)block::AIR;
+        if (below == block::AIR || below == block::WATER ||
+            below == block::FLOWING_WATER || below == block::LAVA ||
+            below == block::FLOWING_LAVA) {
+            uint8_t data = getBlockData(x, y, z);
+            setBlock(x, y, z, 0, 0);
+            sendUpdateBlock(this, x, y, z, 0, 0);
+            int layers = (data & 0x07) + 1;
+            int count = layers / 2 > 1 ? layers / 2 : 1;
+            dropItemAt(x + 0.5, y + 0.25, z + 0.5, item::SNOWBALL, (uint8_t)count, 0);
+        }
+        return;
+    }
     if (!fallableBlockId(id))
         return;
     uint8_t below = (y > 0) ? getBlockId(x, y - 1, z) : (uint8_t)block::AIR;
