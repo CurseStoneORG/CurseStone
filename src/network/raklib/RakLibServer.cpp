@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// RakLibServer.c. Pure C.
+// RakLibServer.cpp — the RakLib worker thread entrypoint.
 #include "RakLibServer.h"
 #include <string.h>
 

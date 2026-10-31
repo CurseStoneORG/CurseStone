@@ -23,31 +23,27 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // NBT — top-level reader/writer.
 //
-// `NBT` is the public façade: parse raw bytes into a Tag tree, or
+// `nbt` is the public façade: parse raw bytes into a Tag tree, or
 // serialize a Tag tree back into bytes. Endianness selection lets
 // the same code read both Java-format chunks (big-endian) and
 // MCPE-format chunks (little-endian).
 #pragma once
 
-#include <stddef.h>
-#include <stdint.h>
+#include <cstddef>
+#include <cstdint>
+#include <vector>
 
-#include "../utils/BinaryStream.h"
 #include "tag/Tag.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+namespace cursestone::nbt {
 
-// Parse a full named root tag. Returns NULL on EOF or parse error.
-// Caller owns the result and releases it with mcp_tag_destroy().
-mcp_tag_t* mcp_nbt_read_bytes(const uint8_t* data, size_t len, bool little_endian);
+// Parse a full named root tag. Returns nullptr on EOF or parse error.
+// Caller owns the result and releases it with delete (a TagGuard keeps
+// that exception-safe).
+Tag* read(const uint8_t* data, size_t len, bool little_endian);
 
-// Serialize a root tag into a malloc'd buffer. Returns NULL on allocation
-// failure. Caller frees the result (single C allocation on this boundary;
-// C++ callers hold it in utils/CRaii.h BufferPtr).
-uint8_t* mcp_nbt_write_bytes(const mcp_tag_t* root, bool little_endian, size_t* out_len);
+// Serialize a root tag (type byte, name and payload) into `out`,
+// replacing whatever the vector held.
+void write(const Tag* root, bool little_endian, std::vector<uint8_t>& out);
 
-#ifdef __cplusplus
-} // extern "C"
-#endif
+} // namespace cursestone::nbt

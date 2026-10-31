@@ -23,7 +23,6 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // ServerHandler — IPC bridge: lets the main thread send commands to the
 // RakLib worker (kickSession, send encapsulated packet, set blocking, etc.)
-// Pure C.
 #pragma once
 
 #include "SessionManager.h"

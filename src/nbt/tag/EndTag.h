@@ -26,12 +26,11 @@
 
 #include "Tag.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+namespace cursestone::nbt {
 
-mcp_tag_t* mcp_end_tag_new(void);
+class EndTag : public Tag {
+  public:
+    EndTag() : Tag(TAG_END) {}
+};
 
-#ifdef __cplusplus
-} // extern "C"
-#endif
+} // namespace cursestone::nbt

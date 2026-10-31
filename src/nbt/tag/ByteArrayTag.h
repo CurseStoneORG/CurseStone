@@ -24,23 +24,34 @@
 // ByteArrayTag — NBT TAG_Byte_Array (uint32 length prefix + bytes).
 #pragma once
 
-#include <stddef.h>
-#include <stdint.h>
+#include <cstddef>
+#include <cstdint>
+#include <vector>
 
 #include "Tag.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+namespace cursestone::nbt {
 
-mcp_tag_t* mcp_byte_array_tag_new(const uint8_t* data, size_t len);
-mcp_tag_t* mcp_byte_array_tag_new_named(const char* name, const uint8_t* data, size_t len);
+class ByteArrayTag : public Tag {
+  public:
+    ByteArrayTag() : Tag(TAG_BYTE_ARRAY) {}
+    ByteArrayTag(const uint8_t* data, size_t len) : Tag(TAG_BYTE_ARRAY) {
+        if (len)
+            this->data.assign(data, data + len);
+    }
+    ByteArrayTag(const char* name, const uint8_t* data, size_t len) : Tag(TAG_BYTE_ARRAY) {
+        if (name)
+            this->name = name;
+        if (len)
+            this->data.assign(data, data + len);
+    }
+    std::vector<uint8_t> data;
+    void write_payload(mcp_bstream_t* s, bool le) const override;
+};
 
-// Returns the payload bytes and stores their count in *out_len. Returns
-// NULL when the tag is missing or not a byte array. A valid empty array
-// yields a non-NULL pointer and *out_len == 0.
-const uint8_t* mcp_byte_array_tag_data(const mcp_tag_t* tag, size_t* out_len);
+// Payload bytes of `tag`, storing their count in *out_len. Returns
+// nullptr when the tag is missing or not a byte array. A valid empty
+// array yields a non-null pointer and *out_len == 0.
+const uint8_t* byte_array_data(const Tag* tag, size_t* out_len);
 
-#ifdef __cplusplus
-} // extern "C"
-#endif
+} // namespace cursestone::nbt

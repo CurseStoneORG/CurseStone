@@ -21,20 +21,24 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// ShortTag — NBT MCP_TAG_SHORT value.
+// ShortTag — NBT TAG_SHORT value.
 #pragma once
 
-#include <stdint.h>
+#include <cstdint>
 
 #include "Tag.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+namespace cursestone::nbt {
 
-mcp_tag_t* mcp_short_tag_new(int16_t v);
-mcp_tag_t* mcp_short_tag_new_named(const char* name, int16_t v);
+class ShortTag : public Tag {
+  public:
+    explicit ShortTag(int16_t v) : Tag(TAG_SHORT), value(v) {}
+    ShortTag(const char* name, int16_t v) : Tag(TAG_SHORT), value(v) {
+        if (name)
+            this->name = name;
+    }
+    int16_t value;
+    void write_payload(mcp_bstream_t* s, bool le) const override;
+};
 
-#ifdef __cplusplus
-} // extern "C"
-#endif
+} // namespace cursestone::nbt

@@ -199,9 +199,9 @@ void Player::resetSpawnToDefault() {
     spawn_z_ = 0;
 
     if (named_tag_) {
-        mcp_compound_tag_remove(named_tag_.get(), "SpawnX");
-        mcp_compound_tag_remove(named_tag_.get(), "SpawnY");
-        mcp_compound_tag_remove(named_tag_.get(), "SpawnZ");
+        cursestone::nbt::remove(named_tag_.get(), "SpawnX");
+        cursestone::nbt::remove(named_tag_.get(), "SpawnY");
+        cursestone::nbt::remove(named_tag_.get(), "SpawnZ");
     }
 
     math::Vector3 sp = getWorld() ? getWorld()->spawn() : math::Vector3{0, 64, 0};
@@ -250,9 +250,9 @@ void Player::setSpawn(int x, int y, int z, bool save) {
     sendPacket(pk);
 
     if (save && named_tag_ && srv_ && !cfg_.username.empty()) {
-        mcp_compound_tag_set_int(named_tag_.get(), "SpawnX", x);
-        mcp_compound_tag_set_int(named_tag_.get(), "SpawnY", y);
-        mcp_compound_tag_set_int(named_tag_.get(), "SpawnZ", z);
+        cursestone::nbt::set_int(named_tag_.get(), "SpawnX", x);
+        cursestone::nbt::set_int(named_tag_.get(), "SpawnY", y);
+        cursestone::nbt::set_int(named_tag_.get(), "SpawnZ", z);
     }
 }
 

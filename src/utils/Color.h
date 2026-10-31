@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-/** @brief Stores an RGBA8 color struct and provides helpers. Pure C. */
+/** @brief Stores an RGBA8 color struct and provides helpers. */
 #pragma once
 
 #include <stdint.h>

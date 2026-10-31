@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Terminal.c — tty detection. Pure C.
+// Terminal.cpp — tty detection.
 #include "Terminal.h"
 
 #include <stdbool.h>

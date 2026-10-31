@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-/** @brief Declares ANSI color code constants and tty detection. Pure C. */
+/** @brief Declares ANSI color code constants and tty detection. */
 #pragma once
 
 #include <stdbool.h>

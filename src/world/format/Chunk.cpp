@@ -45,7 +45,7 @@
 
 // ---------------------------------------------------------------- internals
 //
-// section_new/section_destroy live in ChunkSection.c. Here we only
+// the section helpers live in ChunkSection.cpp. Here we only
 // keep the XZY/nibble helpers that operate on a section within a Chunk
 // context (we don't want to expose these in ChunkSection.h since they
 // are private to the storage layer).

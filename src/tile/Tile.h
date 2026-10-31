@@ -25,24 +25,21 @@
 // Each Tile subclass (TileChest, TileFurnace, TileSign) holds its
 // runtime state and writes back to NBT on save.
 //
-// NOTE on the tag type: this project's NBT layer (src/nbt/) is pure C
-// (`mcp_tag_t`, extern "C" — see nbt/tag/CompoundTag.h). writeNBT/readNBT
-// use `mcp_tag_t*` directly instead of the `class CompoundTag*` this
-// header used to forward-declare. That old forward-declare pointed at
-// a C++ class that was never defined anywhere in the project (a leftover
-// from an earlier design pass) — every real NBT compound in this
-// codebase, including the one Anvil already reads/writes per-chunk
-// (see level/format/anvil/AnvilChunkCodec.c), is an `mcp_tag_t` of type
-// MCP_TAG_COMPOUND. Using the real type here is what lets writeNBT/
-// readNBT actually be called with the tags AnvilChunkCodec hands them,
-// instead of only type-checking against a phantom class that could
-// never receive a real object without an unsafe cast.
+// NOTE on the tag type: this project's NBT layer (src/nbt/) is the
+// C++ class hierarchy in namespace cursestone::nbt (see nbt/tag/CompoundTag.h).
+// writeNBT/readNBT take `cursestone::nbt::Tag*` directly — the same type the
+// Anvil codec reads/writes per-chunk (see
+// world/format/anvil/AnvilChunkCodec.cpp). Every real NBT compound in this
+// codebase is a `cursestone::nbt::CompoundTag`, i.e. a Tag whose type is
+// cursestone::nbt::TAG_COMPOUND; accepting the base type here is what lets
+// writeNBT/readNBT be called with the tags the codec hands them without
+// any cast on the caller side.
 #pragma once
 #include <cstdint>
 #include <memory>
 #include <string> // required for std::string id_ and Tile(std::string, ...)
 #include "world/Position.h"
-#include "nbt/tag/Tag.h" // mcp_tag_t
+#include "nbt/tag/Tag.h" // cursestone::nbt::Tag
 namespace cursestone::tile {
 class Tile {
   public:
@@ -71,26 +68,26 @@ class Tile {
     }
     virtual void tick(uint64_t /*current_tick*/) {
     }
-    // Serialise tile state into `tag` (a fresh MCP_TAG_COMPOUND owned by
+    // Serialise tile state into `tag` (a fresh cursestone::nbt::TAG_COMPOUND owned by
     // the caller — World::syncTilesToChunks() creates it, hands it here,
     // then hands it to mcp_chunk_add_tile_entity()). Base implementation
     // writes the fields every tile needs regardless of subclass: block
     // position (x/y/z) and the "id" string the reference server/Nukkit-style loaders key
     // on ("Chest", "Furnace", "Sign", ...). Subclasses override, call
     // Tile::writeNBT() first, then add their own fields.
-    virtual void writeNBT(mcp_tag_t* tag) const;
+    virtual void writeNBT(cursestone::nbt::Tag* tag) const;
     // Client-facing spawn compound (the reference Spawnable::getSpawnCompound
     // split): what BlockEntityDataPacket carries on the wire. Defaults to
     // the disk layout; a tile whose client reads different keys than the
     // save format overrides it. The 0.15 furnace screen binds BurnTime/
     // CookTime at open time, so TileFurnace must send THOSE keys even
     // though the save format keeps the legacy Nukkit ones.
-    virtual void writeSpawnNBT(mcp_tag_t* tag) const;
+    virtual void writeSpawnNBT(cursestone::nbt::Tag* tag) const;
     // Read tile state back from `tag`. Base implementation is a no-op
     // (x/y/z/id are already known from how the tile was constructed —
     // World::ensureTilesLoaded() reads x/y/z itself to decide which
     // position to construct the Tile at, before readNBT ever runs).
-    virtual void readNBT(const mcp_tag_t* tag);
+    virtual void readNBT(const cursestone::nbt::Tag* tag);
 
   protected:
     std::string id_; // "Chest", "Furnace", "Sign", ...

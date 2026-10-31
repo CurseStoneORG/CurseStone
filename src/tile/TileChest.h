@@ -61,8 +61,8 @@ class TileChest : public Tile, public Container, public Nameable, public Spawnab
     void removeItem(int slot) override;
     void spawnTo(void* /*player*/) override {
     }
-    void writeNBT(mcp_tag_t* tag) const override;
-    void readNBT(const mcp_tag_t* tag) override;
+    void writeNBT(cursestone::nbt::Tag* tag) const override;
+    void readNBT(const cursestone::nbt::Tag* tag) override;
 
     // The backing inventory. Player::openChestAt() hands this shared_ptr
     // straight to InventoryOpenEvent / ContainerSetContentPacket — no

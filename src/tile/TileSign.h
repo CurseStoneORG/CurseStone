@@ -61,8 +61,8 @@ class TileSign : public Tile, public Spawnable {
     }
     void spawnTo(void* /*player*/) override {
     }
-    void writeNBT(mcp_tag_t* tag) const override;
-    void readNBT(const mcp_tag_t* tag) override;
+    void writeNBT(cursestone::nbt::Tag* tag) const override;
+    void readNBT(const cursestone::nbt::Tag* tag) override;
 
   private:
     std::array<std::string, 4> lines_;

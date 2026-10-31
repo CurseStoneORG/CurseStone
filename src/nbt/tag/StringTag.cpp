@@ -21,33 +21,12 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// StringTag.cpp — NBT TAG_String.
+// StringTag.cpp — NBT TAG_String payload.
 #include "StringTag.h"
-#include "TagDefs.h"
 
-mcp_tag_t* mcp_string_tag_new(const char* value, size_t len) {
-    try {
-        auto* t = new mcp_string_tag();
-        if (len)
-            t->value.assign(value, len);
-        return t;
-    } catch (...) {
-        return NULL;
-    }
-}
+namespace cursestone::nbt {
 
-mcp_tag_t* mcp_string_tag_new_cstr(const char* value) {
-    return mcp_string_tag_new(value, value ? strlen(value) : 0);
-}
-
-mcp_tag_t* mcp_string_tag_new_named_cstr(const char* name, const char* value) {
-    mcp_tag_t* t = mcp_string_tag_new_cstr(value);
-    if (t)
-        mcp_tag_set_name_cstr(t, name);
-    return t;
-}
-
-void mcp_string_tag::write_payload(mcp_bstream_t* s, bool le) const {
+void StringTag::write_payload(mcp_bstream_t* s, bool le) const {
     if (le) {
         // MCPE strings use uint16 little-endian prefix
         mcp_bstream_write_u16_le(s, (uint16_t)value.size());
@@ -58,3 +37,5 @@ void mcp_string_tag::write_payload(mcp_bstream_t* s, bool le) const {
     if (!value.empty())
         mcp_bstream_write_bytes(s, value.data(), value.size());
 }
+
+} // namespace cursestone::nbt

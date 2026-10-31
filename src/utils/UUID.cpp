@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// UUID.c — random v4 generation and string parsing. Pure C.
+// UUID.cpp — random v4 generation and string parsing.
 #include "UUID.h"
 
 #include <stdio.h>

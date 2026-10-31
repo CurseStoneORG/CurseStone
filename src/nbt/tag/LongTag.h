@@ -21,20 +21,24 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// LongTag — NBT MCP_TAG_LONG value.
+// LongTag — NBT TAG_LONG value.
 #pragma once
 
-#include <stdint.h>
+#include <cstdint>
 
 #include "Tag.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+namespace cursestone::nbt {
 
-mcp_tag_t* mcp_long_tag_new(int64_t v);
-mcp_tag_t* mcp_long_tag_new_named(const char* name, int64_t v);
+class LongTag : public Tag {
+  public:
+    explicit LongTag(int64_t v) : Tag(TAG_LONG), value(v) {}
+    LongTag(const char* name, int64_t v) : Tag(TAG_LONG), value(v) {
+        if (name)
+            this->name = name;
+    }
+    int64_t value;
+    void write_payload(mcp_bstream_t* s, bool le) const override;
+};
 
-#ifdef __cplusplus
-} // extern "C"
-#endif
+} // namespace cursestone::nbt

@@ -21,20 +21,24 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// IntTag — NBT MCP_TAG_INT value.
+// IntTag — NBT TAG_INT value.
 #pragma once
 
-#include <stdint.h>
+#include <cstdint>
 
 #include "Tag.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+namespace cursestone::nbt {
 
-mcp_tag_t* mcp_int_tag_new(int32_t v);
-mcp_tag_t* mcp_int_tag_new_named(const char* name, int32_t v);
+class IntTag : public Tag {
+  public:
+    explicit IntTag(int32_t v) : Tag(TAG_INT), value(v) {}
+    IntTag(const char* name, int32_t v) : Tag(TAG_INT), value(v) {
+        if (name)
+            this->name = name;
+    }
+    int32_t value;
+    void write_payload(mcp_bstream_t* s, bool le) const override;
+};
 
-#ifdef __cplusplus
-} // extern "C"
-#endif
+} // namespace cursestone::nbt

@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// ServerHandler.c — thin IPC bridge. Pure C.
+// ServerHandler.cpp — thin IPC bridge.
 #include "ServerHandler.h"
 
 #include <stdlib.h>

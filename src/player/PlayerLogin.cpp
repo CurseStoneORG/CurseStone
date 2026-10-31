@@ -213,47 +213,47 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
 
         if (named_tag_) {
             int32_t gm =
-                mcp_compound_tag_get_int(named_tag_.get(), "playerGameType", srv_->gamemode());
+                cursestone::nbt::get_int(named_tag_.get(), "playerGameType", srv_->gamemode());
 
             setGamemode(gm);
 
-            int16_t hp = mcp_compound_tag_get_short(named_tag_.get(), "Health", 20);
+            int16_t hp = cursestone::nbt::get_short(named_tag_.get(), "Health", 20);
 
-            int16_t mh = mcp_compound_tag_get_short(named_tag_.get(), "MaxHealth", 20);
+            int16_t mh = cursestone::nbt::get_short(named_tag_.get(), "MaxHealth", 20);
 
             setMaxHealth(mh > 0 ? mh : 20);
             setHealth(hp <= 0 ? 20 : hp);
 
-            int16_t hunger = mcp_compound_tag_get_short(named_tag_.get(), "Hunger", 20);
+            int16_t hunger = cursestone::nbt::get_short(named_tag_.get(), "Hunger", 20);
 
             setFoodLevel(hunger);
             // Restore hunger saturation and exhaustion.
-            food_saturation_ = mcp_compound_tag_get_float(named_tag_.get(), "FoodSaturation", 5.0f);
-            food_exhaustion_ = mcp_compound_tag_get_float(named_tag_.get(), "FoodExhaustion", 0.0f);
+            food_saturation_ = cursestone::nbt::get_float(named_tag_.get(), "FoodSaturation", 5.0f);
+            food_exhaustion_ = cursestone::nbt::get_float(named_tag_.get(), "FoodExhaustion", 0.0f);
 
             // Restore underwater air and the saved XP bar state.
-            air_ticks_ = mcp_compound_tag_get_short(named_tag_.get(), "Air", (int16_t)300);
+            air_ticks_ = cursestone::nbt::get_short(named_tag_.get(), "Air", (int16_t)300);
             if (air_ticks_ < 0 || air_ticks_ > 300)
                 air_ticks_ = 300;
-            xp_level_ = mcp_compound_tag_get_int(named_tag_.get(), "XpLevel", 0);
+            xp_level_ = cursestone::nbt::get_int(named_tag_.get(), "XpLevel", 0);
             if (xp_level_ < 0)
                 xp_level_ = 0;
-            xp_progress_ = mcp_compound_tag_get_float(named_tag_.get(), "XpP", 0.0f);
+            xp_progress_ = cursestone::nbt::get_float(named_tag_.get(), "XpP", 0.0f);
             if (xp_progress_ < 0.0f || xp_progress_ > 1.0f)
                 xp_progress_ = 0.0f;
             (void)0;
 
             // Restore persisted potion effects (no packets yet — the client
             // gets them at first spawn via sendActiveEffects()).
-            const mcp_tag_t* fx_tag = mcp_compound_tag_get(named_tag_.get(), "ActiveEffects");
-            if (fx_tag && mcp_tag_get_type(fx_tag) == MCP_TAG_LIST) {
-                for (size_t i = 0, n = mcp_list_tag_size(fx_tag); i < n; ++i) {
-                    const mcp_tag_t* entry = mcp_list_tag_get(fx_tag, i);
-                    if (!entry || mcp_tag_get_type(entry) != MCP_TAG_COMPOUND)
+            const cursestone::nbt::Tag* fx_tag = cursestone::nbt::get(named_tag_.get(), "ActiveEffects");
+            if (fx_tag && cursestone::nbt::type_of(fx_tag) == cursestone::nbt::TAG_LIST) {
+                for (size_t i = 0, n = cursestone::nbt::size(fx_tag); i < n; ++i) {
+                    const cursestone::nbt::Tag* entry = cursestone::nbt::at(fx_tag, i);
+                    if (!entry || cursestone::nbt::type_of(entry) != cursestone::nbt::TAG_COMPOUND)
                         continue;
-                    int8_t id = mcp_compound_tag_get_byte(entry, "Id", 0);
-                    int8_t amp = mcp_compound_tag_get_byte(entry, "Amplifier", 0);
-                    int32_t dur = mcp_compound_tag_get_int(entry, "Duration", 0);
+                    int8_t id = cursestone::nbt::get_byte(entry, "Id", 0);
+                    int8_t amp = cursestone::nbt::get_byte(entry, "Amplifier", 0);
+                    int32_t dur = cursestone::nbt::get_int(entry, "Duration", 0);
                     if (id <= 0 || dur <= 0)
                         continue;
                     addEffect(std::make_shared<entity::Effect>(
@@ -264,24 +264,24 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
             // Restore the last position or use the saved spawn.
             const double sentinel = -99999.999;
 
-            double px = mcp_compound_tag_get_double(named_tag_.get(), "PosX", sentinel);
+            double px = cursestone::nbt::get_double(named_tag_.get(), "PosX", sentinel);
 
             if (px != sentinel) {
                 pos_.x = px;
 
-                pos_.y = mcp_compound_tag_get_double(named_tag_.get(), "PosY", 64.0);
+                pos_.y = cursestone::nbt::get_double(named_tag_.get(), "PosY", 64.0);
 
-                pos_.z = mcp_compound_tag_get_double(named_tag_.get(), "PosZ", 0.0);
+                pos_.z = cursestone::nbt::get_double(named_tag_.get(), "PosZ", 0.0);
 
-                yaw_ = mcp_compound_tag_get_float(named_tag_.get(), "Yaw", 0.0f);
+                yaw_ = cursestone::nbt::get_float(named_tag_.get(), "Yaw", 0.0f);
 
-                pitch_ = mcp_compound_tag_get_float(named_tag_.get(), "Pitch", 0.0f);
+                pitch_ = cursestone::nbt::get_float(named_tag_.get(), "Pitch", 0.0f);
             } else {
-                int32_t sx = mcp_compound_tag_get_int(named_tag_.get(), "SpawnX", INT32_MIN);
+                int32_t sx = cursestone::nbt::get_int(named_tag_.get(), "SpawnX", INT32_MIN);
 
-                int32_t sy = mcp_compound_tag_get_int(named_tag_.get(), "SpawnY", INT32_MIN);
+                int32_t sy = cursestone::nbt::get_int(named_tag_.get(), "SpawnY", INT32_MIN);
 
-                int32_t sz = mcp_compound_tag_get_int(named_tag_.get(), "SpawnZ", INT32_MIN);
+                int32_t sz = cursestone::nbt::get_int(named_tag_.get(), "SpawnZ", INT32_MIN);
 
                 if (sx != INT32_MIN || sy != INT32_MIN || sz != INT32_MIN) {
                     pos_.x = (double)sx + 0.5;
@@ -297,11 +297,11 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
 
             // Restore the personal spawn point.
             {
-                int32_t sx = mcp_compound_tag_get_int(named_tag_.get(), "SpawnX", INT32_MIN);
+                int32_t sx = cursestone::nbt::get_int(named_tag_.get(), "SpawnX", INT32_MIN);
 
-                int32_t sy = mcp_compound_tag_get_int(named_tag_.get(), "SpawnY", INT32_MIN);
+                int32_t sy = cursestone::nbt::get_int(named_tag_.get(), "SpawnY", INT32_MIN);
 
-                int32_t sz = mcp_compound_tag_get_int(named_tag_.get(), "SpawnZ", INT32_MIN);
+                int32_t sz = cursestone::nbt::get_int(named_tag_.get(), "SpawnZ", INT32_MIN);
 
                 if (sx != INT32_MIN && sy != INT32_MIN && sz != INT32_MIN) {
                     has_spawn_override_ = true;
@@ -312,19 +312,19 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
             }
 
             // Restore inventory items from NBT.
-            const mcp_tag_t* inv_tag = mcp_compound_tag_get(named_tag_.get(), "Inventory");
+            const cursestone::nbt::Tag* inv_tag = cursestone::nbt::get(named_tag_.get(), "Inventory");
 
-            if (inv_tag && mcp_tag_get_type(inv_tag) == MCP_TAG_LIST) {
+            if (inv_tag && cursestone::nbt::type_of(inv_tag) == cursestone::nbt::TAG_LIST) {
                 int loaded = 0;
 
-                for (size_t i = 0, n = mcp_list_tag_size(inv_tag); i < n; ++i) {
-                    const mcp_tag_t* entry = mcp_list_tag_get(inv_tag, i);
+                for (size_t i = 0, n = cursestone::nbt::size(inv_tag); i < n; ++i) {
+                    const cursestone::nbt::Tag* entry = cursestone::nbt::at(inv_tag, i);
 
-                    if (!entry || mcp_tag_get_type(entry) != MCP_TAG_COMPOUND) {
+                    if (!entry || cursestone::nbt::type_of(entry) != cursestone::nbt::TAG_COMPOUND) {
                         continue;
                     }
 
-                    int8_t nbt_slot = mcp_compound_tag_get_byte(entry, "Slot", -1);
+                    int8_t nbt_slot = cursestone::nbt::get_byte(entry, "Slot", -1);
 
                     item::ItemStack it;
 
@@ -370,7 +370,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
             }
 
             // Restore the selected hotbar slot.
-            int32_t held = mcp_compound_tag_get_int(named_tag_.get(), "SelectedItemSlot", -1);
+            int32_t held = cursestone::nbt::get_int(named_tag_.get(), "SelectedItemSlot", -1);
 
             if (held >= 0 && held <= 8) {
                 inv_->setHeldSlot(held);

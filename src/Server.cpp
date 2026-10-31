@@ -1067,21 +1067,21 @@ static void ensurePlayersDir(const std::string& dataPath) {
 
 // Build the default NBT compound for a new player.
 static NbtPtr buildDefaultPlayerNbt(Server* srv, const std::string& name) {
-    mcp_tag_t* root = mcp_compound_tag_new_named("");
-    mcp_compound_tag_set_long(root, "firstPlayed", (int64_t)(mcp_utils_time_ms()));
-    mcp_compound_tag_set_long(root, "lastPlayed", (int64_t)(mcp_utils_time_ms()));
-    mcp_compound_tag_set_short(root, "Health", 20);
-    mcp_compound_tag_set_short(root, "MaxHealth", 20);
-    mcp_compound_tag_set_short(root, "Hunger", 20);
-    mcp_compound_tag_set_short(root, "Air", 300);
-    mcp_compound_tag_set_int(root, "playerGameType", srv->gamemode());
-    mcp_compound_tag_set_string(root, "NameTag", name.c_str());
-    mcp_compound_tag_set_string(root, "Level", "world");
+    cursestone::nbt::Tag* root = new cursestone::nbt::CompoundTag("");
+    cursestone::nbt::set_long(root, "firstPlayed", (int64_t)(mcp_utils_time_ms()));
+    cursestone::nbt::set_long(root, "lastPlayed", (int64_t)(mcp_utils_time_ms()));
+    cursestone::nbt::set_short(root, "Health", 20);
+    cursestone::nbt::set_short(root, "MaxHealth", 20);
+    cursestone::nbt::set_short(root, "Hunger", 20);
+    cursestone::nbt::set_short(root, "Air", 300);
+    cursestone::nbt::set_int(root, "playerGameType", srv->gamemode());
+    cursestone::nbt::set_string(root, "NameTag", name.c_str());
+    cursestone::nbt::set_string(root, "Level", "world");
     if (srv->getDefaultWorld()) {
         auto sp = srv->getDefaultWorld()->spawn();
-        mcp_compound_tag_set_int(root, "SpawnX", (int32_t)sp.x);
-        mcp_compound_tag_set_int(root, "SpawnY", (int32_t)sp.y);
-        mcp_compound_tag_set_int(root, "SpawnZ", (int32_t)sp.z);
+        cursestone::nbt::set_int(root, "SpawnX", (int32_t)sp.x);
+        cursestone::nbt::set_int(root, "SpawnY", (int32_t)sp.y);
+        cursestone::nbt::set_int(root, "SpawnZ", (int32_t)sp.z);
     }
     return adoptNbt(root);
 }
@@ -1100,7 +1100,7 @@ NbtPtr Server::getOfflinePlayerData(const std::string& name) {
 
     // Read Nukkit-compatible GZIP-compressed big-endian NBT first.
     // Fall back to uncompressed formats used by legacy CurseStone files.
-    mcp_tag_t* root = nullptr;
+    cursestone::nbt::Tag* root = nullptr;
     {
         // Try GZIP-compressed data first.
         z_stream zs{};
@@ -1131,18 +1131,17 @@ NbtPtr Server::getOfflinePlayerData(const std::string& name) {
             } while (rc != Z_STREAM_END && zs.avail_in > 0);
             inflateEnd(&zs);
             if (rc == Z_STREAM_END && !inflated.empty()) {
-                root = mcp_nbt_read_bytes(inflated.data(), inflated.size(),
-                                          /*little_endian=*/false);
+                root = cursestone::nbt::read(inflated.data(), inflated.size(), /*little_endian=*/false);
             }
         }
     }
     if (!root) {
         // Try uncompressed big-endian NBT.
-        root = mcp_nbt_read_bytes(buf.data(), buf.size(), /*little_endian=*/false);
+        root = cursestone::nbt::read(buf.data(), buf.size(), /*little_endian=*/false);
     }
     if (!root) {
         // Try legacy uncompressed little-endian NBT.
-        root = mcp_nbt_read_bytes(buf.data(), buf.size(), /*little_endian=*/true);
+        root = cursestone::nbt::read(buf.data(), buf.size(), /*little_endian=*/true);
     }
     if (!root) {
         utils::MainLogger::get().warn("Corrupt player data: " + path);
@@ -1156,9 +1155,9 @@ void Server::saveOfflinePlayerData(const std::string& name, NbtPtr nbt) {
         return;
     ensurePlayersDir(dataPath_);
     std::string path = dataPath_ + "/players/" + name + ".dat";
-    size_t outLen = 0;
-    utils::BufferPtr bytes(mcp_nbt_write_bytes(nbt.get(), /*little_endian=*/false, &outLen));
-    if (!bytes || outLen == 0) {
+    std::vector<uint8_t> bytes;
+    cursestone::nbt::write(nbt.get(), /*little_endian=*/false, bytes);
+    if (bytes.empty()) {
         utils::MainLogger::get().warn("Failed to serialize NBT for " + name);
         return;
     }
@@ -1169,10 +1168,10 @@ void Server::saveOfflinePlayerData(const std::string& name, NbtPtr nbt) {
         utils::MainLogger::get().warn("Failed to gzip player data for " + name);
         return;
     }
-    size_t bound = deflateBound(&zs, (uLong)outLen);
+    size_t bound = deflateBound(&zs, (uLong)bytes.size());
     std::vector<uint8_t> gz(bound);
-    zs.next_in = (Bytef*)bytes.get();
-    zs.avail_in = (uInt)outLen;
+    zs.next_in = (Bytef*)bytes.data();
+    zs.avail_in = (uInt)bytes.size();
     zs.next_out = (Bytef*)gz.data();
     zs.avail_out = (uInt)gz.size();
     int rc = deflate(&zs, Z_FINISH);

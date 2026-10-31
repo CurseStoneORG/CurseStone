@@ -36,7 +36,7 @@
 // Commands are dispatched from the console or player chat.
 #pragma once
 #include "CurseStone.h"
-#include "nbt/tag/Tag.h" // mcp_tag_t / ::mcp_tag
+#include "nbt/tag/Tag.h" // cursestone::nbt::Tag
 #include <string>
 #include <vector>
 #include <memory>
@@ -79,13 +79,13 @@ class Item;
 }
 
 // Shared owner for an NBT root tag; releases it when the reference count reaches zero.
-using NbtPtr = std::shared_ptr<::mcp_tag>;
+using NbtPtr = std::shared_ptr<cursestone::nbt::Tag>;
 
-// Adopt a raw tag returned by the C NBT API; destroys it on last reference.
-inline NbtPtr adoptNbt(mcp_tag_t* t) {
-    return NbtPtr(t, [](mcp_tag_t* p) {
+// Adopt a raw tag from a parse result; destroys it on last reference.
+inline NbtPtr adoptNbt(cursestone::nbt::Tag* t) {
+    return NbtPtr(t, [](cursestone::nbt::Tag* p) {
         if (p)
-            mcp_tag_destroy(p);
+            delete p;
     });
 }
 

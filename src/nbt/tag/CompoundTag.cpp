@@ -25,165 +25,152 @@
 #include "CompoundTag.h"
 #include "ByteTag.h"
 #include "DoubleTag.h"
-#include "EndTag.h"
 #include "FloatTag.h"
 #include "IntTag.h"
 #include "LongTag.h"
 #include "ShortTag.h"
 #include "StringTag.h"
-#include "TagDefs.h"
 
-mcp_compound_tag::~mcp_compound_tag() {
-    for (const mcp_compound_entry& e : entries)
+namespace cursestone::nbt {
+
+CompoundTag::~CompoundTag() {
+    for (const CompoundEntry& e : entries)
         delete e.tag;
 }
 
-mcp_tag_t* mcp_compound_tag_new(void) {
-    try {
-        return new mcp_compound_tag();
-    } catch (...) {
-        return NULL;
-    }
-}
-
-mcp_tag_t* mcp_compound_tag_new_named(const char* name) {
-    mcp_tag_t* t = mcp_compound_tag_new();
-    if (t)
-        mcp_tag_set_name_cstr(t, name);
-    return t;
-}
-
-int mcp_compound_tag_set(mcp_tag_t* self, const char* name, mcp_tag_t* child) {
-    if (!self || self->type != MCP_TAG_COMPOUND || !name || !child)
-        return -1;
-    auto* t = static_cast<mcp_compound_tag*>(self);
-    for (mcp_compound_entry& e : t->entries) {
+bool set(Tag* self, const char* name, Tag* child) {
+    if (!self || self->type != TAG_COMPOUND || !name || !child)
+        return false;
+    auto* t = static_cast<CompoundTag*>(self);
+    for (CompoundEntry& e : t->entries) {
         if (e.name == name) {
             // Replace.
             delete e.tag;
             e.tag = child;
-            return 0;
+            return true;
         }
     }
     try {
         t->entries.emplace_back(name, child);
     } catch (...) {
-        return -1; // child stays with the caller
+        return false; // child stays with the caller
     }
-    return 0;
+    return true;
 }
 
-int mcp_compound_tag_set_byte(mcp_tag_t* s, const char* n, int8_t v) {
-    if (!s)
-        return -1;
-    return mcp_compound_tag_set(s, n, mcp_byte_tag_new_named(n, v));
+namespace {
+// Build a named child and insert it; on failure the child is destroyed
+// here so the convenience setters never leak.
+template <typename MakeTag>
+bool set_via(Tag* self, const char* name, MakeTag make) {
+    if (!self)
+        return false;
+    Tag* child = make();
+    if (!set(self, name, child)) {
+        delete child;
+        return false;
+    }
+    return true;
 }
-int mcp_compound_tag_set_short(mcp_tag_t* s, const char* n, int16_t v) {
-    if (!s)
-        return -1;
-    return mcp_compound_tag_set(s, n, mcp_short_tag_new_named(n, v));
+} // namespace
+
+bool set_byte(Tag* s, const char* n, int8_t v) {
+    return set_via(s, n, [=] { return new ByteTag(n, v); });
 }
-int mcp_compound_tag_set_int(mcp_tag_t* s, const char* n, int32_t v) {
-    if (!s)
-        return -1;
-    return mcp_compound_tag_set(s, n, mcp_int_tag_new_named(n, v));
+bool set_short(Tag* s, const char* n, int16_t v) {
+    return set_via(s, n, [=] { return new ShortTag(n, v); });
 }
-int mcp_compound_tag_set_long(mcp_tag_t* s, const char* n, int64_t v) {
-    if (!s)
-        return -1;
-    return mcp_compound_tag_set(s, n, mcp_long_tag_new_named(n, v));
+bool set_int(Tag* s, const char* n, int32_t v) {
+    return set_via(s, n, [=] { return new IntTag(n, v); });
 }
-int mcp_compound_tag_set_float(mcp_tag_t* s, const char* n, float v) {
-    if (!s)
-        return -1;
-    return mcp_compound_tag_set(s, n, mcp_float_tag_new_named(n, v));
+bool set_long(Tag* s, const char* n, int64_t v) {
+    return set_via(s, n, [=] { return new LongTag(n, v); });
 }
-int mcp_compound_tag_set_double(mcp_tag_t* s, const char* n, double v) {
-    if (!s)
-        return -1;
-    return mcp_compound_tag_set(s, n, mcp_double_tag_new_named(n, v));
+bool set_float(Tag* s, const char* n, float v) {
+    return set_via(s, n, [=] { return new FloatTag(n, v); });
 }
-int mcp_compound_tag_set_string(mcp_tag_t* s, const char* n, const char* v) {
-    if (!s)
-        return -1;
-    return mcp_compound_tag_set(s, n, mcp_string_tag_new_named_cstr(n, v));
+bool set_double(Tag* s, const char* n, double v) {
+    return set_via(s, n, [=] { return new DoubleTag(n, v); });
+}
+bool set_string(Tag* s, const char* n, const char* v) {
+    return set_via(s, n, [=] { return new StringTag(n, v); });
 }
 
-const mcp_tag_t* mcp_compound_tag_get(const mcp_tag_t* self, const char* name) {
-    if (!self || self->type != MCP_TAG_COMPOUND || !name)
-        return NULL;
-    for (const mcp_compound_entry& e : static_cast<const mcp_compound_tag*>(self)->entries) {
+const Tag* get(const Tag* self, const char* name) {
+    if (!self || self->type != TAG_COMPOUND || !name)
+        return nullptr;
+    for (const CompoundEntry& e : static_cast<const CompoundTag*>(self)->entries) {
         if (e.name == name)
             return e.tag;
     }
-    return NULL;
+    return nullptr;
 }
 
-int8_t mcp_compound_tag_get_byte(const mcp_tag_t* s, const char* n, int8_t d) {
-    const mcp_tag_t* t = mcp_compound_tag_get(s, n);
-    if (!t || t->type != MCP_TAG_BYTE)
+int8_t get_byte(const Tag* s, const char* n, int8_t d) {
+    const Tag* t = get(s, n);
+    if (!t || t->type != TAG_BYTE)
         return d;
-    return static_cast<const mcp_byte_tag*>(t)->value;
+    return static_cast<const ByteTag*>(t)->value;
 }
-int16_t mcp_compound_tag_get_short(const mcp_tag_t* s, const char* n, int16_t d) {
-    const mcp_tag_t* t = mcp_compound_tag_get(s, n);
-    if (!t || t->type != MCP_TAG_SHORT)
+int16_t get_short(const Tag* s, const char* n, int16_t d) {
+    const Tag* t = get(s, n);
+    if (!t || t->type != TAG_SHORT)
         return d;
-    return static_cast<const mcp_short_tag*>(t)->value;
+    return static_cast<const ShortTag*>(t)->value;
 }
-int32_t mcp_compound_tag_get_int(const mcp_tag_t* s, const char* n, int32_t d) {
-    const mcp_tag_t* t = mcp_compound_tag_get(s, n);
-    if (!t || t->type != MCP_TAG_INT)
+int32_t get_int(const Tag* s, const char* n, int32_t d) {
+    const Tag* t = get(s, n);
+    if (!t || t->type != TAG_INT)
         return d;
-    return static_cast<const mcp_int_tag*>(t)->value;
+    return static_cast<const IntTag*>(t)->value;
 }
-int64_t mcp_compound_tag_get_long(const mcp_tag_t* s, const char* n, int64_t d) {
-    const mcp_tag_t* t = mcp_compound_tag_get(s, n);
-    if (!t || t->type != MCP_TAG_LONG)
+int64_t get_long(const Tag* s, const char* n, int64_t d) {
+    const Tag* t = get(s, n);
+    if (!t || t->type != TAG_LONG)
         return d;
-    return static_cast<const mcp_long_tag*>(t)->value;
+    return static_cast<const LongTag*>(t)->value;
 }
-float mcp_compound_tag_get_float(const mcp_tag_t* s, const char* n, float d) {
-    const mcp_tag_t* t = mcp_compound_tag_get(s, n);
-    if (!t || t->type != MCP_TAG_FLOAT)
+float get_float(const Tag* s, const char* n, float d) {
+    const Tag* t = get(s, n);
+    if (!t || t->type != TAG_FLOAT)
         return d;
-    return static_cast<const mcp_float_tag*>(t)->value;
+    return static_cast<const FloatTag*>(t)->value;
 }
-double mcp_compound_tag_get_double(const mcp_tag_t* s, const char* n, double d) {
-    const mcp_tag_t* t = mcp_compound_tag_get(s, n);
-    if (!t || t->type != MCP_TAG_DOUBLE)
+double get_double(const Tag* s, const char* n, double d) {
+    const Tag* t = get(s, n);
+    if (!t || t->type != TAG_DOUBLE)
         return d;
-    return static_cast<const mcp_double_tag*>(t)->value;
+    return static_cast<const DoubleTag*>(t)->value;
 }
-const char* mcp_compound_tag_get_string(const mcp_tag_t* s, const char* n, const char* d) {
-    const mcp_tag_t* t = mcp_compound_tag_get(s, n);
-    if (!t || t->type != MCP_TAG_STRING)
+
+const char* get_string(const Tag* s, const char* n, const char* d) {
+    const Tag* t = get(s, n);
+    if (!t || t->type != TAG_STRING)
         return d ? d : "";
-    // This function MUST NOT return NULL. Almost every caller feeds the
-    // result straight into a std::string, and std::string(NULL) is
-    // undefined behaviour. c_str() never returns NULL, so the accessor
-    // stays total. An empty stored value is returned as "" (not as the
-    // caller's default), matching the historical behaviour.
+    // This function MUST NOT return nullptr. Almost every caller feeds
+    // the result straight into a std::string, and std::string(nullptr)
+    // is undefined behaviour. c_str() never returns nullptr, so the
+    // accessor stays total. An empty stored value is returned as ""
+    // (not as the caller's default), matching the historical behaviour.
     (void)d;
-    return static_cast<const mcp_string_tag*>(t)->value.c_str();
+    return static_cast<const StringTag*>(t)->value.c_str();
 }
 
-const mcp_tag_t* mcp_compound_tag_get_compound(const mcp_tag_t* s, const char* n) {
-    const mcp_tag_t* t = mcp_compound_tag_get(s, n);
-    if (!t || t->type != MCP_TAG_COMPOUND)
-        return NULL;
+const Tag* get_compound(const Tag* s, const char* n) {
+    const Tag* t = get(s, n);
+    if (!t || t->type != TAG_COMPOUND)
+        return nullptr;
     return t;
 }
 
-
-bool mcp_compound_tag_contains(const mcp_tag_t* self, const char* name) {
-    return mcp_compound_tag_get(self, name) != NULL;
+bool contains(const Tag* self, const char* name) {
+    return get(self, name) != nullptr;
 }
 
-bool mcp_compound_tag_remove(mcp_tag_t* self, const char* name) {
-    if (!self || self->type != MCP_TAG_COMPOUND || !name)
+bool remove(Tag* self, const char* name) {
+    if (!self || self->type != TAG_COMPOUND || !name)
         return false;
-    auto* t = static_cast<mcp_compound_tag*>(self);
+    auto* t = static_cast<CompoundTag*>(self);
     for (auto it = t->entries.begin(); it != t->entries.end(); ++it) {
         if (it->name == name) {
             delete it->tag;
@@ -194,9 +181,9 @@ bool mcp_compound_tag_remove(mcp_tag_t* self, const char* name) {
     return false;
 }
 
-void mcp_compound_tag::write_payload(mcp_bstream_t* s, bool le) const {
+void CompoundTag::write_payload(mcp_bstream_t* s, bool le) const {
     // For each child: type byte, name (uint16 length + bytes), payload.
-    for (const mcp_compound_entry& e : entries) {
+    for (const CompoundEntry& e : entries) {
         mcp_bstream_write_u8(s, (uint8_t)e.tag->type);
         if (le)
             mcp_bstream_write_u16_le(s, (uint16_t)e.name.size());
@@ -207,5 +194,7 @@ void mcp_compound_tag::write_payload(mcp_bstream_t* s, bool le) const {
         e.tag->write_payload(s, le);
     }
     // End marker: TAG_End (0 byte, no name).
-    mcp_bstream_write_u8(s, (uint8_t)MCP_TAG_END);
+    mcp_bstream_write_u8(s, (uint8_t)TAG_END);
 }
+
+} // namespace cursestone::nbt

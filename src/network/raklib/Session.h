@@ -103,7 +103,7 @@ typedef struct mcp_split_store {
     size_t seg_sizes[MCP_MAX_SPLIT_SEGMENTS];
     bool in_use;
     // FIX: ordering info from the first fragment, applied once to the
-    // reassembled packet (see deliver_ordered() in SessionManager.c).
+    // reassembled packet (see deliver_ordered() in SessionManager.cpp).
     bool is_ordered;
     uint32_t order_index;
     uint8_t order_channel;
@@ -112,7 +112,7 @@ typedef struct mcp_split_store {
     // assigns a single reliableMessageNumber to a fragmented message
     // BEFORE splitting it — every physical fragment shares that same
     // index. That means the reliable-index duplicate/staleness check
-    // (reliable_index_accept in SessionManager.c) must run exactly once,
+    // (reliable_index_accept in SessionManager.cpp) must run exactly once,
     // against the REASSEMBLED message — never per-fragment, which would
     // reject every fragment after the first as "already seen" the moment
     // the first one set that index's bit in the receive window.

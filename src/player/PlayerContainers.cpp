@@ -443,19 +443,18 @@ void Player::handleSignEdit(network::protocol::BlockEntityDataPacket& pk) {
     if (pk.namedtag.empty())
         return;
 
-    utils::TagGuard root(mcp_nbt_read_bytes(pk.namedtag.data(), pk.namedtag.size(),
-                                            /*little_endian=*/true));
+    utils::TagGuard root(cursestone::nbt::read(pk.namedtag.data(), pk.namedtag.size(), /*little_endian=*/true));
     if (!root)
         return;
 
-    std::string id = mcp_compound_tag_get_string(root.get(), "id", "");
+    std::string id = cursestone::nbt::get_string(root.get(), "id", "");
     if (id != "Sign")
         return;
 
-    std::array<std::string, 4> lines = {mcp_compound_tag_get_string(root.get(), "Text1", ""),
-                                        mcp_compound_tag_get_string(root.get(), "Text2", ""),
-                                        mcp_compound_tag_get_string(root.get(), "Text3", ""),
-                                        mcp_compound_tag_get_string(root.get(), "Text4", "")};
+    std::array<std::string, 4> lines = {cursestone::nbt::get_string(root.get(), "Text1", ""),
+                                        cursestone::nbt::get_string(root.get(), "Text2", ""),
+                                        cursestone::nbt::get_string(root.get(), "Text3", ""),
+                                        cursestone::nbt::get_string(root.get(), "Text4", "")};
 
     // Genisys compares the Creator contra the NBT of the tile of the server
     // (the sign's stored creator), not contra the packet — the client never
@@ -493,7 +492,7 @@ void Player::sendBlockEntityData(int32_t x, int32_t y, int32_t z, tile::Tile& t,
     if (!srv_)
         return;
 
-    utils::TagGuard tag(mcp_compound_tag_new());
+    utils::TagGuard tag(new cursestone::nbt::CompoundTag());
     if (!tag)
         return;
     // Client compound, not the disk compound: tiles whose client reads
@@ -501,16 +500,16 @@ void Player::sendBlockEntityData(int32_t x, int32_t y, int32_t z, tile::Tile& t,
     // override writeSpawnNBT — sending the disk layout instead is what
     // crashed the client on furnace open.
     t.writeSpawnNBT(tag.get());
-    size_t blen = 0;
-    utils::BufferPtr bbuf(mcp_nbt_write_bytes(tag.get(), /*little_endian=*/true, &blen));
-    if (!bbuf || blen == 0)
+    std::vector<uint8_t> bbuf;
+    cursestone::nbt::write(tag.get(), /*little_endian=*/true, bbuf);
+    if (bbuf.empty())
         return;
 
     auto pk = std::make_shared<network::protocol::BlockEntityDataPacket>();
     pk->x = x;
     pk->y = y;
     pk->z = z;
-    pk->namedtag.assign(bbuf.get(), bbuf.get() + blen);
+    pk->namedtag.assign(bbuf.begin(), bbuf.end());
 
     if (only) {
         only->sendPacket(pk);

@@ -22,7 +22,7 @@
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
 /**
- * @brief Provides a Mersenne Twister RNG. Pure C.
+ * @brief Provides a Mersenne Twister RNG.
  *
  * Used by world generation (noise seed) and gameplay randomness.
  */

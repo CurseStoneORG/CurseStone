@@ -79,12 +79,12 @@ Player::~Player() {
     if (connected_.load(std::memory_order_relaxed)) {
         try {
             if (named_tag_ && srv_ && !cfg_.username.empty()) {
-                mcp_compound_tag_set_double(named_tag_.get(), "PosX", pos_.x);
-                mcp_compound_tag_set_double(named_tag_.get(), "PosY", pos_.y);
-                mcp_compound_tag_set_double(named_tag_.get(), "PosZ", pos_.z);
-                mcp_compound_tag_set_float(named_tag_.get(), "Yaw", yaw_);
-                mcp_compound_tag_set_float(named_tag_.get(), "Pitch", pitch_);
-                mcp_compound_tag_set_int(named_tag_.get(), "playerGameType", cfg_.gamemode);
+                cursestone::nbt::set_double(named_tag_.get(), "PosX", pos_.x);
+                cursestone::nbt::set_double(named_tag_.get(), "PosY", pos_.y);
+                cursestone::nbt::set_double(named_tag_.get(), "PosZ", pos_.z);
+                cursestone::nbt::set_float(named_tag_.get(), "Yaw", yaw_);
+                cursestone::nbt::set_float(named_tag_.get(), "Pitch", pitch_);
+                cursestone::nbt::set_int(named_tag_.get(), "playerGameType", cfg_.gamemode);
                 srv_->saveOfflinePlayerData(cfg_.username, named_tag_);
             }
         } catch (...) {}
@@ -409,57 +409,57 @@ void Player::saveData() {
         return;
     if (!named_tag_) {
         // Create an NBT root if none exists.
-        named_tag_ = adoptNbt(mcp_compound_tag_new());
+        named_tag_ = adoptNbt(new cursestone::nbt::CompoundTag());
     }
-    ::mcp_tag* root = named_tag_.get();
+    cursestone::nbt::Tag* root = named_tag_.get();
     if (!root)
         return;
 
     // Save position, rotation, health, and hunger.
-    mcp_compound_tag_set_double(root, "PosX", pos_.x);
-    mcp_compound_tag_set_double(root, "PosY", pos_.y);
-    mcp_compound_tag_set_double(root, "PosZ", pos_.z);
-    mcp_compound_tag_set_float(root, "Yaw", yaw_);
-    mcp_compound_tag_set_float(root, "Pitch", pitch_);
-    mcp_compound_tag_set_int(root, "playerGameType", cfg_.gamemode);
-    mcp_compound_tag_set_short(root, "Health", (int16_t)health());
-    mcp_compound_tag_set_short(root, "MaxHealth", (int16_t)maxHealth());
-    mcp_compound_tag_set_short(root, "Hunger", (int16_t)foodLevel());
-    mcp_compound_tag_set_float(root, "FoodSaturation", food_saturation_);
-    mcp_compound_tag_set_float(root, "FoodExhaustion", food_exhaustion_);
+    cursestone::nbt::set_double(root, "PosX", pos_.x);
+    cursestone::nbt::set_double(root, "PosY", pos_.y);
+    cursestone::nbt::set_double(root, "PosZ", pos_.z);
+    cursestone::nbt::set_float(root, "Yaw", yaw_);
+    cursestone::nbt::set_float(root, "Pitch", pitch_);
+    cursestone::nbt::set_int(root, "playerGameType", cfg_.gamemode);
+    cursestone::nbt::set_short(root, "Health", (int16_t)health());
+    cursestone::nbt::set_short(root, "MaxHealth", (int16_t)maxHealth());
+    cursestone::nbt::set_short(root, "Hunger", (int16_t)foodLevel());
+    cursestone::nbt::set_float(root, "FoodSaturation", food_saturation_);
+    cursestone::nbt::set_float(root, "FoodExhaustion", food_exhaustion_);
     // Active potion effects (vanilla ActiveEffects list).
-    utils::TagGuard fx_list(mcp_list_tag_new_named("ActiveEffects", MCP_TAG_COMPOUND));
+    utils::TagGuard fx_list(new cursestone::nbt::ListTag("ActiveEffects", cursestone::nbt::TAG_COMPOUND));
     if (fx_list) {
         for (const auto& e : effects()) {
-            utils::TagGuard entry(mcp_compound_tag_new_named(""));
+            utils::TagGuard entry(new cursestone::nbt::CompoundTag(""));
             if (!entry)
                 continue;
-            mcp_compound_tag_set_byte(entry.get(), "Id", (int8_t)e->id());
-            mcp_compound_tag_set_byte(entry.get(), "Amplifier", (int8_t)e->amplifier());
-            mcp_compound_tag_set_int(entry.get(), "Duration", e->duration());
-            if (mcp_list_tag_append(fx_list.get(), entry.get()) == 0)
+            cursestone::nbt::set_byte(entry.get(), "Id", (int8_t)e->id());
+            cursestone::nbt::set_byte(entry.get(), "Amplifier", (int8_t)e->amplifier());
+            cursestone::nbt::set_int(entry.get(), "Duration", e->duration());
+            if (!cursestone::nbt::append(fx_list.get(), entry.get()))
                 entry.release();
         }
     }
-    if (mcp_compound_tag_set(root, "ActiveEffects", fx_list.get()) == 0)
+    if (!cursestone::nbt::set(root, "ActiveEffects", fx_list.get()))
         fx_list.release();
-    mcp_compound_tag_set_short(root, "Air", (int16_t)air_ticks_);
+    cursestone::nbt::set_short(root, "Air", (int16_t)air_ticks_);
     // Experience (same keys as the reference Human::saveNBT).
-    mcp_compound_tag_set_int(root, "XpLevel", xp_level_);
-    mcp_compound_tag_set_float(root, "XpP", xp_progress_);
-    mcp_compound_tag_set_long(root, "RuntimeId", runtimeId());
-    mcp_compound_tag_set_long(root, "lastPlayed", (int64_t)mcp_utils_time_ms());
+    cursestone::nbt::set_int(root, "XpLevel", xp_level_);
+    cursestone::nbt::set_float(root, "XpP", xp_progress_);
+    cursestone::nbt::set_long(root, "RuntimeId", runtimeId());
+    cursestone::nbt::set_long(root, "lastPlayed", (int64_t)mcp_utils_time_ms());
 
     // Save the player's personal spawn point if set.
     if (has_spawn_override_) {
-        mcp_compound_tag_set_int(root, "SpawnX", spawn_x_);
-        mcp_compound_tag_set_int(root, "SpawnY", spawn_y_);
-        mcp_compound_tag_set_int(root, "SpawnZ", spawn_z_);
+        cursestone::nbt::set_int(root, "SpawnX", spawn_x_);
+        cursestone::nbt::set_int(root, "SpawnY", spawn_y_);
+        cursestone::nbt::set_int(root, "SpawnZ", spawn_z_);
     }
 
     // Save inventory and armor in a single list.
     // Include all 40 slots so equipped armor is preserved.
-    utils::TagGuard inv_list(mcp_list_tag_new_named("Inventory", MCP_TAG_COMPOUND));
+    utils::TagGuard inv_list(new cursestone::nbt::ListTag("Inventory", cursestone::nbt::TAG_COMPOUND));
     if (inv_list && inv_) {
         for (int slot = 0; slot < inventory::PLAYER_INV_TOTAL; ++slot) {
             auto it = inv_->getItem(slot);
@@ -470,18 +470,18 @@ void Player::saveData() {
                 slot < inventory::PlayerInventory::ARMOR_OFFSET + 4) {
                 nbt_slot = 100 + (slot - inventory::PlayerInventory::ARMOR_OFFSET);
             }
-            utils::TagGuard entry(mcp_compound_tag_new_named(""));
+            utils::TagGuard entry(new cursestone::nbt::CompoundTag(""));
             if (!entry)
                 continue;
-            mcp_compound_tag_set_byte(entry.get(), "Slot", (int8_t)nbt_slot);
+            cursestone::nbt::set_byte(entry.get(), "Slot", (int8_t)nbt_slot);
             // Serialize item data, including enchantments.
             item::itemStackToNbt(it, entry.get());
-            if (mcp_list_tag_append(inv_list.get(), entry.get()) == 0)
+            if (!cursestone::nbt::append(inv_list.get(), entry.get()))
                 entry.release();
         }
-        mcp_compound_tag_set_int(root, "SelectedItemSlot", inv_->heldSlot());
+        cursestone::nbt::set_int(root, "SelectedItemSlot", inv_->heldSlot());
     }
-    if (mcp_compound_tag_set(root, "Inventory", inv_list.get()) == 0)
+    if (!cursestone::nbt::set(root, "Inventory", inv_list.get()))
         inv_list.release();
 
     srv_->saveOfflinePlayerData(cfg_.username, named_tag_);

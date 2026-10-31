@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-/** @brief Provides Minecraft §-color code conversion helpers. Pure C. */
+/** @brief Provides Minecraft §-color code conversion helpers. */
 #pragma once
 
 #include <stdbool.h>

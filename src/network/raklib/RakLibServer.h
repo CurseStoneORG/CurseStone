@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// RakLibServer — the RakLib worker thread entrypoint. Pure C.
+// RakLibServer — the RakLib worker thread entrypoint.
 // In a C++ build this is wrapped by a thread subclass; for now we
 // expose the tick loop directly so it can run on the main thread too.
 #pragma once

@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// AnvilChunkCodec.c — encodes/decodes mcp_chunk_t* to/from Nukkit
+// AnvilChunkCodec.cpp — encodes/decodes mcp_chunk_t* to/from Nukkit
 // Anvil chunk NBT (big-endian, Sections list based).
 //
 // Mirrors cn.nukkit.level.format.anvil.Chunk.toBinary / fromBinary
@@ -45,54 +45,51 @@
 #define ANVIL_SECTIONS 8
 
 // Helper: get a child compound of root by name (must be a CompoundTag).
-static const mcp_tag_t* get_compound(const mcp_tag_t* root, const char* name) {
-    return mcp_compound_tag_get_compound(root, name);
+static const cursestone::nbt::Tag* codec_get_compound(const cursestone::nbt::Tag* root, const char* name) {
+    return cursestone::nbt::get_compound(root, name);
 }
 
 // Helper: get a byte-array child's data + length. Returns NULL if missing.
-static const uint8_t* get_byte_array(const mcp_tag_t* root, const char* name, size_t* out_len) {
-    const mcp_tag_t* t = mcp_compound_tag_get(root, name);
-    if (!t || mcp_tag_get_type(t) != MCP_TAG_BYTE_ARRAY)
+static const uint8_t* get_byte_array(const cursestone::nbt::Tag* root, const char* name, size_t* out_len) {
+    const cursestone::nbt::Tag* t = cursestone::nbt::get(root, name);
+    if (!t || cursestone::nbt::type_of(t) != cursestone::nbt::TAG_BYTE_ARRAY)
         return NULL;
-    return mcp_byte_array_tag_data(t, out_len);
+    return cursestone::nbt::byte_array_data(t, out_len);
 }
 
 // Helper: get an int-array child's data + count.
-static const int32_t* get_int_array(const mcp_tag_t* root, const char* name, size_t* out_count) {
-    const mcp_tag_t* t = mcp_compound_tag_get(root, name);
-    if (!t || mcp_tag_get_type(t) != MCP_TAG_INT_ARRAY)
+static const int32_t* get_int_array(const cursestone::nbt::Tag* root, const char* name, size_t* out_count) {
+    const cursestone::nbt::Tag* t = cursestone::nbt::get(root, name);
+    if (!t || cursestone::nbt::type_of(t) != cursestone::nbt::TAG_INT_ARRAY)
         return NULL;
-    return mcp_int_array_tag_data(t, out_count);
+    return cursestone::nbt::int_array_data(t, out_count);
 }
 
 // =====================================================================
 // ENCODE
 // =====================================================================
-uint8_t* anvil_chunk_encode(const mcp_chunk_t* chunk, size_t* out_len) {
-    if (!chunk || !out_len)
-        return NULL;
-    *out_len = 0;
+std::vector<uint8_t> anvil_chunk_encode(const mcp_chunk_t* chunk) {
+    if (!chunk)
+        return {};
 
     // Root: CompoundTag("")
-    mcp_tag_t* root = mcp_compound_tag_new_named("");
-    if (!root)
-        return NULL;
+    auto* root = new cursestone::nbt::CompoundTag("");
 
     // World: CompoundTag
-    mcp_tag_t* level = mcp_compound_tag_new_named("Level");
+    cursestone::nbt::Tag* level = new cursestone::nbt::CompoundTag("Level");
     if (!level) {
-        mcp_tag_destroy(root);
-        return NULL;
+        delete root;
+        return {};
     }
 
-    mcp_compound_tag_set_int(level, "xPos", chunk->x);
-    mcp_compound_tag_set_int(level, "zPos", chunk->z);
-    mcp_compound_tag_set_long(level, "LastUpdate", chunk->last_update);
-    mcp_compound_tag_set_long(level, "InhabitedTime", 0);
-    mcp_compound_tag_set_byte(level, "vxl", 0);
+    cursestone::nbt::set_int(level, "xPos", chunk->x);
+    cursestone::nbt::set_int(level, "zPos", chunk->z);
+    cursestone::nbt::set_long(level, "LastUpdate", chunk->last_update);
+    cursestone::nbt::set_long(level, "InhabitedTime", 0);
+    cursestone::nbt::set_byte(level, "vxl", 0);
 
     // Sections list.
-    mcp_tag_t* sections = mcp_list_tag_new_named("Sections", MCP_TAG_COMPOUND);
+    cursestone::nbt::Tag* sections = new cursestone::nbt::ListTag("Sections", cursestone::nbt::TAG_COMPOUND);
     for (int sy = 0; sy < ANVIL_SECTIONS; ++sy) {
         const mcp_chunk_section_t* s = chunk->sections ? chunk->sections[sy] : NULL;
         if (!s)
@@ -110,50 +107,44 @@ uint8_t* anvil_chunk_encode(const mcp_chunk_t* chunk, size_t* out_len) {
         if (!has_blocks)
             continue;
 
-        mcp_tag_t* sec = mcp_compound_tag_new_named("");
-        mcp_compound_tag_set_byte(sec, "Y", (int8_t)sy);
+        cursestone::nbt::Tag* sec = new cursestone::nbt::CompoundTag("");
+        cursestone::nbt::set_byte(sec, "Y", (int8_t)sy);
 
         // Blocks (4096) — section is already YZX order: (y<<8)|(z<<4)|x.
-        mcp_compound_tag_set(sec, "Blocks",
-                             mcp_byte_array_tag_new_named("Blocks", s->blocks, 4096));
+        cursestone::nbt::set(sec, "Blocks", new cursestone::nbt::ByteArrayTag("Blocks", s->blocks, 4096));
 
         // Data (2048)
         if (s->data) {
-            mcp_compound_tag_set(sec, "Data", mcp_byte_array_tag_new_named("Data", s->data, 2048));
+            cursestone::nbt::set(sec, "Data", new cursestone::nbt::ByteArrayTag("Data", s->data, 2048));
         } else {
             uint8_t* zero = (uint8_t*)calloc(2048, 1);
-            mcp_compound_tag_set(sec, "Data", mcp_byte_array_tag_new_named("Data", zero, 2048));
+            cursestone::nbt::set(sec, "Data", new cursestone::nbt::ByteArrayTag("Data", zero, 2048));
             free(zero);
         }
 
         // BlockLight (2048)
         if (s->block_light) {
-            mcp_compound_tag_set(sec, "BlockLight",
-                                 mcp_byte_array_tag_new_named("BlockLight", s->block_light, 2048));
+            cursestone::nbt::set(sec, "BlockLight", new cursestone::nbt::ByteArrayTag("BlockLight", s->block_light, 2048));
         } else {
             uint8_t* zero = (uint8_t*)calloc(2048, 1);
-            mcp_compound_tag_set(sec, "BlockLight",
-                                 mcp_byte_array_tag_new_named("BlockLight", zero, 2048));
+            cursestone::nbt::set(sec, "BlockLight", new cursestone::nbt::ByteArrayTag("BlockLight", zero, 2048));
             free(zero);
         }
 
         // SkyLight (2048) — default to 0xFF if not present.
         if (s->sky_light) {
-            mcp_compound_tag_set(sec, "SkyLight",
-                                 mcp_byte_array_tag_new_named("SkyLight", s->sky_light, 2048));
+            cursestone::nbt::set(sec, "SkyLight", new cursestone::nbt::ByteArrayTag("SkyLight", s->sky_light, 2048));
         } else {
             uint8_t* full = (uint8_t*)malloc(2048);
             if (full)
                 memset(full, 0xFF, 2048);
-            mcp_compound_tag_set(
-                sec, "SkyLight",
-                mcp_byte_array_tag_new_named("SkyLight", full ? full : NULL, 2048));
+            cursestone::nbt::set(sec, "SkyLight", new cursestone::nbt::ByteArrayTag("SkyLight", full ? full : NULL, 2048));
             free(full);
         }
 
-        mcp_list_tag_append(sections, sec);
+        cursestone::nbt::append(sections, sec);
     }
-    mcp_compound_tag_set(level, "Sections", sections);
+    cursestone::nbt::set(level, "Sections", sections);
 
     // BiomeColors: 256 ints (one per column). For MCPE compatibility we
     // store biome byte at the lowest byte of each int.
@@ -163,24 +154,21 @@ uint8_t* anvil_chunk_encode(const mcp_chunk_t* chunk, size_t* out_len) {
             for (int i = 0; i < 256; ++i) {
                 bc[i] = (int32_t)chunk->biomes[i];
             }
-            mcp_compound_tag_set(level, "BiomeColors",
-                                 mcp_int_array_tag_new_named("BiomeColors", bc, 256));
+            cursestone::nbt::set(level, "BiomeColors", new cursestone::nbt::IntArrayTag("BiomeColors", bc, 256));
             free(bc);
         }
     } else {
         int32_t* bc = (int32_t*)calloc(256, sizeof(int32_t));
-        mcp_compound_tag_set(level, "BiomeColors",
-                             mcp_int_array_tag_new_named("BiomeColors", bc, 256));
+        cursestone::nbt::set(level, "BiomeColors", new cursestone::nbt::IntArrayTag("BiomeColors", bc, 256));
         free(bc);
     }
 
     // HeightMap: 256 ints.
     if (chunk->height_map) {
-        mcp_compound_tag_set(level, "HeightMap",
-                             mcp_int_array_tag_new_named("HeightMap", chunk->height_map, 256));
+        cursestone::nbt::set(level, "HeightMap", new cursestone::nbt::IntArrayTag("HeightMap", chunk->height_map, 256));
     } else {
         int32_t* hm = (int32_t*)calloc(256, sizeof(int32_t));
-        mcp_compound_tag_set(level, "HeightMap", mcp_int_array_tag_new_named("HeightMap", hm, 256));
+        cursestone::nbt::set(level, "HeightMap", new cursestone::nbt::IntArrayTag("HeightMap", hm, 256));
         free(hm);
     }
 
@@ -188,12 +176,11 @@ uint8_t* anvil_chunk_encode(const mcp_chunk_t* chunk, size_t* out_len) {
     // store a zero-length int array which decoders treat as "no extras").
     {
         int32_t zero = 0;
-        mcp_compound_tag_set(level, "ExtraData",
-                             mcp_int_array_tag_new_named("ExtraData", &zero, 0));
+        cursestone::nbt::set(level, "ExtraData", new cursestone::nbt::IntArrayTag("ExtraData", &zero, 0));
     }
 
     // Entities list.
-    mcp_tag_t* entities_list = mcp_list_tag_new_named("Entities", MCP_TAG_COMPOUND);
+    cursestone::nbt::Tag* entities_list = new cursestone::nbt::ListTag("Entities", cursestone::nbt::TAG_COMPOUND);
     for (size_t i = 0; i < chunk->entity_count; ++i) {
         if (!chunk->entities || !chunk->entity_lens)
             continue;
@@ -202,16 +189,16 @@ uint8_t* anvil_chunk_encode(const mcp_chunk_t* chunk, size_t* out_len) {
         if (!blob || blen == 0)
             continue;
         // Stored blobs are little-endian (legacy). Re-serialize as big-endian.
-        mcp_tag_t* t = mcp_nbt_read_bytes(blob, blen, /*little_endian=*/true);
+        cursestone::nbt::Tag* t = cursestone::nbt::read(blob, blen, /*little_endian=*/true);
         if (t) {
-            mcp_tag_set_name_cstr(t, "");
-            mcp_list_tag_append(entities_list, t);
+            cursestone::nbt::set_name(t, "");
+            cursestone::nbt::append(entities_list, t);
         }
     }
-    mcp_compound_tag_set(level, "Entities", entities_list);
+    cursestone::nbt::set(level, "Entities", entities_list);
 
     // TileEntities list.
-    mcp_tag_t* tiles_list = mcp_list_tag_new_named("TileEntities", MCP_TAG_COMPOUND);
+    cursestone::nbt::Tag* tiles_list = new cursestone::nbt::ListTag("TileEntities", cursestone::nbt::TAG_COMPOUND);
     for (size_t i = 0; i < chunk->tile_entity_count; ++i) {
         if (!chunk->tile_entities || !chunk->tile_entity_lens)
             continue;
@@ -219,24 +206,25 @@ uint8_t* anvil_chunk_encode(const mcp_chunk_t* chunk, size_t* out_len) {
         size_t blen = chunk->tile_entity_lens[i];
         if (!blob || blen == 0)
             continue;
-        mcp_tag_t* t = mcp_nbt_read_bytes(blob, blen, /*little_endian=*/true);
+        cursestone::nbt::Tag* t = cursestone::nbt::read(blob, blen, /*little_endian=*/true);
         if (t) {
-            mcp_tag_set_name_cstr(t, "");
-            mcp_list_tag_append(tiles_list, t);
+            cursestone::nbt::set_name(t, "");
+            cursestone::nbt::append(tiles_list, t);
         }
     }
-    mcp_compound_tag_set(level, "TileEntities", tiles_list);
+    cursestone::nbt::set(level, "TileEntities", tiles_list);
 
     // Terrain flags.
-    mcp_compound_tag_set_byte(level, "TerrainGenerated", chunk->terrain_populated ? 1 : 0);
-    mcp_compound_tag_set_byte(level, "TerrainPopulated", chunk->terrain_populated ? 1 : 0);
-    mcp_compound_tag_set_byte(level, "LightPopulated", chunk->light_populated ? 1 : 0);
+    cursestone::nbt::set_byte(level, "TerrainGenerated", chunk->terrain_populated ? 1 : 0);
+    cursestone::nbt::set_byte(level, "TerrainPopulated", chunk->terrain_populated ? 1 : 0);
+    cursestone::nbt::set_byte(level, "LightPopulated", chunk->light_populated ? 1 : 0);
 
-    mcp_compound_tag_set(root, "Level", level);
+    cursestone::nbt::set(root, "Level", level);
 
     // Serialize big-endian.
-    uint8_t* buf = mcp_nbt_write_bytes(root, /*little_endian=*/false, out_len);
-    mcp_tag_destroy(root);
+    std::vector<uint8_t> buf;
+    cursestone::nbt::write(root, /*little_endian=*/false, buf);
+    delete root;
     return buf;
 }
 
@@ -247,41 +235,41 @@ mcp_chunk_t* anvil_chunk_decode(const uint8_t* data, size_t len) {
     if (!data || len == 0)
         return NULL;
 
-    mcp_tag_t* root = mcp_nbt_read_bytes(data, len, /*little_endian=*/false);
+    cursestone::nbt::Tag* root = cursestone::nbt::read(data, len, /*little_endian=*/false);
     if (!root)
         return NULL;
-    if (mcp_tag_get_type(root) != MCP_TAG_COMPOUND) {
-        mcp_tag_destroy(root);
+    if (cursestone::nbt::type_of(root) != cursestone::nbt::TAG_COMPOUND) {
+        delete root;
         return NULL;
     }
 
-    const mcp_tag_t* level = get_compound(root, "Level");
+    const cursestone::nbt::Tag* level = codec_get_compound(root, "Level");
     if (!level) {
-        mcp_tag_destroy(root);
+        delete root;
         return NULL;
     }
 
-    int32_t cx = mcp_compound_tag_get_int(level, "xPos", 0);
-    int32_t cz = mcp_compound_tag_get_int(level, "zPos", 0);
+    int32_t cx = cursestone::nbt::get_int(level, "xPos", 0);
+    int32_t cz = cursestone::nbt::get_int(level, "zPos", 0);
     mcp_chunk_t* chunk = mcp_chunk_new(cx, cz);
     if (!chunk) {
-        mcp_tag_destroy(root);
+        delete root;
         return NULL;
     }
 
-    chunk->last_update = mcp_compound_tag_get_long(level, "LastUpdate", 0);
-    chunk->terrain_populated = mcp_compound_tag_get_byte(level, "TerrainPopulated", 0) != 0 ||
-                               mcp_compound_tag_get_byte(level, "TerrainGenerated", 0) != 0;
-    chunk->light_populated = mcp_compound_tag_get_byte(level, "LightPopulated", 0) != 0;
+    chunk->last_update = cursestone::nbt::get_long(level, "LastUpdate", 0);
+    chunk->terrain_populated = cursestone::nbt::get_byte(level, "TerrainPopulated", 0) != 0 ||
+                               cursestone::nbt::get_byte(level, "TerrainGenerated", 0) != 0;
+    chunk->light_populated = cursestone::nbt::get_byte(level, "LightPopulated", 0) != 0;
 
     // Sections list.
-    const mcp_tag_t* sections = mcp_compound_tag_get(level, "Sections");
-    if (sections && mcp_tag_get_type(sections) == MCP_TAG_LIST) {
-        for (size_t i = 0, n = mcp_list_tag_size(sections); i < n; ++i) {
-            const mcp_tag_t* sec = mcp_list_tag_get(sections, i);
-            if (!sec || mcp_tag_get_type(sec) != MCP_TAG_COMPOUND)
+    const cursestone::nbt::Tag* sections = cursestone::nbt::get(level, "Sections");
+    if (sections && cursestone::nbt::type_of(sections) == cursestone::nbt::TAG_LIST) {
+        for (size_t i = 0, n = cursestone::nbt::size(sections); i < n; ++i) {
+            const cursestone::nbt::Tag* sec = cursestone::nbt::at(sections, i);
+            if (!sec || cursestone::nbt::type_of(sec) != cursestone::nbt::TAG_COMPOUND)
                 continue;
-            int8_t y_idx = mcp_compound_tag_get_byte(sec, "Y", -1);
+            int8_t y_idx = cursestone::nbt::get_byte(sec, "Y", -1);
             if (y_idx < 0 || y_idx >= ANVIL_SECTIONS)
                 continue;
             mcp_chunk_section_t* s = mcp_chunk_get_or_alloc_section(chunk, (uint8_t)y_idx);
@@ -356,38 +344,36 @@ mcp_chunk_t* anvil_chunk_decode(const uint8_t* data, size_t len) {
     }
 
     // Tile entities.
-    const mcp_tag_t* tiles_list = mcp_compound_tag_get(level, "TileEntities");
-    if (tiles_list && mcp_tag_get_type(tiles_list) == MCP_TAG_LIST) {
-        for (size_t i = 0, n = mcp_list_tag_size(tiles_list); i < n; ++i) {
-            const mcp_tag_t* t = mcp_list_tag_get(tiles_list, i);
+    const cursestone::nbt::Tag* tiles_list = cursestone::nbt::get(level, "TileEntities");
+    if (tiles_list && cursestone::nbt::type_of(tiles_list) == cursestone::nbt::TAG_LIST) {
+        for (size_t i = 0, n = cursestone::nbt::size(tiles_list); i < n; ++i) {
+            const cursestone::nbt::Tag* t = cursestone::nbt::at(tiles_list, i);
             if (!t)
                 continue;
-            size_t blen = 0;
-            uint8_t* bbuf = mcp_nbt_write_bytes(t, /*little_endian=*/true, &blen);
-            if (bbuf && blen > 0) {
-                mcp_chunk_add_tile_entity(chunk, bbuf, blen);
+            std::vector<uint8_t> bbuf;
+            cursestone::nbt::write(t, /*little_endian=*/true, bbuf);
+            if (!bbuf.empty()) {
+                mcp_chunk_add_tile_entity(chunk, bbuf.data(), bbuf.size());
             }
-            free(bbuf);
         }
     }
 
     // Entities.
-    const mcp_tag_t* entities_list = mcp_compound_tag_get(level, "Entities");
-    if (entities_list && mcp_tag_get_type(entities_list) == MCP_TAG_LIST) {
-        for (size_t i = 0, n = mcp_list_tag_size(entities_list); i < n; ++i) {
-            const mcp_tag_t* t = mcp_list_tag_get(entities_list, i);
+    const cursestone::nbt::Tag* entities_list = cursestone::nbt::get(level, "Entities");
+    if (entities_list && cursestone::nbt::type_of(entities_list) == cursestone::nbt::TAG_LIST) {
+        for (size_t i = 0, n = cursestone::nbt::size(entities_list); i < n; ++i) {
+            const cursestone::nbt::Tag* t = cursestone::nbt::at(entities_list, i);
             if (!t)
                 continue;
-            size_t blen = 0;
-            uint8_t* bbuf = mcp_nbt_write_bytes(t, /*little_endian=*/true, &blen);
-            if (bbuf && blen > 0) {
-                mcp_chunk_add_entity(chunk, bbuf, blen);
+            std::vector<uint8_t> bbuf;
+            cursestone::nbt::write(t, /*little_endian=*/true, bbuf);
+            if (!bbuf.empty()) {
+                mcp_chunk_add_entity(chunk, bbuf.data(), bbuf.size());
             }
-            free(bbuf);
         }
     }
 
-    mcp_tag_destroy(root);
+    delete root;
     chunk->dirty = false;
     return chunk;
 }

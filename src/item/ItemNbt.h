@@ -77,18 +77,18 @@ constexpr const char* kNbtTag = "tag";
 // "ench" key removed rather than written as an empty list, so ordinary
 // items keep the exact byte layout they had before this module existed.
 // No-op if `entry` is not a CompoundTag.
-void itemStackToNbt(const ItemStack& stack, mcp_tag_t* entry);
+void itemStackToNbt(const ItemStack& stack, cursestone::nbt::Tag* entry);
 
 // Read a container entry back. Returns false when `entry` is not a
 // compound or holds no item (id == 0 or Count <= 0) — in that case `out` is
 // left empty. Otherwise id / meta / count / enchantments all come back.
-bool itemStackFromNbt(const mcp_tag_t* entry, ItemStack& out);
+bool itemStackFromNbt(const cursestone::nbt::Tag* entry, ItemStack& out);
 
 // Just the "ench" list of `entry`, decoded into `out` (which is NOT
 // cleared first: entries accumulate, which is what EnchantmentList::add
 // is for). Exposed for callers that already have the item fields, and for
 // the regression test.
-void enchantmentsFromNbt(const mcp_tag_t* entry, enchantment::EnchantmentList& out);
+void enchantmentsFromNbt(const cursestone::nbt::Tag* entry, enchantment::EnchantmentList& out);
 
 // Builds the little-endian network NBT compound that gives an item a
 // custom visible name on 0.15.10 clients: {display:{Name:"..."}}. The

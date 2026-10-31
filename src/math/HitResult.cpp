@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// HitResult.c — the ray/segment vs AABB clip.
+// HitResult.cpp — the ray/segment vs AABB clip.
 #include "HitResult.h"
 
 // AABB::clip() — ported from net.minecraft.world.phys.AABB::clip (2013

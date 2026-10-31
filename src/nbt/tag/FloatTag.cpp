@@ -21,33 +21,17 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// FloatTag.cpp — NBT MCP_TAG_FLOAT value.
+// FloatTag.cpp — NBT TAG_FLOAT payload.
 #include "FloatTag.h"
-#include "TagDefs.h"
 
-mcp_tag_t* mcp_float_tag_new(float v) {
-    try {
-        return new mcp_float_tag(v);
-    } catch (...) {
-        return NULL;
-    }
-}
+namespace cursestone::nbt {
 
-mcp_tag_t* mcp_float_tag_new_named(const char* name, float v) {
-    try {
-        auto* t = new mcp_float_tag(v);
-        if (name)
-            t->name = name;
-        return t;
-    } catch (...) {
-        return NULL;
-    }
-}
-
-void mcp_float_tag::write_payload(mcp_bstream_t* s, bool le) const {
+void FloatTag::write_payload(mcp_bstream_t* s, bool le) const {
     (void)le;
     if (le)
         mcp_bstream_write_f32_le(s, value);
     else
         mcp_bstream_write_f32_be(s, value);
 }
+
+} // namespace cursestone::nbt

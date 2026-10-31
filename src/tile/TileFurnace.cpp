@@ -285,29 +285,29 @@ void TileFurnace::sendProgressToViewers() {
 // Persistencia — formato legacy de Nukkit {BurnDuration, BurnTicks,
 // CookTicks, Items:[{Slot,id,Damage,Count}]}.
 // ============================================================
-void TileFurnace::writeNBT(mcp_tag_t* tag) const {
+void TileFurnace::writeNBT(cursestone::nbt::Tag* tag) const {
     if (!tag)
         return;
     Tile::writeNBT(tag); // id/x/y/z
-    mcp_compound_tag_set_short(tag, "BurnDuration", static_cast<int16_t>(max_burn_time_));
-    mcp_compound_tag_set_short(tag, "BurnTicks", static_cast<int16_t>(burn_time_));
-    mcp_compound_tag_set_short(tag, "CookTicks", static_cast<int16_t>(cook_time_));
-    utils::TagGuard items(mcp_list_tag_new_named("Items", MCP_TAG_COMPOUND));
+    cursestone::nbt::set_short(tag, "BurnDuration", static_cast<int16_t>(max_burn_time_));
+    cursestone::nbt::set_short(tag, "BurnTicks", static_cast<int16_t>(burn_time_));
+    cursestone::nbt::set_short(tag, "CookTicks", static_cast<int16_t>(cook_time_));
+    utils::TagGuard items(new cursestone::nbt::ListTag("Items", cursestone::nbt::TAG_COMPOUND));
     if (!items)
         return;
     for (int slot = 0; slot < 3; ++slot) {
         auto stack = inv_->getItem(slot);
         if (stack.isEmpty())
             continue;
-        utils::TagGuard entry(mcp_compound_tag_new());
+        utils::TagGuard entry(new cursestone::nbt::CompoundTag());
         if (!entry)
             continue;
-        mcp_compound_tag_set_byte(entry.get(), "Slot", static_cast<int8_t>(slot));
+        cursestone::nbt::set_byte(entry.get(), "Slot", static_cast<int8_t>(slot));
         item::itemStackToNbt(stack, entry.get());
-        if (mcp_list_tag_append(items.get(), entry.get()) == 0)
+        if (!cursestone::nbt::append(items.get(), entry.get()))
             entry.release();
     }
-    if (mcp_compound_tag_set(tag, "Items", items.get()) == 0)
+    if (!cursestone::nbt::set(tag, "Items", items.get()))
         items.release();
 }
 // ============================================================
@@ -322,31 +322,31 @@ void TileFurnace::writeNBT(mcp_tag_t* tag) const {
 // reference does not send it either; slot contents travel via
 // ContainerSetContent.
 // ============================================================
-void TileFurnace::writeSpawnNBT(mcp_tag_t* tag) const {
+void TileFurnace::writeSpawnNBT(cursestone::nbt::Tag* tag) const {
     if (!tag)
         return;
     Tile::writeNBT(tag); // id/x/y/z
-    mcp_compound_tag_set_short(tag, "BurnTime", static_cast<int16_t>(burn_time_));
-    mcp_compound_tag_set_short(tag, "CookTime", static_cast<int16_t>(cook_time_));
+    cursestone::nbt::set_short(tag, "BurnTime", static_cast<int16_t>(burn_time_));
+    cursestone::nbt::set_short(tag, "CookTime", static_cast<int16_t>(cook_time_));
     if (!getName().empty())
-        mcp_compound_tag_set_string(tag, "CustomName", getName().c_str());
+        cursestone::nbt::set_string(tag, "CustomName", getName().c_str());
 }
-void TileFurnace::readNBT(const mcp_tag_t* tag) {
+void TileFurnace::readNBT(const cursestone::nbt::Tag* tag) {
     if (!tag)
         return;
     Tile::readNBT(tag);
-    burn_time_ = mcp_compound_tag_get_short(tag, "BurnTicks", 0);
-    max_burn_time_ = mcp_compound_tag_get_short(tag, "BurnDuration", 0);
-    cook_time_ = mcp_compound_tag_get_short(tag, "CookTicks", 0);
-    const mcp_tag_t* items = mcp_compound_tag_get(tag, "Items");
-    if (!items || mcp_tag_get_type(items) != MCP_TAG_LIST)
+    burn_time_ = cursestone::nbt::get_short(tag, "BurnTicks", 0);
+    max_burn_time_ = cursestone::nbt::get_short(tag, "BurnDuration", 0);
+    cook_time_ = cursestone::nbt::get_short(tag, "CookTicks", 0);
+    const cursestone::nbt::Tag* items = cursestone::nbt::get(tag, "Items");
+    if (!items || cursestone::nbt::type_of(items) != cursestone::nbt::TAG_LIST)
         return;
-    size_t count = mcp_list_tag_size(items);
+    size_t count = cursestone::nbt::size(items);
     for (size_t i = 0; i < count; ++i) {
-        const mcp_tag_t* entry = mcp_list_tag_get(items, i);
-        if (!entry || mcp_tag_get_type(entry) != MCP_TAG_COMPOUND)
+        const cursestone::nbt::Tag* entry = cursestone::nbt::at(items, i);
+        if (!entry || cursestone::nbt::type_of(entry) != cursestone::nbt::TAG_COMPOUND)
             continue;
-        int slot = mcp_compound_tag_get_byte(entry, "Slot", -1);
+        int slot = cursestone::nbt::get_byte(entry, "Slot", -1);
         if (slot < 0 || slot >= 3)
             continue;
         // id / Count / Damage + enchantments, shared with every other

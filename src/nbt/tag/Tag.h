@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Tag — base NBT tag interface (opaque handle + free functions).
+// Tag — base NBT tag class.
 //
 // NBT (Named Binary Tag) is Minecraft's serialization format. Used for:
 //   - Anvil chunk data, level.dat, and player .dat files
@@ -32,46 +32,78 @@
 //   - Java/NBT big-endian (Anvil chunks, level.dat, player .dat)
 //   - MCPE little-endian (network packets, item extra data)
 //
-// The tag tree is implemented in C++ (see tag/TagDefs.h) with RAII
-// payloads; this header only exposes the type ids and the owning
-// mcp_tag_t handle. Every tag returned by an mcp_*_tag_new function is
-// owned by the caller and must be released with mcp_tag_destroy().
+// The tree is a plain owning-pointer hierarchy: every tag returned by
+// `new` is owned by the caller (or by the compound/list that stored it)
+// and is released with `delete`, which recursively destroys children.
 #pragma once
 
-#include <stddef.h>
-#include <stdint.h>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <string>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include "../../utils/BinaryStream.h"
 
-typedef enum mcp_tag_type {
-    MCP_TAG_END = 0,
-    MCP_TAG_BYTE = 1,
-    MCP_TAG_SHORT = 2,
-    MCP_TAG_INT = 3,
-    MCP_TAG_LONG = 4,
-    MCP_TAG_FLOAT = 5,
-    MCP_TAG_DOUBLE = 6,
-    MCP_TAG_BYTE_ARRAY = 7,
-    MCP_TAG_STRING = 8,
-    MCP_TAG_LIST = 9,
-    MCP_TAG_COMPOUND = 10,
-    MCP_TAG_INT_ARRAY = 11,
-} mcp_tag_type_t;
+namespace cursestone::nbt {
 
-typedef struct mcp_tag mcp_tag_t;
+// Tag type ids. The numeric values are the wire format.
+enum TagType {
+    TAG_END = 0,
+    TAG_BYTE = 1,
+    TAG_SHORT = 2,
+    TAG_INT = 3,
+    TAG_LONG = 4,
+    TAG_FLOAT = 5,
+    TAG_DOUBLE = 6,
+    TAG_BYTE_ARRAY = 7,
+    TAG_STRING = 8,
+    TAG_LIST = 9,
+    TAG_COMPOUND = 10,
+    TAG_INT_ARRAY = 11,
+};
 
-// Free a tag tree (recursively destroys children).
-void mcp_tag_destroy(mcp_tag_t* tag);
+class Tag {
+  public:
+    explicit Tag(TagType t) : type(t) {}
+    virtual ~Tag() = default;
+    Tag(const Tag&) = delete;
+    Tag& operator=(const Tag&) = delete;
 
-// Get the type of a tag (MCP_TAG_END for NULL).
-mcp_tag_type_t mcp_tag_get_type(const mcp_tag_t* tag);
+    const TagType type;
+    std::string name; // empty = unnamed (list elements)
 
-// Set the name. Copies the string (caller keeps ownership of `name`).
-void mcp_tag_set_name(mcp_tag_t* tag, const char* name, size_t len);
-void mcp_tag_set_name_cstr(mcp_tag_t* tag, const char* name);
+    // Serialize this tag's payload (NOT the leading type byte or name).
+    virtual void write_payload(mcp_bstream_t* s, bool le) const {
+        (void)s;
+        (void)le;
+    }
+};
 
-#ifdef __cplusplus
-} // extern "C"
-#endif
+// Type of `t`, TAG_END for nullptr (so callers can chain lookups without
+// a null check first).
+inline TagType type_of(const Tag* t) {
+    return t ? t->type : TAG_END;
+}
+
+// Assign the name. A null pointer or zero length clears it; on
+// allocation failure the previous name is kept.
+inline void set_name(Tag* t, const char* name, size_t len) {
+    if (!t)
+        return;
+    if (!name || len == 0) {
+        t->name.clear();
+        return;
+    }
+    try {
+        t->name.assign(name, len);
+    } catch (...) {
+        // Out of memory: keep the previous name.
+    }
+}
+
+// Convenience overload for NUL-terminated names.
+inline void set_name(Tag* t, const char* name) {
+    set_name(t, name, name ? std::strlen(name) : 0u);
+}
+
+} // namespace cursestone::nbt

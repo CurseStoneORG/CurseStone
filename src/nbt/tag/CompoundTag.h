@@ -26,55 +26,73 @@
 // is a CompoundTag.
 #pragma once
 
-#include <stddef.h>
-#include <stdbool.h>
-#include <stdint.h>
+#include <string>
+#include <vector>
 
 #include "Tag.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+namespace cursestone::nbt {
 
-mcp_tag_t* mcp_compound_tag_new(void);
-mcp_tag_t* mcp_compound_tag_new_named(const char* name);
+struct CompoundEntry {
+    CompoundEntry(std::string n, Tag* t) : name(std::move(n)), tag(t) {}
+    std::string name;
+    Tag* tag; // owned
+};
 
-// Insert or replace a child. The compound takes ownership of `child` on
-// success (returns 0); on failure the caller keeps ownership.
-int mcp_compound_tag_set(mcp_tag_t* self, const char* name, mcp_tag_t* child);
+class CompoundTag : public Tag {
+  public:
+    explicit CompoundTag(const char* name = nullptr) : Tag(TAG_COMPOUND) {
+        if (name)
+            this->name = name;
+    }
+    ~CompoundTag() override;
 
-// Convenience wrappers for primitives.
-int mcp_compound_tag_set_byte(mcp_tag_t* self, const char* name, int8_t v);
-int mcp_compound_tag_set_short(mcp_tag_t* self, const char* name, int16_t v);
-int mcp_compound_tag_set_int(mcp_tag_t* self, const char* name, int32_t v);
-int mcp_compound_tag_set_long(mcp_tag_t* self, const char* name, int64_t v);
-int mcp_compound_tag_set_float(mcp_tag_t* self, const char* name, float v);
-int mcp_compound_tag_set_double(mcp_tag_t* self, const char* name, double v);
-int mcp_compound_tag_set_string(mcp_tag_t* self, const char* name, const char* v);
+    std::vector<CompoundEntry> entries; // insertion order preserved (wire format)
 
-// Lookup. Returns NULL if missing.
-const mcp_tag_t* mcp_compound_tag_get(const mcp_tag_t* self, const char* name);
+    void write_payload(mcp_bstream_t* s, bool le) const override;
+};
+
+// The compound/list operations below all tolerate a missing or
+// wrongly-typed `c` so callers can chain lookups without null checks.
+
+// Insert or replace a child. The compound takes ownership of `child`
+// on success; on failure the caller keeps ownership.
+bool set(Tag* c, const char* name, Tag* child);
+
+// Convenience setters for primitives.
+bool set_byte(Tag* c, const char* name, int8_t v);
+bool set_short(Tag* c, const char* name, int16_t v);
+bool set_int(Tag* c, const char* name, int32_t v);
+bool set_long(Tag* c, const char* name, int64_t v);
+bool set_float(Tag* c, const char* name, float v);
+bool set_double(Tag* c, const char* name, double v);
+bool set_string(Tag* c, const char* name, const char* v);
+
+// Lookup. Returns nullptr if missing.
+const Tag* get(const Tag* c, const char* name);
 
 // Convenience getters (default if missing or wrong type).
-int8_t mcp_compound_tag_get_byte(const mcp_tag_t* self, const char* name, int8_t def);
-int16_t mcp_compound_tag_get_short(const mcp_tag_t* self, const char* name, int16_t def);
-int32_t mcp_compound_tag_get_int(const mcp_tag_t* self, const char* name, int32_t def);
-int64_t mcp_compound_tag_get_long(const mcp_tag_t* self, const char* name, int64_t def);
-float mcp_compound_tag_get_float(const mcp_tag_t* self, const char* name, float def);
-double mcp_compound_tag_get_double(const mcp_tag_t* self, const char* name, double def);
-const char* mcp_compound_tag_get_string(const mcp_tag_t* self, const char* name, const char* def);
+int8_t get_byte(const Tag* c, const char* name, int8_t def);
+int16_t get_short(const Tag* c, const char* name, int16_t def);
+int32_t get_int(const Tag* c, const char* name, int32_t def);
+int64_t get_long(const Tag* c, const char* name, int64_t def);
+float get_float(const Tag* c, const char* name, float def);
+double get_double(const Tag* c, const char* name, double def);
 
-// Returns the named child as a CompoundTag (NULL if not a compound).
-const mcp_tag_t* mcp_compound_tag_get_compound(const mcp_tag_t* self, const char* name);
+// Never returns nullptr: an empty stored value wins over the default,
+// and almost every caller feeds the result straight into a std::string
+// (std::string(nullptr) is undefined behaviour).
+const char* get_string(const Tag* c, const char* name, const char* def);
 
-bool mcp_compound_tag_contains(const mcp_tag_t* self, const char* name);
+// Returns the named child when it is itself a compound (nullptr otherwise).
+const Tag* get_compound(const Tag* c, const char* name);
+
+bool contains(const Tag* c, const char* name);
 
 // Remove `name` and destroy its tag. Returns true when something was
 // actually removed (so a caller can use it as a conditional rewrite
-// without knowing whether the key was there). The order of the remaining
-// entries is preserved.
-bool mcp_compound_tag_remove(mcp_tag_t* self, const char* name);
+// without knowing whether the key was there). The order of the
+// remaining entries is preserved.
+bool remove(Tag* c, const char* name);
 
-#ifdef __cplusplus
-} // extern "C"
-#endif
+} // namespace cursestone::nbt
