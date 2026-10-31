@@ -100,18 +100,32 @@ void Player::sendPacket(std::shared_ptr<network::protocol::DataPacket> p, bool o
         return;
     }
 
-    // Record the outgoing packet in Workbench.
-    WorkbenchManager::get().onPacketOut(cfg_.username, p->pid(), 0);
-
-    // Serialize the packet as [1-byte ID][body].
+    // Serialize the packet as [1-byte ID][body], then hand the bytes to the
+    // shared queue path below.
     std::vector<uint8_t> body;
     p->writePacket(body);
     if (body.empty())
         return;
+    sendEncodedBody(std::move(body), p->pid(), ordered);
+}
+
+// Broadcast fast path: the caller encodes once (e.g. one chat TextPacket)
+// and passes a copy of the encoded [pid][body] bytes per player, so the
+// tick thread stops re-serializing the same payload for every recipient.
+void Player::sendEncodedBody(std::vector<uint8_t> body, uint8_t pid, bool ordered) {
+    if (body.empty())
+        return;
+    if (!connected_.load(std::memory_order_relaxed))
+        return;
+    if (!adv_iface_)
+        return;
+
+    // Record the outgoing packet in Workbench.
+    WorkbenchManager::get().onPacketOut(cfg_.username, pid, 0);
 
     // Record recent outgoing packets for diagnostics.
     diagnostics::Diagnostics::get().recordPacket(
-        /*out=*/true, cfg_.username, p->pid(), body.size());
+        /*out=*/true, cfg_.username, pid, body.size());
 
     bool flush_now = false;
     {
