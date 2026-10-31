@@ -311,12 +311,17 @@ void VgenSource::prepareHeights(BlockVolume& blocks, int xOffs, int zOffs, Threa
 
 void VgenSource::buildSurfaces(ThreadData& td, BlockVolume& blocks,
                                LevelChunk& levelChunk, const ChunkPos& chunkPos) {
-        // Vanilla widens the chunk position to world block coordinates
-        // (Vec3 chunkBlockPos(chunkPos) goes through BlockPos, which scales
-        // by CHUNK_WIDTH); the depth noise must be sampled in block space
-        // or every chunk reuses an overlapping noise window.
-        vgen::Vec3 chunkBlockPos((float)(chunkPos.x * Gen::CHUNK_WIDTH), 0.f,
-                                 (float)(chunkPos.z * Gen::CHUNK_WIDTH));
+        // Vanilla reaches the noise origin through the implicit
+        // BlockPos(const ChunkPos&) conversion, which scales by the world
+        // chunk width of 16 blocks (LevelConstants.h). The local
+        // Gen::CHUNK_WIDTH of 4 only widens the prepareHeights interpolation
+        // lattice and must not leak here: sampling at *4 slid the surface
+        // window 12 blocks into every neighbor, so each surface patch
+        // contour repeated chunk after chunk, sliding and shrinking at the
+        // borders. Sample at the chunk's world-block origin so the 16x16
+        // windows tile the world with no overlap, like vanilla.
+        vgen::Vec3 chunkBlockPos((float)(chunkPos.x * LevelChunk::kWidth), 0.f,
+                                 (float)(chunkPos.z * LevelChunk::kWidth));
         surfaceNoise->getRegion(td.depthBuffer, vgen::Vec2(chunkBlockPos.x, chunkBlockPos.z), 16, 16,
                                 vgen::Vec2(1.f / 8, 1.f / 8), 1.0f);
 
