@@ -36,6 +36,7 @@
 #include "block/Block.h"
 #include "block/LiquidFlow.h"
 #include "tile/TileSign.h"
+#include "tile/TileChest.h"
 #include "inventory/PlayerInventory.h"
 #include "event/EventManager.h"
 #include "event/block/BlockBreakEvent.h"
@@ -274,9 +275,51 @@ void Player::handleBlockBreak(int x, int y, int z) {
     mcp_chunk_recalculate_height_map(ch);
     ch->dirty = true;
 
-    // Remove associated block entities to prevent stale data.
-    if (blockId == block::CHEST || blockId == block::FURNACE || blockId == block::BURNING_FURNACE ||
-        blockId == block::SIGN_POST || blockId == block::WALL_SIGN) {
+    const bool creativeBreak = (cfg_.gamemode & 1) != 0;
+
+    // Remove associated block entities to prevent stale data. A broken
+    // chest first releases its vanilla pairing and hands out its OWN 27
+    // slots as item entities — the paired half keeps its items (no
+    // duplication), and every open GUI on the pair is closed.
+    if (blockId == block::CHEST) {
+        auto chestTile = std::dynamic_pointer_cast<tile::TileChest>(lvl->getTile(x, y, z));
+        if (chestTile) {
+            auto chestPair = chestTile->pairTile(lvl);
+            if (srv_) {
+                for (auto& viewer : srv_->playersSnapshot()) {
+                    if (!viewer)
+                        continue;
+                    if (viewer->open_chest_ == chestTile ||
+                        (chestPair && viewer->open_chest_ == chestPair)) {
+                        viewer->closeOpenChest();
+                    }
+                }
+            }
+            if (!creativeBreak) {
+                // Vanilla ChestBlock::onRemove — scatter the broken half's
+                // slots as item entities at the block position.
+                auto contents = chestTile->inventory()->getContents();
+                for (const auto& entry : contents) {
+                    const auto& stack = entry.second;
+                    if (stack.isEmpty())
+                        continue;
+                    dropItem(x + 0.5, y + 0.5, z + 0.5, stack.id, (uint8_t)stack.count,
+                             stack.meta, 0.0, 0.2, 0.0, 10, stack.nbt);
+                }
+            }
+            if (chestPair) {
+                chestPair->clearPair();
+                // Respawn the surviving half's NBT WITHOUT the pair tags
+                // so every client un-renders the double chest.
+                const auto& pp = chestPair->position();
+                sendBlockEntityData((int32_t)pp.x, (int32_t)pp.y, (int32_t)pp.z, *chestPair,
+                                    nullptr);
+            }
+            chestTile->clearPair();
+            lvl->removeTile(x, y, z);
+        }
+    } else if (blockId == block::FURNACE || blockId == block::BURNING_FURNACE ||
+               blockId == block::SIGN_POST || blockId == block::WALL_SIGN) {
         lvl->removeTile(x, y, z);
     }
 
@@ -517,6 +560,55 @@ uint8_t computeVanillaPlacementMeta(uint8_t blockId, uint8_t baseData, uint8_t f
     default:
         return baseData;
     }
+}
+
+// Vanilla double-chest pairing at placement (BlockChest.onBlockAdded →
+// checkForSurroundingChests): the chest just placed joins the first
+// adjacent single chest it can legally pair with. A legal pair needs the
+// two blocks side by side PERPENDICULAR to their facing — two chests
+// stacked front-to-back stay separate singles, exactly like vanilla.
+// When both facings are legal but differ, the older chest rotates so the
+// pair faces the direction the just-placed chest was given (the
+// observable vanilla behavior: the last placement decides the pair's
+// facing). Returns the paired half, or null when the chest stays single.
+std::shared_ptr<tile::TileChest> tryPairPlacedChest(
+    cursestone::Server* srv, world::World* lvl, int32_t x, int32_t y, int32_t z,
+    const std::shared_ptr<tile::TileChest>& placed, uint8_t placedMeta) {
+    // Side index = block metadata direction: 2=north, 3=south, 4=west, 5=east.
+    static const int32_t sdx[6] = {0, 0, 0, 0, -1, 1};
+    static const int32_t sdz[6] = {0, 0, -1, 1, 0, 0};
+
+    for (int side = 2; side <= 5; ++side) {
+        int32_t nx = x + sdx[side];
+        int32_t nz = z + sdz[side];
+        if (lvl->getBlockId(nx, y, nz) != block::CHEST)
+            continue;
+        auto other = std::dynamic_pointer_cast<tile::TileChest>(lvl->getTile(nx, y, nz));
+        if (!other || other == placed)
+            continue;
+        if (placed->isPaired() || other->isPaired())
+            continue; // never expand an existing double chest
+
+        const bool sideIsX = (side >= 4); // neighbor sits east/west of the placed chest
+        const bool faceIsZ = (placedMeta == 2 || placedMeta == 3);
+        const bool perpendicular = (faceIsZ == sideIsX);
+        if (!perpendicular)
+            continue;
+        const uint8_t otherMeta = lvl->getBlockData(nx, y, nz);
+        const bool otherPerpendicular =
+            sideIsX ? (otherMeta == 2 || otherMeta == 3) : (otherMeta == 4 || otherMeta == 5);
+        if (!otherPerpendicular)
+            continue; // neighbor faces along the pair axis (front-to-back) — stays single
+        if (otherMeta != placedMeta) {
+            // The pair must share one facing: rotate the older half to the
+            // direction the newly placed chest was given.
+            lvl->setBlock(nx, y, nz, block::CHEST, placedMeta);
+            broadcastBlockChange(srv, lvl, nx, y, nz, block::CHEST, placedMeta);
+        }
+        placed->setPair(other);
+        return other;
+    }
+    return nullptr;
 }
 
 } // namespace
@@ -1147,6 +1239,25 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
             cursestone::world::Position((double)placeX, (double)placeY, (double)placeZ));
         sign->setCreator(cfg_.uuid);
         lvl->setTile(placeX, placeY, placeZ, sign);
+    }
+
+    // Register the chest block entity immediately (like vanilla, the
+    // block actor exists as soon as the block does) and try to pair it
+    // with an adjacent single chest — two chests placed together become
+    // one vanilla double chest.
+    if (placedBlockId == block::CHEST) {
+        auto placedChest = std::make_shared<tile::TileChest>(
+            cursestone::world::Position((double)placeX, (double)placeY, (double)placeZ));
+        lvl->setTile(placeX, placeY, placeZ, placedChest);
+        auto pair = tryPairPlacedChest(srv_, lvl, placeX, placeY, placeZ, placedChest,
+                                       placedBlockData);
+        if (pair) {
+            // Push the pair tags to every viewer so the client renders
+            // and treats the two blocks as one large chest right away.
+            sendBlockEntityData(placeX, placeY, placeZ, *placedChest, nullptr);
+            const auto& pp = pair->position();
+            sendBlockEntityData((int32_t)pp.x, (int32_t)pp.y, (int32_t)pp.z, *pair, nullptr);
+        }
     }
 
     // Update neighboring redstone components.

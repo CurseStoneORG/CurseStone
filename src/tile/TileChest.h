@@ -38,7 +38,14 @@
 #include "Spawnable.h"
 #include "item/ItemStack.h" // required for ItemStack return/param types below
 #include "inventory/ChestInventory.h"
+#include <cstdint>
 #include <memory>
+namespace cursestone::world {
+class World;
+}
+namespace cursestone::inventory {
+class DoubleChestInventory;
+}
 namespace cursestone::tile {
 class TileChest : public Tile, public Container, public Nameable, public Spawnable {
   public:
@@ -60,7 +67,9 @@ class TileChest : public Tile, public Container, public Nameable, public Spawnab
     // The backing inventory. Player::openChestAt() hands this shared_ptr
     // straight to InventoryOpenEvent / ContainerSetContentPacket — no
     // copy, so edits made through either the Container interface above
-    // or directly via this Inventory land in the same 27 slots.
+    // or directly via this Inventory land in the same 27 slots. A paired
+    // chest is opened through TileChest::getOrCreateDouble() instead,
+    // which wraps both halves without copying any slot.
     std::shared_ptr<cursestone::inventory::ChestInventory> inventory() const {
         return inventory_;
     }
@@ -81,10 +90,51 @@ class TileChest : public Tile, public Container, public Nameable, public Spawnab
             --viewer_count_;
     }
 
+    // ---- Vanilla double-chest pairing ----
+    // The pairing is the vanilla one: each half stores the integer
+    // position of its partner ("pairx"/"pairz", same-Y implied) — the
+    // fields persist through the tile NBT, so a double chest saved and
+    // reloaded stays a double chest.
+    bool isPaired() const {
+        return has_pair_;
+    }
+    int32_t pairX() const {
+        return pair_x_;
+    }
+    int32_t pairZ() const {
+        return pair_z_;
+    }
+
+    // Resolves the paired half through the world tile registry. Returns
+    // null when this chest is single, the chunk is not loaded, or the
+    // registered tile at the pair position is not a chest anymore.
+    std::shared_ptr<TileChest> pairTile(cursestone::world::World* lvl) const;
+
+    // Vanilla Chest::createPair — writes the pairing onto BOTH halves and
+    // invalidates the cached double inventories.
+    void setPair(const std::shared_ptr<TileChest>& other);
+
+    // Drops the pairing state of THIS half only (pair position + cached
+    // double inventory) and marks the tile dirty for the next save.
+    void clearPair();
+
+    // Vanilla InventoryLargeChest for the pair a/b — built once and SHARED
+    // by both tiles so every viewer of either half works on the same 54
+    // slot space. Slot order follows the vanilla orientation rule: the
+    // east half of an X-axis pair (and the north half of a Z-axis pair)
+    // addresses slots 0-26. Returns null when a/b are not a valid pair.
+    static std::shared_ptr<cursestone::inventory::DoubleChestInventory> getOrCreateDouble(
+        const std::shared_ptr<TileChest>& a, const std::shared_ptr<TileChest>& b);
+
   private:
     static constexpr int SIZE = 27;
     std::shared_ptr<cursestone::inventory::ChestInventory> inventory_;
     int viewer_count_ = 0;
-    std::weak_ptr<TileChest> pair_; // paired chest (double chest)
+    // Vanilla "pairx"/"pairz" — the paired half's block position (same Y).
+    bool has_pair_ = false;
+    int32_t pair_x_ = 0;
+    int32_t pair_z_ = 0;
+    // Cached double window, always shared by both halves when set.
+    std::shared_ptr<cursestone::inventory::DoubleChestInventory> double_;
 };
 } // namespace

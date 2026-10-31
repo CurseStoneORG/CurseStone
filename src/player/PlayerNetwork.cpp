@@ -50,6 +50,7 @@
 #include "tile/TileChest.h"
 #include "tile/TileFurnace.h"
 #include "inventory/CreativeItems.h"
+#include "inventory/DoubleChestInventory.h"
 #include "inventory/FurnaceInventory.h"
 #include "inventory/PlayerInventory.h"
 #include "event/EventManager.h"
@@ -417,15 +418,20 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                     }
 
                     // Route clicks in the open chest to its inventory and confirm the resulting slot.
+                    // A paired chest routes through the shared 54-slot double window
+                    // (slots 0-26 = left half, 27-53 = right half) — the writes land
+                    // in the underlying TileChest halves, so persistence and the
+                    // survival floating-buffer check keep working unchanged.
                     if (cs->windowid == container_window_id_ && open_chest_) {
-                        if (open_chest_ && cs->slot >= 0 &&
-                            cs->slot < open_chest_->inventory()->getSize()) {
-                            auto chestInv = open_chest_->inventory();
+                        std::shared_ptr<inventory::Inventory> chestInv =
+                            open_double_
+                                ? std::static_pointer_cast<inventory::Inventory>(open_double_)
+                                : open_chest_->inventory();
+                        if (cs->slot >= 0 && cs->slot < chestInv->getSize()) {
                             auto cev =
                                 event::EventManager::get()
-                                    .fire<event::inventory::InventoryClickEvent>(
-                                        std::static_pointer_cast<inventory::Inventory>(chestInv),
-                                        this, (int)cs->slot, it);
+                                    .fire<event::inventory::InventoryClickEvent>(chestInv, this,
+                                                                                 (int)cs->slot, it);
                             if (!cev.isCancelled()) {
                                 // Validate survival writes against the floating inventory buffer.
                                 if (isCreative() ||

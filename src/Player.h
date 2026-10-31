@@ -51,6 +51,7 @@ class BlockEntityDataPacket;
 }
 namespace inventory {
 class PlayerInventory;
+class DoubleChestInventory;
 }
 namespace tile {
 class Tile;
@@ -668,6 +669,11 @@ class Player : public IPlayer,
     // Only one chest or furnace can be open at a time.
     std::shared_ptr<tile::TileChest> open_chest_;
     std::shared_ptr<tile::TileFurnace> open_furnace_;
+    // The vanilla 54-slot large-chest window, set instead of the plain
+    // 27-slot inventory whenever the opened chest is one half of a
+    // double chest. Shared by both halves, so co-viewers opening the
+    // pair from opposite sides still sync against the same instance.
+    std::shared_ptr<inventory::DoubleChestInventory> open_double_;
     // Active and next container window IDs.
     uint8_t container_window_id_ = 0;
     uint8_t next_container_window_id_ = 2;
