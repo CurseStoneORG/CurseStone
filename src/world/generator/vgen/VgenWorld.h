@@ -121,9 +121,30 @@ public:
                 return idx % 2 == 0 ? (DataID)pair.first : (DataID)pair.second;
         }
         void setBlock(const ChunkBlockPos& p, BlockID id) {
-                uint32_t idx = (uint32_t)p.y + ((uint32_t)p.z + (uint32_t)p.x * 16) * 128;
+                uint32_t col = ((uint32_t)p.z + (uint32_t)p.x * 16) * 128;
+                uint32_t idx = (uint32_t)p.y + col;
+                uint8_t oldId = (uint8_t)mBlocks[idx];
                 mBlocks[idx] = id;
-                _touchColumn(p.x, p.z);
+                const int slot = p.x | (p.z << 4);
+                mRainHeights[slot] = -999;
+                // Incremental heightmap update — same result as rescanning the
+                // whole column, O(1) for the common cases:
+                //   * invariant: blocks[mHeightmap-1] is the topmost block with
+                //     mLightBlock != 0 and every block above it is transparent;
+                //   * placing an opaque block at/above the top raises the map;
+                //   * clearing exactly the top block rescans downward from it.
+                // Decorators and structures write thousands of blocks per
+                // chunk, so the per-write column rescan dominated generation.
+                uint8_t nl = Block::mLightBlock[(uint8_t)id.value];
+                if (nl != 0) {
+                        if ((int)p.y >= mHeightmap[slot])
+                                mHeightmap[slot] = (int)p.y + 1;
+                } else if (Block::mLightBlock[oldId] != 0 && (int)p.y == mHeightmap[slot] - 1) {
+                        int y = p.y;
+                        while (y > 0 && Block::mLightBlock[(uint8_t)mBlocks[(uint32_t)(y - 1) + col]] == 0)
+                                --y;
+                        mHeightmap[slot] = y;
+                }
         }
         void setData(const ChunkBlockPos& p, DataID v) {
                 uint32_t idx = (uint32_t)p.y + ((uint32_t)p.z + (uint32_t)p.x * 16) * 128;
@@ -140,7 +161,6 @@ public:
         void setAllBlockData(const NibblePair* src, int height);
 
         void recalcHeightmap();
-        void _touchColumn(int x, int z);
         const BlockPos getTopRainBlockPos(const ChunkBlockPos& pos);
         Height getAboveTopSolidBlock(const ChunkBlockPos& start, bool dimensionShowsSky,
                                      bool includeWater, bool includeLeaves) const;
