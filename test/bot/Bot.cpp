@@ -327,7 +327,7 @@ void BotClient::fail(const std::string& why) {
 void BotClient::sendRaw(const std::vector<uint8_t>& bytes) {
     if (fd_ < 0 || bytes.empty())
         return;
-    ssize_t n = ::send(fd_, bytes.data(), bytes.size(), 0);
+    ssize_t n = ::send(fd_, (const char*)bytes.data(), (int)bytes.size(), 0);
     (void)n;
 }
 
@@ -336,7 +336,7 @@ bool BotClient::recvOnce(std::vector<uint8_t>& out, int timeoutMs) {
     if (cs_poll(&p, 1, timeoutMs) <= 0)
         return false;
     uint8_t buf[65535];
-    ssize_t n = ::recv(fd_, buf, sizeof(buf), 0);
+    ssize_t n = ::recv(fd_, (char*)buf, (int)sizeof(buf), 0);
     if (n <= 0)
         return false;
     out.assign(buf, buf + n);
