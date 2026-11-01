@@ -141,7 +141,8 @@ std::vector<std::string> buildStatusLines() {
         }
         lines.push_back(G + "  " + W + w->name() + G + ": " + msColor(w->avgTickMs()) +
                         fixed2(w->avgTickMs()) + " ms" + G + " avg, " + W +
-                        fixed2(w->lastTickMs()) + " ms" + G + " last | chunks " + W +
+                        fixed2(w->lastTickMs()) + " ms" + G + " last | light " + W +
+                        fixed2(w->avgLightMs()) + " ms" + G + " | chunks " + W +
                         std::to_string(w->chunks().count()) + G + " | players " + W +
                         std::to_string(inWorld) + TC::RESET);
     }

@@ -375,6 +375,13 @@ class World {
         return lastTickMs_;
     }
 
+    // EMA of the per-tick light-drain cost (LightEngine::processPending),
+    // the number the /status world line shows next to the tick average:
+    // it is the component that spikes while a view of chunks generates.
+    double avgLightMs() const {
+        return avgLightMs_;
+    }
+
     /// @brief Returns the moving average of world tick duration.
     double avgTickMs() const {
         return avgTickMs_;
@@ -484,6 +491,7 @@ class World {
   private:
     double lastTickMs_ = 0.0;
     double avgTickMs_ = 0.0;
+    double avgLightMs_ = 0.0;
 
     // Flushes a chunk's tiles and removes their in-memory registry entries.
     void evictTilesForChunk(int32_t cx, int32_t cz);
