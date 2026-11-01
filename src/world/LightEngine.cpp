@@ -154,6 +154,13 @@ class Region {
         return maxTop_;
     }
 
+    // Heightmap of one column inside the region; 0 when the column's
+    // chunk is not loaded (nothing there can receive light either).
+    int32_t columnTop(int32_t x, int32_t z) {
+        mcp_chunk_t* c = chunkAt(x, z);
+        return c ? mcp_chunk_get_height_map(c, x & 15, z & 15) : 0;
+    }
+
   private:
     World& lvl_;
     int32_t x0_, y0_, z0_, x1_, y1_, z1_;
@@ -194,41 +201,101 @@ void LightEngine::relight(int32_t x0, int32_t y0, int32_t z0, int32_t x1, int32_
     // this box's border cells, and dropping it would leave a dark ring
     // around every relit region.
     for (int32_t x = x0; x <= x1; ++x) {
+        const bool xBorder = (x == x0 || x == x1);
         for (int32_t z = z0; z <= z1; ++z) {
             mcp_chunk_t* c = r.chunkAt(x, z);
             if (!c)
                 continue;
-            const int32_t h = mcp_chunk_get_height_map(c, x & 15, z & 15);
+            const int lx = x & 15, lz = z & 15;
+            const int32_t h = mcp_chunk_get_height_map(c, lx, lz);
+            const bool border = xBorder || z == z0 || z == z1;
 
-            for (int32_t y = y0; y <= y1; ++y) {
-                const uint8_t id = mcp_chunk_get_block_id(c, x & 15, y, z & 15);
+            // Tallest in-box column around this one (self included). A
+            // full-sky cell can only hand light horizontally to a column
+            // whose heightmap is still above it, or vertically into the
+            // block right below its own heightmap (translucent tops).
+            // Everywhere else 15 - cost(>=1) can never beat the 15 the
+            // target already has, so those BFS pushes are provably no-ops.
+            int32_t hMax = h;
+            if (x > x0)
+                hMax = std::max(hMax, r.columnTop(x - 1, z));
+            if (x < x1)
+                hMax = std::max(hMax, r.columnTop(x + 1, z));
+            if (z > z0)
+                hMax = std::max(hMax, r.columnTop(x, z - 1));
+            if (z < z1)
+                hMax = std::max(hMax, r.columnTop(x, z + 1));
 
-                int sky = (y >= h) ? static_cast<int>(kMaxLight) : 0;
-                int blk = static_cast<int>(cursestone::block::Block::lightEmission(id));
+            c->dirty = true;
 
-                for (int d = 0; d < 6; ++d) {
-                    const int32_t nx = x + kDX[d];
-                    const int32_t ny = y + kDY[d];
-                    const int32_t nz = z + kDZ[d];
-                    if (r.contains(nx, ny, nz))
-                        continue; // not outside
-                    if (ny < 0 || ny >= kWorldHeight)
-                        continue;
-                    const int cost = costThrough(id);
-                    const int inSky = static_cast<int>(r.sky(nx, ny, nz)) - cost;
-                    if (inSky > sky)
-                        sky = std::min(inSky, (int)kMaxLight);
-                    const int inBlk = static_cast<int>(r.blockLight(nx, ny, nz)) - cost;
-                    if (inBlk > blk)
-                        blk = inBlk;
+            for (int secY = y0 >> 4; secY <= y1 >> 4; ++secY) {
+                const int ya = std::max(y0, secY * 16);
+                const int yb = std::min(y1, secY * 16 + 15);
+                mcp_chunk_section_t* s = c->sections[secY];
+                if (!s && ya >= h) {
+                    // Unallocated section in the pure-sky band: the
+                    // accessor contract already reads sky 15 / block 0
+                    // here, and there is no stale light to clear, so
+                    // allocating a section only to write the implicit
+                    // values back is pure waste. Keep the pushes the
+                    // populated path would make (sky == 15 => same
+                    // filter) so the flood sees identical sources.
+                    for (int y = std::max(ya, h); y <= yb; ++y) {
+                        if (y < hMax || y == h)
+                            skyQueue.push_back({x, y, z});
+                    }
+                    continue;
                 }
+                for (int y = ya; y <= yb; ++y) {
+                    uint8_t id = 0;
+                    uint8_t* skyArr = nullptr;
+                    uint8_t* blkArr = nullptr;
+                    if (s) {
+                        id = s->blocks[lx | (lz << 4) | ((y & 15) << 8)];
+                        skyArr = s->sky_light;
+                        blkArr = s->block_light;
+                    } else {
+                        id = mcp_chunk_get_block_id(c, lx, y, lz);
+                    }
 
-                r.setSky(x, y, z, static_cast<uint8_t>(std::max(0, sky)));
-                r.setBlockLight(x, y, z, static_cast<uint8_t>(std::max(0, blk)));
-                if (sky > 0)
-                    skyQueue.push_back({x, y, z});
-                if (blk > 0)
-                    blockQueue.push_back({x, y, z});
+                    int sky = (y >= h) ? static_cast<int>(kMaxLight) : 0;
+                    int blk = static_cast<int>(cursestone::block::Block::lightEmission(id));
+
+                    if (border || y == y0 || y == y1) {
+                        for (int d = 0; d < 6; ++d) {
+                            const int32_t nx = x + kDX[d];
+                            const int32_t ny = y + kDY[d];
+                            const int32_t nz = z + kDZ[d];
+                            if (r.contains(nx, ny, nz))
+                                continue; // not outside
+                            if (ny < 0 || ny >= kWorldHeight)
+                                continue;
+                            const int cost = costThrough(id);
+                            const int inSky = static_cast<int>(r.sky(nx, ny, nz)) - cost;
+                            if (inSky > sky)
+                                sky = std::min(inSky, (int)kMaxLight);
+                            const int inBlk = static_cast<int>(r.blockLight(nx, ny, nz)) - cost;
+                            if (inBlk > blk)
+                                blk = inBlk;
+                        }
+                    }
+
+                    if (s) {
+                        mcp_section_set_nibble(skyArr, lx, y, lz,
+                                               static_cast<uint8_t>(std::max(0, sky)));
+                        mcp_section_set_nibble(blkArr, lx, y, lz,
+                                               static_cast<uint8_t>(std::max(0, blk)));
+                    } else {
+                        mcp_chunk_set_sky_light(c, lx, y, lz,
+                                                static_cast<uint8_t>(std::max(0, sky)));
+                        mcp_chunk_set_block_light(c, lx, y, lz,
+                                                  static_cast<uint8_t>(std::max(0, blk)));
+                    }
+                    if (sky > 0 && (sky < (int) kMaxLight || y < hMax || y == h))
+                        skyQueue.push_back({x, y, z});
+                    if (blk > 0)
+                        blockQueue.push_back({x, y, z});
+                }
             }
         }
     }

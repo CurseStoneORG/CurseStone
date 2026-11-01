@@ -233,6 +233,16 @@ class World {
     // Queues lighting updates for newly added chunks.
     void onChunkAdded(int32_t cx, int32_t cz);
 
+    // Thin main-thread accessors over the light queue, used by the
+    // /status diagnostics and the perf tools (tools/light_bench.cpp):
+    // same contract as LightEngine::processPending / hasPending.
+    size_t drainLightPending(int32_t budget) {
+        return light_.processPending(budget);
+    }
+    bool hasPendingLight() const {
+        return light_.hasPending();
+    }
+
     // Queues a dynamic-liquid scan for a chunk that just entered the
     // level (queueLiquidWake) and drains it on the main-thread tick
     // (processLiquidWakes). Vanilla fills each chunk's block ticking
