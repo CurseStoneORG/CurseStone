@@ -76,6 +76,7 @@ add_executable(CurseStone ${SOURCES_C} ${SOURCES_CXX})
 
 target_include_directories(CurseStone PRIVATE
     ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/world/generator
 )
 
 # ---- Lua 5.4 ----
