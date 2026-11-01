@@ -76,6 +76,12 @@ void putU32LE(std::vector<uint8_t>& v, uint32_t x) {
     v.push_back((uint8_t)((x >> 16) & 0xff));
     v.push_back((uint8_t)((x >> 24) & 0xff));
 }
+void putI16BE(std::vector<uint8_t>& v, int16_t x) {
+    putU16BE(v, (uint16_t)x);
+}
+void putI32BE(std::vector<uint8_t>& v, int32_t x) {
+    putU32BE(v, (uint32_t)x);
+}
 void putU64BE(std::vector<uint8_t>& v, uint64_t x) {
     for (int i = 7; i >= 0; --i)
         v.push_back((uint8_t)((x >> (8 * i)) & 0xff));
@@ -837,12 +843,81 @@ void BotClient::handleMcpePacket(const std::vector<uint8_t>& pkt) {
     case MCPE_FULL_CHUNK: {
         chunksReceived_++;
         chunkBytes_ += pkt.size();
+        // Furnace scenario: scan the column-format block array for a
+        // natural furnace block (61/62 — village houses place them).
+        // Wire layout (FullChunkDataPacket::encode): pid + chunkX i32 BE
+        // + chunkZ i32 BE + order u8 + dataLen i32 BE + data. First hit
+        // wins and becomes the touch target.
+        if (!furnaceFound_ && pkt.size() > 14 + 32768) {
+            int32_t cx = (int32_t)(((uint32_t)pkt[1] << 24) | ((uint32_t)pkt[2] << 16) |
+                                   ((uint32_t)pkt[3] << 8) | (uint32_t)pkt[4]);
+            int32_t cz = (int32_t)(((uint32_t)pkt[5] << 24) | ((uint32_t)pkt[6] << 16) |
+                                   ((uint32_t)pkt[7] << 8) | (uint32_t)pkt[8]);
+            std::vector<uint8_t> payload(pkt.begin() + 14, pkt.end());
+            scanChunkForFurnace(cx, cz, payload);
+        }
+        return;
+    }
+    case MCPE_CONTAINER_OPEN: {
+        // Wire: windowid u8, type u8, slots i16 BE, x/y/z i32 BE.
+        if (pkt.size() >= 17) {
+            containerWindowId_ = pkt[1];
+            containerOpens_++;
+            int32_t ox = (int32_t)(((uint32_t)pkt[5] << 24) | ((uint32_t)pkt[6] << 16) |
+                                   ((uint32_t)pkt[7] << 8) | (uint32_t)pkt[8]);
+            int32_t oy = (int32_t)(((uint32_t)pkt[9] << 24) | ((uint32_t)pkt[10] << 16) |
+                                   ((uint32_t)pkt[11] << 8) | (uint32_t)pkt[12]);
+            int32_t oz = (int32_t)(((uint32_t)pkt[13] << 24) | ((uint32_t)pkt[14] << 16) |
+                                   ((uint32_t)pkt[15] << 8) | (uint32_t)pkt[16]);
+            if (verbose_)
+                fprintf(stderr,
+                        "[bot] <- ContainerOpen window=%u type=%u at %d,%d,%d\n",
+                        (unsigned)pkt[1], (unsigned)pkt[2], ox, oy, oz);
+            if (ox != furnaceX_ || oy != furnaceY_ || oz != furnaceZ_)
+                fprintf(stderr, "[bot] WARNING ContainerOpen coords mismatch: "
+                                "asked %d,%d,%d got %d,%d,%d\n",
+                        furnaceX_, furnaceY_, furnaceZ_, ox, oy, oz);
+        }
+        return;
+    }
+    case MCPE_CONTAINER_CLOSE: {
+        if (verbose_)
+            fprintf(stderr, "[bot] <- ContainerClose window=%u\n", (unsigned)pkt[1]);
+        return;
+    }
+    case MCPE_BLOCK_ENTITY_DATA: {
+        blockEntityDatas_++;
+        if (verbose_)
+            fprintf(stderr, "[bot] <- BlockEntityData (%zu bytes)\n", pkt.size());
         return;
     }
     case MCPE_START_GAME: {
         startGameCount_++;
         if (startGameCount_ == 1 && verbose_)
             fprintf(stderr, "[bot] <- StartGame (%zu bytes)\n", pkt.size());
+        // First StartGame also tells the bot where the server actually
+        // placed it: [pid][seed i32][dim u8][gen i32][gm i32][eid i64]
+        // [spawnX i32][spawnY i32][spawnZ i32][x f32][y f32][z f32].
+        // Seeding moveX_/Y_/Z_ from it keeps the long march compatible
+        // with the server's 20-block move cap (it measures from ITS
+        // tracked position, not ours).
+        if (startGameCount_ == 1 && pkt.size() >= 46 && !gotoDone_) {
+            uint32_t xr = ((uint32_t)pkt[34] << 24) | ((uint32_t)pkt[35] << 16) |
+                          ((uint32_t)pkt[36] << 8) | (uint32_t)pkt[37];
+            uint32_t yr = ((uint32_t)pkt[38] << 24) | ((uint32_t)pkt[39] << 16) |
+                          ((uint32_t)pkt[40] << 8) | (uint32_t)pkt[41];
+            uint32_t zr = ((uint32_t)pkt[42] << 24) | ((uint32_t)pkt[43] << 16) |
+                          ((uint32_t)pkt[44] << 8) | (uint32_t)pkt[45];
+            float fx, fy, fz;
+            std::memcpy(&fx, &xr, 4);
+            std::memcpy(&fy, &yr, 4);
+            std::memcpy(&fz, &zr, 4);
+            moveX_ = (double)fx;
+            moveY_ = (double)fy;
+            moveZ_ = (double)fz;
+            if (verbose_)
+                fprintf(stderr, "[bot] server spawn position: %.1f,%.1f,%.1f\n", fx, fy, fz);
+        }
         return;
     }
     case MCPE_CHUNK_RADIUS_UPDATED: {
@@ -1062,6 +1137,186 @@ void BotClient::capture(const std::string& event, const std::vector<uint8_t>* da
     std::fflush(cap_);
 }
 
+// Furnace-scenario senders — the exact packets a real 0.15.10 client
+// emits when the player taps a furnace block and then closes the window.
+void BotClient::sendUseItem(int32_t x, int32_t y, int32_t z, uint8_t face, double px,
+                            double py, double pz) {
+    std::vector<uint8_t> pkt;
+    putU8(pkt, MCPE_USE_ITEM);
+    putI32BE(pkt, x);
+    putI32BE(pkt, y);
+    putI32BE(pkt, z);
+    putU8(pkt, face);
+    putF32BE(pkt, 0.5f);
+    putF32BE(pkt, 1.0f);
+    putF32BE(pkt, 0.5f);
+    putF32BE(pkt, (float)px);
+    putF32BE(pkt, (float)py);
+    putF32BE(pkt, (float)pz);
+    putI32BE(pkt, 0);  // hotbar slot 0
+    putI16BE(pkt, 0);  // empty held item (Slot ends after id 0)
+    sendMcpe(pkt, true);
+    useItemSent_++;
+}
+
+void BotClient::sendContainerClose(uint8_t windowid) {
+    std::vector<uint8_t> pkt;
+    putU8(pkt, MCPE_CONTAINER_CLOSE);
+    putU8(pkt, windowid);
+    sendMcpe(pkt, true);
+    closeSent_++;
+}
+
+// Column-format scan: blocks live in the first 32768 bytes of the
+// FullChunkData payload at index (x<<11)|(z<<7)|y (y = 0..127).
+void BotClient::scanChunkForFurnace(int32_t cx, int32_t cz,
+                                    const std::vector<uint8_t>& payload) {
+    const size_t kBlocks = 32768;
+    if (payload.size() < kBlocks)
+        return;
+    for (size_t i = 0; i < kBlocks; ++i) {
+        uint8_t id = payload[i];
+        if (id != BLOCK_FURNACE && id != BLOCK_BURNING_FURNACE)
+            continue;
+        int x = (int)(i >> 11);
+        int z = (int)((i >> 7) & 0xF);
+        int y = (int)(i & 0x7F);
+        furnaceX_ = cx * 16 + x;
+        furnaceY_ = y;
+        furnaceZ_ = cz * 16 + z;
+        furnaceFound_ = true;
+        return;
+    }
+}
+
+// Furnace state machine — walk to the natural furnace, tap it (twice,
+// exercising both the create-tile and reuse-tile server paths) and
+// close the window between taps, exactly like a human reproducing the
+// village-furnace client crash.
+void BotClient::furnaceTick(uint64_t now) {
+    if (furnacePhase_ == 6)
+        return;
+    // Long-distance march: the spawn area may not contain a village. The
+    // server caps each MovePlayer at 20 blocks, so hop 15-block steps
+    // toward the target until it is inside the interaction range — chunks
+    // (and the furnace scan) stream as we go.
+    if (goto_ && !gotoDone_) {
+        if (now - lastFurnaceMs_ > 120) {
+            lastFurnaceMs_ = now;
+            double dx = gotoX_ - moveX_, dz = gotoZ_ - moveZ_;
+            double dist = std::sqrt(dx * dx + dz * dz);
+            if (dist <= 14.0) {
+                gotoDone_ = true;
+                phaseStartMs_ = now; // restart the no-furnace deadline here
+                lastFurnaceMs_ = 0;
+                if (verbose_)
+                    fprintf(stderr, "[bot] arrived at %.0f,%.0f after %u hops\n", gotoX_,
+                            gotoZ_, gotoSteps_);
+                return;
+            }
+            double step = 15.0 / dist;
+            moveX_ += dx * step;
+            moveZ_ += dz * step;
+            ++gotoSteps_;
+            sendMovePlayer(moveX_, moveY_, moveZ_, 0.0f, 0.0f, true);
+        }
+        return;
+    }
+    switch (furnacePhase_) {
+    case 0: { // wait for chunks; declare failure honestly when none found
+        if (phaseStartMs_ == 0)
+            phaseStartMs_ = now;
+        if (furnaceFound_) {
+            furnacePhase_ = 1;
+            phaseStartMs_ = now;
+            lastFurnaceMs_ = 0;
+            fprintf(stderr, "[bot] natural furnace at %d,%d,%d\n", furnaceX_, furnaceY_,
+                    furnaceZ_);
+        } else if (now - phaseStartMs_ > 25000) {
+            noFurnace_ = true;
+            fail("no natural furnace block in " + std::to_string(chunksReceived_) +
+                 " streamed chunks (try a seed with a village near spawn)");
+            furnacePhase_ = 6;
+        }
+        break;
+    }
+    case 1: { // walk: stand ON the furnace cell (its own position is fine
+              // for the server's interaction distance)
+        if (now - lastFurnaceMs_ > 600) {
+            lastFurnaceMs_ = now;
+            ++walkSteps_;
+            sendMovePlayer(furnaceX_ + 0.5, furnaceY_ + 1.62, furnaceZ_ + 0.5, 0.0f, 0.0f,
+                           true);
+            if (walkSteps_ >= 3) {
+                furnacePhase_ = 2;
+                phaseStartMs_ = now;
+                lastFurnaceMs_ = now;
+            }
+        }
+        break;
+    }
+    case 2: { // tap the furnace until the window opens (max 3 tries)
+        if (containerOpens_ >= 1) {
+            if (now - lastFurnaceMs_ > 1500) {
+                furnacePhase_ = 3;
+                phaseStartMs_ = now;
+            }
+            break;
+        }
+        if (now - lastFurnaceMs_ > 1500) {
+            lastFurnaceMs_ = now;
+            if (useItemSent_ >= 3) {
+                fail("server never opened the furnace window after 3 taps");
+                furnacePhase_ = 6;
+                break;
+            }
+            sendUseItem(furnaceX_, furnaceY_, furnaceZ_, 1 /* top face */,
+                        furnaceX_ + 0.5, furnaceY_ + 1.62, furnaceZ_ + 0.5);
+        }
+        break;
+    }
+    case 3: { // close the window like a real player
+        if (now - lastFurnaceMs_ > 1200) {
+            lastFurnaceMs_ = now;
+            sendContainerClose(containerWindowId_);
+            furnacePhase_ = 4;
+            phaseStartMs_ = now;
+        }
+        break;
+    }
+    case 4: { // re-open: second open path (existing tile reuse)
+        if (containerOpens_ >= 2) {
+            if (now - lastFurnaceMs_ > 1500) {
+                furnacePhase_ = 5;
+                phaseStartMs_ = now;
+            }
+            break;
+        }
+        if (now - lastFurnaceMs_ > 1500) {
+            lastFurnaceMs_ = now;
+            sendUseItem(furnaceX_, furnaceY_, furnaceZ_, 1,
+                        furnaceX_ + 0.5, furnaceY_ + 1.62, furnaceZ_ + 0.5);
+        }
+        break;
+    }
+    case 5: { // final close
+        if (now - lastFurnaceMs_ > 1200) {
+            lastFurnaceMs_ = now;
+            sendContainerClose(containerWindowId_);
+            furnacePhase_ = 6;
+            phaseStartMs_ = now;
+            if (verbose_)
+                fprintf(stderr, "[bot] furnace cycle complete: opens=%u closes=%u "
+                                "blockEntityDatas=%u\n",
+                        containerOpens_, closeSent_, blockEntityDatas_);
+        }
+        break;
+    }
+    default:
+        break;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // main loop
 // ---------------------------------------------------------------------------
@@ -1077,16 +1332,20 @@ bool BotClient::goalReached(Scenario s) const {
         return spawned_ && chatSent_ > 0;
     case Scenario::Malformed:
         return malformedDone_;
+    case Scenario::Furnace:
+        return furnacePhase_ == 6 && containerOpens_ >= 2 && closeSent_ >= 2;
     }
     return false;
 }
 
 std::string BotClient::statsLine() const {
-    char buf[192];
+    char buf[256];
     std::snprintf(buf, sizeof(buf),
-                  "state=%d login=%d spawn=%d chunks=%u chunkBytes=%llu packets=%zu",
+                  "state=%d login=%d spawn=%d chunks=%u chunkBytes=%llu packets=%zu "
+                  "furnace=[%d,%d,%d] opens=%u closes=%u bed=%u",
                   (int)state_, (int)loginAccepted_, (int)spawned_, chunksReceived_,
-                  (unsigned long long)chunkBytes_, packetCounts_.size());
+                  (unsigned long long)chunkBytes_, packetCounts_.size(), furnaceX_, furnaceY_,
+                  furnaceZ_, containerOpens_, closeSent_, blockEntityDatas_);
     return std::string(buf);
 }
 
@@ -1142,7 +1401,7 @@ bool BotClient::run(uint64_t durationMs, Scenario scenario, const std::string& c
 
         // chunk radius after a successful login (what the real client does)
         if (loginAccepted_ && !radiusSent_)
-            sendRequestChunkRadius(8);
+            sendRequestChunkRadius(radius_);
 
         // scenario traffic
         if (scenario == Scenario::Move && spawned_ && now - lastMoveMs_ > 1000) {
@@ -1154,6 +1413,8 @@ bool BotClient::run(uint64_t durationMs, Scenario scenario, const std::string& c
             lastChatMs_ = now;
             sendChat("hello from cursestone-bot #" + std::to_string(chatSent_));
         }
+        if (scenario == Scenario::Furnace && spawned_)
+            furnaceTick(now);
         if (now - lastPingMs_ > 5000) {
             lastPingMs_ = now;
             if (state_ == State::Connected)
@@ -1198,8 +1459,12 @@ bool BotClient::run(uint64_t durationMs, Scenario scenario, const std::string& c
             }
         }
 
-        // stop early once the goal is reached (except move/chat which run on)
+        // stop early once the goal is reached (except move/chat/furnace
+        // which run on to gather trailing packets)
         if (goalReached(scenario) && scenario == Scenario::Login)
+            break;
+        if (goalReached(scenario) && scenario == Scenario::Furnace &&
+            now - phaseStartMs_ > 1500)
             break;
         if (goalReached(scenario) && scenario == Scenario::Malformed &&
             serverAliveCheckDone) {

@@ -44,7 +44,7 @@ static void usage() {
         "Options:\n"
         "  --host <ip>        server address (default 127.0.0.1)\n"
         "  --port <n>         server UDP port (default 19132)\n"
-        "  --scenario <name>  login | chunks | move | chat | malformed (default login)\n"
+        "  --scenario <name>  login | chunks | move | chat | malformed | furnace (default login)\n"
         "  --duration <ms>    session length (default 15000; 30000 for chunks)\n"
         "  --username <name>  bot username (default BotD)\n"
         "  --capture <file>   JSONL capture of every server->client packet\n"
@@ -56,7 +56,13 @@ static void usage() {
         "  move       chunks + MovePlayer every second while the session runs\n"
         "  chat       chunks + one chat TextPacket every 3 seconds\n"
         "  malformed  six corrupt packets, then an unconnected ping: the server\n"
-        "             must survive all of them\n");
+        "             must survive all of them\n"
+        "  furnace    scan the streamed chunks for a NATURAL furnace (village\n"
+        "             house), walk to it and tap it twice with a close in\n"
+        "             between — reproduces the village-furnace client crash;\n"
+        "             success = two ContainerOpen windows fully cycled. Exit 3\n"
+        "             = no natural furnace in the streamed chunks (skip, not a\n"
+        "             server fault)\n");
 }
 
 int main(int argc, char** argv) {
@@ -66,6 +72,8 @@ int main(int argc, char** argv) {
     std::string capture;
     std::string username = "BotD";
     uint64_t duration = 0;
+    int radius = 8;
+    double gotoX = 0.0, gotoZ = 0.0;
     bool verbose = false;
 
     for (int i = 1; i < argc; ++i) {
@@ -87,7 +95,19 @@ int main(int argc, char** argv) {
             duration = (uint64_t)std::atoll(next("--duration").c_str());
         else if (a == "--username")
             username = next("--username");
-        else if (a == "--capture")
+        else if (a == "--radius")
+            radius = std::atoi(next("--radius").c_str());
+        else if (a == "--goto") {
+            // --goto X,Z: long march to (X,Z) before the furnace scan starts
+            std::string v = next("--goto");
+            auto comma = v.find(',');
+            if (comma == std::string::npos) {
+                std::fprintf(stderr, "--goto expects X,Z\n");
+                return 2;
+            }
+            gotoX = std::atof(v.substr(0, comma).c_str());
+            gotoZ = std::atof(v.substr(comma + 1).c_str());
+        } else if (a == "--capture")
             capture = next("--capture");
         else if (a == "-v" || a == "--verbose")
             verbose = true;
@@ -112,14 +132,25 @@ int main(int argc, char** argv) {
         sc = BotClient::Scenario::Chat;
     else if (scenario == "malformed")
         sc = BotClient::Scenario::Malformed;
+    else if (scenario == "furnace")
+        sc = BotClient::Scenario::Furnace;
     else {
         std::fprintf(stderr, "unknown scenario: %s\n", scenario.c_str());
         return 2;
     }
-    if (duration == 0)
-        duration = (sc == BotClient::Scenario::Login) ? 15000 : 30000;
+    if (duration == 0) {
+        if (sc == BotClient::Scenario::Login)
+            duration = 15000;
+        else if (sc == BotClient::Scenario::Furnace)
+            duration = 60000;
+        else
+            duration = 30000;
+    }
 
     BotClient bot;
+    bot.setRadius(radius);
+    if (gotoX != 0.0 || gotoZ != 0.0)
+        bot.setGoto(gotoX, gotoZ);
     std::string err;
     if (!bot.open(host, port, err)) {
         std::fprintf(stderr, "bot: %s\n", err.c_str());
@@ -134,6 +165,10 @@ int main(int argc, char** argv) {
     if (bot.goalReached(sc)) {
         std::printf("result: PASS (%s)\n", scenario.c_str());
         return 0;
+    }
+    if (sc == BotClient::Scenario::Furnace && bot.noFurnaceFound()) {
+        std::printf("result: SKIP (%s)\n", scenario.c_str());
+        return 3;
     }
     std::printf("result: FAIL (%s)\n", scenario.c_str());
     (void)ok;

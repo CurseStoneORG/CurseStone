@@ -50,12 +50,37 @@ expect move   "$BOT" --scenario move      --duration 12000
 expect chat   "$BOT" --scenario chat      --duration 10000
 expect malformed "$BOT" --scenario malformed --duration 25000
 
+# Furnace: reproduce the village-furnace tap (the historical client
+# crash) end to end. Needs a natural furnace in the streamed area —
+# seed/terrain dependent, so SKIP (exit 3) is not a failure; only a real
+# window-cycle failure (exit 1) is.
+echo "== scenario: furnace (natural village furnace tap) =="
+set +e
+"$BOT" --scenario furnace --duration 60000 --radius 12 \
+    --capture "$WORK/furnace.jsonl"
+FURNACE_RC=$?
+set -e
+case "$FURNACE_RC" in
+0) echo "[furnace] PASS" ;;
+3) echo "[furnace] SKIP (no natural furnace in the streamed chunks)" ;;
+*) echo "[furnace] FAIL (server never opened the furnace window)"
+   FAILED=1 ;;
+esac
+
 echo "== differential validation =="
 if python3 "$ROOT/test/bot/validate_capture.py" --capture "$WORK/capture.jsonl"; then
     echo "[validate] PASS"
 else
     echo "[validate] FAIL (a packet would crash a real client)"
     FAILED=1
+fi
+if [ -s "$WORK/furnace.jsonl" ]; then
+    if python3 "$ROOT/test/bot/validate_capture.py" --capture "$WORK/furnace.jsonl"; then
+        echo "[validate-furnace] PASS"
+    else
+        echo "[validate-furnace] FAIL (a furnace-flow packet would crash a real client)"
+        FAILED=1
+    fi
 fi
 
 echo
