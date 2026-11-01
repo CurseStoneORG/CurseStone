@@ -127,7 +127,8 @@ void hook(LuaPlugin* pl, int fnRef, std::function<void(lua_State*, int /*eIdx*/,
                     }
                 }
                 lua_pop(L, 1);
-                readBack(L, eIdx, ev);
+                if (readBack)
+                    readBack(L, eIdx, ev);
             }
             lua_settop(L, base); // Restore the Lua stack.
         });
