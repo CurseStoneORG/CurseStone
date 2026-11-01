@@ -124,6 +124,37 @@ const BlockPos LevelChunk::getTopRainBlockPos(const ChunkBlockPos& pos) {
 // ---------------------------------------------------------------------------
 // BlockSource
 // ---------------------------------------------------------------------------
+namespace {
+
+// Populates copy a private snapshot of each of the 8 cached neighbours
+// (the cache is shared between workers, so they must never write into
+// it). Those snapshots were new/delete'd per populate — 8 allocations of
+// ~53 KB per chunk. A thread_local pool hands the same objects back:
+// after warmup a populate does 8 copy-assignments and zero mallocs.
+struct NeighborScratchPool {
+        std::vector<std::unique_ptr<LevelChunk>> freeList;
+};
+thread_local NeighborScratchPool tNeighborScratch;
+
+LevelChunk* acquireScratchNeighbor(const LevelChunk& src) {
+        LevelChunk* lc;
+        if (!tNeighborScratch.freeList.empty()) {
+                lc = tNeighborScratch.freeList.back().release();
+                tNeighborScratch.freeList.pop_back();
+                *lc = src;
+        } else {
+                lc = new LevelChunk(src);
+        }
+        return lc;
+}
+
+void recycleScratchNeighbor(LevelChunk* lc) {
+        if (lc)
+                tNeighborScratch.freeList.emplace_back(lc);
+}
+
+} // namespace
+
 BlockSource::BlockSource(ITerrainFeed& feed, LevelChunk& center)
     : mFeed(feed), mCenter(center) {
         for (int dx = 0; dx < 3; ++dx) {
@@ -132,7 +163,7 @@ BlockSource::BlockSource(ITerrainFeed& feed, LevelChunk& center)
                                 mNeighbors[1][1] = &mCenter;
                                 continue;
                         }
-                        LevelChunk* cached = mFeed.acquireTerrain(mCenter.mPos.x + dx - 1,
+                        std::shared_ptr<LevelChunk> cached = mFeed.acquireTerrain(mCenter.mPos.x + dx - 1,
                                                                   mCenter.mPos.z + dz - 1);
                         // Private copy per populate. The cache chunks are
                         // SHARED between threads: writing this populate's
@@ -142,8 +173,10 @@ BlockSource::BlockSource(ITerrainFeed& feed, LevelChunk& center)
                         // and race the terrain build itself. Each populate
                         // therefore works on its own neighborhood snapshot;
                         // cross-populate propagation goes through the spill
-                        // queue / live-chunk sink.
-                        mNeighbors[dx][dz] = new LevelChunk(*cached);
+                        // queue / live-chunk sink. The shared_ptr pins the
+                        // cached chunk against concurrent eviction while the
+                        // snapshot copies from it.
+                        mNeighbors[dx][dz] = acquireScratchNeighbor(*cached);
                 }
         }
 }
@@ -153,7 +186,7 @@ BlockSource::~BlockSource() {
                 for (int dz = 0; dz < 3; ++dz) {
                         if (dx == 1 && dz == 1)
                                 continue;
-                        delete mNeighbors[dx][dz];
+                        recycleScratchNeighbor(mNeighbors[dx][dz]);
                         mNeighbors[dx][dz] = nullptr;
                 }
         }

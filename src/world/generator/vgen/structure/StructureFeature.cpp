@@ -49,7 +49,22 @@ void StructureFeature::addFeature(LevelChunk& lc, Dimension& generator, Random& 
 	random.nextInt();
 	ChunkPos cp(x, z);
 
+	// Bit-exact memo (see the member comment): the verdict per cell is
+	// pure (seed, cell) data, so replaying it from the cache changes no
+	// RNG stream any other code observes. 'true' cells fall through to
+	// the cachedStructures dedup below, which is what actually keeps
+	// the StructureStart single-instance.
+	const int64_t cellKey = ((int64_t)(uint32_t)x << 32) | (uint32_t)z;
+	{
+		std::lock_guard<std::mutex> l(cellMemoMutex);
+		auto it = cellMemo.find(cellKey);
+		if (it != cellMemo.end() && it->second == 0)
+			return;
+	}
+
 	if (!isFeatureChunk(&generator.getBiomes(), random, cp)) {
+		std::lock_guard<std::mutex> l(cellMemoMutex);
+		cellMemo.emplace(cellKey, 0);
 		return;
 	}
 
@@ -58,6 +73,10 @@ void StructureFeature::addFeature(LevelChunk& lc, Dimension& generator, Random& 
 		if (cachedStructures.count(cp) == 0) {
 			cachedStructures[cp] = createStructureStart(generator, random, cp);
 		}
+	}
+	{
+		std::lock_guard<std::mutex> l(cellMemoMutex);
+		cellMemo[cellKey] = 1;
 	}
 }
 

@@ -83,9 +83,7 @@ VgenSource::VgenSource(int64_t seed)
 
 VgenSource::~VgenSource() {
         std::lock_guard<std::mutex> l(mCacheMutex);
-        for (auto& kv : mTerrainCache)
-                delete kv.second.chunk;
-        mTerrainCache.clear();
+        mTerrainCache.clear(); // shared_ptr frees chunks with no other users
 }
 
 // ---------------------------------------------------------------------------
@@ -363,7 +361,7 @@ void VgenSource::generateTerrainInto(LevelChunk& lc, ThreadData& td) {
 // ---------------------------------------------------------------------------
 // ITerrainFeed — terrain cache + spill bookkeeping
 // ---------------------------------------------------------------------------
-vgen::LevelChunk* VgenSource::acquireTerrain(int cx, int cz) {
+std::shared_ptr<vgen::LevelChunk> VgenSource::acquireTerrain(int cx, int cz) {
         const int64_t key = vgenKey(cx, cz);
         {
                 std::lock_guard<std::mutex> l(mCacheMutex);
@@ -376,7 +374,7 @@ vgen::LevelChunk* VgenSource::acquireTerrain(int cx, int cz) {
 
         // build outside the lock (noise work is heavy)
         auto& td = threadData();
-        vgen::LevelChunk* lc = new vgen::LevelChunk(mLevel, mDimension, ChunkPos(cx, cz));
+        auto lc = std::make_shared<vgen::LevelChunk>(mLevel, mDimension, ChunkPos(cx, cz));
         generateTerrainInto(*lc, td);
 
         std::lock_guard<std::mutex> l(mCacheMutex);
@@ -394,11 +392,10 @@ vgen::LevelChunk* VgenSource::acquireTerrain(int cx, int cz) {
                                 if (it->second.stamp < oldest->second.stamp)
                                         oldest = it;
                         }
-                        delete oldest->second.chunk;
-                        mTerrainCache.erase(oldest);
+                        mTerrainCache.erase(oldest); // freed only with the last user
                 }
         } else {
-                delete lc; // lost a race — another worker cached it first
+                lc.reset(); // lost a race — another worker cached it first
                 e.stamp = ++mCacheStamp;
                 return e.chunk;
         }
@@ -465,13 +462,36 @@ void VgenSource::applySpill(vgen::LevelChunk& center, int cx, int cz) {
 // ---------------------------------------------------------------------------
 // Chunk sink plumbing
 // ---------------------------------------------------------------------------
+// True when every block id of one 16-high section of the virtual volume
+// is air. The virtual layout is y-contiguous per column (stride 128), so
+// a section is 256 runs of 16 bytes.
+static bool sectionAllAir(const LevelChunk& lc, int sec) {
+        const int y0 = sec * 16;
+        for (int col = 0; col < 256; ++col) {
+                const vgen::BlockID* run = lc.mBlocks + y0 + col * 128;
+                for (int y = 0; y < 16; ++y) {
+                        if (run[y].value != 0)
+                                return false;
+                }
+        }
+        return true;
+}
+
 void VgenSource::copyVirtualToSink(const LevelChunk& src, mcp_chunk_t* dst) {
         // 0.15 worlds are LEVEL_GEN_HEIGHT (128) blocks tall: the vanilla
         // generator only fills y 0..127, and the virtual LevelChunk is a
         // 16x128x16 volume (stride 128). Copying sections 8..15 would read
         // past each column into the next one's data (aliasing garbage).
         for (int sec = 0; sec < vgen::LEVEL_GEN_HEIGHT / 16; ++sec) {
-                mcp_chunk_section_t* s = mcp_chunk_get_or_alloc_section(dst, (uint8_t)sec);
+                mcp_chunk_section_t* s = dst->sections[sec];
+                if (!s && sectionAllAir(src, sec)) {
+                        // All air in the virtual volume and nothing
+                        // allocated in the sink: writing would only
+                        // allocate the section to fill it with the zeros
+                        // it already reads as. Skip the alloc + 8k writes.
+                        continue;
+                }
+                s = mcp_chunk_get_or_alloc_section(dst, (uint8_t)sec);
                 if (!s)
                         continue;
                 for (int yl = 0; yl < 16; ++yl) {
@@ -558,7 +578,7 @@ void VgenSource::generate(GenerationContext& ctx) {
         if (!sink)
                 return;
 
-        vgen::LevelChunk* tc = acquireTerrain(ctx.chunk_x, ctx.chunk_z);
+        std::shared_ptr<vgen::LevelChunk> tc = acquireTerrain(ctx.chunk_x, ctx.chunk_z);
         copyVirtualToSink(*tc, sink);
 }
 
