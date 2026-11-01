@@ -363,12 +363,13 @@ void LightEngine::onChunkAdded(int32_t cx, int32_t cz) {
     // here would hold up generation, and touching ChunkManager from
     // inside setChunk() would deadlock on its mutex.
     std::lock_guard<std::mutex> lk(mtx_);
-    // Skip duplicates: a single cross-border tree can trigger several
-    // onChunkAdded calls for the same chunk in one tick.
-    for (const auto& p : pending_) {
-        if (p.first == cx && p.second == cz)
-            return;
-    }
+    // Skip duplicates: a single cross-border tree used to trigger
+    // several onChunkAdded calls for the same chunk in one tick, and
+    // the linear scan made that O(n) per spilled block. The companion
+    // set makes it O(1).
+    const uint64_t key = chunkKey(cx, cz);
+    if (!pending_keys_.insert(key).second)
+        return;
     pending_.emplace_back(cx, cz);
 }
 
@@ -384,6 +385,7 @@ size_t LightEngine::processPending(int32_t budget) {
         while (!pending_.empty() && work.size() < (size_t)budget) {
             work.push_back(pending_.front());
             pending_.pop_front();
+            pending_keys_.erase(chunkKey(work.back().first, work.back().second));
         }
     }
     for (const auto& [cx, cz] : work) {

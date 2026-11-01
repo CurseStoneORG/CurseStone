@@ -339,6 +339,7 @@ void ChunkManager::setChunk(int32_t x, int32_t z, mcp_chunk_t* chunk) {
 
 void ChunkManager::commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t id, uint8_t data) {
     mcp_chunk_t* live = nullptr;
+    bool changed = false;
     {
         std::scoped_lock lk(mtx_, pending_mtx_);
         auto it = chunks_.find(ChunkKey{cx, cz});
@@ -351,18 +352,31 @@ void ChunkManager::commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t i
             // the async callback), so the write cannot be swallowed.
             spillQueue_->queueSpill(cx, cz, index, id, data);
         }
+        if (live) {
+            uint32_t y = index % 128;
+            uint32_t rest = index / 128;
+            uint32_t z = rest % 16;
+            uint32_t x = rest / 16;
+            // PERF (light storm during population): features spill whole
+            // volumes — a lake writes its full 16x16x8 envelope even
+            // where the target cell already holds the same id/data. Every
+            // surviving write used to re-queue a full 46x46 relight for
+            // the chunk. A spill that writes the exact bytes the live
+            // chunk already holds changes nothing observable, so skip the
+            // write AND the relight entirely (the chunk still gets one
+            // relight per genuinely-changed cell batch below).
+            if (mcp_chunk_get_block_id(live, (int)x, (int)y, (int)z) != id ||
+                mcp_chunk_get_block_data(live, (int)x, (int)y, (int)z) != data) {
+                mcp_chunk_set_block_full(live, (int)x, (int)y, (int)z, id, data);
+                changed = true;
+            }
+        }
     }
-    if (live) {
-        uint32_t y = index % 128;
-        uint32_t rest = index / 128;
-        uint32_t z = rest % 16;
-        uint32_t x = rest / 16;
-        mcp_chunk_set_block_full(live, (int)x, (int)y, (int)z, id, data);
-        // The new blocks change the sky light the same way a player edit
-        // would — requeue the light sweep for the chunk.
-        if (on_chunk_added_)
-            on_chunk_added_(cx, cz);
-    }
+    // The new blocks change the sky light the same way a player edit
+    // would — requeue the light sweep for the chunk, outside the locks
+    // (same contract as setChunk's on_chunk_added_).
+    if (changed && on_chunk_added_)
+        on_chunk_added_(cx, cz);
 }
 
 void ChunkManager::markDirty(int32_t x, int32_t z) {
