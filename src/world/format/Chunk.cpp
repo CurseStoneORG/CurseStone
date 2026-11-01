@@ -476,7 +476,7 @@ static void propagate_layer(mcp_chunk_t* c, int maxTop, int isSky) {
             for (int y = 0; y <= maxTop; ++y)
                 if (layer_get(c, x, y, z, isSky) > 1) {
                     if (qtail < cap)
-                        queue[qtail++] = (LightNode){(uint8_t)x, (uint8_t)z, (uint16_t)y};
+                        queue[qtail++] = LightNode{(uint8_t)x, (uint8_t)z, (uint16_t)y};
                 }
 
     while (qhead < qtail) {
@@ -500,7 +500,7 @@ static void propagate_layer(mcp_chunk_t* c, int maxTop, int isSky) {
             if ((uint8_t)cand > layer_get(c, nx, ny, nz, isSky)) {
                 layer_set(c, nx, ny, nz, (uint8_t)cand, isSky);
                 if (cand > 1 && qtail < cap)
-                    queue[qtail++] = (LightNode){(uint8_t)nx, (uint8_t)nz, (uint16_t)ny};
+                    queue[qtail++] = LightNode{(uint8_t)nx, (uint8_t)nz, (uint16_t)ny};
             }
         }
     }
