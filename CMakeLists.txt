@@ -182,3 +182,7 @@ target_link_libraries(cursestone-bot PRIVATE
     Threads::Threads
     ZLIB::ZLIB
 )
+
+if(WIN32)
+    target_link_libraries(cursestone-bot PRIVATE ws2_32)
+endif()
