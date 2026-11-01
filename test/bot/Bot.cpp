@@ -31,12 +31,38 @@
 //   login      : [0x01][i32 BE 84][u32 BE outerLen][zlib{u32 LE chainLen][chain][u32 LE cdLen][cdJwt]}
 #include "Bot.h"
 
+// The Winsock shim below references std::strerror (POSIX branch) and
+// std::string/std::to_string (both branches), so pull those first.
+#include <cstring>
+#include <string>
+
+#ifdef _WIN32
+// The bot is a plain connected-UDP client, so Winsock maps 1:1 to the
+// POSIX socket calls below; only startup, close, poll and error text
+// need shims.
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#pragma comment(lib, "ws2_32.lib")
+
+using ssize_t = int;
+static int cs_close(int fd) { return closesocket((SOCKET)fd); }
+static int cs_poll(pollfd* fds, int nfds, int timeout) {
+    return WSAPoll(fds, (ULONG)nfds, (INT)timeout);
+}
+static std::string cs_last_err() {
+    return "WSA error " + std::to_string(WSAGetLastError());
+}
+#else
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#define cs_close ::close
+#define cs_poll ::poll
+static std::string cs_last_err() { return std::strerror(errno); }
+#endif
 
 #include <algorithm>
 #include <cctype>
@@ -244,7 +270,7 @@ std::string jsonEscape(const std::string& s) {
 // ---------------------------------------------------------------------------
 // lifecycle
 // ---------------------------------------------------------------------------
-BotClient::~BotClient() { closeCapture(); if (fd_ >= 0) ::close(fd_); }
+BotClient::~BotClient() { closeCapture(); if (fd_ >= 0) cs_close(fd_); }
 
 uint64_t BotClient::nowMs() {
     return (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -256,12 +282,20 @@ bool BotClient::open(const std::string& host, uint16_t port, std::string& err) {
     host_ = host;
     port_ = port;
 
+#ifdef _WIN32
+    WSADATA wsa;
+    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
+        err = cs_last_err();
+        return false;
+    }
+#endif
+
     std::random_device rd;
     guid_ = ((uint64_t)rd() << 32) ^ rd() ^ nowMs();
 
     fd_ = ::socket(AF_INET, SOCK_DGRAM, 0);
     if (fd_ < 0) {
-        err = std::string("socket(): ") + std::strerror(errno);
+        err = "socket(): " + cs_last_err();
         return false;
     }
     addrinfo hints{};
@@ -277,7 +311,7 @@ bool BotClient::open(const std::string& host, uint16_t port, std::string& err) {
     sa.sin_port = htons(port);
     ::freeaddrinfo(res);
     if (::connect(fd_, (sockaddr*)&sa, sizeof(sa)) != 0) {
-        err = std::string("connect(): ") + std::strerror(errno);
+        err = "connect(): " + cs_last_err();
         return false;
     }
     return true;
@@ -299,7 +333,7 @@ void BotClient::sendRaw(const std::vector<uint8_t>& bytes) {
 
 bool BotClient::recvOnce(std::vector<uint8_t>& out, int timeoutMs) {
     pollfd p{fd_, POLLIN, 0};
-    if (::poll(&p, 1, timeoutMs) <= 0)
+    if (cs_poll(&p, 1, timeoutMs) <= 0)
         return false;
     uint8_t buf[65535];
     ssize_t n = ::recv(fd_, buf, sizeof(buf), 0);
