@@ -63,8 +63,11 @@ class ITerrainFeed {
 public:
         virtual ~ITerrainFeed() = default;
         // Terrain-only chunk for (cx,cz); may come from the cache or be
-        // generated on demand. The pointer stays owned by the feed.
-        virtual LevelChunk* acquireTerrain(int cx, int cz) = 0;
+        // generated on demand. The shared_ptr keeps it alive while the
+        // caller copies from it: cache eviction erases the map entry but
+        // the object itself only dies with the last user, so a worker
+        // can never copy from a chunk another worker just evicted.
+        virtual std::shared_ptr<LevelChunk> acquireTerrain(int cx, int cz) = 0;
         // Deliver a write aimed outside the center chunk: applied to the
         // live chunk when one exists, queued for that chunk's populate /
         // install otherwise. Keeps cross-chunk features (trees, lakes,

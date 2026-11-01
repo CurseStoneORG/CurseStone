@@ -23,6 +23,9 @@
 
 #pragma once
 
+#include <mutex>
+#include <unordered_map>
+
 #include "vgen/structure/StructureFeatureType.h"
 #include "vgen/v1/LargeFeature.h"
 #include "vgen/Vanilla.h"
@@ -71,6 +74,16 @@ protected:
 
 	StructureMap cachedStructures;
 	std::mutex cacheMutex;
+
+	// Memoized isFeatureChunk verdicts per source cell. Every populate
+	// rescans a (2r+1)^2 cell ring per feature (289 cells for r=8, x3
+	// features), re-seeding a Mersenne Twister per cell just to re-derive
+	// a verdict the neighbouring populate already computed. The verdict
+	// is a pure function of (world seed, cell), so caching it preserves
+	// the RNG streams bit-exactly: cells that skip the re-seed never fed
+	// anything downstream (the caller re-seeds per cell).
+	std::mutex cellMemoMutex;
+	std::unordered_map<int64_t, int8_t> cellMemo;
 };
 
 } // namespace vgen

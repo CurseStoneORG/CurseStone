@@ -91,17 +91,17 @@ int main(int argc, char** argv) {
                 continue;
             h = fnv((const uint8_t*)&cx, sizeof(cx), h);
             h = fnv((const uint8_t*)&cz, sizeof(cz), h);
-            for (int sec = 0; sec < 8; ++sec) {
-                const mcp_chunk_section_t* s = mcp_chunk_get_section(c, (uint8_t)sec);
-                if (!s || !s->blocks) {
-                    const uint8_t zero = 0xAB; // marca de seccion ausente
-                    h = fnv(&zero, 1, h);
-                    continue;
-                }
-                h = fnv(s->blocks, 4096, h);
-                if (s->data)
-                    h = fnv(s->data, 2048, h);
-            }
+            // Lee SIEMPRE via accessors: definen el contrato observable
+            // (seccion ausente = aire/data 0), asi el hash solo cambia si
+            // cambia el terreno real, no si una optimizacion deja de
+            // materializar secciones que solo guardaban ceros implicitos.
+            for (int y = 0; y < 128; ++y)
+                for (int x = 0; x < 16; ++x)
+                    for (int z = 0; z < 16; ++z) {
+                        const uint8_t pair[2] = {mcp_chunk_get_block_id(c, x, y, z),
+                                                 mcp_chunk_get_block_data(c, x, y, z)};
+                        h = fnv(pair, 2, h);
+                    }
             if (c->biomes)
                 h = fnv(c->biomes, 256, h);
         }

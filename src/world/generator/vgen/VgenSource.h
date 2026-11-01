@@ -62,7 +62,7 @@ public:
         void setNeighborSink(INeighborBlockSink* sink) { mNeighborSink = sink; }
 
         // ITerrainFeed (the 3x3 virtual-neighborhood backing store)
-        vgen::LevelChunk* acquireTerrain(int cx, int cz) override;
+        std::shared_ptr<vgen::LevelChunk> acquireTerrain(int cx, int cz) override;
         void commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t id, uint8_t data) override;
         void applySpill(vgen::LevelChunk& center, int cx, int cz) override;
         vgen::Level& getLevel() override { return mLevel; }
@@ -121,9 +121,13 @@ private:
         vgen::RandomScatteredLargeFeature mScatteredFeature;
         vgen::MonsterRoomFeature mMonsterRoomFeature;
 
-        // terrain cache — terrain-only, immutable after fill
+        // terrain cache — terrain-only, immutable after fill.
+        // shared_ptr ownership: eviction erases the entry while a worker
+        // may still hold the pointer to copy a neighbor snapshot, so the
+        // object must outlive the map entry (was a real use-after-free:
+        // the evicting delete raced the copying worker).
         struct CacheEntry {
-                vgen::LevelChunk* chunk = nullptr;
+                std::shared_ptr<vgen::LevelChunk> chunk;
                 uint64_t stamp = 0;
         };
         static const size_t kTerrainCacheLimit = 512;
