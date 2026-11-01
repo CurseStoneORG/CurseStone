@@ -59,6 +59,7 @@
 #include <deque>
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 namespace cursestone::world {
@@ -107,6 +108,10 @@ class LightEngine {
     World& lvl_;
     mutable std::mutex mtx_;
     std::deque<std::pair<int32_t, int32_t>> pending_;
+    // Same members as pending_, as a set: population storms used to call
+    // onChunkAdded for the same chunk once per spilled block, and the
+    // duplicate check scanned the whole deque each time (O(n) per block).
+    std::unordered_set<uint64_t> pending_keys_;
 
     // Runs one full region recomputation for both layers.
     void relight(int32_t x0, int32_t y0, int32_t z0, int32_t x1, int32_t y1, int32_t z1);
