@@ -58,9 +58,18 @@ constexpr uint8_t MCPE_BATCH = 0x06;
 constexpr uint8_t MCPE_TEXT = 0x07;
 constexpr uint8_t MCPE_START_GAME = 0x09;
 constexpr uint8_t MCPE_MOVE_PLAYER = 0x10;
+constexpr uint8_t MCPE_USE_ITEM = 0x1f;        // block tap / place (client->server)
+constexpr uint8_t MCPE_CONTAINER_OPEN = 0x2a;  // server->client container UI
+constexpr uint8_t MCPE_CONTAINER_CLOSE = 0x2b;
+constexpr uint8_t MCPE_CONTAINER_SET_CONTENT = 0x2e;
+constexpr uint8_t MCPE_BLOCK_ENTITY_DATA = 0x32;
 constexpr uint8_t MCPE_FULL_CHUNK = 0x34;
 constexpr uint8_t MCPE_REQUEST_CHUNK_RADIUS = 0x3d;
 constexpr uint8_t MCPE_CHUNK_RADIUS_UPDATED = 0x3e;
+
+// furnace block ids (village houses place these naturally)
+constexpr uint8_t BLOCK_FURNACE = 61;
+constexpr uint8_t BLOCK_BURNING_FURNACE = 62;
 
 constexpr uint8_t RELIABILITY_UNRELIABLE = 0;
 constexpr uint8_t RELIABILITY_RELIABLE = 2;
@@ -76,7 +85,7 @@ constexpr size_t MAX_FRAG_PAYLOAD = UDP_BUDGET - 4 - 10 - 10; // datagram hdr + 
 class BotClient {
   public:
     // Scenario drives what the client does after a successful login.
-    enum class Scenario { Login, Chunks, Move, Chat, Malformed };
+    enum class Scenario { Login, Chunks, Move, Chat, Malformed, Furnace };
 
     BotClient() = default;
     ~BotClient();
@@ -103,6 +112,21 @@ class BotClient {
     const std::map<uint8_t, uint32_t>& packetCounts() const { return packetCounts_; }
     const std::string& lastError() const { return lastError_; }
     bool goalReached(Scenario s) const;
+    // Furnace scenario: true when the streamed area simply had no natural
+    // furnace (seed/terrain dependent) — a SKIP, not a server fault.
+    bool noFurnaceFound() const { return noFurnace_; }
+    // Chunk radius request (default 8, like the real client's render
+    // distance option; larger = more terrain explored per run).
+    void setRadius(int32_t r) { radius_ = r; }
+    // Optional long-distance march for the furnace scenario: the server
+    // caps every MovePlayer at 20 blocks, so the bot hops straight-line
+    // in 15-block steps until it reaches the village area, letting the
+    // chunk stream (and the furnace scan) run as it goes.
+    void setGoto(double x, double z) {
+        gotoX_ = x;
+        gotoZ_ = z;
+        goto_ = true;
+    }
     std::string statsLine() const;
 
   private:
@@ -146,6 +170,11 @@ class BotClient {
     void sendMovePlayer(double x, double y, double z, float yaw, float pitch, bool onGround);
     void sendChat(const std::string& message);
     void sendMalformed(int kind);
+    void sendUseItem(int32_t x, int32_t y, int32_t z, uint8_t face, double px, double py,
+                     double pz);
+    void sendContainerClose(uint8_t windowid);
+    void scanChunkForFurnace(int32_t cx, int32_t cz, const std::vector<uint8_t>& payload);
+    void furnaceTick(uint64_t now);
 
     // --- capture ------------------------------------------------------------
     void capture(const std::string& event, const std::vector<uint8_t>* data, uint8_t pid);
@@ -212,6 +241,26 @@ class BotClient {
     uint32_t chatSent_ = 0;
     uint32_t malformedSent_ = 0;
     bool malformedDone_ = false;
+
+    // furnace scenario state machine (0 wait-chunks, 1 walk, 2 touch,
+    // 3 close, 4 re-touch, 5 re-close, 6 done)
+    int furnacePhase_ = 0;
+    int32_t furnaceX_ = 0, furnaceY_ = 0, furnaceZ_ = 0;
+    bool furnaceFound_ = false;
+    bool noFurnace_ = false;
+    uint32_t walkSteps_ = 0;
+    uint32_t useItemSent_ = 0;
+    uint32_t closeSent_ = 0;
+    uint32_t containerOpens_ = 0;      // ContainerOpen(0x2a) received
+    uint32_t blockEntityDatas_ = 0;    // BlockEntityData(0x32) received
+    uint8_t containerWindowId_ = 0;
+    uint64_t lastFurnaceMs_ = 0;
+    uint64_t phaseStartMs_ = 0;
+    int32_t radius_ = 8;
+    bool goto_ = false;
+    double gotoX_ = 0.0, gotoZ_ = 0.0;
+    bool gotoDone_ = false;
+    uint32_t gotoSteps_ = 0;
 
     // capture
     FILE* cap_ = nullptr;
