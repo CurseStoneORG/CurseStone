@@ -163,3 +163,22 @@ endif()
 if(ANDROID)
     target_link_libraries(CurseStone PRIVATE log android)
 endif()
+
+# ---- Test bot harness (standalone protocol-84 client) ----
+# A real-shaped 0.15.10 client used to exercise the running server:
+# RakNet handshake, login, chunks, movement, chat and malformed traffic.
+# Independent from the server sources on purpose — it must build even when
+# game code is mid-refactor.
+add_executable(cursestone-bot
+    test/bot/main.cpp
+    test/bot/Bot.cpp
+)
+
+target_include_directories(cursestone-bot PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/bot
+)
+
+target_link_libraries(cursestone-bot PRIVATE
+    Threads::Threads
+    ZLIB::ZLIB
+)
