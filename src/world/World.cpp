@@ -23,6 +23,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // World implementation; connects the provider and chunk manager for disk persistence.
 #include "World.h"
+
+#include <chrono>
 #include "world/format/Chunk.h"
 #include "world/format/WorldProvider.h"
 #include "world/format/WorldProviderManager.h"
@@ -504,7 +506,14 @@ void World::tick(uint64_t current_tick) {
     if (sleep_ticks_ > 0 && --sleep_ticks_ <= 0) {
         checkSleep();
     }
-    light_.processPending(LightEngine::kPendingBudget);
+    {
+        const auto light0 = std::chrono::steady_clock::now();
+        light_.processPending(LightEngine::kPendingBudget);
+        const double lightMs = std::chrono::duration<double, std::milli>(
+                                   std::chrono::steady_clock::now() - light0)
+                                   .count();
+        avgLightMs_ = avgLightMs_ * 0.9 + lightMs * 0.1;
+    }
     processLiquidWakes(kLiquidWakeBudget);
     tickDroppedItems(current_tick);
     tickArrows(current_tick);
