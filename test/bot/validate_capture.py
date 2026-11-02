@@ -45,15 +45,22 @@ def main():
     ap.add_argument("--all", action="store_true", help="validate every packet, not one per type")
     args = ap.parse_args()
 
-    emu = load_spike(args.libremc)
-    if args.mcpe_lib:
-        emu.LIB = args.mcpe_lib
+    # The differential validator is optional tooling: it needs the LibReMC
+    # data repo (emulation spike + packet tables). Without it, exit 3 so
+    # callers can SKIP instead of misreading the environment as a failure.
+    try:
+        emu = load_spike(args.libremc)
+        if args.mcpe_lib:
+            emu.LIB = args.mcpe_lib
 
-    data_dir = os.path.join(os.path.abspath(args.libremc), "data")
-    with open(os.path.join(data_dir, "packet_ids.json")) as f:
-        ids = json.load(f)["packets"]
-    with open(os.path.join(data_dir, "addresses_for_decompile.json")) as f:
-        addrs = json.load(f)["functions"]
+        data_dir = os.path.join(os.path.abspath(args.libremc), "data")
+        with open(os.path.join(data_dir, "packet_ids.json")) as f:
+            ids = json.load(f)["packets"]
+        with open(os.path.join(data_dir, "addresses_for_decompile.json")) as f:
+            addrs = json.load(f)["functions"]
+    except (ImportError, FileNotFoundError) as exc:
+        print(f"SKIP: LibReMC client libraries not available ({exc})")
+        return 3
 
     id_to_class = {}
     for p in ids:
