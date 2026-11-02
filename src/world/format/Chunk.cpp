@@ -451,36 +451,54 @@ static int light_cost(uint8_t id) {
     return op > 0 ? (int)op : 1;
 }
 
-// Flood one layer through the chunk from every seeded cell, in the six
-// vanilla directions. Bounded to [0, maxTop]: above that there is not a
-// single block in any column of this chunk.
-static void propagate_layer(mcp_chunk_t* c, int maxTop, int isSky) {
-    typedef struct {
-        uint8_t x, z;
-        uint16_t y;
-    } LightNode;
+// Flood one layer through the chunk from a pre-collected seed list, in
+// the six vanilla directions. Bounded to [0, maxTop]: above that there
+// is not a single block in any column of this chunk.
+//
+// The queue GROWS instead of silently dropping nodes: the old fixed
+// cap (16*16*(maxTop+1)) could overflow on concave terrain where a
+// single cell is re-raised several times, and a dropped node meant a
+// permanently darker cell (values only rise, so nothing re-derives it
+// later). Realloc moves the buffer but the head/tail are offsets, so
+// consuming with qhead++ stays valid across the grow.
+typedef struct {
+    uint8_t x, z;
+    uint16_t y;
+} LightNode;
+
+static int light_queue_push(LightNode** q, size_t* cap, size_t* tail, int x, int y, int z) {
+    if (*tail >= *cap) {
+        const size_t ncap = *cap ? *cap * 2 : 1024;
+        LightNode* nq = (LightNode*)realloc(*q, ncap * sizeof(LightNode));
+        if (!nq)
+            return 0; // OOM: drop this push, keep the flood running
+        *q = nq;
+        *cap = ncap;
+    }
+    (*q)[(*tail)++] = LightNode{(uint8_t)x, (uint8_t)z, (uint16_t)y};
+    return 1;
+}
+
+static void propagate_layer(mcp_chunk_t* c, int maxTop, int isSky,
+                            LightNode* seeds, size_t nseeds) {
     const int dx[6] = {1, -1, 0, 0, 0, 0};
     const int dy[6] = {0, 0, 1, -1, 0, 0};
     const int dz[6] = {0, 0, 0, 0, 1, -1};
 
-    size_t cap = (size_t)16 * 16 * (size_t)(maxTop + 1);
-    if (cap == 0)
-        cap = 1;
+    size_t cap = nseeds > 0 ? nseeds : 1;
     LightNode* queue = (LightNode*)malloc(cap * sizeof(LightNode));
     if (!queue)
         return;
-
-    size_t qhead = 0, qtail = 0;
-    for (int x = 0; x < 16; ++x)
-        for (int z = 0; z < 16; ++z)
-            for (int y = 0; y <= maxTop; ++y)
-                if (layer_get(c, x, y, z, isSky) > 1) {
-                    if (qtail < cap)
-                        queue[qtail++] = LightNode{(uint8_t)x, (uint8_t)z, (uint16_t)y};
-                }
+    if (nseeds > 0)
+        memcpy(queue, seeds, nseeds * sizeof(LightNode));
+    size_t qhead = 0, qtail = nseeds;
 
     while (qhead < qtail) {
-        const LightNode n = queue[qhead++];
+        // Copy the node out BEFORE any push: a realloc inside
+        // light_queue_push moves the buffer, so a pointer into the old
+        // storage would read garbage mid-flood.
+        const LightNode n = queue[qhead];
+        ++qhead;
         const uint8_t cur = layer_get(c, n.x, n.y, n.z, isSky);
         if (cur <= 1)
             continue;
@@ -499,8 +517,8 @@ static void propagate_layer(mcp_chunk_t* c, int maxTop, int isSky) {
                 continue;
             if ((uint8_t)cand > layer_get(c, nx, ny, nz, isSky)) {
                 layer_set(c, nx, ny, nz, (uint8_t)cand, isSky);
-                if (cand > 1 && qtail < cap)
-                    queue[qtail++] = LightNode{(uint8_t)nx, (uint8_t)nz, (uint16_t)ny};
+                if (cand > 1)
+                    light_queue_push(&queue, &cap, &qtail, nx, ny, nz);
             }
         }
     }
@@ -529,52 +547,94 @@ void mcp_chunk_propagate_sky_light(mcp_chunk_t* c) {
     if (maxTop > 255)
         maxTop = 255;
 
-    // --- Fase 1: columna descendente (solo hasta maxTop) ---
+    // Seed lists, collected DURING the vertical write instead of a
+    // second full scan per layer: the flood's seed set is exactly the
+    // cells the vertical pass wrote with light > 1 (sky) / emission > 0
+    // (block), so fusing the collection into the write saves two
+    // 16x16x(maxTop+1) sweeps per chunk without changing the set.
+    size_t skyCap = 1024, skyN = 0, blkCap = 1024, blkN = 0;
+    LightNode* skySeeds = (LightNode*)malloc(skyCap * sizeof(LightNode));
+    LightNode* blkSeeds = (LightNode*)malloc(blkCap * sizeof(LightNode));
+    if (!skySeeds || !blkSeeds) {
+        free(skySeeds);
+        free(blkSeeds);
+        return;
+    }
+
+    // --- Fase 1: columna descendente (solo hasta maxTop) --------------
+    // Per column the walk is section-wise: one get_or_alloc per 16
+    // cells (the base pass re-ran the section lookup for EVERY cell),
+    // then direct nibble/block writes through the cached pointer.
     for (int x = 0; x < 16; ++x) {
         for (int z = 0; z < 16; ++z) {
-            int32_t h = mcp_chunk_get_height_map(c, x, z); // primer Y opaco
+            const int32_t h = mcp_chunk_get_height_map(c, x, z); // primer Y opaco
             int light = 15;
-            for (int y = maxTop; y >= 0; --y) {
-                if (y >= h) {
-                    // por encima de la superficie: cielo abierto, luz plena
-                    mcp_chunk_set_sky_light(c, x, y, z, 15);
-                    continue;
-                }
-                uint8_t id = mcp_chunk_get_block_id(c, x, y, z);
-                uint8_t op = cursestone::block::Block::lightOpacity(id);
-                // Minecraft subtracts opacity (min 1 so light still
-                // decays through "transparent" blocks) except pure air.
-                if (id != 0) {
-                    int dec = op > 0 ? op : 1;
-                    light -= dec;
-                    if (light < 0)
-                        light = 0;
-                }
-                mcp_chunk_set_sky_light(c, x, y, z, (uint8_t)light);
-                if (light <= 0) {
-                    // no sky light can exist lower in this column from
-                    // the vertical phase; phase 2 fills from the sides.
+            const int yTop = maxTop;
+            for (int sec = (yTop >> 4); sec >= 0; --sec) {
+                mcp_chunk_section_t* s = mcp_chunk_get_or_alloc_section(c, (uint8_t)sec);
+                const int yb = sec * 16 + 15;
+                const int ya = sec * 16;
+                for (int y = (yb < yTop ? yb : yTop); y >= ya; --y) {
+                    const int lx = x, lz = z;
+                    if (y >= h) {
+                        // por encima de la superficie: cielo abierto, luz plena
+                        if (s)
+                            mcp_section_set_nibble(s->sky_light, lx, y, lz, 15);
+                        else
+                            mcp_chunk_set_sky_light(c, lx, y, lz, 15);
+                        light_queue_push(&skySeeds, &skyCap, &skyN, x, y, z);
+                        continue;
+                    }
+                    const uint8_t id =
+                        s ? s->blocks[lx | (lz << 4) | ((y & 15) << 8)]
+                          : mcp_chunk_get_block_id(c, lx, y, lz);
+                    const uint8_t op = cursestone::block::Block::lightOpacity(id);
+                    // Minecraft subtracts opacity (min 1 so light still
+                    // decays through "transparent" blocks) except pure air.
+                    if (id != 0) {
+                        const int dec = op > 0 ? op : 1;
+                        light -= dec;
+                        if (light < 0)
+                            light = 0;
+                    }
+                    if (s)
+                        mcp_section_set_nibble(s->sky_light, lx, y, lz, (uint8_t)light);
+                    else
+                        mcp_chunk_set_sky_light(c, lx, y, lz, (uint8_t)light);
+                    if (light > 1)
+                        light_queue_push(&skySeeds, &skyCap, &skyN, x, y, z);
+
+                    // Fused block-emission seed collection: same cells
+                    // the old phase-3 scan visited, minus the second
+                    // read of every block id (Phase 1 already fetched
+                    // it). Emission-0 cells skip the nibble write —
+                    // fresh sections are zeroed, so writing 0 over 0
+                    // was a no-op anyway.
+                    const uint8_t e = cursestone::block::Block::lightEmission(id);
+                    if (e > 0) {
+                        if (s)
+                            mcp_section_set_nibble(s->block_light, lx, y, lz, e);
+                        else
+                            mcp_chunk_set_block_light(c, lx, y, lz, e);
+                        light_queue_push(&blkSeeds, &blkCap, &blkN, x, y, z);
+                    }
                 }
             }
         }
     }
 
-    // --- Fase 2: inundado en las 6 direcciones, para las DOS capas ---
+    // --- Fase 2: inundado en las 6 direcciones, para las DOS capas ----
     // La vertical es lo que faltaba antes: sin ella la luz no bajaba
     // nunca y todo lo que estuviera bajo un alero o en una cueva
     // quedaba en 0 (las "manchas negras").
-    propagate_layer(c, maxTop, /*isSky=*/1);
+    propagate_layer(c, maxTop, /*isSky=*/1, skySeeds, skyN);
+    free(skySeeds);
 
-    // Block light: se siembra desde la emision de cada bloque y se
-    // inunda igual que el cielo. Antes esta capa no se tocaba nunca,
-    // asi que una antorcha no iluminaba nada.
-    for (int x = 0; x < 16; ++x)
-        for (int z = 0; z < 16; ++z)
-            for (int y = 0; y <= maxTop; ++y) {
-                const uint8_t e = cursestone::block::Block::lightEmission(mcp_chunk_get_block_id(c, x, y, z));
-                mcp_chunk_set_block_light(c, x, y, z, e);
-            }
-    propagate_layer(c, maxTop, /*isSky=*/0);
+    // Block light: se siembra desde la emision de cada bloque (ya
+    // recolectada arriba) y se inunda igual que el cielo. Antes esta
+    // capa no se tocaba nunca, asi que una antorcha no iluminaba nada.
+    propagate_layer(c, maxTop, /*isSky=*/0, blkSeeds, blkN);
+    free(blkSeeds);
 
     c->light_populated = true;
     c->dirty = true;

@@ -291,11 +291,24 @@ mcp_chunk_t* ChunkManager::getChunkOrRequestAsync(int32_t x, int32_t z,
                 pending_.erase(key);
             }
             // Outside every lock (same contract as setChunk): the World
-            // only queues work — here the dynamic-liquid wake scan, so a
-            // chunk that was generated on a worker also starts its liquid
-            // ticking queue the moment it goes live.
-            if (installed && on_chunk_installed_)
-                on_chunk_installed_(key.x, key.z);
+            // only queues work — here the dynamic-liquid wake scan AND the
+            // light sweep, so a chunk that was generated on a worker also
+            // starts its liquid ticking queue and gets its border pass
+            // queued the moment it goes live.
+            //
+            // REAL BUG (the flight 'black stains, chunk by chunk'): this
+            // callback used to fire ONLY the liquid hook — worker-generated
+            // chunks never entered the light queue at all, so they were
+            // serialized and sent with unrepaired cross-border seams; the
+            // client kept those bytes and the seam stayed until the chunk
+            // re-streamed. The worker DID light the interior; the border
+            // pass is what makes it continuous with the neighbours.
+            if (installed) {
+                if (on_chunk_added_)
+                    on_chunk_added_(key.x, key.z, /*full=*/false);
+                if (on_chunk_installed_)
+                    on_chunk_installed_(key.x, key.z);
+            }
         });
 
     if (pool->submit([task] {
@@ -331,8 +344,15 @@ void ChunkManager::setChunk(int32_t x, int32_t z, mcp_chunk_t* chunk) {
     // Outside the lock: the callback (World) only enqueues the chunk for a
     // later light sweep. Calling it with mtx_ held would deadlock on the
     // very mutex ChunkManager needs.
+    //
+    // BORDER, not FULL: the chunk arrives with its interior already lit
+    // (worker pass on generation, stored light on a disk load), so the
+    // exact re-flood would only re-derive values the chunk already has
+    // and re-wipe 15 blocks into each healthy neighbour. The border pass
+    // pulls/pushes the cross-border flow and flags/queues whatever the
+    // spill replay (drainSpills above) actually changed.
     if (on_chunk_added_)
-        on_chunk_added_(x, z);
+        on_chunk_added_(x, z, /*full=*/false);
     if (on_chunk_installed_)
         on_chunk_installed_(x, z);
 }
@@ -374,9 +394,12 @@ void ChunkManager::commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t i
     }
     // The new blocks change the sky light the same way a player edit
     // would — requeue the light sweep for the chunk, outside the locks
-    // (same contract as setChunk's on_chunk_added_).
+    // (same contract as setChunk's on_chunk_added_). This one is FULL:
+    // blocks genuinely changed under a live chunk, so the exact
+    // clear-and-reflood sweep (chunk + one light range into every
+    // neighbour) is required to darken what the new blocks shadow.
     if (changed && on_chunk_added_)
-        on_chunk_added_(cx, cz);
+        on_chunk_added_(cx, cz, /*full=*/true);
 }
 
 void ChunkManager::markDirty(int32_t x, int32_t z) {

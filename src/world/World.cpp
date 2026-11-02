@@ -207,8 +207,8 @@ World::World(WorldConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
         chunks_.setSpillQueue(vgen);
     }
     provider_ = provider;
-    chunks_.setOnChunkAdded([this](int32_t cx, int32_t cz) {
-        onChunkAdded(cx, cz);
+    chunks_.setOnChunkAdded([this](int32_t cx, int32_t cz, bool full) {
+        onChunkAdded(cx, cz, full);
     });
     chunks_.setOnChunkInstalled([this](int32_t cx, int32_t cz) {
         queueLiquidWake(cx, cz);
@@ -344,8 +344,8 @@ void World::setBlock(int32_t x, int32_t y, int32_t z, uint8_t id, uint8_t data,
     }
 }
 
-void World::onChunkAdded(int32_t cx, int32_t cz) {
-    light_.onChunkAdded(cx, cz);
+void World::onChunkAdded(int32_t cx, int32_t cz, bool full) {
+    light_.onChunkAdded(cx, cz, full);
 }
 
 // How many freshly installed chunks get their dynamic-liquid scan per
@@ -508,7 +508,7 @@ void World::tick(uint64_t current_tick) {
     }
     {
         const auto light0 = std::chrono::steady_clock::now();
-        light_.processPending(LightEngine::kPendingBudget);
+        light_.processPending(LightEngine::kPendingBudget, LightEngine::kTickBudgetMs);
         const double lightMs = std::chrono::duration<double, std::milli>(
                                    std::chrono::steady_clock::now() - light0)
                                    .count();
