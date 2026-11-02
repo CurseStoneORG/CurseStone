@@ -897,6 +897,12 @@ void BotClient::handleMcpePacket(const std::vector<uint8_t>& pkt) {
         if (pkt.size() >= 17) {
             containerWindowId_ = pkt[1];
             containerOpens_++;
+            // The 0.15.10 client aborts inside its furnace screen on every
+            // type=2 open (bisected on a real client) — the server must
+            // open furnaces as generic container windows (type 0).
+            if (pkt[2] == 2)
+                fail("server sent a type=2 ContainerOpen (furnace window) — "
+                     "the 0.15.10 client aborts in its furnace screen");
             int32_t ox = (int32_t)(((uint32_t)pkt[5] << 24) | ((uint32_t)pkt[6] << 16) |
                                    ((uint32_t)pkt[7] << 8) | (uint32_t)pkt[8]);
             int32_t oy = (int32_t)(((uint32_t)pkt[9] << 24) | ((uint32_t)pkt[10] << 16) |

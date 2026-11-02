@@ -26,6 +26,11 @@ BOT="$BUILD/cursestone-bot"
 
 echo "== start server =="
 mkdir -p "$WORK/run" && cd "$WORK/run"
+# Pin the world seed: seed 12345 has a village with a natural furnace at
+# (683, 71, 118), so the furnace regression scenario can march straight
+# to it instead of hoping a village lands inside the streamed radius. A
+# missing furnace still degrades to an honest SKIP, never a false FAIL.
+printf 'world-seed=12345\n' > server.properties
 cp "$BIN" .
 ./CurseStone > server.log 2>&1 &
 SRV_PID=$!
@@ -57,6 +62,7 @@ expect malformed "$BOT" --scenario malformed --duration 25000
 echo "== scenario: furnace (natural village furnace tap) =="
 set +e
 "$BOT" --scenario furnace --duration 60000 --radius 12 \
+    --goto 683,118 \
     --capture "$WORK/furnace.jsonl"
 FURNACE_RC=$?
 set -e
@@ -71,15 +77,25 @@ echo "== differential validation =="
 if python3 "$ROOT/test/bot/validate_capture.py" --capture "$WORK/capture.jsonl"; then
     echo "[validate] PASS"
 else
-    echo "[validate] FAIL (a packet would crash a real client)"
-    FAILED=1
+    vrc=$?
+    if [ "$vrc" -eq 3 ]; then
+        echo "[validate] SKIP (LibReMC client libraries not available)"
+    else
+        echo "[validate] FAIL (a packet would crash a real client)"
+        FAILED=1
+    fi
 fi
 if [ -s "$WORK/furnace.jsonl" ]; then
     if python3 "$ROOT/test/bot/validate_capture.py" --capture "$WORK/furnace.jsonl"; then
         echo "[validate-furnace] PASS"
     else
-        echo "[validate-furnace] FAIL (a furnace-flow packet would crash a real client)"
-        FAILED=1
+        vrc=$?
+        if [ "$vrc" -eq 3 ]; then
+            echo "[validate-furnace] SKIP (LibReMC client libraries not available)"
+        else
+            echo "[validate-furnace] FAIL (a furnace-flow packet would crash a real client)"
+            FAILED=1
+        fi
     fi
 fi
 

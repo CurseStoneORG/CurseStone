@@ -31,9 +31,11 @@
 //   putInt(y)
 //   putInt(z)
 //
-// There is NO trailing entityId long in protocol 84 — an extra 8 bytes
-// at the end of this record is exactly the kind of unexpected payload
-// the 0.15.10 client is strict about on the furnace path.
+// There is NO trailing entityId long in the protocol-84 reference encode
+// (PocketMine-MP 1.6dev). Nukkit's 0.15-era packet appended one; the
+// client tolerates a trailing suffix on window types it survives, but
+// it aborts on every bisected type=2 open regardless of the payload
+// around it — see Player::openFurnaceAt for the workaround.
 #pragma once
 
 #include "DataPacket.h"
@@ -52,6 +54,9 @@ class ContainerOpenPacket : public DataPacket {
     // project actually opens are named here; add more as they're needed.
     static constexpr uint8_t TYPE_CONTAINER = 0;
     static constexpr uint8_t TYPE_FURNACE = 2; // WORKBENCH=1, FURNACE=2
+    // TYPE_FURNACE is never put on the wire: the 0.15.10 client aborts
+    // on type=2 opens, so furnaces open as TYPE_CONTAINER instead (see
+    // Player::openFurnaceAt).
 
     uint8_t windowid = 0;
     uint8_t type = TYPE_CONTAINER;

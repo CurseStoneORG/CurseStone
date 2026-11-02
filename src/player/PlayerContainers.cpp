@@ -358,17 +358,22 @@ void Player::openFurnaceAt(int x, int y, int z) {
     open_furnace_ = furnace;
     openContainerWindow(); // sets container_window_id_ for every packet below
 
-    // BlockEntityData BEFORE the open record — the furnace screen binds
-    // to the block actor at these coords and dies when it is missing
-    // (a village/structure furnace is just a block until a tile exists,
-    // and a chunk streamed before the tile was created never carried
-    // the NBT). Same order the reference produces: tile spawn, then
-    // ContainerOpen, then the content dump.
+    // BlockEntityData BEFORE the open record — same order the reference
+    // produces: tile spawn, then ContainerOpen, then the content dump.
+    // Also hydrates player-placed furnaces whose chunk streamed before
+    // the tile existed.
     sendBlockEntityData(x, y, z, *furnace, nullptr);
 
     auto op = std::make_shared<network::protocol::ContainerOpenPacket>();
     op->windowid = container_window_id_;
-    op->type = network::protocol::ContainerOpenPacket::TYPE_FURNACE;
+    // Type 0, never TYPE_FURNACE: the 0.15.10 client aborts inside its
+    // furnace screen on every type=2 open — bisected on a real client
+    // with confirmed hits (dies with any NBT, content, block metadata
+    // or coords; the identical record with type=1 lives). The generic
+    // container window is the path this client survives (chests); the
+    // 3 slots stay input/fuel/output and clicks route by window id,
+    // not by the open type.
+    op->type = network::protocol::ContainerOpenPacket::TYPE_CONTAINER;
     op->slots = 3;
     op->x = x;
     op->y = y;

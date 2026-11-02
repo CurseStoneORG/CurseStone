@@ -10,10 +10,14 @@ against the era-84 reference (PocketMine-MP 1.6dev):
     ContainerOpen  = windowid u8, type u8, slots i16, x/y/z i32 (16 B,
                      NO trailing entityId long)
     then ContainerSetContent with the slot dump
-    BlockEntityData belongs BEFORE the open (the client binds the
-    furnace UI to the block actor at those coords; a furnace screen
-    without one dies, a chest just refuses)
+    BlockEntityData belongs BEFORE the open (same order the reference
+    produces; also hydrates tiles the chunk stream never carried)
     no ContainerSetData until the tile actually ticks progress
+
+  the 0.15.10 client aborts inside its furnace screen on every type=2
+  open (bisected on a real client with confirmed hits), so furnaces
+  open as generic container windows (type 0) — same wire shape as a
+  chest
 
 A real protocol-84 client drives a self-managed flat server:
 
@@ -23,8 +27,8 @@ A real protocol-84 client drives a self-managed flat server:
   3. tap the furnace, capture the open sequence and assert:
        - a BlockEntityData with a parseable {"id":"Furnace"} NBT
          arrives BEFORE ContainerOpen
-       - ContainerOpen is exactly 16 bytes (type 2, slots 3, right
-         coords, no trailing 8-byte entityId garbage)
+       - ContainerOpen is exactly 16 bytes (container window type 0,
+         slots 3, right coords, no trailing 8-byte entityId garbage)
        - ContainerSetContent follows with 3 empty slots
        - no ContainerSetData squeezed between the open packets
   4. same order checks for the chest (type 0)
@@ -424,7 +428,9 @@ def main() -> int:
                 typ = op[2]
                 slots = struct.unpack(">h", op[3:5])[0]
                 ox, oy, oz = struct.unpack(">iii", op[5:17])
-                check(typ == 2, f"open type=2 furnace (got {typ})")
+                check(typ == 0,
+                      f"open type=0 container — the 0.15.10 furnace screen "
+                      f"aborts on type=2 (got {typ})")
                 check(slots == 3, f"open slots=3 (got {slots})")
                 check((ox, oy, oz) == (FURNACE_X, FURNACE_Y, FURNACE_Z),
                       f"open coords match (got {ox},{oy},{oz})")
