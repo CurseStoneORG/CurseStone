@@ -6,12 +6,14 @@ right after "[FURNACE] ... opened furnace". The fake e2e clients never
 validate the open sequence, so the wire had to be captured and checked
 against the era-84 reference (PocketMine-MP 1.6dev):
 
-  reference open flow for a block container:
+  reference open flow for a block container (PocketMine-MP 1.6.2,
+  ContainerInventory::onOpen — the server software that drove real
+  0.15.10 clients):
     ContainerOpen  = windowid u8, type u8, slots i16, x/y/z i32 (16 B,
                      NO trailing entityId long)
     then ContainerSetContent with the slot dump
-    BlockEntityData belongs BEFORE the open (same order the reference
-    produces; also hydrates tiles the chunk stream never carried)
+    BlockEntityData is NOT re-sent in the open batch: the tile NBT
+    rides the chunk stream (hydrate path) and the place-time spawn
     no ContainerSetData until the tile actually ticks progress
 
   the 0.15.10 client aborts inside its furnace screen on every type=2
@@ -25,12 +27,12 @@ A real protocol-84 client drives a self-managed flat server:
   2. restart the server so the tiles reload from disk, relogin and
      capture the chunk-stream BlockEntityData (the hydrate path)
   3. tap the furnace, capture the open sequence and assert:
-       - a BlockEntityData with a parseable {"id":"Furnace"} NBT
-         arrives BEFORE ContainerOpen
+       - the tile NBT already arrived with the chunk stream (stage 2)
        - ContainerOpen is exactly 16 bytes (container window type 0,
          slots 3, right coords, no trailing 8-byte entityId garbage)
        - ContainerSetContent follows with 3 empty slots
-       - no ContainerSetData squeezed between the open packets
+       - no BlockEntityData re-send and no ContainerSetData squeezed
+         between the open packets (off-reference for the open batch)
   4. same order checks for the chest (type 0)
 
     python3 tools/container_open_wire_check.py [--server /path/to/CurseStone]
@@ -373,6 +375,8 @@ def main() -> int:
                       f"stream furnace NBT has id=Furnace (fields={sorted(tags)})")
                 check("BurnTime" in tags and "CookTime" in tags,
                       "stream furnace NBT carries client keys BurnTime/CookTime")
+                check("BurnDuration" not in tags and "BurnTicks" not in tags,
+                      "stream furnace NBT has no disk-only keys")
             except Exception as exc:
                 check(False, f"stream furnace NBT parses ({exc})")
 
@@ -395,28 +399,10 @@ def main() -> int:
 
         open_idx = seq_pids.index(CONTAINER_OPEN) if CONTAINER_OPEN in seq_pids else -1
         check(open_idx >= 0, "furnace ContainerOpen sent")
-        be_before = [i for i, (pid, _) in enumerate(seq[:open_idx])
-                     if pid == BLOCK_ENTITY_DATA]
-        check(bool(be_before),
-              "BlockEntityData arrives BEFORE the furnace ContainerOpen")
-        if be_before:
-            be_bytes = seq[be_before[-1]][1][13:]
-            try:
-                _, tags = nbt_parse_compound(be_bytes)
-                check(tags.get("id") == "Furnace",
-                      "pre-open furnace NBT parses with id=Furnace")
-                # The 0.15.10 furnace screen binds BurnTime/CookTime when
-                # the BlockEntityData lands; a compound without them is a
-                # null read inside the client and crashes the game — the
-                # village-furnace crash. The disk keys (BurnDuration/
-                # BurnTicks/CookTicks) must never leak to the wire.
-                check("BurnTime" in tags and "CookTime" in tags,
-                      f"pre-open furnace NBT carries client keys "
-                      f"BurnTime/CookTime (fields={sorted(tags)})")
-                check("BurnDuration" not in tags and "BurnTicks" not in tags,
-                      "pre-open furnace NBT has no disk-only keys")
-            except Exception as exc:
-                check(False, f"pre-open furnace NBT parses ({exc})")
+        be_tap = [pid for pid, _ in seq if pid == BLOCK_ENTITY_DATA]
+        check(not be_tap,
+              "no BlockEntityData re-send in the furnace tap batch "
+              "(the tile NBT belongs to the chunk stream, not the open)")
 
         if open_idx >= 0:
             op = seq[open_idx][1]
@@ -460,9 +446,10 @@ def main() -> int:
         seq_pids = [pid for pid, _ in seq]
         open_idx = seq_pids.index(CONTAINER_OPEN) if CONTAINER_OPEN in seq_pids else -1
         check(open_idx >= 0, "chest ContainerOpen sent")
-        be_before = [1 for pid, _ in seq[:open_idx] if pid == BLOCK_ENTITY_DATA]
-        check(bool(be_before),
-              "BlockEntityData arrives BEFORE the chest ContainerOpen")
+        be_tap = [pid for pid, _ in seq if pid == BLOCK_ENTITY_DATA]
+        check(not be_tap,
+              "no BlockEntityData re-send in the chest tap batch "
+              "(the tile NBT belongs to the chunk stream, not the open)")
         if open_idx >= 0:
             op = seq[open_idx][1]
             check(len(op) == 17,
