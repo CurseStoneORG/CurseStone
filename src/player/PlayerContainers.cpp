@@ -160,19 +160,17 @@ void Player::openChestAt(int x, int y, int z) {
     open_double_ = doubleInv;
     openContainerWindow(); // sets container_window_id_ for every packet below
 
-    // The client binds the container UI to the block actor at these
-    // coords, so the BlockEntityData must exist client-side BEFORE the
-    // ContainerOpen record arrives — same order a chunk stream produces
-    // (chunk data, then tile NBTs). Inside the open batch the wrong order
-    // leaves the 0.15.10 client binding a UI to a block entity it has
-    // not seen yet. A paired chest refreshes BOTH halves: the pair tags
-    // (pairx/pairz) are what makes the client render the large chest.
-    sendBlockEntityData(x, y, z, *chest, nullptr);
-    if (chestPair) {
-        const auto& pp = chestPair->position();
-        sendBlockEntityData((int32_t)pp.x, (int32_t)pp.y, (int32_t)pp.z, *chestPair, nullptr);
-    }
-
+    // Reference open flow (PocketMine-MP 1.6.2, ContainerInventory::onOpen,
+    // the server software that drove real 0.15.10 clients): ContainerOpen
+    // followed by the content dump — nothing else in the batch. The tile
+    // NBT is NOT re-sent here: it already reached this client through the
+    // chunk stream (Player::sendChunkTiles) and the place-time spawn
+    // (PlayerBlocks) — both halves of a paired chest included, the pair
+    // tags (pairx/pairz) ride the same spawn compound. Re-sending a
+    // BlockEntityData inside the open batch is off-reference and is the
+    // only deviation left from the reference open flow — the 0.15.10
+    // client is observed to swallow the whole open while it is there
+    // (no UI, no crash).
     auto op = std::make_shared<network::protocol::ContainerOpenPacket>();
     op->windowid = container_window_id_;
     op->type = network::protocol::ContainerOpenPacket::TYPE_CONTAINER;
@@ -358,12 +356,14 @@ void Player::openFurnaceAt(int x, int y, int z) {
     open_furnace_ = furnace;
     openContainerWindow(); // sets container_window_id_ for every packet below
 
-    // BlockEntityData BEFORE the open record — same order the reference
-    // produces: tile spawn, then ContainerOpen, then the content dump.
-    // Also hydrates player-placed furnaces whose chunk streamed before
-    // the tile existed.
-    sendBlockEntityData(x, y, z, *furnace, nullptr);
-
+    // Same reference flow as the chest: ContainerOpen + content dump only
+    // (PocketMine-MP 1.6.2 ContainerInventory::onOpen — the server that
+    // drove real 0.15.10 clients). The furnace tile NBT already reached
+    // this client with the chunk stream (Player::sendChunkTiles) or the
+    // place-time spawn (PlayerBlocks) — no BlockEntityData re-send inside
+    // the open batch: it is the only deviation left from the reference
+    // flow, and the client is observed to swallow the whole open while
+    // it is there (no UI, no crash).
     auto op = std::make_shared<network::protocol::ContainerOpenPacket>();
     op->windowid = container_window_id_;
     // Type 0, never TYPE_FURNACE: the 0.15.10 client aborts inside its
