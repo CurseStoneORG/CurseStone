@@ -72,7 +72,16 @@ class ChunkManager : public generator::INeighborBlockSink {
     // was generated with in isolation and shows a dark border where the
     // light should carry over. Must not block or touch ChunkManager:
     // setChunk() runs on the generation worker thread.
-    void setOnChunkAdded(std::function<void(int32_t, int32_t)> cb) {
+    //
+    // `full` tells the engine which entry to queue: true = blocks changed
+    // under the chunk since it was lit (generation spill batches land
+    // here — the exact 46x46 sweep), false = the chunk merely arrived
+    // with its worker-lit interior (the cheap border pass). A chunk
+    // arrival must NOT pay the full sweep: with async workers the main
+    // thread installs dozens of chunks per second during a flight, and
+    // re-flooding chunk + 15 into every neighbour twice per tick is what
+    // dropped the flight TPS and re-stained the light chunk by chunk.
+    void setOnChunkAdded(std::function<void(int32_t, int32_t, bool)> cb) {
         on_chunk_added_ = std::move(cb);
     }
     // Fired once per chunk that enters the level through ANY install
@@ -173,7 +182,7 @@ class ChunkManager : public generator::INeighborBlockSink {
         }
     };
     mutable std::mutex mtx_;
-    std::function<void(int32_t, int32_t)> on_chunk_added_;
+    std::function<void(int32_t, int32_t, bool)> on_chunk_added_;
     std::function<void(int32_t, int32_t)> on_chunk_installed_;
     std::unordered_map<ChunkKey, mcp_chunk_t*, ChunkKeyHash> chunks_;
     // Mirrors chunks_.size(); written under mtx_, read lock-free by count().

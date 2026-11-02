@@ -55,6 +55,13 @@ typedef struct mcp_chunk {
     bool terrain_populated; // generator ran terrain pass
     bool light_populated;   // generator ran light pass
     bool dirty;             // has unsaved block writes
+    // LightEngine work flag: a neighbour's border push or a full sweep
+    // deposited light INSIDE this chunk after its own pass ran. The
+    // chunk's next border entry must run an incremental interior flood
+    // to spread the deposit — without it, light written directly into
+    // mid-chunk cells would freeze where it landed (the border pull
+    // only floods from the wall cells).
+    uint8_t light_touched;
 
     mcp_chunk_section_t* sections[16]; // NULL = not yet allocated
     uint8_t* biomes;                   // 256 bytes (one byte per column)

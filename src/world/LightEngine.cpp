@@ -2,7 +2,6 @@
  _____                     _____ _
 /  __ \                   /  ___| |
 | /  \/_   _ _ __ ___  ___\ `--.| |_ ___  _ __   ___
-| |   | | | | '__/ __|/ _ \`--. \ __/ _ \| '_ \ / _ \
 | \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
  \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
 
@@ -29,6 +28,8 @@
 #include "world/format/Chunk.h"
 
 #include <algorithm>
+#include <chrono>
+#include <climits>
 #include <deque>
 #include <vector>
 
@@ -37,6 +38,11 @@ namespace cursestone::world {
 namespace {
 
 constexpr int32_t kWorldHeight = 128;
+
+// One cell of a light flood queue.
+struct Cell {
+    int32_t x, y, z;
+};
 
 // Light is stored as a nibble and tops out at 15, so 15 blocks is the
 // furthest anything can travel.
@@ -161,6 +167,21 @@ class Region {
         return c ? mcp_chunk_get_height_map(c, x & 15, z & 15) : 0;
     }
 
+    // Every loaded chunk whose columns overlap the BOX (not the wider
+    // seeding span). The seed phase writes every cell of every loaded
+    // chunk column inside the box, so this is exactly the set of chunks
+    // the sweep wrote; relight() uses it to flag (light_touched) and
+    // re-queue the foreign chunks whose cells it deposited light into.
+    template <class F>
+    void forEachBoxChunk(F&& fn) {
+        const int32_t bcx0 = x0_ >> 4, bcx1 = x1_ >> 4;
+        const int32_t bcz0 = z0_ >> 4, bcz1 = z1_ >> 4;
+        for (int32_t cz = bcz0; cz <= bcz1; ++cz)
+            for (int32_t cx = bcx0; cx <= bcx1; ++cx)
+                if (mcp_chunk_t* c = chunkAt(cx * 16, cz * 16))
+                    fn(cx, cz, c);
+    }
+
   private:
     World& lvl_;
     int32_t x0_, y0_, z0_, x1_, y1_, z1_;
@@ -171,6 +192,46 @@ class Region {
     int32_t maxTop_ = 0;
 };
 
+// BFS spread for one layer, constrained to writes inside the region box.
+// Shared by the full sweep, the border pull and the interior flood —
+// the only difference between those paths is WHICH cells are seeded and
+// how wide the box is.
+void spreadLayer(Region& r, std::deque<Cell>& queue, bool isSky) {
+    while (!queue.empty()) {
+        const Cell cur = queue.front();
+        queue.pop_front();
+        const int level =
+            isSky ? r.sky(cur.x, cur.y, cur.z) : r.blockLight(cur.x, cur.y, cur.z);
+        if (level <= 1)
+            continue;
+
+        for (int d = 0; d < 6; ++d) {
+            const int32_t nx = cur.x + kDX[d];
+            const int32_t ny = cur.y + kDY[d];
+            const int32_t nz = cur.z + kDZ[d];
+            // Only write inside the box; whatever is outside keeps
+            // the value it already had.
+            if (!r.contains(nx, ny, nz))
+                continue;
+            if (ny < 0 || ny >= kWorldHeight)
+                continue;
+            const uint8_t id = r.blockId(nx, ny, nz);
+            const int cand = level - costThrough(id);
+            if (cand <= 0)
+                continue;
+            const int have = isSky ? r.sky(nx, ny, nz) : r.blockLight(nx, ny, nz);
+            if (cand <= have)
+                continue;
+            if (isSky)
+                r.setSky(nx, ny, nz, (uint8_t)cand);
+            else
+                r.setBlockLight(nx, ny, nz, (uint8_t)cand);
+            if (cand > 1)
+                queue.push_back({nx, ny, nz});
+        }
+    }
+}
+
 } // namespace
 
 // relight — recompute BOTH layers over the given box.
@@ -178,7 +239,8 @@ class Region {
 // The box is cleared first and then flooded back in, which is what makes
 // a ceiling going up actually darken the room: there is no separate
 // "remove light" pass to get wrong.
-void LightEngine::relight(int32_t x0, int32_t y0, int32_t z0, int32_t x1, int32_t y1, int32_t z1) {
+void LightEngine::relight(int32_t x0, int32_t y0, int32_t z0, int32_t x1, int32_t y1, int32_t z1,
+                          int32_t homeCx, int32_t homeCz) {
     if (y0 < 0)
         y0 = 0;
     if (y1 > kWorldHeight - 1)
@@ -303,47 +365,31 @@ void LightEngine::relight(int32_t x0, int32_t y0, int32_t z0, int32_t x1, int32_
     // --- flood, six directions ----------------------------------------
     // Y is included this time, so light reaches down into caves and
     // under overhangs instead of stopping at the ceiling edge.
-    auto spread = [&](std::deque<Cell>& queue, bool isSky) {
-        while (!queue.empty()) {
-            const Cell cur = queue.front();
-            queue.pop_front();
-            const int level =
-                isSky ? r.sky(cur.x, cur.y, cur.z) : r.blockLight(cur.x, cur.y, cur.z);
-            if (level <= 1)
-                continue;
+    spreadLayer(r, skyQueue, true);
+    spreadLayer(r, blockQueue, false);
 
-            for (int d = 0; d < 6; ++d) {
-                const int32_t nx = cur.x + kDX[d];
-                const int32_t ny = cur.y + kDY[d];
-                const int32_t nz = cur.z + kDZ[d];
-                // Only write inside the box; whatever is outside keeps
-                // the value it already had.
-                if (!r.contains(nx, ny, nz))
-                    continue;
-                const uint8_t id = r.blockId(nx, ny, nz);
-                const int cand = level - costThrough(id);
-                if (cand <= 0)
-                    continue;
-                const int have = isSky ? r.sky(nx, ny, nz) : r.blockLight(nx, ny, nz);
-                if (cand <= have)
-                    continue;
-                if (isSky)
-                    r.setSky(nx, ny, nz, (uint8_t)cand);
-                else
-                    r.setBlockLight(nx, ny, nz, (uint8_t)cand);
-                if (cand > 1)
-                    queue.push_back({nx, ny, nz});
-            }
-        }
-    };
-    spread(skyQueue, true);
-    spread(blockQueue, false);
+    // Foreign-write bookkeeping: the sweep wrote every cell of every
+    // loaded chunk overlapping the box. The home chunk was fully
+    // recomputed, but each FOREIGN chunk just received deposited light
+    // (and its own interior was never re-flooded) — flag it so its next
+    // border entry runs the incremental interior flood, and queue the
+    // entry so the deposit cannot freeze mid-chunk. Monotone rising
+    // values keep the chain finite.
+    if (homeCx != INT32_MIN) {
+        r.forEachBoxChunk([&](int32_t ccx, int32_t ccz, mcp_chunk_t* c) {
+            if (ccx == homeCx && ccz == homeCz)
+                return;
+            c->light_touched = 1;
+            queueEntry(ccx, ccz, /*full=*/false);
+        });
+    }
 }
 
 void LightEngine::relightAround(int32_t x, int32_t y, int32_t z, int32_t radius) {
     if (radius < 1)
         radius = 1;
-    relight(x - radius, y - radius, z - radius, x + radius, y + radius, z + radius);
+    relight(x - radius, y - radius, z - radius, x + radius, y + radius, z + radius,
+            x >> 4, z >> 4);
 }
 
 void LightEngine::relightChunk(int32_t cx, int32_t cz, int32_t radius) {
@@ -355,22 +401,33 @@ void LightEngine::relightChunk(int32_t cx, int32_t cz, int32_t radius) {
                  bz + 15 + radius);
     const int32_t y1 = std::min(kWorldHeight - 1, probe.maxTop() + 1);
 
-    relight(bx - radius, 0, bz - radius, bx + 15 + radius, y1, bz + 15 + radius);
+    relight(bx - radius, 0, bz - radius, bx + 15 + radius, y1, bz + 15 + radius, cx, cz);
 }
 
-void LightEngine::onChunkAdded(int32_t cx, int32_t cz) {
+void LightEngine::queueEntry(int32_t cx, int32_t cz, bool full) {
+    std::lock_guard<std::mutex> lk(mtx_);
+    const uint64_t key = chunkKey(cx, cz);
+    auto it = pending_keys_.find(key);
+    if (it != pending_keys_.end()) {
+        if (full) {
+            for (auto& e : pending_) {
+                if (e.cx == cx && e.cz == cz) {
+                    e.full = true;
+                    break;
+                }
+            }
+        }
+        return;
+    }
+    pending_keys_.insert(it, key);
+    pending_.push_back({cx, cz, full});
+}
+
+void LightEngine::onChunkAdded(int32_t cx, int32_t cz, bool full) {
     // Called on the generation worker thread: queue only. Relighting
     // here would hold up generation, and touching ChunkManager from
     // inside setChunk() would deadlock on its mutex.
-    std::lock_guard<std::mutex> lk(mtx_);
-    // Skip duplicates: a single cross-border tree used to trigger
-    // several onChunkAdded calls for the same chunk in one tick, and
-    // the linear scan made that O(n) per spilled block. The companion
-    // set makes it O(1).
-    const uint64_t key = chunkKey(cx, cz);
-    if (!pending_keys_.insert(key).second)
-        return;
-    pending_.emplace_back(cx, cz);
+    queueEntry(cx, cz, full);
 }
 
 bool LightEngine::hasPending() const {
@@ -378,22 +435,258 @@ bool LightEngine::hasPending() const {
     return !pending_.empty();
 }
 
-size_t LightEngine::processPending(int32_t budget) {
-    std::deque<std::pair<int32_t, int32_t>> work;
+size_t LightEngine::processPending(int32_t budget, int32_t max_ms) {
+    std::deque<PendingEntry> work;
     {
         std::lock_guard<std::mutex> lk(mtx_);
         while (!pending_.empty() && work.size() < (size_t)budget) {
             work.push_back(pending_.front());
             pending_.pop_front();
-            pending_keys_.erase(chunkKey(work.back().first, work.back().second));
+            pending_keys_.erase(chunkKey(work.back().cx, work.back().cz));
         }
     }
-    for (const auto& [cx, cz] : work) {
+    const auto t0 = std::chrono::steady_clock::now();
+    size_t done = 0;
+    for (const PendingEntry& e : work) {
         // A chunk that got unloaded again before its turn is skipped by
         // the Region cache returning null everywhere; harmless.
-        relightChunk(cx, cz, kChunkRelightRadius);
+        if (e.full) {
+            // Blocks genuinely changed inside a live chunk after install
+            // (generation spill batch): re-flood the chunk AND one full
+            // light range into every neighbour, exactly as before.
+            relightChunk(e.cx, e.cz, kChunkRelightRadius);
+        } else {
+            runBorderEntry(e.cx, e.cz);
+        }
+        ++done;
+        // Time budget: stop before STARTING another entry once the tick's
+        // share is spent (a started entry always completes). Whatever is
+        // left stays queued for the next tick.
+        if (max_ms > 0) {
+            const double spent =
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0)
+                    .count();
+            if (spent >= (double)max_ms)
+                break;
+        }
     }
-    return work.size();
+    if (done < work.size()) {
+        std::lock_guard<std::mutex> lk(mtx_);
+        for (size_t i = work.size(); i-- > done;) {
+            const PendingEntry& e = work[i];
+            const uint64_t key = chunkKey(e.cx, e.cz);
+            if (pending_keys_.insert(key).second)
+                pending_.push_front(e);
+        }
+    }
+    return done;
+}
+
+// One Border entry: pull the neighbours' light in, spread any light a
+// neighbour's sweep or push deposited inside us, push our light out, and
+// re-queue neighbours whose cells the push raised. Without the re-queue +
+// interior flood, light that crosses a chunk border mid-way dies: the
+// depositing sweep writes its cells directly and nothing would spread
+// them further inward. Values only ever RISE and light is capped at 15,
+// so the chain terminates after a couple of passes at most.
+void LightEngine::runBorderEntry(int32_t cx, int32_t cz) {
+    mcp_chunk_t* c = lvl_.chunks().getChunkIfLoaded(cx, cz);
+    if (c && c->light_populated) {
+        borderPull(cx, cz);
+        // A neighbour's sweep or push wrote cells inside this chunk (flag
+        // set by relight()'s foreign-write tracking / pushBorder). Those
+        // cells need their light spread further inward — the pull only
+        // floods from the border walls, so without this the deposited
+        // light freezes where it landed (measured: sky stuck at 5 where
+        // the fixed point says 9, two borders away from the source).
+        if (c->light_touched) {
+            c->light_touched = 0;
+            interiorFlood(cx, cz);
+        }
+    } else {
+        // A chunk whose stored light is NOT trustworthy (never lit —
+        // e.g. an old save with LightPopulated=0) takes the clearing
+        // sweep, which re-derives the interior from scratch.
+        relightChunk(cx, cz, 0);
+        if (c)
+            c->light_touched = 0;
+    }
+    std::vector<std::pair<int32_t, int32_t>> touched;
+    pushBorder(cx, cz, &touched);
+    for (const auto& [tcx, tcz] : touched)
+        onChunkAdded(tcx, tcz, /*full=*/false);
+}
+
+bool LightEngine::flushPending(int32_t cx, int32_t cz) {
+    PendingEntry e;
+    bool found = false;
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        const uint64_t key = chunkKey(cx, cz);
+        if (pending_keys_.erase(key) == 0)
+            return false;
+        for (auto it = pending_.begin(); it != pending_.end(); ++it) {
+            if (it->cx == cx && it->cz == cz) {
+                e = *it;
+                pending_.erase(it);
+                found = true;
+                break;
+            }
+        }
+    }
+    if (!found)
+        return false;
+    if (e.full) {
+        relightChunk(cx, cz, kChunkRelightRadius);
+    } else {
+        runBorderEntry(cx, cz);
+    }
+    return true;
+}
+
+// Chunk-local region probe: builds the Region over one chunk and returns
+// the highest terrain in it, +1 margin, clamped to the world top. The
+// border passes bound their vertical walks with this.
+static int32_t chunkProbeTop(World& lvl, int32_t cx, int32_t cz) {
+    const int32_t bx = cx * 16, bz = cz * 16;
+    Region probe(lvl, bx, 0, bz, bx + 15, kWorldHeight - 1, bz + 15);
+    return std::min(kWorldHeight - 1, probe.maxTop() + 1);
+}
+
+// Incremental interior flood: re-push every lit cell of the chunk (both
+// layers) and let the flood raise whatever can still be raised, writing
+// ONLY inside the chunk. Runs when a neighbour's sweep or push deposited
+// light here — the deposited cells are not border walls, so borderPull's
+// wall-seeded flood would never touch them. Seeds are collected with a
+// full accessor read of the chunk's light nibbles: correct for any mix
+// of allocated and implicit-sky sections.
+void LightEngine::interiorFlood(int32_t cx, int32_t cz) {
+    const int32_t bx = cx * 16, bz = cz * 16;
+    Region r(lvl_, bx, 0, bz, bx + 15, kWorldHeight - 1, bz + 15);
+    const int32_t yTop = r.maxTop() + 1;
+
+    std::deque<Cell> skyQueue;
+    std::deque<Cell> blockQueue;
+    for (int x = bx; x <= bx + 15; ++x)
+        for (int z = bz; z <= bz + 15; ++z)
+            for (int y = 0; y <= yTop; ++y) {
+                const uint8_t s = r.sky(x, y, z);
+                if (s > 1)
+                    skyQueue.push_back({x, y, z});
+                const uint8_t b = r.blockLight(x, y, z);
+                if (b > 1)
+                    blockQueue.push_back({x, y, z});
+            }
+    spreadLayer(r, skyQueue, true);
+    spreadLayer(r, blockQueue, false);
+}
+
+// Pull: raise the chunk's own border cells from the light just outside
+// the chunk, then flood inward from whichever cells actually rose. The
+// interior keeps whatever the generation worker computed — this pass
+// only ever ADDS the cross-border flow the single-chunk worker pass
+// could not see. Wall cells above the probe top are implicit open sky
+// (15) and cannot improve, so the walk stops at the probe.
+void LightEngine::borderPull(int32_t cx, int32_t cz) {
+    const int32_t bx = cx * 16, bz = cz * 16;
+    Region r(lvl_, bx, 0, bz, bx + 15, kWorldHeight - 1, bz + 15);
+    const int32_t yTop = chunkProbeTop(lvl_, cx, cz);
+
+    std::deque<Cell> skyQueue;
+    std::deque<Cell> blockQueue;
+
+    for (int y = 0; y <= yTop; ++y) {
+        for (int i = 0; i < 16; ++i) {
+            // The four wall lines: (0,i) (15,i) (i,0) (i,15) in chunk
+            // local coordinates. The outside offset depends on WHICH
+            // wall the line is, not on the coordinate value — a corner
+            // cell belongs to two walls and must push across both.
+            const int lxs[4] = {0, 15, i, i};
+            const int lzs[4] = {i, i, 0, 15};
+            for (int w = 0; w < 4; ++w) {
+                const int32_t x = bx + lxs[w], z = bz + lzs[w];
+                int32_t ox = x, oz = z;
+                if (w == 0)
+                    ox = x - 1;
+                else if (w == 1)
+                    ox = x + 1;
+                else if (w == 2)
+                    oz = z - 1;
+                else
+                    oz = z + 1;
+                const uint8_t id = r.blockId(x, y, z);
+                const int cost = costThrough(id);
+
+                const int inSky = (int)r.sky(ox, y, oz) - cost;
+                if (inSky > (int)r.sky(x, y, z)) {
+                    r.setSky(x, y, z, (uint8_t)std::min(inSky, (int)kMaxLight));
+                    skyQueue.push_back({x, y, z});
+                }
+                const int inBlk = (int)r.blockLight(ox, y, oz) - cost;
+                if (inBlk > (int)r.blockLight(x, y, z)) {
+                    r.setBlockLight(x, y, z, (uint8_t)std::max(0, std::min(inBlk, (int)kMaxLight)));
+                    blockQueue.push_back({x, y, z});
+                }
+            }
+        }
+    }
+    spreadLayer(r, skyQueue, true);
+    spreadLayer(r, blockQueue, false);
+}
+
+// Push: raise the neighbours' cells the chunk can improve. Only the
+// wall cells can hand light across a border (one step), and the push
+// writes the neighbour's border cell DIRECTLY — the neighbour is flagged
+// light_touched and returned in `touched` so its queued entry spreads
+// the deposit inward with the incremental interior flood. The vertical
+// walk runs the full world height: a taller neighbour can have shaded
+// cells level with our open sky, and skipping them would freeze light
+// the fixed point says should flow.
+void LightEngine::pushBorder(int32_t cx, int32_t cz,
+                             std::vector<std::pair<int32_t, int32_t>>* touched) {
+    const int32_t bx = cx * 16, bz = cz * 16;
+    Region r(lvl_, bx, 0, bz, bx + 15, kWorldHeight - 1, bz + 15);
+
+    for (int y = 0; y < kWorldHeight; ++y) {
+        for (int i = 0; i < 16; ++i) {
+            const int lxs[4] = {0, 15, i, i};
+            const int lzs[4] = {i, i, 0, 15};
+            for (int w = 0; w < 4; ++w) {
+                const int32_t x = bx + lxs[w], z = bz + lzs[w];
+                int32_t ox = x, oz = z;
+                if (w == 0)
+                    ox = x - 1;
+                else if (w == 1)
+                    ox = x + 1;
+                else if (w == 2)
+                    oz = z - 1;
+                else
+                    oz = z + 1;
+                // A missing neighbour chunk makes setSky a no-op; when
+                // it loads, its own arrival entry pulls this border.
+                const int cost = costThrough(r.blockId(ox, y, oz));
+
+                const int candSky = (int)r.sky(x, y, z) - cost;
+                if (candSky > (int)r.sky(ox, y, oz)) {
+                    r.setSky(ox, y, oz, (uint8_t)std::min(candSky, (int)kMaxLight));
+                    mcp_chunk_t* nc = r.chunkAt(ox, oz);
+                    if (nc)
+                        nc->light_touched = 1;
+                    if (touched)
+                        touched->push_back({ox >> 4, oz >> 4});
+                }
+                const int candBlk = (int)r.blockLight(x, y, z) - cost;
+                if (candBlk > (int)r.blockLight(ox, y, oz)) {
+                    r.setBlockLight(ox, y, oz, (uint8_t)std::max(0, std::min(candBlk, (int)kMaxLight)));
+                    mcp_chunk_t* nc = r.chunkAt(ox, oz);
+                    if (nc)
+                        nc->light_touched = 1;
+                    if (touched)
+                        touched->push_back({ox >> 4, oz >> 4});
+                }
+            }
+        }
+    }
 }
 
 } // namespace cursestone::world

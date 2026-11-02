@@ -207,6 +207,10 @@ void Player::sendChunk(int cx, int cz) {
     mcp_chunk_t* ch = chunks.getChunk(cx, cz);
     if (!ch)
         return;
+    // Finalize queued light work first — a protocol 84 client keeps the
+    // light bytes it got in this packet, so the chunk must leave with its
+    // border pass already applied (same rule as the onUpdate stream).
+    getWorld()->flushLightForChunk(cx, cz);
     size_t outLen = 0;
     utils::BufferPtr buf(mcp_chunk_network_serialize(ch, &outLen));
     if (!buf)

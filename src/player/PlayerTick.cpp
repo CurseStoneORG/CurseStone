@@ -655,6 +655,14 @@ void Player::onUpdate(uint64_t current_tick) {
                 break; // Byte budget spent — the spiral is center-out, so
                        // what follows is farther away; resume next tick.
 
+            // Finalize this chunk's queued light work BEFORE serializing:
+            // a protocol 84 client keeps whatever light came in the
+            // FullChunkDataPacket, so sending before the border pass would
+            // freeze the seam into the client until the chunk re-streams.
+            // The border pass is cheap; on a fresh view it just runs the
+            // entry a few ticks earlier than the world-tick drain would.
+            getWorld()->flushLightForChunk(chX, chZ);
+
             size_t outLen = 0;
             utils::BufferPtr buf(mcp_chunk_network_serialize(ch, &outLen));
             if (!buf)

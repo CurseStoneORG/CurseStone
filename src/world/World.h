@@ -230,17 +230,36 @@ class World {
     // placement refuses exactly the cells an entity could not share.
     static bool entityCollidable(uint8_t id);
 
-    // Queues lighting updates for newly added chunks.
-    void onChunkAdded(int32_t cx, int32_t cz);
+    // Queues lighting updates for newly added chunks. `full` selects the
+    // entry kind: true = blocks changed under the chunk (spill batches),
+    // false = the chunk merely arrived with its worker-lit interior (a
+    // cheap border pass instead of the 46x46 re-flood).
+    void onChunkAdded(int32_t cx, int32_t cz, bool full = true);
 
     // Thin main-thread accessors over the light queue, used by the
     // /status diagnostics and the perf tools (tools/light_bench.cpp):
     // same contract as LightEngine::processPending / hasPending.
-    size_t drainLightPending(int32_t budget) {
-        return light_.processPending(budget);
+    size_t drainLightPending(int32_t budget, int32_t max_ms = 0) {
+        return light_.processPending(budget, max_ms);
     }
     bool hasPendingLight() const {
         return light_.hasPending();
+    }
+
+    // Run the queued light entry for exactly this chunk right now, before
+    // its FullChunkDataPacket is serialized. Protocol 84 clients keep the
+    // light bytes they receive — a chunk that leaves before its border
+    // pass would freeze the seam into the client until it re-streams.
+    // Returns false when nothing was queued (already finalized).
+    bool flushLightForChunk(int32_t cx, int32_t cz) {
+        return light_.flushPending(cx, cz);
+    }
+
+    // Direct engine access for the tools: tools/light_oracle.cpp drives
+    // the ground-truth relightBoxExact through it. Not for gameplay code
+    // — use the queue accessors above.
+    LightEngine& light() {
+        return light_;
     }
 
     // Queues a dynamic-liquid scan for a chunk that just entered the
