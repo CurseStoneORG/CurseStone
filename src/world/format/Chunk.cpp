@@ -408,28 +408,22 @@ void mcp_chunk_recompute_section_flags(mcp_chunk_t* c) {
     }
 }
 
-// ---------------------------------------------------------------- sky light propagation
+// ---------------------------------------------------------------- light pass
 //
-// REAL BUG (black world/grass): no generator computed real light —
-// they memset sky_light to 0xFF per section and set light_populated.
-// MCPE 0.15.x clients do not recompute occlusion from sky_light; they
-// render exactly what the server sends, so full-brightness sections
-// plus neighbor combinations rendered solid black.
+// Sky light is GLOBAL — the Aquamarine populateSkyLight() semantics
+// (setAllBlockSkyLight(15)) the project standardised on: every block in
+// every allocated section carries sky light 15, so caves, overhangs and
+// the ocean floor render as bright as the surface and a chunk can never
+// arrive "stained" with a dark patch. Unallocated sections already read
+// 15 (mcp_chunk_get_sky_light), so the fill only has to touch arrays
+// that exist. The per-column decay + 6-direction sky flood is gone from
+// generation entirely — it was the dominant light cost per chunk and it
+// can never change the result again.
 //
-// Fix: pase real de dos fases, mismo enfoque que
-// ------------------------------------------------------------- light pass
-//
-// This is the pass that fills a freshly generated chunk, i.e. the light
-// the CLIENT receives in the very first FullChunkDataPacket for it. It
-// used to flood only the four HORIZONTAL neighbours and never touched
-// block light at all, so a chunk shipped to the client with black under
-// every overhang and no torch light anywhere — and the client keeps that
-// initial state until a block changes near it.
-//
-// Both layers now flood in the six vanilla directions and both are
-// seeded properly. Cross-chunk continuity is still World's job (see
-// LightEngine); this pass has to be right on its own so the first packet
-// a player receives is already sane.
+// Block light keeps its real pass: seed from every block's emission and
+// flood in the six vanilla directions, bounded to [0, maxTop] so empty
+// sky sections are never allocated for it. Cross-chunk continuity for
+// block light is still World's job (see LightEngine).
 
 static uint8_t layer_get(const mcp_chunk_t* c, int x, int y, int z, int isSky) {
     return isSky ? mcp_chunk_get_sky_light(c, x, y, z) : mcp_chunk_get_block_light(c, x, y, z);
@@ -525,19 +519,31 @@ static void propagate_layer(mcp_chunk_t* c, int maxTop, int isSky,
     free(queue);
 }
 
+// Global sky light fill — the Aquamarine populateSkyLight() equivalent.
+// Every allocated section's sky nibbles go to 0xFF (both nibbles = 15).
+// Does not touch `dirty`: disk-loaded chunks call this on every install
+// and marking them dirty would force a pointless resave of the world on
+// each join; the healed arrays are still what the client sees, and the
+// chunk persists with global light the next time it is saved for real.
+void mcp_chunk_fill_sky_light(mcp_chunk_t* c) {
+    if (!c)
+        return;
+    for (int i = 0; i < 16; ++i) {
+        mcp_chunk_section_t* s = c->sections[i];
+        if (s && s->sky_light)
+            memset(s->sky_light, 0xFF, 2048);
+    }
+    c->light_populated = true;
+}
+
 void mcp_chunk_propagate_sky_light(mcp_chunk_t* c) {
     if (!c)
         return;
 
-    // REAL BUG (chunks that never render): scanning y=255..0 for all
-    // 256 columns allocated all 16 sections of EVERY chunk (even empty
-    // sky-only ones) just to rewrite the default 15 — expensive enough
-    // under concurrent generation that some chunks arrived late and
-    // rendered as black holes.
-    //
-    // Fix: all three phases are bounded to [0, maxTop] (the tallest
-    // column of the whole chunk, with margin for side shadows). Nothing
-    // exists above maxTop and unallocated sections already read 15.
+    // Sky layer: global fill (see the light-pass comment above). No
+    // heightmap decay, no flood — nothing occludes the sky anymore.
+    mcp_chunk_fill_sky_light(c);
+
     int32_t maxTop = 0;
     for (int col = 0; col < 256; ++col) {
         int32_t h = c->height_map ? c->height_map[col] : 0;
@@ -547,96 +553,36 @@ void mcp_chunk_propagate_sky_light(mcp_chunk_t* c) {
     if (maxTop > 255)
         maxTop = 255;
 
-    // Seed lists, collected DURING the vertical write instead of a
-    // second full scan per layer: the flood's seed set is exactly the
-    // cells the vertical pass wrote with light > 1 (sky) / emission > 0
-    // (block), so fusing the collection into the write saves two
-    // 16x16x(maxTop+1) sweeps per chunk without changing the set.
-    size_t skyCap = 1024, skyN = 0, blkCap = 1024, blkN = 0;
-    LightNode* skySeeds = (LightNode*)malloc(skyCap * sizeof(LightNode));
+    // Block light: seed from the emission of each block (section-wise
+    // walk, one lookup per 16 cells), then flood in the six vanilla
+    // directions. Torches, glowstone and burning furnaces keep real
+    // local light on top of the global sky layer.
+    size_t blkCap = 1024, blkN = 0;
     LightNode* blkSeeds = (LightNode*)malloc(blkCap * sizeof(LightNode));
-    if (!skySeeds || !blkSeeds) {
-        free(skySeeds);
-        free(blkSeeds);
+    if (!blkSeeds)
         return;
-    }
-
-    // --- Fase 1: columna descendente (solo hasta maxTop) --------------
-    // Per column the walk is section-wise: one get_or_alloc per 16
-    // cells (the base pass re-ran the section lookup for EVERY cell),
-    // then direct nibble/block writes through the cached pointer.
     for (int x = 0; x < 16; ++x) {
         for (int z = 0; z < 16; ++z) {
-            const int32_t h = mcp_chunk_get_height_map(c, x, z); // primer Y opaco
-            int light = 15;
-            const int yTop = maxTop;
-            for (int sec = (yTop >> 4); sec >= 0; --sec) {
+            for (int sec = 0; sec <= (maxTop >> 4); ++sec) {
                 mcp_chunk_section_t* s = mcp_chunk_get_or_alloc_section(c, (uint8_t)sec);
-                const int yb = sec * 16 + 15;
+                if (!s || !s->blocks)
+                    continue;
+                const int yb = sec * 16 + 15 < maxTop ? sec * 16 + 15 : maxTop;
                 const int ya = sec * 16;
-                for (int y = (yb < yTop ? yb : yTop); y >= ya; --y) {
-                    const int lx = x, lz = z;
-                    if (y >= h) {
-                        // por encima de la superficie: cielo abierto, luz plena
-                        if (s)
-                            mcp_section_set_nibble(s->sky_light, lx, y, lz, 15);
-                        else
-                            mcp_chunk_set_sky_light(c, lx, y, lz, 15);
-                        light_queue_push(&skySeeds, &skyCap, &skyN, x, y, z);
-                        continue;
-                    }
-                    const uint8_t id =
-                        s ? s->blocks[lx | (lz << 4) | ((y & 15) << 8)]
-                          : mcp_chunk_get_block_id(c, lx, y, lz);
-                    const uint8_t op = cursestone::block::Block::lightOpacity(id);
-                    // Minecraft subtracts opacity (min 1 so light still
-                    // decays through "transparent" blocks) except pure air.
-                    if (id != 0) {
-                        const int dec = op > 0 ? op : 1;
-                        light -= dec;
-                        if (light < 0)
-                            light = 0;
-                    }
-                    if (s)
-                        mcp_section_set_nibble(s->sky_light, lx, y, lz, (uint8_t)light);
-                    else
-                        mcp_chunk_set_sky_light(c, lx, y, lz, (uint8_t)light);
-                    if (light > 1)
-                        light_queue_push(&skySeeds, &skyCap, &skyN, x, y, z);
-
-                    // Fused block-emission seed collection: same cells
-                    // the old phase-3 scan visited, minus the second
-                    // read of every block id (Phase 1 already fetched
-                    // it). Emission-0 cells skip the nibble write —
-                    // fresh sections are zeroed, so writing 0 over 0
-                    // was a no-op anyway.
+                for (int y = yb; y >= ya; --y) {
+                    const uint8_t id = s->blocks[x | (z << 4) | ((y & 15) << 8)];
                     const uint8_t e = cursestone::block::Block::lightEmission(id);
-                    if (e > 0) {
-                        if (s)
-                            mcp_section_set_nibble(s->block_light, lx, y, lz, e);
-                        else
-                            mcp_chunk_set_block_light(c, lx, y, lz, e);
-                        light_queue_push(&blkSeeds, &blkCap, &blkN, x, y, z);
-                    }
+                    if (e == 0)
+                        continue; // fresh sections are zeroed; skip no-op writes
+                    mcp_section_set_nibble(s->block_light, x, y, z, e);
+                    light_queue_push(&blkSeeds, &blkCap, &blkN, x, y, z);
                 }
             }
         }
     }
-
-    // --- Fase 2: inundado en las 6 direcciones, para las DOS capas ----
-    // La vertical es lo que faltaba antes: sin ella la luz no bajaba
-    // nunca y todo lo que estuviera bajo un alero o en una cueva
-    // quedaba en 0 (las "manchas negras").
-    propagate_layer(c, maxTop, /*isSky=*/1, skySeeds, skyN);
-    free(skySeeds);
-
-    // Block light: se siembra desde la emision de cada bloque (ya
-    // recolectada arriba) y se inunda igual que el cielo. Antes esta
-    // capa no se tocaba nunca, asi que una antorcha no iluminaba nada.
     propagate_layer(c, maxTop, /*isSky=*/0, blkSeeds, blkN);
     free(blkSeeds);
 
-    c->light_populated = true;
     c->dirty = true;
 }
 
@@ -833,7 +779,7 @@ uint8_t* mcp_chunk_network_serialize(const mcp_chunk_t* c, size_t* out_len) {
     //   256 bytes:  heightmap   (one byte per column)
     //   1024 bytes: biome colors (int32 BE per column: R<<24|G<<16|B<<8|0)
     //   4 bytes:    extra data count (LInt32 = 0)
-    // Total: 66036 bytes
+    // Total: 83204 bytes
 
     const size_t kBlocks = 32768; // 16*16*128
     const size_t kData = 16384;   // 16*16*64

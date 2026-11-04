@@ -119,17 +119,6 @@ class Region {
         return c ? mcp_chunk_get_block_id(c, x & 15, y, z & 15) : 0;
     }
 
-    uint8_t sky(int32_t x, int32_t y, int32_t z) {
-        mcp_chunk_t* c = chunkAt(x, z);
-        return c ? mcp_chunk_get_sky_light(c, x & 15, y, z & 15) : 0;
-    }
-
-    void setSky(int32_t x, int32_t y, int32_t z, uint8_t v) {
-        mcp_chunk_t* c = chunkAt(x, z);
-        if (c)
-            mcp_chunk_set_sky_light(c, x & 15, y, z & 15, v);
-    }
-
     uint8_t blockLight(int32_t x, int32_t y, int32_t z) {
         mcp_chunk_t* c = chunkAt(x, z);
         return c ? mcp_chunk_get_block_light(c, x & 15, y, z & 15) : 0;
@@ -160,13 +149,6 @@ class Region {
         return maxTop_;
     }
 
-    // Heightmap of one column inside the region; 0 when the column's
-    // chunk is not loaded (nothing there can receive light either).
-    int32_t columnTop(int32_t x, int32_t z) {
-        mcp_chunk_t* c = chunkAt(x, z);
-        return c ? mcp_chunk_get_height_map(c, x & 15, z & 15) : 0;
-    }
-
     // Every loaded chunk whose columns overlap the BOX (not the wider
     // seeding span). The seed phase writes every cell of every loaded
     // chunk column inside the box, so this is exactly the set of chunks
@@ -192,16 +174,16 @@ class Region {
     int32_t maxTop_ = 0;
 };
 
-// BFS spread for one layer, constrained to writes inside the region box.
-// Shared by the full sweep, the border pull and the interior flood —
-// the only difference between those paths is WHICH cells are seeded and
-// how wide the box is.
-void spreadLayer(Region& r, std::deque<Cell>& queue, bool isSky) {
+// BFS spread for the block layer, constrained to writes inside the
+// region box. Shared by the full sweep, the border pull and the
+// interior flood — the only difference between those paths is WHICH
+// cells are seeded and how wide the box is. Sky light is global
+// (every cell reads 15) and is never written here.
+void spreadLayer(Region& r, std::deque<Cell>& queue) {
     while (!queue.empty()) {
         const Cell cur = queue.front();
         queue.pop_front();
-        const int level =
-            isSky ? r.sky(cur.x, cur.y, cur.z) : r.blockLight(cur.x, cur.y, cur.z);
+        const int level = r.blockLight(cur.x, cur.y, cur.z);
         if (level <= 1)
             continue;
 
@@ -219,13 +201,10 @@ void spreadLayer(Region& r, std::deque<Cell>& queue, bool isSky) {
             const int cand = level - costThrough(id);
             if (cand <= 0)
                 continue;
-            const int have = isSky ? r.sky(nx, ny, nz) : r.blockLight(nx, ny, nz);
+            const int have = r.blockLight(nx, ny, nz);
             if (cand <= have)
                 continue;
-            if (isSky)
-                r.setSky(nx, ny, nz, (uint8_t)cand);
-            else
-                r.setBlockLight(nx, ny, nz, (uint8_t)cand);
+            r.setBlockLight(nx, ny, nz, (uint8_t)cand);
             if (cand > 1)
                 queue.push_back({nx, ny, nz});
         }
@@ -234,11 +213,17 @@ void spreadLayer(Region& r, std::deque<Cell>& queue, bool isSky) {
 
 } // namespace
 
-// relight — recompute BOTH layers over the given box.
+// relight — recompute the BLOCK layer over the given box.
 //
-// The box is cleared first and then flooded back in, which is what makes
-// a ceiling going up actually darken the room: there is no separate
-// "remove light" pass to get wrong.
+// Sky light is global (every cell reads 15, see mcp_chunk_propagate_sky_light
+// in the C chunk layer), so this sweep no longer clears, seeds or floods
+// the sky layer at all — nothing can darken it, and writing it here would
+// only re-create the shadows this server deliberately does not have.
+// Building a roof keeps the room bright; that is the requested behaviour.
+//
+// The block layer still gets the full clear + outside-border seed + flood
+// treatment: there is no separate "remove light" pass, so a torch going
+// away simply lowers the seed value around it.
 void LightEngine::relight(int32_t x0, int32_t y0, int32_t z0, int32_t x1, int32_t y1, int32_t z1,
                           int32_t homeCx, int32_t homeCz) {
     if (y0 < 0)
@@ -250,18 +235,14 @@ void LightEngine::relight(int32_t x0, int32_t y0, int32_t z0, int32_t x1, int32_
 
     Region r(lvl_, x0, y0, z0, x1, y1, z1);
 
-    std::deque<Cell> skyQueue;
     std::deque<Cell> blockQueue;
 
     // --- clear + seed -------------------------------------------------
-    // Sky seeds from the heightmap (anything at or above the first
-    // opaque block sees the sky). Block light seeds from the block's
-    // own emission, which is what finally makes torches work.
-    //
-    // Both layers also take a seed from the cell just OUTSIDE the box:
-    // light already computed in the rest of the world still belongs to
-    // this box's border cells, and dropping it would leave a dark ring
-    // around every relit region.
+    // Block light seeds from the block's own emission, which is what
+    // makes torches work, and on the box border also from the cell just
+    // OUTSIDE the box: light already computed in the rest of the world
+    // still belongs to this box's border cells, and dropping it would
+    // leave a dark ring around every relit region.
     for (int32_t x = x0; x <= x1; ++x) {
         const bool xBorder = (x == x0 || x == x1);
         for (int32_t z = z0; z <= z1; ++z) {
@@ -269,24 +250,7 @@ void LightEngine::relight(int32_t x0, int32_t y0, int32_t z0, int32_t x1, int32_
             if (!c)
                 continue;
             const int lx = x & 15, lz = z & 15;
-            const int32_t h = mcp_chunk_get_height_map(c, lx, lz);
             const bool border = xBorder || z == z0 || z == z1;
-
-            // Tallest in-box column around this one (self included). A
-            // full-sky cell can only hand light horizontally to a column
-            // whose heightmap is still above it, or vertically into the
-            // block right below its own heightmap (translucent tops).
-            // Everywhere else 15 - cost(>=1) can never beat the 15 the
-            // target already has, so those BFS pushes are provably no-ops.
-            int32_t hMax = h;
-            if (x > x0)
-                hMax = std::max(hMax, r.columnTop(x - 1, z));
-            if (x < x1)
-                hMax = std::max(hMax, r.columnTop(x + 1, z));
-            if (z > z0)
-                hMax = std::max(hMax, r.columnTop(x, z - 1));
-            if (z < z1)
-                hMax = std::max(hMax, r.columnTop(x, z + 1));
 
             c->dirty = true;
 
@@ -294,33 +258,10 @@ void LightEngine::relight(int32_t x0, int32_t y0, int32_t z0, int32_t x1, int32_
                 const int ya = std::max(y0, secY * 16);
                 const int yb = std::min(y1, secY * 16 + 15);
                 mcp_chunk_section_t* s = c->sections[secY];
-                if (!s && ya >= h) {
-                    // Unallocated section in the pure-sky band: the
-                    // accessor contract already reads sky 15 / block 0
-                    // here, and there is no stale light to clear, so
-                    // allocating a section only to write the implicit
-                    // values back is pure waste. Keep the pushes the
-                    // populated path would make (sky == 15 => same
-                    // filter) so the flood sees identical sources.
-                    for (int y = std::max(ya, h); y <= yb; ++y) {
-                        if (y < hMax || y == h)
-                            skyQueue.push_back({x, y, z});
-                    }
-                    continue;
-                }
+                if (!s)
+                    continue; // no blocks here: emission 0, nothing to clear
                 for (int y = ya; y <= yb; ++y) {
-                    uint8_t id = 0;
-                    uint8_t* skyArr = nullptr;
-                    uint8_t* blkArr = nullptr;
-                    if (s) {
-                        id = s->blocks[lx | (lz << 4) | ((y & 15) << 8)];
-                        skyArr = s->sky_light;
-                        blkArr = s->block_light;
-                    } else {
-                        id = mcp_chunk_get_block_id(c, lx, y, lz);
-                    }
-
-                    int sky = (y >= h) ? static_cast<int>(kMaxLight) : 0;
+                    const uint8_t id = s->blocks[lx | (lz << 4) | ((y & 15) << 8)];
                     int blk = static_cast<int>(cursestone::block::Block::lightEmission(id));
 
                     if (border || y == y0 || y == y1) {
@@ -333,28 +274,14 @@ void LightEngine::relight(int32_t x0, int32_t y0, int32_t z0, int32_t x1, int32_
                             if (ny < 0 || ny >= kWorldHeight)
                                 continue;
                             const int cost = costThrough(id);
-                            const int inSky = static_cast<int>(r.sky(nx, ny, nz)) - cost;
-                            if (inSky > sky)
-                                sky = std::min(inSky, (int)kMaxLight);
                             const int inBlk = static_cast<int>(r.blockLight(nx, ny, nz)) - cost;
                             if (inBlk > blk)
                                 blk = inBlk;
                         }
                     }
 
-                    if (s) {
-                        mcp_section_set_nibble(skyArr, lx, y, lz,
-                                               static_cast<uint8_t>(std::max(0, sky)));
-                        mcp_section_set_nibble(blkArr, lx, y, lz,
-                                               static_cast<uint8_t>(std::max(0, blk)));
-                    } else {
-                        mcp_chunk_set_sky_light(c, lx, y, lz,
-                                                static_cast<uint8_t>(std::max(0, sky)));
-                        mcp_chunk_set_block_light(c, lx, y, lz,
-                                                  static_cast<uint8_t>(std::max(0, blk)));
-                    }
-                    if (sky > 0 && (sky < (int) kMaxLight || y < hMax || y == h))
-                        skyQueue.push_back({x, y, z});
+                    mcp_section_set_nibble(s->block_light, lx, y, lz,
+                                           static_cast<uint8_t>(std::max(0, blk)));
                     if (blk > 0)
                         blockQueue.push_back({x, y, z});
                 }
@@ -363,10 +290,7 @@ void LightEngine::relight(int32_t x0, int32_t y0, int32_t z0, int32_t x1, int32_
     }
 
     // --- flood, six directions ----------------------------------------
-    // Y is included this time, so light reaches down into caves and
-    // under overhangs instead of stopping at the ceiling edge.
-    spreadLayer(r, skyQueue, true);
-    spreadLayer(r, blockQueue, false);
+    spreadLayer(r, blockQueue);
 
     // Foreign-write bookkeeping: the sweep wrote every cell of every
     // loaded chunk overlapping the box. The home chunk was fully
@@ -553,46 +477,39 @@ static int32_t chunkProbeTop(World& lvl, int32_t cx, int32_t cz) {
     return std::min(kWorldHeight - 1, probe.maxTop() + 1);
 }
 
-// Incremental interior flood: re-push every lit cell of the chunk (both
-// layers) and let the flood raise whatever can still be raised, writing
-// ONLY inside the chunk. Runs when a neighbour's sweep or push deposited
-// light here — the deposited cells are not border walls, so borderPull's
-// wall-seeded flood would never touch them. Seeds are collected with a
-// full accessor read of the chunk's light nibbles: correct for any mix
-// of allocated and implicit-sky sections.
+// Incremental interior flood: re-push every lit cell of the chunk
+// (block layer) and let the flood raise whatever can still be raised,
+// writing ONLY inside the chunk. Runs when a neighbour's sweep or push
+// deposited light here — the deposited cells are not border walls, so
+// borderPull's wall-seeded flood would never touch them. Seeds are
+// collected with a full accessor read of the chunk's light nibbles.
 void LightEngine::interiorFlood(int32_t cx, int32_t cz) {
     const int32_t bx = cx * 16, bz = cz * 16;
     Region r(lvl_, bx, 0, bz, bx + 15, kWorldHeight - 1, bz + 15);
     const int32_t yTop = r.maxTop() + 1;
 
-    std::deque<Cell> skyQueue;
     std::deque<Cell> blockQueue;
     for (int x = bx; x <= bx + 15; ++x)
         for (int z = bz; z <= bz + 15; ++z)
             for (int y = 0; y <= yTop; ++y) {
-                const uint8_t s = r.sky(x, y, z);
-                if (s > 1)
-                    skyQueue.push_back({x, y, z});
                 const uint8_t b = r.blockLight(x, y, z);
                 if (b > 1)
                     blockQueue.push_back({x, y, z});
             }
-    spreadLayer(r, skyQueue, true);
-    spreadLayer(r, blockQueue, false);
+    spreadLayer(r, blockQueue);
 }
 
-// Pull: raise the chunk's own border cells from the light just outside
-// the chunk, then flood inward from whichever cells actually rose. The
-// interior keeps whatever the generation worker computed — this pass
-// only ever ADDS the cross-border flow the single-chunk worker pass
-// could not see. Wall cells above the probe top are implicit open sky
-// (15) and cannot improve, so the walk stops at the probe.
+// Pull: raise the chunk's own border cells from the block light just
+// outside the chunk, then flood inward from whichever cells actually
+// rose. The interior keeps whatever the generation worker computed —
+// this pass only ever ADDS the cross-border flow the single-chunk
+// worker pass could not see. Wall cells cannot pull sky light (the sky
+// layer is global and never written), so only the block channel moves.
 void LightEngine::borderPull(int32_t cx, int32_t cz) {
     const int32_t bx = cx * 16, bz = cz * 16;
     Region r(lvl_, bx, 0, bz, bx + 15, kWorldHeight - 1, bz + 15);
     const int32_t yTop = chunkProbeTop(lvl_, cx, cz);
 
-    std::deque<Cell> skyQueue;
     std::deque<Cell> blockQueue;
 
     for (int y = 0; y <= yTop; ++y) {
@@ -617,11 +534,6 @@ void LightEngine::borderPull(int32_t cx, int32_t cz) {
                 const uint8_t id = r.blockId(x, y, z);
                 const int cost = costThrough(id);
 
-                const int inSky = (int)r.sky(ox, y, oz) - cost;
-                if (inSky > (int)r.sky(x, y, z)) {
-                    r.setSky(x, y, z, (uint8_t)std::min(inSky, (int)kMaxLight));
-                    skyQueue.push_back({x, y, z});
-                }
                 const int inBlk = (int)r.blockLight(ox, y, oz) - cost;
                 if (inBlk > (int)r.blockLight(x, y, z)) {
                     r.setBlockLight(x, y, z, (uint8_t)std::max(0, std::min(inBlk, (int)kMaxLight)));
@@ -630,18 +542,17 @@ void LightEngine::borderPull(int32_t cx, int32_t cz) {
             }
         }
     }
-    spreadLayer(r, skyQueue, true);
-    spreadLayer(r, blockQueue, false);
+    spreadLayer(r, blockQueue);
 }
 
-// Push: raise the neighbours' cells the chunk can improve. Only the
-// wall cells can hand light across a border (one step), and the push
-// writes the neighbour's border cell DIRECTLY — the neighbour is flagged
-// light_touched and returned in `touched` so its queued entry spreads
-// the deposit inward with the incremental interior flood. The vertical
-// walk runs the full world height: a taller neighbour can have shaded
-// cells level with our open sky, and skipping them would freeze light
-// the fixed point says should flow.
+// Push: raise the neighbours' cells the chunk can improve (block
+// layer). Only the wall cells can hand light across a border (one
+// step), and the push writes the neighbour's border cell DIRECTLY — the
+// neighbour is flagged light_touched and returned in `touched` so its
+// queued entry spreads the deposit inward with the incremental interior
+// flood. The vertical walk runs the full world height: a taller
+// neighbour can have unlit cells level with our torch glow, and
+// skipping them would freeze light the fixed point says should flow.
 void LightEngine::pushBorder(int32_t cx, int32_t cz,
                              std::vector<std::pair<int32_t, int32_t>>* touched) {
     const int32_t bx = cx * 16, bz = cz * 16;
@@ -662,19 +573,10 @@ void LightEngine::pushBorder(int32_t cx, int32_t cz,
                     oz = z - 1;
                 else
                     oz = z + 1;
-                // A missing neighbour chunk makes setSky a no-op; when
-                // it loads, its own arrival entry pulls this border.
+                // A missing neighbour chunk makes setBlockLight a no-op;
+                // when it loads, its own arrival entry pulls this border.
                 const int cost = costThrough(r.blockId(ox, y, oz));
 
-                const int candSky = (int)r.sky(x, y, z) - cost;
-                if (candSky > (int)r.sky(ox, y, oz)) {
-                    r.setSky(ox, y, oz, (uint8_t)std::min(candSky, (int)kMaxLight));
-                    mcp_chunk_t* nc = r.chunkAt(ox, oz);
-                    if (nc)
-                        nc->light_touched = 1;
-                    if (touched)
-                        touched->push_back({ox >> 4, oz >> 4});
-                }
                 const int candBlk = (int)r.blockLight(x, y, z) - cost;
                 if (candBlk > (int)r.blockLight(ox, y, oz)) {
                     r.setBlockLight(ox, y, oz, (uint8_t)std::max(0, std::min(candBlk, (int)kMaxLight)));

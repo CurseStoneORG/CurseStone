@@ -341,6 +341,12 @@ void ChunkManager::setChunk(int32_t x, int32_t z, mcp_chunk_t* chunk) {
         if (spillQueue_)
             spillQueue_->drainSpills(x, z, chunk);
     }
+    // Global sky light is a property of the engine, not of the chunk's
+    // history: chunks coming back from a disk written before the
+    // global-light switch carry the old per-column shadow arrays, so
+    // heal them on every install. Idempotent (memset of allocated
+    // sections only) and never marks the chunk dirty.
+    mcp_chunk_fill_sky_light(chunk);
     // Outside the lock: the callback (World) only enqueues the chunk for a
     // later light sweep. Calling it with mtx_ held would deadlock on the
     // very mutex ChunkManager needs.

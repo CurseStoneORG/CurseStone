@@ -21,18 +21,23 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// LightEngine — sky and block light that actually behaves like vanilla.
+// LightEngine — block light that behaves like vanilla, on top of a
+// GLOBAL sky layer.
 //
-// The engine has two kinds of work, and telling them apart is what
-// keeps flight TPS stable:
+// Sky light is global everywhere (the Aquamarine populateSkyLight()
+// semantics: every block reads 15, caves and oceans included — see
+// mcp_chunk_propagate_sky_light in the chunk layer). Nothing occludes
+// it, so this engine never writes the sky channel: no decay, no flood,
+// no relight of it. That removed the dominant per-chunk light cost and
+// the "dark stains while flying" class of bugs with it.
+//
+// What is left to do here is the BLOCK layer (torches, glowstone,
+// burning furnaces), in two kinds of work:
 //
 //   * FULL sweep (relightChunk): clear a chunk PLUS one light range
 //     into every neighbour and re-flood the whole box from scratch.
-//     Exact (it re-derives the vanilla fixed point for the box) but
-//     expensive — hundreds of thousands of cells. Reserved for chunks
-//     whose BLOCKS changed: World::setBlock and generation spill
-//     batches. Darkening (a roof going up) needs the clear, so only a
-//     full sweep can do it.
+//     Reserved for chunks whose BLOCKS changed: World::setBlock and
+//     generation spill batches.
 //
 //   * BORDER entry (runBorderEntry): everything else — a chunk that
 //     just arrived with its interior already lit by the generation

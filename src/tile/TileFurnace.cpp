@@ -311,16 +311,17 @@ void TileFurnace::writeNBT(cursestone::nbt::Tag* tag) const {
         items.release();
 }
 // ============================================================
-// Client spawn compound — the 0.15.10 furnace screen binds the
-// BurnTime/CookTime keys when the BlockEntityData lands; a compound
-// without them is a null read inside the client and takes the game
-// down the moment the window opens (the village-furnace crash: every
-// furnace sent the disk keys BurnDuration/BurnTicks/CookTicks, which
-// the client does not know). Mirrors the reference tile
-// getSpawnCompound: id/x/y/z + BurnTime + CookTime (+CustomName when
-// the tile has one). The Items list is deliberately absent — the
-// reference does not send it either; slot contents travel via
-// ContainerSetContent.
+// Client spawn compound — FULL furnace NBT, the Genisys/protocol-84
+// reference layout: id/x/y/z + BurnTime + CookTime + BurnDuration +
+// Items[] (+CustomName when the tile has one). The 0.15.10 furnace
+// screen binds BurnTime/CookTime when the BlockEntityData lands (a
+// compound without them is a null read inside the client and takes the
+// game down the moment the window opens — the village-furnace crash)
+// and the screen's container model needs the Items list to exist at
+// bind time: without it the window silently refuses to open and the
+// block just sits there no matter how long the player taps it. The
+// pure disk spellings BurnTicks/CookTicks stay off the wire — the
+// client only knows the BurnTime/CookTime names.
 // ============================================================
 void TileFurnace::writeSpawnNBT(cursestone::nbt::Tag* tag) const {
     if (!tag)
@@ -328,6 +329,24 @@ void TileFurnace::writeSpawnNBT(cursestone::nbt::Tag* tag) const {
     Tile::writeNBT(tag); // id/x/y/z
     cursestone::nbt::set_short(tag, "BurnTime", static_cast<int16_t>(burn_time_));
     cursestone::nbt::set_short(tag, "CookTime", static_cast<int16_t>(cook_time_));
+    cursestone::nbt::set_short(tag, "BurnDuration", static_cast<int16_t>(max_burn_time_));
+    utils::TagGuard items(new cursestone::nbt::ListTag("Items", cursestone::nbt::TAG_COMPOUND));
+    if (items) {
+        for (int slot = 0; slot < 3; ++slot) {
+            auto stack = inv_->getItem(slot);
+            if (stack.isEmpty())
+                continue;
+            utils::TagGuard entry(new cursestone::nbt::CompoundTag());
+            if (!entry)
+                continue;
+            cursestone::nbt::set_byte(entry.get(), "Slot", static_cast<int8_t>(slot));
+            item::itemStackToNbt(stack, entry.get());
+            if (cursestone::nbt::append(items.get(), entry.get()))
+                entry.release();
+        }
+        if (cursestone::nbt::set(tag, "Items", items.get()))
+            items.release();
+    }
     if (!getName().empty())
         cursestone::nbt::set_string(tag, "CustomName", getName().c_str());
 }

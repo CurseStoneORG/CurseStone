@@ -118,20 +118,21 @@ void mcp_chunk_recalculate_height_map(mcp_chunk_t* c);
 // on every block placement.
 void mcp_chunk_recalculate_height_map_column(mcp_chunk_t* c, int x, int z);
 
-// Real sky-light propagation pass (replaces the old "memset 0xFF and
-// call it done" approach). Must be called AFTER
-// mcp_chunk_recalculate_height_map, since it uses the heightmap to
-// know where open sky starts per column. Fills every column with 15
-// down to the heightmap surface, then decrements by each opaque
-// block's light filter going down, and finally flood-fills sideways
-// so light also wraps under overhangs / around leaves — same
-// algorithm the reference server's SimpleChunkManager::populateSkyLight +
-// updateBlockSkyLight uses (per-column bright-to-heightmap plus a
-// horizontal BFS spread for occluded neighbours). Single-chunk only:
-// does not read neighbouring chunks, so light right at a chunk edge
-// under an overhang from the next chunk over may need a follow-up
-// pass once neighbours are loaded (same limitation the reference server has before
-// its cross-chunk light-populator queue runs).
+// Global sky light: every allocated section's sky nibbles are filled
+// with 15 (Aquamarine populateSkyLight / setAllBlockSkyLight(15)
+// semantics — no shadows anywhere, caves included). Unallocated
+// sections already read 15 through mcp_chunk_get_sky_light. Marks the
+// chunk light_populated but never dirty.
+void mcp_chunk_fill_sky_light(mcp_chunk_t* c);
+
+// Light pass for a freshly generated chunk: global sky fill (above)
+// plus the real block-light pass (seed from every block's emission,
+// flood in the six vanilla directions). Must run AFTER
+// mcp_chunk_recalculate_height_map — the block-light sweep is bounded
+// by the chunk's highest terrain so empty sky sections are never
+// allocated. Torches keep real local light on top of the global sky
+// layer. Single-chunk only: block light crossing a border is healed by
+// World's LightEngine once neighbours install. Sets light_populated.
 void mcp_chunk_propagate_sky_light(mcp_chunk_t* c);
 
 // Tile-entity + entity add/remove. Copies the bytes in (caller still

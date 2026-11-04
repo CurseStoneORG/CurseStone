@@ -16,10 +16,15 @@ against the era-84 reference (PocketMine-MP 1.6dev):
     rides the chunk stream (hydrate path) and the place-time spawn
     no ContainerSetData until the tile actually ticks progress
 
-  the 0.15.10 client aborts inside its furnace screen on every type=2
-  open (bisected on a real client with confirmed hits), so furnaces
-  open as generic container windows (type 0) — same wire shape as a
-  chest
+  the furnace screen needs the FULL reference spawn compound (id/x/y/z
+  + BurnTime + CookTime + BurnDuration + Items[]) to reach the client
+  BEFORE the open record — the screen binds BurnTime/CookTime at NBT
+  arrival (missing keys are a null read inside the client: the
+  village-furnace crash) and binds its container model to the Items
+  list (without it the window silently never opens). With that
+  compound on the chunk stream, furnaces open as real type=2 windows
+  again — the reference flow, same as PocketMine-MP 1.6.2 did for
+  every 0.15.10 server
 
 A real protocol-84 client drives a self-managed flat server:
 
@@ -27,8 +32,10 @@ A real protocol-84 client drives a self-managed flat server:
   2. restart the server so the tiles reload from disk, relogin and
      capture the chunk-stream BlockEntityData (the hydrate path)
   3. tap the furnace, capture the open sequence and assert:
-       - the tile NBT already arrived with the chunk stream (stage 2)
-       - ContainerOpen is exactly 16 bytes (container window type 0,
+       - the FULL tile NBT already arrived with the chunk stream
+         (stage 2): id=Furnace + BurnTime/CookTime + BurnDuration +
+         Items[] and never the BurnTicks/CookTicks disk spellings
+       - ContainerOpen is exactly 16 bytes (furnace window type 2,
          slots 3, right coords, no trailing 8-byte entityId garbage)
        - ContainerSetContent follows with 3 empty slots
        - no BlockEntityData re-send and no ContainerSetData squeezed
@@ -375,8 +382,13 @@ def main() -> int:
                       f"stream furnace NBT has id=Furnace (fields={sorted(tags)})")
                 check("BurnTime" in tags and "CookTime" in tags,
                       "stream furnace NBT carries client keys BurnTime/CookTime")
-                check("BurnDuration" not in tags and "BurnTicks" not in tags,
-                      "stream furnace NBT has no disk-only keys")
+                items = tags.get("Items")
+                check(isinstance(items, tuple) and items[0] == 10,
+                      f"stream furnace NBT carries the full Items list "
+                      f"the screen binds (fields={sorted(tags)})")
+                check("BurnTicks" not in tags and "CookTicks" not in tags,
+                      "stream furnace NBT has no BurnTicks/CookTicks "
+                      "disk-only spellings")
             except Exception as exc:
                 check(False, f"stream furnace NBT parses ({exc})")
 
@@ -414,9 +426,9 @@ def main() -> int:
                 typ = op[2]
                 slots = struct.unpack(">h", op[3:5])[0]
                 ox, oy, oz = struct.unpack(">iii", op[5:17])
-                check(typ == 0,
-                      f"open type=0 container — the 0.15.10 furnace screen "
-                      f"aborts on type=2 (got {typ})")
+                check(typ == 2,
+                      f"open type=2 furnace — the reference window that "
+                      f"draws the real furnace screen (got {typ})")
                 check(slots == 3, f"open slots=3 (got {slots})")
                 check((ox, oy, oz) == (FURNACE_X, FURNACE_Y, FURNACE_Z),
                       f"open coords match (got {ox},{oy},{oz})")

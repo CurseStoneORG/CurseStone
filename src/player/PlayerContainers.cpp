@@ -366,14 +366,17 @@ void Player::openFurnaceAt(int x, int y, int z) {
     // it is there (no UI, no crash).
     auto op = std::make_shared<network::protocol::ContainerOpenPacket>();
     op->windowid = container_window_id_;
-    // Type 0, never TYPE_FURNACE: the 0.15.10 client aborts inside its
-    // furnace screen on every type=2 open — bisected on a real client
-    // with confirmed hits (dies with any NBT, content, block metadata
-    // or coords; the identical record with type=1 lives). The generic
-    // container window is the path this client survives (chests); the
-    // 3 slots stay input/fuel/output and clicks route by window id,
-    // not by the open type.
-    op->type = network::protocol::ContainerOpenPacket::TYPE_CONTAINER;
+    // TYPE_FURNACE (2) — the only window type that draws the actual
+    // furnace screen. The old type=0 fallback opened nothing (the client
+    // binds the generic container window to the block actor at the coords
+    // and refuses when that actor is not a chest), which is why tapping a
+    // furnace never showed a UI. The historical type=2 abort was the
+    // spawn compound, not the open record: the screen null-read its
+    // BurnTime/CookTime and found no Items list to bind its container
+    // model to. The full reference compound (BurnTime/CookTime/
+    // BurnDuration/Items[]) now rides the chunk stream, so the screen
+    // binds before the open record arrives — the reference flow works.
+    op->type = network::protocol::ContainerOpenPacket::TYPE_FURNACE;
     op->slots = 3;
     op->x = x;
     op->y = y;
