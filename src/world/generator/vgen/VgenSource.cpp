@@ -307,7 +307,7 @@ void VgenSource::prepareHeights(BlockVolume& blocks, int xOffs, int zOffs, Threa
         }
 }
 
-void VgenSource::buildSurfaces(ThreadData& td, BlockVolume& blocks,
+void VgenSource::buildSurfaces(ThreadData& td, vgen::Random& random, BlockVolume& blocks,
                                LevelChunk& levelChunk, const ChunkPos& chunkPos) {
         // Vanilla reaches the noise origin through the implicit
         // BlockPos(const ChunkPos&) conversion, which scales by the world
@@ -328,7 +328,7 @@ void VgenSource::buildSurfaces(ThreadData& td, BlockVolume& blocks,
                 for (p.z = 0; p.z < 16; ++p.z) {
                         BlockPos t = p + levelChunk.getMin();
                         levelChunk.getBiome(p)->buildSurfaceAt(
-                            td.random, blocks, t, td.depthBuffer[p.index2D()], mDimension.getSeaLevel());
+                            random, blocks, t, td.depthBuffer[p.index2D()], mDimension.getSeaLevel());
                 }
         }
 }
@@ -339,7 +339,14 @@ void VgenSource::buildSurfaces(ThreadData& td, BlockVolume& blocks,
 void VgenSource::generateTerrainInto(LevelChunk& lc, ThreadData& td) {
         const ChunkPos& p = lc.getPosition();
 
-        td.random.setSeed((vgen::RandomSeed)(int64_t)(p.x * 341872712l + p.z * 132899541l)); //@fix
+        // Terrain builds are CONTEXT-FREE: they run either from a chunk's own
+        // generate() task or lazily inside another chunk's populate (a feature
+        // touching a neighbour for the first time). A local Random seeded
+        // exactly like the old `td.random.setSeed(...)` keeps the produced
+        // bytes identical in both contexts AND can no longer disturb the
+        // caller's populate RNG (ThreadData::random) mid-sequence — which is
+        // what made neighbour-built-while-populating nondeterministic.
+        vgen::Random terrainRandom((vgen::RandomSeed)(int64_t)(p.x * 341872712l + p.z * 132899541l)); //@fix
 
         memset(td.blockBuffer.data(), 0, sizeof(td.blockBuffer));
 
@@ -349,9 +356,9 @@ void VgenSource::generateTerrainInto(LevelChunk& lc, ThreadData& td) {
 
         mDimension.getBiomes().fillBiomeData(&lc, lc.getMin().x, lc.getMin().z);
         prepareHeights(box, p.x, p.z, td); //biomes, temperatures);
-        buildSurfaces(td, box, lc, p);
+        buildSurfaces(td, terrainRandom, box, lc, p);
 
-        td.caveFeature.apply(box, lc, mDimension, td.random);
+        td.caveFeature.apply(box, lc, mDimension, terrainRandom);
 
         lc.setAllBlockIDs(box.blocks.begin(), box.getHeight());
         lc.setAllBlockData(box.data.begin(), box.getHeight());
