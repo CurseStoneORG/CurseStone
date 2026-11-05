@@ -1494,8 +1494,12 @@ bool Smithy::postProcess(BlockSource* level, Random& random, const BoundingBox& 
 
 	// furnace
 	generateBoxPieces(level, chunkBB, 6, 1, 4, 9, 4, 6, false, Block::mCobblestone->mID, cobbleRandom, mCobbleSelector);
-	placeBlock(level, Block::mFlowingLava->mID, 7, 1, 5, chunkBB);
-	placeBlock(level, Block::mFlowingLava->mID, 8, 1, 5, chunkBB);
+	// Still lava: generated terrain ships settled. Dynamic lava here used
+	// to cascade on chunk activation (wake tick + neighbour re-
+	// dynamization), one UpdateBlockPacket per cell for every viewer —
+	// pure churn for a pool that never actually flows anywhere.
+	placeBlock(level, Block::mStillLava->mID, 7, 1, 5, chunkBB);
+	placeBlock(level, Block::mStillLava->mID, 8, 1, 5, chunkBB);
 	placeBlock(level, Block::mIronFence->mID, 9, 2, 5, chunkBB);
 	placeBlock(level, Block::mIronFence->mID, 9, 2, 4, chunkBB);
 	generateBox(level, chunkBB, 7, 2, 4, 8, 2, 5, BlockID::AIR, BlockID::AIR, false);

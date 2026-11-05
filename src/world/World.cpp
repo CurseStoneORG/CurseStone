@@ -388,16 +388,22 @@ void World::processLiquidWakes(int32_t budget) {
                 liquid_wake_keys_.erase(packChunkPos(w.cx, w.cz));
                 continue;
             }
-            // Every liquid block the generator or an old save left behind
-            // receives its vanilla tick, so springs spill as soon as the
-            // chunk is live: dynamic cells tick directly, and still cells
-            // with somewhere to go turn back dynamic first (the reference
-            // restores the chunk's ticking queue on load — without this,
-            // water saved by an older build would sit frozen forever).
-            // Cells already at rest settle into their still id on that
-            // first tick and never come back here. The scan walks each
-            // section's block array linearly from the cursor; unallocated
-            // sections are pure air and skip in one step.
+            // The only generated liquid that still receives a tick is a
+            // cell the generator or an old save left DYNAMIC (flowing id):
+            // interrupted player flows, village pools, spring cells. One
+            // vanilla tick lets them finish or settle, and the result is
+            // saved — the cost is a handful of cells once per chunk, not a
+            // storm. STILL liquid (oceans, rivers, lakes, lava falls) never
+            // wakes: generated terrain is generated settled, exactly like
+            // the reference, where a static liquid block only re-enters the
+            // simulation when a NEIGHBOUR BLOCK CHANGES (World::setBlock →
+            // LiquidFlow::onBlockChanged). Waking still water on install
+            // used to turn every river bend and waterfall the player walked
+            // past into a live cascade — hundreds of UpdateBlockPackets per
+            // second, one client re-tessellation each: the "FPS tank near
+            // water". The scan walks each section's block array linearly
+            // from the cursor; unallocated sections are pure air and skip
+            // in one step.
             const int32_t bx = w.cx << 4, bz = w.cz << 4;
             uint32_t cell = w.next_cell;
             while (cell < 16 * 16 * 128 && schedules > 0) {
@@ -415,22 +421,16 @@ void World::processLiquidWakes(int32_t budget) {
                         (int32_t)(secY << 4) + (int32_t)(si >> 8),
                         bz + (int32_t)((si >> 4) & 15));
                     --schedules;
-                } else if (block::LiquidFlow::isStillLiquidId(id)) {
-                    if (block::LiquidFlow::wakeSettledLiquid(
-                            this, bx + (int32_t)(si & 15),
-                            (int32_t)(secY << 4) + (int32_t)(si >> 8),
-                            bz + (int32_t)((si >> 4) & 15)))
-                        --schedules;
                 }
                 ++cell;
             }
             if (cell >= 16 * 16 * 128) {
                 liquid_wake_keys_.erase(packChunkPos(w.cx, w.cz));
 
-                // Neighbour border strips: liquid on the edge of an already
-                // live chunk gains (or loses) a face when this chunk goes
-                // live, so a sealed wall can open up next door. Small fixed
-                // sweep, best effort within the same schedule budget.
+                // Neighbour border strips: dynamic liquid on the edge of an
+                // already live chunk resumes its run when this chunk goes
+                // live (a flow interrupted by the chunk frontier). Small
+                // fixed sweep, best effort within the same schedule budget.
                 static constexpr struct {
                     int32_t dx, dz;
                     int lx, lz;
@@ -450,10 +450,6 @@ void World::processLiquidWakes(int32_t budget) {
                             if (block::LiquidFlow::isDynamicLiquidId(id)) {
                                 block::LiquidFlow::scheduleTick(this, nbx | lx, y, nbz | lz);
                                 --schedules;
-                            } else if (block::LiquidFlow::isStillLiquidId(id)) {
-                                if (block::LiquidFlow::wakeSettledLiquid(this, nbx | lx, y,
-                                                                         nbz | lz))
-                                    --schedules;
                             }
                         }
                     }

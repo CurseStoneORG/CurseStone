@@ -691,9 +691,6 @@ void VgenSource::populate(GenerationContext& ctx) {
                 biome.decorate(&source, random, center.getMin(), false, FLT_MAX);
         }
 
-        // edge water fix (vanilla _fixWaterAlongEdges)
-        fixWaterAlongEdges(center, source);
-
         // snow cover (0.15 seasons postProcess equivalent)
         snowPass(source, center);
 
@@ -704,33 +701,6 @@ void VgenSource::populate(GenerationContext& ctx) {
 // ---------------------------------------------------------------------------
 // Population passes
 // ---------------------------------------------------------------------------
-void VgenSource::fixWaterAlongEdges(LevelChunk& lc, vgen::BlockSource& source) {
-        BlockPos min = lc.getMin();
-        auto fixColumn = [&](int ox, int oz) {
-                BlockPos p = min.offset(ox, 0, oz);
-                bool wasAir = true;
-                auto h = source.getHeightmap(p);
-                for (; p.y < h; ++p.y) {
-                        if (source.getBlockID(p) == Block::mStillWater->mID) {
-                                if (wasAir) {
-                                        source.setBlockAndData(p, Block::mFlowingWater->mID, 0);
-                                        wasAir = false;
-                                }
-                        } else {
-                                wasAir = true;
-                        }
-                }
-        };
-        for (int z = 0; z < 16; ++z) {
-                fixColumn(0, z);
-                fixColumn(15, z);
-        }
-        for (int x = 1; x < 15; ++x) {
-                fixColumn(x, 0);
-                fixColumn(x, 15);
-        }
-}
-
 void VgenSource::snowPass(vgen::BlockSource& source, LevelChunk& center) {
         center.recalcHeightmap();
 

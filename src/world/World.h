@@ -264,14 +264,16 @@ class World {
 
     // Queues a dynamic-liquid scan for a chunk that just entered the
     // level (queueLiquidWake) and drains it on the main-thread tick
-    // (processLiquidWakes). Vanilla fills each chunk's block ticking
-    // queue with the flowing water and lava the generator wrote and runs
-    // that queue as soon as the chunk goes live — that is what makes
-    // generated springs spill and structure pools settle. Without the
-    // scan those cells never receive their first tick and sit still
-    // forever. The drain hands out only a few scheduled ticks per tick
-    // and remembers a per-chunk scan cursor, so a freshly loading world
-    // feeds the shared scheduler gradually instead of queueing one
+    // (processLiquidWakes). Only cells left DYNAMIC (flowing ids 8/10) are
+    // resumed: a player flow interrupted by a save, a structure pool, a
+    // spring cell — one vanilla tick lets them finish or settle and the
+    // result persists. Still liquid (oceans, rivers, lakes, lava falls) is
+    // generated settled and never re-enters the simulation on its own; a
+    // static block starts flowing only when a NEIGHBOUR BLOCK CHANGES
+    // (World::setBlock → LiquidFlow::onBlockChanged), which is exactly the
+    // reference behaviour. The drain hands out only a few scheduled ticks
+    // per tick and remembers a per-chunk scan cursor, so a freshly loading
+    // world feeds the shared scheduler gradually instead of queueing one
     // callback per liquid cell in a single burst.
     void queueLiquidWake(int32_t cx, int32_t cz);
     void processLiquidWakes(int32_t budget);
@@ -577,7 +579,7 @@ class World {
 
     // Dynamic-liquid wake queue (see queueLiquidWake). Chunks are queued
     // from the generation worker thread and drained on the main thread;
-    // next_cell_ is the scan cursor so a chunk whose liquid cells exceed
+    // next_cell_ is the scan cursor so a chunk whose dynamic cells exceed
     // one tick's submission budget resumes where it stopped.
     struct LiquidWake {
         int32_t cx;

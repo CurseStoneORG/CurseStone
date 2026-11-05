@@ -40,18 +40,15 @@ class LiquidFlow {
     // Vanilla LiquidBlockDynamic::tick.
     static void onScheduledTick(world::World* world, int32_t x, int32_t y, int32_t z);
 
-    // Vanilla BlockTickingQueue::add for a liquid cell.
-    static void scheduleTick(world::World* world, int32_t x, int32_t y, int32_t z);
-
     // Vanilla LiquidBlock::onPlace — lava solidifies against water neighbors.
     static void onLiquidPlaced(world::World* world, int32_t x, int32_t y, int32_t z);
 
-    // Vanilla BlockTickingQueue restore for loaded chunks: a still liquid
-    // cell that has somewhere to go (a loaded neighbour it can flow into)
-    // turns back dynamic and queues its first tick, so saved terrain
-    // resumes flowing exactly like freshly generated terrain. Returns true
-    // when the cell woke up.
-    static bool wakeSettledLiquid(world::World* world, int32_t x, int32_t y, int32_t z);
+    // Vanilla BlockTickingQueue::add for a liquid cell. DYNAMIC liquid cells
+    // saved by an older build or left mid-flow re-enter the simulation when
+    // their chunk installs (World::processLiquidWakes). Still liquid is
+    // generated settled and only re-joins the simulation through a
+    // neighbour block change (onBlockChanged).
+    static void scheduleTick(world::World* world, int32_t x, int32_t y, int32_t z);
 
     static bool isLiquidId(uint8_t id);
     static bool isDynamicLiquidId(uint8_t id);

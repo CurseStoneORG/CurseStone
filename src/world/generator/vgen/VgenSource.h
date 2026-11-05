@@ -97,7 +97,6 @@ private:
 
         // Population passes.
         void snowPass(vgen::BlockSource& source, vgen::LevelChunk& center);
-        void fixWaterAlongEdges(vgen::LevelChunk& lc, vgen::BlockSource& source);
 
         INeighborBlockSink* mNeighborSink = nullptr;
 
