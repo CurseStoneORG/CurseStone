@@ -123,8 +123,11 @@ BiomeDecorator::BiomeDecorator() {
 	cactusFeature = make_unique<CactusFeature>();
 	waterlilyFeature = make_unique<WaterlilyFeature>();
 	pumpkinFeature = make_unique<PumpkinFeature>();
-	waterSpringFeature = make_unique<SpringFeature>(Block::mFlowingWater->mID);
-	lavaSpringFeature = make_unique<SpringFeature>(Block::mFlowingLava->mID);
+	// Springs ship settled still liquid (see SpringFeature::place): the
+	// flowing ids used to cascade through the runtime liquid sim the moment
+	// their chunk went live, one UpdateBlockPacket per cell.
+	waterSpringFeature = make_unique<SpringFeature>(Block::mStillWater->mID);
+	lavaSpringFeature = make_unique<SpringFeature>(Block::mStillLava->mID);
 	deadBushFeature = make_unique<DeadBushFeature>();
 	desertWellFeature = make_unique<DesertWellFeature>();
 	oakFeature = make_unique<OakFeature>();

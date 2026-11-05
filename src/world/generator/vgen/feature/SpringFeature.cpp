@@ -74,7 +74,14 @@ bool SpringFeature::place(BlockSource& region, const BlockPos& pos, Random& rand
 	}
 
 	if (rockCount == 3 && holeCount == 1 && _setBlockAndData( region, pos, mBlock)) {
-		Block::mBlocks[mBlock]->tick(region, pos, random);
+		// The spring ships SETTLED: still ids (9/11) render exactly like the
+		// flowing ones (full liquid block) but never enter the runtime
+		// simulation on their own, so a chunk going live near a cave spring
+		// no longer cascades a waterfall through the scheduler — that
+		// cascade cost one UpdateBlockPacket per cell (a client re-
+		// tessellation each) and was the main source of the "FPS tank near
+		// water". Player-placed or neighbour-changed liquid keeps the real
+		// dynamic flow.
 	}
 
 	return true;

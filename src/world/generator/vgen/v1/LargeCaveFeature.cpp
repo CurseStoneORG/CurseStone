@@ -189,8 +189,17 @@ void LargeCaveFeature::addTunnel(BlockVolume& blocks, Random& _random, LevelChun
 					auto p = blocks.index(Pos{ xx, yy, zz });
 
 					if (blocks.block(p) == Block::mFlowingWater->mID || blocks.block(p) == Block::mStillWater->mID) {
-						// water might be next to a new tunnel, and should flow into it if possible
-						blocks.setBlock(p, Block::mFlowingWater->mID);
+						// Detection only: the water keeps its still id. The old
+						// setBlock(mFlowingWater) here marked every water cell near
+						// a carve box dynamic, so ocean/river chunks shipped dozens
+						// of cells whose only destiny was to settle back to still
+						// on their first live tick — one UpdateBlockPacket + one
+						// relight each, hundreds per second while exploring any
+						// coast (the client re-tessellates on every one of them:
+						// the "FPS tank near water"). Water that genuinely gained
+						// an opening to flow is woken by the liquid wake pass when
+						// the chunk goes live, which also covers water opened
+						// later by a neighbour's terrain.
 						detectedWater = true;
 					}
 					if (yy != y0 - 1 && xx != x0 && xx != x1 - 1 && zz != z0 && zz != z1 - 1) {
