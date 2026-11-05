@@ -85,7 +85,7 @@ private:
         // RandomLevelSource terrain pipeline (verbatim port).
         void prepareHeights(vgen::BlockVolume& blocks, int xOffs, int zOffs, ThreadData& td);
         void getHeights(float* noiseBuffer, vgen::Biome** biomes, int x, int y, int z);
-        void buildSurfaces(ThreadData& td, vgen::BlockVolume& blocks,
+        void buildSurfaces(ThreadData& td, vgen::Random& random, vgen::BlockVolume& blocks,
                             vgen::LevelChunk& levelChunk, const vgen::ChunkPos& chunkPos);
 
         // Terrain-only chunk construction (vanilla loadChunk terrain half).

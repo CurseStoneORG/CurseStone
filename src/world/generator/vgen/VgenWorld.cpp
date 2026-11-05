@@ -157,37 +157,18 @@ void recycleScratchNeighbor(LevelChunk* lc) {
 
 BlockSource::BlockSource(ITerrainFeed& feed, LevelChunk& center)
     : mFeed(feed), mCenter(center) {
-        for (int dx = 0; dx < 3; ++dx) {
-                for (int dz = 0; dz < 3; ++dz) {
-                        if (dx == 1 && dz == 1) {
-                                mNeighbors[1][1] = &mCenter;
-                                continue;
-                        }
-                        std::shared_ptr<LevelChunk> cached = mFeed.acquireTerrain(mCenter.mPos.x + dx - 1,
-                                                                  mCenter.mPos.z + dz - 1);
-                        // Private copy per populate. The cache chunks are
-                        // SHARED between threads: writing this populate's
-                        // feature blocks straight into them would leak into
-                        // another worker's copy-out (terrain freshly copied
-                        // to its sink would contain our trees/lakes/ores)
-                        // and race the terrain build itself. Each populate
-                        // therefore works on its own neighborhood snapshot;
-                        // cross-populate propagation goes through the spill
-                        // queue / live-chunk sink. The shared_ptr pins the
-                        // cached chunk against concurrent eviction while the
-                        // snapshot copies from it.
-                        mNeighbors[dx][dz] = acquireScratchNeighbor(*cached);
-                }
-        }
+        // Neighbours are now acquired lazily in _chunkAt(): a populate that
+        // never touches a neighbour no longer builds (or even copies) it.
+        // The center slot is resolved in _chunkAt as well.
 }
 
 BlockSource::~BlockSource() {
         for (int dx = 0; dx < 3; ++dx) {
                 for (int dz = 0; dz < 3; ++dz) {
-                        if (dx == 1 && dz == 1)
-                                continue;
-                        recycleScratchNeighbor(mNeighbors[dx][dz]);
-                        mNeighbors[dx][dz] = nullptr;
+                        if (mSlots[dx][dz].snapshot) {
+                                recycleScratchNeighbor(mSlots[dx][dz].snapshot);
+                                mSlots[dx][dz].snapshot = nullptr;
+                        }
                 }
         }
 }
@@ -201,7 +182,20 @@ LevelChunk* BlockSource::_chunkAt(int cx, int cz) const {
         int dz = cz - mCenter.mPos.z + 1;
         if (dx < 0 || dx > 2 || dz < 0 || dz > 2)
                 return nullptr;
-        return mNeighbors[dx][dz];
+        if (dx == 1 && dz == 1)
+                return &mCenter;
+        // Lazy acquire on first touch (see the mSlots comment in the header):
+        // same bytes the eager ctor used to copy, just built when a feature
+        // actually needs them. The shared_ptr from acquireTerrain pins the
+        // cache entry only for the duration of the snapshot copy — the
+        // snapshot itself is private, exactly like the eager path.
+        NeighborSlot& slot = mSlots[dx][dz];
+        if (!slot.snapshot) {
+                std::shared_ptr<LevelChunk> cached = mFeed.acquireTerrain(
+                    mCenter.mPos.x + dx - 1, mCenter.mPos.z + dz - 1);
+                slot.snapshot = acquireScratchNeighbor(*cached);
+        }
+        return slot.snapshot;
 }
 
 LevelChunk* BlockSource::_chunkAtBlock(int x, int z) const {

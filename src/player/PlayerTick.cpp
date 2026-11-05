@@ -619,11 +619,30 @@ void Player::onUpdate(uint64_t current_tick) {
         // discarded chunk payloads — terrain holes while exploring. Pacing
         // the feed keeps the window under the ceiling on any link that can
         // sustain ~5 MB/s, and the congestion backlog absorbs the rest.
-        // Sizing note: a full overworld column serializes to ~83 KB on the
-        // wire, so 256 KB still lets the per-tick count cap (3) go through
-        // unimpeded — the budget only bites on extreme payloads.
-        constexpr int MAX_CHUNKS_PER_TICK = 3;
-        constexpr size_t MAX_CHUNK_BYTES_PER_TICK = 256 * 1024;
+        //
+        // The count cap is ADAPTIVE (the "visual chunk loading lag" fix):
+        // a 0.15.10 phone remeshes every chunk it receives on its render
+        // thread, so N chunks arriving in one tick mean N chunk remeshes
+        // inside one client frame — at a constant 3/tick a flying player's
+        // client spends every frame remeshing 3 chunks, which is exactly
+        // the "lag visual cuando se generan chunks" report. Two regimes:
+        //   - steady state (exploring at any legit 0.15 pace: sprint-fly
+        //     10.9 m/s ≈ 11.6 chunks/s demand): 1 chunk/tick = 20 chunks/s,
+        //     each client frame carries at most ONE remesh and supply still
+        //     covers demand with ~70% headroom;
+        //   - deep backlog (login, teleports, ring re-streams, post-hitch
+        //     recovery, or a faster-than-vanilla flyer): once more than two
+        //     full view rows are missing, burst up to 4/tick so the visible
+        //     square fills fast — the client is filling a mostly empty
+        //     square there and burst remeshing is expected.
+        // The transition is self-regulating: if 1/tick cannot keep up with
+        // the demand, pending grows past the threshold and bursts drain it.
+        // Sizing note: a full overworld column serializes to ~83 KB raw on
+        // the wire path (~3 KB after the batch zlib), so 384 KB still lets
+        // the 4-chunk burst go through unimpeded — the budget only bites on
+        // extreme payloads.
+        constexpr size_t MAX_CHUNK_BYTES_PER_TICK = 384 * 1024;
+        const size_t deep_backlog_rows = (size_t)(2 * vd + 1) * 2; // two full view rows
         int chunks_sent_this_tick = 0;
         size_t chunk_bytes_this_tick = 0;
 
@@ -641,6 +660,11 @@ void Player::onUpdate(uint64_t current_tick) {
                     pending.emplace_back(chX, chZ);
             }
         }
+        // Adaptive count cap — see the streaming comment above: 1 chunk/tick
+        // in steady state (one client remesh per frame), 4/tick while the
+        // backlog is deeper than two view rows (login, teleport, ring
+        // re-stream, recovery, faster-than-vanilla flight).
+        int max_chunks_this_tick = pending.size() > deep_backlog_rows ? 4 : 1;
         for (const auto& pc : pending) {
             int32_t chX = pc.first, chZ = pc.second;
             int64_t hash = ((int64_t)chX << 32) | ((uint32_t)chZ);
@@ -649,7 +673,7 @@ void Player::onUpdate(uint64_t current_tick) {
             mcp_chunk_t* ch = chunks.getChunkOrRequestAsync(chX, chZ, pool);
             if (!ch)
                 continue; // Generation is pending.
-            if (chunks_sent_this_tick >= MAX_CHUNKS_PER_TICK)
+            if (chunks_sent_this_tick >= max_chunks_this_tick)
                 continue; // The network send limit has been reached.
             if (chunk_bytes_this_tick >= MAX_CHUNK_BYTES_PER_TICK && chunks_sent_this_tick > 0)
                 break; // Byte budget spent — the spiral is center-out, so

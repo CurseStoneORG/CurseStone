@@ -301,7 +301,22 @@ private:
 
         ITerrainFeed& mFeed;
         LevelChunk& mCenter;
-        LevelChunk* mNeighbors[3][3] = {}; // [dx+1][dz+1]; center is mCenter
+        // Lazy 3x3 neighbourhood: slot [dx][dz] (dx/dz in 0..2, [1][1] is the
+        // center) is acquired on FIRST ACCESS — acquireTerrain builds the
+        // neighbour's terrain if the cache misses, then acquireScratchNeighbor
+        // copies it into a private scratch snapshot. Features that never read
+        // a neighbour (interior chunks, plains without border features) no
+        // longer pay that neighbour's terrain build on THIS worker: the build
+        // happens later, on the neighbour's own populate task, off this
+        // chunk's critical path. Output-identical: acquireTerrain is
+        // deterministic and cache-backed, so a slot reads the same bytes
+        // eager or lazy, and writes still go through the same spill path.
+        // Single-threaded per populate (each BlockSource is stack-local to
+        // one worker task), so plain mutable fields are enough.
+        struct NeighborSlot {
+                LevelChunk* snapshot = nullptr; // private scratch copy; null = not acquired yet
+        };
+        mutable NeighborSlot mSlots[3][3];
 };
 
 } // namespace vgen
