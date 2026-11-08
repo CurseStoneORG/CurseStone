@@ -53,16 +53,27 @@ namespace cursestone {
 // ============================================================
 // broadcastChestBlockEvent — the chest lid animation + open/close
 // sounds. The 0.15.10 client animates the chest block (and plays the
-// wooden-open/wooden-close sound) ONLY off a BlockEventPacket aimed at
-// the chest's block coordinates: case1 1 opens the lid, case1 0 closes
-// it. Without it the chest opens its UI but stays visually shut and
-// silent. Sent to everyone who tracks the chest's chunk (including the
+// wooden-open/wooden-close sounds locally) ONLY off a BlockEventPacket
+// aimed at the chest's block coordinates, and ONLY for the payload the
+// era reference servers put on the wire (PocketMine-MP/Genisys,
+// Nukkit, ClearSky — the software that drove real 0.15.10 clients):
+//   case1 = 1   ALWAYS — the chest-lid event id ("it's always 1 for a
+//               chest", PocketMine-MP ChestInventory)
+//   case2 = 2   lid UP   (open animation + open sound)
+//   case2 = 0   lid DOWN (close animation + close sound)
+// Anything else is not a chest event and the client drops it — the
+// old (case1 1 open / 0 close) reading sent case2=0 on open, which the
+// client parsed as "zero viewers", so the lid never moved and no sound
+// played. Protocol 84 has no chest sound in its LevelEventPacket
+// vocabulary (sound events 1000-1020): the sound is the client block
+// actor's own reaction to this packet, so nothing else goes out with
+// it. Sent to everyone who tracks the chest's chunk (including the
 // acting player), mirroring how the reference server spreads block
 // events to chunk viewers.
 // ============================================================
 static void broadcastChestBlockEvent(cursestone::Player* actor,
                                      const cursestone::tile::TileChest& chest,
-                                     int case1) {
+                                     bool open) {
     if (!actor || !actor->server())
         return;
     const auto& pos = chest.position();
@@ -74,8 +85,8 @@ static void broadcastChestBlockEvent(cursestone::Player* actor,
     pk->x = x;
     pk->y = y;
     pk->z = z;
-    pk->case1 = case1;
-    pk->case2 = 0;
+    pk->case1 = 1;            // the chest-lid event id — always 1 for chests
+    pk->case2 = open ? 2 : 0; // 2 = lid up (+ open sound), 0 = lid down (+ close sound)
 
     int32_t cx = x >> 4;
     int32_t cz = z >> 4;
@@ -93,10 +104,10 @@ static void broadcastChestBlockEvent(cursestone::Player* actor,
 // ============================================================
 // openChestAt / closeOpenChest — the actual chest flow.
 //
-// TileChest is the single source of truth for to chest's contents
+// TileChest is the single source of truth for the chest's contents
 // (see TileChest.h). World::getTile/setTile is what makes the SAME
 // TileChest instance come back every time this position is opened,
-// instead of to fresh empty one — so items survive to close+reopen for
+// instead of a fresh empty one — so items survive a close+reopen for
 // as long as the process keeps running (not disk persistence yet, see
 // the comment on World::getTile in World.h).
 // ============================================================
@@ -146,9 +157,9 @@ void Player::openChestAt(int x, int y, int z) {
                   : chest->inventory();
     const int slotCount = openInv->getSize();
 
-    // InventoryOpenEvent — to listener can cancel (e.g. zone protection,
-    // to chest mid-trade) to block opening even though PlayerInteractEvent
-    // already passed. Nothing is sent to the client and not viewer is
+    // InventoryOpenEvent — a listener can cancel (e.g. zone protection,
+    // a chest mid-trade) to block opening even though PlayerInteractEvent
+    // already passed. Nothing is sent to the client and no viewer is
     // registered if this is cancelled.
     auto ev = event::EventManager::get().fire<event::inventory::InventoryOpenEvent>(openInv,
                                                                                     this);
@@ -167,10 +178,9 @@ void Player::openChestAt(int x, int y, int z) {
     // chunk stream (Player::sendChunkTiles) and the place-time spawn
     // (PlayerBlocks) — both halves of a paired chest included, the pair
     // tags (pairx/pairz) ride the same spawn compound. Re-sending a
-    // BlockEntityData inside the open batch is off-reference and is the
-    // only deviation left from the reference open flow — the 0.15.10
-    // client is observed to swallow the whole open while it is there
-    // (no UI, no crash).
+    // BlockEntityData inside the open batch is off-reference and the
+    // 0.15.10 client is observed to swallow the whole open while it is
+    // there (no UI, no crash).
     auto op = std::make_shared<network::protocol::ContainerOpenPacket>();
     op->windowid = container_window_id_;
     op->type = network::protocol::ContainerOpenPacket::TYPE_CONTAINER;
@@ -180,20 +190,10 @@ void Player::openChestAt(int x, int y, int z) {
     op->z = z;
     sendPacket(op);
 
-    // Lid up + open sound. Vanilla animates both halves of a double
-    // chest, driven by the combined viewer count of the pair: the lid
-    // opens once per open session and stays up while ANY player still
-    // holds either half open.
-    if (chest->viewerCount() + (chestPair ? chestPair->viewerCount() : 0) == 1) {
-        broadcastChestBlockEvent(this, *chest, 1);
-        if (chestPair)
-            broadcastChestBlockEvent(this, *chestPair, 1);
-    }
-
     // Full slot dump so the client actually shows the contents. Can't
     // reuse BaseInventory::sendContents() — it hardcodes windowid=0
     // (correct for the player's own inventory, wrong here: it would
-    // collide with SPECIAL_INVENTORY and get treated as to hotbar/main
+    // collide with SPECIAL_INVENTORY and get treated as a hotbar/main
     // inventory update instead of the chest window).
     auto content = std::make_shared<network::protocol::ContainerSetContentPacket>();
     content->windowid = container_window_id_;
@@ -202,6 +202,19 @@ void Player::openChestAt(int x, int y, int z) {
         content->slots.push_back(openInv->getItem(i));
     }
     sendPacket(content);
+
+    // Lid up + open sound — AFTER the content dump. The era reference
+    // servers queue the lid event behind the open batch (addChunkPacket
+    // flush), so the client binds the window first and processes the
+    // block event last. Vanilla animates both halves of a double chest,
+    // driven by the combined viewer count of the pair: the lid opens
+    // once per open session and stays up while ANY player still holds
+    // either half open.
+    if (chest->viewerCount() + (chestPair ? chestPair->viewerCount() : 0) == 1) {
+        broadcastChestBlockEvent(this, *chest, true);
+        if (chestPair)
+            broadcastChestBlockEvent(this, *chestPair, true);
+    }
 
     if (srv_ && srv_->debugMode()) {
         utils::MainLogger::get().info("[CHEST] " + cfg_.username + " opened chest at " +
@@ -293,14 +306,14 @@ void Player::closeOpenChest() {
 
         open_chest_->removeViewer();
         // Lid down + close sound, but only for the LAST viewer leaving:
-        // with another player still inside the chest stays visibly open.
+        // with another player still inside, the chest stays visibly open.
         // Vanilla drives both halves of a double chest from the combined
         // viewer count of the pair.
         auto chestPair = open_chest_->pairTile(getWorld());
         if (open_chest_->viewerCount() + (chestPair ? chestPair->viewerCount() : 0) == 0) {
-            broadcastChestBlockEvent(this, *open_chest_, 0);
+            broadcastChestBlockEvent(this, *open_chest_, false);
             if (chestPair)
-                broadcastChestBlockEvent(this, *chestPair, 0);
+                broadcastChestBlockEvent(this, *chestPair, false);
         }
         open_chest_.reset();
     }

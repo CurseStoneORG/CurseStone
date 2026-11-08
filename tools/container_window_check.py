@@ -211,9 +211,9 @@ def main() -> int:
         a.drain(1.2)
         win_f = a.container_opens[-1][0] if a.container_opens else 0
         check(bool(a.container_opens) and
-              a.container_opens[-1][1] == 0 and
+              a.container_opens[-1][1] == 2 and
               a.container_opens[-1][2:] == (FURNACE_X, 4, FURNACE_Z) and win_f >= 2,
-              "furnace opens as a container window (type 0) with a dynamic id",
+              "furnace opens as the type-2 furnace window with a dynamic id",
               f"opens={a.container_opens}")
         n_open_f = plugin_log("[ChestUiTest] open player=WinOne inventory=Furnace")
         check(n_open_f >= 1,

@@ -17,11 +17,11 @@ milk (BUCKET aux 1 — id 335 never appears on the 0.15 wire):
 
 chest (BlockEventPacket drives the lid animation + open/close sounds):
   8. chest block places (UpdateBlock id 54)
-  9. opener gets ContainerOpen + BlockEvent(case1=1) at the chest coords
+  9. opener gets ContainerOpen + BlockEvent(case1=1, case2=2) at the chest coords
  10. a second client in the same chunk also sees the open block event
  11. a second opener does NOT duplicate the open event (one per session)
  12. first client closing does NOT close the lid while one viewer remains
- 13. the last viewer closing sends BlockEvent(case1=0) to everyone
+ 13. the last viewer closing sends BlockEvent(case1=1, case2=0) to everyone
  14. reopening after a full open/close cycle fires a fresh open event
 
 The script spawns the server itself (fresh flat world, known terrain:
@@ -439,8 +439,8 @@ def main() -> int:
         a.drain(1.2)
         b.drain(0.8)  # B must READ the broadcast too before we assert on it
         a_open = [e for e in a.block_events
-                  if e[:3] == (chest_x, 4, chest_z) and e[3] == 1]
-        check(bool(a_open), "opener gets BlockEvent(case1=1) at chest coords",
+                  if e[:3] == (chest_x, 4, chest_z) and e[3] == 1 and e[4] == 2]
+        check(bool(a_open), "opener gets BlockEvent(case1=1, case2=2) at chest coords",
               f"A={a.block_events}")
         win = a.container_opens[-1][0] if a.container_opens else 0
         check(bool(a.container_opens) and
@@ -448,7 +448,7 @@ def main() -> int:
               "opener gets ContainerOpen(type container, real window id)",
               f"opens={a.container_opens}")
         b_open = [e for e in b.block_events
-                  if e[:3] == (chest_x, 4, chest_z) and e[3] == 1]
+                  if e[:3] == (chest_x, 4, chest_z) and e[3] == 1 and e[4] == 2]
         check(bool(b_open), "second client in the same chunk sees the open event",
               f"B={b.block_events}")
         check(not b.container_opens,
@@ -460,8 +460,8 @@ def main() -> int:
         b.use_item(chest_x, 4, chest_z, 1)
         b.drain(1.2)
         a.drain(0.6)
-        dup_open = ([e for e in a.block_events if e[3] == 1] +
-                    [e for e in b.block_events if e[3] == 1])
+        dup_open = ([e for e in a.block_events if e[3] == 1 and e[4] == 2] +
+                    [e for e in b.block_events if e[3] == 1 and e[4] == 2])
         check(not dup_open,
               "second opener does NOT duplicate the open event",
               f"A={a.block_events} B={b.block_events}")
@@ -472,8 +472,10 @@ def main() -> int:
         a.container_close(win)
         a.drain(1.2)
         b.drain(0.6)
-        close_events = ([e for e in a.block_events if e[3] == 0] +
-                        [e for e in b.block_events if e[3] == 0])
+        # The lid-close event is (case1=1, case2=0): case1 is ALWAYS 1 for
+        # the chest-lid event, case2 selects the transition (2 up / 0 down).
+        close_events = ([e for e in a.block_events if e[3] == 1 and e[4] == 0] +
+                        [e for e in b.block_events if e[3] == 1 and e[4] == 0])
         check(not close_events and win in a.container_closes,
               "first viewer closing: close ack but lid stays open",
               f"close={a.container_closes} ev={close_events}")
@@ -485,11 +487,11 @@ def main() -> int:
         b.drain(1.2)
         a.drain(0.8)
         a_closed = [e for e in a.block_events
-                    if e[:3] == (chest_x, 4, chest_z) and e[3] == 0]
+                    if e[:3] == (chest_x, 4, chest_z) and e[3] == 1 and e[4] == 0]
         b_closed = [e for e in b.block_events
-                    if e[:3] == (chest_x, 4, chest_z) and e[3] == 0]
+                    if e[:3] == (chest_x, 4, chest_z) and e[3] == 1 and e[4] == 0]
         check(bool(a_closed) and bool(b_closed),
-              "last viewer closing sends BlockEvent(case1=0) to everyone",
+              "last viewer closing sends BlockEvent(case1=1, case2=0) to everyone",
               f"A={a.block_events} B={b.block_events}")
 
         # full cycle reset: reopening fires a fresh open event
@@ -497,7 +499,7 @@ def main() -> int:
         a.use_item(chest_x, 4, chest_z, 1, item_id=CHEST_BLOCK)
         a.drain(1.2)
         re_open = [e for e in a.block_events
-                   if e[:3] == (chest_x, 4, chest_z) and e[3] == 1]
+                   if e[:3] == (chest_x, 4, chest_z) and e[3] == 1 and e[4] == 2]
         check(bool(re_open),
               "reopening after a full cycle fires a fresh open event",
               f"A={a.block_events}")

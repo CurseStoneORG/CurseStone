@@ -25,9 +25,13 @@
 //
 // Server->client block-level event. The 0.15.10 client drives the
 // chest lid animation AND the chest open/close sounds from this packet
-// addressed to the chest's block position (case1 1 = open, 0 = closed;
-// case2 unused for chests). Without it a chest opens its UI but the
-// lid never moves and no sound plays.
+// addressed to the chest's block position. case1 is the event kind:
+// ALWAYS 1 for a chest (the lid/viewer event). case2 is the event
+// payload: 2 = lid up (open animation + open sound), 0 = lid down
+// (close animation + close sound). Any other case1 is not a chest
+// event and the client drops it. This matches the payload the era
+// reference servers put on the wire for real 0.15.10 clients
+// (Genisys/Nukkit/ClearSky) and later PocketMine-MP versions.
 //
 // Wire layout (big-endian, no varints):
 //   [Int BE] x
