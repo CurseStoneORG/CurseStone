@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// PlayerInventory.cpp — ported from cn.nukkit.inventory.PlayerInventory
+// PlayerInventory.cpp — ported from the reference server API
 #include "PlayerInventory.h"
 #include "../Player.h"
 #include "../network/protocol/ContainerSetContentPacket.h"
@@ -65,7 +65,7 @@ void PlayerInventory::setHotbarSlotIndex(int index, int slot) {
 void PlayerInventory::setHeldItemIndex(int index) {
     if (index >= 0 && index < PLAYER_INV_HOTBAR_SIZE) {
         itemInHandIndex_ = index;
-        // Nukkit: sendHeldItem(viewers) — we skip the broadcast here
+        // the era reference: sendHeldItem(viewers) — we skip the broadcast here
         // and let Player::onUpdate handle MobEquipmentPacket.
     }
 }
@@ -187,7 +187,7 @@ void PlayerInventory::sendSlot(int index, Player* player) {
     // without the {display:{Name}} compound a custom-named stack was
     // re-drawn with its default name (the "sword without its custom
     // name" bug — the inventory data was correct, only this ack was
-    // lossy). Genisys' ContainerSetSlotPacket encodes the full
+    // lossy). the era reference's ContainerSetSlotPacket encodes the full
     // putSlot() payload exactly like this.
     pk->itemNbt = item.nbt;
 

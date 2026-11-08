@@ -4,7 +4,7 @@
 //   PROP_PLAYER_BED_POSITION (17), TYPE_POS     → key byte (6<<5)|17 = 0xD1
 //       followed by three packed int32 BE (x, y, z)
 //   terminator 0x7F
-// Reference: Infinity Human.php:50-55 (indices 16/17) and PMMP 1.6.2
+// Reference: the reference Human.php:50-55 (indices 16/17) and the 1.6-era reference implementation
 // Binary::writeMetadata DATA_TYPE_POS (3 x pack("N")).
 #include "network/protocol/SetEntityDataPacket.h"
 #include <cassert>

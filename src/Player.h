@@ -662,6 +662,9 @@ class Player : public IPlayer,
         event::entity::DamageCause cause = event::entity::DamageCause::ENTITY_ATTACK) override;
     // Updates the burn timer and broadcasts the fire metadata flag.
     void setOnFire(int seconds) override;
+    // Clears the burn timer and drops the on-fire overlay flag from every
+    // client. Idempotent and packet-free when the player was not burning.
+    void extinguishFire();
 
   private:
     Server* srv_;
@@ -723,6 +726,11 @@ class Player : public IPlayer,
     int starve_ticks_ = 0;           // Starvation damage accumulator.
     int air_ticks_ = 300;            // Remaining underwater air.
     int fire_ticks_ = 0;             // Remaining burn time.
+    // Last pose flags byte actually broadcast — broadcastPoseFlags() skips
+    // its packets when the byte has not changed, so repeated edge calls
+    // (water tick, burn expiry) never touch the wire.
+    uint8_t last_sent_pose_flags_ = 0;
+    bool pose_flags_sent_ = false;   // Guard for the cache above.
 
     // --- Experience state ---
     int xp_level_ = 0;               // Displayed level (player.level).

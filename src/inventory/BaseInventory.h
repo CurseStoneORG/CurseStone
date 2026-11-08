@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// BaseInventory.h — ported from cn.nukkit.inventory.BaseInventory
+// BaseInventory.h — ported from the reference server API
 //
 // Concrete base class implementing the Inventory interface. Stores
 // slots in a HashMap-like structure, supports add/remove/canAdd, and

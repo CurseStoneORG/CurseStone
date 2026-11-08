@@ -25,7 +25,7 @@
 // The reference server 0.15 split a player's names in two, and this file ports exactly
 // that split:
 //
-//   - setNameTag(name)  (Genisys Player + Server::updatePlayerListData):
+//   - setNameTag(name)  (the era reference Player + Server::updatePlayerListData):
 //     on protocol 84 the name rendered ABOVE THE HEAD and the one shown in
 //     the SERVER LIST TAB both come from the PlayerListPacket ADD entry —
 //     the tab is global (server-wide), and the overhead name of a player
@@ -56,7 +56,7 @@ void Player::setNameTag(const std::string& tag) {
     if (!srv_)
         return;
 
-    // Server::updatePlayerListData() / removePlayerListData() (Genisys
+    // Server::updatePlayerListData() / removePlayerListData() (the era reference
     // Server): one REMOVE + one ADD broadcast over the global player
     // list. The 0.15.10 client refreshes both the tab entry and the
     // overhead name from this pair.

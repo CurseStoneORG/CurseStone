@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // SetEntityDataPacket.h — server→client entity metadata (pose flags).
 //
-// Wire format (protocol 84) — Genisys 0.15.0
+// Wire format (protocol 84) — the 0.15.0 reference server
 // SetEntityDataPacket::encode + Binary::writeMetadata():
 //
 //     [Int64 BE] eid
@@ -37,13 +37,13 @@
 //     [Byte] 0x7f                                 // terminator
 //
 // This packet is how the SERVER tells other clients about a pose change.
-// Genisys 0.15 itself never sends it for sneaking (its Player::setSneaking()
+// the 0.15 reference server itself never sends it for sneaking (its Player::setSneaking()
 // is local-only — see Player, which only flips the local
 // property), which is exactly why this server's players were invisible to
-// each other while crouching. The reference here is Genisys' *metadata
+// each other while crouching. The reference here is the era reference's *metadata
 // encoding* plus the vanilla semantic of Entity::DATA_FLAGS.
 //
-// The pose bits we care about (Genisys Entity):
+// The pose bits we care about (the era reference Entity):
 //     DATA_FLAGS    = 0   (byte)   -- bit 1 = SNEAKING, bit 3 = SPRINTING
 //
 // They all live in the SAME property, so every update has to send the full
@@ -64,7 +64,7 @@ class SetEntityDataPacket : public DataPacket {
         return SET_ENTITY_DATA_PACKET;
     }
 
-    // Value types (Genisys Entity::DATA_TYPE_*).
+    // Value types (the era reference Entity::DATA_TYPE_*).
     static constexpr uint8_t TYPE_BYTE = 0;
     static constexpr uint8_t TYPE_SHORT = 1;
     static constexpr uint8_t TYPE_INT = 2;
@@ -74,10 +74,10 @@ class SetEntityDataPacket : public DataPacket {
     static constexpr uint8_t TYPE_POS = 6;
     static constexpr uint8_t TYPE_LONG = 7;
 
-    // Metadata terminator byte (Genisys Binary::writeMetadata).
+    // Metadata terminator byte (the era reference Binary::writeMetadata).
     static constexpr uint8_t TERMINATOR = 0x7F;
 
-    // Well-known property indices / flag bits (Genisys Entity).
+    // Well-known property indices / flag bits (the era reference Entity).
     static constexpr uint8_t PROP_FLAGS = 0; // byte
     static constexpr uint8_t FLAG_BIT_ONFIRE = 0;
     static constexpr uint8_t FLAG_BIT_SNEAKING = 1;
@@ -86,7 +86,7 @@ class SetEntityDataPacket : public DataPacket {
     static constexpr uint8_t FLAG_BIT_ACTION = 4;
     static constexpr uint8_t FLAG_BIT_INVISIBLE = 5;
 
-    // Generic entity properties (Genisys Entity, protocol 84).
+    // Generic entity properties (the era reference Entity, protocol 84).
     static constexpr uint8_t PROP_AIR = 1;           // short, 300 = full
     static constexpr uint8_t PROP_NAMETAG = 2;       // string
     static constexpr uint8_t PROP_SHOW_NAMETAG = 3;  // byte, 1 = visible
@@ -97,7 +97,7 @@ class SetEntityDataPacket : public DataPacket {
     static constexpr uint8_t PROP_LEAD = 24;         // byte
 
     // Player-specific metadata (the reference server entity/Human,
-    // protocol 84 — note these indices DIFFER from the newer Genisys
+    // protocol 84 — note these indices DIFFER from the newer era reference
     // multi-protocol tables: on protocol 84 the sleeping flags live at
     // 16/17, not 28/29).
     static constexpr uint8_t PROP_PLAYER_FLAGS = 16;        // byte, bit 1 = SLEEP

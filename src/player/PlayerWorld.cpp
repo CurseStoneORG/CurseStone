@@ -34,7 +34,7 @@
 // On MCPE 0.15.10 the client shows its loading screen when it receives
 // ChangeDimensionPacket and closes it only when the new chunks AND
 // PlayStatus(PLAYER_SPAWN) arrive — in that order. This file replicates
-// the sequence the reference server/Genisys 0.15 used: SetTime, ChangeDimension,
+// the sequence the reference server 0.15 used: SetTime, ChangeDimension,
 // weather, then the chunk stream, then PlayStatus(PLAYER_SPAWN) and the
 // position reset once the whole view has been sent.
 #include "Player.h"

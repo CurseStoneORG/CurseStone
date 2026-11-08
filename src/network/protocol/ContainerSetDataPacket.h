@@ -24,7 +24,7 @@
 // ContainerSetDataPacket — server->client "a container property
 // contenedor abierto" (MCPE protocol 84).
 //
-// Formato p84 verificado contra the reference implementation + Nukkit 2016:
+// Formato p84 verificado contra the reference implementation + the 2016-era reference server:
 // shorts BIG-endian, no varints:
 //   putByte(windowid)
 //   putShort(BE) property

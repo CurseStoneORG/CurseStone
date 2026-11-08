@@ -207,9 +207,9 @@ bool tryInteract(World* world, cursestone::Server* server, int32_t x, int32_t y,
         if ((lowerData & 0x08) != 0)
             return false; // salvaguarda de datos corruptos, igual que updateDoorAt
 
-        // DoorToggleEvent (Nukkit/the reference server block/Door onActivate fires
+        // DoorToggleEvent (the reference server block/Door onActivate fires
         // DoorSound; the event type itself is this project's port of
-        // cn.nukkit.event.block.DoorToggleEvent). Cancellable: a
+        // the reference server API). Cancellable: a
         // protected-door plugin blocks the toggle and the click is
         // consumed (no accidental block placement INTO the door cell).
         {

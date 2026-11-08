@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // DisconnectPacket.cpp — encode/decode.
 //
-// PMMP: $this->putString($this->message)
+// the reference: $this->putString($this->message)
 // (putString = putShort BE length + bytes)
 #include "DisconnectPacket.h"
 

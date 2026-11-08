@@ -31,7 +31,7 @@
 //   - RECIPE_FURNACE   furnace(entrada, meta, resultado)
 //
 // El meta de cada ingrediente es -1 cuando la receta acepta cualquier
-// meta ("any damage", Nukkit item->hasAnyDamageValue()).
+// meta ("any damage", the era reference item->hasAnyDamageValue()).
 #pragma once
 #include "item/ItemStack.h"
 #include <vector>

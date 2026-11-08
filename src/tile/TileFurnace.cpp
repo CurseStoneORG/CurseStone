@@ -71,7 +71,7 @@ void TileFurnace::removeViewer(void* player) {
     viewers_.erase(std::remove(viewers_.begin(), viewers_.end(), player), viewers_.end());
 }
 // ============================================================
-// Fuel — valores vanilla del servidor de referencia/Genisys (Fuel).
+// Fuel — valores vanilla del servidor de referencia/la referencia de la era (Fuel).
 // MCPE 0.15 note: lava bucket = id 327 (ItemIds::LAVA_BUCKET); empty
 // bucket = 325. Lava fuel lasts 20000 ticks and leaves an empty bucket
 // in the fuel slot when consumed.
@@ -282,7 +282,7 @@ void TileFurnace::sendProgressToViewers() {
     }
 }
 // ============================================================
-// Persistencia — formato legacy de Nukkit {BurnDuration, BurnTicks,
+// Persistencia — formato legacy de la referencia de la era {BurnDuration, BurnTicks,
 // CookTicks, Items:[{Slot,id,Damage,Count}]}.
 // ============================================================
 void TileFurnace::writeNBT(cursestone::nbt::Tag* tag) const {
@@ -311,7 +311,7 @@ void TileFurnace::writeNBT(cursestone::nbt::Tag* tag) const {
         items.release();
 }
 // ============================================================
-// Client spawn compound — FULL furnace NBT, the Genisys/protocol-84
+// Client spawn compound — FULL furnace NBT, the era reference
 // reference layout: id/x/y/z + BurnTime + CookTime + BurnDuration +
 // Items[] (+CustomName when the tile has one). The 0.15.10 furnace
 // screen binds BurnTime/CookTime when the BlockEntityData lands (a

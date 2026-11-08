@@ -256,7 +256,7 @@ class Server {
     NbtPtr getOfflinePlayerData(const std::string& name);
     void saveOfflinePlayerData(const std::string& name, NbtPtr nbt);
 
-    // Nukkit-compatible world management.
+    // reference-compatible world management.
     // World IDs are 1-based; ID 1 represents the default world.
     World* getWorld(int worldId) const;
     World* getWorldByName(const std::string& name) const;
@@ -264,12 +264,12 @@ class Server {
         world_ = std::move(l);
     }
 
-    // Nukkit-compatible player management.
+    // reference-compatible player management.
     Player* getPlayerExact(const std::string& name) const;
     std::vector<Player*> matchPlayer(const std::string& partialName) const;
     void onPlayerLogin(Player* player);
 
-    // Nukkit-compatible configuration accessors.
+    // reference-compatible configuration accessors.
     // These methods currently delegate to server.properties or act as stubs.
     std::string getConfigString(const std::string& key, const std::string& def) const;
     int getConfigInt(const std::string& key, int def) const;
@@ -278,10 +278,10 @@ class Server {
     void setPropertyInt(const std::string& key, int val);
     void setPropertyBoolean(const std::string& key, bool val);
 
-    // Nukkit-compatible broadcasting.
+    // reference-compatible broadcasting.
     int broadcast(const std::string& message, const std::string& permissions);
 
-    // Nukkit-compatible operators and whitelist.
+    // reference-compatible operators and whitelist.
     void addOp(const std::string& name) {
         setOp(name, true);
     }
@@ -289,7 +289,7 @@ class Server {
         setOp(name, false);
     }
 
-    // Nukkit-compatible autosave.
+    // reference-compatible autosave.
     bool isAutoSaveEnabled() const {
         return autosave_ticks_ > 0;
     }
@@ -306,13 +306,13 @@ class Server {
     void beginAutosaveDrain();
     void tickAutosaveDrain();
 
-    // Nukkit-compatible offline player data.
+    // reference-compatible offline player data.
     void saveOfflinePlayerData(const std::string& name, NbtPtr nbt, bool async);
 
-    // Nukkit-compatible title updates.
+    // reference-compatible title updates.
     void titleTick();
 
-    // Nukkit-compatible recipe list.
+    // reference-compatible recipe list.
     void sendRecipeList(Player* player);
 
     // Shared crafting manager used by player crafting and furnace updates.
@@ -321,7 +321,7 @@ class Server {
         return crafting_.get();
     }
 
-    // Nukkit-compatible player list data.
+    // reference-compatible player list data.
     void updatePlayerListData(const std::string& uuid, const std::string& name, int64_t eid,
                               const std::string& skin = "");
     void removePlayerListData(const std::string& uuid);

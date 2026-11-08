@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // AnimatePacket.cpp — decode/encode (protocol 84).
 //
-// Genisys AnimatePacket (0.15.10) field order:
+// the era reference AnimatePacket (0.15.10) field order:
 //   putVarInt(action) | putEntityId(eid)
 //
 // Actions (the reference server AnimatePacket): 1 = swing arm.

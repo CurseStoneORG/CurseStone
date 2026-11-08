@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // PlayerListPacket.h — sync the server-side player list (tab list) to client.
 //
-// Wire format (protocol 84) — Genisys 0.15.0 PlayerListPacket::encode
+// Wire format (protocol 84) — the 0.15.0 reference server PlayerListPacket::encode
 // (the tag the reference implementation for this protocol ships):
 //   [1 byte ID 0x38]
 //   [Uint8]   type     (0=ADD, 1=REMOVE)
@@ -36,7 +36,7 @@
 //       [BE String] skinId      <- NOT "isSlim"
 //       [BE String] skinData    <- the player's skin blob, never empty
 //       (a "BE String" here is putString: uint16 BE length + bytes —
-//        Genisys 0.15.0 BinaryStream::putString — NOT a 4-byte LString,
+//        the 0.15.0 reference server BinaryStream::putString — NOT a 4-byte LString,
 //        which is reserved for the login JWT)
 //     else:
 //       [16 bytes] uuid

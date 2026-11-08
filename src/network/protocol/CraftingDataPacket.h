@@ -25,7 +25,7 @@
 //
 // Wire format verificado BYTE A BYTE contra the reference implementation
 // (network/protocol/CraftingDataPacket, protocolo 84 /
-// MCPE 0.15.10) y cross-checkeado con Nukkit 2016 (mismo formato):
+// MCPE 0.15.10) y cross-checkeado con the 2016-era reference server (mismo formato):
 //
 //   putInt(BE)   count(entries)          <- 32-bit big-endian
 //   foreach entry:
@@ -47,7 +47,7 @@
 //   ENTRY_SHAPED (1):
 //     putInt(BE) width; putInt(BE) height;
 //     putSlot(width*height celdas, fila-por-fila: z<Height exterior,
-//             inner x<Width — identical to Genisys/the reference server,
+//             inner x<Width — identical to the reference server,
 //             and the pattern is row-major anchored top-left, like
 //             Recipe::grid)
 //     putInt(BE) 1; putSlot(result);
@@ -63,7 +63,7 @@
 //            + putLShort(nbtLen) + nbt   (nbtLen=0 here; LShort is LE)
 //   damage -1 ("any damage") viaja como 0xFFFF en el short BE.
 //
-// cleanRecipes: The reference server/Genisys lo mandan en true (generateRecipeList
+// cleanRecipes: The reference server lo mandan en true (generateRecipeList
 // pone cleanRecipes = true). El cliente borra sus recetas por
 // defecto y usa SOLO las nuestras — con la lista completa que manda el
 // CraftingManager es lo correcto.

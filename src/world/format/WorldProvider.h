@@ -30,7 +30,7 @@
 // we mirror that here.
 //
 // Concrete implementers:
-//   - anvil/Anvil        Nukkit Anvil format (.mca, big-endian NBT). DEFAULT.
+//   - anvil/Anvil        the era reference Anvil format (.mca, big-endian NBT). DEFAULT.
 //   - leveldb/LevelDB    MCPE LevelDB format (stub until leveldb linked)
 #pragma once
 

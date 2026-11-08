@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // PlayStatusPacket.cpp — encode/decode.
 //
-// PMMP: $this->putInt($this->status)  (Int32 BE)
+// the reference: $this->putInt($this->status)  (Int32 BE)
 #include "PlayStatusPacket.h"
 
 namespace cursestone::network::protocol {

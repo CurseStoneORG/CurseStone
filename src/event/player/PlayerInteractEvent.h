@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// PlayerInteractEvent.h — ported from cn.nukkit.event.player.PlayerInteractEvent
+// PlayerInteractEvent.h — ported from the reference server API
 #pragma once
 #include "PlayerEvent.h"
 #include "../Cancellable.h"

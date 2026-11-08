@@ -39,7 +39,7 @@ import zlib
 
 MAGIC = b"\x00\xff\xff\x00\xfe\xfe\xfe\xfe\xfd\xfd\xfd\xfd\x12\x34\x56\x78"
 
-# RakLib packet ids (PMMP/RakLib numbering).
+# RakLib packet ids (the reference/RakLib numbering).
 UNCONNECTED_PING = 0x01
 UNCONNECTED_PONG = 0x1C
 OCR1 = 0x05
@@ -639,7 +639,7 @@ def main() -> int:
               "day use does not skip the night")
 
         # /time set night must land on TIME_NIGHT (14000) — the same
-        # threshold the bed's sleep check uses (PMMP/Infinity alias the
+        # threshold the bed's sleep check uses (the era reference aliases the
         # command to Level::TIME_NIGHT; 13000 used to "look like night"
         # while the bed still answered "you can only sleep at night").
         print("stage: /time set night = 14000")
@@ -692,7 +692,7 @@ def main() -> int:
 
         # ---------------- ghost-block self-heal (rejection resync) ---
         # A client tapping a GHOST door (server sees AIR) must get the
-        # Infinity sendBlocks rejection resync: UpdateBlockPacket(air) for
+        # the era sendBlocks rejection resync: UpdateBlockPacket(air) for
         # the clicked cell + the face-adjacent cell, clicker only.
         print("stage: ghost tap resync (use on server-air cell)")
         c.events.clear()

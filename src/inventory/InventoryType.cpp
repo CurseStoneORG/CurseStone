@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// InventoryType.cpp — ported from cn.nukkit.inventory.InventoryType
+// InventoryType.cpp — ported from the reference server API
 #include "InventoryType.h"
 
 namespace cursestone::inventory {

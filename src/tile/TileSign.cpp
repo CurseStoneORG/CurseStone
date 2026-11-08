@@ -23,7 +23,7 @@
 #include "TileSign.h"
 #include "nbt/tag/CompoundTag.h"
 namespace cursestone::tile {
-// The reference server/Nukkit legacy key each line as "Text1".."Text4" (plain strings,
+// The reference server/reference legacy key each line as "Text1".."Text4" (plain strings,
 // not JSON — that's a Bedrock-modern-protocol thing this legacy-84
 // project doesn't use).
 void TileSign::writeNBT(cursestone::nbt::Tag* tag) const {
@@ -34,7 +34,7 @@ void TileSign::writeNBT(cursestone::nbt::Tag* tag) const {
     cursestone::nbt::set_string(tag, "Text2", lines_[1].c_str());
     cursestone::nbt::set_string(tag, "Text3", lines_[2].c_str());
     cursestone::nbt::set_string(tag, "Text4", lines_[3].c_str());
-    // The Creator is persisted (Genisys drops it on save; kept here on
+    // The Creator is persisted (the era reference drops it on save; kept here on
     // purpose so the owner can still edit the sign after a restart).
     cursestone::nbt::set_string(tag, "Creator", creator_.c_str());
 }

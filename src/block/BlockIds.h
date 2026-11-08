@@ -156,7 +156,7 @@ enum BlockId : int {
     FARMLAND = 60,
     BREWING_STAND_BLOCK = 117,
     CAKE_BLOCK2 = 92,
-    // --- Additional MCPE 0.15.x block IDs (ported from Nukkit) ---
+    // --- Additional MCPE 0.15.x block IDs (ported from the era reference) ---
     // Only IDs that don't already appear above are listed here.
     ANVIL = 145,
     BED = 26,

@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// BlockUpdateEvent.h — ported from cn.nukkit.event.block.BlockUpdateEvent
+// BlockUpdateEvent.h — ported from the reference server API
 //
 // Fired when a block receives a scheduled update tick.
 #pragma once

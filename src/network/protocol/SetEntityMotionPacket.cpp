@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // SetEntityMotionPacket.cpp — encode/decode.
 //
-// Genisys 0.15.0: a flat run of {putLong(eid), putFloat(x), putFloat(y),
+// the 0.15.0 reference server: a flat run of {putLong(eid), putFloat(x), putFloat(y),
 // putFloat(z)} records, with no count and no terminator.
 #include "SetEntityMotionPacket.h"
 

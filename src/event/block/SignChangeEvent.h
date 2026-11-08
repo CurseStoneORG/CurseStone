@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// SignChangeEvent.h — ported from cn.nukkit.event.block.SignChangeEvent
+// SignChangeEvent.h — ported from the reference server API
 //
 // Fired when a player edits the text on a sign. The four-line text
 // payload can be modified by handlers before it is committed to the

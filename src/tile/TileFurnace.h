@@ -34,7 +34,7 @@
 //     0/1, escala 0..200). Un horno apagado manda a lo sumo un par
 //     final en ceros y se calla: replicar (0,0) cada tick es un flood
 //     de 0x2D que tumba al cliente.
-//   - Persistencia NBT legacy de Nukkit: { BurnDuration, BurnTicks,
+//   - Persistencia NBT legacy de the era reference: { BurnDuration, BurnTicks,
 //     CookTicks, Items: [{Slot,id,Damage,Count}] }.
 #pragma once
 #include "Tile.h"
@@ -80,7 +80,7 @@ class TileFurnace : public Tile, public Container, public Nameable, public Spawn
     int maxCookTime() const {
         return 200;
     }
-    // Slot indices (Nukkit FurnaceInventory).
+    // Slot indices (the era reference FurnaceInventory).
     static constexpr int SLOT_INPUT = 0;
     static constexpr int SLOT_FUEL = 1;
     static constexpr int SLOT_RESULT = 2;

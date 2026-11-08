@@ -35,14 +35,14 @@ struct ItemStack {
     int count = 0;
     // Raw little-endian network NBT compound of this stack (the exact
     // bytes the 0.15.10 client expects after the slot's nbtLen short —
-    // Genisys Item tags). Empty string = no NBT. A custom item name is
+    // the era reference Item tags). Empty string = no NBT. A custom item name is
     // stored as the compound {display:{Name:"..."}}; build it with
     // item::buildDisplayNbt(). The blob travels verbatim in every packet
     // that carries a slot (ContainerSetSlot / ContainerSetContent /
     // MobEquipment / AddItemEntity), which is what makes named items
     // survive inventory moves, being dropped and being picked up.
     std::string nbt;
-    // Encantamientos del stack (el tag "ench" del NBT del item). Genisys los
+    // Encantamientos del stack (el tag "ench" del NBT del item). la referencia de la era los
     // lee del NBT; CurseStone todavia no carga ese tag, asi que la lista
     // arranca vacia — pero el sistema de dano YA la consulta (EPF de la
     // armadura, Knockback / Fire Aspect / Sharpness del arma), asi que en

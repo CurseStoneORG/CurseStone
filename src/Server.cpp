@@ -247,7 +247,7 @@ void Server::loadDefaultWorld() {
     lc.dataPath = dataPath_; // Allows World to resolve absolute world paths.
 
     // Create world directories before constructing the WorldProvider.
-    // This mirrors Nukkit's Anvil directory layout.
+    // This mirrors the reference server's Anvil directory layout.
     std::string worldsDir = dataPath_ + "/worlds";
     std::string worldDir = worldsDir + "/" + lc.name;
     std::string regionDir = worldDir + "/region";
@@ -1098,7 +1098,7 @@ NbtPtr Server::getOfflinePlayerData(const std::string& name) {
     if (buf.empty())
         return buildDefaultPlayerNbt(this, name);
 
-    // Read Nukkit-compatible GZIP-compressed big-endian NBT first.
+    // Read reference-compatible GZIP-compressed big-endian NBT first.
     // Fall back to uncompressed formats used by legacy CurseStone files.
     cursestone::nbt::Tag* root = nullptr;
     {
@@ -1161,7 +1161,7 @@ void Server::saveOfflinePlayerData(const std::string& name, NbtPtr nbt) {
         utils::MainLogger::get().warn("Failed to serialize NBT for " + name);
         return;
     }
-    // Compress player data using GZIP for Nukkit compatibility.
+    // Compress player data using GZIP for the era reference compatibility.
     z_stream zs{};
     if (deflateInit2(&zs, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 15 | 16, 8, Z_DEFAULT_STRATEGY) !=
         Z_OK) {
@@ -1191,7 +1191,7 @@ void Server::saveOfflinePlayerData(const std::string& name, NbtPtr nbt) {
     out.close();
 }
 
-// Nukkit-compatible method implementations.
+// reference-compatible method implementations.
 Player* Server::getPlayerExact(const std::string& name) const {
     auto snap = playersSnapshot();
     for (const auto& p : snap) {
@@ -1231,7 +1231,7 @@ std::vector<Player*> Server::matchPlayer(const std::string& partialName) const {
     return result;
 }
 
-// Nukkit-compatible world management.
+// reference-compatible world management.
 World* Server::getWorld(int worldId) const {
     if (worldId >= 1 && worldId <= (int)worlds_.size()) {
         return worlds_[worldId - 1].get();
@@ -1248,7 +1248,7 @@ World* Server::getWorldByName(const std::string& name) const {
 }
 
 void Server::onPlayerLogin(Player* /*player*/) {
-    // Nukkit callback for successful player login.
+    // The era reference callback for successful player login.
     // Login handling and broadcasts are implemented in player::handleLogin.
 }
 

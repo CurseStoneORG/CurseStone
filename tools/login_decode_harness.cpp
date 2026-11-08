@@ -41,7 +41,7 @@ static std::string b64u(const std::string& in) {
 
 static void putStr(std::vector<uint8_t>& v, const std::string& s) {
     // NOTE: inside the inflated LoginPacket payload both string lengths are
-    // LITTLE-endian (PMMP getLInt), unlike the outer protocol/length fields.
+    // LITTLE-endian (the reference getLInt), unlike the outer protocol/length fields.
     uint32_t n = (uint32_t)s.size();
     v.push_back((uint8_t)n);  v.push_back((uint8_t)(n >> 8));
     v.push_back((uint8_t)(n >> 16)); v.push_back((uint8_t)(n >> 24));

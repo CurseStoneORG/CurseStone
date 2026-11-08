@@ -21,12 +21,12 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// PlayerInventory.h — ported from cn.nukkit.inventory.PlayerInventory
+// PlayerInventory.h — ported from the reference server API
 //
 // Player inventory: 36 main slots + 4 armor slots + 9 hotbar reference
 // slots. The hotbar links hotbar indices (0..8) to inventory slots.
 //
-// Layout (mirrors Nukkit):
+// Layout (mirrors the era reference):
 //   slots 0..35  : main inventory (the bottom 36 of the 45-slot grid)
 //   slots 36..39 : armor (helmet, chestplate, leggings, boots)
 //   hotbar 0..8  : indices into the main inventory (default: 0..8)
@@ -38,7 +38,7 @@
 namespace cursestone::inventory {
 
 // Backward-compat constants used by Player.cpp.
-// SIZE is the number of slots EXCLUDING the 4 armor slots (Nukkit's
+// SIZE is the number of slots EXCLUDING the 4 armor slots (the reference server's
 // getSize() returns super.getSize() - 4). Total storage = SIZE + 4.
 static constexpr int PLAYER_INV_MAIN_SIZE = 36;
 static constexpr int PLAYER_INV_ARMOR_COUNT = 4;
@@ -71,7 +71,7 @@ class PlayerInventory : public BaseInventory {
     }
     void setHeldItemIndex(int index);
 
-    // Reference (Genisys/PMMP 0.15) setHeldItemIndex(index, sendToHolder,
+    // Reference (the reference 0.15 implementation) setHeldItemIndex(index, sendToHolder,
     // slotMapping): MobEquipmentPacket is the ONLY client-driven place a
     // hotbar-position -> inventory-slot link may change. slotMapping is the
     // position's new inventory slot (the wire's padded absolute byte minus
@@ -113,7 +113,7 @@ class PlayerInventory : public BaseInventory {
         return setItem(heldSlot(), item);
     }
 
-    // ---- Armor accessors (mirrors Nukkit) ----
+    // ---- Armor accessors (mirrors the era reference) ----
     item::ItemStack getHelmet() {
         return getItem(SIZE);
     }
@@ -150,7 +150,7 @@ class PlayerInventory : public BaseInventory {
     std::array<item::ItemStack, 4> getArmorContents();
     void setArmorContents(const std::array<item::ItemStack, 4>& items);
 
-    // ---- Nukkit overrides ----
+    // ---- the era reference overrides ----
     // getSize() returns the MAIN inventory size (36), NOT including armor.
     // The underlying storage has 40 slots (36 + 4 armor).
     int getSize() const override {

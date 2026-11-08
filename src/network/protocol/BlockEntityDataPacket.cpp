@@ -22,7 +22,7 @@
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // BlockEntityDataPacket implementation.
-// Genisys: x/y/z = getInt() (BE big-endian); namedtag = get(true) (resto
+// the era reference: x/y/z = getInt() (BE big-endian); namedtag = get(true) (resto
 // crudo del buffer).
 #include "BlockEntityDataPacket.h"
 

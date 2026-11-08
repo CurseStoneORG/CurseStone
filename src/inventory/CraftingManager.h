@@ -47,7 +47,7 @@ class CraftingManager {
     // que cargar. Antes se leia uno externo que no se empaqueta con el
     // binario, asi que una release limpia arrancaba con 0 recetas y el
     // crafting quedaba dead. Estilo alineado con
-    // Nukkit, que declara todas las recetas en
+    // la referencia de la era, que declara todas las recetas en
     // su CraftingManager.
     //
     // Para agregar o cambiar una receta se edita registerBuiltinRecipes()

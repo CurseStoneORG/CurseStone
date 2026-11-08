@@ -22,8 +22,8 @@
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // DropItemPacket implementation (cliente→servidor).
-// Genisys: type = getByte(); item = getSlot(). El servidor no manda este
-// packet, so encode() stays empty (same as Genisys).
+// la referencia de la era: type = getByte(); item = getSlot(). El servidor no manda este
+// packet, so encode() stays empty (same as the era reference).
 #include "DropItemPacket.h"
 
 namespace cursestone::network::protocol {

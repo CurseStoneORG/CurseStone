@@ -6,11 +6,11 @@ lid never animated and no open/close sound played. The lid animation
 and the sounds on a 0.15.10 client are NOT driven by ContainerOpen —
 they are driven ONLY by a BlockEventPacket addressed to the chest's
 block coordinates, with the payload the era reference servers
-(PocketMine-MP/Genisys, Nukkit, ClearSky — the software that drove real
+(the 0.15-era server software — the software that drove real
 0.15.10 clients) put on the wire:
 
   case1 = 1   ALWAYS — the chest-lid event id ("it's always 1 for a
-              chest", PocketMine-MP ChestInventory)
+              chest", the era reference ChestInventory)
   case2 = 2   lid UP   (open animation + open sound)
   case2 = 0   lid DOWN (close animation + close sound)
 
@@ -53,7 +53,7 @@ sys.path.insert(0, __file__.rsplit("/", 1)[0])
 from chest_cowiewer_sync_check import SyncClient  # noqa: E402
 from door_bed_flow_check import PLAYER_ACTION_SPAWN_SAME_DIMENSION  # noqa: E402
 
-# Protocol-84 packet ids (PocketMine-MP 1.6dev Info.php) — NOT the later
+# Protocol-84 packet ids (the 1.6-era reference implementation Info.php) — NOT the later
 # 0.16/1.x renumbering.
 BLOCK_EVENT = 0x17
 CONTAINER_OPEN = 0x2A

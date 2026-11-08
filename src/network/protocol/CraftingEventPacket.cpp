@@ -24,7 +24,7 @@
 // CraftingEventPacket — implementation (decode client->server).
 //
 // Formato verificado contra el CraftingEventPacket de
-// the reference implementation (protocolo 84) + Nukkit 2016 — p84 usa getInt BE y
+// the reference implementation (protocolo 84) + the 2016-era reference server — p84 usa getInt BE y
 // slots de shorts BE, NO varints:
 //   getByte()      windowId
 //   getInt(BE)     type
@@ -39,7 +39,7 @@
 //   + nbt.
 //
 // The item lists are capped at 128 entries per side, like
-// que el servidor de referencia/Nukkit, para que un packet malicioso no fuerce un vector
+// que el servidor de referencia, para que un packet malicioso no fuerce un vector
 // gigante.
 #include "CraftingEventPacket.h"
 

@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// PlayerTeleportEvent.h — ported from cn.nukkit.event.player.PlayerTeleportEvent
+// PlayerTeleportEvent.h — ported from the reference server API
 #pragma once
 #include "PlayerEvent.h"
 #include "../Cancellable.h"

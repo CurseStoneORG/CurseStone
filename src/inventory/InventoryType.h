@@ -21,11 +21,11 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// InventoryType.h — ported from cn.nukkit.inventory.InventoryType
+// InventoryType.h — ported from the reference server API
 //
 // Registry of inventory "types" — each type defines the slot count, the
 // human-readable title, and the network type id sent to the client in
-// ContainerOpenPacket. Mirrors Nukkit's InventoryType.java exactly.
+// ContainerOpenPacket. Mirrors the reference server's InventoryType.java exactly.
 #pragma once
 #include <string>
 #include <unordered_map>

@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // AnvilRegionLoader.cpp — single .mca region file implementation.
 //
-// Mirrors Nukkit's RegionLoader + BaseRegionLoader logic:
+// Mirrors the reference server's RegionLoader + BaseRegionLoader logic:
 //   - open() / createBlank() / loadLocationTable()
 //   - readChunk() reads [int length][byte compression][payload]
 //   - writeChunk() re-allocates sectors at end-of-file when the chunk
@@ -142,7 +142,7 @@ bool AnvilRegionLoader::loadLocationTable() {
     if (std::fread(ts_buf, 1, kTimestampTableSize, fp_) != kTimestampTableSize)
         return false;
 
-    // Nukkit semantics: lastSector = the highest sector index in use.
+    // the era reference semantics: lastSector = the highest sector index in use.
     // Initial value is 1 (sector 0 + 1 are the header / location table).
     last_sector_ = 1;
     for (size_t i = 0; i < kChunkSlotCount; ++i) {
@@ -265,7 +265,7 @@ bool AnvilRegionLoader::writeChunk(int32_t lx, int32_t lz, uint8_t compression,
     bool index_changed = false;
     if (e.count < sectors) {
         // Doesn't fit in current allocation → append at end of file.
-        // Mirror Nukkit: table[0] = lastSector + 1, then lastSector += sectors.
+        // Mirror the era reference: table[0] = lastSector + 1, then lastSector += sectors.
         e.offset = last_sector_ + 1;
         last_sector_ += sectors;
         index_changed = true;

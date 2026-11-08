@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// PlayerEvent.h — ported from cn.nukkit.event.player.PlayerEvent
+// PlayerEvent.h — ported from the reference server API
 //
 // Base class for all player-related events. Holds a reference to the
 // player that triggered the event.

@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // ContainerOpenPacket — server->client "show this container UI" packet.
 //
-// Wire format (protocol 84, PocketMine-MP 1.6dev ContainerOpenPacket::encode):
+// Wire format (protocol 84, the 1.6-era reference implementation ContainerOpenPacket::encode):
 //   putByte(windowid)
 //   putByte(type)        // container "window type" (0 = chest, 2 = furnace)
 //   putShort(slots)      // slot count (27 for a single chest, 3 furnace)
@@ -32,7 +32,7 @@
 //   putInt(z)
 //
 // There is NO trailing entityId long in the protocol-84 reference encode
-// (PocketMine-MP 1.6dev). Nukkit's 0.15-era packet appended one; the
+// (the 1.6-era reference implementation). the reference server's 0.15-era packet appended one; the
 // client tolerates a trailing suffix on window types it survives, but
 // it aborts on every bisected type=2 open regardless of the payload
 // around it — see Player::openFurnaceAt for the workaround.

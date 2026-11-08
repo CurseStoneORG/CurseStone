@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// FurnaceInventory — 3-slot container inventory (mirrors Nukkit
+// FurnaceInventory — 3-slot container inventory (mirrors the era reference
 // FurnaceInventory).
 //
 // Es el backing store real de TileFurnace (misma arquitectura que
@@ -38,7 +38,7 @@ class FurnaceInventory : public BaseInventory {
     FurnaceInventory() : BaseInventory(nullptr, InventoryType::get(InventoryType::FURNACE)) {
     }
 
-    // Slot indices (Nukkit convention).
+    // Slot indices (the era reference convention).
     static constexpr int INPUT = 0;
     static constexpr int FUEL = 1;
     static constexpr int RESULT = 2;

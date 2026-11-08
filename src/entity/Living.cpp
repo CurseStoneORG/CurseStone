@@ -76,7 +76,7 @@ void Living::heal(float amount) {
     // Prevent dead entities from regenerating before respawning.
     // Natural regeneration could otherwise restore health in the lethal-hit tick.
     // This prevented respawn because isDead() would already return false.
-    // Genisys and the reference server process regeneration only while the entity is alive.
+    // the era reference and the reference server process regeneration only while the entity is alive.
     if (isDead())
         return;
     health_ += amount;

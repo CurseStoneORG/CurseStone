@@ -22,7 +22,7 @@ static void check(bool ok, const char* what) {
 int main() {
     const auto& table = creativeItemTable();
 
-    // El catalogo se send a cliente con count=1 siempre (PMMP default).
+    // El catalogo se send a cliente con count=1 siempre (the reference default).
     check(table.size() == 566, "la tabla tiene 566 items (el set completo de MCPE 0.15)");
 
     bool sinIdsInvalidos = true;

@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// InventoryCloseEvent.h — ported from cn.nukkit.event.inventory.InventoryCloseEvent
+// InventoryCloseEvent.h — ported from the reference server API
 #pragma once
 #include "InventoryEvent.h"
 namespace cursestone::event::inventory {

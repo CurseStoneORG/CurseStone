@@ -25,7 +25,7 @@
 // (protocol 84) legacy 4-bit block metadata.
 //
 // Todas las tablas provienen DIRECTAMENTE de las clases equivalentes de
-// Nukkit (cn.nukkit.block.*) que es la referencia usada por el resto del
+// la referencia de la era (the reference server API*) que es la referencia usada por el resto del
 // proyecto para el comportamiento vanilla de este protocolo:
 //
 //   Escaleras        BlockStairs.place      faces {2,1,3,0} sobre el cuadrante E,W,S,N + bit 0x04 invertida
@@ -119,7 +119,7 @@ struct BlockOrientation {
         return m[quadrantBits & 0x03];
     }
 
-    // Door: quadrant → orientation {1,2,3,0} (Nukkit BlockDoor).
+    // Door: quadrant → orientation {1,2,3,0} (the era reference BlockDoor).
     static uint8_t doorMeta(uint8_t quadrantBits) {
         static const uint8_t m[4] = {1, 2, 3, 0};
         return m[quadrantBits & 0x03];
@@ -137,7 +137,7 @@ struct BlockOrientation {
         return m[quadrantBits & 0x03];
     }
 
-    // Trampilla: cuadrante → {2,1,3,0} (Nukkit BlockTrapdoor).
+    // Trampilla: cuadrante → {2,1,3,0} (the era reference BlockTrapdoor).
     static uint8_t trapdoorMeta(uint8_t quadrantBits) {
         static const uint8_t m[4] = {2, 1, 3, 0};
         return m[quadrantBits & 0x03];

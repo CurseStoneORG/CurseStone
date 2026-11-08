@@ -22,7 +22,7 @@
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // ItemFrameDropItemPacket implementation.
-// Genisys: z = getInt(); y = getInt(); x = getInt(); dropItem = getSlot().
+// the era reference: z = getInt(); y = getInt(); x = getInt(); dropItem = getSlot().
 #include "ItemFrameDropItemPacket.h"
 
 namespace cursestone::network::protocol {

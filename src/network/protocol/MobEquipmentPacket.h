@@ -23,8 +23,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // MobEquipmentPacket — client→server hotbar selection / item equip.
 //
-// MCPE protocol 84 (MCPE 0.15.10) wire format — Genisys
-// MobEquipmentPacket::decode (iTXTech/Genisys, network/
+// MCPE protocol 84 (MCPE 0.15.10) wire format — the era reference
+// MobEquipmentPacket::decode (the era reference, network/
 // protocol/MobEquipmentPacket):
 //
 //   [1 byte  ID 0x1b]
@@ -34,7 +34,7 @@
 //   [Byte]    selectedSlot  — getByte() — selected slot on the client's
 //                             hotbar UI (0..8)
 //
-// NOTE: Genisys (0.15.10, protocol 84) reads NO "unknown1" int32 here —
+// NOTE: the era reference (0.15.10, protocol 84) reads NO "unknown1" int32 here —
 // that extra int32 only exists in the old pre-0.15 the reference server packet,
 // which is exactly why the previous decoder failed with
 // "decode() fallo para ID 0x1b".

@@ -30,6 +30,26 @@ namespace cursestone {
 // Player eye height used to convert between eye and feet coordinates.
 constexpr double kEyeHeight = 1.62;
 
+// Compose the pose flags byte for DATA_FLAGS (protocol 84): bit 0 ONFIRE,
+// 1 SNEAKING, 3 SPRINTING, 4 ACTION (bow draw), 5 INVISIBLE. Callers must
+// always send the whole byte — the receiving client replaces the property.
+inline uint8_t poseFlagByte(bool sneaking, bool sprinting, bool action = false,
+                            bool onFire = false, bool invisible = false) {
+    using Set = network::protocol::SetEntityDataPacket;
+    uint8_t flags = 0;
+    if (onFire)
+        flags |= (1 << Set::FLAG_BIT_ONFIRE);
+    if (sneaking)
+        flags |= (1 << Set::FLAG_BIT_SNEAKING);
+    if (sprinting)
+        flags |= (1 << Set::FLAG_BIT_SPRINTING);
+    if (action)
+        flags |= (1 << Set::FLAG_BIT_ACTION);
+    if (invisible)
+        flags |= (1 << Set::FLAG_BIT_INVISIBLE);
+    return flags;
+}
+
 // Build the metadata entry for player pose flags.
 inline network::protocol::SetEntityDataPacket::Entry
 makePoseFlagEntry(bool sneaking, bool sprinting, bool action = false, bool onFire = false,
@@ -37,18 +57,7 @@ makePoseFlagEntry(bool sneaking, bool sprinting, bool action = false, bool onFir
     network::protocol::SetEntityDataPacket::Entry e;
     e.index = network::protocol::SetEntityDataPacket::PROP_FLAGS;
     e.type = network::protocol::SetEntityDataPacket::TYPE_BYTE;
-    uint8_t flags = 0;
-    if (onFire)
-        flags |= (1 << network::protocol::SetEntityDataPacket::FLAG_BIT_ONFIRE);
-    if (sneaking)
-        flags |= (1 << network::protocol::SetEntityDataPacket::FLAG_BIT_SNEAKING);
-    if (sprinting)
-        flags |= (1 << network::protocol::SetEntityDataPacket::FLAG_BIT_SPRINTING);
-    if (action)
-        flags |= (1 << network::protocol::SetEntityDataPacket::FLAG_BIT_ACTION);
-    if (invisible)
-        flags |= (1 << network::protocol::SetEntityDataPacket::FLAG_BIT_INVISIBLE);
-    e.ival = flags;
+    e.ival = poseFlagByte(sneaking, sprinting, action, onFire, invisible);
     return e;
 }
 } // namespace cursestone

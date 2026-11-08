@@ -22,7 +22,7 @@
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // SetDifficultyPacket.cpp — encode/decode.
-// PMMP: putInt(difficulty).
+// the reference: putInt(difficulty).
 #include "SetDifficultyPacket.h"
 
 namespace cursestone::network::protocol {

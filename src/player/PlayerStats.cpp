@@ -149,7 +149,11 @@ void Player::onHealthChanged() {
     sendHealthAttribute();
 }
 
-// Extend the burn timer without restarting an active burn or rebroadcasting unchanged flags.
+// Extend the burn timer without restarting an active burn. The pose flag
+// broadcast only fires on the idle -> burning transition (the on-fire
+// overlay turns on exactly once); broadcastPoseFlags() internally skips
+// identical flag bytes, so extensions of an already-burning player are
+// packet-free as well.
 void Player::setOnFire(int seconds) {
     int ticks = seconds * 20;
     if (ticks <= fire_ticks_)
@@ -158,6 +162,16 @@ void Player::setOnFire(int seconds) {
     fire_ticks_ = ticks;
     if (!wasBurning)
         broadcastPoseFlags();
+}
+
+// Clear the burn timer and drop the on-fire flag from every client (self
+// overlay and remote viewers). Idempotent by construction: broadcastPoseFlags
+// compares the flag byte against the last one sent and skips the wire when
+// nothing changed, so calling this every tick in water costs nothing.
+void Player::extinguishFire() {
+    was_on_fire_ = false;
+    fire_ticks_ = 0;
+    broadcastPoseFlags(); // Burning -> idle transition refreshes the flags.
 }
 
 // Accumulate exhaustion and drain saturation before food, except on Peaceful difficulty.
@@ -447,11 +461,7 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
             damage(2.0f, event::entity::DamageCause::DROWNING); // One heart per second.
         }
         // Water extinguishes fire and cancels pending fall damage.
-        if (fire_ticks_ > 0) {
-            fire_ticks_ = 0;
-            broadcastPoseFlags(); // Clear the burning flag.
-        }
-        was_on_fire_ = false;
+        extinguishFire();
         fall_distance_ = 0.0f;
     } else if (air_ticks_ != 300) {
         air_ticks_ = 300; // Restore 15 seconds of air.
@@ -461,10 +471,8 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
     if (isDead())
         return;
     // Extinguish the player when the burn timer expires.
-    if (fire_ticks_ > 0 && --fire_ticks_ == 0) {
-        was_on_fire_ = false;
-        broadcastPoseFlags(); // Clear the burning flag.
-    }
+    if (fire_ticks_ > 0 && --fire_ticks_ == 0)
+        extinguishFire();
 
     // ---------- 2. Fall damage ----------
     // Apply damage once on landing after a fall of at least three blocks.

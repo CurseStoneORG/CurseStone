@@ -4,9 +4,9 @@
 The real-client crash: tapping a village furnace closed the whole game
 right after "[FURNACE] ... opened furnace". The fake e2e clients never
 validate the open sequence, so the wire had to be captured and checked
-against the era-84 reference (PocketMine-MP 1.6dev):
+against the era-84 reference (the 1.6-era reference implementation):
 
-  reference open flow for a block container (PocketMine-MP 1.6.2,
+  reference open flow for a block container (the era reference 1.6.2,
   ContainerInventory::onOpen — the server software that drove real
   0.15.10 clients):
     ContainerOpen  = windowid u8, type u8, slots i16, x/y/z i32 (16 B,
@@ -23,7 +23,7 @@ against the era-84 reference (PocketMine-MP 1.6dev):
   village-furnace crash) and binds its container model to the Items
   list (without it the window silently never opens). With that
   compound on the chunk stream, furnaces open as real type=2 windows
-  again — the reference flow, same as PocketMine-MP 1.6.2 did for
+  again — the reference flow, same as the era reference 1.6.2 did for
   every 0.15.10 server
 
 A real protocol-84 client drives a self-managed flat server:
@@ -58,7 +58,7 @@ sys.path.insert(0, __file__.rsplit("/", 1)[0])
 from chest_cowiewer_sync_check import SyncClient  # noqa: E402
 from door_bed_flow_check import PLAYER_ACTION_SPAWN_SAME_DIMENSION  # noqa: E402
 
-# Protocol-84 packet ids (PocketMine-MP 1.6dev Info.php) — NOT the later
+# Protocol-84 packet ids (the 1.6-era reference implementation Info.php) — NOT the later
 # 0.16/1.x renumbering.
 CONTAINER_OPEN = 0x2A
 CONTAINER_CLOSE = 0x2B

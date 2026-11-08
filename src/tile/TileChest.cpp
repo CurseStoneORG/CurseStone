@@ -127,7 +127,7 @@ void TileChest::removeItem(int slot) {
     dirty_ = true;
 }
 
-// Items serialize as the reference server/Nukkit legacy do: an "Items" ListTag of
+// Items serialize as the reference-server legacy do: an "Items" ListTag of
 // per-slot compounds {Slot (byte), id (short), Damage (short),
 // Count (byte), ench (list)} — the item fields themselves come from
 // item::itemStackToNbt()/itemStackFromNbt(), see src/item/ItemNbt.h.

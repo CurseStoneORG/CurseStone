@@ -1,13 +1,13 @@
 // tools/falling_block_check.cpp
 //
-// Falling-block (protocol 84 / Infinity FallingSand) regression check.
+// Falling-block (protocol 84 / the reference FallingSand) regression check.
 //
 // Covers the two pieces of the falling-block system that can be verified
-// standalone, against the Infinity (MCPE 0.15.10) reference:
+// standalone, against the era reference (MCPE 0.15.10) reference:
 //
 //   1. AddEntityPacket wire format with entity metadata — the falling
 //      block is spawned as entity type 66 carrying the DATA_BLOCK_INFO
-//      (20) int `blockId | (damage << 8)`. Infinity Binary::writeMetadata
+//      (20) int `blockId | (damage << 8)`. the reference Binary::writeMetadata
 //      encodes INT values LITTLE-endian (writeLInt) with the 0x7F
 //      terminator; empty metadata keeps the historical single 0x00 byte
 //      this server always sent (arrows/lightning).
@@ -46,7 +46,7 @@ static int g_failures = 0;
     } while (0)
 
 // ---------------------------------------------------------------
-// Infinity Binary::writeMetadata (protocol 84), reference encoding of
+// the reference Binary::writeMetadata (protocol 84), reference encoding of
 // the DATA_BLOCK_INFO entry for sand meta 1 (red sand):
 //   key byte  (DATA_TYPE_INT(2) << 5) | 20 = 0x54
 //   value     little-endian int32 of 12 | (1 << 8) = 0x010C
@@ -57,7 +57,7 @@ static void test_metadata_wire() {
 
     AddEntityPacket pk;
     pk.eid = 0x1122334455667788LL;
-    pk.type = AddEntityPacket::TYPE_FALLING_BLOCK;   // 66 (Infinity FallingSand)
+    pk.type = AddEntityPacket::TYPE_FALLING_BLOCK;   // 66 (the reference FallingSand)
     pk.x = 100.5f; pk.y = 64.0f; pk.z = -33.5f;
     SetEntityDataPacket::Entry meta;
     meta.index = SetEntityDataPacket::PROP_BLOCK_INFO;  // 20
@@ -101,7 +101,7 @@ static void test_metadata_wire() {
     expect(0x7F, "metadata terminator");
     expect(0x00, "links count hi");
     expect(0x00, "links count lo");
-    CHECK(ok && out.size() == i, "metadata wire bytes match Infinity writeMetadata");
+    CHECK(ok && out.size() == i, "metadata wire bytes match the era reference writeMetadata");
 
     // Empty metadata keeps the legacy single 0x00 byte.
     AddEntityPacket bare;
@@ -116,7 +116,7 @@ static void test_metadata_wire() {
 }
 
 // ---------------------------------------------------------------
-// Physics: the falling box under the Infinity FallingSand constants.
+// Physics: the falling box under the reference FallingSand constants.
 // gravity 0.04 per tick, drag 0.98 after the move (server integrator).
 // ---------------------------------------------------------------
 static void test_fall_physics() {
@@ -142,7 +142,7 @@ static void test_fall_physics() {
         physics::MotionResult res = physics::sweep(bb, mcp_v3(0.0, vy, 0.0), boxes);
         (void)lookup;
         y += res.motion.y;
-        vy *= 0.98;   // drag (Infinity: motionY *= 1 - drag)
+        vy *= 0.98;   // drag (the era reference: motionY *= 1 - drag)
         if (res.on_ground) { landed = true; land_y = y; }
     }
 
@@ -226,7 +226,7 @@ static void test_stacked_column() {
 }
 
 int main() {
-    std::printf("CurseStone falling-block check (protocol 84 / Infinity FallingSand)\n");
+    std::printf("CurseStone falling-block check (protocol 84 / the reference FallingSand)\n");
     test_metadata_wire();
     test_fall_physics();
     test_stacked_column();

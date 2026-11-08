@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// InventoryOpenEvent.h — ported from cn.nukkit.event.inventory.InventoryOpenEvent
+// InventoryOpenEvent.h — ported from the reference server API
 #pragma once
 #include "InventoryEvent.h"
 #include "../Cancellable.h"

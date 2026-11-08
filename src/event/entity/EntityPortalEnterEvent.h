@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// EntityPortalEnterEvent.h — ported from cn.nukkit.event.entity.EntityPortalEnterEvent
+// EntityPortalEnterEvent.h — ported from the reference server API
 #pragma once
 #include "EntityEvent.h"
 #include "../Cancellable.h"

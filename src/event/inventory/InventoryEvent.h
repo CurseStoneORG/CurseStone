@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// InventoryEvent.h — ported from cn.nukkit.event.inventory.InventoryEvent
+// InventoryEvent.h — ported from the reference server API
 //
 // Base class for all inventory-related events. Holds a reference to the
 // inventory that triggered the event. Subclasses: InventoryOpenEvent,
