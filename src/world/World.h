@@ -426,6 +426,15 @@ class World {
     // Broadcasts a particle to players who can see its chunk.
     void addParticle(const particle::Particle& p);
 
+    // Broadcasts the protocol-84 break-particle event (EVENT_PARTICLE_DESTROY)
+    // at a block's center with that block's texture. On protocol 84 this one
+    // event carries BOTH the particle burst and the dig sound — the same
+    // effect block breaking sends — so every "ground dust" style effect
+    // (hard landings, sprint steps) reuses it instead of inventing events
+    // the 0.15.10 client silently ignores.
+    void broadcastBlockParticles(int32_t bx, int32_t by, int32_t bz,
+                                 uint8_t blockId, uint8_t blockData);
+
     // ----- Falling-block physics -----
     // Converts a supported falling block into an entity and checks the block above.
     void spawnFallingBlock(int32_t bx, int32_t by, int32_t bz);

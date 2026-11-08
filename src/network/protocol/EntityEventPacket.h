@@ -57,10 +57,10 @@ class EntityEventPacket : public DataPacket {
     static constexpr uint8_t SQUID_INK_CLOUD = 15;
     static constexpr uint8_t AMBIENT_SOUND = 16;
     static constexpr uint8_t RESPAWN = 17;
-    // Vanilla EntityEvent::GROUND_DUST — broadcast when a mob lands on a
-    // block after a fall over three blocks; the receiver draws the
-    // landing dust burst at the entity's feet with the ground texture.
-    static constexpr uint8_t GROUND_DUST = 38;
+    // NOTE: vanilla EntityEvent::GROUND_DUST (38) is deliberately absent.
+    // The 0.15.10 client does not render it, so landing dust travels as
+    // the protocol-84 break-particle LevelEvent instead — see
+    // World::broadcastBlockParticles().
 
     int64_t eid = 0;
     uint8_t event = 0;
