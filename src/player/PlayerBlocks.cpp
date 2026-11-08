@@ -673,25 +673,9 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
     // sends this packet for a plain tap on a block too, and a tap must not
     // show the tension animation to other players. The pose only starts
     // from the air-use path (face 0xFF); any block use clears it.
-    bool heldIsFood = false;
-    if (inv_) {
-        item::ItemStack heldNow = inv_->getHeldItem();
-        item::Item* heldDef = item::Item::get(heldNow.id);
-        heldIsFood = heldDef && heldDef->isFood(heldNow.meta);
-    }
     if (face <= 5 && bow_pose_active_ && srv_) {
         bow_start_action_ = -1;
         broadcastBowPose(false);
-    }
-
-    // Food/drink never continues into block placement.
-    if (heldIsFood && face <= 5)
-        return;
-
-    // Throw splash potions when targeting a block.
-    if (heldItemId == (int16_t)item::ITEM_SPLASH_POTION) {
-        throwSplashPotion();
-        return;
     }
 
     // Calculate the target placement position.
@@ -718,9 +702,6 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
     default:
         return;
     }
-    if (placeY < 0 || placeY >= 256)
-        return;
-
     auto* lvl = getWorld();
 
     // Vanilla placement target: when the tapped block itself is
@@ -731,14 +712,27 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
     // block inside the layer while the server stacked it on top, and the
     // layer looked wiped by a plain tap. Liquids stay out: buckets and
     // scoops resolve their own target cell below.
-    {
-        uint8_t targetId = lvl->getBlockId(x, y, z);
-        if (!cursestone::block::LiquidFlow::isLiquidId(targetId) &&
-            cursestone::block::LiquidFlow::isReplaceableId(targetId)) {
-            placeX = x;
-            placeY = y;
-            placeZ = z;
-        }
+    // One lookup serves the whole activation/dispatch section: the tapped
+    // cell id drives the replaceable adjust, the air resync and every
+    // interactive block below. Nothing in between can change it —
+    // redstone::tryInteract leaves the world untouched when the tapped
+    // block is none of its business, and every interaction it does handle
+    // returns immediately.
+    const uint8_t targetId = lvl->getBlockId(x, y, z);
+
+    // Vanilla placement target: when the tapped block itself is
+    // replaceable (snow layer, tall grass, dead bush...), the placement
+    // goes INTO the tapped cell instead of the face neighbor. The touch
+    // client predicts exactly this, so placing next to the target left
+    // every tap on a snow layer desynced — the client showed the new
+    // block inside the layer while the server stacked it on top, and the
+    // layer looked wiped by a plain tap. Liquids stay out: buckets and
+    // scoops resolve their own target cell below.
+    if (!cursestone::block::LiquidFlow::isLiquidId(targetId) &&
+        cursestone::block::LiquidFlow::isReplaceableId(targetId)) {
+        placeX = x;
+        placeY = y;
+        placeZ = z;
     }
 
     // Handle redstone interactions before placement.
@@ -746,7 +740,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
         return;
     }
 
-    if (lvl->getBlockId(x, y, z) == 0) {
+    if (targetId == 0) {
         resyncUseTarget(this, lvl, x, y, z, face);
         return;
     }
@@ -769,20 +763,20 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
     }
 
     // Open chests instead of placing blocks against them.
-    if (!sneakLocked && lvl->getBlockId(x, y, z) == block::CHEST) {
+    if (!sneakLocked && targetId == block::CHEST) {
         openChestAt(x, y, z);
         return;
     }
 
     // Open furnaces instead of placing blocks against them.
-    if (!sneakLocked && (lvl->getBlockId(x, y, z) == block::FURNACE ||
-                         lvl->getBlockId(x, y, z) == block::BURNING_FURNACE)) {
+    if (!sneakLocked && (targetId == block::FURNACE ||
+                         targetId == block::BURNING_FURNACE)) {
         openFurnaceAt(x, y, z);
         return;
     }
 
     // Use beds for sleeping when not sneaking.
-    if (!sneakLocked && lvl->getBlockId(x, y, z) == block::BED_BLOCK) {
+    if (!sneakLocked && targetId == block::BED_BLOCK) {
         // Beds explode when used in the Nether.
         if (lvl->dimension() == 1) {
             world::Explosion boom(world::Position((double)x, (double)y, (double)z), 6.0f);
@@ -837,12 +831,41 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
         return;
     }
 
-    if (!sneakLocked && lvl->getBlockId(x, y, z) == block::WORKBENCH && srv_ &&
-        srv_->debugMode()) {
+    if (!sneakLocked && targetId == block::WORKBENCH && srv_ && srv_->debugMode()) {
         utils::MainLogger::get().info("[CRAFT] " + cfg_.username + " opened crafting table at " +
                                       std::to_string(x) + "," + std::to_string(y) + "," +
                                       std::to_string(z));
     }
+
+    // Item use only starts where block activation ended — vanilla runs
+    // onBlockActivated before any item use. The old pre-activation returns
+    // for food and splash potions sat ABOVE this line and silently ate
+    // every tap on a furnace, chest, bed or lever while something was
+    // held, so containers only ever opened on an empty hand. Food still
+    // never places a block and potions still throw, but only when no
+    // interactive block consumed the tap.
+
+    // Splash potions throw when nothing interactive took the tap.
+    if (heldItemId == (int16_t)item::ITEM_SPLASH_POTION) {
+        throwSplashPotion();
+        return;
+    }
+
+    // Food/drink never continues into block placement: eating is driven
+    // by the air-use path (face 0xFF), so a block tap either activated
+    // something above or is a no-op for food.
+    bool heldIsFood = false;
+    if (inv_) {
+        item::ItemStack heldNow = inv_->getHeldItem();
+        item::Item* heldDef = item::Item::get(heldNow.id);
+        heldIsFood = heldDef && heldDef->isFood(heldNow.meta);
+    }
+    if (heldIsFood)
+        return;
+
+    // Placement never targets a cell outside the world height.
+    if (placeY < 0 || placeY >= 256)
+        return;
 
     // Determine the block to place from the held item.
     uint8_t placedBlockId = 0; // Zero means no placement.
