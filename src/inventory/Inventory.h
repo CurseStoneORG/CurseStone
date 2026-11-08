@@ -21,13 +21,13 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Inventory.h — ported from cn.nukkit.inventory.Inventory (interface)
+// Inventory.h — ported from the reference server API (interface)
 //
 // Abstract inventory interface. Concrete implementations:
 //   - BaseInventory   (the default in-memory storage)
 //   - PlayerInventory (extends BaseInventory with hotbar + armor + held slot)
 //
-// In Nukkit this is a Java interface with ~30 methods. We mirror the
+// In the era reference this is a Java interface with ~30 methods. We mirror the
 // public surface but adapt signatures to C++ (std::vector instead of
 // Item[], shared_ptr<Player> instead of Player, etc.).
 #pragma once
@@ -68,13 +68,13 @@ class Inventory {
     virtual std::vector<item::ItemStack> removeItem(std::vector<item::ItemStack> slots) = 0;
 
     // Contents as a map (slot index → item). Only non-empty slots are
-    // included, matching Nukkit's HashMap<Integer,Item> slots semantics.
+    // included, matching the reference server's HashMap<Integer,Item> slots semantics.
     virtual std::unordered_map<int, item::ItemStack> getContents() = 0;
     virtual void setContents(const std::unordered_map<int, item::ItemStack>& items) = 0;
 
     // Send the full contents or a single slot to a player. These
     // generate ContainerSetContentPacket / ContainerSetSlotPacket.
-    // Mirrors Nukkit's sendContents(player) / sendSlot(index, player).
+    // Mirrors the reference server's sendContents(player) / sendSlot(index, player).
     virtual void sendContents(Player* player) = 0;
     virtual void sendSlot(int index, Player* player) = 0;
 

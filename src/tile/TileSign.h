@@ -51,7 +51,7 @@ class TileSign : public Tile, public Spawnable {
     // UUID of the player who placed the sign (NBT "Creator").
     // handleSignEdit compares it against the player's UUID to authorize
     // the edit,
-    // igual que Genisys (the sign's stored creator id is compared with the player's unique id).
+    // igual que la referencia de la era (the sign's stored creator id is compared with the player's unique id).
     const std::string& creator() const {
         return creator_;
     }

@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // MobEquipmentPacket.cpp — decode/encode (protocol 84).
 //
-// Genisys MobEquipmentPacket (0.15.10) field order:
+// the era reference MobEquipmentPacket (0.15.10) field order:
 //   putEntityId(eid) | putSlot(item) | putByte(slot) | putByte(selectedSlot)
 //
 // putEntityId() writes a big-endian int64; putSlot() writes

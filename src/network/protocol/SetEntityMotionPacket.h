@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // SetEntityMotionPacket — server→client entity velocity (knockback).
 //
-// Wire format (protocol 84) — Genisys 0.15.0
+// Wire format (protocol 84) — the 0.15.0 reference server
 // SetEntityMotionPacket::encode:
 //
 //     for each entity:

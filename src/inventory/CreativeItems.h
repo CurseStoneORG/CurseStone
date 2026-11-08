@@ -24,7 +24,7 @@
 // CreativeItems.h — catalogo de items del inventario creativo.
 //
 // El catalogo vive ENTERO en codigo, como tabla estatica: no hay ningun
-// archivo que cargar. Sigue el enfoque de Nukkit, que hardcodea la
+// archivo que cargar. Sigue el enfoque de la referencia de la era, que hardcodea la
 // lista en compile-time. Para agregar o quitar un item se edita la
 // tabla de abajo (los invariantes los comprueba tools/creative_check).
 //

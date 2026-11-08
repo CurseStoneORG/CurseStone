@@ -2,7 +2,7 @@
 
 **Repositorio:** CurseStone · rama `stable` · HEAD `d8647d5` ("Make the NBT layer a native C++ class API with zero C linkage")
 **Fecha:** 1 de noviembre de 2026 · **Alcance:** todo el árbol (`src/`, `third_party/lua`, `tools/`, build, CI, docs)
-**Objetivo:** evaluar arquitectura, rendimiento, memoria, escalabilidad, mantenibilidad y aprovechamiento real de C++; determinar si CurseStone es un motor C++ nativo o una recreación literal de PocketMine-MP.
+**Objetivo:** evaluar arquitectura, rendimiento, memoria, escalabilidad, mantenibilidad y aprovechamiento real de C++; determinar si CurseStone es un motor C++ nativo o una recreación literal de la referencia de la era-MP.
 **Método:** inspección directa del código con referencias `archivo:línea` para cada afirmación. Auditoría de solo lectura: **no se modificó ningún archivo fuente**. No se inventaron benchmarks: toda afirmación de coste está clasificada como *confirmada por inspección*, *probable (requiere profiling)* o *hipotética (requiere benchmarking)*.
 **Cifras base:** `src/` = 474 `.cpp` + 553 headers (`.h`/`.hpp`) ≈ **104.405 LOC**. Cero `.c` propios (solo `third_party/lua`, 32 archivos vendidos). Cero `extern "C"` en `src/`. C++20 (`CMAKE_CXX_STANDARD 20`, `CMakeLists.txt:34`).
 
@@ -10,7 +10,7 @@
 
 ## 1. RESUMEN EJECUTIVO
 
-**Veredicto en una frase:** CurseStone ya no es un puerto PHP→C++ de PocketMine-MP; es un **híbrido con dos personalidades**: un núcleo de datos excelente (chunks planos, raklib de una sola propietaria por hilo, E/S asíncrona acotada) y una **capa de juego que conserva los hábitos de asignación y despacho de PHP** (objeto por paquete, copia de listas de jugadores por difusión, eventos con copia de `std::function`, cadenas como clave universal). El idioma C++20 se usa como *flag de compilación* más que como *idiom*.
+**Veredicto en una frase:** CurseStone ya no es un puerto PHP→C++ de la referencia de la era-MP; es un **híbrido con dos personalidades**: un núcleo de datos excelente (chunks planos, raklib de una sola propietaria por hilo, E/S asíncrona acotada) y una **capa de juego que conserva los hábitos de asignación y despacho de PHP** (objeto por paquete, copia de listas de jugadores por difusión, eventos con copia de `std::function`, cadenas como clave universal). El idioma C++20 se usa como *flag de compilación* más que como *idiom*.
 
 **Lo que ya es C++ nativo y bien hecho (conservar):**
 
@@ -23,12 +23,12 @@
 **Los 5 problemas que más limitan el motor hoy:**
 
 1. **🔴 CRÍTICA — Use-after-free confirmado en el kick de sesiones raklib:** `mcp_server_handler_close_session` (`ServerHandler.cpp:72-87`) destruye la sesión y la saca del array `sessions[]` **pero nunca la borra del índice O(1)** (`sm_map_erase`, `SessionManager.cpp:129-156`). Cualquier datagrama tardío del mismo endpoint, o una reconexión desde la misma IP:puerto, resuelve el puntero liberado vía `mcp_rak_session_manager_find` (`SessionManager.cpp:158-169`) o `get_or_create` (:171-175). Es un UAF real, alcanzable en producción con cualquier kick.
-2. **🔴 ALTA — Relight de 31³ por cada `setBlock`:** cada cambio de bloque dispara un clear+reseed+BFS completo de una caja 31×31×31 (`World.cpp:329` → `LightEngine.cpp:174-274`). Una explosión lo multiplica por cada bloque del cráter (`Explosion.cpp:48-77`). Es el mayor coste interactivo del servidor y es innecesario: la eliminación incremental de luz es el estándar desde hace años (el propio PMMP moderno la usa).
+2. **🔴 ALTA — Relight de 31³ por cada `setBlock`:** cada cambio de bloque dispara un clear+reseed+BFS completo de una caja 31×31×31 (`World.cpp:329` → `LightEngine.cpp:174-274`). Una explosión lo multiplica por cada bloque del cráter (`Explosion.cpp:48-77`). Es el mayor coste interactivo del servidor y es innecesario: la eliminación incremental de luz es el estándar desde hace años (el propio the reference moderno la usa).
 3. **🔴 ALTA — Mutex+hash por acceso a bloque:** `World::getBlockId` bloquea el mutex del mundo y hashea `unordered_map<ChunkKey,…>` en **cada celda** (`World.cpp:254-260`); los bucles de líquidos, físicas de ítems y luz hacen de 6 a 30 re-lookups por entidad y tick. El precedente de `LightEngine::Region` (array plano de slots) demuestra la solución.
 4. **🔴 ALTA — `flushDirty()` retiene el mutex del mundo durante toda la E/S** (`ChunkManager.cpp:374-397`; el comentario del autor lo admite en :399-409): durante un drain de guardado, *todas* las lecturas/escrituras de bloques y la instalación de chunks generados se bloquean.
 5. **🟠 MEDIA-ALTA — Churn de asignación heredado de PHP:** objeto heap por sub-paquete entrante (`PacketPool.cpp:74-161`), `PacketWriter` que hace `push_back` byte a byte sin `reserve` (`DataPacket.h:123-233`), temp de 1 MiB cero-inicializado por batch entrante (`BatchPacket.cpp:81-82`) con copia extra a `payload_` (:85), copia completa de `playersSnapshot()` por difusión — hasta **11 veces por tick por flecha en vuelo** (`World.cpp:995-1365`), y `Diagnostics::recordPacket` con mutex global por paquete siempre activo (`Diagnostics.cpp:230-239`).
 
-**Herencia de PocketMine-MP:** la huella es profunda pero no uniformemente mala. Lo heredado *bueno*: formato de chunk por secciones, flyweight de bloques indexado por array, contrato generate/populate, colas raklib de dos vías. Lo heredado *caro en C++*: objeto por paquete, evento por paquete de movimiento, scheduler de tareas genéricas usadas como cola de ticks de bloque, `Server` dios con 12 singletons, y claves de sesión de cadena `"ip:port"` duplicando el índice entero O(1) que raklib ya tiene (la duplicación es exactamente donde vive el UAF).
+**Herencia de la referencia de la era-MP:** la huella es profunda pero no uniformemente mala. Lo heredado *bueno*: formato de chunk por secciones, flyweight de bloques indexado por array, contrato generate/populate, colas raklib de dos vías. Lo heredado *caro en C++*: objeto por paquete, evento por paquete de movimiento, scheduler de tareas genéricas usadas como cola de ticks de bloque, `Server` dios con 12 singletons, y claves de sesión de cadena `"ip:port"` duplicando el índice entero O(1) que raklib ya tiene (la duplicación es exactamente donde vive el UAF).
 
 **Estado de seguridad:** 1 UAF confirmado (§12.1), 1 bug de corrección confirmado (daño ambiental lee el mundo por defecto, no el mundo actual — `PlayerStats.cpp:407`), 1 mecanismo anti-flood declarado y nunca aplicado (`MCP_SM_PACKET_LIMIT`, `SessionManager.h:62-66`). El resto del inventario de endurecimiento previo está en su sitio.
 
@@ -47,11 +47,11 @@
 | `src/world/generator/vgen/` (incl. structure/feature/biome/newbiome) | ~36.7k (world total) | Generador "vanilla" portado de MCPE 1.0.0 (`VgenSource`) | Grande, mayormente algorítmico puro; caches con problemas de escala (§10.4) |
 | `src/network/` (incl. raklib 4.3k, protocol 8.1k) | 14.0k | RakNet + MCPE protocolo 84 | Híbrido: raklib es C-compilado-como-C++, protocolo es C++ OOP |
 | `src/player/` + `Player.h/.cpp` | 8.1k | Jugador (clase única, 14 archivos de implementación) | God-class organizativa |
-| `src/item/`, `src/inventory/` | 8.1k + 4.8k | Ítems, inventarios, crafting (port Nukkit declarado) | OOP razonable, matching de recetas lineal |
+| `src/item/`, `src/inventory/` | 8.1k + 4.8k | Ítems, inventarios, crafting (port de la referencia declarado) | OOP razonable, matching de recetas lineal |
 | `src/block/` + `src/tile/` | 4.9k + 1.4k | Flyweights de bloque + block entities | Flyweight limpio; tiles en mapa global del mundo |
 | `src/plugin/` | 4.8k | Host Lua 5.4 (`LuaPlugin`, `Bindings*`) | Bien diseñado; coste por evento acotado |
 | `src/world/format/` (+anvil) | 4.0k | `mcp_chunk_t`, `FullChunk`/`ChunkAdapter`, Anvil | Núcleo de datos plano + fachada virtual |
-| `src/utils/`, `src/command/`, `src/event/`, `src/world/` (resto) | 3.5k + 2.6k + 2.2k | Soporte, comandos, eventos, World/ChunkManager/LightEngine | Mezcla; eventos y comandos heredados de PMMP |
+| `src/utils/`, `src/command/`, `src/event/`, `src/world/` (resto) | 3.5k + 2.6k + 2.2k | Soporte, comandos, eventos, World/ChunkManager/LightEngine | Mezcla; eventos y comandos heredados de the reference |
 | `src/nbt/` (+tag) | 1.7k | NBT reescrito como API de clases C++ (commit `d8647d5`) | A medio camino (§4.5) |
 | `src/scheduler/`, `src/permission/`, `src/entity/`, resto | ~5k | Scheduler, permisos, entidades, diagnóstico, logger | `entity/` mayormente muerto (§3.9) |
 | `third_party/lua/` | (vendido) | Lua 5.4 estático | Intocable por política correcta |
@@ -70,7 +70,7 @@
 
 ### 2.3 Singletons / estado global
 
-12 Meyers singletons (`Server::getInstance` `Server.h:97-100`, `MainLogger::get`, `MemoryManager::get`, `WorkbenchManager::get`, `Diagnostics::get`, `EventManager::get`, `PluginManager::get`, `ServerScheduler::get`, `WorldProviderManager::getInstance`, `PacketPool::get`, `InstallerLang::get`, logger async C). Todos de primera construcción post-`main` (sin riesgo de init-order hoy), pero `MemoryManager::collect()` llama a `Server::getInstance()` (`MemoryManager.cpp:72`), y `ServerScheduler.cpp:79` llega al pool vía el singleton — acoplamiento de service-locator heredado de PMMP.
+12 Meyers singletons (`Server::getInstance` `Server.h:97-100`, `MainLogger::get`, `MemoryManager::get`, `WorkbenchManager::get`, `Diagnostics::get`, `EventManager::get`, `PluginManager::get`, `ServerScheduler::get`, `WorldProviderManager::getInstance`, `PacketPool::get`, `InstallerLang::get`, logger async C). Todos de primera construcción post-`main` (sin riesgo de init-order hoy), pero `MemoryManager::collect()` llama a `Server::getInstance()` (`MemoryManager.cpp:72`), y `ServerScheduler.cpp:79` llega al pool vía el singleton — acoplamiento de service-locator heredado de the reference.
 
 ### 2.4 Flujo de un tick (orden real, `Server::tick()` `Server.cpp:508-674`)
 
@@ -91,7 +91,7 @@ reap de jugadores → scheduler (≤64 tareas/10ms budget) → world.tick ×N
 
 ---
 
-## 3. ANÁLISIS DE LA HERENCIA ARQUITECTÓNICA DE POCKETMINE-MP
+## 3. ANÁLISIS DE LA HERENCIA ARQUITECTÓNICA DE LA REFERENCIA DE LA ERA
 
 Metodología: para cada patrón sospechoso, se responde el cuestionario de 9 puntos. Se distingue explícitamente entre herencia que merece conservarse y limitación heredada.
 
@@ -99,7 +99,7 @@ Metodología: para cada patrón sospechoso, se responde el cuestionario de 9 pun
 
 1. **Cómo funciona hoy:** `PacketPool::create` es un `switch` que devuelve `std::make_shared<T>()` para ~37 IDs (`PacketPool.cpp:74-161`); `Network::dispatchSingle` bloquea el `weak_ptr` del jugador, decodifica y llama `Player::handleDataPacket`, que re-abre un switch y hace `dynamic_cast<T*>` por caso (`PlayerNetwork.cpp:224,230,236,241,249,288…`).
 2. **Problema que resuelve:** despacho tipado y seguro de paquetes heterogéneos.
-3. **Parecido con PMMP:** sí — es el `PacketPool` + `Network::processIncoming` de PMMP casi literal.
+3. **Parecido con the reference:** sí — es el `PacketPool` + `Network::processIncoming` de the reference casi literal.
 4. **Por qué tenía sentido en PHP:** en PHP *todo* es un objeto heap con refcount; crear un objeto por paquete no añade coste marginal visible y no existen valores en stack ni `unique_ptr`.
 5. **¿Sigue teniendo sentido en C++?** A medias. El `switch` está bien (O(1), sin registro); el `make_shared` + control block + strings por paquete es churn puro que en PHP era invisible.
 6. **Alternativa nativa:** decodificar en un objeto reutilizado por llamada (`unique_ptr` o valor en stack en `decodePacketById` — el paquete nunca escapa del handler), y sustituir `dynamic_cast` por `static_cast` tras el `switch` de PID (el PID ya determina el tipo).
@@ -107,11 +107,11 @@ Metodología: para cada patrón sospechoso, se responde el cuestionario de 9 pun
 8. **Riesgo de compatibilidad:** nulo (interno).
 9. **Archivos:** `PacketPool.cpp/.h`, `Network.cpp:163-266`, `PlayerNetwork.cpp:205-700`, `DataPacket.h`.
 
-### 3.2 H2 — Sistema de eventos con coste por disparo heredado del bus de PMMP
+### 3.2 H2 — Sistema de eventos con coste por disparo heredado del bus de the reference
 
 1. **Hoy:** `fire<T>` construye `std::type_index`, bloquea `map_mtx_`, busca la lista; si hay listeners, `HandlerList::dispatch` **copia cada `std::function` a un vector nuevo** bajo su mutex, hace un `dynamic_cast<Cancellable*>` y ejecuta con try/catch por listener (`EventManager.h:118-125`, `EventManager.cpp:43-77`, `HandlerList.cpp:96-137`).
 2. **Problema:** despacho con prioridades y cancelación, seguro frente a listeners que se dan de baja en pleno evento.
-3. **PMMP:** sí — `EventPriority` LOWEST..MONITOR y `@ignoreCancelled` trasladados 1:1 (`EventPriority.h:42-53`, `RegisteredListener.h:47`).
+3. **the reference:** sí — `EventPriority` LOWEST..MONITOR y `@ignoreCancelled` trasladados 1:1 (`EventPriority.h:42-53`, `RegisteredListener.h:47`).
 4. **PHP:** el snapshot de listeners era necesario (array mutable) y el coste por fire era ruido frente al intérprete.
 5. **C++:** la semántica es correcta, pero `PlayerMoveEvent` se dispara **por paquete de movimiento** (~20×/s por jugador, `PlayerTick.cpp:145`), así que el patrón pagado por-evento está en una de las rutas más calientes del servidor.
 6. **Alternativa:** listeners inmutables post-registro (vector persistente reemplazado con `shared_ptr<const vector>` o RCU), `if constexpr (std::is_base_of_v<Cancellable,T>)` en vez de `dynamic_cast`, snapshot solo cuando hay listeners.
@@ -123,7 +123,7 @@ Metodología: para cada patrón sospechoso, se responde el cuestionario de 9 pun
 
 1. **Hoy:** cada difusión copia `vector<shared_ptr<Player>>` bajo `players_mtx_` (`Server.cpp:716-719`).
 2. **Problema:** iterar jugadores sin exponer el mutex.
-3. **PMMP:** sí — `Server::getOnlinePlayers()` devuelve una copia del array PHP en cada llamada.
+3. **the reference:** sí — `Server::getOnlinePlayers()` devuelve una copia del array PHP en cada llamada.
 4. **PHP:** copy-on-write hacía la "copia" casi gratis.
 5. **C++:** la copia es real: N incrementos atómicos + N decrementos + heap alloc + mutex global **por llamada**. Hay ~25 sitios de llamada; el peor amplificador: cada ítem en movimiento la llama para difundir su `MoveEntityPacket` (`World.cpp:870`), hasta ~11×/tick por flecha (`World.cpp:995-1365`).
 6. **Alternativa:** en el hilo principal (donde ocurre todo el juego) iterar bajo lock o cachear un snapshot **por tick**; para difusión por mundo, un índice de jugadores-por-chunk-cargado (los viewers ya existen: `used_chunks_`).
@@ -135,19 +135,19 @@ Metodología: para cada patrón sospechoso, se responde el cuestionario de 9 pun
 
 1. **Hoy:** `mcp_chunk_t` plano + `FullChunk` abstracto + `ChunkAdapter` que hace borrow/own del puntero (`FullChunk.h:44-90`, `ChunkAdapter.h:46-115`); cada carga de disco pasa por `dynamic_cast<ChunkAdapter*>` (`ChunkManager.cpp:73-81,234-249`).
 2. **Problema:** permitir providers intercambiables (Anvil hoy, LevelDB stub mañana).
-3. **PMMP:** explícita — el comentario de `FullChunk.h:24-35` cita la posición de la interfaz en la arquitectura de referencia.
-4. **PHP:** necesaria: PMMP soporta múltiples providers y los objetos PHP ya son indirecciones.
+3. **the reference:** explícita — el comentario de `FullChunk.h:24-35` cita la posición de la interfaz en la arquitectura de referencia.
+4. **PHP:** necesaria: the reference soporta múltiples providers y los objetos PHP ya son indirecciones.
 5. **C++:** la abstracción solo se toca en load/save (no por bloque), así que su coste real es el *ritual* borrow/own y el `dynamic_cast`, no el virtual. No es un problema de rendimiento; es fricción de diseño.
 6. **Alternativa:** si LevelDB llega de verdad, mantener la interfaz; si no, colapsar `FullChunk`+`ChunkAdapter` en un solo tipo C++ que posea `mcp_chunk_t` (RAII) y borrar la capa.
 7. **Ventaja:** −2 archivos de ceremonia, propiedad inequívoca del chunk; sin coste medible hoy.
 8. **Riesgo:** bajo; los consumidores de `FullChunk` son pocos y locales.
 9. **Archivos:** `world/format/FullChunk.h`, `ChunkAdapter.{h,cpp}`, `ChunkManager.cpp`.
 
-### 3.5 H5 — Scheduler genérico de PMMP usado como cola de ticks de bloque
+### 3.5 H5 — Scheduler genérico de the reference usado como cola de ticks de bloque
 
 1. **Hoy:** no existe cola de scheduled-block-ticks; `LiquidFlow::scheduleTick` encola **una tarea heap** (`shared_ptr<CallbackTask>` + `std::function` + nodo `TaskHandler`) por celda líquida, y `ServerScheduler` escanea `handlers_` linealmente cada tick con tope 64 tareas/10 ms (`LiquidFlow.cpp:365-376`, `ServerScheduler.cpp:238-247`, `ServerScheduler.h:88`).
 2. **Problema:** re-programar actualizaciones de bloques en el tick siguiente.
-3. **PMMP:** parcialmente — PMMP usa `scheduleUpdate` sobre un heap propio para bloques; el scheduler de tasks es el mecanismo de plugins. Aquí se usó el de tasks para los bloques.
+3. **the reference:** parcialmente — the reference usa `scheduleUpdate` sobre un heap propio para bloques; el scheduler de tasks es el mecanismo de plugins. Aquí se usó el de tasks para los bloques.
 4. **PHP:** heap + objetos era natural.
 5. **C++:** por un lado es churn; por otro el tope de 64/tick **difiere la simulación de líquidos** cuando hay tormentas (comportamiento visible: el agua avanza a saltos bajo carga).
 6. **Alternativa:** cola dedicada por mundo (`std::deque<pos>` con dedup), procesada con presupuesto propio; el scheduler de tareas queda para plugins.
@@ -159,7 +159,7 @@ Metodología: para cada patrón sospechoso, se responde el cuestionario de 9 pun
 
 1. **Hoy:** `Player : IPlayer, Human, PermissibleBase, enable_shared_from_this` (`Player.h:83-86`); 84 miembros propios (`Player.h:667-801`); los 14 archivos de `player/*.cpp` son definiciones de miembros de la misma clase (sin friend struct; `PlayerInternal.h` solo guarda `kEyeHeight`).
 2. **Problema:** ninguna abstracción rota, pero el estado es difícil de razonar y hay estado muerto/duplicado: `Human::inv_` nunca asignado (`Human.h:62`), `Human::saturation_`/`xp_` sombreados por `Player::food_saturation_`/`xp_level_` (`Human.h:64-65` vs `Player.h:706,728`), doble contabilidad de mundo (`Entity::world_` shared_ptr vs `Player::world_` crudo, `Entity.h:109` vs `Player.h:671-672`).
-3. **PMMP:** sí — el Player de PMMP concentra igualmente todo; el split en archivos imita la organización por traits sin su beneficio.
+3. **the reference:** sí — el Player de the reference concentra igualmente todo; el split en archivos imita la organización por traits sin su beneficio.
 4. **PHP:** traits y duck-typing hacían viable la megaclase.
 5. **C++:** viable pero frágil; el coste real no es CPU sino mantenibilidad, y los 3 mutex intra-jugador existen solo porque el ciclo de vida cruza dos hilos.
 6. **Alternativa:** no merece rewrite; sí: purgar estado muerto, unificar `world_`, mantener aislados los buffers de batch.
@@ -171,7 +171,7 @@ Metodología: para cada patrón sospechoso, se responde el cuestionario de 9 pun
 
 1. **Hoy:** raklib mantiene su índice O(1) por endpoint (`map_key/map_ptr`, `SessionManager.h:74-75`) y la capa C++ mantiene otro mapa por `"ip:port"` string con `weak_ptr` (`Network.h:106`), con clave construida vía `std::ostringstream` **por paquete entrante** (`Network.cpp:65-69`).
 2. **Problema:** dos fuentes de verdad del mismo conjunto de conexiones.
-3. **PMMP:** el mapa string es el estilo PMMP (`Network::sessions`); el índice O(1) es adición local (commit `11bd1d3`).
+3. **the reference:** el mapa string es el estilo the reference (`Network::sessions`); el índice O(1) es adición local (commit `11bd1d3`).
 4. **PHP:** strings como claves eran idiomáticos.
 5. **C++:** el mapa string cuesta 2 allocs + locale por paquete y un hash por paquete; y el UAF confirmado (§12.1) vive precisamente en la costura entre ambos registros.
 6. **Alternativa:** una sola tabla canónica en raklib con handle opaco, y el `weak_ptr<Player>` residente en la sesión raklib vía el puente; mínimo: cachear la clave formateada por sesión.
@@ -185,18 +185,18 @@ Metodología: para cada patrón sospechoso, se responde el cuestionario de 9 pun
 |---|---|---|
 | Chunk de 16 secciones + nibbles = wire 0.15 | Correcto: layout de disco, memoria y wire coinciden; memcpy-compatible | `Chunk.h:24-39`, `AnvilChunkCodec.cpp:113-114` |
 | Block flyweight singleton indexado por array de 256 | Correcto: `Block::get(id)` es índice directo, no mapa | `Block.h:23-26`, `Block.cpp:55-68` |
-| Contrato generate/populate de dos fases (PMMP/Nukkit) | Correcto: paralelizable por chunk, ya corre en AsyncPool | `Generator.h:23-33`, `ChunkManager.cpp:252-308` |
+| Contrato generate/populate de dos fases (the era reference) | Correcto: paralelizable por chunk, ya corre en AsyncPool | `Generator.h:23-33`, `ChunkManager.cpp:252-308` |
 | Puente raklib de dos colas con hilo dedicado | Correcto en concepto; le faltan condvar y soltar el lock antes de `sendto` (§8) | `RakLibInterface.h:156-161` |
 | CommandMap/Permissible/PluginBase | Correctos: rutas frías, port fiel, marshalling a hilo principal ya arreglado (fix L3) | `SimpleCommandMap.cpp:58-105`, `Server.cpp:366-380` |
 | Batch por jugador + zlib por batch (no por paquete) | Correcto y ya optimizado; nivel 2 razonable | `PlayerNetwork.cpp:115-141`, `BatchPacket.cpp:36` |
 | `weak_ptr<Player>` en el registro de red | Correcto: rompe el ciclo Player↔Network | `Network.h:106` |
 | Snapshot-then-mutate en scheduler/eventos/tiles | Correcto como disciplina transversal | `ServerScheduler.cpp:238-294`, `HandlerList.cpp:102-112`, `World.cpp:721-729` |
 
-### 3.9 Ausencias heredadas (huecos funcionales que PMMP sí tiene)
+### 3.9 Ausencias heredadas (huecos funcionales que the reference sí tiene)
 
-- **Random ticks:** cero implementaciones en el árbol (grep `randomTick` = 0). PMMP los usa para cultivos, fuego, brotes. Impacto de gameplay, no de arquitectura.
+- **Random ticks:** cero implementaciones en el árbol (grep `randomTick` = 0). the reference los usa para cultivos, fuego, brotes. Impacto de gameplay, no de arquitectura.
 - **Mob AI / pathfinding:** no existe (`Living.h:25` lo declara; no hay `Creature`/mobs; `Entity::tick` virtual tiene **cero llamadores** — el despacho real son los loops de structs POD en `World::tickDroppedItems/Arrows/SplashPotions/FallingBlocks`, `World.cpp:720,977,1391,1679`).
-- **Subsistemas scaffolding muertos heredados de PMMP:** `QueryHandler` (hook `onRawPacket` es no-op, `RakLibInterface.cpp:438-444`), `RCON` (stub sin socket, `RCONInstance.h:25-58`), `CompressBatchedTask` (nunca construido, `CompressBatchedTask.cpp:32`), `AsyncWorker.h` (autodeclarado sin uso, `AsyncWorker.h:25-31`), `Entity::tick` + las 4 clases de entidad con `.cpp` vacíos (`EntityArrow.cpp:23-24` etc.), `MemoryManager::shouldGc()`/`runGc()` nunca llamados (`MemoryManager.cpp:62-66`), campos `send_queue_*` de sesión nunca escritos (`Session.h:223-226`). La decisión cablear-o-borrar está en §15.
+- **Subsistemas scaffolding muertos heredados de the reference:** `QueryHandler` (hook `onRawPacket` es no-op, `RakLibInterface.cpp:438-444`), `RCON` (stub sin socket, `RCONInstance.h:25-58`), `CompressBatchedTask` (nunca construido, `CompressBatchedTask.cpp:32`), `AsyncWorker.h` (autodeclarado sin uso, `AsyncWorker.h:25-31`), `Entity::tick` + las 4 clases de entidad con `.cpp` vacíos (`EntityArrow.cpp:23-24` etc.), `MemoryManager::shouldGc()`/`runGc()` nunca llamados (`MemoryManager.cpp:62-66`), campos `send_queue_*` de sesión nunca escritos (`Session.h:223-226`). La decisión cablear-o-borrar está en §15.
 
 ---
 
@@ -417,7 +417,7 @@ Tiles en mapa global del mundo (`World.h:529-530`) con hidratación lazy que **e
 
 ### 11.1 Eventos
 
-Implementación, coste por fire y comparación con PMMP: §3.2. Cobertura: 27 clases concretas, **26 realmente disparadas** en 26 sitios (grep `fire|call`); solo `BlockUpdateEvent` existe como base de `DoorToggleEvent`. Los eventos de gameplay calientes: `PlayerMoveEvent` por paquete de movimiento (`PlayerTick.cpp:145`), `BlockBreak/Place` por acción (`PlayerBlocks.cpp:243,1038,1281`), `InventoryClick` por click (`PlayerNetwork.cpp:447,480,514`).
+Implementación, coste por fire y comparación con the reference: §3.2. Cobertura: 27 clases concretas, **26 realmente disparadas** en 26 sitios (grep `fire|call`); solo `BlockUpdateEvent` existe como base de `DoorToggleEvent`. Los eventos de gameplay calientes: `PlayerMoveEvent` por paquete de movimiento (`PlayerTick.cpp:145`), `BlockBreak/Place` por acción (`PlayerBlocks.cpp:243,1038,1281`), `InventoryClick` por click (`PlayerNetwork.cpp:447,480,514`).
 
 ### 11.2 Plugins Lua
 
@@ -425,7 +425,7 @@ Ciclo de vida correcto y aislado (una VM por plugin, `lua_close` en disable, lis
 
 ### 11.3 Comandos y permisos
 
-Port fiel de PMMP/Nukkit, rutas frías; consola marshalled al hilo principal (L3). Costes menores: `utils::split` con allocs por token (`SimpleCommandMap.cpp:75-79`), `PermissibleBase::hasPermission` con substrings por nivel de wildcard (`PermissibleBase.cpp:25-42`). 17 comandos / 20 registros (`Defaults.cpp:44-66`). Sin hallazgos relevantes de rendimiento.
+Port fiel de la referencia de la era, rutas frías; consola marshalled al hilo principal (L3). Costes menores: `utils::split` con allocs por token (`SimpleCommandMap.cpp:75-79`), `PermissibleBase::hasPermission` con substrings por nivel de wildcard (`PermissibleBase.cpp:25-42`). 17 comandos / 20 registros (`Defaults.cpp:44-66`). Sin hallazgos relevantes de rendimiento.
 
 ### 11.4 ¿La API obliga a estructuras ineficientes al motor?
 
@@ -502,7 +502,7 @@ Cada propuesta incluye los 12 campos del encargo. Ninguna toca el wire-format de
 1. **Componente:** acceso a bloques (World/ChunkManager + consumidores).
 2. **Arquitectura actual:** mutex + hash por celda en cada `getBlockId/setBlock/getBlockData` (`ChunkManager.cpp:58-62`, `World.cpp:254-260`).
 3. **Problema:** bucles de vecinos re-hashean y re-bloquean por celda (líquidos, físicas, luz, heightmap).
-4. **Herencia PMMP:** sí — "un mapa global de chunks" es el modelo de PMMP; en PHP el coste por acceso era uniforme.
+4. **Herencia the reference:** sí — "un mapa global de chunks" es el modelo de the reference; en PHP el coste por acceso era uniforme.
 5. **Diseño:** mantener el mapa como almacén; añadir un `ChunkView` con alcance de bucle: resuelve los 1-9 chunks implicados una vez (bajo lock), valida epoch/versión, y expone getters raw sin lock. Precedente ya validado en el propio árbol: `LightEngine::Region` (`LightEngine.cpp:62-95`).
 6. **Implementación C++:** struct con `mcp_chunk_t*` + `uint64_t epoch` del manager; los métodos de World toman `ChunkView&` en variantes `*_fast`; los callers calientes (LiquidFlow, físicas, LightEngine, heightmap) migran primero.
 7. **Archivos:** `world/ChunkManager.{h,cpp}`, `world/World.{h,cpp}`, `block/LiquidFlow.cpp`, `LightEngine.cpp`, `World.cpp` (físicas).
@@ -517,7 +517,7 @@ Cada propuesta incluye los 12 campos del encargo. Ninguna toca el wire-format de
 1. **Componente:** `LightEngine`.
 2. **Actual:** clear+reseed+BFS 31³ por `setBlock` (`World.cpp:329`, `LightEngine.cpp:174-274`).
 3. **Problema:** coste interactivo dominante; explosiones lo multiplican (§7.1).
-4. **Herencia:** sí — el propio `Chunk.h:114-127` cita el heritage de relight por región de la referencia; PMMP moderno usa colas incrementales.
+4. **Herencia:** sí — el propio `Chunk.h:114-127` cita el heritage de relight por región de la referencia; the reference moderno usa colas incrementales.
 5. **Diseño:** BFS bidireccional clásico de *unlight* (cola oscura que borra hasta encontrar fuente) + cola de *relight* desde los bordes, sobre `ChunkView` (R1).
 6. **Implementación:** dos `deque` de celdas empaquetadas (pos+level) por canal de luz; presupuesto por tick ya existente.
 7. **Archivos:** `world/LightEngine.{h,cpp}`, `world/World.cpp` (solo el call-site).
@@ -532,7 +532,7 @@ Cada propuesta incluye los 12 campos del encargo. Ninguna toca el wire-format de
 1. **Componente:** `ChunkManager` guardado/descarga.
 2. **Actual:** `flushDirty*` retiene `mtx_` durante zlib+NBT+fwrite (`ChunkManager.cpp:374-397,410-444`).
 3. **Problema:** el drain de guardado bloquea TODO acceso a bloques e instalación de chunks.
-4. **Herencia:** sí — el modelo "flush dirty all at once" de PMMP/Nukkit (comentario `ChunkManager.cpp:89-93`).
+4. **Herencia:** sí — el modelo "flush dirty all at once" de la referencia de la era (comentario `ChunkManager.cpp:89-93`).
 5. **Diseño:** bajo lock: snapshotear la lista de (key, chunk) dirty y marcar "saving"; fuera del lock: encode → copiar a job del worker Anvil (que ya es asíncrono); re-lock solo para limpiar dirty/estado. El worker ya tiene backpressure acotada (`Anvil.h:185-188`).
 6. **Implementación:** dividir `flushDirtyBudget` en fase snapshot/fase serialize/fase commit; reusar el pipeline del autosave incremental (64 chunks/3 ms).
 7. **Archivos:** `world/ChunkManager.{h,cpp}`, `world/format/anvil/Anvil.cpp` (solo interacción).
@@ -562,7 +562,7 @@ Cada propuesta incluye los 12 campos del encargo. Ninguna toca el wire-format de
 1. **Componente:** difusión y simulación de entidades (World).
 2. **Actual:** `playersSnapshot()` global por difusión (H3), sin culling (`World.cpp:738`), pickups O(32×items) (§7.4).
 3. **Problema:** O(jugadores×ítems) por tick y difusión a quien no ve nada.
-4. **Herencia:** sí — "snapshot global de players por broadcast" es PMMP.
+4. **Herencia:** sí — "snapshot global de players por broadcast" es the reference.
 5. **Diseño:** mapa `ChunkKey → { viewers: vector<Player*>, entities: vector<ent_id> }` mantenido junto a `used_chunks_` (que ya existe por jugador); difusión por viewers del/los chunks afectados; pickups sobre el bucket del chunk del jugador; desalar el snapshot global por tick.
 6. **Implementación:** structs pequeños en `World`, actualizados en add/remove player y en cruzamiento de chunk (ya detectado en `PlayerTick.cpp:710-730`).
 7. **Archivos:** `world/World.{h,cpp}`, `Server.cpp` (broadcast), `player/PlayerTick.cpp`, `player/PlayerChunks.cpp`.
@@ -577,7 +577,7 @@ Cada propuesta incluye los 12 campos del encargo. Ninguna toca el wire-format de
 1. **Componente:** simulación de líquidos / scheduler.
 2. **Actual:** `CallbackTask` heap por celda sobre el scheduler genérico con tope 64/tick (H5).
 3. **Problema:** churn + diferimiento de simulación bajo carga.
-4. **Herencia:** uso del scheduler de tasks de PMMP como cola de bloques.
+4. **Herencia:** uso del scheduler de tasks de the reference como cola de bloques.
 5. **Diseño:** `std::deque<packed_pos>` + dedup (bitset por chunk o small set) por mundo, presupuesto propio por tick (p.ej. 256 celdas), ejecutada en `World::tick` antes de wakes.
 6. **Implementación:** mover `LiquidFlow::scheduleTick` a la cola; mantener `ServerScheduler` para plugins.
 7. **Archivos:** `block/LiquidFlow.{h,cpp}`, `world/World.{h,cpp}`, `scheduler/*` sin cambios de API.
@@ -592,7 +592,7 @@ Cada propuesta incluye los 12 campos del encargo. Ninguna toca el wire-format de
 1. **Componente:** `network/raklib` + puente.
 2. **Actual:** C-compilado-como-C++ con convención create/destroy; índice O(1) interno + mapa string C++ externo (H7); UAF de §12.1 en la costura.
 3. **Problema:** garantía de tipo ausente; dos vidas paralelas por conexión.
-4. **Herencia:** el mapa string es PMMP; el C es legado de la migración selectiva recomendada entonces (y desde ello revocada).
+4. **Herencia:** el mapa string es the reference; el C es legado de la migración selectiva recomendada entonces (y desde ello revocada).
 5. **Diseño:** (a) inmediato: fix de §12.1 (1 línea) + `ServerHandler` vía el índice O(1); (b) medio: `RakSession` RAII con `std::unique_ptr` buffers, constantes `constexpr`, `enum class` de reliability; el `weak_ptr<Player>` reside en la sesión; (c) `SessionManager` como clase con métodos, sin `mcp_*`.
 6. **Implementación:** por fases, con los harness de churn/timeout/slow-ack como red.
 7. **Archivos:** `network/raklib/*`, `Network.{h,cpp}`, `RakLibInterface.{h,cpp}`.
@@ -612,11 +612,11 @@ Cada propuesta incluye los 12 campos del encargo. Ninguna toca el wire-format de
 
 Prioridades: **CRÍTICA** (seguridad/estabilidad/bloquea desarrollo) · **ALTA** (rendimiento/memoria/escalabilidad importantes) · **MEDIA** (beneficio relevante no urgente) · **BAJA** (limpieza/mantenibilidad).
 
-| # | P | Componente | Problema | Causa | ¿Origen PMMP? | Solución | Beneficio | Complej. | Riesgo | Archivos |
+| # | P | Componente | Problema | Causa | ¿Origen the reference? | Solución | Beneficio | Complej. | Riesgo | Archivos |
 |---|---|---|---|---|---|---|---|---|---|---|
 | 1 | CRÍTICA | raklib sesiones | UAF: kick deja entrada colgante en el índice O(1) | `close_session` no llama `sm_map_erase` (`ServerHandler.cpp:72-87`) | Parcial (índice nuevo sin integrar al bridge) | Añadir `sm_map_erase` antes del `free`; test churn/reconnect bajo ASan | Elimina UAF alcanzable en producción | Baja | Mínimo | `raklib/ServerHandler.cpp` |
 | 2 | CRÍTICA | Player/env | Daño ambiental lee el mundo por defecto, no el actual | `getDefaultWorld()` en `PlayerStats.cpp:407` | No (bug local) | Usar `getWorld()` del jugador | Corrección de gameplay en Nether/otros mundos | Baja | Mínimo | `player/PlayerStats.cpp` |
-| 3 | ALTA | ChunkManager | Mutex del mundo retenido durante E/S de guardado | `flushDirty*` hace zlib/NBT/fwrite bajo `mtx_` (`ChunkManager.cpp:374-397`) | Sí (flush-all de PMMP) | Snapshot dirty bajo lock + encode/commit fuera (R3) | Elimina hitches de tick en autosave/flush | Media | Medio | `world/ChunkManager.*`, `anvil/Anvil.cpp` |
+| 3 | ALTA | ChunkManager | Mutex del mundo retenido durante E/S de guardado | `flushDirty*` hace zlib/NBT/fwrite bajo `mtx_` (`ChunkManager.cpp:374-397`) | Sí (flush-all de the reference) | Snapshot dirty bajo lock + encode/commit fuera (R3) | Elimina hitches de tick en autosave/flush | Media | Medio | `world/ChunkManager.*`, `anvil/Anvil.cpp` |
 | 4 | ALTA | LightEngine | Recomputación 31³ por cada setBlock | Relight por región heredado (`World.cpp:329`, `LightEngine.cpp:174-274`) | Sí | Luz incremental add/remove (R2) | El mayor coste interactivo baja a O(cono afectado) | Alta | Medio | `world/LightEngine.*`, `world/World.cpp` |
 | 5 | ALTA | World | Mutex+hash por acceso a bloque | Sin fast path; patrón ráfaga-local (`World.cpp:254-260`) | Sí (mapa global) | `ChunkView`/handle por bucle (R1) | Quita lock+hash de las rutas más calientes | Media | Medio | `ChunkManager.*`, `World.*`, `LiquidFlow.cpp` |
 | 6 | ALTA | RakLibInterface | `sendto` syscalls bajo `outbound_mtx_` | Drain envía sin soltar el lock (`RakLibInterface.cpp:187-244`) | No | Drenar a local y enviar fuera del lock | Productor principal nunca bloqueado por syscall | Baja | Bajo | `network/RakLibInterface.cpp` |
@@ -630,7 +630,7 @@ Prioridades: **CRÍTICA** (seguridad/estabilidad/bloquea desarrollo) · **ALTA**
 | 14 | MEDIA | Seguridad red | Anti-flood por IP declarado y no aplicado | `ip_sec_*` nunca incrementado (`SessionManager.h:62-66`) | No | Aplicar el límite o borrarlo | Mitigación de handshake-flood por IP | Baja | Bajo | `raklib/SessionManager.*` |
 | 15 | MEDIA | NBT | new+string por tag, lookup lineal, copia de I/O | API C-shaped (`CompoundTag.cpp:99-107`, `BinaryStream.cpp:53-61`) | No (reescritura reciente) | Arena por parseo + índice por compound | Autosave de 64 chunks/tick sin cientos de news | Media | Medio | `nbt/**`, `utils/BinaryStream.*` |
 | 16 | MEDIA | Tiles | Mapa mundial escaneado por chunk e hidratación 32k | Sin índice per-chunk (`World.cpp:1916-1931,1996-2025`) | No | Índice tiles-por-chunk en el chunk | Chunk-send y save O(tiles del chunk) | Media | Bajo | `world/World.*`, `tile/*` |
-| 17 | MEDIA | Crafting | matchShaped/Shapeless lineal 336; horno 2 scans/tick | Sin índice por forma/ingrediente (`CraftingManager.cpp:2638-2731`) | Sí (port Nukkit) | Índice por resultado/ingrediente clave | Furnace tick O(1) aprox. | Media | Bajo | `inventory/CraftingManager.*`, `tile/TileFurnace.cpp` |
+| 17 | MEDIA | Crafting | matchShaped/Shapeless lineal 336; horno 2 scans/tick | Sin índice por forma/ingrediente (`CraftingManager.cpp:2638-2731`) | Sí (port de la referencia) | Índice por resultado/ingrediente clave | Furnace tick O(1) aprox. | Media | Bajo | `inventory/CraftingManager.*`, `tile/TileFurnace.cpp` |
 | 18 | MEDIA | Plataforma | 5/6 `run_*.sh` rotos; CI sin tests; `gen_perf` no compila | Rutas `.c`/generador antiguo tras la migración (§13) | No | Arreglar wrappers, job CI que corre harness Python + checks C++ bajo Release | Regresión detectada por CI, no a mano | Baja | Bajo | `tools/*`, `.github/workflows/Build.yml` |
 | 19 | MEDIA | Dead code | Query/RCON/CompressBatchedTask/AsyncWorker/Entity-tick/send_queue/shouldGc sin uso | Scaffolding heredado (§3.9, R8) | Sí | Cablear o eliminar (política `f25e966`) | −LOC, sin confusiones; `CompressBatchedTask` podría revivir como R4-async | Baja | Bajo | varios (ver §3.9) |
 | 20 | MEDIA | Player | Estado muerto/duplicado (`Human::inv_`, saturación/xp, doble `world_`) | God-class con sombras (H6) | Sí | Purga + unificación | Menos superficie de error | Baja | Bajo | `Player.h`, `entity/Human.h`, `entity/Entity.h` |
@@ -659,10 +659,10 @@ Prioridades: **CRÍTICA** (seguridad/estabilidad/bloquea desarrollo) · **ALTA**
 
 ### 17.1 Respuestas explícitas a las preguntas del encargo
 
-**¿CurseStone es realmente un motor diseñado para C++ o sigue siendo una recreación demasiado literal de PocketMine-MP?**
-Es un híbrido avanzado. El núcleo de datos (chunks, luz, E/S, raklib) ya es un motor propio con decisiones de C++ (planos, un-dueño, acotado); la capa de juego conserva la *forma* de PMMP (objeto por paquete, evento por movimiento, snapshot por difusión, scheduler-genérico-como-block-ticks). La recreación literal ya no está en las clases —está en los *hábitos de asignación y despacho*.
+**¿CurseStone es realmente un motor diseñado para C++ o sigue siendo una recreación demasiado literal de la referencia de la era-MP?**
+Es un híbrido avanzado. El núcleo de datos (chunks, luz, E/S, raklib) ya es un motor propio con decisiones de C++ (planos, un-dueño, acotado); la capa de juego conserva la *forma* de the reference (objeto por paquete, evento por movimiento, snapshot por difusión, scheduler-genérico-como-block-ticks). La recreación literal ya no está en las clases —está en los *hábitos de asignación y despacho*.
 
-**¿Qué decisiones de PMMP se reproducen innecesariamente?** H1 (objeto heap + `dynamic_cast` por paquete), H2 (despacho de eventos con copia por fire en ruta de 20 Hz), H3 (snapshot global por difusión), H5 (scheduler genérico como cola de bloques), H7 (mapa string de sesiones duplicando el índice O(1)), y el scaffolding muerto (Query/RCON/CompressBatchedTask).
+**¿Qué decisiones de the reference se reproducen innecesariamente?** H1 (objeto heap + `dynamic_cast` por paquete), H2 (despacho de eventos con copia por fire en ruta de 20 Hz), H3 (snapshot global por difusión), H5 (scheduler genérico como cola de bloques), H7 (mapa string de sesiones duplicando el índice O(1)), y el scaffolding muerto (Query/RCON/CompressBatchedTask).
 
 **¿Qué mecanismos tenían sentido en PHP pero no tienen justificación en C++?** Copiar colecciones para iterarlas (PHP COW), asignar un objeto por unidad de trabajo (paquete/tarea/celda), strings como claves universales, y el bus de eventos costoso por disparo. En C++ cada uno tiene alternativa local sin cambiar APIs.
 

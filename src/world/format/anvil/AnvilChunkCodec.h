@@ -21,11 +21,11 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// AnvilChunkCodec.h — encodes/decodes mcp_chunk_t* to/from the Nukkit
+// AnvilChunkCodec.h — encodes/decodes mcp_chunk_t* to/from the era reference
 // Anvil chunk NBT payload (big-endian, ZLIB-compressed separately).
 //
-// Ported from Nukkit InfinityEdition's
-// `cn.nukkit.level.format.anvil.Chunk` (toBinary / fromBinary).
+// Ported from the era reference
+// `the reference server API` (toBinary / fromBinary).
 //
 // On-disk chunk NBT layout (after ZLIB inflation):
 //
@@ -52,7 +52,7 @@
 //
 // The CurseStone chunk has 16 sections (256-tall). We persist only the
 // lower 8 sections (Y 0..7, i.e. block Y 0..127) since MCPE 0.15.x is
-// 128-tall — matching what Nukkit stores in its Anvil format. Upper
+// 128-tall — matching what the era reference stores in its Anvil format. Upper
 // sections are dropped on save and zero-initialized on load.
 #pragma once
 

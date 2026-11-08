@@ -23,8 +23,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // AnimatePacket.h — client→server arm swing / animation trigger.
 //
-// MCPE protocol 84 (MCPE 0.15.10) wire format — Genisys
-// AnimatePacket::decode (iTXTech/Genisys, network/
+// MCPE protocol 84 (MCPE 0.15.10) wire format — the era reference
+// AnimatePacket::decode (the era reference, network/
 // protocol/AnimatePacket):
 //
 //   [1 byte   ID 0x27]
@@ -33,7 +33,7 @@
 //
 // The client sends this on every arm swing (punching, mining, placing).
 // Server-side we broadcast it to nearby players so they see each other's
-// arm swings (same behaviour as Genisys Player::processMovement's
+// arm swings (same behaviour as the era reference Player::processMovement's
 // ANIMATE_PACKET handling).
 #pragma once
 

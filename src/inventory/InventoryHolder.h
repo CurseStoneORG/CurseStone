@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// InventoryHolder.h — ported from cn.nukkit.inventory.InventoryHolder
+// InventoryHolder.h — ported from the reference server API
 //
 // Anything that "holds" an inventory (Player, Chest tile, Furnace tile)
 // implements this interface so the inventory can ask its holder for

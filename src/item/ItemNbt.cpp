@@ -45,8 +45,8 @@ void enchantmentsFromNbt(const cursestone::nbt::Tag* entry, EnchantmentList& out
             continue;
 
         const int id = cursestone::nbt::get_short(c, kNbtId, -1);
-        // "lvl" is what Bedrock/Genisys write; accept the spelled-out
-        // "level" for Nukkit-era data. A missing/zero level is not an
+        // "lvl" is what Bedrock/the era reference write; accept the spelled-out
+        // "level" for the era reference-era data. A missing/zero level is not an
         // enchantment at all (it would never change a lookup), so it is
         // dropped rather than stored as a no-op entry.
         int lvl = cursestone::nbt::get_short(c, kNbtEnchLvl, 0);
@@ -181,7 +181,7 @@ bool itemStackFromNbt(const cursestone::nbt::Tag* entry, ItemStack& out) {
 // ============================================================
 // buildDisplayNbt — the little-endian network NBT compound the
 // 0.15.10 client reads a custom item name from, byte-exact with what
-// Genisys Item::setCustomName() ends up putting on the wire:
+// the era reference Item::setCustomName() ends up putting on the wire:
 //
 //     0x0A <u16 len=0>                     root compound, empty name
 //       0x0A <u16 len> "display"           display compound

@@ -22,7 +22,7 @@
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // PlayerListPacket.cpp — encode/decode.
-// Genisys 0.15.0: putByte(type) + putInt(count) + per-entry fields (BE),
+// the 0.15.0 reference server: putByte(type) + putInt(count) + per-entry fields (BE),
 // where an ADD entry is uuid, entityId, name, skinId, skinData.
 #include "PlayerListPacket.h"
 

@@ -1,17 +1,17 @@
 // tools/multiplayer_state_check.cpp
 //
 // Regression checks for the three multiplayer state bugs reported
-// against this server, validated byte-by-byte against Genisys 0.15.0
+// against this server, validated byte-by-byte against the 0.15.0 reference server
 // (the reference implementation for MCPE 0.15.10 / protocol 84):
 //
 // 1) Respawn invisibility — Player::respawn() never re-announced the
-//    player, unlike Genisys Player::respawn(), which ends with
+//    player, unlike the era reference Player::respawn(), which ends with
 //    `$this->spawnToAll();` and re-spawns nearby entities TO the
 //    respawning client. Fix lives in Player.cpp; what is checkable here
-//    is that the pieces it relies on encode the way Genisys writes them.
+//    is that the pieces it relies on encode the way the era reference writes them.
 //
 // 2) Broken blocks invisible to everyone else — UpdateBlockPacket was
-//    emitting blockData and flags as TWO separate bytes. Genisys writes
+//    emitting blockData and flags as TWO separate bytes. the era reference writes
 //    `putByte(($flags << 4) | $data)` — ONE byte, flags in the high
 //    nibble, data in the low nibble. With the old layout a break sent
 //    blockData=0, so the receiving client derived flags = 0x0 =
@@ -22,9 +22,9 @@
 //    property 0 (Entity::DATA_FLAGS, byte: bit 1 = SNEAKING,
 //    bit 3 = SPRINTING) and is carried by SetEntityDataPacket, encoded
 //    by Binary::writeMetadata as `(type << 5) | index` + value + 0x7F.
-//    Genisys never actually sends it for sneaking (Player::setSneaking
+//    the era reference never actually sends it for sneaking (Player::setSneaking
 //    is local-only), so the fix here is to send it, in the exact layout
-//    Genisys would have used.
+//    the era reference would have used.
 //
 // Build recipe (verified working, exit 0):
 //
@@ -65,10 +65,10 @@ static void dump(const char* label, const std::vector<uint8_t>& v) {
     printf("    %-26s %s\n", label, hex(v).c_str());
 }
 
-// ---- Genisys 0.15.0 UpdateBlockPacket::encode, transcribed literally ----
+// ---- the 0.15.0 reference server UpdateBlockPacket::encode, transcribed literally ----
 //     putInt(x); putInt(z); putByte(y); putByte(blockId);
 //     putByte((flags << 4) | data);
-static std::vector<uint8_t> genisysUpdateBlock(int32_t x, int32_t z, uint8_t y,
+static std::vector<uint8_t> eraUpdateBlock(int32_t x, int32_t z, uint8_t y,
                                                uint8_t blockId, uint8_t data,
                                                uint8_t flags) {
     std::vector<uint8_t> o;
@@ -82,15 +82,15 @@ static std::vector<uint8_t> genisysUpdateBlock(int32_t x, int32_t z, uint8_t y,
     return o;
 }
 
-// ---- Genisys 0.15.0 Binary::writeMetadata, transcribed literally ----
-static std::vector<uint8_t> genisysMetadata(const std::vector<uint8_t>& keysAndBytes) {
+// ---- the 0.15.0 reference server Binary::writeMetadata, transcribed literally ----
+static std::vector<uint8_t> eraMetadata(const std::vector<uint8_t>& keysAndBytes) {
     std::vector<uint8_t> o = keysAndBytes;
     o.push_back(0x7F);   // "\x7f" terminator
     return o;
 }
 
 int main() {
-    printf("MULTIPLAYER STATE CHECK (Genisys 0.15.0 / protocol 84 reference)\n");
+    printf("MULTIPLAYER STATE CHECK (the 0.15.0 reference server / protocol 84 reference)\n");
 
     // ================================================================
     printf("\n[1] UpdateBlockPacket — flags+data share ONE nibble-packed byte\n");
@@ -100,10 +100,10 @@ int main() {
         p.x = 1234; p.z = -77; p.y = 64;
         p.blockId = 0; p.blockData = 0; p.flags = UpdateBlockPacket::FLAG_ALL_PRIORITY;
         std::vector<uint8_t> out; p.encode(out);
-        auto want = genisysUpdateBlock(1234, -77, 64, 0, 0, UpdateBlockPacket::FLAG_ALL_PRIORITY);
+        auto want = eraUpdateBlock(1234, -77, 64, 0, 0, UpdateBlockPacket::FLAG_ALL_PRIORITY);
         dump("break wire:", out);
         check(out.size() == 11, "break packet body is 11 bytes (4+4+1+1+1, not 12)");
-        check(out == want, "break packet is byte-identical to Genisys");
+        check(out == want, "break packet is byte-identical to the era reference");
         check(out[10] == 0xB0, "packed byte is 0xB0 (data=0, flags=FLAG_ALL_PRIORITY)");
 
         // THE regression: with the old two-byte layout the client read
@@ -124,9 +124,9 @@ int main() {
         p.blockData = 13;                // damage lives in the LOW nibble
         p.flags = UpdateBlockPacket::FLAG_ALL_PRIORITY;
         std::vector<uint8_t> out; p.encode(out);
-        auto want = genisysUpdateBlock(-1, -1, 255, 162, 13, UpdateBlockPacket::FLAG_ALL_PRIORITY);
+        auto want = eraUpdateBlock(-1, -1, 255, 162, 13, UpdateBlockPacket::FLAG_ALL_PRIORITY);
         dump("place wire:", out);
-        check(out == want, "place packet is byte-identical to Genisys");
+        check(out == want, "place packet is byte-identical to the era reference");
         check(out[10] == 0xBD, "packed byte is 0xBD (data=13, flags=0x0B)");
         UpdateBlockPacket rt;
         check(rt.decode(out.data(), out.size()), "place packet decodes");
@@ -135,7 +135,7 @@ int main() {
         check(rt.x == -1 && rt.z == -1 && rt.y == 255 && rt.blockId == 162,
               "round-trip keeps x/z/y/blockId");
     }
-    // Flag constant values must match Genisys UpdateBlockPacket.
+    // Flag constant values must match the era reference UpdateBlockPacket.
     {
         check(UpdateBlockPacket::FLAG_NONE == 0,     "FLAG_NONE == 0");
         check(UpdateBlockPacket::FLAG_NEIGHBORS == 0b0001, "FLAG_NEIGHBORS == 0b0001");
@@ -144,7 +144,7 @@ int main() {
         check(UpdateBlockPacket::FLAG_PRIORITY == 0b1000,  "FLAG_PRIORITY == 0b1000");
         check(UpdateBlockPacket::FLAG_ALL == 0x03, "FLAG_ALL == 0x03");
         check(UpdateBlockPacket::FLAG_ALL_PRIORITY == 0x0B,
-              "FLAG_ALL_PRIORITY == 0x0B (Genisys break/place default)");
+              "FLAG_ALL_PRIORITY == 0x0B (the era reference break/place default)");
     }
 
     // ================================================================
@@ -161,14 +161,14 @@ int main() {
 
         std::vector<uint8_t> out; p.encode(out);
 
-        // Genisys: putLong(eid) then chr((0 << 5) | 0) . chr(0x02) . "\x7f"
-        std::vector<uint8_t> meta = genisysMetadata({ 0x00 /* key: type BYTE(0), index 0 */,
+        // the era reference: putLong(eid) then chr((0 << 5) | 0) . chr(0x02) . "\x7f"
+        std::vector<uint8_t> meta = eraMetadata({ 0x00 /* key: type BYTE(0), index 0 */,
                                                      0x02 /* crouching */ });
         std::vector<uint8_t> want;
         for (int i = 7; i >= 0; --i) want.push_back((uint8_t)(0x0102030405060708LL >> (i * 8)));
         want.insert(want.end(), meta.begin(), meta.end());
         dump("sneak metadata:", out);
-        check(out == want, "crouch metadata is byte-identical to Genisys writeMetadata");
+        check(out == want, "crouch metadata is byte-identical to the era reference writeMetadata");
         check(out.size() == 8 + 1 + 1 + 1, "body is eid(8) + key + value + terminator");
         check(out[8] == 0x00, "key byte 0x00 = DATA_FLAGS (index 0, type BYTE)");
         check(out[9] == 0x02, "value 0x02 = SNEAKING bit set");
@@ -191,7 +191,7 @@ int main() {
             check(rt.entries[0].ival == 0x02, "round-trip keeps the crouch bit");
         }
     }
-    // eid 0 means "the receiving client's own entity" (Genisys sendData($this)).
+    // eid 0 means "the receiving client's own entity" (the era reference sendData($this)).
     {
         SetEntityDataPacket p;
         p.eid = 0;

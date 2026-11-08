@@ -128,7 +128,7 @@ void Player::sendChunksAroundSpawn() {
     // entro, but yes works if salgo and vuelvo to enter"): this used to
     // call doFirstSpawn() immediately here — before to single chunk had
     // been streamed — on the theory that "the client will see chunks
-    // arriving gradually" (true for Nukkit, which doesn't gate spawn on
+    // arriving gradually" (true for the era reference, which doesn't gate spawn on
     // chunks). But doFirstSpawn() is also where PLAYER_SPAWN,
     // sendCreativeInventory() and sendInventory() (the player's OWN
     // inventory ContainerSetContentPacket) go out. Sending those with

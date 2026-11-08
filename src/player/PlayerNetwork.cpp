@@ -305,7 +305,7 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
             // The client reports its held hotbar slot; inventory-screen packets may use a different slot field.
             if (auto* me = dynamic_cast<network::protocol::MobEquipmentPacket*>(&p)) {
                 if (inv_) {
-                    // Wire byte order (Genisys 0.15 / the reference server):
+                    // Wire byte order (the 0.15 reference server / the reference server):
                     // byte 1 (hotbarSlot) is the PADDED ABSOLUTE inventory
                     // slot the position now links to (position + 9; 255 =
                     // blank selection), byte 2 (selectedSlot) is the hotbar
@@ -605,7 +605,7 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
         // Acknowledge these packets without further processing.
         case network::protocol::BATCH_PACKET:
         case network::protocol::PLAYER_INPUT_PACKET:
-        // Genisys ignores this health confirmation packet.
+        // the era reference ignores this health confirmation packet.
         case network::protocol::SET_HEALTH_PACKET:
             break;
         case network::protocol::CONTAINER_CLOSE_PACKET: {

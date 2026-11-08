@@ -22,7 +22,7 @@
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // RequestChunkRadiusPacket.cpp — encode/decode.
-// PMMP: getInt(radius) on decode.
+// the reference: getInt(radius) on decode.
 #include "RequestChunkRadiusPacket.h"
 
 namespace cursestone::network::protocol {

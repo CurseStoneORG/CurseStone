@@ -3,7 +3,7 @@
 // The multiplayer crash: when a second player joined, BOTH 0.15.10
 // clients died within ~2 seconds. The only thing sent at that moment is
 // the pair PlayerListPacket(ADD) + AddPlayerPacket describing the other
-// player. Genisys 0.15.0 (the reference for protocol 84) writes the
+// player. the 0.15.0 reference server (the reference for protocol 84) writes the
 // player-list entry as
 //
 //     [u8 type][i32BE count]{ [16B uuid][i64BE eid][str name]
@@ -12,7 +12,7 @@
 //
 // while its own class comment claims "isSlim, skin". The server used to
 // follow the comment and sent "false" + an EMPTY skin blob — which the
-// client cannot load, and dies on. Genisys' own Human::spawnTo() refuses
+// client cannot load, and dies on. the era reference's own Human::spawnTo() refuses
 // to spawn an entity whose skin is shorter than 64*32*4 bytes for the
 // same reason.
 //
@@ -70,7 +70,7 @@ static std::string defaultSkinData() {
 }
 
 int main() {
-    printf("1. PlayerListPacket ADD layout vs Genisys 0.15.0\n");
+    printf("1. PlayerListPacket ADD layout vs the 0.15.0 reference server\n");
     PlayerListPacket pk;
     pk.type = PlayerListPacket::TYPE_ADD;
     PlayerListPacket::Entry e;
@@ -85,7 +85,7 @@ int main() {
     pk.encode(wire);
 
     // Walk the buffer exactly like the client does. Strings use
-    // putString = uint16 BE length (Genisys 0.15.0 BinaryStream::putString).
+    // putString = uint16 BE length (the 0.15.0 reference server BinaryStream::putString).
     size_t o = 0;
     check(o < wire.size() && wire[o++] == PlayerListPacket::TYPE_ADD, "type byte is ADD (0)");
     uint32_t count = (uint32_t)wire[o] << 24 | (uint32_t)wire[o+1] << 16 |
@@ -127,7 +127,7 @@ int main() {
           back.entries[0].skinData == skinData && back.entries[0].eid == e.eid,
           "every field survives the round-trip");
 
-    printf("3. REMOVE entry is uuid only (Genisys)\n");
+    printf("3. REMOVE entry is uuid only (the era reference)\n");
     PlayerListPacket rm;
     rm.type = PlayerListPacket::TYPE_REMOVE;
     rm.entries.push_back(e);

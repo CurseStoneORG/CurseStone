@@ -134,7 +134,7 @@ std::shared_ptr<DataPacket> PacketPool::create(uint8_t pid) const {
     case INTERACT_PACKET:
         return std::make_shared<InteractPacket>();
     // La lista de abajo cubre EXACTAMENTE el conjunto de paquetes
-    // cliente→servidor que maneja el switch de Genisys 0.15.10
+    // cliente→servidor que maneja el switch de the 0.15.10 reference server
     // (Player::handleDataPacket, protocolo 84). Sin el case
     // corresponding handler, a legitimate client packet was discarded
     // como "ID desconocido" y el estado se desincronizaba.

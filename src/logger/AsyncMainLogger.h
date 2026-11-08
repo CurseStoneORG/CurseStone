@@ -24,7 +24,7 @@
 /**
  * @brief Logs asynchronously through a background worker thread.
  *
- * Mirrors Nukkit's MainLogger pattern:
+ * Mirrors the reference server's MainLogger pattern:
  *   - info()/warn()/error() only push to a ring buffer + signal condvar
  *   - The worker thread does the actual I/O (format, color, fputs)
  *   - Batch writes in 4KB blocks, flushed on a 500 ms poll

@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // ContainerSetDataPacket — implementation (encode server->client).
 //
-// Formato p84 (Dr1xyDev/Infinity + Nukkit 2016): shorts BIG-endian,
+// Formato p84 (the era reference): shorts BIG-endian,
 // NO varints:
 //   putByte(windowid)
 //   putShort(BE) property
@@ -40,7 +40,7 @@ void ContainerSetDataPacket::encode(std::vector<uint8_t>& out) const {
 }
 
 bool ContainerSetDataPacket::decode(const uint8_t* data, size_t len) {
-    // Server->client only — like PMMP, empty decode.
+    // Server->client only — like the reference, empty decode.
     (void)data;
     (void)len;
     return true;

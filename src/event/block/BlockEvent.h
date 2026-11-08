@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// BlockEvent.h — ported from cn.nukkit.event.block.BlockEvent
+// BlockEvent.h — ported from the reference server API
 //
 // Base class for all block-related events. Holds block coordinates.
 #pragma once

@@ -22,7 +22,7 @@
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // SetHealthPacket.cpp — encode/decode.
-// PMMP: putInt(health).
+// the reference: putInt(health).
 #include "SetHealthPacket.h"
 
 namespace cursestone::network::protocol {

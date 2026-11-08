@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // SetEntityDataPacket.cpp — encode/decode.
 //
-// Genisys 0.15.0:
+// the 0.15.0 reference server:
 //     SetEntityDataPacket::encode:  putLong(eid); put(Binary::writeMetadata(meta))
 //     Binary::writeMetadata:        for each entry
 //                                      chr((type << 5) | (index & 0x1F))

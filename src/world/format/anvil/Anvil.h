@@ -21,9 +21,9 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Anvil.h — Nukkit Anvil WorldProvider, ported to CurseStone's C++ core.
+// Anvil.h — the era reference Anvil WorldProvider, ported to CurseStone's C++ core.
 //
-// This is the on-disk world format used by Nukkit:
+// This is the on-disk world format used by the era reference:
 //   worlds/<name>/level.dat      (GZIP-compressed big-endian NBT, root → "Data")
 //   worlds/<name>/region/r.X.Z.mca  (region files, 32x32 chunks each)
 //
@@ -36,7 +36,7 @@
 //
 // World creation (generate):
 //   init(path) creates region/ if missing and writes a default level.dat
-//   if one doesn't exist, mirroring Nukkit's Anvil.generate() defaults:
+//   if one doesn't exist, mirroring the reference server's Anvil.generate() defaults:
 //     Data.{LevelName, RandomSeed, SpawnX/Y/Z, generatorName, version=19133, ...}
 #pragma once
 
@@ -130,7 +130,7 @@ class Anvil : public WorldProvider {
 
     // Static generator — creates the on-disk scaffolding for a fresh
     // Anvil world at `path` (writes level.dat with NBT Data compound +
-    // creates region/ folder). Mirrors Nukkit's Anvil.generate().
+    // creates region/ folder). Mirrors the reference server's Anvil.generate().
     static bool generate(const std::string& path, const std::string& name, int64_t seed,
                          const std::string& generatorName);
 

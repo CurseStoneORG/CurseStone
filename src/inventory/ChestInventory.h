@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// ChestInventory — 27-slot container inventory (mirrors Nukkit ChestInventory).
+// ChestInventory — 27-slot container inventory (mirrors the era reference ChestInventory).
 #pragma once
 #include "BaseInventory.h"
 #include "InventoryType.h"

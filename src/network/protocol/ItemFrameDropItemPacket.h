@@ -24,12 +24,12 @@
 // ItemFrameDropItemPacket — cliente→servidor. El jugador rompe/golpea un
 // item frame to drop the item hanging from it.
 //
-// Wire format (protocolo 84, mirrors Genisys ItemFrameDropItemPacket):
+// Wire format (protocolo 84, mirrors the era reference ItemFrameDropItemPacket):
 //   [Int BE] z
 //   [Int BE] y
 //   [Int BE] x
 //   [Slot]   dropItem      // item the client had in the frame
-// (el orden z,y,x es el que usa Genisys, no x,y,z)
+// (el orden z,y,x es el que usa la referencia de la era, no x,y,z)
 #pragma once
 
 #include "DataPacket.h"

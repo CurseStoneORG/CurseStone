@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// DoorToggleEvent.h — ported from cn.nukkit.event.block.DoorToggleEvent
+// DoorToggleEvent.h — ported from the reference server API
 //
 // Fired when a door (or trapdoor / fence gate) is opened or closed by a
 // player.

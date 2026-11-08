@@ -1,6 +1,6 @@
 // tools/combat_pickup_anim_check.cpp
 //
-// Tres features anadidas, validadas contra Genisys 0.15.0:
+// Tres features anadidas, validadas contra the 0.15.0 reference server:
 //
 // 1) ANIMACION DE ROTURA — handlePlayerAction() re-difunde el
 //    PlayerActionPacket del cliente a los demas (con el eid del que
@@ -9,12 +9,12 @@
 // 2) LIMPIEZA DE ITEMS — al recoger un item, RemoveEntityPacket tiene
 //    que llegar a TODOS los viewers, no solo a quien lo recogio.
 //
-// 3) KNOCKBACK — Living::knockBack() de Genisys, que necesita
+// 3) KNOCKBACK — Living::knockBack() de la referencia de la era, que necesita
 //    SetEntityMotionPacket (aqui era un stub).
 //
 // Lo que se puede verificar sin servidor es el formato de bytes y la
 // formula; el filtrado por spectator/distancia se cubre por lectura del
-// codigo de difusion. La formula se transcribe literalmente de Genisys
+// codigo de difusion. La formula se transcribe literalmente de the era reference
 // Living.php::knockBack() y se compara con la misma formula escrita
 // aqui de forma independiente, para que cualquier cambio futuro en el
 // Gameplay::applyKnockback rompa el check.
@@ -50,11 +50,11 @@ static void dump(const char* l, const std::vector<uint8_t>& v) {
     printf("    %-24s %s\n", l, hex(v).c_str());
 }
 
-// --- Genisys Living::knockBack(), transcrito literalmente ---
-// OJO: Genisys NO usa la Y de la victima (solo deltaX/deltaZ), asi que
+// --- the era reference Living::knockBack(), transcrito literalmente ---
+// OJO: la referencia de la era NO usa la Y de la victima (solo deltaX/deltaZ), asi que
 // el helper tampoco la recibe — igual que la referencia.
 struct Motion { double x = 0, y = 0, z = 0; };
-static Motion genisysKnockBack(double px, double py, double pz,   // motion actual
+static Motion eraKnockBack(double px, double py, double pz,   // motion actual
                                double tx, double tz,              // victima (x,z)
                                double ax, double az,              // atacante
                                double base = 0.4) {
@@ -72,7 +72,7 @@ static Motion genisysKnockBack(double px, double py, double pz,   // motion actu
 }
 
 int main() {
-    printf("COMBAT / PICKUP / BREAK-ANIM CHECK (Genisys 0.15.0)\n");
+    printf("COMBAT / PICKUP / BREAK-ANIM CHECK (the 0.15.0 reference server)\n");
 
     // ================================================================
     printf("\n[1] SetEntityMotionPacket — formato de bytes\n");
@@ -82,7 +82,7 @@ int main() {
         std::vector<uint8_t> out; p.encode(out);
         dump("motion wire:", out);
         check(out.size() == 20, "un registro = 20 bytes (eid 8 + 3 floats 12)");
-        // Genisys: putLong(eid); putFloat(x); putFloat(y); putFloat(z)
+        // the era reference: putLong(eid); putFloat(x); putFloat(y); putFloat(z)
         check(out[0] == 0x01 && out[7] == 0x08, "eid va big-endian (putLong)");
         // 0.5f = 0x3F000000 BE, 0.25f = 0x3E800000 BE, -0.75f = 0xBF400000 BE
         check(out[8]  == 0x3F && out[9]  == 0x00 && out[10] == 0x00 && out[11] == 0x00,
@@ -90,7 +90,7 @@ int main() {
         check(out[12] == 0x3E && out[13] == 0x80, "motionY va big-endian float (0.25f)");
         check(out[16] == 0xBF && out[17] == 0x40, "motionZ big-endian y con signo (-0.75f)");
 
-        // Varios registros aplanados, sin count ni terminador (Genisys).
+        // Varios registros aplanados, sin count ni terminador (the era reference).
         SetEntityMotionPacket q;
         q.entities.push_back({1, 1.0f, 0.0f, 0.0f});
         q.entities.push_back({2, 0.0f, 1.0f, 0.0f});
@@ -110,32 +110,32 @@ int main() {
     }
 
     // ================================================================
-    printf("\n[2] Knockback — Living::knockBack() de Genisys\n");
+    printf("\n[2] Knockback — Living::knockBack() de the era reference\n");
     {
         // Atacante en el origen, victima 1 bloque al este: el empujon va
         // hacia +X y hacia arriba.
-        Motion m = genisysKnockBack(0, 0, 0, 1, 0, 0, 0);
+        Motion m = eraKnockBack(0, 0, 0, 1, 0, 0, 0);
         check(std::fabs(m.x - 0.4) < 1e-9, "victima al este recibe empujon +0.4 en X");
         check(std::fabs(m.z - 0.0) < 1e-9, "sin componente en Z");
         check(std::fabs(m.y - 0.4) < 1e-9, "y sube exactamente +base (0.4)");
 
         // Diagonal: normalizado, magnitud 0.4 en el plano XZ.
-        Motion d = genisysKnockBack(0, 0, 0, 1, 1, 0, 0);
+        Motion d = eraKnockBack(0, 0, 0, 1, 1, 0, 0);
         double s = std::sqrt(d.x * d.x + d.z * d.z);
         check(std::fabs(s - 0.4) < 1e-9, "diagonal: magnitud del empujon = 0.4");
         check(std::fabs(d.x - 0.4 / std::sqrt(2.0)) < 1e-9, "diagonal reparte en X");
         check(std::fabs(d.z - 0.4 / std::sqrt(2.0)) < 1e-9, "diagonal reparte en Z");
 
         // Motion previo mitigado a la mitad.
-        Motion p = genisysKnockBack(1.0, 0, 0, 1, 0, 0, 0);
+        Motion p = eraKnockBack(1.0, 0, 0, 1, 0, 0, 0);
         check(std::fabs(p.x - (0.5 + 0.4)) < 1e-9, "motion previo se amortigua a la mitad (0.5)");
 
         // Tope vertical: my nunca supera base.
-        Motion c = genisysKnockBack(0, 5.0, 0, 1, 0, 0, 0);
+        Motion c = eraKnockBack(0, 5.0, 0, 1, 0, 0, 0);
         check(std::fabs(c.y - 0.4) < 1e-9, "el tope vertical limita y a base");
 
-        // Distancia cero -> no hay empujon (Genisys: if($f <= 0) return).
-        Motion z = genisysKnockBack(0, 0, 0, 0, 0, 0, 0);
+        // Distancia cero -> no hay empujon (the era reference: if($f <= 0) return).
+        Motion z = eraKnockBack(0, 0, 0, 0, 0, 0, 0);
         check(std::fabs(z.x) < 1e-12 && std::fabs(z.y) < 1e-12 && std::fabs(z.z) < 1e-12,
               "distancia cero -> sin empujon");
     }
@@ -150,7 +150,7 @@ int main() {
         std::vector<uint8_t> out; p.encode(out);
         dump("break-action wire:", out);
         check(out.size() == 28, "cuerpo = eid(8) + 5 x int32(20) = 28 bytes");
-        // Genisys encode: putLong(eid) putInt(action) putInt(x) putInt(y) putInt(z) putInt(face)
+        // the era reference encode: putLong(eid) putInt(action) putInt(x) putInt(y) putInt(z) putInt(face)
         check(out[8] == 0 && out[9] == 0 && out[10] == 0 && out[11] == 0,
               "action = ACTION_START_BREAK (0)");
         check(out[12] == 0 && out[13] == 0 && out[14] == 0 && out[15] == 100, "x big-endian");

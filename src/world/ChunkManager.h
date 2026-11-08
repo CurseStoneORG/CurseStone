@@ -152,7 +152,7 @@ class ChunkManager : public generator::INeighborBlockSink {
         return provider_;
     }
     // Set the world generator used to create new chunks when they're
-    // not on disk. Mirrors Nukkit where the generator is queried
+    // not on disk. Mirrors the era reference where the generator is queried
     // for terrain + population.
     void setGenerator(std::shared_ptr<generator::Generator> g) {
         generator_ = std::move(g);

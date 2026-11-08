@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// BaseInventory.cpp — ported from cn.nukkit.inventory.BaseInventory
+// BaseInventory.cpp — ported from the reference server API
 #include "BaseInventory.h"
 #include "InventoryHolder.h"
 #include "../item/ItemStack.h"
@@ -84,7 +84,7 @@ bool BaseInventory::setItem(int index, const item::ItemStack& item) {
     if (item.id == 0 || item.count <= 0)
         return clear(index);
 
-    // (Nukkit fires EntityInventoryChangeEvent here — we skip the event
+    // (the era reference fires EntityInventoryChangeEvent here — we skip the event
     //  layer and just store the item.)
     item::ItemStack old = getItem(index);
     slots_[index] = item;

@@ -33,7 +33,7 @@
 //     Damage  SHORT    aux value (durability for tools/armor)
 //
 // on top of it, the enchantment list, which the client's 2013 loader
-// never had but Bedrock/Genisys always stored:
+// never had but Bedrock/the era reference always stored:
 //
 //     ench    LIST<COMPOUND>  { id SHORT, lvl SHORT }
 //
@@ -60,7 +60,7 @@ constexpr const char* kNbtId = "id";
 constexpr const char* kNbtCount = "Count";
 constexpr const char* kNbtDamage = "Damage";
 constexpr const char* kNbtEnch = "ench";
-// Bedrock/Genisys write the enchantment level as "lvl"; a few Nukkit-era
+// Bedrock/the era reference write the enchantment level as "lvl"; a few the era reference-era
 // writers spell it out as "level". The reader accepts both, the writer
 // always emits "lvl".
 constexpr const char* kNbtEnchLvl = "lvl";
@@ -93,7 +93,7 @@ void enchantmentsFromNbt(const cursestone::nbt::Tag* entry, enchantment::Enchant
 // Builds the little-endian network NBT compound that gives an item a
 // custom visible name on 0.15.10 clients: {display:{Name:"..."}}. The
 // returned blob goes verbatim into ItemStack::nbt; every slot writer
-// prefixes it with its u16 LE length (Genisys putSlot). An empty name
+// prefixes it with its u16 LE length (the era reference putSlot). An empty name
 // yields an empty blob (an unnamed item has no NBT at all).
 std::string buildDisplayNbt(const std::string& name);
 

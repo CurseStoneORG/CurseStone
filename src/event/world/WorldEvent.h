@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// WorldEvent.h — ported from cn.nukkit.event.level.LevelEvent
+// WorldEvent.h — ported from the reference server API
 //
 // Base class for all world-related events. Holds a reference to the
 // world the event occurred in.

@@ -24,7 +24,7 @@
 // CraftingEventPacket — client->server "the player crafted this" (MCPE
 // protocol 84).
 //
-// Formato p84 verificado contra the reference implementation + Nukkit 2016 —
+// Formato p84 verificado contra the reference implementation + the 2016-era reference server —
 // getInt BE y slots de shorts BE (NO varints, NO putString):
 //   getByte()      windowId
 //   getInt(BE)     type
@@ -33,7 +33,7 @@
 //   getInt(BE) size; getSlot() x size    (input, max 128)
 //   getInt(BE) size; getSlot() x size    (output, max 128)
 //
-// The server NEVER encodes this packet (Genisys encode() is empty) —
+// The server NEVER encodes this packet (the era reference encode() is empty) —
 // el flujo se cierra con ContainerSetContentPacket windowid=0.
 #pragma once
 

@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// EntityEvent.h — ported from cn.nukkit.event.entity.EntityEvent
+// EntityEvent.h — ported from the reference server API
 #pragma once
 #include "../Event.h"
 namespace cursestone {

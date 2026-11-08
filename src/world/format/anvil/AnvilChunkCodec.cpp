@@ -21,10 +21,10 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// AnvilChunkCodec.cpp — encodes/decodes mcp_chunk_t* to/from Nukkit
+// AnvilChunkCodec.cpp — encodes/decodes mcp_chunk_t* to/from the era reference
 // Anvil chunk NBT (big-endian, Sections list based).
 //
-// Mirrors cn.nukkit.level.format.anvil.Chunk.toBinary / fromBinary
+// Mirrors the reference server API / fromBinary
 // (minus the ZLIB step, which is handled by AnvilRegionLoader).
 #include "AnvilChunkCodec.h"
 #include "world/format/ChunkSection.h"
@@ -94,7 +94,7 @@ std::vector<uint8_t> anvil_chunk_encode(const mcp_chunk_t* chunk) {
         const mcp_chunk_section_t* s = chunk->sections ? chunk->sections[sy] : NULL;
         if (!s)
             continue;
-        // Skip fully-empty sections (matching Nukkit's EmptyChunkSection handling).
+        // Skip fully-empty sections (matching the reference server's EmptyChunkSection handling).
         bool has_blocks = false;
         if (s->blocks) {
             for (size_t i = 0; i < 4096; ++i) {
@@ -172,7 +172,7 @@ std::vector<uint8_t> anvil_chunk_encode(const mcp_chunk_t* chunk) {
         free(hm);
     }
 
-    // ExtraData: empty (Nukkit format: var-int count + entries; we
+    // ExtraData: empty (the era reference format: var-int count + entries; we
     // store a zero-length int array which decoders treat as "no extras").
     {
         int32_t zero = 0;

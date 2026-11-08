@@ -922,8 +922,7 @@ void Player::respawn() {
     // Reset state for the new life.
     air_ticks_ = 300;
     fall_distance_ = 0.0f;
-    was_on_fire_ = false;
-    fire_ticks_ = 0;
+    extinguishFire(); // Drop any residual burn and its overlay flag.
     was_in_lava_ = false;
     starve_ticks_ = 0;
 
@@ -1134,8 +1133,7 @@ void Player::onDeath() {
     }
 
     // Reset state after death.
-    was_on_fire_ = false;
-    fire_ticks_ = 0;
+    extinguishFire(); // Drop the on-fire overlay flag from every client.
     was_in_lava_ = false;
     fall_distance_ = 0.0f;
     food_saturation_ = 5.0f;

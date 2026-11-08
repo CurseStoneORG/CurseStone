@@ -23,11 +23,11 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // AnvilRegionLoader.h — single .mca region file (32x32 chunks).
 //
-// Ported from Nukkit's
-// `cn.nukkit.level.format.anvil.RegionLoader` and
-// `cn.nukkit.level.format.generic.BaseRegionLoader` to C++.
+// Ported from the reference server's
+// `the reference server API` and
+// `the reference server API` to C++.
 //
-// File layout (vanilla Minecraft Java / Nukkit Anvil):
+// File layout (vanilla Minecraft Java / the era reference Anvil):
 //   [   0 .. 4095]  Location table  — 1024 entries × 4 bytes BE
 //                   Each entry: (sectorOffset << 8) | sectorCount
 //                   offset == 0  → chunk not present
@@ -35,7 +35,7 @@
 //                   Unix-seconds of last write per chunk slot.
 //   [8192 ..]       Chunk sectors (each 4096 bytes).
 //                   Each chunk: [4-byte length BE][1-byte compression][payload]
-//                   compression: 1 = GZIP, 2 = ZLIB (Nukkit always writes ZLIB).
+//                   compression: 1 = GZIP, 2 = ZLIB (the era reference always writes ZLIB).
 //
 // The chunk-slot index inside a region for a local (lx, lz) is
 //   index = lx + (lz << 5)   (= z * 32 + x).

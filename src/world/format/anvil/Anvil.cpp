@@ -21,12 +21,12 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Anvil.cpp — Nukkit Anvil WorldProvider ported to CurseStone C++.
+// Anvil.cpp — the era reference Anvil WorldProvider ported to CurseStone C++.
 //
 // Wires together AnvilRegionLoader (the .mca file codec) and
 // AnvilChunkCodec (the per-chunk NBT codec) behind CurseStone's
 // WorldProvider interface. level.dat is GZIP-compressed big-endian NBT
-// matching Nukkit's Anvil.generate() output.
+// matching the reference server's Anvil.generate() output.
 #include "Anvil.h"
 #include "AnvilChunkCodec.h"
 #include "../WorldProviderManager.h"
@@ -264,7 +264,7 @@ void Anvil::init(const std::string& path) {
     ensure_dir(path_ + "/region");
 
     // If level.dat is missing, write a fresh one with defaults (mirrors
-    // Nukkit's Anvil.generate()).
+    // the reference server's Anvil.generate()).
     std::string level_dat = path_ + "/level.dat";
     FILE* fp = std::fopen(level_dat.c_str(), "rb");
     if (!fp) {
@@ -592,7 +592,7 @@ std::vector<std::pair<int32_t, int32_t>> Anvil::listChunks() const {
 }
 
 // ============================================================================
-// level.dat — Nukkit-style "Data" compound, GZIP, big-endian.
+// level.dat — the era reference-style "Data" compound, GZIP, big-endian.
 // ============================================================================
 void Anvil::loadMetadata() {
     std::string p = path_ + "/level.dat";
@@ -638,7 +638,7 @@ void Anvil::saveMetadata() {
     if (!root)
         return;
 
-    // Build "Data" compound (mirrors Nukkit's Anvil.generate()).
+    // Build "Data" compound (mirrors the reference server's Anvil.generate()).
     utils::TagGuard data(new cursestone::nbt::CompoundTag("Data"));
     if (!data)
         return;

@@ -55,10 +55,10 @@ namespace cursestone {
 // sounds. The 0.15.10 client animates the chest block (and plays the
 // wooden-open/wooden-close sounds locally) ONLY off a BlockEventPacket
 // aimed at the chest's block coordinates, and ONLY for the payload the
-// era reference servers put on the wire (PocketMine-MP/Genisys,
-// Nukkit, ClearSky — the software that drove real 0.15.10 clients):
+// era reference servers put on the wire (the era reference,
+// the 0.15-era server software):
 //   case1 = 1   ALWAYS — the chest-lid event id ("it's always 1 for a
-//               chest", PocketMine-MP ChestInventory)
+//               chest", the era reference ChestInventory)
 //   case2 = 2   lid UP   (open animation + open sound)
 //   case2 = 0   lid DOWN (close animation + close sound)
 // Anything else is not a chest event and the client drops it — the
@@ -171,7 +171,7 @@ void Player::openChestAt(int x, int y, int z) {
     open_double_ = doubleInv;
     openContainerWindow(); // sets container_window_id_ for every packet below
 
-    // Reference open flow (PocketMine-MP 1.6.2, ContainerInventory::onOpen,
+    // Reference open flow (the era reference 1.6.2, ContainerInventory::onOpen,
     // the server software that drove real 0.15.10 clients): ContainerOpen
     // followed by the content dump — nothing else in the batch. The tile
     // NBT is NOT re-sent here: it already reached this client through the
@@ -370,7 +370,7 @@ void Player::openFurnaceAt(int x, int y, int z) {
     openContainerWindow(); // sets container_window_id_ for every packet below
 
     // Same reference flow as the chest: ContainerOpen + content dump only
-    // (PocketMine-MP 1.6.2 ContainerInventory::onOpen — the server that
+    // (the era reference 1.6.2 ContainerInventory::onOpen — the server that
     // drove real 0.15.10 clients). The furnace tile NBT already reached
     // this client with the chunk stream (Player::sendChunkTiles) or the
     // place-time spawn (PlayerBlocks) — no BlockEntityData re-send inside
@@ -437,7 +437,7 @@ uint8_t Player::openContainerWindow() {
 }
 
 // ============================================================
-// handleSignEdit — portado of Genisys player::handleDataPacket case
+// handleSignEdit — portado of the era reference player::handleDataPacket case
 // BLOCK_ENTITY_DATA_PACKET (protocolo 84): editing of sign.
 //   - descarta ediciones to more of 100 blocks;
 //   - requires that the tile is a Sign and that the NBT "id" is "Sign";
@@ -477,7 +477,7 @@ void Player::handleSignEdit(network::protocol::BlockEntityDataPacket& pk) {
                                         cursestone::nbt::get_string(root.get(), "Text3", ""),
                                         cursestone::nbt::get_string(root.get(), "Text4", "")};
 
-    // Genisys compares the Creator contra the NBT of the tile of the server
+    // the era reference compares the Creator contra the NBT of the tile of the server
     // (the sign's stored creator), not contra the packet — the client never
     // the Creator takes precedence in its BlockEntityData, so reading it
     // from the packet would cancel every edit (bug). The owner is whoever
@@ -489,7 +489,7 @@ void Player::handleSignEdit(network::protocol::BlockEntityDataPacket& pk) {
     if (creator.empty() || creator != cfg_.uuid)
         ev.setCancelled(true);
     if (ev.isCancelled()) {
-        // Genisys: spawnTo(player) — forwards the NBT current of the sign
+        // the era reference: spawnTo(player) — forwards the NBT current of the sign
         // to the editor to revert the text the client already showed.
         sendBlockEntityData(pk.x, pk.y, pk.z, *sign, this);
         return;
@@ -497,7 +497,7 @@ void Player::handleSignEdit(network::protocol::BlockEntityDataPacket& pk) {
 
     for (int i = 0; i < 4; ++i)
         sign->setLine(i, ev.getLine(i));
-    // Genisys: Sign::setText() termina in spawnToAll() — the sign
+    // the era reference: Sign::setText() termina in spawnToAll() — the sign
     // is respawns to all its viewers so that vean the text new without
     // recargar the chunk.
     sendBlockEntityData(pk.x, pk.y, pk.z, *sign, nullptr);
@@ -506,8 +506,8 @@ void Player::handleSignEdit(network::protocol::BlockEntityDataPacket& pk) {
 // ============================================================
 // sendBlockEntityData — serializa the NBT of a tile and it takes precedence as
 // BlockEntityDataPacket. `only` selecciona a only destinatario
-// (Genisys tile::spawnTo), or all those that trackean the chunk
-// (Genisys tile::spawnToAll). Reutilizable by any block entity.
+// (the era reference tile::spawnTo), or all those that trackean the chunk
+// (the era reference tile::spawnToAll). Reutilizable by any block entity.
 // ============================================================
 void Player::sendBlockEntityData(int32_t x, int32_t y, int32_t z, tile::Tile& t, Player* only) {
     if (!srv_)

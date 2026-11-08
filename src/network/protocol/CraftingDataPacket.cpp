@@ -25,7 +25,7 @@
 //
 // Formato verificado BYTE A BYTE contra el CraftingDataPacket real
 // de the reference implementation (protocolo 84, MCPE 0.15.10), cross-checkeado
-// con Nukkit 2016 (mismo formato de la era) y Genisys para la
+// con the 2016-era reference server (mismo formato de la era) y la referencia de la era para la
 // recipe data orientation (row by row, anchored
 // arriba-izquierda).
 //
@@ -115,11 +115,11 @@ void CraftingDataPacket::encode(std::vector<uint8_t>& out) const {
             putIntBE(bw, rec.width);
             putIntBE(bw, rec.height);
             // Celdas fila-por-fila: z<Height exterior, x<Width
-            // interior (Genisys/reference server). Recipe::grid is
+            // interior (the reference server). Recipe::grid is
             // anchored top-left in row-major order (row*3+col), so the
             // linear index is exactly row*width + col WITHOUT
             // padding — Width x Height celdas exactas. Requirement
-            // por celda = 1 (el "Count: 9" del JSON legacy de Nukkit
+            // por celda = 1 (el "Count: 9" del JSON legacy de la referencia de la era
             // it is a generator artifact; the reference server forces 1 too).
             const auto& grid = rec.grid;
             const auto& meta = rec.gridMeta;

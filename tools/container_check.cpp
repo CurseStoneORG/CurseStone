@@ -15,7 +15,7 @@
 //      the container UI was opened with no furnace block entity behind it.
 //      openChestAt()/openFurnaceAt() now send BlockEntityDataPacket before
 //      the rest of the window, and the window id comes from the same 2..98
-//      range Infinity hands out (the old fixed id 1 is never used by the
+//      range the era reference hands out (the old fixed id 1 is never used by the
 //      reference server).
 //
 //   3. Cooking — TileFurnace::tick() lights fuel, smelts the input through
@@ -391,7 +391,7 @@ static void testCooking() {
     }
 
     // 6e. A cook cycle smelts exactly ONE item (vanilla behaviour, and what
-    //     Infinity's Furnace.php does: the input is decremented by one when
+    //     the reference Furnace.php does: the input is decremented by one when
     //     the progress bar completes), so 4 cobblestone take 4 cycles.
     {
         tile::TileFurnace f(pos, &recipes);
@@ -474,7 +474,7 @@ static void testFlame() {
 }
 
 // ---- 8. container window ids --------------------------------------------
-// Infinity hands container windows out from 2 upward (Player::addWindow:
+// The era reference hands container windows out from 2 upward (Player::addWindow:
 // max(2, ++windowCnt % 99)). CurseStone used to hardcode 1, which the
 // reference server never sends.
 static void testWindowIds() {

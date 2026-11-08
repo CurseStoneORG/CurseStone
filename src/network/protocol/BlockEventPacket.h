@@ -31,7 +31,7 @@
 // (close animation + close sound). Any other case1 is not a chest
 // event and the client drops it. This matches the payload the era
 // reference servers put on the wire for real 0.15.10 clients
-// (Genisys/Nukkit/ClearSky) and later PocketMine-MP versions.
+// (the 0.15-era server software) and later the era reference versions.
 //
 // Wire layout (big-endian, no varints):
 //   [Int BE] x

@@ -92,7 +92,7 @@ static inline mcp_aabb_t mcp_aabb_grow(mcp_aabb_t b, double pad) {
 // "where does this box end up after being pushed by (dx,dy,dz)".
 // ---------------------------------------------------------------------
 
-// `expand` (Genisys AxisAlignedBB::addCoord): grow the box by the
+// `expand` (the era reference AxisAlignedBB::addCoord): grow the box by the
 // offset ON THE SIDE the offset pushes towards, so the result covers
 // BOTH the original box and the box translated by (dx,dy,dz). This is
 // the region a swept move has to look at.
@@ -161,7 +161,7 @@ static inline bool mcp_aabb_contains_strict(mcp_aabb_t b, mcp_vector3_t p) {
 }
 
 // ---- per-axis swept clipping ---------------------------------------
-// calculateXOffset / calculateYOffset / calculateZOffset (Genisys
+// calculateXOffset / calculateYOffset / calculateZOffset (the era reference
 // AxisAlignedBB, what Entity::move() clips with). Given the moving box
 // `b`, one obstacle `c` and the requested displacement along that axis,
 // return the displacement that is actually free: `d` unchanged when the

@@ -5,7 +5,7 @@
 // uses, so the pickup volume can be checked instead of guessed:
 //
 //   * where a dropped item actually comes to rest (integrator port of
-//     pocketmine\entity\Item::onUpdate + Entity::move), and
+//     the era reference\entity\Item::onUpdate + Entity::move), and
 //   * whether the player standing in a given spot is inside the pickup
 //     volume — level::itemWithinPickupVolume() from src/level/Level.h.
 //
@@ -198,7 +198,7 @@ int main() {
 
     // ---- THE NEW REPORTED CASE: item FALLS FROM ABOVE ----------------
     // "rompo un bloque de parte superior mia y el item que cae de arriba
-    // no lo puedo recoger". With the Genisys center-spawn fix the drop
+    // no lo puedo recoger". With the reference server center-spawn fix the drop
     // is born at the CENTER of the broken block (x+0.5, y+0.5, z+0.5)
     // with the default Level::dropItem motion (lcg()*0.2-0.1, 0.2,
     // lcg()*0.2-0.1), falls past the player and must land inside the
@@ -242,7 +242,7 @@ printf("\n-- thrown item (Q) and pile behaviour --\n");
 
     // ---- wire convention --------------------------------------------
     // MCPE 0.15.10's MovePlayerPacket carries the EYE altitude, not the
-    // feet: Genisys' Player::handleMovePlayer does
+    // feet: the era reference's Player::handleMovePlayer does
     //     $newPos = new Vector3($packet->x, $packet->y - getEyeHeight(), ...)
     // and getEyeHeight() is 1.62. Storing the raw wire value in pos_ left
     // the whole feet-based model 1.62 too high, and the pickup volume

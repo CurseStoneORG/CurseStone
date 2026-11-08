@@ -80,7 +80,7 @@ struct ArrowEntity {
     double lmx = 0.0, lmy = 0.0, lmz = 0.0;
     uint64_t spawn_tick = 0;
     uint64_t flight_ticks = 0; // Used to prevent early self-hits.
-    float damage = 2.0f;       // Default Infinity Arrow damage.
+    float damage = 2.0f;       // Default the era reference Arrow damage.
     bool critical = false;     // True for fully charged shots.
     bool stuck = false;        // True after hitting a block.
     bool taken = false;        // True after being claimed for pickup.

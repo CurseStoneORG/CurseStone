@@ -58,27 +58,49 @@
 
 namespace cursestone {
 
-// Broadcasts sneaking and sprinting flags to all clients.
-// The action bit mirrors bow_pose_active_ so a flag refresh sent while the
-// player is drawing a bow or eating never wipes the using-item pose the
-// viewers are supposed to keep seeing.
+// Broadcasts the pose flags byte (sneak/sprint/bow/on-fire/invisible) to
+// every viewer and to the player itself. The flags byte is cached, so a
+// call whose state has not changed since the last broadcast never touches
+// the wire — that keeps the per-tick extinguish paths free of traffic.
+//
+// The self copy carries BOTH ids: the 0.15 client registers the local
+// entity under its real runtime id and resolves SetEntityDataPacket against
+// that registry (the eid 0 alias exists for UpdateAttributes/EntityEvent,
+// not for metadata), so packets addressed to eid 0 are silently dropped and
+// the burning overlay never lights up. Sending the real id is what makes
+// the on-fire overlay appear; the eid 0 alias rides along for clients that
+// special-case it — the exact compatibility pattern of the sleeping
+// metadata (broadcastSleepMetadata).
 void Player::broadcastPoseFlags() {
     if (!srv_)
         return;
-    auto pk = std::make_shared<network::protocol::SetEntityDataPacket>();
-    pk->eid = runtimeId();
-    pk->entries.push_back(
-        makePoseFlagEntry(sneaking_, sprinting_, bow_pose_active_, isOnFire(), invisible_));
 
-    // Send eid=0 to update the local player's pose.
-    {
-        auto self = std::make_shared<network::protocol::SetEntityDataPacket>();
-        self->eid = 0;
-        self->entries.push_back(
-            makePoseFlagEntry(sneaking_, sprinting_, bow_pose_active_, isOnFire(), invisible_));
-        sendPacket(self);
-    }
+    const uint8_t flags =
+        poseFlagByte(sneaking_, sprinting_, bow_pose_active_, isOnFire(), invisible_);
+    if (pose_flags_sent_ && flags == last_sent_pose_flags_)
+        return; // Nothing changed since the last broadcast.
+    pose_flags_sent_ = true;
+    last_sent_pose_flags_ = flags;
 
+    auto build = [flags](int64_t eid) {
+        auto pk = std::make_shared<network::protocol::SetEntityDataPacket>();
+        pk->eid = eid;
+        network::protocol::SetEntityDataPacket::Entry e;
+        e.index = network::protocol::SetEntityDataPacket::PROP_FLAGS;
+        e.type = network::protocol::SetEntityDataPacket::TYPE_BYTE;
+        e.ival = flags;
+        pk->entries.push_back(e);
+        return pk;
+    };
+
+    // Local player: real runtime id (the packet the client actually
+    // applies) plus the eid 0 alias for compatibility.
+    sendPacket(build(runtimeId()));
+    sendPacket(build(0));
+
+    // Remote viewers always resolve the full entity registry, so the
+    // runtime id is the only id they need.
+    auto viewerPk = build(runtimeId());
     for (auto& other : srv_->playersSnapshot()) {
         if (!other || other.get() == this)
             continue;
@@ -86,7 +108,7 @@ void Player::broadcastPoseFlags() {
             continue;
         if (!other->spawned())
             continue;
-        other->sendPacket(pk);
+        other->sendPacket(viewerPk);
     }
 }
 
@@ -489,7 +511,7 @@ void Player::handleInteract(int action, int64_t targetEid) {
     // Death handling already sends the required packets; avoid duplicates.
     // Cancelled attacks produce no damage or knockback.
 
-    // Apply the default Genisys knockback to successful, non-cancelled hits.
+    // Apply the default the era reference knockback to successful, non-cancelled hits.
     // The attacker's gamemode does not matter, only the victim's immunity.
     if (applied != entity::DamageApply::CANCELLED) {
         const double dx = target->position().x - pos_.x;
@@ -497,7 +519,7 @@ void Player::handleInteract(int action, int64_t targetEid) {
         double f = std::sqrt(dx * dx + dz * dz);
         if (f > 1e-6) {
             f = 1.0 / f;
-            constexpr double kBase = 0.4; // Default Genisys knockback strength.
+            constexpr double kBase = 0.4; // Default the era reference knockback strength.
 
             // Halve the victim's current motion before applying knockback.
             double mx = target->motion().x * 0.5;

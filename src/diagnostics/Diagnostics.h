@@ -38,7 +38,7 @@
 //   * server uptime + current tick
 //
 // CrashDump and the non-fatal error reports both render this context, so a
-// crashdump now reads like a Nukkit crash report instead of a lone backtrace.
+// crashdump now reads like a the era reference crash report instead of a lone backtrace.
 //
 // Signal-safety: the render helpers take the mutex with try_lock and never
 // block, so they are safe to call from CurseStone.cpp's SIGSEGV handler. If the

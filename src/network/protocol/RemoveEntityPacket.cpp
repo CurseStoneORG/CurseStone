@@ -22,7 +22,7 @@
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // RemoveEntityPacket.cpp — encode/decode.
-// PMMP: putLong(eid).
+// the reference: putLong(eid).
 #include "RemoveEntityPacket.h"
 
 namespace cursestone::network::protocol {

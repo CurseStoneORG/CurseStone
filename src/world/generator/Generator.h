@@ -21,14 +21,14 @@
  *
  */
 // Generator — abstract world generator interface.
-// Mirrors Nukkit's cn.nukkit.level.generator.Generator: a generator is
+// Mirrors the reference server's the reference server API: a generator is
 // asked to populate a chunk's terrain, biomes and features. Generators
 // run on AsyncPool workers (one chunk at a time), so implementations must
 // be self-contained and stateless w.r.t. the main thread (the seed is
 // the only state).
 //
 // CRITICAL: each generator defines its OWN spawn point via getSpawn().
-// This mirrors Nukkit where Normal returns (127.5, 128, 127.5), Flat
+// This mirrors the era reference where Normal returns (127.5, 128, 127.5), Flat
 // returns (128, floorLevel, 128), and Nether returns (128, 64, 128).
 // The World no longer hardcodes a spawn position — it asks the generator.
 #pragma once
@@ -77,7 +77,7 @@ class Generator {
     virtual void populate(GenerationContext& ctx) = 0;
 
     // Returns the world spawn position for this generator type.
-    // Mirrors Nukkit's Generator.getSpawn() — each generator type
+    // Mirrors the reference server's Generator.getSpawn() — each generator type
     // defines its own spawn (Normal, Flat, Nether all differ).
     // The World calls this on first load to set the spawn point.
     virtual mcp_vector3_t getSpawn() const = 0;

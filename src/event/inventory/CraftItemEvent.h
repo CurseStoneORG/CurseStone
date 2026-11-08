@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// CraftItemEvent.h — ported from cn.nukkit.event.inventory.CraftItemEvent
+// CraftItemEvent.h — ported from the reference server API
 //
 // Se dispara cuando un jugador completa un crafteo (CraftingEventPacket
 // validado, o fallback del close del inventario). Un listener puede

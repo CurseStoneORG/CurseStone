@@ -43,7 +43,7 @@ class Flat : public Generator {
     void generate(GenerationContext& ctx) override;
     void populate(GenerationContext&) override {
     } // flat = no features
-    // Mirrors Nukkit Flat.getSpawn(): (128, floorLevel, 128)
+    // Mirrors the era reference Flat.getSpawn(): (128, floorLevel, 128)
     // floorLevel = sum of all layer counts (y where grass is)
     mcp_vector3_t getSpawn() const override {
         int floor = 0;

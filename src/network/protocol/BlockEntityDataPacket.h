@@ -25,7 +25,7 @@
 // sign (when leaving the text screen). The server also uses it
 // para re-sincronizar el tile.
 //
-// Wire format (protocolo 84, mirrors Genisys BlockEntityDataPacket):
+// Wire format (protocolo 84, mirrors the era reference BlockEntityDataPacket):
 //   [Int BE] x
 //   [Int BE] y
 //   [Int BE] z

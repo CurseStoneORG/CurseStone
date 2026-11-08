@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // UpdateBlockPacket.cpp — encode/decode.
 //
-// Genisys 0.15.0 UpdateBlockPacket::encode:
+// the 0.15.0 reference server UpdateBlockPacket::encode:
 //     putInt(x); putInt(z); putByte(y); putByte(blockId);
 //     putByte((flags << 4) | blockData);   // <-- flags+data, ONE byte
 //
@@ -38,7 +38,7 @@ void UpdateBlockPacket::encode(std::vector<uint8_t>& out) const {
     w.writeI32BE(z);
     w.writeU8(y);
     w.writeU8(blockId);
-    // Genisys: byte = (flags << 4) | blockData — flags in the HIGH nibble,
+    // the era reference: byte = (flags << 4) | blockData — flags in the HIGH nibble,
     // block data in the LOW nibble, both in one byte.
     w.writeU8((uint8_t)(((flags & 0x0F) << 4) | (blockData & 0x0F)));
 }

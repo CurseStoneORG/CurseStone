@@ -23,7 +23,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // UpdateBlockPacket.h — server→client block change broadcast.
 //
-// Wire format (protocol 84) — Genisys 0.15.0 UpdateBlockPacket::encode:
+// Wire format (protocol 84) — the 0.15.0 reference server UpdateBlockPacket::encode:
 //
 //   for each record:
 //       [Int32 BE] x
@@ -50,7 +50,7 @@
 //     nothing useful either, it was simply appended past the fields the
 //     client parses.
 //
-// Flag values themselves follow Genisys, which uses FLAG_ALL_PRIORITY
+// Flag values themselves follow the era reference, which uses FLAG_ALL_PRIORITY
 // (0x0B) for both useBreakOn (Level) and block placement
 // (Level).
 #pragma once
@@ -67,7 +67,7 @@ class UpdateBlockPacket : public DataPacket {
         return UPDATE_BLOCK_PACKET;
     }
 
-    // Flag bits (Genisys UpdateBlockPacket constants).
+    // Flag bits (the era reference UpdateBlockPacket constants).
     static constexpr uint8_t FLAG_NONE = 0b0000;
     static constexpr uint8_t FLAG_NEIGHBORS = 0b0001;
     static constexpr uint8_t FLAG_NETWORK = 0b0010;
@@ -82,7 +82,7 @@ class UpdateBlockPacket : public DataPacket {
     uint8_t blockId = 0;
     // Only the low 4 bits travel on the wire — MCPE block damage is 0..15.
     uint8_t blockData = 0;
-    // Default matches Genisys' break/place path (FLAG_ALL_PRIORITY) so a
+    // Default matches the era reference's break/place path (FLAG_ALL_PRIORITY) so a
     // call site that forgets to set it still produces a visible update.
     uint8_t flags = FLAG_ALL_PRIORITY;
 

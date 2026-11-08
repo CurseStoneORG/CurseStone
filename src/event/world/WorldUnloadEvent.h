@@ -21,7 +21,7 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// WorldUnloadEvent.h — ported from cn.nukkit.event.level.LevelUnloadEvent
+// WorldUnloadEvent.h — ported from the reference server API
 //
 // Fired before a world is unloaded from the server. Cancellable.
 #pragma once
