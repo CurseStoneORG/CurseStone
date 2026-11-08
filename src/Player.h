@@ -729,6 +729,7 @@ class Player : public IPlayer,
     float xp_progress_ = 0.0f;       // 0..1 progress within the level.
     bool moved_this_tick_ = false;   // Movement flag for hunger updates.
     bool sprinting_ = false;         // Client sprint state.
+    int sprint_dust_cd_ = 0;         // Ticks until the next sprint dust burst.
     bool sneaking_ = false;          // Client crouch state.
 
     // --- Sleep state ---

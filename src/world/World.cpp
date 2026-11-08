@@ -979,6 +979,25 @@ void World::addParticle(const particle::Particle& p) {
     }
 }
 
+void World::broadcastBlockParticles(int32_t bx, int32_t by, int32_t bz,
+                                    uint8_t blockId, uint8_t blockData) {
+    auto pk = std::make_shared<network::protocol::LevelEventPacket>();
+    pk->evid = network::protocol::LevelEventPacket::EVENT_PARTICLE_DESTROY;
+    pk->x = (float)bx + 0.5f;
+    pk->y = (float)by + 0.5f;
+    pk->z = (float)bz + 0.5f;
+    // Block packing of protocol 84: id in the low byte, meta in bits 12+.
+    pk->data = ((int32_t)blockId & 0xFF) | ((int32_t)blockData << 12);
+    int32_t cx = bx >> 4, cz = bz >> 4;
+    for (auto& pl : Server::getInstance().playersSnapshot()) {
+        if (!pl || !pl->spawned() || pl->getWorld() != this)
+            continue;
+        if (!pl->canSeeBlock(cx, cz))
+            continue;
+        pl->sendPacket(pk);
+    }
+}
+
 void World::tickArrows(uint64_t current_tick) {
     std::vector<ArrowEntity*> snapshot;
     {

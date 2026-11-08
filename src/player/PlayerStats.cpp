@@ -29,6 +29,7 @@
 #include "network/protocol/EntityEventPacket.h"
 #include "network/protocol/SetEntityDataPacket.h"
 #include "event/entity/EntityDamageEvent.h"
+#include "world/particle/GenericParticle.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -482,7 +483,44 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
     if (isDead())
         return;
 
-    // ---------- 3. Fire, lava, and cactus contact ----------
+    // ---------- 3. Sprint dust ----------
+    // Vanilla kicks up ground particles behind a sprinting player, but the
+    // 0.15.10 client draws none of them on its own — the server has to
+    // send them. Every other tick while the player sprints on solid
+    // ground and actually moves, a silent terrain particle with the
+    // ground block's texture rises at the feet (the generic particle
+    // event, not the break event, so each step stays quiet). The
+    // real-movement gate keeps sprinting against a wall from emitting
+    // anything, and the cooldown bounds the cost to one small packet per
+    // two ticks per sprinting player.
+    if (sprint_dust_cd_ > 0)
+        --sprint_dust_cd_;
+    if (sprinting_ && on_ground_fall_check_ && moved_this_tick_ &&
+        tick_move_dist_ > 0.05f && !in_water && sprint_dust_cd_ == 0) {
+        // Resolve the ground cell the dust copies its texture from: the
+        // feet cell itself when the client's fractional y sinks a hair
+        // into the block it stands on (float rounding), else the cell
+        // directly below — the vanilla "block under the feet" rule.
+        // Water cells never texture the dust.
+        int gy = by;
+        uint8_t ground_id = lvl->getBlockId(bx, gy, bz);
+        if (ground_id == 0 || ground_id == block::WATER ||
+            ground_id == block::FLOWING_WATER) {
+            if (gy > 0)
+                ground_id = lvl->getBlockId(bx, gy - 1, bz);
+        }
+        if (ground_id != 0 && ground_id != block::WATER &&
+            ground_id != block::FLOWING_WATER) {
+            sprint_dust_cd_ = 2;
+            lvl->addParticle(world::particle::GenericParticle(
+                world::particle::PARTICLE_TERRAIN,
+                world::Position(pos_.x, pos_.y + 0.05, pos_.z),
+                (int32_t)(ground_id & 0xFF) |
+                    ((int32_t)lvl->getBlockData(bx, gy, bz) << 12)));
+        }
+    }
+
+    // ---------- 4. Fire, lava, and cactus contact ----------
     if (at == block::LAVA || at == block::FLOWING_LAVA) {
         if (now_ms - last_lava_dmg_ms_ >= 500) {
             last_lava_dmg_ms_ = now_ms;
@@ -526,7 +564,7 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
     if (isDead())
         return;
 
-    // ---------- 4. Hunger ----------
+    // ---------- 5. Hunger ----------
     if (!creative) {
         // Movement exhaustion: sprinting costs 0.1 per meter; swimming costs 0.01.
         if (moved_this_tick_ && tick_move_dist_ > 0.0f) {

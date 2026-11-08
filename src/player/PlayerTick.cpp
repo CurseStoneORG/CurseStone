@@ -175,36 +175,27 @@ void Player::handleMovePlayer(double x, double y, double z, float yaw, float pit
         else
             fall_distance_ = 0.0f; // Reset the baseline while rising.
     } else if (!wasOnGround && fall_distance_ > 3.0f) {
-        // Landing (vanilla Entity::checkFallDamage): a mob that hits a
-        // block after a fall over three blocks broadcasts GROUND_DUST, and
-        // every client draws the dust burst at the entity's feet with the
-        // ground block's texture. The landing cell must not be air (the
-        // feet cell, or the surface directly below it), like the vanilla
-        // onBlock check. The distance itself stays for the hunger/damage
-        // tick, which applies fall damage and clears it.
+        // Hard-landing dust (vanilla Entity::checkFallDamage): a mob that
+        // hits a block after a fall over three blocks throws the ground
+        // block's particle burst at its feet. The GROUND_DUST entity event
+        // used here before is silently ignored by the 0.15.10 client, so
+        // the burst now travels as the protocol-84 break-particle
+        // LevelEvent — the same event block breaking uses, which also
+        // plays the landing thud. The distance itself stays for the
+        // hunger/damage tick, which applies fall damage and clears it.
         auto* lvl = getWorld();
         if (lvl) {
             int bx = (int)std::floor(pos_.x);
-            int by = (int)std::floor(pos_.y);
+            int gy = (int)std::floor(pos_.y);
             int bz = (int)std::floor(pos_.z);
-            uint8_t ground = lvl->getBlockId(bx, by, bz);
-            if (ground == 0 && by > 0)
-                ground = lvl->getBlockId(bx, by - 1, bz);
-            if (ground != 0 && srv_) {
-                auto dust = std::make_shared<network::protocol::EntityEventPacket>();
-                dust->eid = runtimeId();
-                dust->event = network::protocol::EntityEventPacket::GROUND_DUST;
-                int32_t dcx = bx >> 4, dcz = bz >> 4;
-                for (auto& other : srv_->playersSnapshot()) {
-                    if (!other || !other->spawned())
-                        continue;
-                    if (other->getWorld() != lvl)
-                        continue;
-                    if (!other->canSeeBlock(dcx, dcz))
-                        continue;
-                    other->sendPacket(dust);
-                }
-            }
+            // The landing cell must not be air (the feet cell, or the
+            // surface directly below it), like the vanilla onBlock check.
+            uint8_t ground = lvl->getBlockId(bx, gy, bz);
+            if (ground == 0 && gy > 0)
+                ground = lvl->getBlockId(bx, --gy, bz);
+            if (ground != 0)
+                lvl->broadcastBlockParticles(bx, gy, bz, ground,
+                                             lvl->getBlockData(bx, gy, bz));
         }
     }
 
