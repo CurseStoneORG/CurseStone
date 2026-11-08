@@ -1016,6 +1016,15 @@ void Player::respawn() {
 
 // Handle player death.
 void Player::onDeath() {
+    // Vanilla closes the open container on death (the container GUI dies
+    // with the player). Without this the chest/furnace tile keeps its
+    // viewer registered: the lid would stay up for the other viewers and
+    // the NEXT open of that chest would skip its lid-open event (the
+    // viewer count never reached 0), so the chest would animate only
+    // once and then go silent again. Fires InventoryCloseEvent like
+    // every other teardown path.
+    closeOpenChest();
+
     // Vanilla clears potion effects on death (before the death flow so
     // the removal packets reach a still-connected client).
     removeAllEffects();
