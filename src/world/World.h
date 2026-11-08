@@ -306,6 +306,20 @@ class World {
     static constexpr int32_t TIME_SUNRISE = 23000;
     static constexpr int32_t TIME_FULL = 24000;
 
+    // Period between server-side time re-anchors (protocol 84 SetTime
+    // broadcast): 200 ticks = 10 s. The 0.15.10 client binds its clock to
+    // the LAST SetTime it processed, so one lost packet — the login-time
+    // one lands before the client world exists, plus plain network drops —
+    // would otherwise leave the client sky stuck at its day default. The
+    // periodic re-anchor keeps every client glued to server truth and
+    // heals a dropped packet within ten seconds; one small packet per
+    // player per interval.
+    static constexpr uint32_t TIME_RESYNC_INTERVAL = 200;
+
+    // Sends one SetTime re-anchor to every player of this world. Cheap:
+    // returns without touching the wire when nobody is playing here.
+    void broadcastTimeSync();
+
     // Sets the skip-night countdown; non-positive values cancel it.
     void setSleepTicks(int32_t t) {
         sleep_ticks_ = t;
@@ -555,6 +569,9 @@ class World {
 
     // Skip-night countdown; 0 means inactive.
     int32_t sleep_ticks_ = 0;
+
+    // Countdown to the next periodic time re-anchor broadcast.
+    uint32_t time_resync_countdown_ = TIME_RESYNC_INTERVAL;
 
     // Selects a random online player for a lightning strike during thunderstorms.
     void strikeRandomPlayerLightning();

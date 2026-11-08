@@ -535,6 +535,20 @@ void Player::doFirstSpawn() {
         sendPacket(cd);
     }
 
+    // Time re-anchor in the spawn batch. The login-time SetTime (sent
+    // right after StartGame, reference login order) reaches the client
+    // BEFORE its world exists, and the real 0.15.10 client does not bind
+    // its clock to it — every join then started from the client's day
+    // default and the reported "leave at night, rejoin, it is day again".
+    // doFirstSpawn is the moment the world is actually live client-side,
+    // so this is where the clock gets pinned to server truth.
+    if (getWorld()) {
+        auto st = std::make_shared<network::protocol::SetTimePacket>();
+        st->time = getWorld()->time();
+        st->started = true;
+        sendPacket(st);
+    }
+
     // Notify the client that the player spawned.
     {
         auto ps = std::make_shared<network::protocol::PlayStatusPacket>();

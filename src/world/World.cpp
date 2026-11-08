@@ -498,6 +498,12 @@ size_t World::unsavedChunkCount() const {
 
 void World::tick(uint64_t current_tick) {
     advanceTime(1);
+    // Periodic time re-anchor (see TIME_RESYNC_INTERVAL for why the
+    // client needs more than the one login-time SetTime).
+    if (--time_resync_countdown_ == 0) {
+        time_resync_countdown_ = TIME_RESYNC_INTERVAL;
+        broadcastTimeSync();
+    }
     doWeatherTick(current_tick);
     if (sleep_ticks_ > 0 && --sleep_ticks_ <= 0) {
         checkSleep();
@@ -515,6 +521,28 @@ void World::tick(uint64_t current_tick) {
     tickArrows(current_tick);
     tickSplashPotions(current_tick);
     tickFallingBlocks(current_tick);
+}
+
+void World::broadcastTimeSync() {
+    auto players = cursestone::Server::getInstance().playersSnapshot();
+    bool any = false;
+    for (auto& p : players) {
+        if (p && !p->isPendingRemoval() && p->getWorld() == this) {
+            any = true;
+            break;
+        }
+    }
+    if (!any)
+        return; // Empty world: no packet, no allocation.
+
+    auto pk = std::make_shared<network::protocol::SetTimePacket>();
+    pk->time = cfg_.time;
+    pk->started = true;
+    for (auto& p : players) {
+        if (!p || p->isPendingRemoval() || p->getWorld() != this)
+            continue;
+        p->sendPacket(pk);
+    }
 }
 
 void World::checkSleep() {
