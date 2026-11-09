@@ -36,13 +36,17 @@ world:
   generator: "flat"
 """
 
-DEFAULT_PROPS = """motd=PropsMotdFallback
+# The runner passes a random --port, so the properties template keeps the
+# self-booted server and the MOTD ping on the same port.
+DEFAULT_PROPS_TMPL = """motd=PropsMotdFallback
 server-ip=127.0.0.1
-server-port=19199
+server-port={port}
 max-players=5
 view-distance=4
 world-name=world
 """
+
+DEFAULT_PROPS = DEFAULT_PROPS_TMPL.format(port=PORT)
 
 YML_WITH_MOTD = """settings:
   motd: "MiServidor Test 84"
@@ -53,13 +57,15 @@ world:
 """
 
 
-def ping_motd(timeout=6.0, port=PORT):
+def ping_motd(timeout=6.0, port=None):
     """Sends a RakNet unconnected ping and returns the MOTD field of the pong.
 
     This RakLib answers UNCONNECTED_PING id 0x01 (0x09 is CLIENT_CONNECT
     here) with a 0x1c pong: [0x1c][time u64 LE][guid u64 BE][magic 16]
     [rakstring "MCPE;<motd>;84;0.15.10;<online>;<max>"].
     """
+    if port is None:
+        port = PORT  # Resolved late so main()'s --port override applies.
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.settimeout(1.0)
     deadline = time.time() + timeout
@@ -99,7 +105,9 @@ def wait_ready(runtime, proc, timeout=60):
     return False
 
 
-def boot_and_ping(server, runtime, label, port=PORT):
+def boot_and_ping(server, runtime, label, port=None):
+    if port is None:
+        port = PORT  # Resolved late so main()'s --port override applies.
     log = open(os.path.join(runtime, "server.log"), "wb")
     env = dict(os.environ)
     proc = subprocess.Popen([server], cwd=runtime, env=env, stdin=subprocess.PIPE,
@@ -129,9 +137,16 @@ def shutdown(proc):
 
 
 def main():
+    global PORT
     ap = argparse.ArgumentParser()
     ap.add_argument("--server", default="/tmp/cs_build/CurseStone")
+    ap.add_argument("--port", type=int, default=PORT,
+                    help="port for the self-booted servers (the regression "
+                         "runner passes a random one; the fresh-default case "
+                         "stays pinned to the protocol default 19132)")
     args = ap.parse_args()
+    PORT = args.port
+    default_props = DEFAULT_PROPS_TMPL.format(port=PORT)
     if not os.path.exists(args.server):
         print(f"FAIL: server binary not found: {args.server}")
         return 1
@@ -154,7 +169,7 @@ def main():
     # Case 2: yml motd overrides server.properties.
     runtime = tempfile.mkdtemp(prefix="cs_motd_yml_")
     with open(os.path.join(runtime, "server.properties"), "w") as f:
-        f.write(DEFAULT_PROPS)
+        f.write(default_props)
     with open(os.path.join(runtime, "cursestone.yml"), "w") as f:
         f.write(YML_WITH_MOTD)
     proc, name = boot_and_ping(args.server, runtime, "yml override")
@@ -168,7 +183,7 @@ def main():
     # Case 3: no motd key in the yml -> props fallback.
     runtime = tempfile.mkdtemp(prefix="cs_motd_props_")
     with open(os.path.join(runtime, "server.properties"), "w") as f:
-        f.write(DEFAULT_PROPS)
+        f.write(default_props)
     with open(os.path.join(runtime, "cursestone.yml"), "w") as f:
         f.write(DEFAULT_YML_WITHOUT_MOTD)
     proc, name = boot_and_ping(args.server, runtime, "props fallback")

@@ -167,7 +167,8 @@ void Player::setOnFire(int seconds) {
 // Clear the burn timer and drop the on-fire flag from every client (self
 // overlay and remote viewers). Idempotent by construction: broadcastPoseFlags
 // compares the flag byte against the last one sent and skips the wire when
-// nothing changed, so calling this every tick in water costs nothing.
+// nothing changed, and the water rule in tickHungerAndDamage guards the call
+// with fire_ticks_ > 0, so a wading player costs zero extinguish traffic.
 void Player::extinguishFire() {
     was_on_fire_ = false;
     fire_ticks_ = 0;
@@ -446,6 +447,15 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
     int eye_y = (int)std::floor(pos_.y + kEyeHeight); // Player eye height.
     uint8_t eye = lvl->getBlockId(bx, eye_y, bz);
     bool in_water = (eye == block::WATER || eye == block::FLOWING_WATER);
+    // Water touching ANY occupied cell (feet, torso or eyes) is the burn and
+    // fall rule: vanilla kills the fire the moment the body meets water, so
+    // wading into shallow water with dry eyes must extinguish exactly like
+    // diving under. The eye-level `in_water` above stays the drowning-only
+    // rule. Both extra cells were already fetched for the fire checks below,
+    // so the broader rule costs zero additional block lookups.
+    bool touching_water = in_water || at == block::WATER ||
+                          at == block::FLOWING_WATER || body == block::WATER ||
+                          body == block::FLOWING_WATER;
     if (in_water) {
         // Water breathing prevents air loss.
         if (hasEffect(entity::EFF_WATER_BREATHING)) {
@@ -460,9 +470,6 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
             last_drown_dmg_ms_ = now_ms;
             damage(2.0f, event::entity::DamageCause::DROWNING); // One heart per second.
         }
-        // Water extinguishes fire and cancels pending fall damage.
-        extinguishFire();
-        fall_distance_ = 0.0f;
     } else if (air_ticks_ != 300) {
         air_ticks_ = 300; // Restore 15 seconds of air.
         sendAir();
@@ -470,6 +477,16 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
     // Stop processing if drowning killed the player.
     if (isDead())
         return;
+    // Water kills the burn the moment it touches any occupied cell — the
+    // stuck on-fire overlay (flames + smoke the client keeps rendering) and
+    // the fire-tick damage both end on this first wet tick, not when the
+    // 8-second timer runs out. The timer guard keeps the common dry path
+    // call-free; the overlay drop itself is a single deduped flags byte.
+    if (touching_water && fire_ticks_ > 0)
+        extinguishFire();
+    // Any depth of water cancels the pending fall, shallow wading included.
+    if (touching_water)
+        fall_distance_ = 0.0f;
     // Extinguish the player when the burn timer expires.
     if (fire_ticks_ > 0 && --fire_ticks_ == 0)
         extinguishFire();
@@ -529,14 +546,24 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
     }
 
     // ---------- 4. Fire, lava, and cactus contact ----------
-    if (at == block::LAVA || at == block::FLOWING_LAVA) {
+    // Fire and lava contact follows the vanilla AABB rule: every cell the
+    // hitbox overlaps burns. `at` and `body` cover the standing column, and
+    // `eye` covers the top sliver — the cell that only exists when the feet
+    // rest on a fractional y (a wading player at y=3.99 spans cells 3..5,
+    // and a flame at head height above the water sits in the eye cell).
+    if (at == block::LAVA || at == block::FLOWING_LAVA ||
+        eye == block::LAVA || eye == block::FLOWING_LAVA) {
         if (now_ms - last_lava_dmg_ms_ >= 500) {
             last_lava_dmg_ms_ = now_ms;
             if (!creative)
                 damage(4.0f, event::entity::DamageCause::LAVA); // Two hearts.
         }
         was_in_lava_ = true;
-        if (!creative) {
+        if (!creative && !touching_water) {
+            // Water already owned this tick's occupied cells and cleared the
+            // burn; re-lighting here would flip the on-fire flag on and off
+            // every tick (flowing water over a lava pool) instead of one
+            // clean extinguish.
             was_on_fire_ = true;
             setOnFire(8); // Apply eight seconds of burning.
         }
@@ -550,13 +577,17 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
             }
         }
     }
-    if (at == block::FIRE || body == block::FIRE) {
+    if (at == block::FIRE || body == block::FIRE || eye == block::FIRE) {
         if (now_ms - last_fire_dmg_ms_ >= 500) {
             last_fire_dmg_ms_ = now_ms;
             if (!creative)
                 damage(1.0f, event::entity::DamageCause::FIRE);
         }
-        if (!creative) {
+        if (!creative && !touching_water) {
+            // A fire block never shares a cell with the water the player
+            // touches, so this only guards the seam of wading beneath a
+            // fire block: the burn stays off while water holds the cells
+            // (the contact damage above still applies, like vanilla).
             was_on_fire_ = true;
             setOnFire(8); // Apply eight seconds of burning.
         }
