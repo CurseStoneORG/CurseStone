@@ -598,6 +598,10 @@ def main() -> int:
         # ---------------- door break ----------------
         print("stage: door break (both halves)")
         c.events.clear()
+        # Vanilla break speed: a wooden door takes 4.5s by hand; the server
+        # refuses RemoveBlock that arrives without the hold behind it.
+        c.player_action(0, door_x, 4, door_z, 1)   # ACTION_START_BREAK
+        time.sleep(4.8)
         c.remove_block(door_x, 4, door_z)
         c.drain(1.2)
         ups = [e for e in c.events if e[0] == "update_block"]

@@ -304,6 +304,25 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int face) {
         if (d2 > 10000.0 || y < 0 || y >= 256)
             return;
 
+        // Track the earliest un-aborted break start on this block for the
+        // vanilla break-speed validation in handleBlockBreak(): a repeated
+        // START_BREAK for the same cell keeps the original timestamp, a new
+        // cell or an abort restarts the clock.
+        if (action == network::protocol::PlayerActionPacket::ACTION_START_BREAK) {
+            int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                 std::chrono::steady_clock::now().time_since_epoch())
+                                 .count();
+            if (!mining_tracked_ || mining_x_ != x || mining_y_ != y || mining_z_ != z) {
+                mining_tracked_ = true;
+                mining_start_ms_ = now_ms;
+                mining_x_ = x;
+                mining_y_ = y;
+                mining_z_ = z;
+            }
+        } else if (action == network::protocol::PlayerActionPacket::ACTION_ABORT_BREAK) {
+            mining_tracked_ = false;
+        }
+
         // Handle fire extinguishing when the player starts punching.
         if (action == network::protocol::PlayerActionPacket::ACTION_START_BREAK && face >= 0 &&
             face < 6) {

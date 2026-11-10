@@ -740,6 +740,16 @@ class Player : public IPlayer,
     int sprint_dust_cd_ = 0;         // Ticks until the next sprint dust burst.
     bool sneaking_ = false;          // Client crouch state.
 
+    // --- Vanilla mining timing ---
+    // Server-side validation of the client's own break progress: the
+    // earliest un-aborted ACTION_START_BREAK for the block being mined.
+    // A repeated START_BREAK for the same position keeps the original
+    // timestamp (clients re-announce while holding); a new position or
+    // ACTION_ABORT_BREAK restarts it. Consumed by handleBlockBreak().
+    int64_t mining_start_ms_ = 0;
+    int32_t mining_x_ = 0, mining_y_ = 0, mining_z_ = 0;
+    bool mining_tracked_ = false;
+
     // --- Sleep state ---
     // Stores the sleeping state and bed head coordinates.
     bool sleeping_ = false;
