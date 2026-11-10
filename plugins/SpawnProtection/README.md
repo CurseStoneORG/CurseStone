@@ -1,7 +1,7 @@
 # SpawnProtection
 
 Protects the spawn area of every world from block breaking and placing
-(CurseStone Lua plugin, API 1.0.2).
+(CurseStone Lua plugin, API 1.0.3).
 
 ## Install
 

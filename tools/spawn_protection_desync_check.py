@@ -64,7 +64,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PLUGIN_SRC = os.path.join(REPO_ROOT, "plugins", "SpawnProtection")
 
 STAGER_DIR = "plugins/SpawnProtStager"
-STAGER_YML = ("name: SpawnProtStager\nmain: src/main.lua\napi: 1.0.2\n"
+STAGER_YML = ("name: SpawnProtStager\nmain: src/main.lua\napi: 1.0.3\n"
               "version: 1.0.0\nauthor: CurseStone\n")
 # Lua table literal for the (dx, dz) offsets: `in_break = {5, 4}, ...`
 CELLS_LUA = ", ".join(f"{k} = {{{v[0]}, {v[1]}}}" for k, v in IN_DX_DZ.items())

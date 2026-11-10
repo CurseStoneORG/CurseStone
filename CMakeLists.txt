@@ -9,22 +9,22 @@
 
  * CurseStone | Open Source Server Software
  *
- * Copyright (C) 2026 CurseStoneTeam
+ * Copyright (C) 2026 CurseStoneORG
  *
- * Developed by CurseStoneTeam.
+ * Developed by CurseStoneORG.
  * Built for an open and extensible Minecraft server ecosystem.
  *
  * Licensed under the GNU Lesser General Public License v3.0 or later.
  * You may study, modify, and redistribute this software under its license.
  *
  * License: https://www.gnu.org/licenses/lgpl-3.0.html
- * Repository: https://github.com/CurseStoneTeam/CurseStone
+ * Repository: https://github.com/CurseStoneORG/CurseStone
  *
  */
 ]]
 
 cmake_minimum_required(VERSION 3.20)
-project(CurseStone VERSION 1.0.2 LANGUAGES C CXX) # C is kept for third_party/lua
+project(CurseStone VERSION 1.0.3 LANGUAGES C CXX) # C is kept for third_party/lua
 
 # ---- Language standards ----
 # C20/C23 (c2x) for RakLib / NBT / Binary / math / chunk data structs.

@@ -2,7 +2,7 @@
 # documentation repository on every push to the source branch.
 #
 # Destination (confirmed by the docs-repo preparation):
-#   repository: CurseStoneTeam/cursestone-docs
+#   repository: CurseStoneORG/doxygen-docs
 #   branch:     main
 #   directory:  api/   <- exclusive directory for generated docs
 #
@@ -16,7 +16,7 @@
 #   - force_orphan: false    never replaces the branch history.
 #
 # Authentication: the repository secret DOCS_REPO_TOKEN must have write
-# access to CurseStoneTeam/cursestone-docs (classic token with `repo`
+# access to CurseStoneORG/doxygen-docs (classic token with `repo`
 # scope, or a fine-grained token with Contents: write on that repository).
 # The token value is only ever referenced as ${{ secrets.DOCS_REPO_TOKEN }}
 # and is passed through the environment; it is never echoed or logged.
@@ -112,13 +112,13 @@ jobs:
             echo "::error::Secret DOCS_REPO_TOKEN is missing or empty."
             exit 1
           fi
-          echo "Publishing CurseStoneTeam/cursestone-docs @ main -> api/"
+          echo "Publishing CurseStoneORG/doxygen-docs @ main -> api/"
 
       - name: Publish HTML to api/ (non-destructive)
         uses: peaceiris/actions-gh-pages@v4
         with:
           personal_token: ${{ secrets.DOCS_REPO_TOKEN }}
-          external_repository: CurseStoneTeam/cursestone-docs
+          external_repository: CurseStoneORG/doxygen-docs
           publish_branch: main
           publish_dir: html
           destination_dir: api
@@ -127,6 +127,6 @@ jobs:
           # branch history.
           keep_files: true
           force_orphan: false
-          user_name: CurseStoneTeam
+          user_name: CurseStoneORG
           user_email: docs@cursestone.example
           commit_message: "docs: update generated Doxygen HTML from ${{ github.sha }}"
