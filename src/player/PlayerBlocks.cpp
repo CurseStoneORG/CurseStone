@@ -101,6 +101,24 @@ static void broadcastBlockChange(cursestone::Server* server, world::World* world
     }
 }
 
+// Sends one block update to a single player. This is the packet a
+// 0.15 client needs whenever it has already PREDICTED a local change
+// that the server refused or rolled back: without it the client keeps
+// rendering its own prediction (the ghost block) until rejoin.
+static void sendSelfBlockUpdate(Player* p, int32_t x, int32_t y, int32_t z,
+                                uint8_t blockId, uint8_t blockData) {
+    if (!p)
+        return;
+    auto ubp = std::make_shared<network::protocol::UpdateBlockPacket>();
+    ubp->x = x;
+    ubp->z = z;
+    ubp->y = (uint8_t)y;
+    ubp->blockId = blockId;
+    ubp->blockData = blockData;
+    ubp->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
+    p->sendPacket(ubp);
+}
+
 // Defined below handlePlayerAction.
 static std::pair<uint16_t, uint16_t> lookupBlockDrop(uint8_t blockId, uint8_t blockData);
 
@@ -263,14 +281,7 @@ void Player::handleBlockBreak(int x, int y, int z) {
             if (!tracked || elapsed < (int64_t)(secs * 1000.0f * 0.65f)) {
                 // Refuse: hand the breaker the real block back and leave
                 // the world untouched.
-                auto restore = std::make_shared<network::protocol::UpdateBlockPacket>();
-                restore->x = x;
-                restore->z = z;
-                restore->y = (uint8_t)y;
-                restore->blockId = blockId;
-                restore->blockData = blockData;
-                restore->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
-                sendPacket(restore);
+                sendSelfBlockUpdate(this, x, y, z, blockId, blockData);
                 if (srv_ && srv_->debugMode()) {
                     utils::MainLogger::get().info(
                         "[BLOCK] refused too-fast break of id=" + std::to_string(blockId) +
@@ -287,8 +298,12 @@ void Player::handleBlockBreak(int x, int y, int z) {
     {
         auto ev = event::EventManager::get().fire<event::block::BlockBreakEvent>(
             this, math::Vector3{(double)x, (double)y, (double)z}, (int)blockId);
-        if (ev.isCancelled())
+        if (ev.isCancelled()) {
+            // The client has already predicted the break locally; hand
+            // the real block back or it keeps rendering the ghost.
+            sendSelfBlockUpdate(this, x, y, z, blockId, blockData);
             return;
+        }
     }
 
     int pairX = 0, pairY = 0, pairZ = 0;
@@ -1107,8 +1122,14 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
             auto ev = event::EventManager::get().fire<event::block::BlockPlaceEvent>(
                 this, math::Vector3{(double)placeX, (double)placeY, (double)placeZ},
                 (int)block::BED_BLOCK);
-            if (ev.isCancelled())
+            if (ev.isCancelled()) {
+                // Both predicted halves go back to the server's truth.
+                resyncUseTarget(this, lvl, x, y, z, face);
+                sendSelfBlockUpdate(this, headX, placeY, headZ,
+                                    lvl->getBlockId(headX, placeY, headZ),
+                                    lvl->getBlockData(headX, placeY, headZ));
                 return;
+            }
         }
 
         mcp_chunk_set_block_full(chB, localXB, placeY, localZB, block::BED_BLOCK,
@@ -1350,8 +1371,13 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
         auto ev = event::EventManager::get().fire<event::block::BlockPlaceEvent>(
             this, math::Vector3{(double)placeX, (double)placeY, (double)placeZ},
             (int)placedBlockId);
-        if (ev.isCancelled())
+        if (ev.isCancelled()) {
+            // Same contract as every vanilla refusal above: the clicked
+            // cell, the target cell and the held stack go back to the
+            // client's truth (it already predicted both changes).
+            resyncUseTarget(this, lvl, x, y, z, face);
             return;
+        }
     }
 
     // Update the chunk with the placed block.
