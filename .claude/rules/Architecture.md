@@ -4,8 +4,8 @@ Everything here was read from sources, build files or CI. Items marked **Unverif
 
 ## 1. Identity and constants
 - MCPE 0.15.x server, protocol 84 only (`CURRENT_PROTOCOL = 84` in `network/protocol/Info.h`; `PROTOCOL_VERSION 84` in `src/CurseStone.h`). LGPL-3.0-or-later.
-- `src/CurseStone.h` (umbrella header): `CURSESTONE_API "1.0.2"`, codename "Obsidian", tick rate 20/s (`CURSESTONE_TICK_MS 50`), `CURSESTONE_LEVELDB` default 0.
-- Version drift: `CMakeLists.txt` says `VERSION 1.0.2` while `CurseStone.h` says `1.0.2`. Do not "fix" one silently; report it.
+- `src/CurseStone.h` (umbrella header): `CURSESTONE_API "1.0.3"`, codename "Obsidian", tick rate 20/s (`CURSESTONE_TICK_MS 50`), `CURSESTONE_LEVELDB` default 0.
+- Version drift: `CMakeLists.txt` says `VERSION 1.0.3` while `CurseStone.h` says `1.0.3`. Do not "fix" one silently; report it.
 - Model: docs say modeled on a 0.15.10 legacy server; `CurseStone.h` says "Inspired by a 4.0.0 legacy server". Both appear; the protocol-84 target is the authoritative one.
 
 ## 2. Build shape (`CMakeLists.txt`)
@@ -45,7 +45,7 @@ Everything here was read from sources, build files or CI. Items marked **Unverif
 - Per-plugin data: `<data>/data_pl/<pluginFolder>/` at the server root, reachable only through the `data.*` API (`PathSafe.h` guards relative paths). `resourcesDir_` is `<plugin>/resources` (plugin-owned, unrelated to the repo-root `resources/`).
 - Lua globals registered in `Bindings*.cpp`: `log`, `server` (including `server.worlds`), `player`, `plugin`, `events`, `commands`, `data`, `import`. Event names exposed to Lua are strings such as `PlayerJoin`, `PlayerQuit`, `PlayerChat`, `BlockBreak`, `BlockPlace`, `EntityDamage`, `EntityDamageByEntity`, `PlayerDeath`, `PlayerRespawn`, bed events (list continues in `BindingsEvents.cpp`).
 - Execution limits: every Lua call goes through `LuaPlugin::pcall`. A VM count hook (`LuaPlugin::checkLimits`) enforces `settings.plugin-instruction-limit` and `settings.plugin-time-limit-ms` per outermost call and keeps raising until that call ends, so a Lua-side `pcall` cannot swallow it. `settings.plugin-max-errors` consecutive failed outermost calls refuse further calls and disable the plugin on the next tick. Limits are read once in `Server::loadConfig`; C functions such as `string.rep` are not interruptible by the hook.
-- Any change to a Lua binding is a public API change; the external docs live in `CurseStoneTeam/cursestone-docs`.
+- Any change to a Lua binding is a public API change; the external docs live in `CurseStoneORG/doxygen-docs`.
 
 ## 7. Configuration
 - Read from the working directory by `Server::loadConfig()`; defaults live in `utils/DefaultConfig.cpp` and are written when files are missing.

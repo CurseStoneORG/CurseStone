@@ -73,7 +73,7 @@ INSIDE_WETFIRE = (WETFIRE[0] + 0.5, WETFIRE[1] - 1 + 1.63, WETFIRE[2] + 0.5)
 # server turns into feet y=3.9999 and every cell read slips one block low.
 
 PLUGIN_DIR = "plugins/WaterExtinguish"
-PLUGIN_YML = ("name: WaterExtinguish\nmain: src/main.lua\napi: 1.0.2\n"
+PLUGIN_YML = ("name: WaterExtinguish\nmain: src/main.lua\napi: 1.0.3\n"
               "version: 1.0.0\nauthor: CurseStone\n")
 PLUGIN_LUA = '''local plugin = {}
 local joined = false

@@ -5,7 +5,7 @@
 \____/\ |_| | '__/ __|/ _ \`--. \ __/ _ \| '_ \ / _ \
  * CurseStone | Open Source Server Software
  *
- * Copyright (C) 2026 CurseStoneTeam
+ * Copyright (C) 2026 CurseStoneORG
  *
  * Licensed under the GNU Lesser General Public License v3.0 or later.
  * License: https://www.gnu.org/licenses/lgpl-3.0.html

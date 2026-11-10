@@ -65,7 +65,7 @@ DIAMOND = (135, 4, 135)   # stage 5: stone pick (tier too low)
 BOT_SPOT = (133.5, 5.62, 133.5)   # within reach of every staged cell
 
 PLUGIN_DIR = "plugins/VanillaMining"
-PLUGIN_YML = ("name: VanillaMining\nmain: src/main.lua\napi: 1.0.2\n"
+PLUGIN_YML = ("name: VanillaMining\nmain: src/main.lua\napi: 1.0.3\n"
               "version: 1.0.0\nauthor: CurseStone\n")
 PLUGIN_LUA = '''local plugin = {}
 local joined = false

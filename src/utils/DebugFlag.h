@@ -1,9 +1,9 @@
 #pragma once
 /*
  * CurseStone | Open Source Server Software
- * Copyright (C) 2026 CurseStoneTeam
+ * Copyright (C) 2026 CurseStoneORG
  * Licensed under the GNU Lesser General Public License v3.0 or later.
- * Repository: https://github.com/CurseStoneTeam/CurseStone
+ * Repository: https://github.com/CurseStoneORG/CurseStone
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later

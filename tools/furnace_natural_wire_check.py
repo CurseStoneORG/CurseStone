@@ -47,7 +47,7 @@ HOME = (128, 6, 128)
 FAR = (300, 6, 300)
 
 PLUGIN_DIR = "plugins/FurnNat"
-PLUGIN_YML = ("name: FurnNat\nmain: src/main.lua\napi: 1.0.2\n"
+PLUGIN_YML = ("name: FurnNat\nmain: src/main.lua\napi: 1.0.3\n"
               "version: 1.0.0\nauthor: CurseStone\n")
 PLUGIN_LUA = '''local plugin = {}
 local joined = false

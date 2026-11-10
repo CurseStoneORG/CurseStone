@@ -45,7 +45,7 @@ CHEST_X, CHEST_Z = 134, 134
 LOCKED_SLOT = 13
 
 PLUGIN_DIR = "plugins/ChestUiTest"
-PLUGIN_YML = ("name: ChestUiTest\nmain: src/main.lua\napi: 1.0.2\n"
+PLUGIN_YML = ("name: ChestUiTest\nmain: src/main.lua\napi: 1.0.3\n"
               "version: 1.0.0\nauthor: CurseStone\n")
 PLUGIN_LUA = '''local plugin = {}
 

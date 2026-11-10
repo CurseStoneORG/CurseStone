@@ -56,7 +56,7 @@ STONE_POS = (140, 4, 140)
 HOME = (128, 6, 128)
 
 PLUGIN_DIR = "plugins/HeldOpen"
-PLUGIN_YML = ("name: HeldOpen\nmain: src/main.lua\napi: 1.0.2\n"
+PLUGIN_YML = ("name: HeldOpen\nmain: src/main.lua\napi: 1.0.3\n"
               "version: 1.0.0\nauthor: CurseStone\n")
 PLUGIN_LUA = '''local plugin = {}
 local joined = false

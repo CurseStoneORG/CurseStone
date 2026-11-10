@@ -218,7 +218,7 @@ If you find a security problem, do not post it publicly: contact the maintainers
 
 ## 10. Plugins
 
-Documentation for the Lua plugin system lives in its own repository: <https://github.com/CurseStoneTeam/cursestone-docs>.
+Documentation for the Lua plugin system lives in its own repository: <https://github.com/CurseStoneORG/doxygen-docs>.
 
 ---
 
