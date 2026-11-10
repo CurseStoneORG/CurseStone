@@ -32,6 +32,7 @@
 #include "item/ItemConstants.h"
 #include "item/ItemFlintSteel.h"
 #include "block/BlockIds.h"
+#include "block/BlockMining.h"
 #include "block/BlockOrientation.h"
 #include "block/Block.h"
 #include "block/LiquidFlow.h"
@@ -47,6 +48,7 @@
 #include "utils/TextColor.h"
 #include "utils/MainLogger.hpp"
 #include <cmath>
+#include <chrono>
 #include <utility>
 
 namespace cursestone {
@@ -236,6 +238,49 @@ void Player::handleBlockBreak(int x, int y, int z) {
             }
         }
         return;
+    }
+
+    // Vanilla mining rules: creative mode breaks free; survival must
+    // have spent the vanilla break time on THIS block (tracked from the
+    // client's ACTION_START_BREAK) before the removal is accepted. The
+    // 0.15 client computes its own progress, the server only validates
+    // it — with a tolerance for packet/loopback jitter — and restores
+    // the real block when a removal arrives too fast.
+    const bool creative = (cfg_.gamemode & 1) != 0;
+    item::ItemStack held{};
+    if (inv_)
+        held = inv_->getHeldItem();
+    if (!creative) {
+        const float secs = block::breakSeconds((uint8_t)blockId, held);
+        if (secs >= 0.5f) {
+            int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                 std::chrono::steady_clock::now().time_since_epoch())
+                                 .count();
+            const bool tracked =
+                mining_tracked_ && mining_x_ == x && mining_y_ == y && mining_z_ == z;
+            mining_tracked_ = false;
+            const int64_t elapsed = tracked ? now_ms - mining_start_ms_ : 0;
+            if (!tracked || elapsed < (int64_t)(secs * 1000.0f * 0.65f)) {
+                // Refuse: hand the breaker the real block back and leave
+                // the world untouched.
+                auto restore = std::make_shared<network::protocol::UpdateBlockPacket>();
+                restore->x = x;
+                restore->z = z;
+                restore->y = (uint8_t)y;
+                restore->blockId = blockId;
+                restore->blockData = blockData;
+                restore->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
+                sendPacket(restore);
+                if (srv_ && srv_->debugMode()) {
+                    utils::MainLogger::get().info(
+                        "[BLOCK] refused too-fast break of id=" + std::to_string(blockId) +
+                        " at " + std::to_string(x) + "," + std::to_string(y) + "," +
+                        std::to_string(z) + " (held " + std::to_string(elapsed) +
+                        "ms, vanilla " + std::to_string((int)(secs * 1000.0f)) + "ms)");
+                }
+                return;
+            }
+        }
     }
 
     // Allow plugins to cancel block breaking.
@@ -478,7 +523,6 @@ void Player::handleBlockBreak(int x, int y, int z) {
     }
 
     // Drop items unless the player is in creative mode.
-    bool creative = (cfg_.gamemode & 1) != 0;
     if (!creative) {
         // Apply block-breaking exhaustion.
         addExhaustion(0.025f);
@@ -492,7 +536,9 @@ void Player::handleBlockBreak(int x, int y, int z) {
             // Use the item ID for doors and beds.
             auto drop = (forcedDropId != 0) ? std::make_pair(forcedDropId, forcedDropMeta)
                                             : lookupBlockDrop(blockId, blockData);
-            if (drop.first != 0) {
+            // Vanilla harvest rule: tool-gated blocks only yield their
+            // drop when the held tool reaches the required tier.
+            if (drop.first != 0 && block::canHarvest((uint8_t)blockId, held)) {
                 dropItem(x + 0.5, y + 0.5, z + 0.5, drop.first, 1, drop.second);
             }
         }
@@ -1442,12 +1488,8 @@ static std::pair<uint16_t, uint16_t> lookupBlockDrop(uint8_t blockId, uint8_t bl
         return {4, blockData & 0x07}; // Stone drops cobblestone.
     case 2:
         return {3, 0}; // Grass drops dirt.
-    case 15:
-        return {0, 0}; // Iron ore requires smelting.
     case 16:
         return {263, 0}; // Coal ore drops coal.
-    case 14:
-        return {0, 0}; // Gold ore requires smelting.
     case 21:
         return {351, 4}; // Lapis ore drops lapis lazuli.
     case 56:
