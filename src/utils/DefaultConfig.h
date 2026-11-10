@@ -42,14 +42,23 @@ extern const char* const kDefaultServerProperties;
 extern const char* const kDefaultCursestoneYml;
 
 /**
- * @brief Creates `dataPath` and any missing config file from the defaults.
+ * @brief Creates `dataPath` and both config files from the built-in defaults.
  *
- * Existing files are never overwritten.
+ * server.properties is completed in place: an existing file keeps its
+ * values, comments and keys CurseStone does not manage (panel defaults),
+ * options missing from it are appended with their defaults, and a file
+ * without any property line (empty or comments only) is replaced by the
+ * default template. Hosts such as Pterodactyl ship stub files that would
+ * otherwise never grow the options the server adds over time. A file that
+ * already carries every option is left untouched. cursestone.yml is
+ * created only when missing.
  *
  * @param dataPath  server data directory.
- * @param created   optional; receives the names of the files written.
+ * @param created   optional; receives the names of the files written from scratch.
+ * @param completed optional; receives the names of the existing files completed.
  * @return true if both config files exist when the call returns.
  */
-bool writeDefaultConfigs(const std::string& dataPath, std::vector<std::string>* created = nullptr);
+bool writeDefaultConfigs(const std::string& dataPath, std::vector<std::string>* created = nullptr,
+                         std::vector<std::string>* completed = nullptr);
 
 } // namespace cursestone::utils
