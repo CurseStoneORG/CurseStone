@@ -24,8 +24,13 @@
 // Default configuration templates and file initialization.
 #include "DefaultConfig.h"
 
+#include <cctype>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
+#include <sstream>
+#include <unordered_set>
+#include <utility>
 
 namespace cursestone::utils {
 
@@ -95,14 +100,140 @@ bool seedFile(const std::filesystem::path& path, const char* content,
     return true;
 }
 
+// Splits one "key=value" line the way Config::loadIni reads them: leading
+// whitespace skipped, comments and [sections] rejected, key trimmed on the
+// right. Returns false for anything that is not a property line.
+bool splitPropertyLine(const std::string& line, std::string& key) {
+    const size_t start = line.find_first_not_of(" \t");
+    if (start == std::string::npos)
+        return false;
+    const char c = line[start];
+    if (c == '#' || c == ';' || c == '[')
+        return false;
+    const size_t eq = line.find('=', start);
+    if (eq == std::string::npos)
+        return false;
+    key = line.substr(start, eq - start);
+    while (!key.empty() && std::isspace((unsigned char)key.back()))
+        key.pop_back();
+    return !key.empty();
+}
+
+// The ordered key=default pairs of the canonical template: the template
+// stays the single source of truth for both creation and completion.
+std::vector<std::pair<std::string, std::string>> defaultProperties() {
+    std::vector<std::pair<std::string, std::string>> out;
+    std::istringstream in(kDefaultServerProperties);
+    std::string line;
+    while (std::getline(in, line)) {
+        std::string key;
+        if (!splitPropertyLine(line, key))
+            continue;
+        out.emplace_back(std::move(key), line.substr(line.find('=') + 1));
+    }
+    return out;
+}
+
+// Completes an existing server.properties so every option the server reads
+// is present: values, comments and keys CurseStone does not manage (panel
+// defaults) are preserved, options missing from the file are appended with
+// their defaults. A file without any property line (empty or comments only)
+// is replaced by the default template. A file that already carries every
+// option is left byte-for-byte untouched.
+bool completeServerProperties(const std::filesystem::path& path, bool* completed) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in.is_open())
+        return false;
+    const std::string content((std::istreambuf_iterator<char>(in)),
+                              std::istreambuf_iterator<char>());
+    in.close();
+
+    const std::vector<std::pair<std::string, std::string>> defaults = defaultProperties();
+
+    std::unordered_set<std::string> present;
+    present.reserve(defaults.size() * 2);
+    bool hasProperties = false;
+    size_t begin = 0;
+    while (begin <= content.size()) {
+        const size_t end = content.find('\n', begin);
+        const size_t stop = (end == std::string::npos) ? content.size() : end;
+        std::string line = content.substr(begin, stop - begin);
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+        std::string key;
+        if (splitPropertyLine(line, key)) {
+            hasProperties = true;
+            present.insert(std::move(key));
+        }
+        if (end == std::string::npos)
+            break;
+        begin = end + 1;
+    }
+
+    // Match the file's own line endings so panel-managed files diff clean.
+    const char* eol = (content.find("\r\n") != std::string::npos) ? "\r\n" : "\n";
+
+    std::string updated;
+    if (!hasProperties) {
+        // Empty or comment-only file: the default template replaces it.
+        updated.assign(kDefaultServerProperties);
+    } else {
+        std::string additions;
+        for (const auto& kv : defaults) {
+            if (present.count(kv.first))
+                continue;
+            additions += kv.first;
+            additions += '=';
+            additions += kv.second;
+            additions += eol;
+        }
+        if (additions.empty())
+            return true; // already complete: untouched (no mtime churn)
+        updated.reserve(content.size() + additions.size() + 96);
+        updated += content;
+        if (updated.back() != '\n')
+            updated += eol;
+        updated += eol;
+        updated += "# Added by CurseStone: options that were missing from this file.";
+        updated += eol;
+        updated += additions;
+    }
+
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (!out.is_open())
+        return false;
+    out << updated;
+    out.close();
+    if (out.fail())
+        return false;
+    if (completed)
+        *completed = true;
+    return true;
+}
+
 } // namespace
 
-bool writeDefaultConfigs(const std::string& dataPath, std::vector<std::string>* created) {
+bool writeDefaultConfigs(const std::string& dataPath, std::vector<std::string>* created,
+                         std::vector<std::string>* completed) {
     namespace fs = std::filesystem;
     std::error_code ec;
     fs::create_directories(dataPath, ec);
     const fs::path dir(dataPath);
-    const bool props = seedFile(dir / "server.properties", kDefaultServerProperties, created);
+    const fs::path propsPath = dir / "server.properties";
+
+    // server.properties must always end up complete: hosts (Pterodactyl and
+    // friends) ship stub files with a handful of options, and an empty or
+    // one-line file used to be taken as-is forever.
+    bool propsCompleted = false;
+    bool props = false;
+    if (fs::exists(propsPath, ec)) {
+        props = completeServerProperties(propsPath, &propsCompleted);
+    } else {
+        props = seedFile(propsPath, kDefaultServerProperties, created);
+    }
+    if (props && propsCompleted && completed)
+        completed->push_back(propsPath.filename().string());
+
     const bool yml = seedFile(dir / "cursestone.yml", kDefaultCursestoneYml, created);
     return props && yml;
 }

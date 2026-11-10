@@ -400,13 +400,18 @@ void Server::start(const std::string& dataPath) {
     // Initialize logging before loading configuration.
     initLogger();
 
-    // Create any missing configuration files from built-in defaults.
+    // Create any missing configuration files from built-in defaults and
+    // complete existing ones that lack options (panel stubs, old files).
     std::vector<std::string> created;
-    if (!utils::writeDefaultConfigs(dataPath_, &created)) {
+    std::vector<std::string> completed;
+    if (!utils::writeDefaultConfigs(dataPath_, &created, &completed)) {
         utils::MainLogger::get().warn("Could not create default config files in " + dataPath_);
     }
     for (const auto& name : created) {
         utils::MainLogger::get().info("Created default " + name);
+    }
+    for (const auto& name : completed) {
+        utils::MainLogger::get().info("Completed " + name + " with the missing default options");
     }
 
     utils::MainLogger::get().info("Loading configuration...");
