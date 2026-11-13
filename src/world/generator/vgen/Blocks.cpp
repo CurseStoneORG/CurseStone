@@ -130,6 +130,9 @@ B(mMycelium, 110);
 B(mWaterlily, 111);
 B(mNetherBrick, 112);
 B(mNetherFence, 113);
+B(mNetherBrickStairs, 114);
+B(mNetherWart, 115);
+B(mQuartzOre, 153);
 B(mEnchantingTable, 116);
 B(mCauldron, 118);
 B(mEndStone, 121);
@@ -253,7 +256,8 @@ void Block::initBlocks() {
                 mSoulSand, mGlowStone, mTrapdoor, mIronTrapdoor, mMonsterStoneEgg,
                 mStoneBrick, mBrownMushroomBlock, mRedMushroomBlock, mIronFence,
                 mGlassPane, mMelon, mVine, mMycelium, mWaterlily, mNetherBrick,
-                mNetherFence, mEnchantingTable, mCauldron, mEndStone, mEnderChest,
+                mNetherFence, mNetherBrickStairs, mNetherWart, mQuartzOre,
+                mEnchantingTable, mCauldron, mEndStone, mEnderChest,
                 mEmeraldOre, mTripwireHook, mTripwire, mSandstoneStairs,
                 mSpruceStairs, mAcaciaStairs, mUnpoweredRepeater, mStainedClay,
                 mHardenedClay, mPodzol, mGrassPathBlock, mPackedIce, mWoolCarpet,

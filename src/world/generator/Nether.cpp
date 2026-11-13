@@ -1,7 +1,8 @@
 /*
  _____                     _____ _
 /  __ \                   /  ___| |
-| |   | | | | | '__/ __|/ _ \`--. \ __/ _ \| '_ \ / _ \
+| /  \/_   _ _ __ ___  ___\ `--.| |_ ___  _ __   ___
+| |   | | | | '__/ __|/ _ \`--. \ __/ _ \| '_ \ / _ \
 | \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
  \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
 
@@ -19,169 +20,290 @@
  * Repository: https://github.com/CurseStoneORG/CurseStone
  *
  */
-#include "Nether.h"
+#include "world/generator/Nether.h"
+#include "world/generator/vgen/Blocks.h"
 #include "world/format/Chunk.h"
-#include "world/generator/object/OreGenerator.h"
-#include "block/BlockIds.h"
-#include <algorithm>
-#include <cmath>
+#include "world/format/ChunkSection.h"
+#include <string.h>
 
 namespace cursestone::world::generator {
-namespace {
-using namespace cursestone::block;
 
-// Classic Nether profile at the 0.15.x world height.
-constexpr int kHeight = 128;
-constexpr int kCavernCentre = 64;      // open belt sits around this Y
-constexpr int kLavaLevel = 32;         // still lava fills open space <= this
-constexpr double kDensityOffset = 0.5; // shifts the solid/air threshold
+using vgen::Block;
+using vgen::BlockPos;
+using vgen::BlockVolume;
+using vgen::ChunkPos;
+using vgen::LevelChunk;
 
-// Sparse 3D noise sampling (fast field): evaluate the noise every 4
-// blocks in X/Z and every 8 in Y, then trilinear-interpolate each block.
-constexpr int kStepXZ = 4;
-constexpr int kStepY = 8;
-constexpr int kSamplesXZ = 16 / kStepXZ + 1;    // 5
-constexpr int kSamplesY = kHeight / kStepY + 1; // 17
-
-// Trilinear sample of the sparse field at chunk-local (x, y, z).
-float fieldAt(const float field[kSamplesY][kSamplesXZ][kSamplesXZ], int x, int y, int z) {
-    int gx = x >> 2, gy = y >> 3, gz = z >> 2;
-    float fx = (x & 3) / (float)kStepXZ;
-    float fy = (y & 7) / (float)kStepY;
-    float fz = (z & 3) / (float)kStepXZ;
-    float c00 = field[gy][gx][gz] + (field[gy][gx + 1][gz] - field[gy][gx][gz]) * fx;
-    float c10 = field[gy][gx][gz + 1] + (field[gy][gx + 1][gz + 1] - field[gy][gx][gz + 1]) * fx;
-    float c01 = field[gy + 1][gx][gz] + (field[gy + 1][gx + 1][gz] - field[gy + 1][gx][gz]) * fx;
-    float c11 = field[gy + 1][gx][gz + 1] +
-                (field[gy + 1][gx + 1][gz + 1] - field[gy + 1][gx][gz + 1]) * fx;
-    float c0 = c00 + (c10 - c00) * fz;
-    float c1 = c01 + (c11 - c01) * fz;
-    return c0 + (c1 - c0) * fy;
+// Construction — vanilla HellRandomLevelSource ctor (noise init order
+// matters: every noise ctor draws from the same RNG sequentially).
+static int ensureHellBiomes() {
+	static bool done = false;
+	if (!done) {
+		vgen::Block::initBlocks();
+		vgen::Material::initMaterials();
+		vgen::Biome::initBiomes();
+		done = true;
+	}
+	return 0;
 }
 
-// Deterministic per-chunk random stream shared by both phases.
-int64_t chunkStream(int64_t seed, int32_t cx, int32_t cz) {
-    return (int64_t)0xdeadbeefULL ^ ((int64_t)cx << 8) ^ (int64_t)cz ^ seed;
+Nether::Nether(int64_t seed)
+	: mSeed(seed),
+	  mLevel((ensureHellBiomes(), (vgen::RandomSeed)(uint64_t)seed)),
+	  mBiomeSource((vgen::RandomSeed)(uint64_t)seed, 8 /* Hell */),
+	  mDimension(mLevel, &mBiomeSource),
+	  mSource(mLevel, mDimension, (vgen::RandomSeed)(uint64_t)seed) {
+
+	// The hell dimension keeps its lava sea 32 blocks deep.
+	mDimension._setSeaLevel(32);
 }
 
-// Jagged bedrock shell, vanilla distribution: solid at the outer face,
-// then 4 layers with a decreasing chance of bedrock towards the inside.
-void placeBedrockShell(mcp_chunk_t* c, MersenneRandom& rng, int x, int z) {
-    for (int y = 0; y <= 4; ++y) {
-        if (y == 0 || rng.nextDouble() >= y / 4.0)
-            mcp_chunk_set_block_id(c, x, y, z, BEDROCK);
-    }
-    for (int y = kHeight - 5; y < kHeight; ++y) {
-        if (y == kHeight - 1 || rng.nextDouble() >= (kHeight - 1 - y) / 4.0)
-            mcp_chunk_set_block_id(c, x, y, z, BEDROCK);
-    }
+Nether::~Nether() {
+	std::lock_guard<std::mutex> l(mCacheMutex);
+	mTerrainCache.clear(); // shared_ptr frees chunks with no other users
 }
 
-// Small glowstone cluster hanging under a netherrack ceiling: walks down
-// and sideways from the air cell below the ceiling, filling air only.
-void placeGlowstone(mcp_chunk_t* c, MersenneRandom& rng) {
-    int x = rng.nextInt(16), z = rng.nextInt(16);
-    int ceiling = -1;
-    for (int y = kHeight - 2; y >= kLavaLevel; --y) {
-        if (mcp_chunk_get_block_id(c, x, y, z) == NETHERRACK) {
-            ceiling = y;
-            break;
-        }
-    }
-    if (ceiling < 0)
-        return;
-
-    int blocks = 3 + rng.nextInt(6); // 3..8 glowstone blocks
-    int cx = x, cy = ceiling - 1, cz = z;
-    for (int i = 0; i < blocks * 3 && blocks > 0; ++i) {
-        if (cy < kLavaLevel)
-            break;
-        if (mcp_chunk_get_block_id(c, cx, cy, cz) == AIR) {
-            mcp_chunk_set_block_id(c, cx, cy, cz, GLOWSTONE);
-            --blocks;
-            --cy; // bias downwards (hanging)
-        } else {
-            cx = std::max(0, std::min(15, cx + rng.nextInt(3) - 1));
-            cz = std::max(0, std::min(15, cz + rng.nextInt(3) - 1));
-            if (rng.nextBoolean())
-                --cy;
-        }
-    }
+// Terrain chunk construction (vanilla loadChunk)
+void Nether::generateTerrainInto(LevelChunk& lc, vgen::HellRandomLevelSource::ThreadData& td) {
+	mSource.loadChunk(lc, false);
 }
 
-// Ground fire: a flame resting on netherrack (eternal fire, vanilla).
-void placeGroundFire(mcp_chunk_t* c, MersenneRandom& rng) {
-    int x = rng.nextInt(16), z = rng.nextInt(16);
-    for (int y = 1; y < kHeight - 1; ++y) {
-        if (mcp_chunk_get_block_id(c, x, y, z) != AIR)
-            continue;
-        if (mcp_chunk_get_block_id(c, x, y - 1, z) == NETHERRACK)
-            mcp_chunk_set_block_id(c, x, y, z, FIRE);
-        return;
-    }
+// ITerrainFeed — terrain cache + spill bookkeeping
+std::shared_ptr<vgen::LevelChunk> Nether::acquireTerrain(int cx, int cz) {
+	const int64_t key = ngenKey(cx, cz);
+	{
+		std::lock_guard<std::mutex> l(mCacheMutex);
+		auto it = mTerrainCache.find(key);
+		if (it != mTerrainCache.end()) {
+			it->second.stamp = ++mCacheStamp;
+			return it->second.chunk;
+		}
+	}
+
+	// build outside the lock (noise work is heavy)
+	auto& td = vgen::HellRandomLevelSource::threadData();
+	auto lc = std::make_shared<vgen::LevelChunk>(mLevel, mDimension, ChunkPos(cx, cz));
+	generateTerrainInto(*lc, td);
+
+	std::lock_guard<std::mutex> l(mCacheMutex);
+	auto& e = mTerrainCache[key];
+	if (e.chunk == nullptr) {
+		e.chunk = lc;
+		// stamp FIRST: eviction picks the oldest entry, and a fresh
+		// entry with stamp 0 would evict itself (and hand back a
+		// dangling pointer) the moment the cache overflows
+		e.stamp = ++mCacheStamp;
+		// evict the oldest entries when the cache is full
+		while (mTerrainCache.size() > kTerrainCacheLimit) {
+			auto oldest = mTerrainCache.begin();
+			for (auto it = mTerrainCache.begin(); it != mTerrainCache.end(); ++it) {
+				if (it->second.stamp < oldest->second.stamp)
+					oldest = it;
+			}
+			mTerrainCache.erase(oldest); // freed only with the last user
+		}
+	} else {
+		lc.reset(); // lost a race — another worker cached it first
+		e.stamp = ++mCacheStamp;
+		return e.chunk;
+	}
+	return e.chunk;
 }
-} // namespace
 
-Nether::Nether(int64_t seed) : random_((long)seed), noise_(&random_, 4), seed_(seed) {
+void Nether::commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t id, uint8_t data) {
+	if (mNeighborSink) {
+		mNeighborSink->commitNeighborWrite(cx, cz, index, id, data);
+		return;
+	}
+	// No live-chunk sink wired (offline tools): fall back to the plain
+	// spill queue, which still serves later populations.
+	queueSpill(cx, cz, index, id, data);
 }
 
-Nether::~Nether() = default;
+void Nether::queueSpill(int cx, int cz, uint32_t index, uint8_t id, uint8_t data) {
+	std::lock_guard<std::mutex> l(mSpillMutex);
+	mSpill[ngenKey(cx, cz)].push_back({index, id, data});
+}
 
+void Nether::drainSpills(int cx, int cz, mcp_chunk_t* chunk) {
+	std::vector<SpillEntry> pending;
+	{
+		std::lock_guard<std::mutex> l(mSpillMutex);
+		auto it = mSpill.find(ngenKey(cx, cz));
+		if (it == mSpill.end())
+			return;
+		pending = std::move(it->second);
+		mSpill.erase(it);
+	}
+	if (!chunk)
+		return;
+	for (const SpillEntry& e : pending) {
+		uint32_t y = e.index % 128;
+		uint32_t rest = e.index / 128;
+		uint32_t z = rest % 16;
+		uint32_t x = rest / 16;
+		mcp_chunk_set_block_full(chunk, (int)x, (int)y, (int)z, e.id, e.data);
+	}
+}
+
+void Nether::applySpill(vgen::LevelChunk& center, int cx, int cz) {
+	std::vector<SpillEntry> pending;
+	{
+		std::lock_guard<std::mutex> l(mSpillMutex);
+		auto it = mSpill.find(ngenKey(cx, cz));
+		if (it == mSpill.end())
+			return;
+		pending = std::move(it->second);
+		mSpill.erase(it);
+	}
+	for (const SpillEntry& e : pending) {
+		uint32_t y = e.index % 128;
+		uint32_t rest = e.index / 128;
+		uint32_t z = rest % 16;
+		uint32_t x = rest / 16;
+		vgen::ChunkBlockPos p((uint8_t)x, (vgen::Height)y, (uint8_t)z);
+		center.setBlock(p, vgen::BlockID(e.id));
+		center.setData(p, e.data);
+	}
+}
+
+// Chunk sink plumbing
+// True when every block id of one 16-high section of the virtual volume
+// is air. The virtual layout is y-contiguous per column (stride 128), so
+// a section is 256 runs of 16 bytes.
+static bool hellSectionAllAir(const LevelChunk& lc, int sec) {
+	const int y0 = sec * 16;
+	for (int col = 0; col < 256; ++col) {
+		const vgen::BlockID* run = lc.mBlocks + y0 + col * 128;
+		for (int y = 0; y < 16; ++y) {
+			if (run[y].value != 0)
+				return false;
+		}
+	}
+	return true;
+}
+
+void Nether::copyVirtualToSink(const LevelChunk& src, mcp_chunk_t* dst) {
+	// 0.15 worlds are 128 blocks tall: only sections 0..7 map onto the
+	// virtual volume, and reading past them would alias the next column.
+	for (int sec = 0; sec < 128 / 16; ++sec) {
+		mcp_chunk_section_t* s = dst->sections[sec];
+		if (!s && hellSectionAllAir(src, sec)) {
+			// All air in the virtual volume and nothing allocated in the
+			// sink: writing would only allocate the section to fill it
+			// with the zeros it already reads as. Skip the alloc + writes.
+			continue;
+		}
+		s = mcp_chunk_get_or_alloc_section(dst, (uint8_t)sec);
+		if (!s)
+			continue;
+		for (int yl = 0; yl < 16; ++yl) {
+			int yAbs = sec * 16 + yl;
+			for (int z = 0; z < 16; ++z) {
+				for (int x = 0; x < 16; ++x) {
+					uint32_t vidx = (uint32_t)yAbs + ((uint32_t)z + (uint32_t)x * 16) * 128;
+					uint32_t sidx = mcp_section_block_index(x, yl, z);
+					s->blocks[sidx] = (uint8_t)src.mBlocks[vidx].value;
+					uint8_t v = 0;
+					const vgen::NibblePair& np = src.mData[vidx / 2];
+					v = (vidx % 2 == 0) ? (uint8_t)np.first : (uint8_t)np.second;
+					uint32_t nidx = mcp_section_nibble_index(x, yl, z);
+					uint8_t* arr = s->data;
+					if (!arr)
+						continue;
+					if (nidx & 1)
+						arr[nidx >> 1] = (uint8_t)((arr[nidx >> 1] & 0x0F) | ((v & 0x0F) << 4));
+					else
+						arr[nidx >> 1] = (uint8_t)((arr[nidx >> 1] & 0xF0) | (v & 0x0F));
+				}
+			}
+		}
+	}
+	mcp_chunk_recompute_section_flags(dst);
+	if (!dst->biomes)
+		dst->biomes = (uint8_t*)malloc(256);
+	for (int i = 0; i < 256; ++i) {
+		vgen::Biome* b = src.mBiomes[i];
+		dst->biomes[i] = (uint8_t)(b ? b->mId : 8);
+	}
+}
+
+void Nether::copySinkToVirtual(const mcp_chunk_t* src, LevelChunk& dst) {
+	memset(dst.mBlocks, 0, sizeof(dst.mBlocks));
+	memset(dst.mData, 0, sizeof(dst.mData));
+	// Mirror of copyVirtualToSink: 0.15 chunks are 128 blocks tall, so
+	// only sections 0..7 map onto the virtual 128-high volume.
+	for (int sec = 0; sec < 128 / 16; ++sec) {
+		const mcp_chunk_section_t* s = mcp_chunk_get_section(const_cast<mcp_chunk_t*>(src), (uint8_t)sec);
+		if (!s || !s->blocks)
+			continue;
+		for (int yl = 0; yl < 16; ++yl) {
+			int yAbs = sec * 16 + yl;
+			for (int z = 0; z < 16; ++z) {
+				for (int x = 0; x < 16; ++x) {
+					uint32_t sidx = mcp_section_block_index(x, yl, z);
+					uint8_t id = s->blocks[sidx];
+					uint32_t vidx = (uint32_t)yAbs + ((uint32_t)z + (uint32_t)x * 16) * 128;
+					dst.mBlocks[vidx] = id;
+					uint8_t v = 0;
+					if (s->data) {
+						uint32_t nidx = mcp_section_nibble_index(x, yl, z);
+						uint8_t b = s->data[nidx >> 1];
+						v = (nidx & 1) ? (uint8_t)((b >> 4) & 0x0F) : (uint8_t)(b & 0x0F);
+					}
+					vgen::NibblePair& np = dst.mData[vidx / 2];
+					if (vidx % 2 == 0)
+						np.first = (uint8_t)(v & 0x0F);
+					else
+						np.second = (uint8_t)(v & 0x0F);
+				}
+			}
+		}
+	}
+	if (src->biomes) {
+		for (int i = 0; i < 256; ++i) {
+			vgen::Biome* b = vgen::Biome::getBiome((int)src->biomes[i]);
+			dst.mBiomes[i] = b;
+		}
+	} else {
+		vgen::Biome* def = vgen::Biome::getBiome(8);
+		for (int i = 0; i < 256; ++i)
+			dst.mBiomes[i] = def;
+	}
+	dst.recalcHeightmap();
+}
+
+// Generator interface
 void Nether::generate(GenerationContext& ctx) {
-    mcp_chunk_t* c = ctx.chunk;
+	mcp_chunk_t* sink = ctx.chunk;
+	if (!sink)
+		return;
 
-    // Sparse density samples in world coordinates (64-block wavelength).
-    float field[kSamplesY][kSamplesXZ][kSamplesXZ];
-    for (int sy = 0; sy < kSamplesY; ++sy)
-        for (int sx = 0; sx < kSamplesXZ; ++sx)
-            for (int sz = 0; sz < kSamplesXZ; ++sz)
-                field[sy][sx][sz] = (float)noiseValue3d(
-                    noise_, (ctx.chunk_x * 16 + sx * kStepXZ) / 64.0, (sy * kStepY) / 64.0,
-                    (ctx.chunk_z * 16 + sz * kStepXZ) / 64.0);
-
-    // Terrain columns: netherrack where the density field is solid, open
-    // space elsewhere, lava sea below kLavaLevel. HELL biome everywhere.
-    for (int x = 0; x < 16; ++x)
-        for (int z = 0; z < 16; ++z) {
-            mcp_chunk_set_biome(c, x, z, 8); // HELL
-            for (int y = 0; y < kHeight; ++y) {
-                double n = fieldAt(field, x, y, z);
-                double d =
-                    std::fabs(kCavernCentre - y) / (double)kCavernCentre - n - kDensityOffset;
-                if (d > 0.0)
-                    mcp_chunk_set_block_id(c, x, y, z, NETHERRACK);
-                else if (y <= kLavaLevel)
-                    mcp_chunk_set_block_id(c, x, y, z, LAVA);
-            }
-        }
-
-    // Bedrock shell with the natural jagged distribution.
-    MersenneRandom rng((long)chunkStream(ctx.seed, ctx.chunk_x, ctx.chunk_z));
-    for (int x = 0; x < 16; ++x)
-        for (int z = 0; z < 16; ++z)
-            placeBedrockShell(c, rng, x, z);
+	std::shared_ptr<vgen::LevelChunk> tc = acquireTerrain(ctx.chunk_x, ctx.chunk_z);
+	copyVirtualToSink(*tc, sink);
 }
 
 void Nether::populate(GenerationContext& ctx) {
-    mcp_chunk_t* c = ctx.chunk;
+	mcp_chunk_t* sink = ctx.chunk;
+	if (!sink)
+		return;
+	const int cx = ctx.chunk_x;
+	const int cz = ctx.chunk_z;
 
-    // Ore-style features: random-walk veins replacing netherrack only.
-    // Each vein gets its own seed offset: the per-vein seed is truncated
-    // to 32 bits inside the random, so two veins of the same shape would
-    // otherwise retrace the exact same cells and the later one would
-    // place nothing.
-    using object::OreVein;
-    const int64_t seed = ctx.seed;
-    object::OreGenerator::place(c, seed, {NETHER_QUARTZ_ORE, NETHERRACK, 4, 123, 16, 20});
-    object::OreGenerator::place(c, seed ^ 0x51ed2701LL, {SOUL_SAND, NETHERRACK, 4, 123, 64, 5});
-    object::OreGenerator::place(c, seed ^ 0x2545f491LL, {GRAVEL, NETHERRACK, 4, 123, 64, 5});
-    object::OreGenerator::place(c, seed ^ 0x7f4a7c15LL, {LAVA, NETHERRACK, 4, kLavaLevel, 16, 1});
+	// center working copy of the real chunk
+	LevelChunk center(mLevel, mDimension, ChunkPos(cx, cz));
+	copySinkToVirtual(sink, center);
 
-    MersenneRandom rng((long)chunkStream(ctx.seed, ctx.chunk_x, ctx.chunk_z));
-    placeGlowstone(c, rng);
-    placeGlowstone(c, rng);
-    placeGroundFire(c, rng);
-    if (rng.nextBoolean())
-        placeGroundFire(c, rng);
+	// replay cross-chunk feature writes recorded by earlier populations
+	applySpill(center, cx, cz);
+
+	vgen::BlockSource source(*this, center);
+
+	// fortresses, lava springs, fire, glowstone, mushrooms, quartz ore
+	mSource.postProcess(source, center);
+
+	// write the populated center back into the sink chunk
+	copyVirtualToSink(center, sink);
 }
+
 } // namespace cursestone::world::generator

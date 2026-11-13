@@ -206,6 +206,13 @@ World::World(WorldConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
         vgen->setNeighborSink(&chunks_);
         chunks_.setSpillQueue(vgen);
     }
+    // The nether generator runs the same virtual-neighborhood plumbing
+    // (glowstone clusters, fortress pieces and springs all spill across
+    // borders), so wire the sink for it too.
+    if (auto* nether = dynamic_cast<generator::Nether*>(generator_.get())) {
+        nether->setNeighborSink(&chunks_);
+        chunks_.setSpillQueue(nether);
+    }
     provider_ = provider;
     chunks_.setOnChunkAdded([this](int32_t cx, int32_t cz, bool full) {
         onChunkAdded(cx, cz, full);
