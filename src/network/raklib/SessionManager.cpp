@@ -2250,8 +2250,13 @@ void mcp_rak_session_manager_tick(mcp_rak_session_manager_t* sm) {
     // Reset per-IP flood counter
     sm->ip_sec_n = 0;
 
-    // Receive up to 128 datagrams per tick
-    for (int n = 0; n < 128; ++n) {
+    // Drain datagrams until the socket runs dry, capped at 512 per tick.
+    // The old 128 cap left a burst (several players streaming chunks in
+    // the same 10ms window) sitting in the kernel buffer for whole extra
+    // ticks — pure added latency, since the socket is non-blocking and
+    // the final EAGAIN probe costs one syscall. 512 at the ~100Hz cadence
+    // still bounds per-tick CPU.
+    for (int n = 0; n < 512; ++n) {
         ssize_t r = mcp_udp_socket_recv(&sm->socket, buf, sizeof(buf), ip, &port);
         if (r <= 0)
             break;

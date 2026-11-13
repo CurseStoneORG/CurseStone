@@ -85,7 +85,7 @@ void sendBatchWire(cursestone::network::AdvancedSourceInterface* iface, const st
     wire.push_back(cursestone::network::protocol::BATCH_PACKET); // 0x06
     wire.insert(wire.end(), batchBody.begin(), batchBody.end());
 
-    iface->sendRawPacket(ip, port, wire, ordered);
+    iface->sendRawPacket(ip, port, std::move(wire), ordered);
 }
 
 } // namespace

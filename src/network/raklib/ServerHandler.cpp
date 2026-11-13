@@ -50,15 +50,12 @@ bool mcp_server_handler_send_encapsulated(mcp_server_handler_t* h, const uint8_t
                                           uint8_t reliability) {
     if (!h || !h->manager || !payload || len == 0)
         return false;
-    // Look up the session (it must already exist).
-    mcp_rak_session_t* s = NULL;
-    for (size_t i = 0; i < h->manager->session_count; ++i) {
-        mcp_rak_session_t* cur = h->manager->sessions[i];
-        if (memcmp(cur->ip, ip, 4) == 0 && cur->port == port) {
-            s = cur;
-            break;
-        }
-    }
+    // Look up the session (it must already exist). The manager's open-
+    // addressing endpoint index answers this in O(1); the old inline scan
+    // walked every session per packet — with a handful of players this
+    // multiplied the cost of EVERY outgoing game packet by the player
+    // count, all on the single network thread every player shares.
+    mcp_rak_session_t* s = mcp_rak_session_manager_find(h->manager, ip, port);
     if (!s)
         return false;
     // Use send_payload so large packets (e.g. chunk data ~15KB) are split
