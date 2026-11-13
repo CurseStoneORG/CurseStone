@@ -189,6 +189,9 @@ public:
 	static const Block* mWaterlily;
 	static const Block* mNetherBrick;
 	static const Block* mNetherFence;
+	static const Block* mNetherBrickStairs;
+	static const Block* mNetherWart;
+	static const Block* mQuartzOre;
 	static const Block* mEnchantingTable;
 	static const Block* mCauldron;
 	static const Block* mEndStone;
