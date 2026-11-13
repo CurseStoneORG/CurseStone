@@ -335,7 +335,15 @@ bool HellRandomLevelSource::postProcess(BlockSource& source, LevelChunk& lc) {
 
 	netherBridgeFeature.postProcess(&source, random, lcPosition.x, lcPosition.z);
 
-	HellSpringFeature hellSpringFeature(Block::mFlowingLava->mID, false);
+	// Springs ship SETTLED still lava (same contract as the overworld
+	// SpringFeature): a flowing id is a DYNAMIC cell that wakes on chunk
+	// install, and 8 springs + 16 traps per chunk turned every walk
+	// through the nether into a settle cascade — one UpdateBlockPacket
+	// per cell (a client re-tessellation each) plus a relight, the same
+	// FPS tank the water generator fixed. Still lava renders identically
+	// and only re-enters the simulation when a neighbour block changes,
+	// so a player digging into a trap gets the real vanilla flow.
+	HellSpringFeature hellSpringFeature(Block::mStillLava->mID, false);
 
 	for (int i = 0; i < 8; i++) {
 		int x = random.nextInt(16) + 8;
@@ -403,7 +411,8 @@ bool HellRandomLevelSource::postProcess(BlockSource& source, LevelChunk& lc) {
 		quartzFeature.place(source, featurePlacement, random);
 	}
 
-	HellSpringFeature lavaTrapFeature(Block::mFlowingLava->mID, true);
+	// Traps ship settled too — same reason as the springs above.
+	HellSpringFeature lavaTrapFeature(Block::mStillLava->mID, true);
 
 	for (int i = 0; i < 16; i++) {
 		int x = random.nextInt(16);

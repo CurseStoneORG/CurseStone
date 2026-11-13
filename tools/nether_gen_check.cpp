@@ -163,6 +163,11 @@ int main() {
     check(cnt(87) > 100000, "netherrack terrain present");
     check(cnt(7) > 10000, "bedrock shell present");
     check(cnt(10) + cnt(11) > 1000, "lava sea present");
+    // Generated liquid ships SETTLED: a single flowing id is a DYNAMIC cell
+    // that wakes on install and cascades one UpdateBlockPacket per settle
+    // (the client FPS tank). Springs, traps and the fortress well must all
+    // place still lava; the cave carver only detects lava, never writes it.
+    check(cnt(10) == 0, "no dynamic lava cells — generated liquid settled");
     check(cnt(153) > 0, "quartz ore veins present");
     check(cnt(88) > 0, "soul sand patches present");
     check(cnt(89) > 0, "glowstone clusters present");

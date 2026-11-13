@@ -824,12 +824,11 @@ bool NBCastleEntrance::postProcess(BlockSource* level, Random& random, const Bou
 	generateBox(level, chunkBB, 5, 5, 5, 7, 5, 7, Block::mNetherBrick->mID, Block::mNetherBrick->mID, false);
 	generateBox(level, chunkBB, 6, 1, 6, 6, 4, 6, BlockID::AIR, BlockID::AIR, false);
 	placeBlock(level, Block::mNetherBrick->mID, 0, 6, 0, 6, chunkBB);
-	placeBlock(level, Block::mFlowingLava->mID, 0, 6, 5, 6, chunkBB);
-	// tick lava well
-	BlockPos pos(getWorldX(6, 6), getWorldY(5), getWorldZ(6, 6));
-	if (chunkBB.isInside(pos)) {
-		Block::mBlocks[Block::mFlowingLava->mID]->tick(*level, pos, random);
-	}
+	// The well ships SETTLED still lava: flowing ids wake on install and
+	// cascade UpdateBlockPackets to every client in view (the FPS tank),
+	// and Block::tick is a no-op at generation time anyway — static
+	// liquid re-enters the simulation only when a neighbour changes.
+	placeBlock(level, Block::mStillLava->mID, 0, 6, 5, 6, chunkBB);
 
 	return NetherBridgePiece::postProcess(level, random, chunkBB);
 }
