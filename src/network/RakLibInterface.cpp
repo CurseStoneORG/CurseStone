@@ -42,6 +42,33 @@
 namespace cursestone {
 namespace network {
 
+// parse_ipv4_dotted — strict dotted-quad parser, no locale, no allocations.
+// Replaces the per-drain-loop sscanf("%hhu.%hhu.%hhu.%hhu") on the packet
+// path: format-string interpretation per datagram was the most expensive
+// line in the outbound drain for a job four comparisons can do.
+static bool parse_ipv4_dotted(const std::string& s, uint8_t out[4]) {
+    const char* p = s.c_str();
+    for (int octet = 0; octet < 4; ++octet) {
+        if (*p < '0' || *p > '9')
+            return false;
+        int v = 0, digits = 0;
+        while (*p >= '0' && *p <= '9' && digits < 3) {
+            v = v * 10 + (*p - '0');
+            ++p;
+            ++digits;
+        }
+        if (digits == 0 || v > 255)
+            return false;
+        out[octet] = (uint8_t)v;
+        if (octet < 3) {
+            if (*p != '.')
+                return false;
+            ++p;
+        }
+    }
+    return *p == '\0';
+}
+
 // ============================================================================
 // Constructor / Destructor
 // ============================================================================
@@ -189,9 +216,10 @@ void RakLibInterface::raklibThreadLoop() {
             size_t drained = 0;
             while (!outbound_queue_.empty() && drained < MAX_SENDS_PER_LOOP) {
                 auto& action = outbound_queue_.front();
-                uint8_t ipBytes[4];
-                if (sscanf(action.ip.c_str(), "%hhu.%hhu.%hhu.%hhu", &ipBytes[0], &ipBytes[1],
-                           &ipBytes[2], &ipBytes[3]) == 4) {
+                {
+                    // Endpoint bytes arrive pre-parsed (enqueue time) — the
+                    // drain loop is now a straight dispatch on the action.
+                    const uint8_t* ipBytes = action.ip_bytes;
                     if (action.type == RakLibActionType::SEND_PACKET) {
                         // BUG FIX (v2): the previous fix here forced EVERY
                         // packet to RELIABLE (unordered) on channel 0 to
@@ -279,8 +307,14 @@ void RakLibInterface::raklibThreadLoop() {
             }
         }
 
-        // 4. Sleep 10ms (~100Hz) — independent of main tick loop
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        // 4. Sleep ~10ms (~100Hz cadence) — independent of the main tick
+        //    loop. When this iteration left work behind (a FULL drain cap,
+        //    i.e. the main thread is producing faster than we can send),
+        //    cut the pause to 1ms so the burst drains before the kernel
+        //    socket buffer does; idle servers keep the 10ms cadence and
+        //    burn no extra CPU.
+        std::this_thread::sleep_for(
+            std::chrono::milliseconds(queueDepth >= MAX_SENDS_PER_LOOP ? 1 : 10));
     }
 }
 
@@ -353,14 +387,16 @@ void RakLibInterface::setServerName(const std::string& motd) {
 // sendRawPacket() — enqueue to outbound queue (main → RakLib)
 // ============================================================================
 void RakLibInterface::sendRawPacket(const std::string& ip, uint16_t port,
-                                    const std::vector<uint8_t>& data, bool ordered) {
+                                    std::vector<uint8_t> data, bool ordered) {
     if (!running_.load())
         return;
     RakLibAction action;
     action.type = RakLibActionType::SEND_PACKET;
-    action.ip = ip;
+    if (!parse_ipv4_dotted(ip, action.ip_bytes))
+        return; // malformed endpoint — same outcome as the old per-drain
+                // sscanf failure, just detected before it ever queues
     action.port = port;
-    action.data = data;
+    action.data = std::move(data); // payload moves, zero heap copy
     action.ordered = ordered;
     {
         std::lock_guard<std::mutex> lk(outbound_mtx_);
@@ -382,7 +418,8 @@ void RakLibInterface::closeSession(const std::string& ip, uint16_t port,
         return;
     RakLibAction action;
     action.type = RakLibActionType::CLOSE_SESSION;
-    action.ip = ip;
+    if (!parse_ipv4_dotted(ip, action.ip_bytes))
+        return; // malformed endpoint — nothing to close
     action.port = port;
     {
         std::lock_guard<std::mutex> lk(outbound_mtx_);

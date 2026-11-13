@@ -75,10 +75,13 @@ enum class RakLibActionType { SEND_PACKET, CLOSE_SESSION };
 
 struct RakLibAction {
     RakLibActionType type;
-    std::string ip;
+    // The dotted-quad endpoint is parsed ONCE on the main thread, at
+    // enqueue time. The drain loop used to run sscanf() on a string
+    // copy for every packet — pure waste on the chunk-stream path,
+    // where the same endpoint is re-parsed dozens of times a tick.
+    uint8_t ip_bytes[4] = {0, 0, 0, 0};
     uint16_t port = 0;
     std::vector<uint8_t> data;
-    std::string reason;
     // BUG FIX: see raklibThreadLoop() for the full story. True routes
     // this send through RELIABLE_ORDERED on a dedicated channel so
     // strict-sequence packets (login/spawn) can never arrive out of
@@ -107,7 +110,7 @@ class RakLibInterface : public AdvancedSourceInterface {
     // order it was sent relative to other ordered=true sends. Use for
     // strict-sequence packets (login/spawn handshake). Default false
     // keeps the existing unordered RELIABLE behavior.
-    void sendRawPacket(const std::string& ip, uint16_t port, const std::vector<uint8_t>& data,
+    void sendRawPacket(const std::string& ip, uint16_t port, std::vector<uint8_t> data,
                        bool ordered = false) override;
     void closeSession(const std::string& ip, uint16_t port, const std::string& reason) override;
 

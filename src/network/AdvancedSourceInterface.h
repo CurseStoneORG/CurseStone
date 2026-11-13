@@ -47,8 +47,11 @@ class AdvancedSourceInterface : public SourceInterface {
     // Default false keeps the existing unordered RELIABLE behavior,
     // appropriate for chunks/entity updates where inter-packet order
     // doesn't matter.
+    // `data` is taken by value: callers that just built the buffer
+    // (the batch writer) can std::move it in, so the wire payload
+    // transfers into the outbound queue without a heap copy per send.
     virtual void sendRawPacket(const std::string& ip, uint16_t port,
-                               const std::vector<uint8_t>& data, bool ordered = false) = 0;
+                               std::vector<uint8_t> data, bool ordered = false) = 0;
     // Close a session immediately, optionally sending a DisconnectPacket first.
     virtual void closeSession(const std::string& ip, uint16_t port,
                               const std::string& reason = "") = 0;
