@@ -74,16 +74,15 @@ void sendBatchWire(cursestone::network::AdvancedSourceInterface* iface, const st
     for (auto& sub : subs)
         batch.addSubPacket(sub);
 
-    std::vector<uint8_t> batchBody;
-    batch.encode(batchBody);
-    if (batchBody.empty())
-        return;
-
-    // MCPE game packets must start with 0xFE, as required by the reference server's RakLibInterface.
+    // The batch envelope is written straight into the wire buffer. The old
+    // path compressed into an intermediate vector and then copied the whole
+    // compressed payload twice more (batchBody -> wire) before the socket.
     std::vector<uint8_t> wire;
     wire.push_back(0xFE);                                        // Game packet marker
     wire.push_back(cursestone::network::protocol::BATCH_PACKET); // 0x06
-    wire.insert(wire.end(), batchBody.begin(), batchBody.end());
+    batch.encode(wire);
+    if (wire.size() <= 2)
+        return;
 
     iface->sendRawPacket(ip, port, std::move(wire), ordered);
 }
@@ -159,6 +158,22 @@ void Player::flushPendingPackets() {
     // Send ordered packets first to preserve the login handshake before chunk data.
     sendBatchWire(adv_iface_, cfg_.ip, cfg_.port, take_ordered, /*ordered=*/true);
     sendBatchWire(adv_iface_, cfg_.ip, cfg_.port, take_unordered, /*ordered=*/false);
+    // Hand the drained buffers' capacity back so the next flush starts from
+    // the size this one reached instead of re-growing from zero on every
+    // flush. Only safe while the queues stayed empty during the send; if new
+    // packets arrived, they own their queue and the drained capacity is
+    // simply dropped.
+    {
+        std::lock_guard<std::mutex> lk(batch_mtx_);
+        if (batch_ordered_.empty()) {
+            take_ordered.clear();
+            batch_ordered_.swap(take_ordered);
+        }
+        if (batch_unordered_.empty()) {
+            take_unordered.clear();
+            batch_unordered_.swap(take_unordered);
+        }
+    }
 }
 
 void Player::sendMessage(const std::string& msg) {
@@ -207,11 +222,14 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
         return;
     uint8_t pid = p.pid();
 
-    // Update activity time and record the incoming packet in Workbench.
+    // Update activity time (the connection-alive clock the timeout sweep
+    // checks) and record the incoming packet in Workbench. The ip:port
+    // concatenation (and its allocation) only happens once Workbench is
+    // actually recording.
     last_activity_ms_ = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
                             std::chrono::system_clock::now().time_since_epoch())
                             .count();
-    WorkbenchManager::get().onPacketIn(cfg_.ip + ":" + std::to_string(cfg_.port), pid, 0);
+    WorkbenchManager::get().onPacketIn(cfg_.ip, cfg_.port, pid, 0);
 
     // Record the incoming packet for diagnostics.
     diagnostics::Diagnostics::get().recordPacket(

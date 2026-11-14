@@ -204,7 +204,7 @@ void Network::dispatchSingle(const std::string& ip, uint16_t port, const uint8_t
     player_sp->handleDataPacket(*pkt);
 }
 
-std::shared_ptr<protocol::DataPacket> Network::decodePacketById(uint8_t pid, const uint8_t* body,
+std::unique_ptr<protocol::DataPacket> Network::decodePacketById(uint8_t pid, const uint8_t* body,
                                                                 size_t bodyLen,
                                                                 const std::string& who) {
     // Local helper: first N bytes in hex, for diagnostics.
