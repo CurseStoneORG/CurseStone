@@ -147,6 +147,14 @@ class Server {
 
     /** @brief Returns a thread-safe snapshot of the online player list. */
     std::vector<std::shared_ptr<Player>> playersSnapshot() const;
+
+    /** @brief Main-thread fast path: returns the cached player list,
+     *  rebuilt only when the player set changed (join, tick-start reap).
+     *  Zero allocations and zero locks in steady state. Broadcast and
+     *  iteration call sites use this instead of copying playersSnapshot()
+     *  per call. Must be called on the main thread only: the cache is not
+     *  synchronized, cross-thread callers keep playersSnapshot(). */
+    const std::vector<std::shared_ptr<Player>>& playersSnapshotRef() const;
     Player* getPlayer(const std::string& name) const;
     void addPlayer(std::shared_ptr<Player> p);
     void removePlayer(Player* p);
@@ -394,6 +402,15 @@ class Server {
     std::unique_ptr<CommandReader> console_reader_;
     std::vector<std::shared_ptr<Player>> players_;
     mutable std::mutex players_mtx_; // Protects players_.
+
+    // Snapshot cache behind playersSnapshotRef(). Every mutation of
+    // players_ (tick-start reap, addPlayer) bumps players_version_ under
+    // players_mtx_; a version mismatch rebuilds the cache on the next
+    // read. mutable because the fast path is a const method (a read that
+    // may refresh the cache); all current call sites are main-thread.
+    mutable std::vector<std::shared_ptr<Player>> player_snapshot_cache_;
+    mutable uint64_t player_snapshot_cache_version_ = ~static_cast<uint64_t>(0);
+    mutable std::atomic<uint64_t> players_version_{0};
 
     // Monotonic runtime entity ID allocator; IDs 0 and 1 are reserved.
     std::atomic<int64_t> next_eid_{2};

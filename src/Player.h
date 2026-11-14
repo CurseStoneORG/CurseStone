@@ -262,8 +262,11 @@ class Player : public IPlayer,
     bool canSeeBlock(int32_t cx, int32_t cz) const;
 
     // --- Server-to-player packets ---
-    // Sends a packet, optionally using the ordered channel.
-    void sendPacket(std::shared_ptr<network::protocol::DataPacket> p, bool ordered = false);
+    // Sends a packet, optionally using the ordered channel. Takes the
+    // packet by const&: the callee only serializes, so broadcast loops
+    // stop paying two atomic refcount ops per recipient.
+    void sendPacket(const std::shared_ptr<network::protocol::DataPacket>& p,
+                    bool ordered = false);
     // Broadcast fast path: the caller encodes once and hands each player a
     // copy of the encoded [pid][body] bytes; queueing/flushing is shared
     // with sendPacket().

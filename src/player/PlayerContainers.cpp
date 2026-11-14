@@ -90,7 +90,7 @@ static void broadcastChestBlockEvent(cursestone::Player* actor,
 
     int32_t cx = x >> 4;
     int32_t cz = z >> 4;
-    for (auto& viewer : actor->server()->playersSnapshot()) {
+    for (auto& viewer : actor->server()->playersSnapshotRef()) {
         if (!viewer)
             continue;
         if (viewer->getWorld() != actor->getWorld())
@@ -244,7 +244,7 @@ void Player::broadcastChestSlotToViewers(int slot) {
     if (slot < 0 || slot >= openInv->getSize())
         return;
     auto cur = openInv->getItem(slot);
-    for (auto& other : srv_->playersSnapshot()) {
+    for (auto& other : srv_->playersSnapshotRef()) {
         if (!other || other.get() == this)
             continue;
         // Co-viewer match: for a double chest the pair is the shared
@@ -272,7 +272,7 @@ void Player::broadcastFurnaceSlotToViewers(int slot) {
     if (!srv_ || !open_furnace_ || slot < 0 || slot >= open_furnace_->size())
         return;
     auto cur = open_furnace_->getItem(slot);
-    for (auto& other : srv_->playersSnapshot()) {
+    for (auto& other : srv_->playersSnapshotRef()) {
         if (!other || other.get() == this)
             continue;
         if (other->open_furnace_ != open_furnace_)
@@ -539,7 +539,7 @@ void Player::sendBlockEntityData(int32_t x, int32_t y, int32_t z, tile::Tile& t,
 
     int32_t cx = x >> 4;
     int32_t cz = z >> 4;
-    for (auto& other : srv_->playersSnapshot()) {
+    for (auto& other : srv_->playersSnapshotRef()) {
         if (!other)
             continue;
         if (other->getWorld() != getWorld())

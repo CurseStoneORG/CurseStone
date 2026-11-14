@@ -89,7 +89,8 @@ void sendBatchWire(cursestone::network::AdvancedSourceInterface* iface, const st
 
 } // namespace
 
-void Player::sendPacket(std::shared_ptr<network::protocol::DataPacket> p, bool ordered) {
+void Player::sendPacket(const std::shared_ptr<network::protocol::DataPacket>& p,
+                        bool ordered) {
     if (!p)
         return;
     if (!connected_.load(std::memory_order_relaxed))
@@ -388,7 +389,7 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                     const auto& pos = position();
                     int32_t an_cx = (int32_t)pos.x >> 4;
                     int32_t an_cz = (int32_t)pos.z >> 4;
-                    for (auto& other : srv_->playersSnapshot()) {
+                    for (auto& other : srv_->playersSnapshotRef()) {
                         if (!other || other.get() == this)
                             continue;
                         if (other->isPendingRemoval() || !other->spawned())

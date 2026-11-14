@@ -90,7 +90,7 @@ static void broadcastBlockChange(cursestone::Server* server, world::World* world
     ubp->blockData = blockData;
     ubp->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
     int32_t cx = x >> 4, cz = z >> 4;
-    for (auto& player : server->playersSnapshot()) {
+    for (auto& player : server->playersSnapshotRef()) {
         if (!player)
             continue;
         if (player->getWorld() != world)
@@ -179,7 +179,7 @@ static bool placementOverlapsEntity(world::World* lvl, Server* srv, const mcp_aa
         return false; // No collision volume, nothing to overlap.
     if (!srv)
         return false;
-    for (auto& other : srv->playersSnapshot()) {
+    for (auto& other : srv->playersSnapshotRef()) {
         if (!other || !other->spawned() || other->isClosed())
             continue;
         if (other->getWorld() != lvl)
@@ -243,7 +243,7 @@ void Player::handleBlockBreak(int x, int y, int z) {
         ghost->blockData = 0;
         ghost->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
         if (srv_) {
-            for (auto& other : srv_->playersSnapshot()) {
+            for (auto& other : srv_->playersSnapshotRef()) {
                 if (!other)
                     continue;
                 if (other->getWorld() != lvl)
@@ -361,7 +361,7 @@ void Player::handleBlockBreak(int x, int y, int z) {
         if (chestTile) {
             auto chestPair = chestTile->pairTile(lvl);
             if (srv_) {
-                for (auto& viewer : srv_->playersSnapshot()) {
+                for (auto& viewer : srv_->playersSnapshotRef()) {
                     if (!viewer)
                         continue;
                     if (viewer->open_chest_ == chestTile ||
@@ -448,7 +448,7 @@ void Player::handleBlockBreak(int x, int y, int z) {
     int32_t pk_cz = z >> 4;
     int broadcastTo = 0, broadcastOk = 0;
     if (srv_) {
-        for (auto& other : srv_->playersSnapshot()) {
+        for (auto& other : srv_->playersSnapshotRef()) {
             if (!other)
                 continue;
             if (!other->canSeeBlock(pk_cx, pk_cz))
@@ -473,7 +473,7 @@ void Player::handleBlockBreak(int x, int y, int z) {
         fubp->blockData = 0;
         fubp->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
         if (srv_) {
-            for (auto& other : srv_->playersSnapshot()) {
+            for (auto& other : srv_->playersSnapshotRef()) {
                 if (!other || other->getWorld() != lvl)
                     continue;
                 if (!other->canSeeBlock(cx, cz))
@@ -519,7 +519,7 @@ void Player::handleBlockBreak(int x, int y, int z) {
                 pubp->blockData = 0;
                 pubp->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
                 int32_t pcx = pairX >> 4, pcz = pairZ >> 4;
-                for (auto& other : srv_->playersSnapshot()) {
+                for (auto& other : srv_->playersSnapshotRef()) {
                     if (!other)
                         continue;
                     if (other->getWorld() != lvl)
@@ -961,7 +961,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
                 ubp->blockData = 0;
                 ubp->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
                 if (srv_) {
-                    for (auto& other : srv_->playersSnapshot()) {
+                    for (auto& other : srv_->playersSnapshotRef()) {
                         if (!other)
                             continue;
                         if (other->getWorld() != getWorld())
@@ -1040,7 +1040,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
             snd->z = (float)placeZ;
             snd->data = (int32_t)doorId;
             int32_t scx = placeX >> 4, scz = placeZ >> 4;
-            for (auto& other : srv_->playersSnapshot()) {
+            for (auto& other : srv_->playersSnapshotRef()) {
                 if (!other)
                     continue;
                 if (other->getWorld() != lvl)
@@ -1152,7 +1152,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
             snd->z = (float)placeZ;
             snd->data = (int32_t)block::BED_BLOCK;
             int32_t scx = placeX >> 4, scz = placeZ >> 4;
-            for (auto& other : srv_->playersSnapshot()) {
+            for (auto& other : srv_->playersSnapshotRef()) {
                 if (!other)
                     continue;
                 if (other->getWorld() != lvl)
@@ -1467,7 +1467,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
     int32_t pk_cz = placeZ >> 4;
     int placeInView = 0, placeSent = 0;
     if (srv_) {
-        for (auto& other : srv_->playersSnapshot()) {
+        for (auto& other : srv_->playersSnapshotRef()) {
             if (!other)
                 continue;
             if (other->getWorld() != getWorld())

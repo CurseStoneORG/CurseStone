@@ -61,7 +61,7 @@ bool TimeCommand::execute(CommandSender* sender, const std::string&,
             auto pk = std::make_shared<network::protocol::SetTimePacket>();
             pk->time = t;
             pk->started = true;
-            for (auto& p : Server::getInstance().playersSnapshot()) {
+            for (auto& p : Server::getInstance().playersSnapshotRef()) {
                 if (p)
                     p->sendPacket(pk);
             }

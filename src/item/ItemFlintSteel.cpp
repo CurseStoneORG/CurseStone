@@ -198,7 +198,7 @@ static void broadcastBlockUpdate(Player* player, world::World* world, int32_t x,
     ubp->flags = 0xFF;
 
     int32_t cx = x >> 4, cz = z >> 4;
-    for (auto& other : player->server()->playersSnapshot()) {
+    for (auto& other : player->server()->playersSnapshotRef()) {
         if (other && other->getWorld() == world && other->canSeeBlock(cx, cz))
             other->sendPacket(ubp);
     }

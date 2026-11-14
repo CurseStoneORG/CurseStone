@@ -50,7 +50,7 @@ static void broadcastBlock(cursestone::Server* server, int32_t x, int32_t y, int
 
     int32_t cx = x >> 4;
     int32_t cz = z >> 4;
-    for (auto& player : server->playersSnapshot()) {
+    for (auto& player : server->playersSnapshotRef()) {
         if (!player)
             continue;
         if (!player->canSeeBlock(cx, cz))
@@ -77,7 +77,7 @@ static void broadcastLevelEvent(cursestone::Server* server, int16_t evid, int32_
     pk->z = z;
     int32_t cx = (int32_t)std::floor(x) >> 4;
     int32_t cz = (int32_t)std::floor(z) >> 4;
-    for (auto& player : server->playersSnapshot()) {
+    for (auto& player : server->playersSnapshotRef()) {
         if (!player)
             continue;
         if (!player->canSeeBlock(cx, cz))

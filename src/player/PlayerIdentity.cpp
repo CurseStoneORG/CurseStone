@@ -79,7 +79,7 @@ void Player::setNameTag(const std::string& tag) {
     e.skinData = skinData();
     add->entries.push_back(std::move(e));
 
-    for (auto& other : srv_->playersSnapshot()) {
+    for (auto& other : srv_->playersSnapshotRef()) {
         if (!other || !other->spawned())
             continue;
         other->sendPacket(rm);

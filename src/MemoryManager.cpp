@@ -93,7 +93,7 @@ void MemoryManager::collect(bool force) {
     {
         std::vector<world::World::ChunkViewer> viewers;
         {
-            auto snap = Server::getInstance().playersSnapshot();
+            const auto& snap = Server::getInstance().playersSnapshotRef();
             viewers.reserve(snap.size());
             for (auto& p : snap) {
                 if (!p)

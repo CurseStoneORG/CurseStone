@@ -42,7 +42,7 @@ bool VersionCommand::execute(CommandSender* sender, const std::string&,
     // Line 4: Repo
     //sender->sendMessage("Website: github.com/CurseStoneORG/CurseStone");
     // Line 5: Online players
-    auto players = Server::getInstance().playersSnapshot();
+    const auto& players = Server::getInstance().playersSnapshotRef();
     sender->sendMessage("Online:§a " + std::to_string(players.size()) + "§7/§r" +
                         std::to_string(Server::getInstance().maxPlayers()) + " players");
     return true;

@@ -241,7 +241,7 @@ void Player::close(const std::string& reason) {
         // Skip players who never received this entity's spawn packet.
         try {
             if (srv_) {
-                auto snapshot = srv_->playersSnapshot();
+                const auto& snapshot = srv_->playersSnapshotRef();
                 auto pk = std::make_shared<network::protocol::RemoveEntityPacket>();
                 pk->eid = runtimeId();
                 for (auto& other : snapshot) {
@@ -274,7 +274,7 @@ void Player::close(const std::string& reason) {
                 network::protocol::PlayerListPacket::Entry re;
                 parseUuidBytes(cfg_.uuid, re.uuid);
                 rm->entries.push_back(std::move(re));
-                for (auto& other : srv_->playersSnapshot()) {
+                for (auto& other : srv_->playersSnapshotRef()) {
                     if (!other || other.get() == this)
                         continue;
                     if (other->isPendingRemoval() || !other->spawned())
