@@ -71,89 +71,89 @@
 
 namespace cursestone::network::protocol {
 
-std::shared_ptr<DataPacket> PacketPool::create(uint8_t pid) const {
+std::unique_ptr<DataPacket> PacketPool::create(uint8_t pid) const {
     switch (pid) {
     case LOGIN_PACKET:
-        return std::make_shared<LoginPacket>();
+        return std::make_unique<LoginPacket>();
     case PLAY_STATUS_PACKET:
-        return std::make_shared<PlayStatusPacket>();
+        return std::make_unique<PlayStatusPacket>();
     case DISCONNECT_PACKET:
-        return std::make_shared<DisconnectPacket>();
+        return std::make_unique<DisconnectPacket>();
     case BATCH_PACKET:
-        return std::make_shared<BatchPacket>();
+        return std::make_unique<BatchPacket>();
     case TEXT_PACKET:
-        return std::make_shared<TextPacket>();
+        return std::make_unique<TextPacket>();
     case SET_TIME_PACKET:
-        return std::make_shared<SetTimePacket>();
+        return std::make_unique<SetTimePacket>();
     case START_GAME_PACKET:
-        return std::make_shared<StartGamePacket>();
+        return std::make_unique<StartGamePacket>();
     case ADD_PLAYER_PACKET:
-        return std::make_shared<AddPlayerPacket>();
+        return std::make_unique<AddPlayerPacket>();
     case REMOVE_ENTITY_PACKET:
-        return std::make_shared<RemoveEntityPacket>();
+        return std::make_unique<RemoveEntityPacket>();
     case MOVE_ENTITY_PACKET:
-        return std::make_shared<MoveEntityPacket>();
+        return std::make_unique<MoveEntityPacket>();
     case MOVE_PLAYER_PACKET:
-        return std::make_shared<MovePlayerPacket>();
+        return std::make_unique<MovePlayerPacket>();
     case FULL_CHUNK_DATA_PACKET:
-        return std::make_shared<FullChunkDataPacket>();
+        return std::make_unique<FullChunkDataPacket>();
     case SET_SPAWN_POSITION_PACKET:
-        return std::make_shared<SetSpawnPositionPacket>();
+        return std::make_unique<SetSpawnPositionPacket>();
     case SET_HEALTH_PACKET:
-        return std::make_shared<SetHealthPacket>();
+        return std::make_unique<SetHealthPacket>();
     case SET_DIFFICULTY_PACKET:
-        return std::make_shared<SetDifficultyPacket>();
+        return std::make_unique<SetDifficultyPacket>();
     case ADVENTURE_SETTINGS_PACKET:
-        return std::make_shared<AdventureSettingsPacket>();
+        return std::make_unique<AdventureSettingsPacket>();
     case PLAYER_LIST_PACKET:
-        return std::make_shared<PlayerListPacket>();
+        return std::make_unique<PlayerListPacket>();
     case REQUEST_CHUNK_RADIUS_PACKET:
-        return std::make_shared<RequestChunkRadiusPacket>();
+        return std::make_unique<RequestChunkRadiusPacket>();
     case CHUNK_RADIUS_UPDATED_PACKET:
-        return std::make_shared<ChunkRadiusUpdatedPacket>();
+        return std::make_unique<ChunkRadiusUpdatedPacket>();
     case PLAYER_ACTION_PACKET:
-        return std::make_shared<PlayerActionPacket>();
+        return std::make_unique<PlayerActionPacket>();
     case USE_ITEM_PACKET:
-        return std::make_shared<UseItemPacket>();
+        return std::make_unique<UseItemPacket>();
     case REMOVE_BLOCK_PACKET:
-        return std::make_shared<RemoveBlockPacket>();
+        return std::make_unique<RemoveBlockPacket>();
     case UPDATE_BLOCK_PACKET:
-        return std::make_shared<UpdateBlockPacket>();
+        return std::make_unique<UpdateBlockPacket>();
     case LEVEL_EVENT_PACKET:
-        return std::make_shared<LevelEventPacket>();
+        return std::make_unique<LevelEventPacket>();
     case ANIMATE_PACKET:
-        return std::make_shared<AnimatePacket>();
+        return std::make_unique<AnimatePacket>();
     case MOB_EQUIPMENT_PACKET:
-        return std::make_shared<MobEquipmentPacket>();
+        return std::make_unique<MobEquipmentPacket>();
     case MOB_ARMOR_EQUIPMENT_PACKET:
-        return std::make_shared<MobArmorEquipmentPacket>();
+        return std::make_unique<MobArmorEquipmentPacket>();
     case ADD_ITEM_ENTITY_PACKET:
-        return std::make_shared<AddItemEntityPacket>();
+        return std::make_unique<AddItemEntityPacket>();
     case ENTITY_EVENT_PACKET:
-        return std::make_shared<EntityEventPacket>();
+        return std::make_unique<EntityEventPacket>();
     case INTERACT_PACKET:
-        return std::make_shared<InteractPacket>();
+        return std::make_unique<InteractPacket>();
     // La lista de abajo cubre EXACTAMENTE el conjunto de paquetes
     // cliente→servidor que maneja el switch de the 0.15.10 reference server
     // (Player::handleDataPacket, protocolo 84). Sin el case
     // corresponding handler, a legitimate client packet was discarded
     // como "ID desconocido" y el estado se desincronizaba.
     case DROP_ITEM_PACKET:
-        return std::make_shared<DropItemPacket>();
+        return std::make_unique<DropItemPacket>();
     case CONTAINER_OPEN_PACKET:
-        return std::make_shared<ContainerOpenPacket>();
+        return std::make_unique<ContainerOpenPacket>();
     case CONTAINER_CLOSE_PACKET:
-        return std::make_shared<ContainerClosePacket>();
+        return std::make_unique<ContainerClosePacket>();
     case CONTAINER_SET_CONTENT_PACKET:
-        return std::make_shared<ContainerSetContentPacket>();
+        return std::make_unique<ContainerSetContentPacket>();
     case CONTAINER_SET_SLOT_PACKET:
-        return std::make_shared<ContainerSetSlotPacket>();
+        return std::make_unique<ContainerSetSlotPacket>();
     case CRAFTING_EVENT_PACKET:
-        return std::make_shared<CraftingEventPacket>();
+        return std::make_unique<CraftingEventPacket>();
     case BLOCK_ENTITY_DATA_PACKET:
-        return std::make_shared<BlockEntityDataPacket>();
+        return std::make_unique<BlockEntityDataPacket>();
     case ITEM_FRAME_DROP_ITEM_PACKET:
-        return std::make_shared<ItemFrameDropItemPacket>();
+        return std::make_unique<ItemFrameDropItemPacket>();
     default:
         // Unknown packet — return nullptr so callers can log + skip.
         return nullptr;

@@ -352,9 +352,13 @@ void WorkbenchManager::onTickEnd(uint64_t total_ms) {
     }
 }
 
-void WorkbenchManager::onPacketIn(const std::string& ip_port, uint8_t pid, size_t size) {
+void WorkbenchManager::onPacketIn(const std::string& ip, uint16_t port, uint8_t pid, size_t size) {
     if (!active_.load(std::memory_order_relaxed))
         return;
+    // The ip:port string is only built once Workbench is actually recording:
+    // this hook runs for every inbound packet, and the concatenation used to
+    // allocate on the hot path even when nothing was listening.
+    std::string ip_port = ip + ":" + std::to_string(port);
     std::lock_guard<std::mutex> lk(packet_mtx_);
     packet_log_.push_back({time_str(), "IN ", ip_port, pid, size});
     if (packet_log_.size() > MAX_PACKET_LOG)

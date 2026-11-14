@@ -48,7 +48,6 @@
 
 #include <atomic>
 #include <cstdint>
-#include <deque>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -62,10 +61,13 @@ constexpr size_t kMaxErrorRecords = 128;
 constexpr size_t kMaxPlayerSnapshot = 64;
 
 // One recorded packet (IN = client->server, OUT = server->client).
+// `who` lives inside the record: the ring is written for every packet on the
+// hot path, and a std::string member meant one heap allocation per packet
+// just to carry an endpoint that never exceeds a couple dozen bytes.
 struct PacketRecord {
     uint64_t wall_ms = 0; // epoch milliseconds
     bool out = false;
-    std::string who; // player name (OUT) or "ip:port" (IN)
+    char who[48] = {}; // player name (OUT) or "ip:port" (IN)
     uint8_t pid = 0;
     size_t size = 0;
 };
@@ -159,8 +161,18 @@ class Diagnostics {
     uint64_t start_ms_ = 0;
     std::atomic<uint64_t> tick_{0};
 
-    std::string action_ = "(idle)";
-    std::deque<PacketRecord> packets_;
+    // Fixed-capacity packet ring: recording never allocates (the old
+    // std::deque pushed a heap-owning record and popped the oldest one on
+    // every packet). head_ points at the slot to overwrite next; count_
+    // saturates at kMaxPacketRecords.
+    PacketRecord packets_ring_[kMaxPacketRecords];
+    size_t packets_head_ = 0;
+    size_t packets_count_ = 0;
+
+    // The most recent packet (or the last explicit setAction) as a printable
+    // line. A fixed buffer instead of a std::string keeps the per-packet
+    // update allocation-free.
+    char action_[160] = "(idle)";
     std::vector<ErrorRecord> errors_;
     std::vector<PlayerSnapshot> players_;
 

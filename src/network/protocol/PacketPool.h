@@ -33,14 +33,11 @@
 #include "DataPacket.h"
 #include "Info.h"
 #include <memory>
-#include <functional>
 
 namespace cursestone::network::protocol {
 
 class PacketPool {
   public:
-    using Factory = std::function<std::shared_ptr<DataPacket>()>;
-
     // Singleton accessor.
     static PacketPool& get() {
         static PacketPool inst;
@@ -49,7 +46,12 @@ class PacketPool {
 
     // Create an instance of the packet subclass matching `pid`.
     // Returns nullptr for unknown IDs.
-    std::shared_ptr<DataPacket> create(uint8_t pid) const;
+    //
+    // Inbound packets are uniquely owned: they never escape the dispatch
+    // path (Network::dispatchSingle decodes and forwards by reference), so
+    // a shared_ptr would only add a control block and atomic refcounts per
+    // packet for nothing.
+    std::unique_ptr<DataPacket> create(uint8_t pid) const;
 
   private:
     PacketPool() = default;

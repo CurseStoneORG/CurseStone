@@ -229,18 +229,26 @@ uint64_t Diagnostics::uptimeSeconds() const {
 
 void Diagnostics::recordPacket(bool out, const std::string& who, uint8_t pid, size_t size) {
     std::lock_guard<std::mutex> lk(mtx_);
-    char buf[200];
-    std::snprintf(buf, sizeof(buf), "%s %s %s pid=0x%02x (%s) size=%zu", out ? "OUT ->" : "IN  <-",
-                  who.c_str(), out ? "" : "", pid, packetName(pid), size);
-    action_ = buf;
-    packets_.push_back(PacketRecord{nowWallMs(), out, who, pid, size});
-    if (packets_.size() > kMaxPacketRecords)
-        packets_.pop_front();
+    // The most recent packet doubles as the "last action" line. Formatting
+    // goes straight into the fixed buffer: this runs for every packet in
+    // both directions, where the old code built a temporary std::string and
+    // re-assigned the std::string action_ — a heap allocation per packet.
+    std::snprintf(action_, sizeof(action_), "%s %s pid=0x%02x (%s) size=%zu",
+                  out ? "OUT ->" : "IN  <-", who.c_str(), pid, packetName(pid), size);
+    PacketRecord& rec = packets_ring_[packets_head_];
+    rec.wall_ms = nowWallMs();
+    rec.out = out;
+    rec.pid = pid;
+    rec.size = size;
+    std::snprintf(rec.who, sizeof(rec.who), "%s", who.c_str());
+    packets_head_ = (packets_head_ + 1) % kMaxPacketRecords;
+    if (packets_count_ < kMaxPacketRecords)
+        ++packets_count_;
 }
 
 void Diagnostics::setAction(const std::string& action) {
     std::lock_guard<std::mutex> lk(mtx_);
-    action_ = action;
+    std::snprintf(action_, sizeof(action_), "%s", action.c_str());
 }
 
 void Diagnostics::report(const std::string& category, const std::string& message,
@@ -358,15 +366,19 @@ std::string Diagnostics::renderRecentErrorsLocked(size_t max) const {
 }
 
 std::string Diagnostics::renderRecentPacketsLocked(size_t max) const {
-    if (packets_.empty())
+    if (packets_count_ == 0)
         return "(no packets recorded)\n";
     std::ostringstream os;
-    size_t start = packets_.size() > max ? packets_.size() - max : 0;
-    for (size_t i = start; i < packets_.size(); ++i) {
-        const auto& p = packets_[i];
+    // Walk the ring oldest -> newest and keep the same "last N" window the
+    // deque exposed before it became a fixed-capacity ring.
+    const size_t oldest =
+        (packets_head_ + kMaxPacketRecords - packets_count_) % kMaxPacketRecords;
+    const size_t skip = packets_count_ > max ? packets_count_ - max : 0;
+    for (size_t j = skip; j < packets_count_; ++j) {
+        const PacketRecord& p = packets_ring_[(oldest + j) % kMaxPacketRecords];
         char line[256];
         std::snprintf(line, sizeof(line), "  [%s] %s %-16s pid=0x%02x (%-22s) %zu B\n",
-                      shortTime(p.wall_ms).c_str(), p.out ? "OUT" : "IN ", p.who.c_str(), p.pid,
+                      shortTime(p.wall_ms).c_str(), p.out ? "OUT" : "IN ", p.who, p.pid,
                       packetName(p.pid), p.size);
         os << line;
     }

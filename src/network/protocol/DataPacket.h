@@ -125,6 +125,12 @@ class PacketWriter {
     explicit PacketWriter(std::vector<uint8_t>& out) : out_(out) {
     }
 
+    // Grow the backing buffer once when the caller knows the encoded size
+    // ahead of time (chunk binaries, skins, creative item lists).
+    void reserve(size_t n) {
+        out_.reserve(n);
+    }
+
     // ---- Single byte ----
     void writeU8(uint8_t v) {
         out_.push_back(v);
@@ -201,14 +207,17 @@ class PacketWriter {
         // instead of wrapping the length while writing every byte.
         size_t n = s.size() > 65535 ? 65535 : s.size();
         writeU16BE(static_cast<uint16_t>(n));
+        reserveBulk(n);
         out_.insert(out_.end(), s.data(), s.data() + n);
     }
     // VarInt-prefixed string (used by some newer fields).
     void writeString(const std::string& s) {
         writeVarU32(static_cast<uint32_t>(s.size()));
+        reserveBulk(s.size());
         out_.insert(out_.end(), s.data(), s.data() + s.size());
     }
     void writeBytes(const uint8_t* p, size_t n) {
+        reserveBulk(n);
         out_.insert(out_.end(), p, p + n);
     }
     void writeVarU32(uint32_t v) {
@@ -229,6 +238,15 @@ class PacketWriter {
     }
 
   private:
+    // Bulk appends reserve their exact destination size so a large payload
+    // (chunk binaries, skin data) lands in a single allocation instead of
+    // paying the geometric growth path, which memcpy's the whole buffer on
+    // every doubling. Small writes keep the amortized push_back behavior.
+    static constexpr size_t kBulkReserveBytes = 4096;
+    void reserveBulk(size_t n) {
+        if (n >= kBulkReserveBytes)
+            out_.reserve(out_.size() + n);
+    }
     std::vector<uint8_t>& out_;
 };
 

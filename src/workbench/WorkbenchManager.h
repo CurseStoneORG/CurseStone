@@ -116,7 +116,7 @@ class WorkbenchManager {
     void onTickEnd(uint64_t total_ms);
     void onPlayerUpdate(const std::string& name, uint64_t duration_ms);
     void onAutosave(uint64_t duration_ms);
-    void onPacketIn(const std::string& ip_port, uint8_t pid, size_t size);
+    void onPacketIn(const std::string& ip, uint16_t port, uint8_t pid, size_t size);
     void onPacketOut(const std::string& player, uint8_t pid, size_t size);
     void onDisconnect(const std::string& player, const std::string& reason, uint64_t session_ms,
                       uint64_t last_activity_delta_ms, size_t chunk_queue_pending);
