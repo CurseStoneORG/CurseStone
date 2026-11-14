@@ -1959,17 +1959,46 @@ std::shared_ptr<cursestone::tile::Tile> World::getTile(int32_t x, int32_t y, int
 }
 
 void World::setTile(int32_t x, int32_t y, int32_t z, std::shared_ptr<cursestone::tile::Tile> t) {
+    const uint64_t tkey = packTilePos(x, y, z);
+    const uint64_t ckey = packChunkPos(x >> 4, z >> 4);
     std::lock_guard<std::mutex> lk(tiles_mtx_);
-    tiles_[packTilePos(x, y, z)] = std::move(t);
+    // try_emplace never consumes its argument when the key already exists,
+    // so an overwrite at an occupied position updates the registry entry
+    // and its per-chunk slot in one pass instead of leaving the previous
+    // tile behind in the index.
+    auto [it, inserted] = tiles_.try_emplace(tkey, std::move(t));
+    if (!inserted)
+        it->second = std::move(t);
+    auto& bucket = tiles_by_chunk_[ckey];
+    for (auto& slot : bucket) {
+        if (slot.key == tkey) {
+            slot.tile = it->second;
+            return;
+        }
+    }
+    bucket.push_back(TileSlot{tkey, it->second});
 }
 
 void World::removeTile(int32_t x, int32_t y, int32_t z) {
+    const uint64_t tkey = packTilePos(x, y, z);
+    const uint64_t ckey = packChunkPos(x >> 4, z >> 4);
     std::lock_guard<std::mutex> lk(tiles_mtx_);
-    auto it = tiles_.find(packTilePos(x, y, z));
-    if (it == tiles_.end())
+    if (tiles_.erase(tkey) == 0)
         return;
-    tiles_.erase(it);
-    tiles_dirty_chunks_.insert(packChunkPos(x >> 4, z >> 4));
+    tiles_dirty_chunks_.insert(ckey);
+    auto bit = tiles_by_chunk_.find(ckey);
+    if (bit == tiles_by_chunk_.end())
+        return;
+    auto& bucket = bit->second;
+    for (size_t i = 0; i < bucket.size(); ++i) {
+        if (bucket[i].key == tkey) {
+            bucket[i] = std::move(bucket.back());
+            bucket.pop_back();
+            break;
+        }
+    }
+    if (bucket.empty())
+        tiles_by_chunk_.erase(bit); // No bucket for tile-less chunks.
 }
 
 std::vector<std::shared_ptr<cursestone::tile::Tile>> World::getTilesInChunk(int32_t cx,
@@ -1977,14 +2006,16 @@ std::vector<std::shared_ptr<cursestone::tile::Tile>> World::getTilesInChunk(int3
     ensureTilesLoaded(cx, cz);
     std::vector<std::shared_ptr<cursestone::tile::Tile>> out;
     std::lock_guard<std::mutex> lk(tiles_mtx_);
-    for (auto& kv : tiles_) {
-        auto& t = kv.second;
-        if (!t)
-            continue;
-        const auto& p = t->position();
-        if (((int32_t)p.x >> 4) == cx && ((int32_t)p.z >> 4) == cz) {
-            out.push_back(t);
-        }
+    // The per-chunk index hands over this chunk's tiles directly; the old
+    // path scanned every tile entity in the world per streamed chunk
+    // (CURSESTONE_ARCHITECTURE_AUDIT #16).
+    auto bit = tiles_by_chunk_.find(packChunkPos(cx, cz));
+    if (bit == tiles_by_chunk_.end())
+        return out;
+    out.reserve(bit->second.size());
+    for (auto& slot : bit->second) {
+        if (slot.tile)
+            out.push_back(slot.tile);
     }
     return out;
 }
@@ -2032,14 +2063,24 @@ void World::ensureTilesLoaded(int32_t cx, int32_t cz) {
             }
             if (tile) {
                 tile->readNBT(tag.get());
+                const uint64_t tkey = packTilePos(tx, ty, tz);
+                // Bucket by the tile's OWN claimed chunk, not the chunk the
+                // blob was read from: syncTilesToChunks and getTilesInChunk
+                // key on tile positions, so a hand-edited blob pointing
+                // outside its chunk lands where the rest of the engine
+                // expects it (same grouping the world map scan used).
+                const uint64_t tileCk =
+                    packChunkPos(static_cast<int32_t>(tx) >> 4, static_cast<int32_t>(tz) >> 4);
                 std::lock_guard<std::mutex> lk(tiles_mtx_);
                 // Re-hydration (a chunk streamed again after the client
                 // dropped it) must never clobber a LIVE tile with the
                 // stored blob — the in-memory instance holds the current
-                // state, the blob only what the last sync saw.
-                if (tiles_.count(packTilePos(tx, ty, tz)))
-                    continue;
-                tiles_[packTilePos(tx, ty, tz)] = std::move(tile);
+                // state, the blob only what the last sync saw. try_emplace
+                // encodes that rule: an occupied position keeps its live
+                // instance and the blob's tile is discarded.
+                auto [it, inserted] = tiles_.try_emplace(tkey, std::move(tile));
+                if (inserted)
+                    tiles_by_chunk_[tileCk].push_back(TileSlot{tkey, it->second});
             }
         }
     }
@@ -2076,11 +2117,20 @@ void World::hydrateTilesFromBlocks(int32_t cx, int32_t cz, mcp_chunk_t* c) {
     if (fresh.empty())
         return;
 
+    const uint64_t ckey = packChunkPos(cx, cz);
     std::lock_guard<std::mutex> lk(tiles_mtx_);
-    for (auto& t : fresh)
-        if (t)
-            tiles_[packTilePos((int32_t)t->position().x, (int32_t)t->position().y,
-                               (int32_t)t->position().z)] = std::move(t);
+    // emplace, not overwrite: a tile that raced in between the per-cell
+    // check above and this batch wins, matching the blob-path rule that a
+    // live instance is never clobbered by a re-hydration pass.
+    for (auto& t : fresh) {
+        if (!t)
+            continue;
+        const uint64_t tkey = packTilePos((int32_t)t->position().x, (int32_t)t->position().y,
+                                          (int32_t)t->position().z);
+        auto [it, inserted] = tiles_.try_emplace(tkey, std::move(t));
+        if (inserted)
+            tiles_by_chunk_[ckey].push_back(TileSlot{tkey, it->second});
+    }
 }
 
 void World::syncTilesToChunks() {
@@ -2089,14 +2139,26 @@ void World::syncTilesToChunks() {
     std::vector<uint64_t> emptiedChunks;
     {
         std::lock_guard<std::mutex> lk(tiles_mtx_);
-        for (auto& [_, t] : tiles_) {
-            if (!t)
+        // Group tiles by owning chunk straight from the per-chunk index;
+        // only chunks that actually carry dirty tiles pay for a copy. The
+        // old path rebuilt the whole grouping out of the world map on
+        // every save pass (CURSESTONE_ARCHITECTURE_AUDIT #16).
+        for (auto& [ckey, bucket] : tiles_by_chunk_) {
+            bool chunkHasDirty = false;
+            for (auto& slot : bucket) {
+                if (slot.tile && slot.tile->isDirty()) {
+                    chunkHasDirty = true;
+                    break;
+                }
+            }
+            if (!chunkHasDirty)
                 continue;
-            if (t->isDirty())
-                anyDirty = true;
-            int32_t cx = static_cast<int32_t>(t->position().x) >> 4;
-            int32_t cz = static_cast<int32_t>(t->position().z) >> 4;
-            byChunk[packChunkPos(cx, cz)].push_back(t);
+            anyDirty = true;
+            auto& out = byChunk[ckey];
+            out.reserve(bucket.size());
+            for (auto& slot : bucket)
+                if (slot.tile)
+                    out.push_back(slot.tile);
         }
         for (uint64_t ck : tiles_dirty_chunks_) {
             if (byChunk.find(ck) == byChunk.end())
@@ -2155,19 +2217,18 @@ void World::evictTilesForChunk(int32_t cx, int32_t cz) {
     std::vector<std::shared_ptr<cursestone::tile::Tile>> tilesInChunk;
     {
         std::lock_guard<std::mutex> lk(tiles_mtx_);
-        for (auto it = tiles_.begin(); it != tiles_.end();) {
-            if (!it->second) {
-                it = tiles_.erase(it);
-                continue;
+        // The per-chunk bucket enumerates exactly this chunk's tiles, and
+        // each slot carries its packed key — the registry erases by key
+        // instead of scanning (and re-deriving chunk coordinates from
+        // float positions of) every tile in the world.
+        auto bit = tiles_by_chunk_.find(ckey);
+        if (bit != tiles_by_chunk_.end()) {
+            for (auto& slot : bit->second) {
+                tiles_.erase(slot.key);
+                if (slot.tile)
+                    tilesInChunk.push_back(std::move(slot.tile));
             }
-            int32_t tcx = static_cast<int32_t>(it->second->position().x) >> 4;
-            int32_t tcz = static_cast<int32_t>(it->second->position().z) >> 4;
-            if (tcx == cx && tcz == cz) {
-                tilesInChunk.push_back(it->second);
-                it = tiles_.erase(it); // Remove from the registry.
-            } else {
-                ++it;
-            }
+            tiles_by_chunk_.erase(bit);
         }
         tiles_hydrated_chunks_.erase(ckey); // Rehydrate on the next load.
     }

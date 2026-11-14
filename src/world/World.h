@@ -594,6 +594,19 @@ class World {
     std::unordered_map<uint64_t, std::shared_ptr<cursestone::tile::Tile>> tiles_;
     mutable std::mutex tiles_mtx_;
 
+    // Per-chunk tile index: chunk key -> slots of (packed tile pos, tile).
+    // Mirrors tiles_ under the same mutex (tiles_ stays the authority for
+    // position lookups) so chunk-send, save grouping and eviction touch
+    // O(tiles of the chunk) instead of scanning the whole world map
+    // (CURSESTONE_ARCHITECTURE_AUDIT #16). The packed position lives in
+    // each slot so removal and eviction never re-derive keys from the
+    // tile's float position. Chunks without tiles carry no bucket.
+    struct TileSlot {
+        uint64_t key;
+        std::shared_ptr<cursestone::tile::Tile> tile;
+    };
+    std::unordered_map<uint64_t, std::vector<TileSlot>> tiles_by_chunk_;
+
     // Tracks chunks whose tile NBT has been loaded this session.
     std::unordered_set<uint64_t> tiles_hydrated_chunks_;
 
