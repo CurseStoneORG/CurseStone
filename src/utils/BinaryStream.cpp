@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <vector>
 
 #define MCP_BS_INITIAL_CAP 64
 
@@ -48,6 +49,8 @@ static bool ensure_capacity(mcp_bstream_t* s, size_t need) {
 void mcp_bstream_init(mcp_bstream_t* s) {
     s->data = NULL;
     s->size = s->capacity = s->offset = 0;
+    s->owned = 1;
+    s->vec = NULL;
 }
 
 void mcp_bstream_init_read(mcp_bstream_t* s, const uint8_t* data, size_t len) {
@@ -58,14 +61,40 @@ void mcp_bstream_init_read(mcp_bstream_t* s, const uint8_t* data, size_t len) {
     }
     s->size = s->capacity = len;
     s->offset = 0;
+    s->owned = 1;
+    s->vec = NULL;
+}
+
+void mcp_bstream_init_read_borrow(mcp_bstream_t* s, const uint8_t* data, size_t len) {
+    // Zero-copy read mode: point the cursor at the caller's buffer, which
+    // must outlive the parse. Read helpers never write through s->data.
+    s->data = const_cast<uint8_t*>(data);
+    s->size = s->capacity = len;
+    s->offset = 0;
+    s->owned = 0;
+    s->vec = NULL;
+}
+
+void mcp_bstream_attach_vec(mcp_bstream_t* s, std::vector<uint8_t>* vec) {
+    // Write-attach mode: the vector owns the storage from here on. The
+    // cursor fields mirror the vector after every append so the rest of
+    // the API keeps working unchanged.
+    s->vec = vec;
+    s->owned = 0;
+    s->data = vec->data();
+    s->size = vec->size();
+    s->capacity = vec->capacity();
+    s->offset = 0;
 }
 
 void mcp_bstream_free(mcp_bstream_t* s) {
-    if (s->data) {
+    if (s->owned && s->data) {
         free(s->data);
-        s->data = NULL;
     }
+    s->data = NULL;
     s->size = s->capacity = s->offset = 0;
+    s->owned = 0;
+    s->vec = NULL;
 }
 
 
@@ -74,6 +103,15 @@ size_t mcp_bstream_remaining(const mcp_bstream_t* s) {
 }
 
 void mcp_bstream_write_bytes(mcp_bstream_t* s, const void* data, size_t len) {
+    if (s->vec) {
+        // Attached mode: the vector owns and grows the storage.
+        auto* v = static_cast<std::vector<uint8_t>*>(s->vec);
+        v->insert(v->end(), (const uint8_t*)data, (const uint8_t*)data + len);
+        s->data = v->data();
+        s->size = v->size();
+        s->capacity = v->capacity();
+        return;
+    }
     if (!ensure_capacity(s, s->size + len))
         return;
     if (len)

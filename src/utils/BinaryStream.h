@@ -29,6 +29,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
+#include <vector>
 
 
 typedef struct mcp_bstream {
@@ -36,11 +37,20 @@ typedef struct mcp_bstream {
     size_t size;     // bytes used
     size_t capacity; // bytes allocated
     size_t offset;   // read cursor
+    int owned;       // 1 when data is malloc'd here; 0 when borrowed/attached
+    void* vec;       // attach mode: std::vector<uint8_t>* owning the storage
 } mcp_bstream_t;
 
 // Lifecycle
 void mcp_bstream_init(mcp_bstream_t* s);
 void mcp_bstream_init_read(mcp_bstream_t* s, const uint8_t* data, size_t len);
+// Zero-copy read mode: the stream borrows `data` and never frees or writes
+// through it. The caller must keep the buffer alive for the whole parse.
+void mcp_bstream_init_read_borrow(mcp_bstream_t* s, const uint8_t* data, size_t len);
+// Write-attach mode: every write appends straight into *vec, which owns and
+// grows the storage, so the result is never copied out. mcp_bstream_free()
+// releases nothing in this mode.
+void mcp_bstream_attach_vec(mcp_bstream_t* s, std::vector<uint8_t>* vec);
 void mcp_bstream_free(mcp_bstream_t* s);
 
 // Reset (keeps allocation, sets size and offset to 0)

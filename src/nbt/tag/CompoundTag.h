@@ -50,6 +50,26 @@ class CompoundTag : public Tag {
     std::vector<CompoundEntry> entries; // insertion order preserved (wire format)
 
     void write_payload(mcp_bstream_t* s, bool le) const override;
+
+  private:
+    // Lookup accelerator for big compounds. Open addressing over the entry
+    // names: one slot array mapping name hash -> entry position (+1, 0 =
+    // empty). No key storage; a probe verifies the probed entry's name, so
+    // nothing is duplicated and reallocating `entries` cannot stale the
+    // index. Built when the compound reaches kIndexMinEntries and kept in
+    // sync eagerly by the mutating friends, so get() stays read-only.
+    static constexpr size_t kIndexMinEntries = 8;
+    std::vector<uint32_t> index_slots_;
+
+    size_t index_find(const char* name, uint32_t hash) const;
+    void index_insert(size_t pos);
+    void index_rebuild();
+    bool insert_or_replace(std::string&& name, Tag* child);
+
+    friend bool set(Tag* c, const char* name, Tag* child);
+    friend bool set_moved(Tag* c, std::string&& name, Tag* child);
+    friend const Tag* get(const Tag* c, const char* name);
+    friend bool remove(Tag* c, const char* name);
 };
 
 // The compound/list operations below all tolerate a missing or
@@ -58,6 +78,11 @@ class CompoundTag : public Tag {
 // Insert or replace a child. The compound takes ownership of `child`
 // on success; on failure the caller keeps ownership.
 bool set(Tag* c, const char* name, Tag* child);
+
+// Insert or replace a child, moving `name` into the entry instead of
+// copying it (parse fast path: the parser already holds the name in a
+// local string). Same ownership rules as set().
+bool set_moved(Tag* c, std::string&& name, Tag* child);
 
 // Convenience setters for primitives.
 bool set_byte(Tag* c, const char* name, int8_t v);
