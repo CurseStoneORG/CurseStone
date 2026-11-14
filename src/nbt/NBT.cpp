@@ -169,7 +169,9 @@ Tag* read_payload_depth(mcp_bstream_t* s, TagType type, bool le, int depth) {
             }
             if (!name.empty())
                 set_name(child, name.data(), name.size());
-            if (!set(comp, name.c_str(), child)) {
+            // Move the parsed name into the entry instead of copying it a
+            // second time out of the local string.
+            if (!set_moved(comp, std::move(name), child)) {
                 delete child;
                 delete comp;
                 return nullptr;
@@ -240,7 +242,10 @@ void write_root(mcp_bstream_t* s, const Tag* root, bool le) {
 Tag* read(const uint8_t* data, size_t len, bool le) {
     try {
         mcp_bstream_t s;
-        mcp_bstream_init_read(&s, data, len);
+        // Borrow the caller's buffer: the parse is synchronous and every
+        // tag copies the strings and payloads it keeps, so the whole-input
+        // copy the old init_read made per call bought nothing.
+        mcp_bstream_init_read_borrow(&s, data, len);
         Tag* t = read_root(&s, le);
         mcp_bstream_free(&s);
         return t;
@@ -253,11 +258,11 @@ void write(const Tag* root, bool le, std::vector<uint8_t>& out) {
     out.clear();
     try {
         mcp_bstream_t s;
-        mcp_bstream_init(&s);
+        // Attached mode: write_root encodes straight into `out` - no
+        // temporary malloc stream and no whole-blob copy at the end.
+        mcp_bstream_attach_vec(&s, &out);
         write_root(&s, root, le);
-        if (s.size)
-            out.assign(s.data, s.data + s.size);
-        mcp_bstream_free(&s);
+        mcp_bstream_free(&s); // nothing to free: out owns the bytes
     } catch (...) {
         out.clear();
     }
