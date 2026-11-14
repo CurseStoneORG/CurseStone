@@ -193,7 +193,7 @@ void Player::broadcastBowPose(bool drawing) {
     auto pk = std::make_shared<network::protocol::SetEntityDataPacket>();
     pk->eid = runtimeId();
     pk->entries.push_back(makePoseFlagEntry(sneaking_, sprinting_, drawing, isOnFire(), invisible_));
-    for (auto& other : srv_->playersSnapshot()) {
+    for (auto& other : srv_->playersSnapshotRef()) {
         if (!other || other.get() == this)
             continue;
         if (other->isPendingRemoval() || !other->spawned())
@@ -226,7 +226,7 @@ void Player::broadcastHeldItemToViewers() {
     // hotbar relink.
     pk->hotbarSlot = (uint8_t)inv_->heldSlot();
     pk->selectedSlot = (uint8_t)inv_->getHeldItemIndex();
-    for (auto& other : srv_->playersSnapshot()) {
+    for (auto& other : srv_->playersSnapshotRef()) {
         if (!other || other.get() == this)
             continue;
         if (other->isPendingRemoval() || !other->spawned())
@@ -294,7 +294,7 @@ void Player::throwSplashPotion() {
     auto motion = std::make_shared<network::protocol::SetEntityMotionPacket>();
     motion->entities.push_back(
         {eid, (float)(dx * kThrowPower), (float)(dy * kThrowPower), (float)(dz * kThrowPower)});
-    for (auto& other : srv_->playersSnapshot()) {
+    for (auto& other : srv_->playersSnapshotRef()) {
         if (!other || !other->spawned())
             continue;
         if (other->getWorld() != getWorld())
@@ -433,7 +433,7 @@ void Player::releaseBow() {
     // client velocity and let MoveEntity packets drive the flight.
     bool nearPlayer = false;
     double ex = pos_.x, ey = pos_.y + kEyeHeight, ez = pos_.z;
-    for (auto& other : srv_->playersSnapshot()) {
+    for (auto& other : srv_->playersSnapshotRef()) {
         if (!other || !other->spawned() || other.get() == this)
             continue;
         if (other->isPendingRemoval() || other->isDead())
@@ -460,7 +460,7 @@ void Player::releaseBow() {
         motion = std::make_shared<network::protocol::SetEntityMotionPacket>();
         motion->entities.push_back({eid, (float)(dx * f), (float)(dy * f), (float)(dz * f)});
     }
-    for (auto& other : srv_->playersSnapshot()) {
+    for (auto& other : srv_->playersSnapshotRef()) {
         if (!other || !other->spawned())
             continue;
         if (other->getWorld() != lvl)
@@ -477,7 +477,7 @@ void Player::releaseBow() {
     snd->y = (float)(pos_.y + kEyeHeight);
     snd->z = (float)pos_.z;
     snd->data = 0;
-    for (auto& other : srv_->playersSnapshot()) {
+    for (auto& other : srv_->playersSnapshotRef()) {
         if (!other || !other->spawned())
             continue;
         if (other->getWorld() != lvl)

@@ -66,7 +66,7 @@ static void broadcastSleepMetadata(Player* self, bool sleeping, int bx, int by, 
     self->sendPacket(build(0));
 
     auto viewerPk = build(self->runtimeId());
-    for (auto& other : self->server()->playersSnapshot()) {
+    for (auto& other : self->server()->playersSnapshotRef()) {
         if (!other || other.get() == self)
             continue;
         if (other->isPendingRemoval())
@@ -89,7 +89,7 @@ bool Player::sleepOn(int bx, int by, int bz) {
         return false;
 
     // Prevent multiple players from sleeping in the same bed.
-    for (auto& other : srv_->playersSnapshot()) {
+    for (auto& other : srv_->playersSnapshotRef()) {
         if (!other || other.get() == this)
             continue;
         if (other->isPendingRemoval())
@@ -172,7 +172,7 @@ void Player::stopSleep() {
 void Player::wakeSleepersOnBed(Server* srv, world::World* lvl, int bx, int by, int bz) {
     if (!srv || !lvl)
         return;
-    for (auto& other : srv->playersSnapshot()) {
+    for (auto& other : srv->playersSnapshotRef()) {
         if (!other || other->isPendingRemoval())
             continue;
         if (!other->isSleeping())
@@ -217,7 +217,7 @@ void Player::resetSpawnToDefault() {
 void Player::clearSpawnsOnBed(Server* srv, world::World* lvl, int bx, int by, int bz) {
     if (!srv || !lvl)
         return;
-    for (auto& other : srv->playersSnapshot()) {
+    for (auto& other : srv->playersSnapshotRef()) {
         if (!other || other->isPendingRemoval())
             continue;
         if (!other->hasSpawnOverride())

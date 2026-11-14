@@ -316,7 +316,7 @@ bool Server::unloadWorld(const std::string& name) {
             return false;
 
         // Move players to the default world's spawn before releasing the world.
-        for (auto& p : playersSnapshot()) {
+        for (auto& p : playersSnapshotRef()) {
             if (p && p->getWorld() == w) {
                 auto sp = world_ ? world_->spawn() : mcp_v3(0, 64, 0);
                 p->switchWorld(world_.get(), sp.x, sp.y, sp.z, false);
@@ -523,11 +523,16 @@ void Server::tick() {
     // Remove players marked for deletion.
     {
         std::lock_guard<std::mutex> lk(players_mtx_);
-        players_.erase(std::remove_if(players_.begin(), players_.end(),
-                                      [](const std::shared_ptr<Player>& p) {
-                                          return !p || p->isPendingRemoval();
-                                      }),
-                       players_.end());
+        auto it = std::remove_if(players_.begin(), players_.end(),
+                                 [](const std::shared_ptr<Player>& p) {
+                                     return !p || p->isPendingRemoval();
+                                 });
+        if (it != players_.end()) {
+            players_.erase(it, players_.end());
+            // Invalidate the playersSnapshotRef() cache; the next read
+            // rebuilds it once instead of copying per broadcast call.
+            players_version_.fetch_add(1, std::memory_order_relaxed);
+        }
     }
 
     // Tick the scheduler to process synchronous tasks and async completions.
@@ -592,7 +597,7 @@ void Server::tick() {
         std::memory_order_relaxed);
 
     // Update online players.
-    auto snap = playersSnapshot();
+    const auto& snap = playersSnapshotRef();
     for (auto& p : snap) {
         if (!p)
             continue;
@@ -661,7 +666,7 @@ void Server::tick() {
 
     // Save player data and drain dirty chunks incrementally.
     if (autosave_ticks_ > 0 && currentTick_ % autosave_ticks_ == 0) {
-        auto psnap = playersSnapshot();
+        const auto& psnap = playersSnapshotRef();
         for (auto& p : psnap) {
             if (p)
                 p->saveData(); // Save player NBT data.
@@ -700,7 +705,7 @@ void Server::shutdown() {
 }
 
 Player* Server::getPlayer(const std::string& name) const {
-    auto snap = playersSnapshot();
+    const auto& snap = playersSnapshotRef();
     for (const auto& p : snap)
         if (p && p->getName() == name)
             return p.get();
@@ -709,18 +714,39 @@ Player* Server::getPlayer(const std::string& name) const {
 void Server::addPlayer(std::shared_ptr<Player> p) {
     std::lock_guard<std::mutex> lk(players_mtx_);
     players_.push_back(std::move(p));
+    players_version_.fetch_add(1, std::memory_order_relaxed);
 }
 void Server::removePlayer(Player* p) {
     std::lock_guard<std::mutex> lk(players_mtx_);
-    players_.erase(std::remove_if(players_.begin(), players_.end(),
-                                  [p](const std::shared_ptr<Player>& q) {
-                                      return q.get() == p;
-                                  }),
-                   players_.end());
+    auto it = std::remove_if(players_.begin(), players_.end(),
+                             [p](const std::shared_ptr<Player>& q) {
+                                 return q.get() == p;
+                             });
+    if (it != players_.end()) {
+        players_.erase(it, players_.end());
+        players_version_.fetch_add(1, std::memory_order_relaxed);
+    }
 }
 std::vector<std::shared_ptr<Player>> Server::playersSnapshot() const {
     std::lock_guard<std::mutex> lk(players_mtx_);
     return players_;
+}
+
+const std::vector<std::shared_ptr<Player>>& Server::playersSnapshotRef() const {
+    // Main-thread fast path: hand out the cached list and rebuild it only
+    // when players_ actually changed since the last read. Mutations happen
+    // in the tick-start reap and in addPlayer (network drain), both under
+    // players_mtx_ and both bumping players_version_ - so a mismatch here
+    // means this is the first read after a change. Steady state (no joins,
+    // no leaves): no copy, no lock and no allocation for every broadcast.
+    uint64_t v = players_version_.load(std::memory_order_relaxed);
+    if (player_snapshot_cache_version_ != v) {
+        std::lock_guard<std::mutex> lk(players_mtx_);
+        v = players_version_.load(std::memory_order_relaxed);
+        player_snapshot_cache_ = players_;
+        player_snapshot_cache_version_ = v;
+    }
+    return player_snapshot_cache_;
 }
 void Server::broadcastMessage(const std::string& msg) {
     // Serialize the chat TextPacket once and reuse the encoded bytes for
@@ -731,7 +757,7 @@ void Server::broadcastMessage(const std::string& msg) {
     std::vector<uint8_t> body;
     pk.writePacket(body);
     if (!body.empty()) {
-        auto snap = playersSnapshot();
+        const auto& snap = playersSnapshotRef();
         for (auto& p : snap)
             if (p)
                 p->sendEncodedBody(body, pk.pid());
@@ -744,7 +770,7 @@ int64_t Server::allocateEid() {
 }
 void Server::saveAll() {
     // Save player data first so world changes are marked dirty.
-    auto snap = playersSnapshot();
+    const auto& snap = playersSnapshotRef();
     for (auto& p : snap) {
         if (p)
             p->saveData();
@@ -1198,7 +1224,7 @@ void Server::saveOfflinePlayerData(const std::string& name, NbtPtr nbt) {
 
 // reference-compatible method implementations.
 Player* Server::getPlayerExact(const std::string& name) const {
-    auto snap = playersSnapshot();
+    const auto& snap = playersSnapshotRef();
     for (const auto& p : snap) {
         if (p) {
             std::string pn = p->getName();
@@ -1222,7 +1248,7 @@ std::vector<Player*> Server::matchPlayer(const std::string& partialName) const {
     std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
         return (char)::tolower(c);
     });
-    for (const auto& p : playersSnapshot()) {
+    for (const auto& p : playersSnapshotRef()) {
         if (!p)
             continue;
         std::string pn = p->getName();
@@ -1302,7 +1328,7 @@ void Server::titleTick() {
     if (network_) {
         std::string motd = "MCPE;" + motd_ + ";" + std::to_string(PROTOCOL_VERSION) + ";" +
                            std::string(MINECRAFT_VERSION) + ";" +
-                           std::to_string(playersSnapshot().size()) + ";" +
+                           std::to_string(playersSnapshotRef().size()) + ";" +
                            std::to_string(max_players_);
         // Access setServerName through the RakLib interface.
         auto* raklib = dynamic_cast<network::RakLibInterface*>(network_->getRakLib());

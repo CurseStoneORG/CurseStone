@@ -33,7 +33,7 @@ namespace cursestone {
 // --- Player: solo la clave virtual, para que se emita el typeinfo ---
 Player::~Player() = default;
 void Player::kick(const std::string&) { stub("Player::kick"); }
-void Player::sendPacket(std::shared_ptr<network::protocol::DataPacket>, bool) { stub("Player::sendPacket"); }
+void Player::sendPacket(const std::shared_ptr<network::protocol::DataPacket>&, bool) { stub("Player::sendPacket"); }
 void Player::setGamemode(int) { stub("Player::setGamemode"); }
 void Player::teleport(double, double, double) { stub("Player::teleport"); }
 

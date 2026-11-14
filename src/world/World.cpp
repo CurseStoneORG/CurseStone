@@ -531,7 +531,7 @@ void World::tick(uint64_t current_tick) {
 }
 
 void World::broadcastTimeSync() {
-    auto players = cursestone::Server::getInstance().playersSnapshot();
+    const auto& players = cursestone::Server::getInstance().playersSnapshotRef();
     bool any = false;
     for (auto& p : players) {
         if (p && !p->isPendingRemoval() && p->getWorld() == this) {
@@ -554,7 +554,7 @@ void World::broadcastTimeSync() {
 
 void World::checkSleep() {
     auto& srv = cursestone::Server::getInstance();
-    auto players = srv.playersSnapshot();
+    const auto& players = srv.playersSnapshotRef();
     if (players.empty())
         return;
 
@@ -677,7 +677,7 @@ bool liquidForFalling(uint8_t id) {
 
 void sendToChunkViewers(World* w, int32_t cx, int32_t cz,
                         const std::shared_ptr<network::protocol::DataPacket>& pk) {
-    for (auto& p : cursestone::Server::getInstance().playersSnapshot()) {
+    for (auto& p : cursestone::Server::getInstance().playersSnapshotRef()) {
         if (!p || !p->spawned())
             continue;
         if (p->getWorld() != w)
@@ -691,7 +691,7 @@ void sendToChunkViewers(World* w, int32_t cx, int32_t cz,
 void sendRemoveEntity(World* w, int64_t eid) {
     auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
     rm->eid = eid;
-    for (auto& p : cursestone::Server::getInstance().playersSnapshot()) {
+    for (auto& p : cursestone::Server::getInstance().playersSnapshotRef()) {
         if (!p || !p->spawned())
             continue;
         if (p->getWorld() != w)
@@ -718,7 +718,7 @@ void anvilLandingEffects(World* w, int32_t bx, int32_t by, int32_t bz, float fal
     double minx = (double)bx + 0.5 - 0.49 - 0.1, maxx = (double)bx + 0.5 + 0.49 + 0.1;
     double miny = (double)by - 0.1, maxy = (double)by + 0.98 + 0.1;
     double minz = (double)bz + 0.5 - 0.49 - 0.1, maxz = (double)bz + 0.5 + 0.49 + 0.1;
-    for (auto& p : cursestone::Server::getInstance().playersSnapshot()) {
+    for (auto& p : cursestone::Server::getInstance().playersSnapshotRef()) {
         if (!p || !p->spawned() || p->isDead() || p->isPendingRemoval())
             continue;
         if (p->getWorld() != w)
@@ -746,7 +746,7 @@ void sendUpdateBlock(World* w, int32_t x, int32_t y, int32_t z, uint8_t id, uint
     pk->blockData = data;
     pk->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
     int32_t cx = x >> 4, cz = z >> 4;
-    for (auto& p : cursestone::Server::getInstance().playersSnapshot()) {
+    for (auto& p : cursestone::Server::getInstance().playersSnapshotRef()) {
         if (!p || !p->spawned())
             continue;
         if (p->getWorld() != w)
@@ -907,7 +907,7 @@ void World::tickDroppedItems(uint64_t current_tick) {
         pk->z = (float)di->z;
         int32_t pk_cx = (int32_t)std::floor(di->x) >> 4;
         int32_t pk_cz = (int32_t)std::floor(di->z) >> 4;
-        for (auto& p : Server::getInstance().playersSnapshot()) {
+        for (auto& p : Server::getInstance().playersSnapshotRef()) {
             if (!p || !p->spawned())
                 continue;
             if (p->getWorld() != this)
@@ -945,7 +945,7 @@ size_t World::collectDroppedItems(uint64_t current_tick) {
             if (i > 0)
                 rm = std::make_shared<network::protocol::RemoveEntityPacket>();
             rm->eid = expired[i];
-            for (auto& p : Server::getInstance().playersSnapshot()) {
+            for (auto& p : Server::getInstance().playersSnapshotRef()) {
                 if (p && p->spawned() && p->getWorld() == this)
                     p->sendPacket(rm);
             }
@@ -1005,7 +1005,7 @@ void World::addParticle(const particle::Particle& p) {
     pk->y = (float)pos.y;
     pk->z = (float)pos.z;
     pk->data = p.networkData();
-    for (auto& pl : Server::getInstance().playersSnapshot()) {
+    for (auto& pl : Server::getInstance().playersSnapshotRef()) {
         if (!pl || !pl->spawned() || pl->getWorld() != this)
             continue;
         if (!pl->canSeeBlock(cx, cz))
@@ -1024,7 +1024,7 @@ void World::broadcastBlockParticles(int32_t bx, int32_t by, int32_t bz,
     // Block packing of protocol 84: id in the low byte, meta in bits 12+.
     pk->data = ((int32_t)blockId & 0xFF) | ((int32_t)blockData << 12);
     int32_t cx = bx >> 4, cz = bz >> 4;
-    for (auto& pl : Server::getInstance().playersSnapshot()) {
+    for (auto& pl : Server::getInstance().playersSnapshotRef()) {
         if (!pl || !pl->spawned() || pl->getWorld() != this)
             continue;
         if (!pl->canSeeBlock(cx, cz))
@@ -1051,7 +1051,7 @@ void World::tickArrows(uint64_t current_tick) {
             a->taken = true;
             auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
             rm->eid = a->eid;
-            for (auto& p : Server::getInstance().playersSnapshot()) {
+            for (auto& p : Server::getInstance().playersSnapshotRef()) {
                 if (p && p->spawned() && p->getWorld() == this)
                     p->sendPacket(rm);
             }
@@ -1077,7 +1077,7 @@ void World::tickArrows(uint64_t current_tick) {
         // see server-streamed positions from here on (sticky for the
         // rest of the flight; visually identical, positions are the same).
         if (!a->client_hold) {
-            for (auto& p : Server::getInstance().playersSnapshot()) {
+            for (auto& p : Server::getInstance().playersSnapshotRef()) {
                 if (!p || !p->spawned() || p->isDead() || p->isPendingRemoval())
                     continue;
                 if (p->getWorld() != this)
@@ -1111,7 +1111,7 @@ void World::tickArrows(uint64_t current_tick) {
                            double ez, double* outT = nullptr) -> Player* {
             Player* best = nullptr;
             double bestT = 2.0; // t in [0,1] along the segment
-            for (auto& p : Server::getInstance().playersSnapshot()) {
+            for (auto& p : Server::getInstance().playersSnapshotRef()) {
                 if (!p || !p->spawned() || p->isDead())
                     continue;
                 if (p->isPendingRemoval())
@@ -1210,7 +1210,7 @@ void World::tickArrows(uint64_t current_tick) {
                 dmg += (float)(std::rand() % ((int)(dmg / 2) + 2));
             }
             Player* shooter = nullptr;
-            for (auto& p : Server::getInstance().playersSnapshot()) {
+            for (auto& p : Server::getInstance().playersSnapshotRef()) {
                 if (p && p->runtimeId() == a->shooter_eid) {
                     shooter = p.get();
                     break;
@@ -1227,7 +1227,7 @@ void World::tickArrows(uint64_t current_tick) {
                     auto hurtEv = std::make_shared<network::protocol::EntityEventPacket>();
                     hurtEv->eid = hit->runtimeId();
                     hurtEv->event = network::protocol::EntityEventPacket::HURT_ANIMATION;
-                    for (auto& other : Server::getInstance().playersSnapshot()) {
+                    for (auto& other : Server::getInstance().playersSnapshotRef()) {
                         if (!other || other.get() == hit)
                             continue;
                         if (!other->spawned())
@@ -1261,7 +1261,7 @@ void World::tickArrows(uint64_t current_tick) {
                 mv->pitch = a->pitch;
                 auto mo = std::make_shared<network::protocol::SetEntityMotionPacket>();
                 mo->entities.push_back({a->eid, 0.0f, 0.0f, 0.0f});
-                for (auto& p : Server::getInstance().playersSnapshot()) {
+                for (auto& p : Server::getInstance().playersSnapshotRef()) {
                     if (!p || !p->spawned() || p->getWorld() != this)
                         continue;
                     if (!p->canSeeBlock(fcx, fcz))
@@ -1277,7 +1277,7 @@ void World::tickArrows(uint64_t current_tick) {
                 // between packets then cannot advance the arrow deeper.
                 auto mo = std::make_shared<network::protocol::SetEntityMotionPacket>();
                 mo->entities.push_back({a->eid, 0.0f, 0.0f, 0.0f});
-                for (auto& p : Server::getInstance().playersSnapshot()) {
+                for (auto& p : Server::getInstance().playersSnapshotRef()) {
                     if (!p || !p->spawned() || p->getWorld() != this)
                         continue;
                     p->sendPacket(mo);
@@ -1285,7 +1285,7 @@ void World::tickArrows(uint64_t current_tick) {
             }
             auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
             rm->eid = a->eid;
-            for (auto& p : Server::getInstance().playersSnapshot()) {
+            for (auto& p : Server::getInstance().playersSnapshotRef()) {
                 if (p && p->spawned() && p->getWorld() == this)
                     p->sendPacket(rm);
             }
@@ -1343,7 +1343,7 @@ void World::tickArrows(uint64_t current_tick) {
             a->taken = true;
             auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
             rm->eid = a->eid;
-            for (auto& p : Server::getInstance().playersSnapshot()) {
+            for (auto& p : Server::getInstance().playersSnapshotRef()) {
                 if (p && p->spawned() && p->getWorld() == this)
                     p->sendPacket(rm);
             }
@@ -1400,7 +1400,7 @@ void World::tickArrows(uint64_t current_tick) {
             mv->yaw = a->yaw;
             mv->headYaw = a->yaw;
             mv->pitch = a->pitch;
-            for (auto& p : Server::getInstance().playersSnapshot()) {
+            for (auto& p : Server::getInstance().playersSnapshotRef()) {
                 if (!p || !p->spawned() || p->getWorld() != this)
                     continue;
                 if (!p->canSeeBlock(vcx, vcz))
@@ -1421,7 +1421,7 @@ void World::tickArrows(uint64_t current_tick) {
 
             auto mo = std::make_shared<network::protocol::SetEntityMotionPacket>();
             mo->entities.push_back({a->eid, (float)smx, (float)smy, (float)smz});
-            for (auto& p : Server::getInstance().playersSnapshot()) {
+            for (auto& p : Server::getInstance().playersSnapshotRef()) {
                 if (!p || !p->spawned() || p->getWorld() != this)
                     continue;
                 if (!p->canSeeBlock(vcx, vcz))
@@ -1481,7 +1481,7 @@ void World::tickSplashPotions(uint64_t current_tick) {
         double nz = p->z + p->vz;
 
         bool broke = false;
-        for (auto& pl : Server::getInstance().playersSnapshot()) {
+        for (auto& pl : Server::getInstance().playersSnapshotRef()) {
             if (!pl || !pl->spawned() || pl->isDead() || pl->isPendingRemoval())
                 continue;
             if (pl->getWorld() != this)
@@ -1545,7 +1545,7 @@ void World::tickSplashPotions(uint64_t current_tick) {
             shatter->data = (int32_t)(0xFF000000u | (color & 0x00FFFFFFu));
             int32_t scx = (int32_t)std::floor(p->x) >> 4;
             int32_t scz = (int32_t)std::floor(p->z) >> 4;
-            for (auto& pl : Server::getInstance().playersSnapshot()) {
+            for (auto& pl : Server::getInstance().playersSnapshotRef()) {
                 if (!pl || !pl->spawned() || pl->isPendingRemoval() || pl->getWorld() != this)
                     continue;
                 if (!pl->canSeeBlock(scx, scz))
@@ -1562,7 +1562,7 @@ void World::tickSplashPotions(uint64_t current_tick) {
                 world::Position{p->x + ox, p->y + oy, p->z + oz}, (int32_t)color));
         }
         if (has_effect) {
-            for (auto& pl : Server::getInstance().playersSnapshot()) {
+            for (auto& pl : Server::getInstance().playersSnapshotRef()) {
                 if (!pl || !pl->spawned() || pl->isDead() || pl->isPendingRemoval())
                     continue;
                 if (pl->getWorld() != this)
@@ -1579,7 +1579,7 @@ void World::tickSplashPotions(uint64_t current_tick) {
         }
         auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
         rm->eid = p->eid;
-        for (auto& pl : Server::getInstance().playersSnapshot()) {
+        for (auto& pl : Server::getInstance().playersSnapshotRef()) {
             if (pl && pl->spawned() && pl->getWorld() == this)
                 pl->sendPacket(rm);
         }
@@ -2260,7 +2260,7 @@ void World::setWeather(int state, int32_t durationTicks) {
     weather_ticks_left_ = durationTicks > 0 ? durationTicks : -1;
     rain_strength_ = 90000 + (uint32_t)(rand() % 20001);
     thunder_strength_ = 30000 + (uint32_t)(rand() % 10001);
-    for (auto& p : Server::getInstance().playersSnapshot()) {
+    for (auto& p : Server::getInstance().playersSnapshotRef()) {
         if (p && p->spawned() && p->getWorld() == this)
             sendWeatherTo(p.get());
     }
@@ -2283,7 +2283,7 @@ class LightningRemovalTask : public scheduler::Task {
     void onRun() override {
         auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
         rm->eid = eid_;
-        for (auto& p : Server::getInstance().playersSnapshot()) {
+        for (auto& p : Server::getInstance().playersSnapshotRef()) {
             if (!p || !p->spawned())
                 continue;
             world::World* w = p->getWorld();
@@ -2315,7 +2315,7 @@ void World::spawnLightning(double x, double y, double z, bool withFire) {
     exp->y = (float)y;
     exp->z = (float)z;
     exp->radius = 10.0f;
-    for (auto& p : Server::getInstance().playersSnapshot()) {
+    for (auto& p : Server::getInstance().playersSnapshotRef()) {
         if (p && p->spawned() && p->getWorld() == this) {
             p->sendPacket(add);
             p->sendPacket(exp);
@@ -2327,7 +2327,7 @@ void World::spawnLightning(double x, double y, double z, bool withFire) {
         std::make_shared<LightningRemovalTask>(eid, name()), 20);
 
     if (Server::getInstance().difficulty() > 0) {
-        for (auto& p : Server::getInstance().playersSnapshot()) {
+        for (auto& p : Server::getInstance().playersSnapshotRef()) {
             if (!p || !p->spawned())
                 continue;
             if (p->getWorld() != this)
@@ -2358,7 +2358,7 @@ void World::spawnLightning(double x, double y, double z, bool withFire) {
                 up->y = (uint8_t)by;
                 up->blockId = block::FIRE;
                 up->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
-                for (auto& p : Server::getInstance().playersSnapshot()) {
+                for (auto& p : Server::getInstance().playersSnapshotRef()) {
                     if (p && p->spawned() && p->getWorld() == this)
                         p->sendPacket(up);
                 }
@@ -2368,7 +2368,7 @@ void World::spawnLightning(double x, double y, double z, bool withFire) {
 }
 
 void World::strikeRandomPlayerLightning() {
-    auto players = Server::getInstance().playersSnapshot();
+    const auto& players = Server::getInstance().playersSnapshotRef();
     Player* target = nullptr;
     for (auto& p : players) {
         if (p && p->spawned() && p->getWorld() == this) {
@@ -2446,7 +2446,7 @@ void World::doWeatherTick(uint64_t current_tick) {
                 up->blockId = block::AIR;
                 up->blockData = 0;
                 up->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
-                for (auto& p : Server::getInstance().playersSnapshot()) {
+                for (auto& p : Server::getInstance().playersSnapshotRef()) {
                     if (p && p->spawned() && p->getWorld() == this)
                         p->sendPacket(up);
                 }

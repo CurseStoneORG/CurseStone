@@ -161,7 +161,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
     }
 
     // Reject connections when the server is full.
-    if (srv_ && srv_->playersSnapshot().size() >= (size_t)srv_->maxPlayers()) {
+    if (srv_ && srv_->playersSnapshotRef().size() >= (size_t)srv_->maxPlayers()) {
         kick("disconnectionScreen.serverFull");
         return;
     }
@@ -183,7 +183,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
 
     // Kick duplicate sessions by username or UUID.
     if (srv_) {
-        for (auto& other : srv_->playersSnapshot()) {
+        for (auto& other : srv_->playersSnapshotRef()) {
             if (other.get() == this) {
                 continue;
             }
@@ -582,7 +582,7 @@ void Player::doFirstSpawn() {
 
         plp->type = network::protocol::PlayerListPacket::TYPE_ADD;
 
-        for (auto& other : srv_->playersSnapshot()) {
+        for (auto& other : srv_->playersSnapshotRef()) {
             if (!other) {
                 continue;
             }
@@ -608,7 +608,7 @@ void Player::doFirstSpawn() {
 
     // Spawn other online players for this client.
     if (srv_) {
-        for (auto& other : srv_->playersSnapshot()) {
+        for (auto& other : srv_->playersSnapshotRef()) {
             if (other.get() == this) {
                 continue;
             }
@@ -717,7 +717,7 @@ void Player::announceSelfToOthers() {
         ap_self->itemNbt = held.nbt;
     }
 
-    for (auto& other : srv_->playersSnapshot()) {
+    for (auto& other : srv_->playersSnapshotRef()) {
         if (!other || other.get() == this) {
             continue;
         }
@@ -992,7 +992,7 @@ void Player::respawn() {
         announceSelfToOthers();
 
         if (srv_) {
-            for (auto& other : srv_->playersSnapshot()) {
+            for (auto& other : srv_->playersSnapshotRef()) {
                 if (!other || other.get() == this) {
                     continue;
                 }
@@ -1060,7 +1060,7 @@ void Player::onDeath() {
         sendPacket(ee);
 
         if (srv_) {
-            for (auto& other : srv_->playersSnapshot()) {
+            for (auto& other : srv_->playersSnapshotRef()) {
                 if (!other || other.get() == this || !other->spawned()) {
                     continue;
                 }

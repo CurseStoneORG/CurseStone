@@ -270,7 +270,7 @@ int64_t Player::dropItem(double x, double y, double z, uint16_t itemId, uint8_t 
     // Send the drop to players tracking its chunk.
     int32_t pk_cx = (int)std::floor(x) >> 4;
     int32_t pk_cz = (int)std::floor(z) >> 4;
-    for (auto& other : srv_->playersSnapshot()) {
+    for (auto& other : srv_->playersSnapshotRef()) {
         if (!other)
             continue;
         if (other->getWorld() != getWorld())
@@ -542,7 +542,7 @@ void Player::consumeHeldItem() {
             auto other_pk = std::make_shared<network::protocol::EntityEventPacket>();
             other_pk->eid = runtimeId();
             other_pk->event = network::protocol::EntityEventPacket::USE_ITEM;
-            for (auto& other : srv_->playersSnapshot()) {
+            for (auto& other : srv_->playersSnapshotRef()) {
                 if (!other || other.get() == this)
                     continue;
                 if (other->isPendingRemoval() || !other->spawned())

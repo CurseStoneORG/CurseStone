@@ -112,7 +112,7 @@ std::vector<std::string> buildStatusLines() {
     lines.push_back(G + "Uptime: " + W +
                     formatUptime(diagnostics::Diagnostics::get().uptimeSeconds()) + TC::RESET);
 
-    auto players = srv.playersSnapshot();
+    const auto& players = srv.playersSnapshotRef();
     lines.push_back(G + "Players: " + W + std::to_string(players.size()) + "/" +
                     std::to_string(srv.maxPlayers()) + TC::RESET);
 

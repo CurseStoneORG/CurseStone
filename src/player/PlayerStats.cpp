@@ -223,7 +223,7 @@ void Player::sendEffectPacket(const entity::Effect& e, uint8_t eventId) {
     if (!srv_)
         return;
     auto others = makeEffectPacket(runtimeId(), e, eventId);
-    for (auto& other : srv_->playersSnapshot()) {
+    for (auto& other : srv_->playersSnapshotRef()) {
         if (!other || other.get() == this)
             continue;
         if (other->isPendingRemoval() || !other->spawned())
@@ -280,7 +280,7 @@ void Player::broadcastPotionColor() {
     sendPacket(pk);
     if (!srv_)
         return;
-    for (auto& other : srv_->playersSnapshot()) {
+    for (auto& other : srv_->playersSnapshotRef()) {
         if (!other || other.get() == this)
             continue;
         if (other->isPendingRemoval() || !other->spawned())
@@ -312,7 +312,7 @@ void Player::sendAir() {
     if (!srv_)
         return;
     auto viewerPk = build(runtimeId());
-    for (auto& other : srv_->playersSnapshot()) {
+    for (auto& other : srv_->playersSnapshotRef()) {
         if (!other || other.get() == this)
             continue;
         if (other->isPendingRemoval() || !other->spawned())

@@ -140,7 +140,7 @@ void TileFurnace::setFlame(bool lit) {
         lit ? (uint16_t)cursestone::block::BURNING_FURNACE : (uint16_t)cursestone::block::FURNACE;
     pk->blockData = lvl->getBlockData(x, y, z);
     pk->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
-    for (auto& p : cursestone::Server::getInstance().playersSnapshot())
+    for (auto& p : cursestone::Server::getInstance().playersSnapshotRef())
         if (p && p->canSeeBlock(x >> 4, z >> 4))
             p->sendPacket(pk);
 }

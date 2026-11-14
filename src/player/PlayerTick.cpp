@@ -101,7 +101,7 @@ void Player::broadcastPoseFlags() {
     // Remote viewers always resolve the full entity registry, so the
     // runtime id is the only id they need.
     auto viewerPk = build(runtimeId());
-    for (auto& other : srv_->playersSnapshot()) {
+    for (auto& other : srv_->playersSnapshotRef()) {
         if (!other || other.get() == this)
             continue;
         if (other->isPendingRemoval())
@@ -235,7 +235,7 @@ void Player::handleMovePlayer(double x, double y, double z, float yaw, float pit
         me->yaw = yaw_;
         me->headYaw = yaw_;
         me->pitch = pitch_;
-        for (auto& other : srv_->playersSnapshot()) {
+        for (auto& other : srv_->playersSnapshotRef()) {
             if (other.get() == this)
                 continue;
             if (!other->spawned())
@@ -358,7 +358,7 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int face) {
                         ubp->blockData = 0;
                         ubp->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
                         if (srv_) {
-                            for (auto& other : srv_->playersSnapshot()) {
+                            for (auto& other : srv_->playersSnapshotRef()) {
                                 if (!other || other->getWorld() != lvl)
                                     continue;
                                 if (!other->canSeeBlock(sx >> 4, sz >> 4))
@@ -382,7 +382,7 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int face) {
         pa->z = z;
         int32_t bcx = x >> 4, bcz = z >> 4;
         int32_t sent = 0;
-        for (auto& other : srv_->playersSnapshot()) {
+        for (auto& other : srv_->playersSnapshotRef()) {
             if (!other || other.get() == this)
                 continue;
             if (other->isPendingRemoval())
@@ -473,7 +473,7 @@ void Player::handleInteract(int action, int64_t targetEid) {
 
     // Resolve the target runtime ID against connected players.
     std::shared_ptr<Player> target;
-    for (auto& other : srv_->playersSnapshot()) {
+    for (auto& other : srv_->playersSnapshotRef()) {
         if (!other || other.get() == this)
             continue;
         if (other->runtimeId() == targetEid) {
@@ -511,7 +511,7 @@ void Player::handleInteract(int action, int64_t targetEid) {
         auto hurtEv = std::make_shared<network::protocol::EntityEventPacket>();
         hurtEv->eid = target->runtimeId();
         hurtEv->event = network::protocol::EntityEventPacket::HURT_ANIMATION;
-        for (auto& other : srv_->playersSnapshot()) {
+        for (auto& other : srv_->playersSnapshotRef()) {
             if (!other)
                 continue;
             if (other.get() == target.get())
@@ -557,7 +557,7 @@ void Player::handleInteract(int action, int64_t targetEid) {
             motion->entities.push_back({target->runtimeId(), (float)mx, (float)my, (float)mz});
             int32_t tcx = (int32_t)std::floor(target->position().x) >> 4;
             int32_t tcz = (int32_t)std::floor(target->position().z) >> 4;
-            for (auto& other : srv_->playersSnapshot()) {
+            for (auto& other : srv_->playersSnapshotRef()) {
                 if (!other)
                     continue;
                 if (other->isPendingRemoval())
@@ -886,7 +886,7 @@ void Player::onUpdate(uint64_t current_tick) {
                     int32_t pk_cx = (int32_t)std::floor(di->x) >> 4;
                     int32_t pk_cz = (int32_t)std::floor(di->z) >> 4;
                     int viewers = 0;
-                    for (auto& other : srv_->playersSnapshot()) {
+                    for (auto& other : srv_->playersSnapshotRef()) {
                         if (!other)
                             continue;
                         if (other.get() == this)
@@ -979,7 +979,7 @@ void Player::onUpdate(uint64_t current_tick) {
             tk_self->entityId = 0;
             auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
             rm->eid = a->eid;
-            for (auto& other : srv_->playersSnapshot()) {
+            for (auto& other : srv_->playersSnapshotRef()) {
                 if (!other || !other->spawned())
                     continue;
                 if (other->getWorld() != lvl)
@@ -1065,7 +1065,7 @@ bool Player::tryClaimNearbyDrop(const item::ItemStack& want) {
         auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
         rm->eid = di->eid;
         int viewers = 0;
-        for (auto& other : srv_->playersSnapshot()) {
+        for (auto& other : srv_->playersSnapshotRef()) {
             if (!other)
                 continue;
             if (other.get() == this)
