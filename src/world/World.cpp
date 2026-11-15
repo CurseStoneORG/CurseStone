@@ -2066,19 +2066,32 @@ std::vector<std::shared_ptr<cursestone::tile::Tile>> World::getTilesInChunk(int3
 
 void World::ensureTilesLoaded(int32_t cx, int32_t cz) {
     uint64_t ckey = packChunkPos(cx, cz);
-    {
-        std::lock_guard<std::mutex> lk(tiles_mtx_);
-        if (tiles_hydrated_chunks_.count(ckey))
-            return;
-    }
     mcp_chunk_t* c = chunks_.getChunkIfLoaded(cx, cz);
     if (!c)
         return;
+
+    // PERF (per-stream re-scan): the serial gate. `sendChunkTiles` runs
+    // on every chunk stream and used to force a full invalidate, so the
+    // block scan below walked all 32768 cells of every streamed chunk
+    // even when nothing had changed since the last pass. The chunk now
+    // carries a block-edit serial; re-scan only when it moved (or the
+    // chunk was never hydrated this session). The serial read races
+    // with worker-side spill writes by design: it is captured BEFORE
+    // the scan and stored back as-is, so an edit that lands mid-scan
+    // leaves a stale (lower) serial behind and the next call re-scans —
+    // conservative, never a missed tile.
+    const uint32_t serial = c->block_edit_serial;
     {
         std::lock_guard<std::mutex> lk(tiles_mtx_);
-        if (tiles_hydrated_chunks_.count(ckey))
-            return; // Another thread won.
-        tiles_hydrated_chunks_.insert(ckey);
+        auto it = tiles_hydrated_serial_.find(ckey);
+        if (tiles_hydrated_chunks_.count(ckey) && it != tiles_hydrated_serial_.end() &&
+            it->second == serial)
+            return; // Nothing new since the last scan: zero work.
+        if (!tiles_hydrated_chunks_.count(ckey)) {
+            // Claim the blob phase before parsing: another thread may
+            // reach this chunk concurrently.
+            tiles_hydrated_chunks_.insert(ckey);
+        }
     }
 
     if (c->tile_entities && c->tile_entity_count > 0) {
@@ -2130,11 +2143,23 @@ void World::ensureTilesLoaded(int32_t cx, int32_t cz) {
     }
 
     hydrateTilesFromBlocks(cx, cz, c);
+
+    // Record the PRE-scan serial (not a re-read): an edit that landed
+    // while this thread was scanning bumped the chunk's serial past
+    // `serial`, and storing the re-read value would mark the edit as
+    // already seen — exactly the missed-tile bug this gate prevents.
+    // Storing the pre-scan value makes that edit re-scan next call.
+    {
+        std::lock_guard<std::mutex> lk(tiles_mtx_);
+        tiles_hydrated_serial_[ckey] = serial;
+    }
 }
 
 void World::invalidateTileHydration(int32_t cx, int32_t cz) {
     std::lock_guard<std::mutex> lk(tiles_mtx_);
-    tiles_hydrated_chunks_.erase(packChunkPos(cx, cz));
+    const uint64_t ckey = packChunkPos(cx, cz);
+    tiles_hydrated_chunks_.erase(ckey);
+    tiles_hydrated_serial_.erase(ckey); // Force a fresh block scan too.
 }
 
 void World::hydrateTilesFromBlocks(int32_t cx, int32_t cz, mcp_chunk_t* c) {
@@ -2282,6 +2307,7 @@ void World::evictTilesForChunk(int32_t cx, int32_t cz) {
             tiles_by_chunk_.erase(bit);
         }
         tiles_hydrated_chunks_.erase(ckey); // Rehydrate on the next load.
+        tiles_hydrated_serial_.erase(ckey);
     }
     if (tilesInChunk.empty())
         return;

@@ -184,6 +184,9 @@ void mcp_chunk_set_block_full(mcp_chunk_t* c, int x, int y, int z, uint8_t block
     if (block_id != 0 && (y + 1) > c->height_map[col]) {
         c->height_map[col] = y + 1;
     }
+    // Tile-hydration gate: World compares this serial against the one it
+    // last scanned to skip the 32K-cell re-scan on unchanged chunks.
+    ++c->block_edit_serial;
     c->dirty = true;
 }
 
@@ -200,6 +203,8 @@ void mcp_chunk_set_block_id(mcp_chunk_t* c, int x, int y, int z, uint8_t id) {
     if (id != 0 && (y + 1) > c->height_map[col]) {
         c->height_map[col] = y + 1;
     }
+    // Tile-hydration gate: see mcp_chunk_set_block_full.
+    ++c->block_edit_serial;
     c->dirty = true;
 }
 
@@ -795,46 +800,69 @@ uint8_t* mcp_chunk_network_serialize(const mcp_chunk_t* c, size_t* out_len) {
 
     size_t off = 0;
 
+    // PERF (chunk-send cost during streaming): the four payload passes
+    // used to walk every one of the 32768 cells with a fresh
+    // c->sections[y >> 4] lookup each time — including the sky sections
+    // that most chunks never allocate. The buffer arrives calloc'd, so
+    // every cell of a MISSING section is already the correct value
+    // (0 for blocks/data/block light). Restructured per section:
+    // allocated sections run the same per-cell conversion (the wire
+    // layout is a transposition of the section layout, so no memcpy
+    // shortcut exists), missing sections are skipped entirely except
+    // sky light, which reads 15 through every unallocated section and
+    // therefore fills its slice with 0xFF in one memset per column.
+    // Output bytes are identical to the previous per-cell walk; the
+    // saving is every lookup, branch and write for cells that hold air.
+    const mcp_chunk_section_t* sec[8];
+    for (int i = 0; i < 8; ++i)
+        sec[i] = c->sections[i];
+
     // --- Block IDs: convert from sections (XZY, 256-height) to columns (128-height) ---
     // The reference server column index: (x << 11) | (z << 7) | y, where y = 0..127
     // Our section index: section[y>>4].blocks[(x&15) | ((z&15)<<4) | ((y&15)<<8)]
-    for (int x = 0; x < 16; ++x) {
-        for (int z = 0; z < 16; ++z) {
-            for (int y = 0; y < 128; ++y) {
-                uint8_t id = 0;
-                const mcp_chunk_section_t* s = c->sections[y >> 4];
-                if (s && s->blocks) {
-                    uint32_t sec_idx = (uint32_t)((x & 15) | ((z & 15) << 4) | ((y & 15) << 8));
-                    id = s->blocks[sec_idx];
-                }
-                buf[(x << 11) | (z << 7) | y] = id;
+    for (int sy = 0; sy < 8; ++sy) {
+        const mcp_chunk_section_t* s = sec[sy];
+        if (!s || !s->blocks)
+            continue; // calloc'd buffer already holds the correct zeros
+        const uint8_t* blocks = s->blocks;
+        const int y0 = sy << 4;
+        for (int x = 0; x < 16; ++x) {
+            uint8_t* dst = buf + ((size_t)x << 11) + y0;
+            const uint8_t* src = blocks + (x & 15);
+            for (int z = 0; z < 16; ++z) {
+                const uint8_t* col = src + ((uint32_t)z << 4);
+                uint8_t* out = dst + ((size_t)z << 7);
+                for (int i = 0; i < 16; ++i)
+                    out[i] = col[i << 8];
             }
         }
     }
     off += kBlocks;
 
     // --- Block data (nibbles): same column order ---
-    for (int x = 0; x < 16; ++x) {
-        for (int z = 0; z < 16; ++z) {
-            for (int y = 0; y < 128; y += 2) {
-                uint8_t lo = 0, hi = 0;
-                const mcp_chunk_section_t* s = c->sections[y >> 4];
-                if (s && s->data) {
-                    // Mismo empaquetado que nibble_index() arriba — shift
-                    // de 8, no de 7 (ver el fix de nibble_index).
-                    uint32_t ni = (uint32_t)((x & 15) | ((z & 15) << 4) | ((y & 15) << 8));
-                    lo = (s->data[ni >> 1] >> ((ni & 1) << 2)) & 0x0F;
+    // Mismo empaquetado que nibble_index() arriba — shift de 8, no de 7
+    // (ver el fix de nibble_index).
+    for (int sy = 0; sy < 8; ++sy) {
+        const mcp_chunk_section_t* s = sec[sy];
+        if (!s || !s->data)
+            continue; // zeros are correct for a missing section
+        const uint8_t* data = s->data;
+        const int y0 = sy << 4;
+        for (int x = 0; x < 16; ++x) {
+            for (int z = 0; z < 16; ++z) {
+                uint32_t ci = (uint32_t)(((x << 11) | (z << 7) | y0) >> 1);
+                uint8_t* out = buf + kBlocks + ci;
+                for (int i = 0; i < 8; ++i) {
+                    // Cells (y0+2i, y0+2i+1) share one output byte; the
+                    // source nibble parity bit is x&1, not y&1, so each
+                    // cell is extracted separately (same formula as the
+                    // previous per-cell walk).
+                    uint32_t ni_lo = (uint32_t)((x & 15) | ((z & 15) << 4) | (((y0 + 2 * i) & 15) << 8));
+                    uint32_t ni_hi = (uint32_t)((x & 15) | ((z & 15) << 4) | (((y0 + 2 * i + 1) & 15) << 8));
+                    uint8_t lo = (data[ni_lo >> 1] >> ((ni_lo & 1) << 2)) & 0x0F;
+                    uint8_t hi = (data[ni_hi >> 1] >> ((ni_hi & 1) << 2)) & 0x0F;
+                    out[i] = (uint8_t)((hi << 4) | lo);
                 }
-                {
-                    int y2 = y + 1;
-                    const mcp_chunk_section_t* s2 = c->sections[y2 >> 4];
-                    if (s2 && s2->data) {
-                        uint32_t ni = (uint32_t)((x & 15) | ((z & 15) << 4) | ((y2 & 15) << 8));
-                        hi = (s2->data[ni >> 1] >> ((ni & 1) << 2)) & 0x0F;
-                    }
-                }
-                uint32_t ci = (uint32_t)((x << 11) | (z << 7) | y);
-                buf[kBlocks + (ci >> 1)] = (hi << 4) | lo;
             }
         }
     }
@@ -843,15 +871,39 @@ uint8_t* mcp_chunk_network_serialize(const mcp_chunk_t* c, size_t* out_len) {
     // --- Sky light: real per-column values from mcp_chunk_propagate_sky_light. ---
     // REAL BUG (black world/grass): this used to be a fixed memset(0xFF)
     // that ignored the computed light entirely. Fix: read the real
-    // mcp_chunk_get_sky_light() values, same nibble packing as the
-    // "Block data" section above.
-    for (int x = 0; x < 16; ++x) {
-        for (int z = 0; z < 16; ++z) {
-            for (int y = 0; y < 128; y += 2) {
-                uint8_t lo = mcp_chunk_get_sky_light(c, x, y, z) & 0x0F;
-                uint8_t hi = mcp_chunk_get_sky_light(c, x, y + 1, z) & 0x0F;
-                uint32_t ci = (uint32_t)((x << 11) | (z << 7) | y);
-                buf[off + (ci >> 1)] = (hi << 4) | lo;
+    // sky light values, same nibble packing as the "Block data" section
+    // above. Unallocated sections mean open sky — full brightness 15.
+    for (int sy = 0; sy < 8; ++sy) {
+        const mcp_chunk_section_t* s = sec[sy];
+        const int y0 = sy << 4;
+        if (!s) {
+            // 2048 packed bytes of 0xFF for this section's slice, laid
+            // out as 8 contiguous bytes per column.
+            for (int x = 0; x < 16; ++x) {
+                for (int z = 0; z < 16; ++z) {
+                    uint32_t ci = (uint32_t)(((x << 11) | (z << 7) | y0) >> 1);
+                    memset(buf + off + ci, 0xFF, 8);
+                }
+            }
+            continue;
+        }
+        const uint8_t* sky = s->sky_light;
+        for (int x = 0; x < 16; ++x) {
+            for (int z = 0; z < 16; ++z) {
+                uint32_t ci = (uint32_t)(((x << 11) | (z << 7) | y0) >> 1);
+                uint8_t* out = buf + off + ci;
+                for (int i = 0; i < 8; ++i) {
+                    uint8_t lo, hi;
+                    if (sky) {
+                        uint32_t ni_lo = (uint32_t)((x & 15) | ((z & 15) << 4) | (((y0 + 2 * i) & 15) << 8));
+                        uint32_t ni_hi = (uint32_t)((x & 15) | ((z & 15) << 4) | (((y0 + 2 * i + 1) & 15) << 8));
+                        lo = (sky[ni_lo >> 1] >> ((ni_lo & 1) << 2)) & 0x0F;
+                        hi = (sky[ni_hi >> 1] >> ((ni_hi & 1) << 2)) & 0x0F;
+                    } else {
+                        lo = hi = 0; // get_nibble(NULL) reads 0
+                    }
+                    out[i] = (uint8_t)((hi << 4) | lo);
+                }
             }
         }
     }
@@ -864,13 +916,23 @@ uint8_t* mcp_chunk_network_serialize(const mcp_chunk_t* c, size_t* out_len) {
     // generacion), el cliente recibia un array de block light todo en
     // cero en cada FullChunkDataPacket — es decir, la luz de antorchas
     // se quedaba enteramente en el servidor y nunca se veia en el juego.
-    for (int x = 0; x < 16; ++x) {
-        for (int z = 0; z < 16; ++z) {
-            for (int y = 0; y < 128; y += 2) {
-                uint8_t lo = mcp_chunk_get_block_light(c, x, y, z) & 0x0F;
-                uint8_t hi = mcp_chunk_get_block_light(c, x, y + 1, z) & 0x0F;
-                uint32_t ci = (uint32_t)((x << 11) | (z << 7) | y);
-                buf[off + (ci >> 1)] = (hi << 4) | lo;
+    for (int sy = 0; sy < 8; ++sy) {
+        const mcp_chunk_section_t* s = sec[sy];
+        if (!s || !s->block_light)
+            continue; // zeros are correct for a missing section/array
+        const uint8_t* bl = s->block_light;
+        const int y0 = sy << 4;
+        for (int x = 0; x < 16; ++x) {
+            for (int z = 0; z < 16; ++z) {
+                uint32_t ci = (uint32_t)(((x << 11) | (z << 7) | y0) >> 1);
+                uint8_t* out = buf + off + ci;
+                for (int i = 0; i < 8; ++i) {
+                    uint32_t ni_lo = (uint32_t)((x & 15) | ((z & 15) << 4) | (((y0 + 2 * i) & 15) << 8));
+                    uint32_t ni_hi = (uint32_t)((x & 15) | ((z & 15) << 4) | (((y0 + 2 * i + 1) & 15) << 8));
+                    uint8_t lo = (bl[ni_lo >> 1] >> ((ni_lo & 1) << 2)) & 0x0F;
+                    uint8_t hi = (bl[ni_hi >> 1] >> ((ni_hi & 1) << 2)) & 0x0F;
+                    out[i] = (uint8_t)((hi << 4) | lo);
+                }
             }
         }
     }

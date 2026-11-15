@@ -102,6 +102,13 @@ std::vector<std::string> buildStatusLines() {
     int tps = srv.getTPS();
     lines.push_back(G + "TPS: " + tpsColor(tps) + std::to_string(tps) + W + "/20" + TC::RESET);
 
+    // The number the TPS figure is made of: mean wall-clock cost of one
+    // tick. Anything under 50 ms holds the deadline; the gap to 50 ms is
+    // the headroom a chunk burst (streaming, saves, light) can spend
+    // before the first tick actually drops. EMA-smoothed in the tick loop.
+    lines.push_back(G + "Tick: " + msColor(srv.getMSPT()) + fixed2(srv.getMSPT()) + " ms" +
+                    G + " avg (budget 50 ms)" + TC::RESET);
+
     int64_t rssKB = cachedRssKB();
     int limitMB = MemoryManager::get().limitMB();
     std::string ram = rssKB > 0 ? std::to_string(rssKB / 1024) + " MB" : "n/a";

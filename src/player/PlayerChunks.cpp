@@ -175,7 +175,15 @@ void Player::sendChunkTiles(int32_t cx, int32_t cz) {
     // the client binds actors in. Without this, a re-streamed furnace block
     // reaches the client with no actor and opening its screen crashes the
     // game (the village-furnace crash).
-    getWorld()->invalidateTileHydration(cx, cz);
+    //
+    // PERF: this used to force-invalidate the chunk's tile hydration on
+    // EVERY stream, making getTilesInChunk() below re-walk all 32768
+    // block cells even for a chunk that had not changed since its last
+    // scan. The chunk now carries a block-edit serial (bumped by every
+    // live block write — population spills, player edits, liquid), and
+    // ensureTilesLoaded() re-scans only when that serial moved, so the
+    // village-furnace guarantee still holds at a 32-bit-compare cost in
+    // the steady state.
     auto tiles = getWorld()->getTilesInChunk(cx, cz);
     for (auto& t : tiles) {
         if (!t)

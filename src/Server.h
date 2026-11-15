@@ -136,6 +136,15 @@ class Server {
     int getTPS() const {
         return tps_;
     }
+    // Rolling mean of the tick-loop's own per-tick cost (milliseconds,
+    // wall clock from the start of tick() to its end — the sleeping the
+    // loop does to hold the 50 ms deadline is NOT included). This is the
+    // number the TPS figure is made of: at mspt > 50 the loop cannot
+    // hold 20 ticks per second, and every millisecond between 0 and 50
+    // is headroom. Readable from any thread (command/console, MOTD).
+    double getMSPT() const {
+        return mspt_.load(std::memory_order_relaxed);
+    }
 
     // Online player list.
     std::vector<std::shared_ptr<Player>>& players() {
@@ -359,6 +368,9 @@ class Server {
     // Read only by runTickLoop() on the main thread.
     const volatile std::sig_atomic_t* external_stop_flag_ = nullptr;
     int tps_ = 20;
+    // EMA of measured tick cost (see getMSPT). Updated once per tick by
+    // the tick loop; read from command/console threads.
+    std::atomic<double> mspt_{0.0};
 
     // Configuration from server.properties and cursestone.yml.
     std::string ip_ = "0.0.0.0";

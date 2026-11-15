@@ -227,110 +227,122 @@ mcp_chunk_t* ChunkManager::getChunkOrRequestAsync(int32_t x, int32_t z,
         }
     } guard{pending_mtx_, pending_, key, handed_to_pool};
 
-    // Try disk first — cheap enough to do on the calling (main) thread;
-    // only actual terrain generation goes to a worker.
-    if (provider_) {
-        auto loaded = provider_->loadChunk(x, z);
-        if (loaded.has_value()) {
-            std::shared_ptr<format::FullChunk>& fc = loaded.value();
-            auto* adapter = dynamic_cast<format::ChunkAdapter*>(fc.get());
-            if (adapter && adapter->chunk()) {
-                mcp_chunk_t* raw = adapter->releaseChunk();
-                if (raw) {
-                    setChunk(x, z, raw);
-                    return raw; // guard erases pending_ on the way out
-                }
+    // One worker task does the whole "materialize this chunk" job:
+    // disk first, generation on a miss. Both halves share the same
+    // install callback below, so whichever source wins, the chunk goes
+    // live through the identical path — spill replay, parked tile
+    // blobs, light queue, liquid wake, registry hydration.
+    //
+    // RACE FIX ("a veces los chunks no se renderizan" + edits
+    // disappearing): the install callback never REPLACES a chunk that
+    // is already in the map. While this task runs on a worker, the
+    // MAIN thread can load the same chunk from disk or have it
+    // created/edited synchronously (getChunk() fallback, block
+    // place/break, tile hydration) — a blind setChunk() would swap
+    // chunk memory mid-tick and lose those edits. If a chunk is
+    // already present for this key, the freshly materialized copy is
+    // discarded and the live chunk stays: generated/disk content
+    // matches what would have been produced anyway, and the live copy
+    // may additionally carry real edits, which are strictly newer
+    // information.
+    auto install = [this, key](mcp_chunk_t* c) {
+        bool installed = false;
+        std::vector<std::vector<uint8_t>> drainedTiles;
+        if (c) {
+            std::scoped_lock lk(mtx_, pending_mtx_);
+            auto it = chunks_.find(key);
+            if (it == chunks_.end() || !it->second) {
+                // Replay neighbor writes queued while this chunk was
+                // materializing, then install it.
+                if (spillQueue_)
+                    spillQueue_->drainSpills(key.x, key.z, c);
+                // Structure tile blobs parked for this chunk go into
+                // its tile_entities before it is ever streamed.
+                takePendingTileBlobs(key, drainedTiles);
+                for (const auto& blob : drainedTiles)
+                    mcp_chunk_add_tile_entity(c, blob.data(), blob.size());
+                chunks_[key] = c;
+                count_.store(chunks_.size(), std::memory_order_relaxed);
+                installed = true;
             }
-            // loadChunk() had a value but we couldn't extract a usable
-            // chunk from it (bad adapter / null release) — fall through
-            // to generation below instead of leaving this chunk stuck.
-            // The guard above ensures `pending_` gets cleared even
-            // though we're about to re-insert it for the async submit.
         }
-    }
+        if (c && !installed)
+            mcp_chunk_destroy(c);
+        {
+            std::lock_guard<std::mutex> lk(pending_mtx_);
+            pending_.erase(key);
+        }
+        // Outside every lock (same contract as setChunk): the World
+        // only queues work — here the dynamic-liquid wake scan AND the
+        // light sweep, so a chunk that was materialized on a worker
+        // also starts its liquid ticking queue and gets its border pass
+        // queued the moment it goes live.
+        //
+        // REAL BUG (the flight 'black stains, chunk by chunk'): this
+        // callback used to fire ONLY the liquid hook — worker-produced
+        // chunks never entered the light queue at all, so they were
+        // serialized and sent with unrepaired cross-border seams; the
+        // client kept those bytes and the seam stayed until the chunk
+        // re-streamed. The worker DID light the interior; the border
+        // pass is what makes it continuous with the neighbours.
+        if (installed) {
+            if (on_chunk_added_)
+                on_chunk_added_(key.x, key.z, /*full=*/false);
+            if (on_chunk_installed_)
+                on_chunk_installed_(key.x, key.z);
+            // Registry tiles for the drained blobs — outside every
+            // lock, same contract as the hooks above. applyTileBlob
+            // never clobbers a live tile, so a chunk that already
+            // hydrated the blob loses nothing.
+            if (on_tile_blob_) {
+                for (const auto& blob : drainedTiles)
+                    on_tile_blob_(blob.data(), blob.size());
+            }
+        }
+    };
 
     int64_t seed = provider_ ? provider_->getSeed() : 0;
-    auto task = std::make_shared<generator::GenerationTask>(
-        generator_, x, z, seed, [this, key](mcp_chunk_t* c) {
-            // GenerationTask::run() already filled light/biome defaults
-            // and ran generate()+populate() before calling us — just
-            // hand the finished chunk to the map and clear the in-flight
-            // marker.
-            //
-            // RACE FIX ("a veces los chunks no se renderizan" + ediciones
-            // disappearing edits): while this task ran on a worker, the MAIN
-            // thread could have loaded the same chunk from disk or had it
-            // created/edited synchronously (getChunk() fallback, block
-            // place/break, tile hydration). setChunk() blindly REPLACED
-            // that live chunk with this freshly generated copy — losing
-            // player edits and, worse, swapping chunk memory mid-tick
-            // while other pointers to the old chunk were in use. Now: if
-            // a chunk is already present in the map for this key, the
-            // generated copy is discarded (destroyed — no leak) and the
-            // live chunk stays. Generated content matches what would have
-            // been produced anyway; the live copy may additionally carry
-            // real edits, which are strictly newer information.
-            bool installed = false;
-            std::vector<std::vector<uint8_t>> drainedTiles;
-            if (c) {
-                std::scoped_lock lk(mtx_, pending_mtx_);
-                auto it = chunks_.find(key);
-                if (it == chunks_.end() || !it->second) {
-                    // Replay neighbor writes queued while this chunk was
-                    // generating, then install it.
-                    if (spillQueue_)
-                        spillQueue_->drainSpills(key.x, key.z, c);
-                    // Structure tile blobs parked for this chunk go into
-                    // its tile_entities before it is ever streamed.
-                    takePendingTileBlobs(key, drainedTiles);
-                    for (const auto& blob : drainedTiles)
-                        mcp_chunk_add_tile_entity(c, blob.data(), blob.size());
-                    chunks_[key] = c;
-                    count_.store(chunks_.size(), std::memory_order_relaxed);
-                    installed = true;
+    auto task = std::make_shared<std::function<void()>>([this, x, z, seed, install]() {
+        // 1) Disk first — region open + read + inflate + NBT decode,
+        //    all off the tick thread now. provider_->loadChunk() is
+        //    thread-safe (the Anvil provider serializes region access
+        //    with io_mtx_ against its own writer thread); a provider
+        //    without disk backing simply returns nullopt.
+        if (provider_) {
+            try {
+                auto loaded = provider_->loadChunk(x, z);
+                if (loaded && loaded.value()) {
+                    auto* adapter = dynamic_cast<format::ChunkAdapter*>(loaded.value().get());
+                    if (adapter && adapter->chunk()) {
+                        mcp_chunk_t* raw = adapter->releaseChunk();
+                        if (raw) {
+                            install(raw); // callback owns pending_ now
+                            return;
+                        }
+                    }
                 }
+                // loadChunk() had a value but we couldn't extract a
+                // usable chunk from it (bad adapter / null release) —
+                // fall through to generation below instead of leaving
+                // this chunk stuck.
+            } catch (...) {
+                // A provider failure must not strand the request: fall
+                // through to generation, which carries its own
+                // emergency-chunk guarantee.
             }
-            if (c && !installed)
-                mcp_chunk_destroy(c);
-            {
-                std::lock_guard<std::mutex> lk(pending_mtx_);
-                pending_.erase(key);
-            }
-            // Outside every lock (same contract as setChunk): the World
-            // only queues work — here the dynamic-liquid wake scan AND the
-            // light sweep, so a chunk that was generated on a worker also
-            // starts its liquid ticking queue and gets its border pass
-            // queued the moment it goes live.
-            //
-            // REAL BUG (the flight 'black stains, chunk by chunk'): this
-            // callback used to fire ONLY the liquid hook — worker-generated
-            // chunks never entered the light queue at all, so they were
-            // serialized and sent with unrepaired cross-border seams; the
-            // client kept those bytes and the seam stayed until the chunk
-            // re-streamed. The worker DID light the interior; the border
-            // pass is what makes it continuous with the neighbours.
-            if (installed) {
-                if (on_chunk_added_)
-                    on_chunk_added_(key.x, key.z, /*full=*/false);
-                if (on_chunk_installed_)
-                    on_chunk_installed_(key.x, key.z);
-                // Registry tiles for the drained blobs — outside every
-                // lock, same contract as the hooks above. applyTileBlob
-                // never clobbers a live tile, so a chunk that already
-                // hydrated the blob loses nothing.
-                if (on_tile_blob_) {
-                    for (const auto& blob : drainedTiles)
-                        on_tile_blob_(blob.data(), blob.size());
-                }
-            }
-        });
+        }
+
+        // 2) Not on disk (or unusable) — generate it on this worker.
+        generator::GenerationTask gen(generator_, x, z, seed, install);
+        gen.run();
+    });
 
     if (pool->submit([task] {
-            task->run();
+            (*task)();
         })) {
-        // Successfully handed off — the callback above now owns
-        // clearing `pending_` once generation finishes. Tell the guard
-        // not to erase it out from under the in-flight task.
+        // Successfully handed off — the task/install callback now owns
+        // clearing `pending_` once the chunk is materialized. Tell the
+        // guard not to erase it out from under the in-flight task.
         handed_to_pool = true;
     }
     // Pool refused (shutting down): handed_to_pool stays false, so the

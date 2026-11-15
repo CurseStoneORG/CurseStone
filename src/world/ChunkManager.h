@@ -53,16 +53,29 @@ class ChunkManager : public generator::INeighborBlockSink {
     mcp_chunk_t* getChunk(int32_t x, int32_t z);
 
     // Non-blocking chunk fetch used by the per-player streaming path
-    // (Player::onUpdate). Never generates on the calling thread:
+    // (Player::onUpdate). Never generates OR loads from disk on the
+    // calling thread:
     //   - if the chunk is already in memory, returns it immediately.
-    //   - otherwise, if a generation request for (x,z) isn't already
-    //     in flight, submits one to `pool` (runs generate()+populate()
-    //     on a worker thread, per Generator's "stateless w.r.t. main
-    //     thread" contract) and returns nullptr right away.
+    //   - otherwise, if a request for (x,z) isn't already in flight,
+    //     submits ONE pool task that tries the provider (disk) first and
+    //     falls back to generate()+populate() on a miss (both on a worker
+    //     thread, per Generator's "stateless w.r.t. main thread"
+    //     contract), and returns nullptr right away.
     //   - if a request IS already in flight, just returns nullptr
     //     again (no duplicate work submitted).
     // The caller should treat nullptr as "not ready yet, try again
     // next tick" rather than as a permanent miss.
+    //
+    // PERF (TPS 19 during exploration): the disk half used to run on the
+    // calling (main) thread under a "cheap enough" assumption that does
+    // not hold on real storage — each loadChunk() is region open + read
+    // + zlib inflate + NBT decode, and a player crossing fresh terrain
+    // requests up to 4 chunks per tick. That put multi-millisecond disk
+    // stalls straight into the tick; over a one-second TPS window the
+    // accumulated overruns showed up as a lost tick. Loading now rides
+    // the same worker task generation already uses, at the cost of the
+    // chunk arriving one tick later (the stream loop re-requests and
+    // sends the next tick anyway).
     mcp_chunk_t* getChunkOrRequestAsync(int32_t x, int32_t z, scheduler::AsyncPool* pool);
 
     void setChunk(int32_t x, int32_t z, mcp_chunk_t* chunk);

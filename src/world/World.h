@@ -620,6 +620,15 @@ class World {
     // Tracks chunks whose tile NBT has been loaded this session.
     std::unordered_set<uint64_t> tiles_hydrated_chunks_;
 
+    // Tile-hydration gate (PERF): per chunk, the block-edit serial the
+    // last hydration scan saw. ensureTilesLoaded() re-scans a chunk's
+    // 32768 cells only when the chunk's block_edit_serial moved since
+    // that scan — every stream of an unchanged chunk pays a 32-bit
+    // compare instead of a full block walk. Written under tiles_mtx_;
+    // the serial itself lives in the chunk and is bumped O(1) by every
+    // live block write.
+    std::unordered_map<uint64_t, uint32_t> tiles_hydrated_serial_;
+
     // Tracks chunks whose stored tile NBT must be rebuilt after removals.
     std::unordered_set<uint64_t> tiles_dirty_chunks_;
 

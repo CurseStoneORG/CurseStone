@@ -463,8 +463,16 @@ void Server::runTickLoop() {
         }
         auto start_ts = std::chrono::steady_clock::now();
         tick();
-        auto elapsed = std::chrono::steady_clock::now() - start_ts;
-        auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+        // MSPT — the tick's own cost, measured (not guessed). Feeds the
+        // /status "Tick" line: at 0-50 ms the deadline is held, at >50 ms
+        // the loop physically cannot deliver 20 ticks per second. The EMA
+        // (alpha 1/20) smooths single-tick spikes into a readable mean.
+        const double tick_ms =
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start_ts)
+                .count();
+        const double prev = mspt_.load(std::memory_order_relaxed);
+        mspt_.store(prev > 0.0 ? prev + (tick_ms - prev) / 20.0 : tick_ms,
+                    std::memory_order_relaxed);
         next_tick += std::chrono::milliseconds(CURSESTONE_TICK_MS);
         if (std::chrono::steady_clock::now() < next_tick) {
             std::this_thread::sleep_until(next_tick);
@@ -472,14 +480,20 @@ void Server::runTickLoop() {
             // Re-anchor after an overrun to prevent chained catch-up ticks.
             next_tick = std::chrono::steady_clock::now();
         }
-        (void)elapsed_ms;
         // Update TPS once per second.
         if (currentTick_ - last_tick_count >= 20) {
             auto now = std::chrono::steady_clock::now();
             auto elapsed_sec =
                 std::chrono::duration_cast<std::chrono::milliseconds>(now - last_tps_time).count();
-            if (elapsed_sec > 0)
-                tps_ = (int)(20000 / elapsed_sec);
+            if (elapsed_sec > 0) {
+                // Round, don't truncate: the raw figure is 20000/elapsed,
+                // so a window that slipped just 5 ms (0.25 ms/tick of
+                // scheduler noise) reads 19.9 — truncation reported that
+                // as a full lost tick while no tick was actually lost.
+                // Real sustained loss (>= half a tick per second) still
+                // shows; mspt above exposes the actual cost either way.
+                tps_ = (int)(20000.0 / (double)elapsed_sec + 0.5);
+            }
             last_tps_time = now;
             last_tick_count = currentTick_;
         }
