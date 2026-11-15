@@ -32,7 +32,7 @@ STRIP_FROM_PATH        = .
 # third_party/ (bundled Lua 5.4) and generated/build directories are excluded.
 INPUT                   = README.md \
                           CONTRIBUTING.md \
-                          BUILDING.md \
+                          docs/BUILDING.md \
                           docs \
                           src
 FILE_PATTERNS           = *.c \

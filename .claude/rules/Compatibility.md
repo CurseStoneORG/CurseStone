@@ -1,10 +1,10 @@
 # Platform compatibility
 
-Evidence: `CMakeLists.txt`, `cmake/*.cmake`, `CMakePresets.json`, `.github/workflows/*.yml`, `README.md`, `BUILDING.md`, and platform guards in `src/`.
+Evidence: `CMakeLists.txt`, `cmake/*.cmake`, `CMakePresets.json`, `.github/workflows/*.yml`, `README.md`, `docs/BUILDING.md`, and platform guards in `src/`.
 
 ## Established by CI (`Build.yml`)
 - **Linux x86_64**: ubuntu-22.04, GCC 12, Ninja, zlib + LevelDB dev packages, C23/C++20.
-- **Android ARM64**: NDK r26c, `android-24` (Android 7.0), `arm64-v8a`, static libc++ (`c++_static`), zlib and LevelDB cross-built. Termux native builds are documented in `BUILDING.md`.
+- **Android ARM64**: NDK r26c, `android-24` (Android 7.0), `arm64-v8a`, static libc++ (`c++_static`), zlib and LevelDB cross-built. Termux native builds are documented in `docs/BUILDING.md`.
 - **Windows x86_64**: `windows-latest`, MSVC via `ilammy/msvc-dev-cmd`, vcpkg `zlib` and `leveldb` (`x64-windows-static-md`), and `CMAKE_C_STANDARD=17` because MSVC lacks full C23. `cmake/Windows.cmake` also has a MinGW branch (`-mthreads`).
 
 ## Claimed but not covered by CI

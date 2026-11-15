@@ -36,7 +36,7 @@ Open these with the Read tool when the task touches them:
 
 - `docs/STYLE_COMMENTS.md` — authoritative comment and Doxygen guide
 - `CONTRIBUTING.md` — C/C++ boundary rules, naming, "where things go", PR workflow
-- `BUILDING.md`, `CMakePresets.json`, `build_local.sh` — build procedures
+- `docs/BUILDING.md`, `CMakePresets.json`, `build_local.sh` — build procedures
 - `.clang-format`, `Doxyfile` — formatting and documentation config
 - `.claude/README.md` — how this configuration is organized and what is unverified
 

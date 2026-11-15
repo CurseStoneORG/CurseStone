@@ -42,7 +42,7 @@ For anything larger than a small fix, open an issue first so the approach can be
    ./build/CurseStone
    ```
 
-   Presets `linux-debug`, `linux-release` and `android-arm64` are available in `CMakePresets.json`. If you do not have CMake, `./build_local.sh` compiles with the same sources and flags. The full build guide is in [BUILDING.md](BUILDING.md).
+   Presets `linux-debug`, `linux-release` and `android-arm64` are available in `CMakePresets.json`. If you do not have CMake, `./build_local.sh` compiles with the same sources and flags. The full build guide is in [docs/BUILDING.md](docs/BUILDING.md).
 4. Create a branch for your work:
 
    ```bash
