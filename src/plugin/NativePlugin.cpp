@@ -79,7 +79,11 @@
 #include <vector>
 
 #if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX // keep std::min/std::max usable in the headers below
+#endif
 #include <windows.h>
+#undef VOID // DamageCause::VOID collides with the Win32 VOID macro
 #else
 #include <dlfcn.h>
 #endif
@@ -396,7 +400,7 @@ bool api_player_isOp(const char* name) {
 }
 int api_player_getHealth(const char* name) {
     Player* p = findOnlinePlayer(name);
-    return p ? p->health() : -1;
+    return p ? (int)p->health() : -1;
 }
 bool api_player_setHealth(const char* name, int hp) {
     Player* p = findOnlinePlayer(name);
