@@ -21,6 +21,7 @@
  *
  */
 #pragma once
+#include "PluginBase.h"
 #include <lua.hpp>
 #include <string>
 #include <unordered_map>
@@ -36,7 +37,7 @@ struct PluginLimits {
     int maxErrors = 10;             ///< Consecutive failures before auto-disable.
 };
 
-class LuaPlugin {
+class LuaPlugin : public PluginBase {
   public:
     /// @brief Sets limits for subsequently loaded plugins.
     /// @note Main-thread only; call before PluginManager::loadAll().
@@ -49,9 +50,9 @@ class LuaPlugin {
     LuaPlugin(std::string dir, std::string dataRoot);
     ~LuaPlugin(); // Closes the Lua state if present.
 
-    bool load();    // Loads the manifest, state, and entry script.
-    bool enable();  // Calls onEnable() if available.
-    void disable(); // Calls onDisable(), removes listeners, cancels tasks, and disables the plugin.
+    bool load() override;    // Loads the manifest, state, and entry script.
+    bool enable() override;  // Calls onEnable() if available.
+    void disable() override; // Calls onDisable(), removes listeners, cancels tasks, and disables the plugin.
 
     // Protected call for a function and nargs arguments already on the stack.
     // Logs errors and returns false while restoring the stack.
@@ -80,13 +81,13 @@ class LuaPlugin {
     lua_State* L() const {
         return L_;
     }
-    const std::string& name() const {
+    const std::string& name() const override {
         return name_;
     }
-    const std::string& version() const {
+    const std::string& version() const override {
         return version_;
     }
-    const std::string& author() const {
+    const std::string& author() const override {
         return author_;
     }
     const std::string& api() const {
@@ -105,8 +106,12 @@ class LuaPlugin {
     const std::string& resourcesDir() const {
         return resourcesDir_;
     }
-    bool isEnabled() const {
+    bool isEnabled() const override {
         return enabled_;
+    }
+
+    const char* kind() const override {
+        return "lua";
     }
 
   private:

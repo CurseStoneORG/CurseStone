@@ -1,6 +1,6 @@
 # CurseStone Documentation
 
-Index of the documentation that lives in this repository. Plugin API and generated
+Index of the documentation that lives in this repository. Generated
 reference docs are published separately (see [External documentation](#external-documentation)).
 
 ## Getting started
@@ -8,6 +8,7 @@ reference docs are published separately (see [External documentation](#external-
 | Document | Description |
 |---|---|
 | [BUILDING.md](BUILDING.md) | How to build CurseStone: GitHub Actions, Linux x86_64, Android/Termux and ARM64 cross-compile (in Spanish). |
+| [PLUGINS.md](PLUGINS.md) | Plugin API reference: manifest, lifecycle, Lua globals and the native C++ .so/.dll C ABI with build instructions. |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | Project organization, the C / C++ split, naming and style, protocol 84 notes, where things go and the PR workflow. |
 | [STYLE_COMMENTS.md](STYLE_COMMENTS.md) | Comment and Doxygen style guide, enforced by review and `tools/lint_comments.py`. |
 
@@ -31,6 +32,7 @@ Per-version changelogs, in English and Spanish, are in [`../changelogs/`](../cha
 | Component | Description |
 |---|---|
 | [`plugins/SpawnProtection`](../plugins/SpawnProtection/README.md) | Example Lua plugin that protects the spawn area. |
+| [`plugins/HelloNative`](../plugins/HelloNative/README.md) | Reference native C++ plugin (.so/.dll C ABI) with build instructions. |
 | [`test/bot`](../test/bot/README.md) | Protocol-84 test client used to exercise a running server. |
 
 ## External documentation

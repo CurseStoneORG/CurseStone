@@ -76,7 +76,10 @@ bool LuaCommand::execute(CommandSender* sender, const std::string&,
     int fnRef = fnRef_;
     auto task = std::make_shared<scheduler::CallbackTask>(
         [pluginName, fnRef, senderName, isConsole, isOp, args]() {
-            LuaPlugin* plugin = PluginManager::get().find(pluginName);
+            // The breaker path is the only place that downcasts without a
+            // dynamic_cast: this command belongs to a Lua plugin, so the
+            // base pointer find() returns is always a LuaPlugin here.
+            auto* plugin = static_cast<LuaPlugin*>(PluginManager::get().find(pluginName));
             if (!plugin || !plugin->isEnabled())
                 return;
             lua_State* L = plugin->L();

@@ -92,6 +92,8 @@ bool PluginsCommand::execute(CommandSender* sender, const std::string&,
         out += list[i].name + " v" + list[i].version;
         if (!list[i].author.empty())
             out += " by " + list[i].author;
+        if (list[i].kind == "native")
+            out += " [C++]";
         if (!list[i].enabled)
             out += " (disabled)";
     }
