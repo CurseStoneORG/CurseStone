@@ -120,6 +120,17 @@ void Nether::commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t id, uin
 	queueSpill(cx, cz, index, id, data);
 }
 
+void Nether::commitNeighborTile(int cx, int cz, const std::vector<uint8_t>& blob) {
+	if (mNeighborSink) {
+		mNeighborSink->commitNeighborTile(cx, cz, blob);
+		return;
+	}
+	// No live-chunk sink wired (offline tools): park beside the block
+	// spills and replay at the owning chunk's populate.
+	std::lock_guard<std::mutex> l(mSpillMutex);
+	mPendingTiles[ngenKey(cx, cz)].push_back(blob);
+}
+
 void Nether::queueSpill(int cx, int cz, uint32_t index, uint8_t id, uint8_t data) {
 	std::lock_guard<std::mutex> l(mSpillMutex);
 	mSpill[ngenKey(cx, cz)].push_back({index, id, data});
@@ -147,6 +158,19 @@ void Nether::drainSpills(int cx, int cz, mcp_chunk_t* chunk) {
 }
 
 void Nether::applySpill(vgen::LevelChunk& center, int cx, int cz) {
+	{
+		std::lock_guard<std::mutex> l(mSpillMutex);
+		// Tile blobs parked while this chunk was not populating yet
+		// (fortress chests spilled into it): replay onto the virtual
+		// center so the flush at the end of populate puts them into the
+		// real chunk's tile_entities together with the block spills.
+		auto tiles = mPendingTiles.find(ngenKey(cx, cz));
+		if (tiles != mPendingTiles.end()) {
+			for (auto& blob : tiles->second)
+				center.addPendingTile(std::move(blob));
+			mPendingTiles.erase(tiles);
+		}
+	}
 	std::vector<SpillEntry> pending;
 	{
 		std::lock_guard<std::mutex> l(mSpillMutex);
@@ -304,6 +328,12 @@ void Nether::populate(GenerationContext& ctx) {
 
 	// write the populated center back into the sink chunk
 	copyVirtualToSink(center, sink);
+
+	// flush the tiles queued during this populate (fortress chests)
+	// into the real chunk's tile_entities — the blob store the save
+	// path persists and World::ensureTilesLoaded hydrates from.
+	for (const auto& blob : center.mPendingTiles)
+		mcp_chunk_add_tile_entity(sink, blob.data(), blob.size());
 }
 
 } // namespace cursestone::world::generator

@@ -1406,10 +1406,15 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
         lvl->setTile(placeX, placeY, placeZ, placedChest);
         auto pair = tryPairPlacedChest(srv_, lvl, placeX, placeY, placeZ, placedChest,
                                        placedBlockData);
+        // The chest block actor exists only once the client holds the
+        // tile's BlockEntityDataPacket — an UpdateBlockPacket alone leaves
+        // the client drawing air where the chest is (the classic
+        // "invisible chest"). Spawn the tile to every viewer right after
+        // registration, exactly like the sign below; a paired half gets
+        // its own packet with the pair tags (pairx/pairz) so both blocks
+        // render as one large chest immediately.
+        sendBlockEntityData(placeX, placeY, placeZ, *placedChest, nullptr);
         if (pair) {
-            // Push the pair tags to every viewer so the client renders
-            // and treats the two blocks as one large chest right away.
-            sendBlockEntityData(placeX, placeY, placeZ, *placedChest, nullptr);
             const auto& pp = pair->position();
             sendBlockEntityData((int32_t)pp.x, (int32_t)pp.y, (int32_t)pp.z, *pair, nullptr);
         }

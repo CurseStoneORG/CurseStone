@@ -23,6 +23,7 @@
 
 #include "vgen/structure/StructurePiece.h"
 
+#include "vgen/structure/LootChest.h"
 #include "vgen/Facing.h"
 #include "vgen/Vanilla.h"
 #include "vgen/VgenWorld.h"
@@ -702,20 +703,22 @@ bool StructurePiece::createChest(BlockSource* level, const BoundingBox& chunkBB,
 	int worldX = getWorldX(x, z);
 	int worldY = getWorldY(y);
 	int worldZ = getWorldZ(x, z);
-	DataID data = getOrientationData(Block::mChest, direction);
+	if (!chunkBB.isInside(worldX, worldY, worldZ))
+		return false;
+	// Population re-runs postProcess over the same piece set for the
+	// chunks a piece spans; a chest already standing (this run or a
+	// previous chunk's run) keeps its original loot and position.
+	if (level->getBlockID(worldX, worldY, worldZ) == Block::mChest->mID)
+		return false;
 
-// 	if (chunkBB.isInside(worldX, worldY, worldZ)) {
-// 		if (level->getBlockID(worldX, worldY, worldZ) != Block::mChest->mID) {
-// 			level->setBlockAndData(worldX, worldY, worldZ, Block::mChest->mID, data, Block::UPDATE_NONE);
-// 			ChestBlockEntity* chest = (ChestBlockEntity*) level->getBlockEntity(worldX, worldY, worldZ);
-// 			if (chest != nullptr) {
-// 				Util::LootTableUtils::fillChest(level->getLevel(), *chest, random, lootTable);
-// 			}
-// 			//LOGE("\nCreated chest at (%d, %d, %d)\n", worldX, worldY, worldZ);
-// 			return true;
-// 		}
-// 	}
-	return false;
+	// The piece set reasons in Direction; chests store Facing. Place the
+	// block through the regular structure write path (center chunk or
+	// neighbor sink) and queue the loot-filled tile blob with it —
+	// placeLootChest keeps the pair together per route, which is what
+	// keeps generated chests visible (block actor on the client) and
+	// lootable.
+	DataID data = getOrientationData(Block::mChest, direction);
+	return placeLootChest(*level, worldX, worldY, worldZ, data, lootTable, random);
 }
 
 bool StructurePiece::createDispenser(BlockSource* level, const BoundingBox& chunkBB, Random& random, int x, int y, int z, int facing, const std::string& lootTable) {

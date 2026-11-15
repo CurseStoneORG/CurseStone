@@ -143,5 +143,11 @@ enum ItemId : uint16_t {
     ITEM_PUMPKIN_SEEDS = 361,
     ITEM_MELON_SEEDS = 362,
     ITEM_MAP = 358,
+
+    // Loot / mob-drop materials (structure chest pools)
+    ITEM_SADDLE = 329,
+    ITEM_BONE = 352,
+    ITEM_ROTTEN_FLESH = 367,
+    ITEM_NETHER_WART = 372,
 };
 } // namespace

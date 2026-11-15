@@ -206,6 +206,24 @@ LevelChunk* BlockSource::getChunkAt(const BlockPos& pos) const {
         return _chunkAtBlock(pos.x, pos.z);
 }
 
+bool BlockSource::addTileEntity(const BlockPos& pos, std::vector<uint8_t>&& blob) {
+        if (blob.empty())
+                return false;
+        LevelChunk* c = _chunkAtBlock(pos.x, pos.z);
+        if (!c)
+                return false;
+        if (c == &mCenter) {
+                // Center chunk: the blob rides the virtual volume and is
+                // flushed into the sink at the end of populate.
+                mCenter.addPendingTile(std::move(blob));
+                return true;
+        }
+        // Neighbor chunk: same delivery path the neighbor's block write
+        // just took (commitNeighborWrite), so block and tile stay together.
+        mFeed.commitNeighborTile(c->mPos.x, c->mPos.z, blob);
+        return true;
+}
+
 Biome& BlockSource::getBiome(const BlockPos& pos) const {
         LevelChunk* c = _chunkAtBlock(pos.x, pos.z);
         if (!c)

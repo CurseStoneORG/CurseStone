@@ -26,6 +26,7 @@
 #include "vgen/VgenWorld.h"
 #include "vgen/material/Material.h"
 #include "vgen/Blocks.h"
+#include "vgen/structure/LootChest.h"
 //#include "world/level/block/entity/ChestBlockEntity.h"
 //#include "world/level/block/entity/MobSpawnerBlockEntity.h"
 #include "vgen/Facing.h"
@@ -125,12 +126,11 @@ bool MonsterRoomFeature::place(BlockSource& region, const BlockPos& pos, Random&
 			// Look for a wall next to us, and if we find one, face the chest away from it please.
 			DataID facingId = _getFacingDataId(region, blockPos, randX, randZ);
 
-			_setBlockAndData(region, blockPos, FullBlock(Block::mChest->mID, facingId));
-			
-			//ChestBlockEntity* chest = (ChestBlockEntity*) region.getBlockEntity(blockPos);
-			//if (chest != nullptr) {
-			//	Util::LootTableUtils::fillChest(region.getLevel(), *chest, random, "loot_tables/chests/simple_dungeon.json");
-			//}
+			// Chest block + loot-filled tile blob in one step — a bare
+			// block here is what used to render as an invisible chest (no
+			// block actor without BlockEntityData) with nothing inside.
+			placeLootChest(region, blockPos.x, blockPos.y, blockPos.z, facingId,
+			               "loot_tables/chests/simple_dungeon.json", random);
 
 			break;
 		}
