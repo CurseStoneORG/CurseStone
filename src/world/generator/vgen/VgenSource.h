@@ -64,6 +64,7 @@ public:
         // ITerrainFeed (the 3x3 virtual-neighborhood backing store)
         std::shared_ptr<vgen::LevelChunk> acquireTerrain(int cx, int cz) override;
         void commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t id, uint8_t data) override;
+        void commitNeighborTile(int cx, int cz, const std::vector<uint8_t>& blob) override;
         void applySpill(vgen::LevelChunk& center, int cx, int cz) override;
         vgen::Level& getLevel() override { return mLevel; }
         vgen::Dimension& getDimension() override { return mDimension; }
@@ -142,6 +143,11 @@ private:
         };
         std::mutex mSpillMutex;
         std::unordered_map<int64_t, std::vector<SpillEntry>> mSpill;
+
+        // tile-entity blobs (structure chests) aimed at chunks that had no
+        // live sink when their neighbor populated — replayed into the
+        // virtual center at that chunk's populate, flushed with its spill.
+        std::unordered_map<int64_t, std::vector<std::vector<uint8_t>>> mPendingTiles;
 };
 
 static inline int64_t vgenKey(int cx, int cz) {

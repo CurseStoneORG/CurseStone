@@ -85,6 +85,12 @@ StructurePiece* MineshaftPiece::generateAndAddPiece(StructurePiece* startPiece, 
 }
 
 bool MineshaftPiece::createChest(BlockSource* level, const BoundingBox& chunkBB, Random& random, int x, int y, int z, int direction, const std::string& lootTable) {
+	// Vanilla mineshafts carry their loot in chest MINECARTS on a rail,
+	// not in block chests — that is why this override replaces the base
+	// StructurePiece::createChest instead of calling it. The rail lands;
+	// the minecart itself needs the MinecartChest entity, which the
+	// entity layer does not ship yet, so the spawn stays disabled and
+	// mineshafts keep no loot for now (vanilla-accurate: no block chest).
 	BlockPos pos(getWorldX(x, z), getWorldY(y), getWorldZ(x, z));
 	if (chunkBB.isInside(pos)) {
 		if (level->getBlockID(pos) == Block::mAir->mID && level->getBlockID(pos.below()) != Block::mAir->mID) {

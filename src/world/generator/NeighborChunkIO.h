@@ -33,6 +33,7 @@
 // other's header.
 #pragma once
 #include <stdint.h>
+#include <vector>
 #include "world/format/Chunk.h"
 
 namespace cursestone::world::generator {
@@ -59,6 +60,11 @@ public:
         // otherwise — both under the manager's locks, so the decision is
         // atomic against concurrent chunk installs.
         virtual void commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t id, uint8_t data) = 0;
+        // Same delivery contract for a tile-entity NBT blob (structure
+        // chest) aimed at a neighbor chunk: live chunk gets the blob added
+        // to its tile_entities (plus the registry tile via the blob sink),
+        // otherwise the blob parks until the chunk installs.
+        virtual void commitNeighborTile(int cx, int cz, const std::vector<uint8_t>& blob) = 0;
 };
 
 } // namespace cursestone::world::generator

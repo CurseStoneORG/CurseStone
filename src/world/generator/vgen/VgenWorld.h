@@ -73,6 +73,13 @@ public:
         // install otherwise. Keeps cross-chunk features (trees, lakes,
         // structure pieces) whole no matter what order chunks generate in.
         virtual void commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t id, uint8_t data) = 0;
+        // Deliver a tile-entity NBT blob aimed outside the center chunk
+        // (structure chests): lands in the live chunk's tile_entities with
+        // its registry tile created, or parks beside that chunk's block
+        // spills until it installs. A chest block and its tile blob take
+        // the SAME route, so a spilled chest can never end up block-without-
+        // tile — the invisible-chest bug.
+        virtual void commitNeighborTile(int cx, int cz, const std::vector<uint8_t>& blob) = 0;
         // Replay every spill recorded for (cx,cz) into `center`.
         virtual void applySpill(LevelChunk& center, int cx, int cz) = 0;
         virtual Level& getLevel() = 0;
@@ -99,6 +106,16 @@ public:
         ChunkPos mPos;
         Level* mLevel = nullptr;
         Dimension* mDimension = nullptr;
+
+        // Tile-entity NBT blobs (structure chests) queued while this chunk
+        // was the population center. VgenSource flushes them into the real
+        // chunk's tile_entities right after the virtual volume is copied
+        // out; a blob parked by commitNeighborTile for a not-yet-populated
+        // chunk is drained here at that chunk's populate start.
+        std::vector<std::vector<uint8_t>> mPendingTiles;
+        void addPendingTile(std::vector<uint8_t>&& blob) {
+                mPendingTiles.push_back(std::move(blob));
+        }
 
         const ChunkPos& getPosition() const { return mPos; }
         BlockPos getMin() const { return BlockPos(mPos.x * 16, 0, mPos.z * 16); }
@@ -268,6 +285,15 @@ public:
         }
         void removeBlock(const BlockPos& pos);
         void removeBlock(int x, int y, int z) { removeBlock(BlockPos(x, y, z)); }
+
+        // Queue a tile-entity NBT blob for the chunk owning `pos`. Blobs
+        // for the center chunk park on it and are flushed into the real
+        // chunk at the end of populate; neighbor blobs go through the
+        // feed's commitNeighborTile (same live-or-park decision as the
+        // neighbor block writes). This is what keeps generated chests
+        // visible AND lootable: the tile blob reaches tile_entities, the
+        // chunk stream carries the BlockEntityDataPacket out of it.
+        bool addTileEntity(const BlockPos& pos, std::vector<uint8_t>&& blob);
 
         BlockSource* getExistingChunk(const ChunkPos& cp) { return this; } // shim
         const BlockPos getTopRainBlockPos(const BlockPos& pos) const;

@@ -213,6 +213,13 @@ World::World(WorldConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
         nether->setNeighborSink(&chunks_);
         chunks_.setSpillQueue(nether);
     }
+    // Structure tile blobs (chest NBT from generation) that land in a live
+    // chunk or install with it materialize as registry tiles through this
+    // hook — the block/tile pair is never split long enough for a save
+    // pass to rebuild tile_entities without the chest.
+    chunks_.setTileBlobSink([this](const uint8_t* data, size_t len) {
+        applyTileBlob(data, len);
+    });
     provider_ = provider;
     chunks_.setOnChunkAdded([this](int32_t cx, int32_t cz, bool full) {
         onChunkAdded(cx, cz, full);
@@ -1979,6 +1986,43 @@ void World::setTile(int32_t x, int32_t y, int32_t z, std::shared_ptr<cursestone:
     bucket.push_back(TileSlot{tkey, it->second});
 }
 
+void World::applyTileBlob(const uint8_t* data, size_t len) {
+    if (!data || len == 0)
+        return;
+    utils::TagGuard tag(cursestone::nbt::read(data, len, /*little_endian=*/true));
+    if (!tag)
+        return;
+    const char* id = cursestone::nbt::get_string(tag.get(), "id", "");
+    const int32_t tx = cursestone::nbt::get_int(tag.get(), "x", 0);
+    const int32_t ty = cursestone::nbt::get_int(tag.get(), "y", 0);
+    const int32_t tz = cursestone::nbt::get_int(tag.get(), "z", 0);
+
+    // Same id -> tile mapping the chunk-blob hydration uses.
+    std::shared_ptr<cursestone::tile::Tile> tile;
+    cursestone::world::Position pos(tx, ty, tz);
+    if (std::strcmp(id, "Chest") == 0) {
+        tile = std::make_shared<cursestone::tile::TileChest>(pos);
+    } else if (std::strcmp(id, "Sign") == 0) {
+        tile = std::make_shared<cursestone::tile::TileSign>(pos);
+    } else if (std::strcmp(id, "Furnace") == 0) {
+        tile = std::make_shared<cursestone::tile::TileFurnace>(pos);
+    }
+    if (!tile)
+        return;
+    tile->readNBT(tag.get());
+
+    const uint64_t tkey = packTilePos(tx, ty, tz);
+    const uint64_t tileCk =
+        packChunkPos(static_cast<int32_t>(tx) >> 4, static_cast<int32_t>(tz) >> 4);
+    std::lock_guard<std::mutex> lk(tiles_mtx_);
+    // Insert-only, hydration rules: a tile already at that position — a
+    // player-placed one, or one a concurrent hydration just created from
+    // this same blob — is newer than what we hold, so the blob loses.
+    auto [it, inserted] = tiles_.try_emplace(tkey, std::move(tile));
+    if (inserted)
+        tiles_by_chunk_[tileCk].push_back(TileSlot{tkey, it->second});
+}
+
 void World::removeTile(int32_t x, int32_t y, int32_t z) {
     const uint64_t tkey = packTilePos(x, y, z);
     const uint64_t ckey = packChunkPos(x >> 4, z >> 4);
@@ -2189,6 +2233,13 @@ void World::syncTilesToChunks() {
         mcp_chunk_t* c = chunks_.getChunkIfLoaded(cx, cz);
         if (!c)
             continue; // Chunk unloaded; retry on the next save.
+
+        // Hydrate BEFORE the rebuild: a freshly generated chunk can carry
+        // generation-time tile blobs (structure chests) the registry has
+        // not absorbed yet — rebuilding tile_entities from the registry
+        // now would wipe them before the first hydration ever read them.
+        // ensureTilesLoaded is a no-op for chunks that already hydrated.
+        ensureTilesLoaded(cx, cz);
 
         mcp_chunk_clear_tile_entities(c);
         for (auto& t : tilesInChunk) {

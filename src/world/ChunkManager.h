@@ -29,6 +29,7 @@
 #include "world/format/WorldProvider.h"
 #include "world/generator/NeighborChunkIO.h"
 #include <atomic>
+#include <functional>
 #include <unordered_map>
 #include <unordered_set>
 #include <memory>
@@ -167,6 +168,19 @@ class ChunkManager : public generator::INeighborBlockSink {
     // cross-chunk block writes (trees/lakes/structures that spill over a
     // chunk border).
     void commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t id, uint8_t data) override;
+    // Same for tile-entity NBT blobs (structure chests): live chunk gets
+    // the blob added and handed to the blob sink below; not-yet-live
+    // chunks get it parked until install, exactly like the block spills.
+    void commitNeighborTile(int cx, int cz, const std::vector<uint8_t>& blob) override;
+    // Wire the callback applied to a tile blob that landed in a LIVE
+    // chunk (or was drained on install). World registers its registry
+    // apply here so the chest's tile exists beside its block instead of
+    // waiting for the next hydration pass — a save pass that rebuilds
+    // tile_entities from the registry between the two moments would
+    // otherwise wipe a blob-only chest.
+    void setTileBlobSink(std::function<void(const uint8_t*, size_t)> cb) {
+        on_tile_blob_ = std::move(cb);
+    }
     size_t count() const;
 
   private:
@@ -190,6 +204,18 @@ class ChunkManager : public generator::INeighborBlockSink {
     std::shared_ptr<format::WorldProvider> provider_;
     std::shared_ptr<generator::Generator> generator_;
     generator::ISpillQueue* spillQueue_ = nullptr;
+
+    // Tile blobs parked for chunks that were not live yet (structure
+    // chests spilled into a chunk that generated later) — drained on
+    // install right after the block spills, under the same locks.
+    std::unordered_map<ChunkKey, std::vector<std::vector<uint8_t>>, ChunkKeyHash> pendingTileBlobs_;
+    std::function<void(const uint8_t*, size_t)> on_tile_blob_;
+
+    // Pops every parked blob for `key` into `out` (call with mtx_ +
+    // pending_mtx_ held). Callers hand the blobs to the chunk and then to
+    // on_tile_blob_ outside the locks (same contract as on_chunk_added_).
+    void takePendingTileBlobs(const ChunkKey& key,
+                              std::vector<std::vector<uint8_t>>& out);
 
     // Coordinates currently being generated on an AsyncPool worker,
     // so getChunkOrRequestAsync() doesn't submit the same chunk twice

@@ -271,6 +271,7 @@ mcp_chunk_t* ChunkManager::getChunkOrRequestAsync(int32_t x, int32_t z,
             // been produced anyway; the live copy may additionally carry
             // real edits, which are strictly newer information.
             bool installed = false;
+            std::vector<std::vector<uint8_t>> drainedTiles;
             if (c) {
                 std::scoped_lock lk(mtx_, pending_mtx_);
                 auto it = chunks_.find(key);
@@ -279,6 +280,11 @@ mcp_chunk_t* ChunkManager::getChunkOrRequestAsync(int32_t x, int32_t z,
                     // generating, then install it.
                     if (spillQueue_)
                         spillQueue_->drainSpills(key.x, key.z, c);
+                    // Structure tile blobs parked for this chunk go into
+                    // its tile_entities before it is ever streamed.
+                    takePendingTileBlobs(key, drainedTiles);
+                    for (const auto& blob : drainedTiles)
+                        mcp_chunk_add_tile_entity(c, blob.data(), blob.size());
                     chunks_[key] = c;
                     count_.store(chunks_.size(), std::memory_order_relaxed);
                     installed = true;
@@ -308,6 +314,14 @@ mcp_chunk_t* ChunkManager::getChunkOrRequestAsync(int32_t x, int32_t z,
                     on_chunk_added_(key.x, key.z, /*full=*/false);
                 if (on_chunk_installed_)
                     on_chunk_installed_(key.x, key.z);
+                // Registry tiles for the drained blobs — outside every
+                // lock, same contract as the hooks above. applyTileBlob
+                // never clobbers a live tile, so a chunk that already
+                // hydrated the blob loses nothing.
+                if (on_tile_blob_) {
+                    for (const auto& blob : drainedTiles)
+                        on_tile_blob_(blob.data(), blob.size());
+                }
             }
         });
 
@@ -326,6 +340,7 @@ mcp_chunk_t* ChunkManager::getChunkOrRequestAsync(int32_t x, int32_t z,
 }
 
 void ChunkManager::setChunk(int32_t x, int32_t z, mcp_chunk_t* chunk) {
+    std::vector<std::vector<uint8_t>> drainedTiles;
     {
         std::scoped_lock lk(mtx_, pending_mtx_);
         auto key = ChunkKey{x, z};
@@ -340,6 +355,17 @@ void ChunkManager::setChunk(int32_t x, int32_t z, mcp_chunk_t* chunk) {
         // write can never land between "queued" and "live".
         if (spillQueue_)
             spillQueue_->drainSpills(x, z, chunk);
+        // Structure tile blobs parked while the chunk was absent land in
+        // its tile_entities here, before any client can stream it.
+        takePendingTileBlobs(key, drainedTiles);
+        for (const auto& blob : drainedTiles)
+            mcp_chunk_add_tile_entity(chunk, blob.data(), blob.size());
+    }
+    // Registry tiles for the drained blobs — outside the locks, same
+    // contract as on_chunk_added_ below.
+    if (on_tile_blob_) {
+        for (const auto& blob : drainedTiles)
+            on_tile_blob_(blob.data(), blob.size());
     }
     // Global sky light is a property of the engine, not of the chunk's
     // history: chunks coming back from a disk written before the
@@ -406,6 +432,45 @@ void ChunkManager::commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t i
     // neighbour) is required to darken what the new blocks shadow.
     if (changed && on_chunk_added_)
         on_chunk_added_(cx, cz, /*full=*/true);
+}
+
+void ChunkManager::commitNeighborTile(int cx, int cz, const std::vector<uint8_t>& blob) {
+    if (blob.empty())
+        return;
+    bool landedLive = false;
+    {
+        std::scoped_lock lk(mtx_, pending_mtx_);
+        auto it = chunks_.find(ChunkKey{cx, cz});
+        if (it != chunks_.end() && it->second) {
+            // Live chunk: the blob goes straight into tile_entities —
+            // exactly where the block write next door just landed.
+            mcp_chunk_add_tile_entity(it->second, blob.data(), blob.size());
+            landedLive = true;
+        } else {
+            // Chunk not live yet: park the blob for its install (setChunk
+            // / async callback), beside the block spills for the same
+            // chunk — the pair can never be split by an install in
+            // between because both decisions share these locks.
+            pendingTileBlobs_[ChunkKey{cx, cz}].push_back(blob);
+        }
+    }
+    // Live chunk: also create the registry tile right away — the save
+    // pass rebuilds tile_entities from the registry, so a blob that only
+    // lives in the chunk could be wiped by the next dirty-tile sync
+    // before the first hydration reads it. applyTileBlob inserts
+    // only-if-free, so a tile hydrated in the meantime wins.
+    if (landedLive && on_tile_blob_)
+        on_tile_blob_(blob.data(), blob.size());
+}
+
+void ChunkManager::takePendingTileBlobs(const ChunkKey& key,
+                                        std::vector<std::vector<uint8_t>>& out) {
+    auto it = pendingTileBlobs_.find(key);
+    if (it == pendingTileBlobs_.end())
+        return;
+    for (auto& blob : it->second)
+        out.push_back(std::move(blob));
+    pendingTileBlobs_.erase(it);
 }
 
 void ChunkManager::markDirty(int32_t x, int32_t z) {
