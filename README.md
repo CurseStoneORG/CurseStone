@@ -69,25 +69,19 @@ The project aims to preserve the original game's behavior and world generation w
 
 Not every original game feature is currently implemented. In particular, some gameplay systems, including mob AI and pathfinding, are not yet available.
 
-## Links
+## Documentation
 
-Official resources and project documentation:
+- **Building:** [docs/BUILDING.md](docs/BUILDING.md)
+- **Repository docs index:** [docs/README.md](docs/README.md)
+- **Release notes:** [changelogs](changelogs/README.md)
+- **Online documentation:** https://cursestoneorg.github.io/docs/
+- **API reference (Doxygen):** https://cursestoneorg.github.io/doxygen-docs/
 
-- **Official Website:** https://cursestoneorg.github.io/
-- **Initial Documentation:** https://cursestoneorg.github.io/docs/
-- **Doxygen Documentation:** https://cursestoneorg.github.io/doxygen-docs/
-- **GitHub Repository:** https://github.com/CurseStoneORG/CurseStone
-- **Issue Tracker:** https://github.com/CurseStoneORG/CurseStone/issues
+## Contributing
 
-## Get Involved
+CurseStone is open source and contributions are welcome, whether you are interested in server development, plugin creation, testing or improving existing systems.
 
-CurseStone is developed as an open-source project, and contributions from the community are welcome.
-
-Whether you are interested in server development, plugin creation, testing or improving existing systems, you can follow the project's development on GitHub.
-
-[Explore the repository](https://github.com/CurseStoneORG/CurseStone)
-
-[Report a problem](https://github.com/CurseStoneORG/CurseStone/issues)
+Read [CONTRIBUTING.md](CONTRIBUTING.md) to get started, and use the [issue tracker](https://github.com/CurseStoneORG/CurseStone/issues) to report problems.
 
 ## License
 

@@ -2,7 +2,7 @@
 
 ## Opción 1 — GitHub Actions (recomendado)
 
-Sube el repo a GitHub y el workflow `.github/workflows/build.yml` compila automáticamente:
+Sube el repo a GitHub y el workflow `.github/workflows/Build.yml` compila automáticamente:
 - **Linux x86_64** — para probar en VPS/PC
 - **Android ARM64** — para correr en Android/Termux
 

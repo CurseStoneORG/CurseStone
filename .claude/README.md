@@ -6,7 +6,7 @@ Automatically at session start (Claude Code behavior as documented; not re-verif
 - `.claude/rules/*.md`: all nine rule files, so the file names do not matter; being inside `rules/` does.
 - `.claude/settings.json`: permissions (read-only git and comment-lint commands allowed; edits to `third_party/` denied). Adjust freely.
 
-Referenced manually (read on demand, not auto-loaded): `docs/STYLE_COMMENTS.md`, `CONTRIBUTING.md`, `BUILDING.md`, `.clang-format`, `Doxyfile`, and this README. If a Claude Code version does not auto-load `rules/`, point `.claude/CLAUDE.md` at the files with `@.claude/rules/<name>.md` imports.
+Referenced manually (read on demand, not auto-loaded): `docs/STYLE_COMMENTS.md`, `CONTRIBUTING.md`, `docs/BUILDING.md`, `.clang-format`, `Doxyfile`, and this README. If a Claude Code version does not auto-load `rules/`, point `.claude/CLAUDE.md` at the files with `@.claude/rules/<name>.md` imports.
 
 ## Unresolved conflicts between the requested rules and existing docs
 - Unfinished-work marker: the requested `//TODO: Put what's missing here` differs from the ~50 existing `// TODO:` comments and from `@todo` in `docs/STYLE_COMMENTS.md`. The requested marker is used for new work; reconcile `STYLE_COMMENTS.md` if desired.
