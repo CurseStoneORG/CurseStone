@@ -63,6 +63,16 @@ typedef struct mcp_chunk {
     // only floods from the wall cells).
     uint8_t light_touched;
 
+    // Monotonic counter bumped by every live-chunk block write
+    // (mcp_chunk_set_block_full / mcp_chunk_set_block_id). World uses it
+    // to detect "did any block change since the last tile-hydration
+    // scan" without rescanning the chunk's 32768 cells on every stream:
+    // cost of a block edit stays O(1), cost of an unchanged chunk's
+    // hydration check drops to a 32-bit compare. Generator-time direct
+    // section writes intentionally do NOT bump it — those chunks are not
+    // live yet, so their first hydration happens after install regardless.
+    uint32_t block_edit_serial;
+
     mcp_chunk_section_t* sections[16]; // NULL = not yet allocated
     uint8_t* biomes;                   // 256 bytes (one byte per column)
     int32_t* height_map;               // 256 ints (one int per column)
