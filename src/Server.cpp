@@ -75,7 +75,8 @@
 #include "nbt/tag/ListTag.h"
 #include "utils/BinaryStream.h"
 #include "permission/BanList.h"
-#include "plugin/PluginManager.h" // Lua plugin support
+#include "plugin/PluginManager.h" // Lua + native plugin support
+#include "plugin/LuaPlugin.h"     // plugin::LuaPlugin::limits() in the startup log
 #include "utils/Config.h"
 #include "utils/DefaultConfig.h"
 #include "utils/DebugFlag.h"

@@ -570,7 +570,10 @@ void LuaPlugin::tripBreaker() {
     // Defer disabling until the next tick to avoid modifying listeners during dispatch.
     const std::string pluginName = name_;
     auto task = std::make_shared<scheduler::CallbackTask>([pluginName]() {
-        LuaPlugin* pl = PluginManager::get().find(pluginName);
+        // The instruction breaker only trips for Lua plugins, so the
+        // downcast is safe by construction; find() returns the base for
+        // both backends now.
+        auto* pl = static_cast<LuaPlugin*>(PluginManager::get().find(pluginName));
         if (!pl || !pl->breakerTripped_)
             return;
         if (CommandMap* map = Server::getInstance().getCommandMap())

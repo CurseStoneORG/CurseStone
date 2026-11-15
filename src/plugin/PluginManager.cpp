@@ -23,11 +23,14 @@
 // PluginManager — implementation.
 #include "PluginManager.h"
 #include "LuaBindings.h" // CURSESTONE_API
+#include "LuaPlugin.h"
 #include "MiniYaml.h"    // leer the field `name` of plugin.yml
+#include "NativePlugin.h"
 #include "Server.h"      // getCommandMap() for /plugins reload
 #include "command/CommandMap.h"
 #include "utils/MainLogger.hpp"
 #include <algorithm>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -48,32 +51,58 @@ std::string toLowerAscii(std::string s) {
     return s;
 }
 
-// reads only the field `name` of the plugin.yml of a folder using a
+// reads the fields `name` and `main` of the plugin.yml of a folder using a
 // lua_State temporal: parsea the YAML (parser interno of the binario) but not
-// executes nothing of the plugin. returns "" if not is pudo leer.
-std::string manifestName(const std::string& dir) {
+// executes nothing of the plugin. `name`/`main` stay "" when not is pudo leer.
+struct ManifestFields {
+    std::string name;
+    std::string main;
+};
+
+ManifestFields manifestFields(const std::string& dir) {
     namespace fs = std::filesystem;
+    ManifestFields out;
     std::error_code ec;
     if (!fs::exists(dir + "/plugin.yml", ec))
-        return "";
+        return out;
     std::ifstream in(dir + "/plugin.yml", std::ios::binary);
     if (!in)
-        return "";
+        return out;
     std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 
     lua_State* L = luaL_newstate();
     if (!L)
-        return "";
-    std::string out, err;
+        return out;
+    std::string err;
     if (yaml::parseToLua(L, text, err) && lua_istable(L, -1)) {
-        lua_getfield(L, -1, "name");
-        if (lua_isstring(L, -1))
-            out = lua_tostring(L, -1);
-        lua_pop(L, 1);
+        auto field = [&](const char* key) -> std::string {
+            lua_getfield(L, -1, key);
+            std::string v = lua_isstring(L, -1) ? lua_tostring(L, -1) : "";
+            lua_pop(L, 1);
+            return v;
+        };
+        out.name = field("name");
+        out.main = field("main");
     }
     lua_pop(L, lua_gettop(L)); // stack clean before close the state temporal
     lua_close(L);
     return out;
+}
+
+// true when the manifest's `main` names a shared library: those folders
+// load as NativePlugin (.so on Linux/Android, .dll on Windows) instead of
+// the Lua interpreter.
+bool endsWithAny(const std::string& s, std::initializer_list<const char*> suffixes) {
+    for (const char* suf : suffixes) {
+        size_t n = std::strlen(suf);
+        if (s.size() >= n && s.compare(s.size() - n, n, suf) == 0)
+            return true;
+    }
+    return false;
+}
+
+bool isNativeMain(const std::string& main) {
+    return endsWithAny(main, {".so", ".dll"});
 }
 
 } // namespace
@@ -120,6 +149,7 @@ void PluginManager::loadAll(const std::string& pluginsDir, const std::string& da
         std::string dir;
         std::string folder;
         std::string name;
+        std::string main;
     };
     std::vector<Cand> cands;
 
@@ -135,7 +165,8 @@ void PluginManager::loadAll(const std::string& pluginsDir, const std::string& da
             std::string folder = entry.path().filename().string();
 
             if (fs::exists(entry.path() / "plugin.yml", e2)) {
-                cands.push_back(Cand{dir, folder, manifestName(dir)});
+                ManifestFields mf = manifestFields(dir);
+                cands.push_back(Cand{dir, folder, mf.name, mf.main});
                 continue;
             }
             // without plugin.yml not is a plugin. warn only when it LOOKS like
@@ -208,11 +239,17 @@ void PluginManager::loadAll(const std::string& pluginsDir, const std::string& da
     }
 
     // ---- 3. load + enable those that remain. those that fallen is
-    //         descartan (the log already dijo by what).
+    //         descartan (the log already dijo by what). the manifest's
+    //         `main` decides the backend: .so/.dll -> NativePlugin,
+    //         anything else (incl. empty -> src/main.lua) -> LuaPlugin.
     for (size_t i = 0; i < cands.size(); ++i) {
         if (killed[i])
             continue;
-        auto p = std::make_unique<LuaPlugin>(cands[i].dir, dataRoot);
+        std::unique_ptr<PluginBase> p;
+        if (isNativeMain(cands[i].main))
+            p = std::make_unique<NativePlugin>(cands[i].dir, dataRoot);
+        else
+            p = std::make_unique<LuaPlugin>(cands[i].dir, dataRoot);
         if (p->load() && p->enable()) {
             plugins_.push_back(std::move(p));
         } else {
@@ -237,16 +274,17 @@ size_t PluginManager::reloadAll() {
 }
 
 void PluginManager::unloadAll() {
-    // the LuaCommand are stored refs to the registry of the lua_State that estamos to
-    // point of close: salirlos of the CommandMap first, or a /<cmd> tras
-    // the reload would touch a dead state.
+    // the plugin commands hold refs/callbacks into their runtime (a Lua
+    // registry or a native library): salirlos of the CommandMap first, or a
+    // /<cmd> tras the reload would touch a dead state / dlclose()d library.
     if (CommandMap* map = Server::getInstance().getCommandMap()) {
         for (auto& p : plugins_)
             map->unregisterByOwner(p.get());
     }
-    // destroy each plugin (~LuaPlugin closes the state). the disable already is
-    // hizo (reloadAll -> disableAll); if someone flame unloadAll to pelo,
-    // ~LuaPlugin igualmente disables those that sigan activos.
+    // destroy each plugin (~LuaPlugin closes the state, ~NativePlugin calls
+    // onUnload + dlclose). the disable already is hizo (reloadAll ->
+    // disableAll); if someone flame unloadAll to pelo, the dtors igualmente
+    // disable those that sigan activos.
     plugins_.clear();
 }
 
@@ -259,12 +297,12 @@ std::vector<PluginManager::Info> PluginManager::list() const {
     std::vector<Info> out;
     out.reserve(plugins_.size());
     for (const auto& p : plugins_) {
-        out.push_back(Info{p->name(), p->author(), p->version(), p->isEnabled()});
+        out.push_back(Info{p->name(), p->author(), p->version(), p->kind(), p->isEnabled()});
     }
     return out;
 }
 
-LuaPlugin* PluginManager::find(const std::string& name) const {
+PluginBase* PluginManager::find(const std::string& name) const {
     for (const auto& p : plugins_) {
         if (p && p->name() == name)
             return p.get();

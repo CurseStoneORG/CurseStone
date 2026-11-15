@@ -186,3 +186,19 @@ target_link_libraries(cursestone-bot PRIVATE
 if(WIN32)
     target_link_libraries(cursestone-bot PRIVATE ws2_32)
 endif()
+
+# ---- Example native plugin (C ABI .so/.dll; opt-in build) ----
+# Compiles plugins/HelloNative against the SDK header so a plugin-side
+# break of the NativeAPI.h contract shows up in CI. Kept out of the
+# default build on purpose; produce the library with:
+#   cmake --build . --target cursestone-example-plugin
+add_library(cursestone-example-plugin SHARED EXCLUDE_FROM_ALL
+    plugins/HelloNative/src/HelloNative.cpp
+)
+
+target_include_directories(cursestone-example-plugin PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+# HelloNative.so / HelloNative.dll — no "lib" prefix, matching plugin.yml.
+set_target_properties(cursestone-example-plugin PROPERTIES PREFIX "")

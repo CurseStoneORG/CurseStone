@@ -25,6 +25,11 @@
 // load and enables each plugin in alphabetical order and the disables
 // all when shutting down the server.
 //
+// Two plugin backends share this manager, dispatched by the manifest's
+// `main` field: an entry ending in .so/.dll loads as a NativePlugin
+// (C-ABI shared library, see NativeAPI.h); anything else loads as a
+// LuaPlugin with an entry script under src/.
+//
 // duplicates: if two or more folders declaran the same name of plugin
 // (or use the same name of folder), all remain disabled and is
 // emits a warning indicando that there is plugins duplicates.
@@ -35,7 +40,7 @@
 // Singleton: server::start flame loadAll() and server::runTickLoop flame
 // disableAll() tras leaving of the tick loop.
 #pragma once
-#include "LuaPlugin.h"
+#include "PluginBase.h"
 #include <memory>
 #include <vector>
 #include <string>
@@ -70,21 +75,23 @@ class PluginManager {
         std::string name;
         std::string author;
         std::string version;
+        std::string kind; // "lua" or "native".
         bool enabled;
     };
     std::vector<Info> list() const;
 
     /// @brief returns the plugin with that name, or nullptr if not exists.
-    ///        Live resolution: never retain the returned LuaPlugin pointer
+    ///        Live resolution: never retain the returned PluginBase pointer
     ///        beyond the tick it was obtained in (a /plugins reload
-    ///        destroys and recreates the objects).
-    LuaPlugin* find(const std::string& name) const;
+    ///        destroys and recreates the objects). Callers that need the
+    ///        concrete backend downcast AFTER the null check.
+    PluginBase* find(const std::string& name) const;
 
   private:
     PluginManager() = default;
     std::string pluginsDir_; // stored by loadAll() for reloadAll()
     std::string dataRoot_;   // data_pl root, remembered for reloadAll()
-    std::vector<std::unique_ptr<LuaPlugin>> plugins_;
+    std::vector<std::unique_ptr<PluginBase>> plugins_;
 
     // without onDisable (already it hizo disableAll()): quita the commands of the
     // plugins of the CommandMap and destroys the lua_States.

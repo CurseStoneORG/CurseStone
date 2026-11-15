@@ -44,7 +44,7 @@ Rather than following modern Bedrock Edition development, the project remains fo
 
 ## What it offers
 
-- **Plugin Support** — Extend server functionality using an integrated Lua 5.4 runtime.
+- **Plugin Support** — Extend server functionality with an integrated Lua 5.4 runtime or native C++ plugins (.so/.dll).
 - **Vanilla World Generation** — Generate worlds using terrain generation systems designed to reproduce the original Minecraft: Pocket Edition 0.15.10 world generation.
 - **World Management** — Anvil and LevelDB world storage support.
 - **Terrain Generation** — Biomes, procedural terrain, noise-based generation and world populators.
@@ -58,6 +58,7 @@ Rather than following modern Bedrock Edition development, the project remains fo
 |---|---|
 | C++20 | Entire server core: networking, gameplay and low-level systems |
 | Lua 5.4 | Plugin scripting |
+| C ABI plugin interface | Native .so/.dll plugins |
 | CMake | Build configuration |
 | Ninja | Build system |
 
@@ -72,6 +73,7 @@ Not every original game feature is currently implemented. In particular, some ga
 ## Documentation
 
 - **Building:** [docs/BUILDING.md](docs/BUILDING.md)
+- **Plugin API (Lua + native C++):** [docs/PLUGINS.md](docs/PLUGINS.md)
 - **Repository docs index:** [docs/README.md](docs/README.md)
 - **Release notes:** [changelogs](changelogs/README.md)
 - **Online documentation:** https://cursestoneorg.github.io/docs/
