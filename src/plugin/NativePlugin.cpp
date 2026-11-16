@@ -31,13 +31,13 @@
 // events.
 #include "NativePlugin.h"
 #include "LuaBindings.h" // apiCompatible() + CURSESTONE_API
-#include "MiniYaml.h"
 #include "NativeCommand.h"
 #include "PathSafe.h"
 #include "Player.h"
 #include "Server.h"
 #include "command/ConsoleCommandSender.h"
 #include "command/CommandMap.h"
+#include "entity/Effect.h"
 #include "event/EventManager.h"
 #include "event/block/BlockBreakEvent.h"
 #include "event/block/BlockPlaceEvent.h"
@@ -68,6 +68,7 @@
 #include "world/World.h" // complete World for name()/seed()/setBlock()
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -76,7 +77,6 @@
 #include <memory>
 #include <system_error>
 #include <type_traits>
-#include <vector>
 
 #if defined(_WIN32)
 #ifndef NOMINMAX
@@ -336,6 +336,49 @@ bool api_server_motd(char* out, uint32_t cap) {
     return copyOut(Server::getInstance().getMotd().c_str(), out, cap);
 }
 
+// extension batch 2: server knobs the operator would otherwise set by
+// hand — capacity, difficulty, whitelist and name bans, plus the tip and
+// popup broadcast flavors.
+int api_server_maxPlayers(void) {
+    return Server::getInstance().maxPlayers();
+}
+int api_server_difficulty(void) {
+    return Server::getInstance().difficulty();
+}
+bool api_server_whitelistEnabled(void) {
+    return Server::getInstance().whitelistEnabled();
+}
+Player* serverPlayerForListOps(const char* name) {
+    if (!name || !*name)
+        return nullptr;
+    return Server::getInstance().getPlayerExact(name);
+}
+bool api_server_isBanned(const char* name) {
+    Player* p = serverPlayerForListOps(name);
+    return p && p->isBanned();
+}
+bool api_server_setBanned(const char* name, bool value) {
+    Player* p = serverPlayerForListOps(name);
+    if (!p)
+        return false;
+    p->setBanned(value); // The server kicks banned online players itself.
+    return true;
+}
+void api_server_broadcastTip(const char* msg) {
+    if (!msg)
+        return;
+    for (auto& p : Server::getInstance().playersSnapshot())
+        if (p)
+            p->sendTip(msg);
+}
+void api_server_broadcastPopup(const char* msg) {
+    if (!msg)
+        return;
+    for (auto& p : Server::getInstance().playersSnapshot())
+        if (p)
+            p->sendPopup(msg);
+}
+
 CsServerApi g_serverApi = {api_server_broadcast,
                            api_server_playerCount,
                            api_server_playerNameAt,
@@ -349,7 +392,14 @@ CsServerApi g_serverApi = {api_server_broadcast,
                            api_server_worldExists,
                            api_server_loadWorld,
                            api_server_unloadWorld,
-                           api_server_motd};
+                           api_server_motd,
+                           api_server_maxPlayers,
+                           api_server_difficulty,
+                           api_server_whitelistEnabled,
+                           api_server_isBanned,
+                           api_server_setBanned,
+                           api_server_broadcastTip,
+                           api_server_broadcastPopup};
 
 // player: every call resolves the live player by exact name — the same
 // rule the Lua bindings follow, so nothing ever holds a stale Player*.
@@ -533,6 +583,81 @@ bool api_player_getDisplayName(const char* name, char* out, uint32_t cap) {
     return copyOut(p->getDisplayName().c_str(), out, cap);
 }
 
+// extension batch 2: gamemode, effects, XP, address, spawn point and
+// fire — the per-player state a minigame or utility plugin touches most.
+int api_player_getGamemode(const char* name) {
+    Player* p = findOnlinePlayer(name);
+    return p ? p->gamemode() : -1;
+}
+bool api_player_setGamemode(const char* name, int gm) {
+    Player* p = findOnlinePlayer(name);
+    if (!p || gm < 0 || gm > 3)
+        return false;
+    p->setGamemode(gm);
+    return true;
+}
+bool api_player_addEffect(const char* name, int32_t effectId, int32_t durationTicks,
+                          int32_t amplifier) {
+    Player* p = findOnlinePlayer(name);
+    if (!p || effectId < 1 || effectId > 255 || durationTicks < 1 || amplifier < 0)
+        return false;
+    // Only ids the server actually defines pass: unknown ids would reach
+    // the client as a nameless effect blob.
+    if (!*entity::Effect::nameOf((uint8_t)effectId))
+        return false;
+    int amp = amplifier > 255 ? 255 : amplifier;
+    p->addEffect(std::make_shared<entity::Effect>(entity::Effect::create((uint8_t)effectId, durationTicks, amp)));
+    return true;
+}
+bool api_player_removeEffect(const char* name, int32_t effectId) {
+    Player* p = findOnlinePlayer(name);
+    if (!p || effectId < 1 || effectId > 255)
+        return false;
+    p->removeEffect((uint8_t)effectId);
+    return true;
+}
+int api_player_getExperienceLevel(const char* name) {
+    Player* p = findOnlinePlayer(name);
+    return p ? p->experienceLevel() : -1;
+}
+bool api_player_setExperience(const char* name, int32_t exp, int32_t level) {
+    Player* p = findOnlinePlayer(name);
+    if (!p || exp < 0 || exp > 100 || level < 0)
+        return false;
+    p->setExperience(exp, level);
+    return true;
+}
+bool api_player_getAddress(const char* name, char* out, uint32_t cap) {
+    Player* p = findOnlinePlayer(name);
+    if (!p)
+        return false;
+    return copyOut(p->getAddress().c_str(), out, cap);
+}
+bool api_player_getSpawnPoint(const char* name, double out[3]) {
+    Player* p = findOnlinePlayer(name);
+    if (!p || !out)
+        return false;
+    math::Vector3 sp = p->getSpawn();
+    out[0] = sp.x;
+    out[1] = sp.y;
+    out[2] = sp.z;
+    return true;
+}
+bool api_player_setSpawnPoint(const char* name, double x, double y, double z) {
+    Player* p = findOnlinePlayer(name);
+    if (!p)
+        return false;
+    p->setSpawn((int)std::floor(x), (int)std::floor(y), (int)std::floor(z), true);
+    return true;
+}
+bool api_player_setOnFire(const char* name, int32_t seconds) {
+    Player* p = findOnlinePlayer(name);
+    if (!p || seconds < 0)
+        return false;
+    p->setOnFire(seconds);
+    return true;
+}
+
 CsPlayerApi g_playerApi = {api_player_sendMessage,
                            api_player_sendTip,
                            api_player_sendPopup,
@@ -554,7 +679,17 @@ CsPlayerApi g_playerApi = {api_player_sendMessage,
                            api_player_setNameTag,
                            api_player_getNameTag,
                            api_player_setDisplayName,
-                           api_player_getDisplayName};
+                           api_player_getDisplayName,
+                           api_player_getGamemode,
+                           api_player_setGamemode,
+                           api_player_addEffect,
+                           api_player_removeEffect,
+                           api_player_getExperienceLevel,
+                           api_player_setExperience,
+                           api_player_getAddress,
+                           api_player_getSpawnPoint,
+                           api_player_setSpawnPoint,
+                           api_player_setOnFire};
 
 // world: calls against unloaded worlds fail with 0 / false.
 World* findLoadedWorld(const char* name) {
@@ -621,9 +756,77 @@ uint32_t api_world_playerCount(const char* world) {
     return n;
 }
 
-CsWorldApi g_worldApi = {api_world_seed, api_world_dimension, api_world_getTime, api_world_setTime,
-                         api_world_getBlock, api_world_setBlock, api_world_getSpawn,
-                         api_world_playerCount};
+// extension batch 2: block metadata, world spawn, weather, lightning,
+// chunk residency, save and item drops — the world-level surface behind
+// minigame arenas and event scripting.
+int api_world_getBlockMeta(const char* world, int32_t x, int32_t y, int32_t z) {
+    World* w = findLoadedWorld(world);
+    if (!w || y < 0 || y > 255)
+        return 0;
+    return w->getBlockData(x, y, z);
+}
+bool api_world_setSpawnPoint(const char* world, double x, double y, double z) {
+    World* w = findLoadedWorld(world);
+    if (!w)
+        return false;
+    w->setSpawn(mcp_vector3_t{x, y, z});
+    return true;
+}
+int api_world_getWeather(const char* world) {
+    World* w = findLoadedWorld(world);
+    return w ? w->weatherState() : -1;
+}
+bool api_world_setWeather(const char* world, int32_t state) {
+    World* w = findLoadedWorld(world);
+    if (!w || state < 0 || state > 2)
+        return false;
+    w->setWeather(state); // Default duration; the world broadcasts it.
+    return true;
+}
+bool api_world_spawnLightning(const char* world, double x, double y, double z, bool fire) {
+    World* w = findLoadedWorld(world);
+    if (!w)
+        return false;
+    w->spawnLightning(x, y, z, fire);
+    return true;
+}
+bool api_world_isChunkLoaded(const char* world, int32_t cx, int32_t cz) {
+    World* w = findLoadedWorld(world);
+    return w && w->isChunkLoaded(cx, cz);
+}
+bool api_world_save(const char* world) {
+    World* w = findLoadedWorld(world);
+    if (!w)
+        return false;
+    return w->save() == 0;
+}
+bool api_world_spawnItem(const char* world, double x, double y, double z, int32_t id, int32_t count,
+                         int32_t meta) {
+    World* w = findLoadedWorld(world);
+    if (!w || id <= 0 || id > 65535 || count < 1 || count > 64 || meta < 0 || meta > 15)
+        return false;
+    w->dropItemAt(x, y, z, (uint16_t)id, (uint8_t)count, (uint16_t)meta);
+    return true;
+}
+
+CsWorldApi g_worldApi = {
+    api_world_seed,
+    api_world_dimension,
+    api_world_getTime,
+    api_world_setTime,
+    api_world_getBlock,
+    api_world_setBlock,
+    api_world_getSpawn,
+    api_world_playerCount,
+    api_world_getBlockMeta,
+    api_world_setSpawnPoint,
+    api_world_getWeather,
+    api_world_setWeather,
+    api_world_spawnLightning,
+    api_world_isChunkLoaded,
+    api_world_save,
+    api_world_spawnItem,
+};
 
 // data: the per-plugin data_pl/<plugin> sandbox, same rules as data.*.
 bool dataResolve(CsPluginApi* api, const char* rel, std::string& full) {
@@ -1007,11 +1210,15 @@ CsEventApi g_eventApi = {api_events_on};
 
 // NativePlugin lifecycle /////////////////////////////////////////////////////
 
-NativePlugin::NativePlugin(std::string dir, std::string dataRoot)
-    : dir_(std::move(dir)), dataRoot_(std::move(dataRoot)) {
-    folderName_ = fs::path(dir_).filename().string();
-    dataDir_ = dataRoot_ + "/" + folderName_;
-    resourcesDir_ = dir_ + "/resources";
+NativePlugin::NativePlugin(std::string libPath, std::string dataRoot)
+    : libPath_(std::move(libPath)), dataRoot_(std::move(dataRoot)) {
+    fs::path p(libPath_);
+    stem_ = p.stem().string(); // HelloNative from HelloNative.so
+    pluginsDir_ = p.parent_path().string();
+    if (pluginsDir_.empty())
+        pluginsDir_ = ".";
+    dataDir_ = dataRoot_ + "/" + stem_;
+    name_ = stem_; // Descriptor name replaces this after openLibrary().
 }
 
 NativePlugin::~NativePlugin() {
@@ -1081,7 +1288,7 @@ void NativePlugin::buildApiRoot() {
     apiRoot_.impl = this;
     apiRoot_.serverApi = CURSESTONE_API;
     apiRoot_.pluginName = name_.c_str();
-    apiRoot_.pluginDir = dir_.c_str();
+    apiRoot_.pluginDir = pluginsDir_.c_str();
     apiRoot_.dataDir = dataDir_.c_str();
     apiRoot_.log = &g_logApi;
     apiRoot_.scheduler = &g_schedApi;
@@ -1104,143 +1311,23 @@ bool NativePlugin::ensureDataDir() {
     return true;
 }
 
-bool NativePlugin::loadManifest() {
-    std::string manifestPath = dir_ + "/plugin.yml";
-    std::error_code ec;
-    if (!fs::exists(manifestPath, ec)) {
-        log().error("[" + dir_ + "] has no plugin.yml — it is the ONLY accepted manifest");
-        return false;
-    }
-    std::ifstream in(manifestPath, std::ios::binary);
-    if (!in) {
-        log().error("[" + dir_ + "] could not open plugin.yml");
-        return false;
-    }
-    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-
-    // The YAML parser speaks Lua values; use a temporary state exactly like
-    // PluginManager's pre-scan, and close it before touching the library.
-    lua_State* L = luaL_newstate();
-    if (!L) {
-        log().error("[" + dir_ + "] could not allocate the manifest parser");
-        return false;
-    }
-    std::string err;
-    if (!yaml::parseToLua(L, text, err) || !lua_istable(L, -1)) {
-        log().error("[" + dir_ + "] plugin.yml: " + (err.empty() ? "must be a map of keys" : err));
-        lua_close(L);
-        return false;
-    }
-
-    auto field = [&](const char* key) -> std::string {
-        lua_getfield(L, -1, key);
-        std::string v = lua_isstring(L, -1) ? lua_tostring(L, -1) : "";
-        lua_pop(L, 1);
-        return v;
-    };
-    api_ = field("api");
-    name_ = field("name");
-    author_ = field("author");
-    version_ = field("version");
-    std::string main = field("main");
-    lua_pop(L, lua_gettop(L));
-    lua_close(L);
-
-    if (name_.empty())
-        name_ = folderName_;
-    if (api_.empty())
-        api_ = CURSESTONE_API;
-
-    bool exact = false;
-    if (!apiCompatible(api_, &exact)) {
-        log().error("[" + name_ + "] requires API " + api_ + ", but this server provides API " +
-                    CURSESTONE_API + " — plugin discarded");
-        return false;
-    }
-    if (!exact)
-        log().warn("[" + name_ + "] declares API " + api_ + " while the server provides " +
-                   CURSESTONE_API + " (compatible, but not exact)");
-
-    if (!sanitizeRelPath(main, libRel_)) {
-        log().error("[" + name_ +
-                    "] plugin.yml: missing or invalid 'main' — it must name the shared library "
-                    "(.so/.dll) relative to the plugin folder");
-        return false;
-    }
-
-    // .so is three characters, .dll four — check suffixes, not fixed offsets.
-    auto endsWith = [](const std::string& s, const char* suf) {
-        size_t n = std::strlen(suf);
-        return s.size() >= n && s.compare(s.size() - n, n, suf) == 0;
-    };
-    if (!endsWith(libRel_, ".so") && !endsWith(libRel_, ".dll")) {
-        log().error("[" + name_ + "] plugin.yml: 'main' must point to a .so or .dll library — got '" +
-                    libRel_ + "'");
-        return false;
-    }
-    return true;
-}
-
 bool NativePlugin::openLibrary() {
-    // Cross-platform distribution: when the exact file is missing, try the
-    // natural extension for this platform (HelloNative.so <-> HelloNative.dll).
-    auto endsWith = [](const std::string& s, const char* suf) {
-        size_t n = std::strlen(suf);
-        return s.size() >= n && s.compare(s.size() - n, n, suf) == 0;
-    };
-    const bool isSo = endsWith(libRel_, ".so");
-    if (!isSo && !endsWith(libRel_, ".dll"))
-        return false; // loadManifest already validated; defensive only.
-    std::string swapped = libRel_.substr(0, libRel_.size() - (isSo ? 3 : 4)) +
-                          (isSo ? ".dll" : ".so");
-
-    std::vector<std::string> candidates;
-    bool preferSwapped =
 #if defined(_WIN32)
-        isSo;
-#else
-        !isSo;
-#endif
-    if (preferSwapped) {
-        candidates.push_back(swapped);
-        candidates.push_back(libRel_);
-    } else {
-        candidates.push_back(libRel_);
-        candidates.push_back(swapped);
-    }
-
-    std::string chosen;
-    std::error_code ec;
-    for (const auto& c : candidates) {
-        if (fs::exists(dir_ + "/" + c, ec)) {
-            chosen = c;
-            break;
-        }
-    }
-    if (chosen.empty()) {
-        log().error("[" + name_ + "] library '" + libRel_ + "' not found in " + dir_ +
-                    " (build it first; see docs/PLUGINS.md)");
-        return false;
-    }
-    libRel_ = chosen;
-    std::string full = dir_ + "/" + libRel_;
-
-#if defined(_WIN32)
-    int wlen = MultiByteToWideChar(CP_UTF8, 0, full.c_str(), -1, nullptr, 0);
+    int wlen = MultiByteToWideChar(CP_UTF8, 0, libPath_.c_str(), -1, nullptr, 0);
     std::wstring wpath((size_t)wlen, L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, full.c_str(), -1, wpath.data(), wlen);
+    MultiByteToWideChar(CP_UTF8, 0, libPath_.c_str(), -1, wpath.data(), wlen);
     lib_ = (void*)LoadLibraryW(wpath.c_str());
     if (!lib_) {
-        log().error("[" + name_ + "] LoadLibrary failed for '" + libRel_ + "' (error " +
+        log().error("[" + name_ + "] LoadLibrary failed for '" + libPath_ + "' (error " +
                     std::to_string(GetLastError()) + ")");
         return false;
     }
     void* sym = (void*)GetProcAddress((HMODULE)lib_, CS_PLUGIN_ENTRY);
 #else
-    lib_ = dlopen(full.c_str(), RTLD_NOW | RTLD_LOCAL);
+    lib_ = dlopen(libPath_.c_str(), RTLD_NOW | RTLD_LOCAL);
     if (!lib_) {
         const char* dlerr = dlerror();
-        log().error("[" + name_ + "] dlopen failed for '" + libRel_ + "': " +
+        log().error("[" + name_ + "] dlopen failed for '" + libPath_ + "': " +
                     (dlerr ? dlerr : "unknown error"));
         return false;
     }
@@ -1248,16 +1335,18 @@ bool NativePlugin::openLibrary() {
 #endif
 
     if (!sym) {
-        log().error("[" + name_ + "] '" + libRel_ + "' does not export " + CS_PLUGIN_ENTRY +
+        log().error("[" + name_ + "] '" + stem_ +
+                    "' does not export " + CS_PLUGIN_ENTRY +
                     " — it is not a CurseStone native plugin");
         return false;
     }
     using EntryFn = const CsPluginVTable* (*)(void);
     vtable_ = reinterpret_cast<EntryFn>(sym)();
     if (!vtable_ || vtable_->abiVersion != CS_PLUGIN_ABI_VERSION) {
-        log().error("[" + name_ + "] '" + libRel_ + "' was built against plugin ABI " +
-                    std::to_string(vtable_ ? vtable_->abiVersion : 0) + ", but this server provides ABI " +
-                    std::to_string(CS_PLUGIN_ABI_VERSION) + " — rebuild the plugin");
+        log().error("[" + name_ + "] '" + stem_ + "' was built against plugin ABI " +
+                    std::to_string(vtable_ ? vtable_->abiVersion : 0) +
+                    ", but this server provides ABI " + std::to_string(CS_PLUGIN_ABI_VERSION) +
+                    " — rebuild the plugin");
         vtable_ = nullptr;
         return false;
     }
@@ -1265,26 +1354,44 @@ bool NativePlugin::openLibrary() {
 }
 
 bool NativePlugin::load() {
-    if (!loadManifest())
-        return false;
     if (!ensureDataDir())
         return false;
     if (!openLibrary())
         return false;
 
-    // Static metadata sanity: desc() must resolve and carry a name.
+    // The descriptor IS the manifest: no plugin.yml anywhere on this path.
     const CsPluginDesc* desc = vtable_->desc ? vtable_->desc() : nullptr;
-    if (!desc || !desc->name) {
-        log().error("[" + name_ + "] " + libRel_ + ": vtable::desc() returned no descriptor");
-        return false;
+    if (!desc || !desc->name || !*desc->name) {
+        if (desc)
+            log().warn("[" + name_ + "] descriptor carries no name — using the file stem '" +
+                       stem_ + "'");
+        else
+            log().error("[" + name_ + "] " + stem_ + ": vtable::desc() returned no descriptor");
+        if (!desc)
+            return false;
+    } else {
+        name_ = desc->name;
     }
-    if (name_ != desc->name)
-        log().warn("[" + name_ + "] descriptor name '" + desc->name +
-                   "' differs from the plugin.yml name (plugin.yml wins)");
-    if (version_.empty() && desc->version)
+    if (desc->version && *desc->version)
         version_ = desc->version;
-    if (author_.empty() && desc->author)
+    if (desc->author && *desc->author)
         author_ = desc->author;
+
+    // The descriptor may pin the server API it was built for. Empty means
+    // "built against this SDK"; an incompatible claim discards the plugin.
+    const char* apiClaim = desc->api && *desc->api ? desc->api : "";
+    if (*apiClaim) {
+        bool exact = false;
+        if (!apiCompatible(apiClaim, &exact)) {
+            log().error("[" + name_ + "] was built for plugin API " + apiClaim +
+                        ", but this server provides API " + CURSESTONE_API + " — plugin discarded");
+            return false;
+        }
+        if (!exact)
+            log().warn("[" + name_ + "] declares plugin API " + apiClaim +
+                       " while the server provides " + CURSESTONE_API +
+                       " (compatible, but not exact)");
+    }
 
     buildApiRoot();
 

@@ -24,17 +24,25 @@
 // NativeAPI — the C ABI contract between CurseStone and NATIVE plugins
 // (.so on Linux/Android/macOS, .dll on Windows).
 //
-// A native plugin is a shared library that exports ONE symbol:
+// A native plugin is a bare shared library dropped DIRECTLY into the
+// server's plugins/ folder — no folder, no plugin.yml: the binary IS the
+// plugin. It exports ONE symbol:
 //
 //     const CsPluginVTable* CurseStonePlugin_entry(void);
 //
-// The vtable carries the plugin descriptor plus its lifecycle hooks
-// (onLoad / onEnable / onDisable / onUnload; only desc and onLoad are
-// required). Everything the plugin can do goes through the CsPluginApi
-// pointer handed to onLoad: plain C function-pointer groups, so plugins
-// compile against ONLY this header and never link against the server
-// binary. That keeps the ABI stable across builds and lets one .so work
-// on any server built from the same SDK revision.
+// The vtable carries the plugin descriptor (name / version / author / api
+// — the descriptor replaces plugin.yml as the identity source) plus its
+// lifecycle hooks (onLoad / onEnable / onDisable / onUnload; only desc
+// and onLoad are required). Everything the plugin can do goes through
+// the CsPluginApi pointer handed to onLoad: plain C function-pointer
+// groups, so plugins compile against ONLY this header and never link
+// against the server binary. That keeps the ABI stable across builds and
+// lets one .so work on any server built from the same SDK revision.
+//
+// The two load types the server distinguishes:
+//   1. FOLDER plugins (Lua): plugins/<Name>/ with a plugin.yml manifest.
+//   2. FILE plugins (native): plugins/<Name>.so or plugins/<Name>.dll —
+//      loaded exactly as dropped, manifest-free.
 //
 // RULES FOR PLUGIN AUTHORS:
 //   - Threading: every callback (events, tasks, commands) runs on the
@@ -51,12 +59,16 @@
 //     onDisable has run: the server removes listeners, tasks and
 //     commands before unloading the library.
 //
-// COMPATIBILITY: bumping CS_PLUGIN_ABI_VERSION means the struct layouts
-// below changed in an incompatible way; the server rejects plugins whose
-// vtable reports a different version. Appending to a group struct is a
-// breaking change too (size changes are not versioned per-group) — the
-// agreed workflow is: extend in place, keep field order, bump the ABI
-// version, and keep the CURSESTONE_API string untouched until release.
+// COMPATIBILITY: CS_PLUGIN_ABI_VERSION moves ONLY when an existing field
+// changes meaning, type or order — a reorganisation, never a growth. New
+// surface is added by APPENDING to the END of a group struct and the END
+// of CsPluginApi: plugins compiled against an older header only ever
+// touch the prefix they know, so they keep working unmodified, and a
+// plugin built against this header detects an older server through the
+// root apiSize field (compare against sizeof(CsPluginApi) as compiled)
+// before calling any appended function. This keeps the plugin ABI at
+// version 1 while the server's plugin API version (CURSESTONE_API) stays
+// untouched between releases.
 #ifndef CS_PLUGIN_API_H
 #define CS_PLUGIN_API_H
 
@@ -97,13 +109,17 @@ typedef struct CsPluginApi CsPluginApi;
 
 /**
  * @brief Static plugin metadata returned by the vtable's desc hook.
+ *
+ * For native plugins the descriptor IS the manifest — there is no
+ * plugin.yml. `name` must be unique and non-empty (the server falls back
+ * to the file stem when it is NULL or "").
  */
 typedef struct CsPluginDesc {
     uint32_t abiVersion; /**< Must equal CS_PLUGIN_ABI_VERSION. */
-    const char* name;    /**< Plugin name; plugin.yml `name` stays authoritative. */
+    const char* name;    /**< Plugin name; NULL/"" falls back to the file stem. */
     const char* version; /**< Plugin version string (may be ""). */
     const char* author;  /**< Plugin author (may be ""). */
-    const char* api;     /**< Server plugin API the plugin was built for, e.g. "1.0.3". */
+    const char* api;     /**< Server plugin API the plugin was built for, e.g. "1.0.3"; NULL/"" = built against this SDK. */
 } CsPluginDesc;
 
 /** Scheduler callback: runs on the main thread. @param ud user pointer given at schedule time. */
@@ -233,6 +249,14 @@ typedef struct CsServerApi {
     bool (*loadWorld)(const char* name, const char* generator);      /**< Loads (or returns) a world. */
     bool (*unloadWorld)(const char* name);                           /**< Fails for the default world. */
     bool (*motd)(char* out, uint32_t cap);                           /**< Configured MOTD. */
+    /* ---- appended (ABI 1, extension batch 2) ---- */
+    int (*maxPlayers)(void);                                         /**< server.properties max-players. */
+    int (*difficulty)(void);                                         /**< 0 peaceful .. 3 hard. */
+    bool (*whitelistEnabled)(void);                                  /**< Whitelist toggle state. */
+    bool (*isBanned)(const char* name);                              /**< True when the name is banned. */
+    bool (*setBanned)(const char* name, bool value);                 /**< Bans / pardons by name; banning kicks the player. */
+    void (*broadcastTip)(const char* msg);                           /**< Tip line above the hotbar to every player. */
+    void (*broadcastPopup)(const char* msg);                         /**< Popup line to every player. */
 } CsServerApi;
 
 /**
@@ -265,6 +289,23 @@ typedef struct CsPlayerApi {
     bool (*getNameTag)(const char* name, char* out, uint32_t cap);
     bool (*setDisplayName)(const char* name, const char* dn);
     bool (*getDisplayName)(const char* name, char* out, uint32_t cap);
+    /* ---- appended (ABI 1, extension batch 2) ---- */
+    /** @return 0 survival / 1 creative / 2 adventure / 3 spectator, or -1 offline. */
+    int (*getGamemode)(const char* name);
+    /** @param gm 0 survival / 1 creative / 2 adventure / 3 spectator. */
+    bool (*setGamemode)(const char* name, int gm);
+    /** Vanilla effect id (Speed=1 .. Saturation=23); unknown ids fail. */
+    bool (*addEffect)(const char* name, int32_t effectId, int32_t durationTicks, int32_t amplifier);
+    bool (*removeEffect)(const char* name, int32_t effectId);
+    /** @return current XP level, or -1 offline. */
+    int (*getExperienceLevel)(const char* name);
+    /** @param exp 0..100 progress percent within @p level. */
+    bool (*setExperience)(const char* name, int32_t exp, int32_t level);
+    /** @return "ip:port" the player connected from. */
+    bool (*getAddress)(const char* name, char* out, uint32_t cap);
+    bool (*getSpawnPoint)(const char* name, double out[3]);               /**< Bed/personal spawn; falls back to world spawn. */
+    bool (*setSpawnPoint)(const char* name, double x, double y, double z);/**< Persists with the player data. */
+    bool (*setOnFire)(const char* name, int32_t seconds);                 /**< 0 extinguishes. */
 } CsPlayerApi;
 
 /**
@@ -282,6 +323,19 @@ typedef struct CsWorldApi {
     bool (*setBlock)(const char* world, int32_t x, int32_t y, int32_t z, int32_t id, int32_t meta);
     bool (*getSpawn)(const char* world, double out[3]);
     uint32_t (*playerCount)(const char* world);
+    /* ---- appended (ABI 1, extension batch 2) ---- */
+    /** @return block metadata nibble (0..15), or 0 for unloaded chunks / invalid y. */
+    int (*getBlockMeta)(const char* world, int32_t x, int32_t y, int32_t z);
+    bool (*setSpawnPoint)(const char* world, double x, double y, double z); /**< World compass spawn. */
+    /** @return 0 clear / 1 rain / 2 thunder, or -1 for unloaded worlds. */
+    int (*getWeather)(const char* world);
+    bool (*setWeather)(const char* world, int32_t state);                   /**< 0 clear / 1 rain / 2 thunder. */
+    bool (*spawnLightning)(const char* world, double x, double y, double z, bool fire);
+    bool (*isChunkLoaded)(const char* world, int32_t cx, int32_t cz);       /**< Chunk-residency probe. */
+    bool (*save)(const char* world);                                        /**< Persists dirty chunks + level.dat; costly. */
+    /** Spawns a visible item drop; id/count behave like giveItem (count 1..64). */
+    bool (*spawnItem)(const char* world, double x, double y, double z, int32_t id, int32_t count,
+                      int32_t meta);
 } CsWorldApi;
 
 /**
@@ -313,9 +367,9 @@ typedef struct CsPluginApi {
     uint32_t apiSize;    /**< sizeof(CsPluginApi) of the server build. */
     void* impl;          /**< SERVER-INTERNAL back pointer; plugins must not read or write it. */
     const char* serverApi;   /**< Server plugin API version string (CURSESTONE_API). */
-    const char* pluginName;  /**< Plugin name from plugin.yml. */
-    const char* pluginDir;   /**< Absolute path of the plugin folder. */
-    const char* dataDir;     /**< Absolute path of data_pl/<plugin>. */
+    const char* pluginName;  /**< Plugin name (descriptor `name`, or the file stem). */
+    const char* pluginDir;   /**< Absolute path of the plugins folder the file lives in. */
+    const char* dataDir;     /**< Absolute path of data_pl/<file stem>. */
     const CsLogApi* log;
     const CsSchedulerApi* scheduler;
     const CsCommandApi* commands;

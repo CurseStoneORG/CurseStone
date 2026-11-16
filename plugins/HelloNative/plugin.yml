@@ -1,6 +1,0 @@
-name: HelloNative
-main: HelloNative.so
-api: 1.0.3
-version: 1.0.0
-author: Dr1xyDev
-description: Example CurseStone native plugin (C ABI .so/.dll)

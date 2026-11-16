@@ -200,5 +200,6 @@ target_include_directories(cursestone-example-plugin PRIVATE
     ${CMAKE_SOURCE_DIR}/src
 )
 
-# HelloNative.so / HelloNative.dll — no "lib" prefix, matching plugin.yml.
+# HelloNative.so / HelloNative.dll — no "lib" prefix, matching the bare
+# file name operators drop directly into plugins/.
 set_target_properties(cursestone-example-plugin PROPERTIES PREFIX "")

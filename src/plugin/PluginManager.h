@@ -20,22 +20,25 @@
  * Repository: https://github.com/CurseStoneORG/CurseStone
  *
  */
-// PluginManager — escanea <pluginsDir>/<name>/plugin.yml (the only
-// manifest accepted: a main.lua loose not load already as plugin),
-// load and enables each plugin in alphabetical order and the disables
-// all when shutting down the server.
+// PluginManager — the two discovery paths of the plugin system:
 //
-// Two plugin backends share this manager, dispatched by the manifest's
-// `main` field: an entry ending in .so/.dll loads as a NativePlugin
-// (C-ABI shared library, see NativeAPI.h); anything else loads as a
-// LuaPlugin with an entry script under src/.
+//   1. FOLDER plugins (Lua): plugins/<Name>/plugin.yml with an entry
+//      script under src/ — loaded by the LuaPlugin backend.
+//   2. FILE plugins (native): a bare plugins/<Name>.so or .dll dropped
+//      directly into plugins/ — no folder, no plugin.yml; the vtable
+//      descriptor inside the library is the manifest (NativePlugin).
 //
-// duplicates: if two or more folders declaran the same name of plugin
-// (or use the same name of folder), all remain disabled and is
-// emits a warning indicando that there is plugins duplicates.
+// Both kinds load, enable and disable in one alphabetical pass and are
+// disabled again on server shutdown.
+//
+// duplicates: two folders declaring the same plugin name, two folders
+// with the same name, two native files with the same stem, or any
+// folder/stem collision in the shared data_pl namespace all disable the
+// copies involved with a warning. A native descriptor name that collides
+// with an already-loaded plugin is rejected after load.
 //
 // It also ensures the data folders: <dataPath>/data_pl/ (server root, outside
-// plugins/) and data_pl/<pluginFolder>/ for every loaded plugin. the
+// plugins/) and data_pl/<folder or stem>/ for every loaded plugin. the
 // plugins only can touch its folder through the API data.*.
 // Singleton: server::start flame loadAll() and server::runTickLoop flame
 // disableAll() tras leaving of the tick loop.
