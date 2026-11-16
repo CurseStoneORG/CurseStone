@@ -89,9 +89,10 @@ ManifestFields manifestFields(const std::string& dir) {
     return out;
 }
 
-// true when the manifest's `main` names a shared library: those folders
-// load as NativePlugin (.so on Linux/Android, .dll on Windows) instead of
-// the Lua interpreter.
+// true when a plugin.yml `main` names a shared library. Folder plugins
+// are Lua-only now: a manifest pointing at a .so/.dll gets a migration
+// hint instead of a native load — native plugins are BARE files in
+// plugins/, with no manifest at all.
 bool endsWithAny(const std::string& s, std::initializer_list<const char*> suffixes) {
     for (const char* suf : suffixes) {
         size_t n = std::strlen(suf);
@@ -103,6 +104,33 @@ bool endsWithAny(const std::string& s, std::initializer_list<const char*> suffix
 
 bool isNativeMain(const std::string& main) {
     return endsWithAny(main, {".so", ".dll"});
+}
+
+bool isNativeFileName(const std::string& file) {
+    return endsWithAny(file, {".so", ".dll"});
+}
+
+// The platform's own library extension and the foreign one. A bare
+// MyPlugin.dll on Linux (or MyPlugin.so on Windows) is skipped with a
+// hint when no platform-sibling exists — dlopen would only reject it
+// with a confusing ELF/PE error.
+#if defined(_WIN32)
+const char* const kNativeExt = ".dll";
+const char* const kNativeOtherExt = ".so";
+#else
+const char* const kNativeExt = ".so";
+const char* const kNativeOtherExt = ".dll";
+#endif
+
+// Removes the commands a discarded plugin registered during onLoad from
+// the CommandMap. The NativeCommand/LuaCommand bridges are reload-safe
+// (they re-resolve their plugin per execution), so this is map hygiene:
+// a plugin that never made it into plugins_ must not leave /<cmd> behind.
+void dropPluginCommands(PluginBase* p) {
+    if (!p)
+        return;
+    if (CommandMap* map = Server::getInstance().getCommandMap())
+        map->unregisterByOwner(p);
 }
 
 } // namespace
@@ -140,121 +168,169 @@ void PluginManager::loadAll(const std::string& pluginsDir, const std::string& da
     fs::create_directories(dataRoot, ec);
     ec.clear();
 
-    // ---- 1. scan. only is accepts plugin.yml as manifest: a
-    //         main.lua loose (format old) not load already as plugin.
-    //         therefore, if two folders carry "the same" plugin, the valid
-    //         is directamente that which has plugin.yml — the other ni
-    //         entran to the list.
+    // ---- 1. scan — two discovery paths in one alphabetically ordered
+    //         candidate list:
+    //           * folders carrying plugin.yml -> Lua candidates;
+    //           * bare .so/.dll files -> native candidates (the vtable
+    //             descriptor inside is the manifest, nothing else).
+    //         Loose main.lua folders keep their migration warning; random
+    //         folders and non-library files are silently ignored.
     struct Cand {
-        std::string dir;
-        std::string folder;
-        std::string name;
-        std::string main;
+        bool native;        // false: folder + plugin.yml (Lua).
+        std::string path;   // plugin folder (Lua) or library file (native).
+        std::string key;    // folder name (Lua) or file stem (native): the data_pl identity.
+        std::string name;   // pre-load display name: manifest name or stem.
+        std::string main;   // Lua only: manifest main field.
     };
     std::vector<Cand> cands;
+
+    // Native files grouped by lowercase stem so the two platform flavors
+    // of one plugin (MyPlugin.so + MyPlugin.dll) resolve to one candidate.
+    struct NativeFile {
+        std::string path;
+        bool platformExt; // true when the extension matches this platform.
+    };
+    std::map<std::string, NativeFile> nativeByStem;
 
     fs::directory_iterator it(pluginsDir, ec);
     if (!ec) {
         for (const auto& entry : it) {
             std::error_code e2;
-            if (!entry.is_directory(e2))
-                continue;
             if (entry.path().filename() == "data_pl")
                 continue; // data, not plugin
-            std::string dir = entry.path().string();
-            std::string folder = entry.path().filename().string();
+            if (entry.is_directory(e2)) {
+                std::string dir = entry.path().string();
+                std::string folder = entry.path().filename().string();
 
-            if (fs::exists(entry.path() / "plugin.yml", e2)) {
-                ManifestFields mf = manifestFields(dir);
-                cands.push_back(Cand{dir, folder, mf.name, mf.main});
+                if (fs::exists(entry.path() / "plugin.yml", e2)) {
+                    ManifestFields mf = manifestFields(dir);
+                    if (isNativeMain(mf.main)) {
+                        log().warn("[Plugins] '" + folder +
+                                   "' declares a native main ('" + mf.main +
+                                   "'): native plugins are bare .so/.dll files dropped directly "
+                                   "into plugins/ now, no folder and no plugin.yml. Move the "
+                                   "library out and delete the manifest.");
+                        continue;
+                    }
+                    cands.push_back(Cand{false, dir, folder,
+                                         !mf.name.empty() ? mf.name : folder, mf.main});
+                    continue;
+                }
+                // without plugin.yml not is a plugin. warn only when it LOOKS like
+                // to plugin attempt (to loose main.lua) to keep the log clean of
+                // random user folders.
+                std::error_code e3;
+                if (fs::exists(entry.path() / "main.lua", e3)) {
+                    log().warn("[Plugins] '" + folder +
+                               "' is ignored: main.lua without plugin.yml is not accepted; "
+                               "create a plugin.yml with api/name/author/main.");
+                }
                 continue;
             }
-            // without plugin.yml not is a plugin. warn only when it LOOKS like
-            // to plugin attempt (to loose main.lua) to keep the log clean of
-            // random user folders.
-            std::error_code e3;
-            if (fs::exists(entry.path() / "main.lua", e3)) {
-                log().warn("[Plugins] '" + folder +
-                           "' is ignored: main.lua without plugin.yml is no longer "
-                           "accepted; create a plugin.yml with api/name/author/main.");
+
+            std::string file = entry.path().filename().string();
+            if (!isNativeFileName(file))
+                continue; // notes, archives, whatever — not a plugin library.
+            std::string stem = entry.path().stem().string();
+            std::string ext = file.substr(stem.size()); // ".so" or ".dll"
+            std::string stemKey = toLowerAscii(stem);
+            NativeFile nf{entry.path().string(), ext == kNativeExt};
+            auto ins = nativeByStem.emplace(stemKey, nf);
+            if (!ins.second && nf.platformExt && !ins.first->second.platformExt) {
+                // Second flavor of the same stem: the platform extension wins.
+                ins.first->second = nf;
             }
-            // Any other folder without plugin.yml is silently ignored.
         }
     }
+    for (const auto& [stemKey, f] : nativeByStem) {
+        if (!f.platformExt) {
+            std::string hinted = fs::path(f.path).stem().string() + kNativeExt;
+            log().warn("[Plugins] '" + f.path + "' is a " + kNativeOtherExt +
+                       " build, but this platform loads " + kNativeExt + " — drop '" + hinted +
+                       "' here instead.");
+            continue;
+        }
+        std::string stem = fs::path(f.path).stem().string();
+        cands.push_back(Cand{true, f.path, stem, stem, ""});
+    }
+
     std::sort(cands.begin(), cands.end(), [](const Cand& a, const Cand& b) {
-        return a.dir < b.dir;
+        return a.path < b.path;
     });
 
     // ---- 2. duplicates. is marks for disable (not load) all the
-    //         implicados, with warning claro. two claves:
-    //         to) same name of plugin in plugin.yml (case-insensitive to
-    //            uppercase/lowercase),
-    //         b) same name of folder (also case-insensitive), because
-    //            their data folders in data_pl/ would collide.
+    //         implicados, with warning claro. two claves sobre el MISMO
+    //         namespace: a) same data identity (folder name or file stem,
+    //         case-insensitive) — their data_pl folders would collide;
+    //         b) same plugin name (Lua manifest name, native stem).
+    std::map<std::string, std::vector<size_t>> byDataKey;
     std::map<std::string, std::vector<size_t>> byName;
-    std::map<std::string, std::vector<size_t>> byFolder;
     for (size_t i = 0; i < cands.size(); ++i) {
-        std::string shown = !cands[i].name.empty() ? cands[i].name : cands[i].folder;
-        byName[toLowerAscii(shown)].push_back(i);
-        byFolder[toLowerAscii(cands[i].folder)].push_back(i);
+        byDataKey[toLowerAscii(cands[i].key)].push_back(i);
+        byName[toLowerAscii(cands[i].name)].push_back(i);
     }
     std::vector<bool> killed(cands.size(), false);
+    for (const auto& [key, idxs] : byDataKey) {
+        if (idxs.size() < 2)
+            continue;
+        std::string paths;
+        for (size_t k = 0; k < idxs.size(); ++k) {
+            paths += cands[idxs[k]].path;
+            if (k + 1 < idxs.size())
+                paths += ", ";
+        }
+        log().warn("[Plugins] WARNING: " + std::to_string(idxs.size()) +
+                   " plugins share the data identity '" + key + "' (" + paths +
+                   "). All of them are disabled: their data_pl folders would collide.");
+        for (size_t i : idxs)
+            killed[i] = true;
+    }
     for (const auto& [key, idxs] : byName) {
         if (idxs.size() < 2)
             continue;
-        std::string shown =
-            !cands[idxs[0]].name.empty() ? cands[idxs[0]].name : cands[idxs[0]].folder;
         std::string paths;
         for (size_t k = 0; k < idxs.size(); ++k) {
-            paths += cands[idxs[k]].folder;
+            paths += cands[idxs[k]].path;
             if (k + 1 < idxs.size())
                 paths += ", ";
         }
         log().warn("[Plugins] WARNING: there are " + std::to_string(idxs.size()) +
-                   " duplicate plugins named '" + shown + "' (" + paths +
+                   " duplicate plugins named '" + key + "' (" + paths +
                    "). All of them are disabled: keep only one copy.");
         for (size_t i : idxs)
             killed[i] = true;
     }
-    for (const auto& [key, idxs] : byFolder) {
-        if (idxs.size() < 2)
-            continue;
-        bool anyAlive = false;
-        for (size_t i : idxs)
-            if (!killed[i])
-                anyAlive = true;
-        if (!anyAlive)
-            continue; // already avisado by the name of plugin
-        std::string paths;
-        for (size_t k = 0; k < idxs.size(); ++k) {
-            paths += cands[idxs[k]].folder;
-            if (k + 1 < idxs.size())
-                paths += ", ";
-        }
-        log().warn("[Plugins] WARNING: there are " + std::to_string(idxs.size()) +
-                   " duplicate folders named '" + key + "' (" + paths +
-                   "). All of them are disabled to avoid data conflicts.");
-        for (size_t i : idxs)
-            killed[i] = true;
-    }
 
-    // ---- 3. load + enable those that remain. those that fallen is
-    //         descartan (the log already dijo by what). the manifest's
-    //         `main` decides the backend: .so/.dll -> NativePlugin,
-    //         anything else (incl. empty -> src/main.lua) -> LuaPlugin.
+    // ---- 3. load + enable those that remain. Folder candidates run on
+    //         the Lua backend; bare files run on the native one. Those
+    //         that fail are discarded (the log already dijo by what). A
+    //         native descriptor name colliding with an already-accepted
+    //         plugin is rejected here too — the name is unknowable before
+    //         the library was opened.
+    std::map<std::string, std::string> takenNames; // lowercase name -> loaded from path
     for (size_t i = 0; i < cands.size(); ++i) {
         if (killed[i])
             continue;
         std::unique_ptr<PluginBase> p;
-        if (isNativeMain(cands[i].main))
-            p = std::make_unique<NativePlugin>(cands[i].dir, dataRoot);
+        if (cands[i].native)
+            p = std::make_unique<NativePlugin>(cands[i].path, dataRoot);
         else
-            p = std::make_unique<LuaPlugin>(cands[i].dir, dataRoot);
-        if (p->load() && p->enable()) {
-            plugins_.push_back(std::move(p));
-        } else {
-            log().warn("Plugin discarded: " + cands[i].dir);
+            p = std::make_unique<LuaPlugin>(cands[i].path, dataRoot);
+        if (!p->load() || !p->enable()) {
+            dropPluginCommands(p.get());
+            log().warn("Plugin discarded: " + cands[i].path);
+            continue;
         }
+        auto taken = takenNames.find(toLowerAscii(p->name()));
+        if (taken != takenNames.end()) {
+            dropPluginCommands(p.get());
+            log().warn("[Plugins] '" + p->name() + "' (" + cands[i].path +
+                       ") duplicates the plugin loaded from " + taken->second +
+                       " — this copy is discarded.");
+            continue;
+        }
+        takenNames.emplace(toLowerAscii(p->name()), cands[i].path);
+        plugins_.push_back(std::move(p));
     }
     log().info("Plugins loaded: " + std::to_string(plugins_.size()));
 }

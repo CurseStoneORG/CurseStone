@@ -22,7 +22,9 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 
 // HelloNative — the reference native plugin: the smallest complete
-// example of the C ABI from src/plugin/NativeAPI.h. It exercises the
+// example of the C ABI from src/plugin/NativeAPI.h. A native plugin is a
+// BARE shared library dropped directly into plugins/ (no folder, no
+// plugin.yml — the descriptor below IS the manifest). It exercises the
 // whole lifecycle (onLoad / onEnable / onDisable / onUnload), registers
 // two events, one command, one repeating task and one data file, so
 // server-side smoke tests can grep the log for each piece.
@@ -31,6 +33,7 @@
 //   gcc -shared -fPIC -O2 -I<server>/src -o HelloNative.so src/HelloNative.cpp
 // Windows (MSVC, x64):
 //   cl /LD /O2 /I<server>\src src\HelloNative.cpp
+// Then drop HelloNative.so / HelloNative.dll directly into plugins/.
 // The plugin links NOTHING: the whole server surface arrives through
 // the CsPluginApi function-pointer groups handed to onLoad. All exported
 // definitions live inside extern "C" so the entry symbol keeps its C
@@ -47,14 +50,17 @@ static int g_heartbeats = 0;         // How often the heartbeat ran.
 
 // -- events ---------------------------------------------------------------
 
-// PlayerJoin: greet the player and prove the event reached the plugin.
+// PlayerJoin: greet the player, prove the event reached the plugin and
+// demo the extended server group with a tip broadcast.
 static void onJoin(CsEvent* ev, void* ud) {
     (void)ud;
+    if (!g_api)
+        return;
     char buf[192];
     snprintf(buf, sizeof(buf), "Welcome, %s! This server runs native C++ plugins.", ev->player);
-    if (g_api)
-        g_api->player->sendMessage(ev->player, buf);
-    g_api->log->info(g_api, "PlayerJoin: %s (world %s)", ev->player, "?");
+    g_api->player->sendMessage(ev->player, buf);
+    g_api->server->broadcastTip("Powered by CurseStone native plugins");
+    g_api->log->info(g_api, "PlayerJoin: %s", ev->player);
 }
 
 // PlayerChat: log the raw chat line (the writable `message` buffer is
@@ -67,16 +73,23 @@ static void onChat(CsEvent* ev, void* ud) {
 // -- command ---------------------------------------------------------------
 
 // /hello [<name>]: answers the sender and reports live server stats,
-// showing how commands receive parsed args plus the sender identity.
+// showing how commands receive parsed args, the sender identity and the
+// extended player group (gamemode read for a named player).
 static void helloCmd(const CsCommandSender* sender, int argc, const char* const* argv, void* ud) {
     (void)ud;
     char buf[256];
-    if (argc >= 1)
-        snprintf(buf, sizeof(buf), "Hello, %s — from HelloNative (C++).", argv[0]);
-    else
+    if (argc >= 1) {
+        int gm = g_api->player->getGamemode(argv[0]); // -1 when offline.
+        if (gm >= 0)
+            snprintf(buf, sizeof(buf), "%s is in gamemode %d — hello from HelloNative (C++).",
+                     argv[0], gm);
+        else
+            snprintf(buf, sizeof(buf), "%s is offline — hello from HelloNative (C++).", argv[0]);
+    } else {
         snprintf(buf, sizeof(buf), "Hello from HelloNative (C++). TPS %d, MSPT %.2f, tick %llu.",
                  g_api->server->tps(), g_api->server->mspt(),
                  (unsigned long long)g_api->server->currentTick());
+    }
     g_api->commands->reply(sender, buf);
 }
 
@@ -97,6 +110,8 @@ static void heartbeat(void* ud) {
 // -- lifecycle ---------------------------------------------------------------
 
 CS_PLUGIN_EXPORT const CsPluginDesc* helloDesc(void) {
+    // The descriptor IS the manifest: name, version, author and the API
+    // the plugin was built for — no plugin.yml exists on this path.
     static const CsPluginDesc desc = {CS_PLUGIN_ABI_VERSION, "HelloNative", "1.0.0", "Dr1xyDev",
                                       "1.0.3"};
     return &desc;

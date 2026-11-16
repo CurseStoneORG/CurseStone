@@ -21,15 +21,23 @@
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
 
-// NativePlugin — a plugin shipped as a shared library (.so on
-// Linux/Android/macOS, .dll on Windows) that implements the C ABI from
-// NativeAPI.h. The manifest is the same plugin.yml the Lua loader uses;
-// the `main` field names the library file instead of an entry script.
+// NativePlugin — a plugin shipped as a BARE shared library file dropped
+// directly into plugins/ (.so on Linux/Android/macOS, .dll on Windows):
+// no folder, no plugin.yml. The library implements the C ABI from
+// NativeAPI.h and its vtable descriptor (name / version / author / api)
+// IS the manifest.
 //
-// LIFECYCLE: load() reads the manifest, opens the library (dlopen /
-// LoadLibrary), validates the vtable ABI version and calls the plugin's
-// onLoad with its CsPluginApi. enable()/disable()/dtor drive onEnable /
-// onDisable / onUnload the same way LuaPlugin drives its hooks.
+// IDENTITY: the file stem (HelloNative from HelloNative.so) owns the
+// data_pl/<stem> folder and doubles as the fallback display name; the
+// descriptor name wins for display when it differs. Uniqueness rules are
+// enforced by PluginManager (duplicate stems and duplicate descriptor
+// names both disable the copies involved).
+//
+// LIFECYCLE: load() opens the library (dlopen / LoadLibrary), validates
+// the vtable ABI version, checks the descriptor's `api` claim against
+// CURSESTONE_API and calls onLoad with the plugin's CsPluginApi.
+// enable()/disable()/dtor drive onEnable / onDisable / onUnload the same
+// way LuaPlugin drives its hooks.
 //
 // SAFETY: the library is opened with RTLD_LOCAL so plugins stay symbol-
 // isolated from each other; every plugin callback is wrapped in
@@ -47,11 +55,12 @@ namespace cursestone::plugin {
 
 class NativePlugin : public PluginBase {
   public:
-    // dir is the plugin directory; dataRoot is the shared plugin-data directory.
-    NativePlugin(std::string dir, std::string dataRoot);
+    // libPath is the bare .so/.dll inside the plugins folder; dataRoot is
+    // the shared plugin-data directory (data_pl).
+    NativePlugin(std::string libPath, std::string dataRoot);
     ~NativePlugin() override; // Disables, calls onUnload, closes the library.
 
-    bool load() override;    // Manifest, dlopen/LoadLibrary, ABI check, onLoad.
+    bool load() override;    // dlopen/LoadLibrary, ABI check, desc identity, onLoad.
     bool enable() override;  // Calls the onEnable hook when present.
     void disable() override; // Calls onDisable, removes listeners, cancels tasks.
 
@@ -71,9 +80,14 @@ class NativePlugin : public PluginBase {
         return "native";
     }
 
-    /** @brief The per-plugin data folder (data_pl/<plugin>), shared with the data.* API. */
+    /** @brief The per-plugin data folder (data_pl/<stem>), shared with the data.* API. */
     const std::string& dataDir() const {
         return dataDir_;
+    }
+
+    /** @brief The plugins-folder file backing this plugin, as scanned. */
+    const std::string& libPath() const {
+        return libPath_;
     }
 
     /** @brief A live command registration handed to NativeCommand. */
@@ -102,10 +116,6 @@ class NativePlugin : public PluginBase {
                               const char* const* argv, void* ud, const std::string& pluginName);
 
   private:
-    // Reads plugin.yml, validates api/name/main and resolves the library file.
-    // Returns false when the manifest is missing, invalid or incompatible.
-    bool loadManifest();
-
     // Opens the shared library and binds the entry vtable; false on any failure.
     bool openLibrary();
 
@@ -115,16 +125,14 @@ class NativePlugin : public PluginBase {
     // Fills apiRoot_ with the server group pointers and this plugin's identity.
     void buildApiRoot();
 
-    std::string dir_;        // Plugin directory.
-    std::string folderName_; // Plugin folder name used in data_pl.
-    std::string dataRoot_;   // Shared plugin-data root.
-    std::string dataDir_;    // Plugin data directory.
-    std::string resourcesDir_; // Optional plugin resources directory.
-    std::string name_;
+    std::string libPath_;     // Bare library file inside plugins/.
+    std::string stem_;        // File stem: data_pl key + fallback display name.
+    std::string pluginsDir_;  // Absolute path of plugins/ (api.pluginDir).
+    std::string dataRoot_;    // Shared plugin-data root.
+    std::string dataDir_;     // Plugin data directory (data_pl/<stem>).
+    std::string name_;        // Descriptor name once loaded; stem before that.
     std::string version_ = "?";
     std::string author_;
-    std::string api_;        // API version declared in plugin.yml.
-    std::string libRel_;     // Library path from plugin.yml, plugin-relative.
 
     void* lib_ = nullptr;             // dlopen/LoadLibrary handle.
     const CsPluginVTable* vtable_ = nullptr;
