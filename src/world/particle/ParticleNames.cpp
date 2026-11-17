@@ -21,8 +21,8 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// ParticleNames — name table for the protocol-84 particle registry. The
-// order and ids mirror ParticleId exactly; both plugin runtimes resolve
+// ParticleNames.cpp — name table for the protocol-84 particle registry.
+// The order and ids mirror ParticleId exactly; both plugin runtimes resolve
 // names through this table so Lua and native plugins never drift apart.
 #include "ParticleNames.h"
 #include "Particle.h"

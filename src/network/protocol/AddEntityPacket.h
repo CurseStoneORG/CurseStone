@@ -53,6 +53,10 @@ class AddEntityPacket : public DataPacket {
     static constexpr int32_t TYPE_ARROW = 80;
     static constexpr int32_t TYPE_THROWN_POTION = 86;
     static constexpr int32_t TYPE_FALLING_BLOCK = 66;
+    // Dropped item entity. With item id 0 the client renders nothing but
+    // the nametag — the invisible carrier the floating text particle rides
+    // on (see World::spawnFloatingText).
+    static constexpr int32_t TYPE_ITEM_ENTITY = 64;
 
     int64_t eid = 0;
     int32_t type = 0;

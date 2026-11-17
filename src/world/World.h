@@ -442,7 +442,10 @@ class World {
 
     // Spawns one protocol-84 particle by raw type id (1..32, see
     // particle::ParticleId) at a world position. Returns false for ids the
-    // client has no renderer for — such events would be silently dropped.
+    // client has no renderer for, and for payloads the particle family
+    // rejects (each particle file owns its packing; item break of an
+    // unknown item or terrain of air would crash the client, never reach
+    // the wire).
     bool spawnParticle(int32_t type, float x, float y, float z, int32_t data);
 
     // Broadcasts the protocol-84 splash-potion shatter (EVENT_PARTICLE_SPLASH):
@@ -458,6 +461,25 @@ class World {
     // the 0.15.10 client silently ignores.
     void broadcastBlockParticles(int32_t bx, int32_t by, int32_t bz,
                                  uint8_t blockId, uint8_t blockData);
+
+    // ----- Floating text -----
+    // Protocol 84 has no text-rendering particle; floating text rides on a
+    // client-side item entity (type 64) whose item is 0: the client draws
+    // nothing but the nametag above the invisible carrier. The entity lives
+    // on the client only — the server keeps id, position and text so
+    // plugins can reposition or despawn it. One AddEntityPacket on spawn,
+    // one MoveEntityPacket per move, one RemoveEntityPacket on removal;
+    // zero per-tick cost in between.
+    //
+    // Returns the entity id, or -1 when the per-world cap is reached.
+    // @p ttlTicks > 0 despawns automatically after that many ticks; 0
+    // keeps it until removeFloatingText() (ids do not survive restarts).
+    int64_t spawnFloatingText(double x, double y, double z, std::string text,
+                              int32_t ttlTicks);
+    // Repositions a floating text for its current viewers. Unknown ids fail.
+    bool moveFloatingText(int64_t id, double x, double y, double z);
+    // Despawns a floating text and forgets it. Unknown ids fail.
+    bool removeFloatingText(int64_t id);
 
     // ----- Falling-block physics -----
     // Converts a supported falling block into an entity and checks the block above.
@@ -617,6 +639,16 @@ class World {
     // Falling blocks indexed by runtime entity ID.
     std::unordered_map<int64_t, std::unique_ptr<FallingBlockEntity>> falling_blocks_;
     mutable std::mutex falling_blocks_mtx_;
+
+    // Floating texts indexed by runtime entity ID (client-side carriers).
+    struct FloatingText {
+        double x, y, z;
+        std::string text;
+    };
+    static constexpr size_t kMaxFloatingTexts = 128;
+    static constexpr size_t kMaxFloatingTextChars = 128;
+    std::unordered_map<int64_t, FloatingText> floating_texts_;
+    mutable std::mutex floating_texts_mtx_;
 
     // Tile entities indexed by packed block position.
     std::unordered_map<uint64_t, std::shared_ptr<cursestone::tile::Tile>> tiles_;

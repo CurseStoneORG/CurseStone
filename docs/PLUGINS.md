@@ -47,7 +47,8 @@ API surface (globals):
   `server.defaultWorld()` — world handles with `name`, `seed`,
   `dimension`, `getTime`, `setTime`, `getBlock`, `setBlock`, `getSpawn`,
   `getPlayers`, `spawnParticle`, `spawnBlockParticles`,
-  `spawnSplashParticles`, `unload`
+  `spawnSplashParticles`, `spawnFloatingText`, `moveFloatingText`,
+  `removeFloatingText`, `unload`
 - `commands.register(name, opts, fn)`, `commands.reply(sender, msg)`
 - `events.on(name, fn)` — PlayerJoin, PlayerQuit, PlayerChat, PlayerMove,
   PlayerDropItem, PlayerItemHeld, BlockBreak, BlockPlace, EntityDamage,
@@ -62,7 +63,7 @@ API surface (globals):
 
 Protocol 84 has no arbitrary-particle packet; particles travel inside
 `LevelEventPacket` world events. The Lua world handles expose the three
-event shapes the 0.15.10 client actually renders:
+event shapes the 0.15.10 client actually renders, plus floating text:
 
 ```lua
 local w = server.defaultWorld()
@@ -76,17 +77,40 @@ w.spawnBlockParticles(bx, by, bz, blockId, meta)
 
 -- splash-potion shatter: colored swirl + glass smash sound (2002)
 w.spawnSplashParticles(x, y, z, 0xFF0000)   -- 0xRRGGBB
+
+-- floating text: invisible item-entity carrier, nametag = text
+-- (protocol 84 has no text particle). One spawn packet, zero per-tick
+-- cost. Returns the entity id, or nil at the per-world cap (128/world).
+local id = w.spawnFloatingText(x, y, z, "Welcome!", 200) -- ttl in ticks
+w.moveFloatingText(id, x, y + 1, z)         -- one MoveEntityPacket
+w.removeFloatingText(id)                    -- despawn
 ```
 
-`data` payload per particle family:
+`spawnFloatingText(x, y, z, text, [ttlTicks])`: `ttlTicks > 0` despawns
+automatically after that many ticks, `0` keeps the text until
+`removeFloatingText` (entity ids do not survive restarts). Text longer
+than 128 chars is trimmed.
+
+`data` payload per particle family (each particle type owns its packing
+in its own file under `src/world/particle/`):
 
 - `smoke`, `white_smoke`, `ink`, `critical`, `heart`, `redstone` — scale /
   lifetime integer (`0` is the client default)
 - `dust`, `mob_spell`, `mob_spell_ambient`, `mob_spell_instant` — packed
   ARGB (`0xFF______` is sent for splash; for spell types use the plain
   RGB passed in `data`)
-- `terrain`, `item_break` — block/item packing `id | (meta << 12)`
+- `item_break` — item packing `(itemId << 16) | damage`; the item id must
+  be a registered item (stick is 280, so `280 * 65536`). Payloads the
+  client cannot render — item id 0 (what the old low-bits packing
+  produced) or unregistered ids — return `false`: they crash the
+  0.15.10 renderer.
+- `terrain` — block packing `(meta << 8) | id`; air (id 0) returns
+  `false` for the same reason.
 - everything else — `0`
+
+Payloads a client cannot render never reach the wire: `spawnParticle`
+returns `false` instead of broadcasting, so a bad `data` can never crash
+a player.
 
 Full name list: `bubble critical smoke explode white_smoke flame lava
 large_smoke redstone item_break snowball_poof large_explode huge_explode
@@ -324,9 +348,12 @@ instead of raising anything; invalid arguments never crash the server.
 | `isChunkLoaded(world, cx, cz)` | chunk-residency probe |
 | `save(world)` | persists dirty chunks + level.dat; costly — schedule it, do not spam it |
 | `spawnItem(world, x, y, z, id, count, meta)` | visible drop; count 1..64 |
-| `spawnParticle(world, x, y, z, type, data)` | one generic particle, `type` = `CsParticleType` 1..32; see the Lua particles table for `data` packing |
+| `spawnParticle(world, x, y, z, type, data)` | one generic particle, `type` = `CsParticleType` 1..32; see the Lua particles table for `data` packing; unrenderable payloads return 0, never broadcast |
 | `spawnBlockParticles(world, x, y, z, blockId, meta)` | break burst + dig sound (LevelEvent 2001) |
 | `spawnSplashParticles(world, x, y, z, rgb)` | splash shatter (LevelEvent 2002); `rgb` 0xRRGGBB |
+| `spawnFloatingText(world, x, y, z, text, ttlTicks)` | floating text (invisible item-entity carrier + nametag); entity id, or -1 at the cap; ttl 0 = until removed |
+| `moveFloatingText(world, id, x, y, z)` | repositions a floating text |
+| `removeFloatingText(world, id)` | despawns a floating text; 0 for unknown ids |
 | `playerCount(world)` | players currently in that world |
 
 **data** (context-bound; jailed to `data_pl/<stem>`)

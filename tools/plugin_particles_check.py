@@ -9,12 +9,18 @@ plugin API once per second at that player:
   2. spawnParticle(2, 2)            -> LevelEvent 0x4000|2,  data = 2
   3. spawnBlockParticles(41, 0)     -> LevelEvent 2001, data low byte = 41
   4. spawnSplashParticles(0xFF0000) -> LevelEvent 2002, data = 0xFFFF0000
+  5. spawnParticle("item_break", 280<<16) -> LevelEvent 0x4000|10 with the
+     stick id in bits 16+; the old crash payloads (low-bits id, item 0)
+     and terrain of air must be rejected, never reaching the wire
+  6. spawnFloatingText/move/remove -> AddEntityPacket(type 64) +
+     MoveEntityPacket + RemoveEntityPacket for the same entity id
 
 The plugin also probes rejection (unknown name, out-of-range id, out-of-range
-rgb, out-of-range block id) inside Lua and stamps "PCHK cycle" on the server
-log only when every call returned the documented value; any deviation logs
-"PCHK fail". The bot joins, collects LevelEvents for ~9 seconds and the check
-asserts all four wire shapes plus the plugin-side markers.
+rgb, out-of-range block id, unrenderable item_break/terrain payloads) inside
+Lua and stamps "PCHK cycle" on the server log only when every call returned
+the documented value; any deviation logs "PCHK fail". The bot joins, collects
+LevelEvents for ~9.5 seconds and the check asserts all wire shapes plus the
+plugin-side markers.
 
 Usage:
     python3 tools/plugin_particles_check.py --server <bin> [--port 19186]
@@ -33,15 +39,22 @@ from linux_login_check import STAGE_SPAWN  # noqa: E402
 
 LEVEL_EVENT = 0x16
 START_GAME = 0x09
+ADD_ENTITY = 0x0b
+REMOVE_ENTITY = 0x0c
+MOVE_ENTITY = 0x0f
 
 PARTICLE_ADD_MASK = 0x4000        # generic particles: evid = mask | type
 PARTICLE_HEART = 15
 PARTICLE_CRITICAL = 2
+PARTICLE_ITEM_BREAK = 10
+PARTICLE_TERRAIN = 16
 EVENT_PARTICLE_DESTROY = 2001     # break burst + dig sound
 EVENT_PARTICLE_SPLASH = 2002      # splash shatter + glass smash
 
 BREAK_BLOCK_ID = 41               # gold block texture for the burst
 SPLASH_RGB = 0xFF0000             # red; wire data = 0xFF000000 | rgb
+ITEM_BREAK_STICK = 280 << 16      # item packing: stick id in bits 16+
+ENTITY_TYPE_ITEM = 64             # floating-text carrier (item 0 + nametag)
 EYE_HEIGHT = 1.62
 
 PLUGIN_YML = ("name: ParticleAPI\nmain: src/main.lua\napi: 1.0.3\n"
@@ -72,17 +85,36 @@ return {
         local ok_c  = w:spawnParticle(x, y + 2.0, z, 2, 2)
         local ok_b  = w:spawnBlockParticles(px, py, pz, 41, 0)
         local ok_s  = w:spawnSplashParticles(x, y + 2.0, z, 0xFF0000)
+        -- item_break: item packing (id << 16) | damage; old crash payloads
+        -- must be rejected, the valid stick payload must pass.
+        local ok_ib  = w:spawnParticle(x, y + 2.0, z, "item_break", 280 * 65536)
+        local bad_ib = not w:spawnParticle(x, y + 2.0, z, "item_break", 1)
+        local bad_i0 = not w:spawnParticle(x, y + 2.0, z, "item_break", 0)
+        -- terrain: block packing (meta << 8) | id; air is rejected.
+        local ok_t  = w:spawnParticle(x, y + 2.0, z, "terrain", 1)
+        local bad_t = not w:spawnParticle(x, y + 2.0, z, "terrain", 0)
+        -- floating text: spawn -> move -> remove -> (remove again fails).
+        local ft = w:spawnFloatingText(x, y + 2.4, z, "PCHK floating text", 0)
+        local ok_ft = ft ~= nil
+        local ok_mv = ok_ft and w:moveFloatingText(ft, x, y + 2.6, z)
+        local ok_rm = ok_ft and w:removeFloatingText(ft)
+        local bad_rm = ok_ft and not w:removeFloatingText(ft)
         local bad_n = not w:spawnParticle(x, y + 2.0, z, "not_a_particle", 0)
         local bad_i = not w:spawnParticle(x, y + 2.0, z, 99, 0)
         local bad_r = not w:spawnSplashParticles(x, y + 2.0, z, 0x1FF0000)
         local bad_b = not w:spawnBlockParticles(px, py, pz, 300, 0)
-        if ok_h and ok_c and ok_b and ok_s and bad_n and bad_i and bad_r and bad_b then
+        if ok_h and ok_c and ok_b and ok_s and ok_ib and bad_ib and bad_i0
+           and ok_t and bad_t and ok_ft and ok_mv and ok_rm and bad_rm
+           and bad_n and bad_i and bad_r and bad_b then
           state.fired = state.fired + 1
           log.info("PCHK cycle " .. state.fired)
         else
           log.error("PCHK fail " ..
             tostring(ok_h) .. tostring(ok_c) .. tostring(ok_b) ..
-            tostring(ok_s) .. tostring(bad_n) .. tostring(bad_i) ..
+            tostring(ok_s) .. tostring(ok_ib) .. tostring(bad_ib) ..
+            tostring(bad_i0) .. tostring(ok_t) .. tostring(bad_t) ..
+            tostring(ok_ft) .. tostring(ok_mv) .. tostring(ok_rm) ..
+            tostring(bad_rm) .. tostring(bad_n) .. tostring(bad_i) ..
             tostring(bad_r) .. tostring(bad_b))
         end
       end)
@@ -98,6 +130,9 @@ class ParticleApiClient(PortalClient):
     def __init__(self, *a, **k):
         super().__init__(*a, **k)
         self.level_events = []     # (evid, x, y, z, data) as decoded from the wire
+        self.ft_adds = []          # eids of item-entity spawns (floating text)
+        self.ft_moves = set()      # eids seen in MoveEntityPacket
+        self.ft_removes = set()    # eids seen in RemoveEntityPacket
         self.sg_pos = None         # StartGame player position (feet)
 
     def classify(self, payload: bytes):
@@ -106,6 +141,15 @@ class ParticleApiClient(PortalClient):
             x, y, z = struct.unpack(">fff", payload[3:15])
             data = struct.unpack(">i", payload[15:19])[0]
             self.level_events.append((evid, x, y, z, data))
+        elif payload and payload[0] == ADD_ENTITY and len(payload) >= 13:
+            eid = struct.unpack(">q", payload[1:9])[0]
+            etype = struct.unpack(">i", payload[9:13])[0]
+            if etype == ENTITY_TYPE_ITEM:
+                self.ft_adds.append(eid)
+        elif payload and payload[0] == REMOVE_ENTITY and len(payload) >= 9:
+            self.ft_removes.add(struct.unpack(">q", payload[1:9])[0])
+        elif payload and payload[0] == MOVE_ENTITY and len(payload) >= 17:
+            self.ft_moves.add(struct.unpack(">q", payload[1:9])[0])
         elif payload and payload[0] == START_GAME and len(payload) >= 46:
             px, py, pz = struct.unpack(">fff", payload[34:46])
             self.sg_pos = (px, py, pz)
@@ -206,21 +250,49 @@ def run(host: str, port: int, server_bin: str) -> int:
                     lambda d: d == 1)
         crits = of(lambda e: e == (PARTICLE_ADD_MASK | PARTICLE_CRITICAL),
                    lambda d: d == 2)
+        breaks = of(lambda e: e == (PARTICLE_ADD_MASK | PARTICLE_ITEM_BREAK),
+                    lambda d: d == ITEM_BREAK_STICK)
+        terrains = of(lambda e: e == (PARTICLE_ADD_MASK | PARTICLE_TERRAIN),
+                      lambda d: d == 1)
         bursts = of(lambda e: e == EVENT_PARTICLE_DESTROY,
                     lambda d: (d & 0xFF) == BREAK_BLOCK_ID and (d >> 12) == 0)
         splashes = of(lambda e: e == EVENT_PARTICLE_SPLASH,
                       lambda d: (d & 0xFFFFFFFF) == (0xFF000000 | SPLASH_RGB))
+        # crash payloads must never reach the wire: an item_break whose item
+        # half is 0 (the client parses it as no item and crashes) and a
+        # terrain burst of air (block id 0) leaking through means the
+        # per-family validator failed.
+        leaked = [e for e in events
+                  if (e[0] == (PARTICLE_ADD_MASK | PARTICLE_ITEM_BREAK)
+                      and ((e[4] >> 16) & 0xFFFF) == 0)
+                  or (e[0] == (PARTICLE_ADD_MASK | PARTICLE_TERRAIN)
+                      and (e[4] & 0xFF) == 0)]
         print(f"[{name}] events: heart={len(hearts)} critical={len(crits)} "
+              f"item_break={len(breaks)} terrain={len(terrains)} "
               f"burst={len(bursts)} splash={len(splashes)} total={len(events)}")
 
         check(len(hearts) >= 3,
               f"spawnParticle('heart', 1) reaches the wire ({len(hearts)})")
         check(len(crits) >= 3,
               f"spawnParticle(raw id 2, 2) reaches the wire ({len(crits)})")
+        check(len(breaks) >= 3,
+              f"spawnParticle('item_break', stick packing) reaches the wire ({len(breaks)})")
+        check(len(terrains) >= 3,
+              f"spawnParticle('terrain', block packing) reaches the wire ({len(terrains)})")
+        check(not leaked,
+              f"item_break/terrain crash payloads never reach the wire ({len(leaked)} leaked)")
         check(len(bursts) >= 3,
               f"spawnBlockParticles carries id|meta packing ({len(bursts)})")
         check(len(splashes) >= 3,
               f"spawnSplashParticles carries opaque ARGB ({len(splashes)})")
+
+        # ---- floating text: add -> move -> remove, same entity id -------
+        check(len(c.ft_adds) >= 3,
+              f"spawnFloatingText spawns item-entity carriers ({len(c.ft_adds)})")
+        moved = [eid for eid in c.ft_adds
+                 if eid in c.ft_moves and eid in c.ft_removes]
+        check(len(moved) == len(c.ft_adds) and c.ft_adds,
+              f"every floating text is moved and removed ({len(moved)}/{len(c.ft_adds)})")
 
         def near(evts, idx, want, tol=3.0):
             return all(abs(e[idx] - want) < tol for e in evts)
