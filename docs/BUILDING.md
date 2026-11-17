@@ -4,7 +4,9 @@
 
 Sube el repo a GitHub y el workflow `.github/workflows/Build.yml` compila automáticamente:
 - **Linux x86_64** — para probar en VPS/PC
+- **Linux ARM64** — para ARM64 nativo (Cobalt 100 y similares)
 - **Android ARM64** — para correr en Android/Termux
+- **Windows x86_64** — binario + PDB para símbolos de crash
 
 Los binarios aparecen en **Actions → tu workflow → Artifacts**.
 
@@ -19,11 +21,14 @@ git push origin v1.0.0
 ## Opción 1.5 — Release personalizado (versión y descripción custom)
 
 El workflow **"Release personalizado"** (`.github/workflows/release.yml`) compila
-Linux x86_64 + Android ARM64 y crea un release con el nombre, la versión y la
-descripción que tú quieras (ej. `CurseStone-alpha-v1.0`), adjuntando los binarios:
+las 4 plataformas (Linux x86_64, Linux ARM64, Android ARM64 y Windows x86_64) y
+crea un release con el nombre, la versión y la descripción que tú quieras
+(ej. `CurseStone-alpha-v1.0`), adjuntando los binarios:
 
 - `CurseStone-<versión>-linux-x86_64`
+- `CurseStone-<versión>-linux-arm64`
 - `CurseStone-<versión>-android-arm64`
+- `CurseStone-<versión>-windows-x86_64`
 
 **Desde GitHub (UI):**
 1. Ve a **Actions → Release personalizado → Run workflow**
@@ -70,7 +75,6 @@ pkg update && pkg install -y \
 # Compilar
 cmake -B build -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_C_STANDARD=23 \
   -DCMAKE_CXX_STANDARD=20
 
 cmake --build build --parallel
@@ -83,7 +87,20 @@ cmake --build build --parallel
 
 ---
 
-## Opción 4 — Cross-compile ARM64 desde Linux (con NDK)
+## Opción 4 — Windows x86_64 (MSVC)
+
+```bat
+:: En una terminal con el entorno de Visual Studio (x64 Native Tools)
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel
+build\CurseStone.exe
+```
+
+Necesita Ninja y zlib/LevelDB disponibles (por ejemplo vía `vcpkg`, igual que el job de CI).
+
+---
+
+## Opción 5 — Cross-compile ARM64 desde Linux (con NDK)
 
 ```bash
 # Descargar NDK r26c

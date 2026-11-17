@@ -1,12 +1,12 @@
 # Contributing to CurseStone
 
-Thank you for your interest in CurseStone. This document explains how the project is organized, what rules every change must follow, and how to get your work merged.
+Thank you for your interest in CurseStone. This document explains how the project is organized, which conventions every change follows, and how to get your work merged.
 
 **Contents**
 
 1. [Ways to contribute](#1-ways-to-contribute)
 2. [Setting up](#2-setting-up)
-3. [Architecture rules: the C / C++ split](#3-architecture-rules-the-c--c-split)
+3. [Architecture at a glance](#3-architecture-at-a-glance)
 4. [Naming and style](#4-naming-and-style)
 5. [Protocol 84 notes](#5-protocol-84-notes)
 6. [Where things go](#6-where-things-go)
@@ -33,7 +33,7 @@ For anything larger than a small fix, open an issue first so the approach can be
 ## 2. Setting up
 
 1. Fork the repository and clone your fork.
-2. Install the dependencies listed in the README (CMake 3.20+, GCC 12+ or Clang with C23 and C++20 support, zlib, LevelDB). Lua 5.4 is bundled in `third_party/lua`.
+2. Install the dependencies listed in the README (CMake 3.20+, a C++20 compiler — GCC 12+, Clang or MSVC —, zlib, LevelDB). Lua 5.4 is bundled in `third_party/lua`.
 3. Build in debug mode:
 
    ```bash
@@ -51,60 +51,18 @@ For anything larger than a small fix, open an issue first so the approach can be
 
 ---
 
-## 3. Architecture rules: the C / C++ split
+## 3. Architecture at a glance
 
-CurseStone is a strict **C core plus a C++ layer**, modeled on a legacy 0.15.10 server / protocol 84.
+CurseStone is a **single C++20 codebase** targeting MCPE 0.15.x (protocol 84). There are no first-party sources in any other language; the C language stays enabled in the build only for the vendored Lua 5.4 in `third_party/`.
 
-| Layer | Language | Contains |
-|---|---|---|
-| Core | C23 (`-std=c2x`) | RakNet, NBT, binary I/O, math, chunk data |
-| Game | C++20 | Server, Player, World, Block, Item, Entity, Event, Command, Scheduler, Inventory |
+Conventions that keep the tree consistent:
 
-The two layers talk through plain C structs and `extern "C"` boundaries. These three rules keep that boundary clean, and a pull request that breaks them will not be merged.
-
-### Rule 1: C files never depend on C++
-
-A `*.c` file may only include headers that compile cleanly under `gcc -std=c2x`. That means no STL, no `new`, no templates, no exceptions, no `class`.
-
-### Rule 2: C headers are C++-safe, so C++ includes them directly
-
-Every public C header wraps its declarations like this:
-
-```c
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-/* declarations */
-
-#ifdef __cplusplus
-}
-#endif
-```
-
-Because of that, `*.cpp` files include C headers (`math/Vector3.h`, `utils/Utils.h`, `utils/Logger.h`, ...) with a plain `#include`. Do not add extra `extern "C"` wrapping at the include site.
-
-### Rule 3: never inherit from a C struct
-
-Use **composition**. The canonical example is `Position`: it stores `double x, y, z` itself and converts to and from the C type `mcp_vector3_t` through `toV3()` and an explicit constructor.
-
-```cpp
-// Good: composition, explicit conversion
-Position p(1.0, 64.0, 1.0);
-mcp_vector3_t v = p.toV3();
-
-// Bad: struct Position : mcp_vector3_t { ... };
-```
-
-### C++ wrappers for C headers
-
-When a C header needs C++ conveniences (operators, RAII, namespaced helpers), add a parallel `.hpp` file. Do not change the `.h`.
-
-| C header | C++ wrapper |
-|---|---|
-| `math/Vector3.h` | `math/Vector3.hpp`: `cursestone::math::Vec3` |
-| `utils/Utils.h` | `utils/Utils.hpp`: `cursestone::utils::split/trim/toLower` |
-| `utils/MainLogger.h` | `utils/MainLogger.hpp`: `cursestone::utils::MainLogger` |
+- All server code lives in the `cursestone` namespace and its sub-namespaces.
+- Ownership is expressed with `std::unique_ptr` / `std::shared_ptr`; errors are return values plus logging through `utils::MainLogger`, not exceptions.
+- Headers are self-contained and guarded with `#pragma once`. Do not pull heavy headers into other headers; forward-declare instead.
+- Game state is mutated on the main tick thread only. Off-thread work goes through `ServerScheduler` / `AsyncPool`, and threads hand data over instead of sharing mutable state.
+- Code must build on Linux, macOS, Windows and Android. Keep platform-specific code in `cmake/` or inside clearly guarded blocks; do not scatter `#ifdef` branches through gameplay code.
+- A new block, item, command, packet or event does nothing until it is registered — see section 6.
 
 ---
 
@@ -120,17 +78,15 @@ When a C header needs C++ conveniences (operators, RAII, namespaced helpers), ad
 
 ### General
 
-- C++ code lives in the `cursestone` namespace.
+- Types are `PascalCase`, methods are `camelCase`, data members end with `_` (`dataPath_`, `running_`), protocol constants are `UPPER_SNAKE`.
 - Match the style of the file you are editing. Do not reformat code you are not changing.
-- Keep headers self-contained, and do not pull heavy headers into other headers.
 - Do not add a new dependency without discussing it in an issue first.
-- Code must build on Linux, macOS, Windows and Android. Keep platform-specific code in `cmake/` or inside clearly guarded blocks.
 - Do not leave debugging output, commented-out code or unrelated changes in your pull request.
 
 ### Comments and documentation
 
 - Comments and Doxygen documentation follow [docs/STYLE_COMMENTS.md](docs/STYLE_COMMENTS.md): American English, concise and technically accurate, Doxygen for public/protected declarations, no debugging diaries or decorative separators, and no invented behavior.
-- Public and protected classes, functions, enumerations, macros, and API members get Doxygen comments (`@brief`, `@param`, `@return`, `@note`, `@warning`); trivial overrides reuse inherited documentation.
+- Public and protected classes, functions, enumerations and macros get Doxygen comments (`@brief`, `@param`, `@return`, `@note`, `@warning`); trivial overrides reuse inherited documentation.
 - Preserve invariants, protocol details, threading/ownership requirements, and compatibility notes when editing comments.
 - Two read-only helpers support review:
 
@@ -139,8 +95,7 @@ When a C header needs C++ conveniences (operators, RAII, namespaced helpers), ad
   python3 tools/lint_comments.py src/<dir>
   ```
 
-- API documentation is generated with `doxygen Doxyfile` (output in `build/docs/html/`, git-ignored). Missing-doc warnings are non-fatal while the migration is in progress.
-- When touching formatting, keep formatting-only commits separate from comment/documentation commits.
+- API documentation is generated with `doxygen Doxyfile` (output in `build/docs/html/`, git-ignored). Missing-doc warnings are non-fatal.
 
 ---
 
@@ -148,7 +103,10 @@ When a C header needs C++ conveniences (operators, RAII, namespaced helpers), ad
 
 - Block positions in packets are `int32_t` (**signed**), not unsigned.
 - Entity positions are `float` on the wire and `double` internally.
-- Chunk sections are 16×16×16 blocks. Create them with `mcp_section_new(y)`, not `mcp_chunk_section_new`.
+- Chunk sections are 16×16×16 blocks.
+- `Position` stores the **feet**; movement packets on the wire carry the **eye** position (eye height 1.62).
+
+Keep wire formats unchanged unless your change is explicitly a protocol change, and call it out in the pull request.
 
 ---
 
@@ -164,13 +122,14 @@ When a C header needs C++ conveniences (operators, RAII, namespaced helpers), ad
 | Terrain, biome, noise or populator logic | `src/world/generator/` |
 | A world storage format | `src/world/format/` |
 | An event | `src/event/` |
+| A Lua or native plugin API surface | `src/plugin/` |
 | A standalone check or benchmark | `tools/` |
 
 ---
 
 ## 7. Testing your change
 
-`tools/` contains standalone check programs (`*_check.cpp`), smoke tests, benchmarks and a few shell runners such as `tools/run_nbt_test.sh`. If a check exists for the area you changed, run it. If none exists, consider adding one.
+`tools/` contains standalone check programs (`*_check.cpp`), Python end-to-end checks that talk to a running server, fuzzing helpers and benchmarks. If a check exists for the area you changed, run it. If none exists, consider adding one.
 
 Before you open a pull request, make sure that:
 
@@ -218,11 +177,10 @@ If you find a security problem, do not post it publicly: contact the maintainers
 
 ## 10. Plugins
 
-Documentation for the Lua plugin system lives in its own repository: <https://github.com/CurseStoneORG/doxygen-docs>.
+CurseStone supports two plugin load types: **Lua plugins** (a folder with `plugin.yml`) and **native C++ plugins** (a bare `.so`/`.dll` file, no manifest). The full API reference and build instructions live in [docs/PLUGINS.md](docs/PLUGINS.md); working examples are [`plugins/SpawnProtection/`](plugins/SpawnProtection/README.md) (Lua) and [`plugins/HelloNative/`](plugins/HelloNative/README.md) (C++).
 
 ---
 
 ## 11. License
 
 CurseStone is licensed under **LGPL-3.0-or-later**. By submitting a contribution you agree that it is released under the same license.
-
