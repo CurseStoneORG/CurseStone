@@ -440,6 +440,16 @@ class World {
     // Broadcasts a particle to players who can see its chunk.
     void addParticle(const particle::Particle& p);
 
+    // Spawns one protocol-84 particle by raw type id (1..32, see
+    // particle::ParticleId) at a world position. Returns false for ids the
+    // client has no renderer for — such events would be silently dropped.
+    bool spawnParticle(int32_t type, float x, float y, float z, int32_t data);
+
+    // Broadcasts the protocol-84 splash-potion shatter (EVENT_PARTICLE_SPLASH):
+    // one packet carries the colored swirl AND the glass smash sound.
+    // @p rgb is 0xRRGGBB; the client receives it as opaque ARGB 0xFF______.
+    bool spawnSplashParticles(float x, float y, float z, uint32_t rgb);
+
     // Broadcasts the protocol-84 break-particle event (EVENT_PARTICLE_DESTROY)
     // at a block's center with that block's texture. On protocol 84 this one
     // event carries BOTH the particle burst and the dig sound — the same
@@ -546,6 +556,14 @@ class World {
     double lastTickMs_ = 0.0;
     double avgTickMs_ = 0.0;
     double avgLightMs_ = 0.0;
+
+    // Serializes one LevelEventPacket and delivers it to every player that
+    // sees the chunk (cx, cz). Every particle world-event broadcast funnels
+    // through here: the packet is built once per event (never re-encoded per
+    // player) and the viewer filter (spawned, in this world, not pending
+    // removal, chunk in view) stays identical across all callers.
+    void broadcastLevelEvent(int16_t evid, float x, float y, float z,
+                             int32_t data, int32_t cx, int32_t cz);
 
     // Flushes a chunk's tiles and removes their in-memory registry entries.
     void evictTilesForChunk(int32_t cx, int32_t cz);

@@ -37,6 +37,18 @@
 //   world.getTime() / setTime(t)       time of the world (0..24000)
 //   world.getSpawn()                   x, and, z of the spawn
 //   world.getPlayers()                 names of the players inside
+//   world.spawnParticle(x,and,z,type,[data])   spawns one protocol-84
+//                                      particle; type is a name ("flame",
+//                                      "heart", "terrain", ...) or a raw
+//                                      id 1..32; data is the particle
+//                                      payload (scale/color/packing, see
+//                                      docs/PLUGINS.md). true = sent.
+//   world.spawnBlockParticles(x,and,z,id,[meta])  the break burst + dig
+//                                      sound at a block (event 2001,
+//                                      id low byte, meta in bits 12+).
+//   world.spawnSplashParticles(x,and,z,rgb)    the splash-potion shatter
+//                                      (event 2002) with an 0xRRGGBB
+//                                      color; plays the glass smash.
 //   world.unload()                     unloads the world (false if is
 //                                      the by default or is cancela)
 //
@@ -48,6 +60,7 @@
 #include "Server.h"
 #include "Player.h"
 #include "world/World.h"
+#include "world/particle/ParticleNames.h"
 #include <string>
 #include <cstring>
 
@@ -201,6 +214,65 @@ int l_world_getplayers(lua_State* L) {
     return 1;
 }
 
+// Resolves the `type` argument of spawnParticle: a name string goes through
+// the shared protocol-84 registry, a number must already be an id 1..32.
+// Pushes nothing; returns the resolved id or -1 (Lua's spawnParticle turns
+// that into `false`, never an error).
+int resolveParticleType(lua_State* L, int idx) {
+    if (lua_type(L, idx) == LUA_TSTRING) {
+        int32_t id = -1;
+        world::particle::particleFromName(lua_tostring(L, idx), id);
+        return id;
+    }
+    if (!lua_isnumber(L, idx))
+        return -1;
+    lua_Integer id = lua_tointeger(L, idx);
+    return world::particle::isValidParticleType((int32_t)id) ? (int32_t)id : -1;
+}
+
+int l_world_spawnparticle(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_Number x = luaL_checknumber(L, 2);
+    lua_Number y = luaL_checknumber(L, 3);
+    lua_Number z = luaL_checknumber(L, 4);
+    int type = resolveParticleType(L, 5);
+    lua_Integer data = luaL_optinteger(L, 6, 0);
+    lua_pushboolean(L, type >= 0 && w->spawnParticle(type, (float)x, (float)y, (float)z,
+                                                     (int32_t)data)
+                                     ? 1
+                                     : 0);
+    return 1;
+}
+
+int l_world_spawnblockparticles(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_Integer x = luaL_checkinteger(L, 2);
+    lua_Integer y = luaL_checkinteger(L, 3);
+    lua_Integer z = luaL_checkinteger(L, 4);
+    lua_Integer id = luaL_checkinteger(L, 5);
+    lua_Integer meta = luaL_optinteger(L, 6, 0);
+    if (id < 0 || id > 255 || meta < 0 || meta > 15) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+    w->broadcastBlockParticles((int32_t)x, (int32_t)y, (int32_t)z, (uint8_t)id, (uint8_t)meta);
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+int l_world_splashparticles(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_Number x = luaL_checknumber(L, 2);
+    lua_Number y = luaL_checknumber(L, 3);
+    lua_Number z = luaL_checknumber(L, 4);
+    lua_Integer rgb = luaL_checkinteger(L, 5);
+    lua_pushboolean(L, rgb >= 0 && rgb <= 0xFFFFFF &&
+                           w->spawnSplashParticles((float)x, (float)y, (float)z, (uint32_t)rgb)
+                       ? 1
+                       : 0);
+    return 1;
+}
+
 int l_world_unload(lua_State* L) {
     WORLD_OR_NIL();
     lua_pushboolean(L, Server::getInstance().unloadWorld(w->name()) ? 1 : 0);
@@ -219,6 +291,9 @@ const luaL_Reg kWorldMethods[] = {
     {"setBlock", l_world_setblock},
     {"getSpawn", l_world_getspawn},
     {"getPlayers", l_world_getplayers},
+    {"spawnParticle", l_world_spawnparticle},
+    {"spawnBlockParticles", l_world_spawnblockparticles},
+    {"spawnSplashParticles", l_world_splashparticles},
     {"unload", l_world_unload},
     {nullptr, nullptr},
 };

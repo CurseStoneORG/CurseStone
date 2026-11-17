@@ -63,6 +63,7 @@
 #include "network/protocol/AddItemEntityPacket.h"
 #include "network/protocol/EntityEventPacket.h"
 #include "world/particle/Particle.h"
+#include "world/particle/ParticleNames.h"
 #include "world/particle/GenericParticle.h"
 #include "network/protocol/SetHealthPacket.h"
 #include "network/protocol/SetTimePacket.h"
@@ -1001,19 +1002,16 @@ bool World::tryClaimArrow(int64_t eid) {
     return true;
 }
 
-void World::addParticle(const particle::Particle& p) {
-    const auto& pos = p.position();
-    int32_t cx = (int32_t)std::floor(pos.x) >> 4;
-    int32_t cz = (int32_t)std::floor(pos.z) >> 4;
+void World::broadcastLevelEvent(int16_t evid, float x, float y, float z,
+                                int32_t data, int32_t cx, int32_t cz) {
     auto pk = std::make_shared<network::protocol::LevelEventPacket>();
-    pk->evid = (int16_t)(network::protocol::LevelEventPacket::EVENT_ADD_PARTICLE_MASK |
-                         (p.networkId() & 0xFFF));
-    pk->x = (float)pos.x;
-    pk->y = (float)pos.y;
-    pk->z = (float)pos.z;
-    pk->data = p.networkData();
+    pk->evid = evid;
+    pk->x = x;
+    pk->y = y;
+    pk->z = z;
+    pk->data = data;
     for (auto& pl : Server::getInstance().playersSnapshotRef()) {
-        if (!pl || !pl->spawned() || pl->getWorld() != this)
+        if (!pl || !pl->spawned() || pl->isPendingRemoval() || pl->getWorld() != this)
             continue;
         if (!pl->canSeeBlock(cx, cz))
             continue;
@@ -1021,23 +1019,37 @@ void World::addParticle(const particle::Particle& p) {
     }
 }
 
+void World::addParticle(const particle::Particle& p) {
+    const auto& pos = p.position();
+    broadcastLevelEvent(
+        (int16_t)(network::protocol::LevelEventPacket::EVENT_ADD_PARTICLE_MASK |
+                  (p.networkId() & 0xFFF)),
+        (float)pos.x, (float)pos.y, (float)pos.z, p.networkData(),
+        (int32_t)std::floor(pos.x) >> 4, (int32_t)std::floor(pos.z) >> 4);
+}
+
+bool World::spawnParticle(int32_t type, float x, float y, float z, int32_t data) {
+    if (!particle::isValidParticleType(type))
+        return false;
+    addParticle(particle::GenericParticle((particle::ParticleId)type, Position{x, y, z}, data));
+    return true;
+}
+
+bool World::spawnSplashParticles(float x, float y, float z, uint32_t rgb) {
+    if (rgb > 0xFFFFFFu)
+        return false;
+    broadcastLevelEvent(network::protocol::LevelEventPacket::EVENT_PARTICLE_SPLASH, x, y, z,
+                        (int32_t)(0xFF000000u | rgb), (int32_t)std::floor(x) >> 4,
+                        (int32_t)std::floor(z) >> 4);
+    return true;
+}
+
 void World::broadcastBlockParticles(int32_t bx, int32_t by, int32_t bz,
                                     uint8_t blockId, uint8_t blockData) {
-    auto pk = std::make_shared<network::protocol::LevelEventPacket>();
-    pk->evid = network::protocol::LevelEventPacket::EVENT_PARTICLE_DESTROY;
-    pk->x = (float)bx + 0.5f;
-    pk->y = (float)by + 0.5f;
-    pk->z = (float)bz + 0.5f;
     // Block packing of protocol 84: id in the low byte, meta in bits 12+.
-    pk->data = ((int32_t)blockId & 0xFF) | ((int32_t)blockData << 12);
-    int32_t cx = bx >> 4, cz = bz >> 4;
-    for (auto& pl : Server::getInstance().playersSnapshotRef()) {
-        if (!pl || !pl->spawned() || pl->getWorld() != this)
-            continue;
-        if (!pl->canSeeBlock(cx, cz))
-            continue;
-        pl->sendPacket(pk);
-    }
+    broadcastLevelEvent(network::protocol::LevelEventPacket::EVENT_PARTICLE_DESTROY,
+                        (float)bx + 0.5f, (float)by + 0.5f, (float)bz + 0.5f,
+                        ((int32_t)blockId & 0xFF) | ((int32_t)blockData << 12), bx >> 4, bz >> 4);
 }
 
 void World::tickArrows(uint64_t current_tick) {
@@ -1543,23 +1555,7 @@ void World::tickSplashPotions(uint64_t current_tick) {
             has_effect ? effect_id : (uint8_t)entity::EFF_WATER_BREATHING);
         // Break event first: the client plays the glass smash and draws the
         // splash swirl from this one packet (data = opaque ARGB color).
-        {
-            auto shatter = std::make_shared<network::protocol::LevelEventPacket>();
-            shatter->evid = network::protocol::LevelEventPacket::EVENT_PARTICLE_SPLASH;
-            shatter->x = (float)p->x;
-            shatter->y = (float)p->y;
-            shatter->z = (float)p->z;
-            shatter->data = (int32_t)(0xFF000000u | (color & 0x00FFFFFFu));
-            int32_t scx = (int32_t)std::floor(p->x) >> 4;
-            int32_t scz = (int32_t)std::floor(p->z) >> 4;
-            for (auto& pl : Server::getInstance().playersSnapshotRef()) {
-                if (!pl || !pl->spawned() || pl->isPendingRemoval() || pl->getWorld() != this)
-                    continue;
-                if (!pl->canSeeBlock(scx, scz))
-                    continue;
-                pl->sendPacket(shatter);
-            }
-        }
+        spawnSplashParticles((float)p->x, (float)p->y, (float)p->z, color);
         for (int i = 0; i < 8; ++i) {
             double ox = ((std::rand() % 21) - 10) / 20.0;
             double oy = ((std::rand() % 21) - 10) / 20.0;
