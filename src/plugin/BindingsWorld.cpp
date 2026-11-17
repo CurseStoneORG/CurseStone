@@ -49,6 +49,16 @@
 //   world.spawnSplashParticles(x,and,z,rgb)    the splash-potion shatter
 //                                      (event 2002) with an 0xRRGGBB
 //                                      color; plays the glass smash.
+//   world.spawnFloatingText(x,y,z,text,[ttl])  floating text: an invisible
+//                                      item-entity carrier whose nametag
+//                                      is the text (protocol 84 has no
+//                                      text particle). Returns the entity
+//                                      id, or nil at the per-world cap;
+//                                      ttl in ticks (0 = until removed).
+//   world.moveFloatingText(id,x,y,z)   repositions a floating text
+//                                      (true/false).
+//   world.removeFloatingText(id)       despawns a floating text
+//                                      (true/false).
 //   world.unload()                     unloads the world (false if is
 //                                      the by default or is cancela)
 //
@@ -273,6 +283,42 @@ int l_world_splashparticles(lua_State* L) {
     return 1;
 }
 
+int l_world_spawnfloatingtext(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_Number x = luaL_checknumber(L, 2);
+    lua_Number y = luaL_checknumber(L, 3);
+    lua_Number z = luaL_checknumber(L, 4);
+    size_t len = 0;
+    const char* text = luaL_checklstring(L, 5, &len);
+    lua_Integer ttl = luaL_optinteger(L, 6, 0);
+    int64_t id = w->spawnFloatingText((double)x, (double)y, (double)z,
+                                      std::string(text, len), (int32_t)ttl);
+    if (id < 0) {
+        lua_pushnil(L); // per-world cap reached
+    } else {
+        lua_pushinteger(L, (lua_Integer)id);
+    }
+    return 1;
+}
+
+int l_world_movefloatingtext(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_Integer id = luaL_checkinteger(L, 2);
+    lua_Number x = luaL_checknumber(L, 3);
+    lua_Number y = luaL_checknumber(L, 4);
+    lua_Number z = luaL_checknumber(L, 5);
+    lua_pushboolean(
+        L, w->moveFloatingText((int64_t)id, (double)x, (double)y, (double)z) ? 1 : 0);
+    return 1;
+}
+
+int l_world_removefloatingtext(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_Integer id = luaL_checkinteger(L, 2);
+    lua_pushboolean(L, w->removeFloatingText((int64_t)id) ? 1 : 0);
+    return 1;
+}
+
 int l_world_unload(lua_State* L) {
     WORLD_OR_NIL();
     lua_pushboolean(L, Server::getInstance().unloadWorld(w->name()) ? 1 : 0);
@@ -294,6 +340,9 @@ const luaL_Reg kWorldMethods[] = {
     {"spawnParticle", l_world_spawnparticle},
     {"spawnBlockParticles", l_world_spawnblockparticles},
     {"spawnSplashParticles", l_world_splashparticles},
+    {"spawnFloatingText", l_world_spawnfloatingtext},
+    {"moveFloatingText", l_world_movefloatingtext},
+    {"removeFloatingText", l_world_removefloatingtext},
     {"unload", l_world_unload},
     {nullptr, nullptr},
 };

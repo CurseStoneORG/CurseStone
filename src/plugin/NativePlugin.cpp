@@ -831,6 +831,21 @@ bool api_world_spawnSplashParticles(const char* world, double x, double y, doubl
         return false;
     return w->spawnSplashParticles((float)x, (float)y, (float)z, (uint32_t)rgb);
 }
+int64_t api_world_spawnFloatingText(const char* world, double x, double y, double z,
+                                    const char* text, int32_t ttlTicks) {
+    World* w = findLoadedWorld(world);
+    if (!w || !text)
+        return -1;
+    return w->spawnFloatingText(x, y, z, std::string(text), ttlTicks);
+}
+bool api_world_moveFloatingText(const char* world, int64_t id, double x, double y, double z) {
+    World* w = findLoadedWorld(world);
+    return w && w->moveFloatingText(id, x, y, z);
+}
+bool api_world_removeFloatingText(const char* world, int64_t id) {
+    World* w = findLoadedWorld(world);
+    return w && w->removeFloatingText(id);
+}
 
 CsWorldApi g_worldApi = {
     api_world_seed,
@@ -852,6 +867,9 @@ CsWorldApi g_worldApi = {
     api_world_spawnParticle,
     api_world_spawnBlockParticles,
     api_world_spawnSplashParticles,
+    api_world_spawnFloatingText,
+    api_world_moveFloatingText,
+    api_world_removeFloatingText,
 };
 
 // data: the per-plugin data_pl/<plugin> sandbox, same rules as data.*.

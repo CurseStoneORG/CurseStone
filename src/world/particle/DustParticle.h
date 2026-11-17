@@ -20,20 +20,20 @@
  * Repository: https://github.com/CurseStoneORG/CurseStone
  *
  */
+// DustParticle — protocol-84 particle id 23 ("dust").
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// Family: Color. The client reads `data` as packed RGB (0xRRGGBB; the renderer ignores alpha).
 #pragma once
-#include "Particle.h"
-#include <cstdint>
+#include "GenericParticle.h"
+#include "ParticleFamily.h"
 namespace cursestone::world::particle {
-class DestroyBlockParticle : public Particle {
-  public:
-    DestroyBlockParticle(Position pos, uint8_t block_id)
-        : Particle(PARTICLE_TERRAIN, pos), block_id_(block_id) {
-    }
-    uint8_t blockId() const {
-        return block_id_;
-    }
 
-  private:
-    uint8_t block_id_;
+class DustParticle : public GenericParticle {
+  public:
+    static constexpr ParticleId kId = PARTICLE_DUST;
+    static constexpr DataKind kDataKind = DataKind::Color;
+    explicit DustParticle(Position pos, int32_t data = 0)
+        : GenericParticle(kId, pos, data) {
+    }
 };
 } // namespace

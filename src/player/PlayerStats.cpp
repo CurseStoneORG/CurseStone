@@ -30,6 +30,7 @@
 #include "network/protocol/SetEntityDataPacket.h"
 #include "event/entity/EntityDamageEvent.h"
 #include "world/particle/GenericParticle.h"
+#include "world/particle/ParticleFamily.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -540,8 +541,9 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
             lvl->addParticle(world::particle::GenericParticle(
                 world::particle::PARTICLE_TERRAIN,
                 world::Position(pos_.x, pos_.y + 0.05, pos_.z),
-                (int32_t)(ground_id & 0xFF) |
-                    ((int32_t)lvl->getBlockData(bx, gy, bz) << 12)));
+                world::particle::packBlockData(
+                    (uint8_t)(ground_id & 0xFF),
+                    (uint8_t)(lvl->getBlockData(bx, gy, bz) & 0x0F))));
         }
     }
 

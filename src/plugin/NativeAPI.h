@@ -402,6 +402,23 @@ typedef struct CsWorldApi {
      *        smash sound. @p rgb is 0xRRGGBB; values above fail.
      */
     bool (*spawnSplashParticles)(const char* world, double x, double y, double z, int32_t rgb);
+    /* ---- appended (ABI 1, extension batch 4: floating text) ---- */
+    /**
+     * @brief Spawns a floating text: an invisible item-entity carrier whose
+     *        only visible part is its nametag (protocol 84 has no text
+     *        particle). One spawn packet, zero per-tick cost.
+     *
+     * @param ttlTicks > 0 despawns automatically after that many ticks;
+     *                 0 keeps it until removeFloatingText(). Entity ids do
+     *                 not survive server restarts.
+     * @return the entity id for move/remove, or -1 at the per-world cap.
+     */
+    int64_t (*spawnFloatingText)(const char* world, double x, double y, double z,
+                                 const char* text, int32_t ttlTicks);
+    /** @brief Repositions a floating text for its current viewers. */
+    bool (*moveFloatingText)(const char* world, int64_t id, double x, double y, double z);
+    /** @brief Despawns a floating text; false for unknown ids. */
+    bool (*removeFloatingText)(const char* world, int64_t id);
 } CsWorldApi;
 
 /**

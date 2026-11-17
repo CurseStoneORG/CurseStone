@@ -21,23 +21,16 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// ParticleNames — the protocol-84 particle type registry shared by the
+// ParticleNames — the protocol-84 particle name registry shared by the
 // Lua and native plugin APIs. Plugins address particles by name (Lua) or
 // by the ids of ParticleId (native); this header is the single authority
-// that maps between the two.
+// that maps between the two. The id space itself lives in ParticleId.h.
 #pragma once
+#include "ParticleId.h"
 #include <string_view>
 #include <cstdint>
 
 namespace cursestone::world::particle {
-
-/// @brief Number of particle types protocol 84 exposes (ParticleId range 1..32).
-constexpr int32_t kParticleTypeCount = 32;
-
-/// @brief True when @p id is a valid protocol-84 particle type id.
-inline bool isValidParticleType(int32_t id) {
-    return id >= 1 && id <= kParticleTypeCount;
-}
 
 /// @brief Looks up a particle type id by its API name.
 ///

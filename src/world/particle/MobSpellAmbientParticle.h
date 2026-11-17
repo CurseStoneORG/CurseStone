@@ -20,5 +20,20 @@
  * Repository: https://github.com/CurseStoneORG/CurseStone
  *
  */
-#include "DestroyBlockParticle.h"
-namespace cursestone::world::particle {}
+// MobSpellAmbientParticle — protocol-84 particle id 25 ("mob_spell_ambient").
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// Family: Color. The client reads `data` as packed RGB (0xRRGGBB; the renderer ignores alpha).
+#pragma once
+#include "GenericParticle.h"
+#include "ParticleFamily.h"
+namespace cursestone::world::particle {
+
+class MobSpellAmbientParticle : public GenericParticle {
+  public:
+    static constexpr ParticleId kId = PARTICLE_MOB_SPELL_AMBIENT;
+    static constexpr DataKind kDataKind = DataKind::Color;
+    explicit MobSpellAmbientParticle(Position pos, int32_t data = 0)
+        : GenericParticle(kId, pos, data) {
+    }
+};
+} // namespace

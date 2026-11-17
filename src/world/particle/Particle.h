@@ -20,52 +20,21 @@
  * Repository: https://github.com/CurseStoneORG/CurseStone
  *
  */
+// SPDX-License-Identifier: LGPL-3.0-or-later
 // Particle — abstract level particle. Particles are sent to players
 // in range via LevelEventPacket (evid = EVENT_ADD_PARTICLE_MASK | type).
 // The server-side particle object only computes position and forwards it
 // to the network layer.
+//
+// One concrete particle per file lives beside this header: each type owns
+// its id (ParticleId.h), its payload family (ParticleFamily.h) and, for
+// the structured families, its own packing + validation.
 #pragma once
+#include "ParticleId.h"
 #include "world/Position.h"
 #include <cstdint>
 namespace cursestone::world::particle {
 
-// Particle types of protocol 84. The id travels in the low 12 bits of the
-// LevelEventPacket event field (0x4000 | type) and the client maps it to
-// its own particle renderer.
-enum ParticleId : int32_t {
-    PARTICLE_BUBBLE = 1,
-    PARTICLE_CRITICAL = 2,
-    PARTICLE_SMOKE = 3,
-    PARTICLE_EXPLODE = 4,
-    PARTICLE_WHITE_SMOKE = 5,
-    PARTICLE_FLAME = 6,
-    PARTICLE_LAVA = 7,
-    PARTICLE_LARGE_SMOKE = 8,
-    PARTICLE_REDSTONE = 9,
-    PARTICLE_ITEM_BREAK = 10,
-    PARTICLE_SNOWBALL_POOF = 11,
-    PARTICLE_LARGE_EXPLODE = 12,
-    PARTICLE_HUGE_EXPLODE = 13,
-    PARTICLE_MOB_FLAME = 14,
-    PARTICLE_HEART = 15,
-    PARTICLE_TERRAIN = 16,
-    PARTICLE_TOWN_AURA = 17,
-    PARTICLE_PORTAL = 18,
-    PARTICLE_WATER_SPLASH = 19,
-    PARTICLE_WATER_WAKE = 20,
-    PARTICLE_DRIP_WATER = 21,
-    PARTICLE_DRIP_LAVA = 22,
-    PARTICLE_DUST = 23,
-    PARTICLE_MOB_SPELL = 24,
-    PARTICLE_MOB_SPELL_AMBIENT = 25,
-    PARTICLE_MOB_SPELL_INSTANT = 26,
-    PARTICLE_INK = 27,
-    PARTICLE_SLIME = 28,
-    PARTICLE_RAIN_SPLASH = 29,
-    PARTICLE_VILLAGER_ANGRY = 30,
-    PARTICLE_VILLAGER_HAPPY = 31,
-    PARTICLE_ENCHANTMENT_TABLE = 32,
-};
 class Particle {
   public:
     // data = event payload (particle scale / color), protocol 84.
