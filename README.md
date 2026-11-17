@@ -57,8 +57,8 @@ Rather than following modern Bedrock Edition development, the project remains fo
 | Technology | Purpose |
 |---|---|
 | C++20 | Entire server core: networking, gameplay and low-level systems |
-| Lua 5.4 | Plugin scripting |
-| C ABI plugin interface | Native .so/.dll plugins |
+| Lua 5.4 | Plugin scripting (bundled interpreter) |
+| Native plugin ABI | Function-pointer surface for .so/.dll plugins |
 | CMake | Build configuration |
 | Ninja | Build system |
 

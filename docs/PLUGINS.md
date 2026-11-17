@@ -6,7 +6,7 @@ operator puts into the `plugins/` folder:
 | Load type | What is dropped into `plugins/` | Manifest | Runtime |
 | --------- | ------------------------------- | -------- | ------- |
 | **Folder** | `MyPlugin/` — a folder with a `plugin.yml` | `plugin.yml` | Bundled Lua 5.4 interpreter |
-| **File** | `MyPlugin.so` / `MyPlugin.dll` — a bare shared library | none — the binary IS the plugin | C ABI shared library (C++) |
+| **File** | `MyPlugin.so` / `MyPlugin.dll` — a bare shared library | none — the binary IS the plugin | Native C++ shared library |
 
 The rules in one line each:
 
@@ -91,7 +91,7 @@ plugins/
 
 The library exports ONE symbol:
 
-```c
+```cpp
 const CsPluginVTable* CurseStonePlugin_entry(void);
 ```
 
@@ -102,10 +102,10 @@ the `CsPluginApi*` handed to `onLoad`.
 
 ### Minimal complete plugin
 
-```c
+```cpp
 #include "plugin/NativeAPI.h"
 
-extern "C" {   // keeps the entry symbol's C name (no C++ mangling)
+extern "C" {   // required so the entry symbol is exported unmangled
 
 static CsPluginApi* g_api = nullptr;
 
@@ -153,7 +153,7 @@ descriptor is the manifest: keep `name` non-empty and unique, and set
 
 ```sh
 # Linux / macOS / Android NDK
-gcc -shared -fPIC -O2 -I<repo>/src -o MyPlugin.so src/MyPlugin.cpp
+c++ -shared -fPIC -O2 -I<repo>/src -o MyPlugin.so src/MyPlugin.cpp
 
 # Windows (MSVC, x64)
 cl /LD /O2 /I<repo>\src src\MyPlugin.cpp

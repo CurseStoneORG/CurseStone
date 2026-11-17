@@ -108,7 +108,7 @@ Preserve (never delete during cleanup):
 
 ## 6. File headers
 
-Every project-owned `.h` / `.c` / `.cpp` file keeps exactly one header block:
+Every project-owned `.h` / `.hpp` / `.cpp` file keeps exactly one header block:
 
 1. The existing license banner block (do not alter its text without review).
 2. Exactly one `// SPDX-License-Identifier: LGPL-3.0-or-later` line.
@@ -119,7 +119,7 @@ Every project-owned `.h` / `.c` / `.cpp` file keeps exactly one header block:
 `third_party/` files are exempt: their headers, licenses, and comments are
 never rewritten.
 
-## 7. Tooling workflow (per migration batch)
+## 7. Tooling workflow
 
 ```bash
 # 1. Inventory (read-only)
@@ -133,10 +133,6 @@ python3 tools/lint_comments.py src/network
 # 4. Regenerate docs and check warnings
 doxygen Doxyfile
 
-# 5. Build and run the tests for the touched area, review the diff,
+# 5. Build and run the checks for the touched area, review the diff,
 #    then commit — only after validation and authorization.
 ```
-
-Batch order: core server/utilities → networking/protocols → world/terrain →
-players/inventory → blocks/items/entities → events/commands/plugins →
-tools/build infrastructure → README and contributor docs.

@@ -11,10 +11,11 @@ Read the neighboring implementation first and copy its exact shape. Always add t
 | Packet | `src/network/protocol/<Name>Packet.h/.cpp` derived from `DataPacket`; add the ID constant in `protocol/Info.h` and a `case` in `PacketPool::create` (`PacketPool.cpp`); handle it in `Player::handleDataPacket` (`player/PlayerNetwork.cpp`). Only protocol 84 layouts; block positions are signed `int32_t`. |
 | Built-in command | `src/command/defaults/<Name>Command.h/.cpp`, then register in `command/Defaults.cpp`; check permissions via `permission/`. |
 | Event | `src/event/<domain>/<Name>Event.h`; fire with `EventManager::get().call(ev)` and honor cancellation as neighboring call sites in `player/` do. Exposing it to Lua also needs a mapping in `plugin/BindingsEvents.cpp`. |
-| Lua API function | The matching `plugin/Bindings*.cpp` (`BindingsCore`, `BindingsCommands`, `BindingsData`, `BindingsEvents`, `BindingsWorld`). Validate every argument and every path (`PathSafe.h`); it is a public API change, so note it in docs and `changes.md`. |
+| Lua API function | The matching `plugin/Bindings*.cpp` (`BindingsCore`, `BindingsCommands`, `BindingsData`, `BindingsEvents`, `BindingsWorld`). Validate every argument and every path (`PathSafe.h`); it is a public API change, so note it in `docs/PLUGINS.md`. |
+| Native plugin API function | `src/plugin/NativeAPI.h` (append to the end of the relevant `CsPluginApi*` group struct — the ABI version only moves when an existing field changes meaning, type or order), bridge it in `src/plugin/NativePlugin.cpp`, and document it in `docs/PLUGINS.md`. |
 | World generator or populator | `src/world/generator/` (and subfolders); register by name where `World.cpp` selects `generator` strings. Verify with `tools/gen_smoke.cpp`/`gen_perf.cpp` style checks. |
 | World storage format | `src/world/format/<format>/` implementing `WorldProvider`; register in `WorldProviderManager`. |
-| Config key | Read it in `Server::loadConfig` (or the owning subsystem) with a default, add it to the right file in `utils/DefaultConfig.cpp` (`server.properties` for basic, `cursestone.yml` for advanced), update README config notes, flag in `changes.md`. |
+| Config key | Read it in `Server::loadConfig` (or the owning subsystem) with a default, add it to the right file in `utils/DefaultConfig.cpp` (`server.properties` for basic, `cursestone.yml` for advanced), document it if user-visible. |
 | Standalone check or benchmark | `tools/`; follow `Testing.md`. |
 
-New `.c`/`.cpp` files are picked up by the CMake glob; no build-file edit is needed. Cross-check `CONTRIBUTING.md` section 6 if this table seems to disagree.
+New `.cpp` files are picked up by the CMake glob; no build-file edit is needed. Cross-check `CONTRIBUTING.md` ("Where things go") if this table seems to disagree.

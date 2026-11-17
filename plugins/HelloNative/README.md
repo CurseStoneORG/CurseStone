@@ -1,7 +1,7 @@
 # HelloNative
 
-Reference **native C++ plugin** for CurseStone. It demonstrates the C ABI
-from `src/plugin/NativeAPI.h` with the smallest complete example:
+Reference **native C++ plugin** for CurseStone. It demonstrates the native
+plugin ABI from `src/plugin/NativeAPI.h` with the smallest complete example:
 
 - the full lifecycle: `onLoad` / `onEnable` / `onDisable` / `onUnload`
 - events: `PlayerJoin`, `PlayerChat`
@@ -25,7 +25,7 @@ The plugin links **nothing** — every call goes through the
 Linux / macOS / Android NDK:
 
 ```sh
-gcc -shared -fPIC -O2 -I<repo>/src -o HelloNative.so src/HelloNative.cpp
+c++ -shared -fPIC -O2 -I<repo>/src -o HelloNative.so src/HelloNative.cpp
 ```
 
 Windows (MSVC, x64):
