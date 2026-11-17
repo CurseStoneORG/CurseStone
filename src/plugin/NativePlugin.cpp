@@ -808,6 +808,29 @@ bool api_world_spawnItem(const char* world, double x, double y, double z, int32_
     w->dropItemAt(x, y, z, (uint16_t)id, (uint8_t)count, (uint16_t)meta);
     return true;
 }
+bool api_world_spawnParticle(const char* world, double x, double y, double z, int32_t type,
+                             int32_t data) {
+    World* w = findLoadedWorld(world);
+    if (!w)
+        return false;
+    return w->spawnParticle(type, (float)x, (float)y, (float)z, data);
+}
+bool api_world_spawnBlockParticles(const char* world, double x, double y, double z,
+                                   int32_t blockId, int32_t meta) {
+    World* w = findLoadedWorld(world);
+    if (!w || blockId < 0 || blockId > 255 || meta < 0 || meta > 15)
+        return false;
+    w->broadcastBlockParticles((int32_t)x, (int32_t)y, (int32_t)z, (uint8_t)blockId,
+                               (uint8_t)meta);
+    return true;
+}
+bool api_world_spawnSplashParticles(const char* world, double x, double y, double z,
+                                    int32_t rgb) {
+    World* w = findLoadedWorld(world);
+    if (!w || rgb < 0 || rgb > 0xFFFFFF)
+        return false;
+    return w->spawnSplashParticles((float)x, (float)y, (float)z, (uint32_t)rgb);
+}
 
 CsWorldApi g_worldApi = {
     api_world_seed,
@@ -826,6 +849,9 @@ CsWorldApi g_worldApi = {
     api_world_isChunkLoaded,
     api_world_save,
     api_world_spawnItem,
+    api_world_spawnParticle,
+    api_world_spawnBlockParticles,
+    api_world_spawnSplashParticles,
 };
 
 // data: the per-plugin data_pl/<plugin> sandbox, same rules as data.*.

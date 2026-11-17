@@ -43,8 +43,11 @@ API surface (globals):
   getWorld, isOp, getHealth, setHealth, setPermission, hasPermission,
   giveItem, setNameTag, getNameTag, setDisplayName, getDisplayName,
   getPosition, getRotation, setRotation, setMotion, kill
-- `world(name)` handles — getName, getSeed, getDimension, getTime,
-  setTime, getBlock, setBlock, getSpawn, getPlayers, unload
+- `server.getWorld(name)` / `server.loadWorld(name, gen)` /
+  `server.defaultWorld()` — world handles with `name`, `seed`,
+  `dimension`, `getTime`, `setTime`, `getBlock`, `setBlock`, `getSpawn`,
+  `getPlayers`, `spawnParticle`, `spawnBlockParticles`,
+  `spawnSplashParticles`, `unload`
 - `commands.register(name, opts, fn)`, `commands.reply(sender, msg)`
 - `events.on(name, fn)` — PlayerJoin, PlayerQuit, PlayerChat, PlayerMove,
   PlayerDropItem, PlayerItemHeld, BlockBreak, BlockPlace, EntityDamage,
@@ -54,6 +57,43 @@ API surface (globals):
 - `scheduler.later/every/cancel`
 - `data.read/write/exists/delete/list/loadYml/saveYml/loadJson/saveJson`
 - `plugin.include/import/getResource/saveResource/listResources`
+
+### Particles
+
+Protocol 84 has no arbitrary-particle packet; particles travel inside
+`LevelEventPacket` world events. The Lua world handles expose the three
+event shapes the 0.15.10 client actually renders:
+
+```lua
+local w = server.defaultWorld()
+
+-- one generic particle: evid = 0x4000 | type
+w.spawnParticle(x, y, z, "heart", 1)   -- by name (32 names, see below)
+w.spawnParticle(x, y, z, 2, 2)         -- or by raw id 1..32
+
+-- block break burst + dig sound in one event (2001)
+w.spawnBlockParticles(bx, by, bz, blockId, meta)
+
+-- splash-potion shatter: colored swirl + glass smash sound (2002)
+w.spawnSplashParticles(x, y, z, 0xFF0000)   -- 0xRRGGBB
+```
+
+`data` payload per particle family:
+
+- `smoke`, `white_smoke`, `ink`, `critical`, `heart`, `redstone` — scale /
+  lifetime integer (`0` is the client default)
+- `dust`, `mob_spell`, `mob_spell_ambient`, `mob_spell_instant` — packed
+  ARGB (`0xFF______` is sent for splash; for spell types use the plain
+  RGB passed in `data`)
+- `terrain`, `item_break` — block/item packing `id | (meta << 12)`
+- everything else — `0`
+
+Full name list: `bubble critical smoke explode white_smoke flame lava
+large_smoke redstone item_break snowball_poof large_explode huge_explode
+mob_flame heart terrain town_aura portal water_splash water_wake
+drip_water drip_lava dust mob_spell mob_spell_ambient mob_spell_instant
+ink slime rain_splash villager_angry villager_happy enchantment_table`.
+Unknown names / ids return `false` and never raise.
 
 Sample plugin: `plugins/SpawnProtection/`.
 
@@ -284,6 +324,9 @@ instead of raising anything; invalid arguments never crash the server.
 | `isChunkLoaded(world, cx, cz)` | chunk-residency probe |
 | `save(world)` | persists dirty chunks + level.dat; costly — schedule it, do not spam it |
 | `spawnItem(world, x, y, z, id, count, meta)` | visible drop; count 1..64 |
+| `spawnParticle(world, x, y, z, type, data)` | one generic particle, `type` = `CsParticleType` 1..32; see the Lua particles table for `data` packing |
+| `spawnBlockParticles(world, x, y, z, blockId, meta)` | break burst + dig sound (LevelEvent 2001) |
+| `spawnSplashParticles(world, x, y, z, rgb)` | splash shatter (LevelEvent 2002); `rgb` 0xRRGGBB |
 | `playerCount(world)` | players currently in that world |
 
 **data** (context-bound; jailed to `data_pl/<stem>`)

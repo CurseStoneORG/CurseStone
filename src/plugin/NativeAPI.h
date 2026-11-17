@@ -309,6 +309,50 @@ typedef struct CsPlayerApi {
 } CsPlayerApi;
 
 /**
+ * @brief Protocol-84 particle type ids for world.spawnParticle.
+ *
+ * The ids ARE the wire type ids carried in the low 12 bits of the
+ * LevelEventPacket "add particle" event (evid = 0x4000 | id). The names
+ * mirror the Lua particle names one to one ("mob_spell_ambient" ==
+ * CS_PARTICLE_MOB_SPELL_AMBIENT), so plugins can use either API surface
+ * interchangeably.
+ */
+typedef enum CsParticleType {
+    CS_PARTICLE_BUBBLE = 1,
+    CS_PARTICLE_CRITICAL = 2,
+    CS_PARTICLE_SMOKE = 3,
+    CS_PARTICLE_EXPLODE = 4,
+    CS_PARTICLE_WHITE_SMOKE = 5,
+    CS_PARTICLE_FLAME = 6,
+    CS_PARTICLE_LAVA = 7,
+    CS_PARTICLE_LARGE_SMOKE = 8,
+    CS_PARTICLE_REDSTONE = 9,
+    CS_PARTICLE_ITEM_BREAK = 10,
+    CS_PARTICLE_SNOWBALL_POOF = 11,
+    CS_PARTICLE_LARGE_EXPLODE = 12,
+    CS_PARTICLE_HUGE_EXPLODE = 13,
+    CS_PARTICLE_MOB_FLAME = 14,
+    CS_PARTICLE_HEART = 15,
+    CS_PARTICLE_TERRAIN = 16,
+    CS_PARTICLE_TOWN_AURA = 17,
+    CS_PARTICLE_PORTAL = 18,
+    CS_PARTICLE_WATER_SPLASH = 19,
+    CS_PARTICLE_WATER_WAKE = 20,
+    CS_PARTICLE_DRIP_WATER = 21,
+    CS_PARTICLE_DRIP_LAVA = 22,
+    CS_PARTICLE_DUST = 23,
+    CS_PARTICLE_MOB_SPELL = 24,
+    CS_PARTICLE_MOB_SPELL_AMBIENT = 25,
+    CS_PARTICLE_MOB_SPELL_INSTANT = 26,
+    CS_PARTICLE_INK = 27,
+    CS_PARTICLE_SLIME = 28,
+    CS_PARTICLE_RAIN_SPLASH = 29,
+    CS_PARTICLE_VILLAGER_ANGRY = 30,
+    CS_PARTICLE_VILLAGER_HAPPY = 31,
+    CS_PARTICLE_ENCHANTMENT_TABLE = 32
+} CsParticleType;
+
+/**
  * @brief World queries. First argument is the world name; the call fails
  * (0 / false) for worlds that are not loaded.
  */
@@ -336,6 +380,28 @@ typedef struct CsWorldApi {
     /** Spawns a visible item drop; id/count behave like giveItem (count 1..64). */
     bool (*spawnItem)(const char* world, double x, double y, double z, int32_t id, int32_t count,
                       int32_t meta);
+    /* ---- appended (ABI 1, extension batch 3: particles) ---- */
+    /**
+     * @brief Spawns one protocol-84 particle of @p type (CsParticleType,
+     *        1..32) at a world position; out-of-range ids fail.
+     *
+     * @param data particle payload: scale for smoke/white_smoke/ink/critical/
+     *             heart/redstone, ARGB for dust and mob_spell*, block packing
+     *             id | (meta << 12) for terrain and item_break, else 0.
+     */
+    bool (*spawnParticle)(const char* world, double x, double y, double z, int32_t type,
+                          int32_t data);
+    /**
+     * @brief Break burst + dig sound on a block (LevelEvent 2001, the one
+     *        protocol-84 event that carries both). id 0..255, meta 0..15.
+     */
+    bool (*spawnBlockParticles)(const char* world, double x, double y, double z, int32_t blockId,
+                                int32_t meta);
+    /**
+     * @brief Splash-potion shatter (LevelEvent 2002): colored swirl + glass
+     *        smash sound. @p rgb is 0xRRGGBB; values above fail.
+     */
+    bool (*spawnSplashParticles)(const char* world, double x, double y, double z, int32_t rgb);
 } CsWorldApi;
 
 /**
