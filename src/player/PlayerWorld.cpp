@@ -135,6 +135,12 @@ bool Player::switchWorld(World* target, double x, double y, double z, bool throu
         st->time = target->time();
         sendPacket(st);
 
+        // The 0.15.10 client drops its entity map on a dimension change,
+        // so every mob id this client holds is stale afterwards. Forget
+        // them: the chunk re-stream after the switch re-sends the mobs
+        // of each chunk through sendMobsInChunk.
+        clearKnownMobs();
+
         auto cd = std::make_shared<network::protocol::ChangeDimensionPacket>();
         cd->dimension = target->dimension();
         cd->x = (float)x;

@@ -419,6 +419,31 @@ typedef struct CsWorldApi {
     bool (*moveFloatingText)(const char* world, int64_t id, double x, double y, double z);
     /** @brief Despawns a floating text; false for unknown ids. */
     bool (*removeFloatingText)(const char* world, int64_t id);
+    /* ---- appended (ABI 1, extension batch 5: entities) ---- */
+    /**
+     * @brief Spawns one standing mob (no AI, no physics, zero per-tick
+     *        cost). @p type is a protocol-84 network id from
+     *        entityTypeFromName(); ids outside the registry fail because
+     *        the 0.15.10 client has no verified renderer for them.
+     * @param y feet position; @p yaw/@p pitch spawn rotation.
+     * @return the entity id for move/remove/get, or -1 for an invalid
+     *         type/position or at the per-world cap (256/world).
+     */
+    int64_t (*spawnEntity)(const char* world, int32_t type, double x, double y, double z,
+                           float yaw, float pitch);
+    /** @brief Repositions a standing mob; false for unknown ids. */
+    bool (*moveEntity)(const char* world, int64_t id, double x, double y, double z,
+                       float yaw, float pitch);
+    /** @brief Despawns a standing mob; false for unknown ids. */
+    bool (*removeEntity)(const char* world, int64_t id);
+    /** @brief Reads a mob back: network id, feet position, outRot yaw/pitch. */
+    bool (*getEntity)(const char* world, int64_t id, int32_t* outType, double outPos[3],
+                      float outRot[2]);
+    /** @brief Entity network id from a name ("zombie", "cow", ...); false
+     *         when unknown. Case-insensitive, aliases included. */
+    bool (*entityTypeFromName)(const char* name, int32_t* outId);
+    /** @brief Canonical lowercase name for a network id; NULL when unknown. */
+    const char* (*entityTypeName)(int32_t type);
 } CsWorldApi;
 
 /**

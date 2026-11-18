@@ -38,6 +38,7 @@
 #include "command/ConsoleCommandSender.h"
 #include "command/CommandMap.h"
 #include "entity/Effect.h"
+#include "entity/EntityTypes.h"
 #include "event/EventManager.h"
 #include "event/block/BlockBreakEvent.h"
 #include "event/block/BlockPlaceEvent.h"
@@ -847,6 +848,50 @@ bool api_world_removeFloatingText(const char* world, int64_t id) {
     return w && w->removeFloatingText(id);
 }
 
+// extension batch 5: standing mobs — the same surface the Lua world
+// object exposes. Type ids come from the shared entity registry so an
+// id the 0.15.10 client cannot render never reaches the wire.
+int64_t api_world_spawnEntity(const char* world, int32_t type, double x, double y,
+                              double z, float yaw, float pitch) {
+    World* w = findLoadedWorld(world);
+    if (!w)
+        return -1;
+    return w->spawnMob(type, x, y, z, yaw, pitch);
+}
+bool api_world_moveEntity(const char* world, int64_t id, double x, double y, double z,
+                          float yaw, float pitch) {
+    World* w = findLoadedWorld(world);
+    return w && w->moveMob(id, x, y, z, yaw, pitch);
+}
+bool api_world_removeEntity(const char* world, int64_t id) {
+    World* w = findLoadedWorld(world);
+    return w && w->removeMob(id);
+}
+bool api_world_getEntity(const char* world, int64_t id, int32_t* outType, double outPos[3],
+                         float outRot[2]) {
+    World* w = findLoadedWorld(world);
+    if (!w || !outType || !outPos || !outRot)
+        return false;
+    const world::MobEntity* m = w->mob(id);
+    if (!m)
+        return false;
+    *outType = m->type;
+    outPos[0] = m->x;
+    outPos[1] = m->y;
+    outPos[2] = m->z;
+    outRot[0] = m->yaw;
+    outRot[1] = m->pitch;
+    return true;
+}
+bool api_entity_typeFromName(const char* name, int32_t* outId) {
+    if (!name || !outId)
+        return false;
+    return entity::mobTypeFromName(name, outId);
+}
+const char* api_entity_typeName(int32_t type) {
+    return entity::mobTypeName(type);
+}
+
 CsWorldApi g_worldApi = {
     api_world_seed,
     api_world_dimension,
@@ -870,6 +915,12 @@ CsWorldApi g_worldApi = {
     api_world_spawnFloatingText,
     api_world_moveFloatingText,
     api_world_removeFloatingText,
+    api_world_spawnEntity,
+    api_world_moveEntity,
+    api_world_removeEntity,
+    api_world_getEntity,
+    api_entity_typeFromName,
+    api_entity_typeName,
 };
 
 // data: the per-plugin data_pl/<plugin> sandbox, same rules as data.*.

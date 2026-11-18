@@ -25,6 +25,8 @@
 #include "player/PlayerInternal.h"
 
 #include "world/World.h"
+#include "world/format/Chunk.h"
+#include "block/Block.h"
 
 #include "network/protocol/Info.h"
 #include "network/protocol/LoginPacket.h"
@@ -403,7 +405,13 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
         sg->spawnZ = (int32_t)sp.z;
 
         sg->x = (float)pos_.x;
-        sg->y = (float)pos_.y;
+        // On the wire the client's OWN entity rides at eye height — the
+        // same convention the MovePlayer resets (teleport, respawn,
+        // dimension switch) already use. Feeding the StartGame packet the
+        // feet Y made the 0.15.10 client interpret it as the eye line and
+        // spawn every joining player 1.62 blocks INSIDE the terrain they
+        // had been standing on (the "buried on join" report).
+        sg->y = (float)(pos_.y + kEyeHeight);
         sg->z = (float)pos_.z;
 
         sg->unknown = lvl->name();
@@ -491,6 +499,13 @@ void Player::doFirstSpawn() {
 
     last_activity_ms_ = start_time_ms_;
 
+    // Terrain fit check before any spawn packet uses the position: a
+    // saved spot the regenerated terrain no longer fits would otherwise
+    // pin the client into blocks. The spawn chunk is resident by now
+    // (the threshold gate above fired on streamed chunks), so this never
+    // generates and never blocks.
+    settleJoinPosition();
+
     // Configure adventure settings and permissions.
     {
         auto as = std::make_shared<network::protocol::AdventureSettingsPacket>();
@@ -556,6 +571,27 @@ void Player::doFirstSpawn() {
         ps->status = network::protocol::PlayStatusPacket::PLAYER_SPAWN;
 
         sendPacket(ps);
+    }
+
+    // Final position reset — the exact packet the respawn and dimension
+    // flows use. The StartGame Y carries the eye line now, but this reset
+    // is the packet that actually pins the client to the server position
+    // the moment the world is live, immune to whatever spawn adjustment
+    // the client applies to its own Y while the loading screen runs.
+    // Without it the join flow was the ONLY player-positioning flow that
+    // ended without a reset, and it was the only one that landed buried.
+    {
+        auto mp = std::make_shared<network::protocol::MovePlayerPacket>();
+        mp->eid = runtimeId();
+        mp->x = (float)pos_.x;
+        mp->y = (float)(pos_.y + kEyeHeight);
+        mp->z = (float)pos_.z;
+        mp->yaw = yaw_;
+        mp->bodyYaw = yaw_;
+        mp->pitch = pitch_;
+        mp->mode = network::protocol::MovePlayerPacket::MODE_RESET;
+        mp->onGround = onGround();
+        sendPacket(mp);
     }
 
     sendCreativeInventory();
@@ -668,6 +704,54 @@ void Player::doFirstSpawn() {
     }
 
     utils::MainLogger::get().info("First spawn for " + cfg_.username);
+}
+
+// Lifts a join position the terrain no longer fits. A saved spot whose
+// feet or head cell is solid (terrain regenerated differently across
+// versions, blocks placed over the logout spot) would leave the player
+// pinned inside blocks once the position reset pins the client to the
+// server coordinates. The walk goes straight up looking for the classic
+// landing shape — solid floor, two free cells — and keeps the position
+// untouched when the current one already fits, when the chunk is not
+// resident (defensive; doFirstSpawn guarantees it is) or when nothing
+// above fits before the world height ends.
+void Player::settleJoinPosition() {
+    auto* lvl = getWorld();
+    if (!lvl)
+        return;
+    const int bx = (int)std::floor(pos_.x);
+    const int bz = (int)std::floor(pos_.z);
+    const int lx = bx & 15, lz = bz & 15;
+    int feetY = (int)std::floor(pos_.y);
+    if (feetY < 0 || feetY > 255)
+        return;
+    mcp_chunk_t* c = lvl->chunks().getChunkIfLoaded(bx >> 4, bz >> 4);
+    if (!c)
+        return;
+
+    auto solidAt = [&](int y) {
+        if (y < 0 || y > 255)
+            return false;
+        uint8_t id = mcp_chunk_get_block_id(c, lx, y, lz);
+        return id != 0 && block::Block::get(id)->isSolid();
+    };
+
+    if (!solidAt(feetY) && !solidAt(feetY + 1))
+        return; // The saved position still fits — nothing to do.
+
+    for (int y = std::max(feetY, 1); y < 255; ++y) {
+        if (solidAt(y) || solidAt(y + 1))
+            continue;
+        if (!solidAt(y - 1))
+            continue; // Two free cells, but nothing to stand on yet.
+        pos_.y = (double)y;
+        if (srv_ && srv_->debugMode()) {
+            utils::MainLogger::get().info(
+                "[SPAWN] " + cfg_.username + " join position lifted to " +
+                std::to_string(bx) + "," + std::to_string(y) + "," + std::to_string(bz));
+        }
+        return;
+    }
 }
 
 // Manage player visibility and spawn packets.

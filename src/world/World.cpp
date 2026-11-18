@@ -66,6 +66,7 @@
 #include "world/particle/ParticleNames.h"
 #include "world/particle/ParticleFamily.h"
 #include "world/particle/GenericParticle.h"
+#include "entity/EntityTypes.h"
 #include "network/protocol/SetHealthPacket.h"
 #include "network/protocol/SetTimePacket.h"
 #include "scheduler/ServerScheduler.h"
@@ -1173,6 +1174,191 @@ bool World::removeFloatingText(int64_t id) {
             pl->sendPacket(rm);
     }
     return true;
+}
+
+namespace {
+
+// Builds the protocol-84 AddEntityPacket for one standing mob: feet
+// position, zero velocity, and the NoAI metadata byte (the same property
+// the floating-text carrier uses) — the client never applies movement
+// of its own to the model, which is exactly the "spawns and stands
+// there" contract the mob registry advertises.
+std::shared_ptr<network::protocol::AddEntityPacket> buildMobAddPacket(
+    int64_t eid, int32_t type, double x, double y, double z, float yaw, float pitch) {
+    auto add = std::make_shared<network::protocol::AddEntityPacket>();
+    add->eid = eid;
+    add->type = type;
+    add->x = (float)x;
+    add->y = (float)y;
+    add->z = (float)z;
+    add->speedX = add->speedY = add->speedZ = 0.0f;
+    add->yaw = yaw;
+    add->pitch = pitch;
+    using Meta = network::protocol::SetEntityDataPacket;
+    Meta::Entry no_ai;
+    no_ai.index = Meta::PROP_NO_AI;
+    no_ai.type = Meta::TYPE_BYTE;
+    no_ai.ival = 1;
+    add->metadata.push_back(no_ai);
+    return add;
+}
+
+} // namespace
+
+int64_t World::spawnMob(int32_t type, double x, double y, double z, float yaw, float pitch) {
+    if (!entity::isValidMobType(type) || y < 0.0 || y > 255.0)
+        return -1;
+    {
+        std::lock_guard<std::mutex> lk(mobs_mtx_);
+        if (mobs_.size() >= kMaxMobs)
+            return -1;
+    }
+    const int32_t cx = (int32_t)std::floor(x) >> 4;
+    const int32_t cz = (int32_t)std::floor(z) >> 4;
+    // The mob's cell must exist on the server: forcing the chunk resident
+    // keeps a plugin spawn in generated-but-unloaded terrain from
+    // becoming a silent no-op (the same rule world.setBlock follows).
+    chunks_.getChunk(cx, cz);
+
+    const int64_t eid = Server::getInstance().allocateEid();
+    auto record = std::make_unique<MobEntity>();
+    record->eid = eid;
+    record->type = type;
+    record->x = x;
+    record->y = y;
+    record->z = z;
+    record->yaw = yaw;
+    record->pitch = pitch;
+    record->cx = cx;
+    record->cz = cz;
+    {
+        std::lock_guard<std::mutex> lk(mobs_mtx_);
+        mobs_.emplace(eid, std::move(record));
+        mobs_by_chunk_[packChunkPos(cx, cz)].push_back(eid);
+    }
+
+    sendToChunkViewers(this, cx, cz,
+                       buildMobAddPacket(eid, type, x, y, z, yaw, pitch));
+    return eid;
+}
+
+bool World::moveMob(int64_t id, double x, double y, double z, float yaw, float pitch) {
+    int32_t old_cx = 0, old_cz = 0, new_cx = 0, new_cz = 0;
+    {
+        std::lock_guard<std::mutex> lk(mobs_mtx_);
+        auto it = mobs_.find(id);
+        if (it == mobs_.end() || !it->second)
+            return false;
+        if (y < 0.0 || y > 255.0)
+            return false;
+        MobEntity* m = it->second.get();
+        old_cx = m->cx;
+        old_cz = m->cz;
+        new_cx = (int32_t)std::floor(x) >> 4;
+        new_cz = (int32_t)std::floor(z) >> 4;
+        m->x = x;
+        m->y = y;
+        m->z = z;
+        m->yaw = yaw;
+        m->pitch = pitch;
+        if (old_cx != new_cx || old_cz != new_cz) {
+            // Keep the chunk index in step with the position so the
+            // resend stays O(mobs of the chunk).
+            auto bucket = mobs_by_chunk_.find(packChunkPos(old_cx, old_cz));
+            if (bucket != mobs_by_chunk_.end()) {
+                auto& eids = bucket->second;
+                eids.erase(std::remove(eids.begin(), eids.end(), id), eids.end());
+                if (eids.empty())
+                    mobs_by_chunk_.erase(bucket);
+            }
+            mobs_by_chunk_[packChunkPos(new_cx, new_cz)].push_back(id);
+            m->cx = new_cx;
+            m->cz = new_cz;
+        }
+    }
+    auto mv = std::make_shared<network::protocol::MoveEntityPacket>();
+    mv->eid = id;
+    mv->x = (float)x;
+    mv->y = (float)y;
+    mv->z = (float)z;
+    mv->yaw = yaw;
+    mv->headYaw = yaw;
+    mv->pitch = pitch;
+    sendToChunkViewers(this, new_cx, new_cz, mv);
+    return true;
+}
+
+bool World::removeMob(int64_t id) {
+    {
+        std::lock_guard<std::mutex> lk(mobs_mtx_);
+        auto it = mobs_.find(id);
+        if (it == mobs_.end())
+            return false;
+        if (it->second) {
+            auto bucket = mobs_by_chunk_.find(packChunkPos(it->second->cx, it->second->cz));
+            if (bucket != mobs_by_chunk_.end()) {
+                auto& eids = bucket->second;
+                eids.erase(std::remove(eids.begin(), eids.end(), id), eids.end());
+                if (eids.empty())
+                    mobs_by_chunk_.erase(bucket);
+            }
+        }
+        mobs_.erase(it);
+    }
+    // Same removal scope as the floating texts: every spawned player of
+    // the world, viewers or not — the client ignores unknown ids.
+    sendRemoveEntity(this, id);
+    return true;
+}
+
+MobEntity* World::mob(int64_t eid) {
+    std::lock_guard<std::mutex> lk(mobs_mtx_);
+    auto it = mobs_.find(eid);
+    return (it != mobs_.end()) ? it->second.get() : nullptr;
+}
+
+std::vector<MobEntity*> World::mobs() {
+    std::vector<MobEntity*> out;
+    std::lock_guard<std::mutex> lk(mobs_mtx_);
+    out.reserve(mobs_.size());
+    for (auto& [_, m] : mobs_) {
+        if (m)
+            out.push_back(m.get());
+    }
+    return out;
+}
+
+size_t World::mobCount() {
+    std::lock_guard<std::mutex> lk(mobs_mtx_);
+    return mobs_.size();
+}
+
+void World::sendMobsInChunk(int32_t cx, int32_t cz, Player* viewer) {
+    if (!viewer || !viewer->spawned())
+        return;
+    // Snapshot under the lock, send outside of it: sendPacket never runs
+    // with mobs_mtx_ held (no lock-order coupling with the player's own
+    // streaming locks).
+    std::vector<MobEntity> pending;
+    {
+        std::lock_guard<std::mutex> lk(mobs_mtx_);
+        auto bucket = mobs_by_chunk_.find(packChunkPos(cx, cz));
+        if (bucket == mobs_by_chunk_.end())
+            return;
+        pending.reserve(bucket->second.size());
+        for (int64_t eid : bucket->second) {
+            auto it = mobs_.find(eid);
+            if (it == mobs_.end() || !it->second)
+                continue;
+            if (!viewer->knowsMob(eid))
+                pending.push_back(*it->second);
+        }
+    }
+    for (const MobEntity& m : pending) {
+        viewer->rememberMob(m.eid);
+        viewer->sendPacket(
+            buildMobAddPacket(m.eid, m.type, m.x, m.y, m.z, m.yaw, m.pitch));
+    }
 }
 
 void World::tickArrows(uint64_t current_tick) {

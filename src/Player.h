@@ -151,6 +151,13 @@ class Player : public IPlayer,
     void handleBlockBreak(int x, int y, int z);
     void handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldItemId, uint8_t heldCount,
                           uint16_t heldDamage, float fx = 0.5f, float fy = 0.5f, float fz = 0.5f);
+    // Hatches a spawn egg (item 383, aux = protocol-84 entity network id)
+    // on the tapped face: drops the spawn cell to the first solid ground
+    // below it, validates the egg's entity against the mob registry and
+    // consumes one egg in survival. Kept public so the block-use path can
+    // route here before any placement logic.
+    void handleSpawnEggUse(world::World* lvl, int placeX, int placeY, int placeZ,
+                           uint16_t eggAux, uint8_t face);
     void handlePlayerAction(int action, int x, int y, int z, int face);
 
     // --- Bow handling ---
@@ -261,6 +268,18 @@ class Player : public IPlayer,
     // Checks whether a block's chunk is within the player's view distance.
     bool canSeeBlock(int32_t cx, int32_t cz) const;
 
+    // --- Mob-entity viewer knowledge ---
+    // The 0.15.10 client keeps a received entity until an explicit
+    // RemoveEntityPacket, so each mob's AddEntityPacket must reach a
+    // client exactly once per session. The World's chunk-stream resend
+    // consults this set before building the packet and records the id
+    // after sending. Cleared on dimension switches — the client drops
+    // its entity map there, and the re-stream re-sends every mob.
+    // Main thread only, guarded by chunks_mtx_ like the streaming state.
+    bool knowsMob(int64_t eid) const;
+    void rememberMob(int64_t eid);
+    void clearKnownMobs();
+
     // --- Server-to-player packets ---
     // Sends a packet, optionally using the ordered channel. Takes the
     // packet by const&: the callee only serializes, so broadcast loops
@@ -282,6 +301,12 @@ class Player : public IPlayer,
     // --- Spawning ---
     void doFirstSpawn();
     void sendChunksAroundSpawn();
+    // Lifts a join position the terrain no longer fits (feet or head cell
+    // solid — terrain regenerated differently, blocks placed over the
+    // spot) to the first two-cell gap above solid ground. Bounded cell
+    // walk in the spawn chunk, once per join at doFirstSpawn — the chunk
+    // is resident by then, so the check never triggers generation.
+    void settleJoinPosition();
     bool spawned() const {
         return spawned_.load(std::memory_order_relaxed);
     }
@@ -798,6 +823,12 @@ class Player : public IPlayer,
     // Chunks already sent to this player, protected by chunks_mtx_.
     std::unordered_set<int64_t> used_chunks_;
     mutable std::mutex chunks_mtx_;
+    // Mob entity ids this client has received an AddEntityPacket for.
+    // Append-only: eids are monotonically allocated, so a stale entry of
+    // a removed mob can never collide with a fresh one, and the client
+    // keeps entities across chunk unloads anyway. Protected by
+    // chunks_mtx_.
+    std::unordered_set<int64_t> known_mobs_;
     // View radius the client last requested, already clamped to
     // cfg_.view_distance. 0 until the first RequestChunkRadiusPacket
     // arrives; chunk streaming then falls back to cfg_.view_distance.
