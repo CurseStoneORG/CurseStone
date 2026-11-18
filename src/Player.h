@@ -298,6 +298,11 @@ class Player : public IPlayer,
     // Main thread only, guarded by chunks_mtx_ like the streaming state.
     bool knowsMob(int64_t eid) const;
     void rememberMob(int64_t eid);
+    // Drops one mob id from the known set: the crossing broadcast in
+    // World::moveMob uses it when a mob leaves this viewer's chunk
+    // range, so the client stops rendering a ghost the future move
+    // packets (new-chunk scope) will never update.
+    void forgetMob(int64_t eid);
     void clearKnownMobs();
 
     // --- Server-to-player packets ---

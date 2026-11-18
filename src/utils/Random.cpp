@@ -54,7 +54,10 @@ static void mt_generate(mcp_random_t* r) {
     }
     uint32_t y = (s[MCP_MT_N - 1] & UPPER) | (s[0] & LOWER);
     s[MCP_MT_N - 1] = s[MCP_MT_M - 1] ^ (y >> 1) ^ ((y & 1) ? MATRIX_A : 0);
-    r->index = MCP_MT_N;
+    // Regeneration leaves the read cursor at 0: the "index >= N" state is
+    // the seeded/never-drawn marker, and reading at state[N] would alias
+    // the index field itself and return one constant value forever.
+    r->index = 0;
 }
 
 void mcp_random_seed(mcp_random_t* r, uint32_t seed) {

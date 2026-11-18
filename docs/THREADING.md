@@ -306,3 +306,25 @@ noted, distinct usernames/UUIDs):
 
 The spawn-time and MSPT figures above were sampled through the console
 `status` command every 5 s and per-bot client timestamps.
+
+## 8. Mob AI (added after the join-storm study)
+
+THREADING.md Lesson 4 ("entity ticking needs a budget and a radius the
+day AI lands") is implemented in `src/entity/ai/` and documented in
+`docs/MOB_AI.md`. The threading shape, verified against the code:
+
+* **Main thread only.** The mob pass runs from `World::tick()` after
+  falling blocks; goals read value-only snapshots (`MobContext`) and
+  write intent into per-mob brains; the actuation step mutates records
+  through the same `World::moveMob()` plugins use. No worker thread
+  touches mob state — the seam reserved for later off-thread steering
+  is the intent format itself.
+* **Budget, not unbounded iteration.** The pass drains a 2 ms wall
+  clock budget with a round-robin cursor and a staggered think cadence
+  (one mob's goals per 10-tick slot), the same contract light and
+  liquid use.
+* **Render-distance gating.** A mob thinks and moves only while a
+  spawned player is within the world's view distance (Chebyshev chunk
+  distance); gated-off mobs are frozen, not despawned.
+* **Measured** (docs/MOB_AI.md): 500 wandering mobs add ~0.5 ms to the
+  tick, TPS 20, server process under 2% of one core.
