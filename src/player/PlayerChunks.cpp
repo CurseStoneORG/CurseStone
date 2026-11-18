@@ -23,6 +23,7 @@
 #include "Player.h"
 #include "world/World.h"
 #include "world/format/Chunk.h"
+#include "scheduler/AsyncPool.h"
 #include "network/protocol/FullChunkDataPacket.h"
 #include "tile/Tile.h"
 #include "utils/CRaii.h"
@@ -259,5 +260,142 @@ void Player::sendChunk(int cx, int cz) {
     // chunks_mtx_ again in rememberMob.
     if (getWorld())
         getWorld()->sendMobsInChunk(cx, cz, this);
+}
+
+// ============================================================
+// Async chunk encode pipeline
+// ============================================================
+// The tick thread stops paying mcp_chunk_network_serialize()'s
+// transposition (~83 KB of cell-by-cell nibble work per chunk): it takes
+// a memcpy-bound snapshot — the tick thread is the only writer of
+// resident chunk data, so the copy is a consistent immutable view — and
+// an AsyncPool worker produces the wire payload from it. Workers touch
+// ONLY their snapshot and the pipeline; never the Player, the World or
+// ChunkManager (the pipeline is a shared_ptr, so a disconnect or a
+// shutdown can never strand a worker on freed state).
+//
+// Ordering is preserved per player: flushChunkEncodes() sends strictly
+// from the front of the slot deque, so a later chunk that finishes
+// encoding first waits for the head slot to complete — the per-player
+// reorder buffer.
+// ============================================================
+void Player::submitChunkEncode(mcp_chunk_t* ch, int32_t cx, int32_t cz) {
+    if (!ch)
+        return;
+    if (!chunk_encodes_)
+        chunk_encodes_ = std::make_shared<ChunkEncodePipeline>();
+    ChunkEncodePipeline& pipe = *chunk_encodes_;
+
+    {
+        std::lock_guard<std::mutex> lk(pipe.mtx);
+        for (const ChunkEncodeSlot& s : pipe.slots)
+            if (s.cx == cx && s.cz == cz)
+                return; // Encode already pending or ready-but-unflushed.
+        if (pipe.slots.size() >= kMaxOutstandingChunkEncodes)
+            return; // Reorder buffer full — retried on a later tick.
+    }
+
+    // Snapshot on the tick thread (memcpy-bound: at most 8 sections of
+    // ~10 KB each — see Chunk.h). The tick thread is the only writer of
+    // resident chunk data, so this copy is the immutable view the worker
+    // encodes; the worker never reads the live chunk.
+    mcp_chunk_wire_snapshot_t* snap = mcp_chunk_wire_snapshot_create(ch);
+    if (!snap)
+        return; // OOM — the chunk stays unsent and is retried next tick.
+
+    uint64_t seq;
+    {
+        std::lock_guard<std::mutex> lk(pipe.mtx);
+        seq = pipe.next_seq++;
+        ChunkEncodeSlot slot;
+        slot.seq = seq;
+        slot.cx = cx;
+        slot.cz = cz;
+        pipe.slots.push_back(std::move(slot));
+    }
+
+    // Fills the slot once the payload exists. Captures the pipeline
+    // shared_ptr BY VALUE: on the worker path this copy is what keeps the
+    // pipeline alive past a disconnect (or past a re-stream reset — the
+    // result then lands in the orphaned old pipeline and is never
+    // flushed), and the slot lookup keeps working even if this player is
+    // already gone.
+    std::shared_ptr<ChunkEncodePipeline> pipe_ref = chunk_encodes_;
+    auto complete = [pipe_ref, seq](uint8_t* buf, size_t len,
+                                    mcp_chunk_wire_snapshot_t* s) {
+        mcp_chunk_wire_snapshot_free(s);
+        utils::BufferPtr wire(buf);
+        std::lock_guard<std::mutex> lk(pipe_ref->mtx);
+        for (ChunkEncodeSlot& slot : pipe_ref->slots) {
+            if (slot.seq == seq) {
+                slot.wire = std::move(wire);
+                slot.wire_len = len;
+                slot.ready = true;
+                break;
+            }
+        }
+    };
+
+    auto* pool = srv_ ? srv_->getAsyncPool() : nullptr;
+    if (pool && pool->submit([complete, snap]() {
+            size_t len = 0;
+            uint8_t* buf = mcp_chunk_snapshot_network_serialize(snap, &len);
+            complete(buf, len, snap);
+        }))
+        return; // In flight; flushChunkEncodes sends it when ready.
+
+    // Pool unavailable or stopping — encode inline so the chunk still
+    // goes out (same fallback philosophy as getChunkOrRequestAsync).
+    size_t len = 0;
+    uint8_t* buf = mcp_chunk_snapshot_network_serialize(snap, &len);
+    complete(buf, len, snap);
+}
+
+void Player::flushChunkEncodes(int max_chunks, size_t max_bytes) {
+    if (!chunk_encodes_)
+        return;
+    ChunkEncodePipeline& pipe = *chunk_encodes_;
+    int sent = 0;
+    size_t bytes = 0;
+    for (;;) {
+        if (sent >= max_chunks)
+            return; // Arrival pacing: same adaptive cap the submit side used.
+        if (sent > 0 && bytes >= max_bytes)
+            return; // Byte budget spent — the rest resumes next tick.
+
+        ChunkEncodeSlot slot;
+        {
+            std::lock_guard<std::mutex> lk(pipe.mtx);
+            if (pipe.slots.empty() || !pipe.slots.front().ready)
+                return; // Nothing ready — or the head encode is still in
+                        // flight: a later chunk that finished first must
+                        // WAIT here, that is the whole ordering contract.
+            slot = std::move(pipe.slots.front());
+            pipe.slots.pop_front();
+        }
+
+        if (!slot.wire || slot.wire_len == 0)
+            continue; // Worker-side OOM: the chunk was never marked used,
+                      // so a later tick re-submits it (same retry as the
+                      // synchronous path's null-buffer case).
+
+        auto pk = std::make_shared<network::protocol::FullChunkDataPacket>();
+        pk->chunkX = slot.cx;
+        pk->chunkZ = slot.cz;
+        pk->data.assign(slot.wire.get(), slot.wire.get() + slot.wire_len);
+        sendPacket(pk);
+        sendChunkTiles(slot.cx, slot.cz);
+        int64_t hash = ((int64_t)slot.cx << 32) | ((uint32_t)slot.cz);
+        {
+            std::lock_guard<std::mutex> lk(chunks_mtx_);
+            used_chunks_.insert(hash);
+        }
+        sent++;
+        bytes += slot.wire_len;
+        // Mobs of this chunk ride the stream (deduped per viewer by the
+        // World). No lock held here — see sendChunk for the lock-order note.
+        if (getWorld())
+            getWorld()->sendMobsInChunk(slot.cx, slot.cz, this);
+    }
 }
 } // namespace cursestone

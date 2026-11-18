@@ -52,6 +52,7 @@
 #include <functional>
 #include <string>
 #include <thread>
+#include "../utils/ThreadPort.h"
 namespace cursestone {
 class CommandReader {
   public:
@@ -64,6 +65,7 @@ class CommandReader {
     void start() {
         running_ = true;
         thread_ = std::thread([this]() {
+            mcp_set_thread_name("CS-Console");
             this->loop();
         });
     }

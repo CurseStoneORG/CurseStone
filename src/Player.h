@@ -33,9 +33,17 @@
 #include <string>
 #include "utils/MainLogger.hpp"
 #include <atomic>
+#include <deque>
 #include <mutex>
 #include <unordered_set>
 #include <vector>
+#include "utils/CRaii.h" // utils::BufferPtr — the async chunk encode pipeline.
+// world/format/Chunk.h owns this C struct; Player only ever passes
+// pointers to it (the async chunk encode pipeline snapshots and hands
+// them to workers).
+struct mcp_chunk;
+typedef struct mcp_chunk mcp_chunk_t;
+
 namespace cursestone {
 class Server;
 class Network;
@@ -250,6 +258,18 @@ class Player : public IPlayer,
     // Sends tile data for all block entities in a chunk.
     void sendChunkTiles(int32_t cx, int32_t cz);
 
+    // --- Async chunk encode pipeline (PlayerChunks.cpp) ---
+    // Snapshots @p ch on the tick thread and hands the snapshot to an
+    // AsyncPool worker that produces the FullChunkDataPacket payload.
+    // Deduplicates (cx,cz) against the in-flight slots and stops at the
+    // outstanding-encode cap; falls back to an inline encode when the
+    // pool is unavailable, stopping, or saturated.
+    void submitChunkEncode(mcp_chunk_t* ch, int32_t cx, int32_t cz);
+    // Sends ready encodes strictly in submission order (front of the
+    // slot deque), respecting the per-tick chunk-count and byte budgets;
+    // tiles, the used-chunks marker and the chunk's mobs ride each send.
+    void flushChunkEncodes(int max_chunks, size_t max_bytes);
+
     // Sends the creative inventory contents.
     void sendCreativeInventory();
 
@@ -329,6 +349,11 @@ class Player : public IPlayer,
             std::lock_guard<std::mutex> lk(chunks_mtx_);
             used_chunks_.clear();
         }
+        // Fresh encode pipeline: the re-stream sends everything again, and
+        // encodes already in flight for the old view must not be flushed
+        // as duplicates (in-flight workers finish into the orphaned
+        // pipeline and their payloads are dropped).
+        chunk_encodes_.reset();
         // Restart chunk streaming around the player's current position.
         int cx = (int)(pos_.x) >> 4;
         int cz = (int)(pos_.z) >> 4;
@@ -840,6 +865,42 @@ class Player : public IPlayer,
     // Pending chunk requests in spiral order.
     std::vector<std::pair<int32_t, int32_t>> chunk_queue_;
     mutable std::mutex queue_mtx_;
+
+    // --- Async chunk encode pipeline state ---
+    // The stream loop no longer runs mcp_chunk_network_serialize() on the
+    // tick thread: it snapshots the chunk (memcpy-bound) and hands the
+    // snapshot to an AsyncPool worker, which produces the wire payload.
+    // Chunks are sent strictly in submission order: flushChunkEncodes()
+    // only sends from the front of `slots` and stops at the first entry
+    // that is not ready yet — the per-player reorder buffer.
+    //
+    // The pipeline lives in a shared_ptr because worker tasks outlive the
+    // player: a task captures ONLY the pipeline, its sequence number and
+    // the snapshot it owns — never the Player, the World or ChunkManager —
+    // so a disconnect or a server shutdown can never leave a worker
+    // touching freed state. On disconnect the pending slots are simply
+    // never flushed; tasks fill them, drop their reference, and the
+    // pipeline dies with the last worker that used it.
+    struct ChunkEncodeSlot {
+        uint64_t seq = 0;      // Submission order == wire order.
+        int32_t cx = 0, cz = 0;
+        bool ready = false;    // Worker finished (wire may still be null on OOM).
+        size_t wire_len = 0;
+        utils::BufferPtr wire; // FullChunkDataPacket payload once ready.
+    };
+    struct ChunkEncodePipeline {
+        std::mutex mtx;
+        uint64_t next_seq = 0;             // Submission sequence counter.
+        std::deque<ChunkEncodeSlot> slots; // Submission (== send) order.
+    };
+    // Null until the first submit; reset on every re-stream trigger
+    // (spawn ack, teleport, world switch, disconnect) so stale encodes of
+    // the old view can never be sent.
+    std::shared_ptr<ChunkEncodePipeline> chunk_encodes_;
+    // Outstanding encodes (pending + ready-unflushed) per player. The
+    // cap keeps the reorder buffer and the wire buffers bounded — worst
+    // case ~24 x 83 KB of payload per player.
+    static constexpr size_t kMaxOutstandingChunkEncodes = 24;
 
     mutable std::mutex batch_mtx_;
     std::vector<std::vector<uint8_t>> batch_unordered_;

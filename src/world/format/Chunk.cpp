@@ -772,8 +772,15 @@ static void mcp_biome_grass_color(uint8_t biomeId, uint8_t* r, uint8_t* g, uint8
 //   + 256*4 = 1024 bytes heightmap (big-endian int32)
 //   + 1 byte extra (0x00 — historical "premium" flag)
 // Total: 132353 bytes typical.
-uint8_t* mcp_chunk_network_serialize(const mcp_chunk_t* c, size_t* out_len) {
-    if (!c || !out_len)
+// Shared transposition core of the wire serializer. Both entry points —
+// mcp_chunk_network_serialize (live chunk; main tick thread only) and
+// mcp_chunk_snapshot_network_serialize (immutable snapshot; any thread) —
+// project their source into sec/biomes/heights and call this, so their
+// output bytes are identical by construction.
+static uint8_t* chunk_wire_serialize_core(const mcp_chunk_section_t* const* sec,
+                                          const uint8_t* biomes,
+                                          const int32_t* heights, size_t* out_len) {
+    if (!sec || !out_len)
         return NULL;
 
     // MCPE 0.15.10 ORDER_COLUMNS format (128-height world):
@@ -813,9 +820,6 @@ uint8_t* mcp_chunk_network_serialize(const mcp_chunk_t* c, size_t* out_len) {
     // therefore fills its slice with 0xFF in one memset per column.
     // Output bytes are identical to the previous per-cell walk; the
     // saving is every lookup, branch and write for cells that hold air.
-    const mcp_chunk_section_t* sec[8];
-    for (int i = 0; i < 8; ++i)
-        sec[i] = c->sections[i];
 
     // --- Block IDs: convert from sections (XZY, 256-height) to columns (128-height) ---
     // The reference server column index: (x << 11) | (z << 7) | y, where y = 0..127
@@ -939,10 +943,10 @@ uint8_t* mcp_chunk_network_serialize(const mcp_chunk_t* c, size_t* out_len) {
     off += kBlockLight;
 
     // --- Heightmap: one byte per column (max y with non-air block, capped at 127) ---
-    if (c->height_map) {
+    if (heights) {
         for (int x = 0; x < 16; ++x) {
             for (int z = 0; z < 16; ++z) {
-                int32_t h = c->height_map[(x & 15) + (z & 15) * 16];
+                int32_t h = heights[(x & 15) + (z & 15) * 16];
                 if (h > 127)
                     h = 127;
                 buf[off + (x & 15) + (z & 15) * 16] = (uint8_t)h;
@@ -965,7 +969,7 @@ uint8_t* mcp_chunk_network_serialize(const mcp_chunk_t* c, size_t* out_len) {
     for (int x = 0; x < 16; ++x) {
         for (int z = 0; z < 16; ++z) {
             int idx = (x & 15) + (z & 15) * 16;
-            uint8_t biomeId = c->biomes ? c->biomes[idx] : 1; // 1 = plains si no hay array
+            uint8_t biomeId = biomes ? biomes[idx] : 1; // 1 = plains si no hay array
             uint8_t r, g, b;
             mcp_biome_grass_color(biomeId, &r, &g, &b);
             size_t o = off + (size_t)idx * 4;
@@ -986,4 +990,107 @@ uint8_t* mcp_chunk_network_serialize(const mcp_chunk_t* c, size_t* out_len) {
 
     *out_len = off;
     return buf;
+}
+
+uint8_t* mcp_chunk_network_serialize(const mcp_chunk_t* c, size_t* out_len) {
+    if (!c || !out_len)
+        return NULL;
+    // Pure projection: the live chunk is read on the main tick thread —
+    // the only writer of resident chunk data (generation workers build a
+    // chunk before publishing it and never touch it again). See the wire
+    // snapshot contract in Chunk.h for the async path.
+    return chunk_wire_serialize_core((const mcp_chunk_section_t* const*)c->sections,
+                                     c->biomes, c->height_map, out_len);
+}
+
+// Copies @p n bytes into a fresh malloc block, or NULL on OOM.
+static uint8_t* wire_snapshot_copy(const uint8_t* src, size_t n) {
+    uint8_t* dst = (uint8_t*)malloc(n);
+    if (dst)
+        memcpy(dst, src, n);
+    return dst;
+}
+
+mcp_chunk_wire_snapshot_t* mcp_chunk_wire_snapshot_create(const mcp_chunk_t* c) {
+    if (!c)
+        return NULL;
+    mcp_chunk_wire_snapshot_t* s = (mcp_chunk_wire_snapshot_t*)calloc(1, sizeof(*s));
+    if (!s)
+        return NULL;
+    s->x = c->x;
+    s->z = c->z;
+    if (c->biomes)
+        memcpy(s->biomes, c->biomes, sizeof(s->biomes));
+    else
+        memset(s->biomes, 1, sizeof(s->biomes)); // live-NULL reads biome 1 (plains)
+    if (c->height_map)
+        memcpy(s->height_map, c->height_map, sizeof(s->height_map));
+    for (int i = 0; i < 8; ++i) {
+        const mcp_chunk_section_t* sec = c->sections[i];
+        if (!sec)
+            continue;
+        s->section_present[i] = 1;
+        if (sec->blocks) {
+            s->section_blocks[i] = wire_snapshot_copy(sec->blocks, 4096);
+            if (!s->section_blocks[i])
+                goto fail;
+        }
+        if (sec->data) {
+            s->section_data[i] = wire_snapshot_copy(sec->data, 2048);
+            if (!s->section_data[i])
+                goto fail;
+        }
+        if (sec->sky_light) {
+            s->section_sky[i] = wire_snapshot_copy(sec->sky_light, 2048);
+            if (!s->section_sky[i])
+                goto fail;
+        }
+        if (sec->block_light) {
+            s->section_light[i] = wire_snapshot_copy(sec->block_light, 2048);
+            if (!s->section_light[i])
+                goto fail;
+        }
+    }
+    return s;
+fail:
+    mcp_chunk_wire_snapshot_free(s);
+    return NULL;
+}
+
+void mcp_chunk_wire_snapshot_free(mcp_chunk_wire_snapshot_t* s) {
+    if (!s)
+        return;
+    for (int i = 0; i < 8; ++i) {
+        free(s->section_blocks[i]);
+        free(s->section_data[i]);
+        free(s->section_sky[i]);
+        free(s->section_light[i]);
+    }
+    free(s);
+}
+
+uint8_t* mcp_chunk_snapshot_network_serialize(const mcp_chunk_wire_snapshot_t* s,
+                                              size_t* out_len) {
+    if (!s || !out_len)
+        return NULL;
+    // Project the snapshot arrays into section views. The shim structs live
+    // only on this stack frame; the core reads them for the duration of the
+    // call and keeps no pointers, so the snapshot stays the single owner of
+    // its data. The worker thread runs this against a snapshot it
+    // exclusively owns, so this is safe on any thread.
+    mcp_chunk_section_t shims[8];
+    const mcp_chunk_section_t* sec[8];
+    for (int i = 0; i < 8; ++i) {
+        memset(&shims[i], 0, sizeof(shims[i]));
+        if (!s->section_present[i]) {
+            sec[i] = NULL;
+            continue;
+        }
+        shims[i].blocks = s->section_blocks[i];
+        shims[i].data = s->section_data[i];
+        shims[i].sky_light = s->section_sky[i];
+        shims[i].block_light = s->section_light[i];
+        sec[i] = &shims[i];
+    }
+    return chunk_wire_serialize_core(sec, s->biomes, s->height_map, out_len);
 }

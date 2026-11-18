@@ -162,3 +162,70 @@ void mcp_chunk_recompute_section_flags(mcp_chunk_t* c);
 // Caller frees. *out_len receives size.
 uint8_t* mcp_chunk_network_serialize(const mcp_chunk_t* c, size_t* out_len);
 
+// Wire snapshots — async chunk streaming support.
+//
+// mcp_chunk_network_serialize walks the LIVE chunk, so it is only safe on
+// the thread that owns chunk writes (the main tick thread). To move the
+// transposition off the tick thread, the main thread first takes a
+// snapshot — a deep copy of exactly the data the serializer reads — and a
+// worker then runs mcp_chunk_snapshot_network_serialize() on it. The two
+// entry points share one transposition core, so their output bytes are
+// identical by construction.
+//
+// Threading contract (mirrors the Anvil save pipeline):
+//   * MAIN thread: mcp_chunk_wire_snapshot_create() reads the live chunk.
+//     The main tick is the only writer of resident chunk data; generation
+//     workers build their chunk BEFORE publishing it into ChunkManager and
+//     never touch a published chunk again, so a snapshot taken during the
+//     tick is a consistent immutable view.
+//   * WORKER thread: mcp_chunk_snapshot_network_serialize() touches ONLY
+//     the snapshot it is handed — never the world, never ChunkManager.
+typedef struct mcp_chunk_wire_snapshot {
+    int32_t x; // Chunk X (informational; the packet carries its own coords).
+    int32_t z; // Chunk Z (informational).
+    // Per sub-section 0..7: pointers are NULL when that array does not
+    // exist on the live chunk. section_present[] distinguishes "section
+    // object absent" (wire sky slice fills 0xFF) from "section present
+    // with a NULL array" (wire slice reads zeros) — the serializer treats
+    // the two differently and the snapshot must preserve the difference.
+    uint8_t section_present[8]; // 0/1 per section.
+    uint8_t* section_blocks[8]; // 4096 bytes each when present.
+    uint8_t* section_data[8];   // 2048 bytes each when present.
+    uint8_t* section_sky[8];    // 2048 bytes each when present.
+    uint8_t* section_light[8];  // 2048 bytes each when present.
+    uint8_t biomes[256];        // Copy of the live biomes array.
+    int32_t height_map[256];    // Copy of the live heightmap.
+} mcp_chunk_wire_snapshot_t;
+
+/**
+ * @brief Deep-copies the chunk data the network serializer reads.
+ *
+ * Runs on the main tick thread (the only writer of resident chunk data).
+ * Cost is memcpy-bound: at most 8 sections of ~10 KB each.
+ *
+ * @param c  resident chunk to copy; must not be null.
+ * @return an owned snapshot, or NULL on allocation failure. Free it with
+ *         mcp_chunk_wire_snapshot_free().
+ */
+mcp_chunk_wire_snapshot_t* mcp_chunk_wire_snapshot_create(const mcp_chunk_t* c);
+
+/**
+ * @brief Frees a snapshot returned by mcp_chunk_wire_snapshot_create().
+ * @param s  snapshot to free; NULL is allowed and ignored.
+ */
+void mcp_chunk_wire_snapshot_free(mcp_chunk_wire_snapshot_t* s);
+
+/**
+ * @brief Serializes a snapshot to the FullChunkDataPacket payload.
+ *
+ * Byte-identical to mcp_chunk_network_serialize() of the chunk the
+ * snapshot was taken from. Safe on any thread: it touches only @p s.
+ *
+ * @param s        snapshot to serialize; must not be null.
+ * @param out_len  receives the payload size; must not be null.
+ * @return an owned 83,204-byte buffer, or NULL on allocation failure.
+ *         Caller frees (free()).
+ */
+uint8_t* mcp_chunk_snapshot_network_serialize(const mcp_chunk_wire_snapshot_t* s,
+                                              size_t* out_len);
+

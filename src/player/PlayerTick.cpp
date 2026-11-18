@@ -675,8 +675,6 @@ void Player::onUpdate(uint64_t current_tick) {
         // extreme payloads.
         constexpr size_t MAX_CHUNK_BYTES_PER_TICK = 384 * 1024;
         const size_t deep_backlog_rows = (size_t)(2 * vd + 1) * 2; // two full view rows
-        int chunks_sent_this_tick = 0;
-        size_t chunk_bytes_this_tick = 0;
 
         // Generate missing chunks asynchronously to avoid blocking the main thread.
         auto* pool = srv_ ? srv_->getAsyncPool() : nullptr;
@@ -695,23 +693,23 @@ void Player::onUpdate(uint64_t current_tick) {
         // Adaptive count cap — see the streaming comment above: 1 chunk/tick
         // in steady state (one client remesh per frame), 4/tick while the
         // backlog is deeper than two view rows (login, teleport, ring
-        // re-stream, recovery, faster-than-vanilla flight).
+        // re-stream, recovery, faster-than-vanilla flight). The cap now
+        // paces the ENCODE submissions; flushChunkEncodes() below applies
+        // the same cap plus the byte budget at SEND time, so arrival
+        // pacing at the client is unchanged.
         int max_chunks_this_tick = pending.size() > deep_backlog_rows ? 4 : 1;
+        int submitted_this_tick = 0;
         for (const auto& pc : pending) {
             int32_t chX = pc.first, chZ = pc.second;
-            int64_t hash = ((int64_t)chX << 32) | ((uint32_t)chZ);
 
-            // Request chunk generation even when the send limit has been reached.
+            // Request chunk generation even when the encode limit has been reached.
             mcp_chunk_t* ch = chunks.getChunkOrRequestAsync(chX, chZ, pool);
             if (!ch)
                 continue; // Generation is pending.
-            if (chunks_sent_this_tick >= max_chunks_this_tick)
-                continue; // The network send limit has been reached.
-            if (chunk_bytes_this_tick >= MAX_CHUNK_BYTES_PER_TICK && chunks_sent_this_tick > 0)
-                break; // Byte budget spent — the spiral is center-out, so
-                       // what follows is farther away; resume next tick.
+            if (submitted_this_tick >= max_chunks_this_tick)
+                continue; // The encode submission limit has been reached.
 
-            // Finalize this chunk's queued light work BEFORE serializing:
+            // Finalize this chunk's queued light work BEFORE snapshotting:
             // a protocol 84 client keeps whatever light came in the
             // FullChunkDataPacket, so sending before the border pass would
             // freeze the seam into the client until the chunk re-streams.
@@ -719,30 +717,22 @@ void Player::onUpdate(uint64_t current_tick) {
             // entry a few ticks earlier than the world-tick drain would.
             getWorld()->flushLightForChunk(chX, chZ);
 
-            size_t outLen = 0;
-            utils::BufferPtr buf(mcp_chunk_network_serialize(ch, &outLen));
-            if (!buf)
-                continue;
-            if (outLen == 0)
-                continue;
-            auto pk = std::make_shared<network::protocol::FullChunkDataPacket>();
-            pk->chunkX = chX;
-            pk->chunkZ = chZ;
-            pk->data.assign(buf.get(), buf.get() + outLen);
-            sendPacket(pk);
-            sendChunkTiles(chX, chZ);
-            {
-                std::lock_guard<std::mutex> lk(chunks_mtx_);
-                used_chunks_.insert(hash);
-            }
-            chunks_sent_this_tick++;
-            chunk_bytes_this_tick += outLen;
-            // Mobs of this chunk ride the stream (deduped per viewer by
-            // the World). No lock held here — see sendChunk for the
-            // lock-order note.
-            if (getWorld())
-                getWorld()->sendMobsInChunk(chX, chZ, this);
+            // Snapshot (memcpy-bound, main thread) and hand the wire
+            // transposition to an AsyncPool worker. The per-tick byte
+            // budget below is applied where the wire size is known — at
+            // flush time — exactly like the inline serialize path applied
+            // it. used_chunks_ marks the chunk only once its packet has
+            // actually been handed to the network layer.
+            submitChunkEncode(ch, chX, chZ);
+            submitted_this_tick++;
         }
+
+        // Send ready encodes strictly in submission order (per-player
+        // reorder buffer): tiles ride each chunk packet, mobs ride each
+        // chunk, and later encodes that finished first wait for the head
+        // slot — the client must never see a chunk's tile NBT before the
+        // chunk itself.
+        flushChunkEncodes(max_chunks_this_tick, MAX_CHUNK_BYTES_PER_TICK);
 
         // Start the player once enough chunks have reached the client.
         if (awaiting_spawn) {

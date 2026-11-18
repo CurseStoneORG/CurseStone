@@ -30,6 +30,7 @@
 #include "utils/CRaii.h"
 #include "utils/MainLogger.h"
 #include "utils/MainLogger.hpp"
+#include "utils/ThreadPort.h"
 #include "utils/Config.h"
 #include "utils/Utils.h"
 #include "utils/TextColor.h"
@@ -450,6 +451,7 @@ void Server::start(const std::string& dataPath) {
 }
 
 void Server::runTickLoop() {
+    mcp_set_thread_name("CS-Main");
     uint64_t last_tick_count = 0;
     auto last_tps_time = std::chrono::steady_clock::now();
     // Use absolute tick deadlines to prevent timing drift.
@@ -703,6 +705,7 @@ void Server::shutdown() {
     if (running_.exchange(false, std::memory_order_relaxed)) {
         utils::MainLogger::get().info("Server shutting down...");
         std::thread([this]() {
+            mcp_set_thread_name("CS-Shutdown");
             // Allow five seconds for the main loop to exit cleanly.
             for (int i = 0; i < 50; ++i) {
                 if (!running_.load(std::memory_order_relaxed) &&
