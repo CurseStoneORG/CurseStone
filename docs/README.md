@@ -18,6 +18,12 @@ reference docs are published separately (see [External documentation](#external-
 |---|---|
 | [CURSESTONE_ARCHITECTURE_AUDIT.md](audits/CURSESTONE_ARCHITECTURE_AUDIT.md) | Native C++ architecture audit (performance, memory, scalability, maintainability) with a numbered findings table. Historical snapshot: it reflects the tree at its stated commit. |
 
+## Engineering notes
+
+| Document | Description |
+|---|---|
+| [THREADING.md](THREADING.md) | Threading investigation: CurseStone's current thread map vs. Aquamarine's thread moves (what we already have, what to adopt, what to avoid). |
+
 ## Release notes
 
 Per-version changelogs, in English and Spanish, are in [`../changelogs/`](../changelogs/README.md).
