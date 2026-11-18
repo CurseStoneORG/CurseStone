@@ -112,7 +112,7 @@ and is recommended as the first one to pick up.
 
 1. **Named threads** (`pthread_setname_np` on RakLib, Anvil writer,
    AsyncPool workers, CommandReader, watchdogs). Trivial, observability
-   only, directly from Aquamarine 1.0.9.
+   only, directly from Aquamarine 1.0.9. — **IMPLEMENTED, see §7.**
 2. **Chunk network serialization off the tick thread.** This is the
    remaining Aquamarine-style win. `mcp_chunk_network_serialize` runs
    inline in the stream path for up to 4 chunks per tick on the main
@@ -124,6 +124,8 @@ and is recommended as the first one to pick up.
    the wire — tag each job with a per-player sequence number and have
    the completion callback enqueue in sequence order (a small
    reordering buffer), or dedicate one encode worker per player.
+   — **IMPLEMENTED, see §7** (snapshot + sequence reorder buffer, as
+   designed here).
 3. **Entity update budget + render-distance gating** when AI lands
    (Aquamarine 1.1.4 / 1.1.1). Cheap to build on the chunk-indexed mob
    registry; expensive to retrofit later.
@@ -151,4 +153,103 @@ and is recommended as the first one to pick up.
 | Entity update queue | Not applicable yet — mobs do not tick; adopt with AI (§3, Lesson 4) |
 | Render-distance mob ticking | Not applicable yet — same as above |
 | `AsyncClosureTask` | Have (`ServerScheduler::scheduleAsync` + main-thread `onCompletion`) |
-| Named threads | Missing — recommended first (§4-1) |
+| Named threads | **Implemented** — §7 |
+| Chunk encode off-thread | **Implemented** — §7 (snapshot + per-player reorder buffer) |
+
+## 7. Implementation status (named threads + async chunk encode)
+
+Both §4 items 1 and 2 are implemented in the tree. No public API
+changed — the Lua and native plugin surfaces are untouched.
+
+### Named threads
+
+`mcp_set_thread_name()` in `utils/ThreadPort.h`: POSIX uses
+`pthread_setname_np(pthread_self(), ...)`, Windows resolves
+`SetThreadDescription` dynamically (a no-op on pre-1607 Windows so the
+binary still loads), and names are truncated to the Linux 15-byte limit.
+Applied to every thread the server creates: `CS-Main` (tick loop),
+`CS-RakLib`, `CS-Anvil`, `CS-Pool-N` (AsyncPool workers),
+`CS-SchedAsync` (scheduler worker), `CS-Console`, `CS-Workbench`,
+`CS-Shutdown`. Verified live: `htop`/`/proc/<pid>/task/*/comm` now show
+these names, which is also how the tick-thread CPU numbers below were
+measured.
+
+### Async chunk encode
+
+The stream loop (`Player::onUpdate`) no longer runs the wire
+transposition inline. Per chunk, on the tick thread:
+
+1. `flushLightForChunk()` finalizes queued light (must stay on main —
+   it mutates the chunk).
+2. `mcp_chunk_wire_snapshot_create()` deep-copies exactly the data the
+   serializer reads (≤8 sections of ~10 KB each — memcpy-bound).
+3. `submitChunkEncode()` hands the snapshot to an AsyncPool worker.
+
+The worker runs `mcp_chunk_snapshot_network_serialize()` — a pure
+function of the snapshot — and fills the player's slot. Both serializers
+share one transposition core (`chunk_wire_serialize_core`), so their
+output bytes are identical by construction (asserted by
+`tools/chunk_serialize_bench.cpp` across four section-layout scenarios,
+including present-with-NULL-arrays and missing sections).
+
+Ordering: each player's pipeline keeps an ordered slot deque; the flush
+sends strictly from the front and stops at the first slot that is not
+ready — the per-player reorder buffer. The chunk packet, its tile NBTs
+and its mobs go out in the same relative order the inline path used, and
+`used_chunks_` is marked only after the packet is actually queued.
+Per-tick pacing is unchanged: the adaptive 1/4-chunk cap paces encode
+submissions, and the 384 KB byte budget is applied at flush time where
+the wire size is known.
+
+Lifetime and races:
+
+* The pipeline lives in a `shared_ptr`; a worker task captures ONLY the
+  pipeline, its sequence number and the snapshot it owns — never the
+  Player, the World or ChunkManager. Disconnects, teleports, world
+  switches, spawn-ack re-streams and server shutdown can therefore never
+  strand a worker on freed state: results land in an orphaned pipeline
+  and are dropped.
+* The main tick is the only writer of resident chunk data (generation
+  workers build a chunk before publishing it and never touch it again —
+  the same contract the Anvil save pipeline relies on), so the snapshot
+  is a consistent immutable view.
+* Slots are only appended/popped on the main thread; workers only fill
+  their own slot's fields under the pipeline mutex. The pipeline mutex
+  is leaf-locked (never held while taking world or player locks).
+* The outstanding-encode cap (24 per player) bounds the reorder buffer
+  and the wire buffers (~24 x 83 KB worst case per player); a saturated
+  or stopped pool falls back to an inline encode, so single-threaded
+  boots and tests keep working.
+
+### Measurements
+
+* Offline (`tools/chunk_serialize_bench.cpp`, 400 iters, 8 allocated
+  sections): live serialize **0.082 ms/chunk** on the calling thread;
+  the new path costs the tick thread **0.003 ms/chunk** (snapshot only)
+  and the worker **0.081 ms/chunk** — a 96% reduction of the main-thread
+  serialize cost, ~0.08 ms saved per chunk streamed.
+* Live, single player streaming the full 289-chunk view (seed 12345,
+  bot `chunks` scenario, 8 s run): tick-thread CPU 49-50 jiffies
+  (baseline) vs 48-50 jiffies (this change) — parity within the 10 ms
+  jiffy granularity; the expected ~23 ms saving over the burst is below
+  what jiffies can resolve. Both builds deliver the identical 289
+  chunks / 24 MB and reach spawn.
+* Live, 8 simultaneous joins for 20 s: tick-thread CPU 52 jiffies on
+  both builds; identical client-visible behavior.
+* ASan+UBSan full session (`scripts/cs_build_asan.sh`, login → stream
+  289 chunks → clean shutdown): **zero findings in the touched files**.
+  The only UBSan reports are the pre-existing signed-hash-overflow
+  notices inside the world generator (`vgen/**`), untouched here.
+* Protocol-84 bot matrix (`test/bot`): `login`, `chunks`, `move`,
+  `malformed` all PASS on the new build.
+
+### Pre-existing observation (not a regression, not fixed here)
+
+With N simultaneous joins (tested at N = 3 and N = 8), only ONE of the
+clients streams its full view within the window while the others stay at
+0-4 chunks — reproduced byte-for-byte on the build BEFORE this change
+(8-bot storm: 1/8 spawned, 289 chunks total, 52 tick-thread jiffies on
+both builds). The single-player flow is unaffected. This predates the
+async encode pipeline and deserves its own investigation (first-spawn
+gating vs. the shared generation dedup are the likely suspects); it is
+listed here so it is not mistaken for a side effect of this change.

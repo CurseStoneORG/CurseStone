@@ -29,6 +29,7 @@
 #include "RakLibInterface.h"
 #include "Network.h"
 #include "../Server.h"
+#include "../utils/ThreadPort.h"
 #include "../utils/Utils.h"
 #include "../utils/MainLogger.hpp"
 
@@ -134,6 +135,7 @@ void RakLibInterface::start() {
 
     // Spawn the RakLib worker thread — runs at ~100Hz (10ms sleep)
     raklib_thread_ = std::thread([this]() {
+        mcp_set_thread_name("CS-RakLib");
         this->raklibThreadLoop();
     });
 

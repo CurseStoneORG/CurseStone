@@ -302,6 +302,10 @@ void Player::close(const std::string& reason) {
             std::lock_guard<std::mutex> lk(chunks_mtx_);
             used_chunks_.clear();
         }
+        // Drop the async chunk encode pipeline: in-flight workers keep
+        // their shared_ptr copy and finish filling the orphaned slots, but
+        // nothing will ever flush them (the connection is going away).
+        chunk_encodes_.reset();
         {
             std::lock_guard<std::mutex> lk(queue_mtx_);
             chunk_queue_.clear();
@@ -362,6 +366,10 @@ void Player::teleport(double x, double y, double z) {
             std::lock_guard<std::mutex> lk(chunks_mtx_);
             used_chunks_.clear();
         }
+        // Fresh encode pipeline: encodes of the old view must never be
+        // flushed into the new view (in-flight workers finish into the
+        // orphaned pipeline and their payloads are dropped).
+        chunk_encodes_.reset();
         {
             std::lock_guard<std::mutex> lk(queue_mtx_);
             chunk_queue_.clear();

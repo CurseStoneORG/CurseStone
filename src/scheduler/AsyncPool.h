@@ -58,12 +58,14 @@
 #include <exception>
 #include <string>
 #include "../utils/MainLogger.hpp"
+#include "../utils/ThreadPort.h"
 namespace cursestone::scheduler {
 class AsyncPool {
   public:
     explicit AsyncPool(int n_workers = 4) : n_(n_workers > 0 ? n_workers : 1) {
         for (int i = 0; i < n_; ++i)
-            workers_.emplace_back([this] {
+            workers_.emplace_back([this, i] {
+                mcp_set_thread_name((std::string("CS-Pool-") + std::to_string(i)).c_str());
                 this->workerLoop();
             });
     }

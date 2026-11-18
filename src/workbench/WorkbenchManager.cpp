@@ -24,6 +24,7 @@
 // WorkbenchManager.cpp — implementation of all 6 diagnostic modules.
 #include "WorkbenchManager.h"
 #include "utils/MainLogger.hpp"
+#include "utils/ThreadPort.h"
 
 #include <algorithm>
 #include <chrono>
@@ -194,7 +195,10 @@ void WorkbenchManager::start() {
 
     // Start watchdog thread
     watchdog_stop_.store(false, std::memory_order_relaxed);
-    watchdog_thread_ = std::thread(&WorkbenchManager::watchdogLoop, this);
+    watchdog_thread_ = std::thread([this] {
+        mcp_set_thread_name("CS-Workbench");
+        this->watchdogLoop();
+    });
 
     utils::MainLogger::get().info(
         "[WORKBENCH] Diagnostics started. Use /workbench stop to export.");

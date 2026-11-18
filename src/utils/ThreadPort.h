@@ -50,6 +50,39 @@
 /// Wait argument that blocks until the condition is signalled.
 #define MCP_WAIT_FOREVER 0xFFFFFFFFu
 
+/**
+ * @brief Names the CALLING thread so tools like htop, perf and crash
+ *        dumps show what each thread is instead of a raw TID.
+ *
+ * POSIX (Linux, Android, macOS): pthread_setname_np(pthread_self(), ...).
+ * Windows: SetThreadDescription, resolved dynamically because it only
+ * exists on Windows 10 1607+ — on older systems the call is a no-op and
+ * the binary still loads. The name is truncated to 15 bytes, the Linux
+ * kernel's limit (a 16-byte buffer including the NUL).
+ *
+ * @param name  descriptive thread name, e.g. "CS-RakLib"; must not be null.
+ */
+static inline void mcp_set_thread_name(const char* name) {
+    char buf[16];
+    size_t i = 0;
+    for (; name && name[i] != '\0' && i < 15; ++i)
+        buf[i] = name[i];
+    buf[i] = '\0';
+#ifdef _WIN32
+    typedef long (__stdcall *SetThreadDescriptionFn)(void*, const unsigned short*);
+    SetThreadDescriptionFn fn = (SetThreadDescriptionFn)(void*)GetProcAddress(
+        GetModuleHandleW(L"kernel32.dll"), "SetThreadDescription");
+    if (!fn)
+        return; // Pre-1607 Windows: descriptive names are not available.
+    unsigned short wide[16];
+    for (size_t j = 0; j <= i; ++j)
+        wide[j] = (unsigned short)(unsigned char)buf[j];
+    fn(GetCurrentThread(), wide);
+#else
+    pthread_setname_np(pthread_self(), buf);
+#endif
+}
+
 /** @brief Entry point of a thread started with mcp_thread_start(). */
 typedef void* (*mcp_thread_fn)(void* arg);
 

@@ -35,6 +35,7 @@
 #include <functional>
 #include <exception>
 #include <string>
+#include "../utils/ThreadPort.h"
 #include "../utils/MainLogger.hpp"
 namespace cursestone::scheduler {
 class AsyncWorker {
@@ -45,6 +46,7 @@ class AsyncWorker {
     void start() {
         running_ = true;
         thread_ = std::thread([this] {
+            mcp_set_thread_name("CS-SchedAsync");
             // FIX: an exception escaping a std::thread's entry
             // function calls std::terminate() and kills the whole
             // process. Guard the same way AsyncPool does.

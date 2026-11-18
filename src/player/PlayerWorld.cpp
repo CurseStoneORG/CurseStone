@@ -112,6 +112,10 @@ bool Player::switchWorld(World* target, double x, double y, double z, bool throu
         std::lock_guard<std::mutex> lk(chunks_mtx_);
         used_chunks_.clear();
     }
+    // Fresh encode pipeline: stale encodes of the OLD dimension must
+    // never be flushed into the new world (in-flight workers finish into
+    // the orphaned pipeline and their payloads are dropped).
+    chunk_encodes_.reset();
     int cx = (int)std::floor(x) >> 4;
     int cz = (int)std::floor(z) >> 4;
     {

@@ -32,6 +32,7 @@
 #include "../WorldProviderManager.h"
 #include "../ChunkAdapter.h"
 #include "../Chunk.h"
+#include "../../../utils/ThreadPort.h"
 #include "../../../nbt/NBT.h"
 #include "../../../utils/CRaii.h"
 #include "../../../nbt/tag/CompoundTag.h"
@@ -448,6 +449,7 @@ void Anvil::startWorker() {
         worker_stop_ = false;
     }
     worker_ = std::thread([this] {
+        mcp_set_thread_name("CS-Anvil");
         workerLoop();
     });
 }
