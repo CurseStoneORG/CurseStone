@@ -59,6 +59,20 @@
 //                                      (true/false).
 //   world.removeFloatingText(id)       despawns a floating text
 //                                      (true/false).
+//   world.spawnEntity(type,x,y,z,[yaw],[pitch])
+//                                      spawns one standing mob (no AI,
+//                                      no physics, zero per-tick cost).
+//                                      type is a name ("zombie", "cow",
+//                                      ...) or a protocol-84 network id;
+//                                      see world.entityTypes(). Returns
+//                                      the entity id, or false.
+//   world.moveEntity(id,x,y,z,[yaw])   repositions a mob (true/false).
+//   world.removeEntity(id)             despawns a mob (true/false).
+//   world.getEntity(id)                table {id,type,name,x,y,z,yaw,pitch}
+//                                      or nil.
+//   world.getEntities()                array of those tables.
+//   world.entityTypes()                map name -> protocol-84 id for the
+//                                      33 supported mobs.
 //   world.unload()                     unloads the world (false if is
 //                                      the by default or is cancela)
 //
@@ -71,6 +85,7 @@
 #include "Player.h"
 #include "world/World.h"
 #include "world/particle/ParticleNames.h"
+#include "entity/EntityTypes.h"
 #include <string>
 #include <cstring>
 
@@ -319,6 +334,152 @@ int l_world_removefloatingtext(lua_State* L) {
     return 1;
 }
 
+// ---------- standing mobs ----------
+
+// Resolves the `type` argument of spawnEntity: a name string goes through
+// the shared mob registry (case-insensitive, aliases included), a number
+// must already be a protocol-84 network id. Returns the id or -1.
+int resolveEntityType(lua_State* L, int idx) {
+    if (lua_type(L, idx) == LUA_TSTRING) {
+        int32_t id = -1;
+        entity::mobTypeFromName(lua_tostring(L, idx), &id);
+        return id;
+    }
+    if (!lua_isnumber(L, idx))
+        return -1;
+    lua_Integer id = lua_tointeger(L, idx);
+    return entity::isValidMobType((int32_t)id) ? (int32_t)id : -1;
+}
+
+// Pushes the table shape shared by getEntity and getEntities, or nil for
+// an unknown record. The record pointer is stable while the mob stays
+// registered; Lua runs on the main thread like every world mutation, so
+// the field copies below cannot race a removal.
+int pushMobTable(lua_State* L, const world::MobEntity* m) {
+    if (!m) {
+        lua_pushnil(L);
+        return 1;
+    }
+    lua_createtable(L, 0, 8);
+    lua_pushinteger(L, (lua_Integer)m->eid);
+    lua_setfield(L, -2, "id");
+    lua_pushinteger(L, m->type);
+    lua_setfield(L, -2, "type");
+    const char* name = entity::mobTypeName(m->type);
+    lua_pushstring(L, name ? name : "");
+    lua_setfield(L, -2, "name");
+    lua_pushnumber(L, (lua_Number)m->x);
+    lua_setfield(L, -2, "x");
+    lua_pushnumber(L, (lua_Number)m->y);
+    lua_setfield(L, -2, "y");
+    lua_pushnumber(L, (lua_Number)m->z);
+    lua_setfield(L, -2, "z");
+    lua_pushnumber(L, (lua_Number)m->yaw);
+    lua_setfield(L, -2, "yaw");
+    lua_pushnumber(L, (lua_Number)m->pitch);
+    lua_setfield(L, -2, "pitch");
+    return 1;
+}
+
+int l_world_spawnentity(lua_State* L) {
+    WORLD_OR_NIL();
+    int type = resolveEntityType(L, 2);
+    lua_Number x = luaL_checknumber(L, 3);
+    lua_Number y = luaL_checknumber(L, 4);
+    lua_Number z = luaL_checknumber(L, 5);
+    lua_Number yaw = luaL_optnumber(L, 6, 0.0);
+    lua_Number pitch = luaL_optnumber(L, 7, 0.0);
+    if (type < 0) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+    int64_t eid = w->spawnMob(type, (double)x, (double)y, (double)z, (float)yaw,
+                              (float)pitch);
+    if (eid < 0) {
+        lua_pushboolean(L, 0); // cap reached / invalid position
+    } else {
+        lua_pushinteger(L, (lua_Integer)eid);
+    }
+    return 1;
+}
+
+int l_world_moveentity(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_Integer id = luaL_checkinteger(L, 2);
+    lua_Number x = luaL_checknumber(L, 3);
+    lua_Number y = luaL_checknumber(L, 4);
+    lua_Number z = luaL_checknumber(L, 5);
+    lua_Number yaw = luaL_optnumber(L, 6, -9999.0);
+    lua_Number pitch = luaL_optnumber(L, 7, -9999.0);
+    // Optional yaw/pitch: the sentinel keeps the recorded rotation when
+    // the caller only wants to reposition.
+    float useYaw, usePitch;
+    {
+        world::MobEntity* m = w->mob((int64_t)id);
+        if (!m) {
+            lua_pushboolean(L, 0);
+            return 1;
+        }
+        useYaw = (yaw <= -9998.0) ? m->yaw : (float)yaw;
+        usePitch = (pitch <= -9998.0) ? m->pitch : (float)pitch;
+    }
+    lua_pushboolean(L, w->moveMob((int64_t)id, (double)x, (double)y, (double)z, useYaw,
+                                  usePitch)
+                        ? 1
+                        : 0);
+    return 1;
+}
+
+int l_world_removeentity(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_Integer id = luaL_checkinteger(L, 2);
+    lua_pushboolean(L, w->removeMob((int64_t)id) ? 1 : 0);
+    return 1;
+}
+
+int l_world_getentity(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_Integer id = luaL_checkinteger(L, 2);
+    return pushMobTable(L, w->mob((int64_t)id));
+}
+
+int l_world_getentities(lua_State* L) {
+    WORLD_OR_NIL();
+    auto list = w->mobs();
+    lua_createtable(L, (int)list.size(), 0);
+    int i = 1;
+    for (const world::MobEntity* m : list) {
+        pushMobTable(L, m);
+        lua_rawseti(L, -2, i++);
+    }
+    return 1;
+}
+
+int l_world_entitytypes(lua_State* L) {
+    // name -> protocol-84 network id, straight from the shared registry
+    // so the Lua surface can never drift from the eggs/native one.
+    static const char* kNames[] = {
+        "chicken",   "cow",             "pig",             "sheep",
+        "wolf",      "villager",        "mooshroom",       "squid",
+        "rabbit",    "bat",             "ocelot",          "horse",
+        "donkey",    "mule",            "skeleton_horse",  "zombie_horse",
+        "zombie",    "creeper",         "skeleton",        "spider",
+        "zombie_pigman", "slime",       "enderman",        "silverfish",
+        "ghast",     "lava_slime",      "magma_cube",      "blaze",
+        "zombie_villager", "witch",     "stray",           "husk",
+        "wither_skeleton",
+    };
+    lua_createtable(L, 0, (int)(sizeof(kNames) / sizeof(kNames[0])));
+    for (const char* n : kNames) {
+        int32_t id = -1;
+        if (entity::mobTypeFromName(n, &id)) {
+            lua_pushinteger(L, id);
+            lua_setfield(L, -2, n);
+        }
+    }
+    return 1;
+}
+
 int l_world_unload(lua_State* L) {
     WORLD_OR_NIL();
     lua_pushboolean(L, Server::getInstance().unloadWorld(w->name()) ? 1 : 0);
@@ -343,6 +504,12 @@ const luaL_Reg kWorldMethods[] = {
     {"spawnFloatingText", l_world_spawnfloatingtext},
     {"moveFloatingText", l_world_movefloatingtext},
     {"removeFloatingText", l_world_removefloatingtext},
+    {"spawnEntity", l_world_spawnentity},
+    {"moveEntity", l_world_moveentity},
+    {"removeEntity", l_world_removeentity},
+    {"getEntity", l_world_getentity},
+    {"getEntities", l_world_getentities},
+    {"entityTypes", l_world_entitytypes},
     {"unload", l_world_unload},
     {nullptr, nullptr},
 };

@@ -737,6 +737,11 @@ void Player::onUpdate(uint64_t current_tick) {
             }
             chunks_sent_this_tick++;
             chunk_bytes_this_tick += outLen;
+            // Mobs of this chunk ride the stream (deduped per viewer by
+            // the World). No lock held here — see sendChunk for the
+            // lock-order note.
+            if (getWorld())
+                getWorld()->sendMobsInChunk(chX, chZ, this);
         }
 
         // Start the player once enough chunks have reached the client.

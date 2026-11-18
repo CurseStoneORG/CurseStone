@@ -48,7 +48,8 @@ API surface (globals):
   `dimension`, `getTime`, `setTime`, `getBlock`, `setBlock`, `getSpawn`,
   `getPlayers`, `spawnParticle`, `spawnBlockParticles`,
   `spawnSplashParticles`, `spawnFloatingText`, `moveFloatingText`,
-  `removeFloatingText`, `unload`
+  `removeFloatingText`, `spawnEntity`, `moveEntity`, `removeEntity`,
+  `getEntity`, `getEntities`, `entityTypes`, `unload`
 - `commands.register(name, opts, fn)`, `commands.reply(sender, msg)`
 - `events.on(name, fn)` — PlayerJoin, PlayerQuit, PlayerChat, PlayerMove,
   PlayerDropItem, PlayerItemHeld, BlockBreak, BlockPlace, EntityDamage,
@@ -124,6 +125,43 @@ Sample plugin: `plugins/SpawnProtection/`.
 A folder whose `main` points at a `.so`/`.dll` is **not** loaded: native
 plugins are bare files now, and the log explains the migration (move the
 library into `plugins/`, delete the manifest).
+
+### Entities (standing mobs)
+
+World handles expose the mob registry the creative spawn eggs use. A
+spawned mob has no AI and no physics: it spawns exactly where the caller
+puts it and stays there. Cost is three packets in its whole lifetime —
+one AddEntityPacket on spawn, one MoveEntityPacket per move, one
+RemoveEntityPacket on removal — with no per-tick entry in the world loop,
+and viewers that stream its chunk later (joins, walk-ins) receive it from
+the chunk stream, deduplicated per client.
+
+```lua
+local w = server.defaultWorld()
+
+local eid = w.spawnEntity("zombie", x, y, z)      -- name or raw id (see below)
+w.spawnEntity("cow", x, y, z, 90.0)               -- + yaw
+w.moveEntity(eid, x, y + 1, z)                    -- one MoveEntityPacket
+local e = w.getEntity(eid)                        -- {id,type,name,x,y,z,yaw,pitch}
+for _, m in ipairs(w.getEntities()) do ... end    -- every standing mob
+w.removeEntity(eid)                               -- despawn
+w.entityTypes()                                   -- name -> protocol-84 id map
+```
+
+`type` accepts the canonical lowercase names — `chicken cow pig sheep
+wolf villager mooshroom squid rabbit bat ocelot horse donkey mule
+skeleton_horse zombie_horse zombie creeper skeleton spider
+zombie_pigman slime enderman silverfish ghast lava_slime magma_cube
+blaze zombie_villager witch stray husk wither_skeleton` — or their
+protocol-84 network id (10..48 range above; on this protocol the spawn
+egg aux value IS the id). Common aliases (`mushroom_cow`, `pigman`,
+`cat`, `magma`, ...) resolve too. Unknown names/ids, out-of-height
+positions and the per-world cap (256) return `false` and never raise.
+Every id in the registry has its own egg in the 0.15.10 creative
+inventory, which is what makes the client's renderer for it
+client-verified — ids outside the registry never reach the wire.
+
+Entity ids do not survive restarts, like floating text ids.
 
 ## File plugins (C++ via .so / .dll)
 
@@ -354,6 +392,11 @@ instead of raising anything; invalid arguments never crash the server.
 | `spawnFloatingText(world, x, y, z, text, ttlTicks)` | floating text (invisible item-entity carrier + nametag); entity id, or -1 at the cap; ttl 0 = until removed |
 | `moveFloatingText(world, id, x, y, z)` | repositions a floating text |
 | `removeFloatingText(world, id)` | despawns a floating text; 0 for unknown ids |
+| `spawnEntity(world, type, x, y, z, yaw, pitch)` | standing mob (no AI, zero per-tick cost); entity id, or -1 for an invalid type/position or at the cap; y is feet |
+| `moveEntity(world, id, x, y, z, yaw, pitch)` | repositions a standing mob |
+| `removeEntity(world, id)` | despawns a standing mob; 0 for unknown ids |
+| `getEntity(world, id, outType, outPos[3], outRot[2])` | reads a mob back (type, feet position, yaw/pitch) |
+| `entityTypeFromName(name, outId)` / `entityTypeName(type)` | the shared mob registry, same names the Lua `entityTypes()` maps |
 | `playerCount(world)` | players currently in that world |
 
 **data** (context-bound; jailed to `data_pl/<stem>`)

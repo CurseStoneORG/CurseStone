@@ -136,6 +136,17 @@ struct FallingBlockEntity {
     bool taken = false; // Removed on the next cleanup pass.
 };
 
+// Server-side record of a standing mob (no AI, no physics). The chunk
+// index (cx/cz) mirrors mobs_by_chunk_ so chunk streams touch O(mobs of
+// the chunk) instead of scanning the whole world map.
+struct MobEntity {
+    int64_t eid = 0;
+    int32_t type = 0;  // Protocol-84 network id (entity::EntityTypes).
+    double x = 0.0, y = 0.0, z = 0.0; // Feet position.
+    float yaw = 0.0f, pitch = 0.0f;
+    int32_t cx = 0, cz = 0; // Chunk the entity is indexed under.
+};
+
 // Defines the vanilla dropped-item pickup volume for MCPE 0.15.10.
 // Items are collected when their bounding boxes overlap the player's box grown by one block.
 // The shared bounds keep attraction and pickup checks consistent.
@@ -481,6 +492,43 @@ class World {
     // Despawns a floating text and forgets it. Unknown ids fail.
     bool removeFloatingText(int64_t id);
 
+    // ----- Mob entities (no AI) -----
+    // Protocol-84 mobs spawned by the creative spawn eggs or the plugin
+    // APIs. Static by design: no AI, no physics, no per-tick entry in the
+    // world loop — one AddEntityPacket on spawn, one MoveEntityPacket per
+    // explicit move, one RemoveEntityPacket on removal, nothing in
+    // between. Server records are lightweight, so mobs survive chunk
+    // unload; a viewer that streams their chunk later re-receives them
+    // (sendMobsInChunk, deduplicated per viewer).
+    //
+    // @p type is a protocol-84 network id from entity::EntityTypes; ids
+    // outside the registry fail (-1) because the 0.15.10 client has no
+    // verified renderer for them. y is the FEET position; the mob is
+    // registered in the chunk that contains it for the resend index.
+    // Returns the entity id, or -1 on invalid type/position or when the
+    // per-world cap is reached. Ids do not survive restarts.
+    int64_t spawnMob(int32_t type, double x, double y, double z, float yaw = 0.0f,
+                     float pitch = 0.0f);
+    // Repositions a mob for its current viewers (index follows the move).
+    // Unknown ids or out-of-height positions fail.
+    bool moveMob(int64_t id, double x, double y, double z, float yaw = 0.0f,
+                 float pitch = 0.0f);
+    // Despawns a mob and forgets it. Unknown ids fail.
+    bool removeMob(int64_t id);
+
+    // Returns a non-owning pointer to a mob, or nullptr.
+    MobEntity* mob(int64_t eid);
+    // Snapshot of all mobs for plugin queries.
+    std::vector<MobEntity*> mobs();
+    size_t mobCount();
+
+    // Sends AddEntityPacket for every mob in the chunk that @p viewer has
+    // not received yet. Called when a chunk streams to a player, so
+    // viewers that arrive later (join, walk-in) still see the mobs. The
+    // per-viewer dedup lives on the Player (known_mobs_); zero cost for
+    // viewers who already hold the entity.
+    void sendMobsInChunk(int32_t cx, int32_t cz, Player* viewer);
+
     // ----- Falling-block physics -----
     // Converts a supported falling block into an entity and checks the block above.
     void spawnFallingBlock(int32_t bx, int32_t by, int32_t bz);
@@ -649,6 +697,20 @@ class World {
     static constexpr size_t kMaxFloatingTextChars = 128;
     std::unordered_map<int64_t, FloatingText> floating_texts_;
     mutable std::mutex floating_texts_mtx_;
+
+    // Standing mobs indexed by runtime entity ID. Like the floating
+    // texts they are client-side entities with a lightweight server
+    // record: no tick entry, no physics — the per-viewer AddEntityPacket
+    // resend rides on chunk streaming through the chunk index below.
+    static constexpr size_t kMaxMobs = 256;
+    std::unordered_map<int64_t, std::unique_ptr<MobEntity>> mobs_;
+    mutable std::mutex mobs_mtx_;
+
+    // Per-chunk mob index: chunk key -> eids. Mirrors mobs_ under the
+    // same mutex (mobs_ stays the authority) so a chunk stream touches
+    // O(mobs of the chunk) instead of scanning the whole world map —
+    // the same pattern the tile registry uses with tiles_by_chunk_.
+    std::unordered_map<uint64_t, std::vector<int64_t>> mobs_by_chunk_;
 
     // Tile entities indexed by packed block position.
     std::unordered_map<uint64_t, std::shared_ptr<cursestone::tile::Tile>> tiles_;

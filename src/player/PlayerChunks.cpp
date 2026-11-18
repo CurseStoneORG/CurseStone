@@ -38,6 +38,21 @@ bool Player::isTrackingChunk(int32_t cx, int32_t cz) const {
     return used_chunks_.count(hash) > 0;
 }
 
+bool Player::knowsMob(int64_t eid) const {
+    std::lock_guard<std::mutex> lk(chunks_mtx_);
+    return known_mobs_.count(eid) > 0;
+}
+
+void Player::rememberMob(int64_t eid) {
+    std::lock_guard<std::mutex> lk(chunks_mtx_);
+    known_mobs_.insert(eid);
+}
+
+void Player::clearKnownMobs() {
+    std::lock_guard<std::mutex> lk(chunks_mtx_);
+    known_mobs_.clear();
+}
+
 // ============================================================
 // Phase 5 — sendChunksAroundSpawn (spiral order, like the reference server)
 // ============================================================
@@ -232,7 +247,17 @@ void Player::sendChunk(int cx, int cz) {
     sendPacket(pk);
     sendChunkTiles(cx, cz);
     int64_t hash = ((int64_t)cx << 32) | ((uint32_t)cz);
-    std::lock_guard<std::mutex> lk(chunks_mtx_);
-    used_chunks_.insert(hash);
+    {
+        std::lock_guard<std::mutex> lk(chunks_mtx_);
+        used_chunks_.insert(hash);
+    }
+    // Mobs of this chunk ride the stream: a viewer that just received
+    // the terrain gets their standing entities in the same breath. The
+    // World dedups against this player's known-mob set, so the call is
+    // free for chunks whose mobs the client already holds. Runs with no
+    // lock held — sendMobsInChunk takes the world's mob lock and then
+    // chunks_mtx_ again in rememberMob.
+    if (getWorld())
+        getWorld()->sendMobsInChunk(cx, cz, this);
 }
 } // namespace cursestone

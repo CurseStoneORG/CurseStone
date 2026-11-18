@@ -25,6 +25,7 @@
 #include "item/Item.h"
 #include "world/World.h"
 #include "world/format/Chunk.h"
+#include "entity/EntityTypes.h"
 #include "network/protocol/UpdateBlockPacket.h"
 #include "network/protocol/LevelEventPacket.h"
 #include "redstone/RedstoneManager.h"
@@ -716,6 +717,86 @@ std::shared_ptr<tile::TileChest> tryPairPlacedChest(
 
 } // namespace
 
+// Hatches a spawn egg on the tapped face. On protocol 84 the egg's aux
+// value IS the entity network id, so the CreativeItems catalog aux values
+// (10 chicken, 32 zombie, 48 wither skeleton, ...) feed the mob registry
+// directly: each egg spawns exactly the mob it renders. The spawn cell is
+// the tapped face's neighbor (the same target block placement uses);
+// because standing mobs have no physics, the cell drops to the first
+// solid ground below it (bounded walk) instead of leaving the mob frozen
+// in mid-air over a ledge. The cell itself must be free — an egg tapped
+// against a wall face without space refuses like a blocked placement.
+void Player::handleSpawnEggUse(world::World* lvl, int placeX, int placeY, int placeZ,
+                               uint16_t eggAux, uint8_t face) {
+    if (!lvl)
+        return;
+    if (placeY < 0 || placeY >= 255)
+        return;
+
+    const int32_t type = (int32_t)(eggAux & 0xFF);
+    if (!entity::isValidMobType(type)) {
+        // Unknown egg aux values (bootstrapped catalogs, edited clients)
+        // refuse instead of sending a network id the client may not render.
+        resyncUseTarget(this, lvl, placeX, placeY, placeZ, face);
+        if (srv_ && srv_->debugMode()) {
+            utils::MainLogger::get().info("[EGG] " + cfg_.username + " used spawn egg aux=" +
+                                          std::to_string(type) + " — no such entity");
+        }
+        return;
+    }
+
+    // The hatch cell must be air or replaceable; solid walls refuse. The
+    // chunk must already be resident — a tap at the far edge of the view
+    // radius refuses instead of generating chunks synchronously mid-tick
+    // (the same rule the door placement below follows).
+    int32_t hatchCx = ((int32_t)placeX) >> 4, hatchCz = ((int32_t)placeZ) >> 4;
+    if (!lvl->chunks().getChunkIfLoaded(hatchCx, hatchCz)) {
+        resyncUseTarget(this, lvl, placeX, placeY, placeZ, face);
+        return;
+    }
+    const uint8_t cellId = lvl->getBlockId(placeX, placeY, placeZ);
+    if (cellId != 0 && !cursestone::block::LiquidFlow::isReplaceableId(cellId)) {
+        resyncUseTarget(this, lvl, placeX, placeY, placeZ, face);
+        return;
+    }
+
+    // Drop to the first solid ground below the hatch cell so the mob
+    // stands on terrain instead of floating in it (no physics to settle
+    // it later). Bounded to 16 cells — below that the egg hatches at the
+    // tapped cell and the mob simply stands there.
+    int spawnY = placeY;
+    for (int drop = 0; drop < 16 && spawnY > 0; ++drop) {
+        const uint8_t below = lvl->getBlockId(placeX, spawnY - 1, placeZ);
+        if (below != 0 && block::Block::get(below)->isSolid())
+            break;
+        --spawnY;
+    }
+
+    if (lvl->spawnMob(type, (double)placeX + 0.5, (double)spawnY, (double)placeZ + 0.5,
+                      yaw(), 0.0f) < 0) {
+        // Registry cap reached or the chunk refused to load: keep the
+        // egg so the use is never consumed without a mob.
+        resyncUseTarget(this, lvl, placeX, placeY, placeZ, face);
+        return;
+    }
+
+    // Consume one egg in survival (the doors/rows above share the rule:
+    // `(cfg_.gamemode & 1) != 0` marks creative).
+    if (!(cfg_.gamemode & 1) && inv_) {
+        int held = inv_->heldSlot();
+        auto cur = inv_->getItem(held);
+        if (!cur.isEmpty()) {
+            if (cur.count > 1) {
+                cur.count -= 1;
+                inv_->setItem(held, cur);
+            } else {
+                inv_->clear(held);
+            }
+            sendInventory();
+        }
+    }
+}
+
 void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldItemId,
                               uint8_t heldCount, uint16_t heldDamage, float fx, float fy,
                               float fz) {
@@ -909,6 +990,14 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
     // Splash potions throw when nothing interactive took the tap.
     if (heldItemId == (int16_t)item::ITEM_SPLASH_POTION) {
         throwSplashPotion();
+        return;
+    }
+
+    // Spawn eggs (item 383) hatch their mob on the tapped face. Vanilla
+    // lets them work while sneaking — the sneak lock only suppresses
+    // interactive block use, which already returned above.
+    if (heldItemId == (int16_t)item::SPAWN_EGG) {
+        handleSpawnEggUse(lvl, placeX, placeY, placeZ, heldDamage, face);
         return;
     }
 
