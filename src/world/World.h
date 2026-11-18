@@ -42,6 +42,9 @@
 namespace cursestone {
 class Player;
 class Entity;
+namespace entity::ai {
+class MobAIManager;
+}
 namespace block {
 class LiquidFlow;
 }
@@ -136,9 +139,11 @@ struct FallingBlockEntity {
     bool taken = false; // Removed on the next cleanup pass.
 };
 
-// Server-side record of a standing mob (no AI, no physics). The chunk
-// index (cx/cz) mirrors mobs_by_chunk_ so chunk streams touch O(mobs of
-// the chunk) instead of scanning the whole world map.
+// Server-side record of a mob. The struct carries only identity,
+// position and the chunk index: all per-mob dynamic state (AI goals,
+// intent, physics) lives in entity/ai/'s MobBrain, keyed by eid. The
+// chunk index (cx/cz) mirrors mobs_by_chunk_ so chunk streams touch
+// O(mobs of the chunk) instead of scanning the whole world map.
 struct MobEntity {
     int64_t eid = 0;
     int32_t type = 0;  // Protocol-84 network id (entity::EntityTypes).
@@ -235,6 +240,12 @@ class World {
 
     // Returns world-space collision boxes within the requested region.
     std::vector<physics::BlockBox> collisionBoxes(mcp_aabb_t region);
+
+    // Same collection as collisionBoxes(region) but fills a caller-owned
+    // vector (cleared first): the mob AI actuation pass runs this once
+    // per moving mob per tick, so the per-call allocation of the
+    // returning overload would churn the heap for nothing.
+    void collisionBoxes(mcp_aabb_t region, std::vector<physics::BlockBox>& out);
 
     // Whether the block id carries an entity collision volume. The
     // movement collision cubes run on this same table, so block
@@ -492,14 +503,16 @@ class World {
     // Despawns a floating text and forgets it. Unknown ids fail.
     bool removeFloatingText(int64_t id);
 
-    // ----- Mob entities (no AI) -----
+    // ----- Mob entities -----
     // Protocol-84 mobs spawned by the creative spawn eggs or the plugin
-    // APIs. Static by design: no AI, no physics, no per-tick entry in the
-    // world loop — one AddEntityPacket on spawn, one MoveEntityPacket per
-    // explicit move, one RemoveEntityPacket on removal, nothing in
-    // between. Server records are lightweight, so mobs survive chunk
-    // unload; a viewer that streams their chunk later re-receives them
-    // (sendMobsInChunk, deduplicated per viewer).
+    // APIs. The record stays a lightweight value: the AI layer in
+    // entity/ai/ owns the per-mob behavior state and drives records
+    // through moveMob on the main thread (budgeted pass per tick, gated
+    // on player presence — docs/MOB_AI.md). Clients get one
+    // AddEntityPacket on spawn, MoveEntityPacket per applied move, one
+    // RemoveEntityPacket on removal. Server records are lightweight, so
+    // mobs survive chunk unload; a viewer that streams their chunk later
+    // re-receives them (sendMobsInChunk, deduplicated per viewer).
     //
     // @p type is a protocol-84 network id from entity::EntityTypes; ids
     // outside the registry fail (-1) because the 0.15.10 client has no
@@ -698,11 +711,11 @@ class World {
     std::unordered_map<int64_t, FloatingText> floating_texts_;
     mutable std::mutex floating_texts_mtx_;
 
-    // Standing mobs indexed by runtime entity ID. Like the floating
-    // texts they are client-side entities with a lightweight server
-    // record: no tick entry, no physics — the per-viewer AddEntityPacket
-    // resend rides on chunk streaming through the chunk index below.
-    static constexpr size_t kMaxMobs = 256;
+    // Standing mobs indexed by runtime entity ID. Static records (the
+    // AI layer in entity/ai/ owns all per-mob dynamic state and drives
+    // them through moveMob) — the per-viewer AddEntityPacket resend
+    // rides on chunk streaming through the chunk index below.
+    static constexpr size_t kMaxMobs = 1024;
     std::unordered_map<int64_t, std::unique_ptr<MobEntity>> mobs_;
     mutable std::mutex mobs_mtx_;
 
@@ -711,6 +724,12 @@ class World {
     // O(mobs of the chunk) instead of scanning the whole world map —
     // the same pattern the tile registry uses with tiles_by_chunk_.
     std::unordered_map<uint64_t, std::vector<int64_t>> mobs_by_chunk_;
+
+    // Mob AI driver (entity/ai/): owned here so its lifetime is the
+    // world's, drained from tick() after the falling blocks. The type
+    // is forward-declared; the destructor lives in World.cpp where the
+    // full header is visible.
+    std::unique_ptr<entity::ai::MobAIManager> mob_ai_;
 
     // Tile entities indexed by packed block position.
     std::unordered_map<uint64_t, std::shared_ptr<cursestone::tile::Tile>> tiles_;

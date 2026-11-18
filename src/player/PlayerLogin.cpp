@@ -693,6 +693,31 @@ void Player::doFirstSpawn() {
 
     announceSelfToOthers();
 
+    // Mobs of the chunks that streamed BEFORE the spawn completed: the
+    // per-chunk stream path skips the mob send while the client is still
+    // loading (sendMobsInChunk gates on spawned()) and those chunks never
+    // re-stream, so mobs registered before the join — eggs, plugins, the
+    // previous session — stay invisible in the innermost view ring. Send
+    // their mobs now that the world is live client-side; the per-viewer
+    // dedup makes the call free for chunks whose mobs already arrived.
+    // The used-chunk set is snapshotted under the lock and processed
+    // without it: sendMobsInChunk takes the mob lock and re-enters
+    // chunks_mtx_ in rememberMob (same lock order as the stream path).
+    if (getWorld()) {
+        std::vector<std::pair<int32_t, int32_t>> streamed;
+        {
+            std::lock_guard<std::mutex> lk(chunks_mtx_);
+            streamed.reserve(used_chunks_.size());
+            for (int64_t h : used_chunks_) {
+                streamed.emplace_back((int32_t)(h >> 32),
+                                      (int32_t)(h & 0xFFFFFFFFLL));
+            }
+        }
+        for (const auto& [scx, scz] : streamed) {
+            getWorld()->sendMobsInChunk(scx, scz, this);
+        }
+    }
+
     // Broadcast the join event message.
     if (srv_) {
         auto ev = event::EventManager::get().fire<event::player::PlayerJoinEvent>(

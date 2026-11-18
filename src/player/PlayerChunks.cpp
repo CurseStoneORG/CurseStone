@@ -49,6 +49,11 @@ void Player::rememberMob(int64_t eid) {
     known_mobs_.insert(eid);
 }
 
+void Player::forgetMob(int64_t eid) {
+    std::lock_guard<std::mutex> lk(chunks_mtx_);
+    known_mobs_.erase(eid);
+}
+
 void Player::clearKnownMobs() {
     std::lock_guard<std::mutex> lk(chunks_mtx_);
     known_mobs_.clear();

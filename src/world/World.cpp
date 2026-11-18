@@ -24,6 +24,7 @@
 // World implementation; connects the provider and chunk manager for disk persistence.
 #include "World.h"
 
+#include "entity/ai/MobAIManager.h"
 #include <chrono>
 #include "world/format/Chunk.h"
 #include "world/format/WorldProvider.h"
@@ -258,6 +259,11 @@ World::World(WorldConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
                 std::to_string((int)spawn_.y) + ", " + std::to_string((int)spawn_.z));
         }
     }
+
+    // The AI driver runs on this world's tick thread and mutates mobs
+    // only through the same functions plugins use, so it is created
+    // with the world and torn down with it.
+    mob_ai_ = std::make_unique<entity::ai::MobAIManager>(this);
 }
 
 World::~World() {
@@ -280,6 +286,12 @@ uint8_t World::getBlockId(int32_t x, int32_t y, int32_t z) {
 
 std::vector<physics::BlockBox> World::collisionBoxes(mcp_aabb_t region) {
     std::vector<physics::BlockBox> out;
+    collisionBoxes(region, out);
+    return out;
+}
+
+void World::collisionBoxes(mcp_aabb_t region, std::vector<physics::BlockBox>& out) {
+    out.clear();
     out.reserve(16);
 
     int x0 = (int)std::floor(region.minX), x1 = (int)std::ceil(region.maxX);
@@ -312,7 +324,6 @@ std::vector<physics::BlockBox> World::collisionBoxes(mcp_aabb_t region) {
             }
         }
     }
-    return out;
 }
 
 uint8_t World::getBlockData(int32_t x, int32_t y, int32_t z) {
@@ -538,6 +549,11 @@ void World::tick(uint64_t current_tick) {
     tickArrows(current_tick);
     tickSplashPotions(current_tick);
     tickFallingBlocks(current_tick);
+    // Mob AI last: goals and actuation read the blocks the passes above
+    // may have just changed (liquid, falling blocks) and budget what is
+    // left of the tick, not more.
+    if (mob_ai_)
+        mob_ai_->tick(current_tick);
 }
 
 void World::broadcastTimeSync() {
@@ -1243,7 +1259,8 @@ int64_t World::spawnMob(int32_t type, double x, double y, double z, float yaw, f
 }
 
 bool World::moveMob(int64_t id, double x, double y, double z, float yaw, float pitch) {
-    int32_t old_cx = 0, old_cz = 0, new_cx = 0, new_cz = 0;
+    int32_t old_cx = 0, old_cz = 0, new_cx = 0, new_cz = 0, mob_type = 0;
+    bool crossed = false;
     {
         std::lock_guard<std::mutex> lk(mobs_mtx_);
         auto it = mobs_.find(id);
@@ -1252,6 +1269,7 @@ bool World::moveMob(int64_t id, double x, double y, double z, float yaw, float p
         if (y < 0.0 || y > 255.0)
             return false;
         MobEntity* m = it->second.get();
+        mob_type = m->type;
         old_cx = m->cx;
         old_cz = m->cz;
         new_cx = (int32_t)std::floor(x) >> 4;
@@ -1262,6 +1280,7 @@ bool World::moveMob(int64_t id, double x, double y, double z, float yaw, float p
         m->yaw = yaw;
         m->pitch = pitch;
         if (old_cx != new_cx || old_cz != new_cz) {
+            crossed = true;
             // Keep the chunk index in step with the position so the
             // resend stays O(mobs of the chunk).
             auto bucket = mobs_by_chunk_.find(packChunkPos(old_cx, old_cz));
@@ -1285,6 +1304,35 @@ bool World::moveMob(int64_t id, double x, double y, double z, float yaw, float p
     mv->headYaw = yaw;
     mv->pitch = pitch;
     sendToChunkViewers(this, new_cx, new_cz, mv);
+
+    // A moving mob can cross into a chunk a viewer already holds: those
+    // viewers never re-stream the chunk, so without an explicit
+    // AddEntity the mob would be invisible to them from then on. The
+    // mirror case is the viewer left behind — it sees the old chunk but
+    // not the new one, and every later MoveEntity targets the new
+    // chunk's viewers only, so its copy would be a ghost forever. Both
+    // sends dedup against the viewer's known-mob set, so re-crossings
+    // and overlapping ranges cost nothing.
+    if (crossed) {
+        auto add = buildMobAddPacket(id, mob_type, x, y, z, yaw, pitch);
+        auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
+        rm->eid = id;
+        for (auto& p : Server::getInstance().playersSnapshotRef()) {
+            if (!p || !p->spawned() || p->isPendingRemoval() || p->getWorld() != this)
+                continue;
+            const bool seesNew = p->canSeeBlock(new_cx, new_cz);
+            const bool seesOld = p->canSeeBlock(old_cx, old_cz);
+            if (seesNew) {
+                if (!p->knowsMob(id)) {
+                    p->rememberMob(id);
+                    p->sendPacket(add);
+                }
+            } else if (seesOld && p->knowsMob(id)) {
+                p->forgetMob(id);
+                p->sendPacket(rm);
+            }
+        }
+    }
     return true;
 }
 
