@@ -20,6 +20,7 @@
  * Repository: https://github.com/CurseStoneORG/CurseStone
  *
  */
+// SPDX-License-Identifier: LGPL-3.0-or-later
 // EntityTypes — the protocol-84 entity network id registry for the mobs
 // CurseStone spawns. On this protocol the spawn egg aux value IS the
 // entity network id, so one table serves the eggs, the Lua API and the
@@ -27,64 +28,92 @@
 // creative inventory, which makes the client's renderer for it
 // client-verified — ids outside the table never reach the wire.
 //
+// The id space itself lives one header per mob in mobs/ (MobList.h is the
+// index), mirroring the particle split: a mob's file is the single
+// authority for its id, name, aliases and kind, and this registry
+// aggregates them. The EntityTypeId constants below are stable aliases so
+// existing callers keep spelling ids as EntityTypeId::CHICKEN.
+//
 // The ids follow the era reference Entity network constants (they are
 // the same values the current Bedrock ActorType enum keeps for these
 // mobs). 41 and 42 are BOTH magma cubes: 41 is the legacy "Lava Slime"
 // id from the Nether update era, 42 the renamed id; the creative
 // inventory carries an egg for each, and the client renders both.
 #pragma once
+#include "mobs/MobList.h"
 #include <cstdint>
 #include <string>
 
 namespace cursestone::entity {
 
-// Protocol-84 network ids of the supported mobs.
+// Protocol-84 network ids of the supported mobs, aliased from the per-mob
+// headers in mobs/.
 namespace EntityTypeId {
-constexpr int32_t CHICKEN = 10;
-constexpr int32_t COW = 11;
-constexpr int32_t PIG = 12;
-constexpr int32_t SHEEP = 13;
-constexpr int32_t WOLF = 14;
-constexpr int32_t VILLAGER = 15;
-constexpr int32_t MOOSHROOM = 16;
-constexpr int32_t SQUID = 17;
-constexpr int32_t RABBIT = 18;
-constexpr int32_t BAT = 19;
-constexpr int32_t OCELOT = 22;
-constexpr int32_t HORSE = 23;
-constexpr int32_t DONKEY = 24;
-constexpr int32_t MULE = 25;
-constexpr int32_t SKELETON_HORSE = 26;
-constexpr int32_t ZOMBIE_HORSE = 27;
-constexpr int32_t ZOMBIE = 32;
-constexpr int32_t CREEPER = 33;
-constexpr int32_t SKELETON = 34;
-constexpr int32_t SPIDER = 35;
-constexpr int32_t ZOMBIE_PIGMAN = 36;
-constexpr int32_t SLIME = 37;
-constexpr int32_t ENDERMAN = 38;
-constexpr int32_t SILVERFISH = 39;
-constexpr int32_t GHAST = 40;
-constexpr int32_t LAVA_SLIME = 41;
-constexpr int32_t MAGMA_CUBE = 42;
-constexpr int32_t BLAZE = 43;
-constexpr int32_t ZOMBIE_VILLAGER = 44;
-constexpr int32_t WITCH = 45;
-constexpr int32_t STRAY = 46;
-constexpr int32_t HUSK = 47;
-constexpr int32_t WITHER_SKELETON = 48;
+constexpr int32_t CHICKEN = mobs::Chicken::kId;
+constexpr int32_t COW = mobs::Cow::kId;
+constexpr int32_t PIG = mobs::Pig::kId;
+constexpr int32_t SHEEP = mobs::Sheep::kId;
+constexpr int32_t WOLF = mobs::Wolf::kId;
+constexpr int32_t VILLAGER = mobs::Villager::kId;
+constexpr int32_t MOOSHROOM = mobs::Mooshroom::kId;
+constexpr int32_t SQUID = mobs::Squid::kId;
+constexpr int32_t RABBIT = mobs::Rabbit::kId;
+constexpr int32_t BAT = mobs::Bat::kId;
+constexpr int32_t OCELOT = mobs::Ocelot::kId;
+constexpr int32_t HORSE = mobs::Horse::kId;
+constexpr int32_t DONKEY = mobs::Donkey::kId;
+constexpr int32_t MULE = mobs::Mule::kId;
+constexpr int32_t SKELETON_HORSE = mobs::SkeletonHorse::kId;
+constexpr int32_t ZOMBIE_HORSE = mobs::ZombieHorse::kId;
+constexpr int32_t ZOMBIE = mobs::Zombie::kId;
+constexpr int32_t CREEPER = mobs::Creeper::kId;
+constexpr int32_t SKELETON = mobs::Skeleton::kId;
+constexpr int32_t SPIDER = mobs::Spider::kId;
+constexpr int32_t ZOMBIE_PIGMAN = mobs::ZombiePigman::kId;
+constexpr int32_t SLIME = mobs::Slime::kId;
+constexpr int32_t ENDERMAN = mobs::Enderman::kId;
+constexpr int32_t SILVERFISH = mobs::Silverfish::kId;
+constexpr int32_t GHAST = mobs::Ghast::kId;
+constexpr int32_t LAVA_SLIME = mobs::LavaSlime::kId;
+constexpr int32_t MAGMA_CUBE = mobs::MagmaCube::kId;
+constexpr int32_t BLAZE = mobs::Blaze::kId;
+constexpr int32_t ZOMBIE_VILLAGER = mobs::ZombieVillager::kId;
+constexpr int32_t WITCH = mobs::Witch::kId;
+constexpr int32_t STRAY = mobs::Stray::kId;
+constexpr int32_t HUSK = mobs::Husk::kId;
+constexpr int32_t WITHER_SKELETON = mobs::WitherSkeleton::kId;
 } // namespace EntityTypeId
 
-// Returns true when @p id maps to a mob the 0.15.10 client renders.
+/// @brief The behavior family of a registered mob (mobs/MobKind.h).
+using MobKind = mobs::MobKind;
+
+/// @brief Returns true when @p id maps to a mob the 0.15.10 client renders.
+///
+/// O(1): the registry ids are direct-indexed, not scanned.
 bool isValidMobType(int32_t id);
 
-// Canonical lowercase name ("chicken", "zombie_pigman", ...) for a
-// registry id, or nullptr for ids outside the registry.
+/// @brief Canonical lowercase name ("chicken", "zombie_pigman", ...) for a
+///        registry id, or nullptr for ids outside the registry.
+///
+/// O(1): the registry ids are direct-indexed, not scanned.
 const char* mobTypeName(int32_t id);
 
-// Resolves a mob type by name, case-insensitively. Accepts the canonical
-// lowercase names plus the common aliases ("snowman", "mushroom_cow",
-// "pigman"). Returns false and leaves @p outId untouched when unknown.
+/// @brief Resolves a mob type by name, case-insensitively. Accepts the canonical
+///        lowercase names plus the common aliases ("mushroom_cow", "pigman",
+///        "magma", "lava_cube", "cat"). Returns false and leaves @p outId
+///        untouched when unknown.
+///
+/// Lookup is a binary search over a compile-time sorted name index.
+///
+/// @param name  candidate mob name, matched case-insensitively.
+/// @param outId receives the registry id on success, untouched on failure.
+/// @return true when @p name resolves to a registered mob.
 bool mobTypeFromName(const std::string& name, int32_t* outId);
+
+/// @brief Behavior family of a registry id, or MobKind::Unknown for ids
+///        outside the registry.
+///
+/// O(1): the registry ids are direct-indexed, not scanned.
+MobKind mobTypeKind(int32_t id);
 
 } // namespace cursestone::entity
