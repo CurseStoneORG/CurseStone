@@ -35,6 +35,32 @@ Exit code 0 = pass, 3 = furnace SKIP. The final line prints counters:
 `state`, `login`, `spawn`, `chunks`, `chunkBytes`, distinct packet ids,
 and the furnace stats (`furnace=[x,y,z] opens=closes=bed=`).
 
+## Identity
+
+Every bot derives its client UUID deterministically from its username
+(FNV-1a, v4-shaped), so N bot instances are N distinct sessions. Do NOT
+"fix" them onto a shared UUID: the server's duplicate-session kick
+("logged in from another location") will terminate every earlier login
+mid-stream, and a join storm will report exactly one healthy client no
+matter how the server behaves — that artifact is what the
+"single-streamer" observation in docs/THREADING.md turned out to be.
+
+## Join storm (multi-client)
+
+`join_storm.sh` starts a fresh server and points N bots at it at the
+same instant, then prints per-bot login/spawn/chunks plus the server's
+TPS/MSPT samples (via console `status` every 5 s):
+
+```sh
+test/bot/join_storm.sh 16 50000 simultaneous   # all connect at once
+test/bot/join_storm.sh 8  60000 staggered      # wave joins mid-march of a scout
+test/bot/join_storm.sh 16 90000 march          # every bot walks its own direction
+```
+
+Pass shape for every mode: every bot ends with `spawn=1` and its full
+289-chunk view (306 for marchers), and the duplicate-identity kick count
+is 0. Numbers and the root-cause story live in docs/THREADING.md.
+
 ## The furnace crash diagnosis (village furnace tap)
 
 The historical "client closes when I touch a naturally generated
