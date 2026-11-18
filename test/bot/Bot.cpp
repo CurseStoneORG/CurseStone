@@ -983,11 +983,39 @@ void BotClient::sendMcpe(const std::vector<uint8_t>& pkt, bool ordered) {
     sendEncap(frame, ordered ? RELIABILITY_RELIABLE_ORDERED : RELIABILITY_RELIABLE, 0);
 }
 
+// A deterministic per-username identity (v4-shaped: version nibble fixed
+// to 4, variant nibble to 8). FNV-1a rather than std::hash so the value
+// is stable across compilers and runs.
+static std::string botUuidFromString(const std::string& seed) {
+    auto fnv = [](const std::string& s) {
+        uint64_t h = 1469598103934665603ULL;
+        for (unsigned char c : s) {
+            h ^= c;
+            h *= 1099511628211ULL;
+        }
+        return h;
+    };
+    uint64_t a = fnv(seed + ":a"), b = fnv(seed + ":b");
+    char buf[40];
+    std::snprintf(buf, sizeof(buf), "%08llx-%04llx-4%03llx-8%03llx-%012llx",
+                  (unsigned long long)(a >> 32),
+                  (unsigned long long)((a >> 16) & 0xffffu),
+                  (unsigned long long)(a & 0xfffu),
+                  (unsigned long long)((b >> 12) & 0xfffu),
+                  (unsigned long long)(b & 0xffffffffffffULL));
+    return buf;
+}
+
 void BotClient::doLogin(const std::string& username) {
     // clientData JWT payload (0.15 field names as the server reads them)
     static const uint8_t skin[64 * 32 * 4] = {0};
     std::string skinB64 = b64encode(skin, sizeof(skin));
-    std::string uuid = "123e4567-e89b-12d3-a456-426614174000";
+    // One identity per username: a fixed UUID made every simultaneous bot
+    // claim the SAME client UUID, so a multi-bot join storm tripped the
+    // server's duplicate-session kick ("logged in from another location")
+    // and every login but the last died mid-stream — the storm then
+    // measured the harness, not the server.
+    std::string uuid = botUuidFromString(username);
     std::string cd = "{";
     cd += "\"DisplayName\":\"" + jsonEscape(username) + "\",";
     cd += "\"Identity\":\"" + uuid + "\",";
