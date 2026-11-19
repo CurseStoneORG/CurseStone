@@ -322,9 +322,12 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int face) {
             mining_tracked_ = false;
         }
 
-        // Handle fire extinguishing when the player starts punching.
-        if (action == network::protocol::PlayerActionPacket::ACTION_START_BREAK && face >= 0 &&
-            face < 6) {
+        // Fire the left-hand interact for EVERY break start. Some 0.15
+        // clients punch with a face outside 0..5 (touch devices aim at a
+        // cell, not at a face) — gating the whole event on a valid face
+        // made wand-style plugins deaf to those taps (pos1 never set).
+        // Only the fire-extinguish lookup below needs a real face.
+        if (action == network::protocol::PlayerActionPacket::ACTION_START_BREAK) {
             auto* lvl = getWorld();
             if (lvl) {
                 item::ItemStack held{};
@@ -340,7 +343,7 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int face) {
                     // Restore the held item after a cancelled interaction.
                     if (inv_)
                         sendSlot(inv_->heldSlot());
-                } else {
+                } else if (face >= 0 && face < 6) {
                     static const int8_t fx[6] = {0, 0, 0, 0, -1, 1};
                     static const int8_t fy[6] = {-1, 1, 0, 0, 0, 0};
                     static const int8_t fz[6] = {0, 0, -1, 1, 0, 0};

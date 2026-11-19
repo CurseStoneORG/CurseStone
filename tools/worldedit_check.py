@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 """End-to-end check for the WorldEditDemo brush plugin on a local server.
 
-Runs the REAL plugin folder through the exact player flow that was broken
-when the plugin shipped: /givewe hands out the custom-named brush, LEFT and
-RIGHT clicks set the corners (the v1.0.0 build died inside the corner
-handler with "bad argument #1 to 'spawnBlockParticles' (number has no
-integer representation)" — the click felt dead: no particles, no chat), then
-/we set fills the selection, /we undo reverts it, and the paint brush stamps
-spheres. Every step is asserted twice: the plugin's own chat echo, and the
-OTHER viewer receiving the block changes as wire records. The server log is
-also asserted free of plugin errors.
+Runs the REAL plugin folder through the exact player flows that were
+reported broken: /givewe hands out the custom-named brush, LEFT and RIGHT
+clicks set the corners (the v1.0.0 build died inside the corner handler
+with "bad argument #1 to 'spawnBlockParticles' (number has no integer
+representation)"), and — the phone report — a creative TOUCH TAP arrives
+as a bare RemoveBlockPacket, which never fired the interact event, so pos1
+never set on mobile while pos2 (UseItemPacket) worked. The check drives
+BOTH left-hand paths: the desktop START_BREAK and the bare RemoveBlock,
+plus /we set 41:0 (id:meta syntax), /gid, and the golden-axe paint wand
+(/we wand on -> tap paints spheres -> /we wand off stays inert). Every
+step is asserted twice: the plugin's own chat echo, and the OTHER viewer
+receiving the block changes as wire records. The server log is also
+asserted free of plugin errors.
 
 The plugin ships OUTSIDE the repo (delivery request), so this check skips
 gracefully when --plugin-dir / $WE_PLUGIN_DIR is unavailable.
@@ -31,10 +35,24 @@ from build_api_check import BuildClient, pump_all, until, after  # noqa: E402
 DEFAULT_PLUGIN_DIR = "/home/z/my-project/work/wedemo/WorldEditDemo"
 PLAYER_NAMES = ("WEBuilder", "WEWatcher")
 USE_ITEM = 0x1F
+MOB_EQUIPMENT = 0x1B
 
 
 class WEClient(BuildClient):
-    """Adds the right-click (UseItemPacket) the wand needs."""
+    """Adds the right-click (UseItemPacket) and the hotbar equip the wand
+    and the paint axe need."""
+
+    def mob_equipment(self, hotbar, item_id, meta=0):
+        # MobEquipmentPacket (protocol 84): eid i64 BE, Slot (id i16 BE,
+        # count u8, damage i16 BE, nbtLen u16 LE), then the hotbarSlot byte
+        # (the PADDED absolute slot the position links to: slot + 9) and
+        # selectedSlot byte (the hotbar position 0..8). The server does not
+        # validate the item payload — it only remaps slots from the bytes.
+        inner = bytes([MOB_EQUIPMENT]) + struct.pack(">q", self.self_eid)
+        inner += struct.pack(">h", item_id) + bytes([1]) + struct.pack(">h", meta)
+        inner += struct.pack("<H", 0)
+        inner += bytes([hotbar + 9, hotbar])
+        self.send_game(inner)
 
     def send_use_item(self, x, y, z, face, px, py, pz):
         # UseItemPacket (protocol 84): x/y/z i32 BE, face u8, cursor f32x3,
@@ -126,7 +144,7 @@ def run(host, port, server_bin, plugin_dir):
             print("FAIL: server never became ready")
             return 1
 
-        check("WorldEditDemo v1.1.0 enabled" in log_text(), "plugin loaded (v1.1.0)")
+        check("WorldEditDemo v1.2.0 enabled" in log_text(), "plugin loaded (v1.2.0)")
 
         a = WEClient(host, port, PLAYER_NAMES[0])
         b = WEClient(host, port, PLAYER_NAMES[1])
@@ -143,7 +161,7 @@ def run(host, port, server_bin, plugin_dir):
         # ---- /givewe: the custom-named brush ---------------------------
         t0 = time.monotonic()
         a.say("/givewe")
-        ok = until([a, b], lambda: chat_after(t0, a, r"\[WE\].*The brush is in your hand"), 8.0)
+        ok = until([a, b], lambda: chat_after(t0, a, r"\[WE\].*The brush stick is in your hand"), 8.0)
         check(ok, "/givewe hands out the brush (custom name)")
 
         # ---- learn the feet position through /we pos1 ------------------
@@ -169,6 +187,22 @@ def run(host, port, server_bin, plugin_dir):
             t2, a, rf"pos1 = {fx + 2}, {ground}, {fz}"), 8.0)
         check(ok, "LEFT-click sets pos1 and echoes it (was silent in v1.0.0)")
 
+        # ---- MOBILE tap sets pos1: a creative touch tap arrives as a bare
+        # RemoveBlockPacket — the server used to handle it WITHOUT firing
+        # PlayerInteract, so pos1 never set on phones while pos2 (riding
+        # UseItemPacket) worked. This is the exact reported bug. --------
+        t2b = time.monotonic()
+        a.send_remove_block(a.self_eid, fx + 3, ground, fz)
+        ok = until([a, b], lambda: chat_after(
+            t2b, a, rf"pos1 = {fx + 3}, {ground}, {fz}"), 8.0)
+        check(ok, "MOBILE tap (bare RemoveBlock) sets pos1 — the phone fix")
+        # put the selection corner back for the 3x3x3 box below
+        t2c = time.monotonic()
+        a.say(f"/we pos1 {fx + 2} {ground} {fz}")
+        ok = until([a, b], lambda: chat_after(
+            t2c, a, rf"pos1 = {fx + 2}, {ground}, {fz}"), 8.0)
+        check(ok, "/we pos1 manual coords restore the corner")
+
         # ---- RIGHT-click sets pos2 --------------------------------------
         t3 = time.monotonic()
         a.send_use_item(fx + 4, ground, fz + 2, 1, fx + 0.5, fy, fz + 0.5)
@@ -185,11 +219,12 @@ def run(host, port, server_bin, plugin_dir):
         check(chat_after(t3b, a, r"pos2 = -?\d+\.0") == [],
               "manual corner echoes whole numbers (no float formatting)")
 
-        # ---- /we set 41: the selection fills, the watcher SEES it -------
+        # ---- /we set 41:0 (id:meta syntax): the selection fills, the
+        # watcher SEES it ------------------------------------------------
         t4 = time.monotonic()
-        a.say("/we set 41")
+        a.say("/we set 41:0")
         ok = until([a, b], lambda: chat_after(t4, a, r"Set 27 cell\(s\) to 41"), 10.0)
-        check(ok, "/we set fills the 3x3x3 selection (27 cells of gold)")
+        check(ok, "/we set 41:0 fills the 3x3x3 selection (id:meta syntax)")
         got = [u for u in after(t4, b.block_updates) if u[4] == 41]
         check(len(got) >= 25, "watcher receives the fill on the wire "
               f"({len(got)} gold updates)")
@@ -203,25 +238,46 @@ def run(host, port, server_bin, plugin_dir):
         check(len(back) >= 25, "watcher receives the rollback on the wire "
               f"({len(back)} updates)")
 
-        # ---- the paint brush --------------------------------------------
+        # ---- /gid: what am I holding? -----------------------------------
+        t5b = time.monotonic()
+        a.say("/gid")
+        ok = until([a, b], lambda: chat_after(t5b, a, r"Held: 280:0 x1"), 8.0)
+        check(ok, "/gid prints the held item as id:meta")
+
+        # ---- the golden-axe paint wand ----------------------------------
         t6 = time.monotonic()
-        a.say("/we brush 35 14 2")
-        ok = until([a, b], lambda: chat_after(t6, a, r"Brush paint ON: 35:14 spheres r=2"), 8.0)
-        check(ok, "/we brush arms the paint mode")
+        a.say("/we brush 35:14 2")
+        ok = until([a, b], lambda: chat_after(t6, a, r"Brush bound: 35:14 spheres r=2"), 8.0)
+        check(ok, "/we brush 35:14 2 binds the paint material (id:meta)")
+        t6b = time.monotonic()
+        a.say("/we wand on")
+        ok = until([a, b], lambda: chat_after(
+            t6b, a, r"The golden axe paint wand is in your inventory"), 8.0)
+        check(ok, "/we wand on hands out the golden axe")
+        a.mob_equipment(1, 286, 0)  # the axe lands in the first free slot
+        # Fresh cell (never START_BREAKed by the phases above — an announced
+        # removal fires its interact at START_BREAK, not at the removal).
         t7 = time.monotonic()
-        a.send_use_item(fx + 2, ground, fz, 1, fx + 0.5, fy, fz + 0.5)
-        ok = until([a, b], lambda: chat_after(t7, a, r"Painted \d+ cell\(s\) of 35:14"), 10.0)
-        check(ok, "RIGHT-click paints a wool sphere over the surface")
+        a.send_remove_block(a.self_eid, fx + 5, ground, fz + 4)
+        ok = until([a, b], lambda: chat_after(
+            t7, a, r"Painted \d+ cell\(s\) of 35:14"), 10.0)
+        check(ok, "MOBILE tap with the axe paints a wool sphere")
         painted = [u for u in after(t7, b.block_updates) if u[4] == 35]
-        check(len(painted) >= 10, "watcher receives the paint on the wire "
+        check(len(painted) >= 30, "watcher receives the paint on the wire "
               f"({len(painted)} wool updates)")
         t8 = time.monotonic()
         a.say("/we undo")
         ok = until([a, b], lambda: chat_after(t8, a, r"Undid \d+ cell\(s\)"), 10.0)
         check(ok, "/we undo reverts the painted sphere")
-        a.say("/we brush off")
-        ok = until([a, b], lambda: chat_after(t8, a, r"Brush paint OFF"), 8.0)
-        check(ok, "/we brush off returns to selection mode")
+        t8b = time.monotonic()
+        a.say("/we wand off")
+        ok = until([a, b], lambda: chat_after(t8b, a, r"Paint wand OFF"), 8.0)
+        check(ok, "/we wand off disarms the paint wand")
+        t9 = time.monotonic()
+        a.send_remove_block(a.self_eid, fx + 5, ground, fz + 4)
+        pump_all([a, b], 1.5)
+        check(chat_after(t9, a, r"Painted \d+") == [],
+              "disarmed axe does not paint (plain axe behavior)")
 
         # ---- the old bug must stay dead ----------------------------------
         errs = [ln for ln in log_text().splitlines()
