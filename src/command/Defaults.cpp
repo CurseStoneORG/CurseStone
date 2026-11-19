@@ -39,7 +39,6 @@
 #include "defaults/WorkbenchCommand.h"
 #include "defaults/PluginsCommand.h"
 #include "defaults/StatusCommand.h"
-#include "defaults/WorldsCommand.h"
 #include <memory>
 namespace cursestone {
 void registerDefaultCommands(CommandMap& map) {
@@ -64,6 +63,9 @@ void registerDefaultCommands(CommandMap& map) {
     map.registerCommand(std::make_unique<WorkbenchCommand>());
     map.registerCommand(std::make_unique<PluginsCommand>());
     map.registerCommand(std::make_unique<StatusCommand>());
-    map.registerCommand(std::make_unique<WorldsCommand>());
+    // No default /worlds command: world transport and management belong to
+    // plugins now (server.loadWorld/unloadWorld + player.teleportWorld),
+    // which can tailor the flow (selection UIs, permissions, warps) far
+    // better than a built-in one-size-fits-all command.
 }
 } // namespace

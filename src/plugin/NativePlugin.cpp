@@ -743,7 +743,18 @@ bool api_world_setBlock(const char* world, int32_t x, int32_t y, int32_t z, int3
     // the Lua binding so the change is never a silent no-op.
     w->chunks().getChunk(x >> 4, z >> 4);
     w->setBlock(x, y, z, (uint8_t)id, (uint8_t)meta);
+    // Same contract as the Lua binding: refresh the viewers NOW (the bare
+    // write sat server-side and no client saw it until the chunk
+    // re-streamed).
+    w->broadcastBlockUpdate(x, y, z);
     return true;
+}
+int32_t api_world_fillBlocks(const char* world, int32_t x1, int32_t y1, int32_t z1,
+                             int32_t x2, int32_t y2, int32_t z2, int32_t id, int32_t meta) {
+    World* w = findLoadedWorld(world);
+    if (!w || id < 0 || id > 255 || meta < 0 || meta > 15)
+        return 0;
+    return w->fillBlocks(x1, y1, z1, x2, y2, z2, (uint8_t)id, (uint8_t)meta);
 }
 bool api_world_getSpawn(const char* world, double out[3]) {
     World* w = findLoadedWorld(world);
@@ -1048,6 +1059,7 @@ CsWorldApi g_worldApi = {
     api_world_setFloatingTextViewers,
     api_world_getFloatingTextEx,
     api_world_chunkCount,
+    api_world_fillBlocks,
 };
 
 // data: the per-plugin data_pl/<plugin> sandbox, same rules as data.*.

@@ -526,6 +526,19 @@ typedef struct CsWorldApi {
      *         live cache size the eviction pass drains), or -1 for an
      *         unloaded world. Cache/cost probe for status surfaces. */
     int32_t (*chunkCount)(const char* world);
+    /* ---- appended (ABI 1, extension batch 10: block construction) ---- */
+    /**
+     * @brief Vanilla-shaped /fill bulk write between two corners (any
+     *        order; Y clamped into the world). Forces the affected chunks
+     *        resident, skips no-op cells, notifies the box boundary and
+     *        refreshes viewers — per-block packets for lightly touched
+     *        chunks, whole-chunk re-sends for dense ones.
+     *
+     * @return the cells actually written, -1 when the volume exceeds the
+     *         vanilla cap (32768), 0 for an unloaded world.
+     */
+    int32_t (*fillBlocks)(const char* world, int32_t x1, int32_t y1, int32_t z1,
+                          int32_t x2, int32_t y2, int32_t z2, int32_t id, int32_t meta);
 } CsWorldApi;
 
 /**

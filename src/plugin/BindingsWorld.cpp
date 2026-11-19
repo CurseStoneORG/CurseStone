@@ -20,11 +20,10 @@
  * Repository: https://github.com/CurseStoneORG/CurseStone
  *
  */
-// BindingsWorld — API of worlds expuesta to the plugins Lua.
+// BindingsWorld — the world API exposed to Lua plugins.
 //
-//   server.worlds()                    list with the names of the
-//                                      worlds loaded
-//   server.getWorld(name)            object world (nil if not exists)
+//   server.worlds()                    names of the loaded worlds
+//   server.getWorld(name)            world object (nil when unknown)
 //   server.loadWorld(name, gen, [seed])  load or creates the world; gen is
 //                                      "normal" | "flat" | "nether" |
 //                                      "void" | "empty" (by default
@@ -36,21 +35,42 @@
 //   world.name()                       name of the world
 //   world.seed()                       semilla
 //   world.dimension()                  0 surface, 1 Nether
-//   world.getBlock(x,and,z)              id of the block (0 if not loaded)
-//   world.setBlock(x,and,z,id,data)      writes the block (true/false)
-//   world.getTime() / setTime(t)       time of the world (0..24000)
-//   world.getSpawn()                   x, and, z of the spawn
+//   world.getBlock(x, y, z)              block id (0 when not loaded)
+//   world.getBlockMeta(x, y, z)          block meta/data 0..15 (0 when not
+//                                      loaded)
+//   world.setBlock(x, y, z, id, [data])  writes one block (true/false);
+//                                      the chunk is forced resident first
+//                                      and every viewer of the block is
+//                                      refreshed through one
+//                                      UpdateBlockPacket, so the change is
+//                                      visible on all clients immediately
+//   world.fill(x1, y1, z1, x2, y2, z2,
+//              id, [data])              vanilla-/fill bulk write between
+//                                      two corners (any order; volume cap
+//                                      32768 like vanilla). Forces the
+//                                      affected chunks resident, skips
+//                                      no-op cells, notifies the box
+//                                      boundary (UPDATE_NEIGHBORS) and
+//                                      refreshes viewers — per-block
+//                                      packets for lightly touched chunks,
+//                                      whole-chunk re-sends for dense ones.
+//                                      Returns the cells written, or -1
+//                                      when the volume exceeds the cap.
+//   world.getTime() / setTime(t)       time of the world (0..24000);
+//                                      setTime pushes the new clock to
+//                                      every viewer of this world
+//   world.getSpawn()                   x, y, z of the spawn
 //   world.getPlayers()                 names of the players inside
-//   world.spawnParticle(x,and,z,type,[data])   spawns one protocol-84
+//   world.spawnParticle(x, y, z, type, [data])   spawns one protocol-84
 //                                      particle; type is a name ("flame",
 //                                      "heart", "terrain", ...) or a raw
 //                                      id 1..32; data is the particle
 //                                      payload (scale/color/packing, see
 //                                      docs/PLUGINS.md). true = sent.
-//   world.spawnBlockParticles(x,and,z,id,[meta])  the break burst + dig
+//   world.spawnBlockParticles(x, y, z, id, [meta])  the break burst + dig
 //                                      sound at a block (event 2001,
 //                                      id low byte, meta in bits 12+).
-//   world.spawnSplashParticles(x,and,z,rgb)    the splash-potion shatter
+//   world.spawnSplashParticles(x, y, z, rgb)    the splash-potion shatter
 //                                      (event 2002) with an 0xRRGGBB
 //                                      color; plays the glass smash.
 //   world.spawnFloatingText(x,y,z,text,[ttl])  floating text particle:
@@ -258,6 +278,19 @@ int l_world_getblock(lua_State* L) {
     return 1;
 }
 
+int l_world_getblockmeta(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_Integer x = luaL_checkinteger(L, 2);
+    lua_Integer y = luaL_checkinteger(L, 3);
+    lua_Integer z = luaL_checkinteger(L, 4);
+    if (y < 0 || y > 255) {
+        lua_pushinteger(L, 0);
+        return 1;
+    }
+    lua_pushinteger(L, w->getBlockData((int32_t)x, (int32_t)y, (int32_t)z));
+    return 1;
+}
+
 int l_world_setblock(lua_State* L) {
     WORLD_OR_NIL();
     lua_Integer x = luaL_checkinteger(L, 2);
@@ -269,12 +302,37 @@ int l_world_setblock(lua_State* L) {
         lua_pushboolean(L, 0);
         return 1;
     }
-    // World::setBlock only writes in chunks resident: is forces the
-    // load/generation of the chunk target so that the change never is
-    // a not-op silencioso in terrain not yet generado.
+    // World::setBlock only writes resident chunks, so force the load (or
+    // synchronous generation) of the target chunk first: the change is
+    // never a silent no-op on terrain that is not on disk yet.
     w->chunks().getChunk((int32_t)x >> 4, (int32_t)z >> 4);
     w->setBlock((int32_t)x, (int32_t)y, (int32_t)z, (uint8_t)id, (uint8_t)data);
+    // Refresh every viewer that can see the cell. World::setBlock mutates
+    // the world only — without this packet the change sat server-side and
+    // NO client saw it until the chunk re-streamed (the ghost-block report
+    // against plugin builds).
+    w->broadcastBlockUpdate((int32_t)x, (int32_t)y, (int32_t)z);
     lua_pushboolean(L, 1);
+    return 1;
+}
+
+int l_world_fill(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_Integer x1 = luaL_checkinteger(L, 2);
+    lua_Integer y1 = luaL_checkinteger(L, 3);
+    lua_Integer z1 = luaL_checkinteger(L, 4);
+    lua_Integer x2 = luaL_checkinteger(L, 5);
+    lua_Integer y2 = luaL_checkinteger(L, 6);
+    lua_Integer z2 = luaL_checkinteger(L, 7);
+    lua_Integer id = luaL_checkinteger(L, 8);
+    lua_Integer data = luaL_optinteger(L, 9, 0);
+    if (id < 0 || id > 255 || data < 0 || data > 15) {
+        lua_pushinteger(L, 0);
+        return 1;
+    }
+    lua_pushinteger(
+        L, w->fillBlocks((int32_t)x1, (int32_t)y1, (int32_t)z1, (int32_t)x2,
+                         (int32_t)y2, (int32_t)z2, (uint8_t)id, (uint8_t)data));
     return 1;
 }
 
@@ -728,7 +786,9 @@ const luaL_Reg kWorldMethods[] = {
     {"getTime", l_world_gettime},
     {"setTime", l_world_settime},
     {"getBlock", l_world_getblock},
+    {"getBlockMeta", l_world_getblockmeta},
     {"setBlock", l_world_setblock},
+    {"fill", l_world_fill},
     {"getSpawn", l_world_getspawn},
     {"setSpawn", l_world_setspawn},
     {"getPlayers", l_world_getplayers},

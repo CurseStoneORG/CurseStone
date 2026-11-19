@@ -70,6 +70,7 @@
 #include "entity/EntityTypes.h"
 #include "network/protocol/SetHealthPacket.h"
 #include "network/protocol/SetTimePacket.h"
+#include "network/protocol/UpdateBlockPacket.h"
 #include "scheduler/ServerScheduler.h"
 #include "scheduler/Task.h"
 #include <cmath>
@@ -601,6 +602,183 @@ void World::broadcastTimeSync() {
                 p->sendPacket(pk);
         }
     }
+}
+
+// ----- Block construction API (WorldEdit-style plugins) -----------------
+
+void World::broadcastBlockUpdate(int32_t x, int32_t y, int32_t z) {
+    if (y < 0 || y > 255)
+        return;
+    int32_t cx = x >> 4, cz = z >> 4;
+    if (!chunks_.getChunkIfLoaded(cx, cz))
+        return;
+
+    // Same shape as broadcastTimeSync: collect the recipients of this
+    // chunk first (stack buffer, single pass over the snapshot) and build
+    // the packet only when somebody will receive it.
+    static constexpr size_t kDirectTargets = 96;
+    Player* targets[kDirectTargets];
+    size_t n = 0;
+    bool overflow = false;
+    const auto& players = cursestone::Server::getInstance().playersSnapshotRef();
+    for (auto& p : players) {
+        if (!p || p->isPendingRemoval() || !p->spawned() || p->getWorld() != this)
+            continue;
+        if (!p->canSeeBlock(cx, cz))
+            continue;
+        if (n < kDirectTargets)
+            targets[n++] = p.get();
+        else
+            overflow = true;
+    }
+    if (n == 0 && !overflow)
+        return;
+
+    auto ubp = std::make_shared<network::protocol::UpdateBlockPacket>();
+    ubp->x = x;
+    ubp->z = z;
+    ubp->y = (uint8_t)y;
+    ubp->blockId = getBlockId(x, y, z);
+    ubp->blockData = getBlockData(x, y, z);
+    ubp->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
+    for (size_t i = 0; i < n; ++i)
+        targets[i]->sendPacket(ubp);
+    if (overflow) {
+        size_t seen = 0;
+        for (auto& p : players) {
+            if (!p || p->isPendingRemoval() || !p->spawned() || p->getWorld() != this)
+                continue;
+            if (!p->canSeeBlock(cx, cz))
+                continue;
+            if (seen++ >= kDirectTargets)
+                p->sendPacket(ubp);
+        }
+    }
+}
+
+// Above this many changed cells one chunk carries, a whole-chunk re-send
+// beats the per-block packets on the wire: one FullChunkDataPacket carries
+// 4096 cells, so a dense fill replaces ~4k UpdateBlockPackets per viewer
+// with a single (already compressed) chunk payload.
+static constexpr size_t kFillChunkResendCells = 96;
+
+int32_t World::fillBlocks(int32_t x1, int32_t y1, int32_t z1, int32_t x2, int32_t y2,
+                          int32_t z2, uint8_t id, uint8_t data) {
+    // Canonical box: corners in any order, Y clamped into the world.
+    int32_t min_x = std::min(x1, x2), max_x = std::max(x1, x2);
+    int32_t min_y = std::max(std::min(y1, y2), 0);
+    int32_t max_y = std::min(std::max(y1, y2), 255);
+    int32_t min_z = std::min(z1, z2), max_z = std::max(z1, z2);
+    if (max_y < min_y)
+        return 0; // Fully clamped out of the world.
+
+    const int64_t volume = (int64_t)(max_x - min_x + 1) * (int64_t)(max_y - min_y + 1) *
+                           (int64_t)(max_z - min_z + 1);
+    if (volume > FILL_MAX_VOLUME)
+        return -1; // Refused: vanilla /fill cap.
+
+    // Force every affected chunk resident once — the same contract the
+    // single-block set has (the change never silently no-ops on cold
+    // terrain). Synchronous getChunk, exactly like world.setBlock.
+    for (int32_t cx = min_x >> 4; cx <= max_x >> 4; ++cx)
+        for (int32_t cz = min_z >> 4; cz <= max_z >> 4; ++cz)
+            chunks_.getChunk(cx, cz);
+
+    // Changed cells grouped by chunk so the refresh pass can pick the
+    // cheap per-block packets for lightly touched chunks and the
+    // whole-chunk re-send for the dense ones.
+    struct ChangedCell {
+        uint8_t lx, y, lz;
+    };
+    std::unordered_map<uint64_t, std::vector<ChangedCell>> touched;
+    int32_t written = 0;
+    for (int32_t y = min_y; y <= max_y; ++y) {
+        for (int32_t x = min_x; x <= max_x; ++x) {
+            for (int32_t z = min_z; z <= max_z; ++z) {
+                // No-op cells (same id AND data) are skipped: re-filling
+                // the same area costs one read per cell, no relight, no
+                // dirty chunks, no packets.
+                if (getBlockId(x, y, z) == id && getBlockData(x, y, z) == data)
+                    continue;
+                // Bulk writes do not wake liquids (the per-cell neighbor
+                // cascade on a 32k-cell fill would flood the capped block
+                // tick scheduler); the boundary cells below still notify
+                // their neighbors, and interior liquids settle through the
+                // settled-liquid wake scan when the chunk re-streams.
+                setBlock(x, y, z, id, data, /*notifyLiquid=*/false);
+                touched[packChunkPos(x >> 4, z >> 4)].push_back(
+                    {(uint8_t)(x & 15), (uint8_t)y, (uint8_t)(z & 15)});
+                ++written;
+            }
+        }
+    }
+    if (written == 0)
+        return 0;
+
+    // Vanilla UPDATE_NEIGHBORS on the boundary of the box: the cells just
+    // outside meet the new blocks (liquids flow against walls, sand above
+    // a filled-in cell falls). Interior cells wake through the normal
+    // settled-liquid scan instead.
+    for (int32_t y = min_y; y <= max_y; ++y)
+        for (int32_t x = min_x; x <= max_x; ++x)
+            for (int32_t z = min_z; z <= max_z; ++z) {
+                bool edge = (x == min_x || x == max_x || z == min_z || z == max_z ||
+                             y == min_y || y == max_y);
+                if (edge)
+                    block::LiquidFlow::onBlockChanged(this, x, y, z);
+            }
+
+    // Refresh pass: viewers of this world, collected once on the stack
+    // (the >96 overflow case falls back to scanning the snapshot per
+    // chunk — rare and still correct).
+    const auto& players = cursestone::Server::getInstance().playersSnapshotRef();
+    static constexpr size_t kDirectTargets = 96;
+    Player* viewers[kDirectTargets];
+    size_t nv = 0;
+    bool overflow = false;
+    for (auto& p : players) {
+        if (!p || p->isPendingRemoval() || !p->spawned() || p->getWorld() != this)
+            continue;
+        if (nv < kDirectTargets)
+            viewers[nv++] = p.get();
+        else
+            overflow = true;
+    }
+
+    auto sendChunkResend = [&](Player& p, int32_t ccx, int32_t ccz) {
+        if (!p.canSeeBlock(ccx, ccz))
+            return;
+        p.sendChunk(ccx, ccz);
+    };
+
+    for (auto& [key, cells] : touched) {
+        int32_t ccx = (int32_t)(uint32_t)(key >> 32);
+        int32_t ccz = (int32_t)(uint32_t)(key & 0xFFFFFFFFu);
+        if (cells.size() > kFillChunkResendCells) {
+            // Dense chunk: one whole-chunk payload per viewer (sendChunk
+            // flushes the queued light work first, so the re-streamed
+            // chunk also carries the relight this fill queued).
+            if (!overflow) {
+                for (size_t i = 0; i < nv; ++i)
+                    sendChunkResend(*viewers[i], ccx, ccz);
+            } else {
+                for (auto& p : players) {
+                    if (!p || p->isPendingRemoval() || !p->spawned() ||
+                        p->getWorld() != this)
+                        continue;
+                    sendChunkResend(*p, ccx, ccz);
+                }
+            }
+        } else {
+            // Light chunk: one shared UpdateBlockPacket per changed cell.
+            for (const ChangedCell& c : cells) {
+                int32_t bx = (ccx << 4) + c.lx;
+                int32_t bz = (ccz << 4) + c.lz;
+                broadcastBlockUpdate(bx, c.y, bz);
+            }
+        }
+    }
+    return written;
 }
 
 void World::checkSleep() {

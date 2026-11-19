@@ -42,8 +42,15 @@
 //   player.isOp(name)                 true if is op (false if not exists)
 //   player.giveItem(name, id, count, meta, customName)
 //                                     adds a stack to the inventory;
-//                                     customName (opcional) = nombre
-//                                     visible del item (§ soportado)
+//                                     customName (optional) = visible
+//                                     item name (§ codes supported)
+//   player.getHeldItem(name)          id, meta, count, customName of the
+//                                     stack in the held hotbar slot (the
+//                                     4th value is nil for an unnamed
+//                                     item); all nil when the player is
+//                                     not online. Building tools (a
+//                                     WorldEdit-style brush) identify
+//                                     themselves through the custom name
 //   player.setNameTag(name, tag)      nametag above the head + in the
 //                                     server tab list (§ codes = ranks)
 //   player.getNameTag(name)           nametag actual (nil si no existe)
@@ -331,6 +338,31 @@ int l_player_giveItem(lua_State* L) {
     lua_pushboolean(L, fit ? 1 : 0);
     return 1;
 }
+// getHeldItem(name): the stack in the held hotbar slot as
+// id, meta, count, customName (nil when the item is unnamed, nil x4 when
+// the player or their inventory is gone). The custom name comes back out
+// of the stack's {display:{Name}} NBT — the same surface giveItem writes
+// — so building tools can identify their own brush by name.
+int l_player_gethelditem(lua_State* L) {
+    Player* p = findPlayer(L, 1);
+    if (!p || !p->getInventory()) {
+        lua_pushnil(L);
+        lua_pushnil(L);
+        lua_pushnil(L);
+        lua_pushnil(L);
+        return 4;
+    }
+    item::ItemStack held = p->getInventory()->getHeldItem();
+    lua_pushinteger(L, (lua_Integer)held.id);
+    lua_pushinteger(L, (lua_Integer)held.meta);
+    lua_pushinteger(L, (lua_Integer)held.count);
+    std::string name = item::readDisplayName(held.nbt);
+    if (name.empty())
+        lua_pushnil(L);
+    else
+        lua_pushlstring(L, name.c_str(), name.size());
+    return 4;
+}
 // setNameTag(name, tag): the name ABOVE THE HEAD and in the server list
 // tab ( Player::setNameTag). Accepts §-color codes — this is the
 // rank-prefix surface. Re-broadcasts REMOVE+ADD PlayerListPacket to
@@ -558,6 +590,7 @@ void bindPlayerHandle(lua_State* L) {
         {"setPermission", l_player_setPermission},
         {"hasPermission", l_player_hasPermission},
         {"giveItem", l_player_giveItem},
+        {"getHeldItem", l_player_gethelditem},
         {"setNameTag", l_player_setNameTag},
         {"getNameTag", l_player_getNameTag},
         {"setDisplayName", l_player_setDisplayName},
@@ -778,6 +811,7 @@ void bindCore(lua_State* L) {
                                     {"setPermission", l_player_setPermission},
                                     {"hasPermission", l_player_hasPermission},
                                     {"giveItem", l_player_giveItem},
+                                    {"getHeldItem", l_player_gethelditem},
                                     {"setNameTag", l_player_setNameTag},
                                     {"getNameTag", l_player_getNameTag},
                                     {"setDisplayName", l_player_setDisplayName},
