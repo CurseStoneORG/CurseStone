@@ -28,6 +28,13 @@
 //                          entity of the old world from this viewer — the
 //                          client keeps its entity map in that case — and
 //                          pre-warms the destination 3x3 on the async pool)
+//                          and re-anchors the client clock to the
+//                          destination world's time IMMEDIATELY, both
+//                          before the dimension screen and again after it
+//                          closes, so the other world's day/night phase is
+//                          correct the moment the player arrives instead
+//                          of lagging behind for up to one time-resync
+//                          interval
 //   finishDimensionSwitch() closes the cross-dimension switch once the new
 //                          chunks are on the wire (PlayStatus + position)
 //   checkPortal()          detects the player standing inside a portal
@@ -155,17 +162,30 @@ bool Player::switchWorld(World* target, double x, double y, double z, bool throu
         return true; // pre-spawn: doFirstSpawn() sends the initial packets
     }
 
-    if (dimension_change) {
-        // The reference server 0.15 switchLevel() order: SetTime first, then
-        // ChangeDimensionPacket (dimension as one BYTE — an Int32 here
-        // shifts the whole body and the client drops the packet, which
-        // kept the overworld sky/fog over nether terrain), then the
-        // per-world weather. PlayStatus(PLAYER_SPAWN) and the position
-        // reset wait for the chunk stream (dimension_spawn_pending_).
+    // Immediate time re-anchor of the DESTINATION world, for every world
+    // change. The 0.15.10 client binds its clock to the last SetTime it
+    // processed and keeps interpolating locally, so without this packet the
+    // arriving client keeps the OLD world's sky until the destination
+    // world's next periodic re-anchor — up to TIME_RESYNC_INTERVAL ticks
+    // (10 s) of wrong day/night phase, the reported "the other world's
+    // time takes ages to load" after a switch. One 5-byte packet, sent
+    // before the dimension branch so the cross-dimension reference order
+    // (SetTime -> ChangeDimension -> weather) is preserved.
+    {
         auto st = std::make_shared<network::protocol::SetTimePacket>();
         st->time = target->time();
+        st->started = true;
         sendPacket(st);
+    }
 
+    if (dimension_change) {
+        // SetTime already went out above (reference switchLevel() order:
+        // SetTime first, then ChangeDimensionPacket — dimension as one
+        // BYTE, an Int32 here shifts the whole body and the client drops
+        // the packet, which kept the overworld sky/fog over nether
+        // terrain), then the per-world weather. PlayStatus(PLAYER_SPAWN)
+        // and the position reset wait for the chunk stream
+        // (dimension_spawn_pending_).
         // The 0.15.10 client drops its entity map on a dimension change,
         // so every mob id this client holds is stale afterwards. Forget
         // them: the chunk re-stream after the switch re-sends the mobs
@@ -226,6 +246,22 @@ void Player::finishDimensionSwitch() {
     mp->mode = network::protocol::MovePlayerPacket::MODE_RESET;
     mp->onGround = onGround();
     sendPacket(mp);
+
+    // Clock re-anchor the moment the new world is live client-side. The
+    // SetTime sent BEFORE ChangeDimensionPacket reaches the client while
+    // the dimension loading screen is up, and the 0.15.10 client does not
+    // necessarily bind its clock to it — exactly the rationale the login
+    // flow documents for its second SetTime inside doFirstSpawn (a packet
+    // that lands before the client world exists is not pinned to the
+    // clock). Without this second anchor the arriving client could keep
+    // the previous dimension's time until the destination world's next
+    // periodic re-anchor, up to TIME_RESYNC_INTERVAL ticks.
+    if (World* w = getWorld()) {
+        auto st = std::make_shared<network::protocol::SetTimePacket>();
+        st->time = w->time();
+        st->started = true;
+        sendPacket(st);
+    }
 }
 
 // ---------------------------------------------------------------------

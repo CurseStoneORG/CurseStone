@@ -722,6 +722,10 @@ bool api_world_setTime(const char* world, int32_t t) {
         return false;
     int32_t norm = ((t % 24000) + 24000) % 24000;
     w->setTime(norm);
+    // Same contract as the Lua binding and /time set: the new time goes
+    // out to this world's viewers immediately, not on the next periodic
+    // re-anchor (up to 10 s of stale sky otherwise).
+    w->broadcastTimeSync();
     return true;
 }
 int api_world_getBlock(const char* world, int32_t x, int32_t y, int32_t z) {

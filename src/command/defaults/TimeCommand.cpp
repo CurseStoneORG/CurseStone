@@ -23,13 +23,25 @@
 #include "TimeCommand.h"
 #include "Server.h"
 #include "world/World.h"
-#include "network/protocol/SetTimePacket.h"
 #include "Player.h"
 namespace cursestone {
+namespace {
+// Multiworld rule for /time: the command acts on the world its sender
+// stands in (console -> default world) and broadcasts ONLY there. The old
+// shape always mutated the default world and pushed its time to every
+// player of every world — a player in another world got their client
+// clock forced onto the default world's time until their own world's next
+// re-anchor, a real multiworld desync.
+world::World* timeTargetWorld(CommandSender* sender) {
+    if (auto* p = dynamic_cast<Player*>(sender))
+        return p->getWorld();
+    return Server::getInstance().getDefaultWorld();
+}
+} // namespace
 bool TimeCommand::execute(CommandSender* sender, const std::string&,
                           const std::vector<std::string>& args) {
     if (args.empty()) {
-        auto* lvl = Server::getInstance().getDefaultWorld();
+        auto* lvl = timeTargetWorld(sender);
         if (lvl)
             sender->sendMessage("Current time: " + std::to_string(lvl->time()));
         return true;
@@ -55,16 +67,12 @@ bool TimeCommand::execute(CommandSender* sender, const std::string&,
                 return true;
             }
         }
-        auto* lvl = Server::getInstance().getDefaultWorld();
+        auto* lvl = timeTargetWorld(sender);
         if (lvl) {
             lvl->setTime(t);
-            auto pk = std::make_shared<network::protocol::SetTimePacket>();
-            pk->time = t;
-            pk->started = true;
-            for (auto& p : Server::getInstance().playersSnapshotRef()) {
-                if (p)
-                    p->sendPacket(pk);
-            }
+            // One scoped broadcast: exactly the viewers of this world, and
+            // the packet is built once (or not at all for an empty world).
+            lvl->broadcastTimeSync();
             sender->sendMessage("Set time to " + std::to_string(t));
         }
         return true;
@@ -77,9 +85,12 @@ bool TimeCommand::execute(CommandSender* sender, const std::string&,
             sender->sendMessage("Invalid value");
             return true;
         }
-        auto* lvl = Server::getInstance().getDefaultWorld();
+        auto* lvl = timeTargetWorld(sender);
         if (lvl) {
             lvl->advanceTime(t);
+            // The client keeps interpolating from its last anchor, so the
+            // shift is invisible until the next re-anchor without this.
+            lvl->broadcastTimeSync();
             sender->sendMessage("Added " + std::to_string(t) + " to time");
         }
         return true;
