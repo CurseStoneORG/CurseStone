@@ -848,6 +848,15 @@ bool api_world_removeFloatingText(const char* world, int64_t id) {
     return w && w->removeFloatingText(id);
 }
 
+// extension batch 6: floating text re-text — mirrors the Lua
+// setFloatingText; the line diff happens inside the particle.
+bool api_world_setFloatingText(const char* world, int64_t id, const char* text) {
+    World* w = findLoadedWorld(world);
+    if (!w || !text)
+        return false;
+    return w->setFloatingText(id, std::string(text));
+}
+
 // extension batch 5: standing mobs — the same surface the Lua world
 // object exposes. Type ids come from the shared entity registry so an
 // id the 0.15.10 client cannot render never reaches the wire.
@@ -921,6 +930,7 @@ CsWorldApi g_worldApi = {
     api_world_getEntity,
     api_entity_typeFromName,
     api_entity_typeName,
+    api_world_setFloatingText,
 };
 
 // data: the per-plugin data_pl/<plugin> sandbox, same rules as data.*.

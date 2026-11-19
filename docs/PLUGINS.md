@@ -48,8 +48,9 @@ API surface (globals):
   `dimension`, `getTime`, `setTime`, `getBlock`, `setBlock`, `getSpawn`,
   `getPlayers`, `spawnParticle`, `spawnBlockParticles`,
   `spawnSplashParticles`, `spawnFloatingText`, `moveFloatingText`,
-  `removeFloatingText`, `spawnEntity`, `moveEntity`, `removeEntity`,
-  `getEntity`, `getEntities`, `entityTypes`, `unload`
+  `setFloatingText`, `getFloatingTexts`, `removeFloatingText`,
+  `spawnEntity`, `moveEntity`, `removeEntity`, `getEntity`, `getEntities`,
+  `entityTypes`, `unload`
 - `commands.register(name, opts, fn)`, `commands.reply(sender, msg)`
 - `events.on(name, fn)` — PlayerJoin, PlayerQuit, PlayerChat, PlayerMove,
   PlayerDropItem, PlayerItemHeld, BlockBreak, BlockPlace, EntityDamage,
@@ -79,18 +80,39 @@ w.spawnBlockParticles(bx, by, bz, blockId, meta)
 -- splash-potion shatter: colored swirl + glass smash sound (2002)
 w.spawnSplashParticles(x, y, z, 0xFF0000)   -- 0xRRGGBB
 
--- floating text: invisible item-entity carrier, nametag = text
--- (protocol 84 has no text particle). One spawn packet, zero per-tick
--- cost. Returns the entity id, or nil at the per-world cap (128/world).
-local id = w.spawnFloatingText(x, y, z, "Welcome!", 200) -- ttl in ticks
-w.moveFloatingText(id, x, y + 1, z)         -- one MoveEntityPacket
-w.removeFloatingText(id)                    -- despawn
+-- floating text (FloatingTextParticle): one invisible item-entity
+-- carrier per line, nametag = line text (protocol 84 has no text
+-- particle). '\n' splits lines: the first line is the title carrier at
+-- the requested position, every following line renders 0.28 below the
+-- previous. Returns the entity id, or nil at the per-world cap
+-- (128/world).
+local id = w.spawnFloatingText(x, y, z, "Welcome\n§7to the hub", 200)
+w.moveFloatingText(id, x, y + 1, z)         -- one MoveEntityPacket per line
+w.setFloatingText(id, "New title\n§anew body") -- changed lines only resync
+for _, t in ipairs(w.getFloatingTexts()) do  -- {id,x,y,z,text}
+end
+w.removeFloatingText(id)                    -- one RemoveEntityPacket per line
 ```
 
 `spawnFloatingText(x, y, z, text, [ttlTicks])`: `ttlTicks > 0` despawns
 automatically after that many ticks, `0` keeps the text until
-`removeFloatingText` (entity ids do not survive restarts). Text longer
-than 128 chars is trimmed.
+`removeFloatingText` (entity ids do not survive restarts). Every line is
+capped at 128 chars and a text renders at most 8 lines (title + 7 body).
+
+`setFloatingText(id, text)` replaces the content with the same multi-line
+model. The change is diffed per line: only lines whose text moved emit
+one SetEntityDataPacket to the viewers, extra lines despawn, missing
+lines spawn — an animated title costs two packets per step, not a
+respawn.
+
+`getFloatingTexts()` returns `{id,x,y,z,text}` tables ordered by entity
+id (`text` is the full text with `\n` separators).
+
+Viewer churn reconciles once per second: players that join or walk into
+render range receive the text, players that walk out or quit stop
+rendering it — the same canSeeBlock audience every other world broadcast
+uses. Between syncs the only per-tick cost of a text is none: spawn,
+move, re-text and removal are the only packet moments.
 
 `data` payload per particle family (each particle type owns its packing
 in its own file under `src/world/particle/`):
@@ -121,6 +143,9 @@ ink slime rain_splash villager_angry villager_happy enchantment_table`.
 Unknown names / ids return `false` and never raise.
 
 Sample plugin: `plugins/SpawnProtection/`.
+
+Test plugin for the floating text API: `plugins/FloatingTextDemo/`
+drives every call through the `/ft` command.
 
 A folder whose `main` points at a `.so`/`.dll` is **not** loaded: native
 plugins are bare files now, and the log explains the migration (move the
@@ -389,8 +414,9 @@ instead of raising anything; invalid arguments never crash the server.
 | `spawnParticle(world, x, y, z, type, data)` | one generic particle, `type` = `CsParticleType` 1..32; see the Lua particles table for `data` packing; unrenderable payloads return 0, never broadcast |
 | `spawnBlockParticles(world, x, y, z, blockId, meta)` | break burst + dig sound (LevelEvent 2001) |
 | `spawnSplashParticles(world, x, y, z, rgb)` | splash shatter (LevelEvent 2002); `rgb` 0xRRGGBB |
-| `spawnFloatingText(world, x, y, z, text, ttlTicks)` | floating text (invisible item-entity carrier + nametag); entity id, or -1 at the cap; ttl 0 = until removed |
+| `spawnFloatingText(world, x, y, z, text, ttlTicks)` | floating text (invisible item-entity carrier per line, nametag = line); `\n` splits title + body lines; entity id, or -1 at the cap; ttl 0 = until removed |
 | `moveFloatingText(world, id, x, y, z)` | repositions a floating text |
+| `setFloatingText(world, id, text)` | re-texts a floating text (per-line diff); false for unknown ids |
 | `removeFloatingText(world, id)` | despawns a floating text; 0 for unknown ids |
 | `spawnEntity(world, type, x, y, z, yaw, pitch)` | standing mob (no AI, zero per-tick cost); entity id, or -1 for an invalid type/position or at the cap; y is feet |
 | `moveEntity(world, id, x, y, z, yaw, pitch)` | repositions a standing mob |

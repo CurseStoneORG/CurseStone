@@ -12,8 +12,11 @@ plugin API once per second at that player:
   5. spawnParticle("item_break", 280<<16) -> LevelEvent 0x4000|10 with the
      stick id in bits 16+; the old crash payloads (low-bits id, item 0)
      and terrain of air must be rejected, never reaching the wire
-  6. spawnFloatingText/move/remove -> AddEntityPacket(type 64) +
-     MoveEntityPacket + RemoveEntityPacket for the same entity id
+  6. spawnFloatingText/move/set/remove -> AddEntityPacket(type 64) +
+     MoveEntityPacket + RemoveEntityPacket for the same entity id;
+     '\\n' spawns a title carrier + body carriers one line apart (0.28),
+     setFloatingText re-texts per line as SetEntityDataPacket entries
+     and getFloatingTexts round-trips the text back
 
 The plugin also probes rejection (unknown name, out-of-range id, out-of-range
 rgb, out-of-range block id, unrenderable item_break/terrain payloads) inside
@@ -42,6 +45,7 @@ START_GAME = 0x09
 ADD_ENTITY = 0x0b
 REMOVE_ENTITY = 0x0c
 MOVE_ENTITY = 0x0f
+SET_ENTITY_DATA = 0x22
 
 PARTICLE_ADD_MASK = 0x4000        # generic particles: evid = mask | type
 PARTICLE_HEART = 15
@@ -55,6 +59,7 @@ BREAK_BLOCK_ID = 41               # gold block texture for the burst
 SPLASH_RGB = 0xFF0000             # red; wire data = 0xFF000000 | rgb
 ITEM_BREAK_STICK = 280 << 16      # item packing: stick id in bits 16+
 ENTITY_TYPE_ITEM = 64             # floating-text carrier (item 0 + nametag)
+LINE_SPACING = 0.28               # carrier y gap between two text lines
 EYE_HEIGHT = 1.62
 
 PLUGIN_YML = ("name: ParticleAPI\nmain: src/main.lua\napi: 1.0.3\n"
@@ -99,12 +104,30 @@ return {
         local ok_mv = ok_ft and w:moveFloatingText(ft, x, y + 2.6, z)
         local ok_rm = ok_ft and w:removeFloatingText(ft)
         local bad_rm = ok_ft and not w:removeFloatingText(ft)
+        -- multi-line floating text: title carrier + body carrier (two
+        -- item-entity spawns one line apart), re-texted per line, listed,
+        -- then moved and removed with the same entity ids.
+        local ml = w:spawnFloatingText(x, y + 3.0, z, "PCHK title\\nPCHK body", 0)
+        local ok_ml = ml ~= nil
+        local ok_st = ok_ml and w:setFloatingText(ml, "PCHK retitle\\nPCHK rebody")
+        local ok_gf = false
+        if ok_ml then
+          local list = w:getFloatingTexts() or {}
+          for _, t in ipairs(list) do
+            if t.id == ml and t.text == "PCHK retitle\\nPCHK rebody" then
+              ok_gf = true
+            end
+          end
+        end
+        local ok_mlm = ok_ml and w:moveFloatingText(ml, x, y + 3.2, z)
+        local ok_mlr = ok_ml and w:removeFloatingText(ml)
         local bad_n = not w:spawnParticle(x, y + 2.0, z, "not_a_particle", 0)
         local bad_i = not w:spawnParticle(x, y + 2.0, z, 99, 0)
         local bad_r = not w:spawnSplashParticles(x, y + 2.0, z, 0x1FF0000)
         local bad_b = not w:spawnBlockParticles(px, py, pz, 300, 0)
         if ok_h and ok_c and ok_b and ok_s and ok_ib and bad_ib and bad_i0
            and ok_t and bad_t and ok_ft and ok_mv and ok_rm and bad_rm
+           and ok_ml and ok_st and ok_gf and ok_mlm and ok_mlr
            and bad_n and bad_i and bad_r and bad_b then
           state.fired = state.fired + 1
           log.info("PCHK cycle " .. state.fired)
@@ -114,7 +137,9 @@ return {
             tostring(ok_s) .. tostring(ok_ib) .. tostring(bad_ib) ..
             tostring(bad_i0) .. tostring(ok_t) .. tostring(bad_t) ..
             tostring(ok_ft) .. tostring(ok_mv) .. tostring(ok_rm) ..
-            tostring(bad_rm) .. tostring(bad_n) .. tostring(bad_i) ..
+            tostring(bad_rm) .. tostring(ok_ml) .. tostring(ok_st) ..
+            tostring(ok_gf) .. tostring(ok_mlm) .. tostring(ok_mlr) ..
+            tostring(bad_n) .. tostring(bad_i) ..
             tostring(bad_r) .. tostring(bad_b))
         end
       end)
@@ -130,9 +155,10 @@ class ParticleApiClient(PortalClient):
     def __init__(self, *a, **k):
         super().__init__(*a, **k)
         self.level_events = []     # (evid, x, y, z, data) as decoded from the wire
-        self.ft_adds = []          # eids of item-entity spawns (floating text)
+        self.ft_adds = []          # (eid, x, y, z) of item-entity spawns (floating text)
         self.ft_moves = set()      # eids seen in MoveEntityPacket
         self.ft_removes = set()    # eids seen in RemoveEntityPacket
+        self.ft_retexts = 0        # SetEntityDataPacket frames (floating-text re-texts)
         self.sg_pos = None         # StartGame player position (feet)
 
     def classify(self, payload: bytes):
@@ -141,15 +167,18 @@ class ParticleApiClient(PortalClient):
             x, y, z = struct.unpack(">fff", payload[3:15])
             data = struct.unpack(">i", payload[15:19])[0]
             self.level_events.append((evid, x, y, z, data))
-        elif payload and payload[0] == ADD_ENTITY and len(payload) >= 13:
+        elif payload and payload[0] == ADD_ENTITY and len(payload) >= 25:
             eid = struct.unpack(">q", payload[1:9])[0]
             etype = struct.unpack(">i", payload[9:13])[0]
             if etype == ENTITY_TYPE_ITEM:
-                self.ft_adds.append(eid)
+                ax, ay, az = struct.unpack(">fff", payload[13:25])
+                self.ft_adds.append((eid, ax, ay, az))
         elif payload and payload[0] == REMOVE_ENTITY and len(payload) >= 9:
             self.ft_removes.add(struct.unpack(">q", payload[1:9])[0])
         elif payload and payload[0] == MOVE_ENTITY and len(payload) >= 17:
             self.ft_moves.add(struct.unpack(">q", payload[1:9])[0])
+        elif payload and payload[0] == SET_ENTITY_DATA and len(payload) >= 9:
+            self.ft_retexts += 1
         elif payload and payload[0] == START_GAME and len(payload) >= 46:
             px, py, pz = struct.unpack(">fff", payload[34:46])
             self.sg_pos = (px, py, pz)
@@ -287,12 +316,24 @@ def run(host: str, port: int, server_bin: str) -> int:
               f"spawnSplashParticles carries opaque ARGB ({len(splashes)})")
 
         # ---- floating text: add -> move -> remove, same entity id -------
-        check(len(c.ft_adds) >= 3,
+        check(len(c.ft_adds) >= 6,
               f"spawnFloatingText spawns item-entity carriers ({len(c.ft_adds)})")
-        moved = [eid for eid in c.ft_adds
-                 if eid in c.ft_moves and eid in c.ft_removes]
+        moved = [e[0] for e in c.ft_adds
+                 if e[0] in c.ft_moves and e[0] in c.ft_removes]
         check(len(moved) == len(c.ft_adds) and c.ft_adds,
               f"every floating text is moved and removed ({len(moved)}/{len(c.ft_adds)})")
+        # ---- multi-line: title carrier + body carrier one line apart ----
+        pairs = 0
+        for i in range(len(c.ft_adds)):
+            for j in range(i + 1, len(c.ft_adds)):
+                a, b = c.ft_adds[i], c.ft_adds[j]
+                if (abs(a[1] - b[1]) < 0.01 and abs(a[3] - b[3]) < 0.01
+                        and abs(abs(a[2] - b[2]) - LINE_SPACING) < 0.05):
+                    pairs += 1
+        check(pairs >= 3,
+              f"multi-line texts spawn title+body carriers {LINE_SPACING} apart ({pairs} pairs)")
+        check(c.ft_retexts >= 2,
+              f"setFloatingText re-texts reach the wire ({c.ft_retexts})")
 
         def near(evts, idx, want, tol=3.0):
             return all(abs(e[idx] - want) < tol for e in evts)
@@ -300,7 +341,11 @@ def run(host: str, port: int, server_bin: str) -> int:
         if hearts:
             check(near(hearts, 1, sx) and near(hearts, 3, sz),
                   "hearts spawn at the player position")
-            check(all(abs(e[2] - (sy + 2.0)) < 1.5 for e in hearts),
+            # Hearts ride on the server-side feet + 2.0. The bot settles
+            # on the ground under gravity, which sits below the StartGame
+            # spawn height, so the band anchors at the spawn height with
+            # room for that settle instead of assuming the exact offset.
+            check(all(sy + 0.3 < e[2] < sy + 3.0 for e in hearts),
                   "hearts rise two blocks above the feet")
         if bursts:
             check(all(abs(e[1] - (float(int(sx)) + 0.5)) < 1.0 and

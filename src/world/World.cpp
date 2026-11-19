@@ -63,6 +63,7 @@
 #include "network/protocol/SetEntityDataPacket.h"
 #include "network/protocol/AddItemEntityPacket.h"
 #include "world/particle/Particle.h"
+#include "world/particle/FloatingTextParticle.h"
 #include "world/particle/ParticleNames.h"
 #include "world/particle/ParticleFamily.h"
 #include "world/particle/GenericParticle.h"
@@ -553,6 +554,9 @@ void World::tick(uint64_t current_tick) {
     // left of the tick, not more.
     if (mob_ai_)
         mob_ai_->tick(current_tick);
+    // Floating text viewer churn closes the tick: one cheap pass per
+    // second, zero cost when the world carries no texts.
+    tickFloatingTexts(current_tick);
 }
 
 void World::broadcastTimeSync() {
@@ -1077,20 +1081,6 @@ void World::broadcastBlockParticles(int32_t bx, int32_t by, int32_t bz,
 
 namespace {
 
-// Broadcasts @p pk to every spawned player of @p w who can see the chunk —
-// the same viewer filter broadcastLevelEvent() applies to world events.
-template <typename T>
-void broadcastToViewers(World* w, int32_t cx, int32_t cz,
-                        const std::shared_ptr<T>& pk) {
-    for (auto& pl : Server::getInstance().playersSnapshotRef()) {
-        if (!pl || !pl->spawned() || pl->isPendingRemoval() || pl->getWorld() != w)
-            continue;
-        if (!pl->canSeeBlock(cx, cz))
-            continue;
-        pl->sendPacket(pk);
-    }
-}
-
 // Despawns one floating text after its ttl. The world is matched by name —
 // holding a World* here dangles when the world is unloaded during the
 // delay — the same pattern LightningRemovalTask uses.
@@ -1118,34 +1108,16 @@ int64_t World::spawnFloatingText(double x, double y, double z, std::string text,
         std::lock_guard<std::mutex> lk(floating_texts_mtx_);
         if (floating_texts_.size() >= kMaxFloatingTexts)
             return -1;
-        if (text.size() > kMaxFloatingTextChars)
-            text.resize(kMaxFloatingTextChars);
     }
     const int64_t eid = Server::getInstance().allocateEid();
-
-    auto add = std::make_shared<network::protocol::AddEntityPacket>();
-    add->eid = eid;
-    add->type = network::protocol::AddEntityPacket::TYPE_ITEM_ENTITY;
-    add->x = (float)x;
-    // The item-entity nametag rides above the entity origin; the reference
-    // FloatingTextParticle lowers the spawn by 0.75 so the text lands on
-    // the requested position.
-    add->y = (float)y - 0.75f;
-    add->z = (float)z;
-    using Meta = network::protocol::SetEntityDataPacket;
-    // Invisible carrier + always-on nametag + no AI (the reference
-    // FloatingTextParticle metadata set, protocol 84 shapes).
-    add->metadata = {
-        {0, Meta::TYPE_BYTE, (int64_t)(1 << Meta::FLAG_BIT_INVISIBLE), 0.0f, std::string()},
-        {Meta::PROP_NAMETAG, Meta::TYPE_STRING, 0, 0.0f, std::move(text)},
-        {Meta::PROP_SHOW_NAMETAG, Meta::TYPE_BYTE, 1, 0.0f, std::string()},
-        {Meta::PROP_NO_AI, Meta::TYPE_BYTE, 1, 0.0f, std::string()},
-    };
-    broadcastToViewers(this, (int32_t)std::floor(x) >> 4, (int32_t)std::floor(z) >> 4, add);
-
+    auto ft = std::make_unique<particle::FloatingTextParticle>(eid, x, y, z);
+    // setText() splits '\n' into title + body carriers before the first
+    // viewer is served, so spawn packets already carry the full layout.
+    ft->setText(std::move(text));
+    ft->syncViewers(*this); // spawn to every player in render range now
     {
         std::lock_guard<std::mutex> lk(floating_texts_mtx_);
-        floating_texts_.emplace(eid, FloatingText{x, y, z, add->metadata[1].sval});
+        floating_texts_.emplace(eid, std::move(ft));
     }
     if (ttlTicks > 0) {
         scheduler::ServerScheduler::get().scheduleSync(
@@ -1155,40 +1127,81 @@ int64_t World::spawnFloatingText(double x, double y, double z, std::string text,
 }
 
 bool World::moveFloatingText(int64_t id, double x, double y, double z) {
+    particle::FloatingTextParticle* ft = nullptr;
     {
         std::lock_guard<std::mutex> lk(floating_texts_mtx_);
         auto it = floating_texts_.find(id);
         if (it == floating_texts_.end())
             return false;
-        it->second.x = x;
-        it->second.y = y;
-        it->second.z = z;
+        ft = it->second.get();
     }
-    auto mv = std::make_shared<network::protocol::MoveEntityPacket>();
-    mv->eid = id;
-    mv->x = (float)x;
-    mv->y = (float)y - 0.75f; // Same offset the spawn packet applies.
-    mv->z = (float)z;
-    broadcastToViewers(this, (int32_t)std::floor(x) >> 4, (int32_t)std::floor(z) >> 4, mv);
+    // Pointer stability: only the main thread mutates the map (commands,
+    // scheduler tasks and tick() are all main-thread), so the entry behind
+    // the pointer cannot be erased between unlock and use.
+    ft->setPosition(*this, x, y, z);
     return true;
 }
 
-bool World::removeFloatingText(int64_t id) {
+bool World::setFloatingText(int64_t id, std::string text) {
+    particle::FloatingTextParticle* ft = nullptr;
     {
         std::lock_guard<std::mutex> lk(floating_texts_mtx_);
-        if (floating_texts_.erase(id) == 0)
+        auto it = floating_texts_.find(id);
+        if (it == floating_texts_.end())
             return false;
+        ft = it->second.get();
     }
-    // Removal goes to every player of the world regardless of chunk
-    // visibility: the client ignores unknown entity ids, and this covers
-    // viewers whose chunk was visible at spawn but who moved away since.
-    auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
-    rm->eid = id;
-    for (auto& pl : Server::getInstance().playersSnapshotRef()) {
-        if (pl && pl->spawned() && pl->getWorld() == this)
-            pl->sendPacket(rm);
-    }
+    ft->setText(std::move(text));
     return true;
+}
+
+std::vector<World::FloatingTextSnapshot> World::floatingTexts() const {
+    std::lock_guard<std::mutex> lk(floating_texts_mtx_);
+    std::vector<FloatingTextSnapshot> out;
+    out.reserve(floating_texts_.size());
+    for (const auto& [id, ft] : floating_texts_) {
+        out.push_back(FloatingTextSnapshot{id, ft->x(), ft->y(), ft->z(), ft->text()});
+    }
+    // Entity-id order keeps list queries deterministic across frames.
+    std::sort(out.begin(), out.end(),
+              [](const FloatingTextSnapshot& a, const FloatingTextSnapshot& b) {
+                  return a.id < b.id;
+              });
+    return out;
+}
+
+bool World::removeFloatingText(int64_t id) {
+    std::unique_ptr<particle::FloatingTextParticle> ft;
+    {
+        std::lock_guard<std::mutex> lk(floating_texts_mtx_);
+        auto it = floating_texts_.find(id);
+        if (it == floating_texts_.end())
+            return false;
+        ft = std::move(it->second);
+        floating_texts_.erase(it);
+    }
+    // Off the map already: close() despawns every line from the world
+    // audience before the particle is destroyed.
+    ft->close(*this);
+    return true;
+}
+
+void World::tickFloatingTexts(uint64_t current_tick) {
+    if (current_tick % particle::FloatingTextParticle::kViewerSyncTicks != 0)
+        return;
+    std::vector<particle::FloatingTextParticle*> texts;
+    {
+        std::lock_guard<std::mutex> lk(floating_texts_mtx_);
+        if (floating_texts_.empty())
+            return;
+        texts.reserve(floating_texts_.size());
+        for (const auto& [_, ft] : floating_texts_)
+            texts.push_back(ft.get());
+    }
+    // Packet sends happen off the world mutex — the same pattern the
+    // spawn/move/remove paths use.
+    for (particle::FloatingTextParticle* ft : texts)
+        ft->syncViewers(*this);
 }
 
 namespace {
