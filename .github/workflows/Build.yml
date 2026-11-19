@@ -23,6 +23,11 @@ on:
         type: boolean
 
 jobs:
+  # NOTE: every artifact below uses retention-days: 1. The release job
+  # consumes artifacts within the SAME workflow run, so short storage
+  # never breaks releases — it only keeps the Actions storage quota
+  # from filling up with stale binaries.
+
   # Linux x86_64 — compile check plus the reference binary.
   build-linux:
     name: Linux x86_64
@@ -48,7 +53,7 @@ jobs:
         with:
           name: CurseStone-linux-x86_64
           path: build/linux-release/CurseStone
-          retention-days: 7
+          retention-days: 1
 
   # Linux ARM64 (aarch64) — for ARM Linux hosts (Azure Cobalt 100 VMs, etc.).
   build-linux-arm64:
@@ -95,7 +100,7 @@ jobs:
         with:
           name: CurseStone-linux-arm64
           path: build/linux-arm64-release/CurseStone
-          retention-days: 7
+          retention-days: 1
 
   # Android ARM64 (NDK) — for Termux/Android hosting.
   build-android-arm64:
@@ -154,7 +159,7 @@ jobs:
         with:
           name: CurseStone-android-arm64
           path: build/android-arm64/CurseStone
-          retention-days: 14
+          retention-days: 1
 
   # Windows x86_64 (MSVC + Ninja).
   build-windows:
@@ -201,7 +206,7 @@ jobs:
           path: |
             build/windows-release/CurseStone.exe
             build/windows-release/CurseStone.pdb
-          retention-days: 7
+          retention-days: 1
 
   # Automatic release when a v* tag is pushed.
   release:
