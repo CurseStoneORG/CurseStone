@@ -47,7 +47,8 @@ API surface (globals):
   `server.unloadWorld(name)` / `server.isWorldLoaded(name)` /
   `server.defaultWorld()` — world handles with `name`, `seed`,
   `dimension`, `generator`, `isDefault`, `getTime`, `setTime`, `getBlock`,
-  `getBlockMeta`, `setBlock`, `fill`, `getSpawn`, `setSpawn`, `getPlayers`,
+  `getBlockMeta`, `setBlock`, `fill`, `setBlocks`, `getBlocks`, `getSpawn`,
+  `setSpawn`, `getPlayers`,
   `playerCount`, `isChunkLoaded` (chunk coords), `chunkCount`, `save`,
   `spawnParticle`, `spawnBlockParticles`, `spawnSplashParticles`,
   `spawnFloatingText`, `moveFloatingText`, `setFloatingText`,
@@ -83,6 +84,23 @@ the new walls. `world.getBlockMeta(x, y, z)` reads the meta nibble back
 (wood types, wool colors, facing). `player.getHeldItem(name)` returns
 `id, meta, count, customName` (customName nil when unnamed) — how a tool
 plugin identifies its own custom-named brush item.
+
+Every block-construction coordinate accepts any number: `10`, `10.0` and
+`10.5` all land on the FLOORED cell (the cell containing the point), and
+the particle helpers anchor their bursts on the block center themselves —
+pass plain cell coordinates. Only block/item ids must be whole numbers.
+
+For undo snapshots and arbitrary cell lists (paste, brush stamps) use the
+bulk pair — ONE call per op instead of one per cell:
+
+```lua
+local flat = w.getBlocks(x1, y1, z1, x2, y2, z2)  -- {id, meta, id, meta, ...}
+-- row-major in the same y -> x -> z order fill writes; cold chunks are
+-- forced resident first (a snapshot never reads phantom air); nil over cap
+local n = w.setBlocks({x, y, z, 35, 14,  x, y + 1, z, 35, 14})
+-- 5 numbers per cell; later entries override earlier ones; cells already
+-- in the requested state cost reads only; returns cells written, -1 over cap
+```
 - `commands.register(name, opts, fn)`, `commands.reply(sender, msg)`
 - `events.on(name, fn)` — PlayerJoin, PlayerQuit, PlayerChat, PlayerMove,
   PlayerDropItem, PlayerItemHeld, BlockBreak, BlockPlace, EntityDamage,
@@ -477,6 +495,8 @@ instead of raising anything; invalid arguments never crash the server.
 | `getBlock(world, x, y, z) -> id` / `getBlockMeta(...) -> 0..15` | `0` for unloaded chunks / invalid y |
 | `setBlock(world, x, y, z, id, meta)` | forces the chunk resident first; refreshes every viewer of the cell |
 | `fillBlocks(world, x1, y1, z1, x2, y2, z2, id, meta)` | bulk /fill write, vanilla 32768-cell cap; cells written, -1 over cap — batch 10 |
+| `setBlocks(world, cells, cellCount)` | bulk cell-list write, 5 int32 per cell (x, y, z, id, meta); later entries win; cells written, -1 over cap — batch 11 |
+| `getBlocks(world, x1, y1, z1, x2, y2, z2, out, outCap)` | bulk region read, (id, meta) int32 pairs y-major; forces cold chunks resident; cells read, -1 over cap/buffer — batch 11 |
 | `getSpawn(world, out[3])` / `setSpawnPoint(world, x, y, z)` | compass spawn |
 | `getWeather -> 0..2` / `setWeather(world, state)` | 0 clear / 1 rain / 2 thunder |
 | `spawnLightning(world, x, y, z, fire)` | |

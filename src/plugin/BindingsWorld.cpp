@@ -56,6 +56,19 @@
 //                                      whole-chunk re-sends for dense ones.
 //                                      Returns the cells written, or -1
 //                                      when the volume exceeds the cap.
+//   world.setBlocks({x,y,z,id,meta, ..}) one bulk write for an arbitrary
+//                                      cell list (5 numbers per cell:
+//                                      undo, paste, brush stamps). Same
+//                                      residency + viewer refresh
+//                                      contract as fill; returns the
+//                                      cells written, -1 over the cap.
+//   world.getBlocks(x1,y1,z1,x2,y2,z2)  one bulk read: {id, meta, ...}
+//                                      pairs in the same y->x->z order
+//                                      fill writes, so a plugin can
+//                                      snapshot before overwriting and
+//                                      put the original back with
+//                                      setBlocks; nil over the cap. Cold
+//                                      chunks are forced resident first.
 //   world.getTime() / setTime(t)       time of the world (0..24000);
 //                                      setTime pushes the new clock to
 //                                      every viewer of this world
@@ -164,6 +177,8 @@
 #include "entity/EntityTypes.h"
 #include <string>
 #include <cstring>
+#include <cmath>
+#include <vector>
 
 namespace cursestone::plugin {
 
@@ -265,11 +280,28 @@ int l_world_settime(lua_State* L) {
     return 1;
 }
 
+// Block-construction coordinates accept any number: the fractional part
+// floors toward -inf (the cell CONTAINING the point), which is what
+// "block at this position" means for a 10.5 tap or a player standing at
+// 12.7. Lua integers and floats both pass (10, 10.0, 10.5); non-finite
+// and out-of-int32 values still raise a proper argument error instead of
+// wrapping around. WorldEditDemo used to die on exactly this: its brush
+// passed x + 0.5 where only whole numbers were accepted, the error
+// swallowed the handler and the brush felt dead.
+static lua_Integer cellCoord(lua_State* L, int idx) {
+    lua_Number v = luaL_checknumber(L, idx);
+    if (!(v >= -2147483648.0 && v <= 2147483647.0)) {
+        // NaN fails both comparisons; +/-inf fails the bounds.
+        return luaL_argerror(L, idx, "cell coordinate out of range");
+    }
+    return (lua_Integer)std::floor(v);
+}
+
 int l_world_getblock(lua_State* L) {
     WORLD_OR_NIL();
-    lua_Integer x = luaL_checkinteger(L, 2);
-    lua_Integer y = luaL_checkinteger(L, 3);
-    lua_Integer z = luaL_checkinteger(L, 4);
+    lua_Integer x = cellCoord(L, 2);
+    lua_Integer y = cellCoord(L, 3);
+    lua_Integer z = cellCoord(L, 4);
     if (y < 0 || y > 255) {
         lua_pushinteger(L, 0);
         return 1;
@@ -280,9 +312,9 @@ int l_world_getblock(lua_State* L) {
 
 int l_world_getblockmeta(lua_State* L) {
     WORLD_OR_NIL();
-    lua_Integer x = luaL_checkinteger(L, 2);
-    lua_Integer y = luaL_checkinteger(L, 3);
-    lua_Integer z = luaL_checkinteger(L, 4);
+    lua_Integer x = cellCoord(L, 2);
+    lua_Integer y = cellCoord(L, 3);
+    lua_Integer z = cellCoord(L, 4);
     if (y < 0 || y > 255) {
         lua_pushinteger(L, 0);
         return 1;
@@ -293,9 +325,9 @@ int l_world_getblockmeta(lua_State* L) {
 
 int l_world_setblock(lua_State* L) {
     WORLD_OR_NIL();
-    lua_Integer x = luaL_checkinteger(L, 2);
-    lua_Integer y = luaL_checkinteger(L, 3);
-    lua_Integer z = luaL_checkinteger(L, 4);
+    lua_Integer x = cellCoord(L, 2);
+    lua_Integer y = cellCoord(L, 3);
+    lua_Integer z = cellCoord(L, 4);
     lua_Integer id = luaL_checkinteger(L, 5);
     lua_Integer data = luaL_optinteger(L, 6, 0);
     if (y < 0 || y > 255 || id < 0 || id > 255 || data < 0 || data > 15) {
@@ -318,12 +350,12 @@ int l_world_setblock(lua_State* L) {
 
 int l_world_fill(lua_State* L) {
     WORLD_OR_NIL();
-    lua_Integer x1 = luaL_checkinteger(L, 2);
-    lua_Integer y1 = luaL_checkinteger(L, 3);
-    lua_Integer z1 = luaL_checkinteger(L, 4);
-    lua_Integer x2 = luaL_checkinteger(L, 5);
-    lua_Integer y2 = luaL_checkinteger(L, 6);
-    lua_Integer z2 = luaL_checkinteger(L, 7);
+    lua_Integer x1 = cellCoord(L, 2);
+    lua_Integer y1 = cellCoord(L, 3);
+    lua_Integer z1 = cellCoord(L, 4);
+    lua_Integer x2 = cellCoord(L, 5);
+    lua_Integer y2 = cellCoord(L, 6);
+    lua_Integer z2 = cellCoord(L, 7);
     lua_Integer id = luaL_checkinteger(L, 8);
     lua_Integer data = luaL_optinteger(L, 9, 0);
     if (id < 0 || id > 255 || data < 0 || data > 15) {
@@ -333,6 +365,73 @@ int l_world_fill(lua_State* L) {
     lua_pushinteger(
         L, w->fillBlocks((int32_t)x1, (int32_t)y1, (int32_t)z1, (int32_t)x2,
                          (int32_t)y2, (int32_t)z2, (uint8_t)id, (uint8_t)data));
+    return 1;
+}
+
+// world.setBlocks({x, y, z, id, meta, ...}) — one bulk write for an
+// arbitrary cell list (undo, paste, brush stamps): 5 numbers per cell,
+// the server groups it per chunk and refreshes every viewer once.
+// Returns the cells written, -1 over the 32768-cell cap, 0 when every
+// cell was a no-op or carried an invalid id/meta.
+int l_world_setblocks(lua_State* L) {
+    WORLD_OR_NIL();
+    luaL_checktype(L, 2, LUA_TTABLE);
+    lua_Integer len = luaL_len(L, 2);
+    if (len % 5 != 0) {
+        return luaL_argerror(L, 2,
+                             "cell list must hold 5 numbers per cell (x, y, z, id, meta)");
+    }
+    lua_Integer count = len / 5;
+    if (count > World::FILL_MAX_VOLUME) {
+        lua_pushinteger(L, -1);
+        return 1;
+    }
+    std::vector<World::BlockWrite> cells;
+    cells.reserve((size_t)count);
+    for (lua_Integer i = 0; i < count; ++i) {
+        for (int k = 0; k < 5; ++k)
+            lua_rawgeti(L, 2, i * 5 + k + 1);
+        lua_Integer x = cellCoord(L, -5);
+        lua_Integer y = cellCoord(L, -4);
+        lua_Integer z = cellCoord(L, -3);
+        lua_Integer id = luaL_checkinteger(L, -2);
+        lua_Integer meta = luaL_optinteger(L, -1, 0);
+        lua_pop(L, 5);
+        if (id < 0 || id > 255 || meta < 0 || meta > 15) {
+            lua_pushinteger(L, 0);
+            return 1;
+        }
+        cells.push_back(World::BlockWrite{(int32_t)x, (int32_t)y, (int32_t)z,
+                                          (uint8_t)id, (uint8_t)meta});
+    }
+    lua_pushinteger(L, w->setBlocks(cells.data(), (int32_t)cells.size()));
+    return 1;
+}
+
+// world.getBlocks(x1, y1, z1, x2, y2, z2) — one bulk read of a block
+// region: {id, meta, id, meta, ...} in the same y -> x -> z order fill
+// writes, so a plugin can snapshot before overwriting and put the
+// original back with setBlocks. nil when the region exceeds the cap.
+int l_world_getblocks(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_Integer x1 = cellCoord(L, 2);
+    lua_Integer y1 = cellCoord(L, 3);
+    lua_Integer z1 = cellCoord(L, 4);
+    lua_Integer x2 = cellCoord(L, 5);
+    lua_Integer y2 = cellCoord(L, 6);
+    lua_Integer z2 = cellCoord(L, 7);
+    std::vector<uint8_t> out;
+    int32_t n = w->readBlockRegion((int32_t)x1, (int32_t)y1, (int32_t)z1,
+                                   (int32_t)x2, (int32_t)y2, (int32_t)z2, out);
+    if (n < 0) {
+        lua_pushnil(L);
+        return 1;
+    }
+    lua_createtable(L, (int)out.size(), 0);
+    for (size_t i = 0; i < out.size(); ++i) {
+        lua_pushinteger(L, out[i]);
+        lua_rawseti(L, -2, (int)i + 1);
+    }
     return 1;
 }
 
@@ -381,8 +480,8 @@ int l_world_playercount(lua_State* L) {
 // Chunk coordinates (block >> 4), matching the native isChunkLoaded.
 int l_world_ischunkloaded(lua_State* L) {
     WORLD_OR_NIL();
-    lua_Integer cx = luaL_checkinteger(L, 2);
-    lua_Integer cz = luaL_checkinteger(L, 3);
+    lua_Integer cx = cellCoord(L, 2);
+    lua_Integer cz = cellCoord(L, 3);
     lua_pushboolean(L, w->chunks().getChunkIfLoaded((int32_t)cx, (int32_t)cz) != nullptr ? 1 : 0);
     return 1;
 }
@@ -447,9 +546,9 @@ int l_world_spawnparticle(lua_State* L) {
 
 int l_world_spawnblockparticles(lua_State* L) {
     WORLD_OR_NIL();
-    lua_Integer x = luaL_checkinteger(L, 2);
-    lua_Integer y = luaL_checkinteger(L, 3);
-    lua_Integer z = luaL_checkinteger(L, 4);
+    lua_Integer x = cellCoord(L, 2);
+    lua_Integer y = cellCoord(L, 3);
+    lua_Integer z = cellCoord(L, 4);
     lua_Integer id = luaL_checkinteger(L, 5);
     lua_Integer meta = luaL_optinteger(L, 6, 0);
     if (id < 0 || id > 255 || meta < 0 || meta > 15) {
@@ -789,6 +888,8 @@ const luaL_Reg kWorldMethods[] = {
     {"getBlockMeta", l_world_getblockmeta},
     {"setBlock", l_world_setblock},
     {"fill", l_world_fill},
+    {"setBlocks", l_world_setblocks},
+    {"getBlocks", l_world_getblocks},
     {"getSpawn", l_world_getspawn},
     {"setSpawn", l_world_setspawn},
     {"getPlayers", l_world_getplayers},

@@ -366,6 +366,33 @@ class World {
     // Volume cap of fillBlocks (the vanilla /fill limit).
     static constexpr int32_t FILL_MAX_VOLUME = 32768;
 
+    // One cell of a bulk cell-list write (setBlocks): position plus the
+    // id/data to leave there.
+    struct BlockWrite {
+        int32_t x, y, z;
+        uint8_t id, data;
+    };
+
+    // Bulk cell-list write for building tools (undo, copy/paste, brush
+    // stamps): one call writes an arbitrary set of cells. Touched chunks
+    // are made resident once, no-op cells (same id AND data) are skipped,
+    // later entries override earlier ones for the same cell, and every
+    // written cell meets its neighbors like a normal placement. Viewers
+    // refresh through the same mixed path as fillBlocks (whole-chunk
+    // re-sends for dense chunks, shared per-block packets for sparse
+    // ones). Returns the number of cells actually written, or -1 when
+    // count exceeds the cap.
+    int32_t setBlocks(const BlockWrite* writes, int32_t count);
+
+    // Bulk region read for building tools (undo snapshots): fills `out`
+    // with (id, data) byte pairs, row-major in the same y -> x -> z order
+    // fillBlocks iterates. Cold chunks are made resident first, so a
+    // snapshot taken before a fill can never read phantom air. Returns
+    // the cell count, or -1 when the region exceeds the cap (out is left
+    // untouched then).
+    int32_t readBlockRegion(int32_t x1, int32_t y1, int32_t z1, int32_t x2, int32_t y2,
+                            int32_t z2, std::vector<uint8_t>& out);
+
     // Sets the skip-night countdown; non-positive values cancel it.
     void setSleepTicks(int32_t t) {
         sleep_ticks_ = t;

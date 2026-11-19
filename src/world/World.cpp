@@ -662,6 +662,65 @@ void World::broadcastBlockUpdate(int32_t x, int32_t y, int32_t z) {
 // with a single (already compressed) chunk payload.
 static constexpr size_t kFillChunkResendCells = 96;
 
+// One changed cell inside its chunk (chunk-local coords + absolute y) —
+// the refresh bookkeeping the bulk writers share.
+struct TouchedCell {
+    uint8_t lx, y, lz;
+};
+using TouchedMap = std::unordered_map<uint64_t, std::vector<TouchedCell>>;
+
+// The viewer refresh shared by fillBlocks and setBlocks: dense chunks go
+// out as one whole-chunk re-send per viewer (sendChunk flushes the queued
+// light work first, so the re-streamed chunk also carries the relight the
+// write queued), sparse chunks as one shared UpdateBlockPacket per cell.
+static void refreshTouchedCells(World& w, const TouchedMap& touched) {
+    const auto& players = cursestone::Server::getInstance().playersSnapshotRef();
+    static constexpr size_t kDirectTargets = 96;
+    Player* viewers[kDirectTargets];
+    size_t nv = 0;
+    bool overflow = false;
+    for (auto& p : players) {
+        if (!p || p->isPendingRemoval() || !p->spawned() || p->getWorld() != &w)
+            continue;
+        if (nv < kDirectTargets)
+            viewers[nv++] = p.get();
+        else
+            overflow = true;
+    }
+    if (nv == 0 && !overflow)
+        return; // nobody is watching — no wire traffic at all
+
+    auto sendChunkResend = [&](Player& p, int32_t ccx, int32_t ccz) {
+        if (!p.canSeeBlock(ccx, ccz))
+            return;
+        p.sendChunk(ccx, ccz);
+    };
+
+    for (auto& [key, cells] : touched) {
+        int32_t ccx = (int32_t)(uint32_t)(key >> 32);
+        int32_t ccz = (int32_t)(uint32_t)(key & 0xFFFFFFFFu);
+        if (cells.size() > kFillChunkResendCells) {
+            if (!overflow) {
+                for (size_t i = 0; i < nv; ++i)
+                    sendChunkResend(*viewers[i], ccx, ccz);
+            } else {
+                for (auto& p : players) {
+                    if (!p || p->isPendingRemoval() || !p->spawned() ||
+                        p->getWorld() != &w)
+                        continue;
+                    sendChunkResend(*p, ccx, ccz);
+                }
+            }
+        } else {
+            for (const TouchedCell& c : cells) {
+                int32_t bx = (ccx << 4) + c.lx;
+                int32_t bz = (ccz << 4) + c.lz;
+                w.broadcastBlockUpdate(bx, c.y, bz);
+            }
+        }
+    }
+}
+
 int32_t World::fillBlocks(int32_t x1, int32_t y1, int32_t z1, int32_t x2, int32_t y2,
                           int32_t z2, uint8_t id, uint8_t data) {
     // Canonical box: corners in any order, Y clamped into the world.
@@ -687,10 +746,7 @@ int32_t World::fillBlocks(int32_t x1, int32_t y1, int32_t z1, int32_t x2, int32_
     // Changed cells grouped by chunk so the refresh pass can pick the
     // cheap per-block packets for lightly touched chunks and the
     // whole-chunk re-send for the dense ones.
-    struct ChangedCell {
-        uint8_t lx, y, lz;
-    };
-    std::unordered_map<uint64_t, std::vector<ChangedCell>> touched;
+    TouchedMap touched;
     int32_t written = 0;
     for (int32_t y = min_y; y <= max_y; ++y) {
         for (int32_t x = min_x; x <= max_x; ++x) {
@@ -728,57 +784,77 @@ int32_t World::fillBlocks(int32_t x1, int32_t y1, int32_t z1, int32_t x2, int32_
                     block::LiquidFlow::onBlockChanged(this, x, y, z);
             }
 
-    // Refresh pass: viewers of this world, collected once on the stack
-    // (the >96 overflow case falls back to scanning the snapshot per
-    // chunk — rare and still correct).
-    const auto& players = cursestone::Server::getInstance().playersSnapshotRef();
-    static constexpr size_t kDirectTargets = 96;
-    Player* viewers[kDirectTargets];
-    size_t nv = 0;
-    bool overflow = false;
-    for (auto& p : players) {
-        if (!p || p->isPendingRemoval() || !p->spawned() || p->getWorld() != this)
-            continue;
-        if (nv < kDirectTargets)
-            viewers[nv++] = p.get();
-        else
-            overflow = true;
-    }
-
-    auto sendChunkResend = [&](Player& p, int32_t ccx, int32_t ccz) {
-        if (!p.canSeeBlock(ccx, ccz))
-            return;
-        p.sendChunk(ccx, ccz);
-    };
-
-    for (auto& [key, cells] : touched) {
-        int32_t ccx = (int32_t)(uint32_t)(key >> 32);
-        int32_t ccz = (int32_t)(uint32_t)(key & 0xFFFFFFFFu);
-        if (cells.size() > kFillChunkResendCells) {
-            // Dense chunk: one whole-chunk payload per viewer (sendChunk
-            // flushes the queued light work first, so the re-streamed
-            // chunk also carries the relight this fill queued).
-            if (!overflow) {
-                for (size_t i = 0; i < nv; ++i)
-                    sendChunkResend(*viewers[i], ccx, ccz);
-            } else {
-                for (auto& p : players) {
-                    if (!p || p->isPendingRemoval() || !p->spawned() ||
-                        p->getWorld() != this)
-                        continue;
-                    sendChunkResend(*p, ccx, ccz);
-                }
-            }
-        } else {
-            // Light chunk: one shared UpdateBlockPacket per changed cell.
-            for (const ChangedCell& c : cells) {
-                int32_t bx = (ccx << 4) + c.lx;
-                int32_t bz = (ccz << 4) + c.lz;
-                broadcastBlockUpdate(bx, c.y, bz);
-            }
-        }
-    }
+    refreshTouchedCells(*this, touched);
     return written;
+}
+
+int32_t World::setBlocks(const BlockWrite* writes, int32_t count) {
+    if (count < 0 || count > FILL_MAX_VOLUME)
+        return -1;
+    if (count == 0 || !writes)
+        return 0;
+
+    TouchedMap touched;
+    int32_t written = 0;
+    for (int32_t i = 0; i < count; ++i) {
+        const BlockWrite& b = writes[i];
+        if (b.y < 0 || b.y > 255)
+            continue; // outside the world entirely
+        // Make the target chunk resident once — the same contract as
+        // fillBlocks and world.setBlock: never a silent no-op on cold
+        // terrain. getChunk on an already-resident chunk is a map hit.
+        chunks_.getChunk(b.x >> 4, b.z >> 4);
+        // No-op cells (same id AND data) are skipped: re-applying an undo
+        // snapshot over unchanged terrain costs reads only.
+        if (getBlockId(b.x, b.y, b.z) == b.id && getBlockData(b.x, b.y, b.z) == b.data)
+            continue;
+        // A cell list is surgical editing: every written cell meets its
+        // neighbors like a normal placement (liquids flow against it,
+        // sand above falls, torches pop).
+        setBlock(b.x, b.y, b.z, b.id, b.data, /*notifyLiquid=*/true);
+        touched[packChunkPos(b.x >> 4, b.z >> 4)].push_back(
+            {(uint8_t)(b.x & 15), (uint8_t)b.y, (uint8_t)(b.z & 15)});
+        ++written;
+    }
+    if (written == 0)
+        return 0;
+
+    refreshTouchedCells(*this, touched);
+    return written;
+}
+
+int32_t World::readBlockRegion(int32_t x1, int32_t y1, int32_t z1, int32_t x2, int32_t y2,
+                               int32_t z2, std::vector<uint8_t>& out) {
+    // Canonical box: corners in any order, Y clamped into the world —
+    // the exact normalization fillBlocks applies, so a read taken before
+    // a fill covers the same cells the fill writes.
+    int32_t min_x = std::min(x1, x2), max_x = std::max(x1, x2);
+    int32_t min_y = std::max(std::min(y1, y2), 0);
+    int32_t max_y = std::min(std::max(y1, y2), 255);
+    int32_t min_z = std::min(z1, z2), max_z = std::max(z1, z2);
+    if (max_y < min_y)
+        return 0;
+    const int64_t volume = (int64_t)(max_x - min_x + 1) * (int64_t)(max_y - min_y + 1) *
+                           (int64_t)(max_z - min_z + 1);
+    if (volume > FILL_MAX_VOLUME)
+        return -1;
+
+    // Cold chunks are made resident first: a snapshot taken before a
+    // fill must see the real terrain, never phantom air (getBlockId on
+    // an unloaded chunk answers 0, and undoing that would carve holes).
+    for (int32_t cx = min_x >> 4; cx <= max_x >> 4; ++cx)
+        for (int32_t cz = min_z >> 4; cz <= max_z >> 4; ++cz)
+            chunks_.getChunk(cx, cz);
+
+    out.clear();
+    out.reserve((size_t)volume * 2);
+    for (int32_t y = min_y; y <= max_y; ++y)
+        for (int32_t x = min_x; x <= max_x; ++x)
+            for (int32_t z = min_z; z <= max_z; ++z) {
+                out.push_back(getBlockId(x, y, z));
+                out.push_back(getBlockData(x, y, z));
+            }
+    return (int32_t)volume;
 }
 
 void World::checkSleep() {

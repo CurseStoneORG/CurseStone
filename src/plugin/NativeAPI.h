@@ -539,6 +539,27 @@ typedef struct CsWorldApi {
      */
     int32_t (*fillBlocks)(const char* world, int32_t x1, int32_t y1, int32_t z1,
                           int32_t x2, int32_t y2, int32_t z2, int32_t id, int32_t meta);
+    /* ---- appended (ABI 1, extension batch 11: bulk construction) ---- */
+    /**
+     * @brief Bulk cell-list write: @p cells holds 5 int32 per cell
+     *        (x, y, z, id, meta). Later entries override earlier ones for
+     *        the same cell; out-of-world cells and invalid id/meta are
+     *        skipped. Same residency contract and viewer refresh as
+     *        fillBlocks. Returns the cells actually written, -1 when
+     *        @p cellCount exceeds the 32768-cell cap.
+     */
+    int32_t (*setBlocks)(const char* world, const int32_t* cells, int32_t cellCount);
+    /**
+     * @brief Bulk region read: fills @p out with (id, meta) int32 pairs,
+     *        row-major in the y -> x -> z order fillBlocks iterates;
+     *        @p outCap is the int32 capacity of @p out (2 slots per cell
+     *        are needed). Cold chunks are made resident first, so a
+     *        snapshot before a fill never sees phantom air. Returns the
+     *        cells read, -1 when the region exceeds the cap or the buffer
+     *        is too small.
+     */
+    int32_t (*getBlocks)(const char* world, int32_t x1, int32_t y1, int32_t z1,
+                         int32_t x2, int32_t y2, int32_t z2, int32_t* out, int32_t outCap);
 } CsWorldApi;
 
 /**
