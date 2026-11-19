@@ -8,8 +8,12 @@ op) and exercises the WorldEdit-style building surface end to end:
   Phase 1 — plugin API: world.fill 3x3x3 (27 cells) with a getBlock /
   getBlockMeta round trip, world.fill 8x8x8 (512 cells, the dense
   whole-chunk re-send path), the vanilla volume cap refusal (33^3 > 32768
-  -> -1), setBlock/getBlockMeta nibble round trip, and player.giveItem
-  with a custom item name + player.getHeldItem reading that name back.
+  -> -1), setBlock/getBlockMeta nibble round trip, FRACTIONAL cell
+  coordinates (the WorldEditDemo brush crash class: x + 0.5 used to be a
+  hard Lua error, now it floors into the containing cell), and the bulk
+  pair world.getBlocks + world.setBlocks (one call per undo snapshot and
+  one per write instead of thousands). Also player.giveItem with a custom
+  item name + player.getHeldItem reading that name back.
   The plugin stamps "PCHK BUILD <label> ok" (and "PCHK BUILD FAIL" on
   any deviation) into the server log.
 
@@ -115,6 +119,67 @@ local function onCommand(sender, args)
         w:setBlock(x + 1, y + 1, z + 1, 35, 4)
         local meta = w:getBlockMeta(x + 1, y + 1, z + 1)
         stamp("meta", meta == 4, meta)
+    elseif sub == "float" then
+        -- The WorldEditDemo crash class: fractional coordinates in the
+        -- block-construction calls used to raise "number has no integer
+        -- representation". Every one of these must now succeed and land
+        -- on the FLOORED cell (the cell containing the point).
+        local x, y, z = player.getPosition(name)
+        local fx, fy, fz = x + 0.5, y + 2.5, z + 0.5
+        local bx, by, bz = math.floor(fx), math.floor(fy), math.floor(fz)
+        local ok, err = pcall(w.setBlock, w, fx, fy, fz, 1, 0)
+        stamp("floatset", ok and w:getBlock(bx, by, bz) == 1, err)
+        ok, err = pcall(w.fill, w, fx, fy + 12, fz, fx + 1, fy + 13, fz + 1, 1, 0)
+        stamp("floatfill", ok and err == 8, tostring(err))
+        ok, err = pcall(w.spawnBlockParticles, w, fx, fy, fz, 1, 0)
+        stamp("floatparticles", ok, err)
+        ok, err = pcall(w.getBlocks, w, fx, fy, fz, fx + 1, fy + 1, fz + 1)
+        -- 2x2x2 cells -> 8 cells -> 16 (id, meta) entries.
+        stamp("floatbulkread", ok and type(err) == "table" and #err == 16,
+              tostring(type(err)) .. "/" .. tostring(err and #err or "nil"))
+    elseif sub == "bulk" then
+        -- world.getBlocks + world.setBlocks: one read snapshots the box,
+        -- one write restamps a checker of wool over it, one write puts
+        -- the snapshot back (the undo shape every building plugin uses).
+        local x, y, z = player.getPosition(name)
+        x, y, z = math.floor(x + 0.5), math.floor(y + 0.5), math.floor(z + 0.5)
+        w:fill(x + 1, y + 2, z + 1, x + 3, y + 4, z + 3, 1, 0) -- 3x3x3 stone
+        local flat = w:getBlocks(x + 1, y + 2, z + 1, x + 3, y + 4, z + 3)
+        stamp("bulkread", flat and #flat == 54, flat and #flat or "nil")
+        local cells = {}
+        for i = 0, 26 do
+            if (i // 9 + (i % 9) // 3 + i % 3) % 2 == 0 then -- checker
+                cells[#cells + 1] = x + 1 + (i % 9) // 3
+                cells[#cells + 1] = y + 2 + i // 9
+                cells[#cells + 1] = z + 1 + i % 3
+                cells[#cells + 1] = 35
+                cells[#cells + 1] = 14
+            end
+        end
+        local n = w:setBlocks(cells)
+        stamp("bulkwrite", n == #cells / 5, tostring(n) .. "/" .. #cells / 5)
+        stamp("bulkprobe", w:getBlock(x + 1, y + 2, z + 1) == 35 and
+            w:getBlockMeta(x + 1, y + 2, z + 1) == 14)
+        -- Restore the snapshot through the same bulk write (the undo).
+        local back = {}
+        for i = 0, 26 do
+            back[#back + 1] = x + 1 + (i % 9) // 3
+            back[#back + 1] = y + 2 + i // 9
+            back[#back + 1] = z + 1 + i % 3
+            back[#back + 1] = flat[2 * i + 1]
+            back[#back + 1] = flat[2 * i + 2]
+        end
+        local m = w:setBlocks(back)
+        -- 14 checker cells changed -> only those 14 change back (the other
+        -- 13 are already the snapshotted stone: no-ops are skipped).
+        stamp("bulkundo", m == 14 and w:getBlock(x + 1, y + 2, z + 1) == 1, tostring(m))
+    elseif sub == "bulkcap" then
+        -- A cell list over the vanilla cap is refused with -1.
+        local cells = {}
+        for i = 1, 32769 * 5 do
+            cells[i] = 0
+        end
+        stamp("bulkcap", w:setBlocks(cells) == -1)
     elseif sub == "wand" then
         -- giveItem with a custom name + getHeldItem reading it back: how a
         -- tool plugin identifies its own brush.
@@ -143,7 +208,7 @@ function plugin.onEnable()
     end)
     commands.register("bapi", {
         description = "block-construction API harness",
-        usage = "/bapi <fill|bigfill|cap|meta|wand|probe>",
+        usage = "/bapi <fill|bigfill|cap|meta|float|bulk|bulkcap|wand|probe>",
         permission = "op",
     }, onCommand)
     log.info("BuildApiCheck enabled")
@@ -337,6 +402,7 @@ def run(host, port, server_bin):
                             stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL)
     failures = []
+    log_snapshot = ""
 
     def check(cond, label):
         print(("  PASS  " if cond else "  FAIL  ") + label)
@@ -419,6 +485,22 @@ def run(host, port, server_bin):
         ok = until([a, b], lambda: "PCHK BUILD meta ok" in log_text(), 10.0)
         check(ok, "setBlock/getBlockMeta nibble round trip")
 
+        # ---- phase 1f: fractional coords (the brush crash class) ----------
+        a.say("/bapi float")
+        ok = until([a, b], lambda: all("PCHK BUILD float%s ok" % k in log_text()
+                                       for k in ("set", "fill", "particles", "bulkread")), 10.0)
+        check(ok, "fractional coordinates floor into the containing cell")
+
+        # ---- phase 1g: the bulk read/write pair ----------------------------
+        a.say("/bapi bulk")
+        ok = until([a, b], lambda: all("PCHK BUILD bulk%s ok" % k in log_text()
+                                       for k in ("read", "write", "probe", "undo")), 12.0)
+        check(ok, "getBlocks snapshot + setBlocks checker + setBlocks undo")
+
+        a.say("/bapi bulkcap")
+        ok = until([a, b], lambda: "PCHK BUILD bulkcap ok" in log_text(), 10.0)
+        check(ok, "over-cap cell list refused with -1")
+
         # ---- phase 2: the wand + the protected break ----------------------
         a.say("/bapi wand")
         ok = until([a, b], lambda: "PCHK BUILD held ok" in log_text(), 10.0)
@@ -453,6 +535,7 @@ def run(host, port, server_bin):
             proc.wait(timeout=15)
         except subprocess.TimeoutExpired:
             proc.kill()
+        log_snapshot = log_text() # before the finally wipes the runtime
     finally:
         try:
             if proc.poll() is None:
@@ -463,6 +546,13 @@ def run(host, port, server_bin):
 
     if failures:
         print(f"BUILD-API CHECK FAILED: {len(failures)} failure(s)")
+        # The plugin stamps (PCHK BUILD ...) land in the throwaway runtime's
+        # server.log — dump them before the cleanup wipes the directory so a
+        # failing phase can be diagnosed from the battery output alone.
+        print("--- PCHK markers from server.log ---")
+        for line in log_snapshot.splitlines():
+            if "PCHK" in line or "error" in line.lower():
+                print("  | " + line)
         return 1
     print("BUILD-API CHECK PASSED")
     return 0

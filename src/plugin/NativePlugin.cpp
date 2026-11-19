@@ -76,8 +76,10 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <string>
 #include <system_error>
 #include <type_traits>
+#include <vector>
 
 #if defined(_WIN32)
 #ifndef NOMINMAX
@@ -1021,6 +1023,42 @@ int32_t api_world_chunkCount(const char* world) {
     return w ? (int32_t)w->chunkCount() : -1;
 }
 
+// extension batch 11: bulk construction — the cell-list write and region
+// read the Lua world.setBlocks / world.getBlocks bindings share.
+int32_t api_world_setBlocks(const char* world, const int32_t* cells, int32_t cellCount) {
+    World* w = findLoadedWorld(world);
+    if (!w || (!cells && cellCount > 0) || cellCount < 0 || cellCount > World::FILL_MAX_VOLUME)
+        return -1;
+    std::vector<World::BlockWrite> writes;
+    writes.reserve(cellCount);
+    for (int32_t i = 0; i < cellCount; ++i) {
+        const int32_t* c = cells + (size_t)i * 5;
+        // Out-of-world cells and invalid id/meta drop out instead of
+        // failing the whole call: a bulk write reports what it changed.
+        if (c[1] < 0 || c[1] > 255 || c[3] < 0 || c[3] > 255 || c[4] < 0 || c[4] > 15)
+            continue;
+        writes.push_back(World::BlockWrite{c[0], c[1], c[2], (uint8_t)c[3], (uint8_t)c[4]});
+    }
+    if (writes.empty())
+        return 0;
+    return w->setBlocks(writes.data(), (int32_t)writes.size());
+}
+
+int32_t api_world_getBlocks(const char* world, int32_t x1, int32_t y1, int32_t z1,
+                            int32_t x2, int32_t y2, int32_t z2, int32_t* out,
+                            int32_t outCap) {
+    World* w = findLoadedWorld(world);
+    if (!w || !out || outCap <= 0)
+        return -1;
+    std::vector<uint8_t> buf;
+    int32_t n = w->readBlockRegion(x1, y1, z1, x2, y2, z2, buf);
+    if (n < 0 || (int32_t)buf.size() > outCap)
+        return -1;
+    for (size_t i = 0; i < buf.size(); ++i)
+        out[i] = buf[i];
+    return n;
+}
+
 CsWorldApi g_worldApi = {
     api_world_seed,
     api_world_dimension,
@@ -1060,6 +1098,8 @@ CsWorldApi g_worldApi = {
     api_world_getFloatingTextEx,
     api_world_chunkCount,
     api_world_fillBlocks,
+    api_world_setBlocks,
+    api_world_getBlocks,
 };
 
 // data: the per-plugin data_pl/<plugin> sandbox, same rules as data.*.
