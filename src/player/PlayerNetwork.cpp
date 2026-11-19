@@ -731,7 +731,7 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
     }
 }
 
-// PMMP-style reveal for a dropped outbound packet: the sanitizer caught
+// Forensics-style reveal for a dropped outbound packet: the sanitizer caught
 // bytes that would crash the client, so name the packet, the offending
 // field, the exact value and offset, and the first payload bytes — on the
 // console every time (this is a bug condition), and as a self-contained

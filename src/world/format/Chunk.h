@@ -129,7 +129,7 @@ void mcp_chunk_recalculate_height_map(mcp_chunk_t* c);
 void mcp_chunk_recalculate_height_map_column(mcp_chunk_t* c, int x, int z);
 
 // Global sky light: every allocated section's sky nibbles are filled
-// with 15 (Aquamarine populateSkyLight / setAllBlockSkyLight(15)
+// with 15 (the populateSkyLight / setAllBlockSkyLight(15) reference
 // semantics — no shadows anywhere, caves included). Unallocated
 // sections already read 15 through mcp_chunk_get_sky_light. Marks the
 // chunk light_populated but never dirty.

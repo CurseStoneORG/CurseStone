@@ -22,7 +22,7 @@ reference docs are published separately (see [External documentation](#external-
 
 | Document | Description |
 |---|---|
-| [THREADING.md](THREADING.md) | Threading investigation: CurseStone's current thread map vs. Aquamarine's thread moves (what we already have, what to adopt, what to avoid). |
+| [THREADING.md](THREADING.md) | Threading investigation: CurseStone's current thread map vs. the historical threaded-server design moves (what we already have, what to adopt, what to avoid). |
 
 ## Release notes
 

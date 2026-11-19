@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Client-crash forensics check.
 
-Verifies the PMMP-style client-loss forensics end to end:
+Verifies the self-contained client-loss forensics end to end:
 
   1. A fake client completes the full login + spawn handshake (so the
      server has real outbound traffic on record: StartGame, PlayStatus,

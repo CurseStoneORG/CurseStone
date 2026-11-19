@@ -1,12 +1,13 @@
-# Threading notes: what Aquamarine's thread moves mean for CurseStone
+# Threading notes: what the historical thread moves mean for CurseStone
 
-Investigation notes, written after reviewing the Aquamarine changelog
-(1.0.7 → 1.1.4) against CurseStone's current threading. Aquamarine is a
-PHP PocketMine fork, so every change it shipped has a PHP-core shape
-(pmmpthread workers, `AsyncTask`); the notes below translate the *ideas*
-into CurseStone's C++ reality and mark what we already have, what is
-worth adopting and what to avoid — with the reasons Aquamarine itself
-found out the hard way.
+Investigation notes, written after reviewing the historical threaded
+PHP server's changelog (1.0.7 → 1.1.4) against CurseStone's current
+threading. That server is PHP-based, so every change it shipped has a
+PHP-core shape (workers from the PHP thread extension, `AsyncTask`);
+the notes below translate the *ideas* into CurseStone's C++ reality
+and mark what we already have, what is worth adopting and what to
+avoid — with the reasons the historical design itself found out the
+hard way.
 
 ## 1. CurseStone threading snapshot (current tree)
 
@@ -29,9 +30,9 @@ Threads that exist: main tick, RakLib, Anvil writer, AsyncPool (N
 workers), scheduler AsyncWorker, console `CommandReader`, workbench
 watchdog, shutdown watchdog. None of them is named (`pthread_setname`).
 
-## 2. Aquamarine's thread moves and their outcomes
+## 2. The historical thread moves and their outcomes
 
-| Aquamarine change | Version | Outcome |
+| Historical change | Version | Outcome |
 |---|---|---|
 | Chunk generation thread; packet encoding moved off the main thread; threads named (visible in htop) | 1.0.9 | Kept |
 | Dedicated thread for entity `move()` calculations | 1.1.0 | Kept |
@@ -47,7 +48,7 @@ The two reverts are the most valuable entries in the whole list.
 
 ### Lesson 1 — thread I/O, not game state
 
-Aquamarine's kept moves thread *I/O or isolated work*: chunk generation,
+The historical design's kept moves thread *I/O or isolated work*: chunk generation,
 disk writes, packet encoding, compression. Its reverted moves thread
 *game state*: the world provider before a storage boundary existed
 (1.1.3 beta) and entity movement (1.1.0 → 1.1.3). Both reverts came back
@@ -58,11 +59,11 @@ on workers behind `ChunkManager`, saves run on the Anvil writer, RakLib
 owns the sockets. The reverted side is also already avoided: entity
 movement never left the main thread and must not — with mobs currently
 not ticking at all, there is nothing to gain and the coordination cost
-Aquamarine measured is what we would pay.
+the historical design measured is what we would pay.
 
 ### Lesson 2 — extract the storage boundary BEFORE threading the provider
 
-Aquamarine tried the async provider first (1.1.3 beta), hit "a large
+The historical design tried the async provider first (1.1.3 beta), hit "a large
 amount of bugs and inexplicable behaviors", reverted, extracted
 `ChunkStorage` out of `Level`, and only then reimplemented the
 multithreaded provider successfully (1.1.4). The boundary was the
@@ -76,7 +77,7 @@ path did not need a revert. Keep the rule when extending: workers may
 
 ### Lesson 3 — budget small stateful work instead of threading it
 
-Aquamarine's water/lava lag fix (1.1.2) was not a thread — it was a
+The historical water/lava lag fix (1.1.2) was not a thread — it was a
 per-second update cap. CurseStone already does the same for light
 (`drainLightPending(budget, max_ms)`) and liquid wakes
 (`processLiquidWakes(budget)`). Any future stateful per-block or
@@ -85,7 +86,7 @@ for a worker.
 
 ### Lesson 4 — entity ticking needs a budget and a radius the day AI lands
 
-Two Aquamarine changes matter the moment mobs start ticking:
+Two historical changes matter the moment mobs start ticking:
 
 - **Entity update queue (1.1.4)**: entities may only update a limited
   number of times per tick; with thousands of mobs, only the mobs lag,
@@ -101,7 +102,7 @@ Designing AI with these two from the first commit avoids rework.
 
 ### Lesson 5 — name your threads
 
-Aquamarine made every thread visible by name in htop (1.0.9). CurseStone
+The historical design made every thread visible by name in htop (1.0.9). CurseStone
 creates at least eight threads and none is named, which makes `htop`,
 `perf` and crash dumps harder to read than they need to be.
 `pthread_setname_np()` per thread (POSIX only — guard for Windows) is a
@@ -112,9 +113,9 @@ and is recommended as the first one to pick up.
 
 1. **Named threads** (`pthread_setname_np` on RakLib, Anvil writer,
    AsyncPool workers, CommandReader, watchdogs). Trivial, observability
-   only, directly from Aquamarine 1.0.9. — **IMPLEMENTED, see §7.**
+   only, directly from the historical 1.0.9 design. — **IMPLEMENTED, see §7.**
 2. **Chunk network serialization off the tick thread.** This is the
-   remaining Aquamarine-style win. `mcp_chunk_network_serialize` runs
+   remaining historical-design win. `mcp_chunk_network_serialize` runs
    inline in the stream path for up to 4 chunks per tick on the main
    thread. A chunk is an immutable snapshot the moment it is selected for
    streaming, so its serialization can ride the AsyncPool with
@@ -127,24 +128,24 @@ and is recommended as the first one to pick up.
    — **IMPLEMENTED, see §7** (snapshot + sequence reorder buffer, as
    designed here).
 3. **Entity update budget + render-distance gating** when AI lands
-   (Aquamarine 1.1.4 / 1.1.1). Cheap to build on the chunk-indexed mob
+   (historical 1.1.4 / 1.1.1 moves). Cheap to build on the chunk-indexed mob
    registry; expensive to retrofit later.
 
 ## 5. What NOT to adopt
 
-- **Threading entity movement** — Aquamarine shipped it (1.1.0) and
+- **Threading entity movement** — the historical design shipped it (1.1.0) and
   reverted it as inefficient (1.1.3). CurseStone has nothing to gain
   while mobs do not tick, and player movement is main-thread state.
 - **Re-attempting an async world provider without the storage boundary**
   — already the CurseStone design, but the rule matters for future work
   on tile/entity persistence: produce on workers, install on main.
 - **PHP-core-specific items** (OPcache/JIT boot fixes, `/status` RAM per
-  PHP files, pmmpthread upgrades) have no C++ counterpart worth
+  PHP files, PHP thread extension upgrades) have no C++ counterpart worth
   translating.
 
-## 6. Status against Aquamarine's kept list
+## 6. Status against the historical kept list
 
-| Aquamarine kept | CurseStone |
+| Kept from the historical design | CurseStone |
 |---|---|
 | Chunk generation thread | Have (AsyncPool, single install callback) |
 | Multithreaded world provider (1.1.4 shape) | Have for load+generate; saves async via Anvil writer |

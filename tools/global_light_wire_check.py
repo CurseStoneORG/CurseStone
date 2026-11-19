@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """End-to-end global sky light check for CurseStone.
 
-CurseStone ships GLOBAL sky light (the Aquamarine populateSkyLight
+CurseStone ships GLOBAL sky light (the populateSkyLight reference
 semantics: every block reads sky light 15, caves and oceans included —
 no shadows anywhere). The client never recomputes light; it renders
 exactly the nibbles the server sends in every FullChunkDataPacket, so

@@ -1,7 +1,7 @@
 // tools/global_sky_light_check.cpp
 //
-// Unit check for the GLOBAL sky light policy (Aquamarine
-// populateSkyLight semantics: every block reads sky light 15, caves and
+// Unit check for the GLOBAL sky light policy (the populateSkyLight
+// reference semantics: every block reads sky light 15, caves and
 // oceans included) plus the block-light pass that still has to behave.
 //
 //   1. mcp_chunk_propagate_sky_light() fills sky light 15 EVERYWHERE —
