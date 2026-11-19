@@ -44,8 +44,12 @@
 #include "utils/CRaii.h"
 #include "utils/MainLogger.hpp"
 #include "utils/Utils.h"
+#include <atomic>
 #include <chrono>
 #include <cmath>
+#include <ctime>
+#include <fstream>
+#include <sstream>
 
 namespace cursestone {
 
@@ -186,19 +190,12 @@ void Player::close(const std::string& reason) {
         // disconnect packet ("client disconnect"), the quit path uses the
         // default reason and kicks are prefixed. Anything else means the
         // session died from silence (client crash, dead uplink) or a
-        // server-side error — preserve the last wire traffic so the
-        // client's final moments can be reconstructed. writeReport also
-        // prints one console line and drops a report under crashdumps/.
+        // server-side error — classify it PMMP-style and preserve this
+        // client's exact wire tail in a crashdumps/ report.
         if (reason != "client disconnect" && reason != "disconnect.quitting" &&
             reason.rfind("kicked: ", 0) != 0) {
             try {
-                diagnostics::Diagnostics::get().writeReport(
-                    "client-lost",
-                    "Player " + cfg_.username + " lost connection (" + reason +
-                        ") — no clean disconnect from the client",
-                    "recent_packets lists the last packets the server exchanged; "
-                    "the last batch sent to this client is what the client "
-                    "processed right before it died");
+                handleClientLost(reason);
             } catch (...) {
                 // Never let diagnostics fail the close path.
             }
@@ -342,6 +339,139 @@ void Player::kick(const std::string& reason, const std::string& detail) {
     // Prefix so Player::close can tell a server-side kick from a client
     // that died in silence (the client-lost report must not fire here).
     close("kicked: " + reason);
+}
+
+namespace {
+
+// Local UTC stamp for client-loss report filenames ("%Y%m%d_%H%M%S"),
+// same style the server crashdump uses.
+std::string clientLostStamp(uint64_t wall_ms) {
+    std::time_t t = static_cast<std::time_t>(wall_ms / 1000);
+    std::tm tm{};
+#if defined(_WIN32)
+    gmtime_s(&tm, &t);
+#else
+    gmtime_r(&t, &tm);
+#endif
+    char buf[32];
+    std::strftime(buf, sizeof(buf), "%Y%m%d_%H%M%S", &tm);
+    return buf;
+}
+
+} // namespace
+
+// ---------------------------------------------------------------------------
+// Client-loss forensics (PMMP-style)
+//
+// A dead 0.15.10 client cannot tell the operator anything — the device just
+// shows its own generic crash screen. This is the server's answer: classify
+// the loss, print ONE self-sufficient console line, and drop a self-contained
+// report under crashdumps/ carrying this client's exact wire tail (with hex
+// previews) plus the global server context. See docs/CRASH_DIAGNOSTICS.md.
+// ---------------------------------------------------------------------------
+void Player::handleClientLost(const std::string& reason) {
+    diagnostics::Diagnostics& diags = diagnostics::Diagnostics::get();
+
+    const uint64_t now_ms = (uint64_t)(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                           std::chrono::system_clock::now().time_since_epoch())
+                                           .count());
+    const uint64_t session_ms = now_ms - (start_time_ms_ > 0 ? start_time_ms_ : now_ms);
+    const uint64_t idle_ms = now_ms - (last_activity_ms_ > 0 ? last_activity_ms_ : now_ms);
+
+    // Classification. The RakNet timeout sweep reaping the session means
+    // the client stopped answering entirely — for a game client that is a
+    // crash (process gone) or a dead uplink, never a deliberate quit.
+    const char* classification;
+    if (reason == "timeout") {
+        classification =
+            "CLIENT CRASH or dead uplink — the client stopped answering entirely "
+            "(no 0x15 disconnect; session reaped by the timeout sweep)";
+    } else if (reason == "bad batch") {
+        classification = "client sent an undecodable batch — corrupt client or tampering";
+    } else {
+        classification = "forced close (server-side error path)";
+    }
+
+    // The wire tail is the smoking gun: whatever went out last is what the
+    // client parsed last. A loss within a second of a big packet is a
+    // malformed-payload lead, so state it on the console directly.
+    const std::string out_summary = net_trace_.summarizeOutbound();
+
+    // One self-sufficient console line, PMMP-report style.
+    utils::MainLogger::get().error("[CLIENT-LOST] " + cfg_.username + " (" + cfg_.ip + ":" +
+                                   std::to_string(cfg_.port) + ") " + classification + " | " +
+                                   out_summary);
+
+    // Record in the global error ring (a later server crashdump shows the
+    // lead-up) without printing a second console line.
+    try {
+        diags.report("client-lost",
+                     "Player " + cfg_.username + " lost connection (" + reason + ")",
+                     out_summary, /*console=*/false);
+    } catch (...) {
+    }
+
+    // ---- self-contained report: this client's final wire moments ----
+    std::ostringstream detail;
+    detail << "Classification: " << classification << "\n"
+           << "Reason string:  " << reason << "\n"
+           << "Address:        " << cfg_.ip << ":" << cfg_.port << "\n"
+           << "Session:        " << session_ms / 1000 << "s; silent for the last "
+           << idle_ms / 1000 << "s\n"
+           << "Position:       " << pos_.x << ", " << pos_.y << ", " << pos_.z << " (chunk "
+           << chunkX() << ", " << chunkZ() << ")\n"
+           << "Gamemode:       " << cfg_.gamemode << "\n"
+           << "Wire totals:    " << net_trace_.totalOut() << " out / " << net_trace_.totalIn()
+           << " in\n"
+           << "Last outbound:  " << out_summary << "\n"
+           << "\n--- Outbound tail (what THIS client received last) ---\n"
+           << net_trace_.renderOutboundTail(32)
+           << "\n--- Inbound tail (what the client last managed to send) ---\n"
+           << net_trace_.renderInboundTail(8)
+           << "\n--- Server context ---\n"
+           << diags.renderContext()
+           << "\n--- Players online ---\n"
+           << diags.renderPlayers()
+           << "\n--- Recent server errors ---\n"
+           << diags.renderRecentErrors(20)
+           << "\n--- Recent server packet flow (global) ---\n"
+           << diags.renderRecentPackets(40);
+
+    // Unique, filesystem-safe paths beside the other crashdumps.
+    static std::atomic<uint64_t> report_seq{0};
+    const uint64_t seq = report_seq.fetch_add(1, std::memory_order_relaxed);
+    std::ostringstream fname;
+    fname << diags.dumpDir() << "/crashdumps/client-lost_" << clientLostStamp(now_ms) << "_"
+          << (now_ms % 1000) << "_" << seq;
+    const std::string json_path = fname.str() + ".json";
+    const std::string log_path = fname.str() + ".log";
+
+    {
+        std::ofstream f(json_path);
+        if (f) {
+            f << "{\n"
+              << "  \"kind\": \"client-lost\",\n"
+              << "  \"player\": \"" << diagnostics::json_escape(cfg_.username) << "\",\n"
+              << "  \"reason\": \"" << diagnostics::json_escape(reason) << "\",\n"
+              << "  \"classification\": \"" << diagnostics::json_escape(classification) << "\",\n"
+              << "  \"time_utc\": \"" << diagnostics::json_escape(clientLostStamp(now_ms))
+              << "\",\n"
+              << "  \"detail\": \"" << diagnostics::json_escape(detail.str()) << "\"\n"
+              << "}\n";
+        }
+    }
+    {
+        std::ofstream lf(log_path);
+        if (lf) {
+            lf << "CurseStone client-loss report\n"
+               << "==============================\n"
+               << "Player:   " << cfg_.username << " (" << cfg_.ip << ":" << cfg_.port << ")\n"
+               << "Time:     " << clientLostStamp(now_ms) << " UTC\n\n"
+               << detail.str();
+        }
+    }
+
+    utils::MainLogger::get().error("Client-loss report written to " + json_path);
 }
 
 void Player::teleport(double x, double y, double z) {

@@ -125,6 +125,13 @@ class Diagnostics {
     // Replace the online-player snapshot (called from the tick loop).
     void updatePlayers(std::vector<PlayerSnapshot> snapshot);
 
+    // Directory the non-fatal reports and crashdumps are written under
+    // (set once at startup; "at the data dir" by default). Client-loss
+    // forensics writes its own files beside the error reports.
+    const std::string& dumpDir() const {
+        return dump_dir_;
+    }
+
     // Report an error AND write a self-contained report file under
     // <dumpDir>/crashdumps/. Used for non-fatal but serious events
     // (unhandled packet exception, forced kicks). Returns the file path

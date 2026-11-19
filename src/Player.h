@@ -38,6 +38,7 @@
 #include <unordered_set>
 #include <vector>
 #include "utils/CRaii.h" // utils::BufferPtr — the async chunk encode pipeline.
+#include "diagnostics/PacketForensics.h" // per-player always-on wire recorder.
 // world/format/Chunk.h owns this C struct; Player only ever passes
 // pointers to it (the async chunk encode pipeline snapshots and hands
 // them to workers).
@@ -56,6 +57,9 @@ class DataPacket;
 class LoginPacket;
 class DropItemPacket;
 class BlockEntityDataPacket;
+// Forward-declared: the violation record only appears by reference in the
+// Player interface (PlayerNetwork.cpp includes the full header).
+struct SanitizeViolation;
 }
 namespace inventory {
 class PlayerInventory;
@@ -149,8 +153,26 @@ class Player : public IPlayer,
 
     // --- Network callbacks ---
     void handleDataPacket(network::protocol::DataPacket& p);
+    // Records one inbound wire frame for crash forensics. Called from the
+    // network drain with the raw frame size (pid byte included) BEFORE
+    // decode, so malformed frames — the interesting ones — still appear in
+    // a client-loss tail.
+    void recordInboundWire(uint8_t pid, size_t wire_len) {
+        net_trace_.recordIn(pid, wire_len > 0 ? wire_len - 1 : 0);
+    }
     // Logs packet-handler errors and kicks the player with details.
     void handlePacketError(uint8_t pid, const std::string& what);
+    // Logs a PacketSanitizer violation in PMMP style (packet name, field,
+    // offending value, offset, hex dump) and records it in Diagnostics;
+    // the packet has already been dropped by sendEncodedBody. Rate-limits
+    // the crashdumps/ report file so a runaway producer cannot flood disk.
+    void handleOutboundViolation(uint8_t pid, const std::vector<uint8_t>& body,
+                                 const network::protocol::SanitizeViolation& v);
+    // Client-loss forensics: classifies an abnormal disconnect (crash vs
+    // forced close), prints one self-sufficient console line, and drops a
+    // self-contained report under crashdumps/ with this client's exact
+    // wire tail. Called from close() for every non-clean disconnect.
+    void handleClientLost(const std::string& reason);
     void handleLogin(network::protocol::LoginPacket& p);
     void handleMovePlayer(double x, double y, double z, float yaw, float pitch, bool onGround);
     // Updates hunger and environmental damage each tick.
@@ -913,6 +935,17 @@ class Player : public IPlayer,
     size_t batch_bytes_ = 0;
     // Flush batches immediately when they reach 32 KB.
     static constexpr size_t BATCH_FLUSH_BYTES = 32 * 1024;
+
+    // --- Crash forensics ---
+    // Always-on per-client wire recorder: the last outbound frames (with a
+    // 16-byte payload preview each) and the last inbound pids. A client
+    // crash dump needs "what did THIS client receive last", which the
+    // global Diagnostics ring cannot answer. Written from the same thread
+    // that owns the batch queues; read at close() time.
+    diagnostics::PacketForensics net_trace_;
+    // Rate limiter for the sanitizer's crashdumps/ report files: one file
+    // per violation burst, console logging stays unlimited.
+    uint64_t last_violation_report_ms_ = 0;
 
     // Ensures close() cleanup runs only once across threads.
     std::once_flag close_once_;
