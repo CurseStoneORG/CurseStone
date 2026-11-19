@@ -2852,12 +2852,17 @@ void World::evictTilesForChunk(int32_t cx, int32_t cz) {
     c->dirty = true; // Ensure ChunkManager saves this chunk.
 }
 
-int World::unloadDistantChunks(const std::vector<ChunkViewer>& viewers, int32_t margin) {
+int World::unloadDistantChunks(const std::vector<ChunkViewer>& viewers, int32_t margin,
+                               size_t max_chunks) {
     auto coords = chunks_.loadedChunkCoords();
     int unloaded = 0;
     for (auto& [cx, cz] : coords) {
+        if (max_chunks != 0 && (size_t)unloaded >= max_chunks)
+            break;
         bool needed = false;
         for (auto& v : viewers) {
+            if (v.world && v.world != this)
+                continue; // a viewer of another world protects nothing here
             int32_t dx = cx - v.cx, dz = cz - v.cz;
             int32_t dist = std::max(std::abs(dx), std::abs(dz));
             if (dist <= v.view_radius + margin) {
@@ -2873,6 +2878,76 @@ int World::unloadDistantChunks(const std::vector<ChunkViewer>& viewers, int32_t 
             ++unloaded;
     }
     return unloaded;
+}
+
+// despawnEntitiesFor — the same-dimension world-switch goodbye sweep.
+// The 0.15.10 client only drops its entity map on a ChangeDimensionPacket.
+// A switch between two worlds in the SAME dimension (plugin worlds are all
+// dimension 0) leaves every mob, item drop, arrow, falling block and
+// floating-text carrier of the old world rendered on top of the new
+// terrain. This sweep removes them for one viewer; the destination world's
+// chunk stream re-adds its own entities, and the player's known-mob set is
+// cleared so returning re-sends everything.
+void World::despawnEntitiesFor(Player* viewer) {
+    if (!viewer || !viewer->spawned() || viewer->isPendingRemoval())
+        return;
+
+    std::vector<int64_t> eids;
+    {
+        std::lock_guard<std::mutex> lk(mobs_mtx_);
+        eids.reserve(mobs_.size());
+        for (const auto& [id, m] : mobs_) {
+            if (m)
+                eids.push_back(id);
+        }
+    }
+    {
+        std::lock_guard<std::mutex> lk(dropped_items_mtx_);
+        for (const auto& [id, di] : dropped_items_) {
+            if (di && !di->taken)
+                eids.push_back(id);
+        }
+    }
+    {
+        std::lock_guard<std::mutex> lk(arrows_mtx_);
+        for (const auto& [id, a] : arrows_) {
+            if (a && !a->taken)
+                eids.push_back(id);
+        }
+    }
+    {
+        std::lock_guard<std::mutex> lk(falling_blocks_mtx_);
+        for (const auto& [id, fb] : falling_blocks_) {
+            if (fb && !fb->taken)
+                eids.push_back(id);
+        }
+    }
+
+    // One RemoveEntityPacket per eid (the wire carries a single id each);
+    // sendPacket runs without any world lock held. Clients ignore ids they
+    // never held, so this is safe for viewers that saw only part of the set.
+    for (int64_t eid : eids) {
+        auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
+        rm->eid = eid;
+        viewer->sendPacket(rm);
+        viewer->forgetMob(eid);
+    }
+
+    // Floating-text carriers: despawnFrom is idempotent and keeps the
+    // per-text viewer set honest (the 1 Hz viewer sync would also retire
+    // this viewer, but a full second of a ghost tag in the new world is
+    // noticeable — remove it now).
+    std::vector<particle::FloatingTextParticle*> texts;
+    {
+        std::lock_guard<std::mutex> lk(floating_texts_mtx_);
+        texts.reserve(floating_texts_.size());
+        for (const auto& [id, t] : floating_texts_) {
+            if (t)
+                texts.push_back(t.get());
+        }
+    }
+    for (particle::FloatingTextParticle* t : texts)
+        t->despawnFrom(*viewer);
 }
 
 void World::sendWeatherTo(Player* p) {

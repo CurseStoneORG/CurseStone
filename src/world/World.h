@@ -610,6 +610,14 @@ class World {
     // viewers who already hold the entity.
     void sendMobsInChunk(int32_t cx, int32_t cz, Player* viewer);
 
+    // Removes every entity of this world from one player's view (mobs,
+    // dropped items, arrows, falling blocks, floating-text carriers) and
+    // forgets the mob ids. Sent when the player switches to another world
+    // in the SAME dimension: that client does not clear its entity map on
+    // the switch, so anything left behind would render as a ghost in the
+    // destination world. Idempotent per entity (unknown ids are ignored).
+    void despawnEntitiesFor(Player* viewer);
+
     // ----- Falling-block physics -----
     // Converts a supported falling block into an entity and checks the block above.
     void spawnFallingBlock(int32_t bx, int32_t by, int32_t bz);
@@ -695,13 +703,26 @@ class World {
     void invalidateTileHydration(int32_t cx, int32_t cz);
 
     // ----- Chunk memory eviction -----
-    // Stores a player's current chunk and configured view radius.
+    // Stores a viewer's current chunk, configured view radius and world. A
+    // viewer only protects chunks of its OWN world: coordinates overlap
+    // between worlds (overworld spawn vs the 1:8-scaled nether) used to
+    // pin chunks that nobody ever visited.
     struct ChunkViewer {
         int32_t cx, cz, view_radius;
+        const World* world = nullptr;
     };
 
-    // Unloads chunks outside all viewer radii, saving dirty chunks first.
-    int unloadDistantChunks(const std::vector<ChunkViewer>& viewers, int32_t margin = 4);
+    // Unloads chunks outside every own-world viewer radius, saving dirty
+    // chunks first. At most @p max_chunks chunks per call (0 = unlimited);
+    // MemoryManager passes a budget so an idle world drains over several
+    // GC passes instead of stalling one tick.
+    int unloadDistantChunks(const std::vector<ChunkViewer>& viewers, int32_t margin = 4,
+                            size_t max_chunks = 0);
+
+    // Chunks currently resident in memory (the chunk cache size).
+    size_t chunkCount() const {
+        return chunks_.count();
+    }
 
   private:
     double lastTickMs_ = 0.0;

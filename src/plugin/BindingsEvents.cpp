@@ -42,6 +42,8 @@
 // events.on("InventoryOpen", function(e) ... end)
 // events.on("InventoryClick", function(e) ... end)
 // events.on("InventoryClose", function(e) ... end)
+// events.on("WorldLoad", function(e) ... end)   -- e.world name, e.dimension
+// events.on("WorldUnload", function(e) ... end) -- cancellable, e.world name
 //
 // Event fields:
 // - Player events: e.player and e.message.
@@ -78,6 +80,9 @@
 #include "event/inventory/InventoryCloseEvent.h"
 #include "event/inventory/InventoryClickEvent.h"
 #include "event/inventory/InventoryOpenEvent.h"
+#include "event/world/WorldLoadEvent.h"
+#include "event/world/WorldUnloadEvent.h"
+#include "world/World.h"
 #include <functional>
 #include <string>
 #include <type_traits>
@@ -454,6 +459,26 @@ int l_events_on(lua_State* L) {
             lua_setfield(L, eIdx, "inventory");
         };
         hook<event::inventory::InventoryCloseEvent>(pl, ref, f, {});
+    } else if (name == "WorldLoad") {
+        // Fired when a world finishes loading (startup manifest replay and
+        // plugin /worlds loads). e.world is the world NAME, e.dimension is
+        // 0 surface / 1 Nether. Not cancellable — the world already exists.
+        auto f = [](lua_State* L, int eIdx, event::world::WorldLoadEvent& ev) {
+            lua_pushstring(L, ev.world ? ev.world->name().c_str() : "");
+            lua_setfield(L, eIdx, "world");
+            lua_pushinteger(L, ev.world ? ev.world->dimension() : 0);
+            lua_setfield(L, eIdx, "dimension");
+        };
+        hook<event::world::WorldLoadEvent>(pl, ref, f, {});
+    } else if (name == "WorldUnload") {
+        // Fired before a world unloads (cancellable). e.world is the name.
+        auto f = [](lua_State* L, int eIdx, event::world::WorldUnloadEvent& ev) {
+            lua_pushstring(L, ev.world ? ev.world->name().c_str() : "");
+            lua_setfield(L, eIdx, "world");
+            lua_pushinteger(L, ev.world ? ev.world->dimension() : 0);
+            lua_setfield(L, eIdx, "dimension");
+        };
+        hook<event::world::WorldUnloadEvent>(pl, ref, f, {});
     } else {
         luaL_unref(L, LUA_REGISTRYINDEX, ref);
         return luaL_error(L, "unknown event: %s", name.c_str());
