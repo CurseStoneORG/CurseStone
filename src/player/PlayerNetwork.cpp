@@ -25,6 +25,8 @@
 #include "workbench/WorkbenchManager.h"
 #include "diagnostics/Diagnostics.h"
 #include "network/protocol/Info.h"
+#include "network/protocol/PacketNames.h"
+#include "network/protocol/PacketSanitizer.h"
 #include "network/protocol/DataPacket.h"
 #include "network/protocol/BatchPacket.h"
 #include "network/protocol/TextPacket.h"
@@ -119,6 +121,27 @@ void Player::sendEncodedBody(std::vector<uint8_t> body, uint8_t pid, bool ordere
         return;
     if (!adv_iface_)
         return;
+
+    // body[0] is the wire pid byte; sanitizer and forensics both look at
+    // the payload after it.
+    const uint8_t* payload = body.data() + 1;
+    const size_t payload_len = body.size() - 1;
+
+    // Outbound byte validation: drop the payload classes that crash real
+    // 0.15.10 clients (NaN/Inf floats, parser-desyncing walks, absurd
+    // counts) BEFORE they reach the wire. Fail-safe by design — every
+    // check mirrors the matching encoder, see PacketSanitizer.h. One lost
+    // movement broadcast beats one dead client every time.
+    const network::protocol::SanitizeViolation violation =
+        network::protocol::sanitizeOutbound(pid, payload, payload_len);
+    if (violation.violated) {
+        handleOutboundViolation(pid, body, violation);
+        return;
+    }
+
+    // Per-client wire forensics (always on; this is what a client-loss
+    // dump replays). 16-byte preview copy, no allocation.
+    net_trace_.recordOut(pid, payload, payload_len, ordered);
 
     // Record the outgoing packet in Workbench.
     WorkbenchManager::get().onPacketOut(cfg_.username, pid, 0);
@@ -705,6 +728,65 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
         handlePacketError(pid, std::string("std::exception: ") + e.what());
     } catch (...) {
         handlePacketError(pid, "unknown exception (non-std) while handling packet");
+    }
+}
+
+// PMMP-style reveal for a dropped outbound packet: the sanitizer caught
+// bytes that would crash the client, so name the packet, the offending
+// field, the exact value and offset, and the first payload bytes — on the
+// console every time (this is a bug condition), and as a self-contained
+// report file at most once per 5 s burst so disk cannot be flooded.
+void Player::handleOutboundViolation(uint8_t pid, const std::vector<uint8_t>& body,
+                                     const network::protocol::SanitizeViolation& v) {
+    using network::protocol::formatSuspectFloat;
+    using network::protocol::hexPreview;
+    using network::protocol::packetName;
+
+    char head[224];
+    std::snprintf(head, sizeof(head),
+                  "[BAD-BYTES] dropped outbound %s (pid 0x%02x) to %s — field '%s': %s "
+                  "at payload offset %zu",
+                  packetName(pid), pid, cfg_.username.c_str(), v.field, v.problem, v.offset);
+
+    std::string detail = head;
+    if (v.bits != 0) {
+        detail += "; value=";
+        detail += formatSuspectFloat(v.value, v.bits);
+    }
+    detail += "; payload (";
+    detail += std::to_string(body.size() > 0 ? body.size() - 1 : 0);
+    detail += " B): ";
+    // Preview the payload WITHOUT the leading pid byte, matching the
+    // offset semantics of the violation record.
+    detail += hexPreview(body.data() + 1, body.size() > 0 ? body.size() - 1 : 0, 64);
+
+    utils::MainLogger::get().error(detail);
+
+    // Always land in the global error ring (a later crashdump shows the
+    // lead-up), without a second console line.
+    try {
+        diagnostics::Diagnostics::get().report(
+            "bad-bytes",
+            std::string("dropped outbound ") + packetName(pid) + " to " + cfg_.username,
+            std::string(v.field) + ": " + v.problem + " at offset " + std::to_string(v.offset),
+            /*console=*/false);
+    } catch (...) {
+    }
+
+    // Self-contained report per violation burst (5 s rate limit).
+    const uint64_t now_ms = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+                                std::chrono::system_clock::now().time_since_epoch())
+                                .count();
+    if (last_violation_report_ms_ == 0 || now_ms - last_violation_report_ms_ >= 5000) {
+        last_violation_report_ms_ = now_ms;
+        try {
+            diagnostics::Diagnostics::get().writeReport(
+                "bad-bytes",
+                "Outbound packet to " + cfg_.username + " failed byte validation and was "
+                "dropped (a desynced payload here crashes the 0.15.10 client)",
+                detail);
+        } catch (...) {
+        }
     }
 }
 

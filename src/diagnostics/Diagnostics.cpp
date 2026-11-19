@@ -26,6 +26,7 @@
 
 #include "utils/MainLogger.hpp"
 #include "network/protocol/Info.h"
+#include "network/protocol/PacketNames.h" // shared pid -> name table
 #include "CurseStone.h" // CURSESTONE_API / MINECRAFT_VERSION / PROTOCOL_VERSION
 
 #include <chrono>
@@ -54,106 +55,10 @@ uint64_t nowWallMs() {
                                      .count());
 }
 
-// Human-readable name for a protocol-84 packet id. Falls back to "UNKNOWN".
-const char* packetName(uint8_t pid) {
-    using namespace cursestone::network::protocol;
-    switch (pid) {
-    case LOGIN_PACKET:
-        return "Login";
-    case PLAY_STATUS_PACKET:
-        return "PlayStatus";
-    case SERVER_TO_CLIENT_HANDSHAKE:
-        return "ServerToClientHandshake";
-    case CLIENT_TO_SERVER_HANDSHAKE:
-        return "ClientToServerHandshake";
-    case DISCONNECT_PACKET:
-        return "Disconnect";
-    case BATCH_PACKET:
-        return "Batch";
-    case TEXT_PACKET:
-        return "Text";
-    case SET_TIME_PACKET:
-        return "SetTime";
-    case START_GAME_PACKET:
-        return "StartGame";
-    case ADD_PLAYER_PACKET:
-        return "AddPlayer";
-    case ADD_ENTITY_PACKET:
-        return "AddEntity";
-    case REMOVE_ENTITY_PACKET:
-        return "RemoveEntity";
-    case ADD_ITEM_ENTITY_PACKET:
-        return "AddItemEntity";
-    case TAKE_ITEM_ENTITY_PACKET:
-        return "TakeItemEntity";
-    case MOVE_ENTITY_PACKET:
-        return "MoveEntity";
-    case MOVE_PLAYER_PACKET:
-        return "MovePlayer";
-    case REMOVE_BLOCK_PACKET:
-        return "RemoveBlock";
-    case UPDATE_BLOCK_PACKET:
-        return "UpdateBlock";
-    case LEVEL_EVENT_PACKET:
-        return "LevelEvent";
-    case BLOCK_EVENT_PACKET:
-        return "BlockEvent";
-    case ENTITY_EVENT_PACKET:
-        return "EntityEvent";
-    case MOB_EQUIPMENT_PACKET:
-        return "MobEquipment";
-    case MOB_ARMOR_EQUIPMENT_PACKET:
-        return "MobArmorEquipment";
-    case INTERACT_PACKET:
-        return "Interact";
-    case USE_ITEM_PACKET:
-        return "UseItem";
-    case PLAYER_ACTION_PACKET:
-        return "PlayerAction";
-    case ANIMATE_PACKET:
-        return "Animate";
-    case RESPAWN_PACKET:
-        return "Respawn";
-    case DROP_ITEM_PACKET:
-        return "DropItem";
-    case CONTAINER_OPEN_PACKET:
-        return "ContainerOpen";
-    case CONTAINER_CLOSE_PACKET:
-        return "ContainerClose";
-    case CONTAINER_SET_SLOT_PACKET:
-        return "ContainerSetSlot";
-    case CONTAINER_SET_DATA_PACKET:
-        return "ContainerSetData";
-    case CONTAINER_SET_CONTENT_PACKET:
-        return "ContainerSetContent";
-    case CRAFTING_DATA_PACKET:
-        return "CraftingData";
-    case CRAFTING_EVENT_PACKET:
-        return "CraftingEvent";
-    case BLOCK_ENTITY_DATA_PACKET:
-        return "BlockEntityData";
-    case PLAYER_INPUT_PACKET:
-        return "PlayerInput";
-    case FULL_CHUNK_DATA_PACKET:
-        return "FullChunkData";
-    case SET_DIFFICULTY_PACKET:
-        return "SetDifficulty";
-    case CHANGE_DIMENSION_PACKET:
-        return "ChangeDimension";
-    case SET_PLAYER_GAMETYPE_PACKET:
-        return "SetPlayerGameType";
-    case PLAYER_LIST_PACKET:
-        return "PlayerList";
-    case REQUEST_CHUNK_RADIUS_PACKET:
-        return "RequestChunkRadius";
-    case CHUNK_RADIUS_UPDATED_PACKET:
-        return "ChunkRadiusUpdated";
-    case ADD_ITEM_PACKET:
-        return "AddItem";
-    default:
-        return "UNKNOWN";
-    }
-}
+// The pid -> name table lives in network/protocol/PacketNames.h so the
+// sanitizer, the forensics renderer and this recorder all print the same
+// names.
+using cursestone::network::protocol::packetName;
 
 std::string unameLine() {
 #if defined(__unix__) || defined(__APPLE__)

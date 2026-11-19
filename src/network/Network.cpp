@@ -201,6 +201,9 @@ void Network::dispatchSingle(const std::string& ip, uint16_t port, const uint8_t
     // torn down and we must NOT call onUpdate or handle packets.
     if (!player_sp->isConnected())
         return;
+    // Per-client inbound forensics: record BEFORE decode so malformed
+    // frames — the interesting ones — still appear in a client-loss tail.
+    player_sp->recordInboundWire(pid, len);
     player_sp->handleDataPacket(*pkt);
 }
 
