@@ -444,6 +444,11 @@ typedef struct CsWorldApi {
     bool (*entityTypeFromName)(const char* name, int32_t* outId);
     /** @brief Canonical lowercase name for a network id; NULL when unknown. */
     const char* (*entityTypeName)(int32_t type);
+    /* ---- appended (ABI 1, extension batch 6: floating text re-text) ---- */
+    /** @brief Replaces a floating text's content; '\n' splits it into
+     *         title + body lines and only changed lines reach the wire.
+     *         False for unknown ids. */
+    bool (*setFloatingText)(const char* world, int64_t id, const char* text);
 } CsWorldApi;
 
 /**

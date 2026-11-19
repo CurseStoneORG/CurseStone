@@ -49,14 +49,25 @@
 //   world.spawnSplashParticles(x,and,z,rgb)    the splash-potion shatter
 //                                      (event 2002) with an 0xRRGGBB
 //                                      color; plays the glass smash.
-//   world.spawnFloatingText(x,y,z,text,[ttl])  floating text: an invisible
-//                                      item-entity carrier whose nametag
-//                                      is the text (protocol 84 has no
-//                                      text particle). Returns the entity
-//                                      id, or nil at the per-world cap;
-//                                      ttl in ticks (0 = until removed).
+//   world.spawnFloatingText(x,y,z,text,[ttl])  floating text particle: an
+//                                      invisible item-entity carrier whose
+//                                      nametag is the text (protocol 84 has
+//                                      no text particle). '\n' splits the
+//                                      text into lines: the first line is
+//                                      the title carrier, every following
+//                                      line gets its own carrier below.
+//                                      Returns the entity id, or nil at the
+//                                      per-world cap; ttl in ticks (0 =
+//                                      until removed). Players that enter
+//                                      render range later receive it too
+//                                      (one viewer sync per second).
 //   world.moveFloatingText(id,x,y,z)   repositions a floating text
 //                                      (true/false).
+//   world.setFloatingText(id,text)     replaces the text (same '\n'
+//                                      multi-line model); only changed
+//                                      lines reach the wire (true/false).
+//   world.getFloatingTexts()           array of tables
+//                                      {id,x,y,z,text} of this world.
 //   world.removeFloatingText(id)       despawns a floating text
 //                                      (true/false).
 //   world.spawnEntity(type,x,y,z,[yaw],[pitch])
@@ -327,6 +338,38 @@ int l_world_movefloatingtext(lua_State* L) {
     return 1;
 }
 
+int l_world_setfloatingtext(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_Integer id = luaL_checkinteger(L, 2);
+    size_t len = 0;
+    const char* text = luaL_checklstring(L, 3, &len);
+    lua_pushboolean(
+        L, w->setFloatingText((int64_t)id, std::string(text, len)) ? 1 : 0);
+    return 1;
+}
+
+int l_world_getfloatingtexts(lua_State* L) {
+    WORLD_OR_NIL();
+    auto list = w->floatingTexts();
+    lua_createtable(L, (int)list.size(), 0);
+    int i = 1;
+    for (const auto& t : list) {
+        lua_createtable(L, 0, 5);
+        lua_pushinteger(L, (lua_Integer)t.id);
+        lua_setfield(L, -2, "id");
+        lua_pushnumber(L, (lua_Number)t.x);
+        lua_setfield(L, -2, "x");
+        lua_pushnumber(L, (lua_Number)t.y);
+        lua_setfield(L, -2, "y");
+        lua_pushnumber(L, (lua_Number)t.z);
+        lua_setfield(L, -2, "z");
+        lua_pushstring(L, t.text.c_str());
+        lua_setfield(L, -2, "text");
+        lua_rawseti(L, -2, i++);
+    }
+    return 1;
+}
+
 int l_world_removefloatingtext(lua_State* L) {
     WORLD_OR_NIL();
     lua_Integer id = luaL_checkinteger(L, 2);
@@ -503,6 +546,8 @@ const luaL_Reg kWorldMethods[] = {
     {"spawnSplashParticles", l_world_splashparticles},
     {"spawnFloatingText", l_world_spawnfloatingtext},
     {"moveFloatingText", l_world_movefloatingtext},
+    {"setFloatingText", l_world_setfloatingtext},
+    {"getFloatingTexts", l_world_getfloatingtexts},
     {"removeFloatingText", l_world_removefloatingtext},
     {"spawnEntity", l_world_spawnentity},
     {"moveEntity", l_world_moveentity},
