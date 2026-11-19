@@ -12,11 +12,13 @@ plugin API once per second at that player:
   5. spawnParticle("item_break", 280<<16) -> LevelEvent 0x4000|10 with the
      stick id in bits 16+; the old crash payloads (low-bits id, item 0)
      and terrain of air must be rejected, never reaching the wire
-  6. spawnFloatingText/move/set/remove -> AddEntityPacket(type 64) +
-     MoveEntityPacket + RemoveEntityPacket for the same entity id;
-     '\\n' spawns a title carrier + body carriers one line apart (0.28),
-     setFloatingText re-texts per line as SetEntityDataPacket entries
-     and getFloatingTexts round-trips the text back
+  6. spawnFloatingText/move/set/remove -> the invisible fake-player
+     carrier (AddPlayerPacket, username = title line) + its
+     SetEntityDataPacket spawn metadata, MovePlayerPacket +
+     RemoveEntityPacket for the same entity id; the full '\\n' text rides
+     ONE nametag (the client stacks the lines itself), setFloatingText
+     re-texts as one metadata packet and getFloatingTexts round-trips the
+     text back
 
 The plugin also probes rejection (unknown name, out-of-range id, out-of-range
 rgb, out-of-range block id, unrenderable item_break/terrain payloads) inside
@@ -42,9 +44,9 @@ from linux_login_check import STAGE_SPAWN  # noqa: E402
 
 LEVEL_EVENT = 0x16
 START_GAME = 0x09
-ADD_ENTITY = 0x0b
+ADD_PLAYER = 0x0a
 REMOVE_ENTITY = 0x0c
-MOVE_ENTITY = 0x0f
+MOVE_PLAYER = 0x10
 SET_ENTITY_DATA = 0x22
 
 PARTICLE_ADD_MASK = 0x4000        # generic particles: evid = mask | type
@@ -58,9 +60,7 @@ EVENT_PARTICLE_SPLASH = 2002      # splash shatter + glass smash
 BREAK_BLOCK_ID = 41               # gold block texture for the burst
 SPLASH_RGB = 0xFF0000             # red; wire data = 0xFF000000 | rgb
 ITEM_BREAK_STICK = 280 << 16      # item packing: stick id in bits 16+
-ENTITY_TYPE_ITEM = 64             # floating-text carrier (item 0 + nametag)
-LINE_SPACING = 0.28               # carrier y gap between two text lines
-EYE_HEIGHT = 1.62
+CARRIER_DROP = 1.62               # carrier hangs this far under the text line
 
 PLUGIN_YML = ("name: ParticleAPI\nmain: src/main.lua\napi: 1.0.3\n"
               "version: 1.0.0\nauthor: CurseStone\n")
@@ -104,9 +104,10 @@ return {
         local ok_mv = ok_ft and w:moveFloatingText(ft, x, y + 2.6, z)
         local ok_rm = ok_ft and w:removeFloatingText(ft)
         local bad_rm = ok_ft and not w:removeFloatingText(ft)
-        -- multi-line floating text: title carrier + body carrier (two
-        -- item-entity spawns one line apart), re-texted per line, listed,
-        -- then moved and removed with the same entity ids.
+        -- multi-line floating text: the full '\\n' text rides ONE carrier's
+        -- nametag (the client stacks the lines itself), re-texted as one
+        -- metadata packet, listed, then moved and removed with the same
+        -- entity id.
         local ml = w:spawnFloatingText(x, y + 3.0, z, "PCHK title\\nPCHK body", 0)
         local ok_ml = ml ~= nil
         local ok_st = ok_ml and w:setFloatingText(ml, "PCHK retitle\\nPCHK rebody")
@@ -149,16 +150,55 @@ return {
 '''
 
 
+def parse_nametag(meta: bytes):
+    """Parses one metadata blob and returns the nametag string when the blob
+    carries one (PROP_NAMETAG = 2, string). Bounds-safe: a truncated blob
+    just yields None instead of raising."""
+    off = 0
+    while off < len(meta):
+        key = meta[off]
+        if key == 0x7F:  # terminator
+            return None
+        mtype = key >> 5
+        mindex = key & 0x1F
+        off += 1
+        if mtype == 4:  # string: LE length + bytes (Binary::writeLShort)
+            if off + 2 > len(meta):
+                return None
+            (n,) = struct.unpack("<H", meta[off:off + 2])
+            if off + 2 + n > len(meta):
+                return None
+            val = meta[off + 2:off + 2 + n]
+            off += 2 + n
+            if mindex == 2:
+                return val.decode("utf-8", "replace")
+        elif mtype == 5:  # slot: id short; non-air adds count/damage/nbt len
+            if off + 2 > len(meta):
+                return None
+            (sid,) = struct.unpack(">h", meta[off:off + 2])
+            off += 2
+            if sid != 0:
+                if off + 5 > len(meta):
+                    return None
+                (n,) = struct.unpack(">H", meta[off + 3:off + 5])
+                off += 5 + n
+        elif mtype in (0, 1, 2, 3, 6, 7):  # byte/short/int/float/pos/long
+            off += {0: 1, 1: 2, 2: 4, 3: 4, 6: 12, 7: 8}[mtype]
+        else:
+            return None
+    return None
+
+
 class ParticleApiClient(PortalClient):
     """PortalClient + LevelEvent observer for every particle event shape."""
 
     def __init__(self, *a, **k):
         super().__init__(*a, **k)
         self.level_events = []     # (evid, x, y, z, data) as decoded from the wire
-        self.ft_adds = []          # (eid, x, y, z) of item-entity spawns (floating text)
-        self.ft_moves = set()      # eids seen in MoveEntityPacket
-        self.ft_removes = set()    # eids seen in RemoveEntityPacket
-        self.ft_retexts = 0        # SetEntityDataPacket frames (floating-text re-texts)
+        self.ft_adds = []          # (eid, x, y, z, username) of carrier spawns
+        self.ft_move_eids = set()  # eids seen in MovePlayerPacket
+        self.ft_remove_eids = set()  # eids seen in RemoveEntityPacket
+        self.ft_nametags = []      # (eid, nametag) seen in SetEntityDataPacket
         self.sg_pos = None         # StartGame player position (feet)
 
     def classify(self, payload: bytes):
@@ -167,18 +207,23 @@ class ParticleApiClient(PortalClient):
             x, y, z = struct.unpack(">fff", payload[3:15])
             data = struct.unpack(">i", payload[15:19])[0]
             self.level_events.append((evid, x, y, z, data))
-        elif payload and payload[0] == ADD_ENTITY and len(payload) >= 25:
-            eid = struct.unpack(">q", payload[1:9])[0]
-            etype = struct.unpack(">i", payload[9:13])[0]
-            if etype == ENTITY_TYPE_ITEM:
-                ax, ay, az = struct.unpack(">fff", payload[13:25])
-                self.ft_adds.append((eid, ax, ay, az))
+        elif payload and payload[0] == ADD_PLAYER and len(payload) >= 28:
+            ulen = struct.unpack(">H", payload[17:19])[0]
+            if len(payload) >= 39 + ulen:
+                user = payload[19:19 + ulen]
+                eid = struct.unpack(">q", payload[19 + ulen:27 + ulen])[0]
+                ax, ay, az = struct.unpack(">fff", payload[27 + ulen:39 + ulen])
+                if user.startswith(b"PCHK"):
+                    self.ft_adds.append((eid, ax, ay, az, user))
         elif payload and payload[0] == REMOVE_ENTITY and len(payload) >= 9:
-            self.ft_removes.add(struct.unpack(">q", payload[1:9])[0])
-        elif payload and payload[0] == MOVE_ENTITY and len(payload) >= 17:
-            self.ft_moves.add(struct.unpack(">q", payload[1:9])[0])
+            self.ft_remove_eids.add(struct.unpack(">q", payload[1:9])[0])
+        elif payload and payload[0] == MOVE_PLAYER and len(payload) >= 9:
+            self.ft_move_eids.add(struct.unpack(">q", payload[1:9])[0])
         elif payload and payload[0] == SET_ENTITY_DATA and len(payload) >= 9:
-            self.ft_retexts += 1
+            eid = struct.unpack(">q", payload[1:9])[0]
+            tag = parse_nametag(payload[9:])
+            if tag is not None:
+                self.ft_nametags.append((eid, tag))
         elif payload and payload[0] == START_GAME and len(payload) >= 46:
             px, py, pz = struct.unpack(">fff", payload[34:46])
             self.sg_pos = (px, py, pz)
@@ -315,25 +360,36 @@ def run(host: str, port: int, server_bin: str) -> int:
         check(len(splashes) >= 3,
               f"spawnSplashParticles carries opaque ARGB ({len(splashes)})")
 
-        # ---- floating text: add -> move -> remove, same entity id -------
+        # ---- floating text: fake-player carrier, add/move/remove -------
         check(len(c.ft_adds) >= 6,
-              f"spawnFloatingText spawns item-entity carriers ({len(c.ft_adds)})")
-        moved = [e[0] for e in c.ft_adds
-                 if e[0] in c.ft_moves and e[0] in c.ft_removes]
-        check(len(moved) == len(c.ft_adds) and c.ft_adds,
-              f"every floating text is moved and removed ({len(moved)}/{len(c.ft_adds)})")
-        # ---- multi-line: title carrier + body carrier one line apart ----
-        pairs = 0
-        for i in range(len(c.ft_adds)):
-            for j in range(i + 1, len(c.ft_adds)):
-                a, b = c.ft_adds[i], c.ft_adds[j]
-                if (abs(a[1] - b[1]) < 0.01 and abs(a[3] - b[3]) < 0.01
-                        and abs(abs(a[2] - b[2]) - LINE_SPACING) < 0.05):
-                    pairs += 1
-        check(pairs >= 3,
-              f"multi-line texts spawn title+body carriers {LINE_SPACING} apart ({pairs} pairs)")
-        check(c.ft_retexts >= 2,
-              f"setFloatingText re-texts reach the wire ({c.ft_retexts})")
+              f"spawnFloatingText spawns invisible player carriers ({len(c.ft_adds)})")
+        check(all(u.startswith(b"PCHK") for _, _, _, _, u in c.ft_adds),
+              "carrier usernames carry the title line")
+        served = [a for a in c.ft_adds
+                  if a[0] in c.ft_move_eids and a[0] in c.ft_remove_eids]
+        check(len(served) == len(c.ft_adds) and c.ft_adds,
+              f"every floating text is moved and removed ({len(served)}/{len(c.ft_adds)})")
+        # ---- multi-line text: the full '\n' text rides one nametag ------
+        nametags = [t for _, t in c.ft_nametags]
+        check(any(t == "PCHK title\nPCHK body" for t in nametags),
+              "multi-line text rides one carrier (full '\\n' text in the spawn metadata)")
+        check(any(t == "PCHK retitle\nPCHK rebody" for t in nametags),
+              "setFloatingText re-text reaches the wire as one metadata packet")
+        check(len(c.ft_nametags) >= 6,
+              f"spawn metadata + re-texts reach the wire ({len(c.ft_nametags)})")
+        # ---- carrier drop: the ft add (requested feet + 2.4) hangs 1.62
+        # under the text line while hearts ride feet + 2.0 at the same
+        # spot, so the same-cycle y delta is (2.4 - 1.62) - 2.0 = -1.22.
+        if hearts:
+            pairs = 0
+            for a in c.ft_adds:
+                for e in hearts:
+                    if (abs(e[1] - a[1]) < 0.5 and abs(e[3] - a[3]) < 0.5
+                            and abs((a[2] - e[2]) - (2.4 - CARRIER_DROP - 2.0)) < 0.1):
+                        pairs += 1
+                        break
+            check(pairs >= 3,
+                  f"carrier hangs {CARRIER_DROP} under the text line ({pairs} matched)")
 
         def near(evts, idx, want, tol=3.0):
             return all(abs(e[idx] - want) < tol for e in evts)

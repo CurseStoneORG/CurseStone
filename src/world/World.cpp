@@ -1111,8 +1111,8 @@ int64_t World::spawnFloatingText(double x, double y, double z, std::string text,
     }
     const int64_t eid = Server::getInstance().allocateEid();
     auto ft = std::make_unique<particle::FloatingTextParticle>(eid, x, y, z);
-    // setText() splits '\n' into title + body carriers before the first
-    // viewer is served, so spawn packets already carry the full layout.
+    // setText() applies the '\n' text before the first viewer is served,
+    // so the spawn pair already carries the full text.
     ft->setText(std::move(text));
     ft->syncViewers(*this); // spawn to every player in render range now
     {

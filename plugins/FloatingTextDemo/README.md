@@ -1,8 +1,9 @@
 # FloatingTextDemo
 
 End-to-end test plugin for the CurseStone **FloatingTextParticle** API
-(CurseStone Lua plugin, API 1.0.3). It drives every capability the
-particle exposes to plugins through the `/ft` command:
+(CurseStone Lua plugin, API 1.0.3, plugin 1.0.1 — fake-player carrier
+edition). It drives every capability the particle exposes to plugins
+through the `/ft` command:
 
 | Command | What it exercises |
 | ------- | ----------------- |
@@ -10,7 +11,7 @@ particle exposes to plugins through the `/ft` command:
 | `/ft here <text>` | One-line quick spawn |
 | `/ft list` | Every text of your world (id, position, title) |
 | `/ft move <id>` | Moves a text to your current position |
-| `/ft retext <id> <title>\|<line>\|...` | Per-line diffed re-text (only changed lines resync) |
+| `/ft retext <id> <title>\|<line>\|...` | Re-text; only the nametag moves on the wire (one SetEntityDataPacket) |
 | `/ft remove <id>` | Despawns one text |
 | `/ft clear` | Despawns every text of the world |
 | `/ft ttl <seconds> <title>\|<line>\|...` | Auto-expiring text |
@@ -31,8 +32,8 @@ Drop the `FloatingTextDemo/` folder (this folder, with `plugin.yml` and
 2. Walk away until the text leaves render range and walk back: the
    particle's one-second viewer sync despawns and re-spawns it for you,
    the same way it serves players that joined after the text.
-3. `/ft retext <id> New title|New body` — only the lines that actually
-   changed are re-sent (one SetEntityDataPacket each).
+3. `/ft retext <id> New title|New body` — only the nametag moves on the
+   wire: one SetEntityDataPacket resyncs every viewer, no respawn.
 4. `/ft demo` — the title cycles colors and the body counts down; each
    step re-writes both lines, then the text removes itself.
 5. `/ft list`, `/ft move <id>`, `/ft remove <id>`, `/ft clear` round out
@@ -42,12 +43,13 @@ Drop the `FloatingTextDemo/` folder (this folder, with `plugin.yml` and
 
 ```lua
 local id = w:spawnFloatingText(x, y, z, "title\nbody", 0)  -- '\n' = line
-w:moveFloatingText(id, x, y + 1, z)      -- one MoveEntityPacket per line
-w:setFloatingText(id, "new\ntext")       -- diffed per line
+w:moveFloatingText(id, x, y + 1, z)      -- one MovePlayerPacket
+w:setFloatingText(id, "new\ntext")       -- one metadata packet resyncs
 for _, t in ipairs(w:getFloatingTexts()) do end  -- {id,x,y,z,text}
-w:removeFloatingText(id)                 -- one RemoveEntityPacket per line
+w:removeFloatingText(id)                 -- one RemoveEntityPacket
 ```
 
 Multi-line texts are written with `|` separators in the commands because
 the command layer splits on spaces; each `|` becomes one `\n` line of
-the particle (title + up to 7 body lines, 128 chars per line).
+the particle. The whole text rides one invisible carrier's nametag (the
+client stacks the lines itself) and is capped at 512 chars.

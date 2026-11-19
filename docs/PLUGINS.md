@@ -80,39 +80,40 @@ w.spawnBlockParticles(bx, by, bz, blockId, meta)
 -- splash-potion shatter: colored swirl + glass smash sound (2002)
 w.spawnSplashParticles(x, y, z, 0xFF0000)   -- 0xRRGGBB
 
--- floating text (FloatingTextParticle): one invisible item-entity
--- carrier per line, nametag = line text (protocol 84 has no text
--- particle). '\n' splits lines: the first line is the title carrier at
--- the requested position, every following line renders 0.28 below the
--- previous. Returns the entity id, or nil at the per-world cap
--- (128/world).
+-- floating text (FloatingTextParticle): ONE invisible fake-player
+-- carrier whose nametag is the whole text (this client era draws
+-- nametags only on player entities, and protocol 84 has no text
+-- particle). '\n' splits the title line from the body lines and the
+-- client stacks them itself, so a text costs one entity no matter how
+-- many lines it carries. Returns the entity id, or nil at the per-world
+-- cap (128/world).
 local id = w.spawnFloatingText(x, y, z, "Welcome\n§7to the hub", 200)
-w.moveFloatingText(id, x, y + 1, z)         -- one MoveEntityPacket per line
-w.setFloatingText(id, "New title\n§anew body") -- changed lines only resync
+w.moveFloatingText(id, x, y + 1, z)         -- one MovePlayerPacket
+w.setFloatingText(id, "New title\n§anew body") -- one metadata packet resyncs
 for _, t in ipairs(w.getFloatingTexts()) do  -- {id,x,y,z,text}
 end
-w.removeFloatingText(id)                    -- one RemoveEntityPacket per line
+w.removeFloatingText(id)                    -- one RemoveEntityPacket
 ```
 
 `spawnFloatingText(x, y, z, text, [ttlTicks])`: `ttlTicks > 0` despawns
 automatically after that many ticks, `0` keeps the text until
-`removeFloatingText` (entity ids do not survive restarts). Every line is
-capped at 128 chars and a text renders at most 8 lines (title + 7 body).
+`removeFloatingText` (entity ids do not survive restarts). The whole
+text is capped at 512 chars; the invisible carrier hangs 1.62 below the
+text line so the nametag anchor lands at the requested spot.
 
-`setFloatingText(id, text)` replaces the content with the same multi-line
-model. The change is diffed per line: only lines whose text moved emit
-one SetEntityDataPacket to the viewers, extra lines despawn, missing
-lines spawn — an animated title costs two packets per step, not a
-respawn.
+`setFloatingText(id, text)` replaces the content with the same
+multi-line model. Only the nametag moves on the wire: one
+SetEntityDataPacket resyncs every viewer — an animated title costs one
+packet per step, not a respawn.
 
 `getFloatingTexts()` returns `{id,x,y,z,text}` tables ordered by entity
 id (`text` is the full text with `\n` separators).
 
 Viewer churn reconciles once per second: players that join or walk into
-render range receive the text, players that walk out or quit stop
-rendering it — the same canSeeBlock audience every other world broadcast
-uses. Between syncs the only per-tick cost of a text is none: spawn,
-move, re-text and removal are the only packet moments.
+render range receive the text, players that walk out, quit or switch
+worlds stop rendering it — the same canSeeBlock audience every other
+world broadcast uses. Between syncs the only per-tick cost of a text is
+none: spawn, move, re-text and removal are the only packet moments.
 
 `data` payload per particle family (each particle type owns its packing
 in its own file under `src/world/particle/`):
@@ -414,10 +415,11 @@ instead of raising anything; invalid arguments never crash the server.
 | `spawnParticle(world, x, y, z, type, data)` | one generic particle, `type` = `CsParticleType` 1..32; see the Lua particles table for `data` packing; unrenderable payloads return 0, never broadcast |
 | `spawnBlockParticles(world, x, y, z, blockId, meta)` | break burst + dig sound (LevelEvent 2001) |
 | `spawnSplashParticles(world, x, y, z, rgb)` | splash shatter (LevelEvent 2002); `rgb` 0xRRGGBB |
-| `spawnFloatingText(world, x, y, z, text, ttlTicks)` | floating text (invisible item-entity carrier per line, nametag = line); `\n` splits title + body lines; entity id, or -1 at the cap; ttl 0 = until removed |
+| `spawnFloatingText(world, x, y, z, text, ttlTicks)` | floating text (one invisible fake-player carrier, nametag = the whole text; `\n` stacks title + body lines client-side); entity id, or -1 at the cap; ttl 0 = until removed |
 | `moveFloatingText(world, id, x, y, z)` | repositions a floating text |
-| `setFloatingText(world, id, text)` | re-texts a floating text (per-line diff); false for unknown ids |
+| `setFloatingText(world, id, text)` | re-texts a floating text (one metadata packet); false for unknown ids |
 | `removeFloatingText(world, id)` | despawns a floating text; 0 for unknown ids |
+| `getFloatingTexts(world, out, max)` | copies `{id, x, y, z, text}` snapshots (ordered by id) into a `CsFloatingTextInfo` array; returns how many were written |
 | `spawnEntity(world, type, x, y, z, yaw, pitch)` | standing mob (no AI, zero per-tick cost); entity id, or -1 for an invalid type/position or at the cap; y is feet |
 | `moveEntity(world, id, x, y, z, yaw, pitch)` | repositions a standing mob |
 | `removeEntity(world, id)` | despawns a standing mob; 0 for unknown ids |

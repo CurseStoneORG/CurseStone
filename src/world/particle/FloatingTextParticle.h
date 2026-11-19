@@ -2,7 +2,7 @@
  _____                     _____ _
 /  __ \                   /  ___| |
 | /  \/_   _ _ __ ___  ___\ `--.| |_ ___  _ __   ___
-| |   | | | | '__/ __|/ _ \`--. \ __/ _ \| '_ \ / _ \
+| |   | | | '__/ __|/ _ \`--. \ __/ _ \| '_ \ / _ \
 | \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
  \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
 
@@ -23,24 +23,28 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // FloatingTextParticle — the protocol-84 floating text particle.
 //
-// Protocol 84 has no text-rendering particle; floating text rides on
-// client-side item entities (type 64, item 0): the client draws nothing
-// but the nametag above an invisible carrier. One text is a small packet
-// composite: the first line is the nametag of the carrier entity, every
-// following line gets its own carrier one line slot below it.
+// The 0.15.10 client draws nametags only on player entities, so one
+// floating text is one invisible fake player: the carrier spawns through
+// AddPlayerPacket and takes its wire face from a SetEntityDataPacket
+// (invisible flag, nametag, NoAI) — the same two-packet spawn every real
+// player of this server uses. The whole text, title and every '\n' body
+// line, rides on that single nametag; the client stacks the lines itself,
+// so a text costs one entity and one fixed spawn pair no matter how many
+// lines it carries.
 //
-// Performance contract: one prebuilt AddEntityPacket per line, reused by
-// every viewer; a re-text emits one SetEntityDataPacket per changed line
-// only; viewer churn (joins, walk-ins, walk-outs) reconciles in one pass
-// per second; a world without floating texts pays nothing.
+// Performance contract: the spawn pair and the removal packet are built
+// once per text and reused by every viewer; a re-text emits one
+// SetEntityDataPacket; a move emits one MovePlayerPacket; viewer churn
+// (joins, walk-ins, walk-outs, world switches) reconciles in one pass per
+// second; a world without floating texts pays nothing.
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
 #include <unordered_set>
-#include <vector>
 
 namespace cursestone {
 class Player;
@@ -50,8 +54,9 @@ class World;
 } // namespace cursestone
 
 namespace cursestone::network::protocol {
-class AddEntityPacket;
+class AddPlayerPacket;
 class DataPacket;
+class MovePlayerPacket;
 class RemoveEntityPacket;
 class SetEntityDataPacket;
 } // namespace cursestone::network::protocol
@@ -59,32 +64,31 @@ class SetEntityDataPacket;
 namespace cursestone::world::particle {
 
 /**
- * @brief A persistent, multi-line floating text rendered through invisible
- *        client-side carriers, owned by the world like every other
+ * @brief A persistent floating text rendered through one invisible
+ *        client-side fake player, owned by the world like every other
  *        particle.
  *
- * The text model is a list of lines: line 0 is the title carried by the
- * entity id the world hands out, lines 1..n are body carriers rendered
- * below it. The class tracks which players currently render the text and
- * reconciles that set with the chunk-based audience every second, so a
- * player that joins or walks into range receives the text exactly like a
- * player that was in range at spawn time.
+ * The text model is one string: '\n' splits it into the title line and
+ * body lines, and the client renders that stack above the carrier. The
+ * class tracks which players currently render the text and reconciles
+ * that set with the chunk-based audience every second, so a player that
+ * joins, walks into range or returns from another world receives the
+ * text exactly like a player that was in range at spawn time.
  */
 class FloatingTextParticle {
   public:
     // Ticks between viewer reconciliations (one second at 20 TPS).
     static constexpr uint64_t kViewerSyncTicks = 20;
-    // The nametag of an item-entity carrier renders ~0.75 above its
-    // origin; every part spawns that much lower so the requested y is
-    // where the title appears.
-    static constexpr float kCarrierDrop = 0.75f;
-    // Vertical distance between the nametags of successive lines.
-    static constexpr float kLineSpacing = 0.28f;
-    static constexpr size_t kMaxLines = 8;       // title + 7 body lines
-    static constexpr size_t kMaxLineChars = 128; // per line, not per text
+    // The carrier body hangs this far below the text line: the invisible
+    // player stands 1.62 (the era eye height) under the requested y, so
+    // the nametag anchor renders at the requested spot and the body-sized
+    // hitbox stays clear of it.
+    static constexpr float kCarrierDrop = 1.62f;
+    // Whole-text wire ceiling (title + '\n' body lines together).
+    static constexpr size_t kMaxTextChars = 512;
 
     /**
-     * @brief Builds one floating text at @p pos with an empty title line.
+     * @brief Builds one floating text at @p pos with an empty text.
      *
      * @param id runtime entity id of the carrier; doubles as the handle
      *           every World API call takes.
@@ -95,7 +99,7 @@ class FloatingTextParticle {
     FloatingTextParticle(const FloatingTextParticle&) = delete;
     FloatingTextParticle& operator=(const FloatingTextParticle&) = delete;
 
-    /// @brief Runtime entity id of the title carrier (the external handle).
+    /// @brief Runtime entity id of the carrier (the external handle).
     int64_t id() const {
         return id_;
     }
@@ -110,40 +114,29 @@ class FloatingTextParticle {
     }
 
     /**
-     * @brief Replaces the whole text. '\n' splits it into lines: the first
-     *        line is the title, every following line is a body carrier.
+     * @brief Replaces the whole text. '\n' splits it into the title line
+     *        and the body lines the client stacks below it.
      *
-     * The change is diffed per line: only lines whose text moved emit one
-     * SetEntityDataPacket to the active viewers, extra lines despawn,
-     * missing lines spawn. Lines are clamped to kMaxLines and
-     * kMaxLineChars.
+     * One SetEntityDataPacket reaches the active viewers (the spawn
+     * metadata never changed); the text is clamped to kMaxTextChars.
      */
     void setText(std::string text);
-    /// @brief Replaces the title (line 0) and keeps the body lines.
-    void setTitle(std::string title);
-    /// @brief Replaces one line by index (0 = title); out-of-range is a no-op.
-    void setLine(size_t index, std::string text);
-    /// @brief The full text, lines joined with '\n'.
-    std::string text() const;
-    /// @brief The title line (line 0).
-    const std::string& title() const {
-        return lines_[0];
-    }
-    /// @brief Number of lines currently rendered (title included).
-    size_t lineCount() const {
-        return lines_.size();
+    /// @brief The full text, exactly as set (with '\n' separators).
+    const std::string& text() const {
+        return text_;
     }
 
     /**
-     * @brief Sends the spawn packets (one AddEntityPacket per line) to one
+     * @brief Sends the spawn pair (AddPlayerPacket + metadata) to one
      *        player and records them as an active viewer.
      *
-     * Idempotent: a player that already renders the text receives nothing.
+     * Idempotent: a player that already renders the text receives
+     * nothing.
      */
     void spawnTo(Player& viewer);
     /**
-     * @brief Sends one RemoveEntityPacket per line to one player and drops
-     *        them from the viewer set. Idempotent.
+     * @brief Sends one RemoveEntityPacket to one player and drops them
+     *        from the viewer set. Idempotent.
      */
     void despawnFrom(Player& viewer);
     /// @brief Despawns the text from every viewer of @p world.
@@ -151,7 +144,7 @@ class FloatingTextParticle {
     /**
      * @brief Reconciles the viewer set with the current chunk-based
      *        audience of @p world (spawn to walk-ins, despawn from
-     *        walk-outs, retire quit players). Call once per
+     *        walk-outs, world switches and quit players). Call once per
      *        kViewerSyncTicks.
      */
     void syncViewers(World& world);
@@ -161,9 +154,9 @@ class FloatingTextParticle {
     }
 
     /**
-     * @brief Moves the whole text: one MoveEntityPacket per line to every
-     *        active viewer, and the prebuilt spawn packets follow the new
-     *        position so later viewers spawn in place.
+     * @brief Moves the text: one MovePlayerPacket to every active viewer,
+     *        and the cached spawn pair follows the new position so later
+     *        viewers spawn in place.
      */
     void setPosition(World& world, double x, double y, double z);
 
@@ -175,41 +168,36 @@ class FloatingTextParticle {
     }
 
   private:
-    // One wire part of the text: a client-side invisible carrier whose
-    // nametag renders one line. Each part owns its prebuilt spawn packet
-    // so spawning to a viewer costs one send, never one build.
-    struct Part {
-        int64_t eid = 0;
-        std::string text;
-        std::shared_ptr<network::protocol::AddEntityPacket> add;
-    };
-
-    // Network y of a line's carrier: the requested y lowered by the
-    // nametag render offset, one line slot further down per index.
-    float partY(size_t index) const;
-    // Applies a clamped line list: re-texts the common range, spawns the
-    // growth, despawns the shrink.
-    void applyLines(std::vector<std::string>&& want);
-    // (Re)builds the prebuilt spawn packet of one part from the current
-    // position and text.
-    void rebuildPartAdd(size_t index);
-    // Spawns one additional body line for the active viewers.
-    void addPart(size_t index, const std::string& text);
-    // Despawns and forgets every line from @p first upward.
-    void dropPartsFrom(size_t first);
-    // Sends @p pk to every active viewer (one shared packet, no per-viewer
+    // (Re)builds the cached spawn pair from the current text + position:
+    // one AddPlayerPacket whose username is the title line, one
+    // SetEntityDataPacket with the invisible flag + nametag + NoAI face.
+    void rebuildSpawnPackets();
+    // Sends one shared packet to every active viewer (no per-viewer
     // allocation).
     void sendToViewers(const std::shared_ptr<network::protocol::DataPacket>& pk);
+    // The carrier y on the wire: the requested y lowered by kCarrierDrop.
+    float carrierY() const;
 
     int64_t id_;
     double x_;
     double y_;
     double z_;
-    // The text model: lines_[0] is the title. parts_[i] renders lines_[i].
-    std::vector<std::string> lines_;
-    std::vector<Part> parts_;
-    // Runtime ids of the players that currently render the text. Ids only:
-    // resolved through the server player snapshot, never stored pointers.
+    // Stable fake-player uuid, derived from the carrier id: no player
+    // list entry is ever sent, so the client only uses it for its skin
+    // cache key, and a deterministic id-shaped value keeps every carrier
+    // distinct without an RNG dependency.
+    std::array<uint8_t, 16> uuid_;
+    // The text model: '\n' splits the title line from the body lines.
+    std::string text_;
+    // Cached wire state, shared by every viewer: the two-packet spawn
+    // face and the one-packet removal. Rebuilt only when the text or the
+    // position moves.
+    std::shared_ptr<network::protocol::AddPlayerPacket> add_;
+    std::shared_ptr<network::protocol::SetEntityDataPacket> meta_;
+    std::shared_ptr<network::protocol::RemoveEntityPacket> rm_;
+    // Runtime ids of the players that currently render the text. Ids
+    // only: resolved through the server player snapshot, never stored
+    // pointers.
     std::unordered_set<int64_t> viewers_;
     bool closed_ = false;
 };
