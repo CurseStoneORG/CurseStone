@@ -43,6 +43,7 @@
 #include "SetEntityDataPacket.h" // TERMINATOR — the metadata end byte
 #include "ContainerSetContentPacket.h" // SPECIAL_INVENTORY — hotbar block window
 
+#include <bit>
 #include <cstdio>
 #include <cmath>
 
@@ -76,10 +77,11 @@ inline bool isInfBits(uint32_t bits) {
 }
 
 inline float bitsToF32(uint32_t bits) {
-    float f;
-    static_assert(sizeof(f) == sizeof(bits), "float must be 32-bit");
-    __builtin_memcpy(&f, &bits, sizeof(f));
-    return f;
+    // C++20 bit conversion: a compile-time-checked reinterpret that every
+    // supported toolchain (MSVC, GCC, Clang/NDK) lowers to a single register
+    // move — no float arithmetic, no compiler-specific __builtin_memcpy.
+    static_assert(sizeof(float) == sizeof(bits), "float must be 32-bit");
+    return std::bit_cast<float>(bits);
 }
 
 // Violation builders. `field`/`problem` are static literals — no ownership,
