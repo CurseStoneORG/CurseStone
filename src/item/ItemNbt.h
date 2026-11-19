@@ -97,4 +97,10 @@ void enchantmentsFromNbt(const cursestone::nbt::Tag* entry, enchantment::Enchant
 // yields an empty blob (an unnamed item has no NBT at all).
 std::string buildDisplayNbt(const std::string& name);
 
+// Extracts the visible name back out of a buildDisplayNbt() blob — the
+// exact inverse, so plugins can identify custom-named tools (a
+// WorldEdit-style brush stick) through the item they hold. Returns ""
+// when the blob is empty or does not carry the {display:{Name}} shape.
+std::string readDisplayName(const std::string& nbt);
+
 } // namespace cursestone::item

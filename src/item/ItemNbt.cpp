@@ -220,4 +220,49 @@ std::string buildDisplayNbt(const std::string& name) {
     return blob;
 }
 
+// readDisplayName — the inverse of buildDisplayNbt: strict walk of the
+// little-endian network NBT layout documented above (root compound with an
+// empty name > "display" compound > "Name" string). Anything that does not
+// match the shape byte-for-byte — other NBT payloads, truncated blobs, a
+// name longer than the blob itself — returns "" instead of throwing: the
+// caller only wants a label, never a crash.
+std::string readDisplayName(const std::string& nbt) {
+    size_t off = 0;
+    auto u16le = [&](uint16_t& v) {
+        if (off + 2 > nbt.size())
+            return false;
+        v = (uint16_t)(uint8_t)nbt[off] | (uint16_t)((uint16_t)(uint8_t)nbt[off + 1] << 8);
+        off += 2;
+        return true;
+    };
+    auto str = [&](std::string& s) {
+        uint16_t len = 0;
+        if (!u16le(len) || off + len > nbt.size())
+            return false;
+        s.assign(nbt, off, len);
+        off += len;
+        return true;
+    };
+
+    std::string key;
+    if (off + 1 > nbt.size() || (uint8_t)nbt[off++] != 0x0A)
+        return ""; // root is not a compound
+    if (!str(key) || !key.empty())
+        return ""; // root name must be ""
+    if (off + 1 > nbt.size() || (uint8_t)nbt[off++] != 0x0A)
+        return "";
+    if (!str(key) || key != "display")
+        return "";
+    if (off + 1 > nbt.size() || (uint8_t)nbt[off++] != 0x08)
+        return "";
+    if (!str(key) || key != "Name")
+        return "";
+    std::string name;
+    if (!str(name))
+        return "";
+    // Trailing bytes (the two end markers) are expected but not enforced:
+    // the name itself is what the caller needs.
+    return name;
+}
+
 } // namespace cursestone::item

@@ -41,25 +41,48 @@ API surface (globals):
 - `server.broadcast(msg)`, `server.players()`, `server.getPlayer(name)`
 - `player.*` — message, tip, popup, kick, teleport, teleportWorld,
   getWorld, isOp, getHealth, setHealth, setPermission, hasPermission,
-  giveItem, setNameTag, getNameTag, setDisplayName, getDisplayName,
-  getPosition, getRotation, setRotation, setMotion, kill
+  giveItem, getHeldItem, setNameTag, getNameTag, setDisplayName,
+  getDisplayName, getPosition, getRotation, setRotation, setMotion, kill
 - `server.getWorld(name)` / `server.loadWorld(name, gen, [seed])` /
   `server.unloadWorld(name)` / `server.isWorldLoaded(name)` /
   `server.defaultWorld()` — world handles with `name`, `seed`,
   `dimension`, `generator`, `isDefault`, `getTime`, `setTime`, `getBlock`,
-  `setBlock`, `getSpawn`, `setSpawn`, `getPlayers`, `playerCount`,
-  `isChunkLoaded` (chunk coords), `chunkCount`, `save`, `spawnParticle`,
-  `spawnBlockParticles`, `spawnSplashParticles`, `spawnFloatingText`,
-  `moveFloatingText`, `setFloatingText`, `setFloatingTextTitle`,
-  `setFloatingTextBody`, `setFloatingTextVisible`, `setFloatingTextFollow`,
-  `setFloatingTextFollowPlayer`, `setFloatingTextViewers`,
-  `getFloatingTexts`, `removeFloatingText`,
+  `getBlockMeta`, `setBlock`, `fill`, `getSpawn`, `setSpawn`, `getPlayers`,
+  `playerCount`, `isChunkLoaded` (chunk coords), `chunkCount`, `save`,
+  `spawnParticle`, `spawnBlockParticles`, `spawnSplashParticles`,
+  `spawnFloatingText`, `moveFloatingText`, `setFloatingText`,
+  `setFloatingTextTitle`, `setFloatingTextBody`, `setFloatingTextVisible`,
+  `setFloatingTextFollow`, `setFloatingTextFollowPlayer`,
+  `setFloatingTextViewers`, `getFloatingTexts`, `removeFloatingText`,
   `spawnEntity`, `moveEntity`, `removeEntity`, `getEntity`, `getEntities`,
   `entityTypes`, `unload`. World names must be 1..64 letters, digits,
   `_` or `-` (they become directory names); generators are `normal`,
   `flat`, `nether`, `void` or `empty` (case-insensitive). New secondary
   worlds persist in `worlds/worlds.manifest` and reload on the next boot;
   unloading removes the entry.
+
+### Building blocks from plugins
+
+Every block write a plugin makes is visible to clients immediately —
+`world.setBlock` refreshes all viewers of the cell with one
+UpdateBlockPacket, so there is no "the block only appears after the chunk
+re-loads" window. For WorldEdit-style volume work use the bulk write:
+
+```lua
+local w = server.defaultWorld()
+local n = w.fill(x1, y1, z1, x2, y2, z2, 41, 0)  -- gold box between corners
+-- n = cells actually written; -1 = volume above the vanilla cap (32768)
+-- no-op cells (same id AND data) cost nothing; corners may be given in
+-- any order; y is clamped into the world
+```
+
+Heavily modified chunks reach their viewers as one whole-chunk re-send
+(one packet per 4096 cells), lightly touched chunks as per-block packets;
+the box boundary gets the vanilla neighbor wake so liquids and sand meet
+the new walls. `world.getBlockMeta(x, y, z)` reads the meta nibble back
+(wood types, wool colors, facing). `player.getHeldItem(name)` returns
+`id, meta, count, customName` (customName nil when unnamed) — how a tool
+plugin identifies its own custom-named brush item.
 - `commands.register(name, opts, fn)`, `commands.reply(sender, msg)`
 - `events.on(name, fn)` — PlayerJoin, PlayerQuit, PlayerChat, PlayerMove,
   PlayerDropItem, PlayerItemHeld, BlockBreak, BlockPlace, EntityDamage,
@@ -452,7 +475,8 @@ instead of raising anything; invalid arguments never crash the server.
 | `seed(world) -> i64` / `dimension(world) -> int` | |
 | `getTime -> int` / `setTime(world, t)` | normalized to 0..23999 |
 | `getBlock(world, x, y, z) -> id` / `getBlockMeta(...) -> 0..15` | `0` for unloaded chunks / invalid y |
-| `setBlock(world, x, y, z, id, meta)` | forces the chunk resident first |
+| `setBlock(world, x, y, z, id, meta)` | forces the chunk resident first; refreshes every viewer of the cell |
+| `fillBlocks(world, x1, y1, z1, x2, y2, z2, id, meta)` | bulk /fill write, vanilla 32768-cell cap; cells written, -1 over cap — batch 10 |
 | `getSpawn(world, out[3])` / `setSpawnPoint(world, x, y, z)` | compass spawn |
 | `getWeather -> 0..2` / `setWeather(world, state)` | 0 clear / 1 rain / 2 thunder |
 | `spawnLightning(world, x, y, z, fire)` | |

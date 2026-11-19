@@ -343,6 +343,29 @@ class World {
     // returns without touching the wire when nobody is playing here.
     void broadcastTimeSync();
 
+    // ----- Block construction API (WorldEdit-style plugins) -----
+    // Sends the CURRENT id/data of one block to every viewer that can see
+    // its chunk (one shared UpdateBlockPacket, FLAG_ALL_PRIORITY — the
+    // same refresh the player-driven placement path sends). No-op when
+    // the chunk is not resident or nobody is looking: never allocates.
+    void broadcastBlockUpdate(int32_t x, int32_t y, int32_t z);
+
+    // Vanilla-shaped /fill bulk write for building tools. Normalizes the
+    // two corners, refuses volumes above the vanilla cap (32768 cells)
+    // with -1, forces every affected chunk resident once, then writes the
+    // id/data across the box (no-op cells — same id AND data — are
+    // skipped). Viewers are refreshed with whole-chunk re-sends for the
+    // heavily modified chunks and per-block packets for the lightly
+    // touched ones: one FullChunkDataPacket carries 4096 cells, so for a
+    // dense fill it replaces four thousand UpdateBlockPackets per viewer.
+    // Returns the number of cells actually written (changed), or -1 when
+    // the volume exceeds the cap.
+    int32_t fillBlocks(int32_t x1, int32_t y1, int32_t z1, int32_t x2, int32_t y2,
+                       int32_t z2, uint8_t id, uint8_t data);
+
+    // Volume cap of fillBlocks (the vanilla /fill limit).
+    static constexpr int32_t FILL_MAX_VOLUME = 32768;
+
     // Sets the skip-night countdown; non-positive values cancel it.
     void setSleepTicks(int32_t t) {
         sleep_ticks_ = t;
