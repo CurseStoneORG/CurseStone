@@ -32,7 +32,6 @@
 #include "network/protocol/FullChunkDataPacket.h"
 #include "network/protocol/PlayerActionPacket.h"
 #include "network/protocol/InteractPacket.h"
-#include "network/protocol/EntityEventPacket.h"
 #include "network/protocol/SetHealthPacket.h"
 #include "network/protocol/SetEntityDataPacket.h"
 #include "network/protocol/SetEntityMotionPacket.h"
@@ -506,22 +505,10 @@ void Player::handleInteract(int action, int64_t targetEid) {
         addExhaustion(0.3f);
 
     if (hurt) {
-        // Send the hurt animation to the viewers. The victim's own client
-        // gets its flash from onHealthChanged.
-        auto hurtEv = std::make_shared<network::protocol::EntityEventPacket>();
-        hurtEv->eid = target->runtimeId();
-        hurtEv->event = network::protocol::EntityEventPacket::HURT_ANIMATION;
-        for (auto& other : srv_->playersSnapshotRef()) {
-            if (!other)
-                continue;
-            if (other.get() == target.get())
-                continue;
-            if (!other->spawned())
-                continue;
-            other->sendPacket(hurtEv);
-        }
-
-        // Synchronize the victim's health.
+        // The red flash already reached every spawned player in the
+        // victim's world through Living::broadcastHurtFlash (fired by the
+        // victim's onHealthChanged); only the instant SetHealthPacket
+        // correction for the victim's own hearts is needed here.
         auto sh = std::make_shared<network::protocol::SetHealthPacket>();
         sh->health = std::max(0, (int32_t)target->health());
         target->sendPacket(sh);

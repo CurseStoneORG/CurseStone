@@ -62,7 +62,6 @@
 #include "network/protocol/SetEntityMotionPacket.h"
 #include "network/protocol/SetEntityDataPacket.h"
 #include "network/protocol/AddItemEntityPacket.h"
-#include "network/protocol/EntityEventPacket.h"
 #include "world/particle/Particle.h"
 #include "world/particle/ParticleNames.h"
 #include "world/particle/ParticleFamily.h"
@@ -1596,24 +1595,15 @@ void World::tickArrows(uint64_t current_tick) {
                 shooter ? hit->damageByEntity(dmg, shooter, event::entity::DamageCause::PROJECTILE)
                         : hit->damage(dmg, event::entity::DamageCause::PROJECTILE);
 
-            if (applied != cursestone::entity::DamageApply::CANCELLED) {
-                if (applied == cursestone::entity::DamageApply::HURT) {
-                    // Viewers only; the victim's own flash comes from
-                    // onHealthChanged.
-                    auto hurtEv = std::make_shared<network::protocol::EntityEventPacket>();
-                    hurtEv->eid = hit->runtimeId();
-                    hurtEv->event = network::protocol::EntityEventPacket::HURT_ANIMATION;
-                    for (auto& other : Server::getInstance().playersSnapshotRef()) {
-                        if (!other || other.get() == hit)
-                            continue;
-                        if (!other->spawned())
-                            continue;
-                        other->sendPacket(hurtEv);
-                    }
-                    auto sh = std::make_shared<network::protocol::SetHealthPacket>();
-                    sh->health = std::max(0, (int32_t)hit->health());
-                    hit->sendPacket(sh);
-                }
+            if (applied == cursestone::entity::DamageApply::HURT) {
+                // The hurt flash already reached every spawned player in the
+                // victim's world through Living::broadcastHurtFlash (fired
+                // by the victim's onHealthChanged); only the instant
+                // SetHealthPacket correction for the victim's own hearts is
+                // needed here.
+                auto sh = std::make_shared<network::protocol::SetHealthPacket>();
+                sh->health = std::max(0, (int32_t)hit->health());
+                hit->sendPacket(sh);
             }
 
             a->taken = true;
