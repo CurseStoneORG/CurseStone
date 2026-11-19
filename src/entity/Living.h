@@ -122,9 +122,20 @@ class Living : public Entity {
 
   protected:
     // Called when health decreases without causing death.
-    // Players override this to synchronize health and the hurt animation immediately.
-    virtual void onHealthChanged() {
-    }
+    // The default reaction broadcasts the red hurt flash to every spawned
+    // player in the entity's world: the flash is a viewer-side EntityEvent,
+    // so a damage path that only updates health would otherwise leave the
+    // body unmarked on every screen except the victim's own.
+    // Players override this to add the eid-0 self alias and the health
+    // attribute sync on top of the viewer broadcast.
+    virtual void onHealthChanged();
+
+    // Broadcast the red hurt flash (EntityEventPacket event 2) for this
+    // entity to every spawned player in its world, the victim included.
+    // All recipients share one packet object, and the allocation is skipped
+    // entirely when no client can see the entity, so zero-viewer damage
+    // (empty worlds, distant mobs) stays allocation-free.
+    void broadcastHurtFlash();
 
     // Called when health first reaches zero or below.
     // Players override this to trigger PlayerDeathEvent.

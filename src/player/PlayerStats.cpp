@@ -126,7 +126,8 @@ void Player::sendAllAttributes() {
 }
 
 // Apply the hurt animation and synchronize health after non-fatal damage.
-// Creative players never show the hurt animation.
+// Creative players never show the hurt animation (they take no damage
+// outside VOID / CUSTOM causes anyway).
 void Player::onHealthChanged() {
     if (!spawned_.load(std::memory_order_relaxed))
         return;
@@ -134,13 +135,13 @@ void Player::onHealthChanged() {
         return;
 
     if (!isCreative()) {
-        // Self flash: the real entity id (self events resolve against it,
-        // like the death animation) plus the eid 0 alias packet.
-        auto ee = std::make_shared<network::protocol::EntityEventPacket>();
-        ee->eid = runtimeId();
-        ee->event = network::protocol::EntityEventPacket::HURT_ANIMATION;
-        sendPacket(ee);
+        // Viewer broadcast: every spawned player in this world — the victim
+        // included, through the real entity id — renders the red flash from
+        // one shared packet (Living::broadcastHurtFlash).
+        broadcastHurtFlash();
 
+        // Self alias: the 0.15.10 local player also resolves eid 0 for its
+        // own events, like the death animation does.
         auto alias = std::make_shared<network::protocol::EntityEventPacket>();
         alias->eid = 0;
         alias->event = network::protocol::EntityEventPacket::HURT_ANIMATION;

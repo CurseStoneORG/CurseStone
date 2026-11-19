@@ -22,9 +22,12 @@
  */
 
 #include "Living.h"
+#include "Player.h"
+#include "Server.h"
 #include "event/EventManager.h"
 #include "event/entity/EntityDamageEvent.h"
 #include "event/entity/EntityDamageByEntityEvent.h"
+#include "network/protocol/EntityEventPacket.h"
 
 namespace cursestone::entity {
 
@@ -37,8 +40,43 @@ bool Living::applyDamage(float amount) {
     if (just_died)
         onDeath();
     else
-        onHealthChanged(); // Immediately synchronize the health bar.
+        onHealthChanged(); // Immediately synchronize health + hurt flash.
     return just_died;
+}
+
+// Default health-changed reaction: push the red hurt flash to every client
+// in the world. EntityEvent 2 tints the entity's model red for a few frames
+// on each viewer, which is the only way a 0.15.10 client can see that a
+// body it does not control just took damage. Lethal hits skip this and go
+// through onDeath() instead — the death animation carries its own tint.
+void Living::onHealthChanged() {
+    broadcastHurtFlash();
+}
+
+void Living::broadcastHurtFlash() {
+    const auto& players = Server::getInstance().playersSnapshotRef();
+    World* lvl = world_.get();
+    // Audience pre-pass: the packet object is only allocated when at least
+    // one spawned player of this world would receive it, so zero-viewer
+    // damage (single-player mob noise, empty worlds) never touches the heap.
+    bool audience = false;
+    for (const auto& p : players) {
+        if (p && p->spawned() && !p->isPendingRemoval() && p->getWorld() == lvl) {
+            audience = true;
+            break;
+        }
+    }
+    if (!audience)
+        return;
+    // The event packet is immutable past this point, so one shared instance
+    // serves the whole broadcast without per-viewer copies.
+    auto ev = std::make_shared<network::protocol::EntityEventPacket>();
+    ev->eid = runtimeId();
+    ev->event = network::protocol::EntityEventPacket::HURT_ANIMATION;
+    for (auto& p : players) {
+        if (p && p->spawned() && !p->isPendingRemoval() && p->getWorld() == lvl)
+            p->sendPacket(ev);
+    }
 }
 
 DamageApply Living::damage(float amount) {
