@@ -82,7 +82,10 @@ jobs:
           name: cursestone-docs-html
           path: build/docs/html
           if-no-files-found: error
-          retention-days: 7
+          # The publish job consumes the artifact within the same run; the
+          # published copy lives on the docs repo, so one day of storage
+          # keeps the quota clean without risking the pipeline.
+          retention-days: 1
 
   publish:
     name: Publish to cursestone-docs api/
