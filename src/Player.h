@@ -162,7 +162,7 @@ class Player : public IPlayer,
     }
     // Logs packet-handler errors and kicks the player with details.
     void handlePacketError(uint8_t pid, const std::string& what);
-    // Logs a PacketSanitizer violation in PMMP style (packet name, field,
+    // Logs a PacketSanitizer violation in forensics-report style (packet name, field,
     // offending value, offset, hex dump) and records it in Diagnostics;
     // the packet has already been dropped by sendEncodedBody. Rate-limits
     // the crashdumps/ report file so a runaway producer cannot flood disk.

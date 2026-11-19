@@ -124,7 +124,7 @@ class PacketForensics {
         return in_total_;
     }
 
-    // Multi-line tail for a dump file: newest last, PMMP-report style.
+    // Multi-line tail for a dump file: newest last, forensics-report style.
     //   [HH:MM:SS] OUT MovePlayer        34 B ordered  10 00 00 00 ...
     std::string renderOutboundTail(size_t max) const;
     std::string renderInboundTail(size_t max) const;

@@ -95,7 +95,7 @@ The RakLib close reasons already separate the cases:
 * `bad batch`, kicks, etc. → server-side closes.
 
 For every non-clean close the old code wrote a generic report. It now
-builds a PMMP-style dump instead:
+builds a self-contained forensics dump instead:
 
 * classification ("client went silent — suspected client crash / dead
   uplink" for timeouts);

@@ -24,7 +24,7 @@
 // LightEngine — block light that behaves like vanilla, on top of a
 // GLOBAL sky layer.
 //
-// Sky light is global everywhere (the Aquamarine populateSkyLight()
+// Sky light is global everywhere (the populateSkyLight() reference
 // semantics: every block reads 15, caves and oceans included — see
 // mcp_chunk_propagate_sky_light in the chunk layer). Nothing occludes
 // it, so this engine never writes the sky channel: no decay, no flood,

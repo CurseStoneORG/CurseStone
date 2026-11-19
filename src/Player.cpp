@@ -190,7 +190,7 @@ void Player::close(const std::string& reason) {
         // disconnect packet ("client disconnect"), the quit path uses the
         // default reason and kicks are prefixed. Anything else means the
         // session died from silence (client crash, dead uplink) or a
-        // server-side error — classify it PMMP-style and preserve this
+        // server-side error — classify it forensics-style and preserve this
         // client's exact wire tail in a crashdumps/ report.
         if (reason != "client disconnect" && reason != "disconnect.quitting" &&
             reason.rfind("kicked: ", 0) != 0) {
@@ -361,7 +361,7 @@ std::string clientLostStamp(uint64_t wall_ms) {
 } // namespace
 
 // ---------------------------------------------------------------------------
-// Client-loss forensics (PMMP-style)
+// Client-loss forensics (self-contained single-line report style)
 //
 // A dead 0.15.10 client cannot tell the operator anything — the device just
 // shows its own generic crash screen. This is the server's answer: classify
@@ -397,7 +397,7 @@ void Player::handleClientLost(const std::string& reason) {
     // malformed-payload lead, so state it on the console directly.
     const std::string out_summary = net_trace_.summarizeOutbound();
 
-    // One self-sufficient console line, PMMP-report style.
+    // One self-sufficient console line, forensics-report style.
     utils::MainLogger::get().error("[CLIENT-LOST] " + cfg_.username + " (" + cfg_.ip + ":" +
                                    std::to_string(cfg_.port) + ") " + classification + " | " +
                                    out_summary);

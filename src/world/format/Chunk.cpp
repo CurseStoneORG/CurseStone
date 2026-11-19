@@ -415,7 +415,7 @@ void mcp_chunk_recompute_section_flags(mcp_chunk_t* c) {
 
 // ---------------------------------------------------------------- light pass
 //
-// Sky light is GLOBAL — the Aquamarine populateSkyLight() semantics
+// Sky light is GLOBAL — the populateSkyLight() reference semantics
 // (setAllBlockSkyLight(15)) the project standardised on: every block in
 // every allocated section carries sky light 15, so caves, overhangs and
 // the ocean floor render as bright as the surface and a chunk can never
@@ -524,7 +524,7 @@ static void propagate_layer(mcp_chunk_t* c, int maxTop, int isSky,
     free(queue);
 }
 
-// Global sky light fill — the Aquamarine populateSkyLight() equivalent.
+// Global sky light fill — the populateSkyLight() reference equivalent.
 // Every allocated section's sky nibbles go to 0xFF (both nibbles = 15).
 // Does not touch `dirty`: disk-loaded chunks call this on every install
 // and marking them dirty would force a pointless resave of the world on
