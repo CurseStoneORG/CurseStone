@@ -364,6 +364,23 @@ typedef struct CsFloatingTextInfo {
 } CsFloatingTextInfo;
 
 /**
+ * @brief One floating-text snapshot with the Genisys tag pair separated:
+ * @p title (top line) and @p text (body) travel on the wire joined as
+ * "title\nbody"; @p follow is the entity id the tag anchors over (0 =
+ * static) and @p viewers the armed player count. Both strings are
+ * NUL-terminated and truncate at capacity.
+ */
+typedef struct CsFloatingTextInfoEx {
+    int64_t id;
+    double x, y, z;
+    char title[128];
+    char text[512];
+    int32_t visible;
+    int32_t follow;
+    int32_t viewers;
+} CsFloatingTextInfoEx;
+
+/**
  * @brief World queries. First argument is the world name; the call fails
  * (0 / false) for worlds that are not loaded.
  */
@@ -472,6 +489,36 @@ typedef struct CsWorldApi {
      *         NULL buffer or a non-positive @p max.
      */
     int32_t (*getFloatingTexts)(const char* world, CsFloatingTextInfo* out, int32_t max);
+    /* ---- appended (ABI 1, extension batch 8: Genisys tag controls) ---- */
+    /** @brief Replaces only the title line (the Genisys setTitle); one
+     *         SetEntityDataPacket resyncs the viewers. False for unknown
+     *         ids. */
+    bool (*setFloatingTextTitle)(const char* world, int64_t id, const char* title);
+    /** @brief Replaces only the body lines (the Genisys setText); one
+     *         SetEntityDataPacket resyncs the viewers. False for unknown
+     *         ids. */
+    bool (*setFloatingTextBody)(const char* world, int64_t id, const char* text);
+    /** @brief Visibility toggle: hide despawns the text from its viewers,
+     *         show re-arms the audience. False for unknown ids. */
+    bool (*setFloatingTextVisible)(const char* world, int64_t id, int visible);
+    /** @brief Anchors the text over one entity or player (0 = fixed spot
+     *         again); the budgeted follow pass keeps it there past a
+     *         movement threshold and auto-removes the tag when the target
+     *         despawns. False for unknown ids. */
+    bool (*setFloatingTextFollow)(const char* world, int64_t id, int64_t targetEid);
+    /**
+     * @brief Replaces the viewer allow list: only these player names
+     *        render the text; NULL / zero count restores "everyone".
+     *        Armed viewers that fell out despawn immediately.
+     *
+     * @return false for unknown ids or a count without names.
+     */
+    bool (*setFloatingTextViewers)(const char* world, int64_t id,
+                                   const char* const* names, int32_t count);
+    /** @brief One-text snapshot with the Genisys pair separated; false
+     *         for unknown ids or a NULL buffer. */
+    int32_t (*getFloatingTextEx)(const char* world, int64_t id,
+                                 CsFloatingTextInfoEx* out);
 } CsWorldApi;
 
 /**

@@ -34,6 +34,13 @@ void makeCarrierUuid(int64_t eid, std::array<uint8_t, 16>& out) {
         out[12 + (size_t)i] = (uint8_t)(tail >> (24 - 8 * i));
 }
 
+// Clamps a title/body piece to its ceiling without growing the pair past
+// the whole-text wire ceiling: the body absorbs whatever the title leaves.
+void clampPiece(std::string& piece, size_t ceiling) {
+    if (piece.size() > ceiling)
+        piece.resize(ceiling);
+}
+
 } // namespace
 
 FloatingTextParticle::FloatingTextParticle(int64_t id, double x, double y, double z)
@@ -43,7 +50,7 @@ FloatingTextParticle::FloatingTextParticle(int64_t id, double x, double y, doubl
     // reused by every viewer and by close().
     rm_ = std::make_shared<network::protocol::RemoveEntityPacket>();
     rm_->eid = id_;
-    rebuildSpawnPackets();
+    rebuildSpawnFace();
 }
 
 FloatingTextParticle::~FloatingTextParticle() = default;
@@ -52,23 +59,11 @@ float FloatingTextParticle::carrierY() const {
     return (float)y_ - kCarrierDrop;
 }
 
-void FloatingTextParticle::rebuildSpawnPackets() {
-    // Username = the title line (the client falls back to it only when no
-    // nametag metadata is set; the metadata below always carries the full
-    // text, '\n' stack included).
-    const size_t nl = text_.find('\n');
-    const std::string title = nl == std::string::npos ? text_ : text_.substr(0, nl);
+std::string FloatingTextParticle::combinedText() const {
+    return title_.empty() ? body_ : title_ + "\n" + body_;
+}
 
-    add_ = std::make_shared<network::protocol::AddPlayerPacket>();
-    add_->uuid = uuid_;
-    add_->username = title;
-    add_->eid = id_;
-    add_->x = (float)x_;
-    add_->y = carrierY();
-    add_->z = (float)z_;
-    // Zero velocity, zero rotation, empty held item: the packet defaults
-    // already encode exactly that, nothing to write here.
-
+void FloatingTextParticle::rebuildMetaPacket() {
     using Meta = network::protocol::SetEntityDataPacket;
     meta_ = std::make_shared<network::protocol::SetEntityDataPacket>();
     meta_->eid = id_;
@@ -78,12 +73,33 @@ void FloatingTextParticle::rebuildSpawnPackets() {
     meta_->entries = {
         {Meta::PROP_FLAGS, Meta::TYPE_BYTE, (int64_t)(1 << Meta::FLAG_BIT_INVISIBLE),
          0.0f, std::string()},
-        {Meta::PROP_NAMETAG, Meta::TYPE_STRING, 0, 0.0f, text_},
+        {Meta::PROP_NAMETAG, Meta::TYPE_STRING, 0, 0.0f, combinedText()},
         {Meta::PROP_SHOW_NAMETAG, Meta::TYPE_BYTE, 1, 0.0f, std::string()},
         {Meta::PROP_NO_AI, Meta::TYPE_BYTE, 1, 0.0f, std::string()},
         {Meta::PROP_LEAD_HOLDER, Meta::TYPE_LONG, -1, 0.0f, std::string()},
         {Meta::PROP_LEAD, Meta::TYPE_BYTE, 0, 0.0f, std::string()},
     };
+}
+
+void FloatingTextParticle::rebuildSpawnFace() {
+    // Username = the title line; a body-only tag falls back to the first
+    // body line so the spawn instant still carries a face (the metadata
+    // below always overrides it the same flush).
+    const size_t nl = body_.find('\n');
+    const std::string fallback =
+        nl == std::string::npos ? body_ : body_.substr(0, nl);
+
+    add_ = std::make_shared<network::protocol::AddPlayerPacket>();
+    add_->uuid = uuid_;
+    add_->username = title_.empty() ? fallback : title_;
+    add_->eid = id_;
+    add_->x = (float)x_;
+    add_->y = carrierY();
+    add_->z = (float)z_;
+    // Zero velocity, zero rotation, empty held item: the packet defaults
+    // already encode exactly that, nothing to write here.
+    rebuildMetaPacket();
+    add_dirty_ = false;
 }
 
 void FloatingTextParticle::sendToViewers(
@@ -98,31 +114,95 @@ void FloatingTextParticle::sendToViewers(
     }
 }
 
-void FloatingTextParticle::setText(std::string text) {
-    if (closed_)
-        return;
-    if (text.size() > kMaxTextChars)
-        text.resize(kMaxTextChars);
-    if (text == text_)
-        return; // same content: zero packets
-    text_ = std::move(text);
-    rebuildSpawnPackets();
+void FloatingTextParticle::sendNametagUpdate() {
     if (viewers_.empty())
         return;
     // Only the nametag moved: one metadata entry resyncs every viewer.
+    using Meta = network::protocol::SetEntityDataPacket;
     auto upd = std::make_shared<network::protocol::SetEntityDataPacket>();
     upd->eid = id_;
-    using Meta = network::protocol::SetEntityDataPacket;
     upd->entries.push_back(
-        Meta::Entry{Meta::PROP_NAMETAG, Meta::TYPE_STRING, 0, 0.0f, text_});
+        Meta::Entry{Meta::PROP_NAMETAG, Meta::TYPE_STRING, 0, 0.0f, combinedText()});
     sendToViewers(upd);
 }
 
-void FloatingTextParticle::spawnTo(Player& viewer) {
+void FloatingTextParticle::setContent(std::string title, std::string body) {
     if (closed_)
+        return;
+    clampPiece(title, kMaxTitleChars);
+    // Keep the pair inside the whole-text wire ceiling: the body absorbs
+    // whatever the title leaves (title + '\n' + body <= kMaxTextChars).
+    const size_t bodyCeiling =
+        body.size() + title.size() > kMaxTextChars
+            ? (title.empty() ? kMaxTextChars : kMaxTextChars - title.size() - 1)
+            : body.size();
+    clampPiece(body, bodyCeiling);
+    if (title == title_ && body == body_)
+        return; // same content: zero packets
+    title_ = std::move(title);
+    body_ = std::move(body);
+    // Both cached faces ride the text (username + nametag); the spawn
+    // face rebuild defers to the next spawnTo, the viewers resync with
+    // exactly one metadata packet.
+    add_dirty_ = true;
+    rebuildMetaPacket();
+    sendNametagUpdate();
+}
+
+void FloatingTextParticle::setText(std::string body) {
+    if (closed_)
+        return;
+    setContent(std::string(title_), std::move(body));
+}
+
+void FloatingTextParticle::setTitle(std::string title) {
+    if (closed_)
+        return;
+    setContent(std::move(title), std::string(body_));
+}
+
+void FloatingTextParticle::setVisible(World& world, bool visible) {
+    if (closed_ || visible == visible_)
+        return;
+    visible_ = visible;
+    if (visible)
+        return; // the next viewer sync re-arms the audience
+    // Hide = despawn from every viewer and empty the set, so no player
+    // stays served for a text that left the wire.
+    despawnFromAll(world);
+    viewers_.clear();
+}
+
+void FloatingTextParticle::setAllowedViewers(World& world,
+                                             std::vector<std::string> names) {
+    if (closed_)
+        return;
+    allow_.clear();
+    allow_.reserve(names.size());
+    for (auto& n : names) {
+        if (!n.empty())
+            allow_.insert(std::move(n));
+    }
+    // Armed viewers that fell out of the list stop rendering now; the
+    // viewer sync refuses the rest from here on.
+    const auto& players = Server::getInstance().playersSnapshotRef();
+    for (const auto& p : players) {
+        if (!p || p->isPendingRemoval() || viewers_.count(p->runtimeId()) == 0)
+            continue;
+        if (!allows(p->getName()))
+            despawnFrom(*p);
+    }
+}
+
+void FloatingTextParticle::spawnTo(Player& viewer) {
+    if (closed_ || !visible_)
+        return;
+    if (!allows(viewer.getName()))
         return;
     if (!viewers_.insert(viewer.runtimeId()).second)
         return; // already renders the text: idempotent, zero packets
+    if (add_dirty_)
+        rebuildSpawnFace();
     // Add + metadata back to back, exactly like a real player spawn: both
     // packets ride the same flush, so the client never paints the body.
     viewer.sendPacket(add_);
@@ -148,26 +228,31 @@ void FloatingTextParticle::despawnFromAll(World& world) {
 void FloatingTextParticle::syncViewers(World& world) {
     if (closed_)
         return;
+    if (!visible_) {
+        // Hidden text: nobody is armed (setVisible cleared the set), the
+        // sync only has to keep it that way.
+        viewers_.clear();
+        return;
+    }
     const auto& players = Server::getInstance().playersSnapshotRef();
     const int32_t cx = (int32_t)std::floor(x_) >> 4;
     const int32_t cz = (int32_t)std::floor(z_) >> 4;
     // Audience pass with the same canSeeBlock filter every other world
     // broadcast uses: a player that joins or walks in late receives the
     // text from this pass, a player that walks out stops rendering it,
-    // and a player that switched worlds is retired here — otherwise their
-    // stale viewer id would block the re-spawn when they come back (the
-    // idempotent spawnTo would see them as served and send nothing).
+    // a player the allow list rejects never gets it, and a player that
+    // switched worlds is retired here — otherwise their stale viewer id
+    // would block the re-spawn when they come back (the idempotent
+    // spawnTo would see them as served and send nothing).
     for (const auto& p : players) {
         if (!p || !p->spawned() || p->isPendingRemoval())
             continue;
-        if (p->getWorld() != &world) {
+        if (p->getWorld() != &world || !allows(p->getName()) ||
+            !p->canSeeBlock(cx, cz)) {
             despawnFrom(*p); // idempotent for players that never saw it
             continue;
         }
-        if (p->canSeeBlock(cx, cz))
-            spawnTo(*p);
-        else
-            despawnFrom(*p);
+        spawnTo(*p);
     }
     // Retire viewer ids whose owner left the server: they never run the
     // despawn branch above again.
@@ -188,7 +273,7 @@ void FloatingTextParticle::syncViewers(World& world) {
     }
 }
 
-void FloatingTextParticle::setPosition(World&, double x, double y, double z) {
+void FloatingTextParticle::setPosition(double x, double y, double z) {
     if (closed_)
         return;
     if (x == x_ && y == y_ && z == z_)
@@ -196,10 +281,10 @@ void FloatingTextParticle::setPosition(World&, double x, double y, double z) {
     x_ = x;
     y_ = y;
     z_ = z;
-    // The cached spawn pair follows the move so a viewer that arrives
-    // later spawns at the new position, not the original one. The
-    // metadata is position-independent and stays untouched.
-    rebuildSpawnPackets();
+    // The metadata is position-independent and stays untouched; the spawn
+    // face is only dirtied — a stream of moves rebuilds nothing until a
+    // viewer actually needs to spawn.
+    add_dirty_ = true;
     if (viewers_.empty())
         return;
     // One MovePlayerPacket, shared by every viewer: a player entity moves

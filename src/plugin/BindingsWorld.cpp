@@ -69,8 +69,28 @@
 //                                      multi-line model); one
 //                                      SetEntityDataPacket resyncs the
 //                                      viewers (true/false).
+//   world.setFloatingTextTitle(id,t)   replaces only the title line (the
+//                                      Genisys setTitle; true/false).
+//   world.setFloatingTextBody(id,t)    replaces only the body lines (the
+//                                      Genisys setText; true/false).
+//   world.setFloatingTextVisible(id,b) hides (b=false: one Remove to the
+//                                      viewers) or shows (b=true: re-arm
+//                                      now) a text (true/false).
+//   world.setFloatingTextFollow(id,eid)  anchors the text over one
+//                                      entity or player (0 = fixed spot
+//                                      again); the follow pass keeps it
+//                                      there (true/false).
+//   world.setFloatingTextFollowPlayer(id,name)
+//                                      anchors the text over a player
+//                                      resolved by name now
+//                                      (true/false).
+//   world.setFloatingTextViewers(id,t) viewer allow list: t is a table
+//                                      of player names (nil/{} = every
+//                                      player renders it) (true/false).
 //   world.getFloatingTexts()           array of tables
-//                                      {id,x,y,z,text} of this world.
+//                                      {id,x,y,z,text,title,body,
+//                                      visible,follow} of this world
+//                                      (text = title + '\n' + body).
 //   world.removeFloatingText(id)       despawns a floating text
 //                                      (true/false).
 //   world.spawnEntity(type,x,y,z,[yaw],[pitch])
@@ -351,13 +371,86 @@ int l_world_setfloatingtext(lua_State* L) {
     return 1;
 }
 
+// Genisys-style single-field re-text helpers share the same lookup +
+// boolean reply shape; the class-level clamps (title 128, pair 512 chars)
+// apply inside.
+int l_world_setfloatingtexttitle(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_Integer id = luaL_checkinteger(L, 2);
+    size_t len = 0;
+    const char* title = luaL_checklstring(L, 3, &len);
+    lua_pushboolean(
+        L, w->setFloatingTextTitle((int64_t)id, std::string(title, len)) ? 1 : 0);
+    return 1;
+}
+
+int l_world_setfloatingtextbody(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_Integer id = luaL_checkinteger(L, 2);
+    size_t len = 0;
+    const char* body = luaL_checklstring(L, 3, &len);
+    lua_pushboolean(
+        L, w->setFloatingTextBody((int64_t)id, std::string(body, len)) ? 1 : 0);
+    return 1;
+}
+
+int l_world_setfloatingtextvisible(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_Integer id = luaL_checkinteger(L, 2);
+    lua_pushboolean(L, w->setFloatingTextVisible((int64_t)id, lua_toboolean(L, 3) != 0)
+                           ? 1
+                           : 0);
+    return 1;
+}
+
+int l_world_setfloatingtextfollow(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_Integer id = luaL_checkinteger(L, 2);
+    lua_Integer target = luaL_optinteger(L, 3, 0);
+    lua_pushboolean(
+        L, w->setFloatingTextFollow((int64_t)id, (int64_t)target) ? 1 : 0);
+    return 1;
+}
+
+int l_world_setfloatingtextfollowplayer(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_Integer id = luaL_checkinteger(L, 2);
+    const char* name = luaL_checkstring(L, 3);
+    lua_pushboolean(
+        L, w->setFloatingTextFollowPlayer((int64_t)id, name) ? 1 : 0);
+    return 1;
+}
+
+// setFloatingTextViewers(id, {"A", "B"}) arms the allow list; nil, an
+// empty table or a table with no string entries restores "everyone".
+int l_world_setfloatingtextviewers(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_Integer id = luaL_checkinteger(L, 2);
+    std::vector<std::string> names;
+    if (!lua_isnoneornil(L, 3)) {
+        luaL_checktype(L, 3, LUA_TTABLE);
+        lua_pushnil(L);
+        while (lua_next(L, 3) != 0) {
+            if (lua_isstring(L, -1)) {
+                size_t len = 0;
+                const char* s = lua_tolstring(L, -1, &len);
+                names.emplace_back(s, len);
+            }
+            lua_pop(L, 1);
+        }
+    }
+    lua_pushboolean(
+        L, w->setFloatingTextViewers((int64_t)id, std::move(names)) ? 1 : 0);
+    return 1;
+}
+
 int l_world_getfloatingtexts(lua_State* L) {
     WORLD_OR_NIL();
     auto list = w->floatingTexts();
     lua_createtable(L, (int)list.size(), 0);
     int i = 1;
     for (const auto& t : list) {
-        lua_createtable(L, 0, 5);
+        lua_createtable(L, 0, 9);
         lua_pushinteger(L, (lua_Integer)t.id);
         lua_setfield(L, -2, "id");
         lua_pushnumber(L, (lua_Number)t.x);
@@ -368,6 +461,14 @@ int l_world_getfloatingtexts(lua_State* L) {
         lua_setfield(L, -2, "z");
         lua_pushstring(L, t.text.c_str());
         lua_setfield(L, -2, "text");
+        lua_pushstring(L, t.title.c_str());
+        lua_setfield(L, -2, "title");
+        lua_pushstring(L, t.body.c_str());
+        lua_setfield(L, -2, "body");
+        lua_pushboolean(L, t.visible ? 1 : 0);
+        lua_setfield(L, -2, "visible");
+        lua_pushinteger(L, (lua_Integer)t.followTarget);
+        lua_setfield(L, -2, "follow");
         lua_rawseti(L, -2, i++);
     }
     return 1;
@@ -550,6 +651,12 @@ const luaL_Reg kWorldMethods[] = {
     {"spawnFloatingText", l_world_spawnfloatingtext},
     {"moveFloatingText", l_world_movefloatingtext},
     {"setFloatingText", l_world_setfloatingtext},
+    {"setFloatingTextTitle", l_world_setfloatingtexttitle},
+    {"setFloatingTextBody", l_world_setfloatingtextbody},
+    {"setFloatingTextVisible", l_world_setfloatingtextvisible},
+    {"setFloatingTextFollow", l_world_setfloatingtextfollow},
+    {"setFloatingTextFollowPlayer", l_world_setfloatingtextfollowplayer},
+    {"setFloatingTextViewers", l_world_setfloatingtextviewers},
     {"getFloatingTexts", l_world_getfloatingtexts},
     {"removeFloatingText", l_world_removefloatingtext},
     {"spawnEntity", l_world_spawnentity},
