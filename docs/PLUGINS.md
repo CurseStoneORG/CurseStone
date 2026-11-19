@@ -43,23 +43,30 @@ API surface (globals):
   getWorld, isOp, getHealth, setHealth, setPermission, hasPermission,
   giveItem, setNameTag, getNameTag, setDisplayName, getDisplayName,
   getPosition, getRotation, setRotation, setMotion, kill
-- `server.getWorld(name)` / `server.loadWorld(name, gen)` /
+- `server.getWorld(name)` / `server.loadWorld(name, gen, [seed])` /
+  `server.unloadWorld(name)` / `server.isWorldLoaded(name)` /
   `server.defaultWorld()` — world handles with `name`, `seed`,
-  `dimension`, `getTime`, `setTime`, `getBlock`, `setBlock`, `getSpawn`,
-  `getPlayers`, `spawnParticle`, `spawnBlockParticles`,
-  `spawnSplashParticles`, `spawnFloatingText`, `moveFloatingText`,
-  `setFloatingText`, `setFloatingTextTitle`, `setFloatingTextBody`,
-  `setFloatingTextVisible`, `setFloatingTextFollow`,
+  `dimension`, `generator`, `isDefault`, `getTime`, `setTime`, `getBlock`,
+  `setBlock`, `getSpawn`, `setSpawn`, `getPlayers`, `playerCount`,
+  `isChunkLoaded` (chunk coords), `chunkCount`, `save`, `spawnParticle`,
+  `spawnBlockParticles`, `spawnSplashParticles`, `spawnFloatingText`,
+  `moveFloatingText`, `setFloatingText`, `setFloatingTextTitle`,
+  `setFloatingTextBody`, `setFloatingTextVisible`, `setFloatingTextFollow`,
   `setFloatingTextFollowPlayer`, `setFloatingTextViewers`,
   `getFloatingTexts`, `removeFloatingText`,
   `spawnEntity`, `moveEntity`, `removeEntity`, `getEntity`, `getEntities`,
-  `entityTypes`, `unload`
+  `entityTypes`, `unload`. World names must be 1..64 letters, digits,
+  `_` or `-` (they become directory names); generators are `normal`,
+  `flat`, `nether`, `void` or `empty` (case-insensitive). New secondary
+  worlds persist in `worlds/worlds.manifest` and reload on the next boot;
+  unloading removes the entry.
 - `commands.register(name, opts, fn)`, `commands.reply(sender, msg)`
 - `events.on(name, fn)` — PlayerJoin, PlayerQuit, PlayerChat, PlayerMove,
   PlayerDropItem, PlayerItemHeld, BlockBreak, BlockPlace, EntityDamage,
   EntityDamageByEntity, PlayerDeath, PlayerRespawn, PlayerBedEnter
   (alias `PlayerSleepInBed`), PlayerBedLeave, DoorToggle, PlayerInteract,
-  InventoryOpen, InventoryClick, InventoryClose
+  InventoryOpen, InventoryClick, InventoryClose, WorldLoad (e.world name,
+  e.dimension), WorldUnload (cancellable, e.world name)
 - `scheduler.later/every/cancel`
 - `data.read/write/exists/delete/list/loadYml/saveYml/loadJson/saveJson`
 - `plugin.include/import/getResource/saveResource/listResources`
@@ -414,7 +421,8 @@ instead of raising anything; invalid arguments never crash the server.
 | `maxPlayers()` / `difficulty()` / `whitelistEnabled()` | server.properties reads |
 | `isBanned(name)` / `setBanned(name, value)` | name bans; banning kicks the player |
 | `worldCount()` / `worldNameAt(idx, out, cap)` / `worldExists(name)` | loaded-world queries |
-| `loadWorld(name, generator)` / `unloadWorld(name)` | unload fails for the default world |
+| `loadWorld(name, generator)` / `unloadWorld(name)` | unload fails for the default world; names/generators are validated, new worlds persist in the manifest |
+| `defaultWorldName(out, cap)` | default (spawn) world name — batch 9 |
 
 **player** (context-free; every call fails for offline players)
 
@@ -449,6 +457,7 @@ instead of raising anything; invalid arguments never crash the server.
 | `getWeather -> 0..2` / `setWeather(world, state)` | 0 clear / 1 rain / 2 thunder |
 | `spawnLightning(world, x, y, z, fire)` | |
 | `isChunkLoaded(world, cx, cz)` | chunk-residency probe |
+| `chunkCount(world) -> int` | resident chunks (cache size), -1 unloaded — batch 9 |
 | `save(world)` | persists dirty chunks + level.dat; costly — schedule it, do not spam it |
 | `spawnItem(world, x, y, z, id, count, meta)` | visible drop; count 1..64 |
 | `spawnParticle(world, x, y, z, type, data)` | one generic particle, `type` = `CsParticleType` 1..32; see the Lua particles table for `data` packing; unrenderable payloads return 0, never broadcast |

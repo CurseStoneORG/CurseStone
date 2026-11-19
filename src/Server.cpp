@@ -263,16 +263,120 @@ void Server::loadDefaultWorld() {
 
     utils::MainLogger::get().info("World directory: " + worldDir);
     utils::MainLogger::get().info("Region directory: " + regionDir);
+
+    // Secondary worlds remembered by earlier sessions reload here, before
+    // plugins enable, so plugin worlds are ready when their plugins start.
+    loadWorldsManifest();
 }
 
 // ---------------------------------------------------------------------
 // Multiworld loading and unloading during runtime.
 // ---------------------------------------------------------------------
-// The default world is stored in world_ and worlds_[0]; plugin worlds are stored in worlds_ too.
+// The default world is stored in world_ and worlds_[0]; plugin worlds are stored in worlds_ too
+// and remembered in worlds/worlds.manifest so they reload after a restart.
 
-World* Server::loadWorld(const std::string& name, const std::string& generator) {
-    if (name.empty())
+bool Server::validWorldName(const std::string& name) {
+    if (name.empty() || name.size() > 64)
+        return false;
+    for (char c : name) {
+        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '-'))
+            return false;
+    }
+    return true;
+}
+
+bool Server::normalizeGenerator(std::string& generator) {
+    std::transform(generator.begin(), generator.end(), generator.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return generator == "normal" || generator == "flat" || generator == "nether" ||
+           generator == "void" || generator == "empty";
+}
+
+std::string Server::worldsManifestPath() const {
+    return dataPath_ + "/worlds/worlds.manifest";
+}
+
+void Server::manifestAdd(const std::string& name, const std::string& generator, int64_t seed) {
+    std::ifstream in(worldsManifestPath());
+    std::vector<std::string> lines;
+    std::string line;
+    while (std::getline(in, line)) {
+        if (!line.empty() && line.compare(0, name.size() + 1, name + ";") != 0)
+            lines.push_back(line); // replace any stale entry for this name
+    }
+    in.close();
+    lines.push_back(name + ";" + generator + ";" + std::to_string(seed));
+    std::ofstream out(worldsManifestPath(), std::ios::trunc);
+    if (!out)
+        return;
+    for (const auto& l : lines)
+        out << l << '\n';
+}
+
+void Server::manifestRemove(const std::string& name) {
+    std::ifstream in(worldsManifestPath());
+    if (!in)
+        return;
+    std::vector<std::string> lines;
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.compare(0, name.size() + 1, name + ";") != 0)
+            lines.push_back(line);
+    }
+    in.close();
+    std::ofstream out(worldsManifestPath(), std::ios::trunc);
+    if (!out)
+        return;
+    for (const auto& l : lines)
+        out << l << '\n';
+}
+
+void Server::loadWorldsManifest() {
+    std::ifstream in(worldsManifestPath());
+    if (!in)
+        return; // no manifest: nothing was ever loaded besides the default world
+    std::string line;
+    int loaded = 0;
+    while (std::getline(in, line)) {
+        if (line.empty())
+            continue;
+        // name;generator;seed — the same tokens manifestAdd wrote.
+        size_t p1 = line.find(';');
+        size_t p2 = (p1 == std::string::npos) ? std::string::npos : line.find(';', p1 + 1);
+        if (p1 == std::string::npos || p2 == std::string::npos)
+            continue;
+        std::string name = line.substr(0, p1);
+        std::string gen = line.substr(p1 + 1, p2 - p1 - 1);
+        int64_t seed = 0;
+        try {
+            seed = std::stoll(line.substr(p2 + 1));
+        } catch (...) {
+            seed = 0;
+        }
+        if (loadWorld(name, gen, seed))
+            ++loaded;
+    }
+    if (loaded > 0)
+        utils::MainLogger::get().info("Restored " + std::to_string(loaded) +
+                                      " world(s) from the manifest");
+}
+
+World* Server::loadWorld(const std::string& name, const std::string& generator, int64_t seed) {
+    // A world name becomes a directory name verbatim; anything that could
+    // climb out of worlds/ (or produce weird region files) is refused with
+    // a logged reason instead of silently creating paths elsewhere.
+    if (!validWorldName(name)) {
+        utils::MainLogger::get().warn("Rejected world name '" + name +
+                                      "' (use 1..64 letters, digits, '_' or '-')");
         return nullptr;
+    }
+    std::string gen = generator.empty() ? "normal" : generator;
+    if (!normalizeGenerator(gen)) {
+        utils::MainLogger::get().warn("Unknown generator '" + generator +
+                                      "' for world '" + name +
+                                      "' (normal | flat | nether | void | empty)");
+        return nullptr;
+    }
     // Return the existing world without modifying it.
     if (World* existing = getWorldByName(name))
         return existing;
@@ -280,8 +384,8 @@ World* Server::loadWorld(const std::string& name, const std::string& generator) 
     world::WorldConfig lc;
     lc.name = name;
     lc.format = "anvil";
-    lc.generator = generator.empty() ? "normal" : generator;
-    lc.seed = (int64_t)mcp_utils_time_ms();
+    lc.generator = gen;
+    lc.seed = (seed != 0) ? seed : (int64_t)mcp_utils_time_ms();
     lc.view_distance = view_distance_;
     lc.dataPath = dataPath_;
 
@@ -300,6 +404,11 @@ World* Server::loadWorld(const std::string& name, const std::string& generator) 
     utils::MainLogger::get().info("World '" + name +
                                   "' loaded (generator=" + lv->config().generator +
                                   ", dimension=" + std::to_string(lv->dimension()) + ")");
+    // Remember the world across restarts — but never the default world, which
+    // comes from server.properties and must not shadow its own config.
+    bool is_default = world_ && lv.get() == world_.get();
+    if (!is_default)
+        manifestAdd(name, lv->config().generator, lv->seed());
     event::EventManager::get().fire<event::world::WorldLoadEvent>(lv.get(), 0, 0);
     return lv.get();
 }
@@ -341,6 +450,7 @@ bool Server::unloadWorld(const std::string& name) {
         }
 
         worlds_.erase(it);
+        manifestRemove(name);
         utils::MainLogger::get().info("World '" + name + "' unloaded.");
         return true;
     }

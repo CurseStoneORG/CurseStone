@@ -192,13 +192,20 @@ class Server {
     }
 
     // Multiworld management.
-    // The first loaded world is the default world; additional worlds can be loaded by plugins.
+    // The first loaded world is the default world; additional worlds can be loaded by plugins,
+    // by the /worlds command, or reloaded from worlds/worlds.manifest at startup.
 
     /// @brief Loads a world or returns the existing world with the given name.
+    /// The name must be filesystem-safe (letters, digits, '_', '-', 1..64 chars);
+    /// the generator is one of normal/flat/nether/void/empty (case-insensitive).
+    /// A seed of 0 derives one from the clock; a non-zero seed pins generation.
+    /// Every newly created secondary world is recorded in worlds/worlds.manifest
+    /// so it reloads after a restart.
     /// @return A borrowed world pointer, or nullptr on failure.
-    World* loadWorld(const std::string& name, const std::string& generator);
+    World* loadWorld(const std::string& name, const std::string& generator, int64_t seed = 0);
 
     /// @brief Unloads a world after moving its players to the default world and saving its chunks.
+    /// Removes the world from the manifest (it stays unloaded after restarts).
     bool unloadWorld(const std::string& name);
 
     /// @brief Returns borrowed pointers to all loaded worlds.
@@ -358,6 +365,19 @@ class Server {
     void startCommandReader();
     void loadOps();
     void saveOps();
+
+    // Multiworld helpers. A world name is used verbatim as a directory name
+    // under worlds/, so it must stay inside it: only letters, digits, '_'
+    // and '-' are accepted (no separators, no dots).
+    static bool validWorldName(const std::string& name);
+    // Normalizes a generator token; returns false for unknown generators.
+    static bool normalizeGenerator(std::string& generator);
+    // Desired-state list of secondary worlds, one "name;generator;seed" per
+    // line. loadWorld appends, unloadWorld erases, startup replays it.
+    std::string worldsManifestPath() const;
+    void manifestAdd(const std::string& name, const std::string& generator, int64_t seed);
+    void manifestRemove(const std::string& name);
+    void loadWorldsManifest();
 
     std::unordered_set<std::string> ops_;
 

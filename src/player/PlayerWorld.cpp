@@ -23,7 +23,11 @@
 // PlayerWorld — world switching and Nether portal travel.
 //
 //   switchWorld()          moves the player to another world (sends
-//                          ChangeDimensionPacket when the dimension changes)
+//                          ChangeDimensionPacket when the dimension changes;
+//                          a same-dimension switch first despawns every
+//                          entity of the old world from this viewer — the
+//                          client keeps its entity map in that case — and
+//                          pre-warms the destination 3x3 on the async pool)
 //   finishDimensionSwitch() closes the cross-dimension switch once the new
 //                          chunks are on the wire (PlayStatus + position)
 //   checkPortal()          detects the player standing inside a portal
@@ -98,6 +102,7 @@ bool Player::switchWorld(World* target, double x, double y, double z, bool throu
     stopSleep();
 
     bool dimension_change = !from || target->dimension() != from->dimension();
+    bool world_change = from && from != target;
 
     world_ = target;
     pos_.x = x;
@@ -105,6 +110,16 @@ bool Player::switchWorld(World* target, double x, double y, double z, bool throu
     pos_.z = z;
     fall_distance_ = 0.0f;
     last_pos_set_ = false;
+
+    // Same-dimension world switch: the 0.15.10 client keeps its entity map
+    // here (only a ChangeDimensionPacket drops it), so every mob, item
+    // drop, arrow, falling block and floating-text carrier of the old
+    // world would ride along as a ghost in the destination world. Sweep
+    // them out of this viewer BEFORE the re-stream; the new world's chunk
+    // stream re-adds its own entities, and forgetting the ids makes the
+    // return trip re-send cleanly.
+    if (world_change && !dimension_change)
+        from->despawnEntitiesFor(this);
 
     // teleport()-style re-stream: the client rebuilds its view around the
     // destination with the chunks of the new world.
@@ -122,6 +137,18 @@ bool Player::switchWorld(World* target, double x, double y, double z, bool throu
         std::lock_guard<std::mutex> lk(queue_mtx_);
         chunk_queue_.clear();
         chunk_queue_.emplace_back(cx, cz);
+    }
+
+    // Destination pre-warm: the spiral streaming fills only a few chunks
+    // per tick, so the first ticks after a switch would otherwise wait on
+    // cold disk reads. Submitting the 3x3 neighborhood to the async pool
+    // right now usually has the core chunks resident (or in flight) by
+    // the time the stream loop asks for them — a shorter loading screen
+    // for cross-dimension travel and a smoother arrival otherwise.
+    if (srv_->getAsyncPool()) {
+        for (int dx = -1; dx <= 1; ++dx)
+            for (int dz = -1; dz <= 1; ++dz)
+                target->chunks().getChunkOrRequestAsync(cx + dx, cz + dz, srv_->getAsyncPool());
     }
 
     if (!spawned_.load(std::memory_order_relaxed)) {

@@ -37,6 +37,13 @@
 
 namespace cursestone {
 
+// Chunk-eviction budget per world per GC pass. Clean chunks evict for
+// free; dirty ones pay a region write. The cap bounds the worst pass so
+// a large cold cache drains over several intervals instead of stalling
+// one tick (an idle server with 1000 resident chunks pays ~96 saves per
+// GC interval, invisible to the tick).
+constexpr size_t kChunkEvictPerPass = 96;
+
 MemoryManager& MemoryManager::get() {
     static MemoryManager m; // the ONE and only global GarbageCollector
     return m;
@@ -85,11 +92,14 @@ void MemoryManager::collect(bool force) {
         // loop back and re-check the interval gate with fresh data.
     }
 
-    // 1) Chunk GC — free chunks no viewer can see, flushed + saved.
-    //    Runs here INSTEAD of Server::tick's own 100-tick sweep: same
-    //    amount of work, but on the single coordinated GC schedule.
-    //    Every world is swept: chunks in non-default worlds were never
-    //    evicted before (unbounded growth on Nether/plugin worlds).
+    // 1) Chunk GC — free chunks no own-world viewer can see, flushed and
+    //    saved. Runs here INSTEAD of Server::tick's own 100-tick sweep:
+    //    same amount of work, but on the single coordinated GC schedule.
+    //    Every world is swept, viewers only protect chunks of the world
+    //    they stand in, and a world with NO viewer drains too — an idle
+    //    server used to pin every resident chunk of every world forever.
+    //    The per-pass budget keeps a big cold cache from stalling one
+    //    tick; the remainder waits for the next interval.
     {
         std::vector<world::World::ChunkViewer> viewers;
         {
@@ -98,19 +108,17 @@ void MemoryManager::collect(bool force) {
             for (auto& p : snap) {
                 if (!p)
                     continue;
-                viewers.push_back({p->chunkX(), p->chunkZ(), p->viewDistance()});
+                viewers.push_back({p->chunkX(), p->chunkZ(), p->viewDistance(), p->getWorld()});
             }
         }
-        if (!viewers.empty()) {
-            for (world::World* lvl : Server::getInstance().getWorlds()) {
-                if (!lvl)
-                    continue;
-                int unloaded = lvl->unloadDistantChunks(viewers);
-                if (unloaded > 0 && Server::getInstance().debugMode()) {
-                    utils::MainLogger::get().info("[GC] Unloaded " + std::to_string(unloaded) +
-                                                  " chunk(s) out of view in '" + lvl->name() +
-                                                  "'.");
-                }
+        for (world::World* lvl : Server::getInstance().getWorlds()) {
+            if (!lvl)
+                continue;
+            int unloaded = lvl->unloadDistantChunks(viewers, 4, kChunkEvictPerPass);
+            if (unloaded > 0 && Server::getInstance().debugMode()) {
+                utils::MainLogger::get().info("[GC] Unloaded " + std::to_string(unloaded) +
+                                              " chunk(s) out of view in '" + lvl->name() +
+                                              "'.");
             }
         }
     }

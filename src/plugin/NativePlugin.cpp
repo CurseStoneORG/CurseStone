@@ -327,8 +327,12 @@ bool api_server_worldExists(const char* name) {
 bool api_server_loadWorld(const char* name, const char* generator) {
     if (!name || !*name)
         return false;
-    return Server::getInstance().loadWorld(name, generator && *generator ? generator : "default") !=
+    return Server::getInstance().loadWorld(name, generator && *generator ? generator : "normal") !=
            nullptr;
+}
+bool api_server_defaultWorldName(char* out, uint32_t cap) {
+    World* w = Server::getInstance().getDefaultWorld();
+    return w && copyOut(w->name().c_str(), out, cap);
 }
 bool api_server_unloadWorld(const char* name) {
     return name && Server::getInstance().unloadWorld(name);
@@ -400,7 +404,8 @@ CsServerApi g_serverApi = {api_server_broadcast,
                            api_server_isBanned,
                            api_server_setBanned,
                            api_server_broadcastTip,
-                           api_server_broadcastPopup};
+                           api_server_broadcastPopup,
+                           api_server_defaultWorldName};
 
 // player: every call resolves the live player by exact name — the same
 // rule the Lua bindings follow, so nothing ever holds a stale Player*.
@@ -994,6 +999,13 @@ const char* api_entity_typeName(int32_t type) {
     return entity::mobTypeName(type);
 }
 
+// extension batch 9: multiworld — the resident-chunk probe mirrors the Lua
+// world.chunkCount() so status surfaces can show cache size per world.
+int32_t api_world_chunkCount(const char* world) {
+    World* w = findLoadedWorld(world);
+    return w ? (int32_t)w->chunkCount() : -1;
+}
+
 CsWorldApi g_worldApi = {
     api_world_seed,
     api_world_dimension,
@@ -1031,6 +1043,7 @@ CsWorldApi g_worldApi = {
     api_world_setFloatingTextFollow,
     api_world_setFloatingTextViewers,
     api_world_getFloatingTextEx,
+    api_world_chunkCount,
 };
 
 // data: the per-plugin data_pl/<plugin> sandbox, same rules as data.*.

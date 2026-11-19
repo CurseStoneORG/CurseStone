@@ -25,9 +25,13 @@
 //   server.worlds()                    list with the names of the
 //                                      worlds loaded
 //   server.getWorld(name)            object world (nil if not exists)
-//   server.loadWorld(name, gen)      load or creates the world; gen is
-//                                      "normal" | "flat" | "Nether" |
-//                                      "void" (by default "normal")
+//   server.loadWorld(name, gen, [seed])  load or creates the world; gen is
+//                                      "normal" | "flat" | "nether" |
+//                                      "void" | "empty" (by default
+//                                      "normal"); seed 0 derives one from
+//                                      the clock. New worlds persist in
+//                                      worlds/worlds.manifest and reload
+//                                      after a restart
 //   server.defaultWorld()              the world by default (spawn)
 //   world.name()                       name of the world
 //   world.seed()                       semilla
@@ -109,6 +113,24 @@
 //                                      33 supported mobs.
 //   world.unload()                     unloads the world (false if is
 //                                      the by default or is cancela)
+//   world.save()                       flushes dirty chunks + level.dat to
+//                                      disk (true/false)
+//   world.playerCount()                how many players stand in the world
+//   world.isChunkLoaded(cx,cz)         chunk-COORDINATE residency probe
+//                                      (true = the chunk is in the cache)
+//   world.chunkCount()                 chunks currently resident (the
+//                                      chunk-cache size)
+//   world.generator()                  the generator token ("normal",
+//                                      "flat", "nether", "void", "empty")
+//   world.isDefault()                  true for the default (spawn) world;
+//                                      the default can never unload
+//   world.setSpawn(x,y,z)              moves the world spawn (compass
+//                                      target for players inside)
+//
+//   server.unloadWorld(name)           unloads the world by name (false
+//                                      for the default / cancela)
+//   server.isWorldLoaded(name)         true when the world is loaded —
+//                                      unambiguous vs getWorld() == nil
 //
 // just like the rest of the API, the handles not are stored pointers of
 // C++: the userdata only carries the name of the world and each call it
@@ -270,6 +292,62 @@ int l_world_getplayers(lua_State* L) {
             lua_rawseti(L, -2, i++);
         }
     }
+    return 1;
+}
+
+// ---- multiworld extension: cache, spawn, generator, default flag ----
+
+int l_world_save(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_pushboolean(L, w->save() >= 0 ? 1 : 0);
+    return 1;
+}
+
+int l_world_playercount(lua_State* L) {
+    WORLD_OR_NIL();
+    int n = 0;
+    for (const auto& p : Server::getInstance().playersSnapshotRef()) {
+        if (p && p->getWorld() == w)
+            ++n;
+    }
+    lua_pushinteger(L, n);
+    return 1;
+}
+
+// Chunk coordinates (block >> 4), matching the native isChunkLoaded.
+int l_world_ischunkloaded(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_Integer cx = luaL_checkinteger(L, 2);
+    lua_Integer cz = luaL_checkinteger(L, 3);
+    lua_pushboolean(L, w->chunks().getChunkIfLoaded((int32_t)cx, (int32_t)cz) != nullptr ? 1 : 0);
+    return 1;
+}
+
+int l_world_chunkcount(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_pushinteger(L, (lua_Integer)w->chunkCount());
+    return 1;
+}
+
+int l_world_generator(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_pushstring(L, w->config().generator.c_str());
+    return 1;
+}
+
+int l_world_isdefault(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_pushboolean(L, Server::getInstance().getDefaultWorld() == w ? 1 : 0);
+    return 1;
+}
+
+int l_world_setspawn(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_Number x = luaL_checknumber(L, 2);
+    lua_Number y = luaL_checknumber(L, 3);
+    lua_Number z = luaL_checknumber(L, 4);
+    w->setSpawn(mcp_v3((float)x, (float)y, (float)z));
+    lua_pushboolean(L, 1);
     return 1;
 }
 
@@ -639,12 +717,19 @@ const luaL_Reg kWorldMethods[] = {
     {"name", l_world_name},
     {"seed", l_world_seed},
     {"dimension", l_world_dimension},
+    {"generator", l_world_generator},
+    {"isDefault", l_world_isdefault},
     {"getTime", l_world_gettime},
     {"setTime", l_world_settime},
     {"getBlock", l_world_getblock},
     {"setBlock", l_world_setblock},
     {"getSpawn", l_world_getspawn},
+    {"setSpawn", l_world_setspawn},
     {"getPlayers", l_world_getplayers},
+    {"playerCount", l_world_playercount},
+    {"isChunkLoaded", l_world_ischunkloaded},
+    {"chunkCount", l_world_chunkcount},
+    {"save", l_world_save},
     {"spawnParticle", l_world_spawnparticle},
     {"spawnBlockParticles", l_world_spawnblockparticles},
     {"spawnSplashParticles", l_world_splashparticles},
@@ -694,8 +779,25 @@ int l_server_defaultworld(lua_State* L) {
 int l_server_loadworld(lua_State* L) {
     const char* name = luaL_checkstring(L, 1);
     const char* gen = luaL_optstring(L, 2, "normal");
-    World* w = Server::getInstance().loadWorld(name, gen);
+    lua_Integer seed = luaL_optinteger(L, 3, 0);
+    World* w = Server::getInstance().loadWorld(name, gen, (int64_t)seed);
     return pushWorld(L, w);
+}
+
+// server.unloadWorld(name): unloads a loaded world (players move to the
+// default world's spawn). The default world refuses to unload.
+int l_server_unloadworld(lua_State* L) {
+    const char* name = luaL_checkstring(L, 1);
+    lua_pushboolean(L, Server::getInstance().unloadWorld(name) ? 1 : 0);
+    return 1;
+}
+
+// server.isWorldLoaded(name): true/false — unlike getWorld() (nil) this is
+// unambiguous in a single push and does not allocate a handle.
+int l_server_isworldloaded(lua_State* L) {
+    const char* name = luaL_checkstring(L, 1);
+    lua_pushboolean(L, Server::getInstance().getWorldByName(name) != nullptr ? 1 : 0);
+    return 1;
 }
 
 } // namespace
@@ -724,6 +826,8 @@ void bindWorld(lua_State* L) {
             {"worlds", l_server_worlds},
             {"getWorld", l_server_getworld},
             {"loadWorld", l_server_loadworld},
+            {"unloadWorld", l_server_unloadworld},
+            {"isWorldLoaded", l_server_isworldloaded},
             {"defaultWorld", l_server_defaultworld},
             {nullptr, nullptr},
         };

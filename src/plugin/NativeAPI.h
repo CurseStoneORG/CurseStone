@@ -257,6 +257,8 @@ typedef struct CsServerApi {
     bool (*setBanned)(const char* name, bool value);                 /**< Bans / pardons by name; banning kicks the player. */
     void (*broadcastTip)(const char* msg);                           /**< Tip line above the hotbar to every player. */
     void (*broadcastPopup)(const char* msg);                         /**< Popup line to every player. */
+    /* ---- appended (ABI 1, extension batch 9: multiworld) ---- */
+    bool (*defaultWorldName)(char* out, uint32_t cap);               /**< Default (spawn) world name; false when unavailable. */
 } CsServerApi;
 
 /**
@@ -519,6 +521,11 @@ typedef struct CsWorldApi {
      *         for unknown ids or a NULL buffer. */
     int32_t (*getFloatingTextEx)(const char* world, int64_t id,
                                  CsFloatingTextInfoEx* out);
+    /* ---- appended (ABI 1, extension batch 9: multiworld) ---- */
+    /** @brief Chunks currently resident in @p world's memory cache (the
+     *         live cache size the eviction pass drains), or -1 for an
+     *         unloaded world. Cache/cost probe for status surfaces. */
+    int32_t (*chunkCount)(const char* world);
 } CsWorldApi;
 
 /**
