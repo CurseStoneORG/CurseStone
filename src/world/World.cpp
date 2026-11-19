@@ -555,8 +555,11 @@ void World::tick(uint64_t current_tick) {
     if (mob_ai_)
         mob_ai_->tick(current_tick);
     // Floating text viewer churn closes the tick: one cheap pass per
-    // second, zero cost when the world carries no texts.
+    // second, zero cost when the world carries no texts, then the follow
+    // pass which touches only the follow-mode subset and past the
+    // movement threshold.
     tickFloatingTexts(current_tick);
+    tickFollowTexts(current_tick);
 }
 
 void World::broadcastTimeSync() {
@@ -1100,6 +1103,50 @@ class FloatingTextRemovalTask : public scheduler::Task {
     std::string world_name_; // Survives a world unload without dangling.
 };
 
+// Splits the legacy combined text into the Genisys tag pair: the first
+// '\n' line is the title, the rest the body. A text without '\n' is pure
+// body (the carrier username falls back to it at wire time).
+void splitFloatingText(const std::string& text, std::string& title,
+                       std::string& body) {
+    const size_t nl = text.find('\n');
+    if (nl == std::string::npos) {
+        title.clear();
+        body = text;
+    } else {
+        title = text.substr(0, nl);
+        body = text.substr(nl + 1);
+    }
+}
+
+// Resolves one floating text pointer under the world lock. Pointer
+// stability holds because only the main thread mutates the map (commands,
+// scheduler tasks and tick() are all main-thread), so the entry behind
+// the pointer cannot be erased between unlock and use.
+particle::FloatingTextParticle* resolveFloatingText(
+    std::unordered_map<int64_t, std::unique_ptr<particle::FloatingTextParticle>>& map,
+    std::mutex& mtx, int64_t id) {
+    std::lock_guard<std::mutex> lk(mtx);
+    auto it = map.find(id);
+    return it == map.end() ? nullptr : it->second.get();
+}
+
+// Resolves a follow target's feet position: players first (runtime ids
+// come from the same allocator as carrier ids), then standing mobs.
+// False means the target is gone and the tag has nothing to anchor on.
+bool followTargetPos(int64_t target, double& tx, double& ty, double& tz) {
+    const auto& players = Server::getInstance().playersSnapshotRef();
+    for (const auto& p : players) {
+        if (p && !p->isPendingRemoval() && p->runtimeId() == target) {
+            const auto& pos = p->position();
+            tx = pos.x;
+            ty = pos.y;
+            tz = pos.z;
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace
 
 int64_t World::spawnFloatingText(double x, double y, double z, std::string text,
@@ -1109,11 +1156,13 @@ int64_t World::spawnFloatingText(double x, double y, double z, std::string text,
         if (floating_texts_.size() >= kMaxFloatingTexts)
             return -1;
     }
+    std::string title, body;
+    splitFloatingText(text, title, body);
     const int64_t eid = Server::getInstance().allocateEid();
     auto ft = std::make_unique<particle::FloatingTextParticle>(eid, x, y, z);
-    // setText() applies the '\n' text before the first viewer is served,
-    // so the spawn pair already carries the full text.
-    ft->setText(std::move(text));
+    // setContent() applies the Genisys pair before the first viewer is
+    // served, so the spawn face already carries the full tag.
+    ft->setContent(std::move(title), std::move(body));
     ft->syncViewers(*this); // spawn to every player in render range now
     {
         std::lock_guard<std::mutex> lk(floating_texts_mtx_);
@@ -1127,31 +1176,85 @@ int64_t World::spawnFloatingText(double x, double y, double z, std::string text,
 }
 
 bool World::moveFloatingText(int64_t id, double x, double y, double z) {
-    particle::FloatingTextParticle* ft = nullptr;
-    {
-        std::lock_guard<std::mutex> lk(floating_texts_mtx_);
-        auto it = floating_texts_.find(id);
-        if (it == floating_texts_.end())
-            return false;
-        ft = it->second.get();
-    }
-    // Pointer stability: only the main thread mutates the map (commands,
-    // scheduler tasks and tick() are all main-thread), so the entry behind
-    // the pointer cannot be erased between unlock and use.
-    ft->setPosition(*this, x, y, z);
+    particle::FloatingTextParticle* ft =
+        resolveFloatingText(floating_texts_, floating_texts_mtx_, id);
+    if (!ft)
+        return false;
+    ft->setPosition(x, y, z);
     return true;
 }
 
 bool World::setFloatingText(int64_t id, std::string text) {
-    particle::FloatingTextParticle* ft = nullptr;
+    particle::FloatingTextParticle* ft =
+        resolveFloatingText(floating_texts_, floating_texts_mtx_, id);
+    if (!ft)
+        return false;
+    std::string title, body;
+    splitFloatingText(text, title, body);
+    ft->setContent(std::move(title), std::move(body));
+    return true;
+}
+
+bool World::setFloatingTextTitle(int64_t id, std::string title) {
+    particle::FloatingTextParticle* ft =
+        resolveFloatingText(floating_texts_, floating_texts_mtx_, id);
+    if (!ft)
+        return false;
+    ft->setTitle(std::move(title));
+    return true;
+}
+
+bool World::setFloatingTextBody(int64_t id, std::string body) {
+    particle::FloatingTextParticle* ft =
+        resolveFloatingText(floating_texts_, floating_texts_mtx_, id);
+    if (!ft)
+        return false;
+    ft->setText(std::move(body));
+    return true;
+}
+
+bool World::setFloatingTextVisible(int64_t id, bool visible) {
+    particle::FloatingTextParticle* ft =
+        resolveFloatingText(floating_texts_, floating_texts_mtx_, id);
+    if (!ft)
+        return false;
+    ft->setVisible(*this, visible);
+    if (visible)
+        ft->syncViewers(*this); // re-arm the audience now, not next second
+    return true;
+}
+
+bool World::setFloatingTextFollow(int64_t id, int64_t targetEid) {
+    particle::FloatingTextParticle* ft =
+        resolveFloatingText(floating_texts_, floating_texts_mtx_, id);
+    if (!ft)
+        return false;
+    ft->setFollowTarget(targetEid);
     {
         std::lock_guard<std::mutex> lk(floating_texts_mtx_);
-        auto it = floating_texts_.find(id);
-        if (it == floating_texts_.end())
-            return false;
-        ft = it->second.get();
+        if (targetEid != 0)
+            follow_texts_.insert(id);
+        else
+            follow_texts_.erase(id);
     }
-    ft->setText(std::move(text));
+    return true;
+}
+
+bool World::setFloatingTextFollowPlayer(int64_t id, const std::string& name) {
+    const auto& players = Server::getInstance().playersSnapshotRef();
+    for (const auto& p : players) {
+        if (p && !p->isPendingRemoval() && p->getName() == name)
+            return setFloatingTextFollow(id, p->runtimeId());
+    }
+    return false;
+}
+
+bool World::setFloatingTextViewers(int64_t id, std::vector<std::string> names) {
+    particle::FloatingTextParticle* ft =
+        resolveFloatingText(floating_texts_, floating_texts_mtx_, id);
+    if (!ft)
+        return false;
+    ft->setAllowedViewers(*this, std::move(names));
     return true;
 }
 
@@ -1160,7 +1263,11 @@ std::vector<World::FloatingTextSnapshot> World::floatingTexts() const {
     std::vector<FloatingTextSnapshot> out;
     out.reserve(floating_texts_.size());
     for (const auto& [id, ft] : floating_texts_) {
-        out.push_back(FloatingTextSnapshot{id, ft->x(), ft->y(), ft->z(), ft->text()});
+        out.push_back(FloatingTextSnapshot{id, ft->x(), ft->y(), ft->z(),
+                                           ft->combinedText(), ft->title(),
+                                           ft->text(), ft->visible(),
+                                           ft->followTarget(),
+                                           ft->viewerCount()});
     }
     // Entity-id order keeps list queries deterministic across frames.
     std::sort(out.begin(), out.end(),
@@ -1168,6 +1275,19 @@ std::vector<World::FloatingTextSnapshot> World::floatingTexts() const {
                   return a.id < b.id;
               });
     return out;
+}
+
+bool World::floatingText(int64_t id, FloatingTextSnapshot& out) const {
+    std::lock_guard<std::mutex> lk(floating_texts_mtx_);
+    auto it = floating_texts_.find(id);
+    if (it == floating_texts_.end())
+        return false;
+    const particle::FloatingTextParticle* ft = it->second.get();
+    out = FloatingTextSnapshot{id,          ft->x(),        ft->y(),
+                               ft->z(),     ft->combinedText(), ft->title(),
+                               ft->text(),  ft->visible(),  ft->followTarget(),
+                               ft->viewerCount()};
+    return true;
 }
 
 bool World::removeFloatingText(int64_t id) {
@@ -1179,6 +1299,7 @@ bool World::removeFloatingText(int64_t id) {
             return false;
         ft = std::move(it->second);
         floating_texts_.erase(it);
+        follow_texts_.erase(id);
     }
     // Off the map already: close() despawns every line from the world
     // audience before the particle is destroyed.
@@ -1202,6 +1323,41 @@ void World::tickFloatingTexts(uint64_t current_tick) {
     // spawn/move/remove paths use.
     for (particle::FloatingTextParticle* ft : texts)
         ft->syncViewers(*this);
+}
+
+void World::tickFollowTexts(uint64_t) {
+    if (follow_texts_.empty())
+        return; // the steady state: no follow tag, zero work per tick
+    // Snapshot the follow-mode ids under the lock; the texts themselves
+    // resolve and move off the mutex like every other floating text call.
+    std::vector<int64_t> ids;
+    {
+        std::lock_guard<std::mutex> lk(floating_texts_mtx_);
+        ids.reserve(follow_texts_.size());
+        ids.assign(follow_texts_.begin(), follow_texts_.end());
+    }
+    constexpr double kThrSq = (double)particle::FloatingTextParticle::kFollowThreshold *
+                              (double)particle::FloatingTextParticle::kFollowThreshold;
+    constexpr double kLift = (double)particle::FloatingTextParticle::kFollowLift;
+    std::vector<int64_t> orphaned;
+    for (int64_t id : ids) {
+        particle::FloatingTextParticle* ft =
+            resolveFloatingText(floating_texts_, floating_texts_mtx_, id);
+        if (!ft)
+            continue;
+        double tx, ty, tz;
+        if (!followTargetPos(ft->followTarget(), tx, ty, tz)) {
+            orphaned.push_back(id); // target despawned: the tag goes too
+            continue;
+        }
+        const double lx = tx, ly = ty + kLift, lz = tz;
+        const double dx = lx - ft->x(), dy = ly - ft->y(), dz = lz - ft->z();
+        if (dx * dx + dy * dy + dz * dz > kThrSq)
+            ft->setPosition(lx, ly, lz); // one shared move packet at most
+    }
+    // Orphan sweep after the pass: the removal path takes the lock itself.
+    for (int64_t id : orphaned)
+        removeFloatingText(id);
 }
 
 namespace {

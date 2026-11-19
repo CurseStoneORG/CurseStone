@@ -48,7 +48,10 @@ API surface (globals):
   `dimension`, `getTime`, `setTime`, `getBlock`, `setBlock`, `getSpawn`,
   `getPlayers`, `spawnParticle`, `spawnBlockParticles`,
   `spawnSplashParticles`, `spawnFloatingText`, `moveFloatingText`,
-  `setFloatingText`, `getFloatingTexts`, `removeFloatingText`,
+  `setFloatingText`, `setFloatingTextTitle`, `setFloatingTextBody`,
+  `setFloatingTextVisible`, `setFloatingTextFollow`,
+  `setFloatingTextFollowPlayer`, `setFloatingTextViewers`,
+  `getFloatingTexts`, `removeFloatingText`,
   `spawnEntity`, `moveEntity`, `removeEntity`, `getEntity`, `getEntities`,
   `entityTypes`, `unload`
 - `commands.register(name, opts, fn)`, `commands.reply(sender, msg)`
@@ -83,37 +86,73 @@ w.spawnSplashParticles(x, y, z, 0xFF0000)   -- 0xRRGGBB
 -- floating text (FloatingTextParticle): ONE invisible fake-player
 -- carrier whose nametag is the whole text (this client era draws
 -- nametags only on player entities, and protocol 84 has no text
--- particle). '\n' splits the title line from the body lines and the
--- client stacks them itself, so a text costs one entity no matter how
--- many lines it carries. Returns the entity id, or nil at the per-world
--- cap (128/world).
+-- particle). The Genisys tag model: the first '\n' line is the TITLE
+-- and the rest the BODY, and the client stacks them itself, so a text
+-- costs one entity no matter how many lines it carries. Returns the
+-- entity id, or nil at the per-world cap (128/world).
 local id = w.spawnFloatingText(x, y, z, "Welcome\n§7to the hub", 200)
 w.moveFloatingText(id, x, y + 1, z)         -- one MovePlayerPacket
 w.setFloatingText(id, "New title\n§anew body") -- one metadata packet resyncs
-for _, t in ipairs(w.getFloatingTexts()) do  -- {id,x,y,z,text}
+w.setFloatingTextTitle(id, "Top")           -- Genisys setTitle: one metadata packet
+w.setFloatingTextBody(id, "§7lines below")  -- Genisys setText: one metadata packet
+w.setFloatingTextVisible(id, false)         -- hide: one Remove per viewer
+w.setFloatingTextVisible(id, true)          -- show: the audience re-arms now
+w.setFloatingTextFollow(id, entityEid)      -- tag rides above an entity/mob
+w.setFloatingTextFollowPlayer(id, "Steve")  -- tag rides above a player
+w.setFloatingTextViewers(id, {"Steve"})     -- allow list; nil = everyone
+for _, t in ipairs(w.getFloatingTexts()) do -- {id,x,y,z,text,title,body,visible,follow}
 end
 w.removeFloatingText(id)                    -- one RemoveEntityPacket
 ```
 
 `spawnFloatingText(x, y, z, text, [ttlTicks])`: `ttlTicks > 0` despawns
 automatically after that many ticks, `0` keeps the text until
-`removeFloatingText` (entity ids do not survive restarts). The whole
-text is capped at 512 chars; the invisible carrier hangs 1.62 below the
-text line so the nametag anchor lands at the requested spot.
+`removeFloatingText` (entity ids do not survive restarts). The title is
+capped at 128 chars and the whole pair at 512; the invisible carrier
+hangs 1.62 below the text line so the nametag anchor lands at the
+requested spot.
 
 `setFloatingText(id, text)` replaces the content with the same
-multi-line model. Only the nametag moves on the wire: one
-SetEntityDataPacket resyncs every viewer — an animated title costs one
-packet per step, not a respawn.
+multi-line model (first line = title, rest = body). Only the nametag
+moves on the wire: one SetEntityDataPacket resyncs every viewer — an
+animated title costs one packet per step, not a respawn.
+`setFloatingTextTitle` / `setFloatingTextBody` replace one half of the
+Genisys pair and cost at most the same one metadata packet.
 
-`getFloatingTexts()` returns `{id,x,y,z,text}` tables ordered by entity
-id (`text` is the full text with `\n` separators).
+`getFloatingTexts()` returns `{id,x,y,z,text,title,body,visible,follow}`
+tables ordered by entity id (`text` is the whole nametag with `\n`
+separators; `follow` is the anchored entity id or 0).
+
+#### Tag types (all ride the same one-carrier model)
+
+| Type | Call | Wire cost |
+| ---- | ---- | --------- |
+| Static | `spawnFloatingText` (default) | one fixed spawn pair |
+| Follower | `setFloatingTextFollow(id, eid)` / `...FollowPlayer(id, name)` | one MovePlayerPacket only when the target moves past 0.15 blocks; auto-removed when the target despawns |
+| Filtered | `setFloatingTextViewers(id, {"A", "B"})` (nil = everyone) | none — only listed players are ever served |
+| Hidden | `setFloatingTextVisible(id, false)` / `true` | one Remove per viewer to hide; the show re-arms immediately |
+| Expiring | `spawnFloatingText(..., ttlTicks)` | none — the scheduler despawns it |
 
 Viewer churn reconciles once per second: players that join or walk into
 render range receive the text, players that walk out, quit or switch
 worlds stop rendering it — the same canSeeBlock audience every other
 world broadcast uses. Between syncs the only per-tick cost of a text is
 none: spawn, move, re-text and removal are the only packet moments.
+
+#### Why this cannot hurt the FPS
+
+- One text = one entity whose only visible part is its nametag: the
+  client cost is a player nametag, and the 128/world cap bounds the
+  worst case.
+- Every packet is cached per text and shared by every viewer — a
+  re-text is ONE metadata packet for everyone, a move ONE move packet.
+- Spawn faces rebuild lazily (dirty flag): a stream of moves or re-texts
+  never rebuilds what no viewer is reading.
+- Follower texts resync past a 0.15-block threshold only; a still target
+  costs zero packets per tick.
+- The follow pass and the viewer sync touch only their subset: a world
+  without floating texts pays nothing, and follow texts cost nothing
+  while their target stands still.
 
 `data` payload per particle family (each particle type owns its packing
 in its own file under `src/world/particle/`):
@@ -415,11 +454,17 @@ instead of raising anything; invalid arguments never crash the server.
 | `spawnParticle(world, x, y, z, type, data)` | one generic particle, `type` = `CsParticleType` 1..32; see the Lua particles table for `data` packing; unrenderable payloads return 0, never broadcast |
 | `spawnBlockParticles(world, x, y, z, blockId, meta)` | break burst + dig sound (LevelEvent 2001) |
 | `spawnSplashParticles(world, x, y, z, rgb)` | splash shatter (LevelEvent 2002); `rgb` 0xRRGGBB |
-| `spawnFloatingText(world, x, y, z, text, ttlTicks)` | floating text (one invisible fake-player carrier, nametag = the whole text; `\n` stacks title + body lines client-side); entity id, or -1 at the cap; ttl 0 = until removed |
+| `spawnFloatingText(world, x, y, z, text, ttlTicks)` | floating text (one invisible fake-player carrier; first `\n` line = title, rest = body, client-side stacked); entity id, or -1 at the cap; ttl 0 = until removed |
 | `moveFloatingText(world, id, x, y, z)` | repositions a floating text |
 | `setFloatingText(world, id, text)` | re-texts a floating text (one metadata packet); false for unknown ids |
+| `setFloatingTextTitle(world, id, title)` | Genisys setTitle: replaces the top line; one metadata packet |
+| `setFloatingTextBody(world, id, text)` | Genisys setText: replaces the body lines; one metadata packet |
+| `setFloatingTextVisible(world, id, visible)` | hide (one Remove per viewer) / show (re-arm now) |
+| `setFloatingTextFollow(world, id, targetEid)` | anchor over one entity/player (0 = fixed spot); one move packet past the threshold, auto-remove on target loss |
+| `setFloatingTextViewers(world, id, names, count)` | viewer allow list (NULL/0 = everyone); dropped viewers despawn at once |
 | `removeFloatingText(world, id)` | despawns a floating text; 0 for unknown ids |
 | `getFloatingTexts(world, out, max)` | copies `{id, x, y, z, text}` snapshots (ordered by id) into a `CsFloatingTextInfo` array; returns how many were written |
+| `getFloatingTextEx(world, id, out)` | one-text snapshot with the Genisys pair separated (`CsFloatingTextInfoEx`: title, body, visible, follow, viewers) |
 | `spawnEntity(world, type, x, y, z, yaw, pitch)` | standing mob (no AI, zero per-tick cost); entity id, or -1 for an invalid type/position or at the cap; y is feet |
 | `moveEntity(world, id, x, y, z, yaw, pitch)` | repositions a standing mob |
 | `removeEntity(world, id)` | despawns a standing mob; 0 for unknown ids |

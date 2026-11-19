@@ -491,35 +491,73 @@ class World {
     // FloatingTextParticle packet composite: ONE invisible client-side
     // fake player whose nametag is the whole text. The carrier spawns
     // through AddPlayerPacket + SetEntityDataPacket (invisible flag,
-    // nametag, NoAI) and leaves through one RemoveEntityPacket; the title
-    // and every '\n' body line ride on that single nametag and the client
-    // stacks the lines itself, so a text costs one entity and one fixed
-    // spawn pair no matter how many lines it carries. Viewer churn
-    // (joins, walk-ins, walk-outs, world switches) reconciles once per
-    // second via tickFloatingTexts(); zero per-tick cost in between.
+    // nametag, NoAI) and leaves through one RemoveEntityPacket; the
+    // Genisys-style title line and every '\n' body line ride on that
+    // single nametag and the client stacks the lines itself, so a text
+    // costs one entity and one fixed spawn pair no matter how many lines
+    // it carries.
     //
-    // @p text may contain '\n' to split into title + body lines. Returns
-    // the entity id (the carrier), or -1 when the per-world cap is
-    // reached. @p ttlTicks > 0 despawns automatically after that many
-    // ticks; 0 keeps it until removeFloatingText() (ids do not survive
-    // restarts).
+    // Five tag shapes share this one carrier:
+    //   static    fixed anchor (the default);
+    //   follow    anchors over one entity/player, repositioned by the
+    //             budgeted follow pass past a movement threshold;
+    //   filtered  only an allow list of player names renders it;
+    //   hidden    exists but despawned until shown (visibility toggle);
+    //   expiring  despawns after a TTL via the server scheduler.
+    //
+    // The per-world cap (kMaxFloatingTexts) plus the shared cached
+    // packets keep the client-side nametag rendering bounded: spawn,
+    // move, re-text and removal are the only packet moments, viewer
+    // churn reconciles once per second via tickFloatingTexts(), the
+    // follow pass touches a text only when its target moved past the
+    // threshold, and a world without floating texts pays nothing.
+    //
+    // @p text may contain '\n' to split into title + body lines (the
+    // Genisys tag pair). Returns the entity id (the carrier), or -1 when
+    // the per-world cap is reached. @p ttlTicks > 0 despawns
+    // automatically after that many ticks; 0 keeps it until
+    // removeFloatingText() (ids do not survive restarts).
     int64_t spawnFloatingText(double x, double y, double z, std::string text,
                               int32_t ttlTicks);
     // Repositions a floating text's carrier for its current viewers.
     // Unknown ids fail.
     bool moveFloatingText(int64_t id, double x, double y, double z);
-    // Replaces a floating text's content (same '\n' multi-line model);
-    // the change reaches the wire as one SetEntityDataPacket.
-    // Unknown ids fail.
+    // Replaces a floating text's content (same '\n' multi-line model:
+    // the first line is the title, the rest the body); the change
+    // reaches the wire as one SetEntityDataPacket. Unknown ids fail.
     bool setFloatingText(int64_t id, std::string text);
+    // Genisys-style single-field re-texts; each costs at most one
+    // SetEntityDataPacket. Unknown ids fail.
+    bool setFloatingTextTitle(int64_t id, std::string title);
+    bool setFloatingTextBody(int64_t id, std::string body);
+    // Visibility toggle: hide despawns the text from every viewer, show
+    // lets the next viewer sync re-arm the audience. Unknown ids fail.
+    bool setFloatingTextVisible(int64_t id, bool visible);
+    // Follow mode: anchors the text over one entity or player (0 = back
+    // to the fixed spot). Unknown text ids fail.
+    bool setFloatingTextFollow(int64_t id, int64_t targetEid);
+    // Follow mode resolved by player name at call time. Fails for
+    // unknown text ids or offline players.
+    bool setFloatingTextFollowPlayer(int64_t id, const std::string& name);
+    // Viewer allow list: only these player names render the text (an
+    // empty list = everyone). Armed viewers that fell out are despawned
+    // immediately. Unknown ids fail.
+    bool setFloatingTextViewers(int64_t id, std::vector<std::string> names);
     // Position + text snapshot of one floating text, for list queries.
     struct FloatingTextSnapshot {
         int64_t id;
         double x, y, z;
-        std::string text;
+        std::string text;  // whole wire nametag (title + '\n' + body)
+        std::string title; // top line ("" = body-only tag)
+        std::string body;  // lines below the title
+        bool visible;
+        int64_t followTarget; // entity id anchored over, 0 = static
+        size_t viewers;       // players currently rendering it
     };
     // Snapshots every floating text of this world, ordered by entity id.
     std::vector<FloatingTextSnapshot> floatingTexts() const;
+    // One-text snapshot; false for unknown ids.
+    bool floatingText(int64_t id, FloatingTextSnapshot& out) const;
     // Despawns a floating text and forgets it. Unknown ids fail.
     bool removeFloatingText(int64_t id);
     // Viewer-churn pass: spawns to players that entered render range,
@@ -527,6 +565,11 @@ class World {
     // from tick() once per particle::FloatingTextParticle::kViewerSyncTicks;
     // a world without floating texts pays nothing.
     void tickFloatingTexts(uint64_t current_tick);
+    // Follow pass: repositions every follow-mode text whose target moved
+    // past the threshold, and auto-removes texts whose target despawned.
+    // Driven from tick() every tick but touches only the follow-mode
+    // subset; a world without follow texts pays nothing.
+    void tickFollowTexts(uint64_t current_tick);
 
     // ----- Mob entities -----
     // Protocol-84 mobs spawned by the creative spawn eggs or the plugin
@@ -728,10 +771,12 @@ class World {
 
     // Floating texts indexed by runtime entity ID (the carrier's id).
     // particle::FloatingTextParticle owns the wire state and the viewer
-    // set; the map only ties ids to instances.
+    // set; the map only ties ids to instances. follow_texts_ indexes the
+    // follow-mode subset so the per-tick follow pass touches only those.
     static constexpr size_t kMaxFloatingTexts = 128;
     std::unordered_map<int64_t, std::unique_ptr<particle::FloatingTextParticle>>
         floating_texts_;
+    std::unordered_set<int64_t> follow_texts_;
     mutable std::mutex floating_texts_mtx_;
 
     // Standing mobs indexed by runtime entity ID. Static records (the

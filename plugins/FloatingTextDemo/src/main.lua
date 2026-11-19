@@ -1,10 +1,9 @@
 --[[
  _____                     _____ _
 /  __ \                   /  ___| |
-| /  \/_   _ _ __ ___  ___\ `--.| |_ ___  _ __   ___
-| |   | | | | '__/ __|/ _ \`--. \ __/ _ \| '_ \ / _ \
+| |   | | | '__/ __|/ _ \`--. \ __/ _ \| '_ \ / _ \
 | \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
- \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___/
+ \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
 
  * CurseStone | Open Source Server Software
  *
@@ -23,8 +22,11 @@
 
 --[[
  * FloatingTextDemo — end-to-end test plugin for the FloatingTextParticle
- * API (world.spawnFloatingText / moveFloatingText / setFloatingText /
- * getFloatingTexts / removeFloatingText).
+ * API (the Genisys-style tag surface):
+ *   world.spawnFloatingText / moveFloatingText / setFloatingText /
+ *   setFloatingTextTitle / setFloatingTextBody / setFloatingTextVisible /
+ *   setFloatingTextFollow / setFloatingTextFollowPlayer /
+ *   setFloatingTextViewers / getFloatingTexts / removeFloatingText
  *
  * Every subcommand drives one capability of the particle:
  *   /ft add <title>|<line>|...    static multi-line text at the player's
@@ -33,12 +35,17 @@
  *   /ft list                      every text of the current world
  *   /ft move <id>                 teleports a text to the player
  *   /ft retext <id> <t>|<l>|...   re-text (one metadata packet)
+ *   /ft title <id> <t>            replaces only the title line
+ *   /ft body <id> <l>|...         replaces only the body lines
+ *   /ft hide <id> / show <id>     the visibility toggle
+ *   /ft follow <id>               anchors the text over the sender
+ *   /ft unfollow <id>             back to the fixed spot
+ *   /ft viewers <id> <p>|all      viewer allow list (all = everyone)
  *   /ft remove <id>               despawns one text
  *   /ft clear                     despawns every text of the world
- *   /ft ttl <seconds> <t>|<l>|... auto-expiring text (ticks = seconds*20)
+ *   /ft ttl <seconds> <t>|<l>|... auto-expiring text
  *   /ft demo                      animated color-cycle + countdown, then
- *                                 removes itself (exercises setFloatingText
- *                                 + scheduler + auto-removal)
+ *                                 removes itself
  *   /ft help                      the command list
  *
  * Multi-line texts are written with '|' separators because the command
@@ -48,7 +55,7 @@
  * the player's head.
 ]]
 
-local plugin = { version = "1.0.1" }
+local plugin = { version = "1.1.0" }
 
 -- ---- constants ---------------------------------------------------------
 local HOVER = 2.2        -- spawn height over the player's feet
@@ -176,9 +183,11 @@ local function cmdList(sender)
     end
     commands.reply(sender, string.format("%d floating text(s):", #list))
     for _, t in ipairs(list) do
-        local first = (t.text:gsub("\n.*$", "")) -- title line only
-        commands.reply(sender, string.format("  #%d @ %.1f/%.1f/%.1f  %s",
-            t.id, t.x, t.y, t.z, first))
+        local head = (t.title ~= "" and t.title or t.text:gsub("\n.*$", ""))
+        local state = t.visible and "" or " (hidden)"
+        local mode = t.follow ~= 0 and string.format(" follow=%d", t.follow) or ""
+        commands.reply(sender, string.format("  #%d @ %.1f/%.1f/%.1f  %s%s%s",
+            t.id, t.x, t.y, t.z, head, state, mode))
     end
 end
 
@@ -217,6 +226,131 @@ local function cmdRetext(sender, args)
     local text = splitLines(joinArgs(args, 3))
     if w:setFloatingText(id, text) then
         commands.reply(sender, string.format("Floating text #%d re-texted.", id))
+    else
+        commands.reply(sender, "No floating text with id " .. tostring(args[2]) .. ".")
+    end
+end
+
+local function cmdTitle(sender, args)
+    local w = requirePlayer(sender)
+    if not w then
+        return
+    end
+    local id = parseId(args[2])
+    if not id or #args < 3 then
+        commands.reply(sender, "Usage: /ft title <id> <new title>")
+        return
+    end
+    local title = joinArgs(args, 3)
+    if w:setFloatingTextTitle(id, title) then
+        commands.reply(sender, string.format("Title of #%d set (one metadata packet).", id))
+    else
+        commands.reply(sender, "No floating text with id " .. tostring(args[2]) .. ".")
+    end
+end
+
+local function cmdBody(sender, args)
+    local w = requirePlayer(sender)
+    if not w then
+        return
+    end
+    local id = parseId(args[2])
+    if not id or #args < 3 then
+        commands.reply(sender, "Usage: /ft body <id> <line>|<line>|...")
+        return
+    end
+    local body = splitLines(joinArgs(args, 3))
+    if w:setFloatingTextBody(id, body) then
+        commands.reply(sender, string.format("Body of #%d set (one metadata packet).", id))
+    else
+        commands.reply(sender, "No floating text with id " .. tostring(args[2]) .. ".")
+    end
+end
+
+local function setVisibleCmd(sender, args, visible)
+    local w = requirePlayer(sender)
+    if not w then
+        return
+    end
+    local id = parseId(args[2])
+    if not id then
+        commands.reply(sender, "Usage: /ft " .. (visible and "show" or "hide") .. " <id>")
+        return
+    end
+    if w:setFloatingTextVisible(id, visible) then
+        commands.reply(sender, string.format("Floating text #%d %s.",
+            id, visible and "shown" or "hidden"))
+    else
+        commands.reply(sender, "No floating text with id " .. tostring(args[2]) .. ".")
+    end
+end
+
+local function cmdHide(sender, args)
+    setVisibleCmd(sender, args, false)
+end
+
+local function cmdShow(sender, args)
+    setVisibleCmd(sender, args, true)
+end
+
+local function cmdFollow(sender, args)
+    local w = requirePlayer(sender)
+    if not w then
+        return
+    end
+    local id = parseId(args[2])
+    if not id then
+        commands.reply(sender, "Usage: /ft follow <id>")
+        return
+    end
+    if w:setFloatingTextFollowPlayer(id, sender.name) then
+        commands.reply(sender, string.format(
+            "Floating text #%d now follows you (auto-removed if you leave).", id))
+    else
+        commands.reply(sender, "No floating text with id " .. tostring(args[2]) .. ".")
+    end
+end
+
+local function cmdUnfollow(sender, args)
+    local w = requirePlayer(sender)
+    if not w then
+        return
+    end
+    local id = parseId(args[2])
+    if not id then
+        commands.reply(sender, "Usage: /ft unfollow <id>")
+        return
+    end
+    if w:setFloatingTextFollow(id, 0) then
+        commands.reply(sender, string.format(
+            "Floating text #%d frozen at its current spot.", id))
+    else
+        commands.reply(sender, "No floating text with id " .. tostring(args[2]) .. ".")
+    end
+end
+
+local function cmdViewers(sender, args)
+    local w = requirePlayer(sender)
+    if not w then
+        return
+    end
+    local id = parseId(args[2])
+    if not id or #args < 3 then
+        commands.reply(sender, "Usage: /ft viewers <id> <player> | all")
+        return
+    end
+    if (args[3]:lower() == "all") then
+        if w:setFloatingTextViewers(id, nil) then
+            commands.reply(sender, string.format(
+                "Floating text #%d renders for everyone again.", id))
+        else
+            commands.reply(sender, "No floating text with id " .. tostring(args[2]) .. ".")
+        end
+        return
+    end
+    if w:setFloatingTextViewers(id, { args[3] }) then
+        commands.reply(sender, string.format(
+            "Floating text #%d now renders only for %s.", id, args[3]))
     else
         commands.reply(sender, "No floating text with id " .. tostring(args[2]) .. ".")
     end
@@ -279,9 +413,9 @@ local function cmdTtl(sender, args)
 end
 
 -- The animated demo: one text whose title cycles colors and whose body
--- counts down, then removes itself. Exercises setFloatingText on the
--- whole text every step (each step re-writes title AND body, so every
--- step emits one SetEntityDataPacket to the viewers).
+-- counts down, then removes itself. Exercises the Genisys pair on the
+-- wire: every step re-writes title AND body through setFloatingText
+-- (one SetEntityDataPacket per step, no respawn).
 local function cmdDemo(sender)
     local w, x, y, z = requirePlayer(sender)
     if not w then
@@ -324,6 +458,12 @@ local function cmdHelp(sender)
     commands.reply(sender, "  /ft list                   - every text of your world")
     commands.reply(sender, "  /ft move <id>              - move a text to you")
     commands.reply(sender, "  /ft retext <id> <t>|<l>... - re-text (one metadata packet)")
+    commands.reply(sender, "  /ft title <id> <t>         - replace the title line only")
+    commands.reply(sender, "  /ft body <id> <l>|...      - replace the body lines only")
+    commands.reply(sender, "  /ft hide <id> / show <id>  - the visibility toggle")
+    commands.reply(sender, "  /ft follow <id>            - anchor over you (player tag)")
+    commands.reply(sender, "  /ft unfollow <id>          - freeze it back in place")
+    commands.reply(sender, "  /ft viewers <id> <p>|all   - who renders the text")
     commands.reply(sender, "  /ft remove <id>            - despawn one text")
     commands.reply(sender, "  /ft clear                  - despawn every text")
     commands.reply(sender, "  /ft ttl <s> <t>|<l>|...    - auto-expiring text")
@@ -339,6 +479,13 @@ local function onCommand(sender, args)
         list = function() cmdList(sender) end,
         move = function() cmdMove(sender, args) end,
         retext = function() cmdRetext(sender, args) end,
+        title = function() cmdTitle(sender, args) end,
+        body = function() cmdBody(sender, args) end,
+        hide = function() cmdHide(sender, args) end,
+        show = function() cmdShow(sender, args) end,
+        follow = function() cmdFollow(sender, args) end,
+        unfollow = function() cmdUnfollow(sender, args) end,
+        viewers = function() cmdViewers(sender, args) end,
         remove = function() cmdRemove(sender, args) end,
         clear = function() cmdClear(sender) end,
         ttl = function() cmdTtl(sender, args) end,
@@ -353,10 +500,10 @@ end
 function plugin.onEnable()
     commands.register("ft", {
         description = "FloatingTextParticle test plugin",
-        usage = "/ft <add|here|list|move|retext|remove|clear|ttl|demo|help>",
+        usage = "/ft <add|here|list|move|retext|title|body|hide|show|follow|unfollow|viewers|remove|clear|ttl|demo|help>",
         permission = "op",
     }, onCommand)
-    log.info("FloatingTextDemo enabled: /ft add|here|list|move|retext|remove|clear|ttl|demo")
+    log.info("FloatingTextDemo enabled: /ft add|here|list|move|retext|title|body|hide|show|follow|unfollow|viewers|remove|clear|ttl|demo")
     return true
 end
 

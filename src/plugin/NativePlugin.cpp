@@ -878,6 +878,78 @@ int32_t api_world_getFloatingTexts(const char* world, CsFloatingTextInfo* out,
     return n;
 }
 
+// extension batch 8: Genisys tag controls — the single-field re-texts,
+// the visibility toggle, follow mode, the viewer allow list and the
+// one-text snapshot with the pair separated. Each mirrors its Lua world
+// counterpart and fails (false / 0) for unknown worlds or ids.
+bool api_world_setFloatingTextTitle(const char* world, int64_t id,
+                                    const char* title) {
+    World* w = findLoadedWorld(world);
+    if (!w || !title)
+        return false;
+    return w->setFloatingTextTitle(id, std::string(title));
+}
+
+bool api_world_setFloatingTextBody(const char* world, int64_t id,
+                                   const char* text) {
+    World* w = findLoadedWorld(world);
+    if (!w || !text)
+        return false;
+    return w->setFloatingTextBody(id, std::string(text));
+}
+
+bool api_world_setFloatingTextVisible(const char* world, int64_t id,
+                                      int visible) {
+    World* w = findLoadedWorld(world);
+    return w && w->setFloatingTextVisible(id, visible != 0);
+}
+
+bool api_world_setFloatingTextFollow(const char* world, int64_t id,
+                                     int64_t targetEid) {
+    World* w = findLoadedWorld(world);
+    return w && w->setFloatingTextFollow(id, targetEid);
+}
+
+bool api_world_setFloatingTextViewers(const char* world, int64_t id,
+                                      const char* const* names, int32_t count) {
+    World* w = findLoadedWorld(world);
+    if (!w)
+        return false;
+    std::vector<std::string> list;
+    if (names && count > 0) {
+        list.reserve((size_t)count);
+        for (int32_t i = 0; i < count; ++i) {
+            if (names[i])
+                list.emplace_back(names[i]);
+        }
+        if (list.size() != (size_t)count)
+            return false; // a count without names is a plugin bug
+    }
+    return w->setFloatingTextViewers(id, std::move(list));
+}
+
+int32_t api_world_getFloatingTextEx(const char* world, int64_t id,
+                                    CsFloatingTextInfoEx* out) {
+    World* w = findLoadedWorld(world);
+    if (!w || !out)
+        return 0;
+    World::FloatingTextSnapshot snap;
+    if (!w->floatingText(id, snap))
+        return 0;
+    out->id = snap.id;
+    out->x = snap.x;
+    out->y = snap.y;
+    out->z = snap.z;
+    std::strncpy(out->title, snap.title.c_str(), sizeof(out->title) - 1);
+    out->title[sizeof(out->title) - 1] = '\0';
+    std::strncpy(out->text, snap.body.c_str(), sizeof(out->text) - 1);
+    out->text[sizeof(out->text) - 1] = '\0';
+    out->visible = snap.visible ? 1 : 0;
+    out->follow = snap.followTarget;
+    out->viewers = (int32_t)snap.viewers;
+    return 1;
+}
+
 // extension batch 5: standing mobs — the same surface the Lua world
 // object exposes. Type ids come from the shared entity registry so an
 // id the 0.15.10 client cannot render never reaches the wire.
@@ -953,6 +1025,12 @@ CsWorldApi g_worldApi = {
     api_entity_typeName,
     api_world_setFloatingText,
     api_world_getFloatingTexts,
+    api_world_setFloatingTextTitle,
+    api_world_setFloatingTextBody,
+    api_world_setFloatingTextVisible,
+    api_world_setFloatingTextFollow,
+    api_world_setFloatingTextViewers,
+    api_world_getFloatingTextEx,
 };
 
 // data: the per-plugin data_pl/<plugin> sandbox, same rules as data.*.
