@@ -235,6 +235,12 @@ int l_world_settime(lua_State* L) {
     lua_Integer t = luaL_checkinteger(L, 2);
     t = ((t % 24000) + 24000) % 24000;
     w->setTime((int32_t)t);
+    // Push the new time out RIGHT NOW instead of waiting for the world's
+    // next periodic re-anchor (up to TIME_RESYNC_INTERVAL ticks): the
+    // client binds its clock to the last SetTime it processed, so a
+    // plugin-driven time change that only reached the server left every
+    // viewer of this world on the old sky for up to 10 seconds.
+    w->broadcastTimeSync();
     lua_pushboolean(L, 1);
     return 1;
 }

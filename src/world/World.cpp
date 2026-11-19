@@ -563,24 +563,43 @@ void World::tick(uint64_t current_tick) {
 }
 
 void World::broadcastTimeSync() {
+    // Single pass over the global snapshot: the recipients of THIS world are
+    // collected first (stack buffer — the common case stays allocation-free)
+    // and the packet is built exactly once, only when someone will get it.
+    // The old shape scanned the snapshot twice and built the packet up front.
+    static constexpr size_t kDirectTargets = 96;
+    Player* targets[kDirectTargets];
+    size_t n = 0;
+    bool overflow = false;
+
     const auto& players = cursestone::Server::getInstance().playersSnapshotRef();
-    bool any = false;
     for (auto& p : players) {
-        if (p && !p->isPendingRemoval() && p->getWorld() == this) {
-            any = true;
-            break;
-        }
+        if (!p || p->isPendingRemoval() || p->getWorld() != this)
+            continue;
+        if (n < kDirectTargets)
+            targets[n++] = p.get();
+        else
+            overflow = true;
     }
-    if (!any)
+    if (n == 0)
         return; // Empty world: no packet, no allocation.
 
     auto pk = std::make_shared<network::protocol::SetTimePacket>();
     pk->time = cfg_.time;
     pk->started = true;
-    for (auto& p : players) {
-        if (!p || p->isPendingRemoval() || p->getWorld() != this)
-            continue;
-        p->sendPacket(pk);
+    for (size_t i = 0; i < n; ++i)
+        targets[i]->sendPacket(pk);
+    if (overflow) {
+        // More players than the buffer holds: the snapshot order is stable
+        // for the duration of this call, so a second pass that skips the
+        // first kDirectTargets matches hands out the rest exactly once.
+        size_t seen = 0;
+        for (auto& p : players) {
+            if (!p || p->isPendingRemoval() || p->getWorld() != this)
+                continue;
+            if (seen++ >= kDirectTargets)
+                p->sendPacket(pk);
+        }
     }
 }
 
@@ -619,14 +638,9 @@ void World::checkSleep() {
                 p->stopSleep();
         }
 
-        auto pk = std::make_shared<network::protocol::SetTimePacket>();
-        pk->time = cfg_.time;
-        pk->started = true;
-        for (auto& p : players) {
-            if (!p || p->getWorld() != this)
-                continue;
-            p->sendPacket(pk);
-        }
+        // Morning lands on every viewer of this world through the same
+        // single-pass scoped broadcast every other time change uses.
+        broadcastTimeSync();
 
         utils::MainLogger::get().info("[SLEEP] Everyone is asleep in \"" + cfg_.name +
                                       "\" — time skipped to morning (" +
