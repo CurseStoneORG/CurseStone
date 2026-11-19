@@ -108,6 +108,17 @@ local n = w.setBlocks({x, y, z, 35, 14,  x, y + 1, z, 35, 14})
   (alias `PlayerSleepInBed`), PlayerBedLeave, DoorToggle, PlayerInteract,
   InventoryOpen, InventoryClick, InventoryClose, WorldLoad (e.world name,
   e.dimension), WorldUnload (cancellable, e.world name)
+
+`PlayerInteract` fires for every tap on a block, before the server acts —
+`e.action` is `left_click_block`, `right_click_block`, `left_click_air` or
+`right_click_air`; cancelling swallows the vanilla behavior (no break, no
+placement, no chest open). The left-hand event covers every break gesture:
+the desktop `START_BREAK` action packet fires it whatever face the client
+reports, and a creative-mode touch tap — which reaches the server as a bare
+`RemoveBlockPacket` with no face at all — fires it too (`e.face` is -1
+then), so wand-style tools work identically on phones and desktops. A
+removal the client already announced with `START_BREAK` fires it once
+(the `START_BREAK` path), never twice.
 - `scheduler.later/every/cancel`
 - `data.read/write/exists/delete/list/loadYml/saveYml/loadJson/saveJson`
 - `plugin.include/import/getResource/saveResource/listResources`

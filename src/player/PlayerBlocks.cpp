@@ -269,17 +269,21 @@ void Player::handleBlockBreak(int x, int y, int z) {
     item::ItemStack held{};
     if (inv_)
         held = inv_->getHeldItem();
+    // Did the client announce this removal with ACTION_START_BREAK on this
+    // cell? The touch-device creative tap reports an instant break with
+    // the RemoveBlockPacket ALONE — nothing else on this path would fire
+    // the left-hand interact for it.
+    const bool announced =
+        mining_tracked_ && mining_x_ == x && mining_y_ == y && mining_z_ == z;
     if (!creative) {
         const float secs = block::breakSeconds((uint8_t)blockId, held);
         if (secs >= 0.5f) {
             int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                                  std::chrono::steady_clock::now().time_since_epoch())
                                  .count();
-            const bool tracked =
-                mining_tracked_ && mining_x_ == x && mining_y_ == y && mining_z_ == z;
             mining_tracked_ = false;
-            const int64_t elapsed = tracked ? now_ms - mining_start_ms_ : 0;
-            if (!tracked || elapsed < (int64_t)(secs * 1000.0f * 0.65f)) {
+            const int64_t elapsed = announced ? now_ms - mining_start_ms_ : 0;
+            if (!announced || elapsed < (int64_t)(secs * 1000.0f * 0.65f)) {
                 // Refuse: hand the breaker the real block back and leave
                 // the world untouched.
                 sendSelfBlockUpdate(this, x, y, z, blockId, blockData);
@@ -292,6 +296,21 @@ void Player::handleBlockBreak(int x, int y, int z) {
                 }
                 return;
             }
+        }
+    }
+
+    // Left-hand interact for removals the client never announced: on touch
+    // devices a creative tap arrives as a bare RemoveBlockPacket, so
+    // without this the wand-style plugins never saw the tap at all (pos1
+    // stayed unset on phones while pos2 — riding UseItemPacket — worked).
+    // A cancelled event swallows the break entirely; the client has
+    // already predicted it locally, so hand the real block back.
+    if (!announced) {
+        auto ev = event::EventManager::get().fire<event::player::PlayerInteractEvent>(
+            this, event::player::PlayerInteractEvent::LEFT_CLICK_BLOCK, x, y, z, -1, held);
+        if (ev.isCancelled()) {
+            sendSelfBlockUpdate(this, x, y, z, blockId, blockData);
+            return;
         }
     }
 
