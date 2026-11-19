@@ -5,84 +5,85 @@
 
 #include "Player.h"
 #include "Server.h"
-#include "network/protocol/AddEntityPacket.h"
-#include "network/protocol/MoveEntityPacket.h"
+#include "network/protocol/AddPlayerPacket.h"
+#include "network/protocol/MovePlayerPacket.h"
 #include "network/protocol/RemoveEntityPacket.h"
 #include "network/protocol/SetEntityDataPacket.h"
 #include "world/World.h"
 
-#include <algorithm>
 #include <cmath>
 
 namespace cursestone::world::particle {
 namespace {
 
-// Clamps one line to kMaxLineChars (the wire-side ceiling per line).
-void clampLine(std::string& line) {
-    if (line.size() > FloatingTextParticle::kMaxLineChars)
-        line.resize(FloatingTextParticle::kMaxLineChars);
-}
-
-// Splits @p text into the clamped line list the particle renders: '\n' is
-// the separator, at most kMaxLines lines survive, each at most
-// kMaxLineChars chars. The result is never empty: a text without content
-// still owns its title carrier so the entity id stays valid.
-std::vector<std::string> splitLines(const std::string& text) {
-    std::vector<std::string> out;
-    out.reserve(4);
-    size_t start = 0;
-    while (out.size() < FloatingTextParticle::kMaxLines) {
-        const size_t nl = text.find('\n', start);
-        const size_t end = nl == std::string::npos ? text.size() : nl;
-        std::string line = text.substr(start, end - start);
-        clampLine(line);
-        out.push_back(std::move(line));
-        if (nl == std::string::npos)
-            break;
-        start = nl + 1;
-    }
-    return out;
+// Deterministic 16-byte fake-player uuid for one carrier: big-endian eid
+// in the first half, "CS" marker + RFC 4122-shaped nibbles in the second.
+// No player list entry is ever sent for a carrier, so the client only
+// keys its skin cache by this value; a stable id-shaped blob keeps every
+// carrier distinct without an RNG dependency.
+void makeCarrierUuid(int64_t eid, std::array<uint8_t, 16>& out) {
+    const uint64_t u = (uint64_t)eid;
+    for (int i = 0; i < 8; ++i)
+        out[(size_t)i] = (uint8_t)(u >> (56 - 8 * i));
+    out[8] = 0xC5;
+    out[9] = 0x53;
+    out[10] = 0x40; // version nibble 4
+    out[11] = 0x80; // variant nibble 2
+    const uint64_t tail = u * 0x9E3779B97F4A7C15ULL; // golden-ratio mix
+    for (int i = 0; i < 4; ++i)
+        out[12 + (size_t)i] = (uint8_t)(tail >> (24 - 8 * i));
 }
 
 } // namespace
 
 FloatingTextParticle::FloatingTextParticle(int64_t id, double x, double y, double z)
     : id_(id), x_(x), y_(y), z_(z) {
-    // The title carrier reuses the handle id: one entity id per text is
-    // spent even before the first line of text arrives.
-    lines_.push_back(std::string());
-    Part carrier;
-    carrier.eid = id_;
-    parts_.push_back(std::move(carrier));
-    rebuildPartAdd(0);
+    makeCarrierUuid(id_, uuid_);
+    // The removal packet never changes for the text's lifetime: one build,
+    // reused by every viewer and by close().
+    rm_ = std::make_shared<network::protocol::RemoveEntityPacket>();
+    rm_->eid = id_;
+    rebuildSpawnPackets();
 }
 
 FloatingTextParticle::~FloatingTextParticle() = default;
 
-float FloatingTextParticle::partY(size_t index) const {
-    return (float)y_ - kCarrierDrop - (float)index * kLineSpacing;
+float FloatingTextParticle::carrierY() const {
+    return (float)y_ - kCarrierDrop;
 }
 
-void FloatingTextParticle::rebuildPartAdd(size_t index) {
-    Part& part = parts_[index];
-    auto add = std::make_shared<network::protocol::AddEntityPacket>();
-    add->eid = part.eid;
-    add->type = network::protocol::AddEntityPacket::TYPE_ITEM_ENTITY;
-    add->x = (float)x_;
-    add->y = partY(index);
-    add->z = (float)z_;
-    add->speedX = add->speedY = add->speedZ = 0.0f;
-    add->yaw = add->pitch = 0.0f;
+void FloatingTextParticle::rebuildSpawnPackets() {
+    // Username = the title line (the client falls back to it only when no
+    // nametag metadata is set; the metadata below always carries the full
+    // text, '\n' stack included).
+    const size_t nl = text_.find('\n');
+    const std::string title = nl == std::string::npos ? text_ : text_.substr(0, nl);
+
+    add_ = std::make_shared<network::protocol::AddPlayerPacket>();
+    add_->uuid = uuid_;
+    add_->username = title;
+    add_->eid = id_;
+    add_->x = (float)x_;
+    add_->y = carrierY();
+    add_->z = (float)z_;
+    // Zero velocity, zero rotation, empty held item: the packet defaults
+    // already encode exactly that, nothing to write here.
+
     using Meta = network::protocol::SetEntityDataPacket;
-    // Invisible carrier + always-on nametag + NoAI: the metadata set the
-    // 0.15.10 client renders as a bare nametag above an item entity.
-    add->metadata = {
-        {0, Meta::TYPE_BYTE, (int64_t)(1 << Meta::FLAG_BIT_INVISIBLE), 0.0f, std::string()},
-        {Meta::PROP_NAMETAG, Meta::TYPE_STRING, 0, 0.0f, part.text},
+    meta_ = std::make_shared<network::protocol::SetEntityDataPacket>();
+    meta_->eid = id_;
+    // The invisible flag is what hides the body; the nametag is the only
+    // part the client keeps drawing. NoAI + the leash pair mirror the
+    // metadata face every real player of this server spawns with.
+    meta_->entries = {
+        {Meta::PROP_FLAGS, Meta::TYPE_BYTE, (int64_t)(1 << Meta::FLAG_BIT_INVISIBLE),
+         0.0f, std::string()},
+        {Meta::PROP_NAMETAG, Meta::TYPE_STRING, 0, 0.0f, text_},
         {Meta::PROP_SHOW_NAMETAG, Meta::TYPE_BYTE, 1, 0.0f, std::string()},
         {Meta::PROP_NO_AI, Meta::TYPE_BYTE, 1, 0.0f, std::string()},
+        {Meta::PROP_LEAD_HOLDER, Meta::TYPE_LONG, -1, 0.0f, std::string()},
+        {Meta::PROP_LEAD, Meta::TYPE_BYTE, 0, 0.0f, std::string()},
     };
-    part.add = std::move(add);
 }
 
 void FloatingTextParticle::sendToViewers(
@@ -100,78 +101,21 @@ void FloatingTextParticle::sendToViewers(
 void FloatingTextParticle::setText(std::string text) {
     if (closed_)
         return;
-    applyLines(splitLines(text));
-}
-
-void FloatingTextParticle::setTitle(std::string title) {
-    if (closed_)
+    if (text.size() > kMaxTextChars)
+        text.resize(kMaxTextChars);
+    if (text == text_)
+        return; // same content: zero packets
+    text_ = std::move(text);
+    rebuildSpawnPackets();
+    if (viewers_.empty())
         return;
-    std::vector<std::string> want = lines_;
-    clampLine(title);
-    want[0] = std::move(title);
-    applyLines(std::move(want));
-}
-
-void FloatingTextParticle::setLine(size_t index, std::string text) {
-    if (closed_ || index >= lines_.size())
-        return;
-    std::vector<std::string> want = lines_;
-    clampLine(text);
-    want[index] = std::move(text);
-    applyLines(std::move(want));
-}
-
-void FloatingTextParticle::applyLines(std::vector<std::string>&& want) {
-    // Common range: only the lines whose text moved pay a packet. Parts
-    // receive a copy (lines are short; the moved list becomes the model).
-    const size_t common = std::min(lines_.size(), want.size());
-    for (size_t i = 0; i < common; ++i) {
-        if (lines_[i] == want[i])
-            continue;
-        Part& part = parts_[i];
-        part.text = want[i];
-        rebuildPartAdd(i);
-        if (!viewers_.empty()) {
-            // One metadata entry resyncs the line: only the nametag moved.
-            auto upd = std::make_shared<network::protocol::SetEntityDataPacket>();
-            upd->eid = part.eid;
-            using Meta = network::protocol::SetEntityDataPacket;
-            upd->entries.push_back(Meta::Entry{Meta::PROP_NAMETAG, Meta::TYPE_STRING, 0, 0.0f,
-                                               want[i]});
-            sendToViewers(upd);
-        }
-    }
-    for (size_t i = common; i < want.size(); ++i) {
-        Part part;
-        part.eid = Server::getInstance().allocateEid();
-        part.text = want[i];
-        parts_.push_back(std::move(part));
-        rebuildPartAdd(parts_.size() - 1);
-        sendToViewers(parts_.back().add);
-    }
-    dropPartsFrom(want.size());
-    lines_ = std::move(want);
-}
-
-void FloatingTextParticle::dropPartsFrom(size_t first) {
-    if (parts_.size() <= first)
-        return;
-    for (size_t i = first; i < parts_.size(); ++i) {
-        auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
-        rm->eid = parts_[i].eid;
-        sendToViewers(rm);
-    }
-    parts_.resize(first);
-}
-
-std::string FloatingTextParticle::text() const {
-    std::string out;
-    for (size_t i = 0; i < lines_.size(); ++i) {
-        if (i != 0)
-            out.push_back('\n');
-        out += lines_[i];
-    }
-    return out;
+    // Only the nametag moved: one metadata entry resyncs every viewer.
+    auto upd = std::make_shared<network::protocol::SetEntityDataPacket>();
+    upd->eid = id_;
+    using Meta = network::protocol::SetEntityDataPacket;
+    upd->entries.push_back(
+        Meta::Entry{Meta::PROP_NAMETAG, Meta::TYPE_STRING, 0, 0.0f, text_});
+    sendToViewers(upd);
 }
 
 void FloatingTextParticle::spawnTo(Player& viewer) {
@@ -179,20 +123,16 @@ void FloatingTextParticle::spawnTo(Player& viewer) {
         return;
     if (!viewers_.insert(viewer.runtimeId()).second)
         return; // already renders the text: idempotent, zero packets
-    for (const auto& part : parts_)
-        viewer.sendPacket(part.add);
+    // Add + metadata back to back, exactly like a real player spawn: both
+    // packets ride the same flush, so the client never paints the body.
+    viewer.sendPacket(add_);
+    viewer.sendPacket(meta_);
 }
 
 void FloatingTextParticle::despawnFrom(Player& viewer) {
     if (viewers_.erase(viewer.runtimeId()) == 0)
         return;
-    // One shared packet, re-tagged per line: the client ignores unknown
-    // entity ids, so a leftover viewer without a line costs one encode.
-    auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
-    for (const auto& part : parts_) {
-        rm->eid = part.eid;
-        viewer.sendPacket(rm);
-    }
+    viewer.sendPacket(rm_);
 }
 
 void FloatingTextParticle::despawnFromAll(World& world) {
@@ -213,14 +153,21 @@ void FloatingTextParticle::syncViewers(World& world) {
     const int32_t cz = (int32_t)std::floor(z_) >> 4;
     // Audience pass with the same canSeeBlock filter every other world
     // broadcast uses: a player that joins or walks in late receives the
-    // text from this pass, a player that walks out stops rendering it.
+    // text from this pass, a player that walks out stops rendering it,
+    // and a player that switched worlds is retired here — otherwise their
+    // stale viewer id would block the re-spawn when they come back (the
+    // idempotent spawnTo would see them as served and send nothing).
     for (const auto& p : players) {
-        if (!p || !p->spawned() || p->isPendingRemoval() || p->getWorld() != &world)
+        if (!p || !p->spawned() || p->isPendingRemoval())
             continue;
+        if (p->getWorld() != &world) {
+            despawnFrom(*p); // idempotent for players that never saw it
+            continue;
+        }
         if (p->canSeeBlock(cx, cz))
             spawnTo(*p);
         else
-            despawnFrom(*p); // idempotent for players that never saw it
+            despawnFrom(*p);
     }
     // Retire viewer ids whose owner left the server: they never run the
     // despawn branch above again.
@@ -244,34 +191,29 @@ void FloatingTextParticle::syncViewers(World& world) {
 void FloatingTextParticle::setPosition(World&, double x, double y, double z) {
     if (closed_)
         return;
+    if (x == x_ && y == y_ && z == z_)
+        return; // same spot: zero packets
     x_ = x;
     y_ = y;
     z_ = z;
-    // The prebuilt spawn packets follow the move so a viewer that arrives
-    // later spawns at the new position, not the original one.
-    for (size_t i = 0; i < parts_.size(); ++i)
-        rebuildPartAdd(i);
+    // The cached spawn pair follows the move so a viewer that arrives
+    // later spawns at the new position, not the original one. The
+    // metadata is position-independent and stays untouched.
+    rebuildSpawnPackets();
     if (viewers_.empty())
         return;
-    // One MoveEntityPacket per line, shared by every viewer: a move of the
-    // whole text costs lines packets, not viewers x lines packets.
-    std::vector<std::shared_ptr<network::protocol::MoveEntityPacket>> mvs(parts_.size());
-    for (size_t i = 0; i < parts_.size(); ++i) {
-        auto mv = std::make_shared<network::protocol::MoveEntityPacket>();
-        mv->eid = parts_[i].eid;
-        mv->x = (float)x_;
-        mv->y = partY(i);
-        mv->z = (float)z_;
-        mv->yaw = mv->headYaw = mv->pitch = 0.0f;
-        mvs[i] = std::move(mv);
-    }
-    const auto& players = Server::getInstance().playersSnapshotRef();
-    for (const auto& p : players) {
-        if (!p || p->isPendingRemoval() || viewers_.count(p->runtimeId()) == 0)
-            continue;
-        for (const auto& mv : mvs)
-            p->sendPacket(mv);
-    }
+    // One MovePlayerPacket, shared by every viewer: a player entity moves
+    // through the player-move packet, and RESET snaps the carrier to the
+    // spot without interpolation — the same mode every server-side
+    // teleport of this server uses.
+    auto mv = std::make_shared<network::protocol::MovePlayerPacket>();
+    mv->eid = id_;
+    mv->x = (float)x_;
+    mv->y = carrierY();
+    mv->z = (float)z_;
+    mv->yaw = mv->bodyYaw = mv->pitch = 0.0f;
+    mv->mode = network::protocol::MovePlayerPacket::MODE_RESET;
+    sendToViewers(mv);
 }
 
 void FloatingTextParticle::close(World& world) {
@@ -290,18 +232,10 @@ void FloatingTextParticle::close(World& world) {
         }
     }
     if (audience) {
-        // One shared packet per line for the whole world audience.
-        std::vector<std::shared_ptr<network::protocol::RemoveEntityPacket>> rms(parts_.size());
-        for (size_t i = 0; i < parts_.size(); ++i) {
-            auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
-            rm->eid = parts_[i].eid;
-            rms[i] = std::move(rm);
-        }
         for (const auto& p : players) {
             if (!p || p->isPendingRemoval() || p->getWorld() != &world)
                 continue;
-            for (const auto& rm : rms)
-                p->sendPacket(rm);
+            p->sendPacket(rm_); // one shared packet for the whole audience
         }
     }
     viewers_.clear();

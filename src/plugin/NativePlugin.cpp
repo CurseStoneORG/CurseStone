@@ -849,12 +849,33 @@ bool api_world_removeFloatingText(const char* world, int64_t id) {
 }
 
 // extension batch 6: floating text re-text — mirrors the Lua
-// setFloatingText; the line diff happens inside the particle.
+// setFloatingText; the '\n' text reaches the wire as one metadata packet.
 bool api_world_setFloatingText(const char* world, int64_t id, const char* text) {
     World* w = findLoadedWorld(world);
     if (!w || !text)
         return false;
     return w->setFloatingText(id, std::string(text));
+}
+
+// extension batch 7: floating text listing — mirrors the Lua
+// getFloatingTexts; the snapshot copy happens under the world lock and the
+// entry text truncates at the fixed C-ABI capacity.
+int32_t api_world_getFloatingTexts(const char* world, CsFloatingTextInfo* out,
+                                   int32_t max) {
+    World* w = findLoadedWorld(world);
+    if (!w || !out || max <= 0)
+        return 0;
+    const auto list = w->floatingTexts();
+    const int32_t n = (int32_t)std::min((size_t)max, list.size());
+    for (int32_t i = 0; i < n; ++i) {
+        out[i].id = list[i].id;
+        out[i].x = list[i].x;
+        out[i].y = list[i].y;
+        out[i].z = list[i].z;
+        std::strncpy(out[i].text, list[i].text.c_str(), sizeof(out[i].text) - 1);
+        out[i].text[sizeof(out[i].text) - 1] = '\0';
+    }
+    return n;
 }
 
 // extension batch 5: standing mobs — the same surface the Lua world
@@ -931,6 +952,7 @@ CsWorldApi g_worldApi = {
     api_entity_typeFromName,
     api_entity_typeName,
     api_world_setFloatingText,
+    api_world_getFloatingTexts,
 };
 
 // data: the per-plugin data_pl/<plugin> sandbox, same rules as data.*.

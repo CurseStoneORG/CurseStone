@@ -32,7 +32,7 @@
  *   /ft here <text>               one-line quick spawn
  *   /ft list                      every text of the current world
  *   /ft move <id>                 teleports a text to the player
- *   /ft retext <id> <t>|<l>|...   per-line diffed re-text
+ *   /ft retext <id> <t>|<l>|...   re-text (one metadata packet)
  *   /ft remove <id>               despawns one text
  *   /ft clear                     despawns every text of the world
  *   /ft ttl <seconds> <t>|<l>|... auto-expiring text (ticks = seconds*20)
@@ -43,11 +43,12 @@
  *
  * Multi-line texts are written with '|' separators because the command
  * layer splits on spaces; each '|' becomes one '\n' line of the particle.
- * The text spawns 2.2 blocks above the player's feet: with the particle's
- * carrier offset the title lands just above the player's head.
+ * The text spawns 2.2 blocks above the player's feet: the invisible
+ * carrier hangs 1.62 below that line, so the nametag lands just above
+ * the player's head.
 ]]
 
-local plugin = { version = "1.0.0" }
+local plugin = { version = "1.0.1" }
 
 -- ---- constants ---------------------------------------------------------
 local HOVER = 2.2        -- spawn height over the player's feet
@@ -72,7 +73,7 @@ end
 local function splitLines(joined)
     local lines = {}
     local start = 1
-    while #lines < 8 do -- the particle caps at 8 lines
+    while #lines < 8 do -- keep the client-side line stack readable
         local pipe = string.find(joined, "|", start, true)
         if not pipe then
             lines[#lines + 1] = string.sub(joined, start)
@@ -278,9 +279,9 @@ local function cmdTtl(sender, args)
 end
 
 -- The animated demo: one text whose title cycles colors and whose body
--- counts down, then removes itself. Exercises setFloatingText diffing on
--- both lines every step (each step re-writes title AND body, so every
--- step emits two SetEntityDataPackets to the viewers).
+-- counts down, then removes itself. Exercises setFloatingText on the
+-- whole text every step (each step re-writes title AND body, so every
+-- step emits one SetEntityDataPacket to the viewers).
 local function cmdDemo(sender)
     local w, x, y, z = requirePlayer(sender)
     if not w then
@@ -322,7 +323,7 @@ local function cmdHelp(sender)
     commands.reply(sender, "  /ft here <text>            - one-line text")
     commands.reply(sender, "  /ft list                   - every text of your world")
     commands.reply(sender, "  /ft move <id>              - move a text to you")
-    commands.reply(sender, "  /ft retext <id> <t>|<l>... - re-text (per-line diff)")
+    commands.reply(sender, "  /ft retext <id> <t>|<l>... - re-text (one metadata packet)")
     commands.reply(sender, "  /ft remove <id>            - despawn one text")
     commands.reply(sender, "  /ft clear                  - despawn every text")
     commands.reply(sender, "  /ft ttl <s> <t>|<l>|...    - auto-expiring text")

@@ -49,23 +49,26 @@
 //   world.spawnSplashParticles(x,and,z,rgb)    the splash-potion shatter
 //                                      (event 2002) with an 0xRRGGBB
 //                                      color; plays the glass smash.
-//   world.spawnFloatingText(x,y,z,text,[ttl])  floating text particle: an
-//                                      invisible item-entity carrier whose
-//                                      nametag is the text (protocol 84 has
-//                                      no text particle). '\n' splits the
-//                                      text into lines: the first line is
-//                                      the title carrier, every following
-//                                      line gets its own carrier below.
-//                                      Returns the entity id, or nil at the
-//                                      per-world cap; ttl in ticks (0 =
-//                                      until removed). Players that enter
-//                                      render range later receive it too
-//                                      (one viewer sync per second).
+//   world.spawnFloatingText(x,y,z,text,[ttl])  floating text particle:
+//                                      an invisible fake-player carrier
+//                                      whose nametag is the text (this
+//                                      client era draws nametags only on
+//                                      player entities, and protocol 84
+//                                      has no text particle). '\n' splits
+//                                      the text into the title line and
+//                                      the body lines the client stacks
+//                                      below it. Returns the entity id, or
+//                                      nil at the per-world cap; ttl in
+//                                      ticks (0 = until removed). Players
+//                                      that enter render range later
+//                                      receive it too (one viewer sync per
+//                                      second).
 //   world.moveFloatingText(id,x,y,z)   repositions a floating text
 //                                      (true/false).
 //   world.setFloatingText(id,text)     replaces the text (same '\n'
-//                                      multi-line model); only changed
-//                                      lines reach the wire (true/false).
+//                                      multi-line model); one
+//                                      SetEntityDataPacket resyncs the
+//                                      viewers (true/false).
 //   world.getFloatingTexts()           array of tables
 //                                      {id,x,y,z,text} of this world.
 //   world.removeFloatingText(id)       despawns a floating text

@@ -486,29 +486,30 @@ class World {
                                  uint8_t blockId, uint8_t blockData);
 
     // ----- Floating text (particle/FloatingTextParticle) -----
-    // Protocol 84 has no text-rendering particle; floating text is the
-    // FloatingTextParticle packet composite: one invisible client-side item
-    // entity (type 64) per line whose nametag is the line text. The first
-    // line is the title carrier at the requested position, every following
-    // line renders one line slot below it. One AddEntityPacket per line on
-    // spawn, one MoveEntityPacket per line per move, one
-    // SetEntityDataPacket per changed line on re-text, one
-    // RemoveEntityPacket per line on removal. Viewer churn (joins,
-    // walk-ins, walk-outs) reconciles once per second via
-    // tickFloatingTexts(); zero per-tick cost in between.
+    // Protocol 84 has no text-rendering particle and its client draws
+    // nametags only on player entities, so floating text is the
+    // FloatingTextParticle packet composite: ONE invisible client-side
+    // fake player whose nametag is the whole text. The carrier spawns
+    // through AddPlayerPacket + SetEntityDataPacket (invisible flag,
+    // nametag, NoAI) and leaves through one RemoveEntityPacket; the title
+    // and every '\n' body line ride on that single nametag and the client
+    // stacks the lines itself, so a text costs one entity and one fixed
+    // spawn pair no matter how many lines it carries. Viewer churn
+    // (joins, walk-ins, walk-outs, world switches) reconciles once per
+    // second via tickFloatingTexts(); zero per-tick cost in between.
     //
     // @p text may contain '\n' to split into title + body lines. Returns
-    // the entity id (the title carrier), or -1 when the per-world cap is
+    // the entity id (the carrier), or -1 when the per-world cap is
     // reached. @p ttlTicks > 0 despawns automatically after that many
     // ticks; 0 keeps it until removeFloatingText() (ids do not survive
     // restarts).
     int64_t spawnFloatingText(double x, double y, double z, std::string text,
                               int32_t ttlTicks);
-    // Repositions every line of a floating text for its current viewers.
+    // Repositions a floating text's carrier for its current viewers.
     // Unknown ids fail.
     bool moveFloatingText(int64_t id, double x, double y, double z);
-    // Replaces a floating text's content (same '\n' multi-line model).
-    // Only changed lines reach the wire, one SetEntityDataPacket each.
+    // Replaces a floating text's content (same '\n' multi-line model);
+    // the change reaches the wire as one SetEntityDataPacket.
     // Unknown ids fail.
     bool setFloatingText(int64_t id, std::string text);
     // Position + text snapshot of one floating text, for list queries.
@@ -522,9 +523,9 @@ class World {
     // Despawns a floating text and forgets it. Unknown ids fail.
     bool removeFloatingText(int64_t id);
     // Viewer-churn pass: spawns to players that entered render range,
-    // despawns from players that left or quit. Driven from tick() once per
-    // particle::FloatingTextParticle::kViewerSyncTicks; a world without
-    // floating texts pays nothing.
+    // despawns from players that left, quit or switched worlds. Driven
+    // from tick() once per particle::FloatingTextParticle::kViewerSyncTicks;
+    // a world without floating texts pays nothing.
     void tickFloatingTexts(uint64_t current_tick);
 
     // ----- Mob entities -----
@@ -725,9 +726,9 @@ class World {
     std::unordered_map<int64_t, std::unique_ptr<FallingBlockEntity>> falling_blocks_;
     mutable std::mutex falling_blocks_mtx_;
 
-    // Floating texts indexed by runtime entity ID (the title carrier's id).
-    // particle::FloatingTextParticle owns the per-line wire state and the
-    // viewer set; the map only ties ids to instances.
+    // Floating texts indexed by runtime entity ID (the carrier's id).
+    // particle::FloatingTextParticle owns the wire state and the viewer
+    // set; the map only ties ids to instances.
     static constexpr size_t kMaxFloatingTexts = 128;
     std::unordered_map<int64_t, std::unique_ptr<particle::FloatingTextParticle>>
         floating_texts_;

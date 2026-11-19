@@ -353,6 +353,17 @@ typedef enum CsParticleType {
 } CsParticleType;
 
 /**
+ * @brief One floating-text snapshot for getFloatingTexts(). @p text is
+ * NUL-terminated; longer texts truncate at the array capacity (the wire
+ * itself caps a text at 512 chars).
+ */
+typedef struct CsFloatingTextInfo {
+    int64_t id;
+    double x, y, z;
+    char text[512];
+} CsFloatingTextInfo;
+
+/**
  * @brief World queries. First argument is the world name; the call fails
  * (0 / false) for worlds that are not loaded.
  */
@@ -404,9 +415,11 @@ typedef struct CsWorldApi {
     bool (*spawnSplashParticles)(const char* world, double x, double y, double z, int32_t rgb);
     /* ---- appended (ABI 1, extension batch 4: floating text) ---- */
     /**
-     * @brief Spawns a floating text: an invisible item-entity carrier whose
+     * @brief Spawns a floating text: an invisible fake-player carrier whose
      *        only visible part is its nametag (protocol 84 has no text
-     *        particle). One spawn packet, zero per-tick cost.
+     *        particle and this client era draws nametags only on player
+     *        entities). '\n' splits the title line from the body lines the
+     *        client stacks. One spawn pair, zero per-tick cost.
      *
      * @param ttlTicks > 0 despawns automatically after that many ticks;
      *                 0 keeps it until removeFloatingText(). Entity ids do
@@ -446,9 +459,19 @@ typedef struct CsWorldApi {
     const char* (*entityTypeName)(int32_t type);
     /* ---- appended (ABI 1, extension batch 6: floating text re-text) ---- */
     /** @brief Replaces a floating text's content; '\n' splits it into
-     *         title + body lines and only changed lines reach the wire.
-     *         False for unknown ids. */
+     *         title + body lines and one SetEntityDataPacket resyncs the
+     *         viewers. False for unknown ids. */
     bool (*setFloatingText)(const char* world, int64_t id, const char* text);
+    /* ---- appended (ABI 1, extension batch 7: floating text listing) ---- */
+    /**
+     * @brief Copies every floating text of @p world into @p out (at most
+     *        @p max entries, ordered by entity id), mirroring the Lua
+     *        world.getFloatingTexts().
+     *
+     * @return how many entries were written; 0 for an unknown world, a
+     *         NULL buffer or a non-positive @p max.
+     */
+    int32_t (*getFloatingTexts)(const char* world, CsFloatingTextInfo* out, int32_t max);
 } CsWorldApi;
 
 /**
