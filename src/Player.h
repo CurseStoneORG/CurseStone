@@ -663,6 +663,31 @@ class Player : public IPlayer,
     void checkPortal();
     // Completes a dimension switch after chunks have streamed.
     void finishDimensionSwitch();
+    // --- Multiworld player-visibility sync ---
+    // Player entities spawn unconditionally between spawned players of the
+    // SAME world (doFirstSpawn / announceSelfToOthers), so every world
+    // change has to repair both ends of that contract by hand:
+    //   - the world left behind keeps the departed body frozen at the last
+    //     accepted position, because every per-player broadcast is
+    //     world-scoped and no packet ever moves or removes it again;
+    //   - the destination world has never held the arriving player;
+    //   - the moving client keeps the previous world's bodies on a
+    //     same-dimension switch (only a ChangeDimensionPacket wipes its
+    //     entity map) and has never held the destination's.
+    // The spawn primitive is announceTo() (PlayerList ADD + AddPlayerPacket
+    // + full metadata); the despawn primitive is one RemoveEntityPacket
+    // with the entity's runtime id. Clients ignore unknown entity ids, so
+    // the removals are safe even for viewers that never held the entity.
+    // The tab list is global — switching worlds must never send a
+    // PlayerList REMOVE.
+    // Removes this player's body from every spawned viewer of @p world.
+    void despawnSelfFrom(World* world);
+    // Spawns this player to every spawned viewer of @p world.
+    void spawnSelfTo(World* world);
+    // Removes every player of @p world from this client's view.
+    void despawnWorldPlayersFrom(World* world);
+    // Spawns every player of @p world on this client's view.
+    void spawnWorldPlayersTo(World* world);
 
     // --- Settings ---
     void setMovementSpeed(float speed);

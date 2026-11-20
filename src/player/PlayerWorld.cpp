@@ -56,6 +56,7 @@
 #include "network/protocol/ChangeDimensionPacket.h"
 #include "network/protocol/MovePlayerPacket.h"
 #include "network/protocol/PlayStatusPacket.h"
+#include "network/protocol/RemoveEntityPacket.h"
 #include "network/protocol/SetTimePacket.h"
 #include "event/EventManager.h"
 #include "event/player/PlayerTeleportEvent.h"
@@ -162,6 +163,29 @@ bool Player::switchWorld(World* target, double x, double y, double z, bool throu
         return true; // pre-spawn: doFirstSpawn() sends the initial packets
     }
 
+    // Player-visibility handoff between the two worlds. The departing body
+    // must leave the old world's viewers — with every per-player broadcast
+    // world-scoped, nothing ever moves or removes it again once this
+    // player's packets stop reaching them (the reported ghost: A keeps
+    // seeing B frozen at the pre-switch spot, still playing the pose
+    // updates that leaked across worlds). The arrival must reach the
+    // destination's viewers, and the mover's own view needs the
+    // destination's bodies. A same-dimension switch keeps the client's
+    // entity map, so the old world's players are explicitly removed here
+    // and the destination's added; a dimension change wipes the client's
+    // own map at ChangeDimensionPacket (below), making the removals dead
+    // weight, and the destination's players are spawned in
+    // finishDimensionSwitch() once the new view is live. The tab list is
+    // global, so no PlayerList REMOVE travels in either direction.
+    if (world_change) {
+        despawnSelfFrom(from);
+        spawnSelfTo(target);
+        if (!dimension_change) {
+            despawnWorldPlayersFrom(from);
+            spawnWorldPlayersTo(target);
+        }
+    }
+
     // Immediate time re-anchor of the DESTINATION world, for every world
     // change. The 0.15.10 client binds its clock to the last SetTime it
     // processed and keeps interpolating locally, so without this packet the
@@ -261,6 +285,81 @@ void Player::finishDimensionSwitch() {
         st->time = w->time();
         st->started = true;
         sendPacket(st);
+    }
+
+    // The deferred arrival side of the player-visibility handoff: the
+    // client wiped its entity map on ChangeDimensionPacket, so the
+    // destination world's players reach it only now that the view is live
+    // (the same packet window the chunk stream re-sends its mobs in).
+    if (World* w = getWorld())
+        spawnWorldPlayersTo(w);
+}
+
+// ---------------------------------------------------------------------
+// Multiworld player-visibility primitives.
+// ---------------------------------------------------------------------
+// The four one-world-scoped loops behind Player::switchWorld's visibility
+// handoff. Every loop snapshots over playersSnapshotRef() and sends
+// outside of any world lock, mirroring the delivery discipline of the
+// join-time announceSelfToOthers().
+
+void Player::despawnSelfFrom(World* world) {
+    if (!srv_ || !world)
+        return;
+    auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
+    rm->eid = runtimeId();
+    for (auto& other : srv_->playersSnapshotRef()) {
+        if (!other || other.get() == this)
+            continue;
+        if (other->isPendingRemoval() || !other->spawned())
+            continue;
+        if (other->getWorld() != world)
+            continue;
+        other->sendPacket(rm);
+    }
+}
+
+void Player::spawnSelfTo(World* world) {
+    if (!srv_ || !world)
+        return;
+    for (auto& other : srv_->playersSnapshotRef()) {
+        if (!other || other.get() == this)
+            continue;
+        if (other->isPendingRemoval() || !other->spawned())
+            continue;
+        if (other->getWorld() != world)
+            continue;
+        announceTo(other.get());
+    }
+}
+
+void Player::despawnWorldPlayersFrom(World* world) {
+    if (!srv_ || !world)
+        return;
+    for (auto& other : srv_->playersSnapshotRef()) {
+        if (!other || other.get() == this)
+            continue;
+        if (other->isPendingRemoval() || !other->spawned())
+            continue;
+        if (other->getWorld() != world)
+            continue;
+        auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
+        rm->eid = other->runtimeId();
+        sendPacket(rm);
+    }
+}
+
+void Player::spawnWorldPlayersTo(World* world) {
+    if (!srv_ || !world)
+        return;
+    for (auto& other : srv_->playersSnapshotRef()) {
+        if (!other || other.get() == this)
+            continue;
+        if (other->isPendingRemoval() || !other->spawned())
+            continue;
+        if (other->getWorld() != world)
+            continue;
+        other->announceTo(this);
     }
 }
 

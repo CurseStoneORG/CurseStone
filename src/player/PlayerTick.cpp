@@ -107,6 +107,10 @@ void Player::broadcastPoseFlags() {
             continue;
         if (!other->spawned())
             continue;
+        if (other->getWorld() != getWorld())
+            continue; // Same world: a viewer of another world must not
+                      // keep receiving pose updates for a body it cannot
+                      // see (the ghost's "movement particles").
         other->sendPacket(viewerPk);
     }
 }
@@ -391,6 +395,10 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int face) {
                 continue;
             if (!other->spawned())
                 continue;
+            if (other->getWorld() != getWorld())
+                continue; // Chunk coordinates repeat across worlds; the
+                          // world match decides visibility, not the
+                          // chunk alone.
             if (!other->canSeeBlock(bcx, bcz))
                 continue;
             other->sendPacket(pa);
@@ -554,6 +562,8 @@ void Player::handleInteract(int action, int64_t targetEid) {
                     continue;
                 if (!other->spawned())
                     continue;
+                if (other->getWorld() != target->getWorld())
+                    continue; // The victim's world owns the motion packet.
                 if (!other->canSeeBlock(tcx, tcz))
                     continue;
                 other->sendPacket(motion);
@@ -880,6 +890,8 @@ void Player::onUpdate(uint64_t current_tick) {
                             continue;
                         if (!other->spawned())
                             continue;
+                        if (other->getWorld() != lvl)
+                            continue; // Dropped items live in one world.
                         if (!other->canSeeBlock(pk_cx, pk_cz))
                             continue;
                         other->sendPacket(pk_viewer);
@@ -1057,6 +1069,8 @@ bool Player::tryClaimNearbyDrop(const item::ItemStack& want) {
                 continue;
             if (other->isPendingRemoval() || !other->spawned())
                 continue;
+            if (other->getWorld() != lvl)
+                continue; // Dropped items live in one world.
             if (!other->canSeeBlock(cx, cz))
                 continue;
             other->sendPacket(tk);
