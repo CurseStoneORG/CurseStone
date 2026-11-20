@@ -148,7 +148,9 @@ void RakLibInterface::start() {
     mcp_rak_session_manager_set_name(&raklib_.manager, motd);
 
     if (mcp_raklib_server_start(&raklib_, host_str.c_str(), port) != 0) {
-        utils::MainLogger::get().error(std::string("[RakLib] Failed to bind ") + host_str + ":" +
+        // The bind failure surfaces as a fatal Diagnostic Engine block from
+        // Server::openNetwork; keep a plain trace for the log file here.
+        utils::MainLogger::get().debug(std::string("[RakLib] Failed to bind ") + host_str + ":" +
                                        std::to_string(port));
         return;
     }
@@ -161,10 +163,9 @@ void RakLibInterface::start() {
         this->raklibThreadLoop();
     });
 
-    utils::MainLogger::get().info(std::string("[RakLib] Listening on ") + host_str + ":" +
-                                  std::to_string(port) +
-                                  " (Protocol 84 / MCPE 0.15.10) [separate thread]");
-    utils::MainLogger::get().info(std::string("[RakLib] MOTD: ") + motd);
+    utils::MainLogger::get().debug(std::string("[RakLib] Listening on ") + host_str + ":" +
+                                   std::to_string(port) + " (Protocol 84 / MCPE 0.15.10) [separate thread]");
+    utils::MainLogger::get().debug(std::string("[RakLib] MOTD: ") + motd);
 }
 
 // ============================================================================

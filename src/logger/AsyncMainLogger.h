@@ -1,7 +1,7 @@
 /*
  _____                     _____ _
 /  __ \                   /  ___| |
-| /  \/_   _ _ __ ___  ___\ `--.| |_ ___  _ __   ___
+| | /  \/_   _ _ __ ___  ___\ `--.| |_ ___  _ __   ___
 | |   | | | | '__/ __|/ _ \`--. \ __/ _ \| '_ \ / _ \
 | \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
  \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
@@ -24,18 +24,32 @@
 /**
  * @brief Logs asynchronously through a background worker thread.
  *
- * Mirrors the reference server's MainLogger pattern:
- *   - info()/warn()/error() only push to a ring buffer + signal condvar
- *   - The worker thread does the actual I/O (format, color, fputs)
- *   - Batch writes in 4KB blocks, flushed on a 500 ms poll
+ * The console side of the CurseStone Diagnostic Engine. Contract:
+ *   - info()/warn()/error()/debug()/raw() only push a pre-stamped entry into
+ *     a ring buffer and signal a condvar (lock + memcpy, no I/O).
+ *   - The worker thread does all I/O: one write per drain cycle for the
+ *     console and one for the log file, so a burst of N lines costs two
+ *     syscalls — and the LAST line of the burst is on screen the moment the
+ *     producer finishes. There is deliberately NO timed deferral: every drain
+ *     ends in a flush, which is why `help` and friends echo instantly.
+ *   - Entries whose text contains '\n' are diagnostic blocks (Diagnostic
+ *     Engine): written verbatim, without timestamp or level tag. § color
+ *     codes inside are converted to ANSI for the console and stripped for
+ *     the log file.
  *
- * The struct has `mcp_logger_t vtable` as its first field, so it's
- * layout-compatible with `mcp_main_logger_t*` - the C++ wrapper
+ * Output shapes:
+ *   console: [17:14:40] INFO  message          (level tags INFO/WARN/ERROR/
+ *                                              FATAL/DEBUG, minimalist colors)
+ *   file:    [17:14:40] [INFO] message         (classic format, always plain —
+ *                                              scripts and tail -f friendly)
+ *
+ * The struct has `mcp_logger_t vtable` as its first field, so it is
+ * layout-compatible with `mcp_main_logger_t*` — the C++ wrapper
  * `utils::MainLogger::get()` works without changes.
  *
  * Thread model:
- *   Producer (tick thread):  lock -> push entry -> signal -> unlock
- *   Consumer (worker thread): lock -> wait(cond, 500ms) -> drain -> unlock -> I/O
+ *   Producer (tick thread):  lock -> stamp -> push entry -> signal -> unlock
+ *   Consumer (worker thread): lock -> wait(cond, 500 ms cap) -> drain -> unlock -> I/O
  *
  * When the ring is full, the entry is dropped and `dropped_count` is
  * incremented. On the next drain, "[LOG DROPPED xN]" is emitted first.
@@ -48,15 +62,23 @@
 #include <stdio.h>
 #include <stdint.h>
 
-
-// Ring buffer dimensions.
-#define ASYNC_LOG_RING_SIZE 8192  // entries
-#define ASYNC_LOG_LINE_MAX 1024   // max chars per raw message
+// Ring buffer dimensions. 2048 entries of 2 KB = ~4 MB of static storage:
+// large enough that even a debug-mode packet trace burst never drops lines
+// between two drains, small enough for the Android/Termux builds.
+#define ASYNC_LOG_RING_SIZE 2048  // entries
+#define ASYNC_LOG_LINE_MAX 2048   // max chars per raw message (diagnostic blocks included)
 #define ASYNC_LOG_BATCH_SIZE 4096 // batch write block size
-#define ASYNC_LOG_FLUSH_MS 25000  // force flush interval (25 s)
 
-// One entry in the ring buffer.
+// Worker condvar wait cap. Purely a safety net — every drain cycle flushes,
+// so under normal operation the worker never actually times out.
+#define ASYNC_LOG_POLL_MS 500
+
+// One entry in the ring buffer. `ts` is stamped by the PRODUCER: log lines
+// show the moment they happened, not the moment the worker got around to
+// formatting them (a burst drained after a busy tick used to carry the
+// drain-time timestamp on every line).
 typedef struct {
+    char ts[16];                   // "%H:%M:%S" stamped at push time
     char text[ASYNC_LOG_LINE_MAX]; // raw message (no timestamp)
     mcp_log_level_t level;
     uint16_t len; // strlen(text)
@@ -107,4 +129,3 @@ mcp_async_logger_t* mcp_async_logger_get_instance(void);
 
 // Check if the async logger has been initialized.
 bool mcp_async_logger_is_initialized(void);
-

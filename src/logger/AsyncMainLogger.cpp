@@ -1,7 +1,7 @@
 /*
  _____                     _____ _
 /  __ \                   /  ___| |
-| /  \/_   _ _ __ ___  ___\ `--.| |_ ___  _ __   ___
+| | /  \/_   _ _ __ ___  ___\ `--.| |_ ___  _ __   ___
 | |   | | | | '__/ __|/ _ \`--. \ __/ _ \| '_ \ / _ \
 | \__/\ |_| | |  \__ \  __/\__/ / || (_) | | | |  __/
  \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
@@ -21,19 +21,26 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// AsyncMainLogger.c — async logger implementation on the portable thread
+// AsyncMainLogger.cpp — async logger implementation on the portable thread
 // layer (src/utils/ThreadPort: pthreads on POSIX, Win32 on Windows).
 //
-// The tick thread only does: lock → memcpy entry → signal → unlock.
-// A worker thread does all the expensive I/O: timestamp formatting,
-// ANSI color conversion, fputs to stdout + file, fflush.
+// The producer thread only does: stamp timestamp -> lock -> memcpy entry ->
+// signal -> unlock. The worker does all the I/O.
 //
-// Batch strategy: the worker drains ALL pending entries into a local
-// buffer (up to 4 KB), then does a single fputs + fflush. This avoids
-// one syscall per log line.
+// Latency contract: EVERY drain cycle ends in a flush of both output
+// batches. The producer signals the condvar on each push, so the wakeup is
+// immediate and the visible delay of a console command reply is one context
+// switch, not a batching window (the old policy held a small batch until a
+// 500 ms idle timeout — the "half second lag" on `help`).
 //
-// If the ring buffer is full, the entry is dropped and dropped_count is
-// incremented. On the next drain, "[LOG DROPPED xN]" is emitted.
+// Output paths:
+//   console (stdout): colored when enabled — dim timestamp, colored level
+//     tag, message; § codes converted to ANSI. Plain otherwise.
+//   file (server.log): ALWAYS plain; § codes stripped. Line format kept
+//     stable ("[ts] [LEVEL] msg") because operators and scripts grep it.
+//
+// Multi-line entries are Diagnostic Engine blocks and are written verbatim
+// (no prefix) through the same two paths.
 
 // Need POSIX visibility (localtime_r) in strict C23 mode.
 #ifndef _GNU_SOURCE
@@ -52,10 +59,6 @@
 #include <stdarg.h>
 #include <time.h>
 
-// Worker poll interval: a short wait keeps startup logs visible instead of
-// delaying them until the 25 s force-flush window.
-#define ASYNC_LOG_POLL_MS 500
-
 // Singleton
 static mcp_async_logger_t g_async;
 static bool g_async_initialized = false;
@@ -64,8 +67,8 @@ static bool g_async_initialized = false;
 // mid-teardown whose FILE* and mutex are never cleaned up.
 static bool g_async_destroyed = false;
 
-// Helpers — format timestamp, level name, ANSI color
-static void format_timestamp(char* buf, size_t bufsz) {
+// Helpers — timestamp (producer side), level names
+static void stamp_timestamp(char* buf, size_t bufsz) {
     time_t t = time(NULL);
     struct tm tm;
 #ifdef _WIN32
@@ -80,24 +83,181 @@ static void format_timestamp(char* buf, size_t bufsz) {
     strftime(buf, bufsz, "%H:%M:%S", &tm);
 }
 
-static const char* level_color(mcp_log_level_t lvl) {
+// Console level tags — the Diagnostic Engine's five-level vocabulary.
+// Zero-padded to one width so the message column lines up on every line:
+// "[17:14:40] INFO  ..." / "[17:14:40] ERROR ...". The log file keeps the
+// long-form names (WARNING/CRITICAL/...) via mcp_log_level_name().
+static const char* level_tag(mcp_log_level_t lvl) {
     switch (lvl) {
     case MCP_LOG_DEBUG:
-        return MCP_TERM_BBLACK;
+        return "DEBUG";
     case MCP_LOG_INFO:
-        return MCP_TERM_BGREEN;
     case MCP_LOG_NOTICE:
-        return MCP_TERM_BCYAN;
+        return "INFO ";
     case MCP_LOG_WARN:
-        return MCP_TERM_BYELLOW;
+        return "WARN ";
     case MCP_LOG_ERROR:
-        return MCP_TERM_BRED;
+        return "ERROR";
     case MCP_LOG_CRITICAL:
-        return MCP_TERM_BRED;
     case MCP_LOG_EMERGENCY:
-        return MCP_TERM_BRED;
+        return "FATAL";
+    default:
+        return "INFO ";
+    }
+}
+
+// Minimalist ANSI palette for the level tags (256-color, soft tones —
+// readable on both dark and light terminals; nothing saturated).
+static const char* level_tag_color(mcp_log_level_t lvl) {
+    switch (lvl) {
+    case MCP_LOG_DEBUG:
+        return "\x1b[38;5;245m"; // dim gray
+    case MCP_LOG_INFO:
+    case MCP_LOG_NOTICE:
+        return "\x1b[38;5;114m"; // soft green
+    case MCP_LOG_WARN:
+        return "\x1b[38;5;179m"; // soft amber
+    case MCP_LOG_ERROR:
+        return "\x1b[38;5;203m"; // soft red
+    case MCP_LOG_CRITICAL:
+    case MCP_LOG_EMERGENCY:
+        return "\x1b[1;38;5;203m"; // bold soft red
     default:
         return "";
+    }
+}
+
+#define MCP_TERM_DIM "\x1b[38;5;245m"
+
+// Append `text` (len bytes) to `batch`, flushing the batch to `out` first
+// when it would overflow. Returns false when the LINE itself cannot fit
+// (never expected: batch cap exceeds one line).
+static bool batch_append(char* batch, size_t batch_cap, size_t* batch_len, const char* text,
+                         size_t len, FILE* out) {
+    if (*batch_len + len >= batch_cap) {
+        if (*batch_len == 0)
+            return false; // single line larger than the batch buffer
+        if (out)
+            fputs(batch, out);
+        *batch_len = 0;
+        batch[0] = '\0';
+    }
+    memcpy(batch + *batch_len, text, len);
+    *batch_len += len;
+    batch[*batch_len] = '\0';
+    return true;
+}
+
+// Strip Minecraft § color codes (UTF-8 0xC2 0xA7 + code char). Used for the
+// plain path: the log file and non-colored consoles must stay clean.
+static size_t strip_section_codes(const char* in, char* out, size_t out_cap) {
+    size_t oi = 0;
+    for (size_t i = 0; in[i] && oi + 1 < out_cap; ++i) {
+        if ((unsigned char)in[i] == 0xC2 && (unsigned char)in[i + 1] == 0xA7) {
+            i += 2; // skip the pair plus the code char
+            if (!in[i])
+                break;
+            continue;
+        }
+        out[oi++] = in[i];
+    }
+    out[oi] = '\0';
+    return oi;
+}
+
+// One entry -> two batch lines. Multi-line text is a Diagnostic Engine
+// block: verbatim, no prefix, its own embedded layout and § colors.
+static void format_entry(mcp_async_logger_t* self, const async_log_entry_t* entry, char* tty_batch,
+                         size_t tty_cap, size_t* tty_len, char* file_batch, size_t file_cap,
+                         size_t* file_len) {
+    const char* msg = entry->text[0] ? entry->text : "";
+    const bool block = strchr(msg, '\n') != NULL;
+
+    // ---- plain text (file); the console uses its own shapes below ----
+    char plain[ASYNC_LOG_LINE_MAX + 64];
+    size_t plain_len;
+    if (block) {
+        plain_len = strip_section_codes(msg, plain, sizeof(plain) - 1);
+        if (plain_len && plain[plain_len - 1] != '\n' && plain_len + 1 < sizeof(plain)) {
+            plain[plain_len++] = '\n';
+            plain[plain_len] = '\0';
+        }
+    } else {
+        // § codes may ride ordinary messages (chat echoes); strip them.
+        char clean[ASYNC_LOG_LINE_MAX];
+        strip_section_codes(msg, clean, sizeof(clean));
+        int n = snprintf(plain, sizeof(plain), "[%s] [%s] %s\n", entry->ts,
+                         mcp_log_level_name(entry->level), clean);
+        if (n < 0)
+            return;
+        if ((size_t)n >= sizeof(plain))
+            n = (int)(sizeof(plain) - 1);
+        plain_len = (size_t)n;
+    }
+    if (self->log_file)
+        batch_append(file_batch, file_cap, file_len, plain, plain_len, self->log_file);
+
+    // ---- console: colored when enabled, tag-plain otherwise ----
+    // Exactly ONE line per entry reaches stdout. The non-colored console
+    // keeps the Diagnostic Engine's tag shape ("[ts] INFO  msg"), not the
+    // file's bracketed shape.
+    if (!self->colored) {
+        char tty_plain[ASYNC_LOG_LINE_MAX + 64];
+        size_t tty_plain_len;
+        if (block) {
+            memcpy(tty_plain, plain, plain_len);
+            tty_plain[plain_len] = '\0';
+            tty_plain_len = plain_len;
+        } else {
+            char clean[ASYNC_LOG_LINE_MAX];
+            strip_section_codes(msg, clean, sizeof(clean));
+            int n = snprintf(tty_plain, sizeof(tty_plain), "[%s] %s %s\n", entry->ts,
+                             level_tag(entry->level), clean);
+            if (n < 0)
+                return;
+            if ((size_t)n >= sizeof(tty_plain))
+                n = (int)(sizeof(tty_plain) - 1);
+            tty_plain_len = (size_t)n;
+        }
+        batch_append(tty_batch, tty_cap, tty_len, tty_plain, tty_plain_len, stdout);
+        return;
+    }
+    char colored[ASYNC_LOG_LINE_MAX + 192];
+    size_t c_len;
+    if (block) {
+        c_len = (size_t)snprintf(colored, sizeof(colored), "%s\n", msg);
+        if (c_len >= sizeof(colored))
+            c_len = sizeof(colored) - 1;
+    } else {
+        c_len = (size_t)snprintf(colored, sizeof(colored), MCP_TERM_DIM "[%s]\x1b[0m %s%s\x1b[0m %s\n",
+                                 entry->ts, level_tag_color(entry->level), level_tag(entry->level),
+                                 msg);
+        if (c_len >= sizeof(colored))
+            c_len = sizeof(colored) - 1;
+    }
+    // § codes -> ANSI (mcp_textformat_to_terminal appends a trailing reset).
+    char ansi[sizeof(colored) + 256];
+    if (!mcp_textformat_to_terminal(colored, ansi, sizeof(ansi))) {
+        memcpy(ansi, colored, c_len);
+        ansi[c_len] = '\0';
+    }
+    size_t ansi_len = strlen(ansi);
+    if (ansi_len && ansi[ansi_len - 1] != '\n' && ansi_len + 1 < sizeof(ansi)) {
+        ansi[ansi_len++] = '\n';
+        ansi[ansi_len] = '\0';
+    }
+    batch_append(tty_batch, tty_cap, tty_len, ansi, ansi_len, stdout);
+}
+
+static void flush_batches(mcp_async_logger_t* self, char* tty_batch, size_t tty_len,
+                          char* file_batch, size_t file_len) {
+    if (self->log_file && file_len > 0) {
+        fputs(file_batch, self->log_file);
+        fflush(self->log_file);
+    }
+    if (tty_len > 0) {
+        fputs(tty_batch, stdout);
+        fflush(stdout);
     }
 }
 
@@ -113,6 +273,9 @@ static void async_push(mcp_async_logger_t* self, mcp_log_level_t lvl, const char
             len = ASYNC_LOG_LINE_MAX - 1;
     }
 
+    char ts[16];
+    stamp_timestamp(ts, sizeof(ts)); // producer-side: the line shows WHEN it happened
+
     mcp_mutex_lock(&self->mtx);
 
     if (self->count >= ASYNC_LOG_RING_SIZE) {
@@ -124,6 +287,7 @@ static void async_push(mcp_async_logger_t* self, mcp_log_level_t lvl, const char
 
     uint32_t idx = self->head;
     async_log_entry_t* entry = &self->ring[idx];
+    memcpy(entry->ts, ts, sizeof(ts));
     if (msg && len > 0) {
         memcpy(entry->text, msg, len);
     }
@@ -177,6 +341,9 @@ static void async_log_exception_fn(void* self, const char* what, const char* whe
              where ? where : "(null)");
     async_push((mcp_async_logger_t*)self, MCP_LOG_ERROR, buf);
 }
+static void async_raw_fn(void* self, const char* msg) {
+    async_push((mcp_async_logger_t*)self, MCP_LOG_INFO, msg); // multi-line -> verbatim path
+}
 static void async_shutdown_fn(void* self) {
     // Defer to mcp_main_logger_async_destroy — the caller (CurseStone.cpp)
     // handles the actual join. This is a no-op so the vtable is valid.
@@ -184,93 +351,21 @@ static void async_shutdown_fn(void* self) {
 }
 
 // Worker thread — drains the ring buffer and writes to stdout + file
-static void format_and_write(mcp_async_logger_t* self, const async_log_entry_t* entry, char* batch,
-                             size_t* batch_len, size_t batch_cap) {
-    char ts[16];
-    format_timestamp(ts, sizeof(ts));
-    const char* lvl_name = mcp_log_level_name(entry->level);
-    const char* msg = entry->text[0] ? entry->text : "";
-
-    // Build the plain line (for file + non-colored terminal).
-    char plain[ASYNC_LOG_LINE_MAX + 64];
-    int n = snprintf(plain, sizeof(plain), "[%s] [%s] %s\n", ts, lvl_name, msg);
-    if (n < 0)
-        return;
-
-    // If colored, build the ANSI version for stdout.
-    if (self->colored) {
-        const char* lvl_c = level_color(entry->level);
-        char colored[ASYNC_LOG_LINE_MAX + 128];
-        snprintf(colored, sizeof(colored), "[%s] [%s%s%s] %s\n", ts, lvl_c, lvl_name,
-                 MCP_TERM_RESET, msg);
-
-        // Convert § codes to ANSI.
-        char ansi[ASYNC_LOG_LINE_MAX + 256];
-        if (!mcp_textformat_to_terminal(colored, ansi, sizeof(ansi))) {
-            // Conversion failed — fall back to plain.
-            memcpy(ansi, plain, (size_t)n);
-            ansi[n] = '\0';
-        }
-        size_t ansi_len = strlen(ansi);
-        // Append to batch.
-        if (*batch_len + ansi_len > batch_cap) {
-            // Flush batch first.
-            if (*batch_len > 0) {
-                fputs(batch, stdout);
-                if (self->log_file) {
-                    fputs(batch, self->log_file);
-                }
-                *batch_len = 0;
-            }
-        }
-        memcpy(batch + *batch_len, ansi, ansi_len);
-        *batch_len += ansi_len;
-        batch[*batch_len] = '\0';
-    } else {
-        size_t plain_len = (size_t)n;
-        if (*batch_len + plain_len > batch_cap) {
-            if (*batch_len > 0) {
-                fputs(batch, stdout);
-                if (self->log_file) {
-                    fputs(batch, self->log_file);
-                }
-                *batch_len = 0;
-            }
-        }
-        memcpy(batch + *batch_len, plain, plain_len);
-        *batch_len += plain_len;
-        batch[*batch_len] = '\0';
-    }
-
-    // Also write the plain version to the file if colored (file always
-    // gets plain, stdout gets colored).
-    if (self->colored && self->log_file) {
-        // We already wrote the colored version to file above in the
-        // batch. Fix: file should get PLAIN, not colored.
-        // Actually, for simplicity we write the same batch to both.
-        // If we want plain-only for file, we need a separate file batch.
-        // For now, write plain to file separately (less efficient but
-        // correct). This only runs when colored=true.
-        // We'll skip this for now — the batch already has the colored
-        // version which is fine for file too (ANSI codes in file are
-        // harmless and many servers do this).
-    }
-}
-
 static void* async_worker_fn(void* arg) {
     mcp_async_logger_t* self = (mcp_async_logger_t*)arg;
 
-    // Batch buffer — accumulate up to 4 KB before flushing.
-    char batch[ASYNC_LOG_BATCH_SIZE + ASYNC_LOG_LINE_MAX + 256];
-    size_t batch_len = 0;
-    batch[0] = '\0';
+    // Per-target batch buffers: one fputs per drain cycle per target.
+    char tty_batch[ASYNC_LOG_BATCH_SIZE + ASYNC_LOG_LINE_MAX + 320];
+    char file_batch[ASYNC_LOG_BATCH_SIZE + ASYNC_LOG_LINE_MAX + 64];
+    size_t tty_len = 0, file_len = 0;
+    tty_batch[0] = '\0';
+    file_batch[0] = '\0';
 
     while (1) {
-        // Wait for a signal or 500 ms of silence. The short wait is
-        // deliberate: the original 25 s flush interval delayed startup
-        // logs by up to 25 seconds.
         mcp_mutex_lock(&self->mtx);
 
+        // Wait for entries or shutdown. Every drain flushes, so the timeout
+        // only ever fires when there is nothing to do.
         while (self->count == 0 && !self->shutdown_requested) {
             // Relative timeout, so a wall-clock step cannot stall the wait.
             if (!mcp_cond_wait(&self->cond, &self->mtx, ASYNC_LOG_POLL_MS)) {
@@ -278,29 +373,10 @@ static void* async_worker_fn(void* arg) {
             }
         }
 
-        if (self->count == 0 && self->shutdown_requested) {
-            // Ring is empty and shutdown requested — exit.
-            mcp_mutex_unlock(&self->mtx);
-            break;
-        }
-
-        // If there are entries OR shutdown was requested, drain them.
-        // If we timed out with no entries, just loop again (periodic
-        // flush to catch any partial batch).
         if (self->count == 0) {
-            // Timeout with no new logs — flush partial batch if any.
+            bool done = self->shutdown_requested;
             mcp_mutex_unlock(&self->mtx);
-            if (batch_len > 0) {
-                fputs(batch, stdout);
-                if (self->log_file) {
-                    fputs(batch, self->log_file);
-                    fflush(self->log_file);
-                }
-                fflush(stdout);
-                batch_len = 0;
-                batch[0] = '\0';
-            }
-            if (self->shutdown_requested)
+            if (done)
                 break;
             continue;
         }
@@ -311,8 +387,8 @@ static void* async_worker_fn(void* arg) {
             self->dropped_count = 0;
         }
 
-        // Drain all pending entries.
-        // We copy entries to a local array to minimize time holding the lock.
+        // Drain all pending entries — copied out under the lock so the
+        // producer never waits on formatting.
         async_log_entry_t local_entries[256];
         uint32_t n_drained = 0;
         while (self->count > 0 && n_drained < 256) {
@@ -326,54 +402,35 @@ static void* async_worker_fn(void* arg) {
         bool do_shutdown = self->shutdown_requested;
         mcp_mutex_unlock(&self->mtx);
 
-        // Emit "[LOG DROPPED xN]" if any were dropped.
+        // Emit "[LOG DROPPED xN]" first so it precedes the batch it belongs to.
         if (dropped > 0) {
-            char drop_msg[128];
-            snprintf(drop_msg, sizeof(drop_msg), "[LOG DROPPED x%llu]",
-                     (unsigned long long)dropped);
             async_log_entry_t drop_entry;
-            strncpy(drop_entry.text, drop_msg, ASYNC_LOG_LINE_MAX - 1);
-            drop_entry.text[ASYNC_LOG_LINE_MAX - 1] = '\0';
+            snprintf(drop_entry.ts, sizeof(drop_entry.ts), "%s", "");
+            stamp_timestamp(drop_entry.ts, sizeof(drop_entry.ts));
+            snprintf(drop_entry.text, sizeof(drop_entry.text), "[LOG DROPPED x%llu]",
+                     (unsigned long long)dropped);
             drop_entry.level = MCP_LOG_WARN;
             drop_entry.len = (uint16_t)strlen(drop_entry.text);
-            format_and_write(self, &drop_entry, batch, &batch_len, sizeof(batch));
+            format_entry(self, &drop_entry, tty_batch, sizeof(tty_batch), &tty_len, file_batch,
+                         sizeof(file_batch), &file_len);
         }
 
-        // Process drained entries.
         for (uint32_t i = 0; i < n_drained; ++i) {
-            format_and_write(self, &local_entries[i], batch, &batch_len, sizeof(batch));
+            format_entry(self, &local_entries[i], tty_batch, sizeof(tty_batch), &tty_len,
+                         file_batch, sizeof(file_batch), &file_len);
         }
 
-        // Flush batch if:
-        //  - batch is getting full (> 4 KB)
-        //  - shutdown was requested (final flush)
-        //  - we hit the timeout (periodic flush)
-        if (batch_len >= ASYNC_LOG_BATCH_SIZE || do_shutdown || n_drained == 0) {
-            if (batch_len > 0) {
-                fputs(batch, stdout);
-                if (self->log_file) {
-                    fputs(batch, self->log_file);
-                    fflush(self->log_file);
-                }
-                fflush(stdout);
-                batch_len = 0;
-                batch[0] = '\0';
-            }
-        }
+        // Latency contract: every drain cycle ends in a flush — both targets,
+        // every time. The 4 KB batching still collapses a burst into one
+        // write per target, but nothing is ever held back waiting for more.
+        flush_batches(self, tty_batch, tty_len, file_batch, file_len);
+        tty_len = 0;
+        file_len = 0;
+        tty_batch[0] = '\0';
+        file_batch[0] = '\0';
 
-        if (do_shutdown && n_drained == 0) {
+        if (do_shutdown)
             break;
-        }
-    }
-
-    // Final flush.
-    if (batch_len > 0) {
-        fputs(batch, stdout);
-        if (self->log_file) {
-            fputs(batch, self->log_file);
-            fflush(self->log_file);
-        }
-        fflush(stdout);
     }
 
     return NULL;
@@ -381,19 +438,27 @@ static void* async_worker_fn(void* arg) {
 
 // Public API
 void mcp_main_logger_async_init(const char* log_path, bool colored) {
-    if (g_async_initialized || g_async_destroyed)
+    if (g_async_initialized) {
+        // The singleton was lazily initialized by early logging (before
+        // Server::initLogger) without a log file. Attach the file now when
+        // one arrives — otherwise a first run would never produce server.log —
+        // and adopt the config-informed color mode.
+        if (log_path && !g_async.log_file) {
+            mcp_mutex_lock(&g_async.mtx);
+            g_async.log_file = fopen(log_path, "a");
+            g_async.colored = mcp_terminal_has_color();
+            mcp_mutex_unlock(&g_async.mtx);
+        }
+        return;
+    }
+    if (g_async_destroyed)
         return;
 
     mcp_terminal_init(colored);
 
     memset(&g_async, 0, sizeof(g_async));
     g_async.colored = mcp_terminal_has_color();
-    g_async.head = 0;
-    g_async.tail = 0;
-    g_async.count = 0;
-    g_async.dropped_count = 0;
     g_async.running = true;
-    g_async.shutdown_requested = false;
 
     if (log_path) {
         g_async.log_file = fopen(log_path, "a");
@@ -410,6 +475,7 @@ void mcp_main_logger_async_init(const char* log_path, bool colored) {
     g_async.vtable.emergency = async_emergency_fn;
     g_async.vtable.log_exception = async_log_exception_fn;
     g_async.vtable.shutdown = async_shutdown_fn;
+    g_async.vtable.raw = async_raw_fn;
     g_async.vtable.impl = &g_async;
 
     // Initialize sync primitives.
@@ -456,7 +522,7 @@ void mcp_main_logger_async_destroy(void) {
 
 mcp_async_logger_t* mcp_async_logger_get_instance(void) {
     if (!g_async_initialized && !g_async_destroyed) {
-        mcp_main_logger_async_init(NULL, true);
+        mcp_main_logger_async_init(NULL, false); // auto-detect, see MainLogger.cpp
     }
     return &g_async;
 }

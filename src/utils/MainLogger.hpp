@@ -60,6 +60,52 @@ class MainLogger {
         if (lg->debug)
             lg->debug(lg->impl, s.c_str());
     }
+    // FATAL: the console prints the tag in bold red; the log file keeps the
+    // long-form "CRITICAL" name via mcp_log_level_name().
+    void critical(const std::string& s) {
+        auto* lg = &mcp_main_logger_get_instance()->vtable;
+        if (lg->critical)
+            lg->critical(lg->impl, s.c_str());
+    }
+    // Level-explicit dispatch (the Diagnostic Engine renders severity ->
+    // level directly; maps to the vtable entry of the same meaning).
+    void log(mcp_log_level_t lvl, const std::string& s) {
+        auto* lg = &mcp_main_logger_get_instance()->vtable;
+        switch (lvl) {
+        case MCP_LOG_DEBUG:
+            if (lg->debug)
+                lg->debug(lg->impl, s.c_str());
+            break;
+        case MCP_LOG_NOTICE:
+        case MCP_LOG_INFO:
+            if (lg->info)
+                lg->info(lg->impl, s.c_str());
+            break;
+        case MCP_LOG_WARN:
+            if (lg->warn)
+                lg->warn(lg->impl, s.c_str());
+            break;
+        case MCP_LOG_ERROR:
+            if (lg->error)
+                lg->error(lg->impl, s.c_str());
+            break;
+        case MCP_LOG_CRITICAL:
+        case MCP_LOG_EMERGENCY:
+        default:
+            if (lg->critical)
+                lg->critical(lg->impl, s.c_str());
+            break;
+        }
+    }
+    // Verbatim passthrough (CurseStone Diagnostic Engine blocks): the text is
+    // written as-is, no timestamp or level tag, newlines preserved. The block
+    // carries its own § color codes, which the console layer converts to ANSI
+    // and the log file strips.
+    void raw(const std::string& s) {
+        auto* lg = &mcp_main_logger_get_instance()->vtable;
+        if (lg->raw)
+            lg->raw(lg->impl, s.c_str());
+    }
 
   private:
     MainLogger() = default;

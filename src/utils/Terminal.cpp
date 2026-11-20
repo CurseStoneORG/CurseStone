@@ -43,3 +43,7 @@ void mcp_terminal_init(bool force_color) {
 bool mcp_terminal_has_color(void) {
     return g_color_enabled;
 }
+
+void mcp_terminal_set_enabled(bool enabled) {
+    g_color_enabled = enabled;
+}

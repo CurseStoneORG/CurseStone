@@ -27,10 +27,10 @@
 #include "Server.h"
 #include "CrashDump.h"
 #include "diagnostics/Diagnostics.h"
+#include "diagnostics/DiagnosticEngine.h"
 #include "wizard/Installer.h"
 #include "utils/MainLogger.hpp"
 #include "logger/AsyncMainLogger.h"
-#include "utils/MainLogger.hpp"
 
 #include <iostream>
 #include <csignal>
@@ -809,16 +809,10 @@ void handleSignal(int sig) {
 int main(int argc, char* argv[]) {
     using namespace cursestone;
 
-    // Banner — use fputs instead of std::cout to avoid mixing C and
-    // C++ I/O streams (the async logger uses fputs on stdout).
-    {
-        std::string banner = std::string(CURSESTONE_NAME) + " v" + CURSESTONE_API + " \"" +
-                             CURSESTONE_CODENAME + "\"\n" + "Targeting Minecraft " +
-                             MINECRAFT_VERSION + " (protocol " + std::to_string(PROTOCOL_VERSION) +
-                             ")\n\n";
-        fputs(banner.c_str(), stdout);
-        fflush(stdout);
-    }
+    // Identity banner (CurseStone Diagnostic Engine) — printed before the
+    // logger exists (an early logger init would block Server::initLogger
+    // from attaching the log file). DiagEngine::banner() handles the colors.
+    diagnostics::DiagEngine::banner();
 
     // Install signal handlers for clean shutdown
     std::signal(SIGINT, handleSignal);
@@ -912,5 +906,7 @@ int main(int argc, char* argv[]) {
     // thread. Without this, log lines written during shutdown would
     // be lost.
     mcp_main_logger_async_destroy();
-    return 0;
+    // Non-zero when the boot aborted on a fatal diagnostic; supervisors see
+    // the failure instead of a clean exit.
+    return server.startFailed() ? 1 : 0;
 }

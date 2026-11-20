@@ -24,6 +24,7 @@
 #include "player/PlayerInternal.h"
 #include "workbench/WorkbenchManager.h"
 #include "diagnostics/Diagnostics.h"
+#include "diagnostics/DiagnosticEngine.h"
 #include "world/World.h"
 #include "world/format/Chunk.h"
 #include "block/BlockIds.h"
@@ -398,9 +399,30 @@ void Player::handleClientLost(const std::string& reason) {
     const std::string out_summary = net_trace_.summarizeOutbound();
 
     // One self-sufficient console line, forensics-report style.
-    utils::MainLogger::get().error("[CLIENT-LOST] " + cfg_.username + " (" + cfg_.ip + ":" +
-                                   std::to_string(cfg_.port) + ") " + classification + " | " +
-                                   out_summary);
+    // Client-side crashes render as a Diagnostic Engine block (E5002):
+    // what happened, the wire tail lead, and where the full report lives.
+    // No file:line is invented — this is a runtime event, so the block has
+    // no snippet, only notes and help.
+    {
+        diagnostics::Diagnostic d;
+        d.code = 5002;
+        d.severity = diagnostics::DiagSeverity::Error;
+        d.title = "Client lost: " + cfg_.username + " (" + cfg_.ip + ":" +
+                  std::to_string(cfg_.port) + ")";
+        if (reason == "timeout") {
+            d.notes.push_back(
+                "the client stopped answering entirely (no 0x15 disconnect; session reaped by "
+                "the timeout sweep) — a client crash or a dead uplink");
+        } else if (reason == "bad batch") {
+            d.notes.push_back("the client sent an undecodable batch — corrupt client or tampering");
+        } else {
+            d.notes.push_back("forced close (server-side error path): " + reason);
+        }
+        if (!out_summary.empty())
+            d.notes.push_back("last outbound wire traffic: " + out_summary);
+        d.help.push_back("The client device may have crashed; ask the player to restart the game.");
+        diagnostics::DiagEngine::emit(d);
+    }
 
     // Record in the global error ring (a later server crashdump shows the
     // lead-up) without printing a second console line.
@@ -471,7 +493,7 @@ void Player::handleClientLost(const std::string& reason) {
         }
     }
 
-    utils::MainLogger::get().error("Client-loss report written to " + json_path);
+    utils::MainLogger::get().debug("Client-loss report written to " + json_path);
 }
 
 void Player::teleport(double x, double y, double z) {

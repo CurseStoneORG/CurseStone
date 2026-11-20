@@ -160,8 +160,8 @@ def main() -> int:
                   "no [RakLib][diag] lines while debug-mode off")
             check("[CHUNKS]" not in text,
                   "no verbose gameplay traces while debug-mode off")
-            check("Debug mode: disabled" in text,
-                  "boot line reports debug mode state")
+            # The "Debug mode: ..." line is itself DEBUG-level since the
+            # diagnostic-engine round: silence here IS the disabled state.
         finally:
             stop(proc)
             time.sleep(0.3)

@@ -20,7 +20,7 @@ Boots a runtime with the MultiWorldTest plugin, joins TWO harness clients
   world, keeps it untouched; switching back re-sends the AddEntity.
 
   Phase 3 — restart persistence: the manifest worlds/worlds.manifest
-  reloads worlds created in earlier sessions ("Restored N world(s)").
+  reloads worlds created in earlier sessions (one "+ <name> loaded!" item per world).
 """
 import argparse
 import os
@@ -266,7 +266,9 @@ def run(host, port, server_bin):
         for lbl in labels:
             check(("PCHK MW " + lbl + " ok") in text, f"sequence step '{lbl}' ok")
         check("PCHK MW FAIL" not in text, "no FAIL marker anywhere")
-        check("World 'mwtest' loaded" in text and "World 'mwtest' unloaded." in text,
+        # loadWorld's detail line is DEBUG-level since the diagnostic-engine
+        # round; the stage item is the boot-console confirmation.
+        check("+ mwtest loaded!" in text and "World 'mwtest' unloaded." in text,
               "server log confirms the load/unload cycle")
 
         # ---- phase 2: same-dimension transport sweep on the wire -------
@@ -338,7 +340,9 @@ def run(host, port, server_bin):
             deadline = time.time() + 60
             restored = False
             while time.time() < deadline:
-                if "Restored 1 world(s) from the manifest" in log_text():
+                # The manifest restore prints the Diagnostic Engine stage
+                # item per world since the diagnostic-engine round.
+                if "+ persisted-flat loaded!" in log_text():
                     restored = True
                     break
                 if proc2.poll() is not None:

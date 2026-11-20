@@ -54,6 +54,11 @@ typedef struct mcp_logger {
     void (*emergency)(void* self, const char* msg);
     void (*log_exception)(void* self, const char* what, const char* where);
     void (*shutdown)(void* self);
+    // Verbatim passthrough for pre-formatted multi-line text (the CurseStone
+    // Diagnostic Engine's compiler-style blocks). Implementations may leave
+    // this NULL; callers must check. The text is written as-is: no timestamp,
+    // no level tag, embedded newlines preserved.
+    void (*raw)(void* self, const char* msg);
     void* impl;
 } mcp_logger_t;
 
@@ -66,6 +71,7 @@ typedef struct mcp_logger {
 #define MCP_LOG_ERROR(lg, msg) ((lg) ? (lg)->error((lg)->impl, (msg)) : (void)0)
 #define MCP_LOG_CRIT(lg, msg) ((lg) ? (lg)->critical((lg)->impl, (msg)) : (void)0)
 #define MCP_LOG_EMERG(lg, msg) ((lg) ? (lg)->emergency((lg)->impl, (msg)) : (void)0)
+#define MCP_LOG_RAW(lg, msg) ((lg) && (lg)->raw ? (lg)->raw((lg)->impl, (msg)) : (void)0)
 
 const char* mcp_log_level_name(mcp_log_level_t lvl);
 

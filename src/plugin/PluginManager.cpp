@@ -28,6 +28,7 @@
 #include "NativePlugin.h"
 #include "Server.h"      // getCommandMap() for /plugins reload
 #include "command/CommandMap.h"
+#include "diagnostics/DiagnosticEngine.h"
 #include "utils/MainLogger.hpp"
 #include <algorithm>
 #include <cstring>
@@ -146,7 +147,7 @@ void PluginManager::loadAll(const std::string& pluginsDir, const std::string& da
 
     pluginsDir_ = pluginsDir; // for /plugins reload
     dataRoot_ = dataRoot;
-    log().info("Plugin API: " + std::string(CURSESTONE_API));
+    log().debug("Plugin API: " + std::string(CURSESTONE_API));
 
     // create the folder plugins/ if not exists (first execution).
     fs::create_directories(pluginsDir, ec);
@@ -205,11 +206,16 @@ void PluginManager::loadAll(const std::string& pluginsDir, const std::string& da
                 if (fs::exists(entry.path() / "plugin.yml", e2)) {
                     ManifestFields mf = manifestFields(dir);
                     if (isNativeMain(mf.main)) {
-                        log().warn("[Plugins] '" + folder +
-                                   "' declares a native main ('" + mf.main +
-                                   "'): native plugins are bare .so/.dll files dropped directly "
-                                   "into plugins/ now, no folder and no plugin.yml. Move the "
-                                   "library out and delete the manifest.");
+                        diagnostics::Diagnostic d;
+                        d.code = 1003;
+                        d.severity = diagnostics::DiagSeverity::Error;
+                        d.title = "Failed to load plugin '" + folder + "'";
+                        d.file = dir + "/plugin.yml";
+                        d.notes.push_back("declares a native main ('" + mf.main +
+                                          "'): native plugins are bare .so/.dll files dropped "
+                                          "directly into plugins/ now — no folder, no manifest");
+                        d.help.push_back("Move the library out to plugins/ and delete plugin.yml.");
+                        diagnostics::DiagEngine::emit(d);
                         continue;
                     }
                     cands.push_back(Cand{false, dir, folder,
@@ -221,9 +227,14 @@ void PluginManager::loadAll(const std::string& pluginsDir, const std::string& da
                 // random user folders.
                 std::error_code e3;
                 if (fs::exists(entry.path() / "main.lua", e3)) {
-                    log().warn("[Plugins] '" + folder +
-                               "' is ignored: main.lua without plugin.yml is not accepted; "
-                               "create a plugin.yml with api/name/author/main.");
+                    diagnostics::Diagnostic d;
+                    d.code = 1001;
+                    d.severity = diagnostics::DiagSeverity::Error;
+                    d.title = "Failed to load plugin '" + folder + "'";
+                    d.notes.push_back(
+                        "found main.lua without plugin.yml — the manifest is the only accepted "
+                        "form (api/name/author/main)");
+                    diagnostics::DiagEngine::emit(d);
                 }
                 continue;
             }
@@ -245,9 +256,15 @@ void PluginManager::loadAll(const std::string& pluginsDir, const std::string& da
     for (const auto& [stemKey, f] : nativeByStem) {
         if (!f.platformExt) {
             std::string hinted = fs::path(f.path).stem().string() + kNativeExt;
-            log().warn("[Plugins] '" + f.path + "' is a " + kNativeOtherExt +
-                       " build, but this platform loads " + kNativeExt + " — drop '" + hinted +
-                       "' here instead.");
+            diagnostics::Diagnostic d;
+            d.code = 1008;
+            d.severity = diagnostics::DiagSeverity::Error;
+            d.title = "Failed to load plugin '" + fs::path(f.path).filename().string() + "'";
+            d.file = f.path;
+            d.notes.push_back(std::string("it is a ") + kNativeOtherExt + " build, but this " +
+                              "platform loads " + kNativeExt);
+            d.help.push_back("Drop '" + hinted + "' here instead.");
+            diagnostics::DiagEngine::emit(d);
             continue;
         }
         std::string stem = fs::path(f.path).stem().string();
@@ -273,30 +290,30 @@ void PluginManager::loadAll(const std::string& pluginsDir, const std::string& da
     for (const auto& [key, idxs] : byDataKey) {
         if (idxs.size() < 2)
             continue;
-        std::string paths;
-        for (size_t k = 0; k < idxs.size(); ++k) {
-            paths += cands[idxs[k]].path;
-            if (k + 1 < idxs.size())
-                paths += ", ";
-        }
-        log().warn("[Plugins] WARNING: " + std::to_string(idxs.size()) +
-                   " plugins share the data identity '" + key + "' (" + paths +
-                   "). All of them are disabled: their data_pl folders would collide.");
+        diagnostics::Diagnostic d;
+        d.code = 1007;
+        d.severity = diagnostics::DiagSeverity::Warn;
+        d.title = std::to_string(idxs.size()) + " plugins share the data identity '" + key + "'";
+        for (size_t k = 0; k < idxs.size(); ++k)
+            d.notes.push_back(cands[idxs[k]].path);
+        d.help.push_back(
+            "All of them are disabled: their data_pl folders would collide. Keep one.");
+        diagnostics::DiagEngine::emit(d);
         for (size_t i : idxs)
             killed[i] = true;
     }
     for (const auto& [key, idxs] : byName) {
         if (idxs.size() < 2)
             continue;
-        std::string paths;
-        for (size_t k = 0; k < idxs.size(); ++k) {
-            paths += cands[idxs[k]].path;
-            if (k + 1 < idxs.size())
-                paths += ", ";
-        }
-        log().warn("[Plugins] WARNING: there are " + std::to_string(idxs.size()) +
-                   " duplicate plugins named '" + key + "' (" + paths +
-                   "). All of them are disabled: keep only one copy.");
+        diagnostics::Diagnostic d;
+        d.code = 1007;
+        d.severity = diagnostics::DiagSeverity::Warn;
+        d.title = "there are " + std::to_string(idxs.size()) + " duplicate plugins named '" + key +
+                  "'";
+        for (size_t k = 0; k < idxs.size(); ++k)
+            d.notes.push_back(cands[idxs[k]].path);
+        d.help.push_back("All of them are disabled: keep only one copy.");
+        diagnostics::DiagEngine::emit(d);
         for (size_t i : idxs)
             killed[i] = true;
     }
@@ -318,21 +335,28 @@ void PluginManager::loadAll(const std::string& pluginsDir, const std::string& da
             p = std::make_unique<LuaPlugin>(cands[i].path, dataRoot);
         if (!p->load() || !p->enable()) {
             dropPluginCommands(p.get());
-            log().warn("Plugin discarded: " + cands[i].path);
+            // The reason is already on the console as a Diagnostic Engine
+            // block (what failed, where, why, how to fix). Just log the
+            // discard quietly for the file.
+            log().debug("Plugin discarded: " + cands[i].path);
             continue;
         }
         auto taken = takenNames.find(toLowerAscii(p->name()));
         if (taken != takenNames.end()) {
             dropPluginCommands(p.get());
-            log().warn("[Plugins] '" + p->name() + "' (" + cands[i].path +
-                       ") duplicates the plugin loaded from " + taken->second +
-                       " — this copy is discarded.");
+            diagnostics::Diagnostic d;
+            d.code = 1007;
+            d.severity = diagnostics::DiagSeverity::Error;
+            d.title = "Failed to load plugin '" + p->name() + "'";
+            d.file = cands[i].path;
+            d.notes.push_back("duplicates the plugin already loaded from " + taken->second);
+            diagnostics::DiagEngine::emit(d);
             continue;
         }
         takenNames.emplace(toLowerAscii(p->name()), cands[i].path);
+        diagnostics::DiagEngine::stageItem(p->name() + " v" + p->version() + " loaded!");
         plugins_.push_back(std::move(p));
     }
-    log().info("Plugins loaded: " + std::to_string(plugins_.size()));
 }
 
 size_t PluginManager::reloadAll() {

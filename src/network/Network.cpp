@@ -31,6 +31,7 @@
 #include "../utils/Utils.h"
 #include "../utils/MainLogger.hpp"
 #include "../diagnostics/Diagnostics.h"
+#include "../diagnostics/DiagnosticEngine.h"
 #include "protocol/BatchPacket.h"
 #include "protocol/LoginPacket.h"
 #include "protocol/DataPacket.h"
@@ -257,14 +258,23 @@ std::unique_ptr<protocol::DataPacket> Network::decodePacketById(uint8_t pid, con
     } catch (const std::exception& e) {
         char pidHex[4];
         snprintf(pidHex, sizeof(pidHex), "%02x", pid);
-        utils::MainLogger::get().error(std::string("decode() threw for id 0x") + pidHex +
-                                       " from " + who + ": " + e.what());
+        diagnostics::Diagnostic d;
+        d.code = 5001;
+        d.severity = diagnostics::DiagSeverity::Error;
+        d.title = "decode() threw for packet id 0x" + std::string(pidHex) + " from " + who;
+        d.notes.push_back(e.what());
+        d.help.push_back("The packet was dropped; the session keeps going.");
+        diagnostics::DiagEngine::emit(d);
         return nullptr;
     } catch (...) {
         char pidHex[4];
         snprintf(pidHex, sizeof(pidHex), "%02x", pid);
-        utils::MainLogger::get().error(std::string("decode() threw for id 0x") + pidHex +
-                                       " from " + who);
+        diagnostics::Diagnostic d;
+        d.code = 5001;
+        d.severity = diagnostics::DiagSeverity::Error;
+        d.title = "decode() threw for packet id 0x" + std::string(pidHex) + " from " + who;
+        d.help.push_back("The packet was dropped; the session keeps going.");
+        diagnostics::DiagEngine::emit(d);
         return nullptr;
     }
     if (!ok) {

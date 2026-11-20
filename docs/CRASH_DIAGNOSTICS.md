@@ -108,9 +108,11 @@ builds a self-contained forensics dump instead:
 * the global `Diagnostics` context (server version, tick, players, recent
   errors, recent packets) via the existing `writeReport` machinery.
 
-Console output is a single self-sufficient error line — `[CLIENT-LOST]`
-with the last-outbound summary and the dump path — so an operator reading
-the log sees the suspect packet without opening the dump.
+Console output is a CurseStone Diagnostic Engine block (E5002, see
+docs/DIAGNOSTIC_ENGINE.md): the tagged header line, the classification and
+the last-outbound summary as `note:` lines, a `help:` line, and the dump
+path — an operator reading the log sees the suspect packet without opening
+the dump.
 
 ## How to read a `client-lost` dump
 
@@ -166,7 +168,7 @@ files above):
    fixed by that measurement).
 2. End-to-end — `tools/client_crash_forensics_check.py`: a fake client
    logs in and spawns, then goes totally silent (crash signature). The
-   check asserts the `[CLIENT-LOST]` console line, the CLIENT CRASH
-   classification, and a valid report pair under `crashdumps/` with the
-   per-client wire tail. The pre-existing
+   check asserts the `error[E5002]` diagnostic block (client lost), the
+   CLIENT CRASH classification, and a valid report pair under `crashdumps/`
+   with the per-client wire tail. The pre-existing
    `tools/session_timeout_check.py` keeps reaping behavior unchanged.

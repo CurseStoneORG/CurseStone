@@ -41,7 +41,10 @@ void mcp_main_logger_init(const char* log_path, bool colored) {
 
 mcp_main_logger_t* mcp_main_logger_get_instance(void) {
     if (!mcp_async_logger_is_initialized()) {
-        mcp_main_logger_async_init(NULL, true);
+        // Auto-detect colors: the forced mode belongs to Server::initLogger,
+        // which knows settings.console-color. Early logging must not paint a
+        // piped console.
+        mcp_main_logger_async_init(NULL, false);
     }
     // The async logger has `mcp_logger_t vtable` as its first field,
     // so casting its address to `mcp_main_logger_t*` is safe — callers

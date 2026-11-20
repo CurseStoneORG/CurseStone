@@ -55,8 +55,10 @@ class LuaPlugin : public PluginBase {
     void disable() override; // Calls onDisable(), removes listeners, cancels tasks, and disables the plugin.
 
     // Protected call for a function and nargs arguments already on the stack.
-    // Logs errors and returns false while restoring the stack.
-    bool pcall(int nargs, int nresults);
+    // Logs errors and returns false while restoring the stack. `reportDiag`
+    // renders a Diagnostic Engine block (E1006) instead of the plain error
+    // line — used for load/enable-time failures the operator must see.
+    bool pcall(int nargs, int nresults, bool reportDiag = false);
 
     // Retrieves the plugin associated with a Lua state.
     static LuaPlugin* from(lua_State* L);
