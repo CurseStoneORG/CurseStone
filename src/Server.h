@@ -102,6 +102,30 @@ class Server {
     /** @brief Starts the server. Called from CurseStone.cpp. */
     void start(const std::string& dataPath);
 
+    /**
+     * @brief Traffic pacing limits (cursestone.yml `traffic.*` keys).
+     *
+     * Per-source rate budgets enforced inside the RakLib session manager: a
+     * per-sweep datagram budget per endpoint, per-second budgets for the
+     * unconnected packet classes (pings, handshake requests, fresh
+     * sessions), a concurrent-session cap per source IP, and an escalating
+     * pacing hold for sources that keep violating their budgets. See the
+     * traffic pacing block comment in src/network/raklib/SessionManager.h
+     * for the mechanics.
+     */
+    struct TrafficLimits {
+        bool pacing = true;
+        unsigned max_packets_per_tick = 250;
+        unsigned max_pings_per_sec = 30;
+        unsigned max_handshakes_per_sec = 25;
+        unsigned max_new_sessions_per_sec = 6;
+        unsigned max_sessions_per_ip = 4;
+        unsigned strikes_before_pacing = 1;
+        unsigned pacing_hold_ms = 3000;
+        unsigned pacing_hold_max_ms = 60000;
+        unsigned pacing_expire_ms = 30000;
+    };
+
     /** @brief Runs the main tick loop until shutdown. */
     void runTickLoop();
 
@@ -250,6 +274,11 @@ class Server {
     }
     std::string getMotd() const {
         return motd_;
+    }
+    // Traffic pacing limits (cursestone.yml traffic.* keys). RakLibInterface
+    // maps this into the C limits struct before the socket binds.
+    const TrafficLimits& trafficLimits() const {
+        return traffic_;
     }
 
     // World behavior flags used by fire and Nether portal mechanics.
@@ -413,6 +442,7 @@ class Server {
     // Gameplay rules.
     bool keep_inventory_ = false;
     bool bed_spawn_enabled_ = true;
+    TrafficLimits traffic_;
     int async_workers_ = 4;
     int autosave_ticks_ = 6000; // Five minutes at 20 TPS.
 

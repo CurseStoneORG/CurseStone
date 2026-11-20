@@ -78,7 +78,21 @@ const char* const kDefaultCursestoneYml =
     "\n"
     "memory:\n"
     "  max-mb: 512            # Garbage collector memory budget in MB.\n"
-    "  gc-interval-ticks: 200 # GC interval in ticks (200 = 10 seconds at 20 TPS).\n";
+    "  gc-interval-ticks: 200 # GC interval in ticks (200 = 10 seconds at 20 TPS).\n"
+    "\n"
+    "traffic:\n"
+    "  pacing: true                   # true = drop datagrams from sources over\n"
+    "                                 # their budgets and pace repeat offenders\n"
+    "                                 # (see the [NET] pacing lines). false = off.\n"
+    "  max-packets-per-tick: 250      # Datagrams per source per tick (0 = off).\n"
+    "  max-pings-per-sec: 30          # List pings per source per second.\n"
+    "  max-handshakes-per-sec: 25     # 0x05/0x07 requests per source per second.\n"
+    "  max-new-sessions-per-sec: 6    # New sessions per source per second.\n"
+    "  max-sessions-per-ip: 4         # Concurrent sessions from one source IP.\n"
+    "  strikes-before-pacing: 1       # Budget overflows before pacing starts.\n"
+    "  pacing-hold-ms: 3000           # First hold; doubles per repeat offense.\n"
+    "  pacing-hold-max-ms: 60000      # Escalation ceiling.\n"
+    "  pacing-expire-ms: 30000        # Idle tracking-entry lifetime.\n";
 
 namespace {
 

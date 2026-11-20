@@ -121,6 +121,28 @@ void RakLibInterface::start() {
 
     mcp_raklib_server_init(&raklib_, serverId_, mtu, &instance_);
 
+    // Traffic pacing (cursestone.yml traffic.* keys via Server::loadConfig):
+    // applied after init (which memsets the manager) and before bind — the
+    // recv loop reads the copy without synchronization from here on. With
+    // pacing: false in the config the limits arrive disabled and the whole
+    // gate is skipped in the recv loop.
+    if (server_) {
+        const Server::TrafficLimits& tl = server_->trafficLimits();
+        mcp_traffic_limits_t lim;
+        memset(&lim, 0, sizeof(lim));
+        lim.enabled = tl.pacing;
+        lim.max_packets_per_tick = tl.max_packets_per_tick;
+        lim.max_pings_per_sec = tl.max_pings_per_sec;
+        lim.max_handshakes_per_sec = tl.max_handshakes_per_sec;
+        lim.max_new_sessions_per_sec = tl.max_new_sessions_per_sec;
+        lim.max_sessions_per_ip = tl.max_sessions_per_ip;
+        lim.strikes_before_pacing = tl.strikes_before_pacing;
+        lim.hold_ms = tl.pacing_hold_ms;
+        lim.hold_max_ms = tl.pacing_hold_max_ms;
+        lim.expire_ms = tl.pacing_expire_ms;
+        mcp_rak_session_manager_apply_limits(&raklib_.manager, &lim);
+    }
+
     char motd[512];
     snprintf(motd, sizeof(motd), "MCPE;%s;84;0.15.10;%d;%d", motd_str.c_str(), online, max_players);
     mcp_rak_session_manager_set_name(&raklib_.manager, motd);
@@ -206,6 +228,28 @@ void RakLibInterface::raklibThreadLoop() {
     uint64_t last_probe_ms = 0;
     constexpr uint64_t kProbeIntervalMs = 5000;
     constexpr uint64_t kSlowTickMs = 50;
+
+    // Recv-cadence state: how many consecutive sweeps found the socket dry.
+    // Three modes:
+    //   * IDLE (dry sweeps) — 1 ms confirms twice, then the classic 10 ms
+    //     cadence; an idle server burns nothing.
+    //   * LIGHT traffic (a few datagrams per sweep — normal play, chunk
+    //     streams) — the classic 1 ms pause. Spinning here would pin a core
+    //     for as long as the stream lasts and on a small box that steals
+    //     scheduling from the main thread: chunk eviction timing shifted
+    //     enough to move a regression check's expectations. A 1 ms pause
+    //     queues at most a few datagrams — nothing near the kernel buffer's
+    //     ~300-datagram ceiling.
+    //   * FLOOD (>= kBusySweep datagrams in one sweep) — re-poll with NO
+    //     pause. With the kernel receive buffer capped near ~300 datagrams
+    //     (rmem_max on unprivileged hosts), a pause long enough to queue
+    //     more than that makes the kernel drop NEW arrivals — the honest
+    //     player's included. Sweeps cost ~10-20 us for ~330 datagrams, so
+    //     spinning on recv keeps the queue permanently near-empty at a
+    //     fraction of a core and returns to the 1 ms cadence the moment
+    //     the flood stops.
+    int idle_sweeps = 0;
+    constexpr uint32_t kBusySweep = 256;
 
     while (!stop_flag_.load(std::memory_order_relaxed)) {
         const auto tick_start = std::chrono::steady_clock::now();
@@ -309,14 +353,37 @@ void RakLibInterface::raklibThreadLoop() {
             }
         }
 
-        // 4. Sleep ~10ms (~100Hz cadence) — independent of the main tick
-        //    loop. When this iteration left work behind (a FULL drain cap,
-        //    i.e. the main thread is producing faster than we can send),
-        //    cut the pause to 1ms so the burst drains before the kernel
-        //    socket buffer does; idle servers keep the 10ms cadence and
-        //    burn no extra CPU.
-        std::this_thread::sleep_for(
-            std::chrono::milliseconds(queueDepth >= MAX_SENDS_PER_LOOP ? 1 : 10));
+        // 4. Cadence: see the idle_sweeps/kBusySweep note above. The
+        //    outbound backlog rule (queue left work behind) keeps its
+        //    1 ms burst pause from before this file's flood work.
+        const auto tick_end = std::chrono::steady_clock::now();
+        raklib_.manager.diag_tick_us =
+            (uint32_t)std::chrono::duration_cast<std::chrono::microseconds>(tick_end - tick_start)
+                .count();
+        uint32_t drained = raklib_.manager.last_drain_count;
+        int pause_ms;
+        if (queueDepth >= MAX_SENDS_PER_LOOP)
+            pause_ms = 1; // outbound backlog: existing burst rule
+        else if (drained >= kBusySweep) {
+            pause_ms = 0; // flood: re-poll immediately, queue stays empty
+            idle_sweeps = 0;
+        } else if (drained > 0) {
+            pause_ms = 1; // light traffic: classic burst cadence
+            idle_sweeps = 0;
+        } else if (++idle_sweeps < 3)
+            pause_ms = 1; // momentarily dry: confirm idle quickly
+        else
+            pause_ms = 10; // idle: full cadence
+        const auto pause_start = std::chrono::steady_clock::now();
+        if (pause_ms == 0) {
+            raklib_.manager.diag_pause_us = 0;
+        } else {
+            std::this_thread::sleep_for(std::chrono::milliseconds(pause_ms));
+            raklib_.manager.diag_pause_us =
+                (uint32_t)std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now() - pause_start)
+                    .count();
+        }
     }
 }
 

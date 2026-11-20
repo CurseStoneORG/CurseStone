@@ -87,6 +87,31 @@ void mcp_rak_session_manager_set_name(mcp_rak_session_manager_t* sm, const char*
     snprintf(sm->server_name, sizeof(sm->server_name), "%s", name);
 }
 
+void mcp_rak_session_manager_apply_limits(mcp_rak_session_manager_t* sm,
+                                          const mcp_traffic_limits_t* limits) {
+    if (!sm)
+        return;
+    // Built-in defaults, used verbatim when the operator configures nothing:
+    // pacing ON, budgets sized far above anything an honest client produces.
+    // Server::loadConfig always passes a struct, so the deployed defaults
+    // come from cursestone.yml — these only exist so a bare RakLib user
+    // (tests, tooling) boots protected.
+    mcp_traffic_limits_t lim;
+    lim.enabled = true;
+    lim.max_packets_per_tick = MCP_SM_PACKET_LIMIT;
+    lim.max_pings_per_sec = 30;
+    lim.max_handshakes_per_sec = 25;
+    lim.max_new_sessions_per_sec = 6;
+    lim.max_sessions_per_ip = 4;
+    lim.strikes_before_pacing = 1;
+    lim.hold_ms = 3000;
+    lim.hold_max_ms = 60000;
+    lim.expire_ms = 30000;
+    if (limits)
+        lim = *limits;
+    sm->traffic = lim;
+}
+
 // =========================================================================
 // Bind
 // =========================================================================
@@ -153,6 +178,358 @@ static void sm_map_erase(mcp_rak_session_manager_t* sm, uint64_t key, const mcp_
     }
     sm->map_key[i] = 0;
     sm->map_ptr[i] = NULL;
+}
+
+// =========================================================================
+// Traffic pacing (see the block comment on mcp_traffic_limits_t in the
+// header). Two fixed open-addressing tables, both swept once per second:
+//
+//   * endpoint table — one datagram budget per recv sweep, lazily reset per
+//     entry via tick_id (no full-table scan on the hot path);
+//   * source-IP table — 1 s windows for the unconnected packet classes
+//     (pings, handshake requests, fresh sessions), paced sources ignored.
+//
+// Lookups are a single multiply-shift hash + linear probe. Everything
+// fails OPEN when a table is momentarily full: an untracked source is
+// served, never refused — the per-sweep drain cap already bounds the worst
+// case, and refusing honest traffic to punish scanners is the wrong trade.
+// =========================================================================
+static inline size_t sm_ep_hash(uint64_t key) {
+    return (size_t)((key * 0x9E3779B97F4A7C15ULL) >> (64 - MCP_TRAFFIC_EP_BITS));
+}
+
+static inline uint32_t sm_ip_key(const uint8_t ip[4]) {
+    return ((uint32_t)ip[0] << 24) | ((uint32_t)ip[1] << 16) | ((uint32_t)ip[2] << 8) |
+           (uint32_t)ip[3];
+}
+
+static inline size_t sm_ip_hash(uint32_t ip) {
+    return (size_t)(((uint64_t)ip * 0xC2B2AE3D27D4EB4FULL) >> (64 - MCP_TRAFFIC_IP_BITS));
+}
+
+// Keep 1/16 of each table free so a rotating-port scan never wedges itself
+// between second sweeps: insert pauses are reclaimed by traffic_sweep.
+#define MCP_TRAFFIC_EP_RESERVE (MCP_TRAFFIC_EP_SIZE - MCP_TRAFFIC_EP_SIZE / 16)
+#define MCP_TRAFFIC_IP_RESERVE (MCP_TRAFFIC_IP_SIZE - MCP_TRAFFIC_IP_SIZE / 16)
+
+// Backward-shift erasures (same pattern as sm_map_erase): no tombstones,
+// probe chains stay intact. The walk to the next empty slot is BOUNDED by
+// one table lap: backward-shift deletion needs an empty slot to know where
+// a chain ends, and a 100% full table has none — clearing the slot without
+// the shift then breaks the chain behind it. That is acceptable HERE and
+// only here: these tables are caches, an orphaned entry stops refreshing
+// (its packets can no longer reach it by probe) and the second sweep evicts
+// it at expire_ms like any other idle entry. The session index never hits
+// this case (1024 slots, 512 sessions) and keeps the strict algorithm.
+static void sm_ep_traffic_erase(mcp_rak_session_manager_t* sm, size_t i) {
+    const size_t mask = MCP_TRAFFIC_EP_SIZE - 1;
+    for (;;) {
+        size_t j = (i + 1) & mask;
+        size_t steps = 0;
+        while (sm->ep_key[j] && steps < MCP_TRAFFIC_EP_SIZE) {
+            size_t home = sm_ep_hash(sm->ep_key[j]) & mask;
+            bool can_move = (i <= j) ? (home <= i || home > j) : (home <= i && home > j);
+            if (can_move)
+                break;
+            j = (j + 1) & mask;
+            ++steps;
+        }
+        // Empty slot: chain ends here, the shift is done. A lapped walk
+        // (steps hit the lap bound) means the table is full and no shift is
+        // possible — stop after clearing the slot (see the note above).
+        if (!sm->ep_key[j] || steps >= MCP_TRAFFIC_EP_SIZE)
+            break;
+        sm->ep_key[i] = sm->ep_key[j];
+        sm->ep_val[i] = sm->ep_val[j];
+        sm->ep_key[j] = 0;
+        memset(&sm->ep_val[j], 0, sizeof(sm->ep_val[j]));
+        i = j;
+    }
+    sm->ep_key[i] = 0;
+    memset(&sm->ep_val[i], 0, sizeof(sm->ep_val[i]));
+    sm->ep_count--;
+}
+
+static void sm_ip_traffic_erase(mcp_rak_session_manager_t* sm, size_t i) {
+    const size_t mask = MCP_TRAFFIC_IP_SIZE - 1;
+    for (;;) {
+        size_t j = (i + 1) & mask;
+        size_t steps = 0;
+        while (sm->ip_key[j] && steps < MCP_TRAFFIC_IP_SIZE) {
+            size_t home = sm_ip_hash(sm->ip_key[j]) & mask;
+            bool can_move = (i <= j) ? (home <= i || home > j) : (home <= i && home > j);
+            if (can_move)
+                break;
+            j = (j + 1) & mask;
+            ++steps;
+        }
+        if (!sm->ip_key[j] || steps >= MCP_TRAFFIC_IP_SIZE)
+            break;
+        sm->ip_key[i] = sm->ip_key[j];
+        sm->ip_val[i] = sm->ip_val[j];
+        sm->ip_key[j] = 0;
+        memset(&sm->ip_val[j], 0, sizeof(sm->ip_val[j]));
+        i = j;
+    }
+    sm->ip_key[i] = 0;
+    memset(&sm->ip_val[i], 0, sizeof(sm->ip_val[i]));
+    sm->ip_count--;
+}
+
+// Second sweep: evict idle entries (backward shift), decay strikes after ten
+// quiet seconds. Runs once per second from the manager tick — 4096 + 1024
+// plain array slots, microseconds — and on demand from find_or_add when a
+// table approaches full, which is how a scan that fills the endpoint table
+// reclaims its own slots instead of wedging honest sources out.
+static void traffic_sweep(mcp_rak_session_manager_t* sm, uint64_t now) {
+    for (size_t i = 0; i < MCP_TRAFFIC_EP_SIZE;) {
+        if (!sm->ep_key[i]) {
+            ++i;
+            continue;
+        }
+        mcp_traffic_ep_t* v = &sm->ep_val[i];
+        if (now - v->last_seen_ms > sm->traffic.expire_ms) {
+            sm_ep_traffic_erase(sm, i);
+            continue; // the backward shift brings the next entry into slot i
+        }
+        if (v->strikes && now - v->last_violation_ms > 10000) {
+            v->strikes = 0;
+            v->over_ticks = 0;
+        }
+        ++i;
+    }
+    for (size_t i = 0; i < MCP_TRAFFIC_IP_SIZE;) {
+        if (!sm->ip_key[i]) {
+            ++i;
+            continue;
+        }
+        mcp_traffic_ip_t* v = &sm->ip_val[i];
+        if (now - v->last_seen_ms > sm->traffic.expire_ms) {
+            sm_ip_traffic_erase(sm, i);
+            continue;
+        }
+        if (v->strikes && now - v->last_violation_ms > 10000) {
+            v->strikes = 0;
+        }
+        ++i;
+    }
+}
+
+// Endpoint entry, creating it on first sight. Returns NULL only when the
+// table stays full after an emergency sweep (fail open for that datagram).
+// The count is checked BEFORE probing: open addressing terminates a probe
+// on an empty slot, and a full table has none — probing first would spin
+// forever (the wave test wedged the RakLib thread exactly that way: 4096
+// active rotating-port entries, then the 4097th port spun the probe loop
+// for good).
+static mcp_traffic_ep_t* sm_ep_traffic(mcp_rak_session_manager_t* sm, uint64_t key, uint64_t now) {
+    const size_t mask = MCP_TRAFFIC_EP_SIZE - 1;
+    if (sm->ep_count >= MCP_TRAFFIC_EP_RESERVE) {
+        // Emergency sweep at most once per tick: during a flood every
+        // new-endpoint datagram lands here, and a full-table scan per
+        // datagram would burn a core for nothing (nothing is idle yet).
+        if (sm->ep_sweep_tick != sm->tick_id) {
+            sm->ep_sweep_tick = sm->tick_id;
+            traffic_sweep(sm, now);
+        }
+        if (sm->ep_count >= MCP_TRAFFIC_EP_SIZE)
+            return NULL; // still full: this datagram is served untracked
+    }
+    size_t i = sm_ep_hash(key) & mask;
+    while (sm->ep_key[i]) {
+        if (sm->ep_key[i] == key)
+            return &sm->ep_val[i];
+        i = (i + 1) & mask;
+    }
+    if (sm->ep_count >= MCP_TRAFFIC_EP_SIZE)
+        return NULL; // unreachable given the count pre-check, kept as a guard
+    sm->ep_key[i] = key;
+    memset(&sm->ep_val[i], 0, sizeof(sm->ep_val[i]));
+    sm->ep_val[i].last_seen_ms = now;
+    sm->ep_count++;
+    return &sm->ep_val[i];
+}
+
+static mcp_traffic_ip_t* sm_ip_traffic(mcp_rak_session_manager_t* sm, uint32_t ip, uint64_t now) {
+    const size_t mask = MCP_TRAFFIC_IP_SIZE - 1;
+    if (sm->ip_count >= MCP_TRAFFIC_IP_RESERVE) {
+        if (sm->ip_sweep_tick != sm->tick_id) {
+            sm->ip_sweep_tick = sm->tick_id;
+            traffic_sweep(sm, now);
+        }
+        if (sm->ip_count >= MCP_TRAFFIC_IP_SIZE)
+            return NULL;
+    }
+    size_t i = sm_ip_hash(ip) & mask;
+    while (sm->ip_key[i]) {
+        if (sm->ip_key[i] == ip)
+            return &sm->ip_val[i];
+        i = (i + 1) & mask;
+    }
+    if (sm->ip_count >= MCP_TRAFFIC_IP_SIZE)
+        return NULL;
+    sm->ip_key[i] = ip;
+    memset(&sm->ip_val[i], 0, sizeof(sm->ip_val[i]));
+    sm->ip_val[i].last_seen_ms = now;
+    sm->ip_count++;
+    return &sm->ip_val[i];
+}
+
+// One strike per budget overflow; pacing starts at strikes_before_pacing and
+// its hold doubles per repeat offense up to hold_max_ms. Log lines are capped
+// at one per source per second by comparing against the previous violation —
+// a flood that trips a window 500 times a second may not also flood the log.
+static void traffic_violate(mcp_rak_session_manager_t* sm, uint8_t* strikes,
+                            uint64_t* paced_until_ms, uint64_t* last_violation_ms, uint64_t now,
+                            const uint8_t ip[4], uint16_t port, const char* what) {
+    const mcp_traffic_limits_t* lim = &sm->traffic;
+    const uint64_t prev = *last_violation_ms;
+    const bool loggable = (prev == 0) || (now - prev >= 1000);
+
+    const uint32_t s = (uint32_t)*strikes + 1;
+    *strikes = s > 255 ? 255 : (uint8_t)s;
+    *last_violation_ms = now;
+    if (s < lim->strikes_before_pacing)
+        return;
+
+    uint64_t over = (uint64_t)(s - lim->strikes_before_pacing);
+    if (over > 16)
+        over = 16;
+    uint64_t hold = (uint64_t)lim->hold_ms << over;
+    if (lim->hold_max_ms && hold > lim->hold_max_ms)
+        hold = lim->hold_max_ms;
+    *paced_until_ms = now + hold;
+
+    if (loggable) {
+        if (port)
+            fprintf(stderr,
+                    "[NET] pacing %u.%u.%u.%u:%u for %llums (%s over budget)\n", ip[0], ip[1],
+                    ip[2], ip[3], (unsigned)port, (unsigned long long)hold, what);
+        else
+            fprintf(stderr, "[NET] pacing %u.%u.%u.%u for %llums (%s over budget)\n", ip[0],
+                    ip[1], ip[2], ip[3], (unsigned long long)hold, what);
+    }
+}
+
+// Lazy 1 s window: rolls over on first use after the previous window ended.
+static bool budget_take(uint32_t* cnt, uint64_t* win_start, uint64_t now, uint32_t max) {
+    if (*win_start == 0 || now - *win_start >= 1000) {
+        *win_start = now;
+        *cnt = 0;
+    }
+    ++*cnt;
+    return *cnt <= max;
+}
+
+// Exact concurrent-session count for one source IP. Only called on the
+// new-session path (a handful of packets per connection), never on the
+// datagram hot path, so the O(session_count) scan is effectively free and
+// the count can never drift.
+static size_t sm_sessions_for_ip(mcp_rak_session_manager_t* sm, const uint8_t ip[4]) {
+    size_t n = 0;
+    for (size_t i = 0; i < sm->session_count; ++i)
+        if (memcmp(sm->sessions[i]->ip, ip, 4) == 0)
+            ++n;
+    return n;
+}
+
+// ---- Budget gates for the unconnected packet classes --------------------
+// All three return true when the datagram may proceed. Pacing is only ever
+// enforced on these UNCONNECTED classes: established sessions are
+// dispatched by endpoint before any per-IP budget is consulted, which keeps
+// players behind a shared NAT immune to one another's abuse.
+static bool sm_allow_ping(mcp_rak_session_manager_t* sm, const uint8_t ip[4], uint64_t now) {
+    if (!sm->traffic.enabled)
+        return true;
+    mcp_traffic_ip_t* v = sm_ip_traffic(sm, sm_ip_key(ip), now);
+    if (!v)
+        return true;
+    v->last_seen_ms = now;
+    if (v->paced_until_ms > now)
+        return false;
+    if (budget_take(&v->ping_cnt, &v->ping_win_ms, now, sm->traffic.max_pings_per_sec))
+        return true;
+    traffic_violate(sm, &v->strikes, &v->paced_until_ms, &v->last_violation_ms, now, ip, 0,
+                    "ping");
+    return false;
+}
+
+static bool sm_allow_handshake(mcp_rak_session_manager_t* sm, const uint8_t ip[4], uint64_t now) {
+    if (!sm->traffic.enabled)
+        return true;
+    mcp_traffic_ip_t* v = sm_ip_traffic(sm, sm_ip_key(ip), now);
+    if (!v)
+        return true;
+    v->last_seen_ms = now;
+    if (v->paced_until_ms > now)
+        return false;
+    if (budget_take(&v->hs_cnt, &v->hs_win_ms, now, sm->traffic.max_handshakes_per_sec))
+        return true;
+    traffic_violate(sm, &v->strikes, &v->paced_until_ms, &v->last_violation_ms, now, ip, 0,
+                    "handshake");
+    return false;
+}
+
+static bool sm_allow_new_session(mcp_rak_session_manager_t* sm, const uint8_t ip[4], uint64_t now) {
+    if (!sm->traffic.enabled)
+        return true;
+    mcp_traffic_ip_t* v = sm_ip_traffic(sm, sm_ip_key(ip), now);
+    if (!v)
+        return true;
+    v->last_seen_ms = now;
+    if (v->paced_until_ms > now)
+        return false;
+    if (sm->traffic.max_sessions_per_ip &&
+        sm_sessions_for_ip(sm, ip) >= sm->traffic.max_sessions_per_ip) {
+        traffic_violate(sm, &v->strikes, &v->paced_until_ms, &v->last_violation_ms, now, ip, 0,
+                        "session-per-ip");
+        return false;
+    }
+    if (budget_take(&v->ns_cnt, &v->ns_win_ms, now, sm->traffic.max_new_sessions_per_sec))
+        return true;
+    traffic_violate(sm, &v->strikes, &v->paced_until_ms, &v->last_violation_ms, now, ip, 0,
+                    "new-session");
+    return false;
+}
+
+// The per-sweep gate every datagram crosses (recv loop). Returns false when
+// the datagram must be dropped (endpoint paced, or over its sweep budget).
+// Excess datagrams over the budget do NOT strike on their own: three
+// consecutive over-budget sweeps count as one violation, so a client that
+// briefly bursts cannot pace itself out, while a sustained flood is struck
+// within a tenth of a second.
+static bool sm_ep_gate(mcp_rak_session_manager_t* sm, const uint8_t ip[4], uint16_t port,
+                       uint64_t now) {
+    if (!sm->traffic.enabled)
+        return true;
+    mcp_traffic_ep_t* v = sm_ep_traffic(sm, sm_ep_key(ip, port), now);
+    if (!v) {
+        sm->diag_untracked++;
+        return true;
+    }
+    v->last_seen_ms = now;
+    if (v->paced_until_ms > now) {
+        sm->diag_gate_paced++;
+        return false;
+    }
+    if (sm->traffic.max_packets_per_tick == 0)
+        return true;
+    if (v->tick_id != sm->tick_id) {
+        v->tick_id = sm->tick_id;
+        v->pkt_cnt = 0;
+    }
+    if (v->pkt_cnt >= sm->traffic.max_packets_per_tick) {
+        ++v->over_ticks;
+        if (v->over_ticks >= 3) {
+            traffic_violate(sm, &v->strikes, &v->paced_until_ms, &v->last_violation_ms, now, ip,
+                            port, "datagram");
+            v->over_ticks = 0;
+        }
+        sm->diag_gate_budget++;
+        return false;
+    }
+    v->pkt_cnt++;
+    return true;
 }
 
 mcp_rak_session_t* mcp_rak_session_manager_find(mcp_rak_session_manager_t* sm, const uint8_t ip[4],
@@ -1480,6 +1857,7 @@ static void handle_encapsulated(mcp_rak_session_manager_t* sm, mcp_rak_session_t
 
         // ---- Any other packet → forward to game layer ----
         if (sm->instance && sm->instance->on_packet_receive) {
+            sm->diag_game_fwd++;
             snprintf(ipStr, sizeof(ipStr), "%u.%u.%u.%u", s->ip[0], s->ip[1], s->ip[2], s->ip[3]);
             sm->instance->on_packet_receive(sm->instance->impl, ipStr, s->port, payload, plen);
         }
@@ -1518,13 +1896,16 @@ static void handle_data_packet(mcp_rak_session_manager_t* sm, mcp_rak_session_t*
     } else {
         uint32_t last = (uint32_t)s->last_recv_seq & MCP_SEQ24_MASK;
         if (seq24_less(seq, s->window_start) || !seq24_less(seq, s->window_end)) {
-            return; // out of window — drop
+            sm->diag_seq_drop++; // out of window — drop
+            return;
         }
         (void)last;
     }
     uint32_t slot = seq % MCP_SESSION_WINDOW_SIZE;
-    if (s->recv_window[slot])
-        return; // duplicate
+    if (s->recv_window[slot]) {
+        sm->diag_dup_drop++; // duplicate
+        return;
+    }
 
     uint32_t lastu = (uint32_t)s->last_recv_seq & MCP_SEQ24_MASK;
     int32_t diff = (s->last_recv_seq < 0) ? 1 : seq24_diff(seq, lastu);
@@ -2004,7 +2385,7 @@ static void handle_nack(mcp_rak_session_manager_t* sm, mcp_rak_session_t* s, con
 // Handle unconnected (offline) packets
 // =========================================================================
 static void handle_unconnected(mcp_rak_session_manager_t* sm, const uint8_t* data, size_t len,
-                               const uint8_t ip[4], uint16_t port) {
+                               const uint8_t ip[4], uint16_t port, uint64_t now) {
     if (len < 1)
         return;
     uint8_t pid = data[0];
@@ -2013,6 +2394,11 @@ static void handle_unconnected(mcp_rak_session_manager_t* sm, const uint8_t* dat
 
     // ---- UNCONNECTED_PING (0x01) / PING_OPEN_CONNECTIONS (0x02) ----
     if (pid == 0x01 || pid == 0x02) {
+        // Ping budget first: the pong is pure output (a ~90-byte reply for a
+        // 17-byte request), so a ping storm must never reach the reply
+        // builder. Over budget the request is answered with silence.
+        if (!sm_allow_ping(sm, ip, now))
+            return;
         if (len < 17) {
             note_handshake_drop(data, len, ip, port, "unconnected ping shorter than 17 bytes");
             return;
@@ -2029,6 +2415,10 @@ static void handle_unconnected(mcp_rak_session_manager_t* sm, const uint8_t* dat
 
     // ---- OPEN_CONNECTION_REQUEST_1 (0x05) ----
     if (pid == 0x05) {
+        // Handshake budget at the branch top: a 0x05 storm costs nothing
+        // until it is inside its budget (decode, session lookup, reply).
+        if (!sm_allow_handshake(sm, ip, now))
+            return;
         uint8_t protocol;
         uint16_t mtu;
         if (!decode_ocr1(data, len, &protocol, &mtu)) {
@@ -2065,6 +2455,14 @@ static void handle_unconnected(mcp_rak_session_manager_t* sm, const uint8_t* dat
             }
         }
         if (!s) {
+            // Fresh session: per-IP new-session budget + concurrent-sessions
+            // per IP first — session structs are the biggest allocation the
+            // handshake path can trigger, so this is the gate that matters.
+            if (!sm_allow_new_session(sm, ip, now)) {
+                note_handshake_drop(data, len, ip, port,
+                                    "session budget exhausted for OPEN_CONNECTION_REQUEST_1");
+                return;
+            }
             s = mcp_rak_session_manager_get_or_create(sm, ip, port);
             if (!s) {
                 note_handshake_drop(data, len, ip, port,
@@ -2094,6 +2492,8 @@ static void handle_unconnected(mcp_rak_session_manager_t* sm, const uint8_t* dat
 
     // ---- OPEN_CONNECTION_REQUEST_2 (0x07) ----
     if (pid == 0x07) {
+        if (!sm_allow_handshake(sm, ip, now))
+            return;
         mcp_rak_session_t* s = mcp_rak_session_manager_find(sm, ip, port);
         uint16_t mtu;
         int64_t client_id;
@@ -2107,7 +2507,12 @@ static void handle_unconnected(mcp_rak_session_manager_t* sm, const uint8_t* dat
             return;
         }
         if (!s) {
-            // Can create fresh if state was lost
+            // Can create fresh if state was lost — same budget gates as 0x05.
+            if (!sm_allow_new_session(sm, ip, now)) {
+                note_handshake_drop(data, len, ip, port,
+                                    "session budget exhausted for OPEN_CONNECTION_REQUEST_2");
+                return;
+            }
             s = mcp_rak_session_manager_get_or_create(sm, ip, port);
             if (!s) {
                 note_handshake_drop(data, len, ip, port,
@@ -2247,25 +2652,40 @@ void mcp_rak_session_manager_tick(mcp_rak_session_manager_t* sm) {
     uint8_t ip[4];
     uint16_t port;
 
-    // Reset per-IP flood counter
-    sm->ip_sec_n = 0;
+    sm->tick_id++;
 
-    // Drain datagrams until the socket runs dry, capped at 512 per tick.
-    // The old 128 cap left a burst (several players streaming chunks in
-    // the same 10ms window) sitting in the kernel buffer for whole extra
-    // ticks — pure added latency, since the socket is non-blocking and
-    // the final EAGAIN probe costs one syscall. 512 at the ~100Hz cadence
-    // still bounds per-tick CPU.
-    for (int n = 0; n < 512; ++n) {
+    // Drain datagrams until the socket runs dry. The cap only bounds the
+    // pathological case: past the pacing gate a dropped datagram costs one
+    // recv syscall (~1.5 us), so 16384 is at most ~25 ms of one tick UNDER
+    // sustained flood and costs nothing otherwise (the loop breaks on
+    // EAGAIN the moment the queue is empty). The old fixed 512 cap put the
+    // pacing gate BEHIND the flood instead of in front of it: the 4 MB
+    // rcvbuf absorbs tens of thousands of queued flood datagrams, and at
+    // 512 per tick the honest player's keepalives sat behind them for whole
+    // seconds — long enough for the timeout sweep to reap live players
+    // while the gate never even saw their packets.
+#define MCP_SM_DRAIN_MAX 16384
+    uint32_t drain_count = 0;
+    for (int n = 0; n < MCP_SM_DRAIN_MAX; ++n) {
         ssize_t r = mcp_udp_socket_recv(&sm->socket, buf, sizeof(buf), ip, &port);
         if (r <= 0)
             break;
+        ++drain_count;
         if (r < 1)
+            continue;
+
+        const uint64_t now = mcp_utils_time_ms();
+
+        // Per-endpoint pacing gate: paced sources and sources over their
+        // sweep budget are dropped before ANY parsing or dispatch. See the
+        // traffic pacing block comment in SessionManager.h.
+        if (!sm_ep_gate(sm, ip, port, now))
             continue;
 
         uint8_t pid = buf[0];
 
         if (pid >= 0x80 && pid <= 0x8F) {
+            sm->diag_data_pkts++;
             // Bug 3 fix: use find() instead of get_or_create() for
             // DATA_PACKETs. Connected DATA_PACKETs should only arrive
             // for sessions that already completed the handshake. Using
@@ -2291,12 +2711,41 @@ void mcp_rak_session_manager_tick(mcp_rak_session_manager_t* sm) {
                 handle_nack(sm, s, buf, (size_t)r);
         } else {
             // Offline / unconnected packets
-            handle_unconnected(sm, buf, (size_t)r, ip, port);
+            sm->diag_unconn_pkts++;
+            handle_unconnected(sm, buf, (size_t)r, ip, port, now);
         }
     }
 
     // Per-session post-tick: ACK/NACK flush + retransmit + timeout sweep
     uint64_t now = mcp_utils_time_ms();
+    sm->last_drain_count = drain_count;
+
+    // Traffic pacing second sweep: evict idle table entries, decay quiet
+    // strikes, reclaim the eviction headroom a rotating-port scan consumed.
+    if (sm->traffic.enabled && (sm->tick_id % MCP_TRAFFIC_SWEEP_TICKS) == 0)
+        traffic_sweep(sm, now);
+
+    // One pacing health line per second in debug mode: how much traffic the
+    // sweep saw and where the gate spent its drops. This is how an operator
+    // confirms the budgets are doing the work (and how this file's own
+    // flood drill was tuned).
+    if (mcp_debug_enabled() && sm->traffic.enabled &&
+        (sm->tick_id % MCP_TRAFFIC_SWEEP_TICKS) == 0) {
+        fprintf(stderr,
+                "[NET] pacing-diag drained=%u data=%llu unconn=%llu "
+                "paced=%llu budget=%llu untracked=%llu seqdrop=%llu dupdrop=%llu "
+                "gamefwd=%llu tick=%uus pause=%uus sessions=%zu\n",
+                sm->last_drain_count, (unsigned long long)sm->diag_data_pkts,
+                (unsigned long long)sm->diag_unconn_pkts,
+                (unsigned long long)sm->diag_gate_paced,
+                (unsigned long long)sm->diag_gate_budget,
+                (unsigned long long)sm->diag_untracked,
+                (unsigned long long)sm->diag_seq_drop,
+                (unsigned long long)sm->diag_dup_drop,
+                (unsigned long long)sm->diag_game_fwd,
+                sm->diag_tick_us, sm->diag_pause_us, sm->session_count);
+    }
+
     // ONE retransmit budget for the whole tick, shared by every session.
     size_t retransmit_budget = MCP_RETRANSMIT_MAX_PER_TICK;
     for (size_t i = 0; i < sm->session_count;) {

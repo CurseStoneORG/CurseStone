@@ -166,6 +166,25 @@ void Server::loadConfig() {
     MemoryManager::get().setGcIntervalTicks(
         (uint64_t)std::max<int64_t>(20, adv.getInt("memory.gc-interval-ticks", 200)));
 
+    // Traffic pacing budgets (see TrafficLimits in Server.h). The gate is ON
+    // by default: budgets are sized far above anything an honest client
+    // produces, so the section only needs touching when a host wants to
+    // tighten them (or set pacing: false to switch it off entirely).
+    traffic_.pacing = readBool(adv, "traffic.pacing", true);
+    traffic_.max_packets_per_tick =
+        (unsigned)adv.getInt("traffic.max-packets-per-tick", 250);
+    traffic_.max_pings_per_sec = (unsigned)adv.getInt("traffic.max-pings-per-sec", 30);
+    traffic_.max_handshakes_per_sec =
+        (unsigned)adv.getInt("traffic.max-handshakes-per-sec", 25);
+    traffic_.max_new_sessions_per_sec =
+        (unsigned)adv.getInt("traffic.max-new-sessions-per-sec", 6);
+    traffic_.max_sessions_per_ip = (unsigned)adv.getInt("traffic.max-sessions-per-ip", 4);
+    traffic_.strikes_before_pacing =
+        (unsigned)std::max<int64_t>(1, adv.getInt("traffic.strikes-before-pacing", 1));
+    traffic_.pacing_hold_ms = (unsigned)adv.getInt("traffic.pacing-hold-ms", 3000);
+    traffic_.pacing_hold_max_ms = (unsigned)adv.getInt("traffic.pacing-hold-max-ms", 60000);
+    traffic_.pacing_expire_ms = (unsigned)adv.getInt("traffic.pacing-expire-ms", 30000);
+
     // Plugin limits support zero to disable each limit and root-level fallbacks.
     plugin::PluginLimits pluginLimits;
     pluginLimits.instructions = adv.getInt("settings.plugin-instruction-limit",
@@ -195,6 +214,13 @@ void Server::loadConfig() {
         "Plugin limits: instructions=" + std::to_string(plugin::LuaPlugin::limits().instructions) +
         ", time-ms=" + std::to_string(plugin::LuaPlugin::limits().timeMs) +
         ", max-errors=" + std::to_string(plugin::LuaPlugin::limits().maxErrors) + " (0 = off)");
+    utils::MainLogger::get().info(
+        std::string("Traffic pacing: ") + (traffic_.pacing ? "on" : "off") +
+        " (per-tick datagrams " + std::to_string(traffic_.max_packets_per_tick) +
+        ", pings/s " + std::to_string(traffic_.max_pings_per_sec) + ", handshakes/s " +
+        std::to_string(traffic_.max_handshakes_per_sec) + ", new sessions/s " +
+        std::to_string(traffic_.max_new_sessions_per_sec) + ", sessions/IP " +
+        std::to_string(traffic_.max_sessions_per_ip) + ")");
 }
 
 void Server::initLogger() {
