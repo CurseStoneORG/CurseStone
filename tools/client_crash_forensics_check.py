@@ -9,9 +9,9 @@ Verifies the self-contained client-loss forensics end to end:
   2. The client then goes TOTALLY silent — no ACKs, no pongs, no datagrams
      (the exact signature of a crashed client process or a dead uplink).
   3. The RakNet timeout sweep reaps the session and Player::close() must:
-       - print one self-sufficient [CLIENT-LOST] console line naming the
-         classification (CLIENT CRASH or dead uplink) and the last
-         outbound packet summary;
+       - print an E5002 Diagnostic Engine block naming the classification
+         (a client crash or a dead uplink) and the last outbound packet
+         summary;
        - drop a self-contained report pair under crashdumps/ whose .log
          carries this client's outbound tail with real packet names.
 
@@ -63,7 +63,7 @@ def main() -> int:
         deadline = time.time() + 15
         while time.time() < deadline:
             with open(os.path.join(runtime, "stderr.log"), "rb") as f:
-                if b"Listening on" in f.read():
+                if b"listening on" in f.read():
                     break
             time.sleep(0.2)
         time.sleep(0.5)
@@ -101,14 +101,14 @@ def main() -> int:
 
         failures = []
 
-        if "[CLIENT-LOST]" not in log:
-            failures.append("no [CLIENT-LOST] console line")
+        if "error[E5002]" not in log:
+            failures.append("no E5002 client-lost diagnostic block")
         else:
-            print("ok   [CLIENT-LOST] console line present")
-        if "CLIENT CRASH or dead uplink" not in log:
-            failures.append("no CLIENT CRASH classification in console")
+            print("ok   E5002 client-lost diagnostic block present")
+        if "a client crash or a dead uplink" not in log:
+            failures.append("no client-crash classification in the E5002 block")
         else:
-            print("ok   classification names CLIENT CRASH / dead uplink")
+            print("ok   classification names client crash / dead uplink")
 
         dumps = sorted(glob.glob(os.path.join(runtime, "crashdumps", "client-lost_*.log")))
         if not dumps:

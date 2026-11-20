@@ -26,6 +26,7 @@
 #include "MemoryManager.h"
 #include "workbench/WorkbenchManager.h"
 #include "diagnostics/Diagnostics.h"
+#include "diagnostics/DiagnosticEngine.h"
 #include "Player.h"
 #include "utils/CRaii.h"
 #include "utils/MainLogger.h"
@@ -81,6 +82,7 @@
 #include "utils/Config.h"
 #include "utils/DefaultConfig.h"
 #include "utils/DebugFlag.h"
+#include "utils/Terminal.h"
 
 #include <iostream>
 #include <fstream>
@@ -100,6 +102,15 @@ Server::~Server() = default;
 
 namespace {
 
+// Reads a file into a string for key-span lookups (Diagnostic Engine). Empty
+// when the file cannot be read — the caller decides whether that matters.
+std::string slurpText(const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in)
+        return {};
+    return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+}
+
 // Reads a boolean value, accepting true/on/yes/y/1 case-insensitively.
 bool readBool(const utils::Config& cfg, const char* key, bool def) {
     std::string v = cfg.getString(key, std::string());
@@ -111,36 +122,105 @@ bool readBool(const utils::Config& cfg, const char* key, bool def) {
     return v == "true" || v == "on" || v == "yes" || v == "y" || v == "1";
 }
 
+// Range validation with a Diagnostic Engine report (E0003) anchored at the
+// exact file:line of the offending value. Recoverable: the default is used
+// and boot continues.
+void diagBadValue(const std::string& file, const std::string& display, const std::string& key,
+                  bool ini, const std::string& why, const std::string& fallback) {
+    diagnostics::Diagnostic d;
+    d.code = 3; // E0003 — configuration value invalid
+    d.severity = diagnostics::DiagSeverity::Error;
+    d.title = "Invalid value for '" + key + "' in " + display;
+    d.label = why;
+    d.help.push_back("Falling back to the default (" + fallback + ").");
+    int line = 0, col = 0, span = 0;
+    if (diagnostics::DiagEngine::findKeySpan(slurpText(file), key, ini, &line, &col, &span)) {
+        d.file = display;
+        d.line = line;
+        d.col = col;
+        d.span = span;
+    }
+    diagnostics::DiagEngine::emit(d);
+}
+
 } // namespace
 
-void Server::loadConfig() {
+bool Server::loadConfig() {
     using utils::Config;
+    using diagnostics::DiagEngine;
+    using diagnostics::DiagSeverity;
     Config props; // Basic server.properties settings.
     Config adv;   // Advanced cursestone.yml settings.
 
     const std::string props_path = dataPath_ + "/server.properties";
     const std::string yaml_path = dataPath_ + "/cursestone.yml";
+
+    // A config file that EXISTS but cannot be loaded is essential: the
+    // operator's values would be silently replaced by defaults, so boot
+    // stops with a diagnostic instead. A missing file is normal (defaults
+    // were just seeded by writeDefaultConfigs).
+    const std::string props_text = slurpText(props_path);
+    const std::string adv_text = slurpText(yaml_path);
+    const bool props_exists = std::filesystem::exists(props_path);
+    const bool adv_exists = std::filesystem::exists(yaml_path);
+
     if (props.loadIni(props_path)) {
-        utils::MainLogger::get().info("Loaded config: " + props_path);
-    } else {
-        utils::MainLogger::get().warn("Missing " + props_path + "; using defaults");
+        if (props_exists)
+            DiagEngine::stageItem("server.properties loaded!");
+    } else if (props_exists) {
+        diagnostics::Diagnostic d;
+        d.code = 1; // E0001 — configuration file cannot be read
+        d.severity = DiagSeverity::Fatal;
+        d.title = "Cannot read configuration file";
+        d.file = "server.properties";
+        d.notes.push_back("the file exists but could not be parsed or opened");
+        DiagEngine::fatal(d);
+        return false;
     }
     if (adv.loadYaml(yaml_path)) {
-        utils::MainLogger::get().info("Loaded config: " + yaml_path);
-    } else {
-        utils::MainLogger::get().warn("Missing " + yaml_path + "; using defaults");
+        if (adv_exists)
+            DiagEngine::stageItem("cursestone.yml loaded!");
+    } else if (adv_exists) {
+        diagnostics::Diagnostic d;
+        d.code = 1; // E0001 — configuration file cannot be read
+        d.severity = DiagSeverity::Fatal;
+        d.title = "Cannot read configuration file";
+        d.file = "cursestone.yml";
+        d.notes.push_back("the file exists but could not be parsed or opened");
+        DiagEngine::fatal(d);
+        return false;
     }
 
     // Load server.properties settings.
     ip_ = props.getString("server-ip", "0.0.0.0");
     port_ = (uint16_t)props.getInt("server-port", 19132);
+    if (port_ == 0) {
+        diagBadValue(props_path, "server.properties", "server-port", true, "UDP ports start at 1",
+                     "19132");
+        port_ = 19132;
+    }
     motd_ = props.getString("motd", "CurseStone");
     max_players_ = (int)props.getInt("max-players", 20);
+    if (max_players_ <= 0) {
+        diagBadValue(props_path, "server.properties", "max-players", true, "must be 1 or more",
+                     "20");
+        max_players_ = 20;
+    }
     gamemode_ = (int)props.getInt("gamemode", 0);
+    if (gamemode_ < 0 || gamemode_ > 3) {
+        diagBadValue(props_path, "server.properties", "gamemode", true,
+                     "expected 0 (survival), 1 (creative), 2 (adventure) or 3 (spectator)", "0");
+        gamemode_ = 0;
+    }
     difficulty_ = (int)props.getInt("difficulty", 1);
     whitelist_ = readBool(props, "white-list", false);
     online_mode_ = readBool(props, "online-mode", false);
     view_distance_ = (int)props.getInt("view-distance", 8);
+    if (view_distance_ < 2 || view_distance_ > 32) {
+        diagBadValue(props_path, "server.properties", "view-distance", true,
+                     "expected between 2 and 32 chunks", "8");
+        view_distance_ = 8;
+    }
 
     // Load cursestone.yml settings.
     async_workers_ = (int)adv.getInt("settings.async-workers", 4);
@@ -195,62 +275,100 @@ void Server::loadConfig() {
         (int)adv.getInt("settings.plugin-max-errors", adv.getInt("plugin-max-errors", 10));
     plugin::LuaPlugin::setLimits(pluginLimits);
 
-    utils::MainLogger::get().info("Debug mode: " +
-                                  std::string(debug_mode_ ? "enabled" : "disabled") +
-                                  " (settings.debug-mode in cursestone.yml)");
-    utils::MainLogger::get().info("Server port: " + std::to_string(port_));
-    utils::MainLogger::get().info("Server IP: " + ip_);
-    utils::MainLogger::get().info("MOTD: " + motd_);
-    utils::MainLogger::get().info("Max players: " + std::to_string(max_players_));
-    utils::MainLogger::get().info("Gamemode: " + std::to_string(gamemode_) +
-                                  " (0=survival, 1=creative, 2=adventure, 3=spectator)");
-    utils::MainLogger::get().info("World generator: " + adv.getString("world.generator", "normal"));
-    utils::MainLogger::get().info("World format: " + adv.getString("world.format", "anvil"));
-    utils::MainLogger::get().info(std::string("Keep inventory: ") +
-                                  (keep_inventory_ ? "on" : "off"));
-    utils::MainLogger::get().info(std::string("Bed spawn: ") +
-                                  (bed_spawn_enabled_ ? "on" : "off"));
-    utils::MainLogger::get().info(
+    // Config detail rides DEBUG: the Diagnostic Engine keeps the normal
+    // boot console minimal; `settings.debug-mode: true` reveals everything.
+    utils::MainLogger::get().debug(
+        "Debug mode: " + std::string(debug_mode_ ? "enabled" : "disabled") +
+        " (settings.debug-mode in cursestone.yml)");
+    utils::MainLogger::get().debug("Server port: " + std::to_string(port_));
+    utils::MainLogger::get().debug("Server IP: " + ip_);
+    utils::MainLogger::get().debug("MOTD: " + motd_);
+    utils::MainLogger::get().debug("Max players: " + std::to_string(max_players_));
+    utils::MainLogger::get().debug("Gamemode: " + std::to_string(gamemode_) +
+                                   " (0=survival, 1=creative, 2=adventure, 3=spectator)");
+    utils::MainLogger::get().debug("World generator: " + adv.getString("world.generator", "normal"));
+    utils::MainLogger::get().debug("World format: " + adv.getString("world.format", "anvil"));
+    utils::MainLogger::get().debug(std::string("Keep inventory: ") +
+                                   (keep_inventory_ ? "on" : "off"));
+    utils::MainLogger::get().debug(std::string("Bed spawn: ") +
+                                   (bed_spawn_enabled_ ? "on" : "off"));
+    utils::MainLogger::get().debug(
         "Plugin limits: instructions=" + std::to_string(plugin::LuaPlugin::limits().instructions) +
         ", time-ms=" + std::to_string(plugin::LuaPlugin::limits().timeMs) +
         ", max-errors=" + std::to_string(plugin::LuaPlugin::limits().maxErrors) + " (0 = off)");
-    utils::MainLogger::get().info(
+    utils::MainLogger::get().debug(
         std::string("Traffic pacing: ") + (traffic_.pacing ? "on" : "off") +
         " (per-tick datagrams " + std::to_string(traffic_.max_packets_per_tick) +
         ", pings/s " + std::to_string(traffic_.max_pings_per_sec) + ", handshakes/s " +
         std::to_string(traffic_.max_handshakes_per_sec) + ", new sessions/s " +
         std::to_string(traffic_.max_new_sessions_per_sec) + ", sessions/IP " +
         std::to_string(traffic_.max_sessions_per_ip) + ")");
+    return true;
 }
 
 void Server::initLogger() {
     // Write server.log to the data directory in real time.
     std::string log_path = dataPath_ + "/server.log";
-    mcp_main_logger_init(log_path.c_str(), /*colored=*/true);
-    utils::MainLogger::get().info(std::string(CURSESTONE_NAME) + " v" + CURSESTONE_API +
-                                  " (codename: " + CURSESTONE_CODENAME + ")");
-    utils::MainLogger::get().info(" Minecraft PE " + std::string(MINECRAFT_VERSION) +
-                                  ", protocol " + std::to_string(PROTOCOL_VERSION));
-    utils::MainLogger::get().info("Log file: " + log_path);
+
+    // Color mode (settings.console-color): "auto" colors only when stdout is
+    // a real terminal, "always" forces ANSI (the legacy behavior), "never"
+    // strips every escape. Default: auto.
+    utils::Config early;
+    early.loadYaml(dataPath_ + "/cursestone.yml");
+    std::string cmode = early.getString("settings.console-color", "auto");
+    if (cmode == "never") {
+        mcp_terminal_init(false);
+        mcp_terminal_set_enabled(false);
+    } else if (cmode == "always") {
+        mcp_terminal_init(true);
+    } else {
+        mcp_terminal_init(false); // auto: isatty(stdout)
+    }
+
+    mcp_main_logger_init(log_path.c_str(), /*colored=*/mcp_terminal_has_color());
+    // File-side banner (the console banner is drawn by DiagEngine::banner()).
+    utils::MainLogger::get().info(std::string(CURSESTONE_NAME) + " v" + CURSESTONE_API + " \"" +
+                                  CURSESTONE_CODENAME + "\" — Minecraft PE 0.15.10, protocol " +
+                                  std::to_string(PROTOCOL_VERSION));
+    utils::MainLogger::get().debug("Log file: " + log_path);
 }
 
 void Server::registerBlocksAndItems() {
     block::register_all_blocks();
     item::Item::registerAll();
-    utils::MainLogger::get().info("Registered IDs");
+    utils::MainLogger::get().debug("Block and item IDs registered");
 }
 
-void Server::openNetwork() {
+bool Server::openNetwork() {
+    using diagnostics::DiagEngine;
+    using diagnostics::DiagSeverity;
     network_ = std::make_shared<network::Network>(this);
     auto rli = std::make_unique<network::RakLibInterface>(this);
     // Keep a raw pointer to start the interface after transferring ownership.
     auto* rli_ptr = rli.get();
     network_->registerInterface(std::move(rli));
     rli_ptr->start();
-    utils::MainLogger::get().info("Network bound to " + ip_ + ":" + std::to_string(port_));
+    if (!rli_ptr->isRunning()) {
+        // The spec-level rule: no network, no server. RakLib already logged
+        // the bind error; report it as a fatal diagnostic and abort boot.
+        diagnostics::Diagnostic d;
+        d.code = 3001;
+        d.severity = DiagSeverity::Fatal;
+        d.title = "Network interface failed to bind";
+        d.notes.push_back("address " + ip_ + " port " + std::to_string(port_) + " (UDP)");
+        d.help.push_back("Is another server already running on that port?");
+        d.help.push_back("Change server-port in server.properties or free the port.");
+        DiagEngine::fatal(d);
+        network_.reset();
+        return false;
+    }
+    DiagEngine::stageItem("listening on " + ip_ + ":" + std::to_string(port_) + " (UDP)");
+    return true;
 }
 
-void Server::loadDefaultWorld() {
+bool Server::loadDefaultWorld() {
+    using diagnostics::DiagEngine;
+    using diagnostics::DiagSeverity;
     // Read the world name and seed from server.properties and format/generator from cursestone.yml.
     using utils::Config;
     Config props;
@@ -285,14 +403,28 @@ void Server::loadDefaultWorld() {
 
     // Construct the World and initialize its provider.
     world_ = std::make_shared<world::World>(std::move(lc));
+    if (!world_ || !world_->provider()) {
+        // The default world IS the server: without it there is nothing to
+        // spawn into, so this one failure aborts the boot.
+        diagnostics::Diagnostic d;
+        d.code = 2004;
+        d.severity = DiagSeverity::Fatal;
+        d.title = "Default world failed to load";
+        d.file = "worlds/" + lc.name;
+        d.help.push_back("Restore the world folder from a backup, or set world-name to a new one.");
+        DiagEngine::fatal(d);
+        world_.reset();
+        return false;
+    }
     worlds_.push_back(world_);
-
-    utils::MainLogger::get().info("World directory: " + worldDir);
-    utils::MainLogger::get().info("Region directory: " + regionDir);
+    DiagEngine::stageItem(world_->name() + " loaded!");
+    utils::MainLogger::get().debug("World directory: " + worldDir);
+    utils::MainLogger::get().debug("Region directory: " + regionDir);
 
     // Secondary worlds remembered by earlier sessions reload here, before
     // plugins enable, so plugin worlds are ready when their plugins start.
     loadWorldsManifest();
+    return true;
 }
 
 // ---------------------------------------------------------------------
@@ -382,25 +514,32 @@ void Server::loadWorldsManifest() {
         if (loadWorld(name, gen, seed))
             ++loaded;
     }
-    if (loaded > 0)
-        utils::MainLogger::get().info("Restored " + std::to_string(loaded) +
-                                      " world(s) from the manifest");
+    (void)loaded; // every restored world already printed its own stage item
 }
 
 World* Server::loadWorld(const std::string& name, const std::string& generator, int64_t seed) {
+    using diagnostics::DiagEngine;
+    using diagnostics::DiagSeverity;
     // A world name becomes a directory name verbatim; anything that could
     // climb out of worlds/ (or produce weird region files) is refused with
     // a logged reason instead of silently creating paths elsewhere.
     if (!validWorldName(name)) {
-        utils::MainLogger::get().warn("Rejected world name '" + name +
-                                      "' (use 1..64 letters, digits, '_' or '-')");
+        diagnostics::Diagnostic d;
+        d.code = 2001;
+        d.severity = DiagSeverity::Error;
+        d.title = "Failed to load world '" + name + "'";
+        d.notes.push_back("rejected world name (use 1..64 letters, digits, '_' or '-')");
+        DiagEngine::emit(d);
         return nullptr;
     }
     std::string gen = generator.empty() ? "normal" : generator;
     if (!normalizeGenerator(gen)) {
-        utils::MainLogger::get().warn("Unknown generator '" + generator +
-                                      "' for world '" + name +
-                                      "' (normal | flat | nether | void | empty)");
+        diagnostics::Diagnostic d;
+        d.code = 2002;
+        d.severity = DiagSeverity::Error;
+        d.title = "Failed to load world '" + name + "'";
+        d.notes.push_back("unknown generator '" + generator + "'");
+        DiagEngine::emit(d);
         return nullptr;
     }
     // Return the existing world without modifying it.
@@ -427,9 +566,9 @@ World* Server::loadWorld(const std::string& name, const std::string& generator, 
     if (!lv)
         return nullptr;
     worlds_.push_back(lv);
-    utils::MainLogger::get().info("World '" + name +
-                                  "' loaded (generator=" + lv->config().generator +
-                                  ", dimension=" + std::to_string(lv->dimension()) + ")");
+    DiagEngine::stageItem(name + " loaded!");
+    utils::MainLogger::get().debug("World '" + name + "' generator=" + lv->config().generator +
+                                   " dimension=" + std::to_string(lv->dimension()));
     // Remember the world across restarts — but never the default world, which
     // comes from server.properties and must not shadow its own config.
     bool is_default = world_ && lv.get() == world_.get();
@@ -519,6 +658,7 @@ void Server::startCommandReader() {
 }
 
 void Server::start(const std::string& dataPath) {
+    using diagnostics::DiagEngine;
     // Record startup time for the server startup log.
     auto boot_start = std::chrono::steady_clock::now();
 
@@ -535,6 +675,8 @@ void Server::start(const std::string& dataPath) {
     std::error_code ec;
     std::filesystem::create_directories(dataPath_, ec);
 
+    DiagEngine::stage("Starting server...");
+
     // Initialize logging before loading configuration.
     initLogger();
 
@@ -546,44 +688,67 @@ void Server::start(const std::string& dataPath) {
         utils::MainLogger::get().warn("Could not create default config files in " + dataPath_);
     }
     for (const auto& name : created) {
-        utils::MainLogger::get().info("Created default " + name);
+        utils::MainLogger::get().debug("Created default " + name);
     }
     for (const auto& name : completed) {
-        utils::MainLogger::get().info("Completed " + name + " with the missing default options");
+        utils::MainLogger::get().debug("Completed " + name + " with the missing default options");
     }
 
-    utils::MainLogger::get().info("Loading configuration...");
-    loadConfig();
+    // ---- Configuration. An essential failure (a file that exists but
+    //      cannot be read) aborts the boot inside loadConfig; recoverable
+    //      value problems are reported and fall back to defaults.
+    DiagEngine::stage("Loading config files...");
+    if (!loadConfig()) {
+        running_.store(false, std::memory_order_relaxed);
+        start_failed_.store(true, std::memory_order_relaxed);
+        return;
+    }
     loadOps();
-    utils::MainLogger::get().info("Registering blocks and items...");
+    DiagEngine::stageDone("Config files loaded!");
+
+    // ---- Blocks/items/commands/recipes: internal machinery, visible only
+    //      in debug mode.
     registerBlocksAndItems();
     command_map_ = std::make_shared<SimpleCommandMap>();
     registerDefaultCommands(*command_map_);
     crafting_ = std::make_shared<inventory::CraftingManager>();
     // Built-in recipes are registered in CraftingManager::registerBuiltinRecipes().
     int recipeCount = crafting_->registerBuiltinRecipes();
-    utils::MainLogger::get().info("Loaded " + std::to_string(recipeCount) + " crafting recipes");
+    utils::MainLogger::get().debug("Loaded " + std::to_string(recipeCount) + " crafting recipes");
     async_pool_ = std::make_shared<scheduler::AsyncPool>(async_workers_);
-    utils::MainLogger::get().info("Opening network interface...");
-    openNetwork();
-    utils::MainLogger::get().info("Loading default world...");
-    loadDefaultWorld();
-    // Load Lua plugins after the world exists and before console input starts.
-    utils::MainLogger::get().info("Loading plugins...");
+
+    // ---- Network. The spec-level rule: if the interface cannot bind, the
+    //      boot aborts (a server without a network is a zombie).
+    DiagEngine::stage("Network listening...");
+    if (!openNetwork()) {
+        running_.store(false, std::memory_order_relaxed);
+        start_failed_.store(true, std::memory_order_relaxed);
+        return;
+    }
+
+    // ---- Worlds. The default world failing is fatal (nothing to spawn
+    //      into); secondary worlds fail individually and boot continues.
+    DiagEngine::stage("Loading worlds...");
+    if (!loadDefaultWorld()) {
+        running_.store(false, std::memory_order_relaxed);
+        start_failed_.store(true, std::memory_order_relaxed);
+        return;
+    }
+    DiagEngine::stageDone("Worlds loaded!");
+
+    // ---- Plugins. A failing plugin is never fatal: it is reported with a
+    //      diagnostic and everything else keeps loading.
+    DiagEngine::stage("Loading plugins...");
     plugin::PluginManager::get().loadAll(dataPath_ + "/plugins", dataPath_ + "/data_pl");
-    utils::MainLogger::get().info("Starting console command reader...");
+    DiagEngine::stageDone("Plugins loaded");
+
     startCommandReader();
 
     // Calculate total startup time.
     auto boot_end = std::chrono::steady_clock::now();
     auto boot_ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(boot_end - boot_start).count();
-    double boot_sec = (double)boot_ms / 1000.0;
-    utils::MainLogger::get().info("Server ready Tick loop starting...");
-    utils::MainLogger::get().info("Server started in " + std::to_string(boot_sec) + "s");
-
-    // Allow filesystem buffers to flush before the tick loop starts.
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    DiagEngine::ready((unsigned long)boot_ms);
 }
 
 void Server::runTickLoop() {
@@ -1125,7 +1290,7 @@ void Server::loadOps() {
         const std::string why = (e == ENOENT || e == 0)
                                     ? std::string("file not found")
                                     : std::string("cannot open (") + std::strerror(e) + ")";
-        utils::MainLogger::get().info(
+        utils::MainLogger::get().debug(
             "No operators loaded from " + ops_path + ": " + why +
             ". Nobody is op until you /op <player> (written back to that path). ");
         return;

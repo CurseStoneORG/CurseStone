@@ -29,16 +29,64 @@
 #include "PluginManager.h"
 #include "Server.h"
 #include "command/CommandMap.h"
+#include "diagnostics/DiagnosticEngine.h"
 #include "event/EventManager.h"
 #include "scheduler/CallbackTask.h"
 #include "scheduler/ServerScheduler.h"
 #include "utils/MainLogger.hpp"
 #include <algorithm>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <vector>
 
 namespace cursestone::plugin {
+
+namespace {
+
+// CurseStone Diagnostic Engine plumbing for plugin loading. Every discard
+// path renders a compiler-style block (code, file:line, snippet, help) so
+// the operator sees WHAT failed, WHERE and HOW to fix it. Locations come
+// only from real file scans — nothing is ever guessed.
+
+std::string slurp(const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in)
+        return {};
+    return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+}
+
+// api newer / older than the running server (same major assumed).
+bool apiIsNewer(const std::string& pluginApi) {
+    int pm = 0, pn = 0, ps = 0, sm = 0, sn = 0, ss = 0;
+    if (sscanf(pluginApi.c_str(), "%d.%d.%d", &pm, &pn, &ps) != 3 ||
+        sscanf(CURSESTONE_API, "%d.%d.%d", &sm, &sn, &ss) != 3)
+        return false;
+    return pn > sn;
+}
+
+void emitManifestDiag(const std::string& manifestPath, const std::string& displayPath,
+                      const std::string& title, int code, diagnostics::DiagSeverity sev,
+                      const std::string& key, const std::string& label,
+                      const std::vector<std::string>& notes,
+                      const std::vector<std::string>& help) {
+    using namespace diagnostics;
+    Diagnostic d;
+    d.code = code;
+    d.severity = sev;
+    d.title = title;
+    d.label = label;
+    d.notes = notes;
+    d.help = help;
+    if (!key.empty()) {
+        const std::string text = slurp(manifestPath);
+        if (diagnostics::DiagEngine::findKeySpan(text, key, false, &d.line, &d.col, &d.span))
+            d.file = displayPath;
+    }
+    DiagEngine::emit(d);
+}
+
+} // namespace
 
 LuaPlugin::LuaPlugin(std::string dir, std::string dataRoot)
     : dir_(std::move(dir)), dataRoot_(std::move(dataRoot)) {
@@ -80,32 +128,40 @@ bool LuaPlugin::ensureDataDir() {
 // Loads and validates plugin.yml.
 bool LuaPlugin::loadManifest() {
     namespace fs = std::filesystem;
+    using diagnostics::DiagEngine;
+    using diagnostics::DiagSeverity;
 
     // plugin.yml is the only accepted manifest; standalone main.lua files are rejected.
     std::error_code ec;
     std::string manifestPath = dir_ + "/plugin.yml";
     if (!fs::exists(manifestPath, ec)) {
-        utils::MainLogger::get().error("[" + dir_ +
-                                       "] has no plugin.yml — it is the ONLY accepted manifest "
-                                       "(api/name/author/main)");
+        emitManifestDiag(manifestPath, manifestPath,
+                         "Failed to load plugin '" + folderName_ + "'", 1001, DiagSeverity::Error,
+                         "", "", {"expected a manifest at " + manifestPath}, {});
         return false;
     }
 
     // Parse plugin.yml using the built-in YAML parser.
     std::ifstream in(manifestPath, std::ios::binary);
     if (!in) {
-        utils::MainLogger::get().error("[" + dir_ + "] could not open plugin.yml");
+        emitManifestDiag(manifestPath, manifestPath,
+                         "Failed to load plugin '" + folderName_ + "'", 1001, DiagSeverity::Error,
+                         "", "", {"the file exists but cannot be opened"}, {});
         return false;
     }
-    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 
     std::string err;
     if (!yaml::parseToLua(L_, text, err)) {
-        utils::MainLogger::get().error("[" + dir_ + "] plugin.yml: " + err);
+        emitManifestDiag(manifestPath, manifestPath,
+                         "Failed to load plugin '" + folderName_ + "'", 1001, DiagSeverity::Error,
+                         "", "", {"the YAML parser reports: " + err}, {});
         return false;
     }
     if (!lua_istable(L_, -1)) {
-        utils::MainLogger::get().error("[" + dir_ + "] plugin.yml must be a map of keys");
+        emitManifestDiag(manifestPath, manifestPath,
+                         "Failed to load plugin '" + folderName_ + "'", 1001, DiagSeverity::Error,
+                         "", "", {"plugin.yml must be a map of keys"}, {});
         lua_pop(L_, 1);
         return false;
     }
@@ -138,18 +194,19 @@ bool LuaPlugin::loadManifest() {
     if (lua_isstring(L_, -1)) {
         std::string rel;
         if (!sanitizeRelPath(lua_tostring(L_, -1), rel)) {
-            utils::MainLogger::get().error(
-                "[" + dir_ +
-                "] plugin.yml: invalid 'main' field (absolute paths and '..' are not allowed)");
             lua_pop(L_, 2);
+            emitManifestDiag(manifestPath, manifestPath,
+                             "Failed to load plugin '" + folderName_ + "'", 1003,
+                             DiagSeverity::Error, "main", "absolute paths and '..' are not allowed",
+                             {}, {"Make 'main' a relative path inside the plugin folder."});
             return false;
         }
         if (rel.compare(0, 4, "src/") != 0) {
-            utils::MainLogger::get().error(
-                "[" + dir_ +
-                "] plugin.yml: 'main' must live inside src/ (e.g. src/main.lua) — got '" + rel +
-                "'");
             lua_pop(L_, 2);
+            emitManifestDiag(manifestPath, manifestPath,
+                             "Failed to load plugin '" + folderName_ + "'", 1003,
+                             DiagSeverity::Error, "main", "must live inside src/ — got '" + rel + "'",
+                             {}, {});
             return false;
         }
         entry_ = rel;
@@ -160,15 +217,27 @@ bool LuaPlugin::loadManifest() {
     // Validate API compatibility.
     bool exact = false;
     if (!apiCompatible(api_, &exact)) {
-        utils::MainLogger::get().error("[" + (name_.empty() ? dir_ : name_) + "] requires API " +
-                                       api_ + ", but this server provides API " + CURSESTONE_API +
-                                       " — plugin discarded");
+        // Older (minor below the server's) vs newer (minor above) both break;
+        // the help text points at the right half of the upgrade.
+        const bool newer = apiIsNewer(api_);
+        emitManifestDiag(manifestPath, manifestPath,
+                         "Failed to load plugin '" + folderName_ + "'", 1002,
+                         DiagSeverity::Error, "api", "expected API version " + std::string(CURSESTONE_API),
+                         {},
+                         {newer ? "This plugin requires a newer API version."
+                                : "This plugin requires an older API version.",
+                          newer ? "Update the server or ask the author to support API " +
+                                      std::string(CURSESTONE_API) + "."
+                                : "Update the plugin to support API " +
+                                      std::string(CURSESTONE_API) + "."});
         return false;
     }
     if (!exact) {
-        utils::MainLogger::get().warn("[" + dir_ + "] declares API " + api_ +
-                                      " while the server provides " + CURSESTONE_API +
-                                      " (compatible, but not exact)");
+        // Compatible but not exact: information for developers, noise for
+        // operators — DEBUG keeps the boot console minimal.
+        utils::MainLogger::get().debug("[" + dir_ + "] declares API " + api_ +
+                                       " while the server provides " + CURSESTONE_API +
+                                       " (compatible, but not exact)");
     }
 
     // Default to src/main.lua when main is omitted.
@@ -179,17 +248,19 @@ bool LuaPlugin::loadManifest() {
             entry_ = "src/main.lua";
         } else if (fs::exists(dir_ + "/main.lua", e5)) {
             // Reject the legacy layout and explain how to fix it.
-            utils::MainLogger::get().error("[" + dir_ +
-                                           "] has main.lua next to plugin.yml — that layout is not "
-                                           "accepted anymore. Create a src/ folder and move the "
-                                           "entry inside: " +
-                                           dir_ + "/src/main.lua");
+            emitManifestDiag(manifestPath, manifestPath,
+                             "Failed to load plugin '" + folderName_ + "'", 1003,
+                             DiagSeverity::Error, "", "",
+                             {"found " + dir_ + "/main.lua"},
+                             {"Create a src/ folder and move the entry inside:",
+                              "  " + dir_ + "/src/main.lua"});
             return false;
         } else {
-            utils::MainLogger::get().error(
-                "[" + dir_ +
-                "] plugin.yml has no 'main' and there is no src/main.lua "
-                "(the entry script must be at src/main.lua)");
+            emitManifestDiag(manifestPath, manifestPath,
+                             "Failed to load plugin '" + folderName_ + "'", 1004,
+                             DiagSeverity::Error, "", "",
+                             {"plugin.yml has no 'main' and there is no src/main.lua"},
+                             {"The entry script must be at " + dir_ + "/src/main.lua"});
             return false;
         }
     }
@@ -197,8 +268,9 @@ bool LuaPlugin::loadManifest() {
     // Ensure the entry script exists.
     std::error_code e4;
     if (!fs::exists(dir_ + "/" + entry_, e4)) {
-        utils::MainLogger::get().error("[" + dir_ + "] entry script '" + entry_ +
-                                       "' does not exist");
+        emitManifestDiag(manifestPath, manifestPath,
+                         "Failed to load plugin '" + folderName_ + "'", 1004,
+                         DiagSeverity::Error, "main", "file does not exist", {}, {});
         return false;
     }
     return true;
@@ -362,20 +434,39 @@ bool LuaPlugin::load() {
     registerApi(L_);
 
     // Execute the entry script and retrieve its returned table.
-    if (luaL_loadfile(L_, (dir_ + "/" + entry_).c_str()) != LUA_OK) {
+    const std::string chunkPath = dir_ + "/" + entry_;
+    if (luaL_loadfile(L_, chunkPath.c_str()) != LUA_OK) {
         const char* msg = lua_tostring(L_, -1);
-        utils::MainLogger::get().error("[" + name_ +
-                                       "] error: " + (msg ? msg : "could not read " + entry_));
+        const std::string err = msg ? msg : "could not read " + entry_;
         lua_pop(L_, 1);
+        // Syntax error: locate the line the chunk name carries. When Lua
+        // does not name a line the block renders without a snippet — never
+        // with a guessed one.
+        diagnostics::Diagnostic d;
+        d.code = 1005;
+        d.severity = diagnostics::DiagSeverity::Error;
+        d.title = "Failed to load plugin '" + name_ + "'";
+        d.label = "syntax error";
+        d.notes.push_back(err);
+        const int ln = diagnostics::DiagEngine::luaErrorLine(err, chunkPath);
+        if (ln > 0) {
+            d.file = chunkPath;
+            d.line = ln;
+        }
+        diagnostics::DiagEngine::emit(d);
         return false;
     }
-    if (!pcall(0, 1))
+    if (!pcall(0, 1, /*reportDiag=*/true))
         return false;
 
     if (!lua_istable(L_, -1)) {
-        utils::MainLogger::get().error("[" + name_ + "] " + entry_ +
-                                       " must return a table (with onEnable/onDisable)");
         lua_pop(L_, 1);
+        diagnostics::Diagnostic d;
+        d.code = 1006;
+        d.severity = diagnostics::DiagSeverity::Error;
+        d.title = "Failed to load plugin '" + name_ + "'";
+        d.notes.push_back(entry_ + " must return a table (with onEnable/onDisable)");
+        diagnostics::DiagEngine::emit(d);
         return false;
     }
 
@@ -425,10 +516,10 @@ bool LuaPlugin::enable() {
         return false;
     }
 
-    std::string line = "Plugin enabled: " + name_ + " v" + version_;
-    if (!author_.empty())
-        line += " by " + author_;
-    utils::MainLogger::get().info(line);
+    // Loaded/enable details ride DEBUG — the boot console shows the
+    // diagnostic-engine stage items instead.
+    utils::MainLogger::get().debug("Plugin enabled: " + name_ + " v" + version_ +
+                                   (!author_.empty() ? " by " + author_ : ""));
     return true;
 }
 
@@ -463,7 +554,7 @@ void LuaPlugin::disable() {
     // Cancel all pending scheduled tasks.
     cancelAllTasks();
 
-    utils::MainLogger::get().info("Plugin disabled: " + name_);
+    utils::MainLogger::get().debug("Plugin disabled: " + name_);
 }
 
 namespace {
@@ -521,7 +612,7 @@ void LuaPlugin::checkLimits(lua_State* L) {
     }
 }
 
-bool LuaPlugin::pcall(int nargs, int nresults) {
+bool LuaPlugin::pcall(int nargs, int nresults, bool reportDiag) {
     if (breakerTripped_ && !inDisable_) {
         lua_pop(L_, nargs + 1);
         return false;
@@ -545,8 +636,27 @@ bool LuaPlugin::pcall(int nargs, int nresults) {
 
     if (rc != LUA_OK) {
         const char* msg = lua_tostring(L_, -1);
-        utils::MainLogger::get().error("[" + name_ + "] error: " + (msg ? msg : "unknown error"));
+        const std::string err = msg ? msg : "unknown error";
         lua_pop(L_, 1); // Clear the stack.
+        if (reportDiag) {
+            // Load/enable-time failures render a compiler-style block; the
+            // location comes from the chunk name inside the Lua message when
+            // one exists. Runtime dispatch errors keep the plain log below.
+            diagnostics::Diagnostic d;
+            d.code = 1006;
+            d.severity = diagnostics::DiagSeverity::Error;
+            d.title = "Failed to load plugin '" + name_ + "'";
+            d.notes.push_back(err);
+            const std::string chunkPath = dir_ + "/" + entry_;
+            const int ln = diagnostics::DiagEngine::luaErrorLine(err, chunkPath);
+            if (ln > 0) {
+                d.file = chunkPath;
+                d.line = ln;
+            }
+            diagnostics::DiagEngine::emit(d);
+        } else {
+            utils::MainLogger::get().error("[" + name_ + "] error: " + err);
+        }
         if (outermost && !inDisable_) {
             ++consecutiveErrors_;
             if (g_limits.maxErrors > 0 && consecutiveErrors_ >= g_limits.maxErrors)

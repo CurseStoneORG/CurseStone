@@ -191,7 +191,7 @@ World::World(WorldConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
             spawn_ = mcp_v3(provider->getSpawn().x + 0.5, provider->getSpawn().y,
                             provider->getSpawn().z + 0.5);
         }
-        utils::MainLogger::get().info("World '" + cfg_.name + "' loaded from " + worldDir +
+        utils::MainLogger::get().debug("World '" + cfg_.name + "' loaded from " + worldDir +
                                       " (format=" + provider->getName() +
                                       ", seed=" + std::to_string(cfg_.seed) +
                                       ", generator=" + cfg_.generator + ")");
@@ -255,7 +255,7 @@ World::World(WorldConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
             if (provider_) {
                 provider_->setSpawn(math::Vector3{(double)spawn_.x, spawn_.y, (double)spawn_.z});
             }
-            utils::MainLogger::get().info(
+            utils::MainLogger::get().debug(
                 "Spawn snapped to terrain: " + std::to_string((int)spawn_.x) + ", " +
                 std::to_string((int)spawn_.y) + ", " + std::to_string((int)spawn_.z));
         }

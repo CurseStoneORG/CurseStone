@@ -31,6 +31,7 @@
 // events.
 #include "NativePlugin.h"
 #include "LuaBindings.h" // apiCompatible() + CURSESTONE_API
+#include "diagnostics/DiagnosticEngine.h"
 #include "NativeCommand.h"
 #include "PathSafe.h"
 #include "Player.h"
@@ -1601,26 +1602,43 @@ bool NativePlugin::openLibrary() {
     lib_ = dlopen(libPath_.c_str(), RTLD_NOW | RTLD_LOCAL);
     if (!lib_) {
         const char* dlerr = dlerror();
-        log().error("[" + name_ + "] dlopen failed for '" + libPath_ + "': " +
-                    (dlerr ? dlerr : "unknown error"));
+        diagnostics::Diagnostic d;
+        d.code = 1008;
+        d.severity = diagnostics::DiagSeverity::Error;
+        d.title = "Failed to load native plugin '" + stem_ + "'";
+        d.file = libPath_;
+        d.notes.push_back(std::string("dlopen failed: ") + (dlerr ? dlerr : "unknown error"));
+        diagnostics::DiagEngine::emit(d);
         return false;
     }
     void* sym = dlsym(lib_, CS_PLUGIN_ENTRY);
 #endif
 
     if (!sym) {
-        log().error("[" + name_ + "] '" + stem_ +
-                    "' does not export " + CS_PLUGIN_ENTRY +
-                    " — it is not a CurseStone native plugin");
+        diagnostics::Diagnostic d;
+        d.code = 1008;
+        d.severity = diagnostics::DiagSeverity::Error;
+        d.title = "Failed to load native plugin '" + stem_ + "'";
+        d.file = libPath_;
+        d.notes.push_back(std::string("does not export ") + CS_PLUGIN_ENTRY +
+                          " — it is not a CurseStone native plugin");
+        diagnostics::DiagEngine::emit(d);
         return false;
     }
     using EntryFn = const CsPluginVTable* (*)(void);
     vtable_ = reinterpret_cast<EntryFn>(sym)();
     if (!vtable_ || vtable_->abiVersion != CS_PLUGIN_ABI_VERSION) {
-        log().error("[" + name_ + "] '" + stem_ + "' was built against plugin ABI " +
-                    std::to_string(vtable_ ? vtable_->abiVersion : 0) +
-                    ", but this server provides ABI " + std::to_string(CS_PLUGIN_ABI_VERSION) +
-                    " — rebuild the plugin");
+        diagnostics::Diagnostic d;
+        d.code = 1008;
+        d.severity = diagnostics::DiagSeverity::Error;
+        d.title = "Failed to load native plugin '" + stem_ + "'";
+        d.file = libPath_;
+        d.notes.push_back("built against plugin ABI " +
+                          std::to_string(vtable_ ? vtable_->abiVersion : 0) +
+                          ", but this server provides ABI " +
+                          std::to_string(CS_PLUGIN_ABI_VERSION));
+        d.help.push_back("Rebuild the plugin against this server's SDK headers.");
+        diagnostics::DiagEngine::emit(d);
         vtable_ = nullptr;
         return false;
     }
@@ -1657,14 +1675,22 @@ bool NativePlugin::load() {
     if (*apiClaim) {
         bool exact = false;
         if (!apiCompatible(apiClaim, &exact)) {
-            log().error("[" + name_ + "] was built for plugin API " + apiClaim +
-                        ", but this server provides API " + CURSESTONE_API + " — plugin discarded");
+            diagnostics::Diagnostic d;
+            d.code = 1002;
+            d.severity = diagnostics::DiagSeverity::Error;
+            d.title = "Failed to load native plugin '" + name_ + "'";
+            d.file = libPath_;
+            d.notes.push_back("built for plugin API " + std::string(apiClaim) +
+                              ", but this server provides API " + CURSESTONE_API);
+            d.help.push_back("Rebuild the plugin against API " +
+                             std::string(CURSESTONE_API) + ".");
+            diagnostics::DiagEngine::emit(d);
             return false;
         }
         if (!exact)
-            log().warn("[" + name_ + "] declares plugin API " + apiClaim +
-                       " while the server provides " + CURSESTONE_API +
-                       " (compatible, but not exact)");
+            log().debug("[" + name_ + "] declares plugin API " + apiClaim +
+                        " while the server provides " + CURSESTONE_API +
+                        " (compatible, but not exact)");
     }
 
     buildApiRoot();
@@ -1741,7 +1767,7 @@ void NativePlugin::disable() {
         scheduler::ServerScheduler::get().cancel(id);
     tasks_.clear();
 
-    log().info("Plugin disabled: " + name_);
+    log().debug("Plugin disabled: " + name_);
 }
 
 } // namespace cursestone::plugin

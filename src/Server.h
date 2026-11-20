@@ -151,6 +151,12 @@ class Server {
     bool isRunning() const {
         return running_.load(std::memory_order_relaxed);
     }
+    // True when Server::start aborted the boot on a fatal diagnostic (config,
+    // network, default world). main() uses it to exit non-zero so process
+    // supervisors (systemd, Docker, panels) see the failure.
+    bool startFailed() const {
+        return start_failed_.load(std::memory_order_relaxed);
+    }
     const std::string& getDataPath() const {
         return dataPath_;
     }
@@ -386,11 +392,11 @@ class Server {
     Server(const Server&) = delete;
     Server& operator=(const Server&) = delete;
 
-    void loadConfig();
+    bool loadConfig();
     void initLogger();
     void registerBlocksAndItems();
-    void openNetwork();
-    void loadDefaultWorld();
+    bool openNetwork();
+    bool loadDefaultWorld();
     void startCommandReader();
     void loadOps();
     void saveOps();
@@ -412,6 +418,7 @@ class Server {
 
     std::string dataPath_;
     std::atomic<bool> running_{false};
+    std::atomic<bool> start_failed_{false};
     uint64_t currentTick_{0};
     std::atomic<bool> tick_loop_exited_{false}; // Set when runTickLoop() exits.
     // Read only by runTickLoop() on the main thread.

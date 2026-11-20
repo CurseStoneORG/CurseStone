@@ -272,13 +272,13 @@ void Anvil::init(const std::string& path) {
         // No level.dat → generate defaults. Seed/spawn come from
         // WorldConfig via setSpawn/setCurrentTime (called by World ctor).
         // We'll write level.dat on shutdown/saveMetadata().
-        utils::MainLogger::get().info("[Anvil] No level.dat found at " + level_dat +
+        utils::MainLogger::get().debug("[Anvil] No level.dat found at " + level_dat +
                                       "; will create on save.");
     } else {
         std::fclose(fp);
         loadMetadata();
     }
-    utils::MainLogger::get().info("[Anvil] Initialized at " + path_);
+    utils::MainLogger::get().debug("[Anvil] Initialized at " + path_);
 
     // Background chunk writer — the reference-style autosave pipeline.
     // Main thread only ever encodes; compression + region I/O live here.

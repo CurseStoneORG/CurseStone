@@ -49,6 +49,7 @@
 
 // Styles
 #define MCP_TERM_BOLD "\x1b[1m"
+#define MCP_TERM_DIM "\x1b[38;5;245m"
 #define MCP_TERM_ITALIC "\x1b[3m"
 #define MCP_TERM_UNDERLINE "\x1b[4m"
 #define MCP_TERM_STRIKE "\x1b[9m"
@@ -60,4 +61,9 @@ bool mcp_terminal_has_color(void);
 // Initialize terminal detection. Call once at startup; subsequent
 // calls to mcp_terminal_has_color() read a cached result.
 void mcp_terminal_init(bool force_color);
+
+// Explicit override for the settings.console-color config (auto|always|
+// never): "never" passes false AFTER mcp_terminal_init(false) to disable
+// colors even on a tty.
+void mcp_terminal_set_enabled(bool enabled);
 
