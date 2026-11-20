@@ -18,6 +18,10 @@ Boots a runtime with the MultiWorldTest plugin, joins TWO harness clients
   same-dimension switch — without the sweep the mob would render as a
   ghost in the destination world) while B, still a viewer of the default
   world, keeps it untouched; switching back re-sends the AddEntity.
+  Phase 2b applies the same sweep to PLAYER bodies (the reported ghost:
+  A's body used to stay frozen on B's screen after A switched worlds) —
+  each side drops the other's body on the way out and both re-spawn via
+  AddPlayerPacket on the way back.
 
   Phase 3 — restart persistence: the manifest worlds/worlds.manifest
   reloads worlds created in earlier sessions (one "+ <name> loaded!" item per world).
@@ -37,6 +41,7 @@ from linux_login_check import Client, STAGE_SPAWN  # noqa: E402
 TEXT = 0x07
 ADD_ENTITY = 0x0B
 REMOVE_ENTITY = 0x0C
+ADD_PLAYER = 0x0A
 START_GAME = 0x09
 CHANGE_DIMENSION = 0x36
 
@@ -59,6 +64,7 @@ class MWClient(Client):
         super().__init__(host, port, name)
         self.adds = []     # (t, eid, type)
         self.removes = []  # (t, eid)
+        self.player_adds = []  # (t, eid, username) — AddPlayerPacket bodies
         self.chat = []     # (t, message)
         self.dimensions = []  # (t, dimension)
         self.self_eid = None
@@ -123,6 +129,11 @@ class MWClient(Client):
         elif gp == REMOVE_ENTITY and len(payload) >= 9:
             eid = struct.unpack(">q", payload[1:9])[0]
             self.removes.append((now, eid))
+        elif gp == ADD_PLAYER and len(payload) >= 28:
+            uname, off = be_string(payload, 17)
+            if uname is not None and off + 8 <= len(payload):
+                eid = struct.unpack(">q", payload[off:off + 8])[0]
+                self.player_adds.append((now, eid, uname))
         elif gp == CHANGE_DIMENSION and len(payload) >= 2:
             self.dimensions.append((now, payload[1]))
         elif gp == TEXT and len(payload) > 4:
@@ -255,6 +266,15 @@ def run(host, port, server_bin):
         check(a.self_eid is not None and b.self_eid is not None,
               "both bots spawned")
 
+        # Join-time precondition of the player-visibility contract: same-
+        # world players hold each other's bodies (doFirstSpawn spawns the
+        # peers to the joiner, announceSelfToOthers spawns the joiner to
+        # the peers).
+        check(any(eid == b.self_eid for _, eid, _ in a.player_adds),
+              "A holds B's AddPlayerPacket body")
+        check(any(eid == a.self_eid for _, eid, _ in b.player_adds),
+              "B holds A's AddPlayerPacket body")
+
         # ---- phase 1: the plugin's automated full sequence -------------
         t0 = time.monotonic()
         a.say("/mw check mwtest")
@@ -305,6 +325,33 @@ def run(host, port, server_bin):
         check(ok, "switching back: the zombie AddEntity is re-sent to A")
         check(not any(eid == zid for _, eid in after(t3, b.removes)),
               "B never lost the zombie across both switches")
+
+        # ---- phase 2b: the player-visibility handoff on the wire -------
+        # The same contract for PLAYER bodies, and the reported ghost: B
+        # kept seeing A frozen at the pre-switch spot after A left for
+        # another world, because nothing despawned A for the viewers left
+        # behind (every per-player broadcast is world-scoped, so no packet
+        # ever moved or removed the stale body again). The handoff removes
+        # A's body from B's view and B's body from A's view on the way out
+        # (same-dimension switches keep the client entity map) and re-spawns
+        # both bodies through AddPlayerPacket on the way back. The tab list
+        # is global and stays untouched — only entity packets travel here.
+        check(any(eid == a.self_eid for _, eid in after(t2, b.removes)),
+              "switching out: B's view drops A's body (the reported ghost)")
+        check(any(eid == b.self_eid for _, eid in after(t2, a.removes)),
+              "switching out: A's view drops B's body")
+        check(not any(eid == a.self_eid for _, eid in after(t2, a.removes)),
+              "no self-removal travels on the way out")
+
+        ok = until([a, b],
+                   lambda: any(eid == b.self_eid for _, eid, _ in after(t3, a.player_adds))
+                           and any(eid == a.self_eid
+                                   for _, eid, _ in after(t3, b.player_adds)),
+                   8.0)
+        check(ok, "switching back: both bodies re-spawn via AddPlayerPacket")
+        check(not any(eid == a.self_eid for _, eid in after(t3, b.removes)) and
+              not any(eid == b.self_eid for _, eid in after(t3, a.removes)),
+              "no removal travels on the way back")
 
         # ---- phase 3: the manifest reloads across restarts --------------
         a.say("/mw unload mwtest2")

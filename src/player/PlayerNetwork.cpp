@@ -417,6 +417,11 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
                             continue;
                         if (other->isPendingRemoval() || !other->spawned())
                             continue;
+                        if (other->getWorld() != getWorld())
+                            continue; // isTrackingChunk matches chunk
+                                      // coordinates, which repeat across
+                                      // worlds — the world match comes
+                                      // first.
                         if (!other->isTrackingChunk(an_cx, an_cz))
                             continue;
                         other->sendPacket(fwd);

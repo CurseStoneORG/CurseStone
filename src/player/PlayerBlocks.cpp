@@ -471,6 +471,10 @@ void Player::handleBlockBreak(int x, int y, int z) {
         for (auto& other : srv_->playersSnapshotRef()) {
             if (!other)
                 continue;
+            if (other->getWorld() != lvl)
+                continue; // Chunk coordinates repeat across worlds: a
+                          // viewer of another world must never receive a
+                          // block update for this world's cells.
             if (!other->canSeeBlock(pk_cx, pk_cz))
                 continue;
             ++broadcastTo;

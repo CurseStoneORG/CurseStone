@@ -35,10 +35,13 @@ namespace cursestone::redstone {
 
 using cursestone::world::World;
 
-// broadcastBlock — push a block update to every player viewing chunk (x,z).
-static void broadcastBlock(cursestone::Server* server, int32_t x, int32_t y, int32_t z,
-                           uint8_t blockId, uint8_t blockData) {
-    if (!server)
+// broadcastBlock — push a block update to every player of @p world viewing
+// chunk (x,z). The world match comes first: chunk coordinates repeat across
+// worlds, and a viewer of another world must never receive a block update
+// for cells it does not own.
+static void broadcastBlock(World* world, cursestone::Server* server, int32_t x, int32_t y,
+                           int32_t z, uint8_t blockId, uint8_t blockData) {
+    if (!server || !world)
         return;
     auto ubp = std::make_shared<network::protocol::UpdateBlockPacket>();
     ubp->x = x;
@@ -53,6 +56,8 @@ static void broadcastBlock(cursestone::Server* server, int32_t x, int32_t y, int
     for (auto& player : server->playersSnapshotRef()) {
         if (!player)
             continue;
+        if (player->getWorld() != world)
+            continue;
         if (!player->canSeeBlock(cx, cz))
             continue;
         player->sendPacket(ubp);
@@ -65,9 +70,9 @@ static void broadcastBlock(cursestone::Server* server, int32_t x, int32_t y, int
 // AS GIVEN (block corner for sounds; callers pass what the reference
 // passes). Used for the door open/close sound (EVENT_SOUND_DOOR) on both
 // the hand-toggle and the redstone-toggle paths.
-static void broadcastLevelEvent(cursestone::Server* server, int16_t evid, int32_t data, float x,
-                                float y, float z) {
-    if (!server)
+static void broadcastLevelEvent(World* world, cursestone::Server* server, int16_t evid,
+                                int32_t data, float x, float y, float z) {
+    if (!server || !world)
         return;
     auto pk = std::make_shared<network::protocol::LevelEventPacket>();
     pk->evid = evid;
@@ -80,6 +85,8 @@ static void broadcastLevelEvent(cursestone::Server* server, int16_t evid, int32_
     for (auto& player : server->playersSnapshotRef()) {
         if (!player)
             continue;
+        if (player->getWorld() != world)
+            continue;
         if (!player->canSeeBlock(cx, cz))
             continue;
         player->sendPacket(pk);
@@ -90,8 +97,10 @@ static void broadcastLevelEvent(cursestone::Server* server, int16_t evid, int32_
 // level/sound/DoorSound → LevelEventPacket evid=1003 at the door
 // block position, data = pitch*1000 = 0). The 0.15.10 client needs this
 // or the door toggles silently (bug: "las puertas no emiten sonido").
-static void playDoorSound(cursestone::Server* server, int32_t x, int32_t y, int32_t z) {
-    broadcastLevelEvent(server, network::protocol::LevelEventPacket::EVENT_SOUND_DOOR, 0, (float)x,
+static void playDoorSound(World* world, cursestone::Server* server, int32_t x, int32_t y,
+                          int32_t z) {
+    broadcastLevelEvent(world, server, network::protocol::LevelEventPacket::EVENT_SOUND_DOOR, 0,
+                        (float)x,
                         (float)y, (float)z);
 }
 
@@ -182,7 +191,7 @@ bool tryInteract(World* world, cursestone::Server* server, int32_t x, int32_t y,
         // scheduler (future work). Both act as manual toggles for now.
         uint8_t newData = data ^ 0x08;
         world->setBlock(x, y, z, id, newData);
-        broadcastBlock(server, x, y, z, id, newData); // FIX: was only visible after reconnecting
+        broadcastBlock(world, server, x, y, z, id, newData); // FIX: was only visible after reconnecting
         notifyNeighbors(world, server, x, y, z);
         return true;
     }
@@ -221,12 +230,12 @@ bool tryInteract(World* world, cursestone::Server* server, int32_t x, int32_t y,
 
         uint8_t newLowerData = lowerData ^ 0x04;
         world->setBlock(x, lowerY, z, block::WOODEN_DOOR, newLowerData);
-        broadcastBlock(server, x, lowerY, z, block::WOODEN_DOOR, newLowerData);
+        broadcastBlock(world, server, x, lowerY, z, block::WOODEN_DOOR, newLowerData);
         // FIX ("las puertas no emiten sonido"): the 0.15.10 client only
         // animates the swing locally — the creak itself is a server-side
         // LevelEventPacket (the reference server DoorSound), played for every viewer
         // including the clicker.
-        playDoorSound(server, x, lowerY, z);
+        playDoorSound(world, server, x, lowerY, z);
         // No notifyNeighbors here: a manual toggle must not immediately
         // re-evaluate against active signal (the click would undo itself).
         // The next real redstone event recalculates normally.
@@ -286,7 +295,7 @@ static void updateWireInternal(World* world, cursestone::Server* server, int32_t
     world->setBlock(x, y, z, block::REDSTONE_WIRE, (uint8_t)best);
     // FIX: without this broadcast the wire update was only visible
     // after reconnecting.
-    broadcastBlock(server, x, y, z, block::REDSTONE_WIRE, (uint8_t)best);
+    broadcastBlock(world, server, x, y, z, block::REDSTONE_WIRE, (uint8_t)best);
 
     // Non-wire consumers fed by this wire (lamps, torches via their
     // support, doors, pistons) must re-evaluate too. Keep this list in
@@ -340,7 +349,7 @@ void updateLampAt(World* world, cursestone::Server* server, int32_t x, int32_t y
         return; // already in the right state
 
     world->setBlock(x, y, z, wantId, 0);
-    broadcastBlock(server, x, y, z, wantId, 0);
+    broadcastBlock(world, server, x, y, z, wantId, 0);
 }
 
 // updateRedstoneTorchAt — the redstone torch is an inverter: off when
@@ -403,7 +412,7 @@ void updateRedstoneTorchAt(World* world, cursestone::Server* server, int32_t x, 
         return;
 
     world->setBlock(x, y, z, wantId, 0);
-    broadcastBlock(server, x, y, z, wantId, 0);
+    broadcastBlock(world, server, x, y, z, wantId, 0);
 }
 
 // ============================================================
@@ -457,11 +466,11 @@ void updateDoorAt(World* world, cursestone::Server* server, int32_t x, int32_t y
 
     uint8_t newLowerData = lowerData ^ 0x04;
     world->setBlock(x, lowerY, z, id, newLowerData);
-    broadcastBlock(server, x, lowerY, z, id, newLowerData);
+    broadcastBlock(world, server, x, lowerY, z, id, newLowerData);
     // FIX ("las puertas no emiten sonido"): redstone also toggles doors,
     // and the creak is a server-side LevelEventPacket on protocol 84 —
     // same call the hand-toggle path in tryInteract() makes.
-    playDoorSound(server, x, lowerY, z);
+    playDoorSound(world, server, x, lowerY, z);
 
     // La mitad superior de este motor solo guarda el bit 0x08 (es
     // The upper half stores only 0x08 + hinge bits, never the open bit,
@@ -540,10 +549,10 @@ void updatePistonAt(World* world, cursestone::Server* server, int32_t x, int32_t
 
         uint8_t newData = data | 0x08;
         world->setBlock(x, y, z, id, newData);
-        broadcastBlock(server, x, y, z, id, newData);
+        broadcastBlock(world, server, x, y, z, id, newData);
 
         world->setBlock(headX, headY, headZ, block::PISTON_HEAD, data & 0x07);
-        broadcastBlock(server, headX, headY, headZ, block::PISTON_HEAD, data & 0x07);
+        broadcastBlock(world, server, headX, headY, headZ, block::PISTON_HEAD, data & 0x07);
         // No notifyNeighbors on the head: the piston head is a technical
         // block that neither sources nor conducts redstone. A wire behind
         // it waits for the next event touching it (rare in practice,
@@ -551,7 +560,7 @@ void updatePistonAt(World* world, cursestone::Server* server, int32_t x, int32_t
     } else {
         uint8_t newData = data & ~0x08;
         world->setBlock(x, y, z, id, newData);
-        broadcastBlock(server, x, y, z, id, newData);
+        broadcastBlock(world, server, x, y, z, id, newData);
 
         // Retract: the head returns to air. A sticky piston would also
         // pull the pushed block back — not implemented (needs push
@@ -559,7 +568,7 @@ void updatePistonAt(World* world, cursestone::Server* server, int32_t x, int32_t
         uint8_t headId = world->getBlockId(headX, headY, headZ);
         if (headId == block::PISTON_HEAD) {
             world->setBlock(headX, headY, headZ, 0, 0);
-            broadcastBlock(server, headX, headY, headZ, 0, 0);
+            broadcastBlock(world, server, headX, headY, headZ, 0, 0);
             // Gravity checks live inside World::setBlock — clearing the
             // head re-evaluates the block above (sand/gravel/anvils fall).
         }
