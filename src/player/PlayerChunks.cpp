@@ -27,7 +27,7 @@
 #include "network/protocol/FullChunkDataPacket.h"
 #include "network/protocol/UpdateBlockPacket.h"
 #include "tile/Tile.h"
-#include "tile/TileChest.h"
+#include "tile/TileFactory.h"
 #include "nbt/NBT.h"
 #include "nbt/tag/CompoundTag.h"
 #include "utils/CRaii.h"
@@ -264,12 +264,13 @@ void Player::sendChunkTiles(int32_t cx, int32_t cz) {
         const int32_t tx = (int32_t)p.x, ty = (int32_t)p.y, tz = (int32_t)p.z;
         // The WorldEdit-route block update rides ahead of the tile NBT:
         // the chunk payload gave the cell its block, the UpdateBlock
-        // auto-creates the client's chest actor (the /we set path the
-        // real device renders and opens), and the BlockEntityData that
-        // follows refreshes it with the pair/name tags. Ordering holds
-        // because all three ride one RELIABLE_ORDERED stream.
-        if (std::dynamic_pointer_cast<tile::TileChest>(t))
-            sendChestBlockUpdate(tx, ty, tz);
+        // auto-creates the client's container actor (the /we set path the
+        // real device renders and opens — chests and furnaces alike), and
+        // the BlockEntityData that follows refreshes it with the pair/name
+        // tags. Ordering holds because all three ride one
+        // RELIABLE_ORDERED stream.
+        if (tile::tileNeedsActorAnnounce(t.get()))
+            sendTileBlockUpdate(tx, ty, tz);
         sendBlockEntityData(tx, ty, tz, *t, this);
     }
 }
@@ -301,8 +302,8 @@ void Player::resendTrackedTiles() {
             // Same pair the stream tail sends: the in-world client gets
             // the actor back via the WorldEdit-route block update, then
             // the compound refresh. No chunk rebuild around either.
-            if (std::dynamic_pointer_cast<tile::TileChest>(t))
-                sendChestBlockUpdate(tx, ty, tz);
+            if (tile::tileNeedsActorAnnounce(t.get()))
+                sendTileBlockUpdate(tx, ty, tz);
             sendBlockEntityData(tx, ty, tz, *t, this);
         }
     }

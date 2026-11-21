@@ -552,18 +552,19 @@ void Player::sendBlockEntityData(int32_t x, int32_t y, int32_t z, tile::Tile& t,
 }
 
 // ============================================================
-// sendChestBlockUpdate — the WorldEdit-route block write for one chest
-// cell: the SAME UpdateBlockPacket broadcastBlockUpdate builds for
-// world.setBlock (live grid id + meta, FLAG_ALL_PRIORITY), pushed on the
-// chunk stream so it is processed after the cell's chunk and before the
-// tile NBT that follows it. The 0.15 client auto-creates the block actor
-// from a block update — the /we set 54:0 path that renders and opens on
-// the real device — while a BlockEntityData alone can only refresh an
-// actor the client already holds. Pure wire announcement: no tile is
-// created, moved or emptied; the TileChest (official constructor) and
-// its loot stay exactly as the hydration built them.
+// sendTileBlockUpdate — the WorldEdit-route block write for one tile
+// cell (chest, furnace): the SAME UpdateBlockPacket broadcastBlockUpdate
+// builds for world.setBlock (live grid id + meta, FLAG_ALL_PRIORITY),
+// pushed on the chunk stream so it is processed after the cell's chunk
+// and before the tile NBT that follows it. The 0.15 client auto-creates
+// the block actor from a block update — the /we set 54:0 and /we set
+// 61:0 paths that render and open on the real device — while a
+// BlockEntityData alone can only refresh an actor the client already
+// holds. Pure wire announcement: no tile is created, moved or emptied;
+// the TileChest/TileFurnace (official constructors) and their contents
+// stay exactly as the hydration built them.
 // ============================================================
-void Player::sendChestBlockUpdate(int32_t x, int32_t y, int32_t z) {
+void Player::sendTileBlockUpdate(int32_t x, int32_t y, int32_t z) {
     if (y < 0 || y > 255)
         return;
     auto* lvl = getWorld();

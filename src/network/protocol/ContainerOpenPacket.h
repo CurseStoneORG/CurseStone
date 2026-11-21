@@ -32,10 +32,12 @@
 //   putInt(z)
 //
 // There is NO trailing entityId long in the protocol-84 reference encode
-// (the 1.6-era reference implementation). the reference server's 0.15-era packet appended one; the
-// client tolerates a trailing suffix on window types it survives, but
-// it aborts on every bisected type=2 open regardless of the payload
-// around it — see Player::openFurnaceAt for the workaround.
+// (the 1.6-era reference implementation). the reference server's 0.15-era packet
+// appended one; this encode matches the reference layout. A type=2 open
+// binds the furnace screen to the block actor at the coords, so the
+// tile's client compound (BurnTime/CookTime/BurnDuration/Items) must
+// already sit on the client when the record lands — see
+// Player::openFurnaceAt for the open batch order.
 #pragma once
 
 #include "DataPacket.h"
@@ -54,9 +56,9 @@ class ContainerOpenPacket : public DataPacket {
     // project actually opens are named here; add more as they're needed.
     static constexpr uint8_t TYPE_CONTAINER = 0;
     static constexpr uint8_t TYPE_FURNACE = 2; // WORKBENCH=1, FURNACE=2
-    // TYPE_FURNACE is never put on the wire: the 0.15.10 client aborts
-    // on type=2 opens, so furnaces open as TYPE_CONTAINER instead (see
-    // Player::openFurnaceAt).
+    // TYPE_FURNACE is the only window type that draws the actual furnace
+    // screen. It binds the screen to the tile compound the chunk stream
+    // delivered ahead of the open record (see Player::openFurnaceAt).
 
     uint8_t windowid = 0;
     uint8_t type = TYPE_CONTAINER;

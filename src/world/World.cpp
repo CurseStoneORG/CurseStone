@@ -739,13 +739,14 @@ void World::spawnTileToViewers(tile::Tile& t) {
             overflow = true;
     }
     for (size_t i = 0; i < n; ++i) {
-        // Chest tiles announce through the WorldEdit route as well: the
-        // UpdateBlockPacket (live grid id+meta, FLAG_ALL_PRIORITY) is what
-        // auto-creates the client's block actor — a BlockEntityData alone
-        // can only refresh an actor the viewer already holds. Both ride
-        // the chunk stream, block update first.
-        if (dynamic_cast<tile::TileChest*>(&t))
-            targets[i]->sendChestBlockUpdate(tx, ty, tz);
+        // Container tiles (chest, furnace) announce through the WorldEdit
+        // route as well: the UpdateBlockPacket (live grid id+meta,
+        // FLAG_ALL_PRIORITY) is what auto-creates the client's block
+        // actor — a BlockEntityData alone can only refresh an actor the
+        // viewer already holds. Both ride the chunk stream, block update
+        // first.
+        if (tile::tileNeedsActorAnnounce(&t))
+            targets[i]->sendTileBlockUpdate(tx, ty, tz);
         targets[i]->sendBlockEntityData(tx, ty, tz, t, targets[i]);
     }
     if (overflow) {
@@ -757,8 +758,8 @@ void World::spawnTileToViewers(tile::Tile& t) {
                 continue;
             if (seen++ >= kDirectTargets) {
                 // Same WorldEdit-route announce the direct targets got.
-                if (dynamic_cast<tile::TileChest*>(&t))
-                    pl->sendChestBlockUpdate(tx, ty, tz);
+                if (tile::tileNeedsActorAnnounce(&t))
+                    pl->sendTileBlockUpdate(tx, ty, tz);
                 pl->sendBlockEntityData(tx, ty, tz, t, pl.get());
             }
         }

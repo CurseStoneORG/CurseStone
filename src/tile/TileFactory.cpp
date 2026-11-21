@@ -73,6 +73,10 @@ bool parseTileBlobHeader(const uint8_t* data, size_t len, std::string& tileId,
     return true;
 }
 
+bool tileNeedsActorAnnounce(const Tile* t) {
+    return t && (dynamic_cast<const TileChest*>(t) || dynamic_cast<const TileFurnace*>(t));
+}
+
 std::shared_ptr<Tile> createTileForBlock(uint8_t blockId, const cursestone::world::Position& pos) {
     using cursestone::block::BlockId;
     switch (blockId) {
