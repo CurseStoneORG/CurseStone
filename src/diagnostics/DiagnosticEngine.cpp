@@ -258,9 +258,10 @@ void DiagEngine::stageDone(const std::string& text) {
     utils::MainLogger::get().info(text);
 }
 
-void DiagEngine::ready(unsigned long boot_ms) {
-    utils::MainLogger::get().info(sec('a') + "Server ready! " + sec(kDim) + "(" +
-                                  std::to_string(boot_ms) + "ms)");
+void DiagEngine::ready(double boot_ms) {
+    char ms[32];
+    snprintf(ms, sizeof(ms), "%.2f", boot_ms);
+    utils::MainLogger::get().info(sec('a') + "Server ready! " + sec(kDim) + "(" + ms + "ms)");
     const size_t n = g_issues.load(std::memory_order_relaxed);
     if (n > 0)
         utils::MainLogger::get().warn(sec(kWarnColor) + "Startup completed with " +

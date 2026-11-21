@@ -34,7 +34,7 @@
 #include "utils/ThreadPort.h"
 #include "utils/Config.h"
 #include "utils/Utils.h"
-#include "utils/TextColor.h"
+#include "utils/TextColor.h" // isSectionAt — chat keeps the game's § colors.
 
 #include <climits>
 #include <cstring>
@@ -744,11 +744,14 @@ void Server::start(const std::string& dataPath) {
 
     startCommandReader();
 
-    // Calculate total startup time.
+    // Calculate total startup time. Microsecond resolution so the ready
+    // epilogue can show the cost with decimals ("(0.47ms)") instead of the
+    // truncated integer milliseconds.
     auto boot_end = std::chrono::steady_clock::now();
-    auto boot_ms =
-        std::chrono::duration_cast<std::chrono::milliseconds>(boot_end - boot_start).count();
-    DiagEngine::ready((unsigned long)boot_ms);
+    const double boot_ms =
+        std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(boot_end - boot_start)
+            .count();
+    DiagEngine::ready(boot_ms);
 }
 
 void Server::runTickLoop() {
@@ -1081,8 +1084,21 @@ void Server::broadcastMessage(const std::string& msg) {
             if (p)
                 p->sendEncodedBody(body, pk.pid());
     }
-    // Mirror broadcasts to the console without formatting codes.
-    utils::MainLogger::get().info("[CHAT] " + TC::clean(msg));
+    // Mirror broadcasts to the console keeping the game's § codes (cross-chat
+    // color): the colored console converts them to ANSI, while the log file
+    // and the non-colored console strip them in the logger. Only skip the
+    // mirror when the text carries nothing but format codes.
+    bool onlyCodes = true;
+    for (size_t i = 0; i < msg.size();) {
+        if (TC::isSectionAt(msg, i)) {
+            i += 3;
+        } else {
+            onlyCodes = false;
+            break;
+        }
+    }
+    if (!onlyCodes)
+        utils::MainLogger::get().info("[CHAT] " + msg);
 }
 int64_t Server::allocateEid() {
     return next_eid_.fetch_add(1, std::memory_order_relaxed);

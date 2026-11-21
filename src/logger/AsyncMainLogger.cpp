@@ -165,6 +165,15 @@ static size_t strip_section_codes(const char* in, char* out, size_t out_cap) {
     return oi;
 }
 
+// Trim the trailing newline of a raw block so the colored path can always
+// terminate the line itself: converter output ends with the ANSI reset, and
+// exactly one '\n' is appended after it.
+static size_t trim_trailing_newlines(char* s, size_t len) {
+    while (len > 0 && (s[len - 1] == '\n' || s[len - 1] == '\r'))
+        s[--len] = '\0';
+    return len;
+}
+
 // One entry -> two batch lines. Multi-line text is a Diagnostic Engine
 // block: verbatim, no prefix, its own embedded layout and § colors.
 static void format_entry(mcp_async_logger_t* self, const async_log_entry_t* entry, char* tty_batch,
@@ -173,19 +182,23 @@ static void format_entry(mcp_async_logger_t* self, const async_log_entry_t* entr
     const char* msg = entry->text[0] ? entry->text : "";
     const bool block = strchr(msg, '\n') != NULL;
 
+    // § codes may ride ordinary messages (chat echoes); strip them ONCE and
+    // share the result between the file line and the non-colored console
+    // line. A block's trailing newline is trimmed so every shape below can
+    // terminate its own line with exactly one '\n'.
+    char clean[ASYNC_LOG_LINE_MAX];
+    size_t clean_len = strip_section_codes(msg, clean, sizeof(clean));
+    if (block)
+        trim_trailing_newlines(clean, clean_len);
+
     // ---- plain text (file); the console uses its own shapes below ----
     char plain[ASYNC_LOG_LINE_MAX + 64];
     size_t plain_len;
     if (block) {
-        plain_len = strip_section_codes(msg, plain, sizeof(plain) - 1);
-        if (plain_len && plain[plain_len - 1] != '\n' && plain_len + 1 < sizeof(plain)) {
-            plain[plain_len++] = '\n';
-            plain[plain_len] = '\0';
-        }
+        plain_len = (size_t)snprintf(plain, sizeof(plain), "%s\n", clean);
+        if (plain_len >= sizeof(plain))
+            plain_len = sizeof(plain) - 1;
     } else {
-        // § codes may ride ordinary messages (chat echoes); strip them.
-        char clean[ASYNC_LOG_LINE_MAX];
-        strip_section_codes(msg, clean, sizeof(clean));
         int n = snprintf(plain, sizeof(plain), "[%s] [%s] %s\n", entry->ts,
                          mcp_log_level_name(entry->level), clean);
         if (n < 0)
@@ -205,12 +218,10 @@ static void format_entry(mcp_async_logger_t* self, const async_log_entry_t* entr
         char tty_plain[ASYNC_LOG_LINE_MAX + 64];
         size_t tty_plain_len;
         if (block) {
-            memcpy(tty_plain, plain, plain_len);
-            tty_plain[plain_len] = '\0';
-            tty_plain_len = plain_len;
+            tty_plain_len = (size_t)snprintf(tty_plain, sizeof(tty_plain), "%s\n", clean);
+            if (tty_plain_len >= sizeof(tty_plain))
+                tty_plain_len = sizeof(tty_plain) - 1;
         } else {
-            char clean[ASYNC_LOG_LINE_MAX];
-            strip_section_codes(msg, clean, sizeof(clean));
             int n = snprintf(tty_plain, sizeof(tty_plain), "[%s] %s %s\n", entry->ts,
                              level_tag(entry->level), clean);
             if (n < 0)
@@ -222,30 +233,39 @@ static void format_entry(mcp_async_logger_t* self, const async_log_entry_t* entr
         batch_append(tty_batch, tty_cap, tty_len, tty_plain, tty_plain_len, stdout);
         return;
     }
+
+    // Colored console. The line is built WITHOUT its newline, § codes are
+    // converted to ANSI (mcp_textformat_to_terminal closes with a reset), and
+    // exactly one '\n' is appended after the reset. Writing the reset after
+    // the line's own '\n' (the old order) left an escape-only tail that
+    // rendered as an empty line under every colored log line.
     char colored[ASYNC_LOG_LINE_MAX + 192];
     size_t c_len;
     if (block) {
-        c_len = (size_t)snprintf(colored, sizeof(colored), "%s\n", msg);
-        if (c_len >= sizeof(colored))
-            c_len = sizeof(colored) - 1;
+        size_t msg_len = strlen(msg);
+        if (msg_len >= sizeof(colored))
+            msg_len = sizeof(colored) - 1;
+        memcpy(colored, msg, msg_len);
+        colored[msg_len] = '\0';
+        c_len = trim_trailing_newlines(colored, msg_len);
     } else {
-        c_len = (size_t)snprintf(colored, sizeof(colored), MCP_TERM_DIM "[%s]\x1b[0m %s%s\x1b[0m %s\n",
-                                 entry->ts, level_tag_color(entry->level), level_tag(entry->level),
-                                 msg);
+        c_len = (size_t)snprintf(colored, sizeof(colored),
+                                 MCP_TERM_DIM "[%s]\x1b[0m %s%s\x1b[0m %s", entry->ts,
+                                 level_tag_color(entry->level), level_tag(entry->level), msg);
         if (c_len >= sizeof(colored))
             c_len = sizeof(colored) - 1;
     }
-    // § codes -> ANSI (mcp_textformat_to_terminal appends a trailing reset).
     char ansi[sizeof(colored) + 256];
-    if (!mcp_textformat_to_terminal(colored, ansi, sizeof(ansi))) {
+    size_t ansi_len;
+    if (mcp_textformat_to_terminal(colored, ansi, sizeof(ansi) - 1)) {
+        ansi_len = strlen(ansi);
+    } else {
         memcpy(ansi, colored, c_len);
-        ansi[c_len] = '\0';
-    }
-    size_t ansi_len = strlen(ansi);
-    if (ansi_len && ansi[ansi_len - 1] != '\n' && ansi_len + 1 < sizeof(ansi)) {
-        ansi[ansi_len++] = '\n';
+        ansi_len = c_len;
         ansi[ansi_len] = '\0';
     }
+    ansi[ansi_len++] = '\n';
+    ansi[ansi_len] = '\0';
     batch_append(tty_batch, tty_cap, tty_len, ansi, ansi_len, stdout);
 }
 

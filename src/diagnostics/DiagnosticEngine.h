@@ -105,9 +105,10 @@ class DiagEngine {
     static void stageItem(const std::string& text);  // "+ ExampleWorld loaded!"
     static void stageDone(const std::string& text);  // "Worlds loaded!"
 
-    // Boot epilogue: "Server ready! (41ms)" and, when recoverable issues
-    // were emitted during startup, the summary line.
-    static void ready(unsigned long boot_ms);
+    // Boot epilogue: "Server ready! (41.20ms)" and, when recoverable issues
+    // were emitted during startup, the summary line. The elapsed time carries
+    // decimals (millisecond resolution, two fractional digits).
+    static void ready(double boot_ms);
 
     // ---- diagnostics ----
     // Render a diagnostic. Returns true when it counted as an issue
