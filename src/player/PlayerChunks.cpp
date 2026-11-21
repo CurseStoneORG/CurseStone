@@ -25,8 +25,12 @@
 #include "world/format/Chunk.h"
 #include "scheduler/AsyncPool.h"
 #include "network/protocol/FullChunkDataPacket.h"
+#include "network/protocol/UpdateBlockPacket.h"
 #include "diagnostics/ChestDebug.h"
 #include "tile/Tile.h"
+#include "tile/TileChest.h"
+#include "nbt/NBT.h"
+#include "nbt/tag/CompoundTag.h"
 #include "utils/CRaii.h"
 #include <cstdlib>
 #include <utility>
@@ -179,10 +183,57 @@ void Player::sendChunksAroundSpawn() {
 }
 
 // ============================================================
-// sendChunkTiles — forwards the BlockEntityData of all the tiles of the
-// chunk to this player. The reference server takes precedence the tiles next to with the chunk; without
-// esto, when reconnecting the client receives the block of the sign but not its
-// NBT, this way that the text not is renders until someone it edit again.
+// appendTileSpawnPayload — the era-format tile suffix of a FullChunkData
+// payload. Both era providers appended every Spawnable tile's serialized
+// spawn compound straight onto the chunk blob (blocks+data+sky+light+
+// heightmap+biome colors+extraData+TILES), and the 0.15 client creates
+// its block actors — the chest model, the sign text, the furnace face —
+// from exactly that suffix. CurseStone used to send tiles as standalone
+// BlockEntityData packets only; those can refresh an actor the client
+// holds but never CREATE one, which is why streamed structure chests
+// stayed invisible while /we set 54:0 chests (auto-created actor on the
+// block update) rendered fine. The suffix is the missing half of the
+// era wire format. Empty tile list appends nothing, so tile-less chunks
+// keep their byte-exact old payload.
+// ============================================================
+void Player::appendTileSpawnPayload(int32_t cx, int32_t cz,
+                                    std::vector<uint8_t>& blob) {
+    auto* lvl = getWorld();
+    if (!lvl)
+        return;
+    auto tiles = lvl->getTilesInChunk(cx, cz);
+    if (tiles.empty())
+        return;
+    // Each compound needs its own buffer: cursestone::nbt::write() REPLACES
+    // the output vector (out.clear() first — the write-target contract), so
+    // handing it the chunk blob directly would wipe the 83204-byte block
+    // grid and leave the packet carrying nothing but the last compound
+    // (exactly the wire corruption the first draft shipped). Write one
+    // compound at a time into this scratch vector, then append.
+    blob.reserve(blob.size() + tiles.size() * 96);
+    std::vector<uint8_t> compound;
+    for (auto& t : tiles) {
+        if (!t)
+            continue;
+        utils::TagGuard tag(new cursestone::nbt::CompoundTag());
+        if (!tag)
+            return;
+        // The CLIENT compound (writeSpawnNBT), not the disk layout — the
+        // same distinction sendBlockEntityData draws (furnace BurnTime/
+        // CookTime vs save fields, chest lean id/x/y/z compound).
+        t->writeSpawnNBT(tag.get());
+        compound.clear();
+        cursestone::nbt::write(tag.get(), /*little_endian=*/true, compound);
+        blob.insert(blob.end(), compound.begin(), compound.end());
+    }
+}
+
+// ============================================================
+// sendChunkTiles — the per-stream tile pass: after the chunk payload
+// (now carrying the era tile suffix) the chunk's tiles go out as the
+// WorldEdit-route block update (chests) + BlockEntityData. The suffix
+// binds the actors during the chunk parse; the pass re-affirms them —
+// and covers tiles created between encode-start and flush.
 // ============================================================
 void Player::sendChunkTiles(int32_t cx, int32_t cz) {
     if (!getWorld())
@@ -211,7 +262,16 @@ void Player::sendChunkTiles(int32_t cx, int32_t cz) {
         if (!t)
             continue;
         const auto& p = t->position();
-        sendBlockEntityData((int32_t)p.x, (int32_t)p.y, (int32_t)p.z, *t, this);
+        const int32_t tx = (int32_t)p.x, ty = (int32_t)p.y, tz = (int32_t)p.z;
+        // The WorldEdit-route block update rides ahead of the tile NBT:
+        // the chunk payload gave the cell its block, the UpdateBlock
+        // auto-creates the client's chest actor (the /we set path the
+        // real device renders and opens), and the BlockEntityData that
+        // follows refreshes it with the pair/name tags. Ordering holds
+        // because all three ride one RELIABLE_ORDERED stream.
+        if (std::dynamic_pointer_cast<tile::TileChest>(t))
+            sendChestBlockUpdate(tx, ty, tz);
+        sendBlockEntityData(tx, ty, tz, *t, this);
     }
     // The tile pass for this chunk is complete: this is the gate that
     // makes the "tile not transmitted" verdict meaningful — the inline
@@ -246,6 +306,11 @@ void Player::resendTrackedTiles() {
             const auto& p = t->position();
             const int32_t tx = (int32_t)p.x, ty = (int32_t)p.y, tz = (int32_t)p.z;
             diagnostics::ChestDebug::onTileResync(cfg_.username.c_str(), tx, ty, tz);
+            // Same pair the stream tail sends: the in-world client gets
+            // the actor back via the WorldEdit-route block update, then
+            // the compound refresh. No chunk rebuild around either.
+            if (std::dynamic_pointer_cast<tile::TileChest>(t))
+                sendChestBlockUpdate(tx, ty, tz);
             sendBlockEntityData(tx, ty, tz, *t, this);
         }
     }
@@ -287,6 +352,11 @@ void Player::sendChunk(int cx, int cz) {
     pk->chunkX = cx;
     pk->chunkZ = cz;
     pk->data.assign(buf.get(), buf.get() + outLen);
+    // Era wire format: the chunk carries its own tile compounds (the
+    // suffix the 0.15 client binds block actors from) — appended before
+    // the packet is stamped into ChestDebug so the wire dump shows the
+    // exact bytes the client parses.
+    appendTileSpawnPayload(cx, cz, pk->data);
     diagnostics::ChestDebug::onChunkBuilt(*this, cx, cz, pk->data.data(), pk->data.size());
     sendPacket(pk);
     sendChunkTiles(cx, cz);
@@ -426,6 +496,10 @@ void Player::flushChunkEncodes(int max_chunks, size_t max_bytes) {
         pk->chunkX = slot.cx;
         pk->chunkZ = slot.cz;
         pk->data.assign(slot.wire.get(), slot.wire.get() + slot.wire_len);
+        // Era wire format on the async path too — the worker snapshot
+        // carries no tile state, so the suffix joins here on the tick
+        // thread, before the packet is queued on the chunk stream.
+        appendTileSpawnPayload(slot.cx, slot.cz, pk->data);
         diagnostics::ChestDebug::onChunkBuilt(*this, slot.cx, slot.cz, pk->data.data(),
                                               pk->data.size());
         sendPacket(pk);

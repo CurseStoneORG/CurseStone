@@ -125,6 +125,36 @@ void Player::sendEncodedBody(std::vector<uint8_t> body, uint8_t pid, bool ordere
     if (!adv_iface_)
         return;
 
+    // Wire-order resolution — ONE table for every outbound packet:
+    //   * FullChunkData and BlockEntityData ALWAYS ride the chunk stream
+    //     (RELIABLE_ORDERED, channel 2), whatever the caller asked for.
+    //     The 0.15 client wipes a chunk's block actors when the chunk
+    //     payload arrives, so tile NBT must never overtake its chunk on
+    //     the wire — a rule the batching layer owns, not one every call
+    //     site has to remember to pass a flag for. Tile broadcasts, chunk
+    //     tails and sign reverts all get it by construction.
+    //   * everything else follows the caller's flag: true → login stream
+    //     (channel 0), false → unordered RELIABLE (channel 1).
+    const network::WireStream stream =
+        (pid == network::protocol::FULL_CHUNK_DATA_PACKET ||
+         pid == network::protocol::BLOCK_ENTITY_DATA_PACKET)
+            ? network::WireStream::ChunkOrdered
+            : (ordered ? network::WireStream::LoginOrdered : network::WireStream::Unordered);
+    sendEncodedBodyOnStream(std::move(body), pid, stream);
+}
+
+// The queue path with the stream already resolved: sanitization, the
+// per-packet diagnostics hooks and the per-stream batching queue. Every
+// sendPacket/sendEncodedBody entry point funnels through here.
+void Player::sendEncodedBodyOnStream(std::vector<uint8_t> body, uint8_t pid,
+                                     network::WireStream stream) {
+    if (body.empty())
+        return;
+    if (!connected_.load(std::memory_order_relaxed))
+        return;
+    if (!adv_iface_)
+        return;
+
     // body[0] is the wire pid byte; sanitizer and forensics both look at
     // the payload after it.
     const uint8_t* payload = body.data() + 1;
@@ -142,27 +172,20 @@ void Player::sendEncodedBody(std::vector<uint8_t> body, uint8_t pid, bool ordere
         return;
     }
 
-    // Wire-order resolution — ONE table for every outbound packet:
-    //   * FullChunkData and BlockEntityData ALWAYS ride the chunk stream
-    //     (RELIABLE_ORDERED, channel 2), whatever the caller asked for.
-    //     The 0.15 client wipes a chunk's block actors when the chunk
-    //     payload arrives, so tile NBT must never overtake its chunk on
-    //     the wire — a rule the batching layer owns, not one every call
-    //     site has to remember to pass a flag for. Tile broadcasts, chunk
-    //     tails and sign reverts all get it by construction.
-    //   * everything else follows the caller's flag: true → login stream
-    //     (channel 0), false → unordered RELIABLE (channel 1).
-    const network::WireStream stream =
+    // Wire-order resolution — see sendEncodedBody for the ONE-table rule;
+    // this variant carries a stream the caller already resolved.
+    const network::WireStream resolved =
         (pid == network::protocol::FULL_CHUNK_DATA_PACKET ||
          pid == network::protocol::BLOCK_ENTITY_DATA_PACKET)
             ? network::WireStream::ChunkOrdered
-            : (ordered ? network::WireStream::LoginOrdered : network::WireStream::Unordered);
+            : stream;
 
     diagnostics::ChestDebug::onBodyQueued(cfg_.username.c_str(), pid, payload, payload_len);
 
     // Per-client wire forensics (always on; this is what a client-loss
     // dump replays). 16-byte preview copy, no allocation.
-    net_trace_.recordOut(pid, payload, payload_len, stream != network::WireStream::Unordered);
+    net_trace_.recordOut(pid, payload, payload_len,
+                         resolved != network::WireStream::Unordered);
 
     // Record the outgoing packet in Workbench.
     WorkbenchManager::get().onPacketOut(cfg_.username, pid, 0);
@@ -175,7 +198,7 @@ void Player::sendEncodedBody(std::vector<uint8_t> body, uint8_t pid, bool ordere
     {
         std::lock_guard<std::mutex> lk(batch_mtx_);
         std::vector<std::vector<uint8_t>>* queue;
-        switch (stream) {
+        switch (resolved) {
         case network::WireStream::LoginOrdered:
             queue = &batch_login_;
             break;
