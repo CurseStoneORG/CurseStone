@@ -24,7 +24,6 @@
 #include "item/Item.h"
 #include "workbench/WorkbenchManager.h"
 #include "diagnostics/Diagnostics.h"
-#include "diagnostics/ChestDebug.h"
 #include "network/protocol/Info.h"
 #include "network/protocol/PacketNames.h"
 #include "network/protocol/PacketSanitizer.h"
@@ -180,8 +179,6 @@ void Player::sendEncodedBodyOnStream(std::vector<uint8_t> body, uint8_t pid,
             ? network::WireStream::ChunkOrdered
             : stream;
 
-    diagnostics::ChestDebug::onBodyQueued(cfg_.username.c_str(), pid, payload, payload_len);
-
     // Per-client wire forensics (always on; this is what a client-loss
     // dump replays). 16-byte preview copy, no allocation.
     net_trace_.recordOut(pid, payload, payload_len,
@@ -243,7 +240,6 @@ void Player::flushPendingPackets() {
     sendBatchWire(adv_iface_, cfg_.ip, cfg_.port, take_login, network::WireStream::LoginOrdered);
     sendBatchWire(adv_iface_, cfg_.ip, cfg_.port, take_chunks, network::WireStream::ChunkOrdered);
     sendBatchWire(adv_iface_, cfg_.ip, cfg_.port, take_unordered, network::WireStream::Unordered);
-    diagnostics::ChestDebug::onBodiesFlushed(cfg_.username.c_str(), take_chunks);
     // Hand the drained buffers' capacity back so the next flush starts from
     // the size this one reached instead of re-growing from zero on every
     // flush. Only safe while the queues stayed empty during the send; if new
@@ -311,14 +307,6 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
     if (!connected_.load(std::memory_order_relaxed))
         return;
     uint8_t pid = p.pid();
-
-    // Client-liveness probe for the chest traces: one relaxed increment
-    // per inbound packet while the mode is on (a single relaxed load
-    // when it is off). The traces snapshot this counter when a tile is
-    // handed to the transport, so the report can say whether the client
-    // kept answering after SENT — the only transport-side fact the
-    // server can verify without inventing protocol acknowledgments.
-    diagnostics::ChestDebug::onClientInbound(cfg_.username.c_str());
 
     // Update activity time (the connection-alive clock the timeout sweep
     // checks) and record the incoming packet in Workbench. The ip:port

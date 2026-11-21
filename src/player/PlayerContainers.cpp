@@ -23,7 +23,6 @@
 #include "Player.h"
 #include "world/World.h"
 #include "world/Position.h"
-#include "diagnostics/ChestDebug.h"
 #include "network/protocol/BlockEntityDataPacket.h"
 #include "network/protocol/BlockEventPacket.h"
 #include "network/protocol/UpdateBlockPacket.h"
@@ -118,13 +117,6 @@ void Player::openChestAt(int x, int y, int z) {
     if (!lvl)
         return;
 
-    // OPEN_REQUEST_RECEIVED: the client asked — this tap reached the
-    // server and the chest flow started. Logged before any tile lookup
-    // so a report can tell "the client never asked" apart from "the
-    // server refused/failed the ask"; it says nothing about any UI the
-    // client may or may not render.
-    diagnostics::ChestDebug::onOpenRequest(*this, x, y, z);
-
     // Only one container open at a time per player (see openContainerWindow).
     // The furnace counts too: both windows share the single container window
     // id, and leaving open_furnace_ set would keep a half-open window whose
@@ -145,10 +137,8 @@ void Player::openChestAt(int x, int y, int z) {
     auto existing = lvl->getTile(x, y, z);
     if (existing) {
         chest = std::dynamic_pointer_cast<tile::TileChest>(existing);
-        if (!chest) {
-            diagnostics::ChestDebug::onTileSeam(x, y, z, "open", "foreign-tile-blocked");
+        if (!chest)
             return;
-        }
     } else {
         chest = std::make_shared<tile::TileChest>(
             cursestone::world::Position((double)x, (double)y, (double)z));
@@ -168,20 +158,14 @@ void Player::openChestAt(int x, int y, int z) {
                   : chest->inventory();
     const int slotCount = openInv->getSize();
 
-    diagnostics::ChestDebug::onOpenAttempt(*this, x, y, z, /*tileFound=*/true,
-                                           /*tileCreatedFresh=*/!existing,
-                                           /*paired=*/static_cast<bool>(chestPair));
-
     // InventoryOpenEvent — a listener can cancel (e.g. zone protection,
     // a chest mid-trade) to block opening even though PlayerInteractEvent
     // already passed. Nothing is sent to the client and no viewer is
     // registered if this is cancelled.
     auto ev = event::EventManager::get().fire<event::inventory::InventoryOpenEvent>(openInv,
                                                                                     this);
-    if (ev.isCancelled()) {
-        diagnostics::ChestDebug::onOpenCancelled(*this, x, y, z);
+    if (ev.isCancelled())
         return;
-    }
 
     chest->addViewer();
     open_chest_ = chest;
@@ -219,8 +203,6 @@ void Player::openChestAt(int x, int y, int z) {
         content->slots.push_back(openInv->getItem(i));
     }
     sendPacket(content);
-
-    diagnostics::ChestDebug::onOpenDone(*this, x, y, z, slotCount);
 
     // Lid up + open sound — AFTER the content dump. The era reference
     // servers queue the lid event behind the open batch (addChunkPacket
@@ -550,9 +532,6 @@ void Player::sendBlockEntityData(int32_t x, int32_t y, int32_t z, tile::Tile& t,
     pk->y = y;
     pk->z = z;
     pk->namedtag.assign(bbuf.begin(), bbuf.end());
-    diagnostics::ChestDebug::onTileBuilt(*this, x, y, z, pk->namedtag.data(),
-                                         pk->namedtag.size(),
-                                         only ? only->getName().c_str() : "broadcast");
 
     if (only) {
         only->sendPacket(pk);

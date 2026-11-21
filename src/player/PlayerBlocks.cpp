@@ -36,7 +36,6 @@
 #include "block/BlockMining.h"
 #include "block/BlockOrientation.h"
 #include "block/Block.h"
-#include "diagnostics/ChestDebug.h"
 #include "block/LiquidFlow.h"
 #include "tile/TileSign.h"
 #include "tile/TileChest.h"
@@ -381,7 +380,6 @@ void Player::handleBlockBreak(int x, int y, int z) {
         auto chestTile = std::dynamic_pointer_cast<tile::TileChest>(lvl->getTile(x, y, z));
         if (chestTile) {
             auto chestPair = chestTile->pairTile(lvl);
-            int lootStacks = 0;
             if (srv_) {
                 for (auto& viewer : srv_->playersSnapshotRef()) {
                     if (!viewer)
@@ -401,7 +399,6 @@ void Player::handleBlockBreak(int x, int y, int z) {
                 const auto& stack = entry.second;
                 if (stack.isEmpty())
                     continue;
-                ++lootStacks;
                 double mx, my, mz;
                 scatterDropMotion(mx, my, mz);
                 dropItem(x + 0.5, y + 0.5, z + 0.5, stack.id, (uint8_t)stack.count,
@@ -421,13 +418,6 @@ void Player::handleBlockBreak(int x, int y, int z) {
             // so the next hydration pass cannot resurrect the chest (and
             // heal its block back) from a save the break never reached.
             lvl->dropResidentTileBlob(x, y, z);
-            diagnostics::ChestDebug::onChestBroken(*this, x, y, z, lootStacks,
-                                                   /*tileFound=*/true,
-                                                   /*hadPair=*/static_cast<bool>(chestPair));
-            diagnostics::ChestDebug::onTileRemoved(x, y, z, "block-break");
-        } else {
-            diagnostics::ChestDebug::onChestBroken(*this, x, y, z, 0, /*tileFound=*/false,
-                                                   /*hadPair=*/false);
         }
     } else if (blockId == block::FURNACE || blockId == block::BURNING_FURNACE ||
                blockId == block::SIGN_POST || blockId == block::WALL_SIGN) {
@@ -936,8 +926,6 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
             this, event::player::PlayerInteractEvent::RIGHT_CLICK_BLOCK, x, y, z, (int)face,
             heldStack);
         if (ev.isCancelled()) {
-            diagnostics::ChestDebug::onChestTapped(*this, x, y, z, targetId,
-                                                   /*interactCancelled=*/true);
             // Restore client state after a cancelled interaction.
             resyncUseTarget(this, lvl, x, y, z, face);
             return;
@@ -946,8 +934,6 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
 
     // Open chests instead of placing blocks against them.
     if (!sneakLocked && targetId == block::CHEST) {
-        diagnostics::ChestDebug::onChestTapped(*this, x, y, z, targetId,
-                                               /*interactCancelled=*/false);
         openChestAt(x, y, z);
         return;
     }

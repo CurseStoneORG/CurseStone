@@ -38,7 +38,6 @@
 #include "world/generator/GenerationTask.h"
 #include "scheduler/AsyncPool.h"
 #include "tile/TileFactory.h"
-#include "diagnostics/ChestDebug.h"
 #include "block/BlockIds.h"
 #include "nbt/NBT.h"
 #include "nbt/tag/CompoundTag.h"
@@ -499,10 +498,6 @@ void ChunkManager::commitNeighborTile(int cx, int cz, const std::vector<uint8_t>
                     : uint8_t{0};
             const bool usable = expected != 0 && by >= 0 && by < 128 &&
                                 mcp_chunk_get_block_id(live, bx & 15, by, bz & 15) == expected;
-            if (tileId == "Chest")
-                diagnostics::ChestDebug::onTileSeam(bx, by, bz, "spill",
-                                                    usable ? "landed-live"
-                                                           : "dropped:block-gone-live");
             if (usable) {
                 mcp_chunk_add_tile_entity(live, blob.data(), blob.size());
                 landedLive = true;
@@ -514,15 +509,6 @@ void ChunkManager::commitNeighborTile(int cx, int cz, const std::vector<uint8_t>
             // between because both decisions share these locks. The
             // install re-checks the block before the blob is added.
             pendingTileBlobs_[ChunkKey{cx, cz}].push_back(blob);
-            if (diagnostics::ChestDebug::enabled()) {
-                std::string parkedId;
-                int32_t px = 0, py = 0, pz = 0;
-                if (cursestone::tile::parseTileBlobHeader(blob.data(), blob.size(), parkedId, px,
-                                                          py, pz) &&
-                    parkedId == "Chest")
-                    diagnostics::ChestDebug::onTileSeam(px, py, pz, "spill",
-                                                        "parked-for-install");
-            }
         }
     }
     // Live chunk: also create the registry tile right away — the save
@@ -567,9 +553,6 @@ void ChunkManager::keepBlockMatchedTileBlobs(mcp_chunk_t* chunk,
                 : uint8_t{0};
         const bool usable = expected != 0 && by >= 0 && by < 128 &&
                             mcp_chunk_get_block_id(chunk, bx & 15, by, bz & 15) == expected;
-        if (tileId == "Chest")
-            diagnostics::ChestDebug::onTileSeam(bx, by, bz, "install-drain",
-                                                usable ? "kept" : "dropped:block-gone");
         if (!usable)
             continue;
         mcp_chunk_add_tile_entity(chunk, blob.data(), blob.size());
@@ -632,25 +615,17 @@ void ChunkManager::reconcileStoredTileBlobs(mcp_chunk_t* chunk,
                 ? cursestone::tile::blockIdForTileId(tileId)
                 : uint8_t{0};
         if (expected == 0 || by < 0 || by >= 128) {
-            if (tileId == "Chest")
-                diagnostics::ChestDebug::onTileSeam(bx, by, bz, "install-reconcile",
-                                                    "dropped:no-identity");
             mcp_chunk_remove_tile_entity_at(chunk, i);
             continue;
         }
         const uint8_t at = mcp_chunk_get_block_id(chunk, bx & 15, by, bz & 15);
         if (at == expected) {
-            if (tileId == "Chest")
-                diagnostics::ChestDebug::onTileSeam(bx, by, bz, "install-reconcile", "kept");
             ++i;
             continue;
         }
         if (matchedBefore[i]) {
             // The spill replay of this install killed the block — the
             // tile dies with it (vanilla rule).
-            if (tileId == "Chest")
-                diagnostics::ChestDebug::onTileSeam(bx, by, bz, "install-reconcile",
-                                                    "dropped:spill-kill");
             mcp_chunk_remove_tile_entity_at(chunk, i);
             continue;
         }
@@ -675,11 +650,6 @@ void ChunkManager::reconcileStoredTileBlobs(mcp_chunk_t* chunk,
         mcp_chunk_set_block_full(chunk, bx & 15, by, bz & 15, expected, data);
         mcp_chunk_recalculate_height_map(chunk);
         chunk->dirty = true; // the healed pair persists too
-        if (expected == (uint8_t)cursestone::block::CHEST) {
-            diagnostics::ChestDebug::onTileSeam(bx, by, bz, "install-reconcile",
-                                                "block-healed");
-            diagnostics::ChestDebug::onBlockHealed(bx, by, bz, (int)data);
-        }
         ++i;
     }
 }

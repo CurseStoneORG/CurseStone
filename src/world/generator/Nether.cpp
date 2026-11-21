@@ -21,7 +21,6 @@
  *
  */
 #include "world/generator/Nether.h"
-#include "diagnostics/ChestDebug.h"
 #include "tile/TileFactory.h"
 #include "world/generator/vgen/Blocks.h"
 #include "world/format/Chunk.h"
@@ -336,15 +335,6 @@ void Nether::populate(GenerationContext& ctx) {
 	// path persists and World::ensureTilesLoaded hydrates from.
 	for (const auto& blob : center.mPendingTiles) {
 		mcp_chunk_add_tile_entity(sink, blob.data(), blob.size());
-		if (diagnostics::ChestDebug::enabled()) {
-			std::string tileId;
-			int32_t bx = 0, by = 0, bz = 0;
-			if (cursestone::tile::parseTileBlobHeader(blob.data(), blob.size(), tileId,
-			                                          bx, by, bz) &&
-			    tileId == "Chest")
-				diagnostics::ChestDebug::onTileSeam(bx, by, bz, "populate-flush:nether",
-				                                    "landed");
-		}
 	}
 }
 

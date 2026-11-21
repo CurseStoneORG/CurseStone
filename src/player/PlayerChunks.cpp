@@ -26,7 +26,6 @@
 #include "scheduler/AsyncPool.h"
 #include "network/protocol/FullChunkDataPacket.h"
 #include "network/protocol/UpdateBlockPacket.h"
-#include "diagnostics/ChestDebug.h"
 #include "tile/Tile.h"
 #include "tile/TileChest.h"
 #include "nbt/NBT.h"
@@ -273,12 +272,6 @@ void Player::sendChunkTiles(int32_t cx, int32_t cz) {
             sendChestBlockUpdate(tx, ty, tz);
         sendBlockEntityData(tx, ty, tz, *t, this);
     }
-    // The tile pass for this chunk is complete: this is the gate that
-    // makes the "tile not transmitted" verdict meaningful — the inline
-    // batch flush that carried the chunk already ran (inside
-    // sendPacket), and only now can the trace honestly say whether the
-    // chest's BlockEntityData was built or the pass ended without one.
-    diagnostics::ChestDebug::onChunkTilesDelivered(cx, cz);
 }
 
 void Player::resendTrackedTiles() {
@@ -305,7 +298,6 @@ void Player::resendTrackedTiles() {
                 continue;
             const auto& p = t->position();
             const int32_t tx = (int32_t)p.x, ty = (int32_t)p.y, tz = (int32_t)p.z;
-            diagnostics::ChestDebug::onTileResync(cfg_.username.c_str(), tx, ty, tz);
             // Same pair the stream tail sends: the in-world client gets
             // the actor back via the WorldEdit-route block update, then
             // the compound refresh. No chunk rebuild around either.
@@ -353,11 +345,8 @@ void Player::sendChunk(int cx, int cz) {
     pk->chunkZ = cz;
     pk->data.assign(buf.get(), buf.get() + outLen);
     // Era wire format: the chunk carries its own tile compounds (the
-    // suffix the 0.15 client binds block actors from) — appended before
-    // the packet is stamped into ChestDebug so the wire dump shows the
-    // exact bytes the client parses.
+    // suffix the 0.15 client binds block actors from).
     appendTileSpawnPayload(cx, cz, pk->data);
-    diagnostics::ChestDebug::onChunkBuilt(*this, cx, cz, pk->data.data(), pk->data.size());
     sendPacket(pk);
     sendChunkTiles(cx, cz);
     int64_t hash = ((int64_t)cx << 32) | ((uint32_t)cz);
@@ -500,8 +489,6 @@ void Player::flushChunkEncodes(int max_chunks, size_t max_bytes) {
         // carries no tile state, so the suffix joins here on the tick
         // thread, before the packet is queued on the chunk stream.
         appendTileSpawnPayload(slot.cx, slot.cz, pk->data);
-        diagnostics::ChestDebug::onChunkBuilt(*this, slot.cx, slot.cz, pk->data.data(),
-                                              pk->data.size());
         sendPacket(pk);
         sendChunkTiles(slot.cx, slot.cz);
         int64_t hash = ((int64_t)slot.cx << 32) | ((uint32_t)slot.cz);
