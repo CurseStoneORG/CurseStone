@@ -10,19 +10,41 @@ tapping the empty spot opened nothing. The teleport-sweep chest check
 never caught it because every teleport re-streams the whole ring, which
 picks up late landings.
 
+That first fix made every streamed chest tile ANNOUNCED, but the
+announcements still rode the same unordered-RELIABLE stream as the chunk
+payloads. Plain RELIABLE gives no delivery order: on a real Wi-Fi/LTE
+path (datagram reordering is constant) a tile NBT can reach the client
+before the tail of its chunk's split fragments, and the 0.15 client
+rebuilds a chunk on arrival and destroys the block actors it held for it
+— the actor the tile had just bound is wiped and the chest renders
+invisible and cannot open. On loopback nothing ever reorders, which is
+why the first check stayed green while the real device kept failing.
+The wire now carries chunks + their tile NBT on one RELIABLE_ORDERED
+channel (the chunk stream), so this check locks the fix at three levels:
+
 One real protocol-84 client boots into a normal-generator world (fixed
 seed) and walks a dense, small-step spiral out of spawn — the pacing a
 real exploring player produces, where each stop only streams the ring
 around it while population of freshly generated chunks keeps spilling
 into chunks the client already holds. The client records every streamed
-chunk (FullChunkDataPacket) and every tile announcement
-(BlockEntityDataPacket). After the walk the console saves the world and
-the check parses the region files (.mca, TileEntities list) and asserts:
+chunk (FullChunkDataPacket), every tile announcement
+(BlockEntityDataPacket), the RakNet reliability + ordering channel each
+one arrived on, the per-position receive order, and the raw chunk
+payloads. After the walk the console saves the world and the check
+parses the region files (.mca, TileEntities list) and asserts:
 
   1. the walk actually streamed chunks and found generated chests
   2. EVERY chest tile persisted in a streamed chunk has a
      BlockEntityDataPacket delivered for its exact position — a chest
      the server keeps but never announced is an invisible chest
+  3. every FullChunkData and BlockEntityData arrived RELIABLE_ORDERED
+     on the chunk-stream channel (2) — the wire guarantee that tile NBT
+     can never overtake its chunk, whatever the network does
+  4. every chest tile announcement is processed AFTER the chunk packet
+     of its own chunk in receive order
+  5. the RECEIVED chunk payload itself holds the chest: block id 54
+     with facing 2..5 at every announced chest cell (the wire truth the
+     client's actor binds against, not just what the .mca says)
 
     python3 tools/chest_stream_gap_check.py [--server /path/to/CurseStone]
 
@@ -31,6 +53,7 @@ Exit code 0 = every check passed; 1 = at least one check failed.
 import argparse
 import glob
 import os
+import socket
 import struct
 import subprocess
 import sys
@@ -39,20 +62,154 @@ import time
 import zlib
 
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
-from door_bed_flow_check import Client, PLAYER_ACTION_SPAWN_SAME_DIMENSION  # noqa: E402
+from door_bed_flow_check import (ACK, BATCH_PACKET_ID, DATA_FIRST, DATA_LAST,  # noqa: E402
+                                 NACK, Client, PLAYER_ACTION_SPAWN_SAME_DIMENSION)
 from structure_chest_check import NbtReader  # noqa: E402
 
 BLOCK_ENTITY_DATA = 0x32
 FULL_CHUNK_DATA = 0x34
 
+# Wire layout of the 0.15 FullChunkDataPacket payload (ORDER_COLUMNS,
+# 128-height world) — see world/format/Chunk.cpp chunk_wire_serialize_core:
+#   32768 block ids (index = x<<11 | z<<7 | y) | 16384 data nibbles | ... 
+WIRE_BLOCKS = 32768
+WIRE_DATA = 16384
+
+# RakNet reliability classes the client can observe on received frames.
+RAK_RELIABLE = 2
+RAK_RELIABLE_ORDERED = 3
+# The one ordering channel the chunk stream (chunks + their tile NBT) must
+# ride — WireStream::ChunkOrdered in the server.
+CHUNK_STREAM_CHANNEL = 2
+
 
 class GapClient(Client):
-    """Client + streamed-chunk and tile-announcement capture."""
+    """Client + streamed-chunk, tile-announcement and wire-stream capture.
+
+    Overrides drain() with the same frame walk as the base client, but
+    keeps the RakNet reliability + ordering channel of every received
+    game packet (parse_datagram stays untouched — nine other checks
+    unpack its 5-tuple)."""
 
     def __init__(self, host, port, name, verbose=False):
         super().__init__(host, port, name, verbose)
         self.streamed_chunks = set()  # (cx, cz)
         self.tiles = []               # (x, y, z, compound)
+        # ('chunk', cx, cz) / ('tile', x, y, z) in RECEIVE order — the
+        # tile-after-its-chunk assertion walks this log.
+        self.wire_events = []
+        # (pid, reliability, order_channel) per received game packet,
+        # receive order — the channel-2 lock reads this.
+        self.stream_meta = []
+        # (cx, cz) -> raw FullChunkData payload, kept only during the walk
+        # (≈83 KB per chunk; freed before the region-file phase).
+        self.chunk_payloads = {}
+        self._split_meta = {}         # split_id -> (reliability, channel)
+
+    # ---- receive with stream metadata -----------------------------------
+    @staticmethod
+    def _iter_frames(data):
+        """Same encapsulated-frame walk as Client.parse_datagram, plus the
+        frame's (reliability, order_channel) on every yield."""
+        out = []
+        if not data or data[0] < DATA_FIRST or data[0] > DATA_LAST or len(data) < 4:
+            return out
+        i = 4
+        while i + 3 <= len(data):
+            flags = data[i]
+            reliability = (flags >> 5) & 0x07
+            has_split = bool(flags & 0x10)
+            bit_len = (data[i + 1] << 8) | data[i + 2]
+            i += 3
+            plen = (bit_len + 7) // 8
+            if reliability in (2, 3, 4, 6, 7):
+                i += 3
+            if reliability in (1, 4):
+                i += 3
+            if reliability in (3, 7):
+                channel = data[i + 3]
+                i += 4
+            else:
+                channel = -1
+            split_count = split_id = split_index = 0
+            if has_split:
+                if i + 10 > len(data):
+                    break
+                split_count = int.from_bytes(data[i:i + 4], "big")
+                split_id = int.from_bytes(data[i + 4:i + 6], "big")
+                split_index = int.from_bytes(data[i + 6:i + 10], "big")
+                i += 10
+            if i + plen > len(data):
+                break
+            out.append((data[i:i + plen], has_split, split_count, split_id,
+                        split_index, reliability, channel))
+            i += plen
+        return out
+
+    def drain(self, seconds: float, ack=True):
+        deadline = time.time() + seconds
+        while time.time() < deadline:
+            data = None
+            with self._rx_lock:
+                if self._rx_queue:
+                    data = self._rx_queue.popleft()
+            if data is None:
+                try:
+                    data, _ = self.sock.recvfrom(65536)
+                except socket.timeout:
+                    continue
+                if not data:
+                    continue
+            if data[0] in (ACK, NACK):
+                continue
+            if ack and DATA_FIRST <= data[0] <= DATA_LAST and len(data) >= 4:
+                rel = (data[4] >> 5) & 0x07
+                if rel in (2, 3, 4, 6, 7):
+                    self.send_raw(bytes([ACK]) + struct.pack(">H", 1) + b"\x01" +
+                                  bytes([data[1], data[2], data[3]]))
+            for payload, is_split, count, sid, idx, rel, ch in self._iter_frames(data):
+                if not payload:
+                    continue
+                if is_split:
+                    # Every fragment of one split shares one orderIndex and
+                    # one channel — the reassembled whole inherits them.
+                    self._split_meta.setdefault(sid, (rel, ch))
+                    whole = self.add_fragment(payload, count, sid, idx)
+                    if whole:
+                        meta = self._split_meta.pop(sid, (rel, ch))
+                        self._process_game(whole, meta)
+                    continue
+                self._process_game(payload, (rel, ch))
+
+    def _process_game(self, payload, meta):
+        """Base handle_payload's batch unwrap + ping pong, with the frame's
+        (reliability, channel) attached to every sub-packet."""
+        if payload[0] == 0x00 and len(payload) >= 9:
+            self.send_raw(self.send_encapsulated(
+                bytes([0x03]) + payload[1:9], reliability=2))
+            return
+        if payload[0] == 0xFE and len(payload) > 5:
+            body = payload[1:]
+            if body[0] != BATCH_PACKET_ID or len(body) <= 5:
+                return
+            clen = int.from_bytes(body[1:5], "big")
+            try:
+                raw = zlib.decompress(body[5:5 + clen])
+            except zlib.error:
+                return
+            i = 0
+            while i + 4 <= len(raw):
+                sublen = int.from_bytes(raw[i:i + 4], "big")
+                i += 4
+                if sublen == 0 or i + sublen > len(raw):
+                    break
+                sub = raw[i:i + sublen]
+                i += sublen
+                self.stream_meta.append((sub[0], meta[0], meta[1]))
+                self.on_game_packet(sub)
+            return
+        self.stream_meta.append((payload[0], meta[0], meta[1]))
+        self.on_game_packet(payload)
 
     def on_game_packet(self, p: bytes):
         if not p:
@@ -65,10 +222,19 @@ class GapClient(Client):
                 tag = None
             if tag is not None:
                 self.tiles.append((x, y, z, tag))
+            self.wire_events.append(("tile", x, y, z))
             return
-        if p[0] == FULL_CHUNK_DATA and len(p) >= 10:
+        if p[0] == FULL_CHUNK_DATA and len(p) >= 14:
+            # Wire shape: [pid][cx i32][cz i32][order u8][dataLen i32][data].
             cx, cz = struct.unpack(">ii", p[1:9])
+            data_len = struct.unpack_from(">i", p, 10)[0]
+            if data_len < 0 or 14 + data_len > len(p):
+                return
             self.streamed_chunks.add((cx, cz))
+            self.wire_events.append(("chunk", cx, cz))
+            payload = p[14:14 + data_len]
+            if len(payload) >= WIRE_BLOCKS + WIRE_DATA:
+                self.chunk_payloads[(cx, cz)] = payload
             return
         Client.on_game_packet(self, p)
 
@@ -321,6 +487,49 @@ def main() -> int:
             if extra:
                 fat_chests.append(((x, y, z), extra))
 
+        # Wire-stream truth (the invisible-chest regression lock): chunks
+        # and their tile NBT must arrive RELIABLE_ORDERED on the chunk
+        # stream, and every chest tile must be processed after its own
+        # chunk's packet in receive order.
+        bad_stream = sorted({(pid, rel, ch)
+                             for pid, rel, ch in a.stream_meta
+                             if pid in (FULL_CHUNK_DATA, BLOCK_ENTITY_DATA)
+                             and (rel, ch) != (RAK_RELIABLE_ORDERED, CHUNK_STREAM_CHANNEL)})
+        chunk_seen = set()
+        tiles_before_chunk = []
+        for ev in a.wire_events:
+            if ev[0] == "chunk":
+                chunk_seen.add((ev[1], ev[2]))
+            elif (ev[1] >> 4, ev[3] >> 4) not in chunk_seen:
+                # Tile tuple is ('tile', x, y, z): the chunk key comes from
+                # x and z (ev[1]/ev[3]), never y.
+                tiles_before_chunk.append(ev[1:])
+
+        # Wire truth of every announced chest cell: the chunk payload the
+        # client received must carry block id 54 with facing 2..5 there —
+        # that is the client-side grid the block actor binds against. The
+        # disk (.mca) check below never sees this; a serializer that drops
+        # the chest cell or its facing nibble passes every disk check and
+        # still ships invisible chests.
+        wire_bad_state = []
+        for (x, y, z, tag) in a.tiles:
+            if not (isinstance(tag, dict) and tag.get("id") == "Chest"):
+                continue
+            payload = a.chunk_payloads.get((x >> 4, z >> 4))
+            if payload is None or len(payload) < WIRE_BLOCKS + WIRE_DATA or not (0 <= y < 128):
+                wire_bad_state.append(((x, y, z), "no full chunk payload on the wire"))
+                continue
+            idx = ((x & 15) << 11) | ((z & 15) << 7) | y
+            bid = payload[idx]
+            nib = payload[WIRE_BLOCKS + (idx >> 1)]
+            meta_ = (nib >> 4) if (idx & 1) else (nib & 0x0F)
+            if bid != 54 or not (2 <= meta_ <= 5):
+                wire_bad_state.append(((x, y, z), (bid, meta_)))
+
+        # The payloads were only needed for the decode above; drop them so
+        # the save phase never doubles the check's memory footprint.
+        a.chunk_payloads.clear()
+
         # Flush the world so every held chunk's tiles reach the region
         # files, then read the chests back out of the .mca.
         console("save")
@@ -426,10 +635,21 @@ def main() -> int:
         check(not fat_chests,
               "chest spawn compounds carry the era-reference keys (no disk layout)",
               f"fat={fat_chests[:3]}")
+        check(not bad_stream,
+              "chunk + tile packets arrive RELIABLE_ORDERED on the chunk stream (channel 2)",
+              f"bad={bad_stream[:4]} of {len(bad_stream)}")
+        check(not tiles_before_chunk,
+              "every chest tile announcement is processed after its own chunk",
+              f"before={tiles_before_chunk[:4]} of {len(tiles_before_chunk)}")
+        check(not wire_bad_state,
+              "the received chunk payload holds a chest (id 54, facing 2..5) at every announced chest cell",
+              f"bad={wire_bad_state[:4]} of {len(wire_bad_state)}")
 
         print(f"  sweep: chunks={len(streamed)} announced-chests={len(announced)} "
               f"persisted={len(persisted)} in-streamed-chunks={len(streamed_positions)} "
-              f"missing={len(missing)} broken-blocks={len(broken_blocks)} fat={len(fat_chests)}")
+              f"missing={len(missing)} broken-blocks={len(broken_blocks)} fat={len(fat_chests)} "
+              f"bad-stream={len(bad_stream)} tiles-before-chunk={len(tiles_before_chunk)} "
+              f"wire-bad-state={len(wire_bad_state)}")
     finally:
         try:
             proc.stdin.write(b"stop\n")

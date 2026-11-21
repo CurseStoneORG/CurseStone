@@ -82,14 +82,10 @@ struct RakLibAction {
     uint8_t ip_bytes[4] = {0, 0, 0, 0};
     uint16_t port = 0;
     std::vector<uint8_t> data;
-    // BUG FIX: see raklibThreadLoop() for the full story. True routes
-    // this send through RELIABLE_ORDERED on a dedicated channel so
-    // strict-sequence packets (login/spawn) can never arrive out of
-    // order; false (default) keeps the old RELIABLE-unordered
-    // behavior for everything else (chunks, entity updates, ...),
-    // now on its own separate channel so it can never block ordered
-    // traffic either.
-    bool ordered = false;
+    // Which ordering stream this send rides (see WireStream in
+    // AdvancedSourceInterface.h for the reliability/channel table and
+    // why tile NBT shares the chunk stream).
+    WireStream stream = WireStream::Unordered;
 };
 
 class RakLibInterface : public AdvancedSourceInterface {
@@ -104,14 +100,13 @@ class RakLibInterface : public AdvancedSourceInterface {
     void shutdown() override;
     void tick() override; // Drains inbound_queue_ on main thread
 
-    // AdvancedSourceInterface — these now enqueue to outbound_queue_
-    // ordered=true sends this packet RELIABLE_ORDERED on a dedicated
-    // channel, guaranteeing it's processed by the client in the exact
-    // order it was sent relative to other ordered=true sends. Use for
-    // strict-sequence packets (login/spawn handshake). Default false
-    // keeps the existing unordered RELIABLE behavior.
+    // AdvancedSourceInterface — these now enqueue to outbound_queue_. The
+    // WireStream picks the RakNet reliability + ordering channel: login
+    // handshake on channel 0, chunk stream (chunks + their tile NBT) on
+    // channel 2, everything else unordered RELIABLE on channel 1. See the
+    // WireStream doc in AdvancedSourceInterface.h.
     void sendRawPacket(const std::string& ip, uint16_t port, std::vector<uint8_t> data,
-                       bool ordered = false) override;
+                       WireStream stream = WireStream::Unordered) override;
     void closeSession(const std::string& ip, uint16_t port, const std::string& reason) override;
 
     void setServerName(const std::string& motd);

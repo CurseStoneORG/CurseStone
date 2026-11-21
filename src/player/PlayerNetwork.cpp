@@ -66,9 +66,11 @@ namespace cursestone {
 
 namespace {
 
-// Sends all subpackets in one compressed BatchPacket using the specified channel.
+// Sends all subpackets in one compressed BatchPacket over the given wire
+// stream (reliability + ordering channel picked by the RakLib layer).
 void sendBatchWire(cursestone::network::AdvancedSourceInterface* iface, const std::string& ip,
-                   uint16_t port, std::vector<std::vector<uint8_t>>& subs, bool ordered) {
+                   uint16_t port, std::vector<std::vector<uint8_t>>& subs,
+                   cursestone::network::WireStream stream) {
     if (!iface || subs.empty())
         return;
 
@@ -86,7 +88,7 @@ void sendBatchWire(cursestone::network::AdvancedSourceInterface* iface, const st
     if (wire.size() <= 2)
         return;
 
-    iface->sendRawPacket(ip, port, std::move(wire), ordered);
+    iface->sendRawPacket(ip, port, std::move(wire), stream);
 }
 
 } // namespace
@@ -139,9 +141,25 @@ void Player::sendEncodedBody(std::vector<uint8_t> body, uint8_t pid, bool ordere
         return;
     }
 
+    // Wire-order resolution — ONE table for every outbound packet:
+    //   * FullChunkData and BlockEntityData ALWAYS ride the chunk stream
+    //     (RELIABLE_ORDERED, channel 2), whatever the caller asked for.
+    //     The 0.15 client wipes a chunk's block actors when the chunk
+    //     payload arrives, so tile NBT must never overtake its chunk on
+    //     the wire — a rule the batching layer owns, not one every call
+    //     site has to remember to pass a flag for. Tile broadcasts, chunk
+    //     tails and sign reverts all get it by construction.
+    //   * everything else follows the caller's flag: true → login stream
+    //     (channel 0), false → unordered RELIABLE (channel 1).
+    const network::WireStream stream =
+        (pid == network::protocol::FULL_CHUNK_DATA_PACKET ||
+         pid == network::protocol::BLOCK_ENTITY_DATA_PACKET)
+            ? network::WireStream::ChunkOrdered
+            : (ordered ? network::WireStream::LoginOrdered : network::WireStream::Unordered);
+
     // Per-client wire forensics (always on; this is what a client-loss
     // dump replays). 16-byte preview copy, no allocation.
-    net_trace_.recordOut(pid, payload, payload_len, ordered);
+    net_trace_.recordOut(pid, payload, payload_len, stream != network::WireStream::Unordered);
 
     // Record the outgoing packet in Workbench.
     WorkbenchManager::get().onPacketOut(cfg_.username, pid, 0);
@@ -153,9 +171,20 @@ void Player::sendEncodedBody(std::vector<uint8_t> body, uint8_t pid, bool ordere
     bool flush_now = false;
     {
         std::lock_guard<std::mutex> lk(batch_mtx_);
-        auto& queue = ordered ? batch_ordered_ : batch_unordered_;
+        std::vector<std::vector<uint8_t>>* queue;
+        switch (stream) {
+        case network::WireStream::LoginOrdered:
+            queue = &batch_login_;
+            break;
+        case network::WireStream::ChunkOrdered:
+            queue = &batch_chunks_;
+            break;
+        default:
+            queue = &batch_unordered_;
+            break;
+        }
         batch_bytes_ += body.size();
-        queue.push_back(std::move(body));
+        queue->push_back(std::move(body));
         flush_now = batch_bytes_ >= BATCH_FLUSH_BYTES;
     }
     // Flush immediately when the batch threshold is reached, outside the buffer lock.
@@ -170,18 +199,24 @@ void Player::flushPendingPackets() {
         return;
 
     std::vector<std::vector<uint8_t>> take_unordered;
-    std::vector<std::vector<uint8_t>> take_ordered;
+    std::vector<std::vector<uint8_t>> take_login;
+    std::vector<std::vector<uint8_t>> take_chunks;
     {
         std::lock_guard<std::mutex> lk(batch_mtx_);
-        if (batch_unordered_.empty() && batch_ordered_.empty())
+        if (batch_unordered_.empty() && batch_login_.empty() && batch_chunks_.empty())
             return;
         take_unordered.swap(batch_unordered_);
-        take_ordered.swap(batch_ordered_);
+        take_login.swap(batch_login_);
+        take_chunks.swap(batch_chunks_);
         batch_bytes_ = 0;
     }
-    // Send ordered packets first to preserve the login handshake before chunk data.
-    sendBatchWire(adv_iface_, cfg_.ip, cfg_.port, take_ordered, /*ordered=*/true);
-    sendBatchWire(adv_iface_, cfg_.ip, cfg_.port, take_unordered, /*ordered=*/false);
+    // Handshake first, then the chunk stream (chunks + their tile NBT in
+    // FIFO order), then the rest. Each rides its own RakNet channel, so
+    // this order is UDP pacing, not a correctness dependency — the
+    // client's ordering guarantees live inside each channel.
+    sendBatchWire(adv_iface_, cfg_.ip, cfg_.port, take_login, network::WireStream::LoginOrdered);
+    sendBatchWire(adv_iface_, cfg_.ip, cfg_.port, take_chunks, network::WireStream::ChunkOrdered);
+    sendBatchWire(adv_iface_, cfg_.ip, cfg_.port, take_unordered, network::WireStream::Unordered);
     // Hand the drained buffers' capacity back so the next flush starts from
     // the size this one reached instead of re-growing from zero on every
     // flush. Only safe while the queues stayed empty during the send; if new
@@ -189,9 +224,13 @@ void Player::flushPendingPackets() {
     // simply dropped.
     {
         std::lock_guard<std::mutex> lk(batch_mtx_);
-        if (batch_ordered_.empty()) {
-            take_ordered.clear();
-            batch_ordered_.swap(take_ordered);
+        if (batch_login_.empty()) {
+            take_login.clear();
+            batch_login_.swap(take_login);
+        }
+        if (batch_chunks_.empty()) {
+            take_chunks.clear();
+            batch_chunks_.swap(take_chunks);
         }
         if (batch_unordered_.empty()) {
             take_unordered.clear();

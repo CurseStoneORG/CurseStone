@@ -37,21 +37,49 @@ class Player;
 
 namespace network {
 
+// Wire-order classes — one RakNet ordering channel each. The packet mix a
+// 0.15 client tolerates is strict about some sequences and indifferent to
+// others, so every outbound send declares which class it belongs to:
+//
+//   - Unordered    → RELIABLE on channel 1. Everything whose inter-packet
+//     order the client does not care about (movement, entity updates,
+//     block events, chat). A lost datagram only retransmits itself.
+//
+//   - LoginOrdered → RELIABLE_ORDERED on channel 0. The login/spawn
+//     handshake (PlayStatus → StartGame → SetTime → ...): the client
+//     walks off and hangs if these arrive reordered, and the sequence is
+//     short, so a retransmit-then-unblock here is never observed.
+//
+//   - ChunkOrdered → RELIABLE_ORDERED on channel 2. The chunk stream:
+//     FullChunkDataPacket plus the BlockEntityDataPackets of its tiles.
+//     The 0.15 client rebuilds a chunk when its payload arrives and
+//     destroys every block actor it holds for that chunk, so a tile
+//     packet processed BEFORE its chunk binds an actor the very next
+//     datagram wipes — the chest then renders invisible and cannot open.
+//     Plain RELIABLE delivery does NOT prevent this: real Wi-Fi/LTE
+//     paths reorder UDP datagrams constantly, and a chunk payload spans
+//     2-30 of them while each tile NBT fits in one. Sharing one ordered
+//     channel turns tile-after-chunk into an on-the-wire guarantee
+//     instead of a same-thread enqueueing accident that only holds on a
+//     loopback network.
+enum class WireStream : uint8_t {
+    Unordered = 0,
+    LoginOrdered = 1,
+    ChunkOrdered = 2,
+};
+
 class AdvancedSourceInterface : public SourceInterface {
   public:
     // Send a packet (already-encoded bytes including the leading ID byte)
-    // to the player identified by `ip`:`port`. ordered=true guarantees
-    // this packet is processed by the client strictly after every other
-    // ordered=true packet sent earlier to the same player (RELIABLE_
-    // ORDERED on a dedicated channel); use for login/spawn sequencing.
-    // Default false keeps the existing unordered RELIABLE behavior,
-    // appropriate for chunks/entity updates where inter-packet order
-    // doesn't matter.
+    // to the player identified by `ip`:`port`, routed through the given
+    // WireStream (see the enum above for the reliability/channel table and
+    // the client-side sequences each stream protects).
     // `data` is taken by value: callers that just built the buffer
     // (the batch writer) can std::move it in, so the wire payload
     // transfers into the outbound queue without a heap copy per send.
     virtual void sendRawPacket(const std::string& ip, uint16_t port,
-                               std::vector<uint8_t> data, bool ordered = false) = 0;
+                               std::vector<uint8_t> data,
+                               WireStream stream = WireStream::Unordered) = 0;
     // Close a session immediately, optionally sending a DisconnectPacket first.
     virtual void closeSession(const std::string& ip, uint16_t port,
                               const std::string& reason = "") = 0;
