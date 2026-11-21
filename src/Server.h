@@ -393,10 +393,6 @@ class Server {
     Server& operator=(const Server&) = delete;
 
     bool loadConfig();
-    // Registers the operator's command aliases (commands.aliases in
-    // cursestone.yml) after every command source is live. Bad rows are
-    // reported as E0003 diagnostics and skipped; the boot continues.
-    void applyCommandAliases();
     void initLogger();
     void registerBlocksAndItems();
     bool openNetwork();

@@ -42,17 +42,26 @@ class CommandMap {
     // carry fixed arguments ("gamemode 1") and whatever the sender typed
     // is appended. Real commands always win — a name taken by a command
     // cannot become an alias, and the alias table is consulted only when
-    // the exact lookup misses. owner (a plugin pointer, nullptr for the
-    // software itself) dies with unregisterByOwner. Returns false when
-    // the map does not support aliases or the name/target is rejected.
+    // the exact lookup misses. owner (a plugin pointer, nullptr for
+    // CurseStone's own built-in aliases) dies with unregisterByOwner.
+    // Returns false when the map does not support aliases or the
+    // name/target is rejected.
     virtual bool registerAlias(const std::string& /*alias*/, const std::string& /*target*/,
                                void* /*owner*/) {
         return false;
     }
+    // Removes ONE alias previously registered by the same owner (nullptr
+    // = the software's native aliases). A plugin can never drop a foreign
+    // or native alias this way, and a real command beats an alias anyway.
+    // Returns true when an owned alias existed and is now gone.
+    virtual bool unregisterAlias(const std::string& /*alias*/, void* /*owner*/) {
+        return false;
+    }
     virtual bool dispatch(CommandSender* sender, const std::string& cmd_line) = 0;
     virtual Command* getCommand(const std::string& name) const = 0;
-    // All registered commands (for the dynamic /help). Aliases
-    // (gm, tp, ?...) son comandos propios y aparecen como tales.
+    // All registered commands (for the dynamic /help). Aliases are NOT
+    // Command objects and stay out of this list — they resolve through
+    // dispatch() to the command they point at.
     virtual std::vector<Command*> allCommands() const {
         return {};
     }

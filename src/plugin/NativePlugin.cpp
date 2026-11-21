@@ -272,6 +272,15 @@ bool api_cmd_addAlias(CsPluginApi* api, const char* alias, const char* target) {
     return Server::getInstance().getCommandMap()->registerAlias(alias, target, pl);
 }
 
+// commands.removeAlias: drops ONE alias THIS plugin registered earlier
+// (addAlias). Native and foreign aliases are out of reach by design.
+bool api_cmd_removeAlias(CsPluginApi* api, const char* alias) {
+    NativePlugin* pl = pluginFromApi(api);
+    if (!pl || !alias)
+        return false;
+    return Server::getInstance().getCommandMap()->unregisterAlias(alias, pl);
+}
+
 void api_cmd_reply(const CsCommandSender* sender, const char* msg) {
     if (!sender || !msg)
         return;
@@ -284,7 +293,7 @@ void api_cmd_reply(const CsCommandSender* sender, const char* msg) {
         p->sendMessage(msg);
 }
 
-CsCommandApi g_cmdApi = {api_cmd_add, api_cmd_reply, api_cmd_addAlias};
+CsCommandApi g_cmdApi = {api_cmd_add, api_cmd_reply, api_cmd_addAlias, api_cmd_removeAlias};
 
 // server: world/player lists are resolved per call; nothing caches pointers.
 void api_server_broadcast(const char* msg) {

@@ -73,9 +73,6 @@ class Config {
     bool getBool(const std::string& dottedKey, bool def = false) const;
     std::vector<std::string> getStringList(const std::string& dottedKey,
                                            const std::vector<std::string>& def = {}) const;
-    // Key -> scalar value pairs of a map node (dotted key). Children that
-    // are not scalars are skipped; a missing or non-map key returns empty.
-    std::vector<std::pair<std::string, std::string>> getMap(const std::string& dottedKey) const;
 
     void setString(const std::string& dottedKey, const std::string& v);
     void setInt(const std::string& dottedKey, int64_t v);
