@@ -268,43 +268,53 @@ void RakLibInterface::raklibThreadLoop() {
                     // drain loop is now a straight dispatch on the action.
                     const uint8_t* ipBytes = action.ip_bytes;
                     if (action.type == RakLibActionType::SEND_PACKET) {
-                        // BUG FIX (v2): the previous fix here forced EVERY
-                        // packet to RELIABLE (unordered) on channel 0 to
-                        // avoid one lost reliable-ordered packet blocking
-                        // all later ones on that channel. That avoided the
-                        // deadlock, but it broke something else: The reference server/real
-                        // MCPE servers rely on the login/spawn sequence
-                        // (PlayStatus → StartGame → SetTime →
-                        // SetSpawnPosition → SetDifficulty → SetHealth,
-                        // each sent as its own BatchPacket here) arriving
-                        // in that exact order. With everything on the same
-                        // unordered channel, real network jitter/reorder —
-                        // even mild lag — can deliver those out of order,
-                        // and the real MCPE 0.15.10 client does not
-                        // tolerate that: it silently breaks and eventually
-                        // disconnects with "Disconnected from server",
-                        // typically after a couple minutes of play once
-                        // enough reordering has accumulated (chunk streams
-                        // add many more unordered sends on top of the
-                        // initial handshake, increasing the odds over
-                        // time — matching the reported 3-5 minute pattern).
+                        // WireStream → RakNet reliability + ordering channel.
+                        // Three channels, three independent delivery streams:
                         //
-                        // Fix: use two separate channels instead of one.
-                        //   - ordered=true  → RELIABLE_ORDERED on channel 0
-                        //     (login/spawn packets only — few packets, so
-                        //     a lost one and its retransmit-then-unblock
-                        //     is fast and never observed by the player).
-                        //   - ordered=false → RELIABLE on channel 1 (chunks,
-                        //     entity updates, everything else) — same as
-                        //     before, no ordering guarantee needed or given,
-                        //     and it can never be blocked by channel 0.
+                        //   - LoginOrdered → RELIABLE_ORDERED on channel 0.
+                        //     The login/spawn handshake (PlayStatus →
+                        //     StartGame → SetTime → SetSpawnPosition →
+                        //     SetDifficulty → SetHealth): the client does not
+                        //     tolerate those arriving reordered, and the
+                        //     sequence is short enough that a lost one and
+                        //     its retransmit-then-unblock is never observed.
+                        //
+                        //   - ChunkOrdered → RELIABLE_ORDERED on channel 2.
+                        //     FullChunkDataPacket plus the BlockEntityData
+                        //     of its tiles. The 0.15 client rebuilds a chunk
+                        //     when the payload arrives and destroys the
+                        //     block actors it held for it, so tile NBT that
+                        //     overtakes its chunk binds an actor the next
+                        //     datagram wipes — the chest renders invisible
+                        //     and cannot open. Plain RELIABLE never
+                        //     prevented that: real networks reorder UDP
+                        //     datagrams, and a chunk spans 2-30 of them.
+                        //     One ordered channel makes tile-after-chunk a
+                        //     wire guarantee.
+                        //
+                        //   - Unordered → RELIABLE on channel 1. Movement,
+                        //     entity updates, everything order-agnostic —
+                        //     never blocked by either ordered stream.
+                        //
                         // RakNet supports 32 independent ordering channels
                         // precisely so unrelated traffic doesn't have to
-                        // share one queue — this restores that separation
-                        // instead of collapsing everything onto channel 0.
-                        uint8_t reliability = action.ordered ? MCP_RELIABILITY_RELIABLE_ORDERED
-                                                             : MCP_RELIABILITY_RELIABLE;
-                        uint8_t order_channel = action.ordered ? 0 : 1;
+                        // share one queue.
+                        uint8_t reliability;
+                        uint8_t order_channel;
+                        switch (action.stream) {
+                        case WireStream::LoginOrdered:
+                            reliability = MCP_RELIABILITY_RELIABLE_ORDERED;
+                            order_channel = 0;
+                            break;
+                        case WireStream::ChunkOrdered:
+                            reliability = MCP_RELIABILITY_RELIABLE_ORDERED;
+                            order_channel = 2;
+                            break;
+                        default:
+                            reliability = MCP_RELIABILITY_RELIABLE;
+                            order_channel = 1;
+                            break;
+                        }
                         mcp_rak_session_manager_send_encapsulated(
                             &raklib_.manager, ipBytes, action.port, action.data.data(),
                             action.data.size(), reliability, order_channel);
@@ -457,7 +467,7 @@ void RakLibInterface::setServerName(const std::string& motd) {
 // sendRawPacket() — enqueue to outbound queue (main → RakLib)
 // ============================================================================
 void RakLibInterface::sendRawPacket(const std::string& ip, uint16_t port,
-                                    std::vector<uint8_t> data, bool ordered) {
+                                    std::vector<uint8_t> data, WireStream stream) {
     if (!running_.load())
         return;
     RakLibAction action;
@@ -467,7 +477,7 @@ void RakLibInterface::sendRawPacket(const std::string& ip, uint16_t port,
                 // sscanf failure, just detected before it ever queues
     action.port = port;
     action.data = std::move(data); // payload moves, zero heap copy
-    action.ordered = ordered;
+    action.stream = stream;
     {
         std::lock_guard<std::mutex> lk(outbound_mtx_);
         outbound_queue_.push(std::move(action));

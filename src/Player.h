@@ -955,8 +955,16 @@ class Player : public IPlayer,
     static constexpr size_t kMaxOutstandingChunkEncodes = 24;
 
     mutable std::mutex batch_mtx_;
-    std::vector<std::vector<uint8_t>> batch_unordered_;
-    std::vector<std::vector<uint8_t>> batch_ordered_;
+    // Per-WireStream outbound queues (see AdvancedSourceInterface.h). The
+    // chunk queue is its own list so FullChunkData and the BlockEntityData
+    // of its tiles leave in one FIFO per flush and share one
+    // RELIABLE_ORDERED channel: the 0.15 client wipes a chunk's block
+    // actors when the chunk payload arrives, so tile NBT that overtakes its
+    // chunk on a reordering network binds an actor the client then
+    // destroys — the invisible-chest bug.
+    std::vector<std::vector<uint8_t>> batch_unordered_; // channel 1 (RELIABLE)
+    std::vector<std::vector<uint8_t>> batch_login_;     // channel 0 (RELIABLE_ORDERED)
+    std::vector<std::vector<uint8_t>> batch_chunks_;    // channel 2 (RELIABLE_ORDERED)
     size_t batch_bytes_ = 0;
     // Flush batches immediately when they reach 32 KB.
     static constexpr size_t BATCH_FLUSH_BYTES = 32 * 1024;
