@@ -277,6 +277,33 @@ class Player : public IPlayer,
     void sendBlockEntityData(int32_t x, int32_t y, int32_t z, tile::Tile& t,
                              Player* only = nullptr);
 
+    // The WorldEdit-route block write for one tile cell: an
+    // UpdateBlockPacket carrying the LIVE grid's id + meta (a chest cell
+    // reads 54 + facing 2..5) with FLAG_ALL_PRIORITY — byte-for-byte the
+    // packet World::broadcastBlockUpdate builds for world.setBlock(). The
+    // 0.15 client auto-creates the block actor when a block update lands
+    // (the exact path a player-placed chest takes — the /we set 54:0
+    // chests that render and open), while a standalone BlockEntityData can
+    // only UPDATE an actor the client already holds, never create one.
+    // Sent on the chunk stream (ordered channel 2) so it can never
+    // overtake its own chunk: chunk -> block update (actor born) ->
+    // BlockEntityData (actor refreshed). Read-only over the tile state —
+    // no tile is created, moved or emptied by this packet.
+    void sendChestBlockUpdate(int32_t x, int32_t y, int32_t z);
+
+    // Appends the era-format tile suffix to a FullChunkData payload: the
+    // serialized CLIENT spawn compound of every tile in the chunk,
+    // concatenated as consecutive little-endian NBT compounds right after
+    // the extra-data section. The 0.15 client creates its block actors
+    // (chest model, sign text, furnace face) from exactly this suffix —
+    // both era providers appended getSpawnCompound() of every Spawnable
+    // to the chunk blob, and a standalone BlockEntityData never creates
+    // an actor, so a chunk stream without the suffix ships invisible
+    // chests. Empty tile list appends zero bytes: tile-less chunks keep
+    // their exact old payload.
+    void appendTileSpawnPayload(int32_t cx, int32_t cz,
+                                std::vector<uint8_t>& blob);
+
     // Sends tile data for all block entities in a chunk.
     void sendChunkTiles(int32_t cx, int32_t cz);
 
@@ -349,6 +376,12 @@ class Player : public IPlayer,
     // copy of the encoded [pid][body] bytes; queueing/flushing is shared
     // with sendPacket().
     void sendEncodedBody(std::vector<uint8_t> body, uint8_t pid, bool ordered = false);
+    // Same queue path with the wire stream already resolved — the escape
+    // hatch for packets whose ordering class the pid table cannot express
+    // (the tile-announce UpdateBlock rides the chunk stream while ordinary
+    // block edits keep the unordered stream).
+    void sendEncodedBodyOnStream(std::vector<uint8_t> body, uint8_t pid,
+                                 network::WireStream stream);
     // Flushes pending packets into batches.
     void flushPendingPackets();
     void sendMessage(const std::string& msg) override;

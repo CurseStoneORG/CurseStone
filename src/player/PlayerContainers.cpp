@@ -26,6 +26,7 @@
 #include "diagnostics/ChestDebug.h"
 #include "network/protocol/BlockEntityDataPacket.h"
 #include "network/protocol/BlockEventPacket.h"
+#include "network/protocol/UpdateBlockPacket.h"
 #include "network/protocol/ContainerOpenPacket.h"
 #include "network/protocol/ContainerClosePacket.h"
 #include "network/protocol/ContainerSetContentPacket.h"
@@ -569,5 +570,46 @@ void Player::sendBlockEntityData(int32_t x, int32_t y, int32_t z, tile::Tile& t,
             other->sendPacket(pk);
         }
     }
+}
+
+// ============================================================
+// sendChestBlockUpdate — the WorldEdit-route block write for one chest
+// cell: the SAME UpdateBlockPacket broadcastBlockUpdate builds for
+// world.setBlock (live grid id + meta, FLAG_ALL_PRIORITY), pushed on the
+// chunk stream so it is processed after the cell's chunk and before the
+// tile NBT that follows it. The 0.15 client auto-creates the block actor
+// from a block update — the /we set 54:0 path that renders and opens on
+// the real device — while a BlockEntityData alone can only refresh an
+// actor the client already holds. Pure wire announcement: no tile is
+// created, moved or emptied; the TileChest (official constructor) and
+// its loot stay exactly as the hydration built them.
+// ============================================================
+void Player::sendChestBlockUpdate(int32_t x, int32_t y, int32_t z) {
+    if (y < 0 || y > 255)
+        return;
+    auto* lvl = getWorld();
+    if (!lvl)
+        return;
+
+    auto ubp = std::make_shared<network::protocol::UpdateBlockPacket>();
+    ubp->x = x;
+    ubp->z = z;
+    ubp->y = (uint8_t)y;
+    // The LIVE grid state — same reads broadcastBlockUpdate does, so this
+    // packet is byte-identical to what a /we set 54:0 at this cell sends.
+    ubp->blockId = lvl->getBlockId(x, y, z);
+    ubp->blockData = lvl->getBlockData(x, y, z);
+    ubp->flags = network::protocol::UpdateBlockPacket::FLAG_ALL_PRIORITY;
+    if (ubp->blockId == 0)
+        return; // Nothing to bind an actor against (cell already air).
+    std::vector<uint8_t> body;
+    ubp->writePacket(body);
+    if (body.empty())
+        return;
+    // Chunk stream, not the caller-flag table: an UpdateBlock announced
+    // beside its tile must be ordered AFTER the chunk payload that gave
+    // the cell its block, on the same RELIABLE_ORDERED channel.
+    sendEncodedBodyOnStream(std::move(body), ubp->pid(),
+                            network::WireStream::ChunkOrdered);
 }
 } // namespace cursestone
