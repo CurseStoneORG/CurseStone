@@ -81,8 +81,9 @@ class Block {
     virtual std::string name() const {
         return std::string("Block#") + std::to_string(id());
     }
-    // Get the singleton Block instance for a numeric id. Returns the
-    // generic BlockStone instance for unknown ids.
+    // Get the singleton Block instance for a numeric id. Never null:
+    // ids no concrete Block was registered for come back as a generic
+    // solid flyweight, so callers may dereference the pointer bare.
     static Block* get(uint8_t id);
     // Lazily register a singleton.
     static void registerBlock(std::unique_ptr<Block> b);

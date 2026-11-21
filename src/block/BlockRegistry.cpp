@@ -27,6 +27,7 @@
 #include "BlockAnvil.h"
 #include "BlockBedrock.h"
 #include "BlockChest.h"
+#include "BlockCoalOre.h"
 #include "BlockCobblestone.h"
 #include "BlockDiamond.h"
 #include "BlockDiamondOre.h"
@@ -56,6 +57,7 @@
 #include "BlockObsidian.h"
 #include "BlockPlanks.h"
 #include "BlockPortal.h"
+#include "BlockProfiles.h"
 #include "BlockRedstoneOre.h"
 #include "BlockSapling.h"
 #include "BlockSand.h"
@@ -146,5 +148,65 @@ void register_all_blocks() {
     // physics, an unregistered anvil could not fall. Registered LAST so
     // it does not disturb the ids above if something else re-registers.
     Block::registerBlock(std::make_unique<BlockAnvil>());
+
+    // Coal ore (16) — the flyweight class existed all along but never
+    // made it into this list, so every coal vein underground handed
+    // Block::get() a null for the bare-deref call sites (join settle,
+    // bed support, egg ground scan).
+    Block::registerBlock(std::make_unique<BlockCoalOre>());
+
+    // Palette ids real worlds carry without a bespoke class (see
+    // BlockProfiles.h). Ground cover must not read as solid — the
+    // reported join crash was a saved join spot inside tall grass (31)
+    // dereferencing the null flyweight in the join settle — and thin
+    // decor must not eat skylight, so both groups register with their
+    // real profile instead of the generic fallback's solid shape. The
+    // plain material blocks get their exact id and name on top of
+    // fallback-equal behavior.
+    Block::registerBlock(std::make_unique<BlockPlantLike>(TALL_GRASS_ID, "Tall Grass"));
+    Block::registerBlock(std::make_unique<BlockPlantLike>(DEAD_BUSH, "Dead Bush"));
+    Block::registerBlock(std::make_unique<BlockPlantLike>(DANDELION_ID, "Dandelion"));
+    Block::registerBlock(std::make_unique<BlockPlantLike>(FLOWER, "Poppy"));
+    Block::registerBlock(std::make_unique<BlockPlantLike>(BROWN_MUSHROOM, "Brown Mushroom"));
+    Block::registerBlock(std::make_unique<BlockPlantLike>(RED_MUSHROOM, "Red Mushroom"));
+    Block::registerBlock(std::make_unique<BlockPlantLike>(SUGARCANE, "Sugarcane"));
+    Block::registerBlock(std::make_unique<BlockPlantLike>(DOUBLE_PLANT, "Double Plant"));
+
+    Block::registerBlock(std::make_unique<BlockThinDecor>(BED, "Bed Block"));
+    Block::registerBlock(std::make_unique<BlockThinDecor>(COBWEB_ID, "Cobweb"));
+    Block::registerBlock(std::make_unique<BlockThinDecor>(REDSTONE_WIRE, "Redstone Dust"));
+    Block::registerBlock(std::make_unique<BlockThinDecor>(WOODEN_DOOR, "Wooden Door"));
+    Block::registerBlock(std::make_unique<BlockThinDecor>(LADDER_ID, "Ladder"));
+    Block::registerBlock(std::make_unique<BlockThinDecor>(RAIL, "Rail"));
+    Block::registerBlock(std::make_unique<BlockThinDecor>(IRON_DOOR, "Iron Door"));
+    Block::registerBlock(std::make_unique<BlockThinDecor>(LEVER, "Lever"));
+    Block::registerBlock(std::make_unique<BlockThinDecor>(STONE_PRESSURE_PLATE, "Stone Pressure Plate"));
+    Block::registerBlock(std::make_unique<BlockThinDecor>(WOOD_PRESSURE_PLATE, "Wood Pressure Plate"));
+    Block::registerBlock(std::make_unique<BlockThinDecor>(STONE_BUTTON, "Stone Button"));
+    Block::registerBlock(std::make_unique<BlockThinDecor>(FENCE_ID, "Fence"));
+    Block::registerBlock(std::make_unique<BlockThinDecor>(TRAPDOOR_ID, "Trapdoor"));
+    Block::registerBlock(std::make_unique<BlockThinDecor>(IRON_BARS_ID, "Iron Bars"));
+    Block::registerBlock(std::make_unique<BlockThinDecor>(VINE_ID, "Vines"));
+    Block::registerBlock(std::make_unique<BlockThinDecor>(WATER_LILY, "Lily Pad"));
+    Block::registerBlock(std::make_unique<BlockThinDecor>(TRAPDOOR_IRON, "Iron Trapdoor"));
+    Block::registerBlock(std::make_unique<BlockThinDecor>(LEAVES_2, "Leaves"));
+    Block::registerBlock(std::make_unique<BlockThinDecor>(CACTUS_ID, "Cactus"));
+
+    Block::registerBlock(std::make_unique<BlockSolidLike>(WOOL, "Wool"));
+    Block::registerBlock(std::make_unique<BlockSolidLike>(DOUBLE_SLAB_ID, "Double Stone Slab"));
+    Block::registerBlock(std::make_unique<BlockSolidLike>(BRICKS, "Bricks"));
+    Block::registerBlock(std::make_unique<BlockSolidLike>(BOOKSHELF, "Bookshelf"));
+    Block::registerBlock(std::make_unique<BlockSolidLike>(MOSSY_COBBLESTONE, "Mossy Cobblestone"));
+    Block::registerBlock(std::make_unique<BlockSolidLike>(MOB_SPAWNER, "Mob Spawner"));
+    Block::registerBlock(std::make_unique<BlockSolidLike>(WORKBENCH, "Crafting Table"));
+    Block::registerBlock(std::make_unique<BlockSolidLike>(COBBLE_STAIRS, "Cobblestone Stairs"));
+    Block::registerBlock(std::make_unique<BlockSolidLike>(CLAY, "Clay"));
+    Block::registerBlock(std::make_unique<BlockSolidLike>(PUMPKIN_ID, "Pumpkin"));
+    Block::registerBlock(std::make_unique<BlockSolidLike>(MONSTER_EGG_BLOCK, "Monster Stone Egg"));
+    Block::registerBlock(std::make_unique<BlockSolidLike>(HUGE_MUSHROOM_BROWN, "Brown Mushroom Block"));
+    Block::registerBlock(std::make_unique<BlockSolidLike>(HUGE_MUSHROOM_RED, "Red Mushroom Block"));
+    Block::registerBlock(std::make_unique<BlockSolidLike>(MELON_BLOCK_ID, "Melon"));
+    Block::registerBlock(std::make_unique<BlockSolidLike>(MYCELIUM, "Mycelium"));
+    Block::registerBlock(std::make_unique<BlockSolidLike>(WOOD_2, "Log"));
 }
 } // namespace
