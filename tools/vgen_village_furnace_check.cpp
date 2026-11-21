@@ -1,14 +1,17 @@
 // tools/vgen_village_furnace_check.cpp
-// E2E guard for the village smithy furnace removal: the 0.15.10 client
-// crashes when it touches a furnace, so structure generation must not
-// place any. Locates real village centers for the world seed through the
+// E2E guard for the village smithy furnaces: the blacksmith places its two
+// furnace blocks again (the 0.15 client opens them through the tile-actor
+// route the chest fix ships), so structure generation must place them and
+// only them. Locates real village centers for the world seed through the
 // live VillageFeature placement math, generates a full chunk window
 // around each one through the actual VgenSource pipeline
 // (generate + populate + spill drain), then asserts:
 //   1) at least one village was found,
 //   2) the villages really built (planks + cobblestone present),
-//   3) ZERO furnace blocks (id 61/62) exist anywhere in the generated
-//      terrain — this is what fails before the removal and passes after.
+//   3) furnace blocks (id 61/62) came back inside the generated terrain —
+//      this is what failed while the smithy had them commented out,
+//   4) every furnace carries the smithy's facing meta (2..5), never a
+//      stray unplaced meta.
 //
 //   g++ -std=c++20 -O2 -Isrc -Isrc/world/generator \
 //       tools/vgen_village_furnace_check.cpp <repo objects> -o /tmp/vgen_village_furnace_check
@@ -34,20 +37,24 @@ constexpr int kWindowRadius = 8;      // chunks generated around each village
 struct Window {
     int cx, cz;
     long furnaces = 0;
+    long badMeta = 0;
     long planks = 0;
     long cobble = 0;
 };
 
 // One furnace block anywhere in a generated chunk counts, whichever
-// structure or spill wrote it.
+// structure or spill wrote it; its meta must be a smithy facing (2..5).
 void scanChunk(mcp_chunk_t* c, Window& w) {
     for (int x = 0; x < 16; ++x)
         for (int z = 0; z < 16; ++z)
             for (int y = 0; y < 128; ++y) {
                 const uint8_t id = mcp_chunk_get_block_id(c, x, y, z);
-                if (id == (uint8_t)BlockId::FURNACE || id == (uint8_t)BlockId::BURNING_FURNACE)
+                if (id == (uint8_t)BlockId::FURNACE || id == (uint8_t)BlockId::BURNING_FURNACE) {
                     ++w.furnaces;
-                else if (id == (uint8_t)BlockId::PLANKS)
+                    const uint8_t meta = mcp_chunk_get_block_data(c, x, y, z);
+                    if (meta < 2 || meta > 5)
+                        ++w.badMeta;
+                } else if (id == (uint8_t)BlockId::PLANKS)
                     ++w.planks;
                 else if (id == (uint8_t)BlockId::COBBLESTONE)
                     ++w.cobble;
@@ -128,12 +135,14 @@ int main(int argc, char** argv) {
     VgenSource gen(worldSeed);
 
     long totalFurnaces = 0;
+    long totalBadMeta = 0;
     bool villageBuilt = false;
     for (auto [vcx, vcz] : villages) {
         Window w = generateWindow(gen, worldSeed, vcx, vcz);
-        std::printf("  village @ chunk (%d,%d): furnaces=%ld planks=%ld cobble=%ld\n",
-                    w.cx, w.cz, w.furnaces, w.planks, w.cobble);
+        std::printf("  village @ chunk (%d,%d): furnaces=%ld badMeta=%ld planks=%ld cobble=%ld\n",
+                    w.cx, w.cz, w.furnaces, w.badMeta, w.planks, w.cobble);
         totalFurnaces += w.furnaces;
+        totalBadMeta += w.badMeta;
         if (w.planks > 0 && w.cobble > 0)
             villageBuilt = true;
     }
@@ -143,9 +152,12 @@ int main(int argc, char** argv) {
         std::printf("FAIL: generated window(s) contain no village materials\n");
         ok = false;
     }
-    if (totalFurnaces != 0) {
-        std::printf("FAIL: %ld furnace block(s) generated inside village windows\n",
-                    totalFurnaces);
+    if (totalFurnaces == 0) {
+        std::printf("FAIL: no furnace block generated inside any village window\n");
+        ok = false;
+    }
+    if (totalBadMeta != 0) {
+        std::printf("FAIL: %ld furnace block(s) with a non-facing meta (2..5)\n", totalBadMeta);
         ok = false;
     }
     std::printf(ok ? "VILLAGE FURNACE CHECK: OK\n" : "VILLAGE FURNACE CHECK: FAIL\n");

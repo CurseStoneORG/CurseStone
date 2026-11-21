@@ -279,17 +279,20 @@ class Player : public IPlayer,
 
     // The WorldEdit-route block write for one tile cell: an
     // UpdateBlockPacket carrying the LIVE grid's id + meta (a chest cell
-    // reads 54 + facing 2..5) with FLAG_ALL_PRIORITY — byte-for-byte the
-    // packet World::broadcastBlockUpdate builds for world.setBlock(). The
-    // 0.15 client auto-creates the block actor when a block update lands
-    // (the exact path a player-placed chest takes — the /we set 54:0
-    // chests that render and open), while a standalone BlockEntityData can
-    // only UPDATE an actor the client already holds, never create one.
-    // Sent on the chunk stream (ordered channel 2) so it can never
-    // overtake its own chunk: chunk -> block update (actor born) ->
-    // BlockEntityData (actor refreshed). Read-only over the tile state —
-    // no tile is created, moved or emptied by this packet.
-    void sendChestBlockUpdate(int32_t x, int32_t y, int32_t z);
+    // reads 54 + facing 2..5, a furnace cell 61 + facing 2..5) with
+    // FLAG_ALL_PRIORITY — byte-for-byte the packet World::
+    // broadcastBlockUpdate builds for world.setBlock(). The 0.15 client
+    // auto-creates the block actor when a block update lands (the exact
+    // path a player-placed chest takes — the /we set 54:0 chests and
+    // /we set 61:0 furnaces that render and open), while a standalone
+    // BlockEntityData can only UPDATE an actor the client already holds,
+    // never create one. Sent on the chunk stream (ordered channel 2) so
+    // it can never overtake its own chunk: chunk -> block update (actor
+    // born) -> BlockEntityData (actor refreshed). Read-only over the
+    // tile state — no tile is created, moved or emptied by this packet.
+    // Call it for the tiles tileNeedsActorAnnounce() accepts (chest,
+    // furnace); signs and spawners bind from the chunk suffix alone.
+    void sendTileBlockUpdate(int32_t x, int32_t y, int32_t z);
 
     // Appends the era-format tile suffix to a FullChunkData payload: the
     // serialized CLIENT spawn compound of every tile in the chunk,

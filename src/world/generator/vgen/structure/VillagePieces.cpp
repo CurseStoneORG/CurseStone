@@ -1504,11 +1504,12 @@ bool Smithy::postProcess(BlockSource* level, Random& random, const BoundingBox& 
 	placeBlock(level, Block::mIronFence->mID, 9, 2, 4, chunkBB);
 	generateBox(level, chunkBB, 7, 2, 4, 8, 2, 5, BlockID::AIR, BlockID::AIR, false);
 	placeBlock(level, Block::mCobblestone->mID, cobbleRandom, mCobbleSelector, 6, 1, 3, chunkBB);
-	// TODO: Fix the crash client when it touches an furnace, then restore
-	// the furnace below (the blacksmith was the only structure placing
-	// one). Commented out so villages stop generating them until then.
-	// placeBlock(level, FullBlock(Block::mFurnace->mID, Direction::DIRECTION_FACING[Direction::DIRECTION_OPPOSITE[orientation]]), 6, 2, 3, chunkBB);
-	// placeBlock(level, FullBlock(Block::mFurnace->mID, Direction::DIRECTION_FACING[Direction::DIRECTION_OPPOSITE[orientation]]), 6, 3, 3, chunkBB);
+	// The blacksmith's two furnace blocks (the only structure that places
+	// one). The 0.15 client opens them through the same tile-actor route
+	// the chest fix ships: tile suffix on the chunk stream, then the
+	// WorldEdit-route UpdateBlock, then the compound refresh.
+	placeBlock(level, FullBlock(Block::mFurnace->mID, Direction::DIRECTION_FACING[Direction::DIRECTION_OPPOSITE[orientation]]), 6, 2, 3, chunkBB);
+	placeBlock(level, FullBlock(Block::mFurnace->mID, Direction::DIRECTION_FACING[Direction::DIRECTION_OPPOSITE[orientation]]), 6, 3, 3, chunkBB);
 	placeBlock(level, Block::mDoubleStoneSlab->mID, 8, 1, 1, chunkBB);
 
 	// windows etc

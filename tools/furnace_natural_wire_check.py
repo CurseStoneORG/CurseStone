@@ -7,13 +7,17 @@ generation produces), the client round-trips away and back so the chunk
 streams fresh, and the full wire is captured for both the natural furnace
 and one placed by the player:
 
-  1. chunk stream        -> does a BlockEntityData (0x32) for the furnace
+  1. chunk stream        -> does an UpdateBlockPacket (0x13, live id 61 +
+                            facing, FLAG_ALL_PRIORITY) announce the furnace
+                            the WorldEdit route does? (the tile-actor route
+                            the chest fix ships)
+  2. chunk stream        -> does a BlockEntityData (0x32) for the furnace
                             ride with FullChunkData (0x34)? what NBT keys?
-  2. chunk payload       -> is the furnace block itself in the streamed
+  3. chunk payload       -> is the furnace block itself in the streamed
                             chunk data (client can see it)?
-  3. tap                 -> ContainerOpen (0x2a) shape, BlockEntityData in
+  4. tap                 -> ContainerOpen (0x2a) shape, BlockEntityData in
                             the open batch, ContainerSetContent (0x2e)
-  4. open window         -> ContainerSetData (0x2d) cadence per second
+  5. open window         -> ContainerSetData (0x2d) cadence per second
 
     python3 tools/furnace_natural_wire_check.py [--server /path/to/CurseStone]
 
@@ -84,15 +88,24 @@ return plugin
 
 
 class WireClient(SyncClient):
-    """Captures BlockEntityData, ContainerSetData and raw chunk payloads."""
+    """Captures BlockEntityData, ContainerSetData, raw UpdateBlock flags
+    and raw chunk payloads."""
 
     def __init__(self, *a, **k):
         super().__init__(*a, **k)
         self.bed_pkts = []       # (x, y, z, nbt bytes)
         self.setdata = []        # (windowid, property, value)
         self.chunks = {}         # (cx, cz) -> payload bytes
+        self.tile_updates = []   # (x, y, z, bid, meta, flags_nib)
 
     def on_game_packet(self, p: bytes):
+        # Era UpdateBlock wire: [pid 0x13][x i32][z i32][y u8][blockId u8]
+        # [(flags<<4)|data]. Recorded alongside the base client's own
+        # update_block events (the flags nibble is the announce marker the
+        # base parse drops).
+        if p and p[0] == UPDATE_BLOCK and len(p) >= 12:
+            x, z = struct.unpack(">ii", p[1:9])
+            self.tile_updates.append((x, p[9], z, p[10], p[11] & 0x0F, p[11] >> 4))
         if p:
             pid = p[0]
             if pid == BLOCK_ENTITY_DATA and len(p) >= 13:
@@ -245,6 +258,7 @@ def main() -> int:
         # ---- phase 1: FIRST visit. The stream below is the one a player
         # gets the first time they walk to a village chunk.
         c.chunks.clear()
+        c.tile_updates.clear()
         c.say("/tp %d %d %d" % HOME)
         time.sleep(2.5)
         c.drain(2.5)
@@ -257,6 +271,21 @@ def main() -> int:
         if first_nat:
             ok, keys = parse_nbt_keys(first_nat[0][3])
             print(f"    phase1 natural compound keys: {keys}")
+
+        # The WorldEdit-route announce: the chunk tail carries an
+        # UpdateBlockPacket for the natural furnace — live grid id 61 +
+        # facing, FLAG_ALL_PRIORITY — the packet that auto-creates the
+        # client's block actor (the tile-actor route the chest fix ships).
+        nat_ubs = [u for u in c.tile_updates
+                   if u[:3] == NAT and u[3] == FURNACE_BLOCK]
+        check(bool(nat_ubs) and nat_ubs[0][5] == 0x0B,
+              "natural furnace gets the WorldEdit-route UpdateBlock "
+              "(id 61, flags 0x0B) on the chunk stream",
+              f"ubs={[u for u in c.tile_updates if u[:3] == NAT]}")
+        if nat_ubs:
+            check(nat_ubs[0][4] == 2,
+                  "announced furnace meta is the facing the generator wrote",
+                  f"meta={nat_ubs[0][4]}")
 
         # Player-placed furnace (the known-good baseline).
         c.mob_equipment(1, FURNACE_BLOCK, 0)
@@ -276,6 +305,7 @@ def main() -> int:
         # revisit — the common real-phone scenario).
         c.bed_pkts.clear()
         c.chunks.clear()
+        c.tile_updates.clear()
         c.say("/tp %d %d %d" % FAR)
         time.sleep(1.5)
         c.drain(1.0)
@@ -323,6 +353,19 @@ def main() -> int:
             print(f"    natural spawn compound keys: {keys}")
             check(ok and any(k == "id" for k, _ in keys),
                   "natural spawn compound parses and carries id")
+
+        # The re-stream announces BOTH furnaces again (a re-visited chunk
+        # rebinds its block actors from scratch client-side).
+        re_ubs_nat = [u for u in c.tile_updates
+                      if u[:3] == NAT and u[3] == FURNACE_BLOCK]
+        re_ubs_plc = [u for u in c.tile_updates
+                      if u[:3] == PLC and u[3] == FURNACE_BLOCK]
+        check(bool(re_ubs_nat) and re_ubs_nat[0][5] == 0x0B,
+              "re-visited natural furnace re-announces (id 61, flags 0x0B)",
+              f"ubs={c.tile_updates}")
+        check(bool(re_ubs_plc) and re_ubs_plc[0][5] == 0x0B,
+              "re-visited placed furnace re-announces (id 61, flags 0x0B)",
+              f"ubs={c.tile_updates}")
 
         # 3. tap the natural furnace: open batch + window cadence
         c.bed_pkts.clear()

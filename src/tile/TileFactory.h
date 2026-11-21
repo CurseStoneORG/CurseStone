@@ -62,6 +62,14 @@ bool isTileBlock(uint8_t blockId);
 // pair with this before letting the tile through.
 uint8_t blockIdForTileId(const std::string& tileId);
 
+// True for the tiles whose 0.15 client block actor is born by a block
+// update: chests and furnaces. The WorldEdit-route UpdateBlockPacket
+// (live grid id+meta, FLAG_ALL_PRIORITY) must ride ahead of their
+// BlockEntityData — a standalone compound can only refresh an actor the
+// client already holds, never create one — while signs and spawners
+// bind from the chunk payload's tile suffix alone and stay out.
+bool tileNeedsActorAnnounce(const Tile* t);
+
 // Reads the identity header of a serialized tile compound (the
 // little-endian blob format tile_entities carries and structure
 // generation queues): id/x/y/z. Returns false when the blob is not a
