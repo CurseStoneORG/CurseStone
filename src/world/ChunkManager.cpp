@@ -37,9 +37,15 @@
 #include "world/generator/Generator.h"
 #include "world/generator/GenerationTask.h"
 #include "scheduler/AsyncPool.h"
+#include "tile/TileFactory.h"
+#include "block/BlockIds.h"
+#include "nbt/NBT.h"
+#include "nbt/tag/CompoundTag.h"
+#include "utils/CRaii.h"
 #include "ChunkManager.h"
+#include <algorithm>
 #include <chrono>
-#include <string.h>
+#include <string>
 
 namespace cursestone::world {
 
@@ -248,19 +254,27 @@ mcp_chunk_t* ChunkManager::getChunkOrRequestAsync(int32_t x, int32_t z,
     auto install = [this, key](mcp_chunk_t* c) {
         bool installed = false;
         std::vector<std::vector<uint8_t>> drainedTiles;
+        std::vector<char> preBlobMatches;
         if (c) {
             std::scoped_lock lk(mtx_, pending_mtx_);
             auto it = chunks_.find(key);
             if (it == chunks_.end() || !it->second) {
+                // Snapshot which tile blobs the chunk carries with a
+                // standing block BEFORE the spill replay: a block a
+                // replay kills was alive until now (drop its blob), one
+                // already dead on disk is legacy damage (heal).
+                preBlobMatches = snapshotTileBlobMatches(c);
                 // Replay neighbor writes queued while this chunk was
                 // materializing, then install it.
                 if (spillQueue_)
                     spillQueue_->drainSpills(key.x, key.z, c);
                 // Structure tile blobs parked for this chunk go into
-                // its tile_entities before it is ever streamed.
+                // its tile_entities before it is ever streamed — each
+                // one only while its block survived the spill replay
+                // above (the pair check runs after the blocks landed).
                 takePendingTileBlobs(key, drainedTiles);
-                for (const auto& blob : drainedTiles)
-                    mcp_chunk_add_tile_entity(c, blob.data(), blob.size());
+                keepBlockMatchedTileBlobs(c, drainedTiles);
+                reconcileStoredTileBlobs(c, preBlobMatches);
                 chunks_[key] = c;
                 count_.store(chunks_.size(), std::memory_order_relaxed);
                 installed = true;
@@ -353,6 +367,7 @@ mcp_chunk_t* ChunkManager::getChunkOrRequestAsync(int32_t x, int32_t z,
 
 void ChunkManager::setChunk(int32_t x, int32_t z, mcp_chunk_t* chunk) {
     std::vector<std::vector<uint8_t>> drainedTiles;
+    std::vector<char> preBlobMatches;
     {
         std::scoped_lock lk(mtx_, pending_mtx_);
         auto key = ChunkKey{x, z};
@@ -361,6 +376,9 @@ void ChunkManager::setChunk(int32_t x, int32_t z, mcp_chunk_t* chunk) {
             mcp_chunk_destroy(it->second);
         chunks_[key] = chunk;
         count_.store(chunks_.size(), std::memory_order_relaxed);
+        // Snapshot before the replay (see the async install for the
+        // drop-vs-heal contract the replay feeds).
+        preBlobMatches = snapshotTileBlobMatches(chunk);
         // Replay generation-time writes that were queued for this chunk
         // while it was absent (neighbors populated first). Done under the
         // same locks the generator's commitNeighborWrite() uses, so a
@@ -368,10 +386,11 @@ void ChunkManager::setChunk(int32_t x, int32_t z, mcp_chunk_t* chunk) {
         if (spillQueue_)
             spillQueue_->drainSpills(x, z, chunk);
         // Structure tile blobs parked while the chunk was absent land in
-        // its tile_entities here, before any client can stream it.
+        // its tile_entities here, before any client can stream it — each
+        // one only while its block survived the spill replay above.
         takePendingTileBlobs(key, drainedTiles);
-        for (const auto& blob : drainedTiles)
-            mcp_chunk_add_tile_entity(chunk, blob.data(), blob.size());
+        keepBlockMatchedTileBlobs(chunk, drainedTiles);
+        reconcileStoredTileBlobs(chunk, preBlobMatches);
     }
     // Registry tiles for the drained blobs — outside the locks, same
     // contract as on_chunk_added_ below.
@@ -431,8 +450,18 @@ void ChunkManager::commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t i
             // relight per genuinely-changed cell batch below).
             if (mcp_chunk_get_block_id(live, (int)x, (int)y, (int)z) != id ||
                 mcp_chunk_get_block_data(live, (int)x, (int)y, (int)z) != data) {
+                // Block↔tile invariant at the spill seam: a generation
+                // write that replaces a block-entity block with something
+                // else kills that block's tile exactly like the vanilla
+                // block-removal path would — the actor dies with its
+                // block, never survives over foreign terrain.
+                const uint8_t oldId = mcp_chunk_get_block_id(live, (int)x, (int)y, (int)z);
                 mcp_chunk_set_block_full(live, (int)x, (int)y, (int)z, id, data);
                 changed = true;
+                if (on_spill_tile_block_overwrite_ &&
+                    cursestone::tile::isTileBlock(oldId) && oldId != id) {
+                    on_spill_tile_block_overwrite_(cx * 16 + (int)x, (int)y, cz * 16 + (int)z);
+                }
             }
         }
     }
@@ -456,13 +485,29 @@ void ChunkManager::commitNeighborTile(int cx, int cz, const std::vector<uint8_t>
         if (it != chunks_.end() && it->second) {
             // Live chunk: the blob goes straight into tile_entities —
             // exactly where the block write next door just landed.
-            mcp_chunk_add_tile_entity(it->second, blob.data(), blob.size());
-            landedLive = true;
+            // Block↔tile invariant: only when the block actually stands.
+            // The blob routes here microseconds after its block write, but
+            // a concurrent spill for the same cell can legally have won —
+            // the tile dies with its block, vanilla-style.
+            mcp_chunk_t* live = it->second;
+            std::string tileId;
+            int32_t bx = 0, by = 0, bz = 0;
+            const uint8_t expected =
+                cursestone::tile::parseTileBlobHeader(blob.data(), blob.size(), tileId, bx, by, bz)
+                    ? cursestone::tile::blockIdForTileId(tileId)
+                    : uint8_t{0};
+            const bool usable = expected != 0 && by >= 0 && by < 128 &&
+                                mcp_chunk_get_block_id(live, bx & 15, by, bz & 15) == expected;
+            if (usable) {
+                mcp_chunk_add_tile_entity(live, blob.data(), blob.size());
+                landedLive = true;
+            }
         } else {
             // Chunk not live yet: park the blob for its install (setChunk
             // / async callback), beside the block spills for the same
             // chunk — the pair can never be split by an install in
-            // between because both decisions share these locks.
+            // between because both decisions share these locks. The
+            // install re-checks the block before the blob is added.
             pendingTileBlobs_[ChunkKey{cx, cz}].push_back(blob);
         }
     }
@@ -483,6 +528,130 @@ void ChunkManager::takePendingTileBlobs(const ChunkKey& key,
     for (auto& blob : it->second)
         out.push_back(std::move(blob));
     pendingTileBlobs_.erase(it);
+}
+
+// Adds the drained structure-tile blobs to `chunk`'s tile_entities, but
+// only those whose block still stands there: spills replayed a moment
+// earlier (drainSpills) can legally have wiped the tile-block the blob
+// describes — a lake refill, a later dungeon attempt's interior clear —
+// and a tile that outlives its block is exactly the invisible-chest bug
+// (the 0.15 client draws the chest through its block actor, which only
+// binds over a matching block). Survivors stay in `blobs` so the caller's
+// on_tile_blob_ pass materializes only what was actually added.
+void ChunkManager::keepBlockMatchedTileBlobs(mcp_chunk_t* chunk,
+                                             std::vector<std::vector<uint8_t>>& blobs) {
+    if (!chunk || blobs.empty())
+        return;
+    size_t out = 0;
+    for (size_t i = 0; i < blobs.size(); ++i) {
+        auto& blob = blobs[i];
+        std::string tileId;
+        int32_t bx = 0, by = 0, bz = 0;
+        const uint8_t expected =
+            cursestone::tile::parseTileBlobHeader(blob.data(), blob.size(), tileId, bx, by, bz)
+                ? cursestone::tile::blockIdForTileId(tileId)
+                : uint8_t{0};
+        const bool usable = expected != 0 && by >= 0 && by < 128 &&
+                            mcp_chunk_get_block_id(chunk, bx & 15, by, bz & 15) == expected;
+        if (!usable)
+            continue;
+        mcp_chunk_add_tile_entity(chunk, blob.data(), blob.size());
+        if (out != i)
+            blobs[out] = std::move(blob);
+        ++out;
+    }
+    blobs.resize(out);
+}
+
+// Per-blob "its matching block stands" snapshot of the tile blobs the
+// chunk carries at this instant (see reconcileStoredTileBlobs).
+std::vector<char> ChunkManager::snapshotTileBlobMatches(mcp_chunk_t* chunk) const {
+    std::vector<char> out;
+    if (!chunk || chunk->tile_entity_count == 0)
+        return out;
+    out.reserve(chunk->tile_entity_count);
+    for (size_t i = 0; i < chunk->tile_entity_count; ++i) {
+        const uint8_t* blob = chunk->tile_entities[i];
+        const size_t blen = chunk->tile_entity_lens ? chunk->tile_entity_lens[i] : 0;
+        std::string tileId;
+        int32_t bx = 0, by = 0, bz = 0;
+        const uint8_t expected =
+            cursestone::tile::parseTileBlobHeader(blob, blen, tileId, bx, by, bz)
+                ? cursestone::tile::blockIdForTileId(tileId)
+                : uint8_t{0};
+        const bool matched = expected != 0 && by >= 0 && by < 128 &&
+                             mcp_chunk_get_block_id(chunk, bx & 15, by, bz & 15) == expected;
+        out.push_back(matched ? 1 : 0);
+    }
+    return out;
+}
+
+// Reconciles the tile blobs `chunk` carries against their blocks after the
+// spill replay. `matchedBefore` snapshots, per pre-existing blob, whether
+// its block stood BEFORE the replay:
+//   - a blob whose block stood before and is gone now was killed by a
+//     parked spill of this very install (lake refill, later structure
+//     pass) — vanilla destroys the block actor with its block, so the
+//     blob is dropped;
+//   - a blob that arrived from disk already broken is legacy damage from
+//     builds whose generation could stomp a chest block while its tile
+//     survived — the block is healed back (facing rides the tile
+//     compound when it has one) so the saved chest comes back instead of
+//     staying the invisible-chest shape.
+// Blobs appended after the snapshot (keepBlockMatchedTileBlobs) were
+// already checked against the post-replay blocks and are left alone.
+void ChunkManager::reconcileStoredTileBlobs(mcp_chunk_t* chunk,
+                                            const std::vector<char>& matchedBefore) {
+    if (!chunk)
+        return;
+    const size_t preCount = std::min(matchedBefore.size(), chunk->tile_entity_count);
+    for (size_t i = 0; i < preCount;) {
+        const uint8_t* blob = chunk->tile_entities[i];
+        const size_t blen = chunk->tile_entity_lens ? chunk->tile_entity_lens[i] : 0;
+        std::string tileId;
+        int32_t bx = 0, by = 0, bz = 0;
+        const uint8_t expected =
+            cursestone::tile::parseTileBlobHeader(blob, blen, tileId, bx, by, bz)
+                ? cursestone::tile::blockIdForTileId(tileId)
+                : uint8_t{0};
+        if (expected == 0 || by < 0 || by >= 128) {
+            mcp_chunk_remove_tile_entity_at(chunk, i);
+            continue;
+        }
+        const uint8_t at = mcp_chunk_get_block_id(chunk, bx & 15, by, bz & 15);
+        if (at == expected) {
+            ++i;
+            continue;
+        }
+        if (matchedBefore[i]) {
+            // The spill replay of this install killed the block — the
+            // tile dies with it (vanilla rule).
+            mcp_chunk_remove_tile_entity_at(chunk, i);
+            continue;
+        }
+        // Legacy damage: the blob was saved without its block. Heal the
+        // block back so the chest stands and opens again.
+        uint8_t data = 0;
+        if (expected == (uint8_t)cursestone::block::CHEST) {
+            // facing rides the compound for structure chests; 2 = north
+            // for blobs saved before the heal existed.
+            int32_t facing = 2;
+            {
+                cursestone::utils::TagGuard tag(
+                    cursestone::nbt::read(blob, blen, /*little_endian=*/true));
+                if (tag) {
+                    int32_t stored = cursestone::nbt::get_int(tag.get(), "facing", 2);
+                    if (stored >= 2 && stored <= 5)
+                        facing = stored;
+                }
+            }
+            data = (uint8_t)facing;
+        }
+        mcp_chunk_set_block_full(chunk, bx & 15, by, bz & 15, expected, data);
+        mcp_chunk_recalculate_height_map(chunk);
+        chunk->dirty = true; // the healed pair persists too
+        ++i;
+    }
 }
 
 void ChunkManager::markDirty(int32_t x, int32_t z) {

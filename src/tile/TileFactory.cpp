@@ -27,6 +27,10 @@
 #include "TileSign.h"
 #include "TileSpawner.h"
 #include "block/BlockIds.h"
+#include "nbt/NBT.h"
+#include "nbt/tag/CompoundTag.h"
+#include "nbt/tag/Tag.h"
+#include "utils/CRaii.h"
 
 namespace cursestone::tile {
 
@@ -35,6 +39,38 @@ bool isTileBlock(uint8_t blockId) {
     return blockId == (uint8_t)BlockId::CHEST || blockId == (uint8_t)BlockId::FURNACE ||
            blockId == (uint8_t)BlockId::BURNING_FURNACE || blockId == (uint8_t)BlockId::SIGN_POST ||
            blockId == (uint8_t)BlockId::WALL_SIGN || blockId == (uint8_t)BlockId::MOB_SPAWNER;
+}
+
+uint8_t blockIdForTileId(const std::string& tileId) {
+    using cursestone::block::BlockId;
+    if (tileId == "Chest")
+        return (uint8_t)BlockId::CHEST;
+    if (tileId == "Furnace")
+        return (uint8_t)BlockId::FURNACE;
+    if (tileId == "Sign")
+        return (uint8_t)BlockId::SIGN_POST;
+    if (tileId == "MobSpawner")
+        return (uint8_t)BlockId::MOB_SPAWNER;
+    return 0;
+}
+
+bool parseTileBlobHeader(const uint8_t* data, size_t len, std::string& tileId,
+                         int32_t& x, int32_t& y, int32_t& z) {
+    tileId.clear();
+    x = y = z = 0;
+    if (!data || len == 0)
+        return false;
+    utils::TagGuard tag(cursestone::nbt::read(data, len, /*little_endian=*/true));
+    if (!tag)
+        return false;
+    const char* id = cursestone::nbt::get_string(tag.get(), "id", "");
+    if (!id || id[0] == '\0')
+        return false;
+    tileId = id;
+    x = cursestone::nbt::get_int(tag.get(), "x", 0);
+    y = cursestone::nbt::get_int(tag.get(), "y", 0);
+    z = cursestone::nbt::get_int(tag.get(), "z", 0);
+    return true;
 }
 
 std::shared_ptr<Tile> createTileForBlock(uint8_t blockId, const cursestone::world::Position& pos) {

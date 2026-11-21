@@ -352,6 +352,21 @@ int mcp_chunk_add_tile_entity(mcp_chunk_t* c, const uint8_t* nbt, size_t len) {
     return rc;
 }
 
+void mcp_chunk_remove_tile_entity_at(mcp_chunk_t* c, size_t index) {
+    if (!c || index >= c->tile_entity_count)
+        return;
+    free(c->tile_entities[index]);
+    if (index < c->tile_entity_count - 1) {
+        memmove(c->tile_entities + index, c->tile_entities + index + 1,
+                (c->tile_entity_count - index - 1) * sizeof(uint8_t*));
+        if (c->tile_entity_lens)
+            memmove(c->tile_entity_lens + index, c->tile_entity_lens + index + 1,
+                    (c->tile_entity_count - index - 1) * sizeof(size_t));
+    }
+    c->tile_entity_count--;
+    c->dirty = true;
+}
+
 int mcp_chunk_add_entity(mcp_chunk_t* c, const uint8_t* nbt, size_t len) {
     if (!c)
         return -1;

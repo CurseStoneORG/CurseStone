@@ -40,6 +40,7 @@
 #include "Tile.h"
 #include <cstdint>
 #include <memory>
+#include <string>
 
 namespace cursestone::tile {
 
@@ -51,5 +52,22 @@ std::shared_ptr<Tile> createTileForBlock(uint8_t blockId, const cursestone::worl
 // True for the block ids createTileForBlock() can build. Used by the
 // chunk scan to skip the switch for every block in the world.
 bool isTileBlock(uint8_t blockId);
+
+// The block id a tile compound's "id" string ("Chest", "Furnace", ...)
+// must stand on, or 0 when the tile id has no block counterpart. The
+// inverse of createTileForBlock(): the block↔tile pair is the client's
+// render contract (the 0.15 chest model is drawn by the block actor,
+// which only binds over a chest block), so every seam that moves a tile
+// NBT blob (hydration, structure generation, spill drains) checks the
+// pair with this before letting the tile through.
+uint8_t blockIdForTileId(const std::string& tileId);
+
+// Reads the identity header of a serialized tile compound (the
+// little-endian blob format tile_entities carries and structure
+// generation queues): id/x/y/z. Returns false when the blob is not a
+// parseable tile compound. Cheap: one compound walk of the three int
+// tags plus the id string, no state built.
+bool parseTileBlobHeader(const uint8_t* data, size_t len, std::string& tileId,
+                         int32_t& x, int32_t& y, int32_t& z);
 
 } // namespace cursestone::tile

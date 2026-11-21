@@ -62,6 +62,14 @@ class TileChest : public Tile, public Container, public Nameable, public Spawnab
     void spawnTo(void* /*player*/) override {
     }
     void writeNBT(cursestone::nbt::Tag* tag) const override;
+    // Client compound, era-reference Chest layout: id/x/y/z (+pairx/pairz
+    // while paired, +CustomName when named). The Items list is the disk
+    // layout only — every reference server leaves it off the wire, the
+    // 0.15 client binds its chest contents at open time through
+    // ContainerSetContent, and the block actor this compound creates is
+    // what draws the chest model, so the leaner the compound the less
+    // there is to break actor creation.
+    void writeSpawnNBT(cursestone::nbt::Tag* tag) const override;
     void readNBT(const cursestone::nbt::Tag* tag) override;
 
     // The backing inventory. Player::openChestAt() hands this shared_ptr

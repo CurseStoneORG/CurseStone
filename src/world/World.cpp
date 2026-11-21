@@ -242,6 +242,14 @@ World::World(WorldConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
     chunks_.setTileBlobSink([this](const uint8_t* data, size_t len) {
         applyTileBlob(data, len);
     });
+    // The vanilla rule at the generation seam: a spill that replaces a
+    // block-entity block kills that block's tile with it. Without this, a
+    // lake refill or a later structure pass that writes over a generated
+    // chest leaves the registry tile standing over foreign terrain — a
+    // block actor the 0.15 client cannot bind, i.e. an invisible chest.
+    chunks_.setOnSpillTileBlockOverwrite([this](int32_t x, int32_t y, int32_t z) {
+        removeTile(x, y, z);
+    });
     provider_ = provider;
     chunks_.setOnChunkAdded([this](int32_t cx, int32_t cz, bool full) {
         onChunkAdded(cx, cz, full);
@@ -3620,6 +3628,36 @@ void World::ensureTilesLoaded(int32_t cx, int32_t cz) {
                 tile = std::make_shared<cursestone::tile::TileFurnace>(pos);
             }
             if (tile) {
+                // Block↔tile invariant at the hydration seam. The tile
+                // blob is the client's block actor (the 0.15 chest model
+                // is drawn by the actor, which only binds over a matching
+                // block), so a blob whose block went missing heals its
+                // block back before the tile materializes — that is the
+                // repair path for worlds saved by builds whose
+                // generation-time writes could stomp a chest block while
+                // its tile survived. A blob over a DIFFERENT block-entity
+                // block is a real conflict and stays unhydrated.
+                const uint8_t expected = cursestone::tile::blockIdForTileId(id);
+                const bool inBounds = ty >= 0 && ty < 128;
+                if (expected != 0 && inBounds) {
+                    const uint8_t at =
+                        mcp_chunk_get_block_id(c, tx & 15, ty, tz & 15);
+                    if (at != expected && !cursestone::tile::isTileBlock(at)) {
+                        uint8_t data = 0;
+                        if (expected == (uint8_t)block::CHEST) {
+                            int32_t facing =
+                                cursestone::nbt::get_int(tag.get(), "facing", 2);
+                            data = (uint8_t)(facing >= 2 && facing <= 5 ? facing : 2);
+                        }
+                        mcp_chunk_set_block_full(c, tx & 15, ty, tz & 15, expected, data);
+                        mcp_chunk_recalculate_height_map(c);
+                        c->dirty = true; // the healed pair persists too
+                        utils::MainLogger::get().debug(
+                            "Tile-block heal: restored " + std::to_string(expected) + " under '" +
+                            id + "' at " + std::to_string(tx) + ", " + std::to_string(ty) + ", " +
+                            std::to_string(tz));
+                    }
+                }
                 tile->readNBT(tag.get());
                 const uint64_t tkey = packTilePos(tx, ty, tz);
                 // Bucket by the tile's OWN claimed chunk, not the chunk the
