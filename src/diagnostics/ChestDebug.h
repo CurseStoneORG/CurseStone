@@ -79,10 +79,21 @@ public:
                              size_t payloadLen);
     static void onBodiesFlushed(const char* player,
                                 const std::vector<std::vector<uint8_t>>& chunkQueue);
+    // Closed after sendChunkTiles() had its full chance to build this
+    // chunk's tile NBTs. The tile-transmission verdict is only meaningful
+    // HERE: the batch flush that carries the chunk can drain INLINE inside
+    // sendPacket() — before the tile pass that always follows it in the
+    // same call stack — so judging "tile not transmitted" at flush time
+    // would report every streamed chest as broken.
+    static void onChunkTilesDelivered(int cx, int cz);
 
     // --- interaction ---
     static void onChestTapped(Player& p, int x, int y, int z, int serverBlockId,
                               bool interactCancelled);
+    // The client ASKED to open (tap reached the server, before any tile
+    // lookup). Distinct from onOpenDone, which is the server-side
+    // container opening — neither implies the client rendered a window.
+    static void onOpenRequest(Player& p, int x, int y, int z);
     static void onOpenAttempt(Player& p, int x, int y, int z, bool tileFound, bool tileCreatedFresh,
                               bool paired);
     static void onOpenCancelled(Player& p, int x, int y, int z);
@@ -93,6 +104,18 @@ public:
     // --- persistence ---
     static void onTileSaved(int x, int y, int z, int items);
     static void onTileLoaded(int x, int y, int z, int items);
+
+    // --- post-spawn tile resync + client liveness ---
+    // The resync is what heals the tiles the client dropped while its
+    // loading screen was up: 0.15 block actors bind only from in-world
+    // traffic, and the era gate (tiles only for spawned viewers) exists
+    // because the loading screen eats them.
+    static void onTileResync(const char* player, int x, int y, int z);
+    // One relaxed atomic increment per inbound client packet while the
+    // mode is on. "Traffic kept flowing after SENT" is the only
+    // transport-side fact the server can verify — a dead session means
+    // transport loss, a live one means the reliability layer held delivery.
+    static void onClientInbound(const char* player);
 
     // --- reports (for the /chestdebug command) ---
     static std::vector<std::string> statusLines();
@@ -159,11 +182,24 @@ public:
         std::string nbtHex;
         std::vector<std::string> nbtProblems;
         std::vector<std::string> recipients;
+        // Set when a full chunk tile pass finished for this chest's chunk
+        // (sendChunkTiles ran to completion) — the gate that keeps the
+        // tile-transmission verdict off until the pass could actually
+        // build the NBT.
+        bool tilesDelivered = false;
+        bool tileSentPreSpawn = false;
+        bool resynced = false;
+        // Client-liveness probe: inbound packet counter snapshot taken when
+        // the tile flush fired; a higher counter later proves the client
+        // kept answering after the tile left the server.
+        uint64_t inboundAtSent = 0;
+        bool clientAliveAfterSent = false;
 
         // interaction
         bool tapped = false;
         int tapBlockId = -1;
         bool tapCancelled = false;
+        bool openRequested = false;
         bool openAttempted = false, openTileFound = false, openCreatedFresh = false;
         bool openCancelled = false, openDone = false;
         int openSlots = -1;
@@ -208,6 +244,7 @@ private:
     std::atomic<bool> enabled_{false};
     std::atomic<uint64_t> nextSeq_{1};
     std::atomic<uint64_t> nextId_{1};
+    std::atomic<uint64_t> inboundPackets_{0};
 
     mutable std::mutex mtx_;
     std::unordered_map<PosKey, TileTrace, PosKeyHash> tiles_;

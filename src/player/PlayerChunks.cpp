@@ -213,6 +213,42 @@ void Player::sendChunkTiles(int32_t cx, int32_t cz) {
         const auto& p = t->position();
         sendBlockEntityData((int32_t)p.x, (int32_t)p.y, (int32_t)p.z, *t, this);
     }
+    // The tile pass for this chunk is complete: this is the gate that
+    // makes the "tile not transmitted" verdict meaningful — the inline
+    // batch flush that carried the chunk already ran (inside
+    // sendPacket), and only now can the trace honestly say whether the
+    // chest's BlockEntityData was built or the pass ended without one.
+    diagnostics::ChestDebug::onChunkTilesDelivered(cx, cz);
+}
+
+void Player::resendTrackedTiles() {
+    if (!spawned_.load(std::memory_order_relaxed) || !getWorld())
+        return;
+    // Snapshot the tracked chunks under the lock, walk without it:
+    // sendBlockEntityData takes the player snapshot and the network
+    // queues (the same lock order the stream path already uses).
+    std::vector<std::pair<int32_t, int32_t>> tracked;
+    {
+        std::lock_guard<std::mutex> lk(chunks_mtx_);
+        tracked.reserve(used_chunks_.size());
+        for (int64_t h : used_chunks_) {
+            tracked.emplace_back((int32_t)(h >> 32), (int32_t)(h & 0xFFFFFFFFLL));
+        }
+    }
+    for (const auto& [cx, cz] : tracked) {
+        // getTilesInChunk early-outs on the hydration serial for unchanged
+        // chunks, so the steady state costs one hash lookup per chunk and
+        // only tile-bearing chunks produce packets.
+        auto tiles = getWorld()->getTilesInChunk(cx, cz);
+        for (auto& t : tiles) {
+            if (!t)
+                continue;
+            const auto& p = t->position();
+            const int32_t tx = (int32_t)p.x, ty = (int32_t)p.y, tz = (int32_t)p.z;
+            diagnostics::ChestDebug::onTileResync(cfg_.username.c_str(), tx, ty, tz);
+            sendBlockEntityData(tx, ty, tz, *t, this);
+        }
+    }
 }
 
 bool Player::isChunkLoaded(int cx, int cz) const {

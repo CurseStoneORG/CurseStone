@@ -189,6 +189,11 @@ void ChestDebug::addFinding(const TileTrace& t, const std::string& line) {
 }
 
 void ChestDebug::evaluate(TileTrace& t) {
+    // Client liveness: any inbound client packet after the tile flush is
+    // the only transport-side proof the session was still answering.
+    if (t.tileFlushed && !t.clientAliveAfterSent &&
+        get().inboundPackets_.load(std::memory_order_relaxed) > t.inboundAtSent)
+        t.clientAliveAfterSent = true;
     uint32_t newBits = 0;
     auto flag = [&](uint32_t bit, const char* line) {
         if (!(t.reported & bit)) {
@@ -206,11 +211,16 @@ void ChestDebug::evaluate(TileTrace& t) {
         flag(kPayloadNoBlock,
              "FAILURE: CHUNK PAYLOAD HAS NO BLOCK 54 AT THE TILE CELL — the 0.15 client "
              "cannot bind a block actor without its block");
-    if (t.chunkFlushed && !t.tileBuilt && !t.removed &&
+    // tilesDelivered gates this verdict on a COMPLETED tile pass: the
+    // batch flush that carries the chunk drains inline inside
+    // sendPacket(), before the tile pass that always follows it in the
+    // same call stack, so judging at flush time reported every streamed
+    // chest as broken while its tile was still being built.
+    if (t.chunkFlushed && t.tilesDelivered && !t.tileBuilt && !t.removed &&
         (t.registered || t.generated || t.payloadFacing >= 0))
         flag(kTileNotTransmitted,
-             "FAILURE: CHEST TILE NOT TRANSMITTED — the chunk reached the transport without "
-             "its BlockEntityData, so the client holds no block actor for it");
+             "FAILURE: CHEST TILE NOT TRANSMITTED — the chunk's tile pass completed without "
+             "building a BlockEntityData for this chest, so the client holds no block actor");
     if (t.tileBuilt && t.chunkBuilt && t.tileSeq < t.chunkSeq)
         flag(kWireOrder,
              "FAILURE: TILE NBT LEFT THE SERVER BEFORE ITS CHUNK (seq order) — the 0.15 "
@@ -426,6 +436,8 @@ void ChestDebug::onTileBuilt(Player& sender, int x, int y, int z, const uint8_t*
     t.nbtFields = fields;
     t.nbtHex = hexPreview(nbt, len);
     t.nbtProblems = std::move(problems);
+    t.tileSentPreSpawn = !sender.spawned();
+    t.inboundAtSent = dbg.inboundPackets_.load(std::memory_order_relaxed);
     if (const char* who = recipients ? recipients : nullptr; who && *who) {
         if (std::find(t.recipients.begin(), t.recipients.end(), who) == t.recipients.end()) {
             if (t.recipients.size() < TileTrace::kMaxRecipients)
@@ -503,6 +515,7 @@ void ChestDebug::onBodiesFlushed(const char* player,
             const PosKey key{readBEi32(payload), readBEi32(payload + 4), readBEi32(payload + 8)};
             if (TileTrace* t = dbg.find(key); t && !t->tileFlushed) {
                 t->tileFlushed = true;
+                t->inboundAtSent = dbg.inboundPackets_.load(std::memory_order_relaxed);
                 dbg.addLog(*t, "TILE SENT to transport (ch2, to " + who + ")");
                 dbg.evaluate(*t);
                 touched = true;
@@ -513,7 +526,39 @@ void ChestDebug::onBodiesFlushed(const char* player,
         ++dbg.counts_.flushed;
 }
 
+void ChestDebug::onChunkTilesDelivered(int cx, int cz) {
+    if (!enabled())
+        return;
+    ChestDebug& dbg = get();
+    std::lock_guard<std::mutex> lk(dbg.mtx_);
+    const ChunkKey ck{cx, cz};
+    auto bit = dbg.chunkTiles_.find(ck);
+    if (bit == dbg.chunkTiles_.end())
+        return; // No chest trace lives in this chunk.
+    for (const PosKey& key : bit->second) {
+        TileTrace* t = dbg.find(key);
+        if (!t)
+            continue;
+        t->tilesDelivered = true;
+        dbg.evaluate(*t);
+    }
+}
+
 // --- interaction hooks ---
+
+void ChestDebug::onOpenRequest(Player& p, int x, int y, int z) {
+    if (!enabled())
+        return;
+    ChestDebug& dbg = get();
+    std::lock_guard<std::mutex> lk(dbg.mtx_);
+    TileTrace& t = dbg.findOrCreate(PosKey{x, y, z});
+    t.openRequested = true;
+    t.lastPlayer = p.getName();
+    dbg.addLog(t, "OPEN REQUEST by " + t.lastPlayer +
+                      " (client asked; tile lookup follows)");
+    // No counter here: onOpenAttempt counts the actual open processing,
+    // and the request/attempt pair would double-count one interaction.
+}
 
 void ChestDebug::onChestTapped(Player& p, int x, int y, int z, int serverBlockId,
                                bool interactCancelled) {
@@ -595,6 +640,23 @@ void ChestDebug::onChestBroken(Player& p, int x, int y, int z, int lootStacks, b
 
 // --- persistence hooks ---
 
+void ChestDebug::onTileResync(const char* player, int x, int y, int z) {
+    if (!enabled())
+        return;
+    ChestDebug& dbg = get();
+    std::lock_guard<std::mutex> lk(dbg.mtx_);
+    TileTrace& t = dbg.findOrCreate(PosKey{x, y, z});
+    t.resynced = true;
+    dbg.addLog(t, std::string("TILE RESYNC (post-spawn) to ") + (player ? player : "?"));
+}
+
+void ChestDebug::onClientInbound(const char* player) {
+    (void)player;
+    if (!enabled())
+        return;
+    get().inboundPackets_.fetch_add(1, std::memory_order_relaxed);
+}
+
 void ChestDebug::onTileSaved(int x, int y, int z, int items) {
     if (!enabled())
         return;
@@ -631,10 +693,10 @@ void appendResult(const ChestDebug::TileTrace& t, std::vector<std::string>& out)
                            ")");
     if (t.chunkBuilt && !t.removed && t.registered && t.payloadFacing == -2)
         problems.push_back("FAILURE: CHUNK PAYLOAD HAS NO BLOCK 54 AT THE TILE CELL");
-    if (t.chunkFlushed && !t.tileBuilt && !t.removed &&
+    if (t.chunkFlushed && t.tilesDelivered && !t.tileBuilt && !t.removed &&
         (t.registered || t.generated || t.payloadFacing >= 0))
-        problems.push_back("FAILURE: CHEST TILE NOT TRANSMITTED (no BlockEntityData left the "
-                           "server for this chest)");
+        problems.push_back("FAILURE: CHEST TILE NOT TRANSMITTED (the chunk's tile pass completed "
+                           "without a BlockEntityData for this chest)");
     if (t.tileBuilt && t.chunkBuilt && t.tileSeq < t.chunkSeq)
         problems.push_back("FAILURE: TILE NBT LEFT BEFORE ITS CHUNK (seq " +
                            std::to_string(t.tileSeq) + " < " + std::to_string(t.chunkSeq) + ")");
@@ -665,6 +727,18 @@ void appendResult(const ChestDebug::TileTrace& t, std::vector<std::string>& out)
         for (const auto& p : problems)
             out.emplace_back("[ChestDebug]  " + p);
     }
+
+    // TRANSPORT context — what SENT can and cannot prove. A live session
+    // after the flush means the reliability layer held delivery; a silent
+    // one means the bytes never reached an answering client.
+    out.emplace_back("[ChestDebug]  TRANSPORT: tile handed to RELIABLE_ORDERED ch2; client "
+                     "inbound traffic after SENT: " +
+                     std::string(t.clientAliveAfterSent ? "YES" : "NO/unknown") +
+                     std::string(t.tileSentPreSpawn
+                                     ? "  | tile wire context: PRE-SPAWN (the 0.15 loading "
+                                       "screen can drop tile NBT — post-spawn resync: "
+                                     : "  | tile wire context: POST-SPAWN (resync: ") +
+                     std::string(t.resynced ? "DONE" : "none") + ")");
 }
 
 } // namespace
@@ -790,15 +864,21 @@ std::vector<std::string> ChestDebug::reportLines(int x, int y, int z) {
                      (tr.tapped ? " (server block=" + std::to_string(tr.tapBlockId) +
                                       (tr.tapCancelled ? ", interact CANCELLED" : "") + ")"
                                 : "") +
+                     "  openRequest=" + std::string(tr.openRequested ? "YES" : "no") +
                      "  openAttempt=" + std::string(tr.openAttempted ? "YES" : "no") +
                      (tr.openAttempted
                           ? std::string(" (") +
                                 (tr.openTileFound ? "tile found" : "NO tile — fresh") + ")"
                           : "") +
-                     "  opened=" + std::string(tr.openDone ? "YES (slots " +
-                                                                 std::to_string(tr.openSlots) + ")"
-                                                           : "no") +
+                     "  serverOpened=" +
+                     std::string(tr.openDone
+                                     ? "YES (ContainerOpen + SetContent SENT, slots " +
+                                           std::to_string(tr.openSlots) + ")"
+                                     : "no") +
                      "  cancelled=" + std::string(tr.openCancelled ? "YES" : "no"));
+    if (tr.openDone)
+        out.emplace_back("[ChestDebug]  (serverOpened = the server built and sent the window — "
+                         "the 0.15 client renders it only when its block actor exists)");
     out.emplace_back("[ChestDebug]  broken=" + std::string(tr.broken ? "YES" : "no") +
                      (tr.broken ? " (loot stacks=" +
                                       std::string(tr.lootStacks < 0 ? "-" :

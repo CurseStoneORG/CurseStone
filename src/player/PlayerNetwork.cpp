@@ -289,6 +289,14 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
         return;
     uint8_t pid = p.pid();
 
+    // Client-liveness probe for the chest traces: one relaxed increment
+    // per inbound packet while the mode is on (a single relaxed load
+    // when it is off). The traces snapshot this counter when a tile is
+    // handed to the transport, so the report can say whether the client
+    // kept answering after SENT — the only transport-side fact the
+    // server can verify without inventing protocol acknowledgments.
+    diagnostics::ChestDebug::onClientInbound(cfg_.username.c_str());
+
     // Update activity time (the connection-alive clock the timeout sweep
     // checks) and record the incoming packet in Workbench. The ip:port
     // concatenation (and its allocation) only happens once Workbench is

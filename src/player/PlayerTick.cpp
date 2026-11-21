@@ -779,6 +779,21 @@ void Player::onUpdate(uint64_t current_tick) {
             }
         }
 
+        // Post-spawn tile resync — armed by doFirstSpawn, fires ONE TICK
+        // later so the client has processed PLAYER_SPAWN and is in-world
+        // when the tiles land. See resendTrackedTiles() for why this is
+        // the only delivery a normal 0.15 session ever gets for the
+        // pre-spawn chunks' block actors.
+        if (tile_resync_pending_) {
+            if (tile_resync_at_tick_ == 0) {
+                tile_resync_at_tick_ = current_tick + 1;
+            } else if (current_tick >= tile_resync_at_tick_) {
+                tile_resync_pending_ = false;
+                tile_resync_at_tick_ = 0;
+                resendTrackedTiles();
+            }
+        }
+
         // Complete dimension switching after all visible chunks are sent or timed out.
         if (dimension_spawn_pending_) {
             bool all_sent = true;

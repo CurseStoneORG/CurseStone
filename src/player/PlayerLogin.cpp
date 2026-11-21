@@ -718,6 +718,19 @@ void Player::doFirstSpawn() {
         }
     }
 
+    // Arm the post-spawn tile resync (fires one tick later, from the
+    // stream loop). Same story as the mob pass above, one layer deeper:
+    // the chest tiles of the chunks that streamed while the loading
+    // screen was up reached a client that cannot bind block actors yet,
+    // and those chunks never re-stream in a normal 0.15 session — the
+    // spawn acknowledgment this side once waited for does not exist in
+    // the 0.15.10 protocol, so nothing would ever re-send them and the
+    // chests rendered invisible. One tick of delay keeps the tile NBT
+    // behind PLAYER_SPAWN on the wire: the resync rides the chunk
+    // channel, the spawn status the login channel, and cross-channel
+    // order is not guaranteed.
+    tile_resync_pending_ = true;
+
     // Broadcast the join event message.
     if (srv_) {
         auto ev = event::EventManager::get().fire<event::player::PlayerJoinEvent>(
