@@ -45,6 +45,10 @@
 //       prefijados, los que escriba el emisor se agregan al final). El
 //       alias muere con el plugin y el permiso del comando destino manda.
 //       false si el nombre estaba tomado o era invalido.
+//   commands.unregisterAlias(alias)
+//       borra UN alias registrado por ESTE plugin (limpieza en onDisable
+//       o re-hacer un atajo). Los alias nativos del software y los de
+//       otros plugins no se pueden soltar por esta via. true si existia.
 //   commands.reply(sender, msg)
 //       answers whoever ran the command (console -> log, player ->
 //       sendMessage). `sender` is the plain table handed out by the
@@ -63,8 +67,7 @@
 #include "command/SimpleCommandMap.h" // full CommandMap definition
 #include "Player.h"
 #include "utils/MainLogger.hpp"
-#include <algorithm>
-#include <cctype>
+#include "utils/Utils.hpp"
 #include <string>
 
 namespace cursestone::plugin {
@@ -74,10 +77,7 @@ namespace {
 // commands.register(name, opts, fn) -> boolean
 int l_commands_register(lua_State* L) {
     // 1. Name (required), lowercased.
-    std::string name = luaL_checkstring(L, 1);
-    std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) {
-        return (char)std::tolower(c);
-    });
+    std::string name = utils::toLower(luaL_checkstring(L, 1));
 
     // 2. opts: tabla opcional. Leer description / usage / permission / override.
     std::string description, usage;
@@ -98,10 +98,7 @@ int l_commands_register(lua_State* L) {
         lua_pop(L, 1);
         lua_getfield(L, 2, "permission");
         if (const char* s = lua_tostring(L, -1)) {
-            std::string p = s;
-            std::transform(p.begin(), p.end(), p.begin(), [](unsigned char c) {
-                return (char)std::tolower(c);
-            });
+            std::string p = utils::toLower(s);
             if (p == "op" || p == "admin") {
                 mode = LuaCommand::PermMode::OP;
             } else if (p != "default" && p != "all" && p != "public" && p != "everyone" &&
@@ -164,26 +161,34 @@ int l_commands_register_alias(lua_State* L) {
     const char* target = luaL_checkstring(L, 2);
     LuaPlugin* pl = LuaPlugin::from(L);
 
-    // First target token, lowercased the same way the map stores names —
-    // used only for the "not registered yet" heads-up below.
-    std::string t = target;
-    std::transform(t.begin(), t.end(), t.begin(), [](unsigned char c) {
-        return (char)std::tolower(c);
-    });
-    const size_t sp = t.find(' ');
-    std::string tName = (sp == std::string::npos) ? t : t.substr(0, sp);
-
     bool ok = Server::getInstance().getCommandMap()->registerAlias(alias, target, pl);
     if (!ok) {
-        utils::MainLogger::get().warn("[" + pl->name() + "] alias '/" + alias +
+        utils::MainLogger::get().warn("[" + pl->name() + "] alias '/" + std::string(alias) +
                                       "' rejected (name taken, empty, or self-targeted)");
-    } else if (!Server::getInstance().getCommandMap()->getCommand(tName)) {
+    } else {
         // Honest heads-up, not a failure: the alias may point at a command
         // a LATER plugin registers, but a typo stays silent otherwise.
-        utils::MainLogger::get().warn("[" + pl->name() + "] alias '/" + alias + "' -> '/" +
-                                      tName + "' (target not registered yet)");
+        const std::string lowered = utils::toLower(target);
+        const std::string tName = lowered.substr(0, lowered.find(' '));
+        if (!Server::getInstance().getCommandMap()->getCommand(tName))
+            utils::MainLogger::get().warn("[" + pl->name() + "] alias '/" + std::string(alias) +
+                                          "' -> '/" + tName + "' (target not registered yet)");
     }
     lua_pushboolean(L, ok ? 1 : 0);
+    return 1;
+}
+
+// commands.unregisterAlias(alias) -> boolean
+//
+// Removes an alias THIS plugin registered earlier (onDisable-time cleanup,
+// or re-pointing a shortcut). The software's native aliases and other
+// plugins' aliases cannot be dropped through it; false means the name was
+// not an owned alias.
+int l_commands_unregister_alias(lua_State* L) {
+    const char* alias = luaL_checkstring(L, 1);
+    LuaPlugin* pl = LuaPlugin::from(L);
+    lua_pushboolean(
+        L, Server::getInstance().getCommandMap()->unregisterAlias(alias, pl) ? 1 : 0);
     return 1;
 }
 
@@ -218,6 +223,7 @@ int l_commands_reply(lua_State* L) {
 void bindCommands(lua_State* L) {
     static const luaL_Reg cmdsF[] = {{"register", l_commands_register},
                                      {"registerAlias", l_commands_register_alias},
+                                     {"unregisterAlias", l_commands_unregister_alias},
                                      {"reply", l_commands_reply},
                                      {nullptr, nullptr}};
     lua_newtable(L);

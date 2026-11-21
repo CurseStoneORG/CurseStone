@@ -110,6 +110,14 @@ local n = w.setBlocks({x, y, z, 35, 14,  x, y + 1, z, 35, 14})
   command or another alias is rejected (returns `false`), the target
   command's permission still gates the call, and the alias dies with the
   plugin (`/plugins reload` or unload drops it and may re-register it).
+  The software itself ships the same kind of shortcuts as native aliases
+  (`/ver`, `/about` → `/version`; `/pl` → `/plugins`; `/?` → `/help`;
+  `/tp` → `/teleport`; `/gm` → `/gamemode`) — plugins can never
+  unregister those, and an alias name that collides with one is rejected.
+- `commands.unregisterAlias(alias)` — removes ONE alias THIS plugin
+  registered earlier (onDisable-time cleanup, or re-pointing a shortcut).
+  Native aliases and other plugins' aliases are out of reach; returns
+  `true` only when an owned alias existed and is now gone.
 - `events.on(name, fn)` — PlayerJoin, PlayerQuit, PlayerChat, PlayerMove,
   PlayerDropItem, PlayerItemHeld, BlockBreak, BlockPlace, EntityDamage,
   EntityDamageByEntity, PlayerDeath, PlayerRespawn, PlayerBedEnter
@@ -461,6 +469,7 @@ instead of raising anything; invalid arguments never crash the server.
 | -------- | ----- |
 | `add(api, name, description, usage, permission, fn, ud) -> bool` | permission: `NULL`/`""` public, `"op"`, or a node |
 | `addAlias(api, alias, target) -> bool` | shortcut: `/alias` dispatches `/target`; target may carry fixed args, sender's args are appended; the target command's permission applies; dies with the plugin |
+| `removeAlias(api, alias) -> bool` | removes ONE alias THIS plugin added earlier; native and foreign aliases are out of reach |
 | `reply(sender, msg)` | console → log, player → chat |
 
 **events** (context-bound; names identical to the Lua `events.on()` list above)

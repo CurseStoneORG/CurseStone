@@ -224,6 +224,13 @@ typedef struct CsCommandApi {
      * @return false when the alias name is taken, empty, or self-targeted.
      */
     bool (*addAlias)(CsPluginApi* api, const char* alias, const char* target);
+    /**
+     * Removes an alias previously registered by THIS plugin
+     * (addAlias). The software's native aliases and other plugins'
+     * aliases cannot be dropped through it.
+     * @return true when an owned alias existed and is now gone.
+     */
+    bool (*removeAlias)(CsPluginApi* api, const char* alias);
 } CsCommandApi;
 
 /**

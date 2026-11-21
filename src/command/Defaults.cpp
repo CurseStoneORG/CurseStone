@@ -40,18 +40,16 @@
 #include "defaults/PluginsCommand.h"
 #include "defaults/StatusCommand.h"
 #include <memory>
+#include <utility>
 namespace cursestone {
 void registerDefaultCommands(CommandMap& map) {
     map.registerCommand(std::make_unique<StopCommand>());
-    map.registerCommand(std::make_unique<HelpCommand>("help"));
-    map.registerCommand(std::make_unique<HelpCommand>("?"));
+    map.registerCommand(std::make_unique<HelpCommand>());
     map.registerCommand(std::make_unique<VersionCommand>());
     map.registerCommand(std::make_unique<KickCommand>());
     map.registerCommand(std::make_unique<KillCommand>());
-    map.registerCommand(std::make_unique<TeleportCommand>("teleport"));
-    map.registerCommand(std::make_unique<TeleportCommand>("tp"));
-    map.registerCommand(std::make_unique<GamemodeCommand>("gamemode"));
-    map.registerCommand(std::make_unique<GamemodeCommand>("gm"));
+    map.registerCommand(std::make_unique<TeleportCommand>());
+    map.registerCommand(std::make_unique<GamemodeCommand>());
     map.registerCommand(std::make_unique<GiveCommand>());
     map.registerCommand(std::make_unique<SayCommand>());
     map.registerCommand(std::make_unique<ListCommand>());
@@ -63,6 +61,21 @@ void registerDefaultCommands(CommandMap& map) {
     map.registerCommand(std::make_unique<WorkbenchCommand>());
     map.registerCommand(std::make_unique<PluginsCommand>());
     map.registerCommand(std::make_unique<StatusCommand>());
+
+    // Native aliases: the software's own shortcuts, part of the command
+    // infrastructure itself (never cursestone.yml). Each entry resolves at
+    // dispatch time to its target command — permissions, arguments and
+    // execution context are the target's, exactly like a plugin alias.
+    // Shortcuts that used to be second registered instances (?, tp, gm)
+    // are aliases too: one Command object per behavior, no duplicated
+    // rows in /help.
+    static constexpr std::pair<const char*, const char*> kNativeAliases[] = {
+        {"ver", "version"},  {"about", "version"}, {"pl", "plugins"},
+        {"?", "help"},       {"tp", "teleport"},   {"gm", "gamemode"},
+    };
+    for (const auto& [alias, target] : kNativeAliases)
+        map.registerAlias(alias, target, nullptr);
+
     // No default /worlds command: world transport and management belong to
     // plugins now (server.loadWorld/unloadWorld + player.teleportWorld),
     // which can tailor the flow (selection UIs, permissions, warps) far

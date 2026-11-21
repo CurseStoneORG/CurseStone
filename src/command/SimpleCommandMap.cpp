@@ -22,21 +22,10 @@
  */
 #include "SimpleCommandMap.h"
 #include "utils/Utils.hpp"
-#include <algorithm>
-#include <cctype>
 namespace cursestone {
-namespace {
 // Alias chains are followed at most this many hops before the line is
 // declared unknown — a cyclic pair of aliases can never hang a dispatch.
 constexpr int kAliasMaxHops = 8;
-
-std::string toLower(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
-        return (char)std::tolower(c);
-    });
-    return s;
-}
-} // namespace
 
 bool SimpleCommandMap::registerCommand(std::unique_ptr<Command> cmd) {
     if (!cmd)
@@ -74,8 +63,8 @@ bool SimpleCommandMap::registerAlias(const std::string& alias, const std::string
                                      void* owner) {
     // Names are stored lowercased like every command name (the map looks up
     // by exact string); the fixed-argument tail keeps its original casing.
-    std::string a = toLower(alias);
-    std::string t = toLower(target);
+    std::string a = utils::toLower(alias);
+    std::string t = utils::toLower(target);
     const size_t sp = t.find(' ');
     const std::string tName = (sp == std::string::npos) ? t : t.substr(0, sp);
     if (a.empty() || tName.empty())
@@ -88,6 +77,13 @@ bool SimpleCommandMap::registerAlias(const std::string& alias, const std::string
     // lookup is by exact string) and the fixed-argument tail as written.
     std::string normalized = tName + (sp == std::string::npos ? "" : target.substr(sp));
     aliases_.emplace(std::move(a), AliasEntry{std::move(normalized), owner});
+    return true;
+}
+bool SimpleCommandMap::unregisterAlias(const std::string& alias, void* owner) {
+    auto it = aliases_.find(utils::toLower(alias));
+    if (it == aliases_.end() || it->second.owner != owner)
+        return false;
+    aliases_.erase(it);
     return true;
 }
 bool SimpleCommandMap::dispatch(CommandSender* sender, const std::string& cmd_line_arg) {

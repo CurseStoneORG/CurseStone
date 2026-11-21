@@ -44,6 +44,10 @@ class SimpleCommandMap : public CommandMap {
     // resolucion solo se intenta cuando la busqueda exacta fallo.
     bool registerAlias(const std::string& alias, const std::string& target,
                        void* owner) override;
+    // Borra UN alias registrado por el mismo owner (nullptr = los alias
+    // nativos del software). Un plugin nunca puede soltar un alias ajeno
+    // o nativo por esta via. true si existia y ya no esta.
+    bool unregisterAlias(const std::string& alias, void* owner) override;
     bool dispatch(CommandSender* sender, const std::string& cmd_line) override;
     Command* getCommand(const std::string& name) const override;
     std::vector<Command*> allCommands() const override;
@@ -63,8 +67,8 @@ class SimpleCommandMap : public CommandMap {
     // (nucleo o de otro plugin) que vuelve cuando el que lo piso se va.
     std::unordered_map<std::string, std::unique_ptr<Command>> overridden_;
     // alias -> linea destino ("comando [argumentos prefijados]") + dueno
-    // (nullptr = el software: alias de cursestone.yml). Resueltos en
-    // dispatch() solo cuando el nombre exacto no es un comando.
+    // (nullptr = el software: alias nativos). Resueltos en dispatch()
+    // solo cuando el nombre exacto no es un comando.
     struct AliasEntry {
         std::string target;
         void* owner;
