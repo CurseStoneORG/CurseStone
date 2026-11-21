@@ -24,6 +24,7 @@
 #include "item/Item.h"
 #include "workbench/WorkbenchManager.h"
 #include "diagnostics/Diagnostics.h"
+#include "diagnostics/ChestDebug.h"
 #include "network/protocol/Info.h"
 #include "network/protocol/PacketNames.h"
 #include "network/protocol/PacketSanitizer.h"
@@ -157,6 +158,8 @@ void Player::sendEncodedBody(std::vector<uint8_t> body, uint8_t pid, bool ordere
             ? network::WireStream::ChunkOrdered
             : (ordered ? network::WireStream::LoginOrdered : network::WireStream::Unordered);
 
+    diagnostics::ChestDebug::onBodyQueued(cfg_.username.c_str(), pid, payload, payload_len);
+
     // Per-client wire forensics (always on; this is what a client-loss
     // dump replays). 16-byte preview copy, no allocation.
     net_trace_.recordOut(pid, payload, payload_len, stream != network::WireStream::Unordered);
@@ -217,6 +220,7 @@ void Player::flushPendingPackets() {
     sendBatchWire(adv_iface_, cfg_.ip, cfg_.port, take_login, network::WireStream::LoginOrdered);
     sendBatchWire(adv_iface_, cfg_.ip, cfg_.port, take_chunks, network::WireStream::ChunkOrdered);
     sendBatchWire(adv_iface_, cfg_.ip, cfg_.port, take_unordered, network::WireStream::Unordered);
+    diagnostics::ChestDebug::onBodiesFlushed(cfg_.username.c_str(), take_chunks);
     // Hand the drained buffers' capacity back so the next flush starts from
     // the size this one reached instead of re-growing from zero on every
     // flush. Only safe while the queues stayed empty during the send; if new

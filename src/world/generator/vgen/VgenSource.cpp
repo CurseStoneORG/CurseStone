@@ -23,6 +23,7 @@
 // CurseStone | vgen — VgenSource implementation.
 
 #include "world/generator/vgen/VgenSource.h"
+#include "diagnostics/ChestDebug.h"
 #include "world/generator/vgen/Blocks.h"
 #include "world/generator/vgen/material/Material.h"
 #include "world/generator/vgen/feature/LakeFeature.h"
@@ -745,13 +746,26 @@ void VgenSource::populate(GenerationContext& ctx) {
                                                            bx, by, bz))
                         continue;
                 const uint8_t expected = cursestone::tile::blockIdForTileId(tileId);
-                if (expected == 0 || by < 0 || by >= vgen::LEVEL_GEN_HEIGHT)
+                if (expected == 0 || by < 0 || by >= vgen::LEVEL_GEN_HEIGHT) {
+                        if (tileId == "Chest")
+                                diagnostics::ChestDebug::onTileSeam(bx, by, bz,
+                                                                    "populate-flush:center",
+                                                                    "dropped:no-block");
                         continue;
+                }
                 const vgen::BlockID at = center.getBlock(
                     vgen::ChunkBlockPos((uint8_t)(bx & 15), (vgen::Height)by, (uint8_t)(bz & 15)));
-                if ((uint8_t)at.value != expected)
+                if ((uint8_t)at.value != expected) {
+                        if (tileId == "Chest")
+                                diagnostics::ChestDebug::onTileSeam(bx, by, bz,
+                                                                    "populate-flush:center",
+                                                                    "dropped:block-gone");
                         continue;
+                }
                 mcp_chunk_add_tile_entity(sink, blob.data(), blob.size());
+                if (tileId == "Chest")
+                        diagnostics::ChestDebug::onTileSeam(bx, by, bz, "populate-flush:center",
+                                                            "landed");
         }
 }
 
