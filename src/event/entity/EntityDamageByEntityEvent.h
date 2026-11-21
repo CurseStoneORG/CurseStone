@@ -37,10 +37,13 @@ class EntityDamageByEntityEvent : public EntityDamageEvent {
     // `cause` defaults to ENTITY_ATTACK (melee). World::tickArrows passes
     // DamageCause::PROJECTILE so Lua listeners can tell bow hits from
     // punches (the reference server keeps the cause from the source event too).
+    // Mob victims pass entity = nullptr plus their runtime id and network
+    // type so listeners can still identify the victim.
     EntityDamageByEntityEvent(cursestone::entity::Entity* e, float amount,
                               cursestone::entity::Entity* d,
-                              DamageCause c = DamageCause::ENTITY_ATTACK)
-        : EntityDamageEvent(e, amount, c), damager(d) {
+                              DamageCause c = DamageCause::ENTITY_ATTACK,
+                              int64_t mobEid = 0, int32_t mobType = 0)
+        : EntityDamageEvent(e, amount, c, mobEid, mobType), damager(d) {
     }
 
     const std::string& eventName() const override {

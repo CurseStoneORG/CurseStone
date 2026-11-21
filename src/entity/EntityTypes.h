@@ -116,4 +116,11 @@ bool mobTypeFromName(const std::string& name, int32_t* outId);
 /// O(1): the registry ids are direct-indexed, not scanned.
 MobKind mobTypeKind(int32_t id);
 
+/// @brief Vanilla maximum health of a registry id, or 0 for ids outside
+///        the registry. Mob spawns seed both health and max health from
+///        this value (the era reference Living health table).
+///
+/// O(1): the registry ids are direct-indexed, not scanned.
+float mobMaxHealth(int32_t id);
+
 } // namespace cursestone::entity

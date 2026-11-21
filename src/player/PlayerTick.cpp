@@ -23,6 +23,7 @@
 #include "Player.h"
 #include "player/PlayerInternal.h"
 #include "world/World.h"
+#include "entity/EntityTypes.h"
 #include "item/ItemIds.h"
 #include "item/Item.h"
 #include "world/format/Chunk.h"
@@ -462,8 +463,9 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int face) {
     }
 }
 
-// Handles melee attacks against player entities.
-// Mob AI, item-specific damage, knockback resistance, and reach checks are not implemented.
+// Handles melee attacks against player entities and world mobs. Mob AI
+// goal damage, item-specific damage bonuses, and reach checks are not
+// implemented (the punch carries the flat base attack).
 void Player::handleInteract(int action, int64_t targetEid) {
     if (!spawned_.load(std::memory_order_relaxed))
         return;
@@ -481,7 +483,8 @@ void Player::handleInteract(int action, int64_t targetEid) {
     if (now_ms - last_attack_ms_ < ATTACK_COOLDOWN_MS)
         return;
 
-    // Resolve the target runtime ID against connected players.
+    // Resolve the target runtime ID: connected players first, then the
+    // world's mob records (spawn eggs / plugin spawns share the id space).
     std::shared_ptr<Player> target;
     for (auto& other : srv_->playersSnapshotRef()) {
         if (!other || other.get() == this)
@@ -491,7 +494,17 @@ void Player::handleInteract(int action, int64_t targetEid) {
             break;
         }
     }
-    if (!target || !target->spawned() || target->isDead())
+    if (target && (!target->spawned() || target->isDead()))
+        return;
+
+    world::World* lvl = getWorld();
+    world::MobEntity* mobTarget = nullptr;
+    if (!target && lvl) {
+        mobTarget = lvl->mob(targetEid);
+        if (mobTarget && (mobTarget->death_tick != 0 || mobTarget->health <= 0.0f))
+            mobTarget = nullptr; // A dying body has no more hits to take.
+    }
+    if (!target && !mobTarget)
         return;
 
     last_attack_ms_ = now_ms;
@@ -507,6 +520,25 @@ void Player::handleInteract(int action, int64_t targetEid) {
         melee = 0.0f;
 
     // Apply damage and allow the damage event to modify or cancel it.
+    // A mob hit runs the world's own damage pipeline — same strength/
+    // weakness math, same event surface (plugins can cancel mob damage
+    // exactly like player damage), era knockback, death when it lands.
+    if (!target) {
+        auto applied = lvl->damageMob(targetEid, melee, this);
+        if (srv_->debugMode()) {
+            const char* mobName = entity::mobTypeName(mobTarget->type);
+            utils::MainLogger::get().info(
+                "[COMBAT] " + cfg_.username + " hit " + (mobName ? mobName : "mob") + " #" +
+                std::to_string(targetEid) + " for " + std::to_string(melee) + " (health now " +
+                std::to_string((int)mobTarget->health) + ")" +
+                (applied == entity::DamageApply::KILLED ? " — killed"
+                                                        : (applied == entity::DamageApply::CANCELLED
+                                                               ? " — CANCELLED (plugin)"
+                                                               : " knockback=0.4")));
+        }
+        return;
+    }
+
     auto applied = target->damageByEntity(melee, this);
     bool died = (applied == entity::DamageApply::KILLED);
     bool hurt = (applied == entity::DamageApply::HURT);

@@ -54,6 +54,11 @@ constexpr double kHeight = 1.8;     ///< Collision height.
 constexpr int kJumpCooldownTicks = 10;
 constexpr double kJumpProbe = 0.7;  ///< Horizontal probe distance for steps.
 
+// Knockback: the consumed shove decays with the era ground friction (the
+// same "motion shrinks every tick" shape the entity model uses; 0.6 keeps
+// the ~1 block shove the player-vs-player melee produces).
+constexpr float kKnockbackFriction = 0.6f;
+
 // Broadcast gating: a mob that moved less than this since its last
 // packet is not re-sent (the same threshold the item integrator uses).
 constexpr double kBroadcastEps = 0.0005;
@@ -109,6 +114,8 @@ void MobAIManager::tick(uint64_t current_tick) {
         world::MobEntity* m = mobs[(cursor_ + k) % n];
         if (!m)
             continue;
+        if (m->death_tick != 0 || m->health <= 0.0f)
+            continue; // Dying: the death window owns the body (no AI, no physics).
 
         MobBrain& brain = [&]() -> MobBrain& {
             auto it = brains_.find(m->eid);
@@ -233,6 +240,26 @@ void MobAIManager::actuateOne(world::MobEntity& m, MobBrain& brain,
     if (m.y < 0.0)
         return; // Void: nothing below to integrate against.
 
+    // Consume the record's pending knockback: a fresh shove becomes brain
+    // carry-over (plus the grounded hop), a stale field just expires — the
+    // record fields are cross-thread (damage can arrive from the plugin
+    // APIs), so the clear runs under the world's mob lock.
+    if (m.kb_tick != 0) {
+        const bool fresh = ctx.tick >= m.kb_tick && ctx.tick - m.kb_tick <= 5;
+        if (fresh) {
+            brain.motionX() = m.kbx;
+            brain.motionZ() = m.kbz;
+            if (brain.onGround())
+                brain.wantsJump() = true; // The vertical pop of the hit.
+        }
+        {
+            std::lock_guard<std::mutex> lk(world_->mobMutex());
+            m.kbx = 0.0f;
+            m.kbz = 0.0f;
+            m.kb_tick = 0;
+        }
+    }
+
     const MobIntent& intent = brain.intent();
 
     // Facing: an explicit look intent wins, a movement intent faces the
@@ -243,7 +270,8 @@ void MobAIManager::actuateOne(world::MobEntity& m, MobBrain& brain,
     else if (intent.move)
         targetYaw = faceYaw(intent.dirX, intent.dirZ);
 
-    const bool idle = !intent.move && brain.onGround() && !brain.wantsJump();
+    const bool idle = !intent.move && !brain.hasKnockback() && brain.onGround() &&
+                      !brain.wantsJump();
     if (idle) {
         // Standing mob: physics is a no-op; only a rotation change is
         // worth a packet.
@@ -286,6 +314,9 @@ void MobAIManager::actuateOne(world::MobEntity& m, MobBrain& brain,
         dx = intent.dirX * (double)intent.speed;
         dz = intent.dirZ * (double)intent.speed;
     }
+    // A consumed shove rides on top of the goal's own step.
+    dx += (double)brain.motionX();
+    dz += (double)brain.motionZ();
 
     const mcp_aabb_t bb =
         mcp_aabb_make(m.x - kHalfWidth, m.y, m.z - kHalfWidth, m.x + kHalfWidth,
@@ -298,6 +329,7 @@ void MobAIManager::actuateOne(world::MobEntity& m, MobBrain& brain,
     const double ny = m.y + res.motion.y;
     const double nz = m.z + res.motion.z;
     brain.onGround() = res.on_ground;
+    brain.decayKnockback(kKnockbackFriction);
 
     // Step-up: a horizontal clip with headroom above the obstacle is a
     // one-block step, worth a jump. A clipped column at head height is

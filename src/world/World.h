@@ -38,6 +38,7 @@
 #include "world/LightEngine.h"
 #include "world/PortalRegistry.h"
 #include "world/format/WorldProvider.h"
+#include "entity/Living.h"
 
 namespace cursestone {
 class Player;
@@ -145,12 +146,28 @@ struct FallingBlockEntity {
 // intent, physics) lives in entity/ai/'s MobBrain, keyed by eid. The
 // chunk index (cx/cz) mirrors mobs_by_chunk_ so chunk streams touch
 // O(mobs of the chunk) instead of scanning the whole world map.
+//
+// Combat state lives here (not in the brain): damage can arrive from any
+// thread through the plugin APIs, while brains are main-thread-only.
 struct MobEntity {
     int64_t eid = 0;
     int32_t type = 0;  // Protocol-84 network id (entity::EntityTypes).
     double x = 0.0, y = 0.0, z = 0.0; // Feet position.
     float yaw = 0.0f, pitch = 0.0f;
     int32_t cx = 0, cz = 0; // Chunk the entity is indexed under.
+    // Vanilla-shaped health, seeded from entity::mobMaxHealth(type) on spawn.
+    float health = 20.0f;
+    float max_health = 20.0f;
+    // Pending knockback (blocks/tick) written by the damage pipeline and
+    // consumed by the next AI actuation pass; kb_tick is the server tick
+    // the shove was applied, so a stale field expires instead of firing
+    // after a long gate closure.
+    float kbx = 0.0f, kbz = 0.0f;
+    uint64_t kb_tick = 0;
+    // Death window: non-zero once the lethal blow landed, holding the
+    // server tick the record must be removed at (death animation plays
+    // for ~one second first). Zero means alive.
+    uint64_t death_tick = 0;
 };
 
 // Defines the vanilla dropped-item pickup volume for MCPE 0.15.10.
@@ -647,6 +664,43 @@ class World {
     // Despawns a mob and forgets it. Unknown ids fail.
     bool removeMob(int64_t id);
 
+    // ----- Mob combat -----
+    // The vanilla-shaped damage pipeline for world mobs (records, not
+    // entity::Living objects). Fires the cancellable EntityDamage
+    // (ByEntity)Event with the mob victim identity (entity == nullptr,
+    // victimEid/victimType set), applies the (possibly modified) amount,
+    // broadcasts the hurt flash to the chunk viewers, and on lethal hits
+    // runs the death sequence: EntityDeathEvent, the vanilla drop table,
+    // the death animation, and a ~1s window before tickMobDeaths removes
+    // the record. A damager adds era knockback (client motion packet plus
+    // an AI carry-over the next actuation pass integrates).
+    //
+    // Returns Hurt/Killed/Cancelled following entity::DamageApply.
+    entity::DamageApply damageMob(int64_t eid, float amount,
+                                  entity::Entity* damager = nullptr,
+                                  event::entity::DamageCause cause =
+                                      event::entity::DamageCause::ENTITY_ATTACK);
+
+    // Direct health write, clamped into [0, maxHealth]. No damage event
+    // fires (this is not vanilla damage); reaching zero runs the same
+    // death sequence as a lethal hit. False for unknown or dying mobs.
+    bool setMobHealth(int64_t eid, float hp);
+
+    // Raises a mob's health ceiling (its current health is clamped down
+    // when it exceeds the new one). False for unknown or dying mobs.
+    bool setMobMaxHealth(int64_t eid, float max);
+
+    // Removes mobs whose death-animation window elapsed. Driven from
+    // tick(); an empty death window costs one counter read.
+    void tickMobDeaths(uint64_t current_tick);
+
+    // INTERNAL (entity/ai actuation only): the mutex guarding the mob
+    // records. The AI consumes the cross-thread knockback fields under
+    // it; every other surface goes through the methods above.
+    std::mutex& mobMutex() {
+        return mobs_mtx_;
+    }
+
     // Returns a non-owning pointer to a mob, or nullptr.
     MobEntity* mob(int64_t eid);
     // Snapshot of all mobs for plugin queries.
@@ -857,6 +911,11 @@ class World {
     static constexpr size_t kMaxMobs = 1024;
     std::unordered_map<int64_t, std::unique_ptr<MobEntity>> mobs_;
     mutable std::mutex mobs_mtx_;
+
+    // Mobs inside the death-animation window (death_tick != 0). Kept
+    // under mobs_mtx_ so tickMobDeaths early-outs on the common empty
+    // case without touching the map.
+    size_t dying_mobs_ = 0;
 
     // Per-chunk mob index: chunk key -> eids. Mirrors mobs_ under the
     // same mutex (mobs_ stays the authority) so a chunk stream touches

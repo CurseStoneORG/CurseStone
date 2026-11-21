@@ -68,6 +68,12 @@
 #include "world/particle/ParticleFamily.h"
 #include "world/particle/GenericParticle.h"
 #include "entity/EntityTypes.h"
+#include "event/EventManager.h"
+#include "event/entity/EntityDamageEvent.h"
+#include "event/entity/EntityDamageByEntityEvent.h"
+#include "event/entity/EntityDeathEvent.h"
+#include "network/protocol/EntityEventPacket.h"
+#include "item/ItemIds.h"
 #include "network/protocol/SetHealthPacket.h"
 #include "network/protocol/SetTimePacket.h"
 #include "network/protocol/UpdateBlockPacket.h"
@@ -550,6 +556,9 @@ void World::tick(uint64_t current_tick) {
     tickArrows(current_tick);
     tickSplashPotions(current_tick);
     tickFallingBlocks(current_tick);
+    // Death windows close before the AI pass reads the records (dying
+    // mobs are skipped there); an empty window costs one counter read.
+    tickMobDeaths(current_tick);
     // Mob AI last: goals and actuation read the blocks the passes above
     // may have just changed (liquid, falling blocks) and budget what is
     // left of the tick, not more.
@@ -1683,6 +1692,10 @@ int64_t World::spawnMob(int32_t type, double x, double y, double z, float yaw, f
     record->pitch = pitch;
     record->cx = cx;
     record->cz = cz;
+    // Vanilla-shaped combat state: the registry's era table seeds both
+    // the ceiling and the current health.
+    record->max_health = entity::mobMaxHealth(type);
+    record->health = record->max_health;
     {
         std::lock_guard<std::mutex> lk(mobs_mtx_);
         mobs_.emplace(eid, std::move(record));
@@ -1779,6 +1792,8 @@ bool World::removeMob(int64_t id) {
         if (it == mobs_.end())
             return false;
         if (it->second) {
+            if (it->second->death_tick != 0 && dying_mobs_ > 0)
+                --dying_mobs_; // A dying record despawned before its window closed.
             auto bucket = mobs_by_chunk_.find(packChunkPos(it->second->cx, it->second->cz));
             if (bucket != mobs_by_chunk_.end()) {
                 auto& eids = bucket->second;
@@ -1815,6 +1830,285 @@ std::vector<MobEntity*> World::mobs() {
 size_t World::mobCount() {
     std::lock_guard<std::mutex> lk(mobs_mtx_);
     return mobs_.size();
+}
+
+// ============================================================================
+// Mob combat — the vanilla-shaped damage pipeline for world mob records.
+// Mobs are not entity::Living objects, so this is the world-side mirror of
+// the Living::damage funnel: cancellable events, health application, the
+// hurt flash, era knockback and a full death sequence. Three locked phases
+// keep every re-entrant surface (plugin listeners may call back into world
+// APIs) free of mobs_mtx_ while it runs.
+// ============================================================================
+
+namespace {
+
+// Era drop table: one row per (mob type, item). Counts roll in
+// [minCount, maxCount] per death, matching the vanilla ranges; mobs
+// missing from the table drop nothing (the water and ambient families).
+struct MobDropRow {
+    int32_t type;
+    uint16_t item;
+    uint16_t meta;
+    uint8_t minCount;
+    uint8_t maxCount;
+};
+
+constexpr MobDropRow kMobDrops[] = {
+    {entity::EntityTypeId::CHICKEN, item::ITEM_FEATHER, 0, 0, 2},
+    {entity::EntityTypeId::CHICKEN, item::ITEM_RAW_CHICKEN, 0, 1, 1},
+    {entity::EntityTypeId::COW, item::ITEM_LEATHER, 0, 0, 2},
+    {entity::EntityTypeId::COW, item::ITEM_RAW_BEEF, 0, 1, 3},
+    {entity::EntityTypeId::MOOSHROOM, item::ITEM_RAW_BEEF, 0, 1, 3},
+    {entity::EntityTypeId::PIG, item::ITEM_RAW_PORKCHOP, 0, 1, 3},
+    {entity::EntityTypeId::SHEEP, item::WOOL, 0, 1, 1},
+    {entity::EntityTypeId::ZOMBIE, item::ITEM_ROTTEN_FLESH, 0, 0, 2},
+    {entity::EntityTypeId::ZOMBIE_PIGMAN, item::ITEM_ROTTEN_FLESH, 0, 0, 1},
+    {entity::EntityTypeId::ZOMBIE_VILLAGER, item::ITEM_ROTTEN_FLESH, 0, 0, 2},
+    {entity::EntityTypeId::HUSK, item::ITEM_ROTTEN_FLESH, 0, 0, 2},
+    {entity::EntityTypeId::SKELETON, item::ITEM_ARROW, 0, 0, 2},
+    {entity::EntityTypeId::SKELETON, item::ITEM_BONE, 0, 0, 2},
+    {entity::EntityTypeId::STRAY, item::ITEM_ARROW, 0, 0, 2},
+    {entity::EntityTypeId::STRAY, item::ITEM_BONE, 0, 0, 2},
+    {entity::EntityTypeId::WITHER_SKELETON, item::ITEM_BONE, 0, 0, 2},
+    {entity::EntityTypeId::SPIDER, item::ITEM_STRING, 0, 0, 2},
+    {entity::EntityTypeId::CREEPER, item::ITEM_GUNPOWDER, 0, 0, 2},
+};
+
+// Era knockback constants — the numbers the player-vs-player melee path
+// applies (Player::handleInteract): direction from the attacker, one base
+// impulse horizontally plus the vertical pop the clients animate.
+constexpr double kKnockbackBase = 0.4;
+
+// Ticks a killed mob's body stays for the death animation before
+// tickMobDeaths removes the record (the vanilla death time).
+constexpr uint64_t kMobDeathWindow = 20;
+
+// The AI actuation consumes knockback only while it is fresh: a shove
+// left unconsumed for the whole window (the mob's chunk stayed gated)
+// expires instead of firing long after the hit.
+constexpr uint64_t kKnockbackFreshTicks = 5;
+
+// One EntityEventPacket (hurt flash / death animation) to the viewers of
+// the mob's chunk — the mob-scoped shape of Living::broadcastHurtFlash.
+void sendMobEntityEvent(World* w, int64_t eid, int32_t cx, int32_t cz, uint8_t event) {
+    auto ev = std::make_shared<network::protocol::EntityEventPacket>();
+    ev->eid = eid;
+    ev->event = event;
+    sendToChunkViewers(w, cx, cz, ev);
+}
+
+// The death sequence every lethal path shares: death notification, vanilla
+// drops, and the death animation. Runs with no lock held.
+void runMobDeathEffects(World* w, int64_t eid, int32_t type,
+                        event::entity::DamageCause cause, entity::Entity* damager,
+                        double x, double y, double z, int32_t cx, int32_t cz) {
+    // Pure notification — deaths are not cancellable (cancel the damage
+    // event carrying the lethal hit instead).
+    event::EventManager::get().fire<event::entity::EntityDeathEvent>(eid, type, cause, damager);
+
+    for (const MobDropRow& d : kMobDrops) {
+        if (d.type != type)
+            continue;
+        const int span = (int)d.maxCount - (int)d.minCount;
+        const int count = (int)d.minCount + (span > 0 ? std::rand() % (span + 1) : 0);
+        if (count > 0)
+            w->dropItemAt(x, y + 0.4, z, d.item, (uint8_t)count, d.meta);
+    }
+
+    sendMobEntityEvent(w, eid, cx, cz, network::protocol::EntityEventPacket::DEATH_ANIMATION);
+}
+
+} // namespace
+
+entity::DamageApply World::damageMob(int64_t eid, float amount, entity::Entity* damager,
+                                     event::entity::DamageCause cause) {
+    if (amount <= 0.0f)
+        return entity::DamageApply::CANCELLED;
+
+    // Phase 1 — validate under the lock. Events must not fire with
+    // mobs_mtx_ held: a listener that touches world APIs would re-enter
+    // the same mutex.
+    int32_t type = 0;
+    {
+        std::lock_guard<std::mutex> lk(mobs_mtx_);
+        auto it = mobs_.find(eid);
+        if (it == mobs_.end() || !it->second)
+            return entity::DamageApply::CANCELLED;
+        const MobEntity& m = *it->second;
+        if (m.death_tick != 0 || m.health <= 0.0f)
+            return entity::DamageApply::CANCELLED; // Dying bodies take no more damage.
+        type = m.type;
+    }
+
+    // Phase 2 — the cancellable damage event. Mob victims have no C++
+    // Entity object: listeners identify them through (victimEid, victimType).
+    if (damager) {
+        auto ev = event::EventManager::get().fire<event::entity::EntityDamageByEntityEvent>(
+            nullptr, amount, damager, cause, eid, type);
+        if (ev.isCancelled())
+            return entity::DamageApply::CANCELLED;
+        amount = ev.amount;
+    } else {
+        auto ev = event::EventManager::get().fire<event::entity::EntityDamageEvent>(
+            nullptr, amount, cause, eid, type);
+        if (ev.isCancelled())
+            return entity::DamageApply::CANCELLED;
+        amount = ev.amount;
+    }
+    if (amount <= 0.0f)
+        return entity::DamageApply::CANCELLED;
+
+    // Phase 3 — apply under the lock and re-validate: phase 2 ran plugin
+    // code, and a competing hit may have landed in between.
+    bool killed = false;
+    double mx = 0.0, my = 0.0, mz = 0.0;
+    float kbx = 0.0f, kbz = 0.0f;
+    int32_t cx = 0, cz = 0;
+    {
+        std::lock_guard<std::mutex> lk(mobs_mtx_);
+        auto it = mobs_.find(eid);
+        if (it == mobs_.end() || !it->second)
+            return entity::DamageApply::CANCELLED;
+        MobEntity& m = *it->second;
+        if (m.death_tick != 0 || m.health <= 0.0f)
+            return entity::DamageApply::CANCELLED;
+        m.health -= amount;
+        if (m.health < 0.0f)
+            m.health = 0.0f;
+        killed = m.health <= 0.0f;
+        mx = m.x;
+        my = m.y;
+        mz = m.z;
+        cx = m.cx;
+        cz = m.cz;
+        if (killed) {
+            m.death_tick = Server::getInstance().getCurrentTick() + kMobDeathWindow;
+            ++dying_mobs_;
+        } else if (damager) {
+            // Era knockback: same impulse the player-vs-player melee
+            // applies. The clients get the full 3D shove; the server
+            // record follows through the AI carry-over consumed by the
+            // next actuation pass.
+            const double dx = mx - damager->position().x;
+            const double dz = mz - damager->position().z;
+            double f = std::sqrt(dx * dx + dz * dz);
+            if (f > 1e-6) {
+                f = 1.0 / f;
+                kbx = (float)(dx * f * kKnockbackBase);
+                kbz = (float)(dz * f * kKnockbackBase);
+                m.kbx = kbx;
+                m.kbz = kbz;
+                m.kb_tick = Server::getInstance().getCurrentTick();
+            }
+        }
+    }
+
+    if (killed) {
+        runMobDeathEffects(this, eid, type, cause, damager, mx, my, mz, cx, cz);
+        return entity::DamageApply::KILLED;
+    }
+
+    // Survived: the red flash is the only wire feedback a mob needs (its
+    // health bar is not client-rendered).
+    sendMobEntityEvent(this, eid, cx, cz, network::protocol::EntityEventPacket::HURT_ANIMATION);
+    if (kbx != 0.0f || kbz != 0.0f) {
+        auto motion = std::make_shared<network::protocol::SetEntityMotionPacket>();
+        motion->entities.push_back({eid, kbx, (float)kKnockbackBase, kbz});
+        sendToChunkViewers(this, cx, cz, motion);
+    }
+    return entity::DamageApply::HURT;
+}
+
+bool World::setMobHealth(int64_t eid, float hp) {
+    // Phase 1 — validate (no events, no writes inside the lock).
+    bool lower = false;
+    int32_t type = 0;
+    {
+        std::lock_guard<std::mutex> lk(mobs_mtx_);
+        auto it = mobs_.find(eid);
+        if (it == mobs_.end() || !it->second)
+            return false;
+        const MobEntity& m = *it->second;
+        if (m.death_tick != 0 || m.health <= 0.0f)
+            return false; // Dying bodies are immutable.
+        lower = hp < m.health;
+        type = m.type;
+    }
+
+    // Phase 2 — clamp + apply, re-validated like damageMob.
+    bool died = false;
+    double mx = 0.0, my = 0.0, mz = 0.0;
+    int32_t cx = 0, cz = 0;
+    {
+        std::lock_guard<std::mutex> lk(mobs_mtx_);
+        auto it = mobs_.find(eid);
+        if (it == mobs_.end() || !it->second)
+            return false;
+        MobEntity& m = *it->second;
+        if (m.death_tick != 0 || m.health <= 0.0f)
+            return false;
+        if (hp < 0.0f)
+            hp = 0.0f;
+        if (hp > m.max_health)
+            hp = m.max_health;
+        m.health = hp;
+        died = m.health <= 0.0f;
+        mx = m.x;
+        my = m.y;
+        mz = m.z;
+        cx = m.cx;
+        cz = m.cz;
+        if (died) {
+            m.death_tick = Server::getInstance().getCurrentTick() + kMobDeathWindow;
+            ++dying_mobs_;
+        }
+    }
+
+    if (died) {
+        runMobDeathEffects(this, eid, type, event::entity::DamageCause::CUSTOM, nullptr, mx, my,
+                           mz, cx, cz);
+        return true;
+    }
+    // A lowered body flashes like a hurt; raises are silent heals.
+    if (lower)
+        sendMobEntityEvent(this, eid, cx, cz,
+                           network::protocol::EntityEventPacket::HURT_ANIMATION);
+    return true;
+}
+
+bool World::setMobMaxHealth(int64_t eid, float max) {
+    if (max <= 0.0f)
+        return false;
+    std::lock_guard<std::mutex> lk(mobs_mtx_);
+    auto it = mobs_.find(eid);
+    if (it == mobs_.end() || !it->second)
+        return false;
+    MobEntity& m = *it->second;
+    if (m.death_tick != 0)
+        return false;
+    m.max_health = max;
+    if (m.health > max)
+        m.health = max; // The ceiling pulls the current value down with it.
+    return true;
+}
+
+void World::tickMobDeaths(uint64_t current_tick) {
+    std::vector<int64_t> due;
+    {
+        std::lock_guard<std::mutex> lk(mobs_mtx_);
+        if (dying_mobs_ == 0)
+            return; // The common case: nothing is dying.
+        due.reserve(dying_mobs_);
+        for (auto& [eid, m] : mobs_) {
+            if (m && m->death_tick != 0 && current_tick >= m->death_tick)
+                due.push_back(eid);
+        }
+    }
+    // removeMob re-locks and drops dying_mobs_ per record; the
+    // RemoveEntityPacket closes the client-side death animation.
+    for (int64_t eid : due)
+        removeMob(eid);
 }
 
 void World::sendMobsInChunk(int32_t cx, int32_t cz, Player* viewer) {
@@ -1857,6 +2151,12 @@ void World::tickArrows(uint64_t current_tick) {
     }
     if (snapshot.empty())
         return;
+
+    // Mob snapshot for the arrow-vs-mob scans; mob-free worlds skip the
+    // whole surface with one O(1) count probe.
+    std::vector<world::MobEntity*> mob_scan;
+    if (mobCount() > 0)
+        mob_scan = mobs();
 
     for (ArrowEntity* a : snapshot) {
         if (current_tick - a->spawn_tick > 1200) {
@@ -1991,6 +2291,68 @@ void World::tickArrows(uint64_t current_tick) {
             return best;
         };
 
+        // Same segment-vs-grown-box scan for world mobs (the generic AI
+        // collision box, grown like the player's). Dying bodies are not
+        // targets — the death window owns them, same rule the melee
+        // resolver applies.
+        auto pickMobHit = [&](double sx, double sy, double sz, double ex, double ey,
+                              double ez) -> world::MobEntity* {
+            world::MobEntity* best = nullptr;
+            double bestT = 2.0; // t in [0,1] along the segment
+            for (world::MobEntity* m : mob_scan) {
+                if (!m || m->death_tick != 0 || m->health <= 0.0f)
+                    continue;
+                // Mob AABB [x-0.3, y, z-0.3]..[x+0.3, y+1.8, z+0.3], grown 0.3.
+                double minx = m->x - 0.6, maxx = m->x + 0.6;
+                double miny = m->y - 0.3, maxy = m->y + 2.1;
+                double minz = m->z - 0.6, maxz = m->z + 0.6;
+                if (ex < minx && sx < minx)
+                    continue;
+                if (ex > maxx && sx > maxx)
+                    continue;
+                if (ey < miny && sy < miny)
+                    continue;
+                if (ey > maxy && sy > maxy)
+                    continue;
+                if (ez < minz && sz < minz)
+                    continue;
+                if (ez > maxz && sz > maxz)
+                    continue;
+                double tmin = 0.0, tmax = 1.0;
+                bool miss = false;
+                const double so[3] = {sx, sy, sz};
+                const double sd[3] = {ex - sx, ey - sy, ez - sz};
+                const double blo[3] = {minx, miny, minz};
+                const double bhi[3] = {maxx, maxy, maxz};
+                for (int ax = 0; ax < 3; ++ax) {
+                    if (std::fabs(sd[ax]) < 1e-12) {
+                        if (so[ax] < blo[ax] || so[ax] > bhi[ax]) {
+                            miss = true;
+                            break;
+                        }
+                        continue;
+                    }
+                    double t1 = (blo[ax] - so[ax]) / sd[ax];
+                    double t2 = (bhi[ax] - so[ax]) / sd[ax];
+                    if (t1 > t2)
+                        std::swap(t1, t2);
+                    if (t1 > tmin)
+                        tmin = t1;
+                    if (t2 < tmax)
+                        tmax = t2;
+                    if (tmin > tmax) {
+                        miss = true;
+                        break;
+                    }
+                }
+                if (miss || tmin > bestT)
+                    continue;
+                bestT = tmin;
+                best = m;
+            }
+            return best;
+        };
+
         // ---- Yaw/pitch from motion (needed by the final burst below) ----
         if (!a->stuck) {
             double fh = std::sqrt(a->vx * a->vx + a->vz * a->vz);
@@ -1999,9 +2361,16 @@ void World::tickArrows(uint64_t current_tick) {
         }
 
         Player* hit = pickHit(a->x, a->y, a->z, nx, ny, nz);
+        // Mobs are only scanned when no player was hit this step: the
+        // player path keeps its one-tick lookahead phantom-flash rules
+        // untouched, and a mob standing between players loses the race
+        // (the same priority the melee resolver applies).
+        world::MobEntity* mobHit = nullptr;
+        if (!hit && !mob_scan.empty())
+            mobHit = pickMobHit(a->x, a->y, a->z, nx, ny, nz);
         bool lookaheadHit = false;
         double entryT = 1.0;
-        if (!hit) {
+        if (!hit && !mobHit) {
             // One-tick lookahead: clients advance the arrow one step past
             // the last streamed position while the removal packet is still
             // in flight, and that local step renders a phantom hurt flash
@@ -2091,6 +2460,61 @@ void World::tickArrows(uint64_t current_tick) {
             for (auto& p : Server::getInstance().playersSnapshotRef()) {
                 if (p && p->spawned() && p->getWorld() == this)
                     p->sendPacket(rm);
+            }
+            continue;
+        }
+        if (mobHit) {
+            // Arrow into a world mob: the mob pipeline fires the
+            // cancellable event and broadcasts the hurt flash / death
+            // itself. No SetHealthPacket exists for a mob — its health
+            // bar is not client-rendered.
+            double speed = std::sqrt(a->vx * a->vx + a->vy * a->vy + a->vz * a->vz);
+            float dmg = std::ceil(speed * a->damage);
+            if (a->critical) {
+                dmg += (float)(std::rand() % ((int)(dmg / 2) + 2));
+            }
+            Player* shooter = nullptr;
+            for (auto& p : Server::getInstance().playersSnapshotRef()) {
+                if (p && p->runtimeId() == a->shooter_eid) {
+                    shooter = p.get();
+                    break;
+                }
+            }
+            if (shooter)
+                damageMob(mobHit->eid, dmg, shooter, event::entity::DamageCause::PROJECTILE);
+            else
+                damageMob(mobHit->eid, dmg, nullptr, event::entity::DamageCause::PROJECTILE);
+
+            // The arrow is consumed either way (a plugin-cancelled hit
+            // claims the arrow exactly like a player hit does) and gets
+            // the same freeze-and-remove burst: it stops AT the mob,
+            // one motion step clear of its box.
+            a->taken = true;
+            int32_t fcx = (int32_t)std::floor(nx) >> 4;
+            int32_t fcz = (int32_t)std::floor(nz) >> 4;
+            auto mv = std::make_shared<network::protocol::MoveEntityPacket>();
+            mv->eid = a->eid;
+            mv->x = (float)nx;
+            mv->y = (float)ny;
+            mv->z = (float)nz;
+            mv->yaw = a->yaw;
+            mv->headYaw = a->yaw;
+            mv->pitch = a->pitch;
+            auto mo = std::make_shared<network::protocol::SetEntityMotionPacket>();
+            mo->entities.push_back({a->eid, 0.0f, 0.0f, 0.0f});
+            for (auto& p : Server::getInstance().playersSnapshotRef()) {
+                if (!p || !p->spawned() || p->getWorld() != this)
+                    continue;
+                if (!p->canSeeBlock(fcx, fcz))
+                    continue;
+                p->sendPacket(mv);
+                p->sendPacket(mo);
+            }
+            auto mrm = std::make_shared<network::protocol::RemoveEntityPacket>();
+            mrm->eid = a->eid;
+            for (auto& p : Server::getInstance().playersSnapshotRef()) {
+                if (p && p->spawned() && p->getWorld() == this)
+                    p->sendPacket(mrm);
             }
             continue;
         }

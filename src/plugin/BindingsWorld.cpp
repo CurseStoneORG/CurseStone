@@ -175,6 +175,8 @@
 #include "world/World.h"
 #include "world/particle/ParticleNames.h"
 #include "entity/EntityTypes.h"
+#include "event/entity/EntityDamageEvent.h"
+#include "utils/Utils.hpp"
 #include <string>
 #include <cstring>
 #include <cmath>
@@ -874,6 +876,114 @@ int l_world_unload(lua_State* L) {
     return 1;
 }
 
+// ---------- entity combat ----------
+
+// Resolves the damage-cause argument of damageEntity: the lowercase
+// names the damage events emit, a numeric events.CAUSE constant, or
+// nil for the default ENTITY_ATTACK melee. False when unknown.
+bool resolveDamageCause(lua_State* L, int idx, event::entity::DamageCause* out) {
+    if (lua_isnoneornil(L, idx)) {
+        *out = event::entity::DamageCause::ENTITY_ATTACK;
+        return true;
+    }
+    if (lua_isnumber(L, idx)) {
+        lua_Integer v = lua_tointeger(L, idx);
+        if (v < 0 || v > (lua_Integer)event::entity::DamageCause::MAGIC)
+            return false;
+        *out = (event::entity::DamageCause)v;
+        return true;
+    }
+    const char* s = lua_tostring(L, idx);
+    if (!s)
+        return false;
+    static const struct {
+        const char* name;
+        event::entity::DamageCause cause;
+    } kCauses[] = {
+        {"custom", event::entity::DamageCause::CUSTOM},
+        {"entity_attack", event::entity::DamageCause::ENTITY_ATTACK},
+        {"contact", event::entity::DamageCause::CONTACT},
+        {"fall", event::entity::DamageCause::FALL},
+        {"lava", event::entity::DamageCause::LAVA},
+        {"fire", event::entity::DamageCause::FIRE},
+        {"fire_tick", event::entity::DamageCause::FIRE_TICK},
+        {"drowning", event::entity::DamageCause::DROWNING},
+        {"cactus", event::entity::DamageCause::CACTUS},
+        {"starvation", event::entity::DamageCause::STARVATION},
+        {"void", event::entity::DamageCause::VOID},
+        {"projectile", event::entity::DamageCause::PROJECTILE},
+        {"magic", event::entity::DamageCause::MAGIC},
+    };
+    const std::string key = utils::toLower(s);
+    for (const auto& c : kCauses) {
+        if (key == c.name) {
+            *out = c.cause;
+            return true;
+        }
+    }
+    return false;
+}
+
+int l_world_getentityhealth(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_Integer id = luaL_checkinteger(L, 2);
+    world::MobEntity* m = w->mob((int64_t)id);
+    if (!m) {
+        lua_pushnil(L);
+        return 1;
+    }
+    lua_pushnumber(L, (lua_Number)m->health);
+    return 1;
+}
+
+int l_world_getentitymaxhealth(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_Integer id = luaL_checkinteger(L, 2);
+    world::MobEntity* m = w->mob((int64_t)id);
+    if (!m) {
+        lua_pushnil(L);
+        return 1;
+    }
+    lua_pushnumber(L, (lua_Number)m->max_health);
+    return 1;
+}
+
+int l_world_setentityhealth(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_Integer id = luaL_checkinteger(L, 2);
+    lua_Number hp = luaL_checknumber(L, 3);
+    lua_pushboolean(L, w->setMobHealth((int64_t)id, (float)hp) ? 1 : 0);
+    return 1;
+}
+
+int l_world_setentitymaxhealth(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_Integer id = luaL_checkinteger(L, 2);
+    lua_Number max = luaL_checknumber(L, 3);
+    lua_pushboolean(L, w->setMobMaxHealth((int64_t)id, (float)max) ? 1 : 0);
+    return 1;
+}
+
+int l_world_damageentity(lua_State* L) {
+    WORLD_OR_NIL();
+    lua_Integer id = luaL_checkinteger(L, 2);
+    lua_Number amount = luaL_checknumber(L, 3);
+    event::entity::DamageCause cause;
+    if (!resolveDamageCause(L, 4, &cause))
+        return luaL_error(L, "unknown damage cause (name or events.CAUSE value)");
+    if (!w->mob((int64_t)id)) {
+        lua_pushnil(L); // Unknown id — not to be confused with a cancelled hit.
+        return 1;
+    }
+    // The full pipeline runs: cancellable EntityDamage(ByEntity)Event,
+    // health, hurt flash, and death when the amount lands.
+    auto applied = w->damageMob((int64_t)id, (float)amount, nullptr, cause);
+    lua_pushstring(L, applied == entity::DamageApply::HURT
+                          ? "hurt"
+                          : (applied == entity::DamageApply::KILLED ? "killed" : "cancelled"));
+    return 1;
+}
+
 #undef WORLD_OR_NIL
 
 const luaL_Reg kWorldMethods[] = {
@@ -917,6 +1027,11 @@ const luaL_Reg kWorldMethods[] = {
     {"getEntity", l_world_getentity},
     {"getEntities", l_world_getentities},
     {"entityTypes", l_world_entitytypes},
+    {"getEntityHealth", l_world_getentityhealth},
+    {"getEntityMaxHealth", l_world_getentitymaxhealth},
+    {"setEntityHealth", l_world_setentityhealth},
+    {"setEntityMaxHealth", l_world_setentitymaxhealth},
+    {"damageEntity", l_world_damageentity},
     {"unload", l_world_unload},
     {nullptr, nullptr},
 };
