@@ -46,6 +46,31 @@ struct LightTables {
 };
 LightTables s_tables;
 
+// Generic flyweight standing in for ids no concrete Block was ever
+// registered for. Block::get() must never hand out null: the join
+// settle, the mob-egg ground scan and the bed-support probes all
+// dereference the pointer bare, and a world holding one unregistered
+// id used to segfault the server the moment a saved join spot sat
+// inside it (the reported crash: tall grass 31, which the vanilla
+// generator decorates plains and forests with, had no flyweight).
+// Unknown ids behave like a plain full solid block — exactly what the
+// guarded call sites already assumed for null (full collision box,
+// full light opacity, not replaceable) — so registering the real ids
+// only ever sharpens behavior, never flips it.
+class BlockUnknown final : public Block {
+  public:
+    explicit BlockUnknown(uint8_t id) : id_(id) {}
+    uint8_t id() const override {
+        return id_;
+    }
+    std::string name() const override {
+        return "Unknown (" + std::to_string(id_) + ")";
+    }
+
+  private:
+    uint8_t id_;
+};
+
 } // namespace
 
 // Light query for the chunk light passes: how much light a block eats
@@ -68,10 +93,19 @@ uint8_t Block::lightEmission(uint8_t block_id) {
 cursestone::math::AxisAlignedBB Block::getBoundingBox() const {
     return {0, 0, 0, 1, 1, 1};
 }
+// All 256 slots come pre-filled with the generic unknown flyweight at
+// first touch (magic static — thread-safe init), so Block::get() stays
+// a single branch-free array read that never returns null.
+// register_all_blocks() overwrites the known ids on top; every id it
+// misses keeps a usable instance instead of a crash.
 std::vector<std::unique_ptr<Block>>& Block::registry() {
-    static std::vector<std::unique_ptr<Block>> r;
-    if (r.empty())
-        r.resize(256);
+    static std::vector<std::unique_ptr<Block>> r = [] {
+        std::vector<std::unique_ptr<Block>> v;
+        v.reserve(256);
+        for (uint32_t id = 0; id < 256; ++id)
+            v.push_back(std::make_unique<BlockUnknown>(static_cast<uint8_t>(id)));
+        return v;
+    }();
     return r;
 }
 void Block::registerBlock(std::unique_ptr<Block> b) {

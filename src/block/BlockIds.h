@@ -34,6 +34,7 @@ enum BlockId : int {
     GRASS = 2,
     DIRT = 3,
     COBBLESTONE = 4,
+    MOSSY_COBBLESTONE = 48,
     PLANKS = 5,
     SAPLING = 6,
     BEDROCK = 7,
