@@ -215,6 +215,15 @@ typedef struct CsCommandApi {
                 const char* permission, CsCommandFn fn, void* ud);
     /** Answers the sender: console -> log, player -> chat message. */
     void (*reply)(const CsCommandSender* sender, const char* msg);
+    /**
+     * Registers a shortcut: typing /alias dispatches /target. target may
+     * be "command" or "command with fixed args"; whatever the sender
+     * types is appended after the fixed arguments. Names are case-
+     * insensitive; real commands always win. The alias dies with the
+     * plugin; the target command's permission still gates the call.
+     * @return false when the alias name is taken, empty, or self-targeted.
+     */
+    bool (*addAlias)(CsPluginApi* api, const char* alias, const char* target);
 } CsCommandApi;
 
 /**

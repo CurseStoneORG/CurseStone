@@ -102,6 +102,14 @@ local n = w.setBlocks({x, y, z, 35, 14,  x, y + 1, z, 35, 14})
 -- in the requested state cost reads only; returns cells written, -1 over cap
 ```
 - `commands.register(name, opts, fn)`, `commands.reply(sender, msg)`
+- `commands.registerAlias(alias, target)` — a shortcut: typing `/alias`
+  dispatches `/target`. `target` is `"command"` or `"command with fixed
+  args"`; whatever the sender typed is appended after the fixed ones
+  (`commands.registerAlias("gmc", "gamemode 1")` turns `/gmc survival` into
+  `/gamemode 1 survival`). Real commands always win — a name taken by a
+  command or another alias is rejected (returns `false`), the target
+  command's permission still gates the call, and the alias dies with the
+  plugin (`/plugins reload` or unload drops it and may re-register it).
 - `events.on(name, fn)` — PlayerJoin, PlayerQuit, PlayerChat, PlayerMove,
   PlayerDropItem, PlayerItemHeld, BlockBreak, BlockPlace, EntityDamage,
   EntityDamageByEntity, PlayerDeath, PlayerRespawn, PlayerBedEnter
@@ -452,6 +460,7 @@ instead of raising anything; invalid arguments never crash the server.
 | Function | Notes |
 | -------- | ----- |
 | `add(api, name, description, usage, permission, fn, ud) -> bool` | permission: `NULL`/`""` public, `"op"`, or a node |
+| `addAlias(api, alias, target) -> bool` | shortcut: `/alias` dispatches `/target`; target may carry fixed args, sender's args are appended; the target command's permission applies; dies with the plugin |
 | `reply(sender, msg)` | console → log, player → chat |
 
 **events** (context-bound; names identical to the Lua `events.on()` list above)

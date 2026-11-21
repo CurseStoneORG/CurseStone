@@ -370,6 +370,19 @@ std::vector<std::string> Config::getStringList(const std::string& key,
     return out;
 }
 
+std::vector<std::pair<std::string, std::string>> Config::getMap(const std::string& key) const {
+    const Node* n = lookup(key);
+    if (!n || n->type != Node::Type::Map)
+        return {};
+    std::vector<std::pair<std::string, std::string>> out;
+    out.reserve(n->map.size());
+    for (const auto& [k, child] : n->map) {
+        if (child->type == Node::Type::Scalar)
+            out.emplace_back(k, child->scalar);
+    }
+    return out;
+}
+
 void Config::setString(const std::string& key, const std::string& v) {
     Node* n = lookupOrCreate(key);
     n->type = Node::Type::Scalar;

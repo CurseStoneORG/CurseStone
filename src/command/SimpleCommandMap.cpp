@@ -22,7 +22,22 @@
  */
 #include "SimpleCommandMap.h"
 #include "utils/Utils.hpp"
+#include <algorithm>
+#include <cctype>
 namespace cursestone {
+namespace {
+// Alias chains are followed at most this many hops before the line is
+// declared unknown — a cyclic pair of aliases can never hang a dispatch.
+constexpr int kAliasMaxHops = 8;
+
+std::string toLower(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
+        return (char)std::tolower(c);
+    });
+    return s;
+}
+} // namespace
+
 bool SimpleCommandMap::registerCommand(std::unique_ptr<Command> cmd) {
     if (!cmd)
         return false;
@@ -55,6 +70,26 @@ bool SimpleCommandMap::overrideCommand(std::unique_ptr<Command> cmd) {
     it->second = std::move(cmd);
     return true;
 }
+bool SimpleCommandMap::registerAlias(const std::string& alias, const std::string& target,
+                                     void* owner) {
+    // Names are stored lowercased like every command name (the map looks up
+    // by exact string); the fixed-argument tail keeps its original casing.
+    std::string a = toLower(alias);
+    std::string t = toLower(target);
+    const size_t sp = t.find(' ');
+    const std::string tName = (sp == std::string::npos) ? t : t.substr(0, sp);
+    if (a.empty() || tName.empty())
+        return false;
+    // A real command always wins: the alias name must be free both as a
+    // command and as an alias, and may not point at itself.
+    if (commands_.count(a) || aliases_.count(a) || a == tName)
+        return false;
+    // Store the target with its command name lowercased (the dispatch
+    // lookup is by exact string) and the fixed-argument tail as written.
+    std::string normalized = tName + (sp == std::string::npos ? "" : target.substr(sp));
+    aliases_.emplace(std::move(a), AliasEntry{std::move(normalized), owner});
+    return true;
+}
 bool SimpleCommandMap::dispatch(CommandSender* sender, const std::string& cmd_line_arg) {
     // La consola entrega la linea TAL CUAL ("/op Dr1xy"), mientras que
     // Player::handleChat() ya se quita la barra a los jugadores. Sin este
@@ -79,25 +114,56 @@ bool SimpleCommandMap::dispatch(CommandSender* sender, const std::string& cmd_li
         args = utils::split(rest, ' ');
     }
     auto it = commands_.find(name);
-    if (it == commands_.end()) {
-        sender->sendMessage("Unknown command: " + name);
-        return false;
+    Command* cmd = nullptr;
+    if (it != commands_.end()) {
+        cmd = it->second.get();
+    } else {
+        // Exact miss: walk the alias table. An alias expands to "target
+        // [fixed args]"; chains are followed until a real command appears
+        // (bounded so a cyclic pair cannot hang a dispatch) and the fixed
+        // arguments accumulate outer-first, ahead of the caller's own.
+        std::vector<std::string> fixed;
+        std::string cur = name;
+        for (int hops = 0; hops < kAliasMaxHops; ++hops) {
+            auto ait = aliases_.find(cur);
+            if (ait == aliases_.end())
+                break;
+            const std::string& target = ait->second.target;
+            const size_t tsp = target.find(' ');
+            cur = (tsp == std::string::npos) ? target : target.substr(0, tsp);
+            if (tsp != std::string::npos) {
+                std::vector<std::string> tail = utils::split(target.substr(tsp + 1), ' ');
+                fixed.insert(fixed.end(), std::make_move_iterator(tail.begin()),
+                             std::make_move_iterator(tail.end()));
+            }
+            auto cit = commands_.find(cur);
+            if (cit != commands_.end()) {
+                cmd = cit->second.get();
+                break;
+            }
+        }
+        if (!cmd) {
+            sender->sendMessage("Unknown command: " + name);
+            return false;
+        }
+        args.insert(args.begin(), std::make_move_iterator(fixed.begin()),
+                    std::make_move_iterator(fixed.end()));
     }
     // --- CONTROL DE PERMISOS ---
     //
-    // Single funnel for every command. The permission check lives in
+    // Single funnel for every command (aliases included: an alias to an
+    // op-only command still requires op). The permission check lives in
     // Command::canUse() (virtual): los comandos normales usan el nodo de
     // permiso declarado, y los comandos de plugins (LuaCommand) pueden
     // define its own rule (op / custom node / public). A command with no
     // declared node (empty permission_) stays public:
     // help, list, version.
-    Command& cmd = *it->second;
-    if (!cmd.canUse(sender)) {
+    if (!cmd->canUse(sender)) {
         sender->sendMessage("You do not have permission to use this command.");
         return false;
     }
     try {
-        return it->second->execute(sender, name, args);
+        return cmd->execute(sender, name, args);
     } catch (const std::exception& e) {
         sender->sendMessage("Error executing command: " + std::string(e.what()));
         return false;
@@ -132,6 +198,16 @@ size_t SimpleCommandMap::unregisterByOwner(void* owner) {
             ++removed;
         } else {
             ++it;
+        }
+    }
+    // The plugin's aliases die with its commands — an alias that outlives
+    // its owner would dispatch into a plugin the server no longer has.
+    for (auto ait = aliases_.begin(); ait != aliases_.end();) {
+        if (ait->second.owner == owner) {
+            ait = aliases_.erase(ait);
+            ++removed;
+        } else {
+            ++ait;
         }
     }
     return removed;

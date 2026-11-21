@@ -143,6 +143,26 @@ void diagBadValue(const std::string& file, const std::string& display, const std
     diagnostics::DiagEngine::emit(d);
 }
 
+// Diagnostic for a rejected commands.aliases row (E0003), anchored at the
+// alias key inside cursestone.yml when the row is actually there.
+void diagBadAlias(const std::string& file, const std::string& alias, const std::string& why) {
+    diagnostics::Diagnostic d;
+    d.code = 3; // E0003 — configuration value invalid
+    d.severity = diagnostics::DiagSeverity::Error;
+    d.title = "Invalid command alias '" + alias + "' in " + file;
+    d.label = why;
+    d.help.push_back("Expected 'alias: \"target [fixed args...]\"' pointing at an "
+                     "existing command; the alias name must not be taken.");
+    int line = 0, col = 0, span = 0;
+    if (diagnostics::DiagEngine::findKeySpan(slurpText(file), alias, false, &line, &col, &span)) {
+        d.file = file;
+        d.line = line;
+        d.col = col;
+        d.span = span;
+    }
+    diagnostics::DiagEngine::emit(d);
+}
+
 } // namespace
 
 bool Server::loadConfig() {
@@ -304,6 +324,32 @@ bool Server::loadConfig() {
         std::to_string(traffic_.max_new_sessions_per_sec) + ", sessions/IP " +
         std::to_string(traffic_.max_sessions_per_ip) + ")");
     return true;
+}
+
+void Server::applyCommandAliases() {
+    // Operator-side aliases ("the software's own"): commands.aliases in
+    // cursestone.yml, e.g.  gmc: "gamemode 1".  Plugins are already loaded
+    // here, so an alias may target a plugin command as well. A rejected row
+    // (name taken, empty, self-targeted) is a recoverable configuration
+    // error: E0003 with the real file row, boot continues without it.
+    const std::string yaml_path = dataPath_ + "/cursestone.yml";
+    utils::Config adv;
+    if (!adv.loadYaml(yaml_path))
+        return;
+    auto rows = adv.getMap("commands.aliases");
+    if (rows.empty())
+        return;
+    int applied = 0;
+    for (const auto& [alias, target] : rows) {
+        if (command_map_->registerAlias(alias, target, nullptr)) {
+            ++applied;
+            continue;
+        }
+        diagBadAlias(yaml_path, alias, "the alias name is taken, empty, or self-targeted");
+    }
+    if (applied > 0)
+        utils::MainLogger::get().debug("Loaded " + std::to_string(applied) +
+                                       " command alias(es) from commands.aliases");
 }
 
 void Server::initLogger() {
@@ -741,6 +787,10 @@ void Server::start(const std::string& dataPath) {
     DiagEngine::stage("Loading plugins...");
     plugin::PluginManager::get().loadAll(dataPath_ + "/plugins", dataPath_ + "/data_pl");
     DiagEngine::stageDone("Plugins loaded");
+
+    // ---- Command aliases from cursestone.yml: applied after the plugins
+    //      so an alias may target a plugin command too.
+    applyCommandAliases();
 
     startCommandReader();
 
