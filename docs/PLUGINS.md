@@ -303,15 +303,18 @@ inventory, which is what makes the client's renderer for it
 client-verified — ids outside the registry never reach the wire.
 
 Entity ids do not survive restarts, like floating text ids — but the
-mobs themselves do: every full save point (shutdown, `/save`, world
-unload, the autosave's level-dat pass) rewrites the world's
-`worlds/<world>/mobs.dat`, and the next boot restores each mob at its
-saved position/rotation with its saved health (a plugin-raised max
-health survives too). Dying bodies and dead health values are never
-saved, so a restart cannot resurrect a corpse mid-animation. Because
-the ids are re-allocated on boot, a plugin must not store an eid
-across a restart — re-resolve entities through `getEntities()` /
-`getEntity()` instead.
+mobs themselves do: they are chunk state, stored inside the world's
+region files (each chunk's `Entities` NBT list in
+`worlds/<world>/region/r.X.Z.mca`). Every full save point (shutdown,
+`/save`, world unload, the autosave's level-dat pass) folds the mobs of
+every changed chunk back into its entity list, and each chunk restores
+its bodies the moment it loads — at the saved position/rotation with
+the saved health (a plugin-raised max health survives too). Dying
+bodies and dead health values are never saved, so a restart cannot
+resurrect a corpse mid-animation. Because the ids are re-allocated
+whenever a chunk loads, a plugin must not store an eid across a
+restart — re-resolve entities through `getEntities()` / `getEntity()`
+instead.
 
 #### Mob combat and health
 
