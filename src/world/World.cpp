@@ -38,7 +38,6 @@
 #include "world/MobChunkCodec.h"
 #include "utils/CRaii.h"
 #include "utils/MainLogger.hpp"
-#include "diagnostics/ChestDebug.h"
 #include "tile/Tile.h"
 #include "tile/TileChest.h"
 #include "tile/TileFurnace.h"
@@ -249,7 +248,6 @@ World::World(WorldConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
     // chest leaves the registry tile standing over foreign terrain — a
     // block actor the 0.15 client cannot bind, i.e. an invisible chest.
     chunks_.setOnSpillTileBlockOverwrite([this](int32_t x, int32_t y, int32_t z) {
-        diagnostics::ChestDebug::onTileRemoved(x, y, z, "generation-spill-overwrite");
         removeTile(x, y, z);
     });
     provider_ = provider;
@@ -715,9 +713,7 @@ void World::spawnTileToViewers(tile::Tile& t) {
 
     // Same viewer filter broadcastBlockUpdate applies: spawned, in this
     // world, chunk in view. sendBlockEntityData encodes the tile's spawn
-    // compound per recipient and records the send in ChestDebug, so the
-    // /chestdebug report shows these wire-level announcements exactly
-    // like the stream ones.
+    // compound per recipient.
     static constexpr size_t kDirectTargets = 96;
     Player* targets[kDirectTargets];
     size_t n = 0;
@@ -3543,9 +3539,6 @@ std::shared_ptr<cursestone::tile::Tile> World::getTile(int32_t x, int32_t y, int
 }
 
 void World::setTile(int32_t x, int32_t y, int32_t z, std::shared_ptr<cursestone::tile::Tile> t) {
-    if (diagnostics::ChestDebug::enabled() &&
-        std::dynamic_pointer_cast<cursestone::tile::TileChest>(t))
-        diagnostics::ChestDebug::onTileRegistered(x, y, z, "setTile");
     const uint64_t tkey = packTilePos(x, y, z);
     const uint64_t ckey = packChunkPos(x >> 4, z >> 4);
     std::lock_guard<std::mutex> lk(tiles_mtx_);
@@ -3601,8 +3594,6 @@ void World::applyTileBlob(const uint8_t* data, size_t len) {
     auto [it, inserted] = tiles_.try_emplace(tkey, std::move(tile));
     if (inserted) {
         tiles_by_chunk_[tileCk].push_back(TileSlot{tkey, it->second});
-        if (std::strcmp(id, "Chest") == 0)
-            diagnostics::ChestDebug::onTileRegistered(tx, ty, tz, "blob-apply");
     }
 }
 
@@ -3758,7 +3749,6 @@ void World::ensureTilesLoaded(int32_t cx, int32_t cz, bool notifyViewers) {
                         mcp_chunk_set_block_full(c, tx & 15, ty, tz & 15, expected, data);
                         mcp_chunk_recalculate_height_map(c);
                         c->dirty = true; // the healed pair persists too
-                        diagnostics::ChestDebug::onBlockHealed(tx, ty, tz, (int)data);
                         // The client's own block grid must carry the healed
                         // block too: the actor only binds over a matching
                         // block, and a legacy-save world streamed before
@@ -3790,8 +3780,6 @@ void World::ensureTilesLoaded(int32_t cx, int32_t cz, bool notifyViewers) {
                 if (inserted) {
                     tiles_by_chunk_[tileCk].push_back(TileSlot{tkey, it->second});
                     freshTiles.push_back(it->second);
-                    if (std::strcmp(id, "Chest") == 0)
-                        diagnostics::ChestDebug::onTileRegistered(tx, ty, tz, "hydration");
                 }
             }
         }
