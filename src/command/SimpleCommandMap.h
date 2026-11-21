@@ -37,13 +37,21 @@ class SimpleCommandMap : public CommandMap {
     // nucleo siempre con sus comandos originales. Devuelve false solo
     // si cmd es null.
     bool overrideCommand(std::unique_ptr<Command> cmd) override;
+    // Registra un alias: teclear /alias despacha /target. target puede
+    // llevar argumentos prefijados ("gamemode 1"), y los argumentos que
+    // el emisor escriba se AGREGAN al final. Los comandos reales ganan
+    // siempre: un nombre ocupado por un comando no puede ser alias, y la
+    // resolucion solo se intenta cuando la busqueda exacta fallo.
+    bool registerAlias(const std::string& alias, const std::string& target,
+                       void* owner) override;
     bool dispatch(CommandSender* sender, const std::string& cmd_line) override;
     Command* getCommand(const std::string& name) const override;
     std::vector<Command*> allCommands() const override;
     // Borra todos los comandos cuyo Command::owner() == owner (los
     // LuaCommand de un plugin, antes de que /plugins reload destruya su
-    // lua_State). Si un comando borrado habia pisado a otro (override),
-    // the displaced one is restored in place. Returns how many were removed.
+    // lua_State) y tambien sus alias. Si un comando borrado habia pisado
+    // a otro (override), the displaced one is restored in place. Returns
+    // how many commands and aliases were removed.
     size_t unregisterByOwner(void* owner) override;
     size_t size() const {
         return commands_.size();
@@ -54,6 +62,13 @@ class SimpleCommandMap : public CommandMap {
     // comandos desplazados por override: nombre -> el comando original
     // (nucleo o de otro plugin) que vuelve cuando el que lo piso se va.
     std::unordered_map<std::string, std::unique_ptr<Command>> overridden_;
-    std::vector<std::string> aliases_;
+    // alias -> linea destino ("comando [argumentos prefijados]") + dueno
+    // (nullptr = el software: alias de cursestone.yml). Resueltos en
+    // dispatch() solo cuando el nombre exacto no es un comando.
+    struct AliasEntry {
+        std::string target;
+        void* owner;
+    };
+    std::unordered_map<std::string, AliasEntry> aliases_;
 };
 } // namespace

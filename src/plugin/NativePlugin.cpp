@@ -263,6 +263,15 @@ bool api_cmd_add(CsPluginApi* api, const char* name, const char* description, co
     return Server::getInstance().getCommandMap()->registerCommand(std::move(cmd));
 }
 
+// commands.addAlias: a shortcut name that dispatches an existing command
+// (optionally with fixed arguments). Same owner semantics as api_cmd_add.
+bool api_cmd_addAlias(CsPluginApi* api, const char* alias, const char* target) {
+    NativePlugin* pl = pluginFromApi(api);
+    if (!pl || !alias || !*alias || !target || !*target)
+        return false;
+    return Server::getInstance().getCommandMap()->registerAlias(alias, target, pl);
+}
+
 void api_cmd_reply(const CsCommandSender* sender, const char* msg) {
     if (!sender || !msg)
         return;
@@ -275,7 +284,7 @@ void api_cmd_reply(const CsCommandSender* sender, const char* msg) {
         p->sendMessage(msg);
 }
 
-CsCommandApi g_cmdApi = {api_cmd_add, api_cmd_reply};
+CsCommandApi g_cmdApi = {api_cmd_add, api_cmd_reply, api_cmd_addAlias};
 
 // server: world/player lists are resolved per call; nothing caches pointers.
 void api_server_broadcast(const char* msg) {

@@ -40,6 +40,11 @@
 //                          another plugin granted them the node via
 //                          player.setPermission(nombre, nodo, true)
 //       returns true when registered, false if the name was taken.
+//   commands.registerAlias(alias, target)
+//       atajo: /alias despacha /target (target puede llevar argumentos
+//       prefijados, los que escriba el emisor se agregan al final). El
+//       alias muere con el plugin y el permiso del comando destino manda.
+//       false si el nombre estaba tomado o era invalido.
 //   commands.reply(sender, msg)
 //       answers whoever ran the command (console -> log, player ->
 //       sendMessage). `sender` is the plain table handed out by the
@@ -143,6 +148,45 @@ int l_commands_register(lua_State* L) {
     return 1;
 }
 
+// commands.registerAlias(alias, target) -> boolean
+//
+// Registers a shortcut: typing /alias dispatches /target. target may be
+// "command" or "command with fixed args" — the arguments the sender types
+// are appended after the fixed ones. Real commands always win (a name
+// taken by a command or another alias is rejected), the alias dies with
+// the plugin (/plugins reload or unload drops it), and the TARGET
+// command's permission still gates the call.
+//
+//   commands.registerAlias("spawn", "tp world spawn")
+//   commands.registerAlias("gmc", "gamemode 1")
+int l_commands_register_alias(lua_State* L) {
+    const char* alias = luaL_checkstring(L, 1);
+    const char* target = luaL_checkstring(L, 2);
+    LuaPlugin* pl = LuaPlugin::from(L);
+
+    // First target token, lowercased the same way the map stores names —
+    // used only for the "not registered yet" heads-up below.
+    std::string t = target;
+    std::transform(t.begin(), t.end(), t.begin(), [](unsigned char c) {
+        return (char)std::tolower(c);
+    });
+    const size_t sp = t.find(' ');
+    std::string tName = (sp == std::string::npos) ? t : t.substr(0, sp);
+
+    bool ok = Server::getInstance().getCommandMap()->registerAlias(alias, target, pl);
+    if (!ok) {
+        utils::MainLogger::get().warn("[" + pl->name() + "] alias '/" + alias +
+                                      "' rejected (name taken, empty, or self-targeted)");
+    } else if (!Server::getInstance().getCommandMap()->getCommand(tName)) {
+        // Honest heads-up, not a failure: the alias may point at a command
+        // a LATER plugin registers, but a typo stays silent otherwise.
+        utils::MainLogger::get().warn("[" + pl->name() + "] alias '/" + alias + "' -> '/" +
+                                      tName + "' (target not registered yet)");
+    }
+    lua_pushboolean(L, ok ? 1 : 0);
+    return 1;
+}
+
 // commands.reply(sender, msg)
 int l_commands_reply(lua_State* L) {
     luaL_checktype(L, 1, LUA_TTABLE);
@@ -172,8 +216,10 @@ int l_commands_reply(lua_State* L) {
 } // namespace
 
 void bindCommands(lua_State* L) {
-    static const luaL_Reg cmdsF[] = {
-        {"register", l_commands_register}, {"reply", l_commands_reply}, {nullptr, nullptr}};
+    static const luaL_Reg cmdsF[] = {{"register", l_commands_register},
+                                     {"registerAlias", l_commands_register_alias},
+                                     {"reply", l_commands_reply},
+                                     {nullptr, nullptr}};
     lua_newtable(L);
     luaL_setfuncs(L, cmdsF, 0);
     lua_setglobal(L, "commands");

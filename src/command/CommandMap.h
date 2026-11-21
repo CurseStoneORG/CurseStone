@@ -38,6 +38,17 @@ class CommandMap {
     virtual bool overrideCommand(std::unique_ptr<Command> /*cmd*/) {
         return false;
     }
+    // Registers a shortcut: typing /alias dispatches /target. target may
+    // carry fixed arguments ("gamemode 1") and whatever the sender typed
+    // is appended. Real commands always win — a name taken by a command
+    // cannot become an alias, and the alias table is consulted only when
+    // the exact lookup misses. owner (a plugin pointer, nullptr for the
+    // software itself) dies with unregisterByOwner. Returns false when
+    // the map does not support aliases or the name/target is rejected.
+    virtual bool registerAlias(const std::string& /*alias*/, const std::string& /*target*/,
+                               void* /*owner*/) {
+        return false;
+    }
     virtual bool dispatch(CommandSender* sender, const std::string& cmd_line) = 0;
     virtual Command* getCommand(const std::string& name) const = 0;
     // All registered commands (for the dynamic /help). Aliases
@@ -47,8 +58,9 @@ class CommandMap {
     }
     // Removes every command whose Command::owner() == owner (a plugin's
     // LuaCommand objects, right before /plugins reload destroys their
-    // lua_State). Returns how many commands were removed. The default is
-    // a no-op so lightweight/mock maps don't have to care.
+    // lua_State) and every alias the owner registered. Returns how many
+    // commands and aliases were removed. The default is a no-op so
+    // lightweight/mock maps don't have to care.
     virtual size_t unregisterByOwner(void* owner) {
         (void)owner;
         return 0;
