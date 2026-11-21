@@ -25,6 +25,7 @@
 #include "world/format/Chunk.h"
 #include "scheduler/AsyncPool.h"
 #include "network/protocol/FullChunkDataPacket.h"
+#include "diagnostics/ChestDebug.h"
 #include "tile/Tile.h"
 #include "utils/CRaii.h"
 #include <cstdlib>
@@ -250,6 +251,7 @@ void Player::sendChunk(int cx, int cz) {
     pk->chunkX = cx;
     pk->chunkZ = cz;
     pk->data.assign(buf.get(), buf.get() + outLen);
+    diagnostics::ChestDebug::onChunkBuilt(*this, cx, cz, pk->data.data(), pk->data.size());
     sendPacket(pk);
     sendChunkTiles(cx, cz);
     int64_t hash = ((int64_t)cx << 32) | ((uint32_t)cz);
@@ -388,6 +390,8 @@ void Player::flushChunkEncodes(int max_chunks, size_t max_bytes) {
         pk->chunkX = slot.cx;
         pk->chunkZ = slot.cz;
         pk->data.assign(slot.wire.get(), slot.wire.get() + slot.wire_len);
+        diagnostics::ChestDebug::onChunkBuilt(*this, slot.cx, slot.cz, pk->data.data(),
+                                              pk->data.size());
         sendPacket(pk);
         sendChunkTiles(slot.cx, slot.cz);
         int64_t hash = ((int64_t)slot.cx << 32) | ((uint32_t)slot.cz);

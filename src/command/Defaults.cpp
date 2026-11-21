@@ -39,6 +39,7 @@
 #include "defaults/WorkbenchCommand.h"
 #include "defaults/PluginsCommand.h"
 #include "defaults/StatusCommand.h"
+#include "defaults/ChestDebugCommand.h"
 #include <memory>
 #include <utility>
 namespace cursestone {
@@ -61,6 +62,7 @@ void registerDefaultCommands(CommandMap& map) {
     map.registerCommand(std::make_unique<WorkbenchCommand>());
     map.registerCommand(std::make_unique<PluginsCommand>());
     map.registerCommand(std::make_unique<StatusCommand>());
+    map.registerCommand(std::make_unique<ChestDebugCommand>());
 
     // Native aliases: the software's own shortcuts, part of the command
     // infrastructure itself (never cursestone.yml). Each entry resolves at

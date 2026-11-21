@@ -38,6 +38,7 @@
 #include "world/MobChunkCodec.h"
 #include "utils/CRaii.h"
 #include "utils/MainLogger.hpp"
+#include "diagnostics/ChestDebug.h"
 #include "tile/Tile.h"
 #include "tile/TileChest.h"
 #include "tile/TileFurnace.h"
@@ -248,6 +249,7 @@ World::World(WorldConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
     // chest leaves the registry tile standing over foreign terrain — a
     // block actor the 0.15 client cannot bind, i.e. an invisible chest.
     chunks_.setOnSpillTileBlockOverwrite([this](int32_t x, int32_t y, int32_t z) {
+        diagnostics::ChestDebug::onTileRemoved(x, y, z, "generation-spill-overwrite");
         removeTile(x, y, z);
     });
     provider_ = provider;
@@ -3475,6 +3477,9 @@ std::shared_ptr<cursestone::tile::Tile> World::getTile(int32_t x, int32_t y, int
 }
 
 void World::setTile(int32_t x, int32_t y, int32_t z, std::shared_ptr<cursestone::tile::Tile> t) {
+    if (diagnostics::ChestDebug::enabled() &&
+        std::dynamic_pointer_cast<cursestone::tile::TileChest>(t))
+        diagnostics::ChestDebug::onTileRegistered(x, y, z, "setTile");
     const uint64_t tkey = packTilePos(x, y, z);
     const uint64_t ckey = packChunkPos(x >> 4, z >> 4);
     std::lock_guard<std::mutex> lk(tiles_mtx_);
@@ -3528,8 +3533,11 @@ void World::applyTileBlob(const uint8_t* data, size_t len) {
     // player-placed one, or one a concurrent hydration just created from
     // this same blob — is newer than what we hold, so the blob loses.
     auto [it, inserted] = tiles_.try_emplace(tkey, std::move(tile));
-    if (inserted)
+    if (inserted) {
         tiles_by_chunk_[tileCk].push_back(TileSlot{tkey, it->second});
+        if (std::strcmp(id, "Chest") == 0)
+            diagnostics::ChestDebug::onTileRegistered(tx, ty, tz, "blob-apply");
+    }
 }
 
 void World::removeTile(int32_t x, int32_t y, int32_t z) {
@@ -3652,6 +3660,7 @@ void World::ensureTilesLoaded(int32_t cx, int32_t cz) {
                         mcp_chunk_set_block_full(c, tx & 15, ty, tz & 15, expected, data);
                         mcp_chunk_recalculate_height_map(c);
                         c->dirty = true; // the healed pair persists too
+                        diagnostics::ChestDebug::onBlockHealed(tx, ty, tz, (int)data);
                         utils::MainLogger::get().debug(
                             "Tile-block heal: restored " + std::to_string(expected) + " under '" +
                             id + "' at " + std::to_string(tx) + ", " + std::to_string(ty) + ", " +
@@ -3675,8 +3684,11 @@ void World::ensureTilesLoaded(int32_t cx, int32_t cz) {
                 // encodes that rule: an occupied position keeps its live
                 // instance and the blob's tile is discarded.
                 auto [it, inserted] = tiles_.try_emplace(tkey, std::move(tile));
-                if (inserted)
+                if (inserted) {
                     tiles_by_chunk_[tileCk].push_back(TileSlot{tkey, it->second});
+                    if (std::strcmp(id, "Chest") == 0)
+                        diagnostics::ChestDebug::onTileRegistered(tx, ty, tz, "hydration");
+                }
             }
         }
     }

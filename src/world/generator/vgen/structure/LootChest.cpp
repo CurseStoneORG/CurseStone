@@ -24,6 +24,7 @@
 #include "LootChest.h"
 
 #include "block/BlockIds.h"
+#include "diagnostics/ChestDebug.h"
 #include "item/ItemNbt.h"
 #include "nbt/NBT.h"
 #include "nbt/tag/CompoundTag.h"
@@ -99,9 +100,12 @@ bool placeLootChest(BlockSource& region, int x, int y, int z, DataID facing,
     // any structure write: inside the populated chunk or through the
     // neighbor sink. UPDATE_NONE matches structure placement (no
     // neighbor wake-ups during generation).
+    const size_t blobLen = blob.size();
     if (!region.setBlockAndData(BlockPos(x, y, z), Block::mChest->mID, facing, Block::UPDATE_NONE))
         return false;
     region.addTileEntity(BlockPos(x, y, z), std::move(blob));
+    cursestone::diagnostics::ChestDebug::onChestGenerated(x, y, z, (int)facing, lootTable.c_str(),
+                                                          blobLen);
     return true;
 }
 

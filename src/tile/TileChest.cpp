@@ -22,6 +22,7 @@
  */
 #include "TileChest.h"
 #include "block/BlockIds.h"
+#include "diagnostics/ChestDebug.h"
 #include "item/ItemStack.h"
 #include "item/ItemNbt.h"
 #include "inventory/DoubleChestInventory.h"
@@ -140,6 +141,7 @@ void TileChest::writeNBT(cursestone::nbt::Tag* tag) const {
     if (!tag)
         return;
     Tile::writeNBT(tag); // writes id/x/y/z
+    int savedItems = 0;
     utils::TagGuard items(new cursestone::nbt::ListTag("Items", cursestone::nbt::TAG_COMPOUND));
     if (!items)
         return;
@@ -154,8 +156,10 @@ void TileChest::writeNBT(cursestone::nbt::Tag* tag) const {
             continue;
         cursestone::nbt::set_byte(entry.get(), "Slot", static_cast<int8_t>(slot));
         item::itemStackToNbt(stack, entry.get());
-        if (cursestone::nbt::append(items.get(), entry.get()))
+        if (cursestone::nbt::append(items.get(), entry.get())) {
             entry.release();
+            ++savedItems;
+        }
     }
     if (cursestone::nbt::set(tag, "Items", items.get()))
         items.release();
@@ -166,6 +170,8 @@ void TileChest::writeNBT(cursestone::nbt::Tag* tag) const {
         cursestone::nbt::set_int(tag, "pairx", pair_x_);
         cursestone::nbt::set_int(tag, "pairz", pair_z_);
     }
+    const auto& p = position();
+    diagnostics::ChestDebug::onTileSaved((int32_t)p.x, (int32_t)p.y, (int32_t)p.z, savedItems);
 }
 
 // Client spawn compound — the era-reference Chest layout: id/x/y/z,
@@ -191,6 +197,7 @@ void TileChest::readNBT(const cursestone::nbt::Tag* tag) {
     if (!tag)
         return;
     Tile::readNBT(tag);
+    int loadedItems = 0;
     const cursestone::nbt::Tag* items = cursestone::nbt::get(tag, "Items");
     if (!items || cursestone::nbt::type_of(items) != cursestone::nbt::TAG_LIST)
         return;
@@ -208,6 +215,7 @@ void TileChest::readNBT(const cursestone::nbt::Tag* tag) {
         if (!item::itemStackFromNbt(entry, stack))
             continue;
         inventory_->setItem(slot, stack);
+        ++loadedItems;
     }
     // Vanilla pairing tags (see writeNBT). INT_MIN as the sentinel — no
     // real chest block ever sits at that coordinate.
@@ -220,5 +228,8 @@ void TileChest::readNBT(const cursestone::nbt::Tag* tag) {
         has_pair_ = true;
     }
     dirty_ = false; // just loaded from disk, nothing unsaved yet
+    diagnostics::ChestDebug::onTileLoaded(cursestone::nbt::get_int(tag, "x", 0),
+                                          cursestone::nbt::get_int(tag, "y", 0),
+                                          cursestone::nbt::get_int(tag, "z", 0), loadedItems);
 }
 } // namespace
