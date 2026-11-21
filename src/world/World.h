@@ -473,8 +473,15 @@ class World {
     // Saves all dirty chunks and world data.
     int save();
 
-    // Saves a limited number of chunks within a time budget.
+    // Saves a limited number of chunks within a time budget. The
+    // write_level_data pass (shutdown, /save, world unload and the
+    // autosave's level-dat step) also rewrites the mob file.
     int saveBudget(size_t max_chunks, uint64_t max_ms, bool write_level_data);
+
+    // Snapshots the alive mob records and rewrites "<world dir>/mobs.dat"
+    // atomically (MobPersistence). Dying bodies (death window open) are
+    // skipped: they are one second from despawning and must not come back.
+    void saveMobs();
 
     // Returns the number of chunks with unsaved changes.
     size_t unsavedChunkCount() const;
@@ -859,6 +866,7 @@ class World {
     std::shared_ptr<generator::Generator> generator_;
     PortalRegistry portals_;   // Persistent Nether portal registry.
     std::string portals_path_; // Path to the portal registry file.
+    std::string mobs_path_;    // Path to the persisted mob file (mobs.dat).
     mcp_vector3_t spawn_;
     std::unordered_map<uint64_t, class ChunkLoader*> loaders_;
 
@@ -922,6 +930,15 @@ class World {
     // O(mobs of the chunk) instead of scanning the whole world map —
     // the same pattern the tile registry uses with tiles_by_chunk_.
     std::unordered_map<uint64_t, std::vector<int64_t>> mobs_by_chunk_;
+
+    // Re-creates the mob records the last save left in mobs.dat. Runs
+    // once from the constructor, before any player or viewer can exist:
+    // records are registered directly into mobs_/mobs_by_chunk_ (no
+    // packets, no chunk forcing — mobs in unloaded chunks stay frozen
+    // until a viewer streams them, the same rule the AI gate applies).
+    // Eids are allocated fresh from the Server counter, so a restored
+    // world never collides with the login-time player id space.
+    size_t restoreMobs();
 
     // Mob AI driver (entity/ai/): owned here so its lifetime is the
     // world's, drained from tick() after the falling blocks. The type
