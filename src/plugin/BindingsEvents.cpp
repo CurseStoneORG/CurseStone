@@ -77,6 +77,8 @@
 #include "event/block/DoorToggleEvent.h"
 #include "event/entity/EntityDamageEvent.h"
 #include "event/entity/EntityDamageByEntityEvent.h"
+#include "event/entity/EntityDeathEvent.h"
+#include "entity/EntityTypes.h"
 #include "event/inventory/InventoryCloseEvent.h"
 #include "event/inventory/InventoryClickEvent.h"
 #include "event/inventory/InventoryOpenEvent.h"
@@ -202,9 +204,26 @@ void fillEntityField(lua_State* L, int eIdx, const char* field, cursestone::enti
     if (auto* pl = dynamic_cast<Player*>(e)) {
         lua_pushstring(L, pl->getName().c_str());
     } else {
-        lua_pushfstring(L, "eid:%lld", (long long)e->runtimeId());
+        // lua_pushfstring has no "ll" length modifier (Lua 5.3 formats
+        // through its own converter, not printf's), so the id joins a
+        // plain string.
+        lua_pushstring(L, ("eid:" + std::to_string(e->runtimeId())).c_str());
     }
     lua_setfield(L, eIdx, field);
+}
+
+// Adds the mob victim identity to an event table: e.entity ("eid:N",
+// the same shape a non-player Entity victim carries), e.entityName and
+// e.entityType. Mob victims are world records without a C++ Entity
+// object, so the (eid, network type) pair is their whole identity.
+void pushMobVictimFields(lua_State* L, int eIdx, int64_t victimEid, int32_t victimType) {
+    lua_pushstring(L, ("eid:" + std::to_string(victimEid)).c_str());
+    lua_setfield(L, eIdx, "entity");
+    const char* name = entity::mobTypeName(victimType);
+    lua_pushstring(L, name ? name : "");
+    lua_setfield(L, eIdx, "entityName");
+    lua_pushinteger(L, (lua_Integer)victimType);
+    lua_setfield(L, eIdx, "entityType");
 }
 
 // Converts damage causes to lowercase event names.
@@ -242,8 +261,17 @@ const char* damageCauseName(event::entity::DamageCause c) {
 }
 
 // Adds the victim, damage amount, and cause to the event table.
+// Mob victims (entity == nullptr, victimEid != 0) resolve to the
+// "eid:N" identity plus the mob name/type extras.
 void fillDamage(lua_State* L, int eIdx, event::entity::EntityDamageEvent& ev) {
-    fillEntityField(L, eIdx, "entity", ev.entity);
+    if (ev.entity)
+        fillEntityField(L, eIdx, "entity", ev.entity);
+    else if (ev.victimEid != 0)
+        pushMobVictimFields(L, eIdx, ev.victimEid, ev.victimType);
+    else {
+        lua_pushstring(L, "unknown");
+        lua_setfield(L, eIdx, "entity");
+    }
     lua_pushnumber(L, (lua_Number)ev.amount);
     lua_setfield(L, eIdx, "amount");
     lua_pushstring(L, damageCauseName(ev.cause));
@@ -309,6 +337,16 @@ int l_events_on(lua_State* L) {
                 [](lua_State* L, int eIdx, event::entity::EntityDamageByEntityEvent& ev) {
                     readBackAmount(L, eIdx, ev);
                 }));
+    } else if (name == "EntityDeath") {
+        // Fired when a world mob's health reaches zero (after the lethal
+        // damage — not cancellable; cancel EntityDamage instead).
+        auto f = [](lua_State* L, int eIdx, event::entity::EntityDeathEvent& ev) {
+            pushMobVictimFields(L, eIdx, ev.victimEid, ev.victimType);
+            lua_pushstring(L, damageCauseName(ev.cause));
+            lua_setfield(L, eIdx, "cause");
+            fillEntityField(L, eIdx, "damager", ev.damager);
+        };
+        hook<event::entity::EntityDeathEvent>(pl, ref, f, {});
     } else if (name == "PlayerDeath") {
         auto f = [](lua_State* L, int eIdx, event::player::PlayerDeathEvent& ev) {
             fillPlayer<event::player::PlayerDeathEvent>(L, eIdx, ev);

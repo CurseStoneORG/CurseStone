@@ -120,7 +120,8 @@ local n = w.setBlocks({x, y, z, 35, 14,  x, y + 1, z, 35, 14})
   `true` only when an owned alias existed and is now gone.
 - `events.on(name, fn)` — PlayerJoin, PlayerQuit, PlayerChat, PlayerMove,
   PlayerDropItem, PlayerItemHeld, BlockBreak, BlockPlace, EntityDamage,
-  EntityDamageByEntity, PlayerDeath, PlayerRespawn, PlayerBedEnter
+  EntityDamageByEntity, EntityDeath, PlayerDeath, PlayerRespawn,
+  PlayerBedEnter
   (alias `PlayerSleepInBed`), PlayerBedLeave, DoorToggle, PlayerInteract,
   InventoryOpen, InventoryClick, InventoryClose, WorldLoad (e.world name,
   e.dimension), WorldUnload (cancellable, e.world name)
@@ -279,13 +280,13 @@ the chunk stream, deduplicated per client.
 ```lua
 local w = server.defaultWorld()
 
-local eid = w.spawnEntity("zombie", x, y, z)      -- name or raw id (see below)
-w.spawnEntity("cow", x, y, z, 90.0)               -- + yaw
-w.moveEntity(eid, x, y + 1, z)                    -- one MoveEntityPacket
-local e = w.getEntity(eid)                        -- {id,type,name,x,y,z,yaw,pitch}
-for _, m in ipairs(w.getEntities()) do ... end    -- every standing mob
-w.removeEntity(eid)                               -- despawn
-w.entityTypes()                                   -- name -> protocol-84 id map
+local eid = w:spawnEntity("zombie", x, y, z)      -- name or raw id (see below)
+w:spawnEntity("cow", x, y, z, 90.0)               -- + yaw
+w:moveEntity(eid, x, y + 1, z)                    -- one MoveEntityPacket
+local e = w:getEntity(eid)                        -- {id,type,name,x,y,z,yaw,pitch}
+for _, m in ipairs(w:getEntities()) do ... end    -- every standing mob
+w:removeEntity(eid)                               -- despawn
+w:entityTypes()                                   -- name -> protocol-84 id map
 ```
 
 `type` accepts the canonical lowercase names — `chicken cow pig sheep
@@ -302,6 +303,44 @@ inventory, which is what makes the client's renderer for it
 client-verified — ids outside the registry never reach the wire.
 
 Entity ids do not survive restarts, like floating text ids.
+
+#### Mob combat and health
+
+Mobs carry vanilla-shaped health (each registry id has its era max — a
+zombie 20, a rabbit 3) and take damage through one pipeline used by every
+source: player melee (InteractPacket), arrows, and the plugin
+`damageEntity` call. Each hit fires the cancellable `EntityDamage`
+/ `EntityDamageByEntity` events (mob victims surface as `e.entity =
+"eid:N"` plus `e.entityName`/`e.entityType`, player victims as their
+name), broadcasts the red hurt flash to the chunk viewers, applies era
+knockback (a client motion packet plus a server-side AI carry-over) when
+an attacker drives the hit, and a lethal blow runs the death sequence:
+`EntityDeathEvent`, the vanilla drop table (rotten flesh, beef, feathers,
+gunpowder, ...), the death animation for ~1 second, then the record
+despawns. Dying bodies take no further damage and reject direct health
+writes; death itself is not cancellable — cancel the damage event instead.
+
+```lua
+local eid = w:spawnEntity("zombie", x, y, z)
+print(w:getEntityHealth(eid), w:getEntityMaxHealth(eid))   -- 20  20
+w:setEntityMaxHealth(eid, 40)                              -- raises the ceiling
+print(w:damageEntity(eid, 5))                              -- "hurt" | "killed" | "cancelled"
+w:setEntityHealth(eid, 1)                                  -- direct write, clamped
+w:damageEntity(eid, 999)                                   -- "killed" → drops + death anim
+
+events.on("EntityDamageByEntity", function(e)
+  if e.entityName == "zombie" and e.amount > 5 then
+    e.cancel()                    -- the hit never lands: no flash, no knockback
+  end
+end)
+events.on("EntityDeath", function(e)
+  print(e.entity .. " (" .. e.entityName .. ") died by " .. e.cause)
+end)
+```
+
+`damageEntity`'s cause argument accepts the lowercase names the damage
+events emit (`"fall"`, `"projectile"`, ...), a numeric `events.CAUSE`
+constant, or nothing for `"entity_attack"`.
 
 ## File plugins (C++ via .so / .dll)
 
@@ -476,7 +515,7 @@ instead of raising anything; invalid arguments never crash the server.
 
 | Function | Notes |
 | -------- | ----- |
-| `on(api, eventName, fn, ud) -> bool` | `false` on unknown names; writable fields: `message`, `amount`, `cancelled` |
+| `on(api, eventName, fn, ud) -> bool` | `false` on unknown names; writable fields: `message`, `amount`, `cancelled`; mob damage/death events carry `entityType` (canonical mob name, "" for players) |
 
 **server** (context-free)
 
@@ -551,6 +590,9 @@ instead of raising anything; invalid arguments never crash the server.
 | `moveEntity(world, id, x, y, z, yaw, pitch)` | repositions a standing mob |
 | `removeEntity(world, id)` | despawns a standing mob; 0 for unknown ids |
 | `getEntity(world, id, outType, outPos[3], outRot[2])` | reads a mob back (type, feet position, yaw/pitch) |
+| `getEntityHealth(world, id)` / `getEntityMaxHealth(world, id)` | mob health, or -1 for an unknown id |
+| `setEntityHealth(world, id, hp)` / `setEntityMaxHealth(world, id, max)` | direct writes (clamped); zero health runs the death sequence; false for unknown/dying mobs |
+| `damageEntity(world, id, amount, cause)` | full cancellable pipeline; 0 cancelled, 1 hurt, 2 killed, -1 unknown mob; cause NULL = "custom" |
 | `entityTypeFromName(name, outId)` / `entityTypeName(type)` | the shared mob registry, same names the Lua `entityTypes()` maps |
 | `playerCount(world)` | players currently in that world |
 

@@ -115,6 +115,47 @@ constexpr MobRow kMobTypes[] = {
 
 constexpr size_t kMobTypeCount = sizeof(kMobTypes) / sizeof(kMobTypes[0]);
 
+// Vanilla maximum health per row, same order as kMobTypes (the era
+// reference Living health table; slimes and magma cubes read the small
+// variant's 4, horses the family's average 20).
+constexpr float kMobMaxHealth[] = {
+    4.0f,   // Chicken
+    10.0f,  // Cow
+    10.0f,  // Pig
+    8.0f,   // Sheep
+    8.0f,   // Wolf
+    20.0f,  // Villager
+    10.0f,  // Mooshroom
+    10.0f,  // Squid
+    3.0f,   // Rabbit
+    6.0f,   // Bat
+    10.0f,  // Ocelot
+    20.0f,  // Horse
+    20.0f,  // Donkey
+    20.0f,  // Mule
+    15.0f,  // SkeletonHorse
+    15.0f,  // ZombieHorse
+    20.0f,  // Zombie
+    20.0f,  // Creeper
+    20.0f,  // Skeleton
+    16.0f,  // Spider
+    20.0f,  // ZombiePigman
+    4.0f,   // Slime
+    40.0f,  // Enderman
+    8.0f,   // Silverfish
+    10.0f,  // Ghast
+    4.0f,   // LavaSlime
+    4.0f,   // MagmaCube
+    20.0f,  // Blaze
+    20.0f,  // ZombieVillager
+    26.0f,  // Witch
+    20.0f,  // Stray
+    20.0f,  // Husk
+    20.0f,  // WitherSkeleton
+};
+static_assert(sizeof(kMobMaxHealth) / sizeof(kMobMaxHealth[0]) == kMobTypeCount,
+              "kMobMaxHealth must have one row per kMobTypes entry");
+
 // Registry ids span [kMinId, kMaxId]; the direct index covers the span.
 constexpr int32_t kMinId = kMobTypes[0].id;
 constexpr int32_t kMaxId = kMobTypes[kMobTypeCount - 1].id;
@@ -216,6 +257,11 @@ bool mobTypeFromName(const std::string& name, int32_t* outId) {
 MobKind mobTypeKind(int32_t id) {
     const int8_t slot = rowSlot(id);
     return slot >= 0 ? kMobTypes[slot].kind : MobKind::Unknown;
+}
+
+float mobMaxHealth(int32_t id) {
+    const int8_t slot = rowSlot(id);
+    return slot >= 0 ? kMobMaxHealth[slot] : 0.0f;
 }
 
 } // namespace cursestone::entity

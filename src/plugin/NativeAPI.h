@@ -173,6 +173,9 @@ typedef struct CsEvent {
     const char* action; /**< Interact action, e.g. "right_click_block". */
     int32_t face;       /**< Interact face byte (-1 for air). */
     bool cancelled;     /**< Writable: set true to cancel a cancellable event. */
+    /* ---- appended (ABI 1, extension batch 12: entity combat) ---- */
+    const char* entityType; /**< Mob victim canonical name (EntityDamage*
+                             *   and EntityDeath), "" for player victims. */
 } CsEvent;
 
 /** Event callback: runs on the main thread, ev is server-owned and valid until return. */
@@ -576,6 +579,33 @@ typedef struct CsWorldApi {
      */
     int32_t (*getBlocks)(const char* world, int32_t x1, int32_t y1, int32_t z1,
                          int32_t x2, int32_t y2, int32_t z2, int32_t* out, int32_t outCap);
+    /* ---- appended (ABI 1, extension batch 12: entity combat) ---- */
+    /** @brief Current health of a standing mob, or -1 for an unknown id.
+     *         Mobs carry vanilla-shaped health (see entityTypeFromName). */
+    double (*getEntityHealth)(const char* world, int64_t id);
+    /** @brief Health ceiling of a standing mob, or -1 for an unknown id. */
+    double (*getEntityMaxHealth)(const char* world, int64_t id);
+    /**
+     * @brief Direct health write, clamped into [0, maxHealth]. No damage
+     *        event fires; reaching zero runs the death sequence (drops,
+     *        EntityDeath, death animation, delayed despawn).
+     * @return false for an unknown or already-dying mob.
+     */
+    bool (*setEntityHealth)(const char* world, int64_t id, double hp);
+    /** @brief Raises the health ceiling; the current health follows down
+     *         when it exceeds it. False for unknown or dying mobs. */
+    bool (*setEntityMaxHealth)(const char* world, int64_t id, double max);
+    /**
+     * @brief Damages a standing mob through the full cancellable pipeline
+     *        (EntityDamageByEntity without a damager object, hurt flash,
+     *        era knockback only for attacker-driven hits).
+     * @param amount damage to apply (>= 0).
+     * @param cause one of the lowercase names the damage events emit
+     *              ("entity_attack", "fall", ...), or NULL = "custom".
+     * @return 0 cancelled (plugin or dying body), 1 hurt, 2 killed,
+     *         -1 unknown mob.
+     */
+    int32_t (*damageEntity)(const char* world, int64_t id, double amount, const char* cause);
 } CsWorldApi;
 
 /**

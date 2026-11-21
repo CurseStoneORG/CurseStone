@@ -45,6 +45,7 @@
 #include "event/block/BlockPlaceEvent.h"
 #include "event/block/DoorToggleEvent.h"
 #include "event/entity/EntityDamageByEntityEvent.h"
+#include "event/entity/EntityDeathEvent.h"
 #include "event/entity/EntityDamageEvent.h"
 #include "event/inventory/InventoryClickEvent.h"
 #include "event/inventory/InventoryCloseEvent.h"
@@ -1078,6 +1079,40 @@ int32_t api_world_getBlocks(const char* world, int32_t x1, int32_t y1, int32_t z
     return n;
 }
 
+// extension batch 12: entity combat — the same health/damage surface the
+// Lua world object exposes, backed by the World::damageMob pipeline.
+bool parseDamageCauseName(const char* name, event::entity::DamageCause* out); // below, event bridge
+
+double api_world_getEntityHealth(const char* world, int64_t id) {
+    World* w = findLoadedWorld(world);
+    const world::MobEntity* m = w ? w->mob(id) : nullptr;
+    return m ? (double)m->health : -1.0;
+}
+double api_world_getEntityMaxHealth(const char* world, int64_t id) {
+    World* w = findLoadedWorld(world);
+    const world::MobEntity* m = w ? w->mob(id) : nullptr;
+    return m ? (double)m->max_health : -1.0;
+}
+bool api_world_setEntityHealth(const char* world, int64_t id, double hp) {
+    World* w = findLoadedWorld(world);
+    return w && w->setMobHealth(id, (float)hp);
+}
+bool api_world_setEntityMaxHealth(const char* world, int64_t id, double max) {
+    World* w = findLoadedWorld(world);
+    return w && w->setMobMaxHealth(id, (float)max);
+}
+int32_t api_world_damageEntity(const char* world, int64_t id, double amount,
+                               const char* cause) {
+    World* w = findLoadedWorld(world);
+    if (!w || !w->mob(id))
+        return -1; // Unknown id — distinct from a cancelled hit.
+    event::entity::DamageCause c = event::entity::DamageCause::CUSTOM;
+    if (cause && *cause && !parseDamageCauseName(cause, &c))
+        return -1;
+    auto applied = w->damageMob(id, (float)amount, nullptr, c);
+    return (int32_t)applied;
+}
+
 CsWorldApi g_worldApi = {
     api_world_seed,
     api_world_dimension,
@@ -1119,6 +1154,11 @@ CsWorldApi g_worldApi = {
     api_world_fillBlocks,
     api_world_setBlocks,
     api_world_getBlocks,
+    api_world_getEntityHealth,
+    api_world_getEntityMaxHealth,
+    api_world_setEntityHealth,
+    api_world_setEntityMaxHealth,
+    api_world_damageEntity,
 };
 
 // data: the per-plugin data_pl/<plugin> sandbox, same rules as data.*.
@@ -1215,7 +1255,7 @@ CsDataApi g_dataApi = {api_data_exists, api_data_readFile, api_data_writeFile,
 // Strings handed to the callback point into this scratch; it lives in the
 // listener lambda and outlives the plugin callback.
 struct EventScratch {
-    std::string player, entity, damager, inventory, action;
+    std::string player, entity, damager, inventory, action, entityType;
 };
 
 void setEntityField(std::string& dst, cursestone::entity::Entity* e) {
@@ -1262,6 +1302,31 @@ const char* damageCauseName(event::entity::DamageCause c) {
     return "custom";
 }
 
+// Reverse of damageCauseName for the plugin-facing damageEntity call:
+// the lowercase names the damage events emit. False when unknown.
+bool parseDamageCauseName(const char* name, event::entity::DamageCause* out) {
+    using event::entity::DamageCause;
+    static const struct {
+        const char* name;
+        DamageCause cause;
+    } kCauses[] = {
+        {"custom", DamageCause::CUSTOM},       {"entity_attack", DamageCause::ENTITY_ATTACK},
+        {"contact", DamageCause::CONTACT},     {"fall", DamageCause::FALL},
+        {"lava", DamageCause::LAVA},           {"fire", DamageCause::FIRE},
+        {"fire_tick", DamageCause::FIRE_TICK}, {"drowning", DamageCause::DROWNING},
+        {"cactus", DamageCause::CACTUS},       {"starvation", DamageCause::STARVATION},
+        {"void", DamageCause::VOID},           {"projectile", DamageCause::PROJECTILE},
+        {"magic", DamageCause::MAGIC},
+    };
+    for (const auto& c : kCauses) {
+        if (std::strcmp(name, c.name) == 0) {
+            *out = c.cause;
+            return true;
+        }
+    }
+    return false;
+}
+
 // Templated fills read the fields each concrete event actually carries;
 // the event classes do not share a Player/Block base for every case.
 template <typename E>
@@ -1300,8 +1365,18 @@ void fillPosOf(CsEvent* ev, E& e, EventScratch& s) {
 
 template <typename E>
 void fillDamageOf(CsEvent* ev, E& e, EventScratch& s) {
-    setEntityField(s.entity, e.entity);
+    // Mob victims have no C++ Entity object: the (eid, network type) pair
+    // is the identity, surfaced as "eid:N" plus the canonical name.
+    if (!e.entity && e.victimEid != 0) {
+        s.entity = "eid:" + std::to_string((long long)e.victimEid);
+        const char* tn = entity::mobTypeName(e.victimType);
+        s.entityType = tn ? tn : "";
+    } else {
+        setEntityField(s.entity, e.entity);
+        s.entityType.clear();
+    }
     ev->player = s.entity.c_str(); // `player` carries the victim for damage events.
+    ev->entityType = s.entityType.c_str();
     ev->amount = e.amount;
     ev->cause = damageCauseName(e.cause);
 }
@@ -1398,6 +1473,20 @@ bool api_events_on(CsPluginApi* api, const char* eventName, CsEventFn fn, void* 
         };
         listenNativeEvent<event::entity::EntityDamageByEntityEvent>(pl, eventName, fn, ud, +fill,
                                                                     +readBack);
+    } else if (n == "EntityDeath") {
+        // Fired when a world mob's health reaches zero (not cancellable;
+        // cancel EntityDamage instead).
+        auto fill = [](CsEvent* ev, event::entity::EntityDeathEvent& e, EventScratch& s) {
+            s.entity = "eid:" + std::to_string((long long)e.victimEid);
+            const char* tn = entity::mobTypeName(e.victimType);
+            s.entityType = tn ? tn : "";
+            ev->player = s.entity.c_str();
+            ev->entityType = s.entityType.c_str();
+            ev->cause = damageCauseName(e.cause);
+            setEntityField(s.damager, e.damager);
+            ev->damager = s.damager.c_str();
+        };
+        listenNativeEvent<event::entity::EntityDeathEvent>(pl, eventName, fn, ud, +fill);
     } else if (n == "PlayerRespawn") {
         auto fill = [](CsEvent* ev, event::player::PlayerRespawnEvent& e, EventScratch& s) {
             fillPlayerOf(ev, e, s);

@@ -54,10 +54,17 @@ class EntityDamageEvent : public Event, public Cancellable {
     cursestone::entity::Entity* entity;
     float amount = 0.0f;
     DamageCause cause = DamageCause::CUSTOM;
+    // Mob victims are world records without a C++ Entity object: when
+    // `entity` is null and victimEid is non-zero, the victim is the world
+    // mob record with that runtime id (victimType = protocol-84 network
+    // id). Player victims leave both at zero and carry the Entity pointer.
+    int64_t victimEid = 0;
+    int32_t victimType = 0;
 
     EntityDamageEvent(cursestone::entity::Entity* e = nullptr, float amt = 0.0f,
-                      DamageCause c = DamageCause::CUSTOM)
-        : entity(e), amount(amt), cause(c) {
+                      DamageCause c = DamageCause::CUSTOM, int64_t mobEid = 0,
+                      int32_t mobType = 0)
+        : entity(e), amount(amt), cause(c), victimEid(mobEid), victimType(mobType) {
     }
 
     const std::string& eventName() const override {

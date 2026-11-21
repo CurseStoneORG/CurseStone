@@ -30,10 +30,14 @@
 #pragma once
 #include "entity/ai/Goal.h"
 #include "utils/Random.h"
+#include <cmath>
 #include <memory>
 #include <vector>
 
 namespace cursestone::entity::ai {
+
+/// @brief Shove speed below which a consumed knockback stops sliding.
+constexpr float kKnockbackStop = 0.02f;
 
 /// @brief The movement decision the goals produced on one think tick.
 ///
@@ -104,6 +108,31 @@ class MobBrain {
         return jump_cooldown_;
     }
 
+    // ---- Knockback carry-over (decayed by the actuation step) ----
+    // Horizontal shove written when a hit's record knockback is consumed;
+    // the actuation adds it to the sweep, decays it every tick and zeroes
+    // it below the stop epsilon, so a mob keeps sliding briefly and stops.
+    float& motionX() {
+        return motion_x_;
+    }
+    float& motionZ() {
+        return motion_z_;
+    }
+    /// @brief True while a consumed shove still carries motion.
+    bool hasKnockback() const {
+        return motion_x_ != 0.0f || motion_z_ != 0.0f;
+    }
+    /// @brief Applies one friction tick (the era ground knockback decay);
+    ///        values under the stop epsilon snap to zero.
+    void decayKnockback(float friction) {
+        motion_x_ *= friction;
+        motion_z_ *= friction;
+        if (motion_x_ > -kKnockbackStop && motion_x_ < kKnockbackStop)
+            motion_x_ = 0.0f;
+        if (motion_z_ > -kKnockbackStop && motion_z_ < kKnockbackStop)
+            motion_z_ = 0.0f;
+    }
+
     // ---- Protocol-84 identity (copied from the mob record) ----
     void setKind(uint8_t kind) {
         kind_ = kind;
@@ -151,6 +180,11 @@ class MobBrain {
     bool on_ground_ = false;
     bool wants_jump_ = false;
     int jump_cooldown_ = 0;
+
+    // Knockback carry-over (horizontal; the vertical pop reuses the
+    // wants_jump_ hop the step-up logic already integrates).
+    float motion_x_ = 0.0f;
+    float motion_z_ = 0.0f;
 
     BroadcastCache broadcast_;
 
