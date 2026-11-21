@@ -26,6 +26,7 @@
 #include "world/generator/vgen/Blocks.h"
 #include "world/generator/vgen/material/Material.h"
 #include "world/generator/vgen/feature/LakeFeature.h"
+#include "tile/TileFactory.h"
 #include "world/format/Chunk.h"
 #include "world/format/ChunkSection.h"
 #include <float.h>
@@ -726,8 +727,32 @@ void VgenSource::populate(GenerationContext& ctx) {
         // placed in the center or spilled here by earlier populations)
         // into the real chunk's tile_entities — the blob store the save
         // path persists and World::ensureTilesLoaded hydrates from.
-        for (const auto& blob : center.mPendingTiles)
+        //
+        // Block↔tile invariant at the generation seam: a tile compound is
+        // only flushed when its block still stands. Later passes of the
+        // SAME populate (a second dungeon attempt's interior clear, an
+        // ore blob, a lake refill) legitimately destroy an earlier
+        // feature's chest block without touching its queued tile — the
+        // vanilla pairing destroys the block actor with the block, so a
+        // blob that outlives its block is dropped here rather than
+        // persisted. A tile compound whose id has no block counterpart
+        // (or that lost its identity header) is dropped too: the client
+        // cannot bind its actor anywhere.
+        for (const auto& blob : center.mPendingTiles) {
+                std::string tileId;
+                int32_t bx = 0, by = 0, bz = 0;
+                if (!cursestone::tile::parseTileBlobHeader(blob.data(), blob.size(), tileId,
+                                                           bx, by, bz))
+                        continue;
+                const uint8_t expected = cursestone::tile::blockIdForTileId(tileId);
+                if (expected == 0 || by < 0 || by >= vgen::LEVEL_GEN_HEIGHT)
+                        continue;
+                const vgen::BlockID at = center.getBlock(
+                    vgen::ChunkBlockPos((uint8_t)(bx & 15), (vgen::Height)by, (uint8_t)(bz & 15)));
+                if ((uint8_t)at.value != expected)
+                        continue;
                 mcp_chunk_add_tile_entity(sink, blob.data(), blob.size());
+        }
 }
 
 // ---------------------------------------------------------------------------

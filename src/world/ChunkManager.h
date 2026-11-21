@@ -194,6 +194,14 @@ class ChunkManager : public generator::INeighborBlockSink {
     void setTileBlobSink(std::function<void(const uint8_t*, size_t)> cb) {
         on_tile_blob_ = std::move(cb);
     }
+    // Wire the callback applied when a generation spill overwrites a
+    // block-entity block in a LIVE chunk with a different block. World
+    // registers its registry removal here so the dead block's tile dies
+    // with it (the vanilla rule) instead of surviving as a block actor
+    // over foreign terrain — the invisible-chest shape.
+    void setOnSpillTileBlockOverwrite(std::function<void(int32_t, int32_t, int32_t)> cb) {
+        on_spill_tile_block_overwrite_ = std::move(cb);
+    }
     size_t count() const;
 
   private:
@@ -223,12 +231,31 @@ class ChunkManager : public generator::INeighborBlockSink {
     // install right after the block spills, under the same locks.
     std::unordered_map<ChunkKey, std::vector<std::vector<uint8_t>>, ChunkKeyHash> pendingTileBlobs_;
     std::function<void(const uint8_t*, size_t)> on_tile_blob_;
+    std::function<void(int32_t, int32_t, int32_t)> on_spill_tile_block_overwrite_;
 
     // Pops every parked blob for `key` into `out` (call with mtx_ +
     // pending_mtx_ held). Callers hand the blobs to the chunk and then to
     // on_tile_blob_ outside the locks (same contract as on_chunk_added_).
     void takePendingTileBlobs(const ChunkKey& key,
                               std::vector<std::vector<uint8_t>>& out);
+
+    // Adds drained structure-tile blobs to `chunk`'s tile_entities but
+    // keeps only the ones whose matching block still stands there (spill
+    // replays can legally have wiped it); survivors stay in `blobs` so
+    // the caller's on_tile_blob_ pass sees exactly what was added.
+    void keepBlockMatchedTileBlobs(mcp_chunk_t* chunk,
+                                   std::vector<std::vector<uint8_t>>& blobs);
+
+    // Per-blob "its matching block stands" snapshot taken BEFORE the spill
+    // replay (see reconcileStoredTileBlobs for the drop-vs-heal contract).
+    std::vector<char> snapshotTileBlobMatches(mcp_chunk_t* chunk) const;
+
+    // Reconciles the tile blobs `chunk` carries against their blocks after
+    // the spill replay: blobs whose block the replay killed are dropped
+    // (vanilla rule), blobs already broken on disk get their block healed
+    // back (legacy-damage migration).
+    void reconcileStoredTileBlobs(mcp_chunk_t* chunk,
+                                  const std::vector<char>& matchedBefore);
 
     // Coordinates currently being generated on an AsyncPool worker,
     // so getChunkOrRequestAsync() doesn't submit the same chunk twice

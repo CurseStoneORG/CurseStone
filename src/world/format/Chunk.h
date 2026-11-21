@@ -148,6 +148,9 @@ void mcp_chunk_propagate_sky_light(mcp_chunk_t* c);
 // Tile-entity + entity add/remove. Copies the bytes in (caller still
 // owns the original buffer). Returns 0 on success.
 int mcp_chunk_add_tile_entity(mcp_chunk_t* c, const uint8_t* nbt, size_t len);
+// Drops one tile-entity blob by index (shifts the rest left) and marks
+// the chunk dirty. No-op when the index is out of range.
+void mcp_chunk_remove_tile_entity_at(mcp_chunk_t* c, size_t index);
 int mcp_chunk_add_entity(mcp_chunk_t* c, const uint8_t* nbt, size_t len);
 void mcp_chunk_clear_tile_entities(mcp_chunk_t* c);
 void mcp_chunk_clear_entities(mcp_chunk_t* c);

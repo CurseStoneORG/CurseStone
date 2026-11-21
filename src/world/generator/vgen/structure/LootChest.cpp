@@ -58,6 +58,11 @@ bool placeLootChest(BlockSource& region, int x, int y, int z, DataID facing,
     cursestone::nbt::set_int(root.get(), "x", (int32_t)x);
     cursestone::nbt::set_int(root.get(), "y", (int32_t)y);
     cursestone::nbt::set_int(root.get(), "z", (int32_t)z);
+    // The facing lives in the BLOCK data on the wire, but the block cell
+    // can be rebuilt without it (the tile-block heal replays a saved tile
+    // whose block was stomped by a later generation write) — carry it in
+    // the tile compound so a healed chest stands the way it was placed.
+    cursestone::nbt::set_int(root.get(), "facing", (int32_t)facing);
 
     cursestone::utils::TagGuard items(new cursestone::nbt::ListTag("Items", cursestone::nbt::TAG_COMPOUND));
     if (!items)

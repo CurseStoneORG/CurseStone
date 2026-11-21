@@ -22,17 +22,20 @@ streams fresh chunks at every stop, and every BlockEntityDataPacket the
 chunk stream carries is parsed. The check then asserts:
 
   1. chest tiles arrive AT ALL (a tile = an actor = a visible chest)
-  2. generated chests arrive WITH loot (Items non-empty, entries valid:
-     Slot 0..26, id > 0, Count > 0)
-  3. the loot spans several item types (a pool, not a single hard-coded
+  2. the chest spawn compound is the lean era-reference shape (id/x/y/z
+     +pairx/pairz +CustomName — no disk layout on the wire)
+  3. after a save, the persisted chest tiles carry loot (Items non-empty,
+     entries valid: Slot 0..26, id > 0, Count > 0)
+  4. the loot spans several item types (a pool, not a single hard-coded
      stack) across the whole sweep
-  4. the server survives the whole sweep (no crash during population)
+  5. the server survives the whole sweep (no crash during population)
 
     python3 tools/structure_chest_check.py [--server /path/to/CurseStone]
 
 Exit code 0 = every check passed; 1 = at least one check failed.
 """
 import argparse
+import glob
 import json
 import os
 import struct
@@ -40,9 +43,11 @@ import subprocess
 import sys
 import tempfile
 import time
+import zlib
 
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
 from door_bed_flow_check import Client, PLAYER_ACTION_SPAWN_SAME_DIMENSION  # noqa: E402
+from mob_persistence_check import _nbt_read_payload  # noqa: E402
 
 BLOCK_ENTITY_DATA = 0x32
 
@@ -132,6 +137,51 @@ class NbtReader:
         t = self._u8()
         name = self._string()
         return name, self.value(t)
+
+
+def region_chest_tiles(region_path):
+    """Every chest tile of a region file as a list of compound dicts:
+    reads each chunk's TileEntities list (big-endian Anvil NBT, 16-block
+    sections)."""
+    out = []
+    if not os.path.isfile(region_path):
+        return out
+    import gzip
+    with open(region_path, "rb") as f:
+        data = f.read()
+    for idx in range(1024):
+        raw = struct.unpack_from(">I", data, idx * 4)[0]
+        sector_off = (raw >> 8) * 4096
+        if sector_off == 0:
+            continue
+        length = struct.unpack_from(">I", data, sector_off)[0]
+        if length <= 5 or sector_off + 4 + length > len(data):
+            continue
+        compression = data[sector_off + 4]
+        payload = data[sector_off + 5:sector_off + 4 + length]
+        try:
+            if compression == 2:
+                payload = zlib.decompress(payload)
+            elif compression == 1:
+                payload = gzip.decompress(payload)
+            else:
+                continue
+        except (zlib.error, OSError):
+            continue
+        if len(payload) < 3 or payload[0] != 10:
+            continue
+        try:
+            name_len = struct.unpack_from(">H", payload, 1)[0]
+            root, _ = _nbt_read_payload(payload, 3 + name_len, 10)
+        except (ValueError, IndexError, struct.error):
+            continue
+        level = root.get("Level", {})
+        if not isinstance(level, dict):
+            continue
+        for t in level.get("TileEntities", []):
+            if isinstance(t, dict) and t.get("id") == "Chest":
+                out.append(t)
+    return out
 
 
 class ChestClient(Client):
@@ -260,19 +310,60 @@ def main() -> int:
 
         chests = [t for t in a.tiles
                   if isinstance(t[3], dict) and t[3].get("id") == "Chest"]
-        loot_entries = []
-        for _, _, _, tag in chests:
-            items = tag.get("Items")
-            if isinstance(items, list):
-                loot_entries.extend(e for e in items if isinstance(e, dict))
-        loaded = [t for t in chests
-                  if isinstance(t[3].get("Items"), list) and t[3]["Items"]]
 
         check(proc.poll() is None, "server survives the full sweep")
         check(len(chests) > 0, "chest tiles stream with the chunks",
               f"tiles={len(a.tiles)}")
-        check(len(loaded) > 0, "generated chests arrive WITH loot",
-              f"chests={len(chests)} loaded={len(loaded)}")
+
+        # The spawn compound is the era-reference Chest layout: id/x/y/z
+        # (+pairx/pairz while paired, +CustomName when named). Loot rides
+        # the DISK blob and the open-time ContainerSetContent — the
+        # era-reference servers never wire Items, and the 0.15 client
+        # binds its chest contents at open time.
+        fat = []
+        for _, _, _, tag in chests:
+            allowed = {"id", "x", "y", "z", "CustomName"}
+            if "pairx" in tag or "pairz" in tag:
+                allowed |= {"pairx", "pairz"}
+            if set(tag.keys()) - allowed:
+                fat.append(sorted(set(tag.keys()) - allowed))
+        check(not fat, "chest spawn compounds are the lean era-reference shape",
+              f"fat={fat[:3]}")
+
+        # Flush the world and read the loot out of the region files: the
+        # saved tile blob carries the disk layout (Items included), and
+        # that is what the open path feeds the client.
+        console("save")
+        deadline = time.time() + 25
+        while time.time() < deadline and proc.poll() is None:
+            time.sleep(1.0)
+            try:
+                with open(server_log) as f:
+                    if "Saved" in f.read():
+                        break
+            except FileNotFoundError:
+                pass
+        world_dir = None
+        for cand in glob.glob(os.path.join(runtime, "worlds", "*")):
+            if os.path.isdir(os.path.join(cand, "region")):
+                world_dir = cand
+                break
+        persisted_chests = []
+        if world_dir:
+            for region in glob.glob(os.path.join(world_dir, "region", "*.mca")):
+                persisted_chests.extend(region_chest_tiles(region))
+        loot_entries = []
+        for tile in persisted_chests:
+            items = tile.get("Items")
+            if isinstance(items, list):
+                loot_entries.extend(e for e in items if isinstance(e, dict))
+        loaded = [tile for tile in persisted_chests
+                  if isinstance(tile.get("Items"), list) and tile["Items"]]
+        check(len(persisted_chests) > 0,
+              "generated chests persist with the chunks",
+              f"persisted={len(persisted_chests)}")
+        check(len(loaded) > 0, "generated chests keep their loot on disk",
+              f"chests={len(persisted_chests)} loaded={len(loaded)}")
 
         # Every item entry must be a well-formed slot entry.
         bad = []

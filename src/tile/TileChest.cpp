@@ -168,6 +168,25 @@ void TileChest::writeNBT(cursestone::nbt::Tag* tag) const {
     }
 }
 
+// Client spawn compound — the era-reference Chest layout: id/x/y/z,
+// +pairx/pairz while the vanilla pairing stands and +CustomName when the
+// tile has a name. No Items: the 0.15 client draws the chest through its
+// block actor and binds the window contents at open time via
+// ContainerSetContent, so dragging the whole save layout (an Items list
+// of per-slot compounds) onto the wire only inflates every chunk stream
+// and diverges from the spawn shape the reference server sends.
+void TileChest::writeSpawnNBT(cursestone::nbt::Tag* tag) const {
+    if (!tag)
+        return;
+    Tile::writeNBT(tag); // id/x/y/z
+    if (has_pair_) {
+        cursestone::nbt::set_int(tag, "pairx", pair_x_);
+        cursestone::nbt::set_int(tag, "pairz", pair_z_);
+    }
+    if (!getName().empty())
+        cursestone::nbt::set_string(tag, "CustomName", getName().c_str());
+}
+
 void TileChest::readNBT(const cursestone::nbt::Tag* tag) {
     if (!tag)
         return;
