@@ -35,6 +35,7 @@
 #include "world/generator/Nether.h"
 #include "world/generator/EmptyGenerator.h"
 #include "world/generator/vgen/VgenSource.h"
+#include "world/MobPersistence.h"
 #include "utils/CRaii.h"
 #include "utils/MainLogger.hpp"
 #include "tile/Tile.h"
@@ -137,6 +138,19 @@ World::World(WorldConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
 
     portals_path_ = worldDir + "/portals.dat";
     portals_.load(portals_path_);
+
+    // Mob persistence: same directory, same load-or-start-empty contract
+    // as the portal registry. The records come back before any player,
+    // viewer or plugin can observe the world, so a restart rejoins a
+    // world with the mobs its last save left behind.
+    mobs_path_ = worldDir + "/mobs.dat";
+    {
+        const size_t restored = restoreMobs();
+        if (restored > 0) {
+            utils::MainLogger::get().debug("World '" + cfg_.name + "' restored " +
+                                           std::to_string(restored) + " mob(s)");
+        }
+    }
 
     auto& mgr = format::WorldProviderManager::getInstance();
     auto provider_unique = mgr.create(cfg_.format);
@@ -504,6 +518,9 @@ void World::processLiquidWakes(int32_t budget) {
 int World::save() {
     // Portal registry: tiny text file, rewritten on every full save.
     portals_.save(portals_path_);
+    // The mob file rides every full save point so a restart (or a crash
+    // after an autosave) brings the bodies back where they were.
+    saveMobs();
     syncTilesToChunks();
     int saved = chunks_.flushDirty();
     if (provider_)
@@ -520,6 +537,9 @@ int World::saveBudget(size_t max_chunks, uint64_t max_ms, bool write_level_data)
     syncTilesToChunks();
     int saved = chunks_.flushDirtyBudget(max_chunks, max_ms);
     if (write_level_data && provider_) {
+        // The level-dat pass is the autosave's full-save moment: persist
+        // the mobs here too, so crash recovery resumes them as well.
+        saveMobs();
         provider_->setSpawn(math::Vector3{(double)spawn_.x, (double)spawn_.y, (double)spawn_.z});
         provider_->setCurrentTime(cfg_.time);
         provider_->saveLevelData();
@@ -1830,6 +1850,83 @@ std::vector<MobEntity*> World::mobs() {
 size_t World::mobCount() {
     std::lock_guard<std::mutex> lk(mobs_mtx_);
     return mobs_.size();
+}
+
+// ============================================================================
+// Mob persistence — the restart boundary of the mob records.
+// The world keeps the mobs_ map as the single authority; these two
+// helpers are only the file seam. saveMobs snapshots under mobs_mtx_
+// and writes outside of it (no packet work, one small text rewrite per
+// save point); restoreMobs runs from the constructor where no viewer,
+// plugin thread or AI pass can race the maps yet.
+// ============================================================================
+
+void World::saveMobs() {
+    // One locked pass: the alive records leave as a plain vector, dying
+    // bodies stay behind (their despawn is scheduled and a restart must
+    // not resurrect them mid-animation).
+    std::vector<PersistedMob> snapshot;
+    {
+        std::lock_guard<std::mutex> lk(mobs_mtx_);
+        // An empty map still produces an empty write: a world whose mobs
+        // all died/despawned must not resurrect them from a stale file.
+        snapshot.reserve(mobs_.size());
+        for (auto& [eid, m] : mobs_) {
+            if (!m || m->death_tick != 0)
+                continue;
+            snapshot.push_back(PersistedMob{m->type, m->x, m->y, m->z, m->yaw,
+                                            m->pitch, m->health, m->max_health});
+        }
+    }
+    MobPersistence::save(mobs_path_, snapshot);
+}
+
+size_t World::restoreMobs() {
+    const std::vector<PersistedMob> persisted = MobPersistence::load(mobs_path_);
+    if (persisted.empty())
+        return 0;
+
+    size_t restored = 0;
+    std::lock_guard<std::mutex> lk(mobs_mtx_);
+    for (const PersistedMob& p : persisted) {
+        if (mobs_.size() >= kMaxMobs)
+            break; // The cap is the spawn-time cap; boot respects it too.
+        if (!entity::isValidMobType(p.type))
+            continue; // Registry shrank or the file was hand-edited.
+
+        // The saved ceiling wins (a plugin-raised max health survives),
+        // with the registry as the fallback for garbage rows; health is
+        // clamped back under it and a zero-health row is a corpse the
+        // file should not have kept.
+        float maxHp = p.max_health;
+        if (!(maxHp > 0.0f) || maxHp > entity::mobMaxHealth(p.type) * 64.0f)
+            maxHp = entity::mobMaxHealth(p.type);
+        float hp = p.health;
+        if (!(hp > 0.0f))
+            continue;
+        if (hp > maxHp)
+            hp = maxHp;
+
+        const int32_t cx = (int32_t)std::floor(p.x) >> 4;
+        const int32_t cz = (int32_t)std::floor(p.z) >> 4;
+        const int64_t eid = Server::getInstance().allocateEid();
+        auto record = std::make_unique<MobEntity>();
+        record->eid = eid;
+        record->type = p.type;
+        record->x = p.x;
+        record->y = p.y;
+        record->z = p.z;
+        record->yaw = p.yaw;
+        record->pitch = p.pitch;
+        record->cx = cx;
+        record->cz = cz;
+        record->max_health = maxHp;
+        record->health = hp;
+        mobs_.emplace(eid, std::move(record));
+        mobs_by_chunk_[packChunkPos(cx, cz)].push_back(eid);
+        ++restored;
+    }
+    return restored;
 }
 
 // ============================================================================

@@ -302,7 +302,16 @@ Every id in the registry has its own egg in the 0.15.10 creative
 inventory, which is what makes the client's renderer for it
 client-verified — ids outside the registry never reach the wire.
 
-Entity ids do not survive restarts, like floating text ids.
+Entity ids do not survive restarts, like floating text ids — but the
+mobs themselves do: every full save point (shutdown, `/save`, world
+unload, the autosave's level-dat pass) rewrites the world's
+`worlds/<world>/mobs.dat`, and the next boot restores each mob at its
+saved position/rotation with its saved health (a plugin-raised max
+health survives too). Dying bodies and dead health values are never
+saved, so a restart cannot resurrect a corpse mid-animation. Because
+the ids are re-allocated on boot, a plugin must not store an eid
+across a restart — re-resolve entities through `getEntities()` /
+`getEntity()` instead.
 
 #### Mob combat and health
 

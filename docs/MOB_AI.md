@@ -224,3 +224,40 @@ run — the sweep integration keeps mobs on the ground; nothing fell
 through terrain. The remaining headroom is the budget contract: if a
 population ever pushed the pass past 2 ms, mobs would slow down before
 the tick does.
+
+## 10. Mob persistence
+
+Mob records used to be memory-only: a restart wiped every mob the eggs
+or the plugin API had spawned. The persistence seam closes that gap
+with one file per world, mirroring the portal registry's shape:
+
+- **File**: `worlds/<world>/mobs.dat` (world/MobPersistence.h/.cpp).
+  Plain text, one mob per line:
+  `type x y z yaw pitch health max_health` — the protocol-84 network id,
+  feet position at centimeter resolution, both health values. Tolerant
+  load (missing file, malformed rows and non-finite numbers are skipped,
+  one bad row never costs the rest), atomic write (tmp + rename).
+- **Save points**: `World::save()` — shutdown, `/save`, world unload —
+  and the `write_level_data` pass of `World::saveBudget()` (the
+  autosave's level-dat step). Dying bodies (death window open) and dead
+  health values are skipped, so a restart never resurrects a corpse.
+- **Restore**: `World::restoreMobs()` runs from the world constructor,
+  before any player, viewer, plugin or AI pass can exist. Records are
+  registered straight into `mobs_` / `mobs_by_chunk_` — no packets (no
+  viewers yet; the chunk stream's `sendMobsInChunk` re-adds each mob to
+  the viewers that arrive later), no chunk forcing (a mob in an
+  unloaded chunk stays frozen until a player streams its chunk, the
+  same rule the AI gate applies).
+- **Identity**: eids are runtime ids and are allocated fresh on boot,
+  so a restored world never collides with the login-time player id
+  space; plugins re-resolve entities after a restart. Type validity,
+  the health ceiling (registry fallback) and the per-world cap
+  (`kMaxMobs`) are enforced at restore exactly as at spawn time.
+- **Cost**: one small text rewrite per save point (worst case ~60 KB at
+  the 1024-mob cap) and one file read per boot. Zero per-tick cost.
+
+Verified end to end by `tools/mob_persistence_check.py`: three boots
+over one runtime — spawn 3 sheep, hurt one, `/save`, stop; boot 2 sees
+the 3 bodies back at their saved positions with the hurt sheep's 5 hp;
+clear + `/save` + stop; boot 3 sees none (an emptied world must not
+resurrect its old mobs).
