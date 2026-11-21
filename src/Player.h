@@ -280,6 +280,18 @@ class Player : public IPlayer,
     // Sends tile data for all block entities in a chunk.
     void sendChunkTiles(int32_t cx, int32_t cz);
 
+    // Post-spawn tile resync: re-sends the BlockEntityData of every tile
+    // in every chunk this player already tracks. The 0.15 client binds
+    // block actors only from in-world traffic — tiles that rode the
+    // loading screen can be dropped with it, and a normal session never
+    // re-streams those chunks (the used-chunks marker stays set, and the
+    // spawn acknowledgment this side once waited for does not exist in
+    // the 0.15.10 protocol), so the tile would be lost forever and the
+    // chest would render as an invisible, solid, loot-dropping block.
+    // Cheap: only tile-bearing chunks produce packets, each one a ~35-byte
+    // spawn compound on the chunk stream AFTER the client is in-world.
+    void resendTrackedTiles();
+
     // --- Async chunk encode pipeline (PlayerChunks.cpp) ---
     // Snapshots @p ch on the tick thread and hands the snapshot to an
     // AsyncPool worker that produces the FullChunkDataPacket payload.
@@ -913,6 +925,15 @@ class Player : public IPlayer,
     std::atomic<int32_t> client_chunk_radius_{0};
     // Ensures the spawn acknowledgment triggers re-streaming only once.
     std::atomic<bool> spawn_ack_done_{false};
+
+    // --- Post-spawn tile resync ---
+    // Set by doFirstSpawn (tick thread), consumed one tick later by the
+    // stream loop: by then the client has processed PLAYER_SPAWN and is
+    // in-world, so the re-sent tile NBT actually binds block actors. The
+    // latch carries the tick the resync may fire at; the pending flag and
+    // the latch both live on the tick thread.
+    bool tile_resync_pending_ = false;
+    uint64_t tile_resync_at_tick_ = 0;
 
     // Pending chunk requests in spiral order.
     std::vector<std::pair<int32_t, int32_t>> chunk_queue_;

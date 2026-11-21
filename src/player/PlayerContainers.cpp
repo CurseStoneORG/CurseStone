@@ -117,6 +117,13 @@ void Player::openChestAt(int x, int y, int z) {
     if (!lvl)
         return;
 
+    // OPEN_REQUEST_RECEIVED: the client asked — this tap reached the
+    // server and the chest flow started. Logged before any tile lookup
+    // so a report can tell "the client never asked" apart from "the
+    // server refused/failed the ask"; it says nothing about any UI the
+    // client may or may not render.
+    diagnostics::ChestDebug::onOpenRequest(*this, x, y, z);
+
     // Only one container open at a time per player (see openContainerWindow).
     // The furnace counts too: both windows share the single container window
     // id, and leaving open_furnace_ set would keep a half-open window whose

@@ -703,6 +703,60 @@ void World::broadcastBlockUpdate(int32_t x, int32_t y, int32_t z) {
     }
 }
 
+void World::spawnTileToViewers(tile::Tile& t) {
+    const auto& p = t.position();
+    const int32_t tx = (int32_t)p.x, ty = (int32_t)p.y, tz = (int32_t)p.z;
+    const int32_t cx = tx >> 4, cz = tz >> 4;
+    if (ty < 0 || ty > 255)
+        return;
+    if (!chunks_.getChunkIfLoaded(cx, cz))
+        return; // Tile of a chunk nobody can hold yet — the chunk stream
+                // carries its NBT when it first goes out.
+
+    // Same viewer filter broadcastBlockUpdate applies: spawned, in this
+    // world, chunk in view. sendBlockEntityData encodes the tile's spawn
+    // compound per recipient and records the send in ChestDebug, so the
+    // /chestdebug report shows these wire-level announcements exactly
+    // like the stream ones.
+    static constexpr size_t kDirectTargets = 96;
+    Player* targets[kDirectTargets];
+    size_t n = 0;
+    bool overflow = false;
+    const auto& players = cursestone::Server::getInstance().playersSnapshotRef();
+    // Same viewer filter broadcastBlockUpdate applies — plus one rule the
+    // tile needs beyond the block grid: the viewer must ALREADY HOLD the
+    // chunk. canSeeBlock only means the chunk is inside the view radius;
+    // after a teleport sweep the ring is pending re-stream, and a tile NBT
+    // sent before its chunk would reach a client that rebuilds the chunk
+    // on arrival and wipes the actor the tile had just bound (the
+    // tile-before-chunk wire order the stream-gap check hunts for).
+    // Viewers without the chunk get the tile from the chunk's own stream
+    // (sendChunkTiles), so nobody is left out.
+    for (auto& pl : players) {
+        if (!pl || pl->isPendingRemoval() || !pl->spawned() || pl->getWorld() != this)
+            continue;
+        if (!pl->canSeeBlock(cx, cz) || !pl->isChunkLoaded(cx, cz))
+            continue;
+        if (n < kDirectTargets)
+            targets[n++] = pl.get();
+        else
+            overflow = true;
+    }
+    for (size_t i = 0; i < n; ++i)
+        targets[i]->sendBlockEntityData(tx, ty, tz, t, targets[i]);
+    if (overflow) {
+        size_t seen = 0;
+        for (auto& pl : players) {
+            if (!pl || pl->isPendingRemoval() || !pl->spawned() || pl->getWorld() != this)
+                continue;
+            if (!pl->canSeeBlock(cx, cz) || !pl->isChunkLoaded(cx, cz))
+                continue;
+            if (seen++ >= kDirectTargets)
+                pl->sendBlockEntityData(tx, ty, tz, t, pl.get());
+        }
+    }
+}
+
 // Above this many changed cells one chunk carries, a whole-chunk re-send
 // beats the per-block packets on the wire: one FullChunkDataPacket carries
 // 4096 cells, so a dense fill replaces ~4k UpdateBlockPackets per viewer
@@ -3562,9 +3616,35 @@ void World::removeTile(int32_t x, int32_t y, int32_t z) {
         tiles_by_chunk_.erase(bit); // No bucket for tile-less chunks.
 }
 
+void World::dropResidentTileBlob(int32_t x, int32_t y, int32_t z) {
+    if (y < 0 || y > 255)
+        return;
+    mcp_chunk_t* c = chunks_.getChunkIfLoaded(x >> 4, z >> 4);
+    if (!c)
+        return;
+    // The live chunk's blob list is tick-thread state (the generation
+    // workers never touch a resident chunk's tile_entities), so this
+    // walk needs no lock — see the header comment.
+    for (size_t i = 0; i < c->tile_entity_count; ++i) {
+        const uint8_t* blob = c->tile_entities[i];
+        const size_t blen = c->tile_entity_lens ? c->tile_entity_lens[i] : 0;
+        std::string tileId;
+        int32_t bx = 0, by = 0, bz = 0;
+        if (cursestone::tile::parseTileBlobHeader(blob, blen, tileId, bx, by, bz) &&
+            bx == x && by == y && bz == z) {
+            mcp_chunk_remove_tile_entity_at(c, i);
+            c->dirty = true; // the save loses the blob with the tile
+            break;
+        }
+    }
+}
+
 std::vector<std::shared_ptr<cursestone::tile::Tile>> World::getTilesInChunk(int32_t cx,
                                                                             int32_t cz) {
-    ensureTilesLoaded(cx, cz);
+    // notifyViewers=false: both callers of this helper (the chunk-stream
+    // tile pass and the post-spawn resync) deliver the returned tiles
+    // themselves — a broadcast here would double-send.
+    ensureTilesLoaded(cx, cz, /*notifyViewers=*/false);
     std::vector<std::shared_ptr<cursestone::tile::Tile>> out;
     std::lock_guard<std::mutex> lk(tiles_mtx_);
     // The per-chunk index hands over this chunk's tiles directly; the old
@@ -3581,11 +3661,17 @@ std::vector<std::shared_ptr<cursestone::tile::Tile>> World::getTilesInChunk(int3
     return out;
 }
 
-void World::ensureTilesLoaded(int32_t cx, int32_t cz) {
+void World::ensureTilesLoaded(int32_t cx, int32_t cz, bool notifyViewers) {
     uint64_t ckey = packChunkPos(cx, cz);
     mcp_chunk_t* c = chunks_.getChunkIfLoaded(cx, cz);
     if (!c)
         return;
+
+    // Tiles born in this pass. Announced to the chunk's viewers after the
+    // pass completes: a tile registered while nobody holds the chunk (a
+    // generation-time hydration, a save pass on an idle world) announces
+    // nothing — spawnTileToViewers finds no recipients and returns.
+    std::vector<std::shared_ptr<cursestone::tile::Tile>> freshTiles;
 
     // PERF (per-stream re-scan): the serial gate. `sendChunkTiles` runs
     // on every chunk stream and used to force a full invalidate, so the
@@ -3661,6 +3747,11 @@ void World::ensureTilesLoaded(int32_t cx, int32_t cz) {
                         mcp_chunk_recalculate_height_map(c);
                         c->dirty = true; // the healed pair persists too
                         diagnostics::ChestDebug::onBlockHealed(tx, ty, tz, (int)data);
+                        // The client's own block grid must carry the healed
+                        // block too: the actor only binds over a matching
+                        // block, and a legacy-save world streamed before
+                        // this heal left the chest cell empty client-side.
+                        broadcastBlockUpdate(tx, ty, tz);
                         utils::MainLogger::get().debug(
                             "Tile-block heal: restored " + std::to_string(expected) + " under '" +
                             id + "' at " + std::to_string(tx) + ", " + std::to_string(ty) + ", " +
@@ -3686,6 +3777,7 @@ void World::ensureTilesLoaded(int32_t cx, int32_t cz) {
                 auto [it, inserted] = tiles_.try_emplace(tkey, std::move(tile));
                 if (inserted) {
                     tiles_by_chunk_[tileCk].push_back(TileSlot{tkey, it->second});
+                    freshTiles.push_back(it->second);
                     if (std::strcmp(id, "Chest") == 0)
                         diagnostics::ChestDebug::onTileRegistered(tx, ty, tz, "hydration");
                 }
@@ -3693,7 +3785,7 @@ void World::ensureTilesLoaded(int32_t cx, int32_t cz) {
         }
     }
 
-    hydrateTilesFromBlocks(cx, cz, c);
+    hydrateTilesFromBlocks(cx, cz, c, &freshTiles);
 
     // Record the PRE-scan serial (not a re-read): an edit that landed
     // while this thread was scanning bumped the chunk's serial past
@@ -3704,6 +3796,16 @@ void World::ensureTilesLoaded(int32_t cx, int32_t cz) {
         std::lock_guard<std::mutex> lk(tiles_mtx_);
         tiles_hydrated_serial_[ckey] = serial;
     }
+
+    // Announce what this pass created. The chunk-stream tile pass passes
+    // notifyViewers=false (its caller sends the same tiles); every other
+    // entry (getTile probe, save pass, post-load access) births tiles
+    // outside any stream, and without this the tile would stay silent
+    // until a re-stream that a normal 0.15 session never produces.
+    if (notifyViewers && !freshTiles.empty()) {
+        for (auto& t : freshTiles)
+            spawnTileToViewers(*t);
+    }
 }
 
 void World::invalidateTileHydration(int32_t cx, int32_t cz) {
@@ -3713,7 +3815,8 @@ void World::invalidateTileHydration(int32_t cx, int32_t cz) {
     tiles_hydrated_serial_.erase(ckey); // Force a fresh block scan too.
 }
 
-void World::hydrateTilesFromBlocks(int32_t cx, int32_t cz, mcp_chunk_t* c) {
+void World::hydrateTilesFromBlocks(int32_t cx, int32_t cz, mcp_chunk_t* c,
+                                   std::vector<std::shared_ptr<cursestone::tile::Tile>>* freshOut) {
     using cursestone::tile::createTileForBlock;
     using cursestone::tile::isTileBlock;
 
@@ -3748,8 +3851,11 @@ void World::hydrateTilesFromBlocks(int32_t cx, int32_t cz, mcp_chunk_t* c) {
         const uint64_t tkey = packTilePos((int32_t)t->position().x, (int32_t)t->position().y,
                                           (int32_t)t->position().z);
         auto [it, inserted] = tiles_.try_emplace(tkey, std::move(t));
-        if (inserted)
+        if (inserted) {
             tiles_by_chunk_[ckey].push_back(TileSlot{tkey, it->second});
+            if (freshOut)
+                freshOut->push_back(it->second);
+        }
     }
 }
 

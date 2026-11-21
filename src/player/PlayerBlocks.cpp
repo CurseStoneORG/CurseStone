@@ -417,6 +417,10 @@ void Player::handleBlockBreak(int x, int y, int z) {
             }
             chestTile->clearPair();
             lvl->removeTile(x, y, z);
+            // The registry tile is gone; drop the chunk's stored blob too
+            // so the next hydration pass cannot resurrect the chest (and
+            // heal its block back) from a save the break never reached.
+            lvl->dropResidentTileBlob(x, y, z);
             diagnostics::ChestDebug::onChestBroken(*this, x, y, z, lootStacks,
                                                    /*tileFound=*/true,
                                                    /*hadPair=*/static_cast<bool>(chestPair));
@@ -445,6 +449,7 @@ void Player::handleBlockBreak(int x, int y, int z) {
             }
         }
         lvl->removeTile(x, y, z);
+        lvl->dropResidentTileBlob(x, y, z); // same phantom-tile rule as chests
     }
 
     // Update neighboring redstone components.
