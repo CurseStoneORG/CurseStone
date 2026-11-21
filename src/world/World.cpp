@@ -35,7 +35,7 @@
 #include "world/generator/Nether.h"
 #include "world/generator/EmptyGenerator.h"
 #include "world/generator/vgen/VgenSource.h"
-#include "world/MobPersistence.h"
+#include "world/MobChunkCodec.h"
 #include "utils/CRaii.h"
 #include "utils/MainLogger.hpp"
 #include "tile/Tile.h"
@@ -91,6 +91,7 @@
 #include <algorithm>
 #include <fstream>
 #include <cstddef>
+#include <map>
 #include <sstream>
 #include <string>
 
@@ -139,18 +140,14 @@ World::World(WorldConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
     portals_path_ = worldDir + "/portals.dat";
     portals_.load(portals_path_);
 
-    // Mob persistence: same directory, same load-or-start-empty contract
-    // as the portal registry. The records come back before any player,
-    // viewer or plugin can observe the world, so a restart rejoins a
-    // world with the mobs its last save left behind.
-    mobs_path_ = worldDir + "/mobs.dat";
-    {
-        const size_t restored = restoreMobs();
-        if (restored > 0) {
-            utils::MainLogger::get().debug("World '" + cfg_.name + "' restored " +
-                                           std::to_string(restored) + " mob(s)");
-        }
-    }
+    // Mob persistence is chunk persistence: the records come back per
+    // chunk when the chunk enters the level (reconcileMobsForChunk, wired
+    // through on_chunk_installed_ below). A world saved by a pre-region
+    // build still carries its mobs.dat beside level.dat — the one-time
+    // migration folds those rows into the chunk entity lists before any
+    // chunk can load, so the region files are the only mob storage from
+    // that moment on.
+    legacy_mobs_path_ = worldDir + "/mobs.dat";
 
     auto& mgr = format::WorldProviderManager::getInstance();
     auto provider_unique = mgr.create(cfg_.format);
@@ -251,7 +248,17 @@ World::World(WorldConfig cfg) : cfg_(std::move(cfg)), light_(*this) {
     });
     chunks_.setOnChunkInstalled([this](int32_t cx, int32_t cz) {
         queueLiquidWake(cx, cz);
+        // Mob restore rides the same boundary: the chunk's entity list
+        // becomes live records the moment the chunk goes live, before any
+        // viewer stream or save pass can observe it.
+        reconcileMobsForChunk(cx, cz);
     });
+
+    // Migration must precede every chunk load (the spawn snap below
+    // already forces the spawn chunk resident): a chunk reconciled before
+    // its migrated rows were folded in would come up empty and a later
+    // save of that chunk would wipe the very mobs being migrated.
+    migrateLegacyMobs();
 
     {
         int32_t sbx = (int32_t)std::floor(spawn_.x);
@@ -518,9 +525,9 @@ void World::processLiquidWakes(int32_t budget) {
 int World::save() {
     // Portal registry: tiny text file, rewritten on every full save.
     portals_.save(portals_path_);
-    // The mob file rides every full save point so a restart (or a crash
-    // after an autosave) brings the bodies back where they were.
-    saveMobs();
+    // Mob rosters ride the same flush: chunks whose mobs changed get
+    // their entity list rebuilt right before the dirty-chunk sweep.
+    syncMobsToChunks();
     syncTilesToChunks();
     int saved = chunks_.flushDirty();
     if (provider_)
@@ -534,12 +541,13 @@ int World::save() {
 }
 
 int World::saveBudget(size_t max_chunks, uint64_t max_ms, bool write_level_data) {
+    if (write_level_data)
+        syncMobsToChunks();
     syncTilesToChunks();
     int saved = chunks_.flushDirtyBudget(max_chunks, max_ms);
     if (write_level_data && provider_) {
-        // The level-dat pass is the autosave's full-save moment: persist
-        // the mobs here too, so crash recovery resumes them as well.
-        saveMobs();
+        // The level-dat pass is the autosave's full-save moment: mob
+        // rosters already rode the flush above.
         provider_->setSpawn(math::Vector3{(double)spawn_.x, (double)spawn_.y, (double)spawn_.z});
         provider_->setCurrentTime(cfg_.time);
         provider_->saveLevelData();
@@ -1720,6 +1728,7 @@ int64_t World::spawnMob(int32_t type, double x, double y, double z, float yaw, f
         std::lock_guard<std::mutex> lk(mobs_mtx_);
         mobs_.emplace(eid, std::move(record));
         mobs_by_chunk_[packChunkPos(cx, cz)].push_back(eid);
+        markMobsDirtyLocked(cx, cz);
     }
 
     sendToChunkViewers(this, cx, cz,
@@ -1762,8 +1771,22 @@ bool World::moveMob(int64_t id, double x, double y, double z, float yaw, float p
             mobs_by_chunk_[packChunkPos(new_cx, new_cz)].push_back(id);
             m->cx = new_cx;
             m->cz = new_cz;
+            // Both rosters changed: the old chunk must not resurrect the
+            // departed body and the new one must not lose the arrival.
+            markMobsDirtyLocked(old_cx, old_cz);
+            markMobsDirtyLocked(new_cx, new_cz);
+        } else {
+            // Same chunk, new spot: the persisted list carries feet
+            // positions, so an intra-chunk move is a roster change too.
+            markMobsDirtyLocked(new_cx, new_cz);
         }
     }
+    // Records exist only for resident chunks: a mob the AI or a plugin
+    // walks across a chunk border pulls the destination resident (same
+    // rule spawnMob follows), so its body can always be flushed when the
+    // chunk saves or evicts.
+    if (crossed)
+        chunks_.getChunk(new_cx, new_cz);
     auto mv = std::make_shared<network::protocol::MoveEntityPacket>();
     mv->eid = id;
     mv->x = (float)x;
@@ -1821,6 +1844,9 @@ bool World::removeMob(int64_t id) {
                 if (eids.empty())
                     mobs_by_chunk_.erase(bucket);
             }
+            // The roster shrank: the chunk's entity list must lose the
+            // body too, or the next load would resurrect it.
+            markMobsDirtyLocked(it->second->cx, it->second->cz);
         }
         mobs_.erase(it);
     }
@@ -1853,80 +1879,249 @@ size_t World::mobCount() {
 }
 
 // ============================================================================
-// Mob persistence — the restart boundary of the mob records.
-// The world keeps the mobs_ map as the single authority; these two
-// helpers are only the file seam. saveMobs snapshots under mobs_mtx_
-// and writes outside of it (no packet work, one small text rewrite per
-// save point); restoreMobs runs from the constructor where no viewer,
-// plugin thread or AI pass can race the maps yet.
+// Mob persistence — mobs are chunk state, exactly like blocks and tile
+// entities. The world's mobs_ map is the runtime authority for RESIDENT
+// chunks; the region files are the storage authority. Four seams connect
+// the two:
+//
+//   reconcileMobsForChunk — a chunk entering the level spawns records
+//       from its entity list, so a restart rejoins the world chunk by
+//       chunk with the bodies exactly where they were left;
+//   markMobsDirtyLocked   — every mutation (spawn, move, damage, heal,
+//       death) flags the owning chunk under mobs_mtx_;
+//   syncMobsToChunks      — every save point rebuilds the flagged
+//       chunks' entity lists right before the dirty-chunk flush, so mob
+//       state rides the same region write as the blocks it stands on;
+//   evictMobsForChunk     — an evicted chunk absorbs its alive records
+//       into its list and the records are dropped, keeping mob memory
+//       bounded by what players can actually see.
+//
+// Dying bodies (death window open) are never persisted: their despawn is
+// scheduled and a restart must not resurrect them mid-animation.
 // ============================================================================
 
-void World::saveMobs() {
-    // One locked pass: the alive records leave as a plain vector, dying
-    // bodies stay behind (their despawn is scheduled and a restart must
-    // not resurrect them mid-animation).
+void World::rebuildMobBlobs(int32_t cx, int32_t cz, mcp_chunk_t* chunk) {
+    // One locked pass: the alive records of this chunk leave as a plain
+    // vector, dying bodies stay out (see the section comment).
     std::vector<PersistedMob> snapshot;
     {
         std::lock_guard<std::mutex> lk(mobs_mtx_);
-        // An empty map still produces an empty write: a world whose mobs
-        // all died/despawned must not resurrect them from a stale file.
-        snapshot.reserve(mobs_.size());
-        for (auto& [eid, m] : mobs_) {
-            if (!m || m->death_tick != 0)
-                continue;
-            snapshot.push_back(PersistedMob{m->type, m->x, m->y, m->z, m->yaw,
-                                            m->pitch, m->health, m->max_health});
+        auto bucket = mobs_by_chunk_.find(packChunkPos(cx, cz));
+        if (bucket != mobs_by_chunk_.end()) {
+            snapshot.reserve(bucket->second.size());
+            for (int64_t eid : bucket->second) {
+                auto it = mobs_.find(eid);
+                if (it == mobs_.end() || !it->second)
+                    continue;
+                const MobEntity& m = *it->second;
+                if (m.death_tick != 0)
+                    continue;
+                snapshot.push_back(PersistedMob{m.type, m.x, m.y, m.z, m.yaw,
+                                                m.pitch, m.health, m.max_health});
+            }
         }
     }
-    MobPersistence::save(mobs_path_, snapshot);
+    // The chunk write runs outside mobs_mtx_; writeChunkEntities reports
+    // whether the bytes actually changed, so an untouched roster never
+    // costs a chunk rewrite.
+    if (MobChunkCodec::writeChunkEntities(chunk, snapshot))
+        chunk->dirty = true;
 }
 
-size_t World::restoreMobs() {
-    const std::vector<PersistedMob> persisted = MobPersistence::load(mobs_path_);
-    if (persisted.empty())
-        return 0;
-
-    size_t restored = 0;
-    std::lock_guard<std::mutex> lk(mobs_mtx_);
-    for (const PersistedMob& p : persisted) {
-        if (mobs_.size() >= kMaxMobs)
-            break; // The cap is the spawn-time cap; boot respects it too.
-        if (!entity::isValidMobType(p.type))
-            continue; // Registry shrank or the file was hand-edited.
-
-        // The saved ceiling wins (a plugin-raised max health survives),
-        // with the registry as the fallback for garbage rows; health is
-        // clamped back under it and a zero-health row is a corpse the
-        // file should not have kept.
-        float maxHp = p.max_health;
-        if (!(maxHp > 0.0f) || maxHp > entity::mobMaxHealth(p.type) * 64.0f)
-            maxHp = entity::mobMaxHealth(p.type);
-        float hp = p.health;
-        if (!(hp > 0.0f))
-            continue;
-        if (hp > maxHp)
-            hp = maxHp;
-
-        const int32_t cx = (int32_t)std::floor(p.x) >> 4;
-        const int32_t cz = (int32_t)std::floor(p.z) >> 4;
-        const int64_t eid = Server::getInstance().allocateEid();
-        auto record = std::make_unique<MobEntity>();
-        record->eid = eid;
-        record->type = p.type;
-        record->x = p.x;
-        record->y = p.y;
-        record->z = p.z;
-        record->yaw = p.yaw;
-        record->pitch = p.pitch;
-        record->cx = cx;
-        record->cz = cz;
-        record->max_health = maxHp;
-        record->health = hp;
-        mobs_.emplace(eid, std::move(record));
-        mobs_by_chunk_[packChunkPos(cx, cz)].push_back(eid);
-        ++restored;
+void World::syncMobsToChunks() {
+    std::vector<uint64_t> dirty;
+    {
+        std::lock_guard<std::mutex> lk(mobs_mtx_);
+        if (mobs_dirty_chunks_.empty())
+            return; // The common case: no mob changed since the last save.
+        dirty.assign(mobs_dirty_chunks_.begin(), mobs_dirty_chunks_.end());
+        mobs_dirty_chunks_.clear();
     }
-    return restored;
+    for (uint64_t key : dirty) {
+        const int32_t cx = (int32_t)(key >> 32);
+        const int32_t cz = (int32_t)(key & 0xFFFFFFFFULL);
+        mcp_chunk_t* c = chunks_.getChunkIfLoaded(cx, cz);
+        // Records exist only for resident chunks (spawnMob and moveMob
+        // force the owning chunk), so a miss here cannot strand a body.
+        if (c)
+            rebuildMobBlobs(cx, cz, c);
+    }
+}
+
+void World::evictMobsForChunk(int32_t cx, int32_t cz) {
+    const uint64_t key = packChunkPos(cx, cz);
+    {
+        std::lock_guard<std::mutex> lk(mobs_mtx_);
+        mobs_dirty_chunks_.erase(key); // The roster leaves memory below.
+    }
+
+    // Snapshot the alive bodies and drop every record of this chunk —
+    // they live and die with it. A record dropped mid-death-animation
+    // surrenders its despawn slot; the goodbye packets below close the
+    // client-side animation.
+    std::vector<PersistedMob> snapshot;
+    std::vector<int64_t> gone;
+    {
+        std::lock_guard<std::mutex> lk(mobs_mtx_);
+        auto bucket = mobs_by_chunk_.find(key);
+        if (bucket == mobs_by_chunk_.end())
+            return;
+        snapshot.reserve(bucket->second.size());
+        gone.reserve(bucket->second.size());
+        for (int64_t eid : bucket->second) {
+            auto it = mobs_.find(eid);
+            if (it == mobs_.end() || !it->second)
+                continue;
+            if (it->second->death_tick == 0) {
+                const MobEntity& m = *it->second;
+                snapshot.push_back(PersistedMob{m.type, m.x, m.y, m.z, m.yaw,
+                                                m.pitch, m.health, m.max_health});
+            } else if (dying_mobs_ > 0) {
+                --dying_mobs_;
+            }
+            gone.push_back(eid);
+            mobs_.erase(it);
+        }
+        mobs_by_chunk_.erase(bucket);
+    }
+
+    // The chunk is still resident (caller contract: this runs before
+    // ChunkManager::unloadChunk, mirroring evictTilesForChunk), so the
+    // bodies land in the list the eviction is about to write.
+    mcp_chunk_t* c = chunks_.getChunkIfLoaded(cx, cz);
+    if (c && MobChunkCodec::writeChunkEntities(c, snapshot))
+        c->dirty = true;
+
+    // The reload allocates fresh eids, so every viewer who still knows
+    // the old ones needs one goodbye packet or the client keeps the body
+    // rendered as a ghost beside its re-spawned twin.
+    for (int64_t eid : gone) {
+        auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
+        rm->eid = eid;
+        for (auto& p : Server::getInstance().playersSnapshotRef()) {
+            if (!p || !p->spawned() || p->isPendingRemoval() || p->getWorld() != this)
+                continue;
+            if (p->knowsMob(eid)) {
+                p->forgetMob(eid);
+                p->sendPacket(rm);
+            }
+        }
+    }
+}
+
+void World::reconcileMobsForChunk(int32_t cx, int32_t cz) {
+    mcp_chunk_t* c = chunks_.getChunkIfLoaded(cx, cz);
+    if (!c)
+        return;
+
+    // A roster already in memory for this chunk is newer than the disk
+    // list: the only way one exists is a mob that moved into this chunk
+    // while it was not resident, and its state must win over the stale
+    // rows on disk.
+    bool residentWins = false;
+    {
+        std::lock_guard<std::mutex> lk(mobs_mtx_);
+        residentWins = mobs_by_chunk_.find(packChunkPos(cx, cz)) !=
+                       mobs_by_chunk_.end();
+    }
+    if (residentWins) {
+        rebuildMobBlobs(cx, cz, c);
+        return;
+    }
+
+    const std::vector<PersistedMob> rows = MobChunkCodec::readChunkEntities(c);
+    if (rows.empty())
+        return;
+
+    {
+        std::lock_guard<std::mutex> lk(mobs_mtx_);
+        for (const PersistedMob& p : rows) {
+            if (mobs_.size() >= kMaxMobs)
+                break; // The cap is the spawn-time cap; restore respects it too.
+            if (!entity::isValidMobType(p.type))
+                continue; // Registry shrank or the list was hand-edited.
+
+            // The saved ceiling wins (a plugin-raised max health
+            // survives), with the registry as the fallback for garbage
+            // rows; health is clamped back under it and a zero-health
+            // row is a corpse the list should not have kept.
+            float maxHp = p.max_health;
+            if (!(maxHp > 0.0f) || maxHp > entity::mobMaxHealth(p.type) * 64.0f)
+                maxHp = entity::mobMaxHealth(p.type);
+            float hp = p.health;
+            if (!(hp > 0.0f))
+                continue;
+            if (hp > maxHp)
+                hp = maxHp;
+
+            // Eids come fresh from the Server counter: a restored world
+            // never collides with the login-time player id space, and
+            // clients that still know the previous session's ids get a
+            // clean re-add through sendMobsInChunk.
+            const int64_t eid = Server::getInstance().allocateEid();
+            auto record = std::make_unique<MobEntity>();
+            record->eid = eid;
+            record->type = p.type;
+            record->x = p.x;
+            record->y = p.y;
+            record->z = p.z;
+            record->yaw = p.yaw;
+            record->pitch = p.pitch;
+            record->cx = cx;
+            record->cz = cz;
+            record->max_health = maxHp;
+            record->health = hp;
+            mobs_.emplace(eid, std::move(record));
+            mobs_by_chunk_[packChunkPos(cx, cz)].push_back(eid);
+        }
+    }
+    // The blobs already mirror these rows (that is where they came
+    // from): no dirty marking, no packets. sendMobsInChunk re-adds every
+    // restored mob to the viewers that stream this chunk from now on.
+}
+
+void World::migrateLegacyMobs() {
+    const std::vector<PersistedMob> legacy =
+        MobChunkCodec::loadLegacyMobsDat(legacy_mobs_path_);
+    if (legacy.empty())
+        return; // No legacy file (or an empty one): the region files rule.
+
+    // Group the rows by owning chunk; the ordered map keeps the flush
+    // deterministic.
+    std::map<uint64_t, std::vector<PersistedMob>> byChunk;
+    for (const PersistedMob& m : legacy) {
+        const int32_t cx = (int32_t)std::floor(m.x) >> 4;
+        const int32_t cz = (int32_t)std::floor(m.z) >> 4;
+        byChunk[packChunkPos(cx, cz)].push_back(m);
+    }
+
+    size_t migrated = 0;
+    for (const auto& [key, rows] : byChunk) {
+        const int32_t cx = (int32_t)(key >> 32);
+        const int32_t cz = (int32_t)(key & 0xFFFFFFFFULL);
+        // Force the chunk resident (disk load or generation, the same
+        // machinery a player stream uses): the rows must land in the
+        // chunk that will actually be written, not in a detached copy.
+        mcp_chunk_t* c = chunks_.getChunk(cx, cz);
+        if (!c)
+            continue;
+        if (MobChunkCodec::writeChunkEntities(c, rows))
+            c->dirty = true;
+        // The install reconcile ran before the rows existed, so the
+        // records are built here from the blobs just written.
+        reconcileMobsForChunk(cx, cz);
+        migrated += rows.size();
+    }
+    // Durable before the legacy file retires: a crash right after the
+    // migration must find the bodies in the region files, not nowhere.
+    chunks_.flushDirty();
+    if (provider_)
+        provider_->flushPendingSaves();
+    if (std::remove(legacy_mobs_path_.c_str()) == 0) {
+        utils::MainLogger::get().info(
+            "World '" + cfg_.name + "': migrated " + std::to_string(migrated) +
+            " mob(s) from the legacy mobs.dat into the region files");
+    }
 }
 
 // ============================================================================
@@ -2079,6 +2274,9 @@ entity::DamageApply World::damageMob(int64_t eid, float amount, entity::Entity* 
         mz = m.z;
         cx = m.cx;
         cz = m.cz;
+        // Health is persisted state: the chunk's roster must be rewritten
+        // at the next save point or a restart would heal the wound.
+        markMobsDirtyLocked(cx, cz);
         if (killed) {
             m.death_tick = Server::getInstance().getCurrentTick() + kMobDeathWindow;
             ++dying_mobs_;
@@ -2156,6 +2354,7 @@ bool World::setMobHealth(int64_t eid, float hp) {
         mz = m.z;
         cx = m.cx;
         cz = m.cz;
+        markMobsDirtyLocked(cx, cz); // Persisted state changed (see damageMob).
         if (died) {
             m.death_tick = Server::getInstance().getCurrentTick() + kMobDeathWindow;
             ++dying_mobs_;
@@ -2187,6 +2386,7 @@ bool World::setMobMaxHealth(int64_t eid, float max) {
     m.max_health = max;
     if (m.health > max)
         m.health = max; // The ceiling pulls the current value down with it.
+    markMobsDirtyLocked(m.cx, m.cz); // A plugin-raised ceiling must survive restarts.
     return true;
 }
 
@@ -3663,6 +3863,7 @@ int World::unloadDistantChunks(const std::vector<ChunkViewer>& viewers, int32_t 
             continue;
 
         evictTilesForChunk(cx, cz); // Flush and remove tiles before unloading the chunk.
+        evictMobsForChunk(cx, cz);  // Flush mob bodies into the chunk, then drop the records.
         if (chunks_.unloadChunk(cx, cz, /*save=*/true))
             ++unloaded;
     }

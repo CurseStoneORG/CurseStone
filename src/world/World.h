@@ -475,13 +475,22 @@ class World {
 
     // Saves a limited number of chunks within a time budget. The
     // write_level_data pass (shutdown, /save, world unload and the
-    // autosave's level-dat step) also rewrites the mob file.
+    // autosave's level-dat step) is a full save point: mob rosters ride
+    // the same flush into the region files.
     int saveBudget(size_t max_chunks, uint64_t max_ms, bool write_level_data);
 
-    // Snapshots the alive mob records and rewrites "<world dir>/mobs.dat"
-    // atomically (MobPersistence). Dying bodies (death window open) are
-    // skipped: they are one second from despawning and must not come back.
-    void saveMobs();
+    // Rebuilds the entity list of every chunk whose mobs changed since
+    // the last save pass (the per-chunk dirty set), so mob state rides
+    // the chunk save path into the region files exactly like blocks and
+    // tile entities. Called from every full save point.
+    void syncMobsToChunks();
+
+    // Flushes one chunk's alive mob records into its entity list and
+    // drops the records: mob state lives and dies with its chunk, so an
+    // evicted chunk carries its bodies on disk and a returning one
+    // re-creates them from there. Runs while the chunk is still resident
+    // (before ChunkManager::unloadChunk), mirroring evictTilesForChunk.
+    void evictMobsForChunk(int32_t cx, int32_t cz);
 
     // Returns the number of chunks with unsaved changes.
     size_t unsavedChunkCount() const;
@@ -866,7 +875,7 @@ class World {
     std::shared_ptr<generator::Generator> generator_;
     PortalRegistry portals_;   // Persistent Nether portal registry.
     std::string portals_path_; // Path to the portal registry file.
-    std::string mobs_path_;    // Path to the persisted mob file (mobs.dat).
+    std::string legacy_mobs_path_; // Pre-region mob file, read once for migration.
     mcp_vector3_t spawn_;
     std::unordered_map<uint64_t, class ChunkLoader*> loaders_;
 
@@ -931,14 +940,40 @@ class World {
     // the same pattern the tile registry uses with tiles_by_chunk_.
     std::unordered_map<uint64_t, std::vector<int64_t>> mobs_by_chunk_;
 
-    // Re-creates the mob records the last save left in mobs.dat. Runs
-    // once from the constructor, before any player or viewer can exist:
-    // records are registered directly into mobs_/mobs_by_chunk_ (no
-    // packets, no chunk forcing — mobs in unloaded chunks stay frozen
-    // until a viewer streams them, the same rule the AI gate applies).
-    // Eids are allocated fresh from the Server counter, so a restored
-    // world never collides with the login-time player id space.
-    size_t restoreMobs();
+    // Chunk keys whose mob roster changed since the last save pass
+    // (spawn, move, damage, death). Drained by syncMobsToChunks at every
+    // save point; only chunks that actually changed pay for an entity
+    // list rebuild. Lives under mobs_mtx_ beside the state it mirrors.
+    std::unordered_set<uint64_t> mobs_dirty_chunks_;
+
+    // Marks a chunk's mob roster changed. Caller holds mobs_mtx_ (every
+    // mutation point already runs under it, so this stays an insert).
+    void markMobsDirtyLocked(int32_t cx, int32_t cz) {
+        mobs_dirty_chunks_.insert(packChunkPos(cx, cz));
+    }
+
+    // Rebuilds one resident chunk's entity list from its live records
+    // (MobChunkCodec::writeChunkEntities) and dirties the chunk only when
+    // the bytes actually changed. Snapshot runs under mobs_mtx_, the
+    // chunk write happens outside it.
+    void rebuildMobBlobs(int32_t cx, int32_t cz, mcp_chunk_t* chunk);
+
+    // Mob restore at the chunk boundary: called once per chunk that
+    // enters the level (any install path). Parsable rows in the chunk's
+    // entity list become MobEntity records with fresh eids (no packets —
+    // viewers pick them up through sendMobsInChunk when they stream the
+    // chunk); a roster already in memory for this chunk (a mob a plugin
+    // moved into not-yet-resident terrain) is newer than the disk list
+    // and wins instead. Runs on install threads, so it only locks
+    // mobs_mtx_ and never touches the wire.
+    void reconcileMobsForChunk(int32_t cx, int32_t cz);
+
+    // One-time import: a world saved by a pre-region build still carries
+    // mobs.dat beside level.dat. Its rows are written into the owning
+    // chunks' entity lists (chunks forced resident, flushed to disk),
+    // then the legacy file is removed — from then on the region files
+    // are the only mob storage.
+    void migrateLegacyMobs();
 
     // Mob AI driver (entity/ai/): owned here so its lifetime is the
     // world's, drained from tick() after the falling blocks. The type

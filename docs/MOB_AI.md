@@ -228,36 +228,65 @@ the tick does.
 ## 10. Mob persistence
 
 Mob records used to be memory-only: a restart wiped every mob the eggs
-or the plugin API had spawned. The persistence seam closes that gap
-with one file per world, mirroring the portal registry's shape:
+or the plugin API had spawned. The persistence seam closes that gap by
+making mobs chunk state, exactly like blocks and tile entities — every
+mob lives inside its chunk's entity list in the region files
+(`worlds/<world>/region/r.X.Z.mca`, the `Entities` list of the chunk
+NBT), and there is no side file left to drift out of sync.
 
-- **File**: `worlds/<world>/mobs.dat` (world/MobPersistence.h/.cpp).
-  Plain text, one mob per line:
-  `type x y z yaw pitch health max_health` — the protocol-84 network id,
-  feet position at centimeter resolution, both health values. Tolerant
-  load (missing file, malformed rows and non-finite numbers are skipped,
-  one bad row never costs the rest), atomic write (tmp + rename).
-- **Save points**: `World::save()` — shutdown, `/save`, world unload —
-  and the `write_level_data` pass of `World::saveBudget()` (the
-  autosave's level-dat step). Dying bodies (death window open) and dead
-  health values are skipped, so a restart never resurrects a corpse.
-- **Restore**: `World::restoreMobs()` runs from the world constructor,
-  before any player, viewer, plugin or AI pass can exist. Records are
-  registered straight into `mobs_` / `mobs_by_chunk_` — no packets (no
-  viewers yet; the chunk stream's `sendMobsInChunk` re-adds each mob to
-  the viewers that arrive later), no chunk forcing (a mob in an
-  unloaded chunk stays frozen until a player streams its chunk, the
-  same rule the AI gate applies).
-- **Identity**: eids are runtime ids and are allocated fresh on boot,
-  so a restored world never collides with the login-time player id
-  space; plugins re-resolve entities after a restart. Type validity,
-  the health ceiling (registry fallback) and the per-world cap
+- **Format** (world/MobChunkCodec.h/.cpp): one little-endian NBT
+  compound per mob, riding the same chunk-blob channel
+  `mcp_chunk_t` already round-trips through the Anvil codec:
+  `id` (registry name), `Pos` (List<Float>[3], feet position),
+  `Rotation` (List<Float>[2]), `Health`, `MaxHealth`. The runtime eid is
+  deliberately not stored — ids are allocated fresh whenever the chunk
+  loads — and knockback / death-window state is transient by design.
+- **Restore**: `World::reconcileMobsForChunk()` runs once per chunk that
+  enters the level (any install path: disk load, sync or async
+  generation). Parsable rows become `MobEntity` records with fresh eids,
+  before any viewer stream or save pass can observe the chunk — no
+  packets (`sendMobsInChunk` re-adds each restored mob to the viewers
+  that stream it), no dirty marking (the list already mirrors the rows).
+  A roster already in memory for the chunk (a mob a plugin moved into
+  not-yet-resident terrain) is newer than the disk list and wins.
+- **Save points**: every mob mutation (spawn, move, damage, heal,
+  remove) flags the owning chunk in a per-chunk dirty set;
+  `World::syncMobsToChunks()` rebuilds exactly those chunks' entity
+  lists at every full save point (`World::save()` — shutdown, `/save`,
+  world unload — and the `write_level_data` pass of
+  `World::saveBudget()`, the autosave's level-dat step), right before
+  the dirty-chunk flush. The rebuild is byte-compared against the
+  current list, so an untouched roster never costs a chunk rewrite.
+  Dying bodies and dead health values are never persisted, so a restart
+  cannot resurrect a corpse mid-animation.
+- **Chunk lifecycle**: mob records exist only for resident chunks —
+  `spawnMob` and `moveMob` force the owning chunk resident — and
+  `World::evictMobsForChunk()` runs beside the tile eviction when a
+  chunk is unloaded: alive records are folded into the chunk's list
+  (which the eviction then writes) and dropped from memory, and every
+  viewer who still knows the old eids gets one RemoveEntity. Mob memory
+  is therefore bounded by what players can actually see, and the
+  per-chunk restore is lazy: a world's far-away mobs cost nothing until
+  someone streams their chunk.
+- **Identity**: eids are runtime ids and are re-allocated whenever the
+  chunk loads, so a restored world never collides with the login-time
+  player id space; plugins re-resolve entities after a restart. Type
+  validity, the health ceiling (registry fallback) and the per-world cap
   (`kMaxMobs`) are enforced at restore exactly as at spawn time.
-- **Cost**: one small text rewrite per save point (worst case ~60 KB at
-  the 1024-mob cap) and one file read per boot. Zero per-tick cost.
+- **Migration**: a world saved by a pre-region build still carries its
+  `mobs.dat` beside `level.dat`. The world constructor folds those rows
+  into the owning chunks' entity lists (chunks forced resident, flushed
+  to disk) and removes the legacy file, so the region files are the only
+  mob storage from that moment on. The migration is crash-safe by
+  ordering: the chunks are durable before the file is deleted, and a
+  boot that finds the file again simply re-runs the (idempotent) import.
 
-Verified end to end by `tools/mob_persistence_check.py`: three boots
-over one runtime — spawn 3 sheep, hurt one, `/save`, stop; boot 2 sees
-the 3 bodies back at their saved positions with the hurt sheep's 5 hp;
-clear + `/save` + stop; boot 3 sees none (an emptied world must not
-resurrect its old mobs).
+Verified end to end by `tools/mob_persistence_check.py`: four boots
+over one runtime — a hand-written legacy `mobs.dat` is migrated into
+the region files on boot 1 (file gone, entities inside the .mca, bodies
+restored); boot 2 spawns a fourth sheep in a chunk two rows south
+(which the region file then carries as its own entity list); boot 3
+sees only the home chunk's bodies until the far chunk loads (lazy
+per-chunk restore), then all four at their saved positions with both
+wounds intact; clear + `/save` + stop; boot 4 sees none (an emptied
+world must not resurrect its old mobs).
