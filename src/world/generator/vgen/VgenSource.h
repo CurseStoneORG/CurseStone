@@ -24,6 +24,7 @@
 
 #pragma once
 #include "world/generator/Generator.h"
+#include "world/performance/TerrainCache.h"
 #include "world/generator/NeighborChunkIO.h"
 #include "vgen/VgenWorld.h"
 #include "vgen/biome/Biome.h"
@@ -121,19 +122,14 @@ private:
         vgen::RandomScatteredLargeFeature mScatteredFeature;
         vgen::MonsterRoomFeature mMonsterRoomFeature;
 
-        // terrain cache — terrain-only, immutable after fill.
-        // shared_ptr ownership: eviction erases the entry while a worker
-        // may still hold the pointer to copy a neighbor snapshot, so the
-        // object must outlive the map entry (was a real use-after-free:
-        // the evicting delete raced the copying worker).
-        struct CacheEntry {
-                std::shared_ptr<vgen::LevelChunk> chunk;
-                uint64_t stamp = 0;
-        };
-        static const size_t kTerrainCacheLimit = 512;
-        std::mutex mCacheMutex;
-        std::unordered_map<int64_t, CacheEntry> mTerrainCache;
-        uint64_t mCacheStamp = 0;
+        // terrain cache — terrain-only, immutable after fill. The
+        // performance module's TerrainCache keeps the shared_ptr
+        // ownership story (eviction erases the entry, the object dies
+        // with its last user), adds O(1) LRU eviction, and deduplicates
+        // in-flight neighbour builds across workers: concurrent acquires
+        // of the same chunk share one build instead of racing and
+        // discarding the loser.
+        performance::TerrainCache<vgen::LevelChunk> mTerrainCache;
 
         // feature spill: writes aimed at chunks that are not the current center
         struct SpillEntry {
