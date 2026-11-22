@@ -223,7 +223,15 @@ bool Server::loadConfig() {
     }
 
     // Load cursestone.yml settings.
-    async_workers_ = (int)adv.getInt("settings.async-workers", 4);
+    async_workers_ = (int)adv.getInt("settings.async-workers", 8);
+    // Boot-time spawn pre-generation: -1 follows view-distance, 0 disables,
+    // explicit values clamp into 1..16 — big enough to cover any sane first
+    // view, small enough that the background square never dominates boot.
+    spawn_pregen_radius_ = (int)adv.getInt("world.spawn-pregen-radius", -1);
+    if (spawn_pregen_radius_ < 0)
+        spawn_pregen_radius_ = view_distance_;
+    if (spawn_pregen_radius_ > 16)
+        spawn_pregen_radius_ = 16;
     autosave_ticks_ = (int)adv.getInt("settings.autosave-ticks", 6000);
     // debug-mode is THE switch for all debug/diagnostic console output.
     // The legacy `advanced-log` key is still accepted so existing
@@ -431,6 +439,67 @@ bool Server::loadDefaultWorld() {
     // plugins enable, so plugin worlds are ready when their plugins start.
     loadWorldsManifest();
     return true;
+}
+
+// ---------------------------------------------------------------------
+// Boot-time spawn pre-generation.
+// ---------------------------------------------------------------------
+
+// Queue the spawn square onto the async pool the moment the world is up:
+// terrain for the first joiner — and for the synchronous spawn settle the
+// login performs — is generated while nobody is connected, so the first
+// player streams into a hot world instead of watching chunks pop in.
+// Vanilla's "Preparing spawn area", but off the boot thread: the server
+// becomes ready immediately and the pool drains the square in the
+// background while plugins load and the listener accepts.
+void Server::preGenerateSpawnArea() {
+    if (!world_ || !async_pool_ || spawn_pregen_radius_ <= 0)
+        return;
+
+    const mcp_vector3_t spawn = world_->spawn();
+    const int scx = (int)spawn.x >> 4;
+    const int scz = (int)spawn.z >> 4;
+
+    // Center-out order, the same shape the per-player stream uses: the
+    // chunks a joining player needs first are queued (and generated) first.
+    auto& chunks = world_->chunks();
+    size_t queued = 0;
+    for (const auto& pr : Player::buildChunkSpiral(spawn_pregen_radius_)) {
+        if (!chunks.getChunkOrRequestAsync(scx + pr.first, scz + pr.second,
+                                           async_pool_.get()))
+            ++queued; // Resident chunks return a pointer and need no work.
+    }
+    if (queued == 0)
+        return; // Everything already resident (a warm world reloading).
+
+    spawn_pregen_target_ = queued;
+    spawn_pregen_start_ms_ = mcp_utils_time_ms();
+    spawn_pregen_waiting_ = true;
+    utils::MainLogger::get().info("Preparing spawn area: " +
+                                  std::to_string(queued) + " chunks (radius " +
+                                  std::to_string(spawn_pregen_radius_) + ")");
+}
+
+// Completion probe for the boot pre-generation. The pool is FIFO, so once
+// the last generation task has been dequeued every install has finished or
+// is finishing on a worker — pendingCount() hitting zero means the square
+// is fully resident. A sleeping watcher task inside the pool would block
+// stop()'s synchronous drain, which is why the probe lives on the tick
+// loop, polled twice per second (one small mutex grab, boot-scoped).
+void Server::pollSpawnPregen() {
+    if (!spawn_pregen_waiting_)
+        return;
+    if (currentTick_ - spawn_pregen_last_poll_tick_ < 10)
+        return;
+    spawn_pregen_last_poll_tick_ = currentTick_;
+    if (!world_ || world_->chunks().pendingCount() > 0)
+        return;
+
+    spawn_pregen_waiting_ = false;
+    const uint64_t ms = mcp_utils_time_ms() - spawn_pregen_start_ms_;
+    utils::MainLogger::get().info("Spawn area pregenerated: " +
+                                  std::to_string(spawn_pregen_target_) +
+                                  " chunks in " + std::to_string(ms) + " ms");
 }
 
 // ---------------------------------------------------------------------
@@ -743,6 +812,10 @@ void Server::start(const std::string& dataPath) {
     }
     DiagEngine::stageDone("Worlds loaded!");
 
+    // Background pre-generation of the spawn square — queued before the
+    // plugins load, finished long before the first player can join.
+    preGenerateSpawnArea();
+
     // ---- Plugins. A failing plugin is never fatal: it is reported with a
     //      diagnostic and everything else keeps loading.
     DiagEngine::stage("Loading plugins...");
@@ -870,6 +943,9 @@ void Server::tick() {
     WorkbenchManager::get().onTickPhase(
         "scheduler",
         (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
+
+    // Spawn pre-generation completion probe (boot-scoped, twice a second).
+    pollSpawnPregen();
 
     // Tick all loaded worlds.
     t0 = std::chrono::steady_clock::now();

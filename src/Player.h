@@ -806,6 +806,11 @@ class Player : public IPlayer,
     void broadcastPotionColor();
 
   public:
+    // Shared chunk spiral algorithm: center-out order over a Chebyshev
+    // square of radius vd. Used by the per-player stream loop and by the
+    // server's boot-time spawn pre-generation.
+    static std::vector<std::pair<int32_t, int32_t>> buildChunkSpiral(int vd);
+
     // --- Damage pipeline ---
     // Creative players ignore ordinary damage, except void and custom causes.
     entity::DamageApply damage(float amount) override;
@@ -937,8 +942,6 @@ class Player : public IPlayer,
     void storePortalLink(const PortalArrival& from, uint8_t from_dim, const PortalArrival& to,
                          uint8_t to_dim);
 
-    // Shared chunk spiral algorithm.
-    static std::vector<std::pair<int32_t, int32_t>> buildChunkSpiral(int vd);
     // Spiral for the radius onUpdate() used last; main thread only.
     int spiral_cache_radius_ = -1;
     std::vector<std::pair<int32_t, int32_t>> spiral_cache_;

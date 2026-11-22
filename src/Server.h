@@ -397,6 +397,12 @@ class Server {
     void registerBlocksAndItems();
     bool openNetwork();
     bool loadDefaultWorld();
+    // Boot-time spawn pre-generation: queues the spawn square onto the async
+    // pool right after the world loads (nobody connected yet), then
+    // pollSpawnPregen() — driven by the tick loop — logs the finish line once
+    // the square is fully resident.
+    void preGenerateSpawnArea();
+    void pollSpawnPregen();
     void startCommandReader();
     void loadOps();
     void saveOps();
@@ -450,8 +456,19 @@ class Server {
     bool keep_inventory_ = false;
     bool bed_spawn_enabled_ = true;
     TrafficLimits traffic_;
-    int async_workers_ = 4;
+    int async_workers_ = 8;
     int autosave_ticks_ = 6000; // Five minutes at 20 TPS.
+
+    // Spawn pre-generation (world.spawn-pregen-radius): -1 follows
+    // view-distance, 0 disables, otherwise the radius in chunks (clamped
+    // into 1..16). The tracking fields are written by the boot thread
+    // before the tick loop starts and polled by the tick loop afterwards,
+    // so no extra synchronization is needed.
+    int spawn_pregen_radius_ = -1;
+    bool spawn_pregen_waiting_ = false;
+    uint64_t spawn_pregen_start_ms_ = 0;
+    uint64_t spawn_pregen_last_poll_tick_ = 0;
+    size_t spawn_pregen_target_ = 0;
 
     // Incremental autosave state.
     bool autosave_draining_ = false;

@@ -101,7 +101,7 @@ bool Installer::runWizard() {
     props.setString("world-seed", "");
 
     utils::Config adv;
-    adv.setInt("settings.async-workers", 4);
+    adv.setInt("settings.async-workers", 8);
     adv.setInt("settings.autosave-ticks", 6000);
     adv.setBool("settings.advanced-log", true);
     adv.setInt("settings.plugin-instruction-limit", 1000000);

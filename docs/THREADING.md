@@ -21,7 +21,7 @@ Facts verified against the code, not aspirations:
 | Socket I/O | RakLib thread (~100 Hz): UDP recv/send + keepalives; two FIFO queues bridge it to the main thread. |
 | Packet **decode / apply** | Main thread. |
 | Packet **compression** | AsyncPool workers. |
-| Chunk **network serialization** | Main thread: `mcp_chunk_network_serialize` runs inline in the stream path (`PlayerChunks.cpp`), up to `MAX_CHUNKS_PER_TICK = 4` per tick. |
+| Chunk **network serialization** | AsyncPool **fast lane**: the stream path snapshots on the main thread (memcpy-bound) and the wire transposition runs on a pool worker (`PlayerChunks.cpp`), prioritized ahead of queued generation so an encode never waits behind a teleport's generation burst; deep backlog bursts up to 8 chunks per tick. |
 | Light + liquid propagation | Main thread, but **budgeted**: `drainLightPending(budget, max_ms)` and `processLiquidWakes(budget)` stop at a per-tick allowance. |
 | Async tasks with completion | `ServerScheduler::scheduleAsync` posts to the AsyncPool and runs `onCompletion()` on the main thread. |
 | Entities (mobs) | No AI, no tick — a standing mob costs one `AddEntityPacket` on spawn and nothing per tick. |
@@ -114,13 +114,15 @@ and is recommended as the first one to pick up.
 1. **Named threads** (`pthread_setname_np` on RakLib, Anvil writer,
    AsyncPool workers, CommandReader, watchdogs). Trivial, observability
    only, directly from the historical 1.0.9 design. — **IMPLEMENTED, see §7.**
-2. **Chunk network serialization off the tick thread.** This is the
-   remaining historical-design win. `mcp_chunk_network_serialize` runs
-   inline in the stream path for up to 4 chunks per tick on the main
-   thread. A chunk is an immutable snapshot the moment it is selected for
-   streaming, so its serialization can ride the AsyncPool with
-   `onCompletion` on the main thread (the scheduler already provides
-   that shape). One caveat to design for: AsyncPool completion order is
+2. **Chunk network serialization off the tick thread.** — **IMPLEMENTED**
+   (2026-11-22): the stream path snapshots on the main thread and hands
+   the wire transposition to the AsyncPool **fast lane**, drained ahead
+   of queued generation tasks (a teleport queues hundreds at once);
+   the deep-backlog burst cap moved from 4 to 8 chunks per tick so a
+   cold teleport fill is generation-bound, not stream-bound. The
+   snapshot-immutability note below remains the design contract, and
+   the completion-order caveat it was written with still applies:
+   AsyncPool completion order is
    not submission order, and chunk packets to one client are ordered on
    the wire — tag each job with a per-player sequence number and have
    the completion callback enqueue in sequence order (a small

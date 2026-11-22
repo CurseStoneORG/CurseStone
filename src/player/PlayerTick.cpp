@@ -696,16 +696,22 @@ void Player::onUpdate(uint64_t current_tick) {
         //     covers demand with ~70% headroom;
         //   - deep backlog (login, teleports, ring re-streams, post-hitch
         //     recovery, or a faster-than-vanilla flyer): once more than two
-        //     full view rows are missing, burst up to 4/tick so the visible
+        //     full view rows are missing, burst up to 8/tick so the visible
         //     square fills fast — the client is filling a mostly empty
-        //     square there and burst remeshing is expected.
+        //     square there and burst remeshing is expected. With the
+        //     generation pool at its default width the square usually
+        //     generates faster than that, so the SEND pace is what bounds
+        //     a teleport fill; 8/tick (160 chunks/s) keeps the fill
+        //     generation-bound instead of stream-bound.
         // The transition is self-regulating: if 1/tick cannot keep up with
         // the demand, pending grows past the threshold and bursts drain it.
         // Sizing note: a full overworld column serializes to ~83 KB raw on
-        // the wire path (~3 KB after the batch zlib), so 384 KB still lets
-        // the 4-chunk burst go through unimpeded — the budget only bites on
+        // the wire path (~3 KB after the batch zlib), so 768 KB still lets
+        // the 8-chunk burst (~664 KB) go through unimpeded — roughly
+        // 24 KB/tick of compressed wire, well under the 5 MB/s figure the
+        // window math below assumes — and the budget only bites on
         // extreme payloads.
-        constexpr size_t MAX_CHUNK_BYTES_PER_TICK = 384 * 1024;
+        constexpr size_t MAX_CHUNK_BYTES_PER_TICK = 768 * 1024;
         const size_t deep_backlog_rows = (size_t)(2 * vd + 1) * 2; // two full view rows
 
         // Generate missing chunks asynchronously to avoid blocking the main thread.
@@ -723,13 +729,13 @@ void Player::onUpdate(uint64_t current_tick) {
             }
         }
         // Adaptive count cap — see the streaming comment above: 1 chunk/tick
-        // in steady state (one client remesh per frame), 4/tick while the
+        // in steady state (one client remesh per frame), 8/tick while the
         // backlog is deeper than two view rows (login, teleport, ring
         // re-stream, recovery, faster-than-vanilla flight). The cap now
         // paces the ENCODE submissions; flushChunkEncodes() below applies
         // the same cap plus the byte budget at SEND time, so arrival
         // pacing at the client is unchanged.
-        int max_chunks_this_tick = pending.size() > deep_backlog_rows ? 4 : 1;
+        int max_chunks_this_tick = pending.size() > deep_backlog_rows ? 8 : 1;
         int submitted_this_tick = 0;
         for (const auto& pc : pending) {
             int32_t chX = pc.first, chZ = pc.second;
