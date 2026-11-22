@@ -533,6 +533,19 @@ void Player::teleport(double x, double y, double z) {
             chunk_queue_.clear();
             chunk_queue_.emplace_back(new_cx, new_cz);
         }
+
+        // Destination pre-warm: the spiral stream only starts asking for the
+        // destination next tick, and the 3x3 core decides whether arrival
+        // feels instant or frozen-in-air. Submitting it here (the same seam
+        // switchWorld() uses) has the core chunks generating while the
+        // position reset is still in flight to the client.
+        if (srv_ && getWorld() && srv_->getAsyncPool()) {
+            auto& chunks = getWorld()->chunks();
+            for (int dx = -1; dx <= 1; ++dx)
+                for (int dz = -1; dz <= 1; ++dz)
+                    chunks.getChunkOrRequestAsync(new_cx + dx, new_cz + dz,
+                                                  srv_->getAsyncPool());
+        }
     }
 
     // Send a position reset packet if the player has spawned.

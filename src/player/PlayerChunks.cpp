@@ -440,11 +440,15 @@ void Player::submitChunkEncode(mcp_chunk_t* ch, int32_t cx, int32_t cz) {
     };
 
     auto* pool = srv_ ? srv_->getAsyncPool() : nullptr;
+    // Fast lane: the transposition is a few ms of client-facing work, and
+    // after a teleport the FIFO lane sits behind hundreds of queued
+    // generation tasks — without the fast lane the first chunk of the new
+    // view waits for the whole burst even though its terrain is ready.
     if (pool && pool->submit([complete, snap]() {
             size_t len = 0;
             uint8_t* buf = mcp_chunk_snapshot_network_serialize(snap, &len);
             complete(buf, len, snap);
-        }))
+        }, /*priority=*/true))
         return; // In flight; flushChunkEncodes sends it when ready.
 
     // Pool unavailable or stopping — encode inline so the chunk still

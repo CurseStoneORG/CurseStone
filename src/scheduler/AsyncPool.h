@@ -24,6 +24,14 @@
 // Chunk generation, file I/O and packet compression post tasks here.
 // Mirrors scheduler/AsyncPool.
 //
+// Two lanes, one worker set: submit(work, priority=true) posts to a small
+// fast lane that workers always drain before the FIFO lane. Short,
+// latency-sensitive work (chunk encode transposition) rides the fast lane
+// so a burst of queued generation tasks (a teleport or a fresh world can
+// queue hundreds at once) can never push a client-facing encode behind
+// seconds of terrain math; heavy batch work (generation, disk) rides the
+// FIFO lane and keeps its submission order.
+//
 // STABILITY FIXES applied here (see also ServerScheduler.cpp, which
 // already wraps its own scheduleAsync() lambdas in try/catch — the
 // fixes below make the pool itself safe for ANY caller, not just
@@ -81,11 +89,15 @@ class AsyncPool {
     // outcome as scheduleAsync()'s existing "no AsyncPool" fallback
     // path, just surfaced with a return value instead of happening
     // implicitly.
-    bool submit(Work w) {
+    //
+    // `priority` posts to the fast lane (see the class comment): short
+    // client-facing work jumps ahead of queued heavy batch work. The FIFO
+    // order WITHIN each lane is preserved.
+    bool submit(Work w, bool priority = false) {
         std::unique_lock<std::mutex> lk(mtx_);
         if (!running_)
             return false;
-        queue_.push(std::move(w));
+        (priority ? prio_ : queue_).push(std::move(w));
         cv_.notify_one();
         return true;
     }
@@ -102,17 +114,24 @@ class AsyncPool {
             if (t.joinable())
                 t.join();
 
-        // FIX: drain anything still left in the queue after workers
-        // have exited, instead of destroying the queue (and silently
+        // FIX: drain anything still left in the queues after workers
+        // have exited, instead of destroying the queues (and silently
         // discarding pending work, e.g. an unflushed chunk write)
         // along with the pool. Run on the calling thread (normally
         // the main thread during shutdown) since no workers remain.
         // Each item still gets the same exception protection as the
-        // normal worker path.
+        // normal worker path. The fast lane drains first, mirroring
+        // the order workers used.
         std::queue<Work> remaining;
+        std::queue<Work> remaining_prio;
         {
             std::unique_lock<std::mutex> lk(mtx_);
+            std::swap(remaining_prio, prio_);
             std::swap(remaining, queue_);
+        }
+        while (!remaining_prio.empty()) {
+            runOne(remaining_prio.front());
+            remaining_prio.pop();
         }
         while (!remaining.empty()) {
             runOne(remaining.front());
@@ -141,21 +160,28 @@ class AsyncPool {
             {
                 std::unique_lock<std::mutex> lk(mtx_);
                 cv_.wait(lk, [&] {
-                    return !running_ || !queue_.empty();
+                    return !running_ || !prio_.empty() || !queue_.empty();
                 });
-                if (!running_ && queue_.empty())
+                if (!running_ && prio_.empty() && queue_.empty())
                     return;
-                if (queue_.empty())
-                    continue; // spurious wake / stop with items still draining elsewhere
-                w = std::move(queue_.front());
-                queue_.pop();
+                // Fast lane first: an encode waiting behind a generation
+                // burst is exactly the teleport-fill stall this exists to
+                // prevent. Within a lane, FIFO.
+                if (!prio_.empty()) {
+                    w = std::move(prio_.front());
+                    prio_.pop();
+                } else {
+                    w = std::move(queue_.front());
+                    queue_.pop();
+                }
             }
             runOne(w);
         }
     }
     int n_;
     std::vector<std::thread> workers_;
-    std::queue<Work> queue_;
+    std::queue<Work> prio_;   // fast lane: short client-facing work
+    std::queue<Work> queue_;  // FIFO lane: heavy batch work
     std::mutex mtx_;
     std::condition_variable cv_;
     bool running_{true}; // always accessed under mtx_
