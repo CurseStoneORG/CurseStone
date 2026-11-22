@@ -21,6 +21,7 @@
  *
  */
 
+#include "world/performance/GenerationProfiler.h"
 #include "vgen/biome/BiomeDecorator.h"
 #include "vgen/feature/ClayFeature.h"
 #include "vgen/feature/SandFeature.h"
@@ -207,10 +208,15 @@ void BiomeDecorator::decorate(BlockSource* source, Random& random, Biome* biome,
 
 	// Implemented for correctness right now, we can replace most of the getHeightmapPos with getHeightmap
 	// but right now it is more important with correctness
-	decorateOres(source, random, origin);
+	{
+		cursestone::performance::ScopedStage oresTimer(cursestone::performance::Stage::DecorateOres);
+		decorateOres(source, random, origin);
+	}
 
 	// Sand
-	for (int i = 0; i < sandCount; i++) {
+	{
+		cursestone::performance::ScopedStage surfaceTimer(cursestone::performance::Stage::DecorateSurface);
+		for (int i = 0; i < sandCount; i++) {
 		const int x = origin.x + random.nextInt(16);
 		const int z = origin.z + random.nextInt(16);
 		const int y = source->getAboveTopSolidBlock(x, z);
@@ -232,6 +238,7 @@ void BiomeDecorator::decorate(BlockSource* source, Random& random, Biome* biome,
 		const int y = source->getAboveTopSolidBlock(x, z);
 		_placeFeature(source, gravelFeature, BlockPos(x, y, z), random);
 	}
+	} // DecorateSurface
 
 	int grassCount = this->grassCount;
 	int forests = 0;
@@ -254,7 +261,9 @@ void BiomeDecorator::decorate(BlockSource* source, Random& random, Biome* biome,
 	}
 
 	// Trees
-	for (int i = 0; i < forests; i++) {
+	{
+		cursestone::performance::ScopedStage treesTimer(cursestone::performance::Stage::DecorateTrees);
+		for (int i = 0; i < forests; i++) {
 
 		auto& tree = biome->getTreeFeature(&random);
 		//tree.init();
@@ -272,6 +281,8 @@ void BiomeDecorator::decorate(BlockSource* source, Random& random, Biome* biome,
 		}
 	}
 
+	} // DecorateTrees
+
 	// Huge Mushrooms
 	for (int i = 0; i < hugeMushrooms; i++) {
 		const int x = origin.x + random.nextInt(16);
@@ -281,7 +292,9 @@ void BiomeDecorator::decorate(BlockSource* source, Random& random, Biome* biome,
 	}
 
 	// FLowers
-	for (int i = 0; i < flowerCount; i++) {
+	{
+		cursestone::performance::ScopedStage miscTimer(cursestone::performance::Stage::DecorateMisc);
+		for (int i = 0; i < flowerCount; i++) {
 		const int x = random.nextInt(16);
 		const int z = random.nextInt(16);
 		const int y = random.nextInt(source->getHeightmapPos(origin.offset(x, 0, z)).y + 32);
@@ -431,8 +444,8 @@ void BiomeDecorator::decorate(BlockSource* source, Random& random, Biome* biome,
 			_placeFeature(source, lavaSpringFeature, pos, random);
 		}
 	}
+	} // DecorateMisc
 }
-
 void BiomeDecorator::decorateDepthSpan(BlockSource* region, Random& random, const BlockPos& origin, int count, FeaturePtr& feature, int y0, int y1){
 	if(feature == nullptr) {
 		return;
