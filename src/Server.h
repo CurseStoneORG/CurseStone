@@ -175,6 +175,13 @@ class Server {
     double getMSPT() const {
         return mspt_.load(std::memory_order_relaxed);
     }
+    // Worst single-tick cost since boot (same wall-clock measurement as
+    // getMSPT, max instead of mean). The freeze detector: a big save that
+    // stalls the tick lands here as one huge spike even when the EMA
+    // stays low. Readable from any thread; reset only at boot.
+    double getMSPTPeak() const {
+        return mspt_peak_.load(std::memory_order_relaxed);
+    }
 
     // Online player list.
     std::vector<std::shared_ptr<Player>>& players() {
@@ -433,6 +440,9 @@ class Server {
     // EMA of measured tick cost (see getMSPT). Updated once per tick by
     // the tick loop; read from command/console threads.
     std::atomic<double> mspt_{0.0};
+    // Max single-tick cost since boot (see getMSPTPeak). Freeze detector:
+    // a save stall lands here as one spike even when the EMA stays low.
+    std::atomic<double> mspt_peak_{0.0};
 
     // Configuration from server.properties and cursestone.yml.
     std::string ip_ = "0.0.0.0";

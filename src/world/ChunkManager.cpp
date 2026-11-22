@@ -38,6 +38,7 @@
 #include "world/generator/GenerationTask.h"
 #include "scheduler/AsyncPool.h"
 #include "world/performance/GenerationProfiler.h"
+#include "world/performance/SaveProfiler.h"
 #include "tile/TileFactory.h"
 #include "block/BlockIds.h"
 #include "nbt/NBT.h"
@@ -836,6 +837,12 @@ void ChunkManager::markDirty(int32_t x, int32_t z) {
 }
 
 int ChunkManager::flushDirty() {
+    // Full sweep: mtx_ is held from here to the end (the whole dirty
+    // set is snapshotted and enqueued under it, then flushed). The
+    // probe documents how long the store is closed to everyone else —
+    // the number the /save freeze report cites.
+    performance::SaveProfiler::Scope sweep_probe(
+        performance::SaveStage::FullFlushSweep);
     std::lock_guard<std::mutex> lk(mtx_);
     int n = 0;
     if (!provider_) {
@@ -875,6 +882,10 @@ int ChunkManager::flushDirtyBudget(size_t max_chunks, uint64_t max_ms) {
     if (max_chunks == 0)
         return 0;
 
+    // Budgeted sweep (autosave / drain): same mutex discipline as
+    // flushDirty(), bounded work per call.
+    performance::SaveProfiler::Scope sweep_probe(
+        performance::SaveStage::BudgetFlushSweep);
     std::lock_guard<std::mutex> lk(mtx_);
     int n = 0;
     auto t0 = std::chrono::steady_clock::now();
@@ -908,6 +919,9 @@ int ChunkManager::flushDirtyBudget(size_t max_chunks, uint64_t max_ms) {
 }
 
 size_t ChunkManager::dirtyCount() const {
+    // Polled every autosave tick and every /status: its own cost under
+    // mtx_ is part of the save pipeline's tax on the tick.
+    performance::SaveProfiler::Scope scan_probe(performance::SaveStage::DirtyCount);
     std::lock_guard<std::mutex> lk(mtx_);
     size_t n = 0;
     for (auto& kv : chunks_) {

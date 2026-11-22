@@ -31,6 +31,7 @@
 #include <cstring>
 
 #include "../../../utils/PlatformCompat.h"
+#include "../../../world/performance/SaveProfiler.h"
 
 #if !defined(_WIN32)
 #include <sys/file.h> // ::flock and the LOCK_* verbs for the whole-file lock
@@ -554,6 +555,7 @@ bool DBEngine::put_batch(
         std::fflush(log_file_) != 0)
         return false;
     wal_bytes_ += framed.size();
+    performance::SaveProfiler::noteWalBytes(framed.size());
 
     for (const auto& [key, value] : ops) {
         uint8_t type = value.has_value() ? db::kTypeValue : db::kTypeDeletion;
@@ -724,6 +726,12 @@ bool DBEngine::flush_locked(std::string* err) {
     if (memtable_.empty()) {
         return true;
     }
+    // The whole memtable -> table transition (SSTable build + write +
+    // fsync + WAL rotation + manifest rewrite) is timed as EngineFlush.
+    // This runs on the save worker inside a put_batch when the memtable
+    // crosses its threshold, and from flush() at full-save points.
+    performance::SaveProfiler::Scope flush_probe(performance::SaveStage::EngineFlush);
+    performance::SaveProfiler::noteFlush();
     // Snapshot the memtable into table entries.
     std::vector<TableEntry> entries;
     entries.reserve(memtable_.size());
@@ -745,6 +753,7 @@ bool DBEngine::flush_locked(std::string* err) {
             *err = "failed writing table " + table_path(number);
         return false;
     }
+    performance::SaveProfiler::noteTableBytes(image.size());
 
     FileMeta meta;
     meta.level = 0;
@@ -789,9 +798,16 @@ bool DBEngine::flush_locked(std::string* err) {
 bool DBEngine::compact_locked(std::string* err) {
     if (files_.empty())
         return true;
+    // Full merge: read every table, dedupe, write the merged one. This is
+    // the O(entire-database) I/O burst the engine runs inline once level-0
+    // piles up — timed as EngineCompact so a slow-disk save window can be
+    // attributed precisely instead of hiding inside WorkerPut.
+    performance::SaveProfiler::Scope compact_probe(performance::SaveStage::EngineCompact);
+    performance::SaveProfiler::noteCompact();
     // Read every table, newest source first, and keep only the newest
     // version of each user key (no snapshots exist → older versions and
     // tombstones can drop entirely).
+    uint64_t compact_read_bytes = 0;
     std::vector<const FileMeta*> level0;
     for (const FileMeta& f : files_) {
         if (f.level == 0)
@@ -810,6 +826,7 @@ bool DBEngine::compact_locked(std::string* err) {
         std::vector<uint8_t> image;
         if (!read_file_bytes(table_path(f->number), &image))
             continue;
+        compact_read_bytes += image.size();
         db::TableReader reader;
         if (!reader.open(image.data(), image.size()))
             continue;
@@ -826,6 +843,7 @@ bool DBEngine::compact_locked(std::string* err) {
         std::vector<uint8_t> image;
         if (!read_file_bytes(table_path(f.number), &image))
             continue;
+        compact_read_bytes += image.size();
         db::TableReader reader;
         if (!reader.open(image.data(), image.size()))
             continue;
@@ -882,6 +900,8 @@ bool DBEngine::compact_locked(std::string* err) {
             *err = "failed writing compaction table " + table_path(number);
         return false;
     }
+    performance::SaveProfiler::noteTableBytes(image.size());
+    performance::SaveProfiler::noteCompactBytes(compact_read_bytes);
 
     for (const FileMeta& f : files_)
         std::remove(table_path(f.number).c_str());

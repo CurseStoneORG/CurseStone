@@ -1030,6 +1030,12 @@ void Server::runTickLoop() {
         const double prev = mspt_.load(std::memory_order_relaxed);
         mspt_.store(prev > 0.0 ? prev + (tick_ms - prev) / 20.0 : tick_ms,
                     std::memory_order_relaxed);
+        // Freeze detector: keep the worst single tick since boot. One
+        // monotonic max-store; no locking, no decay — the spike must
+        // survive until someone reads /status.
+        const double prev_peak = mspt_peak_.load(std::memory_order_relaxed);
+        if (tick_ms > prev_peak)
+            mspt_peak_.store(tick_ms, std::memory_order_relaxed);
         next_tick += std::chrono::milliseconds(CURSESTONE_TICK_MS);
         if (std::chrono::steady_clock::now() < next_tick) {
             std::this_thread::sleep_until(next_tick);
