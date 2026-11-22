@@ -67,6 +67,14 @@ class MainLogger {
         if (lg->critical)
             lg->critical(lg->impl, s.c_str());
     }
+    // Game chat mirror (Server::broadcastMessage): pushes MCP_LOG_CHAT so the
+    // console tags the line "CHAT" instead of "INFO". Rides the generic
+    // log() vtable entry — implementations forward any level they receive.
+    void chat(const std::string& s) {
+        auto* lg = &mcp_main_logger_get_instance()->vtable;
+        if (lg->log)
+            lg->log(lg->impl, MCP_LOG_CHAT, s.c_str());
+    }
     // Level-explicit dispatch (the Diagnostic Engine renders severity ->
     // level directly; maps to the vtable entry of the same meaning).
     void log(mcp_log_level_t lvl, const std::string& s) {
@@ -91,6 +99,12 @@ class MainLogger {
             break;
         case MCP_LOG_CRITICAL:
         case MCP_LOG_EMERGENCY:
+            if (lg->critical)
+                lg->critical(lg->impl, s.c_str());
+            break;
+        case MCP_LOG_CHAT:
+            chat(s);
+            break;
         default:
             if (lg->critical)
                 lg->critical(lg->impl, s.c_str());

@@ -184,8 +184,11 @@ void Player::close(const std::string& reason) {
             return;
         }
 
-        utils::MainLogger::get().info("Closing player " + cfg_.username + " (" + cfg_.ip + ":" +
-                                      std::to_string(cfg_.port) + "): " + reason);
+        // Session teardown detail rides DEBUG: the normal log shows the
+        // player leaving via the chat line ("X left the game"), while debug
+        // mode keeps the close reason for forensics.
+        utils::MainLogger::get().debug("Closing player " + cfg_.username + " (" + cfg_.ip + ":" +
+                                       std::to_string(cfg_.port) + "): " + reason);
 
         // Client-crash diagnostics: a clean quit carries the client's own
         // disconnect packet ("client disconnect"), the quit path uses the
@@ -285,11 +288,14 @@ void Player::close(const std::string& reason) {
         } catch (...) {}
 
         // Broadcast the quit message while allowing event cancellation.
+        // The blank line ahead of it visually closes the session block that
+        // opened with the login line.
         try {
             if (srv_ && !cfg_.username.empty()) {
                 auto ev = event::EventManager::get().fire<event::player::PlayerQuitEvent>(
                     this, cfg_.username + " left the game");
                 if (!ev.isCancelled() && !ev.message.empty()) {
+                    utils::MainLogger::get().raw("\n");
                     srv_->broadcastMessage(ev.message);
                 }
             }

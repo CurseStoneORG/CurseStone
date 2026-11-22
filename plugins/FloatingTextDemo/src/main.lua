@@ -503,7 +503,7 @@ function plugin.onEnable()
         usage = "/ft <add|here|list|move|retext|title|body|hide|show|follow|unfollow|viewers|remove|clear|ttl|demo|help>",
         permission = "op",
     }, onCommand)
-    log.info("FloatingTextDemo enabled: /ft add|here|list|move|retext|title|body|hide|show|follow|unfollow|viewers|remove|clear|ttl|demo")
+    print("FloatingTextDemo enabled: /ft add|here|list|move|retext|title|body|hide|show|follow|unfollow|viewers|remove|clear|ttl|demo")
     return true
 end
 

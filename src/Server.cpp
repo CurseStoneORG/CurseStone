@@ -277,6 +277,11 @@ bool Server::loadConfig() {
 
     // Config detail rides DEBUG: the Diagnostic Engine keeps the normal
     // boot console minimal; `settings.debug-mode: true` reveals everything.
+    // The identity line that used to be a boot banner lives here now so the
+    // normal log never repeats what "Starting server in CurseStone vX" said.
+    utils::MainLogger::get().debug(
+        std::string(CURSESTONE_NAME) + " v" + CURSESTONE_API + " — Minecraft PE " +
+        MINECRAFT_VERSION + ", protocol " + std::to_string(PROTOCOL_VERSION));
     utils::MainLogger::get().debug(
         "Debug mode: " + std::string(debug_mode_ ? "enabled" : "disabled") +
         " (settings.debug-mode in cursestone.yml)");
@@ -326,10 +331,9 @@ void Server::initLogger() {
     }
 
     mcp_main_logger_init(log_path.c_str(), /*colored=*/mcp_terminal_has_color());
-    // File-side banner (the console banner is drawn by DiagEngine::banner()).
-    utils::MainLogger::get().info(std::string(CURSESTONE_NAME) + " v" + CURSESTONE_API + " \"" +
-                                  CURSESTONE_CODENAME + "\" — Minecraft PE 0.15.10, protocol " +
-                                  std::to_string(PROTOCOL_VERSION));
+    // The old file-side version banner moved to the debug block in
+    // loadConfig(): the normal log opens with the stage line instead and the
+    // version details ride debug mode.
     utils::MainLogger::get().debug("Log file: " + log_path);
 }
 
@@ -355,14 +359,14 @@ bool Server::openNetwork() {
         d.code = 3001;
         d.severity = DiagSeverity::Fatal;
         d.title = "Network interface failed to bind";
-        d.notes.push_back("address " + ip_ + " port " + std::to_string(port_) + " (UDP)");
+        d.notes.push_back("address " + ip_ + " port " + std::to_string(port_));
         d.help.push_back("Is another server already running on that port?");
         d.help.push_back("Change server-port in server.properties or free the port.");
         DiagEngine::fatal(d);
         network_.reset();
         return false;
     }
-    DiagEngine::stageItem("listening on " + ip_ + ":" + std::to_string(port_) + " (UDP)");
+    DiagEngine::stage("listening on " + ip_ + ":" + std::to_string(port_));
     return true;
 }
 
@@ -417,7 +421,7 @@ bool Server::loadDefaultWorld() {
         return false;
     }
     worlds_.push_back(world_);
-    DiagEngine::stageItem(world_->name() + " loaded!");
+    DiagEngine::stage("\"" + world_->name() + "\" loaded!");
     utils::MainLogger::get().debug("World directory: " + worldDir);
     utils::MainLogger::get().debug("Region directory: " + regionDir);
 
@@ -566,7 +570,7 @@ World* Server::loadWorld(const std::string& name, const std::string& generator, 
     if (!lv)
         return nullptr;
     worlds_.push_back(lv);
-    DiagEngine::stageItem(name + " loaded!");
+    DiagEngine::stage("\"" + name + "\" loaded!");
     utils::MainLogger::get().debug("World '" + name + "' generator=" + lv->config().generator +
                                    " dimension=" + std::to_string(lv->dimension()));
     // Remember the world across restarts — but never the default world, which
@@ -675,7 +679,8 @@ void Server::start(const std::string& dataPath) {
     std::error_code ec;
     std::filesystem::create_directories(dataPath_, ec);
 
-    DiagEngine::stage("Starting server...");
+    DiagEngine::stage(std::string("Starting server in ") + CURSESTONE_NAME + " v" +
+                      CURSESTONE_API + "...");
 
     // Initialize logging before loading configuration.
     initLogger();
@@ -1098,7 +1103,7 @@ void Server::broadcastMessage(const std::string& msg) {
         }
     }
     if (!onlyCodes)
-        utils::MainLogger::get().info("[CHAT] " + msg);
+        utils::MainLogger::get().chat(msg);
 }
 int64_t Server::allocateEid() {
     return next_eid_.fetch_add(1, std::memory_order_relaxed);
@@ -1344,7 +1349,6 @@ void Server::loadOps() {
 
     // Normalize whitespace and names on every line.
     size_t pos = 0;
-    size_t weird = 0;
     while (pos <= content.size()) {
         size_t nl = content.find('\n', pos);
         std::string raw =
@@ -1354,7 +1358,6 @@ void Server::loadOps() {
         if (line.empty())
             continue; // Skip blank or invalid-only lines.
         if (!looksLikeValidOpName(line)) {
-            ++weird;
             // Keep invalid entries but warn that they cannot match login names.
             utils::MainLogger::get().warn("ops.txt entry cannot match any "
                                           "player name (kept anyway): '" +
@@ -1363,18 +1366,10 @@ void Server::loadOps() {
         ops_.insert(std::move(line));
     }
 
-    // Log recognized names to help diagnose operator lookup problems.
-    std::string names;
-    for (const auto& n : ops_) {
-        if (!names.empty())
-            names += ", ";
-        names += n;
-    }
-    utils::MainLogger::get().info(
-        "Loaded " + std::to_string(ops_.size()) + " operator(s) from " + ops_path +
-        (names.empty() ? std::string() : ": " + names) +
-        (weird ? " (" + std::to_string(weird) + " suspicious entry/entries, see warnings above)"
-               : std::string()));
+    // Operator names are private; the count rides DEBUG without the list
+    // (the names stay in ops.txt). Invalid-entry warnings still print above.
+    utils::MainLogger::get().debug("Loaded " + std::to_string(ops_.size()) + " operator(s) from " +
+                                   ops_path);
 }
 
 void Server::saveOps() {

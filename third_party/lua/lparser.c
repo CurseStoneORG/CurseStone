@@ -163,7 +163,7 @@ static void codestring (expdesc *e, TString *s) {
 }
 
 
-static void codename (LexState *ls, expdesc *e) {
+static void parseidentname (LexState *ls, expdesc *e) {
   codestring(e, str_checkname(ls));
 }
 
@@ -814,7 +814,7 @@ static void fieldsel (LexState *ls, expdesc *v) {
   expdesc key;
   luaK_exp2anyregup(fs, v);
   luaX_next(ls);  /* skip the dot or colon */
-  codename(ls, &key);
+  parseidentname(ls, &key);
   luaK_indexed(fs, v, &key);
 }
 
@@ -851,7 +851,7 @@ static void recfield (LexState *ls, ConsControl *cc) {
   expdesc tab, key, val;
   if (ls->t.token == TK_NAME) {
     checklimit(fs, cc->nh, MAX_INT, "items in a constructor");
-    codename(ls, &key);
+    parseidentname(ls, &key);
   }
   else  /* ls->t.token == '[' */
     yindex(ls, &key);
@@ -1121,7 +1121,7 @@ static void suffixedexp (LexState *ls, expdesc *v) {
       case ':': {  /* ':' NAME funcargs */
         expdesc key;
         luaX_next(ls);
-        codename(ls, &key);
+        parseidentname(ls, &key);
         luaK_self(fs, v, &key);
         funcargs(ls, v);
         break;

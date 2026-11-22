@@ -73,7 +73,6 @@ void CrashDump::crash(const std::string& reason, const std::string& trace) {
     if (f) {
         f << "{\n"
           << "  \"version\": \"" << CURSESTONE_API << "\",\n"
-          << "  \"codename\": \"" << CURSESTONE_CODENAME << "\",\n"
           << "  \"minecraft\": \"" << MINECRAFT_VERSION << "\",\n"
           << "  \"protocol\": " << PROTOCOL_VERSION << ",\n"
           << "  \"timestamp_utc\": \"" << utcStamp(now_ms, "%Y-%m-%dT%H:%M:%SZ") << "\",\n"
@@ -92,7 +91,7 @@ void CrashDump::crash(const std::string& reason, const std::string& trace) {
     if (lf) {
         lf << "CurseStone crash dump\n"
            << "====================\n"
-           << "Version:    " << CURSESTONE_API << " \"" << CURSESTONE_CODENAME << "\"\n"
+           << "Version:    " << CURSESTONE_API << "\n"
            << "Minecraft:  " << MINECRAFT_VERSION << " (protocol " << PROTOCOL_VERSION << ")\n"
            << "Time (UTC): " << utcStamp(now_ms, "%Y-%m-%d %H:%M:%S") << "\n"
            << "Reason:     " << reason << "\n"

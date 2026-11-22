@@ -50,6 +50,12 @@ namespace cursestone::plugin {
 // Implementation in LuaBindings.cpp.
 bool apiCompatible(const std::string& pluginApi, bool* exact);
 
+// Builds the console text for a plugin-originated message: prepends the
+// "[Name] " tag once, skipping it when the plugin already wrote it. Shared
+// by log.info/warn/error and the print() binding. Implementation in
+// LuaBindings.cpp.
+std::string pluginLogText(const std::string& pluginName, const std::string& msg);
+
 // registers all the API in the state. the binds add its calls here.
 void registerApi(lua_State* L);
 

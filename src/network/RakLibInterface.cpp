@@ -422,17 +422,20 @@ size_t RakLibInterface::drainEvents() {
 
         switch (event.type) {
         case RakLibEventType::SESSION_OPEN: {
-            utils::MainLogger::get().info("[RakLib] Session opened: " + event.ip + ":" +
-                                          std::to_string(event.port) +
-                                          " (clientId=" + std::to_string(event.clientId) + ")");
+            // Session churn is not admin-visible in the normal log; the
+            // login line ("Player X logged in...") is the user-facing event.
+            // Debug mode keeps the RakLib-level trace.
+            utils::MainLogger::get().debug("[RakLib] Session opened: " + event.ip + ":" +
+                                           std::to_string(event.port) +
+                                           " (clientId=" + std::to_string(event.clientId) + ")");
             if (server_ && server_->getNetwork()) {
                 server_->getNetwork()->onSessionOpen(event.ip, event.port, event.clientId);
             }
             break;
         }
         case RakLibEventType::SESSION_CLOSE: {
-            utils::MainLogger::get().info("[RakLib] Session closed: " + event.ip + ":" +
-                                          std::to_string(event.port) + " (" + event.reason + ")");
+            utils::MainLogger::get().debug("[RakLib] Session closed: " + event.ip + ":" +
+                                           std::to_string(event.port) + " (" + event.reason + ")");
             if (server_ && server_->getNetwork()) {
                 server_->getNetwork()->onSessionClose(event.ip, event.port, event.reason);
             }

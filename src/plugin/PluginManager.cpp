@@ -354,7 +354,10 @@ void PluginManager::loadAll(const std::string& pluginsDir, const std::string& da
             continue;
         }
         takenNames.emplace(toLowerAscii(p->name()), cands[i].path);
-        diagnostics::DiagEngine::stageItem(p->name() + " v" + p->version() + " loaded!");
+        // One line per plugin: name, version and the enabled state. The
+        // "loaded!" wording split load and enable across two lines; the
+        // enable decision is the one that matters to the operator.
+        diagnostics::DiagEngine::stageItem(p->name() + " v" + p->version() + " Enabled!");
         plugins_.push_back(std::move(p));
     }
 }

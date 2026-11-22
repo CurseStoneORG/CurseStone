@@ -30,6 +30,30 @@
 
 namespace cursestone::plugin {
 
+// ---- shared plugin log prefixing ----
+// Prepends "[Name] " UNLESS the message already carries it (plugins that
+// write their own tag would otherwise render "[Coords] [Coords] ...").
+// Comparison is case-insensitive; both sides ASCII-only so locale settings
+// never change the decision.
+static bool iascii_starts_with(const std::string& msg, const std::string& prefix) {
+    if (msg.size() < prefix.size())
+        return false;
+    auto lower = [](char c) {
+        return (char)((c >= 'A' && c <= 'Z') ? c - 'A' + 'a' : c);
+    };
+    for (size_t i = 0; i < prefix.size(); ++i)
+        if (lower(msg[i]) != lower(prefix[i]))
+            return false;
+    return true;
+}
+
+std::string pluginLogText(const std::string& pluginName, const std::string& msg) {
+    const std::string tag = "[" + pluginName + "]";
+    if (pluginName.empty() || iascii_starts_with(msg, tag))
+        return msg;
+    return tag + " " + msg;
+}
+
 // ---- Compatibilidad of versions of API ("X.and.Z") ----
 // Reglas:
 //   - invalid format (not 3 numbers)               -> incompatible.

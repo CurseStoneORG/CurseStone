@@ -384,6 +384,30 @@ int LuaPlugin::import(lua_State* L) {
     return loadModule(L, found, "import");
 }
 
+// print() binding — Lua's stock print writes straight to C stdout, which
+// bypassed the logger entirely (no timestamp, no level tag, nothing in
+// server.log). Plugin prints are diagnostic output: they ride DEBUG
+// (settings.debug-mode reveals them) and carry the "[Name] " tag once via
+// pluginLogText, so verbose boot prints like command listings leave the
+// normal console without changing any plugin code.
+static int l_plugin_print(lua_State* L) {
+    LuaPlugin* pl = LuaPlugin::from(L);
+    std::string msg;
+    const int n = lua_gettop(L);
+    for (int i = 1; i <= n; ++i) {
+        if (i > 1)
+            msg += '\t';
+        size_t len = 0;
+        const char* s = luaL_tolstring(L, i, &len); // pushes the tostring result
+        if (s)
+            msg.append(s, len);
+        lua_pop(L, 1); // drop the pushed string, keep the original argument
+    }
+    utils::MainLogger::get().debug(
+        pluginLogText(pl ? pl->name() : std::string(), msg));
+    return 0;
+}
+
 // Plugin lifecycle, protected calls, and scheduled tasks.
 bool LuaPlugin::load() {
     // Create a new Lua state.
@@ -414,6 +438,11 @@ bool LuaPlugin::load() {
     lua_setglobal(L_, "loadfile");
     lua_pushnil(L_);
     lua_setglobal(L_, "load");
+
+    // print() goes through the logger (DEBUG level), not raw stdout — see
+    // l_plugin_print above.
+    lua_pushcfunction(L_, l_plugin_print);
+    lua_setglobal(L_, "print");
 
     // Store this instance in the Lua registry for binding access.
     lua_pushlightuserdata(L_, this);

@@ -95,19 +95,15 @@ struct Diagnostic {
 
 class DiagEngine {
   public:
-    // Identity banner, printed once from main() before the logger exists:
-    //   CurseStone v1.0.3 "Obsidian"
-    //   Minecraft PE 0.15.10 | Protocol 84
-    static void banner();
-
     // ---- startup stages ----
     static void stage(const std::string& text);      // "Loading worlds..."
-    static void stageItem(const std::string& text);  // "+ ExampleWorld loaded!"
+    static void stageItem(const std::string& text);  // "+ server.properties loaded!"
     static void stageDone(const std::string& text);  // "Worlds loaded!"
 
-    // Boot epilogue: "Server ready! (41.20ms)" and, when recoverable issues
-    // were emitted during startup, the summary line. The elapsed time carries
-    // decimals (millisecond resolution, two fractional digits).
+    // Boot epilogue: "Server ready in 0.219s!" and, when recoverable issues
+    // were emitted during startup, the summary line. Then one blank line
+    // separates the boot block from runtime events. The elapsed time is
+    // seconds with three decimals.
     static void ready(double boot_ms);
 
     // ---- diagnostics ----
