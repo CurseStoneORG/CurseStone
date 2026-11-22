@@ -23,6 +23,8 @@ import tempfile
 import time
 
 LINE = re.compile(r"Spawn area pregenerated: (\d+) chunks in (\d+) ms")
+SCALING = re.compile(r"\[Perf\] pregen scaling: (.*)")
+LOCKS = re.compile(r"\[Perf\] pregen locks: (.*)")
 
 
 def boot_and_measure(binary, radius, workers, port, cap=90.0):
@@ -50,12 +52,25 @@ def boot_and_measure(binary, radius, workers, port, cap=90.0):
                             stderr=subprocess.DEVNULL)
     start = time.time()
     result = None
+    scaling = ""
+    locks = ""
     try:
         while time.time() - start < cap:
             try:
                 with open(log) as f:
-                    m = LINE.search(f.read())
+                    text = f.read()
+                m = LINE.search(text)
                 if m:
+                    # The completion report prints the scaling and lock
+                    # lines right after the headline; give them a beat to
+                    # land before snapshotting the log.
+                    time.sleep(0.5)
+                    with open(log) as f:
+                        text = f.read()
+                    ms_ = SCALING.search(text)
+                    ml_ = LOCKS.search(text)
+                    scaling = ms_.group(1).strip() if ms_ else ""
+                    locks = ml_.group(1).strip() if ml_ else ""
                     result = (int(m.group(1)), int(m.group(2)))
                     break
             except FileNotFoundError:
@@ -74,7 +89,7 @@ def boot_and_measure(binary, radius, workers, port, cap=90.0):
     if not result:
         return None
     chunks, ms = result
-    return chunks, ms, chunks * 1000.0 / ms
+    return chunks, ms, chunks * 1000.0 / ms, scaling, locks
 
 
 def main() -> int:
@@ -99,11 +114,15 @@ def main() -> int:
         if not r:
             print(f"FAIL: pre-generation line never appeared (run {i + 1})")
             return 1
-        chunks, ms, cps = r
+        chunks, ms, cps, scaling, locks = r
         samples.append(cps)
         print(f"  run {i + 1}: {chunks} chunks in {ms} ms "
               f"= {cps:.0f} chunks/sec (radius {args.radius}, "
               f"workers {args.workers})")
+        if scaling:
+            print(f"    {scaling}")
+        if locks:
+            print(f"    {locks}")
 
     best = max(samples)
     print(f"  best: {best:.0f} chunks/sec")
