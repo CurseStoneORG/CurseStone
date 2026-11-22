@@ -23,6 +23,7 @@
 #include "Player.h"
 #include "world/World.h"
 #include "world/format/Chunk.h"
+#include "world/performance/GenerationProfiler.h"
 #include "scheduler/AsyncPool.h"
 #include "network/protocol/FullChunkDataPacket.h"
 #include "network/protocol/UpdateBlockPacket.h"
@@ -402,7 +403,11 @@ void Player::submitChunkEncode(mcp_chunk_t* ch, int32_t cx, int32_t cz) {
     // ~10 KB each — see Chunk.h). The tick thread is the only writer of
     // resident chunk data, so this copy is the immutable view the worker
     // encodes; the worker never reads the live chunk.
-    mcp_chunk_wire_snapshot_t* snap = mcp_chunk_wire_snapshot_create(ch);
+    mcp_chunk_wire_snapshot_t* snap;
+    {
+        performance::ScopedStage snapTimer(performance::Stage::Snapshot);
+        snap = mcp_chunk_wire_snapshot_create(ch);
+    }
     if (!snap)
         return; // OOM — the chunk stays unsent and is retried next tick.
 
@@ -445,6 +450,7 @@ void Player::submitChunkEncode(mcp_chunk_t* ch, int32_t cx, int32_t cz) {
     // generation tasks — without the fast lane the first chunk of the new
     // view waits for the whole burst even though its terrain is ready.
     if (pool && pool->submit([complete, snap]() {
+            performance::ScopedStage encodeTimer(performance::Stage::Encode);
             size_t len = 0;
             uint8_t* buf = mcp_chunk_snapshot_network_serialize(snap, &len);
             complete(buf, len, snap);

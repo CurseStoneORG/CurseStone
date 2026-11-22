@@ -80,6 +80,62 @@ void StructureFeature::addFeature(LevelChunk& lc, Dimension& generator, Random& 
 	}
 }
 
+        // PURE dependency discovery for the populate gate: replays
+        // addFeature's exact per-cell RNG shape over the feature radius,
+        // memoizes verdicts (shared with addFeature, so the populate-time
+        // pass re-hits them) and, for a true cell, builds a THROWAWAY
+        // start to read its bounding box — without touching
+        // cachedStructures. Which chunks share a start must not depend on
+        // whether some neighbour already created it: discovery through the
+        // shared map is timing-dependent and left a chunk's dependency set
+        // incomplete when a start was created between two prepares (caught
+        // as digest mismatches by the radius-4 matrix). The gate waits for
+        // the lower-ranked chunks in the result so the windows of one
+        // structure always run in the reference chunk order — pieces
+        // mutate during postProcess, and the vanilla order is the only
+        // order that reproduces vanilla block output.
+void StructureFeature::probeWindowDeps(Dimension& dimension, int chunkX, int chunkZ,
+                             std::vector<std::pair<int32_t, int32_t>>& out) {
+                // Re-seeded immediately from the dimension, exactly like
+                // apply(), so the incoming seed value is irrelevant.
+                Random random((RandomSeed)0);
+                random.setSeed(dimension.getBiomes().getSeed());
+                int xScale = random.nextInt() / 2 * 2 + 1;
+                int zScale = random.nextInt() / 2 * 2 + 1;
+                for (int x = chunkX - radius; x <= chunkX + radius; ++x) {
+                        for (int z = chunkZ - radius; z <= chunkZ + radius; ++z) {
+                                random.setSeed((x * xScale + z * zScale) ^ dimension.getBiomes().getSeed());
+                                // addFeature clears one draw before the verdict.
+                                random.nextInt();
+                                const int64_t cellKey = ((int64_t)(uint32_t)x << 32) | (uint32_t)z;
+                                {
+                                        std::lock_guard<std::mutex> l(cellMemoMutex);
+                                        auto it = cellMemo.find(cellKey);
+                                        if (it != cellMemo.end() && it->second == 0)
+                                                continue;
+                                }
+                                if (!isFeatureChunk(&dimension.getBiomes(), random, ChunkPos(x, z))) {
+                                        std::lock_guard<std::mutex> l(cellMemoMutex);
+                                        cellMemo.emplace(cellKey, 0);
+                                        continue;
+                                }
+                                {
+                                        std::lock_guard<std::mutex> l(cellMemoMutex);
+                                        cellMemo[cellKey] = 1;
+                                }
+                                Unique<StructureStart> start =
+                                    createStructureStart(dimension, random, ChunkPos(x, z));
+                                const BoundingBox& bb = start->getBoundingBox();
+                                // Arithmetic shift floors negative coords correctly.
+                                const int x0 = bb.x0 >> 4, x1 = bb.x1 >> 4;
+                                const int z0 = bb.z0 >> 4, z1 = bb.z1 >> 4;
+                                for (int cx2 = x0; cx2 <= x1; ++cx2)
+                                        for (int cz2 = z0; cz2 <= z1; ++cz2)
+                                                out.push_back({cx2, cz2});
+                        }
+                }
+        }
+
 bool StructureFeature::postProcess(BlockSource* level, Random& random, int chunkX, int chunkZ) {
 
 	LockGuard l(cacheMutex);
@@ -91,10 +147,34 @@ bool StructureFeature::postProcess(BlockSource* level, Random& random, int chunk
 
 	bool intersection = false;
 
-	for (auto& pair : cachedStructures) {
-		Unique<StructureStart>& start = pair.second;
+	// Deterministic across-starts order. The map's iteration order follows
+	// its insertion history, which concurrent start creation scrambles;
+	// sorting the intersecting starts by source cell keeps the random-call
+	// order content-defined (cell order == the sequential scan order).
+	std::vector<StructureStart*> ordered;
+	{
+		std::vector<std::pair<int64_t, StructureStart*>> keyed;
+		for (auto& pair : cachedStructures) {
+			Unique<StructureStart>& start = pair.second;
+			if (!start->isValid())
+				continue;
+			if (!start->getBoundingBox().intersects(cx, cz, cx + 16, cz + 16))
+				continue;
+			const ChunkPos& cp = pair.first;
+			keyed.push_back({((int64_t)(uint32_t)cp.x << 32) | (uint32_t)cp.z,
+			                 start.get()});
+		}
+		std::sort(keyed.begin(), keyed.end(),
+		          [](const std::pair<int64_t, StructureStart*>& a,
+		             const std::pair<int64_t, StructureStart*>& b) {
+		              return a.first < b.first;
+		          });
+		ordered.reserve(keyed.size());
+		for (auto& k : keyed)
+			ordered.push_back(k.second);
+	}
+	for (StructureStart* start : ordered) {
 		if (start->isValid()) {
-			//if (start->getBoundingBox().intersects(cx - 16, cz - 16, cx + 32, cz + 32))
 			if (start->getBoundingBox().intersects(cx, cz, cx + 16, cz + 16)) {
 
 				//for (int cxo = chunkX - 1; cxo <= chunkX + 1; cxo++)

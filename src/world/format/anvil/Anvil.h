@@ -112,6 +112,11 @@ class Anvil : public WorldProvider {
     // that's the whole point of the background writer.
     void flushPendingSaves() override;
 
+    // Free capacity of the background save queue right now (see
+    // WorldProvider::saveQueueRoom). The budgeted drain and the eviction
+    // path pace themselves with this and never block the tick thread.
+    size_t saveQueueRoom() const override;
+
     // ----- Anvil-specific surface
 
     // Path to the .mca region file for chunk (cx, cz):
@@ -176,7 +181,9 @@ class Anvil : public WorldProvider {
     void enqueueSave(SaveJob&& job);
 
     std::thread worker_;
-    std::mutex job_mtx_;
+    // mutable: saveQueueRoom() is a const interface method that peeks at
+    // the queue depth.
+    mutable std::mutex job_mtx_;
     std::condition_variable job_cv_;  // wakes the worker
     std::condition_variable done_cv_; // wakes flushPendingSaves()
     std::deque<SaveJob> job_queue_;

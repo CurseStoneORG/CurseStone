@@ -22,7 +22,7 @@
 #include "world/ChunkManager.h"
 #include "world/format/ChunkAdapter.h"
 #include "world/format/anvil/Anvil.h"
-#include "world/generator/Normal.h"
+#include "world/generator/vgen/VgenSource.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -39,7 +39,7 @@ int main() {
     const int SIDE = 3;                 // 9 chunks: se generan de verdad (lento)
     const size_t PER_CALL = 4;
     const std::string dir = "/tmp/autosave_check_world";
-    if (system(("rm -rf " + dir).c_str()) != 0) { /* best effort */ }
+    if (system(("rm -rf " + dir + " && mkdir -p " + dir).c_str()) != 0) { /* best effort */ }
 
     auto provider = std::make_shared<cursestone::world::format::anvil::Anvil>();
     provider->init(dir);
@@ -47,7 +47,7 @@ int main() {
 
     cursestone::world::ChunkManager cm;
     cm.setProvider(provider);
-    cm.setGenerator(std::make_shared<cursestone::world::generator::Normal>(1337));
+    cm.setGenerator(std::make_shared<cursestone::world::generator::VgenSource>(1337));
 
     // Generacion real: cada chunk generado queda dirty (asi es como se
     // llena la cola del autosave en un servidor en marcha).

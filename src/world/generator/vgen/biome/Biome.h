@@ -211,7 +211,10 @@ protected:
 
 public:
 
-	const Unique<BiomeDecorator> decorator;
+	Unique<BiomeDecorator> decorator;
+	// Per-thread decorator view while a decorate() wrapper is on this
+	// thread's stack (see decorateImpl); null = the shared singleton.
+	inline static thread_local BiomeDecorator* decoView = nullptr;
 
 	Biome& setOddColor(int color);
 	Biome& setTemperatureAndDownfall(float temperature, float downfall);
@@ -277,9 +280,30 @@ public:
 	float getDownfall() const;
 
 	virtual FullBlock getRandomFlowerTypeAndData(Random& random, const BlockPos& pos);
-	virtual void decorate(BlockSource* source, Random& random, const BlockPos& origin, bool legacy, float worldLimit);
+	// Non-virtual entry: installs this thread's per-biome decorator state
+	// (see decorateImpl) for the duration of the call, so two workers
+	// populating chunks of the same biome never race the decorator's
+	// per-chunk counts.
+	void decorate(BlockSource* source, Random& random, const BlockPos& origin, bool legacy, float worldLimit);
+	virtual void decorateImpl(BlockSource* source, Random& random, const BlockPos& origin, bool legacy, float worldLimit);
+	// The decorator view the per-chunk overrides must write: the
+	// thread-local clone while a decorate() is on this thread's stack,
+	// the shared singleton otherwise (constructors, init paths).
+	BiomeDecorator* deco() { return decoView ? decoView : decorator.get(); }
 	virtual void buildSurfaceAt(Random& random, BlockVolume& blocks, const BlockPos& pos, float depthValue, Height seaLevel);
-	void buildSurfaceAtDefault(Random& random, BlockVolume& blocks, const BlockPos& pos, float depthValue, Height seaLevel);
+	struct SurfaceMats {
+		uint8_t top = 0;
+		uint8_t topData = 0;
+		uint8_t material = 0;
+	};
+	// The per-column surface materials ride as parameters: the biome
+	// decorate/buildSurfaceAt overrides used to retune the SHARED biome
+	// singleton's mTopMaterial/mMaterial per column, and two workers
+	// building terrain of the same biome raced on them (ExtremeHills
+	// gravel/stone/grass — the loser read the winner's materials and the
+	// terrain changed run to run). The members keep their constructor-set
+	// defaults and are only read here.
+	void buildSurfaceAtDefault(Random& random, BlockVolume& blocks, const BlockPos& pos, float depthValue, Height seaLevel, SurfaceMats mats);
 	virtual int getGrassColor(const BlockPos& pos);
 	virtual int getMapGrassColor(const BlockPos& pos);
 	static void refreshBiomes(RandomSeed levelSeed);

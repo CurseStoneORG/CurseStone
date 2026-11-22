@@ -114,6 +114,15 @@ class LevelDB : public WorldProvider {
     // engine (and the engine's memtable reached disk). Save-all / shutdown.
     void flushPendingSaves() override;
 
+    // Free capacity of the background save queue right now (see
+    // WorldProvider::saveQueueRoom). The budgeted drain and the eviction
+    // path pace themselves with this and never block the tick thread on
+    // a full queue.
+    size_t saveQueueRoom() const override {
+        std::lock_guard<std::mutex> lk(job_mtx_);
+        return kMaxQueuedSaves > job_queue_.size() ? kMaxQueuedSaves - job_queue_.size() : 0;
+    }
+
     // Path to the database directory this provider maintains.
     const std::string& dbPath() const {
         return db_path_;
@@ -166,12 +175,25 @@ class LevelDB : public WorldProvider {
     generator::Generator* generator_ = nullptr;
 
     std::thread worker_;
-    std::mutex job_mtx_;
+    // mutable: saveQueueRoom() is a const interface method that peeks at
+    // the queue depth.
+    mutable std::mutex job_mtx_;
     std::condition_variable job_cv_;
     std::condition_variable done_cv_;
     std::deque<SaveJob> job_queue_;
     bool job_busy_ = false;
     bool worker_stop_ = false;
+    // RAM the queue currently holds (snapshot + tile/entity blob bytes,
+    // maintained under job_mtx_ on push/pop). /status reads the gauge
+    // through SaveProfiler; the ceiling below bounds this to ~45 MB.
+    size_t queued_bytes_ = 0;
+    static size_t job_bytes(const SaveJob& j) {
+        size_t b = j.tiles.size() + j.entities.size();
+        // mcp_chunk_wire_snapshot_t worst case: 8 sections of
+        // (4096 blocks + 2048 data + 2048 sky + 2048 light) + biomes
+        // (256) + heightmap (256 x int32) + header fields.
+        return b + 8u * (4096u + 2048u * 3u) + 256u + 256u * 4u + 64u;
+    }
     // ~83 KB per snapshot; 512 in flight is a ~45 MB ceiling, never hit in
     // practice — the cap only guards a wedged disk.
     static constexpr size_t kMaxQueuedSaves = 512;

@@ -31,9 +31,13 @@
 #include <cstring>
 
 #include "../../../utils/PlatformCompat.h"
+#include "../../../world/performance/SaveProfiler.h"
 
 #if !defined(_WIN32)
 #include <sys/file.h> // ::flock and the LOCK_* verbs for the whole-file lock
+#include <sys/mman.h> // read-only file mapping for the table cache
+#include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>   // ::close, ::fsync, ::fileno
 #endif
 
@@ -224,6 +228,149 @@ bool DBEngine::write_file_bytes(const std::string& path, const uint8_t* data,
 }
 
 // ---------------------------------------------------------------------------
+// Cached read-only table views. Point lookups used to read EVERY candidate
+// table file in full (under the engine mutex!) for a single record: after
+// a compaction merged the whole db into one table, every chunk load read
+// the entire file — measured 12-16 ms per chunk load on a 2500-chunk
+// world, with the mutex held so loads serialized behind flushes and
+// compactions. The cache maps each live table once (POSIX mmap; heap copy
+// elsewhere) and point lookups run lock-free against the immutable view.
+// ---------------------------------------------------------------------------
+
+#if defined(_WIN32)
+// Windows keeps the (correct, if more RSS-hungry) read-once heap cache:
+// the file bytes are immutable either way and the reader is parsed once.
+static bool db_load_table_view(const std::string& path, OpenTable* out) {
+    FILE* fp = std::fopen(path.c_str(), "rb");
+    if (!fp)
+        return false;
+    std::fseek(fp, 0, SEEK_END);
+    long sz = std::ftell(fp);
+    std::fseek(fp, 0, SEEK_SET);
+    if (sz < 0) {
+        std::fclose(fp);
+        return false;
+    }
+    out->heap.resize((size_t)sz);
+    bool ok = (sz == 0) ||
+              (std::fread(out->heap.data(), 1, out->heap.size(), fp) == out->heap.size());
+    std::fclose(fp);
+    if (!ok)
+        return false;
+    out->image = out->heap.data();
+    out->size = out->heap.size();
+    out->mapped = false;
+    return true;
+}
+
+static void db_unload_table_view(OpenTable* out) {
+    out->heap.clear();
+    out->heap.shrink_to_fit();
+    out->image = nullptr;
+    out->size = 0;
+}
+#else
+static bool db_load_table_view(const std::string& path, OpenTable* out) {
+    const int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
+    if (fd < 0)
+        return false;
+    struct stat st{};
+    if (::fstat(fd, &st) != 0 || st.st_size < 0) {
+        ::close(fd);
+        return false;
+    }
+    const size_t len = (size_t)st.st_size;
+    if (len == 0) {
+        ::close(fd);
+        return false; // an empty file is not a table
+    }
+    void* view = ::mmap(nullptr, len, PROT_READ, MAP_PRIVATE, fd, 0);
+    ::close(fd);
+    if (view == MAP_FAILED)
+        return false;
+    ::madvise(view, len, MADV_RANDOM);
+    out->image = (const uint8_t*)view;
+    out->size = len;
+    out->mapped = true;
+    return true;
+}
+
+static void db_unload_table_view(OpenTable* out) {
+    if (out->mapped && out->image)
+        ::munmap((void*)out->image, out->size);
+    out->image = nullptr;
+    out->size = 0;
+    out->mapped = false;
+}
+#endif
+
+std::shared_ptr<const OpenTable> DBEngine::get_table(uint64_t number) const {
+    // 1) Cache hit: brief mtx_ take, hand out the shared view.
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        auto it = open_tables_.find(number);
+        if (it != open_tables_.end())
+            return it->second;
+    }
+    // 2) Miss: map/read + parse OUTSIDE mtx_ — the load must never block
+    //    writes, and writes must never wait for it.
+    auto view = std::make_shared<OpenTable>();
+    view->number = number;
+    if (!db_load_table_view(table_path(number), view.get()))
+        return nullptr;
+    if (!view->reader.open(view->image, view->size)) {
+        db_unload_table_view(view.get());
+        return nullptr;
+    }
+    // 3) Publish (or adopt a concurrent loader's view). The file may have
+    //    been compacted away in the meantime: the candidate check that led
+    //    here happened earlier, so serve from the cache even then — the
+    //    immutable bytes stay valid and any newer data lives in newer
+    //    tables or the memtable.
+    std::lock_guard<std::mutex> lk(mtx_);
+    auto it = open_tables_.find(number);
+    if (it != open_tables_.end())
+        return it->second;
+    open_tables_bytes_ += view->size;
+    auto [inserted, _] = open_tables_.emplace(number, std::move(view));
+    (void)_;
+    prune_table_cache_locked();
+    return inserted->second;
+}
+
+void DBEngine::prune_table_cache_locked() const {
+    // Drop views of tables that no longer belong to the live file set and
+    // enforce the byte cap (FIFO over the ordered map; entries still
+    // referenced by an in-flight reader stay alive via shared_ptr).
+    std::vector<uint64_t> stale;
+    for (const auto& [number, view] : open_tables_) {
+        bool live = false;
+        for (const FileMeta& f : files_) {
+            if (f.number == number) {
+                live = true;
+                break;
+            }
+        }
+        if (!live)
+            stale.push_back(number);
+    }
+    for (uint64_t number : stale) {
+        auto it = open_tables_.find(number);
+        open_tables_bytes_ -= it->second->size;
+        db_unload_table_view(const_cast<OpenTable*>(it->second.get()));
+        open_tables_.erase(it);
+    }
+    while (open_tables_bytes_ > kTableCacheMaxBytes && !open_tables_.empty()) {
+        auto it = open_tables_.begin(); // oldest first
+        if (it->second.use_count() > 1)
+            break; // in flight: try again after the current readers finish
+        open_tables_bytes_ -= it->second->size;
+        db_unload_table_view(const_cast<OpenTable*>(it->second.get()));
+        open_tables_.erase(it);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Manifest — rewritten in full on every change, CURRENT swapped atomically.
 // A manifest is small (one record per live table), so a full rewrite per
 // change costs nothing and removes the torn-append failure mode entirely.
@@ -277,6 +424,7 @@ bool DBEngine::write_manifest_locked(std::string* err) {
 // ---------------------------------------------------------------------------
 
 bool DBEngine::open(const std::string& db_dir, std::string* err) {
+    ++files_generation_; // any open-time file set counts as generation 1+
     std::lock_guard<std::mutex> lk(mtx_);
     if (opened_)
         return true;
@@ -554,6 +702,7 @@ bool DBEngine::put_batch(
         std::fflush(log_file_) != 0)
         return false;
     wal_bytes_ += framed.size();
+    performance::SaveProfiler::noteWalBytes(framed.size());
 
     for (const auto& [key, value] : ops) {
         uint8_t type = value.has_value() ? db::kTypeValue : db::kTypeDeletion;
@@ -575,76 +724,104 @@ bool DBEngine::put_batch(
 }
 
 std::optional<std::string> DBEngine::get(const std::string& user_key) const {
-    std::lock_guard<std::mutex> lk(mtx_);
-    if (!opened_)
-        return std::nullopt;
-
-    // 1) Memtable (newest data).
     std::string target =
         db::make_internal_key(user_key, db::kMaxSequenceNumber, db::kTypeValue);
-    auto it = memtable_.lower_bound(target);
-    if (it != memtable_.end() && db::user_key_of(it->first) == user_key) {
-        if (db::type_of(it->first) == db::kTypeValue)
-            return it->second;
-        return std::nullopt; // newest version is a tombstone
+    // A flush or compaction may relocate data between the candidate
+    // snapshot and the table lookups. The loop retries with a fresh
+    // snapshot when the file-set generation moved; a read that returns a
+    // pre-write value is legitimate snapshot semantics, a read that
+    // misses a committed key is not.
+    for (int attempt = 0; attempt < 4; ++attempt) {
+        uint64_t gen = 0;
+        std::optional<std::string> out;
+        bool retry = false;
+        if (!get_once(user_key, target, &gen, &out, &retry))
+            return std::nullopt;
+        if (!retry)
+            return out;
+    }
+    return std::nullopt;
+}
+
+// One get() attempt. Returns false on engine-closed; *retry is set when
+// the file set changed mid-lookup and the caller should re-snapshot.
+bool DBEngine::get_once(const std::string& user_key, const std::string& target,
+                        uint64_t* gen, std::optional<std::string>* out,
+                        bool* retry) const {
+    // 1) Memtable (newest data) — in-memory, under mtx_.
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        if (!opened_)
+            return false;
+        *gen = files_generation_;
+        auto it = memtable_.lower_bound(target);
+        if (it != memtable_.end() && db::user_key_of(it->first) == user_key) {
+            if (db::type_of(it->first) == db::kTypeValue)
+                *out = it->second;
+            return true; // newest version is a tombstone -> miss
+        }
     }
 
     // 2) Tables: level 0 by descending file number (newest wins), then
-    //    levels 1..7 ascending — the LSM lookup order.
-    std::vector<const FileMeta*> level0;
-    for (const FileMeta& f : files_) {
-        if (f.level == 0)
-            level0.push_back(&f);
-    }
-    std::sort(level0.begin(), level0.end(),
-              [](const FileMeta* a, const FileMeta* b) { return a->number > b->number; });
-
-    db::TableEntry entry;
-    for (const FileMeta* f : level0) {
-        std::vector<uint8_t> image;
-        if (!read_file_bytes(table_path(f->number), &image))
-            continue;
-        db::TableReader reader;
-        if (!reader.open(image.data(), image.size()))
-            continue;
-        if (reader.get(target, &entry))
-            return (db::type_of(entry.key) == db::kTypeValue)
-                       ? std::optional<std::string>(entry.value)
-                       : std::nullopt;
-    }
-    for (int level = 1; level < 8; ++level) {
+    //    levels 1..7 ascending — the LSM lookup order. Candidates are
+    //    range-rejected on the USER key (level 0 included now: without it
+    //    every lookup paid a full read of every level-0 file) and the
+    //    point lookups themselves run on cached immutable views with the
+    //    engine mutex RELEASED — a slow disk or a compaction in progress
+    //    no longer stalls other loads or the save worker.
+    std::vector<uint64_t> candidates;
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        std::vector<uint64_t> level0;
         for (const FileMeta& f : files_) {
-            if (f.level != level)
+            if (f.level != 0)
                 continue;
-            // Range reject on USER keys only: the internal-key comparator
-            // orders same-user keys newest-first, so seq-carrying bounds
-            // must never be compared against a seek key here.
             const std::string fmin = db::user_key_of(f.smallest);
             const std::string fmax = db::user_key_of(f.largest);
             if (user_key < fmin || fmax < user_key)
                 continue;
-            std::vector<uint8_t> image;
-            if (!read_file_bytes(table_path(f.number), &image))
-                continue;
-            db::TableReader reader;
-            if (!reader.open(image.data(), image.size()))
-                continue;
-            if (reader.get(target, &entry))
-                return (db::type_of(entry.key) == db::kTypeValue)
-                           ? std::optional<std::string>(entry.value)
-                           : std::nullopt;
+            level0.push_back(f.number);
+        }
+        std::sort(level0.begin(), level0.end(), std::greater<uint64_t>());
+        candidates = std::move(level0);
+        for (int level = 1; level < 8; ++level) {
+            for (const FileMeta& f : files_) {
+                if (f.level != level)
+                    continue;
+                const std::string fmin = db::user_key_of(f.smallest);
+                const std::string fmax = db::user_key_of(f.largest);
+                if (user_key < fmin || fmax < user_key)
+                    continue;
+                candidates.push_back(f.number);
+            }
         }
     }
-    return std::nullopt;
+
+    db::TableEntry entry;
+    for (uint64_t number : candidates) {
+        std::shared_ptr<const OpenTable> t = get_table(number);
+        if (!t)
+            continue;
+        if (t->reader.get(target, &entry)) {
+            if (db::type_of(entry.key) == db::kTypeValue)
+                *out = entry.value;
+            return true;
+        }
+    }
+    // No hit: a miss is only trustworthy if the file set did not move.
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        if (opened_ && files_generation_ != *gen) {
+            *retry = true;
+            return true;
+        }
+    }
+    return true;
 }
 
 void DBEngine::scan(
     const std::string& prefix,
     const std::function<void(const std::string&, const std::string&)>& sink) const {
-    std::lock_guard<std::mutex> lk(mtx_);
-    if (!opened_)
-        return;
-
     // Merge every source newest-first: memtable, then level-0 by file
     // number descending, then higher levels. For a given user key the
     // first source that carries it wins; tombstones silence it. Sequences
@@ -657,40 +834,44 @@ void DBEngine::scan(
         uint8_t type;
     };
     std::vector<Row> rows;
-    for (const auto& [key, value] : memtable_) {
-        std::string user = db::user_key_of(key);
-        if (user.compare(0, prefix.size(), prefix) == 0)
-            rows.push_back({std::move(user), value, db::type_of(key)});
+    std::vector<uint64_t> table_order;
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        if (!opened_)
+            return;
+        for (const auto& [key, value] : memtable_) {
+            std::string user = db::user_key_of(key);
+            if (user.compare(0, prefix.size(), prefix) == 0)
+                rows.push_back({std::move(user), value, db::type_of(key)});
+        }
+        std::vector<uint64_t> level0;
+        for (const FileMeta& f : files_) {
+            if (f.level == 0)
+                level0.push_back(f.number);
+        }
+        std::sort(level0.begin(), level0.end(), std::greater<uint64_t>());
+        table_order = std::move(level0);
+        for (const FileMeta& f : files_) {
+            if (f.level != 0)
+                table_order.push_back(f.number);
+        }
     }
-    auto read_table_rows = [&](const FileMeta& f) {
-        std::vector<uint8_t> image;
-        if (!read_file_bytes(table_path(f.number), &image))
-            return;
-        db::TableReader reader;
-        if (!reader.open(image.data(), image.size()))
-            return;
+
+    // Table reads run on cached immutable views with the mutex RELEASED
+    // (scan is the /status chunk-listing path; it used to read every
+    // table under mtx_).
+    for (uint64_t number : table_order) {
+        std::shared_ptr<const OpenTable> t = get_table(number);
+        if (!t)
+            continue;
         std::vector<TableEntry> entries;
-        reader.scan(&entries);
+        t->reader.scan(&entries);
         for (TableEntry& e : entries) {
             std::string user = db::user_key_of(e.key);
             if (user.compare(0, prefix.size(), prefix) == 0)
                 rows.push_back({std::move(user), std::move(e.value),
                                 db::type_of(e.key)});
         }
-        (void)f.level;
-    };
-    std::vector<const FileMeta*> level0;
-    for (const FileMeta& f : files_) {
-        if (f.level == 0)
-            level0.push_back(&f);
-    }
-    std::sort(level0.begin(), level0.end(),
-              [](const FileMeta* a, const FileMeta* b) { return a->number > b->number; });
-    for (const FileMeta* f : level0)
-        read_table_rows(*f);
-    for (const FileMeta& f : files_) {
-        if (f.level != 0)
-            read_table_rows(f);
     }
 
     // Order: user key ascending, then newest first. The first row of each
@@ -724,6 +905,12 @@ bool DBEngine::flush_locked(std::string* err) {
     if (memtable_.empty()) {
         return true;
     }
+    // The whole memtable -> table transition (SSTable build + write +
+    // fsync + WAL rotation + manifest rewrite) is timed as EngineFlush.
+    // This runs on the save worker inside a put_batch when the memtable
+    // crosses its threshold, and from flush() at full-save points.
+    performance::SaveProfiler::Scope flush_probe(performance::SaveStage::EngineFlush);
+    performance::SaveProfiler::noteFlush();
     // Snapshot the memtable into table entries.
     std::vector<TableEntry> entries;
     entries.reserve(memtable_.size());
@@ -745,6 +932,7 @@ bool DBEngine::flush_locked(std::string* err) {
             *err = "failed writing table " + table_path(number);
         return false;
     }
+    performance::SaveProfiler::noteTableBytes(image.size());
 
     FileMeta meta;
     meta.level = 0;
@@ -753,6 +941,7 @@ bool DBEngine::flush_locked(std::string* err) {
     meta.smallest = entries.front().key;
     meta.largest = entries.back().key;
     files_.push_back(std::move(meta));
+    ++files_generation_;
 
     // Rotate the WAL: everything before this point is durable in the table.
     memtable_.clear();
@@ -789,9 +978,16 @@ bool DBEngine::flush_locked(std::string* err) {
 bool DBEngine::compact_locked(std::string* err) {
     if (files_.empty())
         return true;
+    // Full merge: read every table, dedupe, write the merged one. This is
+    // the O(entire-database) I/O burst the engine runs inline once level-0
+    // piles up — timed as EngineCompact so a slow-disk save window can be
+    // attributed precisely instead of hiding inside WorkerPut.
+    performance::SaveProfiler::Scope compact_probe(performance::SaveStage::EngineCompact);
+    performance::SaveProfiler::noteCompact();
     // Read every table, newest source first, and keep only the newest
     // version of each user key (no snapshots exist → older versions and
     // tombstones can drop entirely).
+    uint64_t compact_read_bytes = 0;
     std::vector<const FileMeta*> level0;
     for (const FileMeta& f : files_) {
         if (f.level == 0)
@@ -810,6 +1006,7 @@ bool DBEngine::compact_locked(std::string* err) {
         std::vector<uint8_t> image;
         if (!read_file_bytes(table_path(f->number), &image))
             continue;
+        compact_read_bytes += image.size();
         db::TableReader reader;
         if (!reader.open(image.data(), image.size()))
             continue;
@@ -826,6 +1023,7 @@ bool DBEngine::compact_locked(std::string* err) {
         std::vector<uint8_t> image;
         if (!read_file_bytes(table_path(f.number), &image))
             continue;
+        compact_read_bytes += image.size();
         db::TableReader reader;
         if (!reader.open(image.data(), image.size()))
             continue;
@@ -864,6 +1062,8 @@ bool DBEngine::compact_locked(std::string* err) {
         for (const FileMeta& f : files_)
             std::remove(table_path(f.number).c_str());
         files_.clear();
+        ++files_generation_;
+        prune_table_cache_locked();
         return write_manifest_locked(err);
     }
 
@@ -882,6 +1082,8 @@ bool DBEngine::compact_locked(std::string* err) {
             *err = "failed writing compaction table " + table_path(number);
         return false;
     }
+    performance::SaveProfiler::noteTableBytes(image.size());
+    performance::SaveProfiler::noteCompactBytes(compact_read_bytes);
 
     for (const FileMeta& f : files_)
         std::remove(table_path(f.number).c_str());
@@ -893,6 +1095,12 @@ bool DBEngine::compact_locked(std::string* err) {
     meta.smallest = merged.front().key;
     meta.largest = merged.back().key;
     files_.push_back(std::move(meta));
+    ++files_generation_;
+    // The merged table replaced every input: drop their cached views (in-
+    // flight readers keep their shared_ptr alive; the unlinked files stay
+    // readable until the last reference drops on POSIX, and the Windows
+    // cache holds its own heap copy).
+    prune_table_cache_locked();
     return write_manifest_locked(err);
 }
 
@@ -918,6 +1126,11 @@ void DBEngine::close() {
         lock_fd_ = -1;
     }
     opened_ = false;
+    // Release every cached table view (unmaps files, frees heap copies).
+    for (auto& [number, view] : open_tables_)
+        db_unload_table_view(const_cast<OpenTable*>(view.get()));
+    open_tables_.clear();
+    open_tables_bytes_ = 0;
 }
 
 } // namespace cursestone::world::format::leveldb

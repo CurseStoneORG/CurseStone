@@ -24,7 +24,9 @@
 
 #pragma once
 #include "world/generator/Generator.h"
+#include "world/performance/TerrainCache.h"
 #include "world/generator/NeighborChunkIO.h"
+#include "vgen/PopulateGate.h"
 #include "vgen/VgenWorld.h"
 #include "vgen/biome/Biome.h"
 #include "vgen/biome/BiomeSource.h"
@@ -51,6 +53,12 @@ public:
         void generate(GenerationContext& ctx) override;
         void populate(GenerationContext& ctx) override;
 
+        // Deterministic populate ordering (see vgen/PopulateGate.h).
+        void preparePopulateDeps(int32_t x, int32_t z) override;
+        void populateRegister(int32_t x, int32_t z) override;
+        bool populateTryEnter(int32_t x, int32_t z) override;
+        void populateMarkDone(int32_t x, int32_t z) override;
+
         // Vanilla-like spawn: surface at the world origin area.
         mcp_vector3_t getSpawn() const override { return mcp_v3(127.5, 128.0, 127.5); }
 
@@ -64,6 +72,8 @@ public:
         // ITerrainFeed (the 3x3 virtual-neighborhood backing store)
         std::shared_ptr<vgen::LevelChunk> acquireTerrain(int cx, int cz) override;
         void commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t id, uint8_t data) override;
+        void commitNeighborWriteBatch(int cx, int cz,
+                                      const std::vector<NeighborWrite>& writes) override;
         void commitNeighborTile(int cx, int cz, const std::vector<uint8_t>& blob) override;
         void applySpill(vgen::LevelChunk& center, int cx, int cz) override;
         vgen::Level& getLevel() override { return mLevel; }
@@ -71,6 +81,8 @@ public:
 
         // ISpillQueue (consumed by ChunkManager at chunk install time)
         void queueSpill(int cx, int cz, uint32_t index, uint8_t id, uint8_t data) override;
+        void queueSpillBatch(int cx, int cz,
+                             const std::vector<NeighborWrite>& writes) override;
         void drainSpills(int cx, int cz, mcp_chunk_t* chunk) override;
 
 private:
@@ -121,25 +133,21 @@ private:
         vgen::RandomScatteredLargeFeature mScatteredFeature;
         vgen::MonsterRoomFeature mMonsterRoomFeature;
 
-        // terrain cache — terrain-only, immutable after fill.
-        // shared_ptr ownership: eviction erases the entry while a worker
-        // may still hold the pointer to copy a neighbor snapshot, so the
-        // object must outlive the map entry (was a real use-after-free:
-        // the evicting delete raced the copying worker).
-        struct CacheEntry {
-                std::shared_ptr<vgen::LevelChunk> chunk;
-                uint64_t stamp = 0;
-        };
-        static const size_t kTerrainCacheLimit = 512;
-        std::mutex mCacheMutex;
-        std::unordered_map<int64_t, CacheEntry> mTerrainCache;
-        uint64_t mCacheStamp = 0;
+        // terrain cache — terrain-only, immutable after fill. The
+        // performance module's TerrainCache keeps the shared_ptr
+        // ownership story (eviction erases the entry, the object dies
+        // with its last user), adds O(1) LRU eviction, and deduplicates
+        // in-flight neighbour builds across workers: concurrent acquires
+        // of the same chunk share one build instead of racing and
+        // discarding the loser.
+        performance::TerrainCache<vgen::LevelChunk> mTerrainCache;
 
         // feature spill: writes aimed at chunks that are not the current center
         struct SpillEntry {
                 uint32_t index;
                 uint8_t id;
                 uint8_t data;
+                uint64_t srcRank; // reference-order rank of the populating chunk
         };
         std::mutex mSpillMutex;
         std::unordered_map<int64_t, std::vector<SpillEntry>> mSpill;
@@ -148,6 +156,19 @@ private:
         // live sink when their neighbor populated — replayed into the
         // virtual center at that chunk's populate, flushed with its spill.
         std::unordered_map<int64_t, std::vector<std::vector<uint8_t>>> mPendingTiles;
+
+        // --- deterministic populate ordering (vgen/PopulateGate.h) ---
+        // Gate slots for requested chunks; dep map entries are written by
+        // the generate task (preparePopulateDeps) and erased by markDone.
+        vgen::PopulateGate mPopulateGate;
+        std::mutex mDepMutex;
+        std::unordered_map<int64_t, std::vector<std::pair<int32_t, int32_t>>> mPopulateDeps;
+
+        // Plains decorator carry-over, reproduced in reference order for the
+        // 1-in-10 forest-grass branch (vanilla reads plains' shared decorator
+        // state; see PopulateGate.h PlainsRefTable). Filled by
+        // populateRegister from the seed-independent per-chunk retune.
+        vgen::PlainsRefTable mPlainsRef;
 };
 
 static inline int64_t vgenKey(int cx, int cz) {

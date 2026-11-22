@@ -81,6 +81,26 @@ class Generator {
     // defines its own spawn (Normal, Flat, Nether all differ).
     // The World calls this on first load to set the spawn point.
     virtual mcp_vector3_t getSpawn() const = 0;
+
+    // Deterministic populate ordering (no-ops by default). VgenSource
+    // overrides these so concurrent workers reproduce the vanilla chunk
+    // order exactly — see vgen/PopulateGate.h for why chunk output is
+    // order-sensitive. The default suits generators whose populate does
+    // not depend on neighbour populate order.
+    //
+    //   preparePopulateDeps — runs on the generate task: pre-creates the
+    //     structure starts this chunk's window would claim and records
+    //     the chunks that share them.
+    //   populateRegister — claims a gate slot when the request is
+    //     accepted (before any task runs).
+    //   populateTryEnter — non-blocking: false means "lower-ranked
+    //     dependencies still running, re-queue and retry"; true means the
+    //     populate turn is held and populateMarkDone MUST follow.
+    //   populateMarkDone — releases the slot (idempotent).
+    virtual void preparePopulateDeps(int32_t x, int32_t z) {}
+    virtual void populateRegister(int32_t x, int32_t z) {}
+    virtual bool populateTryEnter(int32_t x, int32_t z) { return true; }
+    virtual void populateMarkDone(int32_t x, int32_t z) {}
 };
 
 } // namespace

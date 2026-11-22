@@ -69,7 +69,7 @@ const FeaturePtr& TaigaBiome::getGrassFeature(Random* random){
 	return decorator->tallGrassFeature;
 }
 
-void TaigaBiome::decorate(BlockSource* source, Random& random, const BlockPos& origin, bool legacy, float limit){
+void TaigaBiome::decorateImpl(BlockSource* source, Random& random, const BlockPos& origin, bool legacy, float limit){
 	if (type == MEGA || type == MEGA_SPRUCE) {
 		int stoneCount = random.nextInt(3);
 
@@ -80,7 +80,7 @@ void TaigaBiome::decorate(BlockSource* source, Random& random, const BlockPos& o
 
 			p.y = source->getHeightmap(p);
 
-			decorator->forestRockFeature->place(*source, p, random);
+			deco()->forestRockFeature->place(*source, p, random);
 		}
 	}
 
@@ -92,27 +92,28 @@ void TaigaBiome::decorate(BlockSource* source, Random& random, const BlockPos& o
 
 	auto pos = source->getHeightmapPos(p);
 
-	decorator->doublePlantFeature->place(*source, pos, random, fernID);
+	deco()->doublePlantFeature->place(*source, pos, random, fernID);
 
-	Biome::decorate(source, random, origin, legacy, limit);
+	Biome::decorateImpl(source, random, origin, legacy, limit);
 }
 
 void TaigaBiome::buildSurfaceAt(Random& random, BlockVolume& blocks, const BlockPos& pos, float depthValue, Height seaLevel) {
+	Biome::SurfaceMats mats{mTopMaterial, mTopMaterialData, mMaterial};
 	if(type == MEGA || type == MEGA_SPRUCE) {
-		mTopMaterial = Block::mGrass->mID;
-		mTopMaterialData = 0;
-		mMaterial = Block::mDirt->mID;
+		mats.top = Block::mGrass->mID;
+		mats.topData = 0;
+		mats.material = Block::mDirt->mID;
 		if(depthValue > 1.75) {
-			mTopMaterial = Block::mDirt->mID;
-			Block::mDirt->getBlockState(BlockState::MappedType).set(mTopMaterialData, DirtBlock::TYPE_NO_GRASS_SPREAD);
+			mats.top = Block::mDirt->mID;
+			Block::mDirt->getBlockState(BlockState::MappedType).set(mats.topData, DirtBlock::TYPE_NO_GRASS_SPREAD);
 		}
 		else if(depthValue > -.95) {
 			// Podzol is it's own type now instead of a dirt type
-			mTopMaterial = Block::mPodzol->mID;
-			mTopMaterialData = 0;
+			mats.top = Block::mPodzol->mID;
+			mats.topData = 0;
 		}
 	}
-	buildSurfaceAtDefault(random, blocks, pos, depthValue, seaLevel);	// skip super
+	buildSurfaceAtDefault(random, blocks, pos, depthValue, seaLevel, mats);	// skip super
 }
 
 

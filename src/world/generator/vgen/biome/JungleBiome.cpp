@@ -68,15 +68,15 @@ const FeaturePtr& JungleBiome::getGrassFeature(Random* random){
 	return decorator->tallGrassFeature;
 }
 
-void JungleBiome::decorate(BlockSource* source, Random& random, const BlockPos& origin, bool legacy, float limit){
-	Biome::decorate(source, random, origin, legacy, limit);
+void JungleBiome::decorateImpl(BlockSource* source, Random& random, const BlockPos& origin, bool legacy, float limit){
+	Biome::decorateImpl(source, random, origin, legacy, limit);
 	{
 		const int x = random.nextInt(16);
 		const int z = random.nextInt(16);
 		BlockPos pos = origin.offset(x, 0, z);
 		auto h = source->getHeightmap(pos.x, pos.z) * 2;
 		pos.y = h ? random.nextInt(h) : 0;
-		decorator->melonFeature->place(*source, pos, random);
+		deco()->melonFeature->place(*source, pos, random);
 	}
 
 	for (auto i : range(50)) {
@@ -87,7 +87,7 @@ void JungleBiome::decorate(BlockSource* source, Random& random, const BlockPos& 
 
 		BlockPos pos = origin.offset(x, y, z);
 
-		decorator->vinesFeature->place(*source, pos, random);
+		deco()->vinesFeature->place(*source, pos, random);
 	}
 }
 

@@ -74,6 +74,22 @@ file(GLOB_RECURSE SOURCES_CXX CONFIGURE_DEPENDS
 
 add_executable(CurseStone ${SOURCES_C} ${SOURCES_CXX})
 
+# ---- AVX2 noise kernels ----
+# Only the kernel TU gets the ISA flag (never a global -march): the rest
+# of the build stays on the generic baseline so the scalar fallback and
+# the vanilla generator output are unchanged. -mno-fma on GCC/Clang keeps
+# the kernels' explicit mul/add sequence free of fused ops, matching the
+# scalar path bit for bit.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86)|(X86)|(amd64)|(AMD64)|(i.86)")
+    if(MSVC)
+        set_source_files_properties(src/world/performance/NoiseOptimizerAVX2.cpp
+            PROPERTIES COMPILE_OPTIONS "/arch:AVX2")
+    else()
+        set_source_files_properties(src/world/performance/NoiseOptimizerAVX2.cpp
+            PROPERTIES COMPILE_OPTIONS "-mavx2;-mno-fma")
+    endif()
+endif()
+
 target_include_directories(CurseStone PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/world/generator

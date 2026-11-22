@@ -25,22 +25,19 @@ OUT="${OUT:-/tmp/autosave_check}"
 EXTRA="${CXX_EXTRA:-}"
 LIBS="${LIBS:--lz -lpthread}"
 
-OBJDIR="$(mktemp -d)"
-trap 'rm -rf "$OBJDIR"' EXIT
+BUILD="${BUILD:-/tmp/cs_build}"
+OBJDIR="$BUILD/obj"
+if [ ! -d "$OBJDIR" ] || [ -z "$(ls "$OBJDIR"/*.o 2>/dev/null)" ]; then
+    echo "no object tree at $OBJDIR — run: BUILD=$BUILD bash build_local.sh" >&2
+    exit 1
+fi
 
-# Los .c del storage / NBT se compilan como C, igual que en el build real.
-for c in src/world/format/Chunk.c \
-         src/world/format/ChunkSection.c \
-         src/world/format/anvil/AnvilChunkCodec.c \
-         src/nbt/NBT.c src/nbt/tag/*.c \
-         src/utils/Binary.c src/utils/BinaryStream.c src/utils/Logger.c \
-         src/utils/MainLogger.c src/utils/Terminal.c src/utils/TextFormat.c \
-         src/utils/ThreadPort.c \
-         src/logger/AsyncMainLogger.c; do
-    "$CC" -std=c2x -O2 -w -Isrc $EXTRA -c "$c" -o "$OBJDIR/$(basename "$c" .c).o"
-done
+g++ -std=c++20 -O2 -w -Isrc -Isrc/world/generator -o "$OUT" \
+    tools/autosave_check.cpp \
+    $(find "$OBJDIR" -name '*.o' | grep -v src_CurseStone.cpp.o) \
+    -lz -ldl -pthread
 
-"$CXX" -std=c++20 -O2 -w -Isrc $EXTRA -o "$OUT" \
+"$OUT" \
     tools/autosave_check.cpp \
     src/world/ChunkManager.cpp \
     src/world/format/ChunkAdapter.cpp \

@@ -53,8 +53,8 @@ const FeaturePtr& ExtremeHillsBiome::getTreeFeature(Random* random){
 	return Biome::getTreeFeature(random);
 }
 
-void ExtremeHillsBiome::decorate(BlockSource* source, Random& random, const BlockPos& origin, bool legacy, float limit){
-	Biome::decorate(source, random, origin, legacy, limit);
+void ExtremeHillsBiome::decorateImpl(BlockSource* source, Random& random, const BlockPos& origin, bool legacy, float limit){
+	Biome::decorateImpl(source, random, origin, legacy, limit);
 	if(GENERATE_EMERALD_ORE) {
 		int emeraldCount = 3 + random.nextInt(6);
 
@@ -81,18 +81,16 @@ void ExtremeHillsBiome::decorate(BlockSource* source, Random& random, const Bloc
 }
 
 void ExtremeHillsBiome::buildSurfaceAt(Random& random, BlockVolume& blocks, const BlockPos& pos, float depthValue, Height seaLevel) {
-	mTopMaterial = Block::mGrass->mID;
-	mTopMaterialData = 0;
-	mMaterial = Block::mDirt->mID;
+	Biome::SurfaceMats mats{Block::mGrass->mID, 0, Block::mDirt->mID};
 	if((depthValue < -0.1f || depthValue > 0.2f) && type == TYPE_MUTATED) {
-		mTopMaterial = Block::mGravel->mID;
-		mMaterial = Block::mGravel->mID;
+		mats.top = Block::mGravel->mID;
+		mats.material = Block::mGravel->mID;
 	}
 	else if(depthValue > 1.0 && type != TYPE_EXTRA_TREES) {
-		mTopMaterial = Block::mStone->mID;
-		mMaterial = Block::mStone->mID;
+		mats.top = Block::mStone->mID;
+		mats.material = Block::mStone->mID;
 	}
-	buildSurfaceAtDefault(random, blocks, pos, depthValue, seaLevel);	// skip super
+	buildSurfaceAtDefault(random, blocks, pos, depthValue, seaLevel, mats);	// skip super
 }
 
 ExtremeHillsBiome* ExtremeHillsBiome::setMutated(Biome* parent) {

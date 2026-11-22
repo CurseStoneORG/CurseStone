@@ -2,9 +2,9 @@ name: Build CurseStone
 
 on:
   push:
-    branches: [stable, main, master, dev]
+    branches: [stable, main, master, dev, better-performance]
   pull_request:
-    branches: [stable, main, master]
+    branches: [stable, main, master, better-performance]
   workflow_dispatch:
   # release.yml reuses these builds through workflow_call.
   workflow_call:
