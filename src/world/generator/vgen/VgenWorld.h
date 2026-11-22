@@ -165,6 +165,27 @@ public:
                                 --y;
                         mHeightmap[slot] = y;
                 }
+                // Rain-height cache: precise update, same contract as the
+                // heightmap above — the cached value always equals what a
+                // fresh top-down scan would find, so decorates that read
+                // neighbour columns between writes stay correct without
+                // rescanning 128 blocks after every single write.
+                if (mRainHeights[slot] != -999) {
+                        if (Block::mStopsRain[(uint8_t)id.value]) {
+                                if ((int)p.y + 1 > mRainHeights[slot])
+                                        mRainHeights[slot] = (int)p.y + 1;
+                        } else if ((int)p.y == mRainHeights[slot] - 1) {
+                                // The previous stopper became passable: the
+                                // new height is the first stopper strictly
+                                // below it. Like the scan above, a stopper
+                                // at y == 0 never counts (the scan exits
+                                // before reading it), so h lands at 0.
+                                int y = p.y - 1;
+                                while (y > 0 && !Block::mStopsRain[(uint8_t)mBlocks[(uint32_t)y + col]])
+                                        --y;
+                                mRainHeights[slot] = y > 0 ? y + 1 : 0;
+                        }
+                }
         }
         void setData(const ChunkBlockPos& p, DataID v) {
                 uint32_t idx = (uint32_t)p.y + ((uint32_t)p.z + (uint32_t)p.x * 16) * 128;

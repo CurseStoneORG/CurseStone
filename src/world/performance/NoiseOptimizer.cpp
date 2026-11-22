@@ -22,6 +22,7 @@
  */
 #include "NoiseOptimizer.h"
 
+#include <cstdlib>
 #include <cstring>
 #include <mutex>
 
@@ -239,6 +240,10 @@ bool guard3D(Kernel3D cand) {
 }
 
 void selectKernels() {
+    // Testing escape hatch: forces the scalar path so equivalence checks
+    // can compare vector vs scalar output with the same binary.
+    if (std::getenv("CURSESTONE_NOISE_SCALAR") != nullptr)
+        return;
 #if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
     if (guard2D(&readArea2D_avx2))
         k2d = &readArea2D_avx2;

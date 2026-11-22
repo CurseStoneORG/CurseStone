@@ -28,8 +28,12 @@ LINE = re.compile(r"Spawn area pregenerated: (\d+) chunks in (\d+) ms")
 def boot_and_measure(binary, radius, workers, port, cap=90.0):
     runtime = tempfile.mkdtemp(prefix="cs_genbench_")
     with open(os.path.join(runtime, "server.properties"), "w") as f:
+        # Fixed seed: biome layout varies per random seed and snow-covered
+        # spawn changes the populate budget, so before/after comparisons
+        # must hold the terrain identical.
         f.write("server-ip=127.0.0.1\nserver-port=%d\nmax-players=5\n"
-                "motd=GenBench\nview-distance=8\ngamemode=1\n" % port)
+                "motd=GenBench\nview-distance=8\ngamemode=1\n"
+                "level-seed=12345\n" % port)
     with open(os.path.join(runtime, "cursestone.yml"), "w") as f:
         f.write("settings:\n  autosave-ticks: 6000\n"
                 "  async-workers: %d\n"

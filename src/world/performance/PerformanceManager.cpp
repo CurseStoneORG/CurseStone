@@ -36,7 +36,8 @@ namespace {
 const char* kStageNames[] = {
     "total",  "terrain", "noise",   "surface", "caves", "biome",
     "populate", "copy_in", "copy_out", "light", "encode", "snapshot",
-    "disk",
+    "disk",   "lakes",   "structures", "dungeons", "freeze", "decorate",
+    "snow",   "dec.ores", "dec.surface", "dec.trees", "dec.misc",
 };
 static_assert(sizeof(kStageNames) / sizeof(kStageNames[0]) ==
                   (size_t)Stage::Count,
@@ -63,7 +64,7 @@ void PerformanceManager::logStageBreakdown(const char* why) {
 
     // One compact line per half of the pipeline keeps the log readable
     // while still showing every measured stage.
-    char gen[256];
+    char gen[400];
     int off = std::snprintf(gen, sizeof(gen), "[Perf] %s: %llu chunks",
                             why, (unsigned long long)totalChunks);
     for (size_t i = (size_t)Stage::Total; i <= (size_t)Stage::Populate && off > 0;
@@ -77,7 +78,7 @@ void PerformanceManager::logStageBreakdown(const char* why) {
     }
     utils::MainLogger::get().info(gen);
 
-    char io[192];
+    char io[560];
     off = std::snprintf(io, sizeof(io), "[Perf] %s io:", why);
     for (size_t i = (size_t)Stage::CopyIn; i < (size_t)Stage::Count && off > 0;
          ++i) {

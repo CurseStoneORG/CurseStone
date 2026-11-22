@@ -55,6 +55,16 @@ enum class Stage : uint8_t {
     Encode,       // chunk wire transposition + zlib (worker)
     Snapshot,     // chunk wire snapshot (tick thread)
     DiskLoad,     // provider loadChunk (region read + inflate + NBT)
+    Lakes,        // water + lava lake placement
+    Structures,   // village / mineshaft / scattered temple passes
+    Dungeons,     // monster rooms
+    Freeze,       // freeze tops scan
+    Decorate,     // biome decoration umbrella
+    DecorateOres, // ore vein placement
+    DecorateSurface, // sand / clay / gravel / mushroom blobs
+    DecorateTrees,   // trees + tall grass around them
+    DecorateMisc,    // flowers, tall grass, sugar cane, pumpkins...
+    Snow,         // snow cover pass
     Count
 };
 

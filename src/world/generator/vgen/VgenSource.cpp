@@ -639,41 +639,45 @@ void VgenSource::populate(GenerationContext& ctx) {
 
         // water lakes
         bool hasLake = false;
-        if (biome != vgen::Biome::desert && biome != vgen::Biome::desertHills) {
-                if (random.nextInt(4) == 0) {
-                        int x = random.nextInt(3, 12);
-                        int y = random.nextInt(vgen::LEVEL_GEN_HEIGHT);
-                        int z = random.nextInt(3, 12);
-                        BlockPos featurePlacement = origin.offset(x, y, z);
-                        vgen::LakeFeature lakeFeature(Block::mStillWater->mID);
-                        lakeFeature.place(source, featurePlacement, random);
-                        hasLake = true;
+        {
+                performance::ScopedStage lakesTimer(performance::Stage::Lakes);
+                if (biome != vgen::Biome::desert && biome != vgen::Biome::desertHills) {
+                        if (random.nextInt(4) == 0) {
+                                int x = random.nextInt(3, 12);
+                                int y = random.nextInt(vgen::LEVEL_GEN_HEIGHT);
+                                int z = random.nextInt(3, 12);
+                                BlockPos featurePlacement = origin.offset(x, y, z);
+                                vgen::LakeFeature lakeFeature(Block::mStillWater->mID);
+                                lakeFeature.place(source, featurePlacement, random);
+                                hasLake = true;
+                        }
                 }
-        }
 
-        // lava lakes
-        if (!hasLake && random.nextInt(8) == 0) {
-                int x = random.nextInt(3, 12);
-                int yparam = random.nextInt(vgen::LEVEL_GEN_HEIGHT - 8) + 8;
-                int y = random.nextInt(yparam);
-                int z = random.nextInt(3, 12);
-                if (y >= 60 && (y < 64 || random.nextInt(10) == 0)) {
-                        BlockPos featurePlacement = origin.offset(x, y, z);
-                        vgen::LakeFeature lakeFeature(Block::mStillLava->mID);
-                        lakeFeature.place(source, featurePlacement, random);
+                // lava lakes
+                if (!hasLake && random.nextInt(8) == 0) {
+                        int x = random.nextInt(3, 12);
+                        int yparam = random.nextInt(vgen::LEVEL_GEN_HEIGHT - 8) + 8;
+                        int y = random.nextInt(yparam);
+                        int z = random.nextInt(3, 12);
+                        if (y >= 60 && (y < 64 || random.nextInt(10) == 0)) {
+                                BlockPos featurePlacement = origin.offset(x, y, z);
+                                vgen::LakeFeature lakeFeature(Block::mStillLava->mID);
+                                lakeFeature.place(source, featurePlacement, random);
+                        }
                 }
         }
 
         // structures (0.15 set: village, mineshaft, scattered temples)
-        mVillageFeature.apply(center, mDimension, random);
-        mMineshaftFeature.apply(center, mDimension, random);
-        mScatteredFeature.apply(center, mDimension, random);
-
-        random.setSeed((vgen::RandomSeed)(uint64_t)mSeed);
-        xScale = random.nextInt() / 2 * 2 + 1;
-        zScale = random.nextInt() / 2 * 2 + 1;
-        random.setSeed((vgen::RandomSeed)(uint64_t)(((cx * xScale) + (cz * zScale)) ^ mSeed));
         {
+                performance::ScopedStage structuresTimer(performance::Stage::Structures);
+                mVillageFeature.apply(center, mDimension, random);
+                mMineshaftFeature.apply(center, mDimension, random);
+                mScatteredFeature.apply(center, mDimension, random);
+
+                random.setSeed((vgen::RandomSeed)(uint64_t)mSeed);
+                xScale = random.nextInt() / 2 * 2 + 1;
+                zScale = random.nextInt() / 2 * 2 + 1;
+                random.setSeed((vgen::RandomSeed)(uint64_t)(((cx * xScale) + (cz * zScale)) ^ mSeed));
                 mVillageFeature.postProcess(&source, random, cx, cz);
                 mMineshaftFeature.postProcess(&source, random, cx, cz);
                 mScatteredFeature.postProcess(&source, random, cx, cz);
@@ -681,6 +685,7 @@ void VgenSource::populate(GenerationContext& ctx) {
 
         // monster rooms (dungeons)
         {
+                performance::ScopedStage dungeonsTimer(performance::Stage::Dungeons);
                 for (auto i : vgen::range(8)) {
                         UNUSED_VARIABLE(i);
                         int x = xo + random.nextInt(16) + 8;
@@ -692,6 +697,7 @@ void VgenSource::populate(GenerationContext& ctx) {
 
         // freeze tops (ice on cold-biome water)
         {
+                performance::ScopedStage freezeTimer(performance::Stage::Freeze);
                 for (auto x : vgen::range(16)) {
                         for (auto z : vgen::range(16)) {
                                 const BlockPos topPos = source.getTopRainBlockPos(origin.offset(x, 0, z));
@@ -705,12 +711,16 @@ void VgenSource::populate(GenerationContext& ctx) {
 
         // biome decoration (trees, grass, flowers, ores, ...)
         {
+                performance::ScopedStage decorateTimer(performance::Stage::Decorate);
                 random.setSeed((vgen::RandomSeed)(uint64_t)(((cx * xScale) + (cz * zScale)) ^ mSeed));
                 biome.decorate(&source, random, center.getMin(), false, FLT_MAX);
         }
 
         // snow cover (0.15 seasons postProcess equivalent)
-        snowPass(source, center);
+        {
+                performance::ScopedStage snowTimer(performance::Stage::Snow);
+                snowPass(source, center);
+        }
 
         // write the populated center back into the sink chunk
         copyVirtualToSink(center, sink);
