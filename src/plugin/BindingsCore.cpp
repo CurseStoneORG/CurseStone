@@ -128,7 +128,9 @@ void setTable(lua_State* L, const char* name, const luaL_Reg* funcs) {
 // ---------- log ----------
 int logWith(lua_State* L, int level) {
     LuaPlugin* pl = LuaPlugin::from(L);
-    std::string msg = "[" + pl->name() + "] " + luaL_checkstring(L, 1);
+    // pluginLogText() prefixes "[Name] " once — a plugin message that already
+    // carries its own tag is not double-tagged ("[Coords] [Coords] ...").
+    std::string msg = pluginLogText(pl->name(), luaL_checkstring(L, 1));
     auto& lg = utils::MainLogger::get();
     if (level == 0)
         lg.info(msg);

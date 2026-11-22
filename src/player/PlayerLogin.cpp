@@ -367,7 +367,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
                     }
                 }
 
-                utils::MainLogger::get().info("Loaded inventory for " + cfg_.username + " (" +
+                utils::MainLogger::get().debug("Loaded inventory for " + cfg_.username + " (" +
                                               std::to_string(loaded) + " items)");
             }
 
@@ -465,8 +465,12 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
         sendPacket(sh, true);
     }
 
-    utils::MainLogger::get().info("Player " + cfg_.username + " logged in (" + cfg_.ip + ":" +
-                                  std::to_string(cfg_.port) + ")");
+    // Login line: name, world and IP:port — the one user-facing join event
+    // before the join broadcast fires at first spawn.
+    const std::string worldPart =
+        getWorld() ? " world \"" + getWorld()->name() + "\"" : "";
+    utils::MainLogger::get().info("Player " + cfg_.username + " logged in" + worldPart +
+                                  " with IP (" + cfg_.ip + ":" + std::to_string(cfg_.port) + ")");
 
     // Load chunks around the spawn point.
     sendChunksAroundSpawn();
@@ -543,8 +547,10 @@ void Player::doFirstSpawn() {
         if (auto* mgr = srv_->craftingManager()) {
             cd->addAllRecipes(*mgr);
 
-            utils::MainLogger::get().info("Sent " + std::to_string(mgr->size()) + " recipes to " +
-                                          cfg_.username);
+            // Recipe sync is protocol machinery, not console material: the
+            // count rides DEBUG (the functional send below is untouched).
+            utils::MainLogger::get().debug("Sent " + std::to_string(mgr->size()) + " recipes to " +
+                                           cfg_.username);
         }
 
         sendPacket(cd);

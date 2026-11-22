@@ -498,7 +498,7 @@ function plugin.onEnable()
         usage = "/mw <status|create|unload|tp|save|mark|mob|mobclear|check|help>",
         permission = "op",
     }, onCommand)
-    log.info("MultiWorldTest enabled: /mw status|create|unload|tp|save|mark|mob|mobclear|check")
+    print("MultiWorldTest enabled: /mw status|create|unload|tp|save|mark|mob|mobclear|check")
     return true
 end
 

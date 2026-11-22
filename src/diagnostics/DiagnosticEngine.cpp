@@ -27,7 +27,6 @@
 
 #include "../CurseStone.h"
 #include "../utils/MainLogger.hpp"
-#include "../utils/Terminal.h"
 #include "../utils/TextFormat.h"
 
 #include <atomic>
@@ -228,24 +227,6 @@ const char* DiagEngine::codeHelp(int code) {
     return info ? info->help : nullptr;
 }
 
-void DiagEngine::banner() {
-    // Printed from main() before the logger exists (an early logger init
-    // would block Server::initLogger from attaching the log file), so this
-    // is a direct, color-aware write. The file banner is logged separately
-    // from Server::initLogger.
-    std::string out;
-    if (mcp_terminal_has_color()) {
-        out += "\x1b[1m" MCP_TERM_WHITE "CurseStone v" CURSESTONE_API " \"" CURSESTONE_CODENAME
-               "\"\x1b[0m\n" MCP_TERM_DIM "Minecraft PE 0.15.10 | Protocol " +
-               std::to_string(PROTOCOL_VERSION) + "\x1b[0m\n\n";
-    } else {
-        out = std::string(CURSESTONE_NAME) + " v" + CURSESTONE_API + " \"" + CURSESTONE_CODENAME +
-              "\"\nMinecraft PE 0.15.10 | Protocol " + std::to_string(PROTOCOL_VERSION) + "\n\n";
-    }
-    fputs(out.c_str(), stdout);
-    fflush(stdout);
-}
-
 void DiagEngine::stage(const std::string& text) {
     utils::MainLogger::get().info(text);
 }
@@ -259,13 +240,19 @@ void DiagEngine::stageDone(const std::string& text) {
 }
 
 void DiagEngine::ready(double boot_ms) {
-    char ms[32];
-    snprintf(ms, sizeof(ms), "%.2f", boot_ms);
-    utils::MainLogger::get().info(sec('a') + "Server ready! " + sec(kDim) + "(" + ms + "ms)");
+    // Three decimals of seconds ("Server ready in 0.219s!") — the same figure
+    // the old "(41.20ms)" carried, in the unit operators reason about.
+    char s[32];
+    snprintf(s, sizeof(s), "%.3f", boot_ms / 1000.0);
+    utils::MainLogger::get().info(std::string("Server ready in ") + s + "s!");
     const size_t n = g_issues.load(std::memory_order_relaxed);
     if (n > 0)
         utils::MainLogger::get().warn(sec(kWarnColor) + "Startup completed with " +
                                       std::to_string(n) + " issue" + (n == 1 ? "." : "s."));
+    // One blank line closes the boot block: everything below is runtime
+    // (player sessions, chat, worlds), everything above was startup. The raw
+    // path writes it verbatim to console and log file, no timestamp/tag.
+    utils::MainLogger::get().raw("\n");
 }
 
 bool DiagEngine::emit(const Diagnostic& d) {

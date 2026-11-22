@@ -164,7 +164,7 @@ function plugin.onEnable()
         permission = "op",
     }, onCommand)
 
-    log.info(string.format("spawn protection active (radius %d blocks)", cfg.radius))
+    print(string.format("spawn protection active (radius %d blocks)", cfg.radius))
     return true
 end
 

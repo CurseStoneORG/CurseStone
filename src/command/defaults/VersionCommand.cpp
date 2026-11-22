@@ -30,10 +30,8 @@ namespace cursestone {
 
 bool VersionCommand::execute(CommandSender* sender, const std::string&,
                              const std::vector<std::string>&) {
-    // The reference server mirrored
-    // Line 1: Software name + version + codename
-    sender->sendMessage(std::string(CURSESTONE_NAME) + " v" + CURSESTONE_API +
-                        " (codename: " + CURSESTONE_CODENAME + ")");
+    // Line 1: Software name + version
+    sender->sendMessage(std::string(CURSESTONE_NAME) + " v" + CURSESTONE_API);
     // Line 2: Target MCPE version + protocol
     sender->sendMessage("For Minecraft PE " + std::string(MINECRAFT_VERSION) + ", protocol " +
                         std::to_string(PROTOCOL_VERSION));

@@ -85,8 +85,9 @@ static void stamp_timestamp(char* buf, size_t bufsz) {
 
 // Console level tags — the Diagnostic Engine's five-level vocabulary.
 // Zero-padded to one width so the message column lines up on every line:
-// "[17:14:40] INFO  ..." / "[17:14:40] ERROR ...". The log file keeps the
-// long-form names (WARNING/CRITICAL/...) via mcp_log_level_name().
+// "[17:14:40] INFO  ..." / "[17:14:40] ERROR ...". MCP_LOG_CHAT carries its
+// own "CHAT " tag (game chat mirror) and the log file keeps the long-form
+// names (WARNING/CRITICAL/...) via mcp_log_level_name().
 static const char* level_tag(mcp_log_level_t lvl) {
     switch (lvl) {
     case MCP_LOG_DEBUG:
@@ -94,6 +95,8 @@ static const char* level_tag(mcp_log_level_t lvl) {
     case MCP_LOG_INFO:
     case MCP_LOG_NOTICE:
         return "INFO ";
+    case MCP_LOG_CHAT:
+        return "CHAT ";
     case MCP_LOG_WARN:
         return "WARN ";
     case MCP_LOG_ERROR:
@@ -115,6 +118,8 @@ static const char* level_tag_color(mcp_log_level_t lvl) {
     case MCP_LOG_INFO:
     case MCP_LOG_NOTICE:
         return "\x1b[38;5;114m"; // soft green
+    case MCP_LOG_CHAT:
+        return "\x1b[38;5;111m"; // soft blue (game chat)
     case MCP_LOG_WARN:
         return "\x1b[38;5;179m"; // soft amber
     case MCP_LOG_ERROR:

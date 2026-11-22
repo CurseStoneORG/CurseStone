@@ -1,25 +1,31 @@
 # CurseStone Diagnostic Engine
 
-The console and diagnostics layer of CurseStone v1.0.3 "Obsidian". It borrows
+The console and diagnostics layer of CurseStone v1.0.3. It borrows
 the error-reporting ideas of modern compilers (GCC, Clang, Rust): the console
 stays minimal while everything is fine, and the moment something fails it
 renders a precise report — what failed, where, why, and how to fix it.
 
 ## Identity
 
+The boot log opens with the stage line; the full version details (Minecraft
+PE target and protocol) ride `DEBUG` so the normal console never repeats
+them:
+
 ```
-CurseStone v1.0.3 "Obsidian"
-Minecraft PE 0.15.10 | Protocol 84
+[17:14:40] INFO  Starting server in CurseStone v1.0.3...
 ```
 
-The banner is drawn once by `DiagEngine::banner()` (src/diagnostics/
-DiagnosticEngine.cpp) before the logger exists.
+```text
+DEBUG: CurseStone v1.0.3 — Minecraft PE 0.15.x, protocol 84
+DEBUG: Log file: ./server.log
+```
 
 ## Message levels
 
 | Console tag | Meaning |
 | ----------- | ------- |
 | `INFO`  | normal server messages |
+| `CHAT`  | game chat mirror (joins, leaves, broadcasts) — never re-labeled `INFO` |
 | `WARN`  | recoverable problems |
 | `ERROR` | operations that failed |
 | `FATAL` | critical errors that stop the boot |
@@ -39,25 +45,33 @@ plain text (no ANSI codes).
 ## Startup stages
 
 ```
-[17:14:40] INFO  Starting server...
+[17:14:40] INFO  Starting server in CurseStone v1.0.3...
 [17:14:40] INFO  Loading config files...
 [17:14:40] INFO  + server.properties loaded!
 [17:14:40] INFO  + cursestone.yml loaded!
 [17:14:40] INFO  Config files loaded!
 [17:14:40] INFO  Network listening...
-[17:14:40] INFO  + listening on 0.0.0.0:19132 (UDP)
+[17:14:40] INFO  listening on 0.0.0.0:19132
 [17:14:40] INFO  Loading worlds...
-[17:14:40] INFO  + world loaded!
+[17:14:40] INFO  "world" loaded!
 [17:14:40] INFO  Worlds loaded!
 [17:14:40] INFO  Loading plugins...
-[17:14:40] INFO  + WorldEditDemo v1.2.0 loaded!
+[17:14:40] INFO  + WorldEditDemo v1.2.0 Enabled!
 [17:14:40] INFO  Plugins loaded
-[17:14:40] INFO  Server ready! (41ms)
+[17:14:40] INFO  Server ready in 0.219s!
 ```
 
-Every file, world and plugin that loads successfully prints one `+` item.
-Configuration detail (ports, MOTD, generator, pacing budgets...) moved to
-`DEBUG` — enable `settings.debug-mode` to see it.
+The `+` mark is reserved for successful configuration and plugin loads.
+Worlds load with their quoted name, no `+`. After the ready line one blank
+line separates the boot block from runtime events; a blank line also precedes
+a player's leave message, closing that session block.
+
+Configuration detail (ports, MOTD, generator, pacing budgets...) lives in
+`DEBUG` — enable `settings.debug-mode` to see it. The same rule covers every
+trace that left the normal console: session open/close (`[RakLib]`), the
+`[NET] Session closed` statistics block, inventory/recipe sync lines,
+"Closing player" teardown detail, the ops.txt count and plugin `print()`
+output. Warnings and errors always print.
 
 When recoverable problems were reported, the boot ends with:
 

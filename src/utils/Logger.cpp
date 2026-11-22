@@ -40,6 +40,8 @@ const char* mcp_log_level_name(mcp_log_level_t lvl) {
         return "CRITICAL";
     case MCP_LOG_EMERGENCY:
         return "EMERGENCY";
+    case MCP_LOG_CHAT:
+        return "CHAT";
     }
     return "UNKNOWN";
 }

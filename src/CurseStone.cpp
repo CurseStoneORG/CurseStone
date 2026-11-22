@@ -809,11 +809,6 @@ void handleSignal(int sig) {
 int main(int argc, char* argv[]) {
     using namespace cursestone;
 
-    // Identity banner (CurseStone Diagnostic Engine) — printed before the
-    // logger exists (an early logger init would block Server::initLogger
-    // from attaching the log file). DiagEngine::banner() handles the colors.
-    diagnostics::DiagEngine::banner();
-
     // Install signal handlers for clean shutdown
     std::signal(SIGINT, handleSignal);
     std::signal(SIGTERM, handleSignal);

@@ -40,7 +40,11 @@ typedef enum mcp_log_level {
     MCP_LOG_WARN = 3,
     MCP_LOG_ERROR = 4,
     MCP_LOG_CRITICAL = 5,
-    MCP_LOG_EMERGENCY = 6
+    MCP_LOG_EMERGENCY = 6,
+    // Game chat mirror (broadcastMessage): the console tags it "CHAT" instead
+    // of "INFO" and never re-labels it. Not a severity — do not order it
+    // against the levels above.
+    MCP_LOG_CHAT = 7
 } mcp_log_level_t;
 
 typedef struct mcp_logger {

@@ -2236,6 +2236,11 @@ static void handle_data_packet(mcp_rak_session_manager_t* sm, mcp_rak_session_t*
 // split reassembly that kept getting evicted — instead of guessing.
 // =========================================================================
 static void log_session_diagnostics(const mcp_rak_session_t* s, const char* reason) {
+    // Reliability-layer statistics are forensics data, not console chatter:
+    // they ride the debug-mode switch (settings.debug-mode in cursestone.yml)
+    // like every other [NET] trace. Normal disconnects print nothing here.
+    if (!mcp_debug_enabled())
+        return;
     uint64_t now = mcp_utils_time_ms();
     uint32_t split_active_now = 0;
     for (int i = 0; i < MCP_MAX_CONCURRENT_SPLITS; ++i) {

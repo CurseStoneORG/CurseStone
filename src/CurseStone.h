@@ -48,7 +48,6 @@
 // CurseStone version information.
 #define CURSESTONE_API "1.0.3"
 #define CURSESTONE_NAME "CurseStone"
-#define CURSESTONE_CODENAME "Obsidian"
 
 // Minecraft compatibility.
 #define MINECRAFT_VERSION "0.15.x"
