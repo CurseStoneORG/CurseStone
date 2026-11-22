@@ -163,6 +163,12 @@ private:
         vgen::PopulateGate mPopulateGate;
         std::mutex mDepMutex;
         std::unordered_map<int64_t, std::vector<std::pair<int32_t, int32_t>>> mPopulateDeps;
+
+        // Plains decorator carry-over, reproduced in reference order for the
+        // 1-in-10 forest-grass branch (vanilla reads plains' shared decorator
+        // state; see PopulateGate.h PlainsRefTable). Filled by
+        // populateRegister from the seed-independent per-chunk retune.
+        vgen::PlainsRefTable mPlainsRef;
 };
 
 static inline int64_t vgenKey(int cx, int cz) {

@@ -53,6 +53,7 @@
 #pragma once
 #include <condition_variable>
 #include <cstdint>
+#include <map>
 #include <mutex>
 #include <unordered_map>
 
@@ -65,6 +66,81 @@ inline uint64_t populateRank(int32_t cx, int32_t cz) {
     const uint64_t bz = (uint64_t)((int64_t)cz + 0x80000000LL);
     return (bx << 32) | bz;
 }
+
+// ---------------------------------------------------------------------------
+// Plains decorator reference state (the vanilla 1-in-10 forest-grass branch).
+//
+// Vanilla BiomeDecorator::decorate reads Biome::plains->decorator->grassCount
+// for its 1-in-10 "forest" branch, and PlainsBiome::decorate retunes that
+// same shared decorator on every plains populate. The value the branch sees
+// is therefore plains' decorator state carried over from earlier populations
+// — a strictly-sequential-populate concept that concurrent workers can
+// neither share safely (the pre-fix singleton raced, digest e21c87 -> race)
+// nor simply freeze (the constructor default diverges from the sequential
+// reference: seed 1337 radius 5 shifted one brown-mushroom cell because the
+// branch read 10 instead of the 5 a plains chunk two ranks earlier had
+// retuned).
+//
+// The reference order makes the carry-over reproducible WITHOUT shared
+// mutable state: under the gate's rank discipline, plains' decorator state
+// at the moment rank K populates is exactly the retune of the highest plains
+// rank <= K in the registered chunk set — a plains chunk reads its own just
+// retuned value, a non-plains chunk reads the nearest lower-ranked plains
+// chunk's. Each retune is a pure function of the chunk coordinates
+// (seed-independent biome-info noise), so the table is fully known at
+// register time, before any populate runs, and every read returns the same
+// value on every worker and every run. The table lives per VgenSource; a
+// thread-local pointer carries it into BiomeDecorator::decorate for the
+// duration of one populate.
+class PlainsRefTable {
+public:
+    void note(uint64_t rank, int grass) {
+        std::lock_guard<std::mutex> lk(mtx_);
+        plainsByRank_[rank] = grass;
+    }
+
+    // The decorator state rank K's 1-in-10 branch would read under the
+    // reference order; the PlainsBiome constructor default when no plains
+    // chunk precedes it (vanilla: nothing populated plains' decorator yet).
+    int grassAtOrBefore(uint64_t rank) const {
+        std::lock_guard<std::mutex> lk(mtx_);
+        auto it = plainsByRank_.upper_bound(rank);
+        if (it == plainsByRank_.begin())
+            return kDefaultGrassCount;
+        --it;
+        return it->second;
+    }
+
+    static constexpr int kDefaultGrassCount = 10; // PlainsBiome ctor value
+
+private:
+    mutable std::mutex mtx_;
+    std::map<uint64_t, int> plainsByRank_;
+};
+
+// Installed by VgenSource::populate for the duration of one populate. Reads
+// outside a populate (tools, tests) fall back to the constructor default —
+// the vanilla singleton's never-populated state.
+inline PlainsRefTable*& currentPlainsRef() {
+    static thread_local PlainsRefTable* t = nullptr;
+    return t;
+}
+
+// RAII installer — populate has early returns, so the restore must not
+// depend on reaching the end of the function.
+class PlainsRefGuard {
+public:
+    explicit PlainsRefGuard(PlainsRefTable& table)
+        : saved_(currentPlainsRef()) {
+        currentPlainsRef() = &table;
+    }
+    ~PlainsRefGuard() { currentPlainsRef() = saved_; }
+    PlainsRefGuard(const PlainsRefGuard&) = delete;
+    PlainsRefGuard& operator=(const PlainsRefGuard&) = delete;
+
+private:
+    PlainsRefTable* saved_;
+};
 
 class PopulateGate {
 public:
