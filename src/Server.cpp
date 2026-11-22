@@ -397,13 +397,15 @@ bool Server::loadDefaultWorld() {
     lc.dataPath = dataPath_; // Allows World to resolve absolute world paths.
 
     // Create world directories before constructing the WorldProvider.
-    // This mirrors the reference server's Anvil directory layout.
+    // The format's own subdirectory matches what its provider creates:
+    // region/ for Anvil, db/ for LevelDB (both providers also ensure their
+    // own, so this only keeps the scaffolding consistent with the config).
     std::string worldsDir = dataPath_ + "/worlds";
     std::string worldDir = worldsDir + "/" + lc.name;
-    std::string regionDir = worldDir + "/region";
     ::mkdir(worldsDir.c_str(), 0755);
     ::mkdir(worldDir.c_str(), 0755);
-    ::mkdir(regionDir.c_str(), 0755);
+    std::string formatDir = (lc.format == "leveldb") ? "/db" : "/region";
+    ::mkdir((worldDir + formatDir).c_str(), 0755);
 
     // Construct the World and initialize its provider.
     world_ = std::make_shared<world::World>(std::move(lc));
@@ -423,7 +425,7 @@ bool Server::loadDefaultWorld() {
     worlds_.push_back(world_);
     DiagEngine::stage("\"" + world_->name() + "\" loaded!");
     utils::MainLogger::get().debug("World directory: " + worldDir);
-    utils::MainLogger::get().debug("Region directory: " + regionDir);
+    utils::MainLogger::get().debug("Level directory: " + worldDir + formatDir);
 
     // Secondary worlds remembered by earlier sessions reload here, before
     // plugins enable, so plugin worlds are ready when their plugins start.

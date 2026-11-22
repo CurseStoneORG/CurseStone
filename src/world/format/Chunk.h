@@ -232,3 +232,20 @@ void mcp_chunk_wire_snapshot_free(mcp_chunk_wire_snapshot_t* s);
 uint8_t* mcp_chunk_snapshot_network_serialize(const mcp_chunk_wire_snapshot_t* s,
                                               size_t* out_len);
 
+/**
+ * @brief Serializes a snapshot to the MCPE LevelDB legacy terrain record.
+ *
+ * The record the MCPE 0.15.x device writes under the "0" (LegacyTerrain)
+ * db key: the wire payload minus the trailing extra-data count —
+ * blocks + data + sky + block light + heightmap + biome colors
+ * (83,200 bytes). Same transposition core as the wire serializer, so the
+ * on-disk record and the streamed payload agree byte-for-byte on the
+ * parts they share. Safe on any thread: it touches only @p s.
+ *
+ * @param s        snapshot to serialize; must not be null.
+ * @param out_len  receives the record size (83,200); must not be null.
+ * @return an owned buffer, or NULL on allocation failure. Caller frees.
+ */
+uint8_t* mcp_chunk_snapshot_legacy_terrain_serialize(
+    const mcp_chunk_wire_snapshot_t* s, size_t* out_len);
+
