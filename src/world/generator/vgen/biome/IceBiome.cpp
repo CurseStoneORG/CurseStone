@@ -58,7 +58,7 @@ float IceBiome::getCreatureProbability() {
 	return Biome::getCreatureProbability();
 }
 
-void IceBiome::decorate(BlockSource* source, Random& random, const BlockPos& origin, bool legacy, float limit){
+void IceBiome::decorateImpl(BlockSource* source, Random& random, const BlockPos& origin, bool legacy, float limit){
 	if(superIcy) {
 		for (auto i : range(3)) {
 			UNUSED_VARIABLE(i);
@@ -69,7 +69,7 @@ void IceBiome::decorate(BlockSource* source, Random& random, const BlockPos& ori
 
 			p.y = source->getHeightmap(p);
 
-			decorator->iceSpikeFeature->place(*source, p, random);
+			deco()->iceSpikeFeature->place(*source, p, random);
 		}
 
 		for (auto i : range(2)) {
@@ -81,10 +81,10 @@ void IceBiome::decorate(BlockSource* source, Random& random, const BlockPos& ori
 
 			p.y = source->getHeightmap(p);
 
-			decorator->icePatchFeature->place(*source, p, random);
+			deco()->icePatchFeature->place(*source, p, random);
 		}
 	}
-	Biome::decorate(source, random, origin, legacy, limit);
+	Biome::decorateImpl(source, random, origin, legacy, limit);
 }
 
 const FeaturePtr& IceBiome::getTreeFeature(Random* random){

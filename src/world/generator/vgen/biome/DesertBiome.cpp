@@ -48,8 +48,8 @@ DesertBiome::DesertBiome(int id) :
 	decorator->cactusCount = 10;
 }
 
-void DesertBiome::decorate( BlockSource* source, Random& random, const BlockPos& origin, bool legacy, float worldLimit ) {
-	Biome::decorate(source, random, origin, legacy, worldLimit);
+void DesertBiome::decorateImpl(BlockSource* source, Random& random, const BlockPos& origin, bool legacy, float worldLimit ) {
+	Biome::decorateImpl(source, random, origin, legacy, worldLimit);
 
 	if(random.nextInt(500) == 0) {
 		const int randZ = random.nextInt(16);
@@ -58,7 +58,7 @@ void DesertBiome::decorate( BlockSource* source, Random& random, const BlockPos&
 
 		p.y = source->getHeightmap(p);
 
-		decorator->desertWellFeature->place(
+		deco()->desertWellFeature->place(
 			*source,
 			origin.offset(p.x, LEVEL_GEN_HEIGHT, p.z),
 			random );

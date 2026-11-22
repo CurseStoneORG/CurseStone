@@ -129,6 +129,27 @@ public:
 	int hugeMushrooms = 0;
 	bool liquids = true;
 
+public:
+
+	// Counters + feature handles, shared (the handles) and per-populate
+	// (the counts): Biome::decorate runs the per-chunk pass on a
+	// thread-local clone so same-biome workers never race the counts.
+	void copyTunableStateFrom(const BiomeDecorator& other) {
+		waterlilyCount = other.waterlilyCount;
+		treeCount = other.treeCount;
+		flowerCount = other.flowerCount;
+		grassCount = other.grassCount;
+		deadBushCount = other.deadBushCount;
+		mushroomCount = other.mushroomCount;
+		reedsCount = other.reedsCount;
+		cactusCount = other.cactusCount;
+		gravelCount = other.gravelCount;
+		sandCount = other.sandCount;
+		clayCount = other.clayCount;
+		hugeMushrooms = other.hugeMushrooms;
+		liquids = other.liquids;
+	}
+
 protected:
 
 	int _getRandomHeight(int x, int z, BlockSource* source, Random& random, const BlockPos& origin );

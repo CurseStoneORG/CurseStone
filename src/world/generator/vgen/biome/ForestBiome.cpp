@@ -118,7 +118,7 @@ bool ForestBiome::isHumid(){
 	return Biome::isHumid();
 }
 
-void ForestBiome::decorate(BlockSource* source, Random& random, const BlockPos& origin, bool legacy, float limit){
+void ForestBiome::decorateImpl(BlockSource* source, Random& random, const BlockPos& origin, bool legacy, float limit){
 	if(type == TYPE_ROOFED) {
 		for(auto bx : range(4)) {
 			for(auto bz : range(4)) {
@@ -128,7 +128,7 @@ void ForestBiome::decorate(BlockSource* source, Random& random, const BlockPos& 
 				BlockPos pos = origin.offset(x, 0, z);
 				pos.y = source->getHeightmap(pos.x, pos.z);
 				if(random.nextInt(20) == 0) {
-					decorator->hugeMushroomFeature->place(*source, pos, random);
+					deco()->hugeMushroomFeature->place(*source, pos, random);
 				}
 				else {
 					auto& tree = getTreeFeature(&random);
@@ -170,13 +170,13 @@ void ForestBiome::decorate(BlockSource* source, Random& random, const BlockPos& 
 				BlockPos offset = origin.offset(x, 0, z);
 				const int y = random.nextInt(source->getHeightmap(offset.x, offset.z) + 32);
 
-				if (decorator->doublePlantFeature->place(*source, BlockPos(origin.x + x, y, origin.z + z), random, enum_cast(plantType))) {
+				if (deco()->doublePlantFeature->place(*source, BlockPos(origin.x + x, y, origin.z + z), random, enum_cast(plantType))) {
 					break;
 				}
 			}
 		}
 	}
-	Biome::decorate(source, random, origin, legacy, limit);
+	Biome::decorateImpl(source, random, origin, legacy, limit);
 }
 
 

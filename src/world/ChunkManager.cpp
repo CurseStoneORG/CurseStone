@@ -586,12 +586,61 @@ void ChunkManager::commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t i
             }
         }
     }
-    // The new blocks change the sky light the same way a player edit
-    // would — requeue the light sweep for the chunk, outside the locks
-    // (same contract as setChunk's on_chunk_added_). This one is FULL:
-    // blocks genuinely changed under a live chunk, so the exact
-    // clear-and-reflood sweep (chunk + one light range into every
-    // neighbour) is required to darken what the new blocks shadow.
+    if (changed && on_chunk_added_)
+        on_chunk_added_(cx, cz, /*full=*/true);
+}
+
+void ChunkManager::commitNeighborWriteBatch(int cx, int cz,
+                                            const std::vector<generator::NeighborWrite>& writes) {
+    if (writes.empty())
+        return;
+    const auto t0 = SteadyClock::now();
+    mcp_chunk_t* live = nullptr;
+    bool changed = false;
+    {
+        // One store-lock pass for the whole batch — the per-write path
+        // paid this lock per cell (the dominant cost of the boot pregen:
+        // ~9M writes over radius 16, with store_wait up to 40 s at 16
+        // workers). The batch keeps the exact queue-vs-live atomicity
+        // against the installer: the whole group is either applied to the
+        // live chunk or parked as one ordered run, never straddling an
+        // install.
+        std::lock_guard<std::mutex> lk(mtx_);
+        noteLockWait(chunk_lock_, t0);
+        spill_lock_wait_ns_.fetch_add(
+            (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(SteadyClock::now() - t0)
+                .count(),
+            std::memory_order_relaxed);
+        spill_writes_.fetch_add(writes.size(), std::memory_order_relaxed);
+        auto it = chunks_.find(ChunkKey{cx, cz});
+        if (it != chunks_.end() && it->second) {
+            live = it->second;
+        } else if (spillQueue_) {
+            spill_parked_.fetch_add(writes.size(), std::memory_order_relaxed);
+            spillQueue_->queueSpillBatch(cx, cz, writes);
+            return; // parked — no live chunk changed, so no relight
+        }
+        if (live) {
+            for (const generator::NeighborWrite& w : writes) {
+                uint32_t y = w.index % 128;
+                uint32_t rest = w.index / 128;
+                uint32_t z = rest % 16;
+                uint32_t x = rest / 16;
+                // Idempotent skip per cell (a lake writes its whole
+                // envelope): unchanged cells cost no write and no relight.
+                if (mcp_chunk_get_block_id(live, (int)x, (int)y, (int)z) == w.id &&
+                    mcp_chunk_get_block_data(live, (int)x, (int)y, (int)z) == w.data)
+                    continue;
+                const uint8_t oldId = mcp_chunk_get_block_id(live, (int)x, (int)y, (int)z);
+                mcp_chunk_set_block_full(live, (int)x, (int)y, (int)z, w.id, w.data);
+                changed = true;
+                if (on_spill_tile_block_overwrite_ &&
+                    cursestone::tile::isTileBlock(oldId) && oldId != w.id) {
+                    on_spill_tile_block_overwrite_(cx * 16 + (int)x, (int)y, cz * 16 + (int)z);
+                }
+            }
+        }
+    }
     if (changed && on_chunk_added_)
         on_chunk_added_(cx, cz, /*full=*/true);
 }

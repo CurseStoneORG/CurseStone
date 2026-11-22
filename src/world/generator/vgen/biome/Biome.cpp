@@ -453,8 +453,35 @@ float Biome::getDownfall() const {
 	return mDownfall;
 }
 
-void Biome::decorate(BlockSource* source, Random& random, const BlockPos& origin, bool legacy, float worldLimit){
-	decorator->decorate(source, random, this, origin, legacy, worldLimit);
+namespace {
+// Per-(thread, biome) decorator clones holding the per-chunk counts; the
+// feature lists inside are SHARED handles, so the clone is cheap and the
+// feature objects stay singletons.
+BiomeDecorator* threadDecoView() {
+	static thread_local BiomeDecorator* view = nullptr;
+	return view;
+}
+std::unordered_map<Biome*, std::unique_ptr<BiomeDecorator>>& threadDecoScratch() {
+	static thread_local std::unordered_map<Biome*, std::unique_ptr<BiomeDecorator>> map;
+	return map;
+}
+} // namespace
+
+void Biome::decorate(BlockSource* source, Random& random, const BlockPos& origin, bool legacy, float worldLimit) {
+	auto& scratch = threadDecoScratch()[this];
+	if (!scratch)
+		scratch.reset(new BiomeDecorator());
+	scratch->copyTunableStateFrom(*decorator);
+	BiomeDecorator* saved = decoView;
+	decoView = scratch.get();
+	decorateImpl(source, random, origin, legacy, worldLimit);
+	decoView = saved;
+}
+
+void Biome::decorateImpl(BlockSource* source, Random& random, const BlockPos& origin, bool legacy, float worldLimit) {
+	// The base pass runs on the per-thread view: it reads the per-chunk
+	// counts the biome override just wrote there.
+	deco()->decorate(source, random, this, origin, legacy, worldLimit);
 }
 
 FullBlock Biome::getRandomFlowerTypeAndData(Random& random, const BlockPos& pos){
@@ -462,7 +489,8 @@ FullBlock Biome::getRandomFlowerTypeAndData(Random& random, const BlockPos& pos)
 }
 
 void Biome::buildSurfaceAt(Random& random, BlockVolume& blocks, const BlockPos& pos, float depthValue, Height seaLevel) {
-	buildSurfaceAtDefault(random, blocks, pos, depthValue, seaLevel);
+	buildSurfaceAtDefault(random, blocks, pos, depthValue, seaLevel,
+	                      SurfaceMats{mTopMaterial, mTopMaterialData, mMaterial});
 }
 
 void Biome::_placeBedrock(Random& random, BlockVolume& blocks, const BlockPos& pos) {
@@ -475,10 +503,10 @@ void Biome::_placeBedrock(Random& random, BlockVolume& blocks, const BlockPos& p
 	}
 }
 
-void Biome::buildSurfaceAtDefault(Random& random, BlockVolume& blocks, const BlockPos& pos, float depthValue, Height seaLevel) {
+void Biome::buildSurfaceAtDefault(Random& random, BlockVolume& blocks, const BlockPos& pos, float depthValue, Height seaLevel, SurfaceMats mats) {
 
-	FullBlock top(mTopMaterial, mTopMaterialData);
-	BlockID material = mMaterial;
+	FullBlock top(mats.top, mats.topData);
+	BlockID material = mats.material;
 	int run = -1;
 	int runDepth = (int)(depthValue / 3 + 3 + random.nextFloat() * 0.25f);
 
@@ -503,8 +531,8 @@ void Biome::buildSurfaceAtDefault(Random& random, BlockVolume& blocks, const Blo
 					material = Block::mStone->mID;
 				}
 				else if(p.y >= seaLevel - 4 && p.y <= seaLevel + 1) {
-					top = FullBlock(mTopMaterial, mTopMaterialData);
-					material = mMaterial;
+					top = FullBlock(mats.top, mats.topData);
+					material = mats.material;
 				}
 				if(p.y < seaLevel && top.isAir()) {
 					if(getTemperature() < 0.15f) {

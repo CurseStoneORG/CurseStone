@@ -166,12 +166,27 @@ BlockSource::BlockSource(ITerrainFeed& feed, LevelChunk& center)
 }
 
 BlockSource::~BlockSource() {
+        flushNeighborWrites();
         for (int dx = 0; dx < 3; ++dx) {
                 for (int dz = 0; dz < 3; ++dz) {
                         if (mSlots[dx][dz].snapshot) {
                                 recycleScratchNeighbor(mSlots[dx][dz].snapshot);
                                 mSlots[dx][dz].snapshot = nullptr;
                         }
+                }
+        }
+}
+
+void BlockSource::flushNeighborWrites() {
+        for (int dx = 0; dx < 3; ++dx) {
+                for (int dz = 0; dz < 3; ++dz) {
+                        auto& buf = mNeighborWrites[dx][dz];
+                        if (buf.empty())
+                                continue;
+                        const int nx = mCenter.mPos.x + dx - 1;
+                        const int nz = mCenter.mPos.z + dz - 1;
+                        mFeed.commitNeighborWriteBatch(nx, nz, buf);
+                        buf.clear();
                 }
         }
 }
@@ -298,7 +313,14 @@ bool BlockSource::_writeBlock(LevelChunk& c, const ChunkBlockPos& p, BlockID id,
         c.setData(p, data);
         if (recordSpill && &c != &mCenter) {
                 uint32_t idx = (uint32_t)p.y + ((uint32_t)p.z + (uint32_t)p.x * 16) * 128;
-                mFeed.commitNeighborWrite(c.mPos.x, c.mPos.z, idx, (uint8_t)id.value, (uint8_t)data);
+                // Buffer for one batched delivery per neighbour at the end
+                // of populate (see mNeighborWrites). The virtual snapshot is
+                // updated above, so reads within this populate stay exact.
+                const int dx = c.mPos.x - mCenter.mPos.x + 1;
+                const int dz = c.mPos.z - mCenter.mPos.z + 1;
+                mNeighborWrites[dx][dz].push_back(
+                    cursestone::world::generator::NeighborWrite{
+                        idx, (uint8_t)id.value, (uint8_t)data});
         }
         return true;
 }

@@ -64,34 +64,9 @@ public:
 
         virtual bool getNearestGeneratedFeature(Player& player, BlockPos& pos);
 
-        // Chunks whose 16x16 window intersects a cached start's bounding
-        // box — i.e. every chunk that would claim one of this feature's
-        // windows from its own populate. The populate gate (vgen/
-        // PopulateGate.h) waits for the lower-ranked ones so the windows of
-        // one structure always run in the reference chunk order: pieces
-        // mutate during postProcess (lazy ground height, consumed pieces),
-        // and the vanilla order is the only order that reproduces vanilla
-        // block output.
-        void collectWindowDeps(int chunkX, int chunkZ,
-                               std::vector<std::pair<int32_t, int32_t>>& out) {
-                std::lock_guard<std::mutex> l(cacheMutex);
-                const BoundingBox win(chunkX * 16, 0, chunkZ * 16,
-                                      chunkX * 16 + 15, 127, chunkZ * 16 + 15);
-                for (auto& pair : cachedStructures) {
-                        Unique<StructureStart>& start = pair.second;
-                        if (!start->isValid())
-                                continue;
-                        const BoundingBox& bb = start->getBoundingBox();
-                        if (!bb.intersects(win))
-                                continue;
-                        // Arithmetic shift floors negative coords correctly.
-                        const int x0 = bb.x0 >> 4, x1 = bb.x1 >> 4;
-                        const int z0 = bb.z0 >> 4, z1 = bb.z1 >> 4;
-                        for (int x = x0; x <= x1; ++x)
-                                for (int z = z0; z <= z1; ++z)
-                                        out.push_back({x, z});
-                }
-        }
+
+        void probeWindowDeps(Dimension& dimension, int chunkX, int chunkZ,
+                             std::vector<std::pair<int32_t, int32_t>>& out);
 
 protected:
 

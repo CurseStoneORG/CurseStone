@@ -72,6 +72,8 @@ public:
         // ITerrainFeed (the 3x3 virtual-neighborhood backing store)
         std::shared_ptr<vgen::LevelChunk> acquireTerrain(int cx, int cz) override;
         void commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t id, uint8_t data) override;
+        void commitNeighborWriteBatch(int cx, int cz,
+                                      const std::vector<NeighborWrite>& writes) override;
         void commitNeighborTile(int cx, int cz, const std::vector<uint8_t>& blob) override;
         void applySpill(vgen::LevelChunk& center, int cx, int cz) override;
         vgen::Level& getLevel() override { return mLevel; }
@@ -79,6 +81,8 @@ public:
 
         // ISpillQueue (consumed by ChunkManager at chunk install time)
         void queueSpill(int cx, int cz, uint32_t index, uint8_t id, uint8_t data) override;
+        void queueSpillBatch(int cx, int cz,
+                             const std::vector<NeighborWrite>& writes) override;
         void drainSpills(int cx, int cz, mcp_chunk_t* chunk) override;
 
 private:
