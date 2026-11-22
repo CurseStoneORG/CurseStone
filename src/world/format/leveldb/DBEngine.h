@@ -54,6 +54,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -69,6 +70,22 @@ struct InternalKeyLess {
     bool operator()(const std::string& a, const std::string& b) const {
         return db::internal_key_less(a, b);
     }
+};
+
+// A cached read-only view of one live table. Tables are immutable once
+// written, so the image and the parsed reader are shared safely across
+// threads WITHOUT the engine mutex: point lookups and scans only take
+// mtx_ briefly to fetch the shared view (and, on a miss, to publish the
+// freshly loaded one). POSIX maps the file read-only (page-cache backed,
+// no RSS amplification); platforms without mmap cache the bytes read
+// once into the heap buffer.
+struct OpenTable {
+    uint64_t number = 0;
+    size_t size = 0;
+    const uint8_t* image = nullptr; // mapped view when mapped, else heap.data()
+    std::vector<uint8_t> heap;      // populated when the file is not mapped
+    bool mapped = false;
+    db::TableReader reader;
 };
 
 class DBEngine {
@@ -134,6 +151,24 @@ class DBEngine {
     bool write_file_bytes(const std::string& path, const uint8_t* data, size_t len,
                           bool sync) const;
 
+    // --- cached table views --------------------------------------------
+    // NOT called with mtx_ held for the load path: a cache miss maps/
+    // reads the file with the mutex RELEASED (the whole point — the old
+    // code read whole tables under mtx_, so every chunk load serialized
+    // behind flushes and compactions). Returns a shared view that stays
+    // valid even after the file is pruned from the cache or deleted by a
+    // later compaction (the caller holds its own reference).
+    std::shared_ptr<const OpenTable> get_table(uint64_t number) const;
+    // One point-lookup attempt over the memtable + candidate tables (see
+    // get() for the retry-on-generation-change wrapper).
+    bool get_once(const std::string& user_key, const std::string& target,
+                  uint64_t* gen, std::optional<std::string>* out, bool* retry) const;
+    // Drops cached views of tables that no longer belong to the live file
+    // set (after a compaction) and enforces the cache byte cap. Called
+    // with mtx_ held; entries still referenced by a reader stay alive via
+    // shared_ptr until the reader is done with them.
+    void prune_table_cache_locked() const;
+
     // --- state (guarded by mtx_) ----------------------------------------
     mutable std::mutex mtx_;
     bool opened_ = false;
@@ -154,6 +189,24 @@ class DBEngine {
     int lock_fd_ = -1;
     uint64_t manifest_number_ = 0;
     size_t memtable_batch_count_ = 0; // batches since last flush
+
+    // Cached immutable table views (see OpenTable). Mutated only under
+    // mtx_ (insert/prune — mutable because get() is a const interface
+    // that lazily fills the cache); the views themselves are used
+    // lock-free.
+    mutable std::map<uint64_t, std::shared_ptr<const OpenTable>> open_tables_;
+    mutable size_t open_tables_bytes_ = 0;
+    // Bumped on every files_ change (flush publish, compaction publish).
+    // Point lookups snapshot the candidate list + generation and RETRY
+    // when the generation moved underneath them: a compaction that runs
+    // mid-lookup relocates the data into the merged table, and a stale
+    // candidate list alone could report a missing key for data that is
+    // very much alive (a read returning a pre-write value is legitimate
+    // snapshot semantics; a read missing a committed key is not).
+    mutable uint64_t files_generation_{0};
+    // Generous cap: a 2500-chunk MCPE db is ~60 MB of tables. Entries are
+    // evicted FIFO (oldest unreferenced first) once this is exceeded.
+    static constexpr size_t kTableCacheMaxBytes = 512u << 20;
 };
 
 } // namespace cursestone::world::format::leveldb
