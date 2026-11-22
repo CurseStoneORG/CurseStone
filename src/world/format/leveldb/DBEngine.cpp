@@ -26,15 +26,16 @@
 
 #include <algorithm>
 #include <cerrno>
-#include <fcntl.h>
+#include <fcntl.h> // O_*/_O_* for the LOCK descriptor on both platforms
 #include <cstdio>
 #include <cstring>
-#include <dirent.h>
-#include <sys/file.h>
-#include <sys/stat.h>
-#include <unistd.h>
 
 #include "../../../utils/PlatformCompat.h"
+
+#if !defined(_WIN32)
+#include <sys/file.h> // ::flock and the LOCK_* verbs for the whole-file lock
+#include <unistd.h>   // ::close, ::fsync, ::fileno
+#endif
 
 namespace cursestone::world::format::leveldb {
 
@@ -50,6 +51,45 @@ namespace {
 constexpr size_t kMemtableFlushBytes = 4u << 20; // 4 MiB
 // Level-0 tables tolerated before everything is merged into one.
 constexpr size_t kLevel0CompactionTrigger = 8;
+
+// Platform shims for the engine's four POSIX-isms. PlatformCompat.h already
+// maps mkdir/stat/opendir/readdir onto their Windows counterparts; what it
+// does not cover is the advisory whole-file lock on db/LOCK, the durability
+// flush and the CRT fd pair around them. The _-prefixed CRT spellings are
+// used directly on Windows to stay clear of the deprecated POSIX names.
+#if defined(_WIN32)
+// flock() has no CRT equivalent: an exclusive, non-blocking LockFileEx over
+// the whole 64-bit range is the strict Win32 counterpart (MAXDWORD/MAXDWORD
+// is the documented "lock the entire file" idiom), released by UnlockFileEx
+// on the very same range.
+inline bool db_lock_exclusive(int fd) {
+    HANDLE h = reinterpret_cast<HANDLE>(::_get_osfhandle(fd));
+    if (h == INVALID_HANDLE_VALUE)
+        return false;
+    OVERLAPPED ov{};
+    return ::LockFileEx(h, LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY, 0,
+                        MAXDWORD, MAXDWORD, &ov) != 0;
+}
+inline void db_unlock(int fd) {
+    HANDLE h = reinterpret_cast<HANDLE>(::_get_osfhandle(fd));
+    if (h == INVALID_HANDLE_VALUE)
+        return;
+    OVERLAPPED ov{};
+    ::UnlockFileEx(h, 0, MAXDWORD, MAXDWORD, &ov);
+}
+inline int db_open_fd(const char* path) {
+    return ::_open(path, _O_RDWR | _O_CREAT | _O_BINARY, _S_IREAD | _S_IWRITE);
+}
+inline int db_close_fd(int fd) { return ::_close(fd); }
+// fsync() through the CRT: _commit writes the descriptor's buffers to disk.
+inline int db_sync_file(FILE* fp) { return ::_commit(::_fileno(fp)); }
+#else
+inline bool db_lock_exclusive(int fd) { return ::flock(fd, LOCK_EX | LOCK_NB) == 0; }
+inline void db_unlock(int fd) { ::flock(fd, LOCK_UN); }
+inline int db_open_fd(const char* path) { return ::open(path, O_RDWR | O_CREAT, 0644); }
+inline int db_close_fd(int fd) { return ::close(fd); }
+inline int db_sync_file(FILE* fp) { return ::fsync(::fileno(fp)); }
+#endif
 
 bool ensure_dir(const std::string& path) {
     struct stat st{};
@@ -178,7 +218,7 @@ bool DBEngine::write_file_bytes(const std::string& path, const uint8_t* data,
         return false;
     bool ok = (len == 0) || (std::fwrite(data, 1, len, fp) == len);
     if (ok && sync)
-        ok = (std::fflush(fp) == 0) && (::fsync(::fileno(fp)) == 0);
+        ok = (std::fflush(fp) == 0) && (db_sync_file(fp) == 0);
     std::fclose(fp);
     return ok;
 }
@@ -219,7 +259,7 @@ bool DBEngine::write_manifest_locked(std::string* err) {
             *err = "failed writing CURRENT.tmp";
         return false;
     }
-    if (std::rename(tmp.c_str(), (dir_ + "/CURRENT").c_str()) != 0) {
+    if (!db::replace_file(tmp, dir_ + "/CURRENT")) {
         if (err)
             *err = "failed renaming CURRENT.tmp";
         return false;
@@ -253,11 +293,11 @@ bool DBEngine::open(const std::string& db_dir, std::string* err) {
     // Exclusive LOCK for the lifetime of the handle (real leveldb does the
     // same; two processes must never write one db/).
     std::string lock_path = dir_ + "/LOCK";
-    lock_fd_ = ::open(lock_path.c_str(), O_RDWR | O_CREAT, 0644);
+    lock_fd_ = db_open_fd(lock_path.c_str());
     if (lock_fd_ < 0)
         return fail("cannot open LOCK file");
-    if (::flock(lock_fd_, LOCK_EX | LOCK_NB) != 0) {
-        ::close(lock_fd_);
+    if (!db_lock_exclusive(lock_fd_)) {
+        db_close_fd(lock_fd_);
         lock_fd_ = -1;
         return fail("db is already locked by another process (LOCK)");
     }
@@ -269,8 +309,8 @@ bool DBEngine::open(const std::string& db_dir, std::string* err) {
             log_file_ = nullptr;
         }
         if (lock_fd_ >= 0) {
-            ::flock(lock_fd_, LOCK_UN);
-            ::close(lock_fd_);
+            db_unlock(lock_fd_);
+            db_close_fd(lock_fd_);
             lock_fd_ = -1;
         }
         if (err)
@@ -873,8 +913,8 @@ void DBEngine::close() {
         log_file_ = nullptr;
     }
     if (lock_fd_ >= 0) {
-        ::flock(lock_fd_, LOCK_UN);
-        ::close(lock_fd_);
+        db_unlock(lock_fd_);
+        db_close_fd(lock_fd_);
         lock_fd_ = -1;
     }
     opened_ = false;

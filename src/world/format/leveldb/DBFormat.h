@@ -207,6 +207,12 @@ std::string find_shortest_separator(const std::string& start, const std::string&
 // user part (used for the index handle after the last block).
 std::string find_short_successor(const std::string& key);
 
+// Atomically replaces dst with src under POSIX rename() semantics: dst may
+// already exist and is swapped out in one step. Every CURRENT / level.dat
+// swap goes through this — the CRT rename() refuses to overwrite on Windows
+// and std::filesystem::rename carries MOVEFILE_REPLACE_EXISTING there.
+bool replace_file(const std::string& src, const std::string& dst);
+
 // ---- VersionEdit --------------------------------------------------------------
 
 struct VersionEdit {

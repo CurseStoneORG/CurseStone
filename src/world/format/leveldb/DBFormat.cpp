@@ -25,6 +25,8 @@
 #include "DBFormat.h"
 
 #include <cstring>
+#include <filesystem>
+#include <system_error>
 #include <zlib.h>
 
 namespace cursestone::world::format::leveldb::db {
@@ -468,6 +470,15 @@ bool VersionEdit::decode(const uint8_t* data, size_t len) {
         }
     }
     return true;
+}
+
+bool replace_file(const std::string& src, const std::string& dst) {
+    // std::filesystem::rename keeps POSIX rename() semantics on every
+    // platform — dst may exist and is swapped out in one atomic step —
+    // while the CRT rename() would refuse to overwrite on Windows.
+    std::error_code ec;
+    std::filesystem::rename(src, dst, ec);
+    return !ec;
 }
 
 } // namespace cursestone::world::format::leveldb::db

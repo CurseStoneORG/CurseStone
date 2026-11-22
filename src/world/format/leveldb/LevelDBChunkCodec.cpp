@@ -28,6 +28,7 @@
 #include <cstring>
 #include <string>
 
+#include "DBFormat.h" // db::replace_file — atomic rename that overwrites on Windows too
 #include "../../../nbt/NBT.h"
 #include "../../../nbt/tag/Tag.h"
 
@@ -382,7 +383,7 @@ bool LevelDBChunkCodec::write_level_dat(const std::string& world_dir,
     // Rotate first: the previous save becomes level.dat_old (the device's
     // behavior and the crash-recovery seam the real client reads back).
     std::string dat = world_dir + "/level.dat";
-    std::rename(dat.c_str(), (world_dir + "/level.dat_old").c_str());
+    db::replace_file(dat, world_dir + "/level.dat_old");
 
     std::string tmp = world_dir + "/level.dat.new";
     FILE* fp = std::fopen(tmp.c_str(), "wb");
@@ -394,7 +395,7 @@ bool LevelDBChunkCodec::write_level_dat(const std::string& world_dir,
         std::remove(tmp.c_str());
         return false;
     }
-    if (std::rename(tmp.c_str(), dat.c_str()) != 0) {
+    if (!db::replace_file(tmp, dat)) {
         std::remove(tmp.c_str());
         return false;
     }
