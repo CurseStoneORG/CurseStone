@@ -54,6 +54,7 @@
 #include "network/protocol/CraftingDataPacket.h"
 #include "network/protocol/TextPacket.h"
 #include "scheduler/AsyncPool.h"
+#include "world/performance/PerformanceManager.h"
 #include "scheduler/ServerScheduler.h"
 #include "scheduler/CallbackTask.h"
 #include "world/World.h"
@@ -500,6 +501,9 @@ void Server::pollSpawnPregen() {
     utils::MainLogger::get().info("Spawn area pregenerated: " +
                                   std::to_string(spawn_pregen_target_) +
                                   " chunks in " + std::to_string(ms) + " ms");
+    // Same window, stage by stage: shows what the boot burst actually
+    // spent its time on instead of a single wall-clock number.
+    performance::PerformanceManager::logStageBreakdown("spawn pregen");
 }
 
 // ---------------------------------------------------------------------
@@ -792,6 +796,10 @@ void Server::start(const std::string& dataPath) {
     int recipeCount = crafting_->registerBuiltinRecipes();
     utils::MainLogger::get().debug("Loaded " + std::to_string(recipeCount) + " crafting recipes");
     async_pool_ = std::make_shared<scheduler::AsyncPool>(async_workers_);
+
+    // Performance module: CPU detection + noise kernel dispatch decisions
+    // before the worlds (and their generators) come up.
+    performance::PerformanceManager::init();
 
     // ---- Network. The spec-level rule: if the interface cannot bind, the
     //      boot aborts (a server without a network is a zombie).

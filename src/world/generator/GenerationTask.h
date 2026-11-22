@@ -28,6 +28,7 @@
 #include "world/generator/Generator.h"
 #include "world/format/Chunk.h"
 #include "world/format/ChunkSection.h"
+#include "world/performance/GenerationProfiler.h"
 #include <functional>
 #include <memory>
 #include <string.h>
@@ -49,6 +50,7 @@ class GenerationTask {
         // pattern as the synchronous fallback) and guarantee done_() runs
         // either way.
         mcp_chunk_t* partial = nullptr;
+        performance::ScopedStage totalTimer(performance::Stage::Total);
         try {
             runInner(partial);
         } catch (const std::exception& e) {
@@ -116,7 +118,10 @@ class GenerationTask {
         c->terrain_populated = true;
         c->dirty = true;
         mcp_chunk_recalculate_height_map(c);
-        mcp_chunk_propagate_sky_light(c); // sets c->light_populated = true internally
+        {
+            performance::ScopedStage lightTimer(performance::Stage::Light);
+            mcp_chunk_propagate_sky_light(c); // sets c->light_populated = true internally
+        }
         done_(c);
     }
 

@@ -37,6 +37,7 @@
 #include "world/generator/Generator.h"
 #include "world/generator/GenerationTask.h"
 #include "scheduler/AsyncPool.h"
+#include "world/performance/GenerationProfiler.h"
 #include "tile/TileFactory.h"
 #include "block/BlockIds.h"
 #include "nbt/NBT.h"
@@ -324,7 +325,10 @@ mcp_chunk_t* ChunkManager::getChunkOrRequestAsync(int32_t x, int32_t z,
         //    without disk backing simply returns nullopt.
         if (provider_) {
             try {
-                auto loaded = provider_->loadChunk(x, z);
+                auto loaded = [&] {
+                    performance::ScopedStage diskTimer(performance::Stage::DiskLoad);
+                    return provider_->loadChunk(x, z);
+                }();
                 if (loaded && loaded.value()) {
                     auto* adapter = dynamic_cast<format::ChunkAdapter*>(loaded.value().get());
                     if (adapter && adapter->chunk()) {

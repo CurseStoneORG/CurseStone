@@ -23,6 +23,7 @@
 // CurseStone | vgen — VgenSource implementation.
 
 #include "world/generator/vgen/VgenSource.h"
+#include "world/performance/GenerationProfiler.h"
 #include "world/generator/vgen/Blocks.h"
 #include "world/generator/vgen/material/Material.h"
 #include "world/generator/vgen/feature/LakeFeature.h"
@@ -83,7 +84,6 @@ VgenSource::VgenSource(int64_t seed)
 }
 
 VgenSource::~VgenSource() {
-        std::lock_guard<std::mutex> l(mCacheMutex);
         mTerrainCache.clear(); // shared_ptr frees chunks with no other users
 }
 
@@ -117,6 +117,7 @@ void VgenSource::getHeights(float* noiseBuffer, vgen::Biome** biomes, int x, int
         const int noiseSize2d = Gen::NOISE_SIZE_X * Gen::NOISE_SIZE_Y;
         vgen::Vec2 noisePos2D((float)x, (float)z);
 
+        performance::ScopedStage noiseTimer(performance::Stage::Noise);
         float* depthRegion = (float*)alloca(sizeof(float) * noiseSize2d);
         depthNoise->getRegion(depthRegion, noisePos2D, Gen::NOISE_SIZE_X, Gen::NOISE_SIZE_Z, vgen::Vec2(200.0, 200.0), 0.5);
 
@@ -355,11 +356,20 @@ void VgenSource::generateTerrainInto(LevelChunk& lc, ThreadData& td) {
                                                        td.blockBuffer.data() + td.blockBuffer.size()),
                         16, vgen::LEVEL_GEN_HEIGHT, 16};
 
-        mDimension.getBiomes().fillBiomeData(&lc, lc.getMin().x, lc.getMin().z);
+        {
+            performance::ScopedStage biomeTimer(performance::Stage::BiomeFill);
+            mDimension.getBiomes().fillBiomeData(&lc, lc.getMin().x, lc.getMin().z);
+        }
         prepareHeights(box, p.x, p.z, td); //biomes, temperatures);
-        buildSurfaces(td, terrainRandom, box, lc, p);
+        {
+            performance::ScopedStage surfaceTimer(performance::Stage::Surface);
+            buildSurfaces(td, terrainRandom, box, lc, p);
+        }
 
-        td.caveFeature.apply(box, lc, mDimension, terrainRandom);
+        {
+            performance::ScopedStage cavesTimer(performance::Stage::Caves);
+            td.caveFeature.apply(box, lc, mDimension, terrainRandom);
+        }
 
         lc.setAllBlockIDs(box.blocks.begin(), box.getHeight());
         lc.setAllBlockData(box.data.begin(), box.getHeight());
@@ -370,44 +380,19 @@ void VgenSource::generateTerrainInto(LevelChunk& lc, ThreadData& td) {
 // ITerrainFeed — terrain cache + spill bookkeeping
 // ---------------------------------------------------------------------------
 std::shared_ptr<vgen::LevelChunk> VgenSource::acquireTerrain(int cx, int cz) {
+        // Terrain builds are context-free and deterministic, so the cache
+        // coordinates concurrent acquires of the same chunk: one worker
+        // builds, the others wait for the finished result instead of
+        // racing and throwing the loser's full build away.
         const int64_t key = vgenKey(cx, cz);
-        {
-                std::lock_guard<std::mutex> l(mCacheMutex);
-                auto it = mTerrainCache.find(key);
-                if (it != mTerrainCache.end()) {
-                        it->second.stamp = ++mCacheStamp;
-                        return it->second.chunk;
-                }
-        }
-
-        // build outside the lock (noise work is heavy)
-        auto& td = threadData();
-        auto lc = std::make_shared<vgen::LevelChunk>(mLevel, mDimension, ChunkPos(cx, cz));
-        generateTerrainInto(*lc, td);
-
-        std::lock_guard<std::mutex> l(mCacheMutex);
-        auto& e = mTerrainCache[key];
-        if (e.chunk == nullptr) {
-                e.chunk = lc;
-                // stamp FIRST: eviction picks the oldest entry, and a fresh
-                // entry with stamp 0 would evict itself (and hand back a
-                // dangling pointer) the moment the cache overflows
-                e.stamp = ++mCacheStamp;
-                // evict the oldest entries when the cache is full
-                while (mTerrainCache.size() > kTerrainCacheLimit) {
-                        auto oldest = mTerrainCache.begin();
-                        for (auto it = mTerrainCache.begin(); it != mTerrainCache.end(); ++it) {
-                                if (it->second.stamp < oldest->second.stamp)
-                                        oldest = it;
-                        }
-                        mTerrainCache.erase(oldest); // freed only with the last user
-                }
-        } else {
-                lc.reset(); // lost a race — another worker cached it first
-                e.stamp = ++mCacheStamp;
-                return e.chunk;
-        }
-        return e.chunk;
+        return mTerrainCache.acquire((uint64_t)key,
+                                     [this, cx, cz]() -> std::shared_ptr<vgen::LevelChunk> {
+                auto& td = threadData();
+                auto lc = std::make_shared<vgen::LevelChunk>(mLevel, mDimension, ChunkPos(cx, cz));
+                performance::ScopedStage terrainTimer(performance::Stage::TerrainBuild);
+                generateTerrainInto(*lc, td);
+                return lc;
+        });
 }
 
 void VgenSource::commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t id, uint8_t data) {
@@ -511,6 +496,7 @@ static bool sectionAllAir(const LevelChunk& lc, int sec) {
 }
 
 void VgenSource::copyVirtualToSink(const LevelChunk& src, mcp_chunk_t* dst) {
+        performance::ScopedStage copyTimer(performance::Stage::CopyOut);
         // 0.15 worlds are LEVEL_GEN_HEIGHT (128) blocks tall: the vanilla
         // generator only fills y 0..127, and the virtual LevelChunk is a
         // 16x128x16 volume (stride 128). Copying sections 8..15 would read
@@ -559,6 +545,7 @@ void VgenSource::copyVirtualToSink(const LevelChunk& src, mcp_chunk_t* dst) {
 }
 
 void VgenSource::copySinkToVirtual(const mcp_chunk_t* src, LevelChunk& dst) {
+        performance::ScopedStage copyTimer(performance::Stage::CopyIn);
         memset(dst.mBlocks, 0, sizeof(dst.mBlocks));
         memset(dst.mData, 0, sizeof(dst.mData));
         // Mirror of copyVirtualToSink: 0.15 chunks are 128 blocks tall, so
@@ -616,6 +603,7 @@ void VgenSource::generate(GenerationContext& ctx) {
 }
 
 void VgenSource::populate(GenerationContext& ctx) {
+        performance::ScopedStage populateTimer(performance::Stage::Populate);
         mcp_chunk_t* sink = ctx.chunk;
         if (!sink)
                 return;
