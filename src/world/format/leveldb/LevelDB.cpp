@@ -34,7 +34,9 @@
 #include "../../../utils/MainLogger.hpp"
 #include "../../../utils/ThreadPort.h"
 #include "../../../utils/CRaii.h"
+#include "../../../world/performance/SaveProfiler.h"
 
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <ctime>
@@ -356,6 +358,8 @@ void LevelDB::saveChunk(const std::shared_ptr<FullChunk>& chunk) {
     // MAIN-thread part: copy the arrays the worker will read (snapshot of
     // the block/light data, byte copies of the tile/entity blobs). The
     // transpose, batching and any table flush happen on the worker.
+    performance::SaveProfiler::Scope snap_probe(
+        performance::SaveStage::Snapshot);
     SaveJob job;
     job.x = raw->x;
     job.z = raw->z;
@@ -372,6 +376,7 @@ void LevelDB::saveChunk(const std::shared_ptr<FullChunk>& chunk) {
     }
     job.flags = (uint8_t)(((raw->terrain_populated ? 0x03 : 0x00)) |
                            (raw->light_populated ? 0x04 : 0x00));
+    performance::SaveProfiler::noteChunkSubmitted();
     enqueueSave(std::move(job));
 }
 
@@ -430,12 +435,41 @@ void LevelDB::stopWorker() {
 }
 
 void LevelDB::enqueueSave(SaveJob&& job) {
-    std::unique_lock<std::mutex> lk(job_mtx_);
-    job_cv_.wait(lk, [&] {
-        return job_queue_.size() < kMaxQueuedSaves;
-    });
-    job_queue_.push_back(std::move(job));
-    lk.unlock();
+    // Backpressure point: when the worker has fallen behind (fast
+    // exploration marks chunks dirty faster than the single writer
+    // drains them), this wait is where the caller stalls. It is timed
+    // as EnqueueBlocked — a non-zero count is the queue's verdict on
+    // whether the drain budget matches the production rate.
+    const bool probe = performance::SaveProfiler::enabled();
+    const auto wait_t0 = probe ? std::chrono::steady_clock::now()
+                               : std::chrono::steady_clock::time_point{};
+    size_t depth = 0, bytes = 0;
+    bool queue_was_full = false;
+    {
+        std::unique_lock<std::mutex> lk(job_mtx_);
+        // Non-blocking fast-path check BEFORE waiting: only callers that
+        // actually found a full queue count as backpressure events.
+        queue_was_full = job_queue_.size() >= kMaxQueuedSaves;
+        job_cv_.wait(lk, [&] {
+            return job_queue_.size() < kMaxQueuedSaves;
+        });
+        queued_bytes_ += job_bytes(job);
+        job_queue_.push_back(std::move(job));
+        depth = job_queue_.size();
+        bytes = queued_bytes_;
+    }
+    if (probe) {
+        performance::SaveProfiler::add(
+            performance::SaveStage::EnqueueBlocked,
+            (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - wait_t0)
+                .count());
+        performance::SaveProfiler::add(performance::SaveStage::Enqueue, 0);
+        if (queue_was_full)
+            performance::SaveProfiler::noteEnqueueBlocked();
+        // Gauge note after the push: depth+bytes as the queue now stands.
+        performance::SaveProfiler::noteQueueDepth(depth, bytes);
+    }
     job_cv_.notify_one();
 }
 
@@ -455,10 +489,31 @@ void LevelDB::workerLoop() {
             job = std::move(job_queue_.front());
             job_queue_.pop_front();
             job_busy_ = true;
+            queued_bytes_ -= job_bytes(job);
+            // DEADLOCK FIX (the reported "server freezes during autosave
+            // with ~2500 chunks"): a producer blocked in enqueueSave()
+            // waits on job_cv_ for QUEUE SPACE, and only a pop creates
+            // space. Without this notify, the first time the queue hit
+            // kMaxQueuedSaves the producer slept forever — flushDirty()
+            // held the chunk-store mutex behind it and the whole server
+            // (ticks, console dispatch, generation) froze with it; Ctrl+C
+            // only flipped a flag the tick loop could never reach again.
+            // Wake every waiting producer on every pop.
+            lk.unlock();
+            job_cv_.notify_all();
+            lk.lock();
+            // Live gauge note from the consumer side (depth as it stands
+            // after the pop; the enqueue side notes after each push).
+            if (performance::SaveProfiler::enabled())
+                performance::SaveProfiler::noteQueueDepth(job_queue_.size(),
+                                                          queued_bytes_);
         }
 
         // Transpose the snapshot into the legacy terrain record (worker
-        // thread — touches only the snapshot it owns).
+        // thread — touches only the snapshot it owns). The whole job
+        // (transpose + batch write + any table flush the engine decides
+        // to run inline) is timed as WorkerPut.
+        performance::SaveProfiler::Scope put_probe(performance::SaveStage::WorkerPut);
         size_t terrain_len = 0;
         uint8_t* terrain =
             mcp_chunk_snapshot_legacy_terrain_serialize(job.snapshot, &terrain_len);
@@ -485,7 +540,9 @@ void LevelDB::workerLoop() {
             if (!job.entities.empty())
                 push_op(LevelDBChunkCodec::kRecordEntities, std::string(
                     (const char*)job.entities.data(), job.entities.size()));
-            if (!engine_.put_batch(ops)) {
+            const bool put_ok = engine_.put_batch(ops);
+            performance::SaveProfiler::noteChunkWritten(put_ok);
+            if (!put_ok) {
                 utils::MainLogger::get().warn("[LevelDB] batch write failed for chunk " +
                                               std::to_string(job.x) + "," +
                                               std::to_string(job.z));
@@ -517,10 +574,16 @@ void LevelDB::flushPendingSaves() {
         engine_.flush();
         return; // worker never started (no saves accepted)
     }
+    // The caller (main thread on /save, shutdown, world unload) waits
+    // here for EVERY queued chunk plus the batch in flight. Timed as
+    // DrainWait: this number IS the main-thread stall of a full save,
+    // before any final engine flush is added on top.
+    performance::SaveProfiler::Scope drain_probe(performance::SaveStage::DrainWait);
     done_cv_.wait(lk, [&] {
         return job_queue_.empty() && !job_busy_;
     });
     lk.unlock();
+    performance::SaveProfiler::Scope flush_probe(performance::SaveStage::EngineFlushCall);
     engine_.flush(); // force the memtable to a table: /save is durable now
 }
 

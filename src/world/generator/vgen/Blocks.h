@@ -72,6 +72,14 @@ public:
 	static bool mShouldTick[NUM_BLOCK_TYPES];
 	static float mTranslucency[NUM_BLOCK_TYPES];
 	static uint8_t mLightBlock[NUM_BLOCK_TYPES];
+	// 1 = the block stops a rain-height scan (blocks motion or is liquid).
+	// Lets the generator's column scans run on a flat array read instead
+	// of a material lookup per block.
+	static uint8_t mStopsRain[NUM_BLOCK_TYPES];
+	// Fills mStopsRain from the registered materials (idempotent). Must
+	// run after Material::initMaterials(); the LevelChunk ctor calls it
+	// so any generator path has the table before its first block write.
+	static void ensureRainTable();
 	static uint8_t mLightEmission[NUM_BLOCK_TYPES];
 
 	static void initBlocks();

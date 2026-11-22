@@ -43,7 +43,7 @@ public:
 	Biome& setColor(int color, bool oddColor) override;
 	const FeaturePtr& getTreeFeature(Random* random) override;
 	FullBlock getRandomFlowerTypeAndData(Random& random, const BlockPos& pos) override;
-	void decorate(BlockSource* source, Random& random, const BlockPos& origin, bool legacy, float limit) override;
+	void decorateImpl(BlockSource* source, Random& random, const BlockPos& origin, bool legacy, float limit) override;
 	bool isHumid() override;
 
 protected:

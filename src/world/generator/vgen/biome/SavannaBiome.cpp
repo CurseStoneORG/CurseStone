@@ -47,15 +47,15 @@ const FeaturePtr& SavannaBiome::getTreeFeature(Random* random){
 	return decorator->oakFeature;
 }
 
-void SavannaBiome::decorate(BlockSource* source, Random& random, const BlockPos& origin, bool legacy, float limit){
+void SavannaBiome::decorateImpl(BlockSource* source, Random& random, const BlockPos& origin, bool legacy, float limit){
 	if (!legacy) {
 		const int x = random.nextInt(16);
 		const int z = random.nextInt(16);
 		BlockPos pos = origin.offset(x, 0, z);
 		pos.y = source->getHeightmap(pos.x, pos.z);
-		decorator->doublePlantFeature->place(*source, pos, random, enum_cast(DoublePlantType::Grass));
+		deco()->doublePlantFeature->place(*source, pos, random, enum_cast(DoublePlantType::Grass));
 	}
-	Biome::decorate(source, random, origin, legacy, limit);
+	Biome::decorateImpl(source, random, origin, legacy, limit);
 }
 
 

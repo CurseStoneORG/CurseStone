@@ -114,7 +114,8 @@ void SwampBiome::buildSurfaceAt(Random& random, BlockVolume& blocks, const Block
 		}
 	}
 
-	buildSurfaceAtDefault(random, blocks, pos, depthValue, seaLevel);
+	buildSurfaceAtDefault(random, blocks, pos, depthValue, seaLevel,
+	                      SurfaceMats{mTopMaterial, mTopMaterialData, mMaterial});
 }
 
 } // namespace vgen

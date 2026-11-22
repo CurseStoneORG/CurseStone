@@ -30,6 +30,7 @@
 #include "vgen/Facing.h"
 #include "vgen/biome/BiomeSource.h"
 #include "vgen/material/Material.h"
+#include "world/generator/NeighborChunkIO.h"
 #include <stdint.h>
 
 namespace vgen {
@@ -73,6 +74,16 @@ public:
         // install otherwise. Keeps cross-chunk features (trees, lakes,
         // structure pieces) whole no matter what order chunks generate in.
         virtual void commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t id, uint8_t data) = 0;
+        // Whole-batch delivery (one store-lock pass per target chunk on
+        // the sink side). Order within the batch is the populate's
+        // program order; the sink applies it or parks it as one group.
+        // Default: per-entry commitNeighborWrite.
+        virtual void commitNeighborWriteBatch(
+            int cx, int cz,
+            const std::vector<cursestone::world::generator::NeighborWrite>& writes) {
+                for (const auto& w : writes)
+                        commitNeighborWrite(cx, cz, w.index, w.id, w.data);
+        }
         // Deliver a tile-entity NBT blob aimed outside the center chunk
         // (structure chests): lands in the live chunk's tile_entities with
         // its registry tile created, or parks beside that chunk's block
@@ -164,6 +175,27 @@ public:
                         while (y > 0 && Block::mLightBlock[(uint8_t)mBlocks[(uint32_t)(y - 1) + col]] == 0)
                                 --y;
                         mHeightmap[slot] = y;
+                }
+                // Rain-height cache: precise update, same contract as the
+                // heightmap above — the cached value always equals what a
+                // fresh top-down scan would find, so decorates that read
+                // neighbour columns between writes stay correct without
+                // rescanning 128 blocks after every single write.
+                if (mRainHeights[slot] != -999) {
+                        if (Block::mStopsRain[(uint8_t)id.value]) {
+                                if ((int)p.y + 1 > mRainHeights[slot])
+                                        mRainHeights[slot] = (int)p.y + 1;
+                        } else if ((int)p.y == mRainHeights[slot] - 1) {
+                                // The previous stopper became passable: the
+                                // new height is the first stopper strictly
+                                // below it. Like the scan above, a stopper
+                                // at y == 0 never counts (the scan exits
+                                // before reading it), so h lands at 0.
+                                int y = p.y - 1;
+                                while (y > 0 && !Block::mStopsRain[(uint8_t)mBlocks[(uint32_t)y + col]])
+                                        --y;
+                                mRainHeights[slot] = y > 0 ? y + 1 : 0;
+                        }
                 }
         }
         void setData(const ChunkBlockPos& p, DataID v) {
@@ -324,6 +356,11 @@ private:
         LevelChunk* _chunkAtBlock(int x, int z) const;
         bool _writeBlock(LevelChunk& c, const ChunkBlockPos& p, BlockID id, DataID data,
                          bool recordSpill);
+        // Delivers every buffered out-of-center write: one commit per
+        // touched neighbour chunk, at the end of populate (BlockSource is
+        // stack-local to one populate, so the destructor is the natural
+        // flush point and is exception-safe).
+        void flushNeighborWrites();
 
         ITerrainFeed& mFeed;
         LevelChunk& mCenter;
@@ -343,6 +380,15 @@ private:
                 LevelChunk* snapshot = nullptr; // private scratch copy; null = not acquired yet
         };
         mutable NeighborSlot mSlots[3][3];
+        // Out-of-center block writes buffered per neighbour slot until the
+        // end of populate. The spill decision (live write vs parked spill)
+        // then costs ONE store-lock pass per touched neighbour instead of
+        // one per cell. Order within a slot is the populate's program
+        // order, and every entry carries the populate's rank at delivery,
+        // so the parked-spill bytes and replay order are identical to the
+        // per-write path.
+        std::vector<cursestone::world::generator::NeighborWrite>
+            mNeighborWrites[3][3];
 };
 
 } // namespace vgen

@@ -100,6 +100,17 @@ class WorldProvider {
     // the per-tick autosave drain keeps running fully asynchronous.
     virtual void flushPendingSaves() {
     }
+
+    // How many chunk saves the provider can accept RIGHT NOW without
+    // blocking the caller (the async save queue's free capacity).
+    // Providers without a queue answer SIZE_MAX. The budgeted drain and
+    // the eviction path use this to pace themselves: they ask before
+    // snapshotting and never block the tick thread on a full queue —
+    // blocked work stays dirty/resident and rides the next tick/pass
+    // instead (queue backpressure becomes natural pacing, not a stall).
+    virtual size_t saveQueueRoom() const {
+        return SIZE_MAX;
+    }
 };
 
 } // namespace cursestone::world::format

@@ -37,6 +37,8 @@
 #include "world/generator/Generator.h"
 #include "world/generator/GenerationTask.h"
 #include "scheduler/AsyncPool.h"
+#include "world/performance/GenerationProfiler.h"
+#include "world/performance/SaveProfiler.h"
 #include "tile/TileFactory.h"
 #include "block/BlockIds.h"
 #include "nbt/NBT.h"
@@ -45,9 +47,23 @@
 #include "ChunkManager.h"
 #include <algorithm>
 #include <chrono>
+#include <thread>
 #include <string>
 
 namespace cursestone::world {
+
+namespace {
+using SteadyClock = std::chrono::steady_clock;
+// Records wait-to-acquire time for one lock acquisition. t0 is captured
+// just before the lock statement; call right after it. Pure observer.
+inline void noteLockWait(ChunkManager::LockStats& s, const SteadyClock::time_point t0) {
+    s.wait_ns.fetch_add(
+        (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(SteadyClock::now() - t0)
+            .count(),
+        std::memory_order_relaxed);
+    s.acquires.fetch_add(1, std::memory_order_relaxed);
+}
+} // namespace
 
 ChunkManager::ChunkManager() {
 }
@@ -62,7 +78,9 @@ ChunkManager::~ChunkManager() {
 }
 
 mcp_chunk_t* ChunkManager::getChunkIfLoaded(int32_t x, int32_t z) const {
+    const auto t0 = SteadyClock::now();
     std::lock_guard<std::mutex> lk(mtx_);
+    noteLockWait(chunk_lock_, t0);
     auto it = chunks_.find({x, z});
     return it == chunks_.end() ? nullptr : it->second;
 }
@@ -111,13 +129,29 @@ mcp_chunk_t* ChunkManager::getChunk(int32_t x, int32_t z) {
             ctx.chunk = c;
             // A throw here must not strand the half-built chunk (mirrors
             // the async task's own cleanup).
+            generator_->populateRegister(x, z);
             try {
                 generator_->generate(ctx);
+                generator_->preparePopulateDeps(x, z);
+                // Take the populate turn like the async pipeline does. The
+                // synchronous path normally runs before any pool burst
+                // (boot), so the gate is empty and this returns at once;
+                // the bounded wait only matters if a worker burst is in
+                // flight, and yielding here beats producing a chunk that
+                // does not match the vanilla populate order.
+                int spins = 0;
+                while (!generator_->populateTryEnter(x, z)) {
+                    if (++spins > 200000)
+                        break; // degrade to ungated rather than hang
+                    std::this_thread::sleep_for(std::chrono::microseconds(200));
+                }
                 generator_->populate(ctx);
             } catch (...) {
+                generator_->populateMarkDone(x, z);
                 mcp_chunk_destroy(c);
                 throw;
             }
+            generator_->populateMarkDone(x, z);
 
             // Mark as populated + dirty (so it gets saved to disk).
             c->terrain_populated = true;
@@ -179,7 +213,9 @@ mcp_chunk_t* ChunkManager::getChunkOrRequestAsync(int32_t x, int32_t z,
 
     ChunkKey key{x, z};
     {
+        const auto t0 = SteadyClock::now();
         std::lock_guard<std::mutex> lk(pending_mtx_);
+        noteLockWait(pending_lock_, t0);
         if (pending_.count(key))
             return nullptr; // already in flight
         pending_.insert(key);
@@ -256,7 +292,9 @@ mcp_chunk_t* ChunkManager::getChunkOrRequestAsync(int32_t x, int32_t z,
         std::vector<std::vector<uint8_t>> drainedTiles;
         std::vector<char> preBlobMatches;
         if (c) {
+            const auto t0 = SteadyClock::now();
             std::scoped_lock lk(mtx_, pending_mtx_);
+            noteLockWait(chunk_lock_, t0); // pair acquired as one event
             auto it = chunks_.find(key);
             if (it == chunks_.end() || !it->second) {
                 // Snapshot which tile blobs the chunk carries with a
@@ -316,48 +354,117 @@ mcp_chunk_t* ChunkManager::getChunkOrRequestAsync(int32_t x, int32_t z,
     };
 
     int64_t seed = provider_ ? provider_->getSeed() : 0;
-    auto task = std::make_shared<std::function<void()>>([this, x, z, seed, install]() {
-        // 1) Disk first — region open + read + inflate + NBT decode,
-        //    all off the tick thread now. provider_->loadChunk() is
-        //    thread-safe (the Anvil provider serializes region access
-        //    with io_mtx_ against its own writer thread); a provider
-        //    without disk backing simply returns nullopt.
-        if (provider_) {
-            try {
-                auto loaded = provider_->loadChunk(x, z);
-                if (loaded && loaded.value()) {
-                    auto* adapter = dynamic_cast<format::ChunkAdapter*>(loaded.value().get());
-                    if (adapter && adapter->chunk()) {
-                        mcp_chunk_t* raw = adapter->releaseChunk();
-                        if (raw) {
-                            install(raw); // callback owns pending_ now
-                            return;
+
+    // Register with the generator's populate gate BEFORE any task runs:
+    // a dependency that is queued but not started must still be visible
+    // as "not done", or a chunk could populate past a lower-ranked
+    // neighbour and reproduce a timing-dependent spill/window order
+    // instead of the vanilla chunk order (see vgen/PopulateGate.h).
+    generator_->populateRegister(x, z);
+
+    // Split pipeline (deterministic concurrent populate):
+    //   task 1 — disk load, or generate. Order-free, fully parallel.
+    //   task 2 — populate under the reference-order gate, then install.
+    // Task 2 re-queues itself instead of blocking its worker when a
+    // lower-ranked dependency is still populating: a worker that waits
+    // inside its task can deadlock the whole pool (every worker waiting
+    // on tasks still sitting in the queue), while the re-queue keeps the
+    // lowest unfinished populate always runnable (dependencies strictly
+    // point down-rank). PopulateStep is a plain callable, so every
+    // re-queue submits a fresh copy — no self-referencing function, no
+    // shared_ptr cycle, no leak.
+    auto gt = std::make_shared<generator::GenerationTask>(generator_, x, z, seed, install);
+    auto generated = std::make_shared<mcp_chunk_t*>(nullptr);
+    auto attempts = std::make_shared<int>(0);
+
+    struct PopulateStep {
+        ChunkManager* cm;
+        int32_t x, z;
+        std::shared_ptr<generator::GenerationTask> gt;
+        std::shared_ptr<mcp_chunk_t*> generated;
+        std::shared_ptr<int> attempts;
+        scheduler::AsyncPool* pool;
+        void operator()() const {
+            if (!cm->generator_->populateTryEnter(x, z)) {
+                if (++*attempts < 20000 && pool && pool->submit(*this))
+                    return; // re-queued: worker freed, retry from the FIFO lane
+                // Retry budget exhausted or pool stopping: finish ungated
+                // rather than strand the chunk.
+            }
+            gt->runPopulate(*generated); // always ends in install()
+            cm->generator_->populateMarkDone(x, z);
+        }
+    };
+    const PopulateStep populateStep{this, x, z, gt, generated, attempts, pool};
+
+    auto generateTask = std::make_shared<std::function<void()>>(
+        [this, x, z, gt, generated, populateStep, install, pool]() {
+            // 1) Disk first — region open + read + inflate + NBT decode,
+            //    all off the tick thread now. provider_->loadChunk() is
+            //    thread-safe (the Anvil provider serializes region access
+            //    with io_mtx_ against its own writer thread); a provider
+            //    without disk backing simply returns nullopt.
+            if (provider_) {
+                try {
+                    auto loaded = [&] {
+                        performance::ScopedStage diskTimer(performance::Stage::DiskLoad);
+                        return provider_->loadChunk(x, z);
+                    }();
+                    if (loaded && loaded.value()) {
+                        auto* adapter = dynamic_cast<format::ChunkAdapter*>(loaded.value().get());
+                        if (adapter && adapter->chunk()) {
+                            mcp_chunk_t* raw = adapter->releaseChunk();
+                            if (raw) {
+                                // Disk chunk: no populate will run for this
+                                // request — release its gate slot so
+                                // dependencies don't wait on it forever.
+                                generator_->populateMarkDone(x, z);
+                                install(raw); // callback owns pending_ now
+                                return;
+                            }
                         }
                     }
+                    // loadChunk() had a value but we couldn't extract a
+                    // usable chunk from it (bad adapter / null release) —
+                    // fall through to generation below instead of leaving
+                    // this chunk stuck.
+                } catch (...) {
+                    // A provider failure must not strand the request: fall
+                    // through to generation, which carries its own
+                    // emergency-chunk guarantee.
                 }
-                // loadChunk() had a value but we couldn't extract a
-                // usable chunk from it (bad adapter / null release) —
-                // fall through to generation below instead of leaving
-                // this chunk stuck.
-            } catch (...) {
-                // A provider failure must not strand the request: fall
-                // through to generation, which carries its own
-                // emergency-chunk guarantee.
             }
-        }
 
-        // 2) Not on disk (or unusable) — generate it on this worker.
-        generator::GenerationTask gen(generator_, x, z, seed, install);
-        gen.run();
-    });
+            // 2) Not on disk (or unusable) — generate on this worker, then
+            //    pre-create the structure starts (their window-sharing
+            //    dependencies feed the populate gate).
+            mcp_chunk_t* c = gt->runGenerate();
+            if (!c) {
+                // Allocation failure or a generate() throw: runGenerate
+                // already handed an emergency chunk (or null) to install —
+                // just release the gate slot.
+                generator_->populateMarkDone(x, z);
+                return;
+            }
+            *generated = c;
+            generator_->preparePopulateDeps(x, z);
+            if (pool && pool->submit(populateStep))
+                return;
+            // Pool refused (shutting down): populate inline, ungated, so
+            // the chunk still lands.
+            gt->runPopulate(c);
+            generator_->populateMarkDone(x, z);
+        });
 
-    if (pool->submit([task] {
-            (*task)();
-        })) {
+    if (pool->submit(*generateTask)) {
         // Successfully handed off — the task/install callback now owns
         // clearing `pending_` once the chunk is materialized. Tell the
         // guard not to erase it out from under the in-flight task.
         handed_to_pool = true;
+    } else {
+        // Pool refused before task 1 ran: nothing will populate, so the
+        // gate slot must go or unrelated chunks would wait on it forever.
+        generator_->populateMarkDone(x, z);
     }
     // Pool refused (shutting down): handed_to_pool stays false, so the
     // guard erases pending_ on return — caller just sees nullptr this
@@ -369,7 +476,9 @@ void ChunkManager::setChunk(int32_t x, int32_t z, mcp_chunk_t* chunk) {
     std::vector<std::vector<uint8_t>> drainedTiles;
     std::vector<char> preBlobMatches;
     {
+        const auto t0 = SteadyClock::now();
         std::scoped_lock lk(mtx_, pending_mtx_);
+        noteLockWait(chunk_lock_, t0); // pair acquired as one event
         auto key = ChunkKey{x, z};
         auto it = chunks_.find(key);
         if (it != chunks_.end() && it->second && it->second != chunk)
@@ -421,18 +530,31 @@ void ChunkManager::setChunk(int32_t x, int32_t z, mcp_chunk_t* chunk) {
 }
 
 void ChunkManager::commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t id, uint8_t data) {
+    const auto t0 = SteadyClock::now();
     mcp_chunk_t* live = nullptr;
     bool changed = false;
     {
-        std::scoped_lock lk(mtx_, pending_mtx_);
+        // Store mutex only. The queue-vs-live decision needs to be atomic
+        // against the INSTALLER, which holds mtx_ for its whole
+        // find → drain → insert sequence — pending_mtx_ adds nothing here:
+        // a parked write ordered before the install is drained by it, one
+        // ordered after sees the chunk live. The spill path pays this lock
+        // once per out-of-chunk block write (measured during the boot
+        // pregen: ~660k writes, 97% parked, 846 of 951 ms wall inside the
+        // old double lock), so it takes exactly one lock.
+        std::lock_guard<std::mutex> lk(mtx_);
+        noteLockWait(chunk_lock_, t0);
+        spill_lock_wait_ns_.fetch_add(
+            (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(SteadyClock::now() - t0)
+                .count(),
+            std::memory_order_relaxed);
+        spill_writes_.fetch_add(1, std::memory_order_relaxed);
         auto it = chunks_.find(ChunkKey{cx, cz});
         if (it != chunks_.end() && it->second) {
             live = it->second;
         } else if (spillQueue_) {
             // Chunk not live yet: park the write for its populate/install.
-            // Holding both locks here makes the queue-vs-live decision
-            // atomic against the installer (drainSpills in setChunk and in
-            // the async callback), so the write cannot be swallowed.
+            spill_parked_.fetch_add(1, std::memory_order_relaxed);
             spillQueue_->queueSpill(cx, cz, index, id, data);
         }
         if (live) {
@@ -465,12 +587,61 @@ void ChunkManager::commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t i
             }
         }
     }
-    // The new blocks change the sky light the same way a player edit
-    // would — requeue the light sweep for the chunk, outside the locks
-    // (same contract as setChunk's on_chunk_added_). This one is FULL:
-    // blocks genuinely changed under a live chunk, so the exact
-    // clear-and-reflood sweep (chunk + one light range into every
-    // neighbour) is required to darken what the new blocks shadow.
+    if (changed && on_chunk_added_)
+        on_chunk_added_(cx, cz, /*full=*/true);
+}
+
+void ChunkManager::commitNeighborWriteBatch(int cx, int cz,
+                                            const std::vector<generator::NeighborWrite>& writes) {
+    if (writes.empty())
+        return;
+    const auto t0 = SteadyClock::now();
+    mcp_chunk_t* live = nullptr;
+    bool changed = false;
+    {
+        // One store-lock pass for the whole batch — the per-write path
+        // paid this lock per cell (the dominant cost of the boot pregen:
+        // ~9M writes over radius 16, with store_wait up to 40 s at 16
+        // workers). The batch keeps the exact queue-vs-live atomicity
+        // against the installer: the whole group is either applied to the
+        // live chunk or parked as one ordered run, never straddling an
+        // install.
+        std::lock_guard<std::mutex> lk(mtx_);
+        noteLockWait(chunk_lock_, t0);
+        spill_lock_wait_ns_.fetch_add(
+            (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(SteadyClock::now() - t0)
+                .count(),
+            std::memory_order_relaxed);
+        spill_writes_.fetch_add(writes.size(), std::memory_order_relaxed);
+        auto it = chunks_.find(ChunkKey{cx, cz});
+        if (it != chunks_.end() && it->second) {
+            live = it->second;
+        } else if (spillQueue_) {
+            spill_parked_.fetch_add(writes.size(), std::memory_order_relaxed);
+            spillQueue_->queueSpillBatch(cx, cz, writes);
+            return; // parked — no live chunk changed, so no relight
+        }
+        if (live) {
+            for (const generator::NeighborWrite& w : writes) {
+                uint32_t y = w.index % 128;
+                uint32_t rest = w.index / 128;
+                uint32_t z = rest % 16;
+                uint32_t x = rest / 16;
+                // Idempotent skip per cell (a lake writes its whole
+                // envelope): unchanged cells cost no write and no relight.
+                if (mcp_chunk_get_block_id(live, (int)x, (int)y, (int)z) == w.id &&
+                    mcp_chunk_get_block_data(live, (int)x, (int)y, (int)z) == w.data)
+                    continue;
+                const uint8_t oldId = mcp_chunk_get_block_id(live, (int)x, (int)y, (int)z);
+                mcp_chunk_set_block_full(live, (int)x, (int)y, (int)z, w.id, w.data);
+                changed = true;
+                if (on_spill_tile_block_overwrite_ &&
+                    cursestone::tile::isTileBlock(oldId) && oldId != w.id) {
+                    on_spill_tile_block_overwrite_(cx * 16 + (int)x, (int)y, cz * 16 + (int)z);
+                }
+            }
+        }
+    }
     if (changed && on_chunk_added_)
         on_chunk_added_(cx, cz, /*full=*/true);
 }
@@ -478,9 +649,14 @@ void ChunkManager::commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t i
 void ChunkManager::commitNeighborTile(int cx, int cz, const std::vector<uint8_t>& blob) {
     if (blob.empty())
         return;
+    const auto t0 = SteadyClock::now();
     bool landedLive = false;
     {
-        std::scoped_lock lk(mtx_, pending_mtx_);
+        // Store mutex only — same reasoning as commitNeighborWrite: the
+        // installer's find → drain → insert runs under mtx_, so the
+        // live-vs-park decision stays atomic without pending_mtx_.
+        std::lock_guard<std::mutex> lk(mtx_);
+        noteLockWait(chunk_lock_, t0);
         auto it = chunks_.find(ChunkKey{cx, cz});
         if (it != chunks_.end() && it->second) {
             // Live chunk: the blob goes straight into tile_entities —
@@ -661,6 +837,12 @@ void ChunkManager::markDirty(int32_t x, int32_t z) {
 }
 
 int ChunkManager::flushDirty() {
+    // Full sweep: mtx_ is held from here to the end (the whole dirty
+    // set is snapshotted and enqueued under it, then flushed). The
+    // probe documents how long the store is closed to everyone else —
+    // the number the /save freeze report cites.
+    performance::SaveProfiler::Scope sweep_probe(
+        performance::SaveStage::FullFlushSweep);
     std::lock_guard<std::mutex> lk(mtx_);
     int n = 0;
     if (!provider_) {
@@ -696,10 +878,30 @@ int ChunkManager::flushDirty() {
 // provider is not thread-safe; the lock serializes both writers. The
 // difference is that the lock is now released within a few ms, which is
 // the most an AsyncPool worker waiting on setChunk() can lose.
+//
+// BACKPRESSURE (FASE L): the call also refuses to enqueue more than the
+// provider's save queue can hold (saveQueueRoom()). When the writer
+// thread has fallen behind (fast exploration + eviction storms), the
+// excess chunks STAY DIRTY and ride the next tick instead of blocking
+// this caller inside enqueueSave with the store mutex held — the exact
+// shape that turned queue backpressure into a multi-second tick stall
+// before the deadlock fix. Natural pacing, never a stall.
 int ChunkManager::flushDirtyBudget(size_t max_chunks, uint64_t max_ms) {
     if (max_chunks == 0)
         return 0;
 
+    // Cap the work to what the save queue can accept without blocking.
+    const size_t room = provider_ ? provider_->saveQueueRoom() : SIZE_MAX;
+    if (room == 0) {
+        return 0; // writer behind: retry next tick, chunks stay dirty
+    }
+    if (room < max_chunks)
+        max_chunks = room;
+
+    // Budgeted sweep (autosave / drain): same mutex discipline as
+    // flushDirty(), bounded work per call.
+    performance::SaveProfiler::Scope sweep_probe(
+        performance::SaveStage::BudgetFlushSweep);
     std::lock_guard<std::mutex> lk(mtx_);
     int n = 0;
     auto t0 = std::chrono::steady_clock::now();
@@ -733,6 +935,9 @@ int ChunkManager::flushDirtyBudget(size_t max_chunks, uint64_t max_ms) {
 }
 
 size_t ChunkManager::dirtyCount() const {
+    // Polled every autosave tick and every /status: its own cost under
+    // mtx_ is part of the save pipeline's tax on the tick.
+    performance::SaveProfiler::Scope scan_probe(performance::SaveStage::DirtyCount);
     std::lock_guard<std::mutex> lk(mtx_);
     size_t n = 0;
     for (auto& kv : chunks_) {
@@ -747,6 +952,13 @@ size_t ChunkManager::count() const {
 }
 
 bool ChunkManager::unloadChunk(int32_t x, int32_t z, bool save) {
+    // Eviction backpressure: when the provider's save queue is full, do
+    // NOT evict (the chunk would have to block this thread in enqueueSave
+    // to save it, or be lost). Keep the chunk resident; the next GC pass
+    // retries once the writer has caught up. Eviction is opportunistic —
+    // memory pressure resolves one pass later, a frozen tick does not.
+    if (save && provider_ && provider_->saveQueueRoom() == 0)
+        return false;
     mcp_chunk_t* c = nullptr;
     {
         std::lock_guard<std::mutex> lk(mtx_);

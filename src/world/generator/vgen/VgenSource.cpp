@@ -23,9 +23,11 @@
 // CurseStone | vgen — VgenSource implementation.
 
 #include "world/generator/vgen/VgenSource.h"
+#include "world/performance/GenerationProfiler.h"
 #include "world/generator/vgen/Blocks.h"
 #include "world/generator/vgen/material/Material.h"
 #include "world/generator/vgen/feature/LakeFeature.h"
+#include "vgen/biome/PlainsBiome.h"
 #include "tile/TileFactory.h"
 #include "world/format/Chunk.h"
 #include "world/format/ChunkSection.h"
@@ -40,6 +42,17 @@ using vgen::BlockPos;
 using vgen::BlockVolume;
 using vgen::ChunkPos;
 using vgen::LevelChunk;
+
+// Reference-order rank of the populate running on THIS thread. Spills are
+// tagged with it at queue time (see queueSpill) so the replay can apply
+// exactly the writes the vanilla chunk order would have made before this
+// populate, in that order — independent of worker timing. Set at populate
+// entry; queueSpill only runs inside a populate, so the stale value after
+// return is never read.
+namespace {
+thread_local uint64_t tPopulateRank = 0;
+
+}
 
 // ---------------------------------------------------------------------------
 // Construction — vanilla RandomLevelSource ctor (noise init order matters:
@@ -83,7 +96,6 @@ VgenSource::VgenSource(int64_t seed)
 }
 
 VgenSource::~VgenSource() {
-        std::lock_guard<std::mutex> l(mCacheMutex);
         mTerrainCache.clear(); // shared_ptr frees chunks with no other users
 }
 
@@ -118,22 +130,27 @@ void VgenSource::getHeights(float* noiseBuffer, vgen::Biome** biomes, int x, int
         vgen::Vec2 noisePos2D((float)x, (float)z);
 
         float* depthRegion = (float*)alloca(sizeof(float) * noiseSize2d);
-        depthNoise->getRegion(depthRegion, noisePos2D, Gen::NOISE_SIZE_X, Gen::NOISE_SIZE_Z, vgen::Vec2(200.0, 200.0), 0.5);
-
         const int noiseSize3d = Gen::NOISE_SIZE_X * Gen::NOISE_SIZE_Y * Gen::NOISE_SIZE_Z;
         vgen::Vec3 noisePos((float)x, (float)y, (float)z);
-
         float* mainNoiseRegion = (float*)alloca(sizeof(float) * noiseSize3d);
-        mainPerlinNoise->getRegion(mainNoiseRegion, noisePos, Gen::NOISE_SIZE_X, Gen::NOISE_SIZE_Y, Gen::NOISE_SIZE_Z,
-                                   vgen::Vec3(coordinateScale / 80.0f, heightScale / 160.0f, coordinateScale / 80.0f));
-
         float* minLimitRegion = (float*)alloca(sizeof(float) * noiseSize3d);
-        minLimitPerlinNoise->getRegion(minLimitRegion, noisePos, Gen::NOISE_SIZE_X, Gen::NOISE_SIZE_Y, Gen::NOISE_SIZE_Z,
-                                       vgen::Vec3(coordinateScale, heightScale * 1.25f, coordinateScale));
-
         float* maxLimitRegion = (float*)alloca(sizeof(float) * noiseSize3d);
-        maxLimitPerlinNoise->getRegion(maxLimitRegion, noisePos, Gen::NOISE_SIZE_X, Gen::NOISE_SIZE_Y, Gen::NOISE_SIZE_Z,
-                                       vgen::Vec3(coordinateScale, heightScale, coordinateScale));
+        {
+            // Tight scope around the four octave-region calls only: the
+            // rest of getHeights (biome weighting + the y interpolation)
+            // is its own cost and stays inside the terrain stage.
+            performance::ScopedStage noiseTimer(performance::Stage::Noise);
+            depthNoise->getRegion(depthRegion, noisePos2D, Gen::NOISE_SIZE_X, Gen::NOISE_SIZE_Z, vgen::Vec2(200.0, 200.0), 0.5);
+
+            mainPerlinNoise->getRegion(mainNoiseRegion, noisePos, Gen::NOISE_SIZE_X, Gen::NOISE_SIZE_Y, Gen::NOISE_SIZE_Z,
+                                       vgen::Vec3(coordinateScale / 80.0f, heightScale / 160.0f, coordinateScale / 80.0f));
+
+            minLimitPerlinNoise->getRegion(minLimitRegion, noisePos, Gen::NOISE_SIZE_X, Gen::NOISE_SIZE_Y, Gen::NOISE_SIZE_Z,
+                                           vgen::Vec3(coordinateScale, heightScale * 1.25f, coordinateScale));
+
+            maxLimitPerlinNoise->getRegion(maxLimitRegion, noisePos, Gen::NOISE_SIZE_X, Gen::NOISE_SIZE_Y, Gen::NOISE_SIZE_Z,
+                                           vgen::Vec3(coordinateScale, heightScale, coordinateScale));
+        }
 
         x = z = 0;
 
@@ -355,11 +372,20 @@ void VgenSource::generateTerrainInto(LevelChunk& lc, ThreadData& td) {
                                                        td.blockBuffer.data() + td.blockBuffer.size()),
                         16, vgen::LEVEL_GEN_HEIGHT, 16};
 
-        mDimension.getBiomes().fillBiomeData(&lc, lc.getMin().x, lc.getMin().z);
+        {
+            performance::ScopedStage biomeTimer(performance::Stage::BiomeFill);
+            mDimension.getBiomes().fillBiomeData(&lc, lc.getMin().x, lc.getMin().z);
+        }
         prepareHeights(box, p.x, p.z, td); //biomes, temperatures);
-        buildSurfaces(td, terrainRandom, box, lc, p);
+        {
+            performance::ScopedStage surfaceTimer(performance::Stage::Surface);
+            buildSurfaces(td, terrainRandom, box, lc, p);
+        }
 
-        td.caveFeature.apply(box, lc, mDimension, terrainRandom);
+        {
+            performance::ScopedStage cavesTimer(performance::Stage::Caves);
+            td.caveFeature.apply(box, lc, mDimension, terrainRandom);
+        }
 
         lc.setAllBlockIDs(box.blocks.begin(), box.getHeight());
         lc.setAllBlockData(box.data.begin(), box.getHeight());
@@ -370,44 +396,19 @@ void VgenSource::generateTerrainInto(LevelChunk& lc, ThreadData& td) {
 // ITerrainFeed — terrain cache + spill bookkeeping
 // ---------------------------------------------------------------------------
 std::shared_ptr<vgen::LevelChunk> VgenSource::acquireTerrain(int cx, int cz) {
+        // Terrain builds are context-free and deterministic, so the cache
+        // coordinates concurrent acquires of the same chunk: one worker
+        // builds, the others wait for the finished result instead of
+        // racing and throwing the loser's full build away.
         const int64_t key = vgenKey(cx, cz);
-        {
-                std::lock_guard<std::mutex> l(mCacheMutex);
-                auto it = mTerrainCache.find(key);
-                if (it != mTerrainCache.end()) {
-                        it->second.stamp = ++mCacheStamp;
-                        return it->second.chunk;
-                }
-        }
-
-        // build outside the lock (noise work is heavy)
-        auto& td = threadData();
-        auto lc = std::make_shared<vgen::LevelChunk>(mLevel, mDimension, ChunkPos(cx, cz));
-        generateTerrainInto(*lc, td);
-
-        std::lock_guard<std::mutex> l(mCacheMutex);
-        auto& e = mTerrainCache[key];
-        if (e.chunk == nullptr) {
-                e.chunk = lc;
-                // stamp FIRST: eviction picks the oldest entry, and a fresh
-                // entry with stamp 0 would evict itself (and hand back a
-                // dangling pointer) the moment the cache overflows
-                e.stamp = ++mCacheStamp;
-                // evict the oldest entries when the cache is full
-                while (mTerrainCache.size() > kTerrainCacheLimit) {
-                        auto oldest = mTerrainCache.begin();
-                        for (auto it = mTerrainCache.begin(); it != mTerrainCache.end(); ++it) {
-                                if (it->second.stamp < oldest->second.stamp)
-                                        oldest = it;
-                        }
-                        mTerrainCache.erase(oldest); // freed only with the last user
-                }
-        } else {
-                lc.reset(); // lost a race — another worker cached it first
-                e.stamp = ++mCacheStamp;
-                return e.chunk;
-        }
-        return e.chunk;
+        return mTerrainCache.acquire((uint64_t)key,
+                                     [this, cx, cz]() -> std::shared_ptr<vgen::LevelChunk> {
+                auto& td = threadData();
+                auto lc = std::make_shared<vgen::LevelChunk>(mLevel, mDimension, ChunkPos(cx, cz));
+                performance::ScopedStage terrainTimer(performance::Stage::TerrainBuild);
+                generateTerrainInto(*lc, td);
+                return lc;
+        });
 }
 
 void VgenSource::commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t id, uint8_t data) {
@@ -420,9 +421,33 @@ void VgenSource::commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t id,
         queueSpill(cx, cz, index, id, data);
 }
 
+void VgenSource::commitNeighborWriteBatch(int cx, int cz,
+                                          const std::vector<NeighborWrite>& writes) {
+        if (writes.empty())
+                return;
+        if (mNeighborSink) {
+                mNeighborSink->commitNeighborWriteBatch(cx, cz, writes);
+                return;
+        }
+        // No live-chunk sink wired (offline tools): park the batch as
+        // ordered spills, one queue-lock pass.
+        queueSpillBatch(cx, cz, writes);
+}
+
 void VgenSource::queueSpill(int cx, int cz, uint32_t index, uint8_t id, uint8_t data) {
         std::lock_guard<std::mutex> l(mSpillMutex);
-        mSpill[vgenKey(cx, cz)].push_back({index, id, data});
+        mSpill[vgenKey(cx, cz)].push_back({index, id, data, tPopulateRank});
+}
+
+void VgenSource::queueSpillBatch(int cx, int cz,
+                                 const std::vector<NeighborWrite>& writes) {
+        if (writes.empty())
+                return;
+        std::lock_guard<std::mutex> l(mSpillMutex);
+        std::vector<SpillEntry>& list = mSpill[vgenKey(cx, cz)];
+        list.reserve(list.size() + writes.size());
+        for (const NeighborWrite& w : writes)
+                list.push_back({w.index, w.id, w.data, tPopulateRank});
 }
 
 void VgenSource::drainSpills(int cx, int cz, mcp_chunk_t* chunk) {
@@ -437,6 +462,12 @@ void VgenSource::drainSpills(int cx, int cz, mcp_chunk_t* chunk) {
         }
         if (!chunk)
                 return;
+        // Reference (vanilla chunk) order: stable sort keeps each source's
+        // own write sequence intact while ordering sources by rank.
+        std::stable_sort(pending.begin(), pending.end(),
+                         [](const SpillEntry& a, const SpillEntry& b) {
+                                 return a.srcRank < b.srcRank;
+                         });
         for (const SpillEntry& e : pending) {
                 uint32_t y = e.index % 128;
                 uint32_t rest = e.index / 128;
@@ -472,16 +503,42 @@ void VgenSource::applySpill(vgen::LevelChunk& center, int cx, int cz) {
                         mPendingTiles.erase(tiles);
                 }
         }
-        std::vector<SpillEntry> pending;
+        std::vector<SpillEntry> qualifying;
         {
                 std::lock_guard<std::mutex> l(mSpillMutex);
                 auto it = mSpill.find(vgenKey(cx, cz));
-                if (it == mSpill.end())
-                        return;
-                pending = std::move(it->second);
-                mSpill.erase(it);
+                if (it != mSpill.end()) {
+                        // Replay exactly the writes the vanilla chunk order
+                        // would have landed before this populate: sources
+                        // ranked below this chunk. Later-ranked sources that
+                        // already populated (the scheduler ran them ahead)
+                        // stay parked — the install-time drainSpills applies
+                        // them in reference order, which is exactly the
+                        // vanilla "write onto an already-populated chunk"
+                        // case. Without the filter the replayed subset would
+                        // depend on worker timing (measured: digests changed
+                        // run to run under threads=4).
+                        std::vector<SpillEntry>& all = it->second;
+                        const size_t keep = std::stable_partition(
+                                                all.begin(), all.end(),
+                                                [this](const SpillEntry& e) {
+                                                        return e.srcRank < tPopulateRank;
+                                                })
+                                            - all.begin();
+                        qualifying.assign(std::make_move_iterator(all.begin()),
+                                          std::make_move_iterator(all.begin() + keep));
+                        all.erase(all.begin(), all.begin() + keep);
+                        if (all.empty())
+                                mSpill.erase(it);
+                }
         }
-        for (const SpillEntry& e : pending) {
+        // Stable sort keeps each source's own write sequence while ordering
+        // sources by reference rank (arrival order across workers is racy).
+        std::stable_sort(qualifying.begin(), qualifying.end(),
+                         [](const SpillEntry& a, const SpillEntry& b) {
+                                 return a.srcRank < b.srcRank;
+                         });
+        for (const SpillEntry& e : qualifying) {
                 uint32_t y = e.index % 128;
                 uint32_t rest = e.index / 128;
                 uint32_t z = rest % 16;
@@ -511,6 +568,7 @@ static bool sectionAllAir(const LevelChunk& lc, int sec) {
 }
 
 void VgenSource::copyVirtualToSink(const LevelChunk& src, mcp_chunk_t* dst) {
+        performance::ScopedStage copyTimer(performance::Stage::CopyOut);
         // 0.15 worlds are LEVEL_GEN_HEIGHT (128) blocks tall: the vanilla
         // generator only fills y 0..127, and the virtual LevelChunk is a
         // 16x128x16 volume (stride 128). Copying sections 8..15 would read
@@ -559,6 +617,7 @@ void VgenSource::copyVirtualToSink(const LevelChunk& src, mcp_chunk_t* dst) {
 }
 
 void VgenSource::copySinkToVirtual(const mcp_chunk_t* src, LevelChunk& dst) {
+        performance::ScopedStage copyTimer(performance::Stage::CopyIn);
         memset(dst.mBlocks, 0, sizeof(dst.mBlocks));
         memset(dst.mData, 0, sizeof(dst.mData));
         // Mirror of copyVirtualToSink: 0.15 chunks are 128 blocks tall, so
@@ -616,11 +675,21 @@ void VgenSource::generate(GenerationContext& ctx) {
 }
 
 void VgenSource::populate(GenerationContext& ctx) {
+        performance::ScopedStage populateTimer(performance::Stage::Populate);
         mcp_chunk_t* sink = ctx.chunk;
         if (!sink)
                 return;
         const int cx = ctx.chunk_x;
         const int cz = ctx.chunk_z;
+        // Tag every spill this populate queues with its reference-order
+        // rank (see queueSpill / applySpill / PopulateGate.h).
+        tPopulateRank = vgen::populateRank(cx, cz);
+
+        // Expose the plains reference table for this populate: the 1-in-10
+        // forest-grass branch inside BiomeDecorator::decorate reads it
+        // (vanilla's shared-decorator carry-over in reference order). RAII
+        // restore — populate has early returns.
+        const vgen::PlainsRefGuard plainsRefGuard(mPlainsRef);
 
         // center working copy of the real chunk
         LevelChunk center(mLevel, mDimension, ChunkPos(cx, cz));
@@ -647,48 +716,55 @@ void VgenSource::populate(GenerationContext& ctx) {
 
         // water lakes
         bool hasLake = false;
-        if (biome != vgen::Biome::desert && biome != vgen::Biome::desertHills) {
-                if (random.nextInt(4) == 0) {
-                        int x = random.nextInt(3, 12);
-                        int y = random.nextInt(vgen::LEVEL_GEN_HEIGHT);
-                        int z = random.nextInt(3, 12);
-                        BlockPos featurePlacement = origin.offset(x, y, z);
-                        vgen::LakeFeature lakeFeature(Block::mStillWater->mID);
-                        lakeFeature.place(source, featurePlacement, random);
-                        hasLake = true;
+        {
+                performance::ScopedStage lakesTimer(performance::Stage::Lakes);
+                if (biome != vgen::Biome::desert && biome != vgen::Biome::desertHills) {
+                        if (random.nextInt(4) == 0) {
+                                int x = random.nextInt(3, 12);
+                                int y = random.nextInt(vgen::LEVEL_GEN_HEIGHT);
+                                int z = random.nextInt(3, 12);
+                                BlockPos featurePlacement = origin.offset(x, y, z);
+                                vgen::LakeFeature lakeFeature(Block::mStillWater->mID);
+                                lakeFeature.place(source, featurePlacement, random);
+                                hasLake = true;
+                        }
                 }
-        }
 
-        // lava lakes
-        if (!hasLake && random.nextInt(8) == 0) {
-                int x = random.nextInt(3, 12);
-                int yparam = random.nextInt(vgen::LEVEL_GEN_HEIGHT - 8) + 8;
-                int y = random.nextInt(yparam);
-                int z = random.nextInt(3, 12);
-                if (y >= 60 && (y < 64 || random.nextInt(10) == 0)) {
-                        BlockPos featurePlacement = origin.offset(x, y, z);
-                        vgen::LakeFeature lakeFeature(Block::mStillLava->mID);
-                        lakeFeature.place(source, featurePlacement, random);
+                // lava lakes
+                if (!hasLake && random.nextInt(8) == 0) {
+                        int x = random.nextInt(3, 12);
+                        int yparam = random.nextInt(vgen::LEVEL_GEN_HEIGHT - 8) + 8;
+                        int y = random.nextInt(yparam);
+                        int z = random.nextInt(3, 12);
+                        if (y >= 60 && (y < 64 || random.nextInt(10) == 0)) {
+                                BlockPos featurePlacement = origin.offset(x, y, z);
+                                vgen::LakeFeature lakeFeature(Block::mStillLava->mID);
+                                lakeFeature.place(source, featurePlacement, random);
+                        }
                 }
         }
 
         // structures (0.15 set: village, mineshaft, scattered temples)
-        mVillageFeature.apply(center, mDimension, random);
-        mMineshaftFeature.apply(center, mDimension, random);
-        mScatteredFeature.apply(center, mDimension, random);
-
-        random.setSeed((vgen::RandomSeed)(uint64_t)mSeed);
-        xScale = random.nextInt() / 2 * 2 + 1;
-        zScale = random.nextInt() / 2 * 2 + 1;
-        random.setSeed((vgen::RandomSeed)(uint64_t)(((cx * xScale) + (cz * zScale)) ^ mSeed));
         {
+                performance::ScopedStage structuresTimer(performance::Stage::Structures);
+                mVillageFeature.apply(center, mDimension, random);
+                mMineshaftFeature.apply(center, mDimension, random);
+                mScatteredFeature.apply(center, mDimension, random);
+
+                random.setSeed((vgen::RandomSeed)(uint64_t)mSeed);
+                xScale = random.nextInt() / 2 * 2 + 1;
+                zScale = random.nextInt() / 2 * 2 + 1;
+                random.setSeed((vgen::RandomSeed)(uint64_t)(((cx * xScale) + (cz * zScale)) ^ mSeed));
                 mVillageFeature.postProcess(&source, random, cx, cz);
+
                 mMineshaftFeature.postProcess(&source, random, cx, cz);
                 mScatteredFeature.postProcess(&source, random, cx, cz);
         }
 
         // monster rooms (dungeons)
+
         {
+                performance::ScopedStage dungeonsTimer(performance::Stage::Dungeons);
                 for (auto i : vgen::range(8)) {
                         UNUSED_VARIABLE(i);
                         int x = xo + random.nextInt(16) + 8;
@@ -699,7 +775,9 @@ void VgenSource::populate(GenerationContext& ctx) {
         }
 
         // freeze tops (ice on cold-biome water)
+
         {
+                performance::ScopedStage freezeTimer(performance::Stage::Freeze);
                 for (auto x : vgen::range(16)) {
                         for (auto z : vgen::range(16)) {
                                 const BlockPos topPos = source.getTopRainBlockPos(origin.offset(x, 0, z));
@@ -712,13 +790,18 @@ void VgenSource::populate(GenerationContext& ctx) {
         }
 
         // biome decoration (trees, grass, flowers, ores, ...)
+
         {
+                performance::ScopedStage decorateTimer(performance::Stage::Decorate);
                 random.setSeed((vgen::RandomSeed)(uint64_t)(((cx * xScale) + (cz * zScale)) ^ mSeed));
                 biome.decorate(&source, random, center.getMin(), false, FLT_MAX);
         }
 
         // snow cover (0.15 seasons postProcess equivalent)
-        snowPass(source, center);
+        {
+                performance::ScopedStage snowTimer(performance::Stage::Snow);
+                snowPass(source, center);
+        }
 
         // write the populated center back into the sink chunk
         copyVirtualToSink(center, sink);
@@ -753,6 +836,94 @@ void VgenSource::populate(GenerationContext& ctx) {
                         continue;
                 mcp_chunk_add_tile_entity(sink, blob.data(), blob.size());
         }
+}
+
+// ---------------------------------------------------------------------------
+// Deterministic populate ordering (vgen/PopulateGate.h)
+// ---------------------------------------------------------------------------
+void VgenSource::preparePopulateDeps(int32_t cx, int32_t cz) {
+        // Runs on the generate task: PURE dependency discovery. For every
+        // feature cell in range, probe the verdict and — for a hit — take
+        // the bounding box straight from a throwaway start, recording every
+        // chunk it touches. This must not go through the shared
+        // cachedStructures map: whether a start already exists there
+        // depends on which neighbours have generated so far, and a start
+        // created BETWEEN two prepares gave the earlier chunk a dependency
+        // set that missed it (the CI radius-4 matrix caught the resulting
+        // digest mismatch). The probe replicates addFeature's per-cell RNG
+        // shape and memoizes verdicts, so verdicts and start content stay
+        // bit-identical to the populate-time pass.
+        std::vector<std::pair<int32_t, int32_t>> deps;
+        mVillageFeature.probeWindowDeps(mDimension, cx, cz, deps);
+        mMineshaftFeature.probeWindowDeps(mDimension, cx, cz, deps);
+        mScatteredFeature.probeWindowDeps(mDimension, cx, cz, deps);
+
+        std::lock_guard<std::mutex> lk(mDepMutex);
+        mPopulateDeps[vgenKey(cx, cz)] = std::move(deps);
+}
+
+void VgenSource::populateRegister(int32_t cx, int32_t cz) {
+        mPopulateGate.registerSlot(vgenKey(cx, cz));
+        // Record this chunk's plains decorator retune if it is a plains
+        // chunk. The retune is a pure function of the coordinates (the
+        // biome-info noise is seed-independent), so the table is fully
+        // determined at register time and every 1-in-10 forest-grass read
+        // returns the same value on every worker and every run — vanilla's
+        // shared-decorator carry-over, reproduced in reference order
+        // (vgen/PopulateGate.h PlainsRefTable). Sample the same block
+        // populate's biome choice samples (center.getMax()).
+        vgen::Biome* b =
+            mBiomeSource.getBiome(cx * 16 + 15, cz * 16 + 15);
+        if (b == vgen::Biome::plains.get()) {
+                mPlainsRef.note(
+                    vgen::populateRank(cx, cz),
+                    static_cast<vgen::PlainsBiome*>(b)->referenceGrassCount(cx, cz));
+        }
+}
+
+bool VgenSource::populateTryEnter(int32_t cx, int32_t cz) {
+        const uint64_t myRank = vgen::populateRank(cx, cz);
+        std::vector<uint64_t> deps;
+        deps.reserve(48);
+        // Feature spills: the 3x3 neighbourhood. A lower-ranked neighbour
+        // still populating may still write into this chunk; its spill must
+        // be parked before this populate replays them or the replay subset
+        // depends on worker timing.
+        for (int dx = -1; dx <= 1; ++dx) {
+                for (int dz = -1; dz <= 1; ++dz) {
+                        if (dx == 0 && dz == 0)
+                                continue;
+                        const int nx = cx + dx;
+                        const int nz = cz + dz;
+                        if (vgen::populateRank(nx, nz) < myRank)
+                                deps.push_back(vgenKey(nx, nz));
+                }
+        }
+        // Structure windows: chunks sharing a start with this window (the
+        // chunk itself claims its own window — never a dependency of
+        // itself, or the gate would never open).
+        {
+                std::lock_guard<std::mutex> lk(mDepMutex);
+                auto it = mPopulateDeps.find(vgenKey(cx, cz));
+                if (it != mPopulateDeps.end()) {
+                        for (const auto& n : it->second) {
+                                if (n.first == cx && n.second == cz)
+                                        continue;
+                                if (vgen::populateRank(n.first, n.second) < myRank)
+                                        deps.push_back(vgenKey(n.first, n.second));
+                        }
+                }
+        }
+        const bool ok = mPopulateGate.tryEnter(vgenKey(cx, cz), deps);
+        return ok;
+}
+
+void VgenSource::populateMarkDone(int32_t cx, int32_t cz) {
+        {
+                std::lock_guard<std::mutex> lk(mDepMutex);
+                mPopulateDeps.erase(vgenKey(cx, cz));
+        }
+        mPopulateGate.markDone(vgenKey(cx, cz));
 }
 
 // ---------------------------------------------------------------------------
@@ -803,7 +974,6 @@ void VgenSource::snowPass(vgen::BlockSource& source, LevelChunk& center) {
                                 snowLevel = b->getMaxSnowLayers();
                         if (snowLevel > 8)
                                 snowLevel = 8;
-
                         // 0.15 snow layer: data 0..7 (data 7 = a full block)
                         source.setBlockAndData(tpos, Block::mSnow->mID, (vgen::DataID)(snowLevel - 1), Block::UPDATE_CLIENTS);
                 }

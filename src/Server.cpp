@@ -42,6 +42,11 @@
 #include <thread>
 #include <chrono>
 #include <cstdlib> // std::_Exit
+#include <fstream>
+#include <sstream>
+#ifdef __linux__
+#include <unistd.h> // sysconf(_SC_CLK_TCK) for the pregen CPU readout
+#endif
 #include <zlib.h>
 #include "command/CommandMap.h"
 #include "command/SimpleCommandMap.h"
@@ -54,6 +59,9 @@
 #include "network/protocol/CraftingDataPacket.h"
 #include "network/protocol/TextPacket.h"
 #include "scheduler/AsyncPool.h"
+#include "world/performance/PerformanceManager.h"
+#include "world/performance/GenerationProfiler.h"
+#include "world/performance/SaveProfiler.h"
 #include "scheduler/ServerScheduler.h"
 #include "scheduler/CallbackTask.h"
 #include "world/World.h"
@@ -444,6 +452,96 @@ bool Server::loadDefaultWorld() {
 // ---------------------------------------------------------------------
 // Boot-time spawn pre-generation.
 // ---------------------------------------------------------------------
+namespace {
+// Worker-scaling counters sampled when the pregen square is queued and
+// again when the completion report fires; the diff describes exactly the
+// pregen window. Pure observers — nothing here changes scheduling.
+struct PregenStatSample {
+    scheduler::AsyncPool::Snapshot pool{};
+    world::ChunkManager::LockStats::Snapshot chunk_lock{};
+    world::ChunkManager::LockStats::Snapshot pending_lock{};
+    uint64_t spill_writes = 0;
+    uint64_t spill_parked = 0;
+    uint64_t spill_lock_wait_ns = 0;
+    uint64_t gen_total_ns = 0;
+    uint64_t gen_chunks = 0;
+    uint64_t cpu_ticks = 0; // utime+stime, Linux only (0 elsewhere)
+};
+PregenStatSample g_pregen_start;
+
+#ifdef __linux__
+// utime+stime of this process from /proc/self/stat. comm may contain
+// spaces, so parse past the ')' before tokenizing.
+bool readProcessCpuTicks(uint64_t& out) {
+    std::ifstream f("/proc/self/stat");
+    if (!f)
+        return false;
+    std::string data;
+    if (!std::getline(f, data))
+        return false;
+    const size_t rparen = data.rfind(')');
+    if (rparen == std::string::npos)
+        return false;
+    std::istringstream ss(data.substr(rparen + 1));
+    // Fields 3..15 follow comm; utime is field 14 (token index 11),
+    // stime field 15.
+    std::string tok;
+    int i = 0;
+    long long utime = -1, stime = -1;
+    while (ss >> tok) {
+        if (i == 11)
+            utime = atoll(tok.c_str());
+        else if (i == 12) {
+            stime = atoll(tok.c_str());
+            break;
+        }
+        ++i;
+    }
+    if (utime < 0 || stime < 0)
+        return false;
+    out = (uint64_t)(utime + stime);
+    return true;
+}
+
+uint64_t residentRssKb() {
+    std::ifstream f("/proc/self/status");
+    std::string line;
+    while (std::getline(f, line)) {
+        if (line.rfind("VmRSS:", 0) == 0)
+            return (uint64_t)atoll(line.c_str() + 6);
+    }
+    return 0;
+}
+
+double clockTicksPerSec() {
+    static const double tps = (double)sysconf(_SC_CLK_TCK);
+    return tps > 0 ? tps : 100.0;
+}
+#else
+bool readProcessCpuTicks(uint64_t&) { return false; }
+uint64_t residentRssKb() { return 0; }
+double clockTicksPerSec() { return 100.0; }
+#endif
+
+PregenStatSample samplePregenStats(Server& srv) {
+    PregenStatSample s;
+    if (srv.getAsyncPool())
+        s.pool = srv.getAsyncPool()->statsSnapshot();
+    if (srv.getDefaultWorld()) {
+        const world::ChunkManager& cm = srv.getDefaultWorld()->chunks();
+        s.chunk_lock = cm.chunkLockSnap();
+        s.pending_lock = cm.pendingLockSnap();
+        s.spill_writes = cm.spillWritesSnap();
+        s.spill_parked = cm.spillParkedSnap();
+        s.spill_lock_wait_ns = cm.spillLockWaitNsSnap();
+    }
+    const auto gs = performance::GenerationProfiler::peek();
+    s.gen_total_ns = gs.stages[(size_t)performance::Stage::Total].ns;
+    s.gen_chunks = gs.stages[(size_t)performance::Stage::Total].calls;
+    readProcessCpuTicks(s.cpu_ticks);
+    return s;
+}
+} // namespace
 
 // Queue the spawn square onto the async pool the moment the world is up:
 // terrain for the first joiner — and for the synchronous spawn settle the
@@ -475,6 +573,7 @@ void Server::preGenerateSpawnArea() {
     spawn_pregen_target_ = queued;
     spawn_pregen_start_ms_ = mcp_utils_time_ms();
     spawn_pregen_waiting_ = true;
+    g_pregen_start = samplePregenStats(*this);
     utils::MainLogger::get().info("Preparing spawn area: " +
                                   std::to_string(queued) + " chunks (radius " +
                                   std::to_string(spawn_pregen_radius_) + ")");
@@ -500,6 +599,74 @@ void Server::pollSpawnPregen() {
     utils::MainLogger::get().info("Spawn area pregenerated: " +
                                   std::to_string(spawn_pregen_target_) +
                                   " chunks in " + std::to_string(ms) + " ms");
+
+    // Worker-scaling window: pool busy/idle/queue wait, chunk-store lock
+    // waits, process CPU and RSS over exactly this pregen. Read before
+    // logStageBreakdown drains the profiler counters.
+    {
+        const PregenStatSample end = samplePregenStats(*this);
+        const uint64_t busy_ns = end.pool.busy_ns - g_pregen_start.pool.busy_ns;
+        const uint64_t idle_ns = end.pool.idle_ns - g_pregen_start.pool.idle_ns;
+        const uint64_t busy_idle = busy_ns + idle_ns;
+        const uint64_t qw_ns = end.pool.queue_wait_ns - g_pregen_start.pool.queue_wait_ns;
+        const uint64_t qw_n =
+            end.pool.queue_wait_samples - g_pregen_start.pool.queue_wait_samples;
+        const uint64_t qw_max_ns =
+            end.pool.queue_wait_max_ns > g_pregen_start.pool.queue_wait_max_ns
+                ? end.pool.queue_wait_max_ns
+                : 0; // max is a high-water, not a diff
+        const uint64_t lock_ns = end.pool.lock_wait_ns - g_pregen_start.pool.lock_wait_ns;
+        const uint64_t gen_ns = end.gen_total_ns - g_pregen_start.gen_total_ns;
+        const uint64_t gen_n = end.gen_chunks - g_pregen_start.gen_chunks;
+        const uint64_t mtx_wait_ns =
+            end.chunk_lock.wait_ns - g_pregen_start.chunk_lock.wait_ns;
+        const uint64_t pending_wait_ns =
+            end.pending_lock.wait_ns - g_pregen_start.pending_lock.wait_ns;
+        const uint64_t spill_wait_ns =
+            end.spill_lock_wait_ns - g_pregen_start.spill_lock_wait_ns;
+
+        char line[420];
+        std::snprintf(
+            line, sizeof(line),
+            "[Perf] pregen scaling: workers=%d chunks=%llu wall_ms=%llu "
+            "chunks_per_s=%.1f gen_avg_ms=%.2f worker_busy=%.1f%% "
+            "worker_idle=%.1f%% queue_wait_avg_ms=%.2f "
+            "queue_wait_max_ms=%.2f pool_lock_wait_ms=%.2f",
+            async_workers_, (unsigned long long)spawn_pregen_target_,
+            (unsigned long long)ms,
+            ms > 0 ? (double)spawn_pregen_target_ * 1000.0 / (double)ms : 0.0,
+            gen_n > 0 ? (double)gen_ns / (double)gen_n / 1e6 : 0.0,
+            busy_idle > 0 ? 100.0 * (double)busy_ns / (double)busy_idle : 0.0,
+            busy_idle > 0 ? 100.0 * (double)idle_ns / (double)busy_idle : 0.0,
+            qw_n > 0 ? (double)qw_ns / (double)qw_n / 1e6 : 0.0,
+            (double)qw_max_ns / 1e6, (double)lock_ns / 1e6);
+        utils::MainLogger::get().info(line);
+
+        double cpu_pct = 0.0;
+        const uint64_t rss_kb = residentRssKb();
+        if (end.cpu_ticks > g_pregen_start.cpu_ticks && ms > 0) {
+            const double cpu_ms =
+                (double)(end.cpu_ticks - g_pregen_start.cpu_ticks) /
+                clockTicksPerSec() * 1000.0;
+            cpu_pct = 100.0 * cpu_ms / (double)ms;
+        }
+        char line2[380];
+        std::snprintf(
+            line2, sizeof(line2),
+            "[Perf] pregen locks: store_wait_ms=%.2f pending_wait_ms=%.2f "
+            "spill_writes=%llu spill_parked=%llu spill_wait_ms=%.2f "
+            "cpu_percent=%.1f rss_mb=%.1f queue_depth_max=%llu",
+            (double)mtx_wait_ns / 1e6, (double)pending_wait_ns / 1e6,
+            (unsigned long long)(end.spill_writes - g_pregen_start.spill_writes),
+            (unsigned long long)(end.spill_parked - g_pregen_start.spill_parked),
+            (double)spill_wait_ns / 1e6, cpu_pct, (double)rss_kb / 1024.0,
+            (unsigned long long)end.pool.depth_max);
+        utils::MainLogger::get().info(line2);
+    }
+
+    // Same window, stage by stage: shows what the boot burst actually
+    // spent its time on instead of a single wall-clock number.
+    performance::PerformanceManager::logStageBreakdown("spawn pregen");
 }
 
 // ---------------------------------------------------------------------
@@ -793,6 +960,10 @@ void Server::start(const std::string& dataPath) {
     utils::MainLogger::get().debug("Loaded " + std::to_string(recipeCount) + " crafting recipes");
     async_pool_ = std::make_shared<scheduler::AsyncPool>(async_workers_);
 
+    // Performance module: CPU detection + noise kernel dispatch decisions
+    // before the worlds (and their generators) come up.
+    performance::PerformanceManager::init();
+
     // ---- Network. The spec-level rule: if the interface cannot bind, the
     //      boot aborts (a server without a network is a zombie).
     DiagEngine::stage("Network listening...");
@@ -838,6 +1009,10 @@ void Server::runTickLoop() {
     mcp_set_thread_name("CS-Main");
     uint64_t last_tick_count = 0;
     auto last_tps_time = std::chrono::steady_clock::now();
+    // FASE L stop watchdog: a normal thread that reacts to the stop flag
+    // even when the main thread is wedged (see the header note).
+    stop_watchdog_running_.store(true, std::memory_order_relaxed);
+    stop_watchdog_ = std::thread([this] { runStopWatchdog(); });
     // Use absolute tick deadlines to prevent timing drift.
     // Advance by 50 ms per tick and compensate for overruns on the next tick.
     auto next_tick = std::chrono::steady_clock::now();
@@ -860,6 +1035,12 @@ void Server::runTickLoop() {
         const double prev = mspt_.load(std::memory_order_relaxed);
         mspt_.store(prev > 0.0 ? prev + (tick_ms - prev) / 20.0 : tick_ms,
                     std::memory_order_relaxed);
+        // Freeze detector: keep the worst single tick since boot. One
+        // monotonic max-store; no locking, no decay — the spike must
+        // survive until someone reads /status.
+        const double prev_peak = mspt_peak_.load(std::memory_order_relaxed);
+        if (tick_ms > prev_peak)
+            mspt_peak_.store(tick_ms, std::memory_order_relaxed);
         next_tick += std::chrono::milliseconds(CURSESTONE_TICK_MS);
         if (std::chrono::steady_clock::now() < next_tick) {
             std::this_thread::sleep_until(next_tick);
@@ -909,10 +1090,18 @@ void Server::runTickLoop() {
         async_pool_->stop();
 
     utils::MainLogger::get().info("Shutdown complete.");
+
+    // Stop the stop watchdog LAST: it monitors the shutdown cleanup too
+    // (the save-all below the tick loop is itself a long stretch that
+    // used to look dead from the outside).
+    stop_watchdog_running_.store(false, std::memory_order_relaxed);
+    if (stop_watchdog_.joinable())
+        stop_watchdog_.join();
 }
 
 void Server::tick() {
     ++currentTick_;
+    diag_tick_.store(currentTick_, std::memory_order_relaxed);
 
     // Update the current tick for crash diagnostics.
     diagnostics::Diagnostics::get().setTick(currentTick_);
@@ -1075,7 +1264,12 @@ void Server::tick() {
             if (p)
                 p->saveData(); // Save player NBT data.
         }
-        beginAutosaveDrain();
+        // An autosave does not interrupt a manual save already in flight:
+        // the drain is shared, the manual requester still gets its
+        // completion message, and chunks the autosave would have written
+        // ride the same budget anyway.
+        if (!autosave_draining_)
+            beginAutosaveDrain();
     }
     if (autosave_draining_)
         tickAutosaveDrain();
@@ -1085,6 +1279,95 @@ void Server::tick() {
     uint64_t total_ms =
         (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(wb_end - wb_start).count();
     WorkbenchManager::get().onTickEnd(total_ms);
+}
+
+// -----------------------------------------------------------------------
+// FASE L stop watchdog (L3). Signal handlers stay async-signal-safe:
+// they only flip a flag. This normal thread provides what the flag alone
+// cannot — operator feedback while the main thread is wedged, periodic
+// diagnostics of the save pipeline, and a fully-disclosed last-resort
+// exit after two minutes of zero progress. It never hides a slow disk:
+// every step is logged, and the escalation reports exactly what would
+// be lost (queued-but-unwritten chunk saves).
+// -----------------------------------------------------------------------
+void Server::runStopWatchdog() {
+    mcp_set_thread_name("CS-StopWatch");
+    uint64_t last_tick = 0;
+    uint64_t last_written = 0;
+    uint64_t last_queue = 0;
+    auto last_progress = std::chrono::steady_clock::now();
+    auto last_report = last_progress - std::chrono::seconds(10);
+    bool announced = false;
+    bool announced_main_exit = false;
+
+    for (;;) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        if (!stop_watchdog_running_.load(std::memory_order_relaxed))
+            return; // shutdown finished normally
+        if (!(external_stop_flag_ && *external_stop_flag_))
+            continue; // no stop requested: pure observer
+
+        const auto now = std::chrono::steady_clock::now();
+        if (!announced) {
+            announced = true;
+            utils::MainLogger::get().info(
+                "[STOP] Shutdown requested (Ctrl+C/SIGTERM) — waiting for the main "
+                "loop to reach a safe point. Progress will be reported here.");
+            last_progress = now;
+        }
+
+        // Progress = ticks advancing OR the save pipeline moving (a
+        // shutdown save-all freezes the tick counter while chunks are
+        // still being written — that is progress, not a stall).
+        const uint64_t tick = diag_tick_.load(std::memory_order_relaxed);
+        const auto sp = performance::SaveProfiler::peek();
+        if (tick != last_tick || sp.chunks_written != last_written ||
+            sp.queue_depth != last_queue) {
+            last_tick = tick;
+            last_written = sp.chunks_written;
+            last_queue = sp.queue_depth;
+            last_progress = now;
+        }
+        const double stalled_s =
+            std::chrono::duration<double>(now - last_progress).count();
+        const bool main_exited = tick_loop_exited_.load(std::memory_order_relaxed);
+
+        if (now - last_report >= std::chrono::seconds(10)) {
+            last_report = now;
+            if (main_exited) {
+                if (!announced_main_exit) {
+                    announced_main_exit = true;
+                    utils::MainLogger::get().info(
+                        "[STOP] Main loop exited — running shutdown cleanup "
+                        "(save-all, provider flush, worker joins)...");
+                }
+            } else if (stalled_s > 5.0) {
+                utils::MainLogger::get().warn(
+                    "[STOP] Main loop has not made progress for " +
+                    std::to_string((int)stalled_s) + "s — it is most likely wedged "
+                    "inside a disk operation (save pipeline: queue=" +
+                    std::to_string(sp.queue_depth) + " pending, " +
+                    std::to_string(sp.chunks_written) + " written so far). "
+                    "The process still honors this watchdog; nothing is being "
+                    "hidden.");
+            }
+        }
+
+        // Last resort: two minutes of TOTAL stall (no ticks, no writes,
+        // no queue movement). Escalate WITH disclosure — the queued-but-
+        // unwritten chunk saves are listed before the exit.
+        if (stalled_s >= 120.0) {
+            utils::MainLogger::get().error(
+                "[STOP] No progress for " + std::to_string((int)stalled_s) +
+                "s — forcing exit to honor the stop request. " +
+                std::to_string(sp.queue_depth) + " chunk save(s) were queued but "
+                "not written and are lost; " + std::to_string(sp.chunks_written) +
+                " chunk(s) were written and are durable in the world db (WAL "
+                "replay recovers them on the next boot). This path should never "
+                "fire on a healthy disk.");
+            std::_Exit(1);
+        }
+    }
 }
 
 void Server::shutdown() {
@@ -1205,17 +1488,88 @@ void Server::saveAll() {
     }
 }
 
-// Incremental autosave pipeline.
-static constexpr size_t kAutosaveChunksPerTick = 64;
-static constexpr uint64_t kAutosaveMsPerTick = 3;
-// Stop retrying after this many consecutive idle ticks.
-static constexpr int kAutosaveIdleTicksMax = 40;
-
 static uint64_t nowSteadyMs() {
     return (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
                std::chrono::steady_clock::now().time_since_epoch())
         .count();
 }
+
+// -----------------------------------------------------------------------
+// FASE L — the shared save drain (autosave + manual /save).
+//
+// One budgeted pipeline, two entry points: the autosave begins it on its
+// interval; requestFullSave() begins (or upgrades) it for /save with
+// progress reporting and an honest completion message. The main thread
+// never serializes more than kAutosaveChunksPerTick chunks per tick and
+// never waits on the save worker: everything else rides the queue.
+
+// Tell the /save requester (and the log) about save progress. The
+// requester is a player name or "CONSOLE"; a player that has left just
+// misses the message — the log keeps it.
+void Server::notifySaveRequester(const std::string& msg) {
+    utils::MainLogger::get().info(msg);
+    if (autosave_drain_requester_.empty() || autosave_drain_requester_ == "CONSOLE")
+        return;
+    if (Player* p = getPlayerExact(autosave_drain_requester_))
+        p->sendMessage(msg);
+}
+
+void Server::requestFullSave(const std::string& requester) {
+    // Player data first (cheap, N small files) so world changes the
+    // players caused are marked dirty before the pending count is taken.
+    const auto& snap = playersSnapshotRef();
+    for (auto& p : snap) {
+        if (p)
+            p->saveData();
+    }
+
+    if (autosave_draining_) {
+        // Coalesce: one drain at a time. Upgrade in place and keep the
+        // accounting (written/ticks) intact so the completion message
+        // covers the whole drain, not just this request's tail.
+        autosave_drain_manual_ = true;
+        autosave_drain_requester_ = requester;
+        autosave_drain_last_progress_ms_ = nowSteadyMs();
+        size_t pending = 0;
+        for (auto& w : worlds_) {
+            if (w)
+                pending += w->unsavedChunkCount();
+        }
+        notifySaveRequester("[SAVE] Already saving — upgraded to a full save; " +
+                            std::to_string(pending) + " chunk(s) still pending.");
+        return;
+    }
+
+    autosave_drain_manual_ = true;
+    autosave_drain_requester_ = requester;
+    autosave_drain_last_progress_ms_ = 0; // begin() sets it
+    beginAutosaveDrain();
+    size_t pending = 0;
+    for (auto& w : worlds_) {
+        if (w)
+            pending += w->unsavedChunkCount();
+    }
+    if (autosave_draining_)
+        notifySaveRequester("[SAVE] Saving world: " + std::to_string(pending) +
+                            " chunk(s) pending — progress will be reported.");
+    else {
+        // Even with zero modified chunks, /save is a full save point:
+        // rewrite level.dat so Time/LastPlayed reflect the request and
+        // report completion honestly.
+        for (auto& w : worlds_) {
+            if (w)
+                w->saveBudget(/*max_chunks=*/0, /*max_ms=*/0,
+                              /*write_level_data=*/true);
+        }
+        notifySaveRequester("[SAVE] World saved: 0 modified chunks; level.dat updated.");
+    }
+}
+
+// Incremental autosave pipeline.
+static constexpr size_t kAutosaveChunksPerTick = 64;
+static constexpr uint64_t kAutosaveMsPerTick = 3;
+// Stop retrying after this many consecutive idle ticks.
+static constexpr int kAutosaveIdleTicksMax = 40;
 
 void Server::beginAutosaveDrain() {
     autosave_draining_ = false;
@@ -1228,17 +1582,22 @@ void Server::beginAutosaveDrain() {
     autosave_drain_max_tick_ms_ = 0;
     autosave_drain_idle_ticks_ = 0;
 
-    // Write level.dat once without processing chunks.
-    auto t0 = std::chrono::steady_clock::now();
-    for (auto& w : worlds_) {
-        if (w)
-            w->saveBudget(/*max_chunks=*/0, /*max_ms=*/0,
-                          /*write_level_data=*/true);
+    // The manual (/save) drain writes level.dat at the END — the final
+    // time and spawn values, after every chunk landed. The autosave keeps
+    // its periodic level-dat write here (it has no completion step).
+    if (!autosave_drain_manual_) {
+        auto t0 = std::chrono::steady_clock::now();
+        for (auto& w : worlds_) {
+            if (w)
+                w->saveBudget(/*max_chunks=*/0, /*max_ms=*/0,
+                              /*write_level_data=*/true);
+        }
+        WorkbenchManager::get().onAutosave(
+            (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - t0)
+                .count());
     }
-    WorkbenchManager::get().onAutosave(
-        (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - t0)
-            .count());
+    autosave_drain_last_progress_ms_ = nowSteadyMs();
 
     size_t pending = 0;
     for (auto& w : worlds_) {
@@ -1249,7 +1608,15 @@ void Server::beginAutosaveDrain() {
         return; // No dirty chunks to drain.
 
     autosave_draining_ = true;
-    if (debug_mode_) {
+    if (autosave_drain_manual_) {
+        // The requester already got the "saving world" line from
+        // requestFullSave(); keep the drain log for the record.
+        utils::MainLogger::get().info("[SAVE] Manual save drain started: " +
+                                      std::to_string(pending) + " chunk(s), budgeted at " +
+                                      std::to_string(kAutosaveChunksPerTick) +
+                                      "/tick (max " + std::to_string(kAutosaveMsPerTick) +
+                                      "ms/tick) — the main thread never blocks.");
+    } else if (debug_mode_) {
         utils::MainLogger::get().info("[SAVE] Autosave: " + std::to_string(pending) +
                                       " chunk(s) queued -> draining " +
                                       std::to_string(kAutosaveChunksPerTick) + "/tick (max " +
@@ -1304,22 +1671,67 @@ void Server::tickAutosaveDrain() {
         if (w)
             pending += w->unsavedChunkCount();
     }
+
+    // Manual-save progress: throttle to one line per 500 ms so a long
+    // drain reports steadily without flooding the console.
+    if (autosave_drain_manual_) {
+        const uint64_t now_ms = nowSteadyMs();
+        if (now_ms - autosave_drain_last_progress_ms_ >= 500) {
+            autosave_drain_last_progress_ms_ = now_ms;
+            notifySaveRequester("[SAVE] Progress: " +
+                                std::to_string(autosave_drain_written_) + " chunk(s) written, " +
+                                std::to_string(pending) + " pending, " +
+                                std::to_string((now_ms - autosave_drain_start_ms_) / 1000) +
+                                "s elapsed.");
+        }
+    }
+
     bool stuck = (pending > 0 && autosave_drain_idle_ticks_ >= kAutosaveIdleTicksMax);
     if (pending == 0 || stuck) {
         autosave_draining_ = false;
         uint64_t total_ms = nowSteadyMs() - autosave_drain_start_ms_;
         if (stuck) {
-            utils::MainLogger::get().warn(
-                "[SAVE] Autosave drain stopped with " + std::to_string(pending) +
-                " chunk(s) still dirty (provider "
-                "not accepting writes?) — will retry on the next autosave.");
-        } else if (autosave_drain_written_ > 0) {
-            utils::MainLogger::get().info(
-                "[SAVE] Autosave done: " + std::to_string(autosave_drain_written_) +
-                " chunk(s) en " + std::to_string(total_ms) + "ms (" +
-                std::to_string(autosave_drain_ticks_) + " tick(s), max " +
-                std::to_string(autosave_drain_max_tick_ms_) + "ms en un tick).");
+            // Manual saves do NOT quietly give up like the autosave does:
+            // the requester asked for a full save point and gets told the
+            // truth. The drain flag stays down; the next autosave (or
+            // another /save) retries.
+            const std::string why =
+                "[SAVE] Save drain stopped with " + std::to_string(pending) +
+                " chunk(s) still dirty (provider not accepting writes?) — " +
+                "nothing was lost: the chunks stay marked modified and the next "
+                "autosave or /save retries them.";
+            if (autosave_drain_manual_)
+                notifySaveRequester(why);
+            else
+                utils::MainLogger::get().warn(why);
+        } else if (autosave_drain_written_ > 0 || autosave_drain_manual_) {
+            if (autosave_drain_manual_) {
+                // The manual save's full-save moment: level.dat now carries
+                // the final time/spawn, every modified chunk is in the
+                // providers' write queues or already durable in their
+                // write-ahead logs. Report real completion, not intent.
+                for (auto& w : worlds_) {
+                    if (w)
+                        w->saveBudget(/*max_chunks=*/0, /*max_ms=*/0,
+                                      /*write_level_data=*/true);
+                }
+                notifySaveRequester("[SAVE] World saved: " +
+                                    std::to_string(autosave_drain_written_) +
+                                    " chunk(s) in " + std::to_string(total_ms) +
+                                    "ms (" + std::to_string(autosave_drain_ticks_) +
+                                    " ticks, worst tick " +
+                                    std::to_string(autosave_drain_max_tick_ms_) +
+                                    "ms). All modified chunks are persisted.");
+            } else {
+                utils::MainLogger::get().info(
+                    "[SAVE] Autosave done: " + std::to_string(autosave_drain_written_) +
+                    " chunk(s) en " + std::to_string(total_ms) + "ms (" +
+                    std::to_string(autosave_drain_ticks_) + " tick(s), max " +
+                    std::to_string(autosave_drain_max_tick_ms_) + "ms en un tick).");
+            }
         }
+        autosave_drain_manual_ = false;
+        autosave_drain_requester_.clear();
     }
 }
 

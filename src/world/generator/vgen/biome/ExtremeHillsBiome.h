@@ -33,7 +33,7 @@ public:
 
 	ExtremeHillsBiome(int id, bool extraTrees);
 	const FeaturePtr& getTreeFeature(Random* random) override;
-	void decorate(BlockSource* source, Random& random, const BlockPos& origin, bool legacy, float limit) override;
+	void decorateImpl(BlockSource* source, Random& random, const BlockPos& origin, bool legacy, float limit) override;
 	void buildSurfaceAt(Random& random, BlockVolume& blocks, const BlockPos& pos, float depthValue, Height seaLevel) override;
 
 protected:

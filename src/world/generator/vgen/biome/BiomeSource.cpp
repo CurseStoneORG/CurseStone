@@ -22,6 +22,7 @@
  */
 
 #include "vgen/biome/BiomeSource.h"
+#include "world/performance/GenerationProfiler.h"
 #include "vgen/biome/Biome.h"
 #include "vgen/newbiome/Layer.h"
 #include "vgen/VgenWorld.h"
@@ -65,6 +66,7 @@ void BiomeSource::fillBiomeData(LevelChunk* levelChunk, int x, int z) const {
 
 void BiomeSource::fillRawBiomeData(Biome** biomes, int x, int z) const {
 	ScopedProfile("fillRawBiomeData");
+	cursestone::performance::ScopedStage biomeTimer(cursestone::performance::Stage::BiomeFill);
 	LayerData layerData;
 
 	biomeLayer->fillArea(layerData, x, z, 10, 10);

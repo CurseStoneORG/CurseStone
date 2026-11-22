@@ -172,6 +172,7 @@ bool Block::mSolid[Block::NUM_BLOCK_TYPES] = {};
 bool Block::mShouldTick[Block::NUM_BLOCK_TYPES] = {};
 float Block::mTranslucency[Block::NUM_BLOCK_TYPES] = {};
 uint8_t Block::mLightBlock[Block::NUM_BLOCK_TYPES] = {};
+uint8_t Block::mStopsRain[Block::NUM_BLOCK_TYPES] = {};
 uint8_t Block::mLightEmission[Block::NUM_BLOCK_TYPES] = {};
 
 static MaterialType sMaterialType[Block::NUM_BLOCK_TYPES];
@@ -292,6 +293,19 @@ void Block::initBlocks() {
         mLightEmission[11] = 15;
         mLightEmission[51] = 15;  // fire
         mLightEmission[91] = 15;  // lit pumpkin
+}
+
+void Block::ensureRainTable() {
+        // Materials are registered by Material::initMaterials(), which
+        // every generator entry point runs before it can build chunks.
+        static bool done = [] {
+                for (int id = 0; id < NUM_BLOCK_TYPES; ++id) {
+                        const Material& m = Material::getMaterial(sMaterialType[id]);
+                        mStopsRain[id] = (m.getBlocksMotion() || m.isLiquid()) ? 1 : 0;
+                }
+                return true;
+        }();
+        (void)done;
 }
 
 // ---------------------------------------------------------------------------

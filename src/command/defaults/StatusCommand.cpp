@@ -33,6 +33,7 @@
 #include "scheduler/ServerScheduler.h"
 #include "utils/TextColor.h"
 #include "world/World.h"
+#include "world/performance/SaveProfiler.h"
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -59,6 +60,30 @@ std::string formatUptime(uint64_t sec) {
 std::string fixed2(double v) {
     char buf[32];
     std::snprintf(buf, sizeof(buf), "%.2f", v);
+    return buf;
+}
+
+// Human-readable byte counts for the save gauges.
+std::string humanBytes(uint64_t b) {
+    char buf[32];
+    if (b >= 1024ull * 1024ull * 1024ull)
+        std::snprintf(buf, sizeof(buf), "%.2f GB", (double)b / (1024.0 * 1024.0 * 1024.0));
+    else if (b >= 1024ull * 1024ull)
+        std::snprintf(buf, sizeof(buf), "%.2f MB", (double)b / (1024.0 * 1024.0));
+    else if (b >= 1024ull)
+        std::snprintf(buf, sizeof(buf), "%.1f KB", (double)b / 1024.0);
+    else
+        std::snprintf(buf, sizeof(buf), "%llu B", (unsigned long long)b);
+    return buf;
+}
+
+// Millisecond counts from the profiler's ns totals.
+std::string msFromNs(uint64_t ns, uint64_t calls) {
+    char buf[64];
+    if (calls == 0)
+        return "n/a";
+    std::snprintf(buf, sizeof(buf), "%.1f ms/call x%llu",
+                  (double)ns / 1e6 / (double)calls, (unsigned long long)calls);
     return buf;
 }
 
@@ -109,6 +134,13 @@ std::vector<std::string> buildStatusLines() {
     lines.push_back(G + "Tick: " + msColor(srv.getMSPT()) + fixed2(srv.getMSPT()) + " ms" +
                     G + " avg (budget 50 ms)" + TC::RESET);
 
+    // Tick peak: the worst single tick since boot — the freeze detector
+    // the save pipeline feeds (mean can stay green through one 3-second
+    // stall; the peak cannot).
+    lines.push_back(G + "Tick peak: " + msColor(srv.getMSPTPeak()) +
+                    fixed2(srv.getMSPTPeak()) + " ms" + G + " worst since boot" +
+                    TC::RESET);
+
     int64_t rssKB = cachedRssKB();
     int limitMB = MemoryManager::get().limitMB();
     std::string ram = rssKB > 0 ? std::to_string(rssKB / 1024) + " MB" : "n/a";
@@ -153,6 +185,40 @@ std::vector<std::string> buildStatusLines() {
                         std::to_string(w->chunks().count()) + G + " | players " + W +
                         std::to_string(inWorld) + TC::RESET);
     }
+
+    // Save pipeline section. The old /status answered "how many chunks
+    // are loaded" and nothing else — the freeze reports needed the
+    // distinction between loaded, modified and pending-on-disk.
+    size_t loaded = 0, dirty = 0;
+    for (World* w : srv.getWorlds()) {
+        if (!w)
+            continue;
+        loaded += w->chunks().count();
+        dirty += w->chunks().dirtyCount();
+    }
+    const auto save = performance::SaveProfiler::peek();
+    lines.push_back(G + "Save: " + W + std::to_string(loaded) + G + " loaded | " + W +
+                    std::to_string(dirty) + G + " modified/pending | written " + W +
+                    std::to_string(save.chunks_written) + G + " | queue " + W +
+                    std::to_string(save.queue_depth) + G + "/" + W +
+                    std::to_string(save.queue_depth_max) + G + " max (" +
+                    humanBytes(save.queue_bytes) + G + " queued)" + TC::RESET);
+    lines.push_back(G + "Save pipeline: snapshot " + W +
+                    msFromNs(save.stages[(size_t)performance::SaveStage::Snapshot].ns,
+                             save.stages[(size_t)performance::SaveStage::Snapshot].calls) +
+                    G + " | db write " + W +
+                    msFromNs(save.stages[(size_t)performance::SaveStage::WorkerPut].ns,
+                             save.stages[(size_t)performance::SaveStage::WorkerPut].calls) +
+                    G + " | drain waits " + W +
+                    msFromNs(save.stages[(size_t)performance::SaveStage::DrainWait].ns,
+                             save.stages[(size_t)performance::SaveStage::DrainWait].calls) +
+                    TC::RESET);
+    lines.push_back(G + "Save disk: table flushes " + W + std::to_string(save.flush_count) +
+                    G + " (" + humanBytes(save.table_bytes) + G + " written) | compactions " +
+                    W + std::to_string(save.compact_count) + G + " (" +
+                    humanBytes(save.compact_bytes) + G + " read) | WAL " +
+                    humanBytes(save.wal_bytes) + G + " | backpressure blocks " + W +
+                    std::to_string(save.enqueue_blocks) + TC::RESET);
     return lines;
 }
 

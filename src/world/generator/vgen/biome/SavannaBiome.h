@@ -32,7 +32,7 @@ public:
 
 	SavannaBiome(int id);
 	const FeaturePtr& getTreeFeature(Random* random) override;
-	void decorate(BlockSource* source, Random& random, const BlockPos& origin, bool legacy, float limit) override;
+	void decorateImpl(BlockSource* source, Random& random, const BlockPos& origin, bool legacy, float limit) override;
 
 };
 
