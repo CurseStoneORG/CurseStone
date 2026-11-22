@@ -44,6 +44,7 @@
 #include "world/format/ChunkSection.h"
 #include "world/generator/Generator.h"
 #include "world/generator/vgen/VgenSource.h"
+#include "world/performance/NoiseOptimizer.h"
 
 #include <atomic>
 #include <cstdio>
@@ -140,6 +141,14 @@ int main(int argc, char** argv) {
     const int64_t seed = argc > 1 ? atoll(argv[1]) : 12345;
     const int radius = argc > 2 ? atoi(argv[2]) : 6;  // chunks [-r, r]
     const int threads = argc > 3 ? atoi(argv[3]) : 1; // concurrent workers
+
+    // Optional SIMD dispatch (the server enables the kernels via
+    // PerformanceManager::init(); the check defaults to scalar so both
+    // sides of the noise comparison are the scalar path unless -s is
+    // passed). -s must produce digests IDENTICAL to the default: the
+    // vector kernels are bit-exact or the runtime guard rejects them.
+    if (argc > 4 && argv[4][0] == '-' && argv[4][1] == 's')
+        cursestone::performance::noise::initialize();
 
     VgenSource gen(seed);
 

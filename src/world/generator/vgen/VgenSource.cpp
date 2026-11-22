@@ -50,6 +50,7 @@ using vgen::LevelChunk;
 // return is never read.
 namespace {
 thread_local uint64_t tPopulateRank = 0;
+
 }
 
 // ---------------------------------------------------------------------------
@@ -419,9 +420,33 @@ void VgenSource::commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t id,
         queueSpill(cx, cz, index, id, data);
 }
 
+void VgenSource::commitNeighborWriteBatch(int cx, int cz,
+                                          const std::vector<NeighborWrite>& writes) {
+        if (writes.empty())
+                return;
+        if (mNeighborSink) {
+                mNeighborSink->commitNeighborWriteBatch(cx, cz, writes);
+                return;
+        }
+        // No live-chunk sink wired (offline tools): park the batch as
+        // ordered spills, one queue-lock pass.
+        queueSpillBatch(cx, cz, writes);
+}
+
 void VgenSource::queueSpill(int cx, int cz, uint32_t index, uint8_t id, uint8_t data) {
         std::lock_guard<std::mutex> l(mSpillMutex);
         mSpill[vgenKey(cx, cz)].push_back({index, id, data, tPopulateRank});
+}
+
+void VgenSource::queueSpillBatch(int cx, int cz,
+                                 const std::vector<NeighborWrite>& writes) {
+        if (writes.empty())
+                return;
+        std::lock_guard<std::mutex> l(mSpillMutex);
+        std::vector<SpillEntry>& list = mSpill[vgenKey(cx, cz)];
+        list.reserve(list.size() + writes.size());
+        for (const NeighborWrite& w : writes)
+                list.push_back({w.index, w.id, w.data, tPopulateRank});
 }
 
 void VgenSource::drainSpills(int cx, int cz, mcp_chunk_t* chunk) {
@@ -724,11 +749,13 @@ void VgenSource::populate(GenerationContext& ctx) {
                 zScale = random.nextInt() / 2 * 2 + 1;
                 random.setSeed((vgen::RandomSeed)(uint64_t)(((cx * xScale) + (cz * zScale)) ^ mSeed));
                 mVillageFeature.postProcess(&source, random, cx, cz);
+
                 mMineshaftFeature.postProcess(&source, random, cx, cz);
                 mScatteredFeature.postProcess(&source, random, cx, cz);
         }
 
         // monster rooms (dungeons)
+
         {
                 performance::ScopedStage dungeonsTimer(performance::Stage::Dungeons);
                 for (auto i : vgen::range(8)) {
@@ -741,6 +768,7 @@ void VgenSource::populate(GenerationContext& ctx) {
         }
 
         // freeze tops (ice on cold-biome water)
+
         {
                 performance::ScopedStage freezeTimer(performance::Stage::Freeze);
                 for (auto x : vgen::range(16)) {
@@ -755,6 +783,7 @@ void VgenSource::populate(GenerationContext& ctx) {
         }
 
         // biome decoration (trees, grass, flowers, ores, ...)
+
         {
                 performance::ScopedStage decorateTimer(performance::Stage::Decorate);
                 random.setSeed((vgen::RandomSeed)(uint64_t)(((cx * xScale) + (cz * zScale)) ^ mSeed));
@@ -806,21 +835,21 @@ void VgenSource::populate(GenerationContext& ctx) {
 // Deterministic populate ordering (vgen/PopulateGate.h)
 // ---------------------------------------------------------------------------
 void VgenSource::preparePopulateDeps(int32_t cx, int32_t cz) {
-        // Runs on the generate task: pre-create the structure starts this
-        // chunk's window would claim (deterministic, memoized — the later
-        // populate pass re-scans cheaply) and record which chunks share
-        // them. populateTryEnter folds these into the dependency set so a
-        // structure's windows always postProcess in reference chunk order.
-        vgen::Random random((vgen::RandomSeed)(uint64_t)mSeed);
-        auto dummy = std::make_unique<vgen::LevelChunk>(mLevel, mDimension, ChunkPos(cx, cz));
-        mVillageFeature.apply(*dummy, mDimension, random);
-        mMineshaftFeature.apply(*dummy, mDimension, random);
-        mScatteredFeature.apply(*dummy, mDimension, random);
-
+        // Runs on the generate task: PURE dependency discovery. For every
+        // feature cell in range, probe the verdict and — for a hit — take
+        // the bounding box straight from a throwaway start, recording every
+        // chunk it touches. This must not go through the shared
+        // cachedStructures map: whether a start already exists there
+        // depends on which neighbours have generated so far, and a start
+        // created BETWEEN two prepares gave the earlier chunk a dependency
+        // set that missed it (the CI radius-4 matrix caught the resulting
+        // digest mismatch). The probe replicates addFeature's per-cell RNG
+        // shape and memoizes verdicts, so verdicts and start content stay
+        // bit-identical to the populate-time pass.
         std::vector<std::pair<int32_t, int32_t>> deps;
-        mVillageFeature.collectWindowDeps(cx, cz, deps);
-        mMineshaftFeature.collectWindowDeps(cx, cz, deps);
-        mScatteredFeature.collectWindowDeps(cx, cz, deps);
+        mVillageFeature.probeWindowDeps(mDimension, cx, cz, deps);
+        mMineshaftFeature.probeWindowDeps(mDimension, cx, cz, deps);
+        mScatteredFeature.probeWindowDeps(mDimension, cx, cz, deps);
 
         std::lock_guard<std::mutex> lk(mDepMutex);
         mPopulateDeps[vgenKey(cx, cz)] = std::move(deps);
@@ -923,7 +952,6 @@ void VgenSource::snowPass(vgen::BlockSource& source, LevelChunk& center) {
                                 snowLevel = b->getMaxSnowLayers();
                         if (snowLevel > 8)
                                 snowLevel = 8;
-
                         // 0.15 snow layer: data 0..7 (data 7 = a full block)
                         source.setBlockAndData(tpos, Block::mSnow->mID, (vgen::DataID)(snowLevel - 1), Block::UPDATE_CLIENTS);
                 }

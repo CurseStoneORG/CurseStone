@@ -75,15 +75,15 @@ FullBlock PlainsBiome::getRandomFlowerTypeAndData(Random& random, const BlockPos
 	return flower;
 }
 
-void PlainsBiome::decorate(BlockSource* source, Random& random, const BlockPos& origin, bool legacy, float limit){
+void PlainsBiome::decorateImpl(BlockSource* source, Random& random, const BlockPos& origin, bool legacy, float limit){
 	float flowerNoise = mBiomeInfoNoise->getValue((origin.x + 8) / 200.0f, (origin.z + 8) / 200.0f);
 	if(flowerNoise < -.8) {
-		decorator->flowerCount = 15;
-		decorator->grassCount = 5;
+		deco()->flowerCount = 15;
+		deco()->grassCount = 5;
 	}
 	else if( !legacy ) {
-		decorator->flowerCount = 4;
-		decorator->grassCount = 10;
+		deco()->flowerCount = 4;
+		deco()->grassCount = 10;
 
 		DataID grassID = enum_cast(DoublePlantType::Grass);
 		for (auto i : range(7)) {
@@ -92,7 +92,7 @@ void PlainsBiome::decorate(BlockSource* source, Random& random, const BlockPos& 
 			int z = random.nextInt(16);
 			BlockPos offsetPos = origin.offset(x, 0, z);
 			offsetPos.y = random.nextInt(source->getHeightmap(offsetPos.x, offsetPos.z) + 32);
-			decorator->doublePlantFeature->place(*source, offsetPos, random, grassID);
+			deco()->doublePlantFeature->place(*source, offsetPos, random, grassID);
 		}
 	}
 	if(sunflowers) {
@@ -103,10 +103,10 @@ void PlainsBiome::decorate(BlockSource* source, Random& random, const BlockPos& 
 			int z = random.nextInt(16);
 			BlockPos offsetPos = origin.offset(x, 0, z);
 			offsetPos.y = random.nextInt(source->getHeightmap(offsetPos.x, offsetPos.z) + 32);
-			decorator->doublePlantFeature->place(*source, offsetPos, random, sunflowerID);
+			deco()->doublePlantFeature->place(*source, offsetPos, random, sunflowerID);
 		}
 	}
-	Biome::decorate(source, random, origin, legacy, limit);
+	Biome::decorateImpl(source, random, origin, legacy, limit);
 }
 
 

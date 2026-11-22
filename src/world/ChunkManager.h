@@ -198,6 +198,11 @@ class ChunkManager : public generator::INeighborBlockSink {
     // cross-chunk block writes (trees/lakes/structures that spill over a
     // chunk border).
     void commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t id, uint8_t data) override;
+    // One store-lock pass per target chunk for a whole populate's worth
+    // of out-of-center writes (the spill path was measured at ~660k
+    // per-write lock pairs over a radius-16 pregen).
+    void commitNeighborWriteBatch(int cx, int cz,
+                                  const std::vector<generator::NeighborWrite>& writes) override;
     // Same for tile-entity NBT blobs (structure chests): live chunk gets
     // the blob added and handed to the blob sink below; not-yet-live
     // chunks get it parked until install, exactly like the block spills.

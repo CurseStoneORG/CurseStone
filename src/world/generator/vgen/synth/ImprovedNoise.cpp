@@ -53,6 +53,16 @@ void ImprovedNoise::_init(Random& random) {
 
 		mNoiseMap[i + 256] = mNoiseMap[i];
 	}
+
+	// Float copy of the permutation table for the vector kernels' gather
+	// loads. The kernels read THIS table at generation time (the runtime
+	// equivalence guard only ever tests them with a synthetic map), so a
+	// missing fill fed them uninitialized memory: gathers returned garbage
+	// permutation values and the SIMD-enabled server generated terrain
+	// that differed from the scalar path run to run.
+	for (int i = 0; i < 512; i++) {
+		mNoiseMapF[i] = (float)mNoiseMap[i];
+	}
 }
 
 float ImprovedNoise::_noise(const Vec3& pos) const {

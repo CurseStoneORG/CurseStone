@@ -38,6 +38,13 @@
 
 namespace cursestone::world::generator {
 
+// One out-of-center block write, in virtual-volume index form.
+struct NeighborWrite {
+        uint32_t index;
+        uint8_t id;
+        uint8_t data;
+};
+
 // Implemented by VgenSource: owns the per-chunk spill queues.
 class ISpillQueue {
 public:
@@ -45,6 +52,14 @@ public:
         // Store a write for a chunk that is not live yet; replayed by
         // drainSpills() when that chunk becomes live.
         virtual void queueSpill(int cx, int cz, uint32_t index, uint8_t id, uint8_t data) = 0;
+        // Store a whole batch with ONE queue-lock pass. Entries land in
+        // order and carry the current populate's rank, exactly like the
+        // per-write path. Default: per-entry queueSpill.
+        virtual void queueSpillBatch(int cx, int cz,
+                                     const std::vector<NeighborWrite>& writes) {
+                for (const NeighborWrite& w : writes)
+                        queueSpill(cx, cz, w.index, w.id, w.data);
+        }
         // Apply every queued write for (cx, cz) to `chunk` and clear the
         // queue. Called with the ChunkManager locks held right after the
         // chunk becomes live, so a write can never land between "queued"
@@ -60,6 +75,17 @@ public:
         // otherwise — both under the manager's locks, so the decision is
         // atomic against concurrent chunk installs.
         virtual void commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t id, uint8_t data) = 0;
+        // Whole-batch delivery with ONE store-lock pass per target chunk:
+        // live chunk applies every cell (idempotent skip per cell, one
+        // relight request if anything changed), otherwise the batch parks
+        // as ordered spills. Order within the batch is the populate's
+        // program order — identical to the per-write path. Default:
+        // per-entry commitNeighborWrite.
+        virtual void commitNeighborWriteBatch(int cx, int cz,
+                                              const std::vector<NeighborWrite>& writes) {
+                for (const NeighborWrite& w : writes)
+                        commitNeighborWrite(cx, cz, w.index, w.id, w.data);
+        }
         // Same delivery contract for a tile-entity NBT blob (structure
         // chest) aimed at a neighbor chunk: live chunk gets the blob added
         // to its tile_entities (plus the registry tile via the blob sink),
