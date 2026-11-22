@@ -546,6 +546,11 @@ void Anvil::flushPendingSaves() {
     });
 }
 
+size_t Anvil::saveQueueRoom() const {
+    std::lock_guard<std::mutex> lk(job_mtx_);
+    return kMaxQueuedSaves > job_queue_.size() ? kMaxQueuedSaves - job_queue_.size() : 0;
+}
+
 void Anvil::unloadChunk(int32_t /*x*/, int32_t /*z*/) {
     // Chunks themselves are managed by ChunkManager; the provider just
     // handles disk I/O. Nothing to do here.

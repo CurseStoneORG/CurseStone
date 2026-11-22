@@ -114,6 +114,15 @@ class LevelDB : public WorldProvider {
     // engine (and the engine's memtable reached disk). Save-all / shutdown.
     void flushPendingSaves() override;
 
+    // Free capacity of the background save queue right now (see
+    // WorldProvider::saveQueueRoom). The budgeted drain and the eviction
+    // path pace themselves with this and never block the tick thread on
+    // a full queue.
+    size_t saveQueueRoom() const override {
+        std::lock_guard<std::mutex> lk(job_mtx_);
+        return kMaxQueuedSaves > job_queue_.size() ? kMaxQueuedSaves - job_queue_.size() : 0;
+    }
+
     // Path to the database directory this provider maintains.
     const std::string& dbPath() const {
         return db_path_;
@@ -166,7 +175,9 @@ class LevelDB : public WorldProvider {
     generator::Generator* generator_ = nullptr;
 
     std::thread worker_;
-    std::mutex job_mtx_;
+    // mutable: saveQueueRoom() is a const interface method that peeks at
+    // the queue depth.
+    mutable std::mutex job_mtx_;
     std::condition_variable job_cv_;
     std::condition_variable done_cv_;
     std::deque<SaveJob> job_queue_;

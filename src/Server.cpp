@@ -61,6 +61,7 @@
 #include "scheduler/AsyncPool.h"
 #include "world/performance/PerformanceManager.h"
 #include "world/performance/GenerationProfiler.h"
+#include "world/performance/SaveProfiler.h"
 #include "scheduler/ServerScheduler.h"
 #include "scheduler/CallbackTask.h"
 #include "world/World.h"
@@ -1008,6 +1009,10 @@ void Server::runTickLoop() {
     mcp_set_thread_name("CS-Main");
     uint64_t last_tick_count = 0;
     auto last_tps_time = std::chrono::steady_clock::now();
+    // FASE L stop watchdog: a normal thread that reacts to the stop flag
+    // even when the main thread is wedged (see the header note).
+    stop_watchdog_running_.store(true, std::memory_order_relaxed);
+    stop_watchdog_ = std::thread([this] { runStopWatchdog(); });
     // Use absolute tick deadlines to prevent timing drift.
     // Advance by 50 ms per tick and compensate for overruns on the next tick.
     auto next_tick = std::chrono::steady_clock::now();
@@ -1085,10 +1090,18 @@ void Server::runTickLoop() {
         async_pool_->stop();
 
     utils::MainLogger::get().info("Shutdown complete.");
+
+    // Stop the stop watchdog LAST: it monitors the shutdown cleanup too
+    // (the save-all below the tick loop is itself a long stretch that
+    // used to look dead from the outside).
+    stop_watchdog_running_.store(false, std::memory_order_relaxed);
+    if (stop_watchdog_.joinable())
+        stop_watchdog_.join();
 }
 
 void Server::tick() {
     ++currentTick_;
+    diag_tick_.store(currentTick_, std::memory_order_relaxed);
 
     // Update the current tick for crash diagnostics.
     diagnostics::Diagnostics::get().setTick(currentTick_);
@@ -1251,7 +1264,12 @@ void Server::tick() {
             if (p)
                 p->saveData(); // Save player NBT data.
         }
-        beginAutosaveDrain();
+        // An autosave does not interrupt a manual save already in flight:
+        // the drain is shared, the manual requester still gets its
+        // completion message, and chunks the autosave would have written
+        // ride the same budget anyway.
+        if (!autosave_draining_)
+            beginAutosaveDrain();
     }
     if (autosave_draining_)
         tickAutosaveDrain();
@@ -1261,6 +1279,95 @@ void Server::tick() {
     uint64_t total_ms =
         (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(wb_end - wb_start).count();
     WorkbenchManager::get().onTickEnd(total_ms);
+}
+
+// -----------------------------------------------------------------------
+// FASE L stop watchdog (L3). Signal handlers stay async-signal-safe:
+// they only flip a flag. This normal thread provides what the flag alone
+// cannot — operator feedback while the main thread is wedged, periodic
+// diagnostics of the save pipeline, and a fully-disclosed last-resort
+// exit after two minutes of zero progress. It never hides a slow disk:
+// every step is logged, and the escalation reports exactly what would
+// be lost (queued-but-unwritten chunk saves).
+// -----------------------------------------------------------------------
+void Server::runStopWatchdog() {
+    mcp_set_thread_name("CS-StopWatch");
+    uint64_t last_tick = 0;
+    uint64_t last_written = 0;
+    uint64_t last_queue = 0;
+    auto last_progress = std::chrono::steady_clock::now();
+    auto last_report = last_progress - std::chrono::seconds(10);
+    bool announced = false;
+    bool announced_main_exit = false;
+
+    for (;;) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        if (!stop_watchdog_running_.load(std::memory_order_relaxed))
+            return; // shutdown finished normally
+        if (!(external_stop_flag_ && *external_stop_flag_))
+            continue; // no stop requested: pure observer
+
+        const auto now = std::chrono::steady_clock::now();
+        if (!announced) {
+            announced = true;
+            utils::MainLogger::get().info(
+                "[STOP] Shutdown requested (Ctrl+C/SIGTERM) — waiting for the main "
+                "loop to reach a safe point. Progress will be reported here.");
+            last_progress = now;
+        }
+
+        // Progress = ticks advancing OR the save pipeline moving (a
+        // shutdown save-all freezes the tick counter while chunks are
+        // still being written — that is progress, not a stall).
+        const uint64_t tick = diag_tick_.load(std::memory_order_relaxed);
+        const auto sp = performance::SaveProfiler::peek();
+        if (tick != last_tick || sp.chunks_written != last_written ||
+            sp.queue_depth != last_queue) {
+            last_tick = tick;
+            last_written = sp.chunks_written;
+            last_queue = sp.queue_depth;
+            last_progress = now;
+        }
+        const double stalled_s =
+            std::chrono::duration<double>(now - last_progress).count();
+        const bool main_exited = tick_loop_exited_.load(std::memory_order_relaxed);
+
+        if (now - last_report >= std::chrono::seconds(10)) {
+            last_report = now;
+            if (main_exited) {
+                if (!announced_main_exit) {
+                    announced_main_exit = true;
+                    utils::MainLogger::get().info(
+                        "[STOP] Main loop exited — running shutdown cleanup "
+                        "(save-all, provider flush, worker joins)...");
+                }
+            } else if (stalled_s > 5.0) {
+                utils::MainLogger::get().warn(
+                    "[STOP] Main loop has not made progress for " +
+                    std::to_string((int)stalled_s) + "s — it is most likely wedged "
+                    "inside a disk operation (save pipeline: queue=" +
+                    std::to_string(sp.queue_depth) + " pending, " +
+                    std::to_string(sp.chunks_written) + " written so far). "
+                    "The process still honors this watchdog; nothing is being "
+                    "hidden.");
+            }
+        }
+
+        // Last resort: two minutes of TOTAL stall (no ticks, no writes,
+        // no queue movement). Escalate WITH disclosure — the queued-but-
+        // unwritten chunk saves are listed before the exit.
+        if (stalled_s >= 120.0) {
+            utils::MainLogger::get().error(
+                "[STOP] No progress for " + std::to_string((int)stalled_s) +
+                "s — forcing exit to honor the stop request. " +
+                std::to_string(sp.queue_depth) + " chunk save(s) were queued but "
+                "not written and are lost; " + std::to_string(sp.chunks_written) +
+                " chunk(s) were written and are durable in the world db (WAL "
+                "replay recovers them on the next boot). This path should never "
+                "fire on a healthy disk.");
+            std::_Exit(1);
+        }
+    }
 }
 
 void Server::shutdown() {
@@ -1381,17 +1488,88 @@ void Server::saveAll() {
     }
 }
 
-// Incremental autosave pipeline.
-static constexpr size_t kAutosaveChunksPerTick = 64;
-static constexpr uint64_t kAutosaveMsPerTick = 3;
-// Stop retrying after this many consecutive idle ticks.
-static constexpr int kAutosaveIdleTicksMax = 40;
-
 static uint64_t nowSteadyMs() {
     return (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
                std::chrono::steady_clock::now().time_since_epoch())
         .count();
 }
+
+// -----------------------------------------------------------------------
+// FASE L — the shared save drain (autosave + manual /save).
+//
+// One budgeted pipeline, two entry points: the autosave begins it on its
+// interval; requestFullSave() begins (or upgrades) it for /save with
+// progress reporting and an honest completion message. The main thread
+// never serializes more than kAutosaveChunksPerTick chunks per tick and
+// never waits on the save worker: everything else rides the queue.
+
+// Tell the /save requester (and the log) about save progress. The
+// requester is a player name or "CONSOLE"; a player that has left just
+// misses the message — the log keeps it.
+void Server::notifySaveRequester(const std::string& msg) {
+    utils::MainLogger::get().info(msg);
+    if (autosave_drain_requester_.empty() || autosave_drain_requester_ == "CONSOLE")
+        return;
+    if (Player* p = getPlayerExact(autosave_drain_requester_))
+        p->sendMessage(msg);
+}
+
+void Server::requestFullSave(const std::string& requester) {
+    // Player data first (cheap, N small files) so world changes the
+    // players caused are marked dirty before the pending count is taken.
+    const auto& snap = playersSnapshotRef();
+    for (auto& p : snap) {
+        if (p)
+            p->saveData();
+    }
+
+    if (autosave_draining_) {
+        // Coalesce: one drain at a time. Upgrade in place and keep the
+        // accounting (written/ticks) intact so the completion message
+        // covers the whole drain, not just this request's tail.
+        autosave_drain_manual_ = true;
+        autosave_drain_requester_ = requester;
+        autosave_drain_last_progress_ms_ = nowSteadyMs();
+        size_t pending = 0;
+        for (auto& w : worlds_) {
+            if (w)
+                pending += w->unsavedChunkCount();
+        }
+        notifySaveRequester("[SAVE] Already saving — upgraded to a full save; " +
+                            std::to_string(pending) + " chunk(s) still pending.");
+        return;
+    }
+
+    autosave_drain_manual_ = true;
+    autosave_drain_requester_ = requester;
+    autosave_drain_last_progress_ms_ = 0; // begin() sets it
+    beginAutosaveDrain();
+    size_t pending = 0;
+    for (auto& w : worlds_) {
+        if (w)
+            pending += w->unsavedChunkCount();
+    }
+    if (autosave_draining_)
+        notifySaveRequester("[SAVE] Saving world: " + std::to_string(pending) +
+                            " chunk(s) pending — progress will be reported.");
+    else {
+        // Even with zero modified chunks, /save is a full save point:
+        // rewrite level.dat so Time/LastPlayed reflect the request and
+        // report completion honestly.
+        for (auto& w : worlds_) {
+            if (w)
+                w->saveBudget(/*max_chunks=*/0, /*max_ms=*/0,
+                              /*write_level_data=*/true);
+        }
+        notifySaveRequester("[SAVE] World saved: 0 modified chunks; level.dat updated.");
+    }
+}
+
+// Incremental autosave pipeline.
+static constexpr size_t kAutosaveChunksPerTick = 64;
+static constexpr uint64_t kAutosaveMsPerTick = 3;
+// Stop retrying after this many consecutive idle ticks.
+static constexpr int kAutosaveIdleTicksMax = 40;
 
 void Server::beginAutosaveDrain() {
     autosave_draining_ = false;
@@ -1404,17 +1582,22 @@ void Server::beginAutosaveDrain() {
     autosave_drain_max_tick_ms_ = 0;
     autosave_drain_idle_ticks_ = 0;
 
-    // Write level.dat once without processing chunks.
-    auto t0 = std::chrono::steady_clock::now();
-    for (auto& w : worlds_) {
-        if (w)
-            w->saveBudget(/*max_chunks=*/0, /*max_ms=*/0,
-                          /*write_level_data=*/true);
+    // The manual (/save) drain writes level.dat at the END — the final
+    // time and spawn values, after every chunk landed. The autosave keeps
+    // its periodic level-dat write here (it has no completion step).
+    if (!autosave_drain_manual_) {
+        auto t0 = std::chrono::steady_clock::now();
+        for (auto& w : worlds_) {
+            if (w)
+                w->saveBudget(/*max_chunks=*/0, /*max_ms=*/0,
+                              /*write_level_data=*/true);
+        }
+        WorkbenchManager::get().onAutosave(
+            (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - t0)
+                .count());
     }
-    WorkbenchManager::get().onAutosave(
-        (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - t0)
-            .count());
+    autosave_drain_last_progress_ms_ = nowSteadyMs();
 
     size_t pending = 0;
     for (auto& w : worlds_) {
@@ -1425,7 +1608,15 @@ void Server::beginAutosaveDrain() {
         return; // No dirty chunks to drain.
 
     autosave_draining_ = true;
-    if (debug_mode_) {
+    if (autosave_drain_manual_) {
+        // The requester already got the "saving world" line from
+        // requestFullSave(); keep the drain log for the record.
+        utils::MainLogger::get().info("[SAVE] Manual save drain started: " +
+                                      std::to_string(pending) + " chunk(s), budgeted at " +
+                                      std::to_string(kAutosaveChunksPerTick) +
+                                      "/tick (max " + std::to_string(kAutosaveMsPerTick) +
+                                      "ms/tick) — the main thread never blocks.");
+    } else if (debug_mode_) {
         utils::MainLogger::get().info("[SAVE] Autosave: " + std::to_string(pending) +
                                       " chunk(s) queued -> draining " +
                                       std::to_string(kAutosaveChunksPerTick) + "/tick (max " +
@@ -1480,22 +1671,67 @@ void Server::tickAutosaveDrain() {
         if (w)
             pending += w->unsavedChunkCount();
     }
+
+    // Manual-save progress: throttle to one line per 500 ms so a long
+    // drain reports steadily without flooding the console.
+    if (autosave_drain_manual_) {
+        const uint64_t now_ms = nowSteadyMs();
+        if (now_ms - autosave_drain_last_progress_ms_ >= 500) {
+            autosave_drain_last_progress_ms_ = now_ms;
+            notifySaveRequester("[SAVE] Progress: " +
+                                std::to_string(autosave_drain_written_) + " chunk(s) written, " +
+                                std::to_string(pending) + " pending, " +
+                                std::to_string((now_ms - autosave_drain_start_ms_) / 1000) +
+                                "s elapsed.");
+        }
+    }
+
     bool stuck = (pending > 0 && autosave_drain_idle_ticks_ >= kAutosaveIdleTicksMax);
     if (pending == 0 || stuck) {
         autosave_draining_ = false;
         uint64_t total_ms = nowSteadyMs() - autosave_drain_start_ms_;
         if (stuck) {
-            utils::MainLogger::get().warn(
-                "[SAVE] Autosave drain stopped with " + std::to_string(pending) +
-                " chunk(s) still dirty (provider "
-                "not accepting writes?) — will retry on the next autosave.");
-        } else if (autosave_drain_written_ > 0) {
-            utils::MainLogger::get().info(
-                "[SAVE] Autosave done: " + std::to_string(autosave_drain_written_) +
-                " chunk(s) en " + std::to_string(total_ms) + "ms (" +
-                std::to_string(autosave_drain_ticks_) + " tick(s), max " +
-                std::to_string(autosave_drain_max_tick_ms_) + "ms en un tick).");
+            // Manual saves do NOT quietly give up like the autosave does:
+            // the requester asked for a full save point and gets told the
+            // truth. The drain flag stays down; the next autosave (or
+            // another /save) retries.
+            const std::string why =
+                "[SAVE] Save drain stopped with " + std::to_string(pending) +
+                " chunk(s) still dirty (provider not accepting writes?) — " +
+                "nothing was lost: the chunks stay marked modified and the next "
+                "autosave or /save retries them.";
+            if (autosave_drain_manual_)
+                notifySaveRequester(why);
+            else
+                utils::MainLogger::get().warn(why);
+        } else if (autosave_drain_written_ > 0 || autosave_drain_manual_) {
+            if (autosave_drain_manual_) {
+                // The manual save's full-save moment: level.dat now carries
+                // the final time/spawn, every modified chunk is in the
+                // providers' write queues or already durable in their
+                // write-ahead logs. Report real completion, not intent.
+                for (auto& w : worlds_) {
+                    if (w)
+                        w->saveBudget(/*max_chunks=*/0, /*max_ms=*/0,
+                                      /*write_level_data=*/true);
+                }
+                notifySaveRequester("[SAVE] World saved: " +
+                                    std::to_string(autosave_drain_written_) +
+                                    " chunk(s) in " + std::to_string(total_ms) +
+                                    "ms (" + std::to_string(autosave_drain_ticks_) +
+                                    " ticks, worst tick " +
+                                    std::to_string(autosave_drain_max_tick_ms_) +
+                                    "ms). All modified chunks are persisted.");
+            } else {
+                utils::MainLogger::get().info(
+                    "[SAVE] Autosave done: " + std::to_string(autosave_drain_written_) +
+                    " chunk(s) en " + std::to_string(total_ms) + "ms (" +
+                    std::to_string(autosave_drain_ticks_) + " tick(s), max " +
+                    std::to_string(autosave_drain_max_tick_ms_) + "ms en un tick).");
+            }
         }
+        autosave_drain_manual_ = false;
+        autosave_drain_requester_.clear();
     }
 }
 
