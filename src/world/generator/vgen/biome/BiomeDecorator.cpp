@@ -22,6 +22,7 @@
  */
 
 #include "world/performance/GenerationProfiler.h"
+#include "vgen/PopulateGate.h"
 #include "vgen/biome/BiomeDecorator.h"
 #include "vgen/feature/ClayFeature.h"
 #include "vgen/feature/SandFeature.h"
@@ -245,7 +246,18 @@ void BiomeDecorator::decorate(BlockSource* source, Random& random, Biome* biome,
 	if (treeCount > 0) {
 		if (random.nextInt(10) == 0) {
 			forests = (int)random.nextFloat(treeCount);
-			grassCount = Biome::plains->decorator->grassCount;
+			// Vanilla reads Biome::plains->decorator->grassCount here — the
+			// shared decorator state plains' last populate left behind. Under
+			// the rank gate that carry-over is reproduced by the per-generator
+			// PlainsRefTable (pure, register-time known; see PopulateGate.h);
+			// outside a populate the constructor default stands in for the
+			// never-populated singleton.
+			if (vgen::PlainsRefTable* ref = vgen::currentPlainsRef()) {
+				grassCount = ref->grassAtOrBefore(
+					vgen::populateRank(origin.x >> 4, origin.z >> 4));
+			} else {
+				grassCount = Biome::plains->decorator->grassCount;
+			}
 		}
 		else {
 			if (treeCount >= 1.f) {

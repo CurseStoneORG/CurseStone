@@ -27,6 +27,7 @@
 #include "world/generator/vgen/Blocks.h"
 #include "world/generator/vgen/material/Material.h"
 #include "world/generator/vgen/feature/LakeFeature.h"
+#include "vgen/biome/PlainsBiome.h"
 #include "tile/TileFactory.h"
 #include "world/format/Chunk.h"
 #include "world/format/ChunkSection.h"
@@ -684,6 +685,12 @@ void VgenSource::populate(GenerationContext& ctx) {
         // rank (see queueSpill / applySpill / PopulateGate.h).
         tPopulateRank = vgen::populateRank(cx, cz);
 
+        // Expose the plains reference table for this populate: the 1-in-10
+        // forest-grass branch inside BiomeDecorator::decorate reads it
+        // (vanilla's shared-decorator carry-over in reference order). RAII
+        // restore — populate has early returns.
+        const vgen::PlainsRefGuard plainsRefGuard(mPlainsRef);
+
         // center working copy of the real chunk
         LevelChunk center(mLevel, mDimension, ChunkPos(cx, cz));
         copySinkToVirtual(sink, center);
@@ -857,6 +864,21 @@ void VgenSource::preparePopulateDeps(int32_t cx, int32_t cz) {
 
 void VgenSource::populateRegister(int32_t cx, int32_t cz) {
         mPopulateGate.registerSlot(vgenKey(cx, cz));
+        // Record this chunk's plains decorator retune if it is a plains
+        // chunk. The retune is a pure function of the coordinates (the
+        // biome-info noise is seed-independent), so the table is fully
+        // determined at register time and every 1-in-10 forest-grass read
+        // returns the same value on every worker and every run — vanilla's
+        // shared-decorator carry-over, reproduced in reference order
+        // (vgen/PopulateGate.h PlainsRefTable). Sample the same block
+        // populate's biome choice samples (center.getMax()).
+        vgen::Biome* b =
+            mBiomeSource.getBiome(cx * 16 + 15, cz * 16 + 15);
+        if (b == vgen::Biome::plains.get()) {
+                mPlainsRef.note(
+                    vgen::populateRank(cx, cz),
+                    static_cast<vgen::PlainsBiome*>(b)->referenceGrassCount(cx, cz));
+        }
 }
 
 bool VgenSource::populateTryEnter(int32_t cx, int32_t cz) {

@@ -75,6 +75,15 @@ FullBlock PlainsBiome::getRandomFlowerTypeAndData(Random& random, const BlockPos
 	return flower;
 }
 
+// Pure per-chunk retune (see the header). The noise coordinate matches
+// decorateImpl exactly: it receives origin = center.getMin(), i.e.
+// (cx * 16, 0, cz * 16), and samples ((origin.x + 8) / 200, (origin.z + 8) / 200).
+int PlainsBiome::referenceGrassCount(int cx, int cz) const {
+	const float flowerNoise =
+		mBiomeInfoNoise->getValue(((cx * 16) + 8) / 200.0f, ((cz * 16) + 8) / 200.0f);
+	return flowerNoise < -.8f ? 5 : 10;
+}
+
 void PlainsBiome::decorateImpl(BlockSource* source, Random& random, const BlockPos& origin, bool legacy, float limit){
 	float flowerNoise = mBiomeInfoNoise->getValue((origin.x + 8) / 200.0f, (origin.z + 8) / 200.0f);
 	if(flowerNoise < -.8) {
