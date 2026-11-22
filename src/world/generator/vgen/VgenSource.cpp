@@ -117,24 +117,28 @@ void VgenSource::getHeights(float* noiseBuffer, vgen::Biome** biomes, int x, int
         const int noiseSize2d = Gen::NOISE_SIZE_X * Gen::NOISE_SIZE_Y;
         vgen::Vec2 noisePos2D((float)x, (float)z);
 
-        performance::ScopedStage noiseTimer(performance::Stage::Noise);
         float* depthRegion = (float*)alloca(sizeof(float) * noiseSize2d);
-        depthNoise->getRegion(depthRegion, noisePos2D, Gen::NOISE_SIZE_X, Gen::NOISE_SIZE_Z, vgen::Vec2(200.0, 200.0), 0.5);
-
         const int noiseSize3d = Gen::NOISE_SIZE_X * Gen::NOISE_SIZE_Y * Gen::NOISE_SIZE_Z;
         vgen::Vec3 noisePos((float)x, (float)y, (float)z);
-
         float* mainNoiseRegion = (float*)alloca(sizeof(float) * noiseSize3d);
-        mainPerlinNoise->getRegion(mainNoiseRegion, noisePos, Gen::NOISE_SIZE_X, Gen::NOISE_SIZE_Y, Gen::NOISE_SIZE_Z,
-                                   vgen::Vec3(coordinateScale / 80.0f, heightScale / 160.0f, coordinateScale / 80.0f));
-
         float* minLimitRegion = (float*)alloca(sizeof(float) * noiseSize3d);
-        minLimitPerlinNoise->getRegion(minLimitRegion, noisePos, Gen::NOISE_SIZE_X, Gen::NOISE_SIZE_Y, Gen::NOISE_SIZE_Z,
-                                       vgen::Vec3(coordinateScale, heightScale * 1.25f, coordinateScale));
-
         float* maxLimitRegion = (float*)alloca(sizeof(float) * noiseSize3d);
-        maxLimitPerlinNoise->getRegion(maxLimitRegion, noisePos, Gen::NOISE_SIZE_X, Gen::NOISE_SIZE_Y, Gen::NOISE_SIZE_Z,
-                                       vgen::Vec3(coordinateScale, heightScale, coordinateScale));
+        {
+            // Tight scope around the four octave-region calls only: the
+            // rest of getHeights (biome weighting + the y interpolation)
+            // is its own cost and stays inside the terrain stage.
+            performance::ScopedStage noiseTimer(performance::Stage::Noise);
+            depthNoise->getRegion(depthRegion, noisePos2D, Gen::NOISE_SIZE_X, Gen::NOISE_SIZE_Z, vgen::Vec2(200.0, 200.0), 0.5);
+
+            mainPerlinNoise->getRegion(mainNoiseRegion, noisePos, Gen::NOISE_SIZE_X, Gen::NOISE_SIZE_Y, Gen::NOISE_SIZE_Z,
+                                       vgen::Vec3(coordinateScale / 80.0f, heightScale / 160.0f, coordinateScale / 80.0f));
+
+            minLimitPerlinNoise->getRegion(minLimitRegion, noisePos, Gen::NOISE_SIZE_X, Gen::NOISE_SIZE_Y, Gen::NOISE_SIZE_Z,
+                                           vgen::Vec3(coordinateScale, heightScale * 1.25f, coordinateScale));
+
+            maxLimitPerlinNoise->getRegion(maxLimitRegion, noisePos, Gen::NOISE_SIZE_X, Gen::NOISE_SIZE_Y, Gen::NOISE_SIZE_Z,
+                                           vgen::Vec3(coordinateScale, heightScale, coordinateScale));
+        }
 
         x = z = 0;
 

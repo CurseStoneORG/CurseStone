@@ -22,6 +22,7 @@
  */
 
 #include "vgen/synth/ImprovedNoise.h"
+#include "world/performance/NoiseOptimizer.h"
 #include "vgen/Random.h"
 
 namespace vgen {
@@ -111,6 +112,28 @@ float ImprovedNoise::_getValue(const Vec3& pos) const {
 }
 
 void ImprovedNoise::_readArea(float* buffer, const Vec3& pos, int xSize, int ySize, int zSize, const Vec3& s, float pow) const {
+        // Vector kernels first (bit-exact with the scalar loop below,
+        // enforced by their runtime guard). 2D regions (ySize == 1) are
+        // always safe to vectorize; 3D only when sy >= 1, where vanilla's
+        // corner-reuse across y-steps can never fire — anything else
+        // returns false and falls through to the scalar loop verbatim.
+        {
+                cursestone::performance::noise::Params prm{};
+                prm.map = mNoiseMap;
+                prm.mapf = mNoiseMapF;
+                prm.ox = mOrigin.x; prm.oy = mOrigin.y; prm.oz = mOrigin.z;
+                prm.px = pos.x; prm.py = pos.y; prm.pz = pos.z;
+                prm.xSize = xSize; prm.ySize = ySize; prm.zSize = zSize;
+                prm.sx = s.x; prm.sy = s.y; prm.sz = s.z;
+                prm.pow = pow;
+                prm.buffer = buffer;
+                if (ySize == 1) {
+                        if (cursestone::performance::noise::readArea2D(prm))
+                                return;
+                } else if (cursestone::performance::noise::readArea3D(prm)) {
+                        return;
+                }
+        }
 	if (ySize == 1) {
 		int A = 0, AA = 0, B = 0, BA = 0;
 		float vv0 = 0, vv2 = 0;

@@ -46,7 +46,14 @@ while IFS= read -r f; do
   o="$OUT/obj/${f//\//_}.o"
   if [ -f "$o" ] && [ "$o" -nt "$f" ] && [ "$o" -nt "$NEWEST_HDR" ]; then continue; fi
   rm -f "$o"
-  ( g++ $CXXFLAGS -c "$f" -o "$o" || touch "$OUT/.fail" ) &
+  # The AVX2 noise kernels need the ISA enabled for this TU only. The
+  # rest of the build keeps the generic x86-64 baseline so the scalar
+  # fallback (and every vanilla output) stays byte-identical.
+  if [ "$f" = "src/world/performance/NoiseOptimizerAVX2.cpp" ]; then
+    ( g++ $CXXFLAGS -mavx2 -mno-fma -c "$f" -o "$o" || touch "$OUT/.fail" ) &
+  else
+    ( g++ $CXXFLAGS -c "$f" -o "$o" || touch "$OUT/.fail" ) &
+  fi
   pids+=($!); n=$((n+1))
   if [ $((n % 4)) -eq 0 ]; then wait; fi
 done < <(find src -name '*.cpp')
