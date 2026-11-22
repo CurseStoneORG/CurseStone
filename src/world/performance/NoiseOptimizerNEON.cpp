@@ -37,7 +37,7 @@ namespace {
 constexpr int kLanes = 4;
 
 static inline float32x4_t calcValues(float32x4_t val, int32x4_t& index, float32x4_t& fade) {
-    const int32x4_t trunc = vcvtzq_s32_f32(val);
+    const int32x4_t trunc = vcvtq_s32_f32(val);
     const uint32x4_t lt = vcltq_f32(val, vcvtq_f32_s32(trunc));
     const int32x4_t vf = vaddq_s32(trunc, vreinterpretq_s32_u32(lt));
     index = vandq_s32(vf, vdupq_n_s32(255));
@@ -56,7 +56,7 @@ static inline float32x4_t lerp(float32x4_t t, float32x4_t a, float32x4_t b) {
 }
 
 static inline float32x4_t grad(float32x4_t hashF, float32x4_t px, float32x4_t py, float32x4_t pz) {
-    const int32x4_t h = vandq_s32(vcvtzq_s32_f32(hashF), vdupq_n_s32(15));
+    const int32x4_t h = vandq_s32(vcvtq_s32_f32(hashF), vdupq_n_s32(15));
     // u = h < 8 ? px : py
     const float32x4_t u = vbslq_f32(vcltq_s32(h, vdupq_n_s32(8)), px, py);
     // v = h < 4 ? py : (h == 12 || h == 14 ? px : pz)
@@ -72,7 +72,7 @@ static inline float32x4_t grad(float32x4_t hashF, float32x4_t px, float32x4_t py
 
 // _grad2(hash, x, z): u = (1 - ((h & 8) >> 3)) * x  ->  h & 8 ? 0 : x.
 static inline float32x4_t grad2(float32x4_t hashF, float32x4_t x, float32x4_t z) {
-    const int32x4_t h = vandq_s32(vcvtzq_s32_f32(hashF), vdupq_n_s32(15));
+    const int32x4_t h = vandq_s32(vcvtq_s32_f32(hashF), vdupq_n_s32(15));
     const float32x4_t u = vbslq_f32(vceqzq_s32(vandq_s32(h, vdupq_n_s32(8))), x, vdupq_n_f32(0));
     const uint32x4_t m12or14 = vorrq_u32(vceqq_s32(h, vdupq_n_s32(12)),
                                          vceqq_s32(h, vdupq_n_s32(14)));
@@ -161,10 +161,10 @@ bool readArea2D_neon(const Params& p) {
             aa1F[k] = (float)p.map[p.map[ai[k]] + zi[k] + 1];
             ba1F[k] = (float)p.map[p.map[bi[k]] + zi[k] + 1];
         }
-        const int32x4_t AAv = vaddq_s32(vcvtzq_s32_f32(vld1q_f32(aaF)), Z);
-        const int32x4_t BAv = vaddq_s32(vcvtzq_s32_f32(vld1q_f32(baF)), Z);
-        const int32x4_t AA1v = vaddq_s32(vcvtzq_s32_f32(vld1q_f32(aa1F)), Z);
-        const int32x4_t BA1v = vaddq_s32(vcvtzq_s32_f32(vld1q_f32(ba1F)), Z);
+        const int32x4_t AAv = vaddq_s32(vcvtq_s32_f32(vld1q_f32(aaF)), Z);
+        const int32x4_t BAv = vaddq_s32(vcvtq_s32_f32(vld1q_f32(baF)), Z);
+        const int32x4_t AA1v = vaddq_s32(vcvtq_s32_f32(vld1q_f32(aa1F)), Z);
+        const int32x4_t BA1v = vaddq_s32(vcvtq_s32_f32(vld1q_f32(ba1F)), Z);
 
         const float32x4_t gAA = lookup4(mapf, AAv);
         const float32x4_t gBA = lookup4(mapf, BAv);
@@ -213,10 +213,10 @@ bool readArea2D_neon(const Params& p) {
             aa1F[k] = (float)p.map[p.map[ai[k]] + zi[k] + 1];
             ba1F[k] = (float)p.map[p.map[bi[k]] + zi[k] + 1];
         }
-        const int32x4_t AAv = vaddq_s32(vcvtzq_s32_f32(vld1q_f32(aaF)), Z);
-        const int32x4_t BAv = vaddq_s32(vcvtzq_s32_f32(vld1q_f32(baF)), Z);
-        const int32x4_t AA1v = vaddq_s32(vcvtzq_s32_f32(vld1q_f32(aa1F)), Z);
-        const int32x4_t BA1v = vaddq_s32(vcvtzq_s32_f32(vld1q_f32(ba1F)), Z);
+        const int32x4_t AAv = vaddq_s32(vcvtq_s32_f32(vld1q_f32(aaF)), Z);
+        const int32x4_t BAv = vaddq_s32(vcvtq_s32_f32(vld1q_f32(baF)), Z);
+        const int32x4_t AA1v = vaddq_s32(vcvtq_s32_f32(vld1q_f32(aa1F)), Z);
+        const int32x4_t BA1v = vaddq_s32(vcvtq_s32_f32(vld1q_f32(ba1F)), Z);
         const float32x4_t gAA = lookup4(mapf, AAv);
         const float32x4_t gBA = lookup4(mapf, BAv);
         const float32x4_t gAA1 = lookup4(mapf, AA1v);
@@ -293,10 +293,10 @@ bool readArea3D_neon(const Params& p) {
                     bF[k] = (float)p.map[bi[k]];
                     b1F[k] = (float)p.map[bi[k] + 1];
                 }
-                const int32x4_t AAv = vaddq_s32(vcvtzq_s32_f32(vld1q_f32(aF)), Zv);
-                const int32x4_t ABv = vaddq_s32(vcvtzq_s32_f32(vld1q_f32(a1F)), Zv);
-                const int32x4_t BAv = vaddq_s32(vcvtzq_s32_f32(vld1q_f32(bF)), Zv);
-                const int32x4_t BBv = vaddq_s32(vcvtzq_s32_f32(vld1q_f32(b1F)), Zv);
+                const int32x4_t AAv = vaddq_s32(vcvtq_s32_f32(vld1q_f32(aF)), Zv);
+                const int32x4_t ABv = vaddq_s32(vcvtq_s32_f32(vld1q_f32(a1F)), Zv);
+                const int32x4_t BAv = vaddq_s32(vcvtq_s32_f32(vld1q_f32(bF)), Zv);
+                const int32x4_t BBv = vaddq_s32(vcvtq_s32_f32(vld1q_f32(b1F)), Zv);
 
                 const float32x4_t gAA = lookup4(mapf, AAv);
                 const float32x4_t gBA = lookup4(mapf, BAv);
@@ -337,10 +337,10 @@ bool readArea3D_neon(const Params& p) {
                     bF[k] = (float)p.map[bi[k]];
                     b1F[k] = (float)p.map[bi[k] + 1];
                 }
-                const int32x4_t AAv = vaddq_s32(vcvtzq_s32_f32(vld1q_f32(aF)), Zv);
-                const int32x4_t ABv = vaddq_s32(vcvtzq_s32_f32(vld1q_f32(a1F)), Zv);
-                const int32x4_t BAv = vaddq_s32(vcvtzq_s32_f32(vld1q_f32(bF)), Zv);
-                const int32x4_t BBv = vaddq_s32(vcvtzq_s32_f32(vld1q_f32(b1F)), Zv);
+                const int32x4_t AAv = vaddq_s32(vcvtq_s32_f32(vld1q_f32(aF)), Zv);
+                const int32x4_t ABv = vaddq_s32(vcvtq_s32_f32(vld1q_f32(a1F)), Zv);
+                const int32x4_t BAv = vaddq_s32(vcvtq_s32_f32(vld1q_f32(bF)), Zv);
+                const int32x4_t BBv = vaddq_s32(vcvtq_s32_f32(vld1q_f32(b1F)), Zv);
                 const float32x4_t gAA = lookup4(mapf, AAv);
                 const float32x4_t gBA = lookup4(mapf, BAv);
                 const float32x4_t gAB = lookup4(mapf, ABv);
