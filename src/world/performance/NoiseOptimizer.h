@@ -66,6 +66,13 @@ bool readArea3D(const Params& p);
 // One-time guard + kernel selection; returns the active kernel name.
 const char* initialize();
 
+// Registers the generator's own scalar loop as the guard reference.
+// Called once before main() by ImprovedNoise; when set, the guard
+// compares kernels against the platform's real scalar bits (whatever
+// the compiler did to the scalar expressions) instead of the local
+// mirror below. Returns true on first registration.
+bool setScalarReference(void (*fn)(const Params&));
+
 // Scalar reference implementation (mirrors ImprovedNoise::_readArea op
 // for op). The runtime guard compares the vector kernels against it.
 void region_scalar_2d(const Params& p);

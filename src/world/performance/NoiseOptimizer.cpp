@@ -148,6 +148,22 @@ Kernel3D k3d = nullptr;
 const char* kName = "scalar";
 std::once_flag kOnce;
 
+// Reference set by ImprovedNoise (its verbatim scalar loop). Guards run
+// against it when present so vector output is checked against the exact
+// bits the platform's scalar path produces.
+void (*gRef)(const Params&) = nullptr;
+
+void refRegion(const Params& p) {
+    if (gRef) {
+        gRef(p);
+        return;
+    }
+    if (p.ySize == 1)
+        region_scalar_2d(p);
+    else
+        region_scalar_3d(p);
+}
+
 bool buffersEqual(const float* a, const float* b, size_t n) {
     // Bit comparison: the requirement is identical bytes, not "close".
     return memcmp(a, b, n * sizeof(float)) == 0;
@@ -188,7 +204,7 @@ bool guard2D(Kernel2D cand) {
         p.sx = c.s; p.sy = 1.0f; p.sz = c.s * 1.01f;
         p.pow = c.pow;
         p.buffer = a;
-        region_scalar_2d(p);
+        refRegion(p);
         p.buffer = b;
         if (!cand(p))
             return false;
@@ -227,7 +243,7 @@ bool guard3D(Kernel3D cand) {
         p.sx = 684.412f; p.sy = c.sy; p.sz = 684.412f;
         p.pow = c.pow;
         p.buffer = a;
-        region_scalar_3d(p);
+        refRegion(p);
         p.buffer = b;
         if (!cand(p))
             return false;
@@ -262,6 +278,13 @@ void selectKernels() {
 }
 
 } // namespace
+
+bool setScalarReference(void (*fn)(const Params&)) {
+    if (gRef)
+        return false;
+    gRef = fn;
+    return true;
+}
 
 const char* initialize() {
     std::call_once(kOnce, selectKernels);
