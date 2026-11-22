@@ -26,6 +26,7 @@
 #include "world/generator/Generator.h"
 #include "world/performance/TerrainCache.h"
 #include "world/generator/NeighborChunkIO.h"
+#include "vgen/PopulateGate.h"
 #include "vgen/VgenWorld.h"
 #include "vgen/biome/Biome.h"
 #include "vgen/biome/BiomeSource.h"
@@ -51,6 +52,12 @@ public:
 
         void generate(GenerationContext& ctx) override;
         void populate(GenerationContext& ctx) override;
+
+        // Deterministic populate ordering (see vgen/PopulateGate.h).
+        void preparePopulateDeps(int32_t x, int32_t z) override;
+        void populateRegister(int32_t x, int32_t z) override;
+        bool populateTryEnter(int32_t x, int32_t z) override;
+        void populateMarkDone(int32_t x, int32_t z) override;
 
         // Vanilla-like spawn: surface at the world origin area.
         mcp_vector3_t getSpawn() const override { return mcp_v3(127.5, 128.0, 127.5); }
@@ -136,6 +143,7 @@ private:
                 uint32_t index;
                 uint8_t id;
                 uint8_t data;
+                uint64_t srcRank; // reference-order rank of the populating chunk
         };
         std::mutex mSpillMutex;
         std::unordered_map<int64_t, std::vector<SpillEntry>> mSpill;
@@ -144,6 +152,13 @@ private:
         // live sink when their neighbor populated — replayed into the
         // virtual center at that chunk's populate, flushed with its spill.
         std::unordered_map<int64_t, std::vector<std::vector<uint8_t>>> mPendingTiles;
+
+        // --- deterministic populate ordering (vgen/PopulateGate.h) ---
+        // Gate slots for requested chunks; dep map entries are written by
+        // the generate task (preparePopulateDeps) and erased by markDone.
+        vgen::PopulateGate mPopulateGate;
+        std::mutex mDepMutex;
+        std::unordered_map<int64_t, std::vector<std::pair<int32_t, int32_t>>> mPopulateDeps;
 };
 
 static inline int64_t vgenKey(int cx, int cz) {

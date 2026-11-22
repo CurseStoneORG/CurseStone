@@ -25,6 +25,9 @@
 
 #include <mutex>
 #include <unordered_map>
+#include <vector>
+#include <cstdint>
+#include <utility>
 
 #include "vgen/structure/StructureFeatureType.h"
 #include "vgen/v1/LargeFeature.h"
@@ -41,49 +44,78 @@ class Dimension;
 
 class StructureFeature : public LargeFeature {
 
-	typedef std::unordered_map<ChunkPos, Unique<StructureStart> > StructureMap;
+        typedef std::unordered_map<ChunkPos, Unique<StructureStart> > StructureMap;
 
 public:
 
-	StructureFeature()
-		: LargeFeature(){
+        StructureFeature()
+                : LargeFeature(){
 
-	}
+        }
 
-	virtual std::string getFeatureName() = 0;
+        virtual std::string getFeatureName() = 0;
 
-	bool postProcess(BlockSource* level, Random& random, int chunkX, int chunkZ);
+        bool postProcess(BlockSource* level, Random& random, int chunkX, int chunkZ);
 
-	void postProcessMobsAt(BlockSource* blockSource, int chunkWestBlock, int chunkNorthBlock, Random& random);
+        void postProcessMobsAt(BlockSource* blockSource, int chunkWestBlock, int chunkNorthBlock, Random& random);
 
-	bool isInsideFeature(int cellX, int cellY, int cellZ);
-	bool isInsideBoundingFeature(int cellX, int cellY, int cellZ);
+        bool isInsideFeature(int cellX, int cellY, int cellZ);
+        bool isInsideBoundingFeature(int cellX, int cellY, int cellZ);
 
-	virtual bool getNearestGeneratedFeature(Player& player, BlockPos& pos);
+        virtual bool getNearestGeneratedFeature(Player& player, BlockPos& pos);
+
+        // Chunks whose 16x16 window intersects a cached start's bounding
+        // box — i.e. every chunk that would claim one of this feature's
+        // windows from its own populate. The populate gate (vgen/
+        // PopulateGate.h) waits for the lower-ranked ones so the windows of
+        // one structure always run in the reference chunk order: pieces
+        // mutate during postProcess (lazy ground height, consumed pieces),
+        // and the vanilla order is the only order that reproduces vanilla
+        // block output.
+        void collectWindowDeps(int chunkX, int chunkZ,
+                               std::vector<std::pair<int32_t, int32_t>>& out) {
+                std::lock_guard<std::mutex> l(cacheMutex);
+                const BoundingBox win(chunkX * 16, 0, chunkZ * 16,
+                                      chunkX * 16 + 15, 127, chunkZ * 16 + 15);
+                for (auto& pair : cachedStructures) {
+                        Unique<StructureStart>& start = pair.second;
+                        if (!start->isValid())
+                                continue;
+                        const BoundingBox& bb = start->getBoundingBox();
+                        if (!bb.intersects(win))
+                                continue;
+                        // Arithmetic shift floors negative coords correctly.
+                        const int x0 = bb.x0 >> 4, x1 = bb.x1 >> 4;
+                        const int z0 = bb.z0 >> 4, z1 = bb.z1 >> 4;
+                        for (int x = x0; x <= x1; ++x)
+                                for (int z = z0; z <= z1; ++z)
+                                        out.push_back({x, z});
+                }
+        }
 
 protected:
 
-	virtual void addFeature(LevelChunk& lc, Dimension& generator, Random& random, int x, int z ) override;
+        virtual void addFeature(LevelChunk& lc, Dimension& generator, Random& random, int x, int z ) override;
 
-	virtual bool isFeatureChunk(BiomeSource* biomeSource, Random& random, const ChunkPos& lc) = 0;
+        virtual bool isFeatureChunk(BiomeSource* biomeSource, Random& random, const ChunkPos& lc) = 0;
 
-	virtual Unique<StructureStart> createStructureStart(Dimension& biomeSource, Random& random, const ChunkPos& lc) = 0;
-	virtual StructureStart* getStructureAt(int cellX, int cellY, int cellZ);
+        virtual Unique<StructureStart> createStructureStart(Dimension& biomeSource, Random& random, const ChunkPos& lc) = 0;
+        virtual StructureStart* getStructureAt(int cellX, int cellY, int cellZ);
 
-	virtual std::vector<BlockPos> getGuesstimatedFeaturePositions();
+        virtual std::vector<BlockPos> getGuesstimatedFeaturePositions();
 
-	StructureMap cachedStructures;
-	std::mutex cacheMutex;
+        StructureMap cachedStructures;
+        std::mutex cacheMutex;
 
-	// Memoized isFeatureChunk verdicts per source cell. Every populate
-	// rescans a (2r+1)^2 cell ring per feature (289 cells for r=8, x3
-	// features), re-seeding a Mersenne Twister per cell just to re-derive
-	// a verdict the neighbouring populate already computed. The verdict
-	// is a pure function of (world seed, cell), so caching it preserves
-	// the RNG streams bit-exactly: cells that skip the re-seed never fed
-	// anything downstream (the caller re-seeds per cell).
-	std::mutex cellMemoMutex;
-	std::unordered_map<int64_t, int8_t> cellMemo;
+        // Memoized isFeatureChunk verdicts per source cell. Every populate
+        // rescans a (2r+1)^2 cell ring per feature (289 cells for r=8, x3
+        // features), re-seeding a Mersenne Twister per cell just to re-derive
+        // a verdict the neighbouring populate already computed. The verdict
+        // is a pure function of (world seed, cell), so caching it preserves
+        // the RNG streams bit-exactly: cells that skip the re-seed never fed
+        // anything downstream (the caller re-seeds per cell).
+        std::mutex cellMemoMutex;
+        std::unordered_map<int64_t, int8_t> cellMemo;
 };
 
 } // namespace vgen

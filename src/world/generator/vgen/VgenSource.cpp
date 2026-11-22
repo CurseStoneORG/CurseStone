@@ -42,6 +42,16 @@ using vgen::BlockVolume;
 using vgen::ChunkPos;
 using vgen::LevelChunk;
 
+// Reference-order rank of the populate running on THIS thread. Spills are
+// tagged with it at queue time (see queueSpill) so the replay can apply
+// exactly the writes the vanilla chunk order would have made before this
+// populate, in that order — independent of worker timing. Set at populate
+// entry; queueSpill only runs inside a populate, so the stale value after
+// return is never read.
+namespace {
+thread_local uint64_t tPopulateRank = 0;
+}
+
 // ---------------------------------------------------------------------------
 // Construction — vanilla RandomLevelSource ctor (noise init order matters:
 // every noise ctor draws from the same RNG sequentially).
@@ -411,7 +421,7 @@ void VgenSource::commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t id,
 
 void VgenSource::queueSpill(int cx, int cz, uint32_t index, uint8_t id, uint8_t data) {
         std::lock_guard<std::mutex> l(mSpillMutex);
-        mSpill[vgenKey(cx, cz)].push_back({index, id, data});
+        mSpill[vgenKey(cx, cz)].push_back({index, id, data, tPopulateRank});
 }
 
 void VgenSource::drainSpills(int cx, int cz, mcp_chunk_t* chunk) {
@@ -426,6 +436,12 @@ void VgenSource::drainSpills(int cx, int cz, mcp_chunk_t* chunk) {
         }
         if (!chunk)
                 return;
+        // Reference (vanilla chunk) order: stable sort keeps each source's
+        // own write sequence intact while ordering sources by rank.
+        std::stable_sort(pending.begin(), pending.end(),
+                         [](const SpillEntry& a, const SpillEntry& b) {
+                                 return a.srcRank < b.srcRank;
+                         });
         for (const SpillEntry& e : pending) {
                 uint32_t y = e.index % 128;
                 uint32_t rest = e.index / 128;
@@ -461,16 +477,42 @@ void VgenSource::applySpill(vgen::LevelChunk& center, int cx, int cz) {
                         mPendingTiles.erase(tiles);
                 }
         }
-        std::vector<SpillEntry> pending;
+        std::vector<SpillEntry> qualifying;
         {
                 std::lock_guard<std::mutex> l(mSpillMutex);
                 auto it = mSpill.find(vgenKey(cx, cz));
-                if (it == mSpill.end())
-                        return;
-                pending = std::move(it->second);
-                mSpill.erase(it);
+                if (it != mSpill.end()) {
+                        // Replay exactly the writes the vanilla chunk order
+                        // would have landed before this populate: sources
+                        // ranked below this chunk. Later-ranked sources that
+                        // already populated (the scheduler ran them ahead)
+                        // stay parked — the install-time drainSpills applies
+                        // them in reference order, which is exactly the
+                        // vanilla "write onto an already-populated chunk"
+                        // case. Without the filter the replayed subset would
+                        // depend on worker timing (measured: digests changed
+                        // run to run under threads=4).
+                        std::vector<SpillEntry>& all = it->second;
+                        const size_t keep = std::stable_partition(
+                                                all.begin(), all.end(),
+                                                [this](const SpillEntry& e) {
+                                                        return e.srcRank < tPopulateRank;
+                                                })
+                                            - all.begin();
+                        qualifying.assign(std::make_move_iterator(all.begin()),
+                                          std::make_move_iterator(all.begin() + keep));
+                        all.erase(all.begin(), all.begin() + keep);
+                        if (all.empty())
+                                mSpill.erase(it);
+                }
         }
-        for (const SpillEntry& e : pending) {
+        // Stable sort keeps each source's own write sequence while ordering
+        // sources by reference rank (arrival order across workers is racy).
+        std::stable_sort(qualifying.begin(), qualifying.end(),
+                         [](const SpillEntry& a, const SpillEntry& b) {
+                                 return a.srcRank < b.srcRank;
+                         });
+        for (const SpillEntry& e : qualifying) {
                 uint32_t y = e.index % 128;
                 uint32_t rest = e.index / 128;
                 uint32_t z = rest % 16;
@@ -613,6 +655,9 @@ void VgenSource::populate(GenerationContext& ctx) {
                 return;
         const int cx = ctx.chunk_x;
         const int cz = ctx.chunk_z;
+        // Tag every spill this populate queues with its reference-order
+        // rank (see queueSpill / applySpill / PopulateGate.h).
+        tPopulateRank = vgen::populateRank(cx, cz);
 
         // center working copy of the real chunk
         LevelChunk center(mLevel, mDimension, ChunkPos(cx, cz));
@@ -755,6 +800,79 @@ void VgenSource::populate(GenerationContext& ctx) {
                         continue;
                 mcp_chunk_add_tile_entity(sink, blob.data(), blob.size());
         }
+}
+
+// ---------------------------------------------------------------------------
+// Deterministic populate ordering (vgen/PopulateGate.h)
+// ---------------------------------------------------------------------------
+void VgenSource::preparePopulateDeps(int32_t cx, int32_t cz) {
+        // Runs on the generate task: pre-create the structure starts this
+        // chunk's window would claim (deterministic, memoized — the later
+        // populate pass re-scans cheaply) and record which chunks share
+        // them. populateTryEnter folds these into the dependency set so a
+        // structure's windows always postProcess in reference chunk order.
+        vgen::Random random((vgen::RandomSeed)(uint64_t)mSeed);
+        auto dummy = std::make_unique<vgen::LevelChunk>(mLevel, mDimension, ChunkPos(cx, cz));
+        mVillageFeature.apply(*dummy, mDimension, random);
+        mMineshaftFeature.apply(*dummy, mDimension, random);
+        mScatteredFeature.apply(*dummy, mDimension, random);
+
+        std::vector<std::pair<int32_t, int32_t>> deps;
+        mVillageFeature.collectWindowDeps(cx, cz, deps);
+        mMineshaftFeature.collectWindowDeps(cx, cz, deps);
+        mScatteredFeature.collectWindowDeps(cx, cz, deps);
+
+        std::lock_guard<std::mutex> lk(mDepMutex);
+        mPopulateDeps[vgenKey(cx, cz)] = std::move(deps);
+}
+
+void VgenSource::populateRegister(int32_t cx, int32_t cz) {
+        mPopulateGate.registerSlot(vgenKey(cx, cz));
+}
+
+bool VgenSource::populateTryEnter(int32_t cx, int32_t cz) {
+        const uint64_t myRank = vgen::populateRank(cx, cz);
+        std::vector<uint64_t> deps;
+        deps.reserve(48);
+        // Feature spills: the 3x3 neighbourhood. A lower-ranked neighbour
+        // still populating may still write into this chunk; its spill must
+        // be parked before this populate replays them or the replay subset
+        // depends on worker timing.
+        for (int dx = -1; dx <= 1; ++dx) {
+                for (int dz = -1; dz <= 1; ++dz) {
+                        if (dx == 0 && dz == 0)
+                                continue;
+                        const int nx = cx + dx;
+                        const int nz = cz + dz;
+                        if (vgen::populateRank(nx, nz) < myRank)
+                                deps.push_back(vgenKey(nx, nz));
+                }
+        }
+        // Structure windows: chunks sharing a start with this window (the
+        // chunk itself claims its own window — never a dependency of
+        // itself, or the gate would never open).
+        {
+                std::lock_guard<std::mutex> lk(mDepMutex);
+                auto it = mPopulateDeps.find(vgenKey(cx, cz));
+                if (it != mPopulateDeps.end()) {
+                        for (const auto& n : it->second) {
+                                if (n.first == cx && n.second == cz)
+                                        continue;
+                                if (vgen::populateRank(n.first, n.second) < myRank)
+                                        deps.push_back(vgenKey(n.first, n.second));
+                        }
+                }
+        }
+        const bool ok = mPopulateGate.tryEnter(vgenKey(cx, cz), deps);
+        return ok;
+}
+
+void VgenSource::populateMarkDone(int32_t cx, int32_t cz) {
+        {
+                std::lock_guard<std::mutex> lk(mDepMutex);
+                mPopulateDeps.erase(vgenKey(cx, cz));
+        }
+        mPopulateGate.markDone(vgenKey(cx, cz));
 }
 
 // ---------------------------------------------------------------------------

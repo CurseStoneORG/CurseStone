@@ -91,10 +91,34 @@ bool StructureFeature::postProcess(BlockSource* level, Random& random, int chunk
 
 	bool intersection = false;
 
-	for (auto& pair : cachedStructures) {
-		Unique<StructureStart>& start = pair.second;
+	// Deterministic across-starts order. The map's iteration order follows
+	// its insertion history, which concurrent start creation scrambles;
+	// sorting the intersecting starts by source cell keeps the random-call
+	// order content-defined (cell order == the sequential scan order).
+	std::vector<StructureStart*> ordered;
+	{
+		std::vector<std::pair<int64_t, StructureStart*>> keyed;
+		for (auto& pair : cachedStructures) {
+			Unique<StructureStart>& start = pair.second;
+			if (!start->isValid())
+				continue;
+			if (!start->getBoundingBox().intersects(cx, cz, cx + 16, cz + 16))
+				continue;
+			const ChunkPos& cp = pair.first;
+			keyed.push_back({((int64_t)(uint32_t)cp.x << 32) | (uint32_t)cp.z,
+			                 start.get()});
+		}
+		std::sort(keyed.begin(), keyed.end(),
+		          [](const std::pair<int64_t, StructureStart*>& a,
+		             const std::pair<int64_t, StructureStart*>& b) {
+		              return a.first < b.first;
+		          });
+		ordered.reserve(keyed.size());
+		for (auto& k : keyed)
+			ordered.push_back(k.second);
+	}
+	for (StructureStart* start : ordered) {
 		if (start->isValid()) {
-			//if (start->getBoundingBox().intersects(cx - 16, cz - 16, cx + 32, cz + 32))
 			if (start->getBoundingBox().intersects(cx, cz, cx + 16, cz + 16)) {
 
 				//for (int cxo = chunkX - 1; cxo <= chunkX + 1; cxo++)

@@ -50,6 +50,7 @@
 #include <cstdint>
 #include <cstring>
 #include <string>
+#include <chrono>
 #include <thread>
 #include <vector>
 
@@ -65,14 +66,16 @@ static uint64_t fnv1a(const void* data, size_t n, uint64_t h = 14695981039346656
     return h;
 }
 
-// One chunk's full server-shaped pipeline: default biomes, generate,
-// populate, heightmap, sky light. The chunk stays allocated — the caller
-// digests (and frees) it only after every task finished, because cross-
-// chunk feature spills that arrive after this chunk's populate are
-// parked in the generator's spill queue and replayed at install time by
-// the server (ChunkManager drains them before the chunk goes live). The
-// drain step below is that install-time replay.
-static mcp_chunk_t* generateChunk(VgenSource& gen, int64_t seed, int cx, int cz) {
+// One chunk's full server-shaped pipeline, split exactly like the server's
+// async tasks: phase 1 generates terrain (order-free), phase 2 takes the
+// populate-gate turn (reference chunk order — see vgen/PopulateGate.h),
+// populates, and flags. The chunk stays allocated — the caller digests
+// (and frees) it only after every task finished, because cross-chunk
+// feature spills that arrive after this chunk's populate are parked in
+// the generator's spill queue and replayed at install time by the server
+// (ChunkManager drains them before the chunk goes live). The drain step
+// below is that install-time replay.
+static mcp_chunk_t* generatePhase(VgenSource& gen, int64_t seed, int cx, int cz) {
     mcp_chunk_t* c = mcp_chunk_new(cx, cz);
     if (!c) {
         std::printf("FAIL: chunk alloc\n");
@@ -89,12 +92,32 @@ static mcp_chunk_t* generateChunk(VgenSource& gen, int64_t seed, int cx, int cz)
     ctx.biomes_in = nullptr;
     ctx.chunk = c;
     gen.generate(ctx);
+    // Server task 1 also pre-creates the structure starts and records the
+    // window-sharing dependencies the populate gate will wait on.
+    gen.preparePopulateDeps(cx, cz);
+    return c;
+}
+
+// One server-task-2 attempt: take the reference-order turn if it is free,
+// otherwise report false so the caller re-queues (a worker that blocked
+// waiting could deadlock the pool, exactly like the live pipeline).
+static bool populatePhaseTry(VgenSource& gen, int64_t seed, mcp_chunk_t* c,
+                             int cx, int cz) {
+    GenerationContext ctx;
+    ctx.seed = seed;
+    ctx.chunk_x = cx;
+    ctx.chunk_z = cz;
+    ctx.biomes_in = nullptr;
+    ctx.chunk = c;
+    if (!gen.populateTryEnter(cx, cz))
+        return false;
     gen.populate(ctx);
+    gen.populateMarkDone(cx, cz);
     c->terrain_populated = true;
     c->dirty = true;
     mcp_chunk_recalculate_height_map(c);
     mcp_chunk_propagate_sky_light(c);
-    return c;
+    return true;
 }
 
 static uint64_t digestChunk(mcp_chunk_t* c) {
@@ -129,12 +152,32 @@ int main(int argc, char** argv) {
         cz = lz - radius;
     };
 
+    // Register the whole workset with the populate gate up front, the way
+    // the server's request burst does: a dependency that is queued but not
+    // started must be visible as "not done" before any populate runs.
+    for (size_t i = 0; i < digests.size(); ++i) {
+        int cx, cz;
+        coordOf(i, cx, cz);
+        gen.populateRegister(cx, cz);
+    }
+
     if (threads <= 1) {
         std::vector<mcp_chunk_t*> built(digests.size(), nullptr);
         for (int cx = -radius; cx <= radius; ++cx)
             for (int cz = -radius; cz <= radius; ++cz)
-                built[(size_t)(cx + radius) * side + (cz + radius)] =
-                    generateChunk(gen, seed, cx, cz);
+                built[(size_t)(cz + radius) * side + (cx + radius)] =
+                    generatePhase(gen, seed, cx, cz);
+        // Sequential = ascending chunk order (cx-major, the reference rank
+        // order), so every gate turn is already free; populate in that
+        // same pass. built[] is indexed (cz,radius)*side + (cx,radius).
+        for (int cx = -radius; cx <= radius; ++cx)
+            for (int cz = -radius; cz <= radius; ++cz)
+                if (!populatePhaseTry(gen, seed,
+                                      built[(size_t)(cz + radius) * side + (cx + radius)],
+                                      cx, cz)) {
+                    std::printf("FAIL: sequential turn blocked at %d %d\n", cx, cz);
+                    return 1;
+                }
         for (size_t i = 0; i < built.size(); ++i) {
             int cx, cz;
             coordOf(i, cx, cz);
@@ -143,28 +186,103 @@ int main(int argc, char** argv) {
             mcp_chunk_destroy(built[i]);
         }
     } else {
-        // Same shared generator, same task shape the server runs: each
-        // worker pulls the next unclaimed (cx, cz), builds the chunk
-        // end to end. The terrain cache coordinates concurrent
-        // neighbour builds exactly like the live pipeline.
+        // Same shared generator, same task shape the server runs: N
+        // workers generate in parallel, then N workers populate through
+        // the gate — interacting chunks wait for their reference-order
+        // turn, independent chunks run at once. The terrain cache
+        // coordinates concurrent neighbour builds like the live pipeline.
         std::vector<mcp_chunk_t*> built(digests.size(), nullptr);
-        std::atomic<size_t> next{0};
-        auto worker = [&]() {
-            for (;;) {
-                const size_t idx = next.fetch_add(1, std::memory_order_relaxed);
-                if (idx >= digests.size())
-                    return;
+        // Phase 1: N workers generate in parallel (order-free).
+        {
+            std::atomic<size_t> next{0};
+            auto worker = [&]() {
+                for (;;) {
+                    const size_t idx = next.fetch_add(1, std::memory_order_relaxed);
+                    if (idx >= digests.size())
+                        return;
+                    int cx, cz;
+                    coordOf(idx, cx, cz);
+                    built[idx] = generatePhase(gen, seed, cx, cz);
+                }
+            };
+            std::vector<std::thread> pool;
+            pool.reserve((size_t)threads);
+            for (int t = 0; t < threads; ++t)
+                pool.emplace_back(worker);
+            for (auto& t : pool)
+                t.join();
+        }
+        // Phase 2: N workers populate through the gate with the same
+        // re-queue discipline as the server's task pipeline: a worker that
+        // cannot take its turn hands the task back and picks the next one,
+        // so no worker ever blocks (blocking could stall tasks still
+        // sitting in the queue). Dependencies strictly point down-rank, so
+        // the lowest unfinished populate is always runnable.
+        {
+            std::atomic<size_t> next{0};
+            std::atomic<int> remaining{(int)digests.size()};
+            std::mutex retryMtx;
+            std::vector<size_t> retry; // kept sorted by reference rank, lowest first
+            auto rankOf = [&](size_t idx) {
                 int cx, cz;
                 coordOf(idx, cx, cz);
-                built[idx] = generateChunk(gen, seed, cx, cz);
+                return vgen::populateRank(cx, cz);
+            };
+            auto worker = [&]() {
+                for (;;) {
+                    // Fresh tasks first (a dependency that is still unpulled
+                    // would otherwise never start), then the re-queue in
+                    // reference-rank order: the lowest-rank unfinished
+                    // populate is always attempted first, so progress is
+                    // guaranteed and no task starves the others.
+                    size_t idx = SIZE_MAX;
+                    const size_t got = next.fetch_add(1, std::memory_order_relaxed);
+                    if (got < digests.size())
+                        idx = got;
+                    if (idx == SIZE_MAX) {
+                        std::lock_guard<std::mutex> lk(retryMtx);
+                        if (!retry.empty()) {
+                            idx = retry.front();
+                            retry.erase(retry.begin());
+                        }
+                    }
+                    if (idx == SIZE_MAX) {
+                        if (remaining.load(std::memory_order_relaxed) == 0)
+                            return;
+                        std::this_thread::sleep_for(std::chrono::microseconds(500));
+                        continue;
+                    }
+                    // Pacing mirrors the server's FIFO re-queue cost.
+                    std::this_thread::sleep_for(std::chrono::microseconds(200));
+                    int cx, cz;
+                    coordOf(idx, cx, cz);
+                    if (populatePhaseTry(gen, seed, built[idx], cx, cz)) {
+                        remaining.fetch_sub(1, std::memory_order_relaxed);
+                    } else {
+                        const uint64_t r = rankOf(idx);
+                        std::lock_guard<std::mutex> lk(retryMtx);
+                        retry.insert(
+                            std::lower_bound(retry.begin(), retry.end(), idx,
+                                             [&](size_t a, size_t b) {
+                                                 return rankOf(a) < rankOf(b);
+                                             }),
+                            idx);
+                        (void)r;
+                    }
+                }
+            };
+            std::vector<std::thread> pool;
+            pool.reserve((size_t)threads);
+            for (int t = 0; t < threads; ++t)
+                pool.emplace_back(worker);
+            for (auto& t : pool)
+                t.join();
+            if (remaining.load() != 0) {
+                std::printf("FAIL: populate pass left %d chunks\n",
+                            remaining.load());
+                return 1;
             }
-        };
-        std::vector<std::thread> pool;
-        pool.reserve((size_t)threads);
-        for (int t = 0; t < threads; ++t)
-            pool.emplace_back(worker);
-        for (auto& t : pool)
-            t.join();
+        }
         // Install-time spill replay + digest, in the fixed coordinate
         // order, after every task finished — exactly what the server's
         // install path does before a chunk streams.
@@ -179,13 +297,16 @@ int main(int argc, char** argv) {
 
     uint64_t total = 1469598103934665603ULL;
     int chunks = 0;
-    for (size_t i = 0; i < digests.size(); ++i) {
-        int cx, cz;
-        coordOf(i, cx, cz);
-        std::printf("chunk %d %d %016llx\n", cx, cz,
-                    (unsigned long long)digests[i]);
-        total = fnv1a(&digests[i], sizeof(digests[i]), total);
-        ++chunks;
+    // Canonical cx-major coordinate order (the reference order the
+    // sequential pass uses), independent of the internal storage map.
+    for (int cx = -radius; cx <= radius; ++cx) {
+        for (int cz = -radius; cz <= radius; ++cz) {
+            const size_t i = (size_t)(cz + radius) * side + (cx + radius);
+            std::printf("chunk %d %d %016llx\n", cx, cz,
+                        (unsigned long long)digests[i]);
+            total = fnv1a(&digests[i], sizeof(digests[i]), total);
+            ++chunks;
+        }
     }
     std::printf("TOTAL threads=%d chunks=%d seed=%lld radius=%d digest=%016llx\n",
                 threads, chunks, (long long)seed, radius,
