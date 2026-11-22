@@ -40,34 +40,101 @@ class GenerationTask {
                    DoneCallback done)
         : gen_(std::move(gen)), x_(x), z_(z), seed_(seed), done_(std::move(done)) {
     }
+
+    // Combined path (legacy callers): generate then populate, exactly the
+    // old single-task behaviour.
     void run() {
-        // FIX (chunks that never render): everything below runs on an
-        // AsyncPool worker. If generate()/populate() throws for some
-        // chunk, runOne() swallows the exception but run() never reaches
-        // done_(c) — the only place that clears pending_. The chunk would
-        // stay "in flight" forever and the world would keep a permanent
-        // hole. Fix: catch here, build an emergency flat chunk (same
-        // pattern as the synchronous fallback) and guarantee done_() runs
-        // either way.
+        mcp_chunk_t* c = runGenerate();
+        if (c)
+            runPopulate(c);
+    }
+
+    // Phase 1 of the split pipeline: create the chunk and run
+    // generator->generate() on this worker. On success returns the chunk
+    // for phase 2 (runPopulate). If generate() throws, the emergency flat
+    // chunk is handed to done_() and null returns (phase 2 skipped); an
+    // allocation failure hands done_(nullptr) and returns null. The gate
+    // (populateTryEnter) is NOT touched here — phase 1 is order-free.
+    mcp_chunk_t* runGenerate() {
+        const auto t0 = std::chrono::steady_clock::now();
         mcp_chunk_t* partial = nullptr;
-        performance::ScopedStage totalTimer(performance::Stage::Total);
         try {
-            runInner(partial);
+            mcp_chunk_t* c = mcp_chunk_new(x_, z_);
+            if (!c) {
+                done_(nullptr);
+                return nullptr;
+            }
+            partial = c; // visible to the catch below if generate() throws
+
+            // Defensive default biome (plains) in case the generator
+            // doesn't set its own (Normal/Flat both do, but this keeps
+            // behaviour identical for any future one that doesn't).
+            //
+            // REAL BUG (black world/grass): this used to fill sky_light
+            // with 0xFF before a single block existed and never computed
+            // real light — full brightness everywhere plus a broken
+            // heightmap that counted leaves/flowers as ceiling, rendering
+            // solid black under any tree canopy.
+            // Fix: generate terrain first, THEN recalc the heightmap, then
+            // run the real light pass (phase 2), never a memset.
+            for (int bx = 0; bx < 16; ++bx)
+                for (int bz = 0; bz < 16; ++bz)
+                    mcp_chunk_set_biome(c, bx, bz, 1);
+
+            GenerationContext ctx{seed_, x_, z_, nullptr, c};
+            gen_->generate(ctx);
+            generate_ns_ = (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(
+                               std::chrono::steady_clock::now() - t0)
+                               .count();
+            return c;
         } catch (const std::exception& e) {
-            // 'partial' is the chunk runInner had already allocated
-            // before generate()/populate() threw — free it.
             if (partial)
                 mcp_chunk_destroy(partial);
-            done_(makeEmergencyChunk(e.what()));
+            done_(makeEmergencyChunk());
+            return nullptr;
         } catch (...) {
             if (partial)
                 mcp_chunk_destroy(partial);
-            done_(makeEmergencyChunk("unknown exception"));
+            done_(makeEmergencyChunk());
+            return nullptr;
         }
     }
 
+    // Phase 2: the populate-gate turn must already be held (the caller
+    // asked populateTryEnter first). Runs populate, flags, heightmap and
+    // light, then hands the chunk to done_() exactly once — an emergency
+    // flat chunk if populate threw, same guarantee as the old combined
+    // run(). One Stage::Total entry per chunk: generate time is carried
+    // over from phase 1 so the per-chunk number stays whole.
+    void runPopulate(mcp_chunk_t* c) {
+        if (!c)
+            return; // phase 1 already handed the task off via done_
+        const auto t0 = std::chrono::steady_clock::now();
+        try {
+            GenerationContext ctx{seed_, x_, z_, nullptr, c};
+            gen_->populate(ctx);
+            c->terrain_populated = true;
+            c->dirty = true;
+            mcp_chunk_recalculate_height_map(c);
+            {
+                performance::ScopedStage lightTimer(performance::Stage::Light);
+                mcp_chunk_propagate_sky_light(c); // sets c->light_populated = true internally
+            }
+            done_(c);
+        } catch (...) {
+            mcp_chunk_destroy(c);
+            done_(makeEmergencyChunk());
+        }
+        performance::GenerationProfiler::add(
+            performance::Stage::Total,
+            generate_ns_ +
+                (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    std::chrono::steady_clock::now() - t0)
+                    .count());
+    }
+
   private:
-    mcp_chunk_t* makeEmergencyChunk(const char* reason) {
+    mcp_chunk_t* makeEmergencyChunk() {
         mcp_chunk_t* c = mcp_chunk_new(x_, z_);
         if (!c)
             return nullptr;
@@ -84,46 +151,10 @@ class GenerationTask {
         c->dirty = true;
         mcp_chunk_recalculate_height_map(c);
         mcp_chunk_propagate_sky_light(c);
-        (void)reason; // kept for future logging if a logger ever lands here
         return c;
     }
-    void runInner(mcp_chunk_t*& partial_out) {
-        mcp_chunk_t* c = mcp_chunk_new(x_, z_);
-        if (!c) {
-            done_(nullptr);
-            return;
-        }
-        partial_out = c; // visible al catch de run() si algo de abajo explota
 
-        // Defensive default biome (plains) in case the generator
-        // doesn't set its own (Normal/Flat both do, but this keeps
-        // behaviour identical for any future one that doesn't). Runs
-        // on the worker thread — Generator is documented stateless
-        // w.r.t. the main thread, so this is safe.
-        //
-        // REAL BUG (black world/grass): this used to fill sky_light with
-        // 0xFF before a single block existed and never computed real
-        // light — full brightness everywhere plus a broken heightmap that
-        // counted leaves/flowers as ceiling, rendering solid black under
-        // any tree canopy.
-        // Fix: generate terrain first, THEN recalc the heightmap, then
-        // run the real light pass (which replaces the old memset).
-        for (int bx = 0; bx < 16; ++bx)
-            for (int bz = 0; bz < 16; ++bz)
-                mcp_chunk_set_biome(c, bx, bz, 1);
-
-        GenerationContext ctx{seed_, x_, z_, nullptr, c};
-        gen_->generate(ctx);
-        gen_->populate(ctx);
-        c->terrain_populated = true;
-        c->dirty = true;
-        mcp_chunk_recalculate_height_map(c);
-        {
-            performance::ScopedStage lightTimer(performance::Stage::Light);
-            mcp_chunk_propagate_sky_light(c); // sets c->light_populated = true internally
-        }
-        done_(c);
-    }
+    uint64_t generate_ns_ = 0;
 
   private:
     std::shared_ptr<Generator> gen_;

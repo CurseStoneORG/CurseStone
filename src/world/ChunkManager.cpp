@@ -46,6 +46,7 @@
 #include "ChunkManager.h"
 #include <algorithm>
 #include <chrono>
+#include <thread>
 #include <string>
 
 namespace cursestone::world {
@@ -127,13 +128,29 @@ mcp_chunk_t* ChunkManager::getChunk(int32_t x, int32_t z) {
             ctx.chunk = c;
             // A throw here must not strand the half-built chunk (mirrors
             // the async task's own cleanup).
+            generator_->populateRegister(x, z);
             try {
                 generator_->generate(ctx);
+                generator_->preparePopulateDeps(x, z);
+                // Take the populate turn like the async pipeline does. The
+                // synchronous path normally runs before any pool burst
+                // (boot), so the gate is empty and this returns at once;
+                // the bounded wait only matters if a worker burst is in
+                // flight, and yielding here beats producing a chunk that
+                // does not match the vanilla populate order.
+                int spins = 0;
+                while (!generator_->populateTryEnter(x, z)) {
+                    if (++spins > 200000)
+                        break; // degrade to ungated rather than hang
+                    std::this_thread::sleep_for(std::chrono::microseconds(200));
+                }
                 generator_->populate(ctx);
             } catch (...) {
+                generator_->populateMarkDone(x, z);
                 mcp_chunk_destroy(c);
                 throw;
             }
+            generator_->populateMarkDone(x, z);
 
             // Mark as populated + dirty (so it gets saved to disk).
             c->terrain_populated = true;
@@ -336,51 +353,117 @@ mcp_chunk_t* ChunkManager::getChunkOrRequestAsync(int32_t x, int32_t z,
     };
 
     int64_t seed = provider_ ? provider_->getSeed() : 0;
-    auto task = std::make_shared<std::function<void()>>([this, x, z, seed, install]() {
-        // 1) Disk first — region open + read + inflate + NBT decode,
-        //    all off the tick thread now. provider_->loadChunk() is
-        //    thread-safe (the Anvil provider serializes region access
-        //    with io_mtx_ against its own writer thread); a provider
-        //    without disk backing simply returns nullopt.
-        if (provider_) {
-            try {
-                auto loaded = [&] {
-                    performance::ScopedStage diskTimer(performance::Stage::DiskLoad);
-                    return provider_->loadChunk(x, z);
-                }();
-                if (loaded && loaded.value()) {
-                    auto* adapter = dynamic_cast<format::ChunkAdapter*>(loaded.value().get());
-                    if (adapter && adapter->chunk()) {
-                        mcp_chunk_t* raw = adapter->releaseChunk();
-                        if (raw) {
-                            install(raw); // callback owns pending_ now
-                            return;
+
+    // Register with the generator's populate gate BEFORE any task runs:
+    // a dependency that is queued but not started must still be visible
+    // as "not done", or a chunk could populate past a lower-ranked
+    // neighbour and reproduce a timing-dependent spill/window order
+    // instead of the vanilla chunk order (see vgen/PopulateGate.h).
+    generator_->populateRegister(x, z);
+
+    // Split pipeline (deterministic concurrent populate):
+    //   task 1 — disk load, or generate. Order-free, fully parallel.
+    //   task 2 — populate under the reference-order gate, then install.
+    // Task 2 re-queues itself instead of blocking its worker when a
+    // lower-ranked dependency is still populating: a worker that waits
+    // inside its task can deadlock the whole pool (every worker waiting
+    // on tasks still sitting in the queue), while the re-queue keeps the
+    // lowest unfinished populate always runnable (dependencies strictly
+    // point down-rank). PopulateStep is a plain callable, so every
+    // re-queue submits a fresh copy — no self-referencing function, no
+    // shared_ptr cycle, no leak.
+    auto gt = std::make_shared<generator::GenerationTask>(generator_, x, z, seed, install);
+    auto generated = std::make_shared<mcp_chunk_t*>(nullptr);
+    auto attempts = std::make_shared<int>(0);
+
+    struct PopulateStep {
+        ChunkManager* cm;
+        int32_t x, z;
+        std::shared_ptr<generator::GenerationTask> gt;
+        std::shared_ptr<mcp_chunk_t*> generated;
+        std::shared_ptr<int> attempts;
+        scheduler::AsyncPool* pool;
+        void operator()() const {
+            if (!cm->generator_->populateTryEnter(x, z)) {
+                if (++*attempts < 20000 && pool && pool->submit(*this))
+                    return; // re-queued: worker freed, retry from the FIFO lane
+                // Retry budget exhausted or pool stopping: finish ungated
+                // rather than strand the chunk.
+            }
+            gt->runPopulate(*generated); // always ends in install()
+            cm->generator_->populateMarkDone(x, z);
+        }
+    };
+    const PopulateStep populateStep{this, x, z, gt, generated, attempts, pool};
+
+    auto generateTask = std::make_shared<std::function<void()>>(
+        [this, x, z, gt, generated, populateStep, install, pool]() {
+            // 1) Disk first — region open + read + inflate + NBT decode,
+            //    all off the tick thread now. provider_->loadChunk() is
+            //    thread-safe (the Anvil provider serializes region access
+            //    with io_mtx_ against its own writer thread); a provider
+            //    without disk backing simply returns nullopt.
+            if (provider_) {
+                try {
+                    auto loaded = [&] {
+                        performance::ScopedStage diskTimer(performance::Stage::DiskLoad);
+                        return provider_->loadChunk(x, z);
+                    }();
+                    if (loaded && loaded.value()) {
+                        auto* adapter = dynamic_cast<format::ChunkAdapter*>(loaded.value().get());
+                        if (adapter && adapter->chunk()) {
+                            mcp_chunk_t* raw = adapter->releaseChunk();
+                            if (raw) {
+                                // Disk chunk: no populate will run for this
+                                // request — release its gate slot so
+                                // dependencies don't wait on it forever.
+                                generator_->populateMarkDone(x, z);
+                                install(raw); // callback owns pending_ now
+                                return;
+                            }
                         }
                     }
+                    // loadChunk() had a value but we couldn't extract a
+                    // usable chunk from it (bad adapter / null release) —
+                    // fall through to generation below instead of leaving
+                    // this chunk stuck.
+                } catch (...) {
+                    // A provider failure must not strand the request: fall
+                    // through to generation, which carries its own
+                    // emergency-chunk guarantee.
                 }
-                // loadChunk() had a value but we couldn't extract a
-                // usable chunk from it (bad adapter / null release) —
-                // fall through to generation below instead of leaving
-                // this chunk stuck.
-            } catch (...) {
-                // A provider failure must not strand the request: fall
-                // through to generation, which carries its own
-                // emergency-chunk guarantee.
             }
-        }
 
-        // 2) Not on disk (or unusable) — generate it on this worker.
-        generator::GenerationTask gen(generator_, x, z, seed, install);
-        gen.run();
-    });
+            // 2) Not on disk (or unusable) — generate on this worker, then
+            //    pre-create the structure starts (their window-sharing
+            //    dependencies feed the populate gate).
+            mcp_chunk_t* c = gt->runGenerate();
+            if (!c) {
+                // Allocation failure or a generate() throw: runGenerate
+                // already handed an emergency chunk (or null) to install —
+                // just release the gate slot.
+                generator_->populateMarkDone(x, z);
+                return;
+            }
+            *generated = c;
+            generator_->preparePopulateDeps(x, z);
+            if (pool && pool->submit(populateStep))
+                return;
+            // Pool refused (shutting down): populate inline, ungated, so
+            // the chunk still lands.
+            gt->runPopulate(c);
+            generator_->populateMarkDone(x, z);
+        });
 
-    if (pool->submit([task] {
-            (*task)();
-        })) {
+    if (pool->submit(*generateTask)) {
         // Successfully handed off — the task/install callback now owns
         // clearing `pending_` once the chunk is materialized. Tell the
         // guard not to erase it out from under the in-flight task.
         handed_to_pool = true;
+    } else {
+        // Pool refused before task 1 ran: nothing will populate, so the
+        // gate slot must go or unrelated chunks would wait on it forever.
+        generator_->populateMarkDone(x, z);
     }
     // Pool refused (shutting down): handed_to_pool stays false, so the
     // guard erases pending_ on return — caller just sees nullptr this
