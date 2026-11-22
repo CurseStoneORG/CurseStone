@@ -794,7 +794,8 @@ static void mcp_biome_grass_color(uint8_t biomeId, uint8_t* r, uint8_t* g, uint8
 // output bytes are identical by construction.
 static uint8_t* chunk_wire_serialize_core(const mcp_chunk_section_t* const* sec,
                                           const uint8_t* biomes,
-                                          const int32_t* heights, size_t* out_len) {
+                                          const int32_t* heights, size_t* out_len,
+                                          bool include_wire_tail) {
     if (!sec || !out_len)
         return NULL;
 
@@ -814,7 +815,7 @@ static uint8_t* chunk_wire_serialize_core(const mcp_chunk_section_t* const* sec,
     const size_t kBlockLight = 16384;
     const size_t kHeightMap = 256;
     const size_t kBiomeCol = 1024; // 256 * 4
-    const size_t kExtra = 4;       // LInt32 count = 0
+    const size_t kExtra = include_wire_tail ? 4 : 0; // LInt32 count = 0
     size_t total = kBlocks + kData + kSkyLight + kBlockLight + kHeightMap + kBiomeCol + kExtra;
     uint8_t* buf = (uint8_t*)calloc(total, 1);
     if (!buf)
@@ -996,12 +997,16 @@ static uint8_t* chunk_wire_serialize_core(const mcp_chunk_section_t* const* sec,
     }
     off += kBiomeCol;
 
-    // --- Extra data: LInt32 count = 0 ---
-    buf[off + 0] = 0;
-    buf[off + 1] = 0;
-    buf[off + 2] = 0;
-    buf[off + 3] = 0;
-    off += 4;
+    // --- Extra data: only the wire payload carries it. The LevelDB legacy
+    // terrain record stops after the biome colors (the MCPE device writes
+    // block extra data to its own "4" record, and CurseStone tracks none).
+    if (include_wire_tail) {
+        buf[off + 0] = 0;
+        buf[off + 1] = 0;
+        buf[off + 2] = 0;
+        buf[off + 3] = 0;
+        off += 4;
+    }
 
     *out_len = off;
     return buf;
@@ -1015,7 +1020,8 @@ uint8_t* mcp_chunk_network_serialize(const mcp_chunk_t* c, size_t* out_len) {
     // chunk before publishing it and never touch it again). See the wire
     // snapshot contract in Chunk.h for the async path.
     return chunk_wire_serialize_core((const mcp_chunk_section_t* const*)c->sections,
-                                     c->biomes, c->height_map, out_len);
+                                     c->biomes, c->height_map, out_len,
+                                     /*include_wire_tail=*/true);
 }
 
 // Copies @p n bytes into a fresh malloc block, or NULL on OOM.
@@ -1107,5 +1113,33 @@ uint8_t* mcp_chunk_snapshot_network_serialize(const mcp_chunk_wire_snapshot_t* s
         shims[i].block_light = s->section_light[i];
         sec[i] = &shims[i];
     }
-    return chunk_wire_serialize_core(sec, s->biomes, s->height_map, out_len);
+    return chunk_wire_serialize_core(sec, s->biomes, s->height_map, out_len,
+                                     /*include_wire_tail=*/true);
+}
+
+uint8_t* mcp_chunk_snapshot_legacy_terrain_serialize(
+    const mcp_chunk_wire_snapshot_t* s, size_t* out_len) {
+    // The MCPE LevelDB legacy terrain record: the wire payload minus the
+    // trailing extra-data count — blocks + data + sky + block light +
+    // heightmap + biome colors (83200 bytes). Same transposition core, so
+    // a saved chunk and a streamed chunk agree byte-for-byte on the parts
+    // they share.
+    if (!s || !out_len)
+        return NULL;
+    mcp_chunk_section_t shims[8];
+    const mcp_chunk_section_t* sec[8];
+    for (int i = 0; i < 8; ++i) {
+        memset(&shims[i], 0, sizeof(shims[i]));
+        if (!s->section_present[i]) {
+            sec[i] = NULL;
+            continue;
+        }
+        shims[i].blocks = s->section_blocks[i];
+        shims[i].data = s->section_data[i];
+        shims[i].sky_light = s->section_sky[i];
+        shims[i].block_light = s->section_light[i];
+        sec[i] = &shims[i];
+    }
+    return chunk_wire_serialize_core(sec, s->biomes, s->height_map, out_len,
+                                     /*include_wire_tail=*/false);
 }

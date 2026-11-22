@@ -31,7 +31,8 @@
 //
 // Concrete implementers:
 //   - anvil/Anvil        the era reference Anvil format (.mca, big-endian NBT). DEFAULT.
-//   - leveldb/LevelDB    MCPE LevelDB format (stub until leveldb linked)
+//   - leveldb/LevelDB    MCPE LevelDB format on the built-in engine
+//                        (real-format db/ files, no external library)
 #pragma once
 
 #include <memory>
@@ -88,8 +89,6 @@ class WorldProvider {
 
     // Persist world metadata (level.dat) — called by World::save() so
     // that periodic auto-saves flush metadata to disk, not just chunks.
-    // The provider may choose to no-op if it has no metadata (e.g.
-    // a stub LevelDB provider).
     virtual void saveLevelData() = 0;
 
     // Block until every chunk write accepted by saveChunk() has actually
