@@ -498,6 +498,15 @@ void Anvil::workerLoop() {
             job = std::move(job_queue_.front());
             job_queue_.pop_front();
             job_busy_ = true;
+            // Same deadlock fix as the LevelDB engine's queue: a producer
+            // blocked in enqueueSave() waits on job_cv_ for QUEUE SPACE,
+            // and only a pop creates space. Without this notify the first
+            // full queue (kMaxQueuedSaves pending saves) put every
+            // producer to sleep forever — flushDirty() held the chunk
+            // store behind it and the server froze. Wake them on every pop.
+            lk.unlock();
+            job_cv_.notify_all();
+            lk.lock();
         }
 
         // ZLIB OUTSIDE io_mtx_ — pure CPU over job-local memory.
