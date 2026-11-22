@@ -172,6 +172,17 @@ class LevelDB : public WorldProvider {
     std::deque<SaveJob> job_queue_;
     bool job_busy_ = false;
     bool worker_stop_ = false;
+    // RAM the queue currently holds (snapshot + tile/entity blob bytes,
+    // maintained under job_mtx_ on push/pop). /status reads the gauge
+    // through SaveProfiler; the ceiling below bounds this to ~45 MB.
+    size_t queued_bytes_ = 0;
+    static size_t job_bytes(const SaveJob& j) {
+        size_t b = j.tiles.size() + j.entities.size();
+        // mcp_chunk_wire_snapshot_t worst case: 8 sections of
+        // (4096 blocks + 2048 data + 2048 sky + 2048 light) + biomes
+        // (256) + heightmap (256 x int32) + header fields.
+        return b + 8u * (4096u + 2048u * 3u) + 256u + 256u * 4u + 64u;
+    }
     // ~83 KB per snapshot; 512 in flight is a ~45 MB ceiling, never hit in
     // practice — the cap only guards a wedged disk.
     static constexpr size_t kMaxQueuedSaves = 512;
