@@ -52,6 +52,10 @@ private:
 
 	Vec3 mOrigin;
 	int mNoiseMap[512];
+	// Float copy of the permutation table for the vector kernels'
+	// gather loads (values are exact small integers, so gather + truncate
+	// reproduces mNoiseMap[] exactly).
+	float mNoiseMapF[512];
 };
 
 } // namespace vgen

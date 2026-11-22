@@ -23,6 +23,7 @@
 #include "PerformanceManager.h"
 
 #include "GenerationProfiler.h"
+#include "NoiseOptimizer.h"
 #include "platform/CpuFeatures.h"
 #include "utils/MainLogger.hpp"
 
@@ -91,10 +92,8 @@ void PerformanceManager::logStageBreakdown(const char* why) {
 }
 
 const char* PerformanceManager::noiseKernelName() {
-    // Wired by NoiseOptimizer when the SIMD kernels land; the default
-    // stands until then.
-    static const char* name = "scalar";
-    return name;
+    // Runs the guard on first call and reports what actually got picked.
+    return noise::initialize();
 }
 
 } // namespace cursestone::performance
