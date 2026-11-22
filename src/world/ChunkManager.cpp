@@ -533,21 +533,26 @@ void ChunkManager::commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t i
     mcp_chunk_t* live = nullptr;
     bool changed = false;
     {
-        std::scoped_lock lk(mtx_, pending_mtx_);
-        const uint64_t waitNs =
+        // Store mutex only. The queue-vs-live decision needs to be atomic
+        // against the INSTALLER, which holds mtx_ for its whole
+        // find → drain → insert sequence — pending_mtx_ adds nothing here:
+        // a parked write ordered before the install is drained by it, one
+        // ordered after sees the chunk live. The spill path pays this lock
+        // once per out-of-chunk block write (measured during the boot
+        // pregen: ~660k writes, 97% parked, 846 of 951 ms wall inside the
+        // old double lock), so it takes exactly one lock.
+        std::lock_guard<std::mutex> lk(mtx_);
+        noteLockWait(chunk_lock_, t0);
+        spill_lock_wait_ns_.fetch_add(
             (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(SteadyClock::now() - t0)
-                .count();
-        noteLockWait(chunk_lock_, t0);      // pair acquired as one event
-        spill_lock_wait_ns_.fetch_add(waitNs, std::memory_order_relaxed);
+                .count(),
+            std::memory_order_relaxed);
         spill_writes_.fetch_add(1, std::memory_order_relaxed);
         auto it = chunks_.find(ChunkKey{cx, cz});
         if (it != chunks_.end() && it->second) {
             live = it->second;
         } else if (spillQueue_) {
             // Chunk not live yet: park the write for its populate/install.
-            // Holding both locks here makes the queue-vs-live decision
-            // atomic against the installer (drainSpills in setChunk and in
-            // the async callback), so the write cannot be swallowed.
             spill_parked_.fetch_add(1, std::memory_order_relaxed);
             spillQueue_->queueSpill(cx, cz, index, id, data);
         }
@@ -597,8 +602,11 @@ void ChunkManager::commitNeighborTile(int cx, int cz, const std::vector<uint8_t>
     const auto t0 = SteadyClock::now();
     bool landedLive = false;
     {
-        std::scoped_lock lk(mtx_, pending_mtx_);
-        noteLockWait(chunk_lock_, t0); // pair acquired as one event
+        // Store mutex only — same reasoning as commitNeighborWrite: the
+        // installer's find → drain → insert runs under mtx_, so the
+        // live-vs-park decision stays atomic without pending_mtx_.
+        std::lock_guard<std::mutex> lk(mtx_);
+        noteLockWait(chunk_lock_, t0);
         auto it = chunks_.find(ChunkKey{cx, cz});
         if (it != chunks_.end() && it->second) {
             // Live chunk: the blob goes straight into tile_entities —
