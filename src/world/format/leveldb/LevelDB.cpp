@@ -36,6 +36,7 @@
 #include "../../../utils/CRaii.h"
 #include "../../../world/performance/SaveProfiler.h"
 
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <ctime>

@@ -42,6 +42,7 @@
 #include <memory>
 #include <atomic>
 #include <mutex>
+#include <thread>
 #include <unordered_map>
 #include <cstdint>
 #include <unordered_set>
@@ -372,6 +373,45 @@ class Server {
     void beginAutosaveDrain();
     void tickAutosaveDrain();
 
+    // FASE L stop watchdog (L3): Ctrl+C/SIGTERM set a flag from the
+    // signal handler and nothing more — the tick loop observes it at the
+    // TOP of the next iteration, so a main thread wedged inside a long
+    // save used to leave the operator with a completely dead console and
+    // no feedback at all (the old 5s force-exit watchdog only started
+    // once shutdown() itself ran, which needs the main loop to move).
+    // This watchdog is a normal thread started with the tick loop: the
+    // moment the stop flag appears it says so (Ctrl+C visibly works),
+    // then reports the save pipeline's progress every 10s so a wedged
+    // disk is diagnosable, and only after 120s of TOTAL stall (no ticks,
+    // no chunk writes, no queue movement) escalates to a forced exit —
+    // with a full disclosure of what was lost, never silently.
+
+    // FASE L manual save (/save, plugin save-all requests): a FULL save
+    // point that runs through the SAME budgeted drain pipeline as the
+    // autosave — the main thread never blocks on serialization or disk.
+    // The requester (player name or "CONSOLE") gets progress reports
+    // while the drain runs and an honest completion message (chunks
+    // written, elapsed time) only after every modified chunk is accepted
+    // by the world providers and level.dat is rewritten. Concurrent
+    // requests coalesce: a second request while a drain is running just
+    // upgrades it to manual (progress reporting + the level-dat pass at
+    // the end) instead of starting a duplicate.
+    void requestFullSave(const std::string& requester);
+    // True while a manual (/save) drain is still running.
+    bool isManualSaveRunning() const {
+        return autosave_draining_ && autosave_drain_manual_;
+    }
+    // Log + route a save-pipeline message to the manual requester.
+    void notifySaveRequester(const std::string& msg);
+
+    // FASE L stop watchdog (see runStopWatchdog above).
+    void runStopWatchdog();
+    std::thread stop_watchdog_;
+    std::atomic<bool> stop_watchdog_running_{false};
+    // Tick counter mirror for cross-thread diagnostics (the watchdog
+    // reads it; the tick loop stores it once per tick).
+    std::atomic<uint64_t> diag_tick_{0};
+
     // reference-compatible offline player data.
     void saveOfflinePlayerData(const std::string& name, NbtPtr nbt, bool async);
 
@@ -482,6 +522,11 @@ class Server {
 
     // Incremental autosave state.
     bool autosave_draining_ = false;
+    // True when the active drain was requested by /save (manual): report
+    // progress to the requester and finish with the level-dat pass.
+    bool autosave_drain_manual_ = false;
+    std::string autosave_drain_requester_;
+    uint64_t autosave_drain_last_progress_ms_ = 0;
     uint64_t autosave_drain_start_ms_ = 0;
     size_t autosave_drain_written_ = 0;
     uint64_t autosave_drain_ticks_ = 0;

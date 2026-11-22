@@ -878,9 +878,25 @@ int ChunkManager::flushDirty() {
 // provider is not thread-safe; the lock serializes both writers. The
 // difference is that the lock is now released within a few ms, which is
 // the most an AsyncPool worker waiting on setChunk() can lose.
+//
+// BACKPRESSURE (FASE L): the call also refuses to enqueue more than the
+// provider's save queue can hold (saveQueueRoom()). When the writer
+// thread has fallen behind (fast exploration + eviction storms), the
+// excess chunks STAY DIRTY and ride the next tick instead of blocking
+// this caller inside enqueueSave with the store mutex held — the exact
+// shape that turned queue backpressure into a multi-second tick stall
+// before the deadlock fix. Natural pacing, never a stall.
 int ChunkManager::flushDirtyBudget(size_t max_chunks, uint64_t max_ms) {
     if (max_chunks == 0)
         return 0;
+
+    // Cap the work to what the save queue can accept without blocking.
+    const size_t room = provider_ ? provider_->saveQueueRoom() : SIZE_MAX;
+    if (room == 0) {
+        return 0; // writer behind: retry next tick, chunks stay dirty
+    }
+    if (room < max_chunks)
+        max_chunks = room;
 
     // Budgeted sweep (autosave / drain): same mutex discipline as
     // flushDirty(), bounded work per call.
@@ -936,6 +952,13 @@ size_t ChunkManager::count() const {
 }
 
 bool ChunkManager::unloadChunk(int32_t x, int32_t z, bool save) {
+    // Eviction backpressure: when the provider's save queue is full, do
+    // NOT evict (the chunk would have to block this thread in enqueueSave
+    // to save it, or be lost). Keep the chunk resident; the next GC pass
+    // retries once the writer has caught up. Eviction is opportunistic —
+    // memory pressure resolves one pass later, a frozen tick does not.
+    if (save && provider_ && provider_->saveQueueRoom() == 0)
+        return false;
     mcp_chunk_t* c = nullptr;
     {
         std::lock_guard<std::mutex> lk(mtx_);
