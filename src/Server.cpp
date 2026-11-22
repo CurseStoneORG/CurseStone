@@ -42,6 +42,11 @@
 #include <thread>
 #include <chrono>
 #include <cstdlib> // std::_Exit
+#include <fstream>
+#include <sstream>
+#ifdef __linux__
+#include <unistd.h> // sysconf(_SC_CLK_TCK) for the pregen CPU readout
+#endif
 #include <zlib.h>
 #include "command/CommandMap.h"
 #include "command/SimpleCommandMap.h"
@@ -55,6 +60,7 @@
 #include "network/protocol/TextPacket.h"
 #include "scheduler/AsyncPool.h"
 #include "world/performance/PerformanceManager.h"
+#include "world/performance/GenerationProfiler.h"
 #include "scheduler/ServerScheduler.h"
 #include "scheduler/CallbackTask.h"
 #include "world/World.h"
@@ -445,6 +451,96 @@ bool Server::loadDefaultWorld() {
 // ---------------------------------------------------------------------
 // Boot-time spawn pre-generation.
 // ---------------------------------------------------------------------
+namespace {
+// Worker-scaling counters sampled when the pregen square is queued and
+// again when the completion report fires; the diff describes exactly the
+// pregen window. Pure observers — nothing here changes scheduling.
+struct PregenStatSample {
+    scheduler::AsyncPool::Snapshot pool{};
+    world::ChunkManager::LockStats::Snapshot chunk_lock{};
+    world::ChunkManager::LockStats::Snapshot pending_lock{};
+    uint64_t spill_writes = 0;
+    uint64_t spill_parked = 0;
+    uint64_t spill_lock_wait_ns = 0;
+    uint64_t gen_total_ns = 0;
+    uint64_t gen_chunks = 0;
+    uint64_t cpu_ticks = 0; // utime+stime, Linux only (0 elsewhere)
+};
+PregenStatSample g_pregen_start;
+
+#ifdef __linux__
+// utime+stime of this process from /proc/self/stat. comm may contain
+// spaces, so parse past the ')' before tokenizing.
+bool readProcessCpuTicks(uint64_t& out) {
+    std::ifstream f("/proc/self/stat");
+    if (!f)
+        return false;
+    std::string data;
+    if (!std::getline(f, data))
+        return false;
+    const size_t rparen = data.rfind(')');
+    if (rparen == std::string::npos)
+        return false;
+    std::istringstream ss(data.substr(rparen + 1));
+    // Fields 3..15 follow comm; utime is field 14 (token index 11),
+    // stime field 15.
+    std::string tok;
+    int i = 0;
+    long long utime = -1, stime = -1;
+    while (ss >> tok) {
+        if (i == 11)
+            utime = atoll(tok.c_str());
+        else if (i == 12) {
+            stime = atoll(tok.c_str());
+            break;
+        }
+        ++i;
+    }
+    if (utime < 0 || stime < 0)
+        return false;
+    out = (uint64_t)(utime + stime);
+    return true;
+}
+
+uint64_t residentRssKb() {
+    std::ifstream f("/proc/self/status");
+    std::string line;
+    while (std::getline(f, line)) {
+        if (line.rfind("VmRSS:", 0) == 0)
+            return (uint64_t)atoll(line.c_str() + 6);
+    }
+    return 0;
+}
+
+double clockTicksPerSec() {
+    static const double tps = (double)sysconf(_SC_CLK_TCK);
+    return tps > 0 ? tps : 100.0;
+}
+#else
+bool readProcessCpuTicks(uint64_t&) { return false; }
+uint64_t residentRssKb() { return 0; }
+double clockTicksPerSec() { return 100.0; }
+#endif
+
+PregenStatSample samplePregenStats(Server& srv) {
+    PregenStatSample s;
+    if (srv.getAsyncPool())
+        s.pool = srv.getAsyncPool()->statsSnapshot();
+    if (srv.getDefaultWorld()) {
+        const world::ChunkManager& cm = srv.getDefaultWorld()->chunks();
+        s.chunk_lock = cm.chunkLockSnap();
+        s.pending_lock = cm.pendingLockSnap();
+        s.spill_writes = cm.spillWritesSnap();
+        s.spill_parked = cm.spillParkedSnap();
+        s.spill_lock_wait_ns = cm.spillLockWaitNsSnap();
+    }
+    const auto gs = performance::GenerationProfiler::peek();
+    s.gen_total_ns = gs.stages[(size_t)performance::Stage::Total].ns;
+    s.gen_chunks = gs.stages[(size_t)performance::Stage::Total].calls;
+    readProcessCpuTicks(s.cpu_ticks);
+    return s;
+}
+} // namespace
 
 // Queue the spawn square onto the async pool the moment the world is up:
 // terrain for the first joiner — and for the synchronous spawn settle the
@@ -476,6 +572,7 @@ void Server::preGenerateSpawnArea() {
     spawn_pregen_target_ = queued;
     spawn_pregen_start_ms_ = mcp_utils_time_ms();
     spawn_pregen_waiting_ = true;
+    g_pregen_start = samplePregenStats(*this);
     utils::MainLogger::get().info("Preparing spawn area: " +
                                   std::to_string(queued) + " chunks (radius " +
                                   std::to_string(spawn_pregen_radius_) + ")");
@@ -501,6 +598,71 @@ void Server::pollSpawnPregen() {
     utils::MainLogger::get().info("Spawn area pregenerated: " +
                                   std::to_string(spawn_pregen_target_) +
                                   " chunks in " + std::to_string(ms) + " ms");
+
+    // Worker-scaling window: pool busy/idle/queue wait, chunk-store lock
+    // waits, process CPU and RSS over exactly this pregen. Read before
+    // logStageBreakdown drains the profiler counters.
+    {
+        const PregenStatSample end = samplePregenStats(*this);
+        const uint64_t busy_ns = end.pool.busy_ns - g_pregen_start.pool.busy_ns;
+        const uint64_t idle_ns = end.pool.idle_ns - g_pregen_start.pool.idle_ns;
+        const uint64_t busy_idle = busy_ns + idle_ns;
+        const uint64_t qw_ns = end.pool.queue_wait_ns - g_pregen_start.pool.queue_wait_ns;
+        const uint64_t qw_n =
+            end.pool.queue_wait_samples - g_pregen_start.pool.queue_wait_samples;
+        const uint64_t qw_max_ns =
+            end.pool.queue_wait_max_ns > g_pregen_start.pool.queue_wait_max_ns
+                ? end.pool.queue_wait_max_ns
+                : 0; // max is a high-water, not a diff
+        const uint64_t lock_ns = end.pool.lock_wait_ns - g_pregen_start.pool.lock_wait_ns;
+        const uint64_t gen_ns = end.gen_total_ns - g_pregen_start.gen_total_ns;
+        const uint64_t gen_n = end.gen_chunks - g_pregen_start.gen_chunks;
+        const uint64_t mtx_wait_ns =
+            end.chunk_lock.wait_ns - g_pregen_start.chunk_lock.wait_ns;
+        const uint64_t pending_wait_ns =
+            end.pending_lock.wait_ns - g_pregen_start.pending_lock.wait_ns;
+        const uint64_t spill_wait_ns =
+            end.spill_lock_wait_ns - g_pregen_start.spill_lock_wait_ns;
+
+        char line[420];
+        std::snprintf(
+            line, sizeof(line),
+            "[Perf] pregen scaling: workers=%d chunks=%llu wall_ms=%llu "
+            "chunks_per_s=%.1f gen_avg_ms=%.2f worker_busy=%.1f%% "
+            "worker_idle=%.1f%% queue_wait_avg_ms=%.2f "
+            "queue_wait_max_ms=%.2f pool_lock_wait_ms=%.2f",
+            async_workers_, (unsigned long long)spawn_pregen_target_,
+            (unsigned long long)ms,
+            ms > 0 ? (double)spawn_pregen_target_ * 1000.0 / (double)ms : 0.0,
+            gen_n > 0 ? (double)gen_ns / (double)gen_n / 1e6 : 0.0,
+            busy_idle > 0 ? 100.0 * (double)busy_ns / (double)busy_idle : 0.0,
+            busy_idle > 0 ? 100.0 * (double)idle_ns / (double)busy_idle : 0.0,
+            qw_n > 0 ? (double)qw_ns / (double)qw_n / 1e6 : 0.0,
+            (double)qw_max_ns / 1e6, (double)lock_ns / 1e6);
+        utils::MainLogger::get().info(line);
+
+        double cpu_pct = 0.0;
+        const uint64_t rss_kb = residentRssKb();
+        if (end.cpu_ticks > g_pregen_start.cpu_ticks && ms > 0) {
+            const double cpu_ms =
+                (double)(end.cpu_ticks - g_pregen_start.cpu_ticks) /
+                clockTicksPerSec() * 1000.0;
+            cpu_pct = 100.0 * cpu_ms / (double)ms;
+        }
+        char line2[380];
+        std::snprintf(
+            line2, sizeof(line2),
+            "[Perf] pregen locks: store_wait_ms=%.2f pending_wait_ms=%.2f "
+            "spill_writes=%llu spill_parked=%llu spill_wait_ms=%.2f "
+            "cpu_percent=%.1f rss_mb=%.1f queue_depth_max=%llu",
+            (double)mtx_wait_ns / 1e6, (double)pending_wait_ns / 1e6,
+            (unsigned long long)(end.spill_writes - g_pregen_start.spill_writes),
+            (unsigned long long)(end.spill_parked - g_pregen_start.spill_parked),
+            (double)spill_wait_ns / 1e6, cpu_pct, (double)rss_kb / 1024.0,
+            (unsigned long long)end.pool.depth_max);
+        utils::MainLogger::get().info(line2);
+    }
+
     // Same window, stage by stage: shows what the boot burst actually
     // spent its time on instead of a single wall-clock number.
     performance::PerformanceManager::logStageBreakdown("spawn pregen");

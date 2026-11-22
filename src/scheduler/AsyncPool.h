@@ -63,11 +63,30 @@
 #include <condition_variable>
 #include <functional>
 #include <atomic>
+#include <chrono>
 #include <exception>
 #include <string>
 #include "../utils/MainLogger.hpp"
 #include "../utils/ThreadPort.h"
 namespace cursestone::scheduler {
+
+// Cumulative pool counters (all relaxed atomics; pure observers, they
+// never influence scheduling). Snapshot + diff at two instants gives the
+// queue wait / busy / idle numbers for that window — the spawn-pregen
+// worker-scaling report reads exactly that.
+struct PoolStats {
+    std::atomic<uint64_t> submitted{0};      // tasks accepted (both lanes)
+    std::atomic<uint64_t> completed{0};      // tasks run to completion
+    std::atomic<uint64_t> queue_wait_ns{0};  // sum of (pop - enqueue) per task
+    std::atomic<uint64_t> queue_wait_samples{0};
+    std::atomic<uint64_t> queue_wait_max_ns{0};
+    std::atomic<uint64_t> busy_ns{0};        // workers executing tasks
+    std::atomic<uint64_t> idle_ns{0};        // workers waiting for work
+    std::atomic<uint64_t> lock_wait_ns{0};   // submitters blocked on mtx_
+    std::atomic<uint64_t> lock_waits{0};
+    std::atomic<uint64_t> depth_max{0};      // queue high-water (both lanes)
+};
+
 class AsyncPool {
   public:
     explicit AsyncPool(int n_workers = 4) : n_(n_workers > 0 ? n_workers : 1) {
@@ -94,12 +113,62 @@ class AsyncPool {
     // client-facing work jumps ahead of queued heavy batch work. The FIFO
     // order WITHIN each lane is preserved.
     bool submit(Work w, bool priority = false) {
+        const auto t0 = std::chrono::steady_clock::now();
         std::unique_lock<std::mutex> lk(mtx_);
+        {
+            const auto wait = std::chrono::steady_clock::now() - t0;
+            stats_.lock_wait_ns.fetch_add(
+                (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(wait)
+                    .count(),
+                std::memory_order_relaxed);
+            stats_.lock_waits.fetch_add(1, std::memory_order_relaxed);
+        }
         if (!running_)
             return false;
-        (priority ? prio_ : queue_).push(std::move(w));
+        const uint64_t enqueued = (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                      std::chrono::steady_clock::now().time_since_epoch())
+                                      .count();
+        TimedWork tw;
+        tw.work = std::move(w);
+        tw.enqueue_ns = enqueued;
+        (priority ? prio_ : queue_).push(std::move(tw));
+        const size_t depth = prio_.size() + queue_.size();
+        uint64_t seen = stats_.depth_max.load(std::memory_order_relaxed);
+        while (seen < depth &&
+               !stats_.depth_max.compare_exchange_weak(seen, depth,
+                                                       std::memory_order_relaxed)) {
+        }
+        stats_.submitted.fetch_add(1, std::memory_order_relaxed);
         cv_.notify_one();
         return true;
+    }
+
+    // Point-in-time copy of the counters (single pass, no locks).
+    struct Snapshot {
+        uint64_t submitted = 0;
+        uint64_t completed = 0;
+        uint64_t queue_wait_ns = 0;
+        uint64_t queue_wait_samples = 0;
+        uint64_t queue_wait_max_ns = 0;
+        uint64_t busy_ns = 0;
+        uint64_t idle_ns = 0;
+        uint64_t lock_wait_ns = 0;
+        uint64_t lock_waits = 0;
+        uint64_t depth_max = 0;
+    };
+    Snapshot statsSnapshot() const {
+        Snapshot s;
+        s.submitted = stats_.submitted.load(std::memory_order_relaxed);
+        s.completed = stats_.completed.load(std::memory_order_relaxed);
+        s.queue_wait_ns = stats_.queue_wait_ns.load(std::memory_order_relaxed);
+        s.queue_wait_samples = stats_.queue_wait_samples.load(std::memory_order_relaxed);
+        s.queue_wait_max_ns = stats_.queue_wait_max_ns.load(std::memory_order_relaxed);
+        s.busy_ns = stats_.busy_ns.load(std::memory_order_relaxed);
+        s.idle_ns = stats_.idle_ns.load(std::memory_order_relaxed);
+        s.lock_wait_ns = stats_.lock_wait_ns.load(std::memory_order_relaxed);
+        s.lock_waits = stats_.lock_waits.load(std::memory_order_relaxed);
+        s.depth_max = stats_.depth_max.load(std::memory_order_relaxed);
+        return s;
     }
 
     void stop() {
@@ -122,24 +191,31 @@ class AsyncPool {
         // Each item still gets the same exception protection as the
         // normal worker path. The fast lane drains first, mirroring
         // the order workers used.
-        std::queue<Work> remaining;
-        std::queue<Work> remaining_prio;
+        std::queue<TimedWork> remaining;
+        std::queue<TimedWork> remaining_prio;
         {
             std::unique_lock<std::mutex> lk(mtx_);
             std::swap(remaining_prio, prio_);
             std::swap(remaining, queue_);
         }
         while (!remaining_prio.empty()) {
-            runOne(remaining_prio.front());
+            runOne(remaining_prio.front().work);
             remaining_prio.pop();
         }
         while (!remaining.empty()) {
-            runOne(remaining.front());
+            runOne(remaining.front().work);
             remaining.pop();
         }
     }
 
   private:
+    // Queued item with its enqueue stamp, so a worker can charge the
+    // queue wait to the right task. Timing only — never read for order.
+    struct TimedWork {
+        Work work;
+        uint64_t enqueue_ns = 0;
+    };
+
     static void runOne(Work& w) {
         if (!w)
             return;
@@ -154,9 +230,16 @@ class AsyncPool {
         }
     }
 
+    static uint64_t nowNs() {
+        return (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(
+                   std::chrono::steady_clock::now().time_since_epoch())
+            .count();
+    }
+
     void workerLoop() {
         for (;;) {
-            Work w;
+            TimedWork tw;
+            const uint64_t idle_start = nowNs();
             {
                 std::unique_lock<std::mutex> lk(mtx_);
                 cv_.wait(lk, [&] {
@@ -168,22 +251,38 @@ class AsyncPool {
                 // burst is exactly the teleport-fill stall this exists to
                 // prevent. Within a lane, FIFO.
                 if (!prio_.empty()) {
-                    w = std::move(prio_.front());
+                    tw = std::move(prio_.front());
                     prio_.pop();
                 } else {
-                    w = std::move(queue_.front());
+                    tw = std::move(queue_.front());
                     queue_.pop();
                 }
             }
-            runOne(w);
+            const uint64_t idle_ns = nowNs() - idle_start;
+            stats_.idle_ns.fetch_add(idle_ns, std::memory_order_relaxed);
+            if (tw.enqueue_ns != 0) {
+                const uint64_t wait = nowNs() - tw.enqueue_ns;
+                stats_.queue_wait_ns.fetch_add(wait, std::memory_order_relaxed);
+                stats_.queue_wait_samples.fetch_add(1, std::memory_order_relaxed);
+                uint64_t seen = stats_.queue_wait_max_ns.load(std::memory_order_relaxed);
+                while (seen < wait &&
+                       !stats_.queue_wait_max_ns.compare_exchange_weak(
+                           seen, wait, std::memory_order_relaxed)) {
+                }
+            }
+            const uint64_t busy_start = nowNs();
+            runOne(tw.work);
+            stats_.busy_ns.fetch_add(nowNs() - busy_start, std::memory_order_relaxed);
+            stats_.completed.fetch_add(1, std::memory_order_relaxed);
         }
     }
     int n_;
     std::vector<std::thread> workers_;
-    std::queue<Work> prio_;   // fast lane: short client-facing work
-    std::queue<Work> queue_;  // FIFO lane: heavy batch work
+    std::queue<TimedWork> prio_;   // fast lane: short client-facing work
+    std::queue<TimedWork> queue_;  // FIFO lane: heavy batch work
     std::mutex mtx_;
     std::condition_variable cv_;
     bool running_{true}; // always accessed under mtx_
+    PoolStats stats_;
 };
 } // namespace

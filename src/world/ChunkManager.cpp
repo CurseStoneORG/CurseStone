@@ -50,6 +50,19 @@
 
 namespace cursestone::world {
 
+namespace {
+using SteadyClock = std::chrono::steady_clock;
+// Records wait-to-acquire time for one lock acquisition. t0 is captured
+// just before the lock statement; call right after it. Pure observer.
+inline void noteLockWait(ChunkManager::LockStats& s, const SteadyClock::time_point t0) {
+    s.wait_ns.fetch_add(
+        (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(SteadyClock::now() - t0)
+            .count(),
+        std::memory_order_relaxed);
+    s.acquires.fetch_add(1, std::memory_order_relaxed);
+}
+} // namespace
+
 ChunkManager::ChunkManager() {
 }
 ChunkManager::~ChunkManager() {
@@ -63,7 +76,9 @@ ChunkManager::~ChunkManager() {
 }
 
 mcp_chunk_t* ChunkManager::getChunkIfLoaded(int32_t x, int32_t z) const {
+    const auto t0 = SteadyClock::now();
     std::lock_guard<std::mutex> lk(mtx_);
+    noteLockWait(chunk_lock_, t0);
     auto it = chunks_.find({x, z});
     return it == chunks_.end() ? nullptr : it->second;
 }
@@ -180,7 +195,9 @@ mcp_chunk_t* ChunkManager::getChunkOrRequestAsync(int32_t x, int32_t z,
 
     ChunkKey key{x, z};
     {
+        const auto t0 = SteadyClock::now();
         std::lock_guard<std::mutex> lk(pending_mtx_);
+        noteLockWait(pending_lock_, t0);
         if (pending_.count(key))
             return nullptr; // already in flight
         pending_.insert(key);
@@ -257,7 +274,9 @@ mcp_chunk_t* ChunkManager::getChunkOrRequestAsync(int32_t x, int32_t z,
         std::vector<std::vector<uint8_t>> drainedTiles;
         std::vector<char> preBlobMatches;
         if (c) {
+            const auto t0 = SteadyClock::now();
             std::scoped_lock lk(mtx_, pending_mtx_);
+            noteLockWait(chunk_lock_, t0); // pair acquired as one event
             auto it = chunks_.find(key);
             if (it == chunks_.end() || !it->second) {
                 // Snapshot which tile blobs the chunk carries with a
@@ -373,7 +392,9 @@ void ChunkManager::setChunk(int32_t x, int32_t z, mcp_chunk_t* chunk) {
     std::vector<std::vector<uint8_t>> drainedTiles;
     std::vector<char> preBlobMatches;
     {
+        const auto t0 = SteadyClock::now();
         std::scoped_lock lk(mtx_, pending_mtx_);
+        noteLockWait(chunk_lock_, t0); // pair acquired as one event
         auto key = ChunkKey{x, z};
         auto it = chunks_.find(key);
         if (it != chunks_.end() && it->second && it->second != chunk)
@@ -425,10 +446,17 @@ void ChunkManager::setChunk(int32_t x, int32_t z, mcp_chunk_t* chunk) {
 }
 
 void ChunkManager::commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t id, uint8_t data) {
+    const auto t0 = SteadyClock::now();
     mcp_chunk_t* live = nullptr;
     bool changed = false;
     {
         std::scoped_lock lk(mtx_, pending_mtx_);
+        const uint64_t waitNs =
+            (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(SteadyClock::now() - t0)
+                .count();
+        noteLockWait(chunk_lock_, t0);      // pair acquired as one event
+        spill_lock_wait_ns_.fetch_add(waitNs, std::memory_order_relaxed);
+        spill_writes_.fetch_add(1, std::memory_order_relaxed);
         auto it = chunks_.find(ChunkKey{cx, cz});
         if (it != chunks_.end() && it->second) {
             live = it->second;
@@ -437,6 +465,7 @@ void ChunkManager::commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t i
             // Holding both locks here makes the queue-vs-live decision
             // atomic against the installer (drainSpills in setChunk and in
             // the async callback), so the write cannot be swallowed.
+            spill_parked_.fetch_add(1, std::memory_order_relaxed);
             spillQueue_->queueSpill(cx, cz, index, id, data);
         }
         if (live) {
@@ -482,9 +511,11 @@ void ChunkManager::commitNeighborWrite(int cx, int cz, uint32_t index, uint8_t i
 void ChunkManager::commitNeighborTile(int cx, int cz, const std::vector<uint8_t>& blob) {
     if (blob.empty())
         return;
+    const auto t0 = SteadyClock::now();
     bool landedLive = false;
     {
         std::scoped_lock lk(mtx_, pending_mtx_);
+        noteLockWait(chunk_lock_, t0); // pair acquired as one event
         auto it = chunks_.find(ChunkKey{cx, cz});
         if (it != chunks_.end() && it->second) {
             // Live chunk: the blob goes straight into tile_entities —

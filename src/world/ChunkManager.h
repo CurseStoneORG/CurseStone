@@ -47,6 +47,23 @@ namespace cursestone::world {
 
 class ChunkManager : public generator::INeighborBlockSink {
   public:
+    // Lock contention counters (relaxed atomics, pure observers): wait-to-
+    // acquire time and acquisition counts for the two chunk-store mutexes.
+    // The spawn-pregen scaling report diffs two snapshots; nothing here
+    // influences behavior or ordering.
+    struct LockStats {
+        std::atomic<uint64_t> wait_ns{0};
+        std::atomic<uint64_t> acquires{0};
+        struct Snapshot {
+            uint64_t wait_ns;
+            uint64_t acquires;
+        };
+        Snapshot snap() const {
+            return {wait_ns.load(std::memory_order_relaxed),
+                    acquires.load(std::memory_order_relaxed)};
+        }
+    };
+
     ChunkManager();
     ~ChunkManager();
     mcp_chunk_t* getChunkIfLoaded(int32_t x, int32_t z) const;
@@ -204,6 +221,14 @@ class ChunkManager : public generator::INeighborBlockSink {
     }
     size_t count() const;
 
+    // Contention counters for the pregen scaling report (drain-style:
+    // subtract two snapshots to get a window's numbers).
+    LockStats::Snapshot chunkLockSnap() const { return chunk_lock_.snap(); }
+    LockStats::Snapshot pendingLockSnap() const { return pending_lock_.snap(); }
+    uint64_t spillWritesSnap() const { return spill_writes_.load(std::memory_order_relaxed); }
+    uint64_t spillParkedSnap() const { return spill_parked_.load(std::memory_order_relaxed); }
+    uint64_t spillLockWaitNsSnap() const { return spill_lock_wait_ns_.load(std::memory_order_relaxed); }
+
   private:
     struct ChunkKey {
         int32_t x, z;
@@ -264,5 +289,13 @@ class ChunkManager : public generator::INeighborBlockSink {
     // — which takes mtx_ itself — right before it clears this set).
     mutable std::mutex pending_mtx_;
     std::unordered_set<ChunkKey, ChunkKeyHash> pending_;
+
+    // Contention observers for the two store mutexes and the neighbor-
+    // spill path (see LockStats above).
+    mutable LockStats chunk_lock_;
+    mutable LockStats pending_lock_;
+    std::atomic<uint64_t> spill_writes_{0};       // cross-chunk writes seen
+    std::atomic<uint64_t> spill_parked_{0};       // writes parked (chunk not live)
+    std::atomic<uint64_t> spill_lock_wait_ns_{0}; // wait on the spill decision lock
 };
 } // namespace
