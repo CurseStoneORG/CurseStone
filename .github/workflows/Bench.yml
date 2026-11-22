@@ -1,0 +1,80 @@
+name: Perf Bench
+
+# Focused performance validation for the "better-performance" branch:
+# worker-scaling throughput (1/2/4/8/16 pool workers over the boot spawn
+# pregen) plus the vanilla equivalence matrix (seeds x worker counts x
+# noise paths). No full tools/harness run — these two focused checks only.
+# Every number this workflow prints comes from a real run on the runner;
+# the summary records the runner's core count so oversubscribed worker
+# counts (8/16 on a 4-vCPU runner) are never mistaken for dedicated cores.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [better-performance]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+
+jobs:
+  bench-linux-x64:
+    name: Gen scaling + vanilla equivalence (x64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ninja-build zlib1g-dev
+
+      - name: Build server (Release)
+        run: |
+          cmake -B build/bench -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/bench --parallel
+
+      - name: Worker-scaling benchmark (1/2/4/8/16 workers)
+        run: |
+          mkdir -p /tmp/bench
+          for w in 1 2 4 8 16; do
+            echo "== workers=$w ==" | tee /tmp/bench/w$w.txt
+            python3 tools/gen_bench_check.py \
+              --server build/bench/CurseStone --radius 16 \
+              --workers $w --port $((19180 + w)) | tee -a /tmp/bench/w$w.txt
+          done
+
+      - name: Link vanilla equivalence tool against the build objects
+        run: |
+          g++ -std=c++20 -O2 -w -Isrc -Isrc/world/generator \
+              -o /tmp/gen_equiv tools/gen_equiv_check.cpp \
+              $(find build/bench/CMakeFiles/CurseStone.dir -name '*.o' \
+                | grep -v "src/CurseStone.cpp.o") -lz -ldl -pthread
+
+      - name: Vanilla equivalence matrix (seeds x threads x noise paths)
+        run: |
+          python3 tools/gen_equiv_matrix.py --tool /tmp/gen_equiv \
+            --radius 4 | tee /tmp/bench/equiv.txt
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## Gen scaling benchmark"
+            echo ""
+            echo "Runner: $(nproc) vCPU ($(uname -m)). Worker counts above"
+            echo "$(nproc) run oversubscribed (no larger runner configured);"
+            echo "those rows measure oversubscription, not dedicated cores."
+            echo ""
+            echo '```'
+            for w in 1 2 4 8 16; do cat /tmp/bench/w$w.txt; done
+            echo '```'
+            echo ""
+            echo "## Vanilla equivalence"
+            echo ""
+            echo '```'
+            cat /tmp/bench/equiv.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
