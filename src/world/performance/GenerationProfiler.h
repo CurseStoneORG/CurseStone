@@ -105,6 +105,17 @@ class GenerationProfiler {
         }
         return out;
     }
+    // Non-destructive read for reports that drain elsewhere (or diff two
+    // reads to describe a window without consuming anything).
+    static Snapshot peek() {
+        Snapshot out;
+        for (size_t i = 0; i < (size_t)Stage::Count; ++i) {
+            out.stages[i].ns = stages_[i].ns.load(std::memory_order_relaxed);
+            out.stages[i].calls =
+                stages_[i].calls.load(std::memory_order_relaxed);
+        }
+        return out;
+    }
 
   private:
     struct AtomicEntry {
