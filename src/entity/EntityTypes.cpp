@@ -156,6 +156,54 @@ constexpr float kMobMaxHealth[] = {
 static_assert(sizeof(kMobMaxHealth) / sizeof(kMobMaxHealth[0]) == kMobTypeCount,
               "kMobMaxHealth must have one row per kMobTypes entry");
 
+// Per-species movement and body profile, same row order as kMobTypes.
+// Speeds are blocks per tick: the walk column is the calm stroll the
+// wander goal drives (vanilla wandering runs at the mob's own walk
+// speed — roughly twice the flat 0.055 pace mobs used before species
+// profiles existed), the panic column the flee pace of the panic goal.
+// Sizes are the era collision boxes the actuation sweeps against, and
+// the eye heights are the look-pitch pivots of the head tracking.
+// grounded=false keeps a kind static (pre-AI record): flight (ghast,
+// blaze, bat), hopping (slimes) and swimming (squid) move on models
+// this stage does not implement.
+constexpr MobProfile kMobProfiles[] = {
+    {0.075f, 0.17f, 0.4f, 0.7f, 0.65f, true},   // Chicken (darty scurry)
+    {0.090f, 0.20f, 0.9f, 1.4f, 1.30f, true},   // Cow (heavy trot)
+    {0.095f, 0.21f, 0.9f, 0.9f, 0.85f, true},   // Pig (sniffing trot)
+    {0.085f, 0.19f, 0.9f, 1.3f, 1.20f, true},   // Sheep (docile stroll)
+    {0.090f, 0.26f, 0.6f, 0.85f, 0.75f, true},  // Wolf (lean lope)
+    {0.085f, 0.19f, 0.6f, 1.95f, 1.65f, true},  // Villager (hurried walk)
+    {0.090f, 0.20f, 0.9f, 1.4f, 1.30f, true},   // Mooshroom (= cow)
+    {0.000f, 0.00f, 0.8f, 0.8f, 0.40f, false},  // Squid (aquatic, static)
+    {0.100f, 0.32f, 0.4f, 0.5f, 0.45f, true},   // Rabbit (startle bursts)
+    {0.000f, 0.00f, 0.5f, 0.9f, 0.80f, false},  // Bat (flier, static)
+    {0.095f, 0.24f, 0.6f, 0.7f, 0.65f, true},   // Ocelot (cat strides)
+    {0.100f, 0.22f, 1.4f, 1.6f, 1.40f, true},   // Horse
+    {0.095f, 0.21f, 1.4f, 1.6f, 1.40f, true},   // Donkey
+    {0.095f, 0.21f, 1.4f, 1.6f, 1.40f, true},   // Mule
+    {0.100f, 0.22f, 1.4f, 1.6f, 1.40f, true},   // SkeletonHorse
+    {0.095f, 0.21f, 1.4f, 1.6f, 1.40f, true},   // ZombieHorse
+    {0.085f, 0.00f, 0.6f, 1.95f, 1.65f, true},  // Zombie (shambling prowl)
+    {0.090f, 0.00f, 0.6f, 1.7f, 1.45f, true},   // Creeper (silent stalk)
+    {0.090f, 0.00f, 0.6f, 1.99f, 1.69f, true},  // Skeleton
+    {0.110f, 0.00f, 1.4f, 0.9f, 0.75f, true},   // Spider (skittering)
+    {0.085f, 0.00f, 0.6f, 1.95f, 1.65f, true},  // ZombiePigman
+    {0.000f, 0.00f, 0.8f, 0.8f, 0.40f, false},  // Slime (hops, static)
+    {0.090f, 0.00f, 0.6f, 2.9f, 2.55f, true},   // Enderman
+    {0.090f, 0.00f, 0.4f, 0.3f, 0.25f, true},   // Silverfish
+    {0.000f, 0.00f, 4.0f, 4.0f, 1.50f, false},  // Ghast (flier, static)
+    {0.000f, 0.00f, 0.8f, 0.8f, 0.40f, false},  // LavaSlime (hops, static)
+    {0.000f, 0.00f, 0.8f, 0.8f, 0.40f, false},  // MagmaCube (hops, static)
+    {0.000f, 0.00f, 0.6f, 1.8f, 1.60f, false},  // Blaze (hover, static)
+    {0.085f, 0.00f, 0.6f, 1.95f, 1.65f, true},  // ZombieVillager
+    {0.085f, 0.00f, 0.6f, 1.95f, 1.65f, true},  // Witch
+    {0.090f, 0.00f, 0.6f, 1.99f, 1.69f, true},  // Stray
+    {0.085f, 0.00f, 0.6f, 1.95f, 1.65f, true},  // Husk
+    {0.090f, 0.00f, 0.7f, 2.4f, 2.10f, true},   // WitherSkeleton
+};
+static_assert(sizeof(kMobProfiles) / sizeof(kMobProfiles[0]) == kMobTypeCount,
+              "kMobProfiles must have one row per kMobTypes entry");
+
 // Registry ids span [kMinId, kMaxId]; the direct index covers the span.
 constexpr int32_t kMinId = kMobTypes[0].id;
 constexpr int32_t kMaxId = kMobTypes[kMobTypeCount - 1].id;
@@ -262,6 +310,13 @@ MobKind mobTypeKind(int32_t id) {
 float mobMaxHealth(int32_t id) {
     const int8_t slot = rowSlot(id);
     return slot >= 0 ? kMobMaxHealth[slot] : 0.0f;
+}
+
+MobProfile mobProfile(int32_t id) {
+    const int8_t slot = rowSlot(id);
+    if (slot < 0)
+        return MobProfile{}; // Zero profile: static kind, never moves.
+    return kMobProfiles[slot];
 }
 
 } // namespace cursestone::entity

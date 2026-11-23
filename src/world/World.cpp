@@ -25,6 +25,7 @@
 #include "World.h"
 
 #include "entity/ai/MobAIManager.h"
+#include "entity/ai/Goals.h"
 #include <chrono>
 #include "world/format/Chunk.h"
 #include "world/format/WorldProvider.h"
@@ -1806,7 +1807,7 @@ int64_t World::spawnMob(int32_t type, double x, double y, double z, float yaw,
         head_yaw = yaw; // Sentinel: the head rides the body yaw.
     {
         std::lock_guard<std::mutex> lk(mobs_mtx_);
-        if (mobs_.size() >= kMaxMobs)
+        if (mobs_.size() >= cfg_.max_mobs)
             return -1;
     }
     const int32_t cx = (int32_t)std::floor(x) >> 4;
@@ -1966,6 +1967,11 @@ bool World::removeMob(int64_t id) {
         }
         mobs_.erase(it);
     }
+    // The AI brain of a removed record is garbage: drop it now (the
+    // event-driven brain GC — the periodic sweep only exists as a
+    // drift safety net).
+    if (mob_ai_)
+        mob_ai_->forget(id);
     // Same removal scope as the floating texts: every spawned player of
     // the world, viewers or not — the client ignores unknown ids.
     sendRemoveEntity(this, id);
@@ -1976,6 +1982,46 @@ MobEntity* World::mob(int64_t eid) {
     std::lock_guard<std::mutex> lk(mobs_mtx_);
     auto it = mobs_.find(eid);
     return (it != mobs_.end()) ? it->second.get() : nullptr;
+}
+
+std::vector<MobEntity*> World::chunkMobs(int32_t cx, int32_t cz) {
+    // One small snapshot under the lock: the AI pass visits the world
+    // chunk by chunk, so a million-record world never materializes a
+    // whole-population pointer list per tick.
+    std::vector<MobEntity*> out;
+    std::lock_guard<std::mutex> lk(mobs_mtx_);
+    auto bucket = mobs_by_chunk_.find(packChunkPos(cx, cz));
+    if (bucket == mobs_by_chunk_.end())
+        return out;
+    out.reserve(bucket->second.size());
+    for (int64_t eid : bucket->second) {
+        auto it = mobs_.find(eid);
+        if (it != mobs_.end() && it->second)
+            out.push_back(it->second.get());
+    }
+    return out;
+}
+
+bool World::setMobSprinting(int64_t id, int32_t cx, int32_t cz,
+                            bool sprinting) {
+    // Only live records toggle the bit (a dying body keeps whatever
+    // pose it had; the client wipes it with the RemoveEntity).
+    {
+        std::lock_guard<std::mutex> lk(mobs_mtx_);
+        auto it = mobs_.find(id);
+        if (it == mobs_.end() || !it->second || it->second->death_tick != 0)
+            return false;
+    }
+    using Meta = network::protocol::SetEntityDataPacket;
+    Meta::Entry flags;
+    flags.index = Meta::PROP_FLAGS;
+    flags.type = Meta::TYPE_BYTE;
+    flags.ival = sprinting ? (1 << Meta::FLAG_BIT_SPRINTING) : 0;
+    auto pk = std::make_shared<Meta>();
+    pk->eid = id;
+    pk->entries.push_back(flags);
+    sendToChunkViewers(this, cx, cz, pk);
+    return true;
 }
 
 std::vector<MobEntity*> World::mobs() {
@@ -2103,6 +2149,13 @@ void World::evictMobsForChunk(int32_t cx, int32_t cz) {
         mobs_by_chunk_.erase(bucket);
     }
 
+    // The chunk's brains are garbage with its records (the reload
+    // allocates fresh eids): drop them event-driven, like removeMob.
+    if (mob_ai_) {
+        for (int64_t eid : gone)
+            mob_ai_->forget(eid);
+    }
+
     // The chunk is still resident (caller contract: this runs before
     // ChunkManager::unloadChunk, mirroring evictTilesForChunk), so the
     // bodies land in the list the eviction is about to write.
@@ -2154,7 +2207,7 @@ void World::reconcileMobsForChunk(int32_t cx, int32_t cz) {
     {
         std::lock_guard<std::mutex> lk(mobs_mtx_);
         for (const PersistedMob& p : rows) {
-            if (mobs_.size() >= kMaxMobs)
+            if (mobs_.size() >= cfg_.max_mobs)
                 break; // The cap is the spawn-time cap; restore respects it too.
             if (!entity::isValidMobType(p.type))
                 continue; // Registry shrank or the list was hand-edited.
@@ -2414,6 +2467,23 @@ entity::DamageApply World::damageMob(int64_t eid, float amount, entity::Entity* 
                 m.kbz = kbz;
                 m.kb_tick = Server::getInstance().getCurrentTick();
             }
+            // The panic reflex rides every hit, with or without a
+            // knockback vector: the away-from-threat direction and the
+            // tick it landed, consumed by the AI's next pass. Passive
+            // mobs bolt immediately; the FLAGS sprint bit carries the
+            // pose. Hostile/neutral records stamp the same fields —
+            // their brains simply have no panic goal, so their combat
+            // behaviors stay untouched.
+            if (f > 1e-6) {
+                m.panic_dir_x = (float)(dx * f);
+                m.panic_dir_z = (float)(dz * f);
+            } else {
+                // Degenerate same-cell hit: flee along the mob's own
+                // facing rather than stamping a zero direction.
+                m.panic_dir_x = -std::sin((double)m.yaw * 3.14159265358979323846 / 180.0);
+                m.panic_dir_z = std::cos((double)m.yaw * 3.14159265358979323846 / 180.0);
+            }
+            m.panic_tick = Server::getInstance().getCurrentTick();
         }
     }
 

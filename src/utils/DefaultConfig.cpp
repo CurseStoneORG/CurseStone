@@ -46,6 +46,10 @@ const char* const kDefaultServerProperties = "# CurseStone server properties (ba
                                              "white-list=false\n"
                                              "online-mode=false\n"
                                              "view-distance=8\n"
+                                             "# Ceiling of the mob record map. Records only exist for\n"
+                                             "# chunks players actually have loaded, so this bounds\n"
+                                             "# worst-case memory (~200 bytes per record), not tick cost.\n"
+                                             "max-mobs=1000000\n"
                                              "world-name=world\n"
                                              "# Empty or 0 selects a random seed.\n"
                                              "world-seed=\n";

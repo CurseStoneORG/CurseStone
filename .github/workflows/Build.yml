@@ -60,12 +60,12 @@ jobs:
           DEBIAN_FRONTEND: noninteractive
         run: |
           set -e
-          APT="apt-get -o Acquire::Retries=3"
+          APT="apt-get -o Acquire::Retries=10 -o Acquire::https::Timeout=120 -o Acquire::http::Timeout=120 -o Acquire::Queue-Mode=access -o Acquire::Languages=none"
           # Every network step gets a hard timeout: a stalled mirror fails
           # the job fast instead of hanging it for hours.
           timeout 300 $APT update -y
           timeout 300 $APT install -y --no-install-recommends \
-            ca-certificates git ninja-build python3-pip zlib1g-dev
+            ca-certificates git ninja-build python3-pip zlib1g-dev curl
           # gcc-13 for C++20 comes from the ubuntu-toolchain PPA, which
           # still publishes for focal (focal's own gcc-9 cannot compile
           # the sources). Added as a raw source over https with
@@ -74,8 +74,39 @@ jobs:
           # hang the job indefinitely.
           echo 'deb [trusted=yes] https://ppa.launchpadcontent.net/ubuntu-toolchain-r/test/ubuntu/ focal main' \
             > /etc/apt/sources.list.d/cursestone-toolchain.list
-          timeout 300 $APT update -y
-          timeout 300 $APT install -y --no-install-recommends gcc-13 g++-13
+          # The PPA host is the one mirror in this pipeline with no
+          # sibling: it has slow windows where its single uplink serves
+          # the 71 MB gcc-13 deb at a few hundred KB/s. Two mitigations:
+          #  1. serial per-host downloads (Queue-Mode=access) and long
+          #     per-connection budgets — parallel pipelining against a
+          #     slow host loses more time to dropped requests than it
+          #     gains, and apt keeps the partials between attempts;
+          #  2. a release-asset fallback below with the EXACT same debs.
+          gcc_ok=""
+          for attempt in 1 2 3; do
+            echo "toolchain install attempt ${attempt}/3 (apt from PPA)"
+            if timeout 900 $APT update -y && timeout 900 $APT install -y --no-install-recommends gcc-13 g++-13; then
+              gcc_ok="yes"
+              break
+            fi
+            sleep $((attempt * 30))
+          done
+          # No silent compiler swap: the fallback ships the same
+          # 13.1.0-8ubuntu1~20.04.2 debs byte-for-byte, only delivered
+          # from GitHub's CDN instead of launchpadcontent. Checksum pins
+          # the asset so a corrupted mirror can never compile a build.
+          if [ -z "$gcc_ok" ]; then
+            echo "PPA unreachable - fetching the pinned release-asset toolchain"
+            curl -fL --retry 5 --retry-all-errors --connect-timeout 30 \
+              -o /tmp/gcc13-toolchain.tar.gz \
+              https://github.com/CurseStoneORG/CurseStone/releases/download/ci-toolchain-focal-gcc13/gcc13-focal-amd64-toolchain.tar.gz
+            echo "728d2b1073c7f04bbce76aa5051a5578ddf5a33b9455db0af8c92f194340126a  /tmp/gcc13-toolchain.tar.gz" | sha256sum -c -
+            mkdir -p /tmp/gcc13-debs
+            tar -xzf /tmp/gcc13-toolchain.tar.gz -C /tmp/gcc13-debs
+            dpkg -i /tmp/gcc13-debs/*.deb || true
+            apt-get -f install -y
+            dpkg -i /tmp/gcc13-debs/*.deb
+          fi
           # focal's cmake is 3.16, older than the project's 3.20 minimum;
           # the PyPI cmake wheel (Kitware's own binary) installs a modern,
           # self-contained cmake without adding another apt repo.

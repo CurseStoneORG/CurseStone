@@ -178,6 +178,13 @@ struct MobEntity {
     // after a long gate closure.
     float kbx = 0.0f, kbz = 0.0f;
     uint64_t kb_tick = 0;
+    // Panic reflex (the same cross-thread contract as the knockback):
+    // every hit stamps the away-from-damager direction and the tick it
+    // landed. The AI consumes the reflex on its next pass — passive
+    // mobs bolt, the sprint pose rides the FLAGS metadata byte — and
+    // the reflex expires when the vanilla panic window closes.
+    float panic_dir_x = 0.0f, panic_dir_z = 0.0f;
+    uint64_t panic_tick = 0;
     // Death window: non-zero once the lethal blow landed, holding the
     // server tick the record must be removed at (death animation plays
     // for ~one second first). Zero means alive.
@@ -220,6 +227,12 @@ struct WorldConfig {
     int32_t time = 0;
     int32_t spawn_x = 0, spawn_y = 64, spawn_z = 0;
     int32_t view_distance = 8;
+    /// @brief Ceiling of the mob record map (the old compile-time
+    ///        kMaxMobs, configurable through the max-mobs property so
+    ///        large-population deployments can raise it; records only
+    ///        exist for resident chunks, so the ceiling bounds worst-case
+    ///        memory, not steady-state cost).
+    size_t max_mobs = 1000000;
     std::string dataPath; // Absolute server data directory.
 };
 
@@ -735,6 +748,27 @@ class World {
         return mobs_mtx_;
     }
 
+    // Snapshot of ONE chunk's mob records (small vector under the mob
+    // lock; pointers stable until removeMob). The AI pass visits the
+    // world chunk by chunk through this instead of materializing a
+    // whole-population list per tick.
+    std::vector<MobEntity*> chunkMobs(int32_t cx, int32_t cz);
+
+    // Public chunk key packing (the same layout the internal index
+    // uses): the AI tier machinery builds its visited-chunk key list
+    // from player coordinates through this.
+    static uint64_t chunkKey(int32_t cx, int32_t cz) {
+        uint64_t ux = static_cast<uint64_t>(static_cast<uint32_t>(cx));
+        uint64_t uz = static_cast<uint64_t>(static_cast<uint32_t>(cz));
+        return (ux << 32) | uz;
+    }
+
+    // Toggles the FLAGS metadata sprint bit (bit 3) of one mob for its
+    // chunk viewers — the pose and faster leg cycle the 0.15.10 client
+    // renders for sprinting entities. The AI drives it for fleeing
+    // passives; false clears the bit. False for unknown mobs.
+    bool setMobSprinting(int64_t id, int32_t cx, int32_t cz, bool sprinting);
+
     // Returns a non-owning pointer to a mob, or nullptr.
     MobEntity* mob(int64_t eid);
     // Snapshot of all mobs for plugin queries.
@@ -966,8 +1000,9 @@ class World {
     // Standing mobs indexed by runtime entity ID. Static records (the
     // AI layer in entity/ai/ owns all per-mob dynamic state and drives
     // them through moveMob) — the per-viewer AddEntityPacket resend
-    // rides on chunk streaming through the chunk index below.
-    static constexpr size_t kMaxMobs = 1024;
+    // rides on chunk streaming through the chunk index below. The
+    // record ceiling is the per-world config (WorldConfig::max_mobs,
+    // the max-mobs property), not a compile-time constant.
     std::unordered_map<int64_t, std::unique_ptr<MobEntity>> mobs_;
     mutable std::mutex mobs_mtx_;
 

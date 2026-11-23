@@ -229,6 +229,16 @@ bool Server::loadConfig() {
                      "expected between 2 and 32 chunks", "8");
         view_distance_ = 8;
     }
+    // Mob record ceiling. The default keeps one million records reachable
+    // (records only exist for resident chunks, so the ceiling bounds
+    // worst-case memory at roughly 200 bytes per record, not steady-state
+    // tick cost); deployments on small hosts can lower it.
+    max_mobs_ = (size_t)props.getInt("max-mobs", 1000000);
+    if (max_mobs_ < 16 || max_mobs_ > 2000000) {
+        diagBadValue(props_path, "server.properties", "max-mobs", true,
+                     "expected between 16 and 2000000", "1000000");
+        max_mobs_ = 1000000;
+    }
 
     // Load cursestone.yml settings.
     async_workers_ = (int)adv.getInt("settings.async-workers", 8);
@@ -410,6 +420,7 @@ bool Server::loadDefaultWorld() {
     lc.spawn_y = 64;
     lc.spawn_z = 0;
     lc.view_distance = view_distance_;
+    lc.max_mobs = max_mobs_;
     lc.dataPath = dataPath_; // Allows World to resolve absolute world paths.
 
     // Create world directories before constructing the WorldProvider.
@@ -794,6 +805,7 @@ World* Server::loadWorld(const std::string& name, const std::string& generator, 
     lc.generator = gen;
     lc.seed = (seed != 0) ? seed : (int64_t)mcp_utils_time_ms();
     lc.view_distance = view_distance_;
+    lc.max_mobs = max_mobs_;
     lc.dataPath = dataPath_;
 
     // Create the required directories before provider initialization.
