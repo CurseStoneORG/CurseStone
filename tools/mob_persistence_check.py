@@ -457,7 +457,7 @@ def main() -> int:
                   f"healths={healths}")
 
             console("save")
-            m = expect(r"Saved world", seconds=8.0)
+            m = expect(r"\[SAVE\] World saved", seconds=8.0)
             check(m is not None, "boot 1: /save ran (the /save save point)",
                   "no 'Saved world' reply")
 
@@ -559,7 +559,7 @@ def main() -> int:
                       f"reply={m.group(0) if m else 'none'}")
 
             console("save")
-            m = expect(r"Saved world", seconds=8.0)
+            m = expect(r"\[SAVE\] World saved", seconds=8.0)
             check(m is not None, "boot 2: /save ran", "no 'Saved world' reply")
             console("stop")
             try:
@@ -633,7 +633,7 @@ def main() -> int:
                   f"reply={m.group(1) if m else 'none'}")
 
             console("save")
-            expect(r"Saved world", seconds=8.0)
+            expect(r"\[SAVE\] World saved", seconds=8.0)
         finally:
             stop(proc, log_fh)
 

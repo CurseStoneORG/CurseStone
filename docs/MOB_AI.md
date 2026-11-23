@@ -3,8 +3,8 @@
 Design document for CurseStone's entity AI system. Written **before**
 the implementation it describes; the implementation status lives in
 section 9. The architecture keeps every world mutation on the main
-thread, budgets the AI work per tick, gates updates on player presence
-and leaves the public plugin surface untouched.
+thread, budgets the AI work per tick, tiers updates by distance to the
+players and leaves the public plugin surface untouched.
 
 ## 1. Starting point (facts about the current tree)
 
@@ -185,45 +185,140 @@ plugin callbacks — they stay main-thread by contract, matching
 
 | Stage | Content | Trigger/integration |
 |---|---|---|
-| 1 (this document) | Wander, look-at-player, idle for Passive kinds; budget; gate; actuation | None (always available) |
-| 2 | Panic for passives; retaliation for Neutral kinds (wolf, enderman, zombie pigman) | Needs a mob damage entry point (`World::hurtMob`) wired into arrows/potions |
-| 3 | Hostile: sight targeting, melee approach + attack cooldown | Needs melee hit resolution against mob AABBs |
-| 4 | Async steering for far mobs on the reserved seam; per-kind physics sizes | After stage 3 proves the intent format |
+| 1 | Wander, look-at-player, idle for Passive kinds; budget; gate; actuation | Done |
+| 2 | Species profiles (per-species speeds + body boxes + eye heights); natural movement for every grounded kind; panic reflex for passives (sprint pose + flee); hold-band swim model (~55% submersion, entry splash, swim wake); obstacle steering; tiered simulation (full/reduced/frozen) with a distance-ordered budget pass | Done (this document, section 9) |
+| 3 | Retaliation for Neutral kinds; hostile sight targeting, melee approach + attack cooldown | Needs melee hit resolution against mob AABBs |
+| 4 | Async steering for far mobs on the reserved seam; flight/hop/aquatic movement models (bat, ghast, blaze, slimes, squid) | After stage 3 proves the intent format |
 
 ## 9. Implementation status
 
-Implemented and verified in stage 1 (see commit history):
+Implemented and verified (see commit history):
 
-- `src/entity/ai/` — Goal, Goals (Wander / LookAtPlayer / Idle),
-  MobBrain/MobContext, MobAIManager (budget, gate, actuation).
-- `World` owns a manager and drains it from `World::tick()` after
-  falling blocks; `kMaxMobs` 256 → 1024.
+- `src/entity/ai/` — Goal, Goals (Wander / LookAtPlayer / Idle / Panic),
+  MobBrain/MobContext, MobAIManager (budget, tiers, actuation,
+  steering, water effects).
+- `src/entity/EntityTypes.h/.cpp` — `MobProfile` table: per-species
+  walk/panic speeds, collision width/height, eye height and the
+  `grounded` flag. Grounded kinds (passives, neutrals, land hostiles)
+  get the stage-2 goal set; flight (ghast, blaze, bat), hopping
+  (slimes) and aquatic (squid) kinds stay static records until their
+  movement model lands.
+- `World::damageMob` stamps the panic reflex (away-from-damager
+  direction + tick) under the mob lock; `World::setMobSprinting`
+  toggles the FLAGS metadata sprint bit — the 0.15.10 client renders
+  the sprint pose and the faster leg cycle for fleeing mobs.
+- `World::chunkMobs` feeds the AI pass chunk by chunk (no
+  whole-population list per tick); `MobAIManager::forget` drops brains
+  event-driven on every removal path; `WorldConfig::max_mobs` (the
+  `max-mobs` property) replaces the old compile-time cap.
+- `World::addParticle` rides the era LevelEventPacket particle ids 19
+  (water splash) and 20 (water wake) — the same particles the player's
+  own swimming effect uses — for the mob entry splash and the
+  rate-limited swim wake.
 - Benchmark harness `tools/mob_ai_bench.py`: protocol-84 client joins,
-  mob populations of 10/50/100/500 wander; TPS/MSPT from the server's
-  own measurements, CPU from `/proc/<pid>/stat`, movement verified from
-  the client's received `MoveEntityPacket` stream.
+  progressive populations (0 → 1,000,000) spawn in a golden-angle
+  spiral; TPS/MSPT from the server's own /status, CPU and RAM from
+  `/proc`, per-window AI work from the `[MOB AI]` diagnostics line,
+  movement verified from the client's MoveEntityPacket stream.
+- Model check `tools/mob_ai_water_check.cpp`: the hold-band swim
+  equilibrium (idle + swimming + small bodies), the clamps, the shore
+  hop, the facing split, the goal gates, the panic reflex and the
+  species profile table — pure logic, no World.
 
-Results are recorded below (15 s measurement window per population,
+### The tier contract
+
+| Tier | Condition | Cost |
+|---|---|---|
+| FULL | Chunk within 4 of a player's chunk (Chebyshev), or a panicking mob | Think every 10 ticks, actuate every tick |
+| REDUCED | Inside the view distance, outside that radius | Think every 40 ticks, actuate every 4 ticks (stride unchanged — positions stay exact, packets arrive at 5 Hz) |
+| FROZEN | Outside every player's view distance | The chunk is not visited; the record persists in the region files |
+
+The pass walks chunks nearest-first and stops at the wall-clock budget
+(base 2 ms plus 0.5 ms per 1000 records, capped at 8 ms): under load,
+degradation lands on the OUTERMOST chunks — the mobs a player watches
+keep their smooth per-tick simulation, far mobs hold their last pose
+instead of stuttering. One `[MOB AI]` diagnostics line per 200 ticks
+reports records, live brains, actuations, thinks and budget cuts — the
+real numbers, not estimates.
+
+### The swim model (hold-band regulator)
+
+The stage-1 loop integrated every floater up to the surface (mobs
+riding ON the water). Stage 2 is a regulator: inside the hold band
+(55% ± 7% of the body height under the rendered waterline) no vertical
+force applies; below it the paddle lifts; above it water gravity sinks
+the body back. A swimming mob strokes toward the hold depth, never
+above it — it crosses chest-deep, its head clear for every species
+(profile heights). Shallow fords (water shallower than the hold depth)
+are WALKED, with the era water slowdown on the stride; the shore hop
+still climbs banks.
+
+### Steering
+
+Before the sweep, the actuation probes the cell one stride ahead: a
+wall (two body levels of solid) or — for a mob on land — deep water
+rotates the intended direction toward the first open candidate
+(±30°, ±60°, ±90°, ±135°, nearest turn first). A one-block step is NOT
+steered around (the jump logic climbs it); a one-deep ford is NOT
+steered around (it is walkable). The steered direction owns the facing,
+so the body always faces where the mob will actually walk.
+
+### Panic
+
+Every hit stamps the away-from-threat direction and the tick into the
+mob record (the same cross-thread contract as knockback). A fresh hit
+forces an extra think the same tick, so the reflex starts at most one
+tick after the strike; the goal flees at the species panic pace for
+100 ticks (re-aimed every ~15 ticks with a small per-mob lean so a
+herd scatters), re-arms on every further hit, and carries the FLAGS
+sprint bit while it runs. Hostile and neutral records stamp the same
+fields; their brains simply have no panic goal, so their combat
+behaviors stay untouched.
+
+### Benchmarks
+
+Recorded runs (15 s measurement window per population unless noted,
 protocol-84 client standing at the world spawn of a fresh flat world,
-`tools/mob_ai_bench.py`; the "mob AI" column is the tick-cost delta
-against the 0-mob baseline of the same run series):
+`tools/mob_ai_bench.py`, sandbox: 2 cores, 3 GB RAM; sheep at species
+pace spread over a 24-block radius for ≤2000 and a 120-block radius
+above, so the tier system actually tiers):
 
-| Population | TPS | MSPT (avg) | CPU % (server proc) | Mob AI ms/tick | Client saw mob moves |
-|---|---|---|---|---|---|
-| 0 (baseline) | 20 | 0.02 ms | 0.9% | — | — |
-| 10 | 20 | 0.07 ms | 1.0% | +0.05 | 10/10 |
-| 50 | 20 | 0.12 ms | 1.1% | +0.10 | 50/50 |
-| 100 | 20 | 0.19 ms | 1.2% | +0.17 | 100/100 |
-| 500 | 20 | 0.51 ms | 1.7% | +0.49 | 500/500 |
+| Population | TPS | MSPT avg | CPU % | RSS | AI actuations/tick | Budget cuts/200 ticks | Movers client-verified |
+|---|---|---|---|---|---|---|---|
+| 0 (baseline) | 20 | 0.05 ms | 0.8% | 18 MB | 0 | 0 | — |
+| 100 | 20 | 0.36 ms | 1.3% | 19 MB | 2002 | 0 | 100/100 |
+| 500 | 20 | 1.3 ms | 2.9% | 21 MB | 9975 | 1 | 500/500 |
+| 1,000 | 20 | 2.2 ms | 4.7% | 22 MB | 16241 | 25 | 1000/1000 |
+| 10,000 | 20 | 7.3 ms | 13.9% | 43 MB | ~30000 | 200 | 555k moves consumed |
+| 50,000 | 20 | 8.2 ms | 16.5% | 61 MB | 3965 | 200 | 688k moves consumed |
+| 100,000 | 20 | 8.3 ms | 17.4% | 82 MB | 3966 | 200 | 731k moves consumed |
+| 1,000,000 | 20 | 8.2 ms | 39.2% | 545 MB | 3748 | 200 | 1.69M moves consumed |
 
-Reading: at 500 wandering mobs the AI pass costs ~0.5 ms of the 50 ms
-tick budget (~1 µs per mob per tick, think stagger included), TPS holds
-at 20 and the server process stays under 2% of one core. The maximum
-vertical drift the client observed for any mob was 0.92 blocks in every
-run — the sweep integration keeps mobs on the ground; nothing fell
-through terrain. The remaining headroom is the budget contract: if a
-population ever pushed the pass past 2 ms, mobs would slow down before
-the tick does.
+Reading, and the honest limits:
+
+- **TPS never left 20** at any population — the budget contract held
+  (8 ms cap, a sixth of the tick budget).
+- Up to ~1,000 mobs inside one view distance every mob actuates every
+  tick (smooth 20 Hz movement, client-verified). Beyond that the
+  pass spends its budget on the nearest chunks first.
+- 50k–1M mobs inside ONE player's view distance is far beyond any
+  natural density (hundreds per chunk): the near ring (thousands of
+  mobs, 7.4k live brains) keeps full 20 Hz simulation and the outer
+  rings hold their pose under the 8 ms cap. That is the designed
+  degradation, and the `[MOB AI]` line reports it (actuated ≈ 3.7–4k
+  per tick, budget cuts on every tick).
+- **1,000,000 mobs REGISTERED and LOADED cost TPS 20, 8.2 ms MSPT and
+  545 MB RSS on this 2-core sandbox** — records are ~200 bytes each
+  and only near mobs carry brains. This is NOT "a million mobs running
+  full AI": a million mobs each actuating every tick would need
+  ~200 ms of AI per tick on this hardware. The architecture scales by
+  tiers, not by making every mob expensive.
+- Remaining limits: far-mob actuation under extreme density is budget
+  starved (held pose, resumed as the budget allows); flight, hopping
+  and aquatic movement models are still static (stage 4); hostile
+  targeting and melee are stage 3; a 1M-mob world's first /save
+  rebuilds every touched chunk's roster (budgeted, but slow the first
+  time).
 
 ## 10. Mob persistence
 
