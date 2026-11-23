@@ -22,6 +22,7 @@
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include "entity/ai/MobAI.h"
+#include "entity/EntityTypes.h"
 #include "entity/ai/Goals.h"
 #include "entity/mobs/MobKind.h"
 #include <algorithm>
@@ -136,21 +137,35 @@ FacingStep resolveFacing(float body_yaw, float head_yaw, float pitch,
     return out;
 }
 
-WaterVerticalStep waterVerticalStep(float vy, bool head_in_water,
-                                    bool move_intent, bool wants_jump) {
+namespace water {
+
+WaterVerticalStep waterVerticalStep(float vy, float submersion,
+                                    bool head_in_water, bool move_intent,
+                                    bool wants_jump) {
     if (wants_jump) {
         // Shore exit: a real hop against the bank, sized for water drag
         // so a one-block shore is climbable without overshooting.
         return {kWaterJumpOut, true};
     }
-    // The era water travel shape: buoyancy first, the paddle when the
-    // mob still has water over its head or is swimming somewhere, then
-    // the water drag, then the rise/sink clamps that turn the loop into
-    // a surface bob instead of a rocket or a stone.
-    vy += kWaterBuoyancy;
-    if (head_in_water || move_intent)
-        vy += kSwimUpBoost;
-    vy *= kWaterDrag;
+    // The stage-2 hold-band regulator. Outside the band a net force
+    // accelerates the body back toward the half-submerged depth; inside
+    // the band no vertical force applies, so the drag bleeds the
+    // remaining motion and the mob floats still instead of riding the
+    // surface or oscillating forever.
+    const float err = submersion - kSubmergeTarget;
+    float accel = -kWaterGravity; // Water gravity: the fall, at ease.
+    if (head_in_water || err > kSubmergeBand) {
+        // Under the hold depth, or the head is wet: paddle up.
+        accel += kSwimPaddle;
+    } else if (err >= -kSubmergeBand) {
+        accel = 0.0f; // Inside the hold band: no net vertical force.
+    }
+    if (move_intent && err > 0.0f) {
+        // Forward strokes lift toward the hold depth, never above it —
+        // a swimming mob crosses the water chest-deep, not skimming.
+        accel += kSwimPaddle * 0.5f;
+    }
+    vy = (vy + accel) * kWaterDrag;
     if (vy > kWaterMaxRise)
         vy = kWaterMaxRise;
     if (vy < kWaterMaxSink)
@@ -158,19 +173,30 @@ WaterVerticalStep waterVerticalStep(float vy, bool head_in_water,
     return {vy, false};
 }
 
-std::unique_ptr<MobBrain> makeMobBrain(uint8_t kind, uint64_t seed) {
+} // namespace water
+
+std::unique_ptr<MobBrain> makeMobBrain(uint8_t kind, int32_t type,
+                                       uint64_t seed) {
     auto brain = std::make_unique<MobBrain>();
     brain->setKind(kind);
     mcp_random_seed(&brain->rng(), (uint32_t)(seed ^ (seed >> 32)));
-    // Stage 1 covers the Passive family; Neutral and Hostile arrive
-    // with their own stage (docs/MOB_AI.md section 8). Kinds without a
-    // behavior stage keep the pre-AI static record: an empty brain is
-    // never thought about, never moved, never sent packets.
-    if (kind == (uint8_t)mobs::MobKind::Passive) {
-        brain->addGoal(std::make_unique<IdleLookGoal>());
-        brain->addGoal(std::make_unique<LookAtPlayerGoal>());
-        brain->addGoal(std::make_unique<WanderGoal>());
-    }
+    // Stage 2 assembles brains from the species profile: every grounded
+    // kind (Passive, Neutral and the land Hostiles) strolls, watches
+    // nearby players and glances around; Passive kinds additionally
+    // carry the panic reflex. Flight (ghast, blaze, bat), hopping
+    // (slimes) and swimming (squid) keep the pre-AI static record — an
+    // empty brain is never thought about, never moved, never sent
+    // packets — until their own movement model lands.
+    const entity::MobProfile profile = entity::mobProfile(type);
+    if (!profile.grounded || profile.walk_speed <= 0.0f)
+        return brain;
+    const bool passive = kind == (uint8_t)mobs::MobKind::Passive;
+    const bool hostile = kind == (uint8_t)mobs::MobKind::Hostile;
+    brain->addGoal(std::make_unique<IdleLookGoal>());
+    brain->addGoal(std::make_unique<LookAtPlayerGoal>(hostile));
+    brain->addGoal(std::make_unique<WanderGoal>());
+    if (passive)
+        brain->addGoal(std::make_unique<PanicGoal>());
     return brain;
 }
 
