@@ -29,24 +29,59 @@ jobs:
   # from filling up with stale binaries.
 
   # Linux x86_64 — compile check plus the reference binary.
+  #
+  # The job builds inside an ubuntu:20.04 container on purpose: the glibc
+  # of that sysroot (2.31) becomes the binary's requirement ceiling, which
+  # is what common hosting images run (Pterodactyl yolks are Temurin focal
+  # builds). Building on the runner's own toolchain instead leaked the
+  # runner's fresh glibc into the binary (sqrtf at GLIBC_2.43, __isoc23_*
+  # and fmod at 2.38) and older hosts refused to start it:
+  #   "./bin/CurseStone: /lib/x86_64-linux-gnu/libm.so.6: version
+  #    'GLIBC_2.43' not found"
+  # tools/check_portability.sh guards the ceiling below, so runner drift
+  # can never regress this silently again.
   build-linux:
     name: Linux x86_64
     runs-on: ubuntu-latest
+    container:
+      image: ubuntu:20.04
+
+    env:
+      # focal's default gcc-9 cannot compile the C++20 sources; gcc-13
+      # from the ubuntu-toolchain-r/test PPA can, and its headers still
+      # target the focal glibc (2.31).
+      CC: gcc-13
+      CXX: g++-13
 
     steps:
+      # git must exist before checkout runs inside the container.
+      - name: Install toolchain and dependencies
+        run: |
+          apt-get update -y
+          apt-get install -y --no-install-recommends \
+            ca-certificates gnupg software-properties-common git \
+            ninja-build zlib1g-dev
+          add-apt-repository -y ppa:ubuntu-toolchain-r/test
+          apt-get update -y
+          apt-get install -y --no-install-recommends gcc-13 g++-13
+
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Configure (Release, host-portable link)
+        # -static-libstdc++/-static-libgcc: hosts may carry an older
+        # libstdc++ than the build's GCC 13, so the C++ runtime travels
+        # inside the binary. glibc stays dynamic (that is what the
+        # portability check below measures).
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ninja-build zlib1g-dev
-
-      - name: Configure (Release)
-        run: cmake -B build/linux-release -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake -B build/linux-release -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_EXE_LINKER_FLAGS="-static-libstdc++ -static-libgcc"
 
       - name: Build
         run: cmake --build build/linux-release --parallel
+
+      - name: Check host portability (glibc ceiling 2.31)
+        run: tools/check_portability.sh build/linux-release/CurseStone 2.31
 
       - name: Upload Linux binary
         uses: actions/upload-artifact@v4
@@ -56,6 +91,11 @@ jobs:
           retention-days: 1
 
   # Linux ARM64 (aarch64) — for ARM Linux hosts (Azure Cobalt 100 VMs, etc.).
+  # NOTE: unlike build-linux this job still compiles on the runner's own
+  # toolchain, so its binary carries the runner's glibc ceiling. ARM64
+  # hosting images are newer and this keeps the cross toolchain simple;
+  # if an ARM host ever reports "GLIBC_2.xx not found", pin this job the
+  # same way (focal + a modern aarch64 cross gcc).
   build-linux-arm64:
     name: Linux ARM64 (Cobalt 100)
     runs-on: ubuntu-latest
