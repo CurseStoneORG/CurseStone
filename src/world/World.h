@@ -147,6 +147,12 @@ struct FallingBlockEntity {
 // chunk index (cx/cz) mirrors mobs_by_chunk_ so chunk streams touch
 // O(mobs of the chunk) instead of scanning the whole world map.
 //
+// Sentinel for spawnMob/moveMob head-yaw parameters: "no explicit head
+// facing" — the head rides the body yaw, which is the contract the plugin
+// bindings (world.moveEntity / native moveMob) were written against. The
+// AI actuation passes a real head yaw; plugins keep their old behavior.
+constexpr float kHeadYawFollowBody = -1000.0f;
+
 // Combat state lives here (not in the brain): damage can arrive from any
 // thread through the plugin APIs, while brains are main-thread-only.
 struct MobEntity {
@@ -154,6 +160,14 @@ struct MobEntity {
     int32_t type = 0;  // Protocol-84 network id (entity::EntityTypes).
     double x = 0.0, y = 0.0, z = 0.0; // Feet position.
     float yaw = 0.0f, pitch = 0.0f;
+    // The head's own facing. The 0.15.10 client renders the body from
+    // the move packet's yaw and the head from its headYaw byte, so the
+    // two are independent channels: body yaw tracks the movement
+    // direction while head yaw tracks the look target — a mob whose
+    // body and head share one yaw reads as moonwalking (facing the
+    // player it watches while sliding sideways toward its wander
+    // target).
+    float head_yaw = 0.0f;
     int32_t cx = 0, cz = 0; // Chunk the entity is indexed under.
     // Vanilla-shaped health, seeded from entity::mobMaxHealth(type) on spawn.
     float health = 20.0f;
@@ -671,12 +685,16 @@ class World {
     // registered in the chunk that contains it for the resend index.
     // Returns the entity id, or -1 on invalid type/position or when the
     // per-world cap is reached. Ids do not survive restarts.
+    // @p head_yaw is the head's own facing; kHeadYawFollowBody (the
+    // default) makes the head ride the body yaw — the pre-head-sync
+    // contract the plugin bindings were written against.
     int64_t spawnMob(int32_t type, double x, double y, double z, float yaw = 0.0f,
-                     float pitch = 0.0f);
+                     float pitch = 0.0f, float head_yaw = kHeadYawFollowBody);
     // Repositions a mob for its current viewers (index follows the move).
-    // Unknown ids or out-of-height positions fail.
+    // Unknown ids or out-of-height positions fail. @p head_yaw follows
+    // the body under the same sentinel contract as spawnMob.
     bool moveMob(int64_t id, double x, double y, double z, float yaw = 0.0f,
-                 float pitch = 0.0f);
+                 float pitch = 0.0f, float head_yaw = kHeadYawFollowBody);
     // Despawns a mob and forgets it. Unknown ids fail.
     bool removeMob(int64_t id);
 
