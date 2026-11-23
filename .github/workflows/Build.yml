@@ -65,7 +65,7 @@ jobs:
           # the job fast instead of hanging it for hours.
           timeout 300 $APT update -y
           timeout 300 $APT install -y --no-install-recommends \
-            ca-certificates git ninja-build zlib1g-dev
+            ca-certificates git ninja-build python3-pip zlib1g-dev
           # gcc-13 for C++20 comes from the ubuntu-toolchain PPA, which
           # still publishes for focal (focal's own gcc-9 cannot compile
           # the sources). Added as a raw source over https with
@@ -76,7 +76,12 @@ jobs:
             > /etc/apt/sources.list.d/cursestone-toolchain.list
           timeout 300 $APT update -y
           timeout 300 $APT install -y --no-install-recommends gcc-13 g++-13
+          # focal's cmake is 3.16, older than the project's 3.20 minimum;
+          # the PyPI cmake wheel (Kitware's own binary) installs a modern,
+          # self-contained cmake without adding another apt repo.
+          timeout 300 pip3 install --quiet 'cmake>=3.20'
           gcc-13 --version | head -1
+          cmake --version | head -1
 
       - name: Checkout
         uses: actions/checkout@v4
