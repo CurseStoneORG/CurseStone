@@ -1,8 +1,26 @@
 # Build artifacts
 build/
+obj/
+
+# Editor / tooling
+skills/
+node_modules/
 
 # Refactor helper scripts (not part of the build)
 .renamework/
 __pycache__/
 *.pyc
 *.gch
+
+# Runtime server files — generated on first boot by src/utils/DefaultConfig
+# and rewritten by every run. The default templates live in source code
+# (DefaultConfig.h/.cpp); anything here is a local machine's live state.
+server.log
+server.pid
+server.properties
+cursestone.yml
+worlds/
+crashdumps/
+data_pl/
+plugins/*.so
+plugins/*.dll
