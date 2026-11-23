@@ -60,7 +60,7 @@ jobs:
           DEBIAN_FRONTEND: noninteractive
         run: |
           set -e
-          APT="apt-get -o Acquire::Retries=3"
+          APT="apt-get -o Acquire::Retries=8 -o Acquire::https::Timeout=30"
           # Every network step gets a hard timeout: a stalled mirror fails
           # the job fast instead of hanging it for hours.
           timeout 300 $APT update -y
@@ -74,8 +74,26 @@ jobs:
           # hang the job indefinitely.
           echo 'deb [trusted=yes] https://ppa.launchpadcontent.net/ubuntu-toolchain-r/test/ubuntu/ focal main' \
             > /etc/apt/sources.list.d/cursestone-toolchain.list
-          timeout 300 $APT update -y
-          timeout 300 $APT install -y --no-install-recommends gcc-13 g++-13
+          # The PPA host is the one mirror in this pipeline with no
+          # fallback; it has had slow-window outages where every package
+          # fetch Ign-loops for minutes. Retry the whole fetch a few
+          # times with a fresh apt cache each round before giving up —
+          # a transient outage then costs a retry, not the job. No
+          # silent compiler fallback: a gcc-9 build would not compile,
+          # and a half-downgraded toolchain would be worse than a red X.
+          gcc_ok=""
+          for attempt in 1 2 3 4; do
+            echo "toolchain install attempt ${attempt}/4"
+            if timeout 420 $APT update -y && timeout 420 $APT install -y --no-install-recommends gcc-13 g++-13; then
+              gcc_ok="yes"
+              break
+            fi
+            sleep $((attempt * 60))
+          done
+          if [ -z "$gcc_ok" ]; then
+            echo "::error::ubuntu-toolchain-r PPA unreachable after 4 attempts (launchpadcontent outage?)"
+            exit 1
+          fi
           # focal's cmake is 3.16, older than the project's 3.20 minimum;
           # the PyPI cmake wheel (Kitware's own binary) installs a modern,
           # self-contained cmake without adding another apt repo.
