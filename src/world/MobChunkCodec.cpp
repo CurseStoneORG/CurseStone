@@ -52,6 +52,7 @@ bool sanitizeMob(PersistedMob* m) {
         return false;
     if (!std::isfinite(m->x) || !std::isfinite(m->y) || !std::isfinite(m->z) ||
         !std::isfinite(m->yaw) || !std::isfinite(m->pitch) ||
+        !std::isfinite(m->head_yaw) ||
         !std::isfinite(m->health) || !std::isfinite(m->max_health))
         return false;
     if (m->x < -kMaxCoord || m->x > kMaxCoord || m->z < -kMaxCoord ||
@@ -61,6 +62,7 @@ bool sanitizeMob(PersistedMob* m) {
         m->max_health <= 0.0f || m->max_health > kMaxSavedHealth)
         return false;
     m->yaw = std::fmod(m->yaw, 360.0f);
+    m->head_yaw = std::fmod(m->head_yaw, 360.0f);
     m->pitch = std::fmod(m->pitch, 360.0f);
     return true;
 }
@@ -90,6 +92,7 @@ bool parseLegacyMobLine(const char* line, PersistedMob* out) {
         kLegacyLineFields)
         return false;
     m.type = type;
+    m.head_yaw = m.yaw; // Legacy rows carry one rotation; the head rode it.
     if (!sanitizeMob(&m))
         return false;
     *out = m;
@@ -112,6 +115,11 @@ std::vector<uint8_t> MobChunkCodec::encodeBlob(const PersistedMob& mob) {
     nbt::append(rot, new nbt::FloatTag(mob.yaw));
     nbt::append(rot, new nbt::FloatTag(mob.pitch));
     nbt::set(&root, "Rotation", rot);
+
+    // Head facing: an optional tag so pre-head-sync readers just ignore
+    // it and post-head-sync readers fall back to the body yaw when it is
+    // missing — no world-format break in either direction.
+    nbt::set_float(&root, "HeadYaw", mob.head_yaw);
 
     nbt::set_float(&root, "Health", mob.health);
     nbt::set_float(&root, "MaxHealth", mob.max_health);
@@ -142,6 +150,9 @@ bool MobChunkCodec::decodeBlob(const uint8_t* data, size_t len, PersistedMob* ou
     m.z = listFloat(nbt::get(root, "Pos"), 2, (float)0.0);
     m.yaw = listFloat(nbt::get(root, "Rotation"), 0, 0.0f);
     m.pitch = listFloat(nbt::get(root, "Rotation"), 1, 0.0f);
+    // Rows saved before the head-sync work carry no HeadYaw: the head
+    // rode the body rotation, which is exactly the fallback.
+    m.head_yaw = nbt::get_float(root, "HeadYaw", m.yaw);
     m.health = nbt::get_float(root, "Health", 0.0f);
     m.max_health = nbt::get_float(root, "MaxHealth", 0.0f);
     delete root;

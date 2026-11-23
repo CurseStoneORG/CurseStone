@@ -1765,11 +1765,45 @@ std::shared_ptr<network::protocol::AddEntityPacket> buildMobAddPacket(
     return add;
 }
 
+// sendMobGroundSettle — resolves the client copy's grounded state for a
+// NoAI mob. The 0.15.10 client runs no entity physics for NoAI bodies, so
+// its own "standing on the ground" state never resolves, and the chicken
+// wing animation — which reads exactly that state — flaps forever for a
+// mob the server keeps standing (the MC-94462 family). Two packets give
+// the copy the landing event a naturally-spawned mob reports:
+//   1. a one-tick landing motion (the same downward velocity a mob that
+//      just settled carries), and
+//   2. an immediate position echo that zeroes the copy's velocity again,
+//      so the nudge can never dead-reckon into a visible dip.
+// Both ride the mob motion/move packets the wire already uses for
+// knockback — no new traffic class, and the packets carry the position
+// the server already holds, so the sequence is always consistent.
+void sendMobGroundSettle(World* w, int64_t eid, int32_t cx, int32_t cz,
+                         double x, double y, double z, float yaw, float head_yaw,
+                         float pitch) {
+    auto settle = std::make_shared<network::protocol::SetEntityMotionPacket>();
+    settle->entities.push_back({eid, 0.0f, -0.078f, 0.0f});
+    sendToChunkViewers(w, cx, cz, settle);
+
+    auto echo = std::make_shared<network::protocol::MoveEntityPacket>();
+    echo->eid = eid;
+    echo->x = (float)x;
+    echo->y = (float)y;
+    echo->z = (float)z;
+    echo->yaw = yaw;
+    echo->headYaw = head_yaw;
+    echo->pitch = pitch;
+    sendToChunkViewers(w, cx, cz, echo);
+}
+
 } // namespace
 
-int64_t World::spawnMob(int32_t type, double x, double y, double z, float yaw, float pitch) {
+int64_t World::spawnMob(int32_t type, double x, double y, double z, float yaw,
+                        float pitch, float head_yaw) {
     if (!entity::isValidMobType(type) || y < 0.0 || y > 255.0)
         return -1;
+    if (head_yaw <= kHeadYawFollowBody)
+        head_yaw = yaw; // Sentinel: the head rides the body yaw.
     {
         std::lock_guard<std::mutex> lk(mobs_mtx_);
         if (mobs_.size() >= kMaxMobs)
@@ -1790,6 +1824,7 @@ int64_t World::spawnMob(int32_t type, double x, double y, double z, float yaw, f
     record->y = y;
     record->z = z;
     record->yaw = yaw;
+    record->head_yaw = head_yaw;
     record->pitch = pitch;
     record->cx = cx;
     record->cz = cz;
@@ -1806,10 +1841,17 @@ int64_t World::spawnMob(int32_t type, double x, double y, double z, float yaw, f
 
     sendToChunkViewers(this, cx, cz,
                        buildMobAddPacket(eid, type, x, y, z, yaw, pitch));
+    // The grounded-state settle rides the spawn: a NoAI body never
+    // resolves its own "standing on ground" client-side, which is what
+    // the chicken wing animation reads (see sendMobGroundSettle).
+    sendMobGroundSettle(this, eid, cx, cz, x, y, z, yaw, head_yaw, pitch);
     return eid;
 }
 
-bool World::moveMob(int64_t id, double x, double y, double z, float yaw, float pitch) {
+bool World::moveMob(int64_t id, double x, double y, double z, float yaw, float pitch,
+                    float head_yaw) {
+    if (head_yaw <= kHeadYawFollowBody)
+        head_yaw = yaw; // Sentinel: the head rides the body yaw.
     int32_t old_cx = 0, old_cz = 0, new_cx = 0, new_cz = 0, mob_type = 0;
     bool crossed = false;
     {
@@ -1829,6 +1871,7 @@ bool World::moveMob(int64_t id, double x, double y, double z, float yaw, float p
         m->y = y;
         m->z = z;
         m->yaw = yaw;
+        m->head_yaw = head_yaw;
         m->pitch = pitch;
         if (old_cx != new_cx || old_cz != new_cz) {
             crossed = true;
@@ -1866,7 +1909,7 @@ bool World::moveMob(int64_t id, double x, double y, double z, float yaw, float p
     mv->y = (float)y;
     mv->z = (float)z;
     mv->yaw = yaw;
-    mv->headYaw = yaw;
+    mv->headYaw = head_yaw;
     mv->pitch = pitch;
     sendToChunkViewers(this, new_cx, new_cz, mv);
 
@@ -1990,7 +2033,8 @@ void World::rebuildMobBlobs(int32_t cx, int32_t cz, mcp_chunk_t* chunk) {
                 if (m.death_tick != 0)
                     continue;
                 snapshot.push_back(PersistedMob{m.type, m.x, m.y, m.z, m.yaw,
-                                                m.pitch, m.health, m.max_health});
+                                                m.pitch, m.head_yaw,
+                                                m.health, m.max_health});
             }
         }
     }
@@ -2048,7 +2092,8 @@ void World::evictMobsForChunk(int32_t cx, int32_t cz) {
             if (it->second->death_tick == 0) {
                 const MobEntity& m = *it->second;
                 snapshot.push_back(PersistedMob{m.type, m.x, m.y, m.z, m.yaw,
-                                                m.pitch, m.health, m.max_health});
+                                                m.pitch, m.head_yaw,
+                                                m.health, m.max_health});
             } else if (dying_mobs_ > 0) {
                 --dying_mobs_;
             }
@@ -2378,12 +2423,20 @@ entity::DamageApply World::damageMob(int64_t eid, float amount, entity::Entity* 
     }
 
     // Survived: the red flash is the only wire feedback a mob needs (its
-    // health bar is not client-rendered).
+    // health bar is not client-rendered). Both feedback packets ride the
+    // unordered stream and flush RIGHT NOW instead of waiting for the
+    // end-of-tick batch flush: the strike and the red flash then land in
+    // one round trip even on heavy ticks, with no extra packets.
     sendMobEntityEvent(this, eid, cx, cz, network::protocol::EntityEventPacket::HURT_ANIMATION);
     if (kbx != 0.0f || kbz != 0.0f) {
         auto motion = std::make_shared<network::protocol::SetEntityMotionPacket>();
         motion->entities.push_back({eid, kbx, (float)kKnockbackBase, kbz});
         sendToChunkViewers(this, cx, cz, motion);
+    }
+    for (auto& p : Server::getInstance().playersSnapshotRef()) {
+        if (p && p->spawned() && !p->isPendingRemoval() && p->getWorld() == this &&
+            p->canSeeBlock(cx, cz))
+            p->flushUnorderedNow();
     }
     return entity::DamageApply::HURT;
 }
@@ -2506,6 +2559,10 @@ void World::sendMobsInChunk(int32_t cx, int32_t cz, Player* viewer) {
         viewer->rememberMob(m.eid);
         viewer->sendPacket(
             buildMobAddPacket(m.eid, m.type, m.x, m.y, m.z, m.yaw, m.pitch));
+        // A fresh AddEntity resets the client copy — resolve its grounded
+        // state again (the chicken wing state, see sendMobGroundSettle).
+        sendMobGroundSettle(this, m.eid, m.cx, m.cz, m.x, m.y, m.z, m.yaw,
+                            m.head_yaw, m.pitch);
     }
 }
 

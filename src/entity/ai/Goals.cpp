@@ -40,7 +40,11 @@ double horizDist2(double ax, double az, double bx, double bz) {
 // ---- WanderGoal ----
 
 bool WanderGoal::canStart(const MobContext& ctx, MobBrain& brain) {
-    if (!ctx.onGround)
+    // Land mobs stroll from solid ground; swimming mobs paddle from the
+    // water too — without the water branch a mob that enters a pond
+    // would never stroll again (onGround is false while it swims) and
+    // would just drift with the buoyancy.
+    if (!ctx.onGround && !ctx.inWater)
         return false;
     // Start on roughly one think in twenty, so a passive mob strolls
     // about once every ten seconds and a herd spreads its walks across
@@ -92,7 +96,19 @@ bool LookAtPlayerGoal::shouldContinue(const MobContext& ctx) const {
 }
 
 void LookAtPlayerGoal::tick(const MobContext& ctx, MobBrain& brain) {
-    brain.setLookIntent(faceYaw(ctx.playerX - ctx.x, ctx.playerZ - ctx.z));
+    // Head yaw AND pitch: the head tracks the player's eye line, so a
+    // player standing on a ledge or crouching by a pond gets a real
+    // head tilt instead of a flat stare. Protocol-84 pitch is degrees
+    // with positive = down, hence the negated atan2.
+    const double dx = ctx.playerX - ctx.x;
+    const double dz = ctx.playerZ - ctx.z;
+    const double dy = (ctx.playerY + kPlayerEyeHeight) - (ctx.y + kMobEyeHeight);
+    const double flat = std::sqrt(dx * dx + dz * dz);
+    const float pitch = flat > 1e-6
+                            ? (float)(-std::atan2(dy, flat) * 180.0 /
+                                      3.14159265358979323846)
+                            : 0.0f;
+    brain.setLookIntent(faceYaw(dx, dz), pitch);
 }
 
 // ---- IdleLookGoal ----

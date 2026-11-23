@@ -65,6 +65,11 @@ struct PersistedMob {
     int32_t type = 0; // Protocol-84 network id (entity::EntityTypes).
     double x = 0.0, y = 0.0, z = 0.0; // Feet position.
     float yaw = 0.0f, pitch = 0.0f;
+    // Head facing, persisted as the optional "HeadYaw" float tag. Rows
+    // saved before the head-sync work (and the legacy mobs.dat lines)
+    // decode with head yaw equal to body yaw — the rotation those rows
+    // carried.
+    float head_yaw = 0.0f;
     float health = 0.0f;
     float max_health = 0.0f;
 };

@@ -54,6 +54,8 @@ struct MobContext {
     double x = 0.0, y = 0.0, z = 0.0; ///< Feet position.
     float yaw = 0.0f;
     bool onGround = false;
+    bool inWater = false;     ///< Feet or chest cell is water (swim model).
+    bool headInWater = false; ///< Head cell is water (surfacing paddle).
     bool playerNear = false;       ///< A spawned player is within look range.
     double playerDist = 0.0;       ///< Horizontal distance to that player.
     double playerX = 0.0, playerY = 0.0, playerZ = 0.0;

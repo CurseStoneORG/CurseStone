@@ -69,13 +69,19 @@ void Living::broadcastHurtFlash() {
     if (!audience)
         return;
     // The event packet is immutable past this point, so one shared instance
-    // serves the whole broadcast without per-viewer copies.
+    // serves the whole broadcast without per-viewer copies. Each viewer's
+    // unordered stream flushes right after its copy goes out: the hurt
+    // flash is perceived-latency-critical feedback, and waiting for the
+    // end-of-tick batch flush puts the red flash a full phase behind the
+    // strike on heavy ticks.
     auto ev = std::make_shared<network::protocol::EntityEventPacket>();
     ev->eid = runtimeId();
     ev->event = network::protocol::EntityEventPacket::HURT_ANIMATION;
     for (auto& p : players) {
-        if (p && p->spawned() && !p->isPendingRemoval() && p->getWorld() == lvl)
+        if (p && p->spawned() && !p->isPendingRemoval() && p->getWorld() == lvl) {
             p->sendPacket(ev);
+            p->flushUnorderedNow();
+        }
     }
 }
 
