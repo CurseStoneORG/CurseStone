@@ -123,4 +123,33 @@ MobKind mobTypeKind(int32_t id);
 /// O(1): the registry ids are direct-indexed, not scanned.
 float mobMaxHealth(int32_t id);
 
+/// @brief Per-species movement and body profile — the "each species
+///        moves and floats like itself" table of the mob AI pass.
+///
+/// Speeds are blocks per tick and read as the era reference: a calm
+/// stroll (vanilla wandering uses the mob's own walk speed, cows cover
+/// roughly twice the old flat 0.055 pace, rabbits and ocelots dart)
+/// and a flee pace used by the panic goal. Body sizes are the era
+/// collision boxes, which the AI actuation sweeps against; the eye
+/// height is the look-pitch pivot the 0.15.10 client renders the head
+/// tilt around.
+struct MobProfile {
+    float walk_speed;   ///< Blocks per tick while strolling.
+    float panic_speed;  ///< Blocks per tick while fleeing (passives).
+    float width;        ///< Collision box width (blocks).
+    float height;       ///< Collision box height above the feet.
+    float eye_height;   ///< Eye line above the feet (look pitch pivot).
+    bool grounded;      ///< Walks on the ground: gets the goal set and
+                        ///< the ground/water physics. Flight (ghast,
+                        ///< blaze, bat), hopping (slimes) and swimming
+                        ///< (squid) movement models differ enough to
+                        ///< stay static until their own stage.
+};
+
+/// @brief Profile of a registry id, or the zero profile (all zeros,
+///        grounded=false) for ids outside the registry.
+///
+/// O(1): the registry ids are direct-indexed, not scanned.
+MobProfile mobProfile(int32_t id);
+
 } // namespace cursestone::entity

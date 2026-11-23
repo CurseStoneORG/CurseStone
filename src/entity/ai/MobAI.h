@@ -142,6 +142,32 @@ class MobBrain {
             motion_z_ = 0.0f;
     }
 
+    // ---- Water carry-over (splash transitions + wake rate limit) ----
+    // The swim model is stateless per tick, but the entry splash needs
+    // the transition (air -> water) and the swim wake needs a rate
+    // limit, so the actuation keeps those two here.
+    bool& inWater() {
+        return in_water_;
+    }
+    bool inWater() const {
+        return in_water_;
+    }
+    int& splashCooldown() {
+        return splash_cd_;
+    }
+
+    // ---- Sprint flag mirror (the panic pose on the client) ----
+    // The 0.15.10 client renders the sprint pose and the faster leg
+    // cycle for entities whose FLAGS metadata byte carries bit 3. A
+    // fleeing mob carries the flag for the panic window; the actuation
+    // toggles the wire byte only when this mirror changes.
+    bool& sprintFlag() {
+        return sprint_on_;
+    }
+    bool sprintFlag() const {
+        return sprint_on_;
+    }
+
     // ---- Protocol-84 identity (copied from the mob record) ----
     void setKind(uint8_t kind) {
         kind_ = kind;
@@ -156,6 +182,12 @@ class MobBrain {
     ///        no physics, no packets.
     bool dynamic() const {
         return !goals_.empty();
+    }
+
+    /// @brief Read-only goal list (tests and diagnostics; the brain
+    ///        owns the goals and nothing outside may start them).
+    const std::vector<std::unique_ptr<Goal>>& goals() const {
+        return goals_;
     }
 
     mcp_random_t& rng() {
@@ -197,16 +229,27 @@ class MobBrain {
     float motion_x_ = 0.0f;
     float motion_z_ = 0.0f;
 
+    // Water carry-over: the air->water transition fires the entry
+    // splash, and the wake emitter counts down its rate limit.
+    bool in_water_ = false;
+    int splash_cd_ = 0;
+
+    // Sprint flag mirror (see the accessor above).
+    bool sprint_on_ = false;
+
     BroadcastCache broadcast_;
 
     mcp_random_t rng_{};
 };
 
-/// @brief Builds the brain of a mob kind: the stage-1 passive goal set
-///        (wander, look at player, idle) for Passive kinds, an empty
-///        brain for everything not covered by a behavior stage yet.
-///        @p seed diversifies per-mob randomness.
-std::unique_ptr<MobBrain> makeMobBrain(uint8_t kind, uint64_t seed);
+/// @brief Builds the brain of a mob kind: the stage-2 goal set
+///        (wander, look at player, idle — plus the panic reflex for
+///        Passive kinds) for grounded kinds, an empty brain for
+///        everything whose movement model this stage does not
+///        implement (flight, hopping, aquatic). @p type selects the
+///        species profile; @p seed diversifies per-mob randomness.
+std::unique_ptr<MobBrain> makeMobBrain(uint8_t kind, int32_t type,
+                                       uint64_t seed);
 
 /// @brief Protocol-84 facing for a direction: the same atan2(dx, dz)
 ///        convention the arrow spawn path uses.
@@ -243,19 +286,43 @@ constexpr float kBodyFollowStep = 5.0f;
 FacingStep resolveFacing(float body_yaw, float head_yaw, float pitch,
                          const MobIntent& intent, bool standing);
 
-/// @brief Vanilla-era water buoyancy per tick (the +0.04 the era
-///        reference entity model adds while swimming).
-constexpr float kWaterBuoyancy = 0.04f;
+/// @brief Vanilla-era water buoyancy model, stage-2 shape.
+///
+/// The stage-1 loop (buoyancy every tick plus a paddle whenever the
+/// mob moved) integrates to mobs riding ON the water: the paddle never
+/// stops pushing up until the head cell clears the surface, so the
+/// body skims the waterline and only the soles touch it. The stage-2
+/// model is a hold-band regulator instead: the mob settles where
+/// roughly half its body is submerged, gravity pulls it back under the
+/// band, the paddle lifts it from below the band, and inside the band
+/// no vertical force applies — a true floating equilibrium.
+namespace water {
+
+/// @brief Reduced gravity inside water (the era reference applies the
+///        fall acceleration at roughly a quarter strength while wet).
+constexpr float kWaterGravity = 0.02f;
 
 /// @brief Vertical drag inside water (motion shrinks to 80% per tick).
 constexpr float kWaterDrag = 0.8f;
 
-/// @brief Extra upward paddle while swimming: applied when the head is
-///        still under the surface or the mob is swimming somewhere.
-constexpr float kSwimUpBoost = 0.06f;
+/// @brief Upward paddle while the mob is deeper than its hold band or
+///        its head is still under the surface.
+constexpr float kSwimPaddle = 0.055f;
 
-/// @brief Rise/sink clamps inside water. Mobs bob to the surface and
-///        stop; they never rocket up and never sink away.
+/// @brief Depth the regulator holds: fraction of the body height under
+///        the rendered waterline while floating. 0.55 puts the
+///        waterline mid-body — the vanilla "half-submerged swimmer".
+constexpr float kSubmergeTarget = 0.55f;
+
+/// @brief Half-width of the hold band in submersion fraction. Inside
+///        [target-band, target+band] no vertical force applies, so an
+///        idle mob floats still instead of oscillating forever; a mob
+///        outside the band accelerates back toward it. The band sizes
+///        the gentle surface bob while swimming.
+constexpr float kSubmergeBand = 0.07f;
+
+/// @brief Rise/sink clamps inside water. Mobs bob to their hold depth
+///        and stop; they never rocket up and never sink away.
 constexpr float kWaterMaxRise = 0.12f;
 constexpr float kWaterMaxSink = -0.15f;
 
@@ -265,14 +332,27 @@ constexpr float kWaterMaxSink = -0.15f;
 constexpr float kWaterJumpOut = 0.30f;
 
 /// @brief One vertical step of the swim model. Pure so the water check
-///        harness can verify the surface bob, the sink clamp and the
-///        shore hop without a World.
+///        harness can verify the hold-band equilibrium, the sink
+///        recovery and the shore hop without a World.
 struct WaterVerticalStep {
     float vy = 0.0f;          ///< Integrated vertical motion.
     bool jumpConsumed = false; ///< True when @p wants_jump was spent.
 };
 
-WaterVerticalStep waterVerticalStep(float vy, bool head_in_water,
-                                    bool move_intent, bool wants_jump);
+/// @brief Evaluates the model inputs (@see WaterVerticalStep).
+///
+/// @param vy            integrated vertical motion entering the tick.
+/// @param submersion    fraction of the body height under the waterline
+///                      (0 = feet at the surface, 1 = fully under).
+/// @param head_in_water the head cell is water: the paddle always runs
+///                      (a mob must never hold its head under).
+/// @param move_intent   the mob swims somewhere: strokes lift it toward
+///                      its hold depth, never above it.
+/// @param wants_jump    shore hop requested by a bank clip.
+WaterVerticalStep waterVerticalStep(float vy, float submersion,
+                                    bool head_in_water, bool move_intent,
+                                    bool wants_jump);
+
+} // namespace water
 
 } // namespace cursestone::entity::ai

@@ -56,6 +56,18 @@ struct MobContext {
     bool onGround = false;
     bool inWater = false;     ///< Feet or chest cell is water (swim model).
     bool headInWater = false; ///< Head cell is water (surfacing paddle).
+    float waterSurface = 0.0f; ///< Y of the rendered waterline above the
+                               ///< mob's column (valid while inWater).
+    // ---- Species profile (entity::mobProfile(type)) ----
+    float walkSpeed = 0.0f;   ///< Blocks per tick, the species stroll.
+    float panicSpeed = 0.0f;  ///< Blocks per tick while fleeing.
+    float bodyWidth = 0.6f;   ///< Collision box width.
+    float bodyHeight = 1.8f;  ///< Collision box height above the feet.
+    float eyeHeight = 1.62f;  ///< Look-pitch pivot above the feet.
+    // ---- Panic (the damage pipeline's cross-thread reflex) ----
+    bool panicActive = false; ///< A hit landed within the panic window.
+    float panicDirX = 0.0f;   ///< Unit direction AWAY from the threat.
+    float panicDirZ = 0.0f;
     bool playerNear = false;       ///< A spawned player is within look range.
     double playerDist = 0.0;       ///< Horizontal distance to that player.
     double playerX = 0.0, playerY = 0.0, playerZ = 0.0;

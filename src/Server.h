@@ -259,6 +259,9 @@ class Server {
     int viewDistance() const {
         return view_distance_;
     }
+    size_t maxMobs() const {
+        return max_mobs_;
+    }
     int gamemode() const {
         return gamemode_;
     }
@@ -490,6 +493,7 @@ class Server {
     std::string motd_ = "CurseStone";
     int max_players_ = 20;
     int view_distance_ = 8;
+    size_t max_mobs_ = 1000000;
     int gamemode_ = 0;
     int difficulty_ = 1;
     bool whitelist_ = false;
