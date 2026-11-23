@@ -50,7 +50,10 @@ struct MobIntent {
     double dirZ = 0.0;
     float speed = 0.0f;       ///< Blocks per tick while moving.
     bool look = false;        ///< Explicit facing requested.
-    float yaw = 0.0f;         ///< Facing in protocol-84 degrees.
+    float yaw = 0.0f;         ///< Head facing in protocol-84 degrees.
+    float pitch = 0.0f;       ///< Head pitch in protocol-84 degrees
+                              ///< (positive = down), so a mob tilts its
+                              ///< head toward a player above or below.
 };
 
 /// @brief Per-mob AI state machine.
@@ -82,8 +85,14 @@ class MobBrain {
     }
 
     void setLookIntent(float yaw) {
+        setLookIntent(yaw, 0.0f);
+    }
+
+    /// @brief Looks at @p yaw with the head tilted to @p pitch.
+    void setLookIntent(float yaw, float pitch) {
         intent_.look = true;
         intent_.yaw = yaw;
+        intent_.pitch = pitch;
     }
 
     // ---- Physics carry-over (integrated by the actuation step) ----
@@ -154,13 +163,15 @@ class MobBrain {
     }
 
     // ---- Broadcast cache (actuation bookkeeping) ----
-    // The last position/yaw handed to World::moveMob. The actuation
+    // The last position/rotation handed to World::moveMob. The actuation
     // step compares against it and skips sub-threshold moves, so an
     // idle mob produces no packets at all.
     struct BroadcastCache {
         bool valid = false;
         double x = 0.0, y = 0.0, z = 0.0;
-        float yaw = 0.0f;
+        float yaw = 0.0f;       ///< Body yaw.
+        float head_yaw = 0.0f;  ///< Head yaw (independent of the body).
+        float pitch = 0.0f;     ///< Head pitch.
     };
     BroadcastCache& broadcast() {
         return broadcast_;
@@ -200,5 +211,68 @@ std::unique_ptr<MobBrain> makeMobBrain(uint8_t kind, uint64_t seed);
 /// @brief Protocol-84 facing for a direction: the same atan2(dx, dz)
 ///        convention the arrow spawn path uses.
 float faceYaw(double dx, double dz);
+
+/// @brief The rotation one actuation pass broadcasts: body yaw, head
+///        yaw and head pitch. The 0.15.10 client renders the body from
+///        the move packet's yaw and the head from its headYaw, so the
+///        two are independent channels — a mob walking one way must
+///        keep its body in the movement direction even while its head
+///        tracks a player (body and head in one yaw reads as
+///        moonwalking: the model faces the player and slides sideways).
+struct FacingStep {
+    float bodyYaw = 0.0f;
+    float headYaw = 0.0f;
+    float pitch = 0.0f;
+};
+
+/// @brief Head-to-body angle above which a standing mob starts turning
+///        its body toward its head (the vanilla stance behavior: a mob
+///        that watches you long enough squares up).
+constexpr float kBodyFollowAngle = 45.0f;
+
+/// @brief Body-yaw degrees one tick may close toward the head while
+///        standing; bounds the stance turn so it reads as a rotation,
+///        not a snap.
+constexpr float kBodyFollowStep = 5.0f;
+
+/// @brief Resolves one facing step. @p body_yaw / @p head_yaw /
+///        @p pitch are the record's current values; @p intent carries
+///        the goals' decision; @p standing marks a mob with no
+///        movement intent (the only state where the body may turn for
+///        anything but travel).
+FacingStep resolveFacing(float body_yaw, float head_yaw, float pitch,
+                         const MobIntent& intent, bool standing);
+
+/// @brief Vanilla-era water buoyancy per tick (the +0.04 the era
+///        reference entity model adds while swimming).
+constexpr float kWaterBuoyancy = 0.04f;
+
+/// @brief Vertical drag inside water (motion shrinks to 80% per tick).
+constexpr float kWaterDrag = 0.8f;
+
+/// @brief Extra upward paddle while swimming: applied when the head is
+///        still under the surface or the mob is swimming somewhere.
+constexpr float kSwimUpBoost = 0.06f;
+
+/// @brief Rise/sink clamps inside water. Mobs bob to the surface and
+///        stop; they never rocket up and never sink away.
+constexpr float kWaterMaxRise = 0.12f;
+constexpr float kWaterMaxSink = -0.15f;
+
+/// @brief The shore-exit hop: a horizontal clip against a bank while
+///        swimming spends this as an upward jump so the mob can climb
+///        out (the vanilla paddling-against-the-shore hop).
+constexpr float kWaterJumpOut = 0.30f;
+
+/// @brief One vertical step of the swim model. Pure so the water check
+///        harness can verify the surface bob, the sink clamp and the
+///        shore hop without a World.
+struct WaterVerticalStep {
+    float vy = 0.0f;          ///< Integrated vertical motion.
+    bool jumpConsumed = false; ///< True when @p wants_jump was spent.
+};
+
+WaterVerticalStep waterVerticalStep(float vy, bool head_in_water,
+                                    bool move_intent, bool wants_jump);
 
 } // namespace cursestone::entity::ai
