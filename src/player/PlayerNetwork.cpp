@@ -262,6 +262,34 @@ void Player::flushPendingPackets() {
     }
 }
 
+void Player::flushUnorderedNow() {
+    if (!connected_.load(std::memory_order_relaxed))
+        return;
+    if (!adv_iface_)
+        return;
+
+    // Same take-send-refill shape as flushPendingPackets, narrowed to the
+    // unordered stream: everything else keeps its end-of-tick cadence, so
+    // a mid-tick combat flush neither reorders the login/chunk streams nor
+    // drags their payloads out ahead of schedule.
+    std::vector<std::vector<uint8_t>> take_unordered;
+    {
+        std::lock_guard<std::mutex> lk(batch_mtx_);
+        if (batch_unordered_.empty())
+            return;
+        take_unordered.swap(batch_unordered_);
+    }
+    sendBatchWire(adv_iface_, cfg_.ip, cfg_.port, take_unordered,
+                  network::WireStream::Unordered);
+    {
+        std::lock_guard<std::mutex> lk(batch_mtx_);
+        if (batch_unordered_.empty()) {
+            take_unordered.clear();
+            batch_unordered_.swap(take_unordered);
+        }
+    }
+}
+
 void Player::sendMessage(const std::string& msg) {
     auto pk = std::make_shared<network::protocol::TextPacket>();
     pk->type = network::protocol::TextPacket::TYPE_RAW;

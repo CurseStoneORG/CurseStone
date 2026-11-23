@@ -387,6 +387,13 @@ class Player : public IPlayer,
                                  network::WireStream stream);
     // Flushes pending packets into batches.
     void flushPendingPackets();
+    // Drains and sends ONLY the unordered stream right now. Combat
+    // feedback (the hurt flash, the knockback motion) rides the unordered
+    // stream and is perceived latency-critical: flushing it at the hit
+    // keeps the strike and the client's red flash inside one round trip
+    // even when the tick still has heavy phases ahead. The ordered
+    // streams keep the end-of-tick flush.
+    void flushUnorderedNow();
     void sendMessage(const std::string& msg) override;
     void kick(const std::string& reason = "disconnect.kick");
     // Includes diagnostic details in the client's disconnect message.
