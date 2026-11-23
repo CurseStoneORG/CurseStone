@@ -33,6 +33,13 @@ namespace cursestone::entity::ai {
 /// @brief Calm wander pace in blocks per tick (~1.1 blocks per second).
 constexpr float kWanderSpeed = 0.055f;
 
+/// @brief Eye-line heights the look pitch is computed from. The mob
+///        model is the generic 0.6x1.8 box (eye at 1.62), and the look
+///        target is the player's own eye line — the same convention the
+///        era entity model uses for head tracking.
+constexpr double kMobEyeHeight = 1.62;
+constexpr double kPlayerEyeHeight = 1.62;
+
 /// @brief Picks a random nearby point and walks to it, then rests.
 ///
 /// Claims the MOVE flag: while wandering, no other goal may drive

@@ -24,6 +24,7 @@
 #include "entity/ai/MobAIManager.h"
 #include "Server.h"
 #include "Player.h"
+#include "block/BlockIds.h"
 #include "entity/EntityTypes.h"
 #include "math/AxisAlignedBB.h"
 #include "math/Vector3.h"
@@ -63,6 +64,9 @@ constexpr float kKnockbackFriction = 0.6f;
 // packet is not re-sent (the same threshold the item integrator uses).
 constexpr double kBroadcastEps = 0.0005;
 constexpr float kYawEps = 2.0f;     ///< Degrees of yaw change worth a packet.
+constexpr float kPitchEps = 2.0f;   ///< Degrees of pitch change worth a
+                                    ///< packet (the wire encodes pitch as
+                                    ///< a byte, ~1.4 degree resolution).
 
 /// @brief Absolute angle difference in degrees, wrapped to [0, 180].
 float yawDelta(float a, float b) {
@@ -192,6 +196,13 @@ bool MobAIManager::gateOpen(int32_t mcx, int32_t mcz) const {
     return false;
 }
 
+bool MobAIManager::isWaterCell(double x, double y, double z) const {
+    const uint8_t id = world_->getBlockId((int32_t)std::floor(x),
+                                          (int32_t)std::floor(y),
+                                          (int32_t)std::floor(z));
+    return id == block::FLOWING_WATER || id == block::WATER;
+}
+
 MobContext MobAIManager::buildContext(const world::MobEntity& m,
                                       const MobBrain& brain,
                                       uint64_t current_tick) {
@@ -204,6 +215,13 @@ MobContext MobAIManager::buildContext(const world::MobEntity& m,
     ctx.z = m.z;
     ctx.yaw = m.yaw;
     ctx.onGround = brain.onGround();
+
+    // Water snapshot for the swim model: the feet and chest cells make
+    // the body buoyant, the head cell decides the surfacing paddle.
+    // Three block reads per build, same resident-chunk contract the
+    // actuation's block probes already follow.
+    ctx.inWater = isWaterCell(m.x, m.y, m.z) || isWaterCell(m.x, m.y + 0.5, m.z);
+    ctx.headInWater = isWaterCell(m.x, m.y + 1.5, m.z);
 
     // Nearest spawned player within look range. Players are few, so the
     // linear scan is cheaper than any spatial index would be.
@@ -262,13 +280,15 @@ void MobAIManager::actuateOne(world::MobEntity& m, MobBrain& brain,
 
     const MobIntent& intent = brain.intent();
 
-    // Facing: an explicit look intent wins, a movement intent faces the
-    // direction of travel, otherwise the mob keeps its last rotation.
-    float targetYaw = m.yaw;
-    if (intent.look)
-        targetYaw = intent.yaw;
-    else if (intent.move)
-        targetYaw = faceYaw(intent.dirX, intent.dirZ);
+    // Facing: the body follows the movement direction while the mob
+    // travels (the 0.15.10 client renders the body from the move
+    // packet's yaw — body and head in one yaw read as moonwalking),
+    // the head tracks the look target when a goal is looking, and a
+    // standing mob squares its body up to its head past the follow
+    // angle. resolveFacing owns the whole rule set.
+    const ai::FacingStep facing =
+        ai::resolveFacing(m.yaw, m.head_yaw, m.pitch, intent,
+                          /*standing=*/brain.onGround());
 
     const bool idle = !intent.move && !brain.hasKnockback() && brain.onGround() &&
                       !brain.wantsJump();
@@ -281,15 +301,23 @@ void MobAIManager::actuateOne(world::MobEntity& m, MobBrain& brain,
             bc.x = m.x;
             bc.y = m.y;
             bc.z = m.z;
-            bc.yaw = m.yaw;
+            bc.yaw = facing.bodyYaw;
+            bc.head_yaw = facing.headYaw;
+            bc.pitch = facing.pitch;
             return;
         }
-        if (yawDelta(targetYaw, bc.yaw) >= kYawEps) {
-            if (world_->moveMob(m.eid, m.x, m.y, m.z, targetYaw, 0.0f)) {
+        const bool turned = yawDelta(facing.bodyYaw, bc.yaw) >= kYawEps ||
+                            yawDelta(facing.headYaw, bc.head_yaw) >= kYawEps ||
+                            std::fabs(facing.pitch - bc.pitch) >= kPitchEps;
+        if (turned) {
+            if (world_->moveMob(m.eid, m.x, m.y, m.z, facing.bodyYaw,
+                                facing.pitch, facing.headYaw)) {
                 bc.x = m.x;
                 bc.y = m.y;
                 bc.z = m.z;
-                bc.yaw = targetYaw;
+                bc.yaw = facing.bodyYaw;
+                bc.head_yaw = facing.headYaw;
+                bc.pitch = facing.pitch;
             } else {
                 bc.valid = false;
             }
@@ -299,7 +327,18 @@ void MobAIManager::actuateOne(world::MobEntity& m, MobBrain& brain,
 
     // ---- Physics integration (the item/falling-block sweep shape) ----
     float& vy = brain.motionY();
-    if (brain.onGround()) {
+    if (ctx.inWater) {
+        // The swim model replaces the fall: buoyancy, paddle and drag
+        // integrate to a surface bob; the shore hop spends the pending
+        // jump as an upward shove against the bank.
+        const ai::WaterVerticalStep water = ai::waterVerticalStep(
+            vy, ctx.headInWater, intent.move, brain.wantsJump());
+        vy = water.vy;
+        if (water.jumpConsumed) {
+            brain.wantsJump() = false;
+            brain.jumpCooldown() = kJumpCooldownTicks;
+        }
+    } else if (brain.onGround()) {
         vy = brain.wantsJump() ? kJumpVelocity : 0.0f;
         brain.wantsJump() = false;
     } else {
@@ -311,8 +350,12 @@ void MobAIManager::actuateOne(world::MobEntity& m, MobBrain& brain,
 
     double dx = 0.0, dz = 0.0;
     if (intent.move) {
-        dx = intent.dirX * (double)intent.speed;
-        dz = intent.dirZ * (double)intent.speed;
+        // Water halves the stride: swimming is slower than walking, in
+        // the era entity model and in the reference.
+        const double stride = ctx.inWater ? (double)intent.speed * 0.5
+                                          : (double)intent.speed;
+        dx = intent.dirX * stride;
+        dz = intent.dirZ * stride;
     }
     // A consumed shove rides on top of the goal's own step.
     dx += (double)brain.motionX();
@@ -333,19 +376,27 @@ void MobAIManager::actuateOne(world::MobEntity& m, MobBrain& brain,
 
     // Step-up: a horizontal clip with headroom above the obstacle is a
     // one-block step, worth a jump. A clipped column at head height is
-    // a wall, and jumping would only grind against it.
-    if ((res.clipped_x || res.clipped_z) && res.on_ground && intent.move &&
+    // a wall, and jumping would only grind against it. In water the
+    // same clip is a shore: the pending jump becomes the swim hop that
+    // climbs the bank (no onGround requirement — a swimming mob has
+    // none).
+    if ((res.clipped_x || res.clipped_z) && intent.move &&
         brain.jumpCooldown() <= 0) {
-        const int bx = (int)std::floor(m.x + intent.dirX * kJumpProbe);
-        const int bz = (int)std::floor(m.z + intent.dirZ * kJumpProbe);
-        const int feetY = (int)std::floor(m.y);
-        const bool chestSolid =
-            World::entityCollidable(world_->getBlockId(bx, feetY + 1, bz));
-        const bool headSolid =
-            World::entityCollidable(world_->getBlockId(bx, feetY + 2, bz));
-        if (!chestSolid && !headSolid) {
+        if (ctx.inWater) {
             brain.wantsJump() = true;
             brain.jumpCooldown() = kJumpCooldownTicks;
+        } else if (res.on_ground) {
+            const int bx = (int)std::floor(m.x + intent.dirX * kJumpProbe);
+            const int bz = (int)std::floor(m.z + intent.dirZ * kJumpProbe);
+            const int feetY = (int)std::floor(m.y);
+            const bool chestSolid =
+                World::entityCollidable(world_->getBlockId(bx, feetY + 1, bz));
+            const bool headSolid =
+                World::entityCollidable(world_->getBlockId(bx, feetY + 2, bz));
+            if (!chestSolid && !headSolid) {
+                brain.wantsJump() = true;
+                brain.jumpCooldown() = kJumpCooldownTicks;
+            }
         }
     }
     if (brain.jumpCooldown() > 0)
@@ -357,14 +408,19 @@ void MobAIManager::actuateOne(world::MobEntity& m, MobBrain& brain,
                        std::fabs(nx - bc.x) > kBroadcastEps ||
                        std::fabs(ny - bc.y) > kBroadcastEps ||
                        std::fabs(nz - bc.z) > kBroadcastEps;
-    const bool turned = yawDelta(targetYaw, bc.yaw) >= kYawEps;
+    const bool turned = yawDelta(facing.bodyYaw, bc.yaw) >= kYawEps ||
+                        yawDelta(facing.headYaw, bc.head_yaw) >= kYawEps ||
+                        std::fabs(facing.pitch - bc.pitch) >= kPitchEps;
     if (moved || turned) {
-        if (world_->moveMob(m.eid, nx, ny, nz, targetYaw, 0.0f)) {
+        if (world_->moveMob(m.eid, nx, ny, nz, facing.bodyYaw,
+                            facing.pitch, facing.headYaw)) {
             bc.valid = true;
             bc.x = nx;
             bc.y = ny;
             bc.z = nz;
-            bc.yaw = targetYaw;
+            bc.yaw = facing.bodyYaw;
+            bc.head_yaw = facing.headYaw;
+            bc.pitch = facing.pitch;
         } else {
             bc.valid = false; // Out-of-height move refused; re-sync next tick.
         }

@@ -69,6 +69,10 @@ class MobAIManager {
     /// @brief True when any snapshot player is within the world's view
     ///        distance (Chebyshev chunk distance) of the mob's chunk.
     bool gateOpen(int32_t mcx, int32_t mcz) const;
+    /// @brief True when the cell at (x, y, z) is still or flowing water.
+    ///        The swim model reads three cells per mob per tick (feet,
+    ///        chest, head) through this probe.
+    bool isWaterCell(double x, double y, double z) const;
     /// @brief Assembles the read-only input snapshot the goals see.
     ///        @p brain supplies the physics carry-over (on-ground) the
     ///        record does not carry.

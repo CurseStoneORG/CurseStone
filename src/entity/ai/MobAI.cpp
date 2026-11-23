@@ -91,6 +91,73 @@ float faceYaw(double dx, double dz) {
     return (float)(std::atan2(-dx, dz) * 180.0 / 3.14159265358979323846);
 }
 
+FacingStep resolveFacing(float body_yaw, float head_yaw, float pitch,
+                         const MobIntent& intent, bool standing) {
+    FacingStep out;
+    out.bodyYaw = body_yaw;
+    out.headYaw = head_yaw;
+    out.pitch = pitch;
+
+    if (intent.move) {
+        // Travel owns the body: the model must face where it walks, or
+        // every wander leg renders as a sideways/backward slide.
+        out.bodyYaw = faceYaw(intent.dirX, intent.dirZ);
+        // The head follows travel unless a look goal is active; the
+        // look goal's head (and its pitch) wins while it runs.
+        if (intent.look) {
+            out.headYaw = intent.yaw;
+            out.pitch = intent.pitch;
+        } else {
+            out.headYaw = out.bodyYaw;
+            out.pitch = 0.0f;
+        }
+        return out;
+    }
+
+    if (intent.look) {
+        // Standing: the head turns to the look target, the body squares
+        // up to the head only past the follow angle and only at the
+        // bounded per-tick step — a stance rotation, not a snap.
+        out.headYaw = intent.yaw;
+        out.pitch = intent.pitch;
+        if (standing) {
+            float d = intent.yaw - body_yaw;
+            while (d > 180.0f)
+                d -= 360.0f;
+            while (d < -180.0f)
+                d += 360.0f;
+            const float abs_d = std::fabs(d);
+            if (abs_d > kBodyFollowAngle) {
+                const float step = std::copysign(std::fmin(abs_d, kBodyFollowStep), d);
+                out.bodyYaw = body_yaw + step;
+            }
+        }
+    }
+    return out;
+}
+
+WaterVerticalStep waterVerticalStep(float vy, bool head_in_water,
+                                    bool move_intent, bool wants_jump) {
+    if (wants_jump) {
+        // Shore exit: a real hop against the bank, sized for water drag
+        // so a one-block shore is climbable without overshooting.
+        return {kWaterJumpOut, true};
+    }
+    // The era water travel shape: buoyancy first, the paddle when the
+    // mob still has water over its head or is swimming somewhere, then
+    // the water drag, then the rise/sink clamps that turn the loop into
+    // a surface bob instead of a rocket or a stone.
+    vy += kWaterBuoyancy;
+    if (head_in_water || move_intent)
+        vy += kSwimUpBoost;
+    vy *= kWaterDrag;
+    if (vy > kWaterMaxRise)
+        vy = kWaterMaxRise;
+    if (vy < kWaterMaxSink)
+        vy = kWaterMaxSink;
+    return {vy, false};
+}
+
 std::unique_ptr<MobBrain> makeMobBrain(uint8_t kind, uint64_t seed) {
     auto brain = std::make_unique<MobBrain>();
     brain->setKind(kind);
