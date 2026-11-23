@@ -56,14 +56,27 @@ jobs:
     steps:
       # git must exist before checkout runs inside the container.
       - name: Install toolchain and dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          apt-get update -y
-          apt-get install -y --no-install-recommends \
-            ca-certificates gnupg software-properties-common git \
-            ninja-build zlib1g-dev
-          add-apt-repository -y ppa:ubuntu-toolchain-r/test
-          apt-get update -y
-          apt-get install -y --no-install-recommends gcc-13 g++-13
+          set -e
+          APT="apt-get -o Acquire::Retries=3"
+          # Every network step gets a hard timeout: a stalled mirror fails
+          # the job fast instead of hanging it for hours.
+          timeout 300 $APT update -y
+          timeout 300 $APT install -y --no-install-recommends \
+            ca-certificates git ninja-build zlib1g-dev
+          # gcc-13 for C++20 comes from the ubuntu-toolchain PPA, which
+          # still publishes for focal (focal's own gcc-9 cannot compile
+          # the sources). Added as a raw source over https with
+          # [trusted=yes] — TLS already authenticates the host, and this
+          # avoids add-apt-repository's keyserver round-trip, which can
+          # hang the job indefinitely.
+          echo 'deb [trusted=yes] https://ppa.launchpadcontent.net/ubuntu-toolchain-r/test/ubuntu/ focal main' \
+            > /etc/apt/sources.list.d/cursestone-toolchain.list
+          timeout 300 $APT update -y
+          timeout 300 $APT install -y --no-install-recommends gcc-13 g++-13
+          gcc-13 --version | head -1
 
       - name: Checkout
         uses: actions/checkout@v4
