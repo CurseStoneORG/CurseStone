@@ -139,9 +139,23 @@ FacingStep resolveFacing(float body_yaw, float head_yaw, float pitch,
 
 namespace water {
 
+SwimBob swimBob(float phase) {
+    const float s = std::sin(phase);
+    return {kBobForce * s, -kBobPitchDeg * s};
+}
+
+float bobPhaseStep(float phase) {
+    phase += kBobPhaseStep;
+    // One step is far below 2*pi, so a single conditional subtract
+    // keeps the phase in [0, 2*pi) forever — no fmod division per tick.
+    if (phase >= kBobTwoPi)
+        phase -= kBobTwoPi;
+    return phase;
+}
+
 WaterVerticalStep waterVerticalStep(float vy, float submersion,
                                     bool head_in_water, bool move_intent,
-                                    bool wants_jump) {
+                                    bool wants_jump, float bob_force) {
     if (wants_jump) {
         // Shore exit: a real hop against the bank, sized for water drag
         // so a one-block shore is climbable without overshooting.
@@ -149,16 +163,17 @@ WaterVerticalStep waterVerticalStep(float vy, float submersion,
     }
     // The stage-2 hold-band regulator. Outside the band a net force
     // accelerates the body back toward the half-submerged depth; inside
-    // the band no vertical force applies, so the drag bleeds the
-    // remaining motion and the mob floats still instead of riding the
-    // surface or oscillating forever.
+    // the band the flotation bob rides — a gentle zero-mean force that
+    // rocks the body up and down over the surface, so a floating mob
+    // never freezes on the waterline. The regulator still owns the band
+    // edges, so the rocking can never walk the mob out of its float.
     const float err = submersion - kSubmergeTarget;
     float accel = -kWaterGravity; // Water gravity: the fall, at ease.
     if (head_in_water || err > kSubmergeBand) {
         // Under the hold depth, or the head is wet: paddle up.
         accel += kSwimPaddle;
     } else if (err >= -kSubmergeBand) {
-        accel = 0.0f; // Inside the hold band: no net vertical force.
+        accel = bob_force; // Inside the hold band: the flotation bob.
     }
     if (move_intent && err > 0.0f) {
         // Forward strokes lift toward the hold depth, never above it —
@@ -180,6 +195,11 @@ std::unique_ptr<MobBrain> makeMobBrain(uint8_t kind, int32_t type,
     auto brain = std::make_unique<MobBrain>();
     brain->setKind(kind);
     mcp_random_seed(&brain->rng(), (uint32_t)(seed ^ (seed >> 32)));
+    // Each floater rocks on its own beat: the bob phase is spread over
+    // a full cycle from the identity seed, so a herd never bobs in
+    // lockstep and the client never sees a synchronized wave.
+    brain->swimPhase() =
+        (float)((seed >> 8) & 0xFFFFu) * (water::kBobTwoPi / 65536.0f);
     // Stage 2 assembles brains from the species profile: every grounded
     // kind (Passive, Neutral and the land Hostiles) strolls, watches
     // nearby players and glances around; Passive kinds additionally

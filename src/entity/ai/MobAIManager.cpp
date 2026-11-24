@@ -568,30 +568,6 @@ void MobAIManager::actuateOne(world::MobEntity& m, MobBrain& brain,
 
     const MobIntent& intent = brain.intent();
 
-    // ---- Steering + facing: the body follows where the mob will
-    // actually walk this tick. A raw intent that grinds into a wall
-    // while the model faces it reads as a stuck replay; the steered
-    // direction owns the facing exactly like the raw one owns it when
-    // the path ahead is open.
-    double dir_x = intent.dirX;
-    double dir_z = intent.dirZ;
-    if (intent.move)
-        steerAround(m, ctx, intent, dir_x, dir_z);
-    MobIntent facing_intent = intent;
-    facing_intent.dirX = dir_x;
-    facing_intent.dirZ = dir_z;
-    const ai::FacingStep facing = ai::resolveFacing(
-        m.yaw, m.head_yaw, m.pitch, facing_intent,
-        /*standing=*/brain.onGround());
-
-    // Sprint pose: a fleeing passive carries the FLAGS sprint bit, the
-    // pose and the faster leg cycle the 0.15.10 client already renders
-    // for sprinting entities. Toggle only on state change.
-    if (ctx.panicActive != brain.sprintFlag()) {
-        brain.sprintFlag() = ctx.panicActive;
-        world_->setMobSprinting(m.eid, m.cx, m.cz, ctx.panicActive);
-    }
-
     // ---- Swim-vs-walk: the hold-band model owns the body only where
     // water is deep enough to submerge the hold depth (or the feet are
     // off the bottom); a ford shallower than that is walked, with the
@@ -604,6 +580,47 @@ void MobAIManager::actuateOne(world::MobEntity& m, MobBrain& brain,
         ctx.inWater &&
         (submersion > ai::water::kSubmergeTarget - ai::water::kSubmergeBand ||
          !brain.onGround());
+
+    // ---- Steering + facing: the body follows where the mob will
+    // actually walk this tick. A raw intent that grinds into a wall
+    // while the model faces it reads as a stuck replay; the steered
+    // direction owns the facing exactly like the raw one owns it when
+    // the path ahead is open.
+    double dir_x = intent.dirX;
+    double dir_z = intent.dirZ;
+    if (intent.move)
+        steerAround(m, ctx, intent, dir_x, dir_z);
+    MobIntent facing_intent = intent;
+    facing_intent.dirX = dir_x;
+    facing_intent.dirZ = dir_z;
+    ai::FacingStep facing = ai::resolveFacing(
+        m.yaw, m.head_yaw, m.pitch, facing_intent,
+        /*standing=*/brain.onGround());
+
+    // ---- Flotation bob: a floating body never freezes on the
+    // waterline — it rocks gently up and down around the hold depth
+    // (half the body in, half out), rising nose-up and falling
+    // nose-down. The phase advances one step per floating tick and
+    // freezes on land, so each mob keeps its own beat; the rocking
+    // rides the move packet's pitch channel and the zero-mean force
+    // feeds the hold band in the vertical step below. One sine per
+    // swimming mob per tick, nothing else.
+    float bob_force = 0.0f;
+    if (swimming) {
+        brain.swimPhase() = ai::water::bobPhaseStep(brain.swimPhase());
+        const ai::water::SwimBob bob =
+            ai::water::swimBob(brain.swimPhase());
+        bob_force = bob.force;
+        facing.pitch = std::clamp(facing.pitch + bob.pitch, -90.0f, 90.0f);
+    }
+
+    // Sprint pose: a fleeing passive carries the FLAGS sprint bit, the
+    // pose and the faster leg cycle the 0.15.10 client already renders
+    // for sprinting entities. Toggle only on state change.
+    if (ctx.panicActive != brain.sprintFlag()) {
+        brain.sprintFlag() = ctx.panicActive;
+        world_->setMobSprinting(m.eid, m.cx, m.cz, ctx.panicActive);
+    }
 
     const bool idle =
         !intent.move && !brain.hasKnockback() && brain.onGround() &&
@@ -647,9 +664,11 @@ void MobAIManager::actuateOne(world::MobEntity& m, MobBrain& brain,
     if (swimming) {
         // The hold-band swim model: gravity, the hold band, the paddle
         // and the shore hop integrate to a mob resting half-submerged —
-        // the waterline mid-body, not the soles riding the surface.
+        // the waterline mid-body, riding the flotation bob instead of
+        // freezing on the surface.
         const ai::water::WaterVerticalStep water = ai::water::waterVerticalStep(
-            vy, submersion, ctx.headInWater, intent.move, brain.wantsJump());
+            vy, submersion, ctx.headInWater, intent.move, brain.wantsJump(),
+            bob_force);
         vy = water.vy;
         if (water.jumpConsumed) {
             brain.wantsJump() = false;

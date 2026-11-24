@@ -156,6 +156,15 @@ class MobBrain {
         return splash_cd_;
     }
 
+    // ---- Flotation bob phase (advanced while the mob floats) ----
+    // The oscillator phase of the swim rocking. It advances one step per
+    // floating tick and freezes on land, so a mob that leaves the water
+    // resumes its own rhythm when it falls back in instead of popping
+    // onto a shared beat. Diversified per mob at brain creation.
+    float& swimPhase() {
+        return swim_phase_;
+    }
+
     // ---- Sprint flag mirror (the panic pose on the client) ----
     // The 0.15.10 client renders the sprint pose and the faster leg
     // cycle for entities whose FLAGS metadata byte carries bit 3. A
@@ -234,6 +243,9 @@ class MobBrain {
     bool in_water_ = false;
     int splash_cd_ = 0;
 
+    // Flotation bob oscillator phase (radians); diversified per mob.
+    float swim_phase_ = 0.0f;
+
     // Sprint flag mirror (see the accessor above).
     bool sprint_on_ = false;
 
@@ -295,7 +307,9 @@ FacingStep resolveFacing(float body_yaw, float head_yaw, float pitch,
 /// model is a hold-band regulator instead: the mob settles where
 /// roughly half its body is submerged, gravity pulls it back under the
 /// band, the paddle lifts it from below the band, and inside the band
-/// no vertical force applies — a true floating equilibrium.
+/// the flotation bob rides — a gentle zero-mean force that rocks the
+/// body up and down over the surface instead of freezing the
+/// waterline.
 namespace water {
 
 /// @brief Reduced gravity inside water (the era reference applies the
@@ -331,6 +345,56 @@ constexpr float kWaterMaxSink = -0.15f;
 ///        out (the vanilla paddling-against-the-shore hop).
 constexpr float kWaterJumpOut = 0.30f;
 
+/// @brief Flotation bob: the gentle, continuous rocking of a body that
+///        floats half in and half out of the water. Inside the hold
+///        band the regulator applies this instead of no force at all:
+///        a zero-mean vertical force shaped like a slow sine (the body
+///        rises and falls over the surface) plus a matching pitch
+///        component the move packet renders as the rocking model.
+///        Excursions stay regulator-owned — anything beyond the band
+///        is corrected exactly as before, so equilibrium, sink
+///        recovery and the shore hop behave identically; the bob only
+///        replaces the frozen waterline inside the band.
+constexpr float kBobTwoPi = 6.2831853f;
+
+/// @brief Bob cadence: 0.35 Hz — a full rise-and-fall cycle roughly
+///        every three seconds, the pace of a relaxed float.
+constexpr float kBobHz = 0.35f;
+
+/// @brief Phase (radians) the oscillator advances per floating tick:
+///        an exact per-tick step, so the only per-tick trig a swimming
+///        mob spends is the single sine the bob itself needs.
+constexpr float kBobPhaseStep = kBobTwoPi * kBobHz / 20.0f;
+
+/// @brief Rocking amplitude of the body pitch (degrees). The wire
+///        encodes pitch as a byte (~1.4 degree resolution), so the
+///        rocking rides well above that to read on the client.
+constexpr float kBobPitchDeg = 5.0f;
+
+/// @brief Vertical bob force amplitude (blocks/tick^2). Sized so the
+///        integrated excursion under the water drag lands around a few
+///        hundredths of a block: a visible, relaxed float — never a
+///        wallow.
+constexpr float kBobForce = 0.0022f;
+
+/// @brief One flotation-bob output: the vertical force the hold band
+///        applies this tick and the body pitch offset in protocol-84
+///        degrees. Negative pitch = nose up, so a rising body noses up
+///        — the natural read of a float pushing off the surface.
+struct SwimBob {
+    float force; ///< Vertical bob acceleration for this tick.
+    float pitch; ///< Body rocking offset (degrees, positive = down).
+};
+
+/// @brief The flotation bob at @p phase (radians). Pure: one sine, so
+///        a swimming mob costs a single trig call per tick.
+SwimBob swimBob(float phase);
+
+/// @brief One oscillator step: advances the phase by kBobPhaseStep and
+///        wraps it into [0, 2*pi). Pure so the water check harness can
+///        verify the wrap and the per-tick smoothness bound.
+float bobPhaseStep(float phase);
+
 /// @brief One vertical step of the swim model. Pure so the water check
 ///        harness can verify the hold-band equilibrium, the sink
 ///        recovery and the shore hop without a World.
@@ -349,9 +413,12 @@ struct WaterVerticalStep {
 /// @param move_intent   the mob swims somewhere: strokes lift it toward
 ///                      its hold depth, never above it.
 /// @param wants_jump    shore hop requested by a bank clip.
+/// @param bob_force     the flotation-bob force for this tick, applied
+///                      inside the hold band only (outside it the
+///                      regulator force owns the body).
 WaterVerticalStep waterVerticalStep(float vy, float submersion,
                                     bool head_in_water, bool move_intent,
-                                    bool wants_jump);
+                                    bool wants_jump, float bob_force);
 
 } // namespace water
 
