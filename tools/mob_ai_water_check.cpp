@@ -1,8 +1,9 @@
-// Mob water/swim + facing + panic check: the stage-2 swim model's
-// hold-band equilibrium (half the body submerged, never riding the
-// surface), the body/head facing split, the water-aware goal gates and
-// the panic reflex — pure logic, no World, no network. Links only the
-// AI translation units, the entity registry and the RNG.
+// Mob water/swim + facing + panic + flotation-bob check: the stage-2
+// swim model's hold-band equilibrium (half the body submerged, never
+// riding the surface), the flotation bob that rocks the floater over
+// the waterline, the body/head facing split, the water-aware goal
+// gates and the panic reflex — pure logic, no World, no network.
+// Links only the AI translation units, the entity registry and the RNG.
 //
 //   g++ -std=c++20 -Isrc tools/mob_ai_water_check.cpp \
 //       src/entity/ai/MobAI.cpp src/entity/ai/Goals.cpp \
@@ -45,7 +46,7 @@ static float simulateFloat(float start_submersion, float body_height,
         const float submersion = -y / height;
         const bool head_in_water = (-y + height * 0.85f) < 0.0f;
         vy = water::waterVerticalStep(vy, submersion, head_in_water,
-                                      move_intent, false).vy;
+                                      move_intent, false, 0.0f).vy;
         y += vy;
     }
     return -y / height;
@@ -102,19 +103,100 @@ int main() {
     // No runaway: the integrated motion never exceeds the clamps.
     float vy = -3.0f;
     for (int i = 0; i < 400; ++i)
-        vy = water::waterVerticalStep(vy, 0.9f, false, false, false).vy;
+        vy = water::waterVerticalStep(vy, 0.9f, false, false, false, 0.0f).vy;
     check(vy >= water::kWaterMaxSink - 1e-6f && vy <= water::kWaterMaxRise + 1e-6f,
           "integrated motion stays inside the rise/sink clamps");
 
+    // ---- 2b. Flotation bob: the swim rocking. The band interior no
+    // longer freezes the waterline: a zero-mean sine force rocks the
+    // body up and down around the hold depth (half in, half out),
+    // while the regulator still owns the band edges.
+    {
+        // Signs: rising (phase 1/4 cycle) pushes up and noses the body
+        // up (negative protocol pitch = look up); sinking (3/4 cycle)
+        // does the opposite. Neutral at phase 0.
+        const water::SwimBob b0 = water::swimBob(0.0f);
+        check(near(b0.force, 0.0f) && near(b0.pitch, 0.0f),
+              "bob is neutral at phase 0");
+        const water::SwimBob br =
+            water::swimBob(water::kBobTwoPi * 0.25f);
+        check(br.force > 0.0f && br.pitch < 0.0f,
+              "rising bob pushes up and noses up");
+        const water::SwimBob bs =
+            water::swimBob(water::kBobTwoPi * 0.75f);
+        check(bs.force < 0.0f && bs.pitch > 0.0f,
+              "sinking bob pulls down and noses down");
+
+        // Bounded and smooth: the rocking pitch never exceeds its
+        // amplitude and never jumps more than one per-tick step.
+        float phase = 0.0f;
+        float prev_pitch = water::swimBob(phase).pitch;
+        float worst_pitch = 0.0f;
+        float worst_step = 0.0f;
+        for (int i = 0; i < 800; ++i) {
+            phase = water::bobPhaseStep(phase);
+            const float p = water::swimBob(phase).pitch;
+            worst_pitch = std::fmax(worst_pitch, std::fabs(p));
+            worst_step = std::fmax(worst_step, std::fabs(p - prev_pitch));
+            prev_pitch = p;
+        }
+        check(worst_pitch <= water::kBobPitchDeg + 1e-4f,
+              "rocking pitch stays inside its amplitude");
+        check(worst_step <= water::kBobPitchDeg * water::kBobPhaseStep + 1e-5f,
+              "rocking pitch advances smoothly (no snaps)");
+        check(worst_step > 1e-4f, "rocking pitch actually moves");
+
+        // Phase wrap: the oscillator stays in [0, 2*pi) forever.
+        float p2 = water::kBobTwoPi - water::kBobPhaseStep * 0.5f;
+        for (int i = 0; i < 3; ++i)
+            p2 = water::bobPhaseStep(p2);
+        check(p2 >= 0.0f && p2 < water::kBobTwoPi,
+              "bob phase wraps into [0, 2pi)");
+
+        // Floating equilibrium WITH the bob: start at rest on the hold
+        // depth, drive the same loop the actuation pass runs (advance
+        // phase, take the bob force, integrate). The body must visibly
+        // ride above and below the hold depth, stay inside the band
+        // envelope, and not drift away over time.
+        const float height = std::max(cow.height, 0.1f);
+        float y = -water::kSubmergeTarget * height; // hold depth
+        float bvy = 0.0f;
+        float bphase = 0.0f;
+        float lo = 1e9f, hi = -1e9f;
+        for (int i = 0; i < 600; ++i) {
+            bphase = water::bobPhaseStep(bphase);
+            const float sub = -y / height;
+            const bool head_wet = (-y + height * 0.85f) < 0.0f;
+            bvy = water::waterVerticalStep(bvy, sub, head_wet, false,
+                                           false,
+                                           water::swimBob(bphase).force).vy;
+            y += bvy;
+            if (i >= 120) { // measure the settled window
+                const float s = -y / height;
+                lo = std::fmin(lo, s);
+                hi = std::fmax(hi, s);
+            }
+        }
+        check(lo > cow_band_lo - 0.05f && hi < cow_band_hi + 0.05f,
+              "bobbed floater stays inside the hold band envelope");
+        printf("      (bobbed envelope: %.3f .. %.3f submersion, "
+               "%.3f blocks peak-to-peak)\n",
+               lo, hi, (hi - lo) * height);
+        check(hi - lo > 0.02f, "bobbed floater visibly rises and falls");
+        check(lo < water::kSubmergeTarget && hi > water::kSubmergeTarget,
+              "bob straddles the hold depth (half in, half out)");
+    }
+
     // ---- 3. Shore exit: the pending jump becomes the hop ----
     water::WaterVerticalStep s =
-        water::waterVerticalStep(-0.10f, 0.6f, false, true, true);
+        water::waterVerticalStep(-0.10f, 0.6f, false, true, true, 0.0f);
     check(near(s.vy, water::kWaterJumpOut),
           "shore hop uses kWaterJumpOut");
     check(s.jumpConsumed, "shore hop consumes the pending jump");
 
     // Head under water forces the paddle even in the hold band.
-    s = water::waterVerticalStep(0.0f, water::kSubmergeTarget, true, false, false);
+    s = water::waterVerticalStep(0.0f, water::kSubmergeTarget, true, false,
+                                 false, 0.0f);
     check(s.vy > 0.0f, "wet head paddles up from rest");
 
     // ---- 4. Facing: body tracks travel, head tracks the look target ----
