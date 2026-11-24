@@ -357,9 +357,9 @@ constexpr float kWaterJumpOut = 0.30f;
 ///        replaces the frozen waterline inside the band.
 constexpr float kBobTwoPi = 6.2831853f;
 
-/// @brief Bob cadence: 0.35 Hz — a full rise-and-fall cycle roughly
-///        every three seconds, the pace of a relaxed float.
-constexpr float kBobHz = 0.35f;
+/// @brief Bob cadence: 0.5 Hz — a full rise-and-fall cycle every two
+///        seconds, the lively pace of a vanilla-style float.
+constexpr float kBobHz = 0.5f;
 
 /// @brief Phase (radians) the oscillator advances per floating tick:
 ///        an exact per-tick step, so the only per-tick trig a swimming
@@ -368,14 +368,15 @@ constexpr float kBobPhaseStep = kBobTwoPi * kBobHz / 20.0f;
 
 /// @brief Rocking amplitude of the body pitch (degrees). The wire
 ///        encodes pitch as a byte (~1.4 degree resolution), so the
-///        rocking rides well above that to read on the client.
-constexpr float kBobPitchDeg = 5.0f;
+///        rocking rides well above that to read on the client — 8
+///        degrees gives the nose a clear vanilla-like dip and lift.
+constexpr float kBobPitchDeg = 8.0f;
 
 /// @brief Vertical bob force amplitude (blocks/tick^2). Sized so the
 ///        integrated excursion under the water drag lands around a few
-///        hundredths of a block: a visible, relaxed float — never a
-///        wallow.
-constexpr float kBobForce = 0.0022f;
+///        hundredths of a block: a clearly visible float with a firm
+///        rise-and-fall — never a wallow.
+constexpr float kBobForce = 0.005f;
 
 /// @brief One flotation-bob output: the vertical force the hold band
 ///        applies this tick and the body pitch offset in protocol-84
