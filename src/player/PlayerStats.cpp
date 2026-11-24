@@ -29,6 +29,9 @@
 #include "network/protocol/EntityEventPacket.h"
 #include "network/protocol/SetEntityDataPacket.h"
 #include "event/entity/EntityDamageEvent.h"
+#include "event/EventManager.h"
+#include "event/player/PlayerExhaustEvent.h"
+#include "event/player/PlayerHungerChangeEvent.h"
 #include "world/particle/GenericParticle.h"
 #include "world/particle/ParticleFamily.h"
 #include <algorithm>
@@ -178,9 +181,26 @@ void Player::extinguishFire() {
 }
 
 // Accumulate exhaustion and drain saturation before food, except on Peaceful difficulty.
-void Player::addExhaustion(float amount) {
+// Every increment goes through PlayerExhaustEvent first: listeners may
+// rewrite the amount (validated to a finite, non-negative value) or
+// cancel the whole increment. Nested calls — a listener touching hunger
+// while the event dispatches — apply silently through the re-entrancy
+// guard so a callback can never recurse into another dispatch.
+void Player::addExhaustion(float amount, int32_t cause) {
     if (amount <= 0.0f)
         return;
+    if (mechanic_event_depth_ == 0) {
+        ++mechanic_event_depth_;
+        auto ev = event::EventManager::get().fire<event::player::PlayerExhaustEvent>(this,
+                                                                                      amount,
+                                                                                      cause);
+        --mechanic_event_depth_;
+        if (ev.isCancelled())
+            return;
+        amount = ev.amount();
+        if (!std::isfinite(amount) || amount <= 0.0f)
+            return;
+    }
     food_exhaustion_ += amount;
     if (srv_ && srv_->difficulty() >= 1) {
         while (food_exhaustion_ >= 4.0f) {
@@ -189,13 +209,32 @@ void Player::addExhaustion(float amount) {
                 food_saturation_ = std::max(0.0f, food_saturation_ - 1.0f);
             } else {
                 int h = foodLevel();
-                setFoodLevel(h > 0 ? h - 1 : 0);
+                setFoodLevel(h > 0 ? h - 1 : 0, event::player::HungerChangeReason::EXHAUSTION);
             }
         }
     }
     // Clamp the displayed value without discarding accumulated exhaustion.
     food_exhaustion_ = std::min(5.0f, food_exhaustion_);
     food_attrs_dirty_ = true;
+}
+
+// Apply a food level change through PlayerHungerChangeEvent. The event
+// runs before the value moves; listeners may rewrite the new level
+// (clamped to the protocol's 0..20 range) or cancel to keep the old one.
+// While the event dispatches, nested setFoodLevel calls from listener
+// side-effects apply directly — no nested dispatch, no loops.
+void Player::setFoodLevel(int f, event::player::HungerChangeReason reason) {
+    int target = f;
+    if (mechanic_event_depth_ == 0) {
+        ++mechanic_event_depth_;
+        auto ev = event::EventManager::get().fire<event::player::PlayerHungerChangeEvent>(
+            this, foodLevel(), target, reason);
+        --mechanic_event_depth_;
+        if (ev.isCancelled())
+            return;
+        target = std::clamp(ev.getNewLevel(), 0, 20);
+    }
+    entity::Human::setFoodLevel(target);
 }
 
 // Create a protocol 84 effect packet for the specified entity and event.
@@ -364,14 +403,15 @@ void Player::onEffectRemoved(const entity::Effect& e) {
 
 // Hunger drains 0.005 exhaustion per effect level each tick.
 void Player::onHungerEffectTick(int amplifier) {
-    addExhaustion(0.1f * (amplifier + 1));
+    addExhaustion(0.1f * (amplifier + 1), event::player::PlayerExhaustEvent::CAUSE_POTION);
 }
 
 // Restore one food point and one saturation point per effect interval.
 void Player::onSaturationEffectTick(int amplifier) {
     (void)amplifier;
     food_saturation_ = std::min(20.0f, food_saturation_ + 1.0f);
-    setFoodLevel(std::min(20, foodLevel() + 1));
+    setFoodLevel(std::min(20, foodLevel() + 1),
+                 event::player::HungerChangeReason::SATURATION_EFFECT);
     food_attrs_dirty_ = true;
 }
 
@@ -611,15 +651,18 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
         // Movement exhaustion: sprinting costs 0.1 per meter; swimming costs 0.01.
         if (moved_this_tick_ && tick_move_dist_ > 0.0f) {
             if (sprinting_)
-                addExhaustion(0.1f * tick_move_dist_);
+                addExhaustion(0.1f * tick_move_dist_,
+                              event::player::PlayerExhaustEvent::CAUSE_WALKING |
+                                  event::player::PlayerExhaustEvent::CAUSE_FLAG_SPRINT);
             else if (in_water)
-                addExhaustion(0.01f * tick_move_dist_);
+                addExhaustion(0.01f * tick_move_dist_,
+                              event::player::PlayerExhaustEvent::CAUSE_SWIMMING);
         }
         // Regenerate one health point every four seconds when food is at least 18.
         if (foodLevel() >= 18 && health() < maxHealth() && now_ms - last_regen_ms_ >= 4000) {
             last_regen_ms_ = now_ms;
             heal(1.0f);
-            addExhaustion(3.0f);
+            addExhaustion(3.0f, event::player::PlayerExhaustEvent::CAUSE_HEALTH_REGEN);
             sendAllAttributes();
             food_attrs_dirty_ = false;
         }
@@ -639,7 +682,7 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
     } else {
         // Creative mode keeps food full and disables hunger drain and starvation.
         if (foodLevel() != 20) {
-            setFoodLevel(20);
+            setFoodLevel(20, event::player::HungerChangeReason::CREATIVE_SYNC);
             sendFoodLevel();
             food_attrs_dirty_ = false;
         }
