@@ -241,17 +241,32 @@ instead of stuttering. One `[MOB AI]` diagnostics line per 200 ticks
 reports records, live brains, actuations, thinks and budget cuts — the
 real numbers, not estimates.
 
-### The swim model (hold-band regulator)
+### The swim model (hold-band regulator + flotation bob)
 
 The stage-1 loop integrated every floater up to the surface (mobs
 riding ON the water). Stage 2 is a regulator: inside the hold band
-(55% ± 7% of the body height under the rendered waterline) no vertical
-force applies; below it the paddle lifts; above it water gravity sinks
-the body back. A swimming mob strokes toward the hold depth, never
-above it — it crosses chest-deep, its head clear for every species
-(profile heights). Shallow fords (water shallower than the hold depth)
-are WALKED, with the era water slowdown on the stride; the shore hop
-still climbs banks.
+(55% ± 7% of the body height under the rendered waterline) no net
+regulator force applies; below it the paddle lifts; above it water
+gravity sinks the body back. A swimming mob strokes toward the hold
+depth, never above it — it crosses chest-deep, its head clear for every
+species (profile heights). Shallow fords (water shallower than the hold
+depth) are WALKED, with the era water slowdown on the stride; the shore
+hop still climbs banks.
+
+The flotation bob replaces the frozen waterline inside the band. A
+per-mob oscillator (phase spread over a full cycle from the identity
+seed at brain creation, advanced one step per floating tick, frozen on
+land) drives a zero-mean vertical force (`water::swimBob`, one sine per
+swimming mob per tick) that rocks the body up and down over the surface
+— measured envelope 0.50..0.61 submersion for a cow, ~0.14 blocks
+peak-to-peak at 0.35 Hz — plus a ±5° pitch component that rides the
+move packet's pitch channel: a rising body noses up, a sinking body
+noses down, so the float reads as a natural rocking instead of a
+suspended statue. The excursions stay regulator-owned (anything beyond
+the band is corrected exactly as before), each mob rocks on its own
+beat (no synchronized herd wave), and equilibrium, sink recovery and
+the shore hop are unchanged — `tools/mob_ai_water_check.cpp` verifies
+the envelope, the smoothness bound, the straddle and the phase wrap.
 
 ### Steering
 
