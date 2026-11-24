@@ -349,6 +349,13 @@ class World {
     bool setFurnaceFlame(int32_t x, int32_t y, int32_t z, bool lit);
 
     // Checks chunk loading without triggering generation.
+    //
+    // BLOCK coordinates: (x, z) are world cell positions and the owning
+    // chunk is derived here (x >> 4). Chunk-coordinate residency probes
+    // go through chunks().getChunkIfLoaded(cx, cz) instead — passing
+    // chunk coords here shifts them a second time and silently probes
+    // the wrong chunk (this froze the mob AI past 256 blocks of the
+    // world origin once; see MobAIManager::actuateOne).
     bool isChunkLoaded(int32_t x, int32_t z) {
         return chunks_.getChunkIfLoaded(x >> 4, z >> 4) != nullptr;
     }

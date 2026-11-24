@@ -3529,23 +3529,26 @@ void World::tickFallingBlocks(uint64_t current_tick) {
             sendRemoveEntity(this, fb->eid);
 
             // --- Convert back into a block ----------------------------
+            // Vanilla FallingBlock landing rules: the body places itself
+            // only into AIR (or over a snow layer, which it crushes);
+            // any other occupied cell — a liquid pool included — kills
+            // the body and spills the block as an item entity, which
+            // burns away instantly in lava. The old shape treated a
+            // liquid cell as placeable and REPLACED the puddle's water
+            // or lava with the block, deleting a liquid source and
+            // leaving a sand block floating inside the pool.
             bool chunkOk =
                 (cy >= 0 && cy < 256) && (chunks_.getChunkIfLoaded(cx >> 4, cz >> 4) != nullptr);
             if (chunkOk) {
                 uint8_t cellId = getBlockId(cx, cy, cz);
-                if (cellId == block::SNOW_LAYER) {
+                if (cellId == block::AIR || cellId == block::SNOW_LAYER) {
                     setBlock(cx, cy, cz, fb->blockId, fb->blockData);
                     sendUpdateBlock(this, cx, cy, cz, fb->blockId, fb->blockData);
-                    if (fb->blockId == block::ANVIL)
-                        anvilLandingEffects(this, cx, cy, cz, fb->fall_distance);
-                } else if (cellId > 0 && !dropBlockSolid(cellId) && !liquidForFalling(cellId)) {
-                    dropItemAt(fb->x, fb->y, fb->z, (uint16_t)fb->blockId, 1,
-                               (uint16_t)fb->blockData);
                     if (fb->blockId == block::ANVIL)
                         anvilLandingEffects(this, cx, cy, cz, fb->fall_distance);
                 } else {
-                    setBlock(cx, cy, cz, fb->blockId, fb->blockData);
-                    sendUpdateBlock(this, cx, cy, cz, fb->blockId, fb->blockData);
+                    dropItemAt(fb->x, fb->y, fb->z, (uint16_t)fb->blockId, 1,
+                               (uint16_t)fb->blockData);
                     if (fb->blockId == block::ANVIL)
                         anvilLandingEffects(this, cx, cy, cz, fb->fall_distance);
                 }

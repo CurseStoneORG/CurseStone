@@ -845,7 +845,10 @@ bool api_world_spawnLightning(const char* world, double x, double y, double z, b
 }
 bool api_world_isChunkLoaded(const char* world, int32_t cx, int32_t cz) {
     World* w = findLoadedWorld(world);
-    return w && w->isChunkLoaded(cx, cz);
+    // The contract (docs/PLUGINS.md) is chunk coordinates: resolve the
+    // residency directly. World::isChunkLoaded would shift the values
+    // again — it is a block-coordinate probe.
+    return w && w->chunks().getChunkIfLoaded(cx, cz) != nullptr;
 }
 bool api_world_save(const char* world) {
     World* w = findLoadedWorld(world);
