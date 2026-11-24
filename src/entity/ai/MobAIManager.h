@@ -148,6 +148,9 @@ class MobAIManager {
     // did and how often the budget cut it short). ----
     uint64_t stat_actuated_ = 0;
     uint64_t stat_thinks_ = 0;
+    uint64_t stat_moves_ = 0;       ///< Actuations that carried a move intent.
+    uint64_t stat_mob_moved_ = 0;   ///< Accepted moveMob broadcasts.
+    uint64_t stat_mob_refused_ = 0; ///< moveMob refusals.
     uint64_t stat_budget_stops_ = 0;
     uint64_t stat_window_tick_ = 0;
 };

@@ -425,18 +425,24 @@ void MobAIManager::tick(uint64_t current_tick) {
     const auto log_stats = [this, &pass_start](uint64_t now) {
         if (now % kBrainGCInterval != 0)
             return;
-        char line[192];
+        char line[256];
         std::snprintf(line, sizeof(line),
                       "[MOB AI] records=%zu brains=%zu actuated=%llu thinks=%llu "
-                      "budget_cuts=%llu chunks=%zu",
+                      "moves=%llu mobmoved=%llu mobrefused=%llu budget_cuts=%llu chunks=%zu",
                       world_->mobCount(), brains_.size(),
                       (unsigned long long)stat_actuated_,
                       (unsigned long long)stat_thinks_,
+                      (unsigned long long)stat_moves_,
+                      (unsigned long long)stat_mob_moved_,
+                      (unsigned long long)stat_mob_refused_,
                       (unsigned long long)stat_budget_stops_,
                       active_keys_.size());
         utils::MainLogger::get().info(line);
         stat_actuated_ = 0;
         stat_thinks_ = 0;
+        stat_moves_ = 0;
+        stat_mob_moved_ = 0;
+        stat_mob_refused_ = 0;
         stat_budget_stops_ = 0;
         stat_window_tick_ = now;
     };
@@ -514,6 +520,8 @@ void MobAIManager::tick(uint64_t current_tick) {
                 thinkOne(brain, ctx);
                 ++stat_thinks_;
             }
+            if (brain.intent().move)
+                ++stat_moves_;
             actuateOne(*m, brain, ctx, current_tick);
             ++stat_actuated_;
 
@@ -541,7 +549,14 @@ void MobAIManager::actuateOne(world::MobEntity& m, MobBrain& brain,
     // can sit in a chunk a viewer already left — this guard keeps
     // physics on resident chunks only (the same rule world.setBlock
     // follows).
-    if (!world_->isChunkLoaded(m.cx, m.cz))
+    // Resident terrain only: a mob whose chunk a viewer already left
+    // must not sweep against air and fall through the world (the same
+    // rule world.setBlock follows). The record's (cx, cz) are CHUNK
+    // coordinates — the residency probe takes them directly; routing
+    // them through World::isChunkLoaded (a block-coordinate API) would
+    // shift them again and silently freeze every mob beyond 256 blocks
+    // of the world origin.
+    if (world_->chunks().getChunkIfLoaded(m.cx, m.cz) == nullptr)
         return;
     if (m.y < 0.0)
         return; // Void: nothing below to integrate against.
@@ -645,6 +660,7 @@ void MobAIManager::actuateOne(world::MobEntity& m, MobBrain& brain,
         if (turned) {
             if (world_->moveMob(m.eid, m.x, m.y, m.z, facing.bodyYaw,
                                 facing.pitch, facing.headYaw)) {
+                ++stat_mob_moved_;
                 bc.x = m.x;
                 bc.y = m.y;
                 bc.z = m.z;
@@ -652,6 +668,7 @@ void MobAIManager::actuateOne(world::MobEntity& m, MobBrain& brain,
                 bc.head_yaw = facing.headYaw;
                 bc.pitch = facing.pitch;
             } else {
+                ++stat_mob_refused_;
                 bc.valid = false;
             }
         }
@@ -752,6 +769,7 @@ void MobAIManager::actuateOne(world::MobEntity& m, MobBrain& brain,
     if (moved || turned) {
         if (world_->moveMob(m.eid, nx, ny, nz, facing.bodyYaw,
                             facing.pitch, facing.headYaw)) {
+            ++stat_mob_moved_;
             bc.valid = true;
             bc.x = nx;
             bc.y = ny;
@@ -760,6 +778,7 @@ void MobAIManager::actuateOne(world::MobEntity& m, MobBrain& brain,
             bc.head_yaw = facing.headYaw;
             bc.pitch = facing.pitch;
         } else {
+            ++stat_mob_refused_;
             bc.valid = false; // Out-of-height move refused; re-sync next tick.
         }
     }
