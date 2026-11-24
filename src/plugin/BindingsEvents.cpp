@@ -72,6 +72,16 @@
 #include "event/player/PlayerMoveEvent.h"
 #include "event/player/PlayerDropItemEvent.h"
 #include "event/player/PlayerItemHeldEvent.h"
+#include "event/player/PlayerExhaustEvent.h"
+#include "event/player/PlayerHungerChangeEvent.h"
+#include "event/player/PlayerToggleSneakEvent.h"
+#include "event/player/PlayerToggleSprintEvent.h"
+#include "event/player/PlayerPreLoginEvent.h"
+#include "event/player/PlayerBucketEvent.h"
+#include "event/player/PlayerBucketFillEvent.h"
+#include "event/player/PlayerGamemodeChangeEvent.h"
+#include "event/player/PlayerCreationEvent.h"
+#include "event/player/PlayerAnimationEvent.h"
 #include "event/block/BlockBreakEvent.h"
 #include "event/block/BlockPlaceEvent.h"
 #include "event/block/DoorToggleEvent.h"
@@ -467,6 +477,156 @@ int l_events_on(lua_State* L) {
             lua_setfield(L, eIdx, "slot");
         };
         hook<event::player::PlayerItemHeldEvent>(pl, ref, f, {});
+    } else if (name == "PlayerExhaust") {
+        // Fired before exhaustion is applied (cancellable). e.amount is
+        // writable: the surviving value is what the accumulator receives.
+        auto f = [](lua_State* L, int eIdx, event::player::PlayerExhaustEvent& ev) {
+            lua_pushstring(L, ev.player ? ev.player->getName().c_str() : "");
+            lua_setfield(L, eIdx, "player");
+            lua_pushnumber(L, (lua_Number)ev.amount());
+            lua_setfield(L, eIdx, "amount");
+            lua_pushstring(L, event::player::PlayerExhaustEvent::causeName(ev.cause()).c_str());
+            lua_setfield(L, eIdx, "cause");
+        };
+        auto rb = [](lua_State* L, int eIdx, event::player::PlayerExhaustEvent& ev) {
+            lua_getfield(L, eIdx, "amount");
+            if (lua_isnumber(L, -1))
+                ev.setAmount((float)lua_tonumber(L, -1));
+            lua_pop(L, 1);
+        };
+        hook<event::player::PlayerExhaustEvent>(pl, ref, f, rb);
+    } else if (name == "PlayerHungerChange") {
+        // Fired before the food level moves (cancellable). e.new_level is
+        // writable; the caller clamps it into the 0..20 protocol range.
+        auto f = [](lua_State* L, int eIdx, event::player::PlayerHungerChangeEvent& ev) {
+            lua_pushstring(L, ev.player ? ev.player->getName().c_str() : "");
+            lua_setfield(L, eIdx, "player");
+            lua_pushinteger(L, (lua_Integer)ev.getOldLevel());
+            lua_setfield(L, eIdx, "old_level");
+            lua_pushinteger(L, (lua_Integer)ev.getNewLevel());
+            lua_setfield(L, eIdx, "new_level");
+            lua_pushstring(L, event::player::PlayerHungerChangeEvent::reasonName(ev.reason()));
+            lua_setfield(L, eIdx, "reason");
+        };
+        auto rb = [](lua_State* L, int eIdx, event::player::PlayerHungerChangeEvent& ev) {
+            lua_getfield(L, eIdx, "new_level");
+            if (lua_isnumber(L, -1))
+                ev.setNewLevel((int32_t)lua_tointeger(L, -1));
+            lua_pop(L, 1);
+        };
+        hook<event::player::PlayerHungerChangeEvent>(pl, ref, f, rb);
+    } else if (name == "PlayerToggleSneak") {
+        // Fired before the sneak pose changes (cancellable).
+        auto f = [](lua_State* L, int eIdx, event::player::PlayerToggleSneakEvent& ev) {
+            lua_pushstring(L, ev.player ? ev.player->getName().c_str() : "");
+            lua_setfield(L, eIdx, "player");
+            lua_pushboolean(L, ev.isSneaking() ? 1 : 0);
+            lua_setfield(L, eIdx, "sneaking");
+        };
+        hook<event::player::PlayerToggleSneakEvent>(pl, ref, f, {});
+    } else if (name == "PlayerToggleSprint") {
+        // Fired before the sprint flag changes (cancellable).
+        auto f = [](lua_State* L, int eIdx, event::player::PlayerToggleSprintEvent& ev) {
+            lua_pushstring(L, ev.player ? ev.player->getName().c_str() : "");
+            lua_setfield(L, eIdx, "player");
+            lua_pushboolean(L, ev.isSprinting() ? 1 : 0);
+            lua_setfield(L, eIdx, "sprinting");
+        };
+        hook<event::player::PlayerToggleSprintEvent>(pl, ref, f, {});
+    } else if (name == "PlayerAnimation") {
+        // Fired on a client animation packet (cancellable; stops the relay
+        // to other viewers only — combat is untouched).
+        auto f = [](lua_State* L, int eIdx, event::player::PlayerAnimationEvent& ev) {
+            lua_pushstring(L, ev.player ? ev.player->getName().c_str() : "");
+            lua_setfield(L, eIdx, "player");
+            lua_pushinteger(L, (lua_Integer)ev.animationId());
+            lua_setfield(L, eIdx, "animation");
+            lua_pushstring(L, event::player::PlayerAnimationEvent::animationName(ev.animationId()));
+            lua_setfield(L, eIdx, "action");
+        };
+        hook<event::player::PlayerAnimationEvent>(pl, ref, f, {});
+    } else if (name == "PlayerPreLogin") {
+        // Fired mid-handshake, before whitelist/bans/data load (cancellable).
+        // e.message is the writable kick message for a rejected connection.
+        auto f = [](lua_State* L, int eIdx, event::player::PlayerPreLoginEvent& ev) {
+            lua_pushstring(L, ev.player ? ev.player->getName().c_str() : "");
+            lua_setfield(L, eIdx, "player");
+            lua_pushstring(L, ev.ip().c_str());
+            lua_setfield(L, eIdx, "ip");
+            lua_pushinteger(L, (lua_Integer)ev.port());
+            lua_setfield(L, eIdx, "port");
+            lua_pushstring(L, ev.clientId().c_str());
+            lua_setfield(L, eIdx, "client_id");
+            lua_pushstring(L, ev.kickMessage().c_str());
+            lua_setfield(L, eIdx, "message");
+        };
+        auto rb = [](lua_State* L, int eIdx, event::player::PlayerPreLoginEvent& ev) {
+            lua_getfield(L, eIdx, "message");
+            if (const char* s = lua_tostring(L, -1))
+                ev.setKickMessage(s);
+            lua_pop(L, 1);
+        };
+        hook<event::player::PlayerPreLoginEvent>(pl, ref, f, rb);
+    } else if (name == "PlayerGamemodeChange") {
+        // Fired before a game mode switch lands (cancellable).
+        auto f = [](lua_State* L, int eIdx, event::player::PlayerGamemodeChangeEvent& ev) {
+            lua_pushstring(L, ev.player ? ev.player->getName().c_str() : "");
+            lua_setfield(L, eIdx, "player");
+            lua_pushinteger(L, (lua_Integer)ev.getOldGamemode());
+            lua_setfield(L, eIdx, "old_gamemode");
+            lua_pushinteger(L, (lua_Integer)ev.getNewGamemode());
+            lua_setfield(L, eIdx, "new_gamemode");
+        };
+        hook<event::player::PlayerGamemodeChangeEvent>(pl, ref, f, {});
+    } else if (name == "PlayerCreation") {
+        // Fired right before a Player object is built for a fresh session.
+        // Observational from Lua; custom player classes are a C++-side
+        // factory (see docs/EVENTS.md). Not cancellable.
+        auto f = [](lua_State* L, int eIdx, event::player::PlayerCreationEvent& ev) {
+            lua_pushstring(L, "");
+            lua_setfield(L, eIdx, "player");
+            lua_pushstring(L, ev.ip().c_str());
+            lua_setfield(L, eIdx, "ip");
+            lua_pushinteger(L, (lua_Integer)ev.port());
+            lua_setfield(L, eIdx, "port");
+        };
+        hook<event::player::PlayerCreationEvent>(pl, ref, f, {});
+    } else if (name == "PlayerBucket") {
+        // Fired before a filled bucket pours its liquid (cancellable).
+        auto f = [](lua_State* L, int eIdx, event::player::PlayerBucketEvent& ev) {
+            lua_pushstring(L, ev.player ? ev.player->getName().c_str() : "");
+            lua_setfield(L, eIdx, "player");
+            fillItemStack(L, eIdx, "bucket", ev.getBucket());
+            lua_pushinteger(L, (lua_Integer)ev.getLiquidId());
+            lua_setfield(L, eIdx, "liquid_id");
+            lua_pushnumber(L, (lua_Number)ev.getBlockX());
+            lua_setfield(L, eIdx, "x");
+            lua_pushnumber(L, (lua_Number)ev.getBlockY());
+            lua_setfield(L, eIdx, "y");
+            lua_pushnumber(L, (lua_Number)ev.getBlockZ());
+            lua_setfield(L, eIdx, "z");
+            lua_pushstring(L, "pour");
+            lua_setfield(L, eIdx, "action");
+        };
+        hook<event::player::PlayerBucketEvent>(pl, ref, f, {});
+    } else if (name == "PlayerBucketFill") {
+        // Fired before an empty bucket scoops a liquid source (cancellable).
+        auto f = [](lua_State* L, int eIdx, event::player::PlayerBucketFillEvent& ev) {
+            lua_pushstring(L, ev.player ? ev.player->getName().c_str() : "");
+            lua_setfield(L, eIdx, "player");
+            fillItemStack(L, eIdx, "bucket", ev.getBucket());
+            lua_pushinteger(L, (lua_Integer)ev.getLiquidId());
+            lua_setfield(L, eIdx, "liquid_id");
+            lua_pushnumber(L, (lua_Number)ev.getBlockX());
+            lua_setfield(L, eIdx, "x");
+            lua_pushnumber(L, (lua_Number)ev.getBlockY());
+            lua_setfield(L, eIdx, "y");
+            lua_pushnumber(L, (lua_Number)ev.getBlockZ());
+            lua_setfield(L, eIdx, "z");
+            lua_pushstring(L, "fill");
+            lua_setfield(L, eIdx, "action");
+        };
+        hook<event::player::PlayerBucketFillEvent>(pl, ref, f, {});
     } else if (name == "InventoryOpen") {
         // Fired when a player opens a chest/furnace window (cancellable).
         auto f = [](lua_State* L, int eIdx, event::inventory::InventoryOpenEvent& ev) {

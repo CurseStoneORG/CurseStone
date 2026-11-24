@@ -55,6 +55,16 @@
 #include "event/player/PlayerChatEvent.h"
 #include "event/player/PlayerDeathEvent.h"
 #include "event/player/PlayerDropItemEvent.h"
+#include "event/player/PlayerExhaustEvent.h"
+#include "event/player/PlayerHungerChangeEvent.h"
+#include "event/player/PlayerToggleSneakEvent.h"
+#include "event/player/PlayerToggleSprintEvent.h"
+#include "event/player/PlayerPreLoginEvent.h"
+#include "event/player/PlayerBucketEvent.h"
+#include "event/player/PlayerBucketFillEvent.h"
+#include "event/player/PlayerGamemodeChangeEvent.h"
+#include "event/player/PlayerCreationEvent.h"
+#include "event/player/PlayerAnimationEvent.h"
 #include "event/player/PlayerInteractEvent.h"
 #include "event/player/PlayerItemHeldEvent.h"
 #include "event/player/PlayerJoinEvent.h"
@@ -1501,6 +1511,135 @@ bool api_events_on(CsPluginApi* api, const char* eventName, CsEventFn fn, void* 
     } else if (n == "PlayerBedLeave") {
         listenNativeEvent<event::player::PlayerBedLeaveEvent>(
             pl, eventName, fn, ud, fillPosOf<event::player::PlayerBedLeaveEvent>);
+    } else if (n == "PlayerExhaust") {
+        // Fired before exhaustion is applied (cancellable). aux1 carries the
+        // raw cause word and `cause` its readable name; `amount` is the
+        // writable exhaustion increment the accumulator will receive.
+        auto fill = [](CsEvent* ev, event::player::PlayerExhaustEvent& e, EventScratch& s) {
+            fillPlayerOf(ev, e, s);
+            ev->amount = e.amount();
+            ev->aux1 = e.cause();
+            s.entityType = event::player::PlayerExhaustEvent::causeName(e.cause());
+            ev->cause = s.entityType.c_str();
+        };
+        auto readBack = [](CsEvent* ev, event::player::PlayerExhaustEvent* e) {
+            if (ev->amount > 0)
+                e->setAmount((float)ev->amount);
+        };
+        listenNativeEvent<event::player::PlayerExhaustEvent>(pl, eventName, fn, ud, +fill,
+                                                             +readBack);
+    } else if (n == "PlayerHungerChange") {
+        // Fired before the food level moves (cancellable). aux1/aux2 carry
+        // old/new level; `amount` mirrors the new level and is writable
+        // (clamped by the caller into the protocol range).
+        auto fill = [](CsEvent* ev, event::player::PlayerHungerChangeEvent& e, EventScratch& s) {
+            fillPlayerOf(ev, e, s);
+            ev->aux1 = e.getOldLevel();
+            ev->aux2 = e.getNewLevel();
+            ev->amount = (double)e.getNewLevel();
+            s.entityType = event::player::PlayerHungerChangeEvent::reasonName(e.reason());
+            ev->cause = s.entityType.c_str();
+        };
+        auto readBack = [](CsEvent* ev, event::player::PlayerHungerChangeEvent* e) {
+            if (ev->amount >= 0 && ev->amount <= 20)
+                e->setNewLevel((int32_t)ev->amount);
+        };
+        listenNativeEvent<event::player::PlayerHungerChangeEvent>(pl, eventName, fn, ud, +fill,
+                                                                  +readBack);
+    } else if (n == "PlayerToggleSneak") {
+        // Cancellable. aux1 = new state (1 starting, 0 stopping).
+        auto fill = [](CsEvent* ev, event::player::PlayerToggleSneakEvent& e, EventScratch& s) {
+            fillPlayerOf(ev, e, s);
+            ev->aux1 = e.isSneaking() ? 1 : 0;
+            s.action = e.isSneaking() ? "start" : "stop";
+            ev->action = s.action.c_str();
+        };
+        listenNativeEvent<event::player::PlayerToggleSneakEvent>(pl, eventName, fn, ud, +fill);
+    } else if (n == "PlayerToggleSprint") {
+        // Cancellable. aux1 = new state (1 starting, 0 stopping).
+        auto fill = [](CsEvent* ev, event::player::PlayerToggleSprintEvent& e, EventScratch& s) {
+            fillPlayerOf(ev, e, s);
+            ev->aux1 = e.isSprinting() ? 1 : 0;
+            s.action = e.isSprinting() ? "start" : "stop";
+            ev->action = s.action.c_str();
+        };
+        listenNativeEvent<event::player::PlayerToggleSprintEvent>(pl, eventName, fn, ud, +fill);
+    } else if (n == "PlayerAnimation") {
+        // Cancellable; only stops the viewer relay, combat is untouched.
+        // aux1 = protocol animation id, `action` its readable name.
+        auto fill = [](CsEvent* ev, event::player::PlayerAnimationEvent& e, EventScratch& s) {
+            fillPlayerOf(ev, e, s);
+            ev->aux1 = (int32_t)e.animationId();
+            s.action = event::player::PlayerAnimationEvent::animationName(e.animationId());
+            ev->action = s.action.c_str();
+        };
+        listenNativeEvent<event::player::PlayerAnimationEvent>(pl, eventName, fn, ud, +fill);
+    } else if (n == "PlayerPreLogin") {
+        // Cancellable: ev->message is the writable kick message handed to a
+        // rejected connection. `cause` carries "ip:port".
+        auto fill = [](CsEvent* ev, event::player::PlayerPreLoginEvent& e, EventScratch& s) {
+            fillPlayerOf(ev, e, s);
+            s.entity = e.ip() + ":" + std::to_string(e.port());
+            ev->cause = s.entity.c_str();
+            ev->aux1 = (int32_t)e.port();
+            std::snprintf(ev->message, CS_EVENT_MESSAGE_MAX, "%s", e.kickMessage().c_str());
+        };
+        auto readBack = [](CsEvent* ev, event::player::PlayerPreLoginEvent* e) {
+            e->setKickMessage(ev->message);
+        };
+        listenNativeEvent<event::player::PlayerPreLoginEvent>(pl, eventName, fn, ud, +fill,
+                                                              +readBack);
+    } else if (n == "PlayerGamemodeChange") {
+        // Cancellable. aux1/aux2 = old/new gamemode ints; `cause` names the
+        // mode being applied.
+        auto fill = [](CsEvent* ev, event::player::PlayerGamemodeChangeEvent& e, EventScratch& s) {
+            fillPlayerOf(ev, e, s);
+            ev->aux1 = e.getOldGamemode();
+            ev->aux2 = e.getNewGamemode();
+            s.entityType =
+                event::player::PlayerGamemodeChangeEvent::modeName(e.getNewGamemode());
+            ev->cause = s.entityType.c_str();
+        };
+        listenNativeEvent<event::player::PlayerGamemodeChangeEvent>(pl, eventName, fn, ud, +fill);
+    } else if (n == "PlayerCreation") {
+        // Observational (the custom-class factory is a C++-side API — see
+        // docs/EVENTS.md). No player object exists yet: `player` is "" and
+        // `cause` carries "ip:port".
+        auto fill = [](CsEvent* ev, event::player::PlayerCreationEvent& e, EventScratch& s) {
+            s.player = "";
+            ev->player = s.player.c_str();
+            s.entity = e.ip() + ":" + std::to_string(e.port());
+            ev->cause = s.entity.c_str();
+            ev->aux1 = (int32_t)e.port();
+        };
+        listenNativeEvent<event::player::PlayerCreationEvent>(pl, eventName, fn, ud, +fill);
+    } else if (n == "PlayerBucket") {
+        // Cancellable pour: bucket/item fields describe the held stack,
+        // blockId the liquid, x/y/z the target cell, `action` = "pour".
+        auto fill = [](CsEvent* ev, event::player::PlayerBucketEvent& e, EventScratch& s) {
+            fillPlayerOf(ev, e, s);
+            fillItemStackOf(ev, e.getBucket());
+            ev->blockId = e.getLiquidId();
+            ev->x = e.getBlockX();
+            ev->y = e.getBlockY();
+            ev->z = e.getBlockZ();
+            s.action = "pour";
+            ev->action = s.action.c_str();
+        };
+        listenNativeEvent<event::player::PlayerBucketEvent>(pl, eventName, fn, ud, +fill);
+    } else if (n == "PlayerBucketFill") {
+        // Cancellable scoop: same fields as the pour event, `action`="fill".
+        auto fill = [](CsEvent* ev, event::player::PlayerBucketFillEvent& e, EventScratch& s) {
+            fillPlayerOf(ev, e, s);
+            fillItemStackOf(ev, e.getBucket());
+            ev->blockId = e.getLiquidId();
+            ev->x = e.getBlockX();
+            ev->y = e.getBlockY();
+            ev->z = e.getBlockZ();
+            s.action = "fill";
+            ev->action = s.action.c_str();
+        };
+        listenNativeEvent<event::player::PlayerBucketFillEvent>(pl, eventName, fn, ud, +fill);
     } else if (n == "DoorToggle") {
         auto fill = [](CsEvent* ev, event::block::DoorToggleEvent& e, EventScratch& s) {
             fillPlayerOf(ev, e, s);
