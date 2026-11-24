@@ -9,6 +9,7 @@ reference docs are published separately (see [External documentation](#external-
 |---|---|
 | [BUILDING.md](BUILDING.md) | How to build CurseStone: GitHub Actions, Linux x86_64, Windows, Android/Termux and ARM64 cross-compile (in Spanish). |
 | [PLUGINS.md](PLUGINS.md) | Plugin API reference: the two load types (Lua folders, native C++ .so/.dll files), lifecycle, API tables and build instructions. |
+| [EVENTS.md](EVENTS.md) | Player mechanics events (exhaustion, hunger, sneak/sprint, animation, gamemode, pre-login, creation, buckets): fields, cancellation and listener examples. |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | Project conventions, naming and style, protocol 84 notes, where things go and the PR workflow. |
 | [STYLE_COMMENTS.md](STYLE_COMMENTS.md) | Comment and Doxygen style guide, enforced by review and `tools/lint_comments.py`. |
 

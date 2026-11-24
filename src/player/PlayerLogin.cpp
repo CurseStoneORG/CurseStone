@@ -51,6 +51,7 @@
 #include "event/EventManager.h"
 #include "event/player/PlayerJoinEvent.h"
 #include "event/player/PlayerDeathEvent.h"
+#include "event/player/PlayerPreLoginEvent.h"
 #include "event/player/PlayerRespawnEvent.h"
 
 #include "permission/BanList.h"
@@ -168,6 +169,19 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
         return;
     }
 
+    // Last plugin gate before the join pipeline: identity is on the player
+    // (username, uuid, client id) but the session has NOT reached logged-in
+    // state yet — a rejected connection never becomes a connected player.
+    {
+        auto ev = event::EventManager::get().fire<event::player::PlayerPreLoginEvent>(
+            this, cfg_.ip, cfg_.port, cfg_.client_id);
+        if (ev.isCancelled()) {
+            kick(ev.kickMessage().empty() ? std::string("You were rejected by the server")
+                                          : ev.kickMessage());
+            return;
+        }
+    }
+
     // Continue with whitelist, bans, NBT, and spawning.
     logged_in_.store(true, std::memory_order_relaxed);
 
@@ -228,7 +242,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
 
             int16_t hunger = cursestone::nbt::get_short(named_tag_.get(), "Hunger", 20);
 
-            setFoodLevel(hunger);
+            setFoodLevel(hunger, event::player::HungerChangeReason::LOGIN);
             // Restore hunger saturation and exhaustion.
             food_saturation_ = cursestone::nbt::get_float(named_tag_.get(), "FoodSaturation", 5.0f);
             food_exhaustion_ = cursestone::nbt::get_float(named_tag_.get(), "FoodExhaustion", 0.0f);
@@ -1052,7 +1066,7 @@ void Player::respawn() {
         ev.respawnZ = safe.z;
     }
 
-    setFoodLevel(20);
+    setFoodLevel(20, event::player::HungerChangeReason::RESPAWN);
     food_saturation_ = 5.0f;
     food_exhaustion_ = 0.0f;
     last_eat_ms_ = 0;
