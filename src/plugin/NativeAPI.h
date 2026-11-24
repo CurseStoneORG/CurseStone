@@ -176,6 +176,18 @@ typedef struct CsEvent {
     /* ---- appended (ABI 1, extension batch 12: entity combat) ---- */
     const char* entityType; /**< Mob victim canonical name (EntityDamage*
                              *   and EntityDeath), "" for player victims. */
+    /* ---- appended (ABI 2, extension batch 13: player mechanics events) ----
+     * Two generic integer slots so the mechanics events stay representable
+     * without breaking the ABI of compiled plugins. Per-event meaning:
+     *   PlayerExhaust        aux1 = raw cause word (see the event constants)
+     *   PlayerHungerChange   aux1 = old food level, aux2 = new food level
+     *   PlayerToggleSneak    aux1 = new sneak state (0 stopping, 1 starting)
+     *   PlayerToggleSprint   aux1 = new sprint state (0 stopping, 1 starting)
+     *   PlayerGamemodeChange aux1 = old gamemode, aux2 = new gamemode
+     *   PlayerAnimation      aux1 = protocol animation id
+     * Unrelated events keep both zero. */
+    int32_t aux1;
+    int32_t aux2;
 } CsEvent;
 
 /** Event callback: runs on the main thread, ev is server-owned and valid until return. */
