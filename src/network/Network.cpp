@@ -36,6 +36,8 @@
 #include "protocol/LoginPacket.h"
 #include "protocol/DataPacket.h"
 #include "protocol/PacketPool.h"
+#include "../event/EventManager.h"
+#include "../event/player/PlayerCreationEvent.h"
 
 #include <sstream>
 #include <iostream>
@@ -330,7 +332,27 @@ bool Network::createPlayerForSession(const std::string& ip, uint16_t port) {
     // the entity counter for the same purpose). Without this, every player
     // shares EID 0 and AddPlayerPacket broadcasts confuse the client.
     cfg.runtime_eid = server_->allocateEid();
-    auto p = std::make_shared<Player>(server_, std::move(cfg));
+
+    // Let the embedding application pick the player implementation before
+    // anything is constructed. The event is not cancellable: connection
+    // rejection belongs to PlayerPreLoginEvent later in the handshake.
+    // A factory returning null falls back to the standard Player with a
+    // warning, so a session never ends up without a player object.
+    event::player::PlayerCreationEvent ev(ip, port, (void*)getRakLib(),
+                                          std::type_index(typeid(Player)));
+    event::EventManager::get().call(ev);
+    std::shared_ptr<Player> p;
+    if (ev.playerFactory()) {
+        PlayerConfig custom = cfg; // The factory gets its own copy.
+        p = ev.playerFactory()(server_, std::move(custom));
+        if (!p) {
+            utils::MainLogger::get().warn(
+                "PlayerCreationEvent factory produced no player for " + ip + ":" +
+                std::to_string(port) + " — using the standard implementation");
+        }
+    }
+    if (!p)
+        p = std::make_shared<Player>(server_, std::move(cfg));
     if (auto* r = getRakLib())
         p->setSourceInterface(r);
     server_->addPlayer(p);

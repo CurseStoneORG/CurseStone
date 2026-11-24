@@ -73,7 +73,7 @@ entity::DamageApply Player::damage(float amount, event::entity::DamageCause caus
     auto applied = entity::Living::damage(amount, cause);
     // Taking damage adds 0.3 exhaustion.
     if (applied != entity::DamageApply::CANCELLED)
-        addExhaustion(0.3f);
+        addExhaustion(0.3f, event::player::PlayerExhaustEvent::CAUSE_DAMAGE);
     return applied;
 }
 
@@ -88,7 +88,7 @@ entity::DamageApply Player::damageByEntity(float amount, entity::Entity* damager
     auto applied = entity::Living::damageByEntity(amount, damager, cause);
     // Taking damage adds 0.3 exhaustion.
     if (applied != entity::DamageApply::CANCELLED)
-        addExhaustion(0.3f);
+        addExhaustion(0.3f, event::player::PlayerExhaustEvent::CAUSE_DAMAGE);
     return applied;
 }
 

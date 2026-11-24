@@ -29,6 +29,9 @@
 #include "network/AdvancedSourceInterface.h"
 #include "Server.h"         // Defines NbtPtr.
 #include "item/ItemStack.h" // ItemStack for getDrops().
+#include "event/player/PlayerHungerChangeEvent.h" // HungerChangeReason for setFoodLevel.
+#include "event/player/PlayerExhaustEvent.h"      // Exhaustion cause constants.
+#include <cstdint>
 #include <memory>
 #include <string>
 #include "utils/MainLogger.hpp"
@@ -578,7 +581,23 @@ class Player : public IPlayer,
     // Synchronizes hunger, saturation, and exhaustion attributes.
     void sendFoodLevel();
     // Adds exhaustion; hunger drains after the exhaustion threshold.
-    void addExhaustion(float amount);
+    // The cause overload fires PlayerExhaustEvent BEFORE the accumulator
+    // moves (cancel drops the increment, the amount can be rewritten);
+    // the bare form reports the generic custom cause.
+    void addExhaustion(float amount, int32_t cause);
+    void addExhaustion(float amount) {
+        addExhaustion(amount, event::player::PlayerExhaustEvent::CAUSE_CUSTOM);
+    }
+    // Applies a food level change through PlayerHungerChangeEvent; the
+    // reason tells listeners which mechanic asked for it. Listener
+    // side-effects that call back into setFoodLevel apply silently
+    // (re-entrancy guard) so event storms are impossible.
+    void setFoodLevel(int f, event::player::HungerChangeReason reason);
+    // Shadows entity::Human::setFoodLevel so every Player-level food
+    // write goes through the event path with the generic plugin reason.
+    void setFoodLevel(int f) {
+        setFoodLevel(f, event::player::HungerChangeReason::PLUGIN);
+    }
     float foodExhaustion() const {
         return food_exhaustion_;
     }
@@ -878,6 +897,10 @@ class Player : public IPlayer,
     bool invisible_ = false;         // Invisibility effect pose bit.
     float tick_move_dist_ = 0.0f;    // Horizontal distance moved this tick.
     bool food_attrs_dirty_ = false;  // Food attributes need syncing.
+    // Re-entrancy guard for the exhaustion/hunger event dispatch: while
+    // >0, nested addExhaustion/setFoodLevel calls apply directly without
+    // firing another event, so a listener callback can never loop.
+    uint8_t mechanic_event_depth_ = 0;
     uint64_t last_pos_y_ = 0;        // Previous Y position.
     bool last_pos_set_ = false;      // Fall-damage initialization guard.
     bool was_in_lava_ = false;       // Lava damage state.
