@@ -557,7 +557,7 @@ void Player::consumeHeldItem() {
     int restored = def->foodPoints(held.meta);
     if (restored > 0) {
         int h = foodLevel() + restored;
-        setFoodLevel(h > 20 ? 20 : h);
+        setFoodLevel(h > 20 ? 20 : h, event::player::HungerChangeReason::EATING);
     }
     def->applyEatEffects(*this, held.meta);
 

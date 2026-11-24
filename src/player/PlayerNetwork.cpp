@@ -57,6 +57,7 @@
 #include "inventory/PlayerInventory.h"
 #include "event/EventManager.h"
 #include "event/inventory/InventoryClickEvent.h"
+#include "event/player/PlayerAnimationEvent.h"
 #include "event/player/PlayerItemHeldEvent.h"
 #include "utils/MainLogger.hpp"
 #include <chrono>
@@ -496,6 +497,13 @@ void Player::handleDataPacket(network::protocol::DataPacket& p) {
         case network::protocol::ANIMATE_PACKET:
             // Broadcast arm swings to nearby players, excluding the player who performed them.
             if (auto* an = dynamic_cast<network::protocol::AnimatePacket*>(&p)) {
+                // Visual-only event: cancelling stops the relay to other
+                // viewers, combat logic never consults this path.
+                auto anim_ev =
+                    event::EventManager::get().fire<event::player::PlayerAnimationEvent>(
+                        this, an->action);
+                if (anim_ev.isCancelled())
+                    break;
                 an->eid = runtimeId();
                 auto fwd = std::make_shared<network::protocol::AnimatePacket>(*an);
                 if (srv_) {

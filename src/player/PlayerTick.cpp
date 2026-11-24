@@ -45,6 +45,8 @@
 #include "event/player/PlayerMoveEvent.h"
 #include "event/player/PlayerChatEvent.h"
 #include "event/player/PlayerInteractEvent.h"
+#include "event/player/PlayerToggleSneakEvent.h"
+#include "event/player/PlayerToggleSprintEvent.h"
 #include "network/protocol/UpdateBlockPacket.h"
 #include "redstone/RedstoneManager.h"
 #include "nbt/tag/CompoundTag.h"
@@ -118,7 +120,11 @@ void Player::broadcastPoseFlags() {
 
 void Player::setSneaking(bool v) {
     if (sneaking_ == v)
-        return;
+        return; // No state change, no event: listeners never see dup toggles.
+    // Let plugins veto the pose change before it lands.
+    auto ev = event::EventManager::get().fire<event::player::PlayerToggleSneakEvent>(this, v);
+    if (ev.isCancelled())
+        return; // Previous sneak state stays.
     sneaking_ = v;
     broadcastPoseFlags();
 }
@@ -420,12 +426,27 @@ void Player::handlePlayerAction(int action, int x, int y, int z, int face) {
         // Require more than six food points unless the player is creative.
         if (foodLevel() > 6 || isCreative()) {
             if (!sprinting_) {
+                // Plugins may hold the sprint off; re-broadcast the truth so
+                // the client's prediction resyncs instead of drifting.
+                auto ev =
+                    event::EventManager::get().fire<event::player::PlayerToggleSprintEvent>(
+                        this, true);
+                if (ev.isCancelled()) {
+                    broadcastPoseFlags();
+                    return;
+                }
                 sprinting_ = true;
                 broadcastPoseFlags();
             }
         }
     } else if (action == network::protocol::PlayerActionPacket::ACTION_STOP_SPRINT) {
         if (sprinting_) {
+            auto ev = event::EventManager::get().fire<event::player::PlayerToggleSprintEvent>(
+                this, false);
+            if (ev.isCancelled()) {
+                broadcastPoseFlags();
+                return;
+            }
             sprinting_ = false;
             broadcastPoseFlags();
         }
@@ -545,7 +566,7 @@ void Player::handleInteract(int action, int64_t targetEid) {
 
     // Apply survival exhaustion after a successful hit.
     if (hurt && !isCreative())
-        addExhaustion(0.3f);
+        addExhaustion(0.3f, event::player::PlayerExhaustEvent::CAUSE_ATTACK);
 
     if (hurt) {
         // The red flash already reached every spawned player in the

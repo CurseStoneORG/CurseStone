@@ -46,6 +46,8 @@
 #include "event/block/BlockBreakEvent.h"
 #include "event/block/BlockPlaceEvent.h"
 #include "event/player/PlayerInteractEvent.h"
+#include "event/player/PlayerBucketEvent.h"
+#include "event/player/PlayerBucketFillEvent.h"
 #include "utils/TextColor.h"
 #include "utils/MainLogger.hpp"
 #include <cmath>
@@ -569,7 +571,7 @@ void Player::handleBlockBreak(int x, int y, int z) {
     // Drop items unless the player is in creative mode.
     if (!creative) {
         // Apply block-breaking exhaustion.
-        addExhaustion(0.025f);
+        addExhaustion(0.025f, event::player::PlayerExhaustEvent::CAUSE_MINING);
         if (blockId == block::SNOW_LAYER) {
             // Vanilla TopSnowBlock::getResourceCount — a mined layer
             // spills one snowball per two layers, at least one.
@@ -1373,6 +1375,21 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
         // picks the variant — 0 empty, 8 water, 10 lava, 1 milk.
         uint8_t bucketAux = heldDamage & 0xFF;
         if (bucketAux == 8 || bucketAux == 10) {
+            // Bucket pour goes through the event bus BEFORE the shared
+            // placement path below: cancelling leaves the world, the
+            // inventory and the held bucket untouched and resyncs the
+            // client's predicted target (no partial pour).
+            item::ItemStack bucketStack;
+            bucketStack.id = (uint16_t)heldItemId;
+            bucketStack.meta = bucketAux;
+            bucketStack.count = heldCount;
+            auto bucket_ev = event::EventManager::get().fire<event::player::PlayerBucketEvent>(
+                this, bucketStack, (bucketAux == 8) ? 8 : 10, placeX, placeY, placeZ,
+                event::player::PlayerBucketEvent::BucketAction::POUR);
+            if (bucket_ev.isCancelled()) {
+                resyncUseTarget(this, lvl, x, y, z, face);
+                return;
+            }
             // Pour: place the liquid block; the shared path's onBlockChanged
             // runs the vanilla onPlace pass (lava solidifies against water)
             // and schedules the first flow tick.
@@ -1393,6 +1410,20 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
             if (cursestone::block::LiquidFlow::isLiquidId(scoopId) &&
                 lvl->getBlockData(scoopX, scoopY, scoopZ) == 0) {
                 bool scoopWater = cursestone::block::LiquidFlow::isWaterId(scoopId);
+                // Fill goes through its own event before anything moves:
+                // cancelling keeps the liquid cell and the empty bucket
+                // exactly as they were (no partial fill, no lost buckets).
+                item::ItemStack emptyBucket;
+                emptyBucket.id = (uint16_t)heldItemId;
+                emptyBucket.meta = 0;
+                emptyBucket.count = heldCount;
+                auto fill_ev =
+                    event::EventManager::get().fire<event::player::PlayerBucketFillEvent>(
+                        this, emptyBucket, scoopWater ? 8 : 10, scoopX, scoopY, scoopZ);
+                if (fill_ev.isCancelled()) {
+                    resyncUseTarget(this, lvl, x, y, z, face);
+                    return;
+                }
                 lvl->setBlock(scoopX, scoopY, scoopZ, 0, 0);
                 broadcastBlockChange(srv_, lvl, scoopX, scoopY, scoopZ, 0, 0);
                 if (inv_) {

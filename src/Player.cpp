@@ -38,6 +38,7 @@
 #include "event/EventManager.h"
 #include "event/player/PlayerQuitEvent.h"
 #include "event/player/PlayerTeleportEvent.h"
+#include "event/player/PlayerGamemodeChangeEvent.h"
 #include "nbt/tag/CompoundTag.h"
 #include "nbt/tag/ListTag.h"
 #include "nbt/tag/Tag.h"
@@ -565,6 +566,15 @@ void Player::teleport(double x, double y, double z) {
 }
 void Player::setGamemode(int gm) {
     int new_gm = gm & 0x03;
+    // A no-op switch fires nothing and skips every side effect — callers
+    // that refresh packets unconditionally keep doing their own work.
+    if (new_gm == cfg_.gamemode)
+        return;
+    // Plugins may hold the previous mode; cancelling changes nothing.
+    auto ev = event::EventManager::get().fire<event::player::PlayerGamemodeChangeEvent>(
+        this, cfg_.gamemode, new_gm);
+    if (ev.isCancelled())
+        return;
     bool was_creative = (cfg_.gamemode & 1) != 0;
     bool is_creative = (new_gm & 1) != 0;
     cfg_.gamemode = new_gm;
