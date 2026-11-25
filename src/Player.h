@@ -398,7 +398,7 @@ class Player : public IPlayer,
     // streams keep the end-of-tick flush.
     void flushUnorderedNow();
     void sendMessage(const std::string& msg) override;
-    void kick(const std::string& reason = "disconnect.kick");
+    void kick(const std::string& reason = "disconnect.kicked");
     // Includes diagnostic details in the client's disconnect message.
     void kick(const std::string& reason, const std::string& detail);
     void teleport(double x, double y, double z);

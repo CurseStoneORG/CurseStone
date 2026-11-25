@@ -293,11 +293,18 @@ void Player::close(const std::string& reason) {
         // opened with the login line.
         try {
             if (srv_ && !cfg_.username.empty()) {
+                const std::string english = cfg_.username + " left the game";
                 auto ev = event::EventManager::get().fire<event::player::PlayerQuitEvent>(
-                    this, cfg_.username + " left the game");
+                    this, english);
                 if (!ev.isCancelled() && !ev.message.empty()) {
                     utils::MainLogger::get().raw("\n");
-                    srv_->broadcastMessage(ev.message);
+                    // Unchanged default -> client-translated multiplayer.player.left;
+                    // a listener-rewritten message keeps the raw-text path.
+                    if (ev.message == english)
+                        srv_->broadcastTranslation("multiplayer.player.left", {cfg_.username},
+                                                   english);
+                    else
+                        srv_->broadcastMessage(ev.message);
                 }
             }
         } catch (...) {}

@@ -49,7 +49,7 @@ bool KickCommand::execute(CommandSender* sender, const std::string&,
                                  {target->getName(), reason});
         return true;
     }
-    target->kick("Kicked");
+    target->kick("disconnect.kicked");
     sender->sendTranslatable("commands.kick.success", "Kicked " + target->getName(),
                              {target->getName()});
     return true;

@@ -187,7 +187,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
 
     // Check whitelist and bans.
     if (!isWhitelisted()) {
-        kick("Server is white-listed");
+        kick("disconnectionScreen.notAllowed");
         return;
     }
 
@@ -215,10 +215,10 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
             });
 
             if (on == lower) {
-                other->kick("logged in from another location");
+                other->kick("disconnectionScreen.loggedinOtherLocation");
             } else if (other->loggedIn() && !other->config().uuid.empty() &&
                        other->config().uuid == cfg_.uuid) {
-                other->kick("logged in from another location");
+                other->kick("disconnectionScreen.loggedinOtherLocation");
             }
         }
     }
@@ -753,11 +753,17 @@ void Player::doFirstSpawn() {
 
     // Broadcast the join event message.
     if (srv_) {
-        auto ev = event::EventManager::get().fire<event::player::PlayerJoinEvent>(
-            this, cfg_.username + " joined the game");
+        const std::string english = cfg_.username + " joined the game";
+        auto ev = event::EventManager::get().fire<event::player::PlayerJoinEvent>(this, english);
 
         if (!ev.isCancelled() && !ev.message.empty()) {
-            srv_->broadcastMessage(ev.message);
+            // Unchanged default: the client renders multiplayer.player.joined
+            // in its own language. A listener that rewrote the message keeps
+            // the raw-text path.
+            if (ev.message == english)
+                srv_->broadcastTranslation("multiplayer.player.joined", {cfg_.username}, english);
+            else
+                srv_->broadcastMessage(ev.message);
         }
     }
 
