@@ -3419,6 +3419,11 @@ void World::dropItemAt(double x, double y, double z, uint16_t itemId, uint8_t co
     pk->speedY = 0.2f;
     pk->speedZ = (float)(lcg() * 0.2 - 0.1);
     sendToChunkViewers(this, (int32_t)std::floor(x) >> 4, (int32_t)std::floor(z) >> 4, pk);
+    // PMMP follows the item spawn with the entity's default metadata; the
+    // client's pickup animation needs that complete entity record.
+    sendToChunkViewers(this, (int32_t)std::floor(x) >> 4, (int32_t)std::floor(z) >> 4,
+                       std::make_shared<network::protocol::SetEntityDataPacket>(
+                           network::protocol::SetEntityDataPacket::makeDefaultEntityData(eid)));
 
     DroppedItem di;
     di.eid = eid;

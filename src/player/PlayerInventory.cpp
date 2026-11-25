@@ -26,6 +26,7 @@
 #include "network/protocol/ContainerSetSlotPacket.h"
 #include "network/protocol/ContainerClosePacket.h"
 #include "network/protocol/AddItemEntityPacket.h"
+#include "network/protocol/SetEntityDataPacket.h"
 #include "network/protocol/DropItemPacket.h"
 #include "inventory/CraftingManager.h"
 #include "inventory/PlayerInventory.h"
@@ -281,6 +282,8 @@ int64_t Player::dropItem(double x, double y, double z, uint16_t itemId, uint8_t 
             continue;
         }
         other->sendPacket(pk);
+        other->sendPacket(std::make_shared<network::protocol::SetEntityDataPacket>(
+            network::protocol::SetEntityDataPacket::makeDefaultEntityData(eid)));
     }
 
     // Register the dropped item for pickup and movement updates.

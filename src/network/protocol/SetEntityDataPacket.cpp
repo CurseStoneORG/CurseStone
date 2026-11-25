@@ -33,6 +33,28 @@
 
 namespace cursestone::network::protocol {
 
+SetEntityDataPacket SetEntityDataPacket::makeDefaultEntityData(int64_t eid) {
+    SetEntityDataPacket pk;
+    pk.eid = eid;
+    auto add = [&pk](uint8_t index, uint8_t type, int64_t ival, const char* sval = "") {
+        Entry e;
+        e.index = index;
+        e.type = type;
+        e.ival = ival;
+        e.sval = sval;
+        pk.entries.push_back(e);
+    };
+    add(PROP_FLAGS, TYPE_BYTE, 0);
+    add(PROP_AIR, TYPE_SHORT, 300);
+    add(PROP_NAMETAG, TYPE_STRING, 0, "");
+    add(PROP_SHOW_NAMETAG, TYPE_BYTE, 1);
+    add(PROP_SILENT, TYPE_BYTE, 0);
+    add(PROP_NO_AI, TYPE_BYTE, 0);
+    add(PROP_LEAD_HOLDER, TYPE_LONG, -1);
+    add(PROP_LEAD, TYPE_BYTE, 0);
+    return pk;
+}
+
 void SetEntityDataPacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
     w.writeI64BE(eid);

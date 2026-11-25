@@ -140,6 +140,13 @@ class SetEntityDataPacket : public DataPacket {
     int64_t eid = 0;
     std::vector<Entry> entries;
 
+    // The default metadata block the reference server (PMMP Entity::$dataProperties)
+    // sends right after AddItemEntityPacket via Entity::sendData(): flags, air,
+    // nametag, show-nametag, silent, no-AI, lead holder and lead. The client
+    // builds a complete entity record from it, which is what its own pickup
+    // ("absorb into the player") animation runs on.
+    static SetEntityDataPacket makeDefaultEntityData(int64_t eid);
+
     void encode(std::vector<uint8_t>& out) const override;
     bool decode(const uint8_t* data, size_t len) override;
 };
