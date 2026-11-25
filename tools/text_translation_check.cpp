@@ -36,7 +36,7 @@ int main() {
         TextPacket back;
         check(back.decode(out.data() + 1, out.size() - 1), "decode round-trip");
         check(back.type == TextPacket::TYPE_TRANSLATION, "decoded type is TRANSLATION");
-        check(back.message == "death.attack.lava.player", "decoded key matches");
+        check(back.message == "%death.attack.lava.player", "decoded key carries the % marker");
         check(back.parameters.size() == 2, "decoded parameter count matches");
         check(back.parameters[0] == "Steve" && back.parameters[1] == "Alex",
               "decoded parameters match");
@@ -52,6 +52,28 @@ int main() {
         TextPacket back;
         check(back.decode(out.data() + 1, out.size() - 1), "parameterless decode");
         check(back.parameters.empty(), "parameterless keeps zero parameters");
+    }
+
+    // 2b) A colored key keeps its color code in front of the % marker.
+    {
+        TextPacket pk;
+        pk.type = TextPacket::TYPE_TRANSLATION;
+        pk.message = "\xc2\xa7" "emultiplayer.player.joined";
+        std::vector<uint8_t> out;
+        pk.writePacket(out);
+        TextPacket back;
+        check(back.decode(out.data() + 1, out.size() - 1), "colored decode");
+        check(back.message == "\xc2\xa7" "e%multiplayer.player.joined",
+              "color code precedes the % marker");
+        // Already-marked keys are not double-prefixed.
+        TextPacket pk2;
+        pk2.type = TextPacket::TYPE_TRANSLATION;
+        pk2.message = "%commands.weather.clear";
+        std::vector<uint8_t> out2;
+        pk2.writePacket(out2);
+        TextPacket back2;
+        back2.decode(out2.data() + 1, out2.size() - 1);
+        check(back2.message == "%commands.weather.clear", "no double % marker");
     }
 
     // 3) Raw and tip packets still encode their single message (chat path
