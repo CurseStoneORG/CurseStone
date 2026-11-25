@@ -1480,13 +1480,14 @@ void Server::broadcastMessage(const std::string& msg) {
 }
 void Server::broadcastTranslation(const std::string& key,
                                   const std::vector<std::string>& parameters,
-                                  const std::string& consoleFallback) {
+                                  const std::string& consoleFallback,
+                                  const std::string& prefix) {
     // Serialize the translation TextPacket once and reuse the encoded bytes
     // for every player, exactly like broadcastMessage() — one packet body,
     // zero per-recipient re-encoding.
     network::protocol::TextPacket pk;
     pk.type = network::protocol::TextPacket::TYPE_TRANSLATION;
-    pk.message = key;
+    pk.message = prefix + key;
     pk.parameters = parameters;
     std::vector<uint8_t> body;
     pk.writePacket(body);

@@ -935,10 +935,11 @@ void Player::sendTip(const std::string& msg) {
 // template (%1$s..%9$s), so every player reads the line in the language
 // their game is set to — the server never ships localized strings.
 void Player::sendTranslation(const std::string& key,
-                             const std::vector<std::string>& parameters) {
+                             const std::vector<std::string>& parameters,
+                             const std::string& prefix) {
     auto pk = std::make_shared<network::protocol::TextPacket>();
     pk->type = network::protocol::TextPacket::TYPE_TRANSLATION;
-    pk->message = key;
+    pk->message = prefix + key;
     pk->parameters = parameters;
     sendPacket(pk);
 }

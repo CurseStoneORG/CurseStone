@@ -23,6 +23,7 @@
 #include "Player.h"
 #include "item/Item.h"
 #include "player/PlayerInternal.h"
+#include "utils/TextColor.h"
 
 #include "world/World.h"
 #include "world/format/Chunk.h"
@@ -761,7 +762,8 @@ void Player::doFirstSpawn() {
             // in its own language. A listener that rewrote the message keeps
             // the raw-text path.
             if (ev.message == english)
-                srv_->broadcastTranslation("multiplayer.player.joined", {cfg_.username}, english);
+                srv_->broadcastTranslation("multiplayer.player.joined", {cfg_.username}, english,
+                                           TC::YELLOW);
             else
                 srv_->broadcastMessage(ev.message);
         }

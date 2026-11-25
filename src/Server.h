@@ -219,9 +219,12 @@ class Server {
     // its own language. `consoleFallback` is the plain-English line mirrored
     // to the server console (the console has no language table); an empty
     // string skips the console mirror.
+    // `prefix` (e.g. TC::YELLOW) is prepended to the key so the client colors
+    // the translated line; the console fallback stays uncolored plain text.
     void broadcastTranslation(const std::string& key,
                               const std::vector<std::string>& parameters,
-                              const std::string& consoleFallback);
+                              const std::string& consoleFallback,
+                              const std::string& prefix = "");
 
     // World, scheduler, and network accessors.
     World* getDefaultWorld() const {
