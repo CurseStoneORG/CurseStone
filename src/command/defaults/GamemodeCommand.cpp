@@ -30,7 +30,8 @@ namespace cursestone {
 bool GamemodeCommand::execute(CommandSender* sender, const std::string&,
                               const std::vector<std::string>& args) {
     if (args.empty()) {
-        sender->sendMessage("Usage: /gamemode <0|1|2> [player]");
+        sender->sendTranslatable("commands.generic.usage", "Usage: /gamemode <0|1|2> [player]",
+                                 {"/gamemode <mode> [player]"});
         return true;
     }
     int gm = -1;
@@ -46,14 +47,16 @@ bool GamemodeCommand::execute(CommandSender* sender, const std::string&,
         } catch (...) {}
     }
     if (gm < 0 || gm > 2) {
-        sender->sendMessage("Invalid gamemode: " + args[0]);
+        sender->sendTranslatable("commands.gamemode.fail.invalid",
+                                 "Invalid gamemode: " + args[0], {args[0]});
         return true;
     }
     Player* target = nullptr;
     if (args.size() >= 2) {
         target = Server::getInstance().getPlayer(args[1]);
         if (!target) {
-            sender->sendMessage("Player not found: " + args[1]);
+            sender->sendTranslatable("commands.generic.player.notFound",
+                                     "Player not found: " + args[1]);
             return true;
         }
     } else {
@@ -85,8 +88,18 @@ bool GamemodeCommand::execute(CommandSender* sender, const std::string&,
     as->userPermission = 2;   // host
     as->globalPermission = 2; // host
     target->sendPacket(as);
+    // The vanilla gamemode names ride as the last parameter; the client
+    // templates slot them at %3$s (commands.gamemode.success.self/other).
     std::string gmName = gm == 0 ? "Survival" : (gm == 1 ? "Creative" : "Adventure");
-    sender->sendMessage("Set " + target->getName() + "'s game mode to " + gmName);
+    if (args.size() >= 2) {
+        sender->sendTranslatable(
+            "commands.gamemode.success.other",
+            "Set " + target->getName() + "'s game mode to " + gmName,
+            {"", target->getName(), gmName});
+    } else {
+        sender->sendTranslatable("commands.gamemode.success.self",
+                                 "Set own game mode to " + gmName, {"", "", gmName});
+    }
     return true;
 }
 } // namespace

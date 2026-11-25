@@ -25,7 +25,7 @@
 namespace cursestone {
 bool StopCommand::execute(CommandSender* sender, const std::string&,
                           const std::vector<std::string>&) {
-    sender->sendMessage("Stopping the server...");
+    sender->sendTranslatable("commands.stop.start", "Stopping the server...");
     Server::getInstance().shutdown();
     return true;
 }

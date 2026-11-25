@@ -30,14 +30,16 @@ namespace cursestone {
 bool KillCommand::execute(CommandSender* sender, const std::string&,
                           const std::vector<std::string>& args) {
     if (args.empty()) {
-        sender->sendMessage("Usage: /kill <player>");
+        sender->sendTranslatable("commands.generic.usage", "Usage: /kill <player>",
+                                 {"/kill <player>"});
         return true;
     }
 
     Player* target = Server::getInstance().getPlayer(args[0]);
 
     if (!target) {
-        sender->sendMessage("Player not found: " + args[0]);
+        sender->sendTranslatable("commands.generic.player.notFound",
+                                 "Player not found: " + args[0]);
         return true;
     }
 
@@ -48,10 +50,12 @@ bool KillCommand::execute(CommandSender* sender, const std::string&,
 
     // Regular death pipeline (Player::setHealth(0) -> applyDamage ->
     // onDeath): death screen for the client, drops, PlayerDeathEvent and
-    // the "<name> died" broadcast. Creative players die too, like vanilla.
+    // the client-translatable death broadcast. Creative players die too,
+    // like vanilla.
     target->setHealth(0);
 
-    sender->sendMessage("Killed " + target->getName());
+    sender->sendTranslatable("commands.kill.successful", "Killed " + target->getName(),
+                             {target->getName()});
 
     return true;
 }

@@ -27,8 +27,14 @@ namespace cursestone {
 bool ListCommand::execute(CommandSender* sender, const std::string&,
                           const std::vector<std::string>&) {
     const auto& players = Server::getInstance().playersSnapshotRef();
-    sender->sendMessage("There are " + std::to_string(players.size()) + "/" +
-                        std::to_string(Server::getInstance().maxPlayers()) + " players online:");
+    // commands.players.list = "Hay %d/%d jugadores conectados:" — the
+    // client slots the counts into its own template; the console keeps the
+    // English line.
+    sender->sendTranslatable(
+        "commands.players.list",
+        "There are " + std::to_string(players.size()) + "/" +
+            std::to_string(Server::getInstance().maxPlayers()) + " players online:",
+        {std::to_string(players.size()), std::to_string(Server::getInstance().maxPlayers())});
     for (auto& p : players) {
         if (p)
             sender->sendMessage("  - " + p->getName());

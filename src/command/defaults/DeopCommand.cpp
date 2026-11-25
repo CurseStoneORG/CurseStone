@@ -27,14 +27,15 @@ namespace cursestone {
 bool DeopCommand::execute(CommandSender* sender, const std::string&,
                           const std::vector<std::string>& args) {
     if (args.empty()) {
-        sender->sendMessage("Usage: /deop <player>");
+        sender->sendTranslatable("commands.generic.usage", "Usage: /deop <player>",
+                                 {"/deop <player>"});
         return true;
     }
     Server::getInstance().setOp(args[0], false);
     Player* target = Server::getInstance().getPlayer(args[0]);
     if (target)
-        target->sendMessage("You are no longer an operator");
-    sender->sendMessage("De-opped " + args[0]);
+        target->sendTranslation("commands.deop.message");
+    sender->sendTranslatable("commands.deop.success", "De-opped " + args[0], {args[0]});
     return true;
 }
 } // namespace

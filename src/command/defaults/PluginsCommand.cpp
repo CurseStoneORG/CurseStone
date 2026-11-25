@@ -56,7 +56,8 @@ bool PluginsCommand::execute(CommandSender* sender, const std::string&,
 
         if (sub == "reload") {
             if (!sender->isOp()) {
-                sender->sendMessage("You do not have permission to use this command.");
+                sender->sendTranslatable("commands.generic.permission",
+                                         "You do not have permission to use this command.");
                 return false;
             }
             // Copiar el nombre AHORA (el puntero sender no sobrevive si el

@@ -50,7 +50,9 @@ bool WeatherCommand::execute(CommandSender* sender, const std::string& label,
     }
 
     if (args.empty()) {
-        sender->sendMessage("Usage: /weather <clear|rain|thunder> [duration in seconds]");
+        sender->sendTranslatable("commands.generic.usage",
+                                 "Usage: /weather <clear|rain|thunder> [duration in seconds]",
+                                 {"/weather <clear|rain|thunder> [duration in seconds]"});
         const char* names[4] = {"clear", "rain", "rain+thunder", "thunder"};
         sender->sendMessage(std::string("Current: ") + names[lvl->weatherState() & 3] +
                             (lvl->weatherTicksLeft() > 0
@@ -65,12 +67,16 @@ bool WeatherCommand::execute(CommandSender* sender, const std::string& label,
         try {
             int seconds = std::stoi(args[1]);
             if (seconds < 0) {
-                sender->sendMessage("Invalid duration");
+                sender->sendTranslatable("commands.generic.num.invalid",
+                                         "'" + args[1] + "' is not a valid number",
+                                         {args[1]});
                 return true;
             }
             duration_ticks = seconds * 20;
         } catch (...) {
-            sender->sendMessage("Invalid duration");
+            sender->sendTranslatable("commands.generic.num.invalid",
+                                     "'" + args[1] + "' is not a valid number",
+                                     {args[1]});
             return true;
         }
     }
@@ -78,28 +84,21 @@ bool WeatherCommand::execute(CommandSender* sender, const std::string& label,
     const std::string& w = args[0];
     if (w == "clear" || w == "sunny" || w == "fine" || w == "0") {
         lvl->setWeather(world::World::WEATHER_CLEAR, duration_ticks);
-        sender->sendMessage("Weather cleared");
+        sender->sendTranslatable("commands.weather.clear", "Weather cleared");
     } else if (w == "rain" || w == "rainy" || w == "1") {
         lvl->setWeather(world::World::WEATHER_RAIN, duration_ticks);
-        sender->sendMessage("Rain started" +
-                            std::string(duration_ticks > 0
-                                            ? " (" + std::to_string(duration_ticks / 20) + "s)"
-                                            : ""));
+        sender->sendTranslatable("commands.weather.rain", "Rain started");
     } else if (w == "storm" || w == "rain_thunder" || w == "rainy_thunder" || w == "2") {
         lvl->setWeather(world::World::WEATHER_RAINY_THUNDER, duration_ticks);
-        sender->sendMessage("Thunderstorm started" +
-                            std::string(duration_ticks > 0
-                                            ? " (" + std::to_string(duration_ticks / 20) + "s)"
-                                            : ""));
+        sender->sendTranslatable("commands.weather.thunder", "Thunderstorm started");
     } else if (w == "thunder" || w == "3") {
         // The reference server's bare "thunder" is state 3: thunder WITHOUT rain.
         lvl->setWeather(world::World::WEATHER_THUNDER, duration_ticks);
-        sender->sendMessage("Thunder started" +
-                            std::string(duration_ticks > 0
-                                            ? " (" + std::to_string(duration_ticks / 20) + "s)"
-                                            : ""));
+        sender->sendTranslatable("commands.weather.thunder", "Thunder started");
     } else {
-        sender->sendMessage("Usage: /weather <clear|rain|thunder> [duration in seconds]");
+        sender->sendTranslatable("commands.generic.usage",
+                                 "Usage: /weather <clear|rain|thunder> [duration in seconds]",
+                                 {"/weather <clear|rain|thunder> [duration in seconds]"});
     }
     return true;
 }
