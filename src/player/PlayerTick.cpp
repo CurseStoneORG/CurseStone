@@ -38,6 +38,8 @@
 #include "network/protocol/SetEntityMotionPacket.h"
 #include "network/protocol/TakeItemEntityPacket.h"
 #include "network/protocol/RemoveEntityPacket.h"
+#include "scheduler/ServerScheduler.h"
+#include "scheduler/Task.h"
 #include "command/CommandMap.h"
 #include "block/BlockIds.h"
 #include "inventory/PlayerInventory.h"
@@ -59,6 +61,60 @@
 #include <vector>
 
 namespace cursestone {
+
+// Removes a picked-up entity from clients a few ticks AFTER the pickup packet.
+// The client plays the "absorb into the player" animation on the entity it
+// still has: removing it in the same tick (as this used to do) cancelled the
+// animation and the item vanished dry. PMMP delays the despawn for the same
+// reason (the dead entity lingers 10 ticks).
+namespace {
+class DeferredEntityRemovalTask : public scheduler::Task {
+  public:
+    DeferredEntityRemovalTask(int64_t eid, world::World* world, int32_t cx, int32_t cz)
+        : eid_(eid), world_(world), cx_(cx), cz_(cz) {
+    }
+    void onRun() override {
+        auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
+        rm->eid = eid_;
+        for (auto& other : Server::getInstance().playersSnapshotRef()) {
+            if (!other || other->isPendingRemoval() || !other->spawned())
+                continue;
+            if (other->getWorld() != world_) // Pointer compare only, never dereferenced.
+                continue;
+            if (!other->canSeeBlock(cx_, cz_))
+                continue;
+            other->sendPacket(rm);
+        }
+    }
+
+  private:
+    int64_t eid_;
+    world::World* world_;
+    int32_t cx_, cz_;
+};
+
+constexpr int kPickupRemovalDelayTicks = 10;
+// The inventory resync is held back while the client plays the absorb
+// animation: PMMP never pushes the inventory on pickup at all (the client adds
+// the item itself when it receives TakeItemEntityPacket), so pushing it in the
+// same tick could pre-empt that client-side flow.
+constexpr int kPickupInventoryDelayTicks = 4;
+
+class DeferredInventorySyncTask : public scheduler::Task {
+  public:
+    explicit DeferredInventorySyncTask(std::weak_ptr<Player> who) : who_(std::move(who)) {
+    }
+    void onRun() override {
+        if (auto p = who_.lock()) {
+            if (p->spawned() && !p->isPendingRemoval())
+                p->sendInventory();
+        }
+    }
+
+  private:
+    std::weak_ptr<Player> who_;
+};
+} // namespace
 
 // Broadcasts the pose flags byte (sneak/sprint/bow/on-fire/invisible) to
 // every viewer and to the player itself. The flags byte is cached, so a
@@ -900,6 +956,7 @@ void Player::onUpdate(uint64_t current_tick) {
     if (spawned_.load(std::memory_order_relaxed) && getWorld() && inv_ && !isDead()) {
         auto* lvl = getWorld();
         bool any_picked_up = false;
+        bool animated_pickup = false; // A whole stack was taken (absorb animation plays).
 
         // Repeat scans because each pickup changes the inventory state.
         for (int pass = 0; pass < 32; ++pass) {
@@ -952,12 +1009,11 @@ void Player::onUpdate(uint64_t current_tick) {
 
                 // Broadcast removal only when the entire stack is collected.
                 if (leftover_count == 0) {
+                    animated_pickup = true;
                     // Notify viewers and remove the item entity for the picker.
                     auto pk_viewer = std::make_shared<network::protocol::TakeItemEntityPacket>();
                     pk_viewer->target = di->eid;
                     pk_viewer->entityId = runtimeId();
-                    auto rm_pk = std::make_shared<network::protocol::RemoveEntityPacket>();
-                    rm_pk->eid = di->eid;
                     int32_t pk_cx = (int32_t)std::floor(di->x) >> 4;
                     int32_t pk_cz = (int32_t)std::floor(di->z) >> 4;
                     int viewers = 0;
@@ -975,7 +1031,6 @@ void Player::onUpdate(uint64_t current_tick) {
                         if (!other->canSeeBlock(pk_cx, pk_cz))
                             continue;
                         other->sendPacket(pk_viewer);
-                        other->sendPacket(rm_pk);
                         ++viewers;
                     }
                     auto pk_picker = std::make_shared<network::protocol::TakeItemEntityPacket>();
@@ -983,7 +1038,10 @@ void Player::onUpdate(uint64_t current_tick) {
                     pk_picker->entityId = 0;
                     sendPacket(pk_picker);
                     lvl->removeDroppedItem(di->eid);
-                    sendPacket(rm_pk);
+                    // Despawn on clients after the absorb animation has played.
+                    scheduler::ServerScheduler::get().scheduleSync(
+                        std::make_shared<DeferredEntityRemovalTask>(di->eid, lvl, pk_cx, pk_cz),
+                        kPickupRemovalDelayTicks);
                     if (srv_ && srv_->debugMode()) {
                         utils::MainLogger::get().info(
                             "[PICKUP] " + cfg_.username +
@@ -1005,7 +1063,13 @@ void Player::onUpdate(uint64_t current_tick) {
                 break;
         }
         if (any_picked_up) {
-            sendInventory();
+            if (animated_pickup) {
+                scheduler::ServerScheduler::get().scheduleSync(
+                    std::make_shared<DeferredInventorySyncTask>(weak_from_this()),
+                    kPickupInventoryDelayTicks);
+            } else {
+                sendInventory();
+            }
         }
 
         // Collect stuck arrows, but ignore arrows still in flight.
@@ -1054,8 +1118,6 @@ void Player::onUpdate(uint64_t current_tick) {
             auto tk_self = std::make_shared<network::protocol::TakeItemEntityPacket>();
             tk_self->target = a->eid;
             tk_self->entityId = 0;
-            auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
-            rm->eid = a->eid;
             for (auto& other : srv_->playersSnapshotRef()) {
                 if (!other || !other->spawned())
                     continue;
@@ -1063,9 +1125,12 @@ void Player::onUpdate(uint64_t current_tick) {
                     continue;
                 if (other.get() != this)
                     other->sendPacket(tk);
-                other->sendPacket(rm);
             }
             sendPacket(tk_self); // Show the pickup animation to the collector.
+            scheduler::ServerScheduler::get().scheduleSync(
+                std::make_shared<DeferredEntityRemovalTask>(
+                    a->eid, lvl, (int32_t)std::floor(a->x) >> 4, (int32_t)std::floor(a->z) >> 4),
+                kPickupRemovalDelayTicks);
             sendInventory();
             if (srv_ && srv_->debugMode()) {
                 utils::MainLogger::get().info("[ARROW] " + cfg_.username +
@@ -1139,8 +1204,6 @@ bool Player::tryClaimNearbyDrop(const item::ItemStack& want) {
         auto tk = std::make_shared<network::protocol::TakeItemEntityPacket>();
         tk->target = di->eid;
         tk->entityId = runtimeId();
-        auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
-        rm->eid = di->eid;
         int viewers = 0;
         for (auto& other : srv_->playersSnapshotRef()) {
             if (!other)
@@ -1154,13 +1217,14 @@ bool Player::tryClaimNearbyDrop(const item::ItemStack& want) {
             if (!other->canSeeBlock(cx, cz))
                 continue;
             other->sendPacket(tk);
-            other->sendPacket(rm);
             ++viewers;
         }
         tk->entityId = 0;
         sendPacket(tk); // Pickup animation for the collector.
-        sendPacket(rm);
         lvl->removeDroppedItem(di->eid);
+        scheduler::ServerScheduler::get().scheduleSync(
+            std::make_shared<DeferredEntityRemovalTask>(di->eid, lvl, cx, cz),
+            kPickupRemovalDelayTicks);
         if (srv_->debugMode()) {
             utils::MainLogger::get().info(
                 "[PICKUP] " + cfg_.username + " picked up eid=" +
