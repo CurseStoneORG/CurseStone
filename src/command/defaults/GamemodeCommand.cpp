@@ -20,6 +20,7 @@
  * Repository: https://github.com/CurseStoneORG/CurseStone
  *
  */
+#include "utils/TextColor.h"
 #include "GamemodeCommand.h"
 #include "Server.h"
 #include "Player.h"
@@ -31,7 +32,7 @@ bool GamemodeCommand::execute(CommandSender* sender, const std::string&,
                               const std::vector<std::string>& args) {
     if (args.empty()) {
         sender->sendTranslatable("commands.generic.usage", "Usage: /gamemode <0|1|2> [player]",
-                                 {"/gamemode <mode> [player]"});
+                                 {"/gamemode <mode> [player]"}, TC::RED);
         return true;
     }
     int gm = -1;
@@ -48,7 +49,7 @@ bool GamemodeCommand::execute(CommandSender* sender, const std::string&,
     }
     if (gm < 0 || gm > 2) {
         sender->sendTranslatable("commands.gamemode.fail.invalid",
-                                 "Invalid gamemode: " + args[0], {args[0]});
+                                 "Invalid gamemode: " + args[0], {args[0]}, TC::RED);
         return true;
     }
     Player* target = nullptr;
@@ -56,7 +57,7 @@ bool GamemodeCommand::execute(CommandSender* sender, const std::string&,
         target = Server::getInstance().getPlayer(args[1]);
         if (!target) {
             sender->sendTranslatable("commands.generic.player.notFound",
-                                     "Player not found: " + args[1]);
+                                     "Player not found: " + args[1], {}, TC::RED);
             return true;
         }
     } else {

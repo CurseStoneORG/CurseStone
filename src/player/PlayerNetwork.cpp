@@ -948,9 +948,10 @@ void Player::sendTranslation(const std::string& key,
 // so the English fallback is dead weight here — the key + parameters are all
 // the client needs to render the localized line.
 void Player::sendTranslatable(const std::string& key, const std::string& fallback,
-                              const std::vector<std::string>& parameters) {
+                              const std::vector<std::string>& parameters,
+                              const std::string& prefix) {
     (void)fallback;
-    sendTranslation(key, parameters);
+    sendTranslation(key, parameters, prefix);
 }
 
 void Player::sendSettings() {

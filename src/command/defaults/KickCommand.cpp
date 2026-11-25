@@ -20,6 +20,7 @@
  * Repository: https://github.com/CurseStoneORG/CurseStone
  *
  */
+#include "utils/TextColor.h"
 #include "KickCommand.h"
 #include "Server.h"
 #include "Player.h"
@@ -28,13 +29,13 @@ bool KickCommand::execute(CommandSender* sender, const std::string&,
                           const std::vector<std::string>& args) {
     if (args.empty()) {
         sender->sendTranslatable("commands.generic.usage", "Usage: /kick <player> [reason]",
-                                 {"/kick <player> [reason ...]"});
+                                 {"/kick <player> [reason ...]"}, TC::RED);
         return true;
     }
     Player* target = Server::getInstance().getPlayer(args[0]);
     if (!target) {
         sender->sendTranslatable("commands.kick.not.found", "Player not found: " + args[0],
-                                 {args[0]});
+                                 {args[0]}, TC::RED);
         return true;
     }
     if (args.size() >= 2) {

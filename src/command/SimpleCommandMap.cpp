@@ -20,6 +20,7 @@
  * Repository: https://github.com/CurseStoneORG/CurseStone
  *
  */
+#include "utils/TextColor.h"
 #include "SimpleCommandMap.h"
 #include "utils/Utils.hpp"
 namespace cursestone {
@@ -142,7 +143,7 @@ bool SimpleCommandMap::dispatch(CommandSender* sender, const std::string& cmd_li
             // commands.generic.notFound = the client's own "unknown command"
             // line (no parameters); the console keeps the informative
             // English line with the typed name.
-            sender->sendTranslatable("commands.generic.notFound", "Unknown command: " + name);
+            sender->sendTranslatable("commands.generic.notFound", "Unknown command: " + name, {}, TC::RED);
             return false;
         }
         args.insert(args.begin(), std::make_move_iterator(fixed.begin()),
@@ -160,7 +161,7 @@ bool SimpleCommandMap::dispatch(CommandSender* sender, const std::string& cmd_li
     if (!cmd->canUse(sender)) {
         // commands.generic.permission = the client's own "no permission" line.
         sender->sendTranslatable("commands.generic.permission",
-                                 "You do not have permission to use this command.");
+                                 "You do not have permission to use this command.", {}, TC::RED);
         return false;
     }
     try {
@@ -169,7 +170,7 @@ bool SimpleCommandMap::dispatch(CommandSender* sender, const std::string& cmd_li
         // commands.generic.exception = the client's own generic command-error
         // line; the console fallback keeps the exception detail for triage.
         sender->sendTranslatable("commands.generic.exception",
-                                 "Error executing command: " + std::string(e.what()));
+                                 "Error executing command: " + std::string(e.what()), {}, TC::RED);
         return false;
     }
 }

@@ -20,6 +20,7 @@
  * Repository: https://github.com/CurseStoneORG/CurseStone
  *
  */
+#include "utils/TextColor.h"
 #include "TeleportCommand.h"
 #include "Server.h"
 #include "Player.h"
@@ -28,7 +29,7 @@ bool TeleportCommand::execute(CommandSender* sender, const std::string&,
                               const std::vector<std::string>& args) {
     if (args.size() < 3) {
         sender->sendTranslatable("commands.generic.usage", "Usage: /teleport <x> <y> <z>",
-                                 {"/teleport <x> <y> <z>"});
+                                 {"/teleport <x> <y> <z>"}, TC::RED);
         return true;
     }
     Player* target = dynamic_cast<Player*>(sender);
@@ -44,7 +45,7 @@ bool TeleportCommand::execute(CommandSender* sender, const std::string&,
             // The offending token rides as the %s of the client's
             // "'%s' is not a valid number" template.
             sender->sendTranslatable("commands.generic.num.invalid",
-                                     "'" + args[i] + "' is not a valid number", {args[i]});
+                                     "'" + args[i] + "' is not a valid number", {args[i]}, TC::RED);
             return true;
         }
     }

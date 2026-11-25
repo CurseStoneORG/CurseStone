@@ -571,7 +571,8 @@ class Player : public IPlayer,
     // CommandSender bridge: a connected client always carries a language
     // table, so the English fallback is unused on this path.
     void sendTranslatable(const std::string& key, const std::string& fallback,
-                          const std::vector<std::string>& parameters = {}) override;
+                          const std::vector<std::string>& parameters = {},
+                          const std::string& prefix = "") override;
 
     // --- Experience ---
     // exp: 0..100 progress percent within the level (attribute carries 0..1).

@@ -247,8 +247,7 @@ bool StatusCommand::execute(CommandSender* sender, const std::string&,
                             const std::vector<std::string>&) {
     if (!sender->isOp()) {
         sender->sendTranslatable("commands.generic.permission",
-                                 TC::RED + "You don't have permission to use this command." +
-                                     TC::RESET);
+                                 "You don't have permission to use this command.", {}, TC::RED);
         return true;
     }
 

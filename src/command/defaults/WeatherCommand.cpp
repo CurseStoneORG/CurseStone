@@ -20,6 +20,7 @@
  * Repository: https://github.com/CurseStoneORG/CurseStone
  *
  */
+#include "utils/TextColor.h"
 #include "WeatherCommand.h"
 #include "Server.h"
 #include "world/World.h"
@@ -52,7 +53,7 @@ bool WeatherCommand::execute(CommandSender* sender, const std::string& label,
     if (args.empty()) {
         sender->sendTranslatable("commands.generic.usage",
                                  "Usage: /weather <clear|rain|thunder> [duration in seconds]",
-                                 {"/weather <clear|rain|thunder> [duration in seconds]"});
+                                 {"/weather <clear|rain|thunder> [duration in seconds]"}, TC::RED);
         const char* names[4] = {"clear", "rain", "rain+thunder", "thunder"};
         sender->sendMessage(std::string("Current: ") + names[lvl->weatherState() & 3] +
                             (lvl->weatherTicksLeft() > 0
@@ -69,14 +70,14 @@ bool WeatherCommand::execute(CommandSender* sender, const std::string& label,
             if (seconds < 0) {
                 sender->sendTranslatable("commands.generic.num.invalid",
                                          "'" + args[1] + "' is not a valid number",
-                                         {args[1]});
+                                         {args[1]}, TC::RED);
                 return true;
             }
             duration_ticks = seconds * 20;
         } catch (...) {
             sender->sendTranslatable("commands.generic.num.invalid",
                                      "'" + args[1] + "' is not a valid number",
-                                     {args[1]});
+                                     {args[1]}, TC::RED);
             return true;
         }
     }
@@ -98,7 +99,7 @@ bool WeatherCommand::execute(CommandSender* sender, const std::string& label,
     } else {
         sender->sendTranslatable("commands.generic.usage",
                                  "Usage: /weather <clear|rain|thunder> [duration in seconds]",
-                                 {"/weather <clear|rain|thunder> [duration in seconds]"});
+                                 {"/weather <clear|rain|thunder> [duration in seconds]"}, TC::RED);
     }
     return true;
 }
