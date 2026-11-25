@@ -54,6 +54,15 @@ int main() {
         check(back.parameters.empty(), "parameterless keeps zero parameters");
     }
 
+    // 2b) Color rides on the first parameter; the key stays untouched.
+    {
+        std::vector<std::string> params = {"Steve"};
+        check(TextPacket::colorFirstParam(params, "\xc2\xa7" "e"), "color applied to first param");
+        check(params[0] == "\xc2\xa7" "eSteve", "first param carries the color code");
+        std::vector<std::string> none;
+        check(!TextPacket::colorFirstParam(none, "\xc2\xa7" "e"), "no param -> no color");
+    }
+
     // 3) Raw and tip packets still encode their single message (chat path
     //    untouched, plugin compatibility).
     {
