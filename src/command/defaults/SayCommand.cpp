@@ -26,7 +26,8 @@ namespace cursestone {
 bool SayCommand::execute(CommandSender* sender, const std::string&,
                          const std::vector<std::string>& args) {
     if (args.empty()) {
-        sender->sendMessage("Usage: /say <message>");
+        sender->sendTranslatable("commands.generic.usage", "Usage: /say <message>",
+                                 {"/say <message ...>"});
         return true;
     }
     std::string msg;
@@ -35,7 +36,11 @@ bool SayCommand::execute(CommandSender* sender, const std::string&,
             msg += " ";
         msg += args[i];
     }
-    Server::getInstance().broadcastMessage("[" + sender->getName() + "] " + msg);
+    // The client renders announcements from its own lang table
+    // (chat.type.announcement = "[%s] %s"); the console keeps the plain line.
+    Server::getInstance().broadcastTranslation(
+        "chat.type.announcement", {sender->getName(), msg},
+        "[" + sender->getName() + "] " + msg);
     return true;
 }
 } // namespace
