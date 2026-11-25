@@ -21,6 +21,7 @@
  *
  */
 
+#include "utils/TextColor.h"
 #include "KillCommand.h"
 #include "Server.h"
 #include "Player.h"
@@ -31,7 +32,7 @@ bool KillCommand::execute(CommandSender* sender, const std::string&,
                           const std::vector<std::string>& args) {
     if (args.empty()) {
         sender->sendTranslatable("commands.generic.usage", "Usage: /kill <player>",
-                                 {"/kill <player>"});
+                                 {"/kill <player>"}, TC::RED);
         return true;
     }
 
@@ -39,7 +40,7 @@ bool KillCommand::execute(CommandSender* sender, const std::string&,
 
     if (!target) {
         sender->sendTranslatable("commands.generic.player.notFound",
-                                 "Player not found: " + args[0]);
+                                 "Player not found: " + args[0], {}, TC::RED);
         return true;
     }
 

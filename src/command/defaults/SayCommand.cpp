@@ -20,6 +20,7 @@
  * Repository: https://github.com/CurseStoneORG/CurseStone
  *
  */
+#include "utils/TextColor.h"
 #include "SayCommand.h"
 #include "Server.h"
 namespace cursestone {
@@ -27,7 +28,7 @@ bool SayCommand::execute(CommandSender* sender, const std::string&,
                          const std::vector<std::string>& args) {
     if (args.empty()) {
         sender->sendTranslatable("commands.generic.usage", "Usage: /say <message>",
-                                 {"/say <message ...>"});
+                                 {"/say <message ...>"}, TC::RED);
         return true;
     }
     std::string msg;

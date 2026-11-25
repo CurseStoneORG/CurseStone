@@ -34,8 +34,7 @@ bool WorkbenchCommand::execute(CommandSender* sender, const std::string&,
     // Only ops can use this command.
     if (!sender->isOp()) {
         sender->sendTranslatable("commands.generic.permission",
-                                 TC::RED + "You don't have permission to use this command." +
-                                     TC::RESET);
+                                 "You don't have permission to use this command.", {}, TC::RED);
         return true;
     }
 

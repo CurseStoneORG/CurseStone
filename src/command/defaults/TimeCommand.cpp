@@ -20,6 +20,7 @@
  * Repository: https://github.com/CurseStoneORG/CurseStone
  *
  */
+#include "utils/TextColor.h"
 #include "TimeCommand.h"
 #include "Server.h"
 #include "world/World.h"
@@ -67,7 +68,7 @@ bool TimeCommand::execute(CommandSender* sender, const std::string&,
             } catch (...) {
                 sender->sendTranslatable("commands.generic.num.invalid",
                                          "'" + args[1] + "' is not a valid number",
-                                         {args[1]});
+                                         {args[1]}, TC::RED);
                 return true;
             }
         }
@@ -89,7 +90,7 @@ bool TimeCommand::execute(CommandSender* sender, const std::string&,
         } catch (...) {
             sender->sendTranslatable("commands.generic.num.invalid",
                                      "'" + args[1] + "' is not a valid number",
-                                     {args[1]});
+                                     {args[1]}, TC::RED);
             return true;
         }
         auto* lvl = timeTargetWorld(sender);
@@ -105,7 +106,7 @@ bool TimeCommand::execute(CommandSender* sender, const std::string&,
         return true;
     }
     sender->sendTranslatable("commands.generic.usage", "Usage: /time <set|add|get> [value]",
-                             {"/time <set|add|query> <value>"});
+                             {"/time <set|add|query> <value>"}, TC::RED);
     return true;
 }
 } // namespace

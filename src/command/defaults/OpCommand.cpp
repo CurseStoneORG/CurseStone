@@ -20,6 +20,7 @@
  * Repository: https://github.com/CurseStoneORG/CurseStone
  *
  */
+#include "utils/TextColor.h"
 #include "OpCommand.h"
 #include "Server.h"
 #include "Player.h"
@@ -28,7 +29,7 @@ bool OpCommand::execute(CommandSender* sender, const std::string&,
                         const std::vector<std::string>& args) {
     if (args.empty()) {
         sender->sendTranslatable("commands.generic.usage", "Usage: /op <player>",
-                                 {"/op <player>"});
+                                 {"/op <player>"}, TC::RED);
         return true;
     }
     Server::getInstance().setOp(args[0], true);

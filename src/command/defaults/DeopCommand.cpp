@@ -20,6 +20,7 @@
  * Repository: https://github.com/CurseStoneORG/CurseStone
  *
  */
+#include "utils/TextColor.h"
 #include "DeopCommand.h"
 #include "Server.h"
 #include "Player.h"
@@ -28,7 +29,7 @@ bool DeopCommand::execute(CommandSender* sender, const std::string&,
                           const std::vector<std::string>& args) {
     if (args.empty()) {
         sender->sendTranslatable("commands.generic.usage", "Usage: /deop <player>",
-                                 {"/deop <player>"});
+                                 {"/deop <player>"}, TC::RED);
         return true;
     }
     Server::getInstance().setOp(args[0], false);
