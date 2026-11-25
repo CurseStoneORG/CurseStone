@@ -44,12 +44,24 @@ void TextPacket::encode(std::vector<uint8_t>& out) const {
     case TYPE_SYSTEM:
         w.writeBEString(message);
         break;
-    case TYPE_TRANSLATION:
-        w.writeBEString(message);
+    case TYPE_TRANSLATION: {
+        // The client only resolves a key through its lang table when it carries
+        // the '%' marker (PMMP/Genisys send "%multiplayer.player.joined"); a bare
+        // key is drawn literally. Leading section-sign color codes (§X, UTF-8
+        // C2 A7 + code) stay in front, so a colored line is "§e%key".
+        size_t i = 0;
+        while (i + 2 < message.size() && static_cast<uint8_t>(message[i]) == 0xC2 &&
+               static_cast<uint8_t>(message[i + 1]) == 0xA7)
+            i += 3;
+        std::string wire = message;
+        if (i >= wire.size() || wire[i] != '%')
+            wire.insert(i, "%");
+        w.writeBEString(wire);
         w.writeU8(static_cast<uint8_t>(parameters.size()));
         for (const auto& p : parameters)
             w.writeBEString(p);
         break;
+    }
     default:
         // Unknown type — emit raw message to keep wire shape consistent.
         w.writeBEString(message);
