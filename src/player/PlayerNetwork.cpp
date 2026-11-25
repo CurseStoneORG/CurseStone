@@ -929,8 +929,27 @@ void Player::sendTip(const std::string& msg) {
     pk->message = msg;
     sendPacket(pk);
 }
-void Player::sendTranslation(const std::string& key) {
-    sendMessage(key);
+
+// TYPE_TRANSLATION text packet: the client looks `key` up in its own
+// language table and substitutes the positional parameters into the found
+// template (%1$s..%9$s), so every player reads the line in the language
+// their game is set to — the server never ships localized strings.
+void Player::sendTranslation(const std::string& key,
+                             const std::vector<std::string>& parameters) {
+    auto pk = std::make_shared<network::protocol::TextPacket>();
+    pk->type = network::protocol::TextPacket::TYPE_TRANSLATION;
+    pk->message = key;
+    pk->parameters = parameters;
+    sendPacket(pk);
+}
+
+// CommandSender bridge: a connected client always carries a language table,
+// so the English fallback is dead weight here — the key + parameters are all
+// the client needs to render the localized line.
+void Player::sendTranslatable(const std::string& key, const std::string& fallback,
+                              const std::vector<std::string>& parameters) {
+    (void)fallback;
+    sendTranslation(key, parameters);
 }
 
 void Player::sendSettings() {

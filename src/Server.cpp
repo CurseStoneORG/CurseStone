@@ -1478,6 +1478,29 @@ void Server::broadcastMessage(const std::string& msg) {
     if (!onlyCodes)
         utils::MainLogger::get().chat(msg);
 }
+void Server::broadcastTranslation(const std::string& key,
+                                  const std::vector<std::string>& parameters,
+                                  const std::string& consoleFallback) {
+    // Serialize the translation TextPacket once and reuse the encoded bytes
+    // for every player, exactly like broadcastMessage() — one packet body,
+    // zero per-recipient re-encoding.
+    network::protocol::TextPacket pk;
+    pk.type = network::protocol::TextPacket::TYPE_TRANSLATION;
+    pk.message = key;
+    pk.parameters = parameters;
+    std::vector<uint8_t> body;
+    pk.writePacket(body);
+    if (!body.empty()) {
+        const auto& snap = playersSnapshotRef();
+        for (auto& p : snap)
+            if (p)
+                p->sendEncodedBody(body, pk.pid());
+    }
+    // The console has no language table: mirror the plain-English fallback
+    // so the log stays readable instead of showing raw lang keys.
+    if (!consoleFallback.empty())
+        utils::MainLogger::get().chat(consoleFallback);
+}
 int64_t Server::allocateEid() {
     return next_eid_.fetch_add(1, std::memory_order_relaxed);
 }

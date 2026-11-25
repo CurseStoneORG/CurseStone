@@ -559,7 +559,16 @@ class Player : public IPlayer,
     // --- Chat and messaging ---
     void sendPopup(const std::string& msg);
     void sendTip(const std::string& msg);
-    void sendTranslation(const std::string& key);
+    // Sends a raw lang key with positional parameters as a TYPE_TRANSLATION
+    // text packet. The client resolves the key in its own language table and
+    // substitutes the %1$s..%9$s placeholders, so every player reads the
+    // text in the language their game is set to.
+    void sendTranslation(const std::string& key,
+                         const std::vector<std::string>& parameters = {});
+    // CommandSender bridge: a connected client always carries a language
+    // table, so the English fallback is unused on this path.
+    void sendTranslatable(const std::string& key, const std::string& fallback,
+                          const std::vector<std::string>& parameters = {}) override;
 
     // --- Experience ---
     // exp: 0..100 progress percent within the level (attribute carries 0..1).
@@ -914,6 +923,18 @@ class Player : public IPlayer,
     int starve_ticks_ = 0;           // Starvation damage accumulator.
     int air_ticks_ = 300;            // Remaining underwater air.
     int fire_ticks_ = 0;             // Remaining burn time.
+
+    // --- Last damage state (drives the client-translatable death message) ---
+    // damage()/damageByEntity() stamp these before the pipeline runs: a
+    // lethal hit fires onDeath() synchronously, so the death message reads
+    // the stamp set by the very hit that killed. onDeath() trusts a stamp
+    // only inside the fight window, so stale state (e.g. /kill) degrades to
+    // the vanilla generic death text instead of inventing a cause.
+    event::entity::DamageCause last_damage_cause_ = event::entity::DamageCause::CUSTOM;
+    uint64_t last_damage_tick_ = 0;     // Server tick of the last applied damage.
+    std::string last_attacker_name_;    // Display name of the last entity damager.
+    bool last_attacker_player_ = false; // True when the last damager was a player.
+    uint64_t last_attacker_tick_ = 0;   // Server tick of the last entity damage.
     // Last pose flags byte actually broadcast — broadcastPoseFlags() skips
     // its packets when the byte has not changed, so repeated edge calls
     // (water tick, burn expiry) never touch the wire.
