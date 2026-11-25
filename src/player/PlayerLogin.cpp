@@ -23,6 +23,7 @@
 #include "Player.h"
 #include "item/Item.h"
 #include "player/PlayerInternal.h"
+#include "utils/TextColor.h"
 
 #include "world/World.h"
 #include "world/format/Chunk.h"
@@ -187,7 +188,7 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
 
     // Check whitelist and bans.
     if (!isWhitelisted()) {
-        kick("Server is white-listed");
+        kick("disconnectionScreen.notAllowed");
         return;
     }
 
@@ -215,10 +216,10 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
             });
 
             if (on == lower) {
-                other->kick("logged in from another location");
+                other->kick("disconnectionScreen.loggedinOtherLocation");
             } else if (other->loggedIn() && !other->config().uuid.empty() &&
                        other->config().uuid == cfg_.uuid) {
-                other->kick("logged in from another location");
+                other->kick("disconnectionScreen.loggedinOtherLocation");
             }
         }
     }
@@ -753,11 +754,18 @@ void Player::doFirstSpawn() {
 
     // Broadcast the join event message.
     if (srv_) {
-        auto ev = event::EventManager::get().fire<event::player::PlayerJoinEvent>(
-            this, cfg_.username + " joined the game");
+        const std::string english = cfg_.username + " joined the game";
+        auto ev = event::EventManager::get().fire<event::player::PlayerJoinEvent>(this, english);
 
         if (!ev.isCancelled() && !ev.message.empty()) {
-            srv_->broadcastMessage(ev.message);
+            // Unchanged default: the client renders multiplayer.player.joined
+            // in its own language. A listener that rewrote the message keeps
+            // the raw-text path.
+            if (ev.message == english)
+                srv_->broadcastTranslation("multiplayer.player.joined", {cfg_.username}, english,
+                                           TC::YELLOW);
+            else
+                srv_->broadcastMessage(ev.message);
         }
     }
 
@@ -1184,12 +1192,101 @@ void Player::onDeath() {
     // the removal packets reach a still-connected client).
     removeAllEffects();
 
-    std::string msg = cfg_.username + " died";
+    // Client-translatable death message. The 0.15.10 client carries the
+    // whole vanilla language table, so instead of a hardcoded English
+    // "<name> died" the server broadcasts the death.attack.<cause> key with
+    // the victim as %1$s and, when the death carries one, the killer as
+    // %2$s — every client renders it in its own language. The key comes
+    // from the last-damage stamp (set by the killing hit); a stamp outside
+    // the fight window (e.g. /kill via setHealth(0)) degrades to the
+    // vanilla generic text, and a fresh killer upgrades environmental
+    // deaths to their ".player" variant ("... while trying to escape X").
+    // The event's `message` stays the plain-English line for the console
+    // mirror and plugin listeners: a listener that rewrites it broadcasts
+    // its raw text instead, exactly like before.
+    const uint64_t nowTick = srv_ ? srv_->getCurrentTick() : 0;
+    constexpr uint64_t kFightWindowTicks = 100; // 5 s at 20 TPS.
+    const bool freshCause = last_damage_tick_ != 0 &&
+                            nowTick - last_damage_tick_ <= kFightWindowTicks;
+    const bool freshKiller = !last_attacker_name_.empty() && last_attacker_tick_ != 0 &&
+                             nowTick - last_attacker_tick_ <= kFightWindowTicks;
+    const event::entity::DamageCause cause =
+        freshCause ? last_damage_cause_ : event::entity::DamageCause::CUSTOM;
+    // Table index guard (cannot trigger — the enum ends at MAGIC): clamp to
+    // the generic row instead of skipping the death flow.
+    const size_t causeIdx =
+        (size_t)cause <= (size_t)event::entity::DamageCause::MAGIC
+            ? (size_t)cause
+            : (size_t)event::entity::DamageCause::CUSTOM;
+    static_assert((size_t)event::entity::DamageCause::MAGIC == 12,
+                  "kDeathKeys/kDeathEnglish/kHasEscapeVariant mirror DamageCause");
 
-    auto ev = event::EventManager::get().fire<event::player::PlayerDeathEvent>(this, msg);
+    static constexpr const char* kDeathKeys[] = {
+        "generic",    // CUSTOM — vanilla fallback (incl. /kill).
+        "generic",    // ENTITY_ATTACK — resolved to player/mob by the killer.
+        "inWall",     // CONTACT (suffocation).
+        "fall",       // FALL.
+        "lava",       // LAVA.
+        "inFire",     // FIRE (fire block contact).
+        "onFire",     // FIRE_TICK (burning).
+        "drown",      // DROWNING.
+        "cactus",     // CACTUS.
+        "starve",     // STARVATION.
+        "outOfWorld", // VOID.
+        "arrow",      // PROJECTILE.
+        "magic",      // MAGIC.
+    };
+    static constexpr const char* kDeathEnglish[] = {
+        "died",                    // CUSTOM.
+        "died",                    // ENTITY_ATTACK (killer-specific wording below).
+        "suffocated in a wall",    // CONTACT.
+        "hit the ground too hard", // FALL.
+        "tried to swim in lava",   // LAVA.
+        "went up in flames",       // FIRE.
+        "burned to death",         // FIRE_TICK.
+        "drowned",                 // DROWNING.
+        "was pricked to death",    // CACTUS.
+        "starved to death",        // STARVATION.
+        "fell out of the world",   // VOID.
+        "was shot",                // PROJECTILE.
+        "died by magic",           // MAGIC.
+    };
+    static constexpr bool kHasEscapeVariant[] = {false, false, false, false, true,  true,
+                                                 true,  true,  true,  false, false, false,
+                                                 false}; // LAVA, FIRE, FIRE_TICK,
+                                                         // DROWNING, CACTUS only.
+
+    std::string key = std::string("death.attack.") + kDeathKeys[causeIdx];
+    std::string english = std::string(cfg_.username) + " " + kDeathEnglish[causeIdx];
+    std::vector<std::string> params{cfg_.username};
+    if (freshKiller) {
+        if (cause == event::entity::DamageCause::ENTITY_ATTACK) {
+            // Players murder, mobs assassinate (client lang keys).
+            key = last_attacker_player_ ? "death.attack.player" : "death.attack.mob";
+            english += " was slain by " + last_attacker_name_;
+            params.push_back(last_attacker_name_);
+        } else if (cause == event::entity::DamageCause::PROJECTILE) {
+            key = "death.attack.arrow";
+            english += " was shot by " + last_attacker_name_;
+            params.push_back(last_attacker_name_);
+        } else if (kHasEscapeVariant[causeIdx]) {
+            // ".player" fight variant of the environmental death key
+            // (death.attack.lava.player, death.attack.inFire.player, ...).
+            key += ".player";
+            english += " while fighting " + last_attacker_name_;
+            params.push_back(last_attacker_name_);
+        }
+    }
+
+    auto ev = event::EventManager::get().fire<event::player::PlayerDeathEvent>(this, english);
 
     if (!ev.isCancelled() && !ev.message.empty() && srv_) {
-        srv_->broadcastMessage(ev.message);
+        // Unchanged event default: the translatable key goes on the wire.
+        // A listener that rewrote the message keeps the old raw-text path.
+        if (ev.message == english)
+            srv_->broadcastTranslation(key, params, english);
+        else
+            srv_->broadcastMessage(ev.message);
     }
 
     // Send the death animation and health update.
@@ -1297,6 +1394,16 @@ void Player::onDeath() {
     last_eat_ms_ = 0;
     starve_ticks_ = 0;
     air_ticks_ = 300;
+
+    // Expire the death-message stamps: the next life starts with no fight
+    // history, so a stale cause or killer can never surface in a later
+    // death message. Stamping the tick with the current one (instead of 0)
+    // keeps the "now - stamp" window arithmetic monotonic.
+    last_damage_cause_ = event::entity::DamageCause::CUSTOM;
+    last_damage_tick_ = nowTick;
+    last_attacker_name_.clear();
+    last_attacker_player_ = false;
+    last_attacker_tick_ = nowTick;
 
     // A death mid-draw (very common while shooting) must not leave the
     // drawing pose up for viewers nor a stale draw-start tick behind:

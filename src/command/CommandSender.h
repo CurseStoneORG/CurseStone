@@ -24,6 +24,7 @@
 // players, RCON clients). Mirrors command/CommandSender.
 #pragma once
 #include <string>
+#include <vector>
 #include <memory>
 namespace cursestone {
 class CommandSender {
@@ -31,6 +32,19 @@ class CommandSender {
     virtual ~CommandSender() = default;
     // Where to send messages back to.
     virtual void sendMessage(const std::string& msg) = 0;
+    // Client-translatable feedback line. Senders backed by a game client
+    // (Player) deliver the raw lang key + positional parameters and the
+    // client renders it in its own language; senders without a language
+    // table (console, logs) fall back to the plain-English line.
+    // `prefix` (e.g. TC::RED) colors the line: players get it prepended to the
+    // key, the console gets it prepended to the fallback.
+    virtual void sendTranslatable(const std::string& key, const std::string& fallback,
+                                  const std::vector<std::string>& parameters = {},
+                                  const std::string& prefix = "") {
+        (void)key;
+        (void)parameters;
+        sendMessage(prefix + fallback);
+    }
     // Identity: "CONSOLE" or player username.
     virtual std::string getName() const = 0;
     // Whether the sender has the given permission node.

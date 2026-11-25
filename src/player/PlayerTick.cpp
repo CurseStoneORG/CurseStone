@@ -290,7 +290,13 @@ void Player::handleChat(const std::string& message) {
     if (srv_) {
         auto ev = event::EventManager::get().fire<event::player::PlayerChatEvent>(this, message);
         if (!ev.isCancelled()) {
-            srv_->broadcastMessage(getDisplayName() + ": " + ev.message);
+            // The client formats chat from its own lang table
+            // (chat.type.text = "<%s> %s"), so the broadcast carries the
+            // name and the text as parameters — the vanilla "<Steve> hi"
+            // look in every client language. The console keeps the plain
+            // "name: text" line it has always logged.
+            srv_->broadcastTranslation("chat.type.text", {getDisplayName(), ev.message},
+                                       getDisplayName() + ": " + ev.message);
         }
     }
 }

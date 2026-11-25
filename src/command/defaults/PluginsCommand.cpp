@@ -31,6 +31,7 @@
 // a CommandReader local), a CallbackTask is queued via
 // ServerScheduler::scheduleSync and PluginManager::reloadAll() runs next
 // tick on the main thread. The result is reported through the log.
+#include "utils/TextColor.h"
 #include "PluginsCommand.h"
 #include "plugin/PluginManager.h"
 #include "plugin/LuaBindings.h" // CURSESTONE_API
@@ -56,7 +57,8 @@ bool PluginsCommand::execute(CommandSender* sender, const std::string&,
 
         if (sub == "reload") {
             if (!sender->isOp()) {
-                sender->sendMessage("You do not have permission to use this command.");
+                sender->sendTranslatable("commands.generic.permission",
+                                         "You do not have permission to use this command.", {}, TC::RED);
                 return false;
             }
             // Copiar el nombre AHORA (el puntero sender no sobrevive si el
