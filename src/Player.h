@@ -935,6 +935,14 @@ class Player : public IPlayer,
     std::string last_attacker_name_;    // Display name of the last entity damager.
     bool last_attacker_player_ = false; // True when the last damager was a player.
     uint64_t last_attacker_tick_ = 0;   // Server tick of the last entity damage.
+    // Stamps the state above from the damage overrides in PlayerCombat.cpp.
+    // Must run BEFORE the pipeline delegates into Living: a lethal hit fires
+    // onDeath() synchronously, so the stamp set by the very killing hit is
+    // the one the death message sees. Attacker records are kept separate
+    // from the cause stamp — an environmental death (lava, fire, ...) after
+    // a hit still resolves its ".player" fight variant while the attacker is
+    // fresh, and never from a stale one.
+    void stampLastDamage(event::entity::DamageCause cause, entity::Entity* damager);
     // Last pose flags byte actually broadcast — broadcastPoseFlags() skips
     // its packets when the byte has not changed, so repeated edge calls
     // (water tick, burn expiry) never touch the wire.
