@@ -1204,9 +1204,14 @@ void Player::onDeath() {
                              nowTick - last_attacker_tick_ <= kFightWindowTicks;
     const event::entity::DamageCause cause =
         freshCause ? last_damage_cause_ : event::entity::DamageCause::CUSTOM;
-    const size_t causeIdx = (size_t)cause;
-    if (causeIdx >= (size_t)event::entity::DamageCause::MAGIC + 1)
-        return; // Unreachable: the enum has no other values, guard the table read.
+    // Table index guard (cannot trigger — the enum ends at MAGIC): clamp to
+    // the generic row instead of skipping the death flow.
+    const size_t causeIdx =
+        (size_t)cause <= (size_t)event::entity::DamageCause::MAGIC
+            ? (size_t)cause
+            : (size_t)event::entity::DamageCause::CUSTOM;
+    static_assert((size_t)event::entity::DamageCause::MAGIC == 12,
+                  "kDeathKeys/kDeathEnglish/kHasEscapeVariant mirror DamageCause");
 
     static constexpr const char* kDeathKeys[] = {
         "generic",    // CUSTOM — vanilla fallback (incl. /kill).
@@ -1243,35 +1248,26 @@ void Player::onDeath() {
                                                  false}; // LAVA, FIRE, FIRE_TICK,
                                                          // DROWNING, CACTUS only.
 
-    const char* deathKey = kDeathKeys[causeIdx];
+    std::string key = std::string("death.attack.") + kDeathKeys[causeIdx];
     std::string english = std::string(cfg_.username) + " " + kDeathEnglish[causeIdx];
     std::vector<std::string> params{cfg_.username};
     if (freshKiller) {
-        const bool attackDeath = cause == event::entity::DamageCause::ENTITY_ATTACK ||
-                                 cause == event::entity::DamageCause::PROJECTILE;
-        if (attackDeath || kHasEscapeVariant[causeIdx]) {
-            if (cause == event::entity::DamageCause::ENTITY_ATTACK) {
-                // Players murder, mobs assassinate (client lang keys).
-                deathKey = last_attacker_player_ ? "player" : "mob";
-                english += " was slain by " + last_attacker_name_;
-            } else if (cause == event::entity::DamageCause::PROJECTILE) {
-                deathKey = "arrow";
-                english += " was shot by " + last_attacker_name_;
-            } else {
-                // ".player" fight variant of the environmental death key
-                // (death.attack.lava.player, death.attack.inFire.player, ...).
-                deathKey = nullptr;
-                english += " while fighting " + last_attacker_name_;
-            }
+        if (cause == event::entity::DamageCause::ENTITY_ATTACK) {
+            // Players murder, mobs assassinate (client lang keys).
+            key = last_attacker_player_ ? "death.attack.player" : "death.attack.mob";
+            english += " was slain by " + last_attacker_name_;
+            params.push_back(last_attacker_name_);
+        } else if (cause == event::entity::DamageCause::PROJECTILE) {
+            key = "death.attack.arrow";
+            english += " was shot by " + last_attacker_name_;
+            params.push_back(last_attacker_name_);
+        } else if (kHasEscapeVariant[causeIdx]) {
+            // ".player" fight variant of the environmental death key
+            // (death.attack.lava.player, death.attack.inFire.player, ...).
+            key += ".player";
+            english += " while fighting " + last_attacker_name_;
             params.push_back(last_attacker_name_);
         }
-    }
-
-    std::string key;
-    if (deathKey) {
-        key = std::string("death.attack.") + deathKey;
-    } else {
-        key = std::string("death.attack.") + kDeathKeys[causeIdx] + ".player";
     }
 
     auto ev = event::EventManager::get().fire<event::player::PlayerDeathEvent>(this, english);
