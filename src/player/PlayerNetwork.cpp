@@ -939,8 +939,9 @@ void Player::sendTranslation(const std::string& key,
                              const std::string& prefix) {
     auto pk = std::make_shared<network::protocol::TextPacket>();
     pk->type = network::protocol::TextPacket::TYPE_TRANSLATION;
-    pk->message = prefix + key;
+    pk->message = key; // never prefixed: the client resolves the exact key only
     pk->parameters = parameters;
+    network::protocol::TextPacket::colorFirstParam(pk->parameters, prefix);
     sendPacket(pk);
 }
 
@@ -950,7 +951,12 @@ void Player::sendTranslation(const std::string& key,
 void Player::sendTranslatable(const std::string& key, const std::string& fallback,
                               const std::vector<std::string>& parameters,
                               const std::string& prefix) {
-    (void)fallback;
+    // A colored line with no parameter has nothing to carry the color, and a
+    // prefixed key would be drawn raw: send the colored English line instead.
+    if (!prefix.empty() && parameters.empty()) {
+        sendMessage(prefix + fallback);
+        return;
+    }
     sendTranslation(key, parameters, prefix);
 }
 
