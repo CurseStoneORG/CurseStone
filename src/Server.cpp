@@ -1487,8 +1487,9 @@ void Server::broadcastTranslation(const std::string& key,
     // zero per-recipient re-encoding.
     network::protocol::TextPacket pk;
     pk.type = network::protocol::TextPacket::TYPE_TRANSLATION;
-    pk.message = prefix + key;
+    pk.message = key; // never prefixed: the client resolves the exact key only
     pk.parameters = parameters;
+    network::protocol::TextPacket::colorFirstParam(pk.parameters, prefix);
     std::vector<uint8_t> body;
     pk.writePacket(body);
     if (!body.empty()) {

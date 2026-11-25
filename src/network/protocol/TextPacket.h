@@ -59,6 +59,19 @@ class TextPacket : public DataPacket {
     static constexpr uint8_t TYPE_TIP = 4;
     static constexpr uint8_t TYPE_SYSTEM = 5;
 
+    // Colors a translated line WITHOUT touching the key: the client only
+    // resolves a key that arrives exactly as-is, so a color prefix in front of
+    // it makes it draw the raw key. The vanilla templates (multiplayer.player.*,
+    // commands.generic.*) start with their first %s, so a color code at the
+    // front of the first parameter colors the whole line. Returns false when
+    // there is no parameter to carry the color.
+    static bool colorFirstParam(std::vector<std::string>& params, const std::string& prefix) {
+        if (prefix.empty() || params.empty())
+            return false;
+        params[0] = prefix + params[0];
+        return true;
+    }
+
     uint8_t type = TYPE_RAW;
     std::string source; // CHAT/POPUP only
     std::string message;
