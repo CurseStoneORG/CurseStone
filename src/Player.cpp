@@ -22,6 +22,7 @@
  */
 #include "Player.h"
 #include "player/PlayerInternal.h"
+#include "utils/TextColor.h"
 #include "workbench/WorkbenchManager.h"
 #include "diagnostics/Diagnostics.h"
 #include "diagnostics/DiagnosticEngine.h"
@@ -302,7 +303,7 @@ void Player::close(const std::string& reason) {
                     // a listener-rewritten message keeps the raw-text path.
                     if (ev.message == english)
                         srv_->broadcastTranslation("multiplayer.player.left", {cfg_.username},
-                                                   english);
+                                                   english, TC::YELLOW);
                     else
                         srv_->broadcastMessage(ev.message);
                 }

@@ -563,8 +563,11 @@ class Player : public IPlayer,
     // text packet. The client resolves the key in its own language table and
     // substitutes the %1$s..%9$s placeholders, so every player reads the
     // text in the language their game is set to.
+    // `prefix` (e.g. TC::YELLOW) is prepended to the key like PMMP's
+    // TextFormat::YELLOW . "%key": the client colors the translated line.
     void sendTranslation(const std::string& key,
-                         const std::vector<std::string>& parameters = {});
+                         const std::vector<std::string>& parameters = {},
+                         const std::string& prefix = "");
     // CommandSender bridge: a connected client always carries a language
     // table, so the English fallback is unused on this path.
     void sendTranslatable(const std::string& key, const std::string& fallback,
