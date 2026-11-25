@@ -1478,6 +1478,30 @@ void Server::broadcastMessage(const std::string& msg) {
     if (!onlyCodes)
         utils::MainLogger::get().chat(msg);
 }
+void Server::broadcastTranslation(const std::string& key,
+                                  const std::vector<std::string>& parameters,
+                                  const std::string& consoleFallback,
+                                  const std::string& prefix) {
+    // Serialize the translation TextPacket once and reuse the encoded bytes
+    // for every player, exactly like broadcastMessage() — one packet body,
+    // zero per-recipient re-encoding.
+    network::protocol::TextPacket pk;
+    pk.type = network::protocol::TextPacket::TYPE_TRANSLATION;
+    pk.message = prefix + key;
+    pk.parameters = parameters;
+    std::vector<uint8_t> body;
+    pk.writePacket(body);
+    if (!body.empty()) {
+        const auto& snap = playersSnapshotRef();
+        for (auto& p : snap)
+            if (p)
+                p->sendEncodedBody(body, pk.pid());
+    }
+    // The console has no language table: mirror the plain-English fallback
+    // so the log stays readable instead of showing raw lang keys.
+    if (!consoleFallback.empty())
+        utils::MainLogger::get().chat(consoleFallback);
+}
 int64_t Server::allocateEid() {
     return next_eid_.fetch_add(1, std::memory_order_relaxed);
 }
@@ -1526,6 +1550,14 @@ void Server::notifySaveRequester(const std::string& msg) {
         p->sendMessage(msg);
 }
 
+void Server::notifySaveRequester(const std::string& msg, const std::string& langKey) {
+    utils::MainLogger::get().info(msg);
+    if (autosave_drain_requester_.empty() || autosave_drain_requester_ == "CONSOLE")
+        return;
+    if (Player* p = getPlayerExact(autosave_drain_requester_))
+        p->sendTranslation(langKey);
+}
+
 void Server::requestFullSave(const std::string& requester) {
     // Player data first (cheap, N small files) so world changes the
     // players caused are marked dirty before the pending count is taken.
@@ -1563,7 +1595,8 @@ void Server::requestFullSave(const std::string& requester) {
     }
     if (autosave_draining_)
         notifySaveRequester("[SAVE] Saving world: " + std::to_string(pending) +
-                            " chunk(s) pending — progress will be reported.");
+                                " chunk(s) pending — progress will be reported.",
+                            "commands.save.start");
     else {
         // Even with zero modified chunks, /save is a full save point:
         // rewrite level.dat so Time/LastPlayed reflect the request and
@@ -1573,7 +1606,8 @@ void Server::requestFullSave(const std::string& requester) {
                 w->saveBudget(/*max_chunks=*/0, /*max_ms=*/0,
                               /*write_level_data=*/true);
         }
-        notifySaveRequester("[SAVE] World saved: 0 modified chunks; level.dat updated.");
+        notifySaveRequester("[SAVE] World saved: 0 modified chunks; level.dat updated.",
+                            "commands.save.success");
     }
 }
 
@@ -1733,7 +1767,8 @@ void Server::tickAutosaveDrain() {
                                     "ms (" + std::to_string(autosave_drain_ticks_) +
                                     " ticks, worst tick " +
                                     std::to_string(autosave_drain_max_tick_ms_) +
-                                    "ms). All modified chunks are persisted.");
+                                    "ms). All modified chunks are persisted.",
+                                    "commands.save.success");
             } else {
                 utils::MainLogger::get().info(
                     "[SAVE] Autosave done: " + std::to_string(autosave_drain_written_) +

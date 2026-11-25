@@ -975,7 +975,7 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
                 }
             }
             if (!found) {
-                sendMessage(TC::GRAY + "This bed is incomplete");
+                sendTranslation("tile.bed.notValid");
                 return;
             }
         }
@@ -992,13 +992,13 @@ void Player::handleBlockPlace(int x, int y, int z, uint8_t face, int16_t heldIte
         int32_t t = lvl->time() % world::World::TIME_FULL;
         bool isNight = (t >= world::World::TIME_NIGHT && t < world::World::TIME_SUNRISE);
         if (!isNight) {
-            sendMessage(TC::GRAY + "You can only sleep at night");
+            sendTranslation("tile.bed.noSleep");
             return;
         }
 
         // Attempt to sleep and report occupied beds.
         if (!sleepOn(headX, headY, headZ)) {
-            sendMessage(TC::GRAY + "This bed is occupied");
+            sendTranslation("tile.bed.occupied");
         }
         return;
     }

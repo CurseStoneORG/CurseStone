@@ -71,9 +71,13 @@ bool HelpCommand::execute(CommandSender* sender, const std::string&,
     if (pageNumber > totalPages)
         pageNumber = totalPages;
 
-    // Header (the reference server style: "--- Showing help page X/Y ---")
-    sender->sendMessage("--- Showing help page " + std::to_string(pageNumber) + "/" +
-                        std::to_string(totalPages) + " ---");
+    // Header: the client slots the page numbers into its own lang template
+    // (commands.help.header); the console keeps the plain-English line.
+    sender->sendTranslatable(
+        "commands.help.header",
+        "--- Showing help page " + std::to_string(pageNumber) + "/" +
+            std::to_string(totalPages) + " ---",
+        {std::to_string(pageNumber), std::to_string(totalPages)});
 
     // Show commands for this page
     int start = (pageNumber - 1) * perPage;

@@ -32,6 +32,7 @@
 #include "network/protocol/MobEquipmentPacket.h"
 #include "network/protocol/SetEntityDataPacket.h"
 #include "network/protocol/SetEntityMotionPacket.h"
+#include "entity/EntityTypes.h"
 #include "event/EventManager.h"
 #include "event/player/PlayerInteractEvent.h"
 #include <cmath>
@@ -45,8 +46,32 @@ namespace cursestone {
 // gamemode before firing damage events or sending damage-related packets.
 // This prevents unexpected damage synchronization from crashing 0.15.10.
 // ============================================================
+
+// Stamps the last-damage state (see Player.h — the contract lives there).
+// Must run BEFORE the pipeline delegates into Living: a lethal hit fires
+// onDeath() synchronously inside that call, so the stamp set by the very
+// killing hit is the one the death message sees.
+void Player::stampLastDamage(event::entity::DamageCause cause, entity::Entity* damager) {
+    last_damage_cause_ = cause;
+    last_damage_tick_ = srv_ ? srv_->getCurrentTick() : 0;
+    if (!damager)
+        return;
+    last_attacker_tick_ = last_damage_tick_;
+    if (auto* attacker = dynamic_cast<Player*>(damager)) {
+        last_attacker_player_ = true;
+        last_attacker_name_ = attacker->getDisplayName();
+        return;
+    }
+    // A mob damager carries the protocol-84 network id of its registry type.
+    if (const char* mobName = entity::mobTypeName(damager->networkId())) {
+        last_attacker_player_ = false;
+        last_attacker_name_ = mobName;
+    }
+}
+
 entity::DamageApply Player::damage(float amount) {
     // Custom damage from server-side operations remains allowed in creative.
+    stampLastDamage(event::entity::DamageCause::CUSTOM, nullptr);
     return entity::Living::damage(amount);
 }
 
@@ -70,6 +95,7 @@ entity::DamageApply Player::damage(float amount, event::entity::DamageCause caus
             amount *= 1.0f - 0.2f * (res->amplifier() + 1);
         }
     }
+    stampLastDamage(cause, nullptr);
     auto applied = entity::Living::damage(amount, cause);
     // Taking damage adds 0.3 exhaustion.
     if (applied != entity::DamageApply::CANCELLED)
@@ -85,6 +111,7 @@ entity::DamageApply Player::damageByEntity(float amount, entity::Entity* damager
     // Resistance reduces damage by 20% per level.
     if (const entity::Effect* res = getEffect(entity::EFF_RESISTANCE))
         amount *= 1.0f - 0.2f * (res->amplifier() + 1);
+    stampLastDamage(cause, damager);
     auto applied = entity::Living::damageByEntity(amount, damager, cause);
     // Taking damage adds 0.3 exhaustion.
     if (applied != entity::DamageApply::CANCELLED)
