@@ -214,6 +214,14 @@ class Server {
 
     // Broadcast helpers.
     void broadcastMessage(const std::string& msg);
+    // Broadcasts a client-translatable message: every connected client
+    // receives the raw lang key + positional parameters and renders it in
+    // its own language. `consoleFallback` is the plain-English line mirrored
+    // to the server console (the console has no language table); an empty
+    // string skips the console mirror.
+    void broadcastTranslation(const std::string& key,
+                              const std::vector<std::string>& parameters,
+                              const std::string& consoleFallback);
 
     // World, scheduler, and network accessors.
     World* getDefaultWorld() const {
