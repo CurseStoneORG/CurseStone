@@ -47,13 +47,10 @@ namespace cursestone {
 // This prevents unexpected damage synchronization from crashing 0.15.10.
 // ============================================================
 
-// Stamps the last-damage state the client-translatable death message reads.
+// Stamps the last-damage state (see Player.h — the contract lives there).
 // Must run BEFORE the pipeline delegates into Living: a lethal hit fires
-// onDeath() synchronously, so the stamp set by the very killing hit is the
-// one the death message sees. Attacker records are kept separate from the
-// cause stamp — an environmental death (lava, fire, ...) minutes after a
-// hit still resolves its ".player" fight variant while the attacker is
-// fresh, and never from a stale one.
+// onDeath() synchronously inside that call, so the stamp set by the very
+// killing hit is the one the death message sees.
 void Player::stampLastDamage(event::entity::DamageCause cause, entity::Entity* damager) {
     last_damage_cause_ = cause;
     last_damage_tick_ = srv_ ? srv_->getCurrentTick() : 0;

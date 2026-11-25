@@ -166,7 +166,10 @@ bool SimpleCommandMap::dispatch(CommandSender* sender, const std::string& cmd_li
     try {
         return cmd->execute(sender, name, args);
     } catch (const std::exception& e) {
-        sender->sendMessage("Error executing command: " + std::string(e.what()));
+        // commands.generic.exception = the client's own generic command-error
+        // line; the console fallback keeps the exception detail for triage.
+        sender->sendTranslatable("commands.generic.exception",
+                                 "Error executing command: " + std::string(e.what()));
         return false;
     }
 }
