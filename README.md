@@ -6,19 +6,16 @@
 
   **A modern, native server for Minecraft: Pocket Edition**
 
-  Open-source server software written in C++20.
+  Fast to start. Faithful to the game. Yours to customize.
 
   <p>
-    <a href="https://github.com/CurseStoneORG/CurseStone/actions/workflows/Build.yml">
-      <img src="https://github.com/CurseStoneORG/CurseStone/actions/workflows/Build.yml/badge.svg" alt="Build">
-    </a>
     <img src="https://img.shields.io/badge/license-LGPL--3.0--or--later-blue" alt="License">
   </p>
 
   <p align="center">
     <a href="https://cursestoneorg.github.io/">Website</a> ·
     <a href="https://cursestoneorg.github.io/docs/">Docs</a> ·
-    <a href="https://github.com/CurseStoneORG/CurseStone/releases">Releases</a> ·
+    <a href="https://github.com/CurseStoneORG/CurseStone/releases">Download</a> ·
     <a href="https://github.com/CurseStoneORG/CurseStone/issues">Issues</a>
   </p>
 
@@ -26,94 +23,70 @@
 
 ---
 
-## Why CurseStone exists
+## What is CurseStone?
 
-CurseStoneORG builds a Minecraft: Pocket Edition server that treats the game with respect: one that
-starts fast, runs as a single native program, behaves like the game players remember, and gives server
-owners and plugin authors real control.
+**CurseStone** is server software for **Minecraft: Pocket Edition**. It lets you host your own
+multiplayer world for you and your friends, or for a whole community, with a server that starts
+quickly, plays like the game people remember, and gives you real control over how it works.
 
-Pocket Edition has a loyal community that deserves server software that is actively maintained,
-honest about what it does and doesn't do, and built to last. That is what we build here, in the open,
-with everyone who wants to help.
-
-## What CurseStone is
-
-**CurseStone** is an independent server implementation for **Minecraft: Pocket Edition**.
-The whole core is native C++20: networking, world generation, physics,
-inventories, redstone, commands and the plugin system. It is not a fork and it does not need a
-language runtime installed on your host.
+It is a single native program: no extra runtime to install and nothing to set up before you play.
 
 ## What you get
 
-| | |
-|---|---|
-| **One native binary** | No interpreter or runtime to install. Download, run, play. Releases ship for **Linux x86-64**, **Linux ARM64**, **Android (Termux)** and **Windows x86-64**. |
-| **Vanilla-faithful worlds** | A port of the vanilla Pocket Edition overworld generator: biome layout, rivers, mesa surfaces, vanilla structures, plus the vanilla liquid flow engine. Anvil and LevelDB world formats are supported. |
-| **Two ways to write plugins** | Script in **Lua 5.4** (built in) or ship **native C++ plugins** (`.so` / `.dll`) for maximum speed. Both are documented and come with working examples. |
-| **Client-translated messages** | Join/leave messages, command feedback, chat formats and death messages are rendered by the player's own game in their own language, with color support. |
-| **Diagnostics you can read** | A compiler-style error console, runtime profiling, `/status` with tick-level costs, client-lost reports and crash memory dumps with symbolized backtraces. |
-| **Built for hosting** | Linux builds are compiled against an old glibc ceiling (2.31) so they start on common hosting images, including Pterodactyl. Incomplete `server.properties` files are completed automatically, and the launcher script restarts the server after a crash. |
-| **A real test client** | `cursestone-bot`, a protocol test client, exercises login, chunk streaming, containers and furnaces end to end. |
+### A server that just works
+- **Download and run.** Ready-made builds for **Linux (x86-64 and ARM64)**, **Android (Termux)** and **Windows**.
+- **Made for hosting.** Runs on common hosting images and panels, including Pterodactyl.
+- **Forgiving setup.** A short or incomplete `server.properties` is completed with the missing options for you.
+- **Self-healing.** The included launcher restarts the server automatically if it crashes.
+- **Your own server name** in the server list, set in `cursestone.yml`.
+
+### The game, as players remember it
+- **Vanilla-style worlds.** Natural biomes, rivers, mesa terrain, villages and the vanilla way water and lava flow.
+- **Vanilla gameplay rules.** Mining needs the right tool and follows real break speeds, chests (including double chests), furnaces, buckets, fire, combat, redstone and more.
+- **Your worlds, your format.** Works with Anvil and LevelDB worlds.
+- **Messages in every player's language.** Join and leave messages, command feedback, chat and death messages are shown by each player's own game, in their own language, with colors.
+
+### Make it your own
+- **Plugins in Lua.** Write scripts with the built-in Lua 5.4 support, no compiling needed.
+- **Native plugins for speed.** Ship `.so` / `.dll` plugins when you need maximum performance.
+- **Events and commands.** Hook into player actions, cancel or change them, and add your own commands and permissions.
+- **Examples included**, such as spawn protection and floating text.
+
+### Clear answers when something goes wrong
+- **Readable errors** that say what failed, where and how to fix it, instead of walls of log text.
+- **`/status`** shows how the server is performing, including per-tick costs.
+- **Crash reports** with readable backtraces, so problems can be fixed instead of guessed at.
 
 ## Why choose CurseStone
 
-We won't claim it is the best at everything. Here is where it genuinely stands out, and where it doesn't (yet).
+- **Light and fast to run.** One native program written in C++20, with bounded per-tick work so busy moments don't freeze your server.
+- **Faithful to the game.** Worlds and mechanics follow vanilla behavior instead of approximating it.
+- **Flexible.** Lua for quick ideas, native code for demanding plugins, the same events for both.
+- **Runs almost anywhere.** From a Windows PC to a Linux host or an Android phone.
+- **Open and maintained.** Free software under the LGPL, developed in the open and updated with clear release notes.
 
-**Choose CurseStone if you want:**
-
-- **A single native program.** C++20 end to end, with per-tick work budgets, bounded chunk streaming and a main-thread-safe design written down in the open ([THREADING.md](docs/THREADING.md)). Less to install, less to break.
-- **The classic game, not an approximation of it.** Mining rules, tool gating, liquids and terrain follow vanilla behavior, and every change is checked against a real game client.
-- **Freedom in how you extend it.** Lua when you want to iterate quickly, native C++ when you need raw performance, with the same event model for both.
-- **A project that explains itself.** Architecture notes, a published audit, per-version changelogs in English and Spanish, a documented plugin API and a Doxygen reference.
-- **Hosting that just works.** Prebuilt binaries for four platforms, including Android and ARM64.
-- **An open, welcoming codebase.** LGPL-licensed, with contribution guidelines and a style guide.
-
-**Be aware that:**
-
-- CurseStone supports specific client versions at a time. Check the [release notes](changelogs/README.md) for the versions each release supports.
-- Not every vanilla mechanic is implemented. Mob AI and pathfinding, for example, are still in development.
-- The project is in beta. Features move quickly, and the changelogs say exactly what changed.
-
-If you want a stable, readable, hackable home for Pocket Edition multiplayer, this is it.
+### Honest limits
+- Each release supports specific client versions. Check the [release notes](changelogs/README.md) to see which.
+- Not every vanilla mechanic is implemented yet. Mob AI and pathfinding, for example, are still in development.
+- The project is in beta and moves quickly.
 
 ## Quick start
 
 1. Download the archive for your platform from the [Releases](https://github.com/CurseStoneORG/CurseStone/releases) page.
 2. Extract it and run `start.sh` (Linux / Termux) or `start.bat` (Windows).
-3. Join with a supported Minecraft: Pocket Edition client (see the [release notes](changelogs/README.md)) using your server's address and port.
+3. Join with a supported Minecraft: Pocket Edition client using your server's address and port.
 
-Prefer to build it yourself? See [docs/BUILDING.md](docs/BUILDING.md) (CMake + Ninja, GCC 12 or newer).
+## Learn more
 
-## Technology
-
-| Technology | Purpose |
-|---|---|
-| C++20 | The whole server core: networking, game mechanics and low-level systems |
-| Lua 5.4 | Integrated scripting for plugins |
-| Native Plugin ABI | Function-pointer interface for `.so` / `.dll` plugins |
-| CMake + Ninja | Build configuration and build system |
-
-## Project status
-
-CurseStone is actively developed. Systems and gameplay features keep evolving while compatibility
-with Minecraft: Pocket Edition stays the priority. Support for more client versions is planned as the
-project grows, without compromising the quality of the existing experience.
-
-## Documentation
-
-- **Building:** [docs/BUILDING.md](docs/BUILDING.md)
-- **Plugin API (Lua + native C++):** [docs/PLUGINS.md](docs/PLUGINS.md)
-- **Events:** [docs/EVENTS.md](docs/EVENTS.md)
-- **Diagnostics:** [docs/DIAGNOSTIC_ENGINE.md](docs/DIAGNOSTIC_ENGINE.md) · [docs/CRASH_DIAGNOSTICS.md](docs/CRASH_DIAGNOSTICS.md)
-- **Documentation index:** [docs/README.md](docs/README.md)
+- **Plugins (Lua + native C++):** [docs/PLUGINS.md](docs/PLUGINS.md)
 - **Release notes:** [changelogs](changelogs/README.md)
-- **Online docs:** https://cursestoneorg.github.io/docs/
-- **API reference (Doxygen):** https://cursestoneorg.github.io/doxygen-docs/
+- **Online documentation:** https://cursestoneorg.github.io/docs/
+- **Website:** https://cursestoneorg.github.io/
 
-## Contributing
+## Community and contributing
 
-CurseStone grows with its community. Server code, plugins, testing, documentation, translations and bug
-reports are all welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) and use the
+CurseStone grows with its community. Plugins, bug reports, testing, translations and code are all
+welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) to get started, and use the
 [issue tracker](https://github.com/CurseStoneORG/CurseStone/issues) to report bugs or suggest ideas.
 
 ## License
