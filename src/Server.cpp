@@ -1549,6 +1549,14 @@ void Server::notifySaveRequester(const std::string& msg) {
         p->sendMessage(msg);
 }
 
+void Server::notifySaveRequester(const std::string& msg, const std::string& langKey) {
+    utils::MainLogger::get().info(msg);
+    if (autosave_drain_requester_.empty() || autosave_drain_requester_ == "CONSOLE")
+        return;
+    if (Player* p = getPlayerExact(autosave_drain_requester_))
+        p->sendTranslation(langKey);
+}
+
 void Server::requestFullSave(const std::string& requester) {
     // Player data first (cheap, N small files) so world changes the
     // players caused are marked dirty before the pending count is taken.
@@ -1586,7 +1594,8 @@ void Server::requestFullSave(const std::string& requester) {
     }
     if (autosave_draining_)
         notifySaveRequester("[SAVE] Saving world: " + std::to_string(pending) +
-                            " chunk(s) pending — progress will be reported.");
+                                " chunk(s) pending — progress will be reported.",
+                            "commands.save.start");
     else {
         // Even with zero modified chunks, /save is a full save point:
         // rewrite level.dat so Time/LastPlayed reflect the request and
@@ -1596,7 +1605,8 @@ void Server::requestFullSave(const std::string& requester) {
                 w->saveBudget(/*max_chunks=*/0, /*max_ms=*/0,
                               /*write_level_data=*/true);
         }
-        notifySaveRequester("[SAVE] World saved: 0 modified chunks; level.dat updated.");
+        notifySaveRequester("[SAVE] World saved: 0 modified chunks; level.dat updated.",
+                            "commands.save.success");
     }
 }
 
@@ -1756,7 +1766,8 @@ void Server::tickAutosaveDrain() {
                                     "ms (" + std::to_string(autosave_drain_ticks_) +
                                     " ticks, worst tick " +
                                     std::to_string(autosave_drain_max_tick_ms_) +
-                                    "ms). All modified chunks are persisted.");
+                                    "ms). All modified chunks are persisted.",
+                                    "commands.save.success");
             } else {
                 utils::MainLogger::get().info(
                     "[SAVE] Autosave done: " + std::to_string(autosave_drain_written_) +

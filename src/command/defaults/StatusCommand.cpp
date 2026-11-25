@@ -246,7 +246,9 @@ constexpr uint64_t kPlayerCooldownTicks = 40;
 bool StatusCommand::execute(CommandSender* sender, const std::string&,
                             const std::vector<std::string>&) {
     if (!sender->isOp()) {
-        sender->sendMessage(TC::RED + "You don't have permission to use this command." + TC::RESET);
+        sender->sendTranslatable("commands.generic.permission",
+                                 TC::RED + "You don't have permission to use this command." +
+                                     TC::RESET);
         return true;
     }
 

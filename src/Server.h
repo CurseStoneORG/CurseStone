@@ -414,6 +414,10 @@ class Server {
     }
     // Log + route a save-pipeline message to the manual requester.
     void notifySaveRequester(const std::string& msg);
+    // Same, but a player requester gets the client-translated lang key
+    // (commands.save.start / commands.save.success) instead of the detailed
+    // English line; the console/log keeps the detailed line.
+    void notifySaveRequester(const std::string& msg, const std::string& langKey);
 
     // FASE L stop watchdog (see runStopWatchdog above).
     void runStopWatchdog();

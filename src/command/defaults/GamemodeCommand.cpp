@@ -92,6 +92,9 @@ bool GamemodeCommand::execute(CommandSender* sender, const std::string&,
     // templates slot them at %3$s (commands.gamemode.success.self/other).
     std::string gmName = gm == 0 ? "Survival" : (gm == 1 ? "Creative" : "Adventure");
     if (args.size() >= 2) {
+        // The affected player is told too (vanilla gameMode.changed).
+        if (target != dynamic_cast<Player*>(sender))
+            target->sendTranslation("gameMode.changed");
         sender->sendTranslatable(
             "commands.gamemode.success.other",
             "Set " + target->getName() + "'s game mode to " + gmName,
