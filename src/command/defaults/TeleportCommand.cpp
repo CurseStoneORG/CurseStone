@@ -27,7 +27,8 @@ namespace cursestone {
 bool TeleportCommand::execute(CommandSender* sender, const std::string&,
                               const std::vector<std::string>& args) {
     if (args.size() < 3) {
-        sender->sendMessage("Usage: /teleport <x> <y> <z>");
+        sender->sendTranslatable("commands.generic.usage", "Usage: /teleport <x> <y> <z>",
+                                 {"/teleport <x> <y> <z>"});
         return true;
     }
     Player* target = dynamic_cast<Player*>(sender);
@@ -35,18 +36,27 @@ bool TeleportCommand::execute(CommandSender* sender, const std::string&,
         sender->sendMessage("Console teleport not supported yet");
         return true;
     }
-    double x, y, z;
-    try {
-        x = std::stod(args[0]);
-        y = std::stod(args[1]);
-        z = std::stod(args[2]);
-    } catch (...) {
-        sender->sendMessage("Invalid coordinates");
-        return true;
+    double coords[3];
+    for (int i = 0; i < 3; ++i) {
+        try {
+            coords[i] = std::stod(args[i]);
+        } catch (...) {
+            // The offending token rides as the %s of the client's
+            // "'%s' is not a valid number" template.
+            sender->sendTranslatable("commands.generic.num.invalid",
+                                     "'" + args[i] + "' is not a valid number", {args[i]});
+            return true;
+        }
     }
-    target->teleport(x, y, z);
-    sender->sendMessage("Teleported to " + std::to_string(x) + ", " + std::to_string(y) + ", " +
-                        std::to_string(z));
+    target->teleport(coords[0], coords[1], coords[2]);
+    // commands.tp.success.coordinates = "%s ha sido teletransportado a %s, %s, %s"
+    // — victim name first, then the coordinates.
+    std::string ax = std::to_string(coords[0]), ay = std::to_string(coords[1]),
+                az = std::to_string(coords[2]);
+    sender->sendTranslatable(
+        "commands.tp.success.coordinates",
+        "Teleported to " + ax + ", " + ay + ", " + az,
+        {target->getName(), ax, ay, az});
     return true;
 }
 } // namespace

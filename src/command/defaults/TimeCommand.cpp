@@ -43,7 +43,9 @@ bool TimeCommand::execute(CommandSender* sender, const std::string&,
     if (args.empty()) {
         auto* lvl = timeTargetWorld(sender);
         if (lvl)
-            sender->sendMessage("Current time: " + std::to_string(lvl->time()));
+            sender->sendTranslatable("commands.time.query", "Current time: " +
+                                        std::to_string(lvl->time()),
+                                     {std::to_string(lvl->time())});
         return true;
     }
     if (args[0] == "set" && args.size() >= 2) {
@@ -63,7 +65,9 @@ bool TimeCommand::execute(CommandSender* sender, const std::string&,
             try {
                 t = std::stoi(args[1]);
             } catch (...) {
-                sender->sendMessage("Invalid time");
+                sender->sendTranslatable("commands.generic.num.invalid",
+                                         "'" + args[1] + "' is not a valid number",
+                                         {args[1]});
                 return true;
             }
         }
@@ -73,7 +77,8 @@ bool TimeCommand::execute(CommandSender* sender, const std::string&,
             // One scoped broadcast: exactly the viewers of this world, and
             // the packet is built once (or not at all for an empty world).
             lvl->broadcastTimeSync();
-            sender->sendMessage("Set time to " + std::to_string(t));
+            sender->sendTranslatable("commands.time.set", "Time set to " + std::to_string(t),
+                                     {std::to_string(t)});
         }
         return true;
     }
@@ -82,7 +87,9 @@ bool TimeCommand::execute(CommandSender* sender, const std::string&,
         try {
             t = std::stoi(args[1]);
         } catch (...) {
-            sender->sendMessage("Invalid value");
+            sender->sendTranslatable("commands.generic.num.invalid",
+                                     "'" + args[1] + "' is not a valid number",
+                                     {args[1]});
             return true;
         }
         auto* lvl = timeTargetWorld(sender);
@@ -91,11 +98,14 @@ bool TimeCommand::execute(CommandSender* sender, const std::string&,
             // The client keeps interpolating from its last anchor, so the
             // shift is invisible until the next re-anchor without this.
             lvl->broadcastTimeSync();
-            sender->sendMessage("Added " + std::to_string(t) + " to time");
+            sender->sendTranslatable("commands.time.added", "Added " + std::to_string(t) +
+                                        " to time",
+                                     {std::to_string(t)});
         }
         return true;
     }
-    sender->sendMessage("Usage: /time <set|add|get> [value]");
+    sender->sendTranslatable("commands.generic.usage", "Usage: /time <set|add|get> [value]",
+                             {"/time <set|add|query> <value>"});
     return true;
 }
 } // namespace

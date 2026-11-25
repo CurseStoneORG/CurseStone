@@ -139,7 +139,10 @@ bool SimpleCommandMap::dispatch(CommandSender* sender, const std::string& cmd_li
             }
         }
         if (!cmd) {
-            sender->sendMessage("Unknown command: " + name);
+            // commands.generic.notFound = the client's own "unknown command"
+            // line (no parameters); the console keeps the informative
+            // English line with the typed name.
+            sender->sendTranslatable("commands.generic.notFound", "Unknown command: " + name);
             return false;
         }
         args.insert(args.begin(), std::make_move_iterator(fixed.begin()),
@@ -155,7 +158,9 @@ bool SimpleCommandMap::dispatch(CommandSender* sender, const std::string& cmd_li
     // declared node (empty permission_) stays public:
     // help, list, version.
     if (!cmd->canUse(sender)) {
-        sender->sendMessage("You do not have permission to use this command.");
+        // commands.generic.permission = the client's own "no permission" line.
+        sender->sendTranslatable("commands.generic.permission",
+                                 "You do not have permission to use this command.");
         return false;
     }
     try {
