@@ -208,6 +208,13 @@ constexpr double kPickupHalfExtent = 0.8; // Player half-width (0.3) + grow (0.5
 constexpr double kPickupBelowFeet = 0.5;  // grow (0.5).
 constexpr double kPickupAboveFeet = 2.3;  // Player height (1.8) + grow (0.5).
 
+// The 0.15-era pickup volume is the player box grown by 0.5 on every axis;
+// pin the derived constants so a future edit cannot silently widen the
+// volume back past what the reference scan reaches.
+static_assert(kPickupHalfExtent == 0.8, "pickup half-extent must stay at 0.3 + 0.5");
+static_assert(kPickupBelowFeet == 0.5, "pickup reach below feet must stay at 0.5");
+static_assert(kPickupAboveFeet == 2.3, "pickup reach above feet must stay at 1.8 + 0.5");
+
 // Checks strict AABB overlap between an item and the player's pickup volume.
 inline bool itemWithinPickupVolume(double ix, double iy, double iz, double px, double py,
                                    double pz) {
