@@ -33,6 +33,17 @@ namespace cursestone::entity {
 
 bool Living::applyDamage(float amount) {
     bool was_alive = health_ > 0.0f;
+    // Vanilla absorption (generic.absorption) eats the damage before it can
+    // touch health. A hit fully absorbed leaves the victim unharmed — no
+    // health drop and therefore no hurt flash.
+    if (absorption_ > 0.0f && amount > 0.0f) {
+        float absorbed = absorption_ < amount ? absorption_ : amount;
+        absorption_ -= absorbed;
+        amount -= absorbed;
+        onAbsorptionChanged();
+    }
+    if (amount <= 0.0f)
+        return false;
     health_ -= amount;
     if (health_ < 0)
         health_ = 0;
@@ -42,6 +53,14 @@ bool Living::applyDamage(float amount) {
     else
         onHealthChanged(); // Immediately synchronize health + hurt flash.
     return just_died;
+}
+
+void Living::setAbsorption(float v) {
+    float clamped = v < 0.0f ? 0.0f : v;
+    if (clamped == absorption_)
+        return;
+    absorption_ = clamped;
+    onAbsorptionChanged();
 }
 
 // Default health-changed reaction: push the red hurt flash to every client
