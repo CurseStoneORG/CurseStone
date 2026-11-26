@@ -208,29 +208,53 @@ Breathing, 14 Invisibility, 15 Blindness, 16 Night Vision, 17 Hunger,
 
 ## 10. Implementación (esta rama)
 
-Ver `docs/POTION_EFFECTS_PROGRESS.md` para la lista de commits; resumen:
+Commits reales de `fix-potion-effects-vanilla` (en orden):
 
-1. `fix(effects)`: regla de sustitución vanilla en `Living::addEffect`
-   (amp mayor toma amp+duration; amp igual toma duración mayor; amp menor
-   conserva; particles/ambient reflejados) y `REMOVE` con
-   amplifier=0/particles=0/duration=0 en el paquete.
-2. `fix(effects)`: hambre con intervalo `40>>amp` y drenaje directo de food
-   (referencia de la época) en lugar de agotamiento cada 20 ticks.
-3. `feat(splash)`: radio vanilla (AABB grow 4/2/4 + dist²<16 + escalado
-   `×(1−dist/4)`, base `×0.75`), afecta a mobs y jugadores, botella de agua
-   apaga el fuego de entidades y bloques vecinos, RemoveEntity tras el
-   estallido.
-4. `feat(effects)`: overlay de efectos para mobs (per-MobEntity, tick en el
-   pase de IA, MobEffectPacket + color a los viewers, daño/curación
-   poison/wither/regen/instantáneos, expiración).
-5. `feat(effects)`: absorción real para jugadores (atributo
-   `generic.absorption`, corazones que absorben daño primero, sync de
-   atributos, reset en remove/expire/leche/respawn).
-6. `feat(command)`: `/effect` para aplicar/quitar efectos (tercera vía de
-   aplicación, además de beber y splash).
-7. `test(effects)`: `tools/potion_effect_check.cpp` — wire byte-a-byte del
-   0x19 (ADD/MODIFY/REMOVE a cero), regla de sustitución, escalados de splash,
-   color mezclado, saturación de veneno a ½ corazón.
+1. `a252ee7`/`2669055` — checkpoint de tarea + inventario del código + re-
+   verificación del entorno (docs).
+2. `324c48f` — `docs: vanilla potion reference from binary RE and Genisys
+   0.15.0` (este documento, primera versión).
+3. `389f167` — `fix(effects)`: regla de sustitución vanilla en
+   `Living::addEffect` (amp mayor toma amp+duration; amp igual toma duración
+   mayor; amp menor conserva) y REMOVE con amplifier=0/particles=0/duration=0;
+   hambre con intervalo `40>>amp` y drenaje directo de food (nueva razón
+   `HUNGER_EFFECT`).
+4. `8d37bc4` — `feat(effects)`: absorción real (pool en `Living`, consumo
+   previo a la salud en `applyDamage`, 4 puntos por nivel en add/modify,
+   limpieza en remove/leche/respawn, atributo `generic.absorption` vía
+   UpdateAttributesPacket al dueño).
+5. `81fa940` — `feat(splash)`: volumen vanilla (grow 4/2/4 + dist²<16),
+   afecta a mobs y jugadores, base ×0.75 y escalado `×(1−dist/4)` con
+   redondeo +0.5, botella de agua apaga fuego de bloques (5 celdas del
+   `_dowseFire`) y entidades, overlay de efectos para mobs con paquete 0x19
+   a los viewers + tint metadata + replay al entrar en rango
+   (`sendMobsInChunk`).
+6. `0a6ae84` — `feat(command)`: `/effect <player> <effect> [seconds]
+   [amplifier] | /effect <player> clear` con la regla vanilla de duración 0
+   = quitar.
+7. `3634374` — `test(effects)`: `tools/potion_effect_check.cpp`.
+8. `2e55d4d` — `fix(splash)`: las pociones instantáneas arrojadizas
+   (harming/healing) aterrizan a plena fuerza (el escalado ×0.75 colapsaría
+   su duración de 1 tick a cero).
+
+## 9bis. Pruebas ejecutadas (resultados reales)
+
+- `tools/potion_effect_check.cpp` (nuevo): **27/27 PASS, exit 0** — wire
+  byte-a-byte del 0x19 (ADD/MODIFY/REMOVE a cero), regla de sustitución,
+  geometría de splash, dowse solo con agua, intervalos de la era
+  (25/50/40/40/20 >> amp) y drenaje directo del hambre. Ejecutado con:
+  `g++ -std=c++20 -Wall -Wextra -O1 -Isrc tools/potion_effect_check.cpp
+  src/network/protocol/MobEffectPacket.cpp src/network/protocol/DataPacket.cpp
+  src/entity/Effect.cpp -o /tmp/tools/potion_effect_check` desde la raíz del
+  repo (los checks que escanean fuentes requieren el CWD del repo).
+- Compilación completa: `cmake -G Ninja` + `ninja -j2`: **OK** — 56/56
+  targets, enlaza `CurseStone` (GCC 14.2, x86_64). Tras cada commit se
+  recompilaron además los TU afectados individualmente.
+- Smoke test del binario: arranque real (`./build/CurseStone`) → config
+  cargada, `listening on 0.0.0.0:19132`, `world` cargada, preparación de
+  spawn iniciada; terminado con `timeout -k` limpio.
+- El resto del harness de `tools/` **no** se ejecutó (instrucción del
+  usuario: solo lo necesario).
 
 ## 11. NO VERIFICADO (honesto)
 
@@ -246,6 +270,14 @@ Ver `docs/POTION_EFFECTS_PROGRESS.md` para la lista de commits; resumen:
   (probablemente en `Mob::baseTick`); se usan los de la referencia de la época.
 - Pitch/volumen de sonidos: no medidos.
 - `Mob::canBeAffected` completo (solo se verificó que es la puerta de entrada).
+- Trato del lanzador en el splash: vanilla PC 1.9 da duración completa al
+  lanzador (`d2 = 1.0`); el desensamblado de `onHit` no llegó hasta esa rama,
+  así que CurseStone aplica el mismo escalado por distancia al lanzador que a
+  cualquier entidad. Diferencia máxima posible: el lanzador centrado en el
+  estallido recibe `base × 0.75` en vez de `base`.
+- El ancla vertical del escalado (torso: y+0.9 jugador, y+0.5 mob): la caja
+  candidata ±2 vertical es del binario; el punto exacto de medida de la
+  distancia no se correlacionó con una fórmula cerrada.
 
 ## 12. Limitaciones del entorno
 
