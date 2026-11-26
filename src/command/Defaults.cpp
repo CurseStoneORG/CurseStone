@@ -29,6 +29,7 @@
 #include "defaults/TeleportCommand.h"
 #include "defaults/GamemodeCommand.h"
 #include "defaults/GiveCommand.h"
+#include "defaults/EffectCommand.h"
 #include "defaults/SayCommand.h"
 #include "defaults/ListCommand.h"
 #include "defaults/OpCommand.h"
@@ -51,6 +52,7 @@ void registerDefaultCommands(CommandMap& map) {
     map.registerCommand(std::make_unique<TeleportCommand>());
     map.registerCommand(std::make_unique<GamemodeCommand>());
     map.registerCommand(std::make_unique<GiveCommand>());
+    map.registerCommand(std::make_unique<EffectCommand>());
     map.registerCommand(std::make_unique<SayCommand>());
     map.registerCommand(std::make_unique<ListCommand>());
     map.registerCommand(std::make_unique<OpCommand>());
