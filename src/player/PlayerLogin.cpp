@@ -736,6 +736,10 @@ void Player::doFirstSpawn() {
         }
         for (const auto& [scx, scz] : streamed) {
             getWorld()->sendMobsInChunk(scx, scz, this);
+            // Dropped items of the pre-spawn chunks (drops from other
+            // players, mob loot, previous sessions) — same reason as the
+            // mob pass, no dedup needed (client putEntity replaces).
+            getWorld()->sendDroppedItemsInChunk(scx, scz, this);
         }
     }
 

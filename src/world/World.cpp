@@ -2662,6 +2662,47 @@ void World::sendMobsInChunk(int32_t cx, int32_t cz, Player* viewer) {
     }
 }
 
+void World::sendDroppedItemsInChunk(int32_t cx, int32_t cz, Player* viewer) {
+    if (!viewer || !viewer->spawned())
+        return;
+    // Snapshot under the lock, send outside of it (same lock-order
+    // discipline as sendMobsInChunk). Dropped items are few and short-lived,
+    // so a linear scan beats maintaining a per-chunk bucket that would have
+    // to track items crossing chunk borders while they slide.
+    std::vector<DroppedItem> pending;
+    {
+        std::lock_guard<std::mutex> lk(dropped_items_mtx_);
+        pending.reserve(dropped_items_.size());
+        for (auto& [_, di] : dropped_items_) {
+            if (!di || di->taken)
+                continue;
+            if (((int32_t)std::floor(di->x) >> 4) != cx ||
+                ((int32_t)std::floor(di->z) >> 4) != cz)
+                continue;
+            pending.push_back(*di);
+        }
+    }
+
+    for (const DroppedItem& di : pending) {
+        auto pk = std::make_shared<network::protocol::AddItemEntityPacket>();
+        pk->eid = di.eid;
+        pk->itemId = (int16_t)di.itemId;
+        pk->itemCount = di.count;
+        pk->itemDamage = (int16_t)di.damage;
+        pk->itemNbt = di.nbt;
+        // The current position and motion, not the spawn ones: the client's
+        // putEntity replaces a known eid, so this doubles as a resync for
+        // viewers that already hold the item.
+        pk->x = (float)di.x;
+        pk->y = (float)di.y;
+        pk->z = (float)di.z;
+        pk->speedX = (float)di.vx;
+        pk->speedY = (float)di.vy;
+        pk->speedZ = (float)di.vz;
+        viewer->sendPacket(pk);
+    }
+}
+
 void World::tickArrows(uint64_t current_tick) {
     std::vector<ArrowEntity*> snapshot;
     {
