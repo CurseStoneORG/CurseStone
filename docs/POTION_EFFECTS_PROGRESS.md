@@ -1,7 +1,7 @@
 # POTION_EFFECTS_PROGRESS.md — checkpoint de fix-potion-effects-vanilla
 
-Última actualización: 2026-11-26 — **FASES 0-10 COMPLETADAS; tests y build OK;
-CI pendiente de disparo.**
+Última actualización: 2026-11-26 — **TAREA COMPLETA: FASES 0-12, CI verde;
+sin entorno Android (documentado).***
 
 ## Identidad de la tarea
 
@@ -44,8 +44,7 @@ CI pendiente de disparo.**
       y corregido en revisión; build completo 56/56 + smoke test del binario OK
 - [x] FASE 11 — commits/push progresivos: todos pushados y verificados con
       ls-remote
-- [~] FASE 12 — docs finales listos (`POTION_EFFECTS_VANILLA.md` completo);
-      CI: disparar `workflow_dispatch` si el workflow lo soporta
+- [x] FASE 12 — docs finales listos; CI workflow_dispatch run 45747722439 **success**.
 
 ## Commits de la rama (base 6605b4b)
 
@@ -123,10 +122,17 @@ CI pendiente de disparo.**
 
 1. Si la sesión terminó: `git fetch origin && git switch
    fix-potion-effects-vanilla` — todo el trabajo ya está pushado.
-2. Disparar CI `workflow_dispatch` en el workflow `build.yml` y registrar el
-   resultado real (run id + conclusión).
+2. **CI COMPLETADA**: `Build.yml` `workflow_dispatch` disparado contra
+   `bfab2b7` → run **45747722439**, estado `completed`, conclusión
+   **success** (verificado vía API).
 3. Opcional: abrir PR de `fix-potion-effects-vanilla` → `stable` (el usuario
    hace el merge, como en la tarea pickup).
 4. NO VERIFICADO pendiente (requiere host con KVM o Android real): validación
    visual/funcional de cada poción con el cliente 0.15.10 (FASE 9), medición
    de duraciones desde el binario, trato del lanzador en splash.
+
+## Resultado de CI (real)
+
+- Run 45747722439 (Build.yml, workflow_dispatch, ref fix-potion-effects-vanilla
+  @ bfab2b7): **success**. Pull_request/push también corren automáticamente
+  contra esta rama.
