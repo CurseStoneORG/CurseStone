@@ -133,9 +133,12 @@ void Living::tick(uint64_t t) {
     tickEffects();
 }
 
-// Manage potion effects using one slot per effect ID.
-// Weaker effects are ignored; stronger effects replace existing ones.
-// Instant effects apply immediately when added or replaced.
+// Manage potion effects using one slot per effect ID, with the vanilla
+// 0.15.10 replacement rule measured in MobEffectInstance::update
+// (libminecraftpe.so 0x00BA5BF0): a higher amplifier takes BOTH the
+// amplifier and the duration of the incoming effect, an equal amplifier
+// only takes a strictly longer duration, and a weaker amplifier keeps the
+// running effect untouched. Instant effects apply when they land.
 void Living::addEffect(std::shared_ptr<Effect> e) {
     if (!e || e->isExpired())
         return;
@@ -143,11 +146,15 @@ void Living::addEffect(std::shared_ptr<Effect> e) {
     for (auto& existing : effects_) {
         if ((uint8_t)existing->id() != id)
             continue;
-        bool weaker = e->amplifier() < existing->amplifier() ||
-                      (e->amplifier() == existing->amplifier() &&
-                       e->duration() <= existing->duration());
-        if (weaker)
+        if (e->amplifier() < existing->amplifier())
+            return; // Weaker amplifier: vanilla keeps the running effect.
+        if (e->amplifier() == existing->amplifier() &&
+            e->duration() <= existing->duration()) {
+            // Vanilla still fires the modify sync (particles refresh) even
+            // when nothing changes numerically.
+            onEffectModified(*existing);
             return;
+        }
         existing = std::move(e);
         onEffectModified(*existing);
         if (Effect::isInstant(id))
