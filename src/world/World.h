@@ -797,6 +797,17 @@ class World {
     // viewers who already hold the entity.
     void sendMobsInChunk(int32_t cx, int32_t cz, Player* viewer);
 
+    // Sends the AddItemEntityPacket for every dropped item currently in one
+    // chunk to one player. Rides the chunk stream (and the post-spawn pass)
+    // so items that existed before the player entered range — drops from
+    // other players, mob loot, previous sessions — render for them too; the
+    // era reference spawns exactly this way (sendChunk -> spawnTo() for the
+    // chunk's entities). There is no per-viewer dedup on purpose: the 0.15.10
+    // client's MultiPlayerLevel::putEntity removes the stale entity and
+    // inserts the new one when an eid repeats, so a re-send is a safe
+    // position/motion resync rather than a duplicate.
+    void sendDroppedItemsInChunk(int32_t cx, int32_t cz, Player* viewer);
+
     // Removes every entity of this world from one player's view (mobs,
     // dropped items, arrows, falling blocks, floating-text carriers) and
     // forgets the mob ids. Sent when the player switches to another world
