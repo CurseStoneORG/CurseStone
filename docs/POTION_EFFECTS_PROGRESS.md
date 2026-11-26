@@ -115,10 +115,10 @@ llama `tickEffects` por jugador; mobs heredan el sistema pero nada les aplica ef
 - [x] FASE 0 — protección/checkpoint/rama
 - [x] FASE 1 — inventario del código CurseStone (Effect/Potion/paquetes/ticks)
 - [x] FASE 2 — entorno Android (re-verificación breve + conclusión documentada)
-- [ ] FASE 3 — catálogo de pociones/efectos reales de MCPE 0.15.x
-- [ ] FASE 4 — captura vanilla en vivo (depende del entorno; si no, NO VERIFICADO)
-- [ ] FASE 5 — RE del cliente (paquete de efectos del protocolo 84)
-- [ ] FASE 6 — referencia Genisys (Effect/EffectManager/ItemPotion/paquetes)
+- [x] FASE 3 — catálogo (Genisys 0.15.0 + wiki; tabla binaria NO extraída: runtime)
+- [x] FASE 4 — captura vanilla en vivo: BLOQUEADA por entorno (documentada; NO VERIFICADO)
+- [x] FASE 5 — RE completa (0x19, layout, handler, reglas, splash 4.0/±2.0, absorción)
+- [x] FASE 6 — referencia Genisys 0.15.0 completa (Effect/Entity/Potion/ThrownPotion)
 - [ ] FASE 7 — diseño + implementación en CurseStone
 - [ ] FASE 8 — tests específicos ligeros (sin harness completo)
 - [ ] FASE 9 — validación con MCPE original (sujeta a entorno)
