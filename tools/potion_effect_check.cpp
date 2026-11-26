@@ -172,7 +172,7 @@ int main() {
         check(contains(world, "ey >= py - 2.0 && ey <= py + 2.0"), "volume grows 2 vertically");
         check(contains(world, "d2 >= 16.0"), "per-entity dist^2 < 16 cut");
         check(contains(world, "0.75f"), "splash base is 3/4 of the drinkable duration");
-        check(contains(world, "0.25f) * base + 0.5f"),
+        check(contains(world, "std::sqrt(d2) * 0.25f") && contains(world, "* base +"),
               "per-entity (1 - dist/4) scaling with +0.5 rounding");
         check(contains(world, "addMobEffect(meid"),
               "mobs in the volume receive the effect");

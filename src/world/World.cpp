@@ -3380,7 +3380,12 @@ void World::tickSplashPotions(uint64_t current_tick) {
             // the drinkable duration (MobEffectInstance::getSplashDuration
             // @ 0x00BA5C34) scaled per entity by (1 − dist/4) with +0.5
             // rounding (the 16.0 / -0.25 / 0.5 constant set of the loop).
-            int base = (int)((float)duration * 0.75f);
+            // Instant effects (healing/harming splash, the classic PvP tool)
+            // land at full strength: their one-tick duration would collapse
+            // to zero under the scaling, and the vanilla instant path applies
+            // through applyInstantaneousEffect regardless of duration.
+            bool instant = entity::Effect::isInstant(effect_id);
+            int base = instant ? 1 : (int)((float)duration * 0.75f);
             if (base > 0) {
                 for (auto& pl : Server::getInstance().playersSnapshotRef()) {
                     if (!pl || !pl->spawned() || pl->isDead() || pl->isPendingRemoval())
@@ -3394,9 +3399,12 @@ void World::tickSplashPotions(uint64_t current_tick) {
                     if (!withinSplashVolume(p->x, p->y, p->z, pp.x, pp.y + 0.9, pp.z))
                         continue;
                     double d2 = dx * dx + dy * dy + dz * dz;
-                    if (d2 >= 16.0)
+                    if (!instant && d2 >= 16.0)
                         continue;
-                    int k = (int)((1.0f - (float)std::sqrt(d2) * 0.25f) * base + 0.5f);
+                    int k = instant
+                                ? 1
+                                : (int)((1.0f - (float)std::sqrt(d2) * 0.25f) * base +
+                                        0.5f);
                     if (k <= 0)
                         continue;
                     pl->addEffect(std::make_shared<entity::Effect>(
@@ -3416,14 +3424,17 @@ void World::tickSplashPotions(uint64_t current_tick) {
                         if (!withinSplashVolume(p->x, p->y, p->z, m->x, m->y + 0.5, m->z))
                             continue;
                         double d2 = dx * dx + dy * dy + dz * dz;
-                        if (d2 >= 16.0)
+                        if (!instant && d2 >= 16.0)
                             continue;
                         candidates.push_back({meid, {dx, dy, dz}});
                     }
                 }
                 for (auto& [meid, d] : candidates) {
                     double d2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
-                    int k = (int)((1.0f - (float)std::sqrt(d2) * 0.25f) * base + 0.5f);
+                    int k = instant ? 1
+                                    : (int)((1.0f - (float)std::sqrt(d2) * 0.25f) *
+                                                base +
+                                            0.5f);
                     if (k <= 0)
                         continue;
                     addMobEffect(meid, std::make_shared<entity::Effect>(
