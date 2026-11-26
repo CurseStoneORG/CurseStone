@@ -124,6 +124,9 @@ struct DroppedItem {
     bool on_ground = false;
     // Last position sent to clients for movement updates.
     double lx = 0.0, ly = 0.0, lz = 0.0;
+    // Last motion sent to clients, so SetEntityMotionPacket only goes out
+    // when the velocity actually drifted.
+    double lmx = 0.0, lmy = 0.0, lmz = 0.0;
 };
 
 struct FallingBlockEntity {
