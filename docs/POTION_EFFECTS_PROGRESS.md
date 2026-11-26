@@ -54,11 +54,67 @@
 - Genisys 0.15.0 confirma los IDs (`Info.php`) y es referencia de flujo
   server-side, pero vanilla manda.
 
+## Fase 1 — Inventario CurseStone (COMPLETADA, verificado leyendo el código)
+
+Tabla de funcionalidades (solo resultados comprobados leyendo las fuentes):
+
+| Funcionalidad | CurseStone (estado) | Evidencia |
+|---|---|---|
+| Aplicar efecto | Presente | `Living::addEffect` (Living.cpp ~139); `ItemPotion::applyEatEffects` (meta 5-35); splash en impacto |
+| Duración | Presente | `Effect::duration_`, decremento en `tick()`, expiración `isExpired()` |
+| Amplificador | Presente | `Effect::amplifier_`; usado en `canTick()` y escalados |
+| Expiración | Presente | `Living::tickEffects` → `removeEffect` en expirados |
+| Metadata | Presente | `broadcastPotionColor` → `SetEntityData` DATA_POTION_COLOR(7 int)/DATA_POTION_AMBIENT(8 byte); splash lleva DATA_POTION_ID(16 short) en el AddEntityPacket |
+| Sincronización cliente | Presente | `Player::sendEffectPacket` (owner + viewers mismo mundo, eid real), `sendActiveEffects` al login |
+| Partículas | Presente | registro RGB por efecto (23 ids), `blendedEffectColor`, splash: `EVENT_PARTICLE_SPLASH` + 8 `MOB_SPELL` |
+| Sonidos | Parcial | consumo: `EntityEvent USE_ITEM` (self+otros) con eid real; splash: evento shatter. Sin sonido de aplicación (vanilla tampoco lo tiene aparte del gulp) |
+| Sustitución de efectos | Presente, regla por verificar | `addEffect`: ignora si amp menor, o amp igual y duración <=; reemplaza en caso contrario. **Regla vanilla exacta pendiente de FASE 5/6** |
+| Eliminación | Presente | `removeEffect`, `removeAllEffects` (leche), expiración |
+
+Pociones bebibles: tabla `kPotions` meta 5..35 en `ItemPotion.cpp` (durations
+180/480/90/240/45/120/22/1 s según poción) — **valores por verificar contra el
+binario en FASE 5** (sospecha: veneno extendido 120 s vs PC 1.9 = 90 s).
+
+Splash potion: `throwSplashPotion` (PlayerCombat.cpp ~267) crea AddEntityPacket
+TYPE_THROWN_POTION con DATA_POTION_ID + shooter + motion; server-side
+`SplashPotionEntity` (World.h ~97, física grav 0.1/drag 0.05, timeout 1200
+ticks), `tickSplashPotions` (World.cpp ~3241): rompe contra jugador (caja 0.6/
+0.3/2.1) o bloque sólido, aplica efecto a **jugadores** en radio 6.0
+(distancia torso). **Hallazgos**: no afecta mobs; radio 6.0 sin verificar;
+water bottle no apaga fuego; sin RemoveEntity antes del shatter event
+(RemoveEntity va después ✓).
+
+Efectos con gameplay server en CurseStone: speed/slowness (atributo
+movementSpeed), strength/weakness (PlayerTick ~542), resistance (PlayerCombat
+~92,112), fire resistance (PlayerCombat ~85), water breathing (air_ticks),
+poison/wither/regen/instant health/damage (applyEffectBehavior), hunger/saturation.
+**Sin gameplay server**: jump, haste, mining fatigue, nausea, blindness, night
+vision, invisibilidad (solo flags), absorption (icono sin corazones), health boost.
+En 0.15 el minado/salto son client-authoritative: MobEffectPacket basta para que
+el cliente los aplique; absorption sí requiere corazones extra server-side
+(golden apple lo aplica y el daño ignora los corazones de absorción).
+
+Paquetes de efectos: `MobEffectPacket` ID 0x19 con layout
+[eid Long][eventId][effectId][amplifier][particles][duration Int] — **layout e ID
+presumidos de la era PMMP, SIN verificar contra el binario** → FASE 5 crítica.
+Metadata: PROP_POTION_COLOR=7, PROP_POTION_AMBIENT=8, PROP_POTION_ID=16 — también
+por verificar en FASE 5. `Living` es base de `Human`/mobs; `Player::tickHungerAndDamage`
+llama `tickEffects` por jugador; mobs heredan el sistema pero nada les aplica efectos hoy.
+
+## Fase 2 — Entorno Android (RE-VERIFICADA hoy, misma conclusión)
+
+- Re-verificado hoy: sin `/dev/kvm`, sin binder/ashmem, sin docker; **red hacia
+  OSDN (000), archive.org (000), mirror OCF android-x86 (404)** — la ISO de
+  Android-x86 sigue no descargable; micromamba 2.10.0 sigue operativo.
+- Conclusión idéntica a `docs/ENTORNO.md` (rama pickup): ningún emulador
+  ejecutable en este sandbox. Referencia vanilla vía RE estática de
+  `libminecraftpe.so` + Genisys 0.15.0. Cualquier prueba en vivo = NO VERIFICADO.
+
 ## Fases
 
 - [x] FASE 0 — protección/checkpoint/rama
-- [ ] FASE 1 — inventario del código CurseStone (Effect/Potion/paquetes/ticks)
-- [ ] FASE 2 — entorno Android (re-verificación breve + conclusión documentada)
+- [x] FASE 1 — inventario del código CurseStone (Effect/Potion/paquetes/ticks)
+- [x] FASE 2 — entorno Android (re-verificación breve + conclusión documentada)
 - [ ] FASE 3 — catálogo de pociones/efectos reales de MCPE 0.15.x
 - [ ] FASE 4 — captura vanilla en vivo (depende del entorno; si no, NO VERIFICADO)
 - [ ] FASE 5 — RE del cliente (paquete de efectos del protocolo 84)
