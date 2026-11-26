@@ -987,12 +987,9 @@ void Player::onUpdate(uint64_t current_tick) {
             if (!a || a->taken || !a->stuck)
                 continue;
 
-            // Check overlap with the player's expanded bounding box.
-            if (a->x < pos_.x - 1.3 || a->x > pos_.x + 1.3)
-                continue;
-            if (a->z < pos_.z - 1.3 || a->z > pos_.z + 1.3)
-                continue;
-            if (a->y < pos_.y - 1.0 || a->y > pos_.y + 2.8)
+            // Same vanilla pickup volume as dropped items: the player box
+            // grown by 0.5 on every axis (see World.h constants).
+            if (!world::itemWithinPickupVolume(a->x, a->y, a->z, pos_.x, pos_.y, pos_.z))
                 continue;
 
             bool can_pickup;

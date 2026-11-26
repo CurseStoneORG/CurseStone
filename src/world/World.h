@@ -192,13 +192,18 @@ struct MobEntity {
 };
 
 // Defines the vanilla dropped-item pickup volume for MCPE 0.15.10.
-// Items are collected when their bounding boxes overlap the player's box grown by one block.
-// The shared bounds keep attraction and pickup checks consistent.
+// Items are collected when their bounding boxes overlap the player's pickup
+// volume: the player box grown by 0.5 on every axis, exactly the scan the
+// 0.15-era reference runs in Player::checkNearEntities
+// (boundingBox->grow(0.5, 0.5, 0.5)). The player box is 0.6 wide (half
+// width 0.3) and 1.8 tall, so the volume reaches 0.8 blocks horizontally,
+// 0.5 below the feet and 2.3 above them. The shared bounds keep the item
+// scan and the arrow scan consistent.
 constexpr double kItemHalfW = 0.125;      // Half of the item width.
 constexpr double kItemHeight = 0.25;      // Item height.
-constexpr double kPickupHalfExtent = 1.3; // Player half-width plus pickup range.
-constexpr double kPickupBelowFeet = 1.0;  // Pickup range below the feet.
-constexpr double kPickupAboveFeet = 2.8;  // Player height plus pickup range.
+constexpr double kPickupHalfExtent = 0.8; // Player half-width (0.3) + grow (0.5).
+constexpr double kPickupBelowFeet = 0.5;  // grow (0.5).
+constexpr double kPickupAboveFeet = 2.3;  // Player height (1.8) + grow (0.5).
 
 // Checks strict AABB overlap between an item and the player's pickup volume.
 inline bool itemWithinPickupVolume(double ix, double iy, double iz, double px, double py,
