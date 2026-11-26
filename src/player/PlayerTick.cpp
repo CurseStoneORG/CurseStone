@@ -952,38 +952,11 @@ void Player::onUpdate(uint64_t current_tick) {
 
                 // Broadcast removal only when the entire stack is collected.
                 if (leftover_count == 0) {
-                    // Notify viewers and remove the item entity for the picker.
-                    auto pk_viewer = std::make_shared<network::protocol::TakeItemEntityPacket>();
-                    pk_viewer->target = di->eid;
-                    pk_viewer->entityId = runtimeId();
-                    auto rm_pk = std::make_shared<network::protocol::RemoveEntityPacket>();
-                    rm_pk->eid = di->eid;
                     int32_t pk_cx = (int32_t)std::floor(di->x) >> 4;
                     int32_t pk_cz = (int32_t)std::floor(di->z) >> 4;
                     int viewers = 0;
-                    for (auto& other : srv_->playersSnapshotRef()) {
-                        if (!other)
-                            continue;
-                        if (other.get() == this)
-                            continue;
-                        if (other->isPendingRemoval())
-                            continue;
-                        if (!other->spawned())
-                            continue;
-                        if (other->getWorld() != lvl)
-                            continue; // Dropped items live in one world.
-                        if (!other->canSeeBlock(pk_cx, pk_cz))
-                            continue;
-                        other->sendPacket(pk_viewer);
-                        other->sendPacket(rm_pk);
-                        ++viewers;
-                    }
-                    auto pk_picker = std::make_shared<network::protocol::TakeItemEntityPacket>();
-                    pk_picker->target = di->eid;
-                    pk_picker->entityId = 0;
-                    sendPacket(pk_picker);
+                    sendPickupSequence(lvl, di->eid, pk_cx, pk_cz, &viewers);
                     lvl->removeDroppedItem(di->eid);
-                    sendPacket(rm_pk);
                     if (srv_ && srv_->debugMode()) {
                         utils::MainLogger::get().info(
                             "[PICKUP] " + cfg_.username +
@@ -1045,27 +1018,11 @@ void Player::onUpdate(uint64_t current_tick) {
                 inv_->addItem({arrowIt});
             }
 
-            // Notify viewers and remove the collected arrow entity. The
-            // collector gets the eid=0 form (the reference server's
-            // self-addressed TakeItemEntityPacket), viewers the real id.
-            auto tk = std::make_shared<network::protocol::TakeItemEntityPacket>();
-            tk->target = a->eid;
-            tk->entityId = runtimeId();
-            auto tk_self = std::make_shared<network::protocol::TakeItemEntityPacket>();
-            tk_self->target = a->eid;
-            tk_self->entityId = 0;
-            auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
-            rm->eid = a->eid;
-            for (auto& other : srv_->playersSnapshotRef()) {
-                if (!other || !other->spawned())
-                    continue;
-                if (other->getWorld() != lvl)
-                    continue;
-                if (other.get() != this)
-                    other->sendPacket(tk);
-                other->sendPacket(rm);
-            }
-            sendPacket(tk_self); // Show the pickup animation to the collector.
+            // Notify viewers and remove the collected arrow entity, the same
+            // Take+Remove sequence the item scan sends.
+            int32_t a_cx = (int32_t)std::floor(a->x) >> 4;
+            int32_t a_cz = (int32_t)std::floor(a->z) >> 4;
+            sendPickupSequence(lvl, a->eid, a_cx, a_cz);
             sendInventory();
             if (srv_ && srv_->debugMode()) {
                 utils::MainLogger::get().info("[ARROW] " + cfg_.username +
@@ -1111,6 +1068,52 @@ void Player::onUpdate(uint64_t current_tick) {
 // inside this player's pickup volume, claim that entity (the same atomic
 // claim the scan uses, so two clients cannot both take it) and accept the
 // write instead of wiping the slot.
+//
+// The 0.15.10 client handles TakeItemEntityPacket in
+// ClientNetworkHandler::handle(): it resolves the item with
+// Level::getEntity(EntityUniqueID), requires the hit to be an ItemEntity
+// with a usable ItemInstance, resolves the player with
+// Level::getPlayer(EntityUniqueID), and only then spawns the
+// TakeAnimationParticle (3-tick absorb animation, its own snapshot of the
+// item entity) and plays the random.pop sound. The packet therefore needs
+// BOTH real entity ids: the era-reference eid=0 self-addressed form used to
+// be sent to the picker, but Level::getPlayer(0) never resolves and the
+// pickup rendered dry for the only player who is looking at the item.
+// RemoveEntityPacket follows in the same tick on purpose: the particle no
+// longer depends on the live entity, so the immediate despawn is invisible
+// (this is the vanilla same-tick sequence, not the reverted 10-tick deferral).
+void Player::sendPickupSequence(world::World* lvl, int64_t taken_eid, int32_t cx, int32_t cz,
+                                int* viewers) {
+    if (!srv_ || !lvl)
+        return;
+
+    auto take = std::make_shared<network::protocol::TakeItemEntityPacket>();
+    take->target = taken_eid;
+    take->entityId = runtimeId();
+    auto remove = std::make_shared<network::protocol::RemoveEntityPacket>();
+    remove->eid = taken_eid;
+
+    int count = 0;
+    for (auto& other : srv_->playersSnapshotRef()) {
+        if (!other || other.get() == this)
+            continue;
+        if (other->isPendingRemoval() || !other->spawned())
+            continue;
+        if (other->getWorld() != lvl)
+            continue; // Dropped items live in one world.
+        if (!other->canSeeBlock(cx, cz))
+            continue;
+        other->sendPacket(take);
+        other->sendPacket(remove);
+        ++count;
+    }
+
+    sendPacket(take);
+    sendPacket(remove);
+    if (viewers)
+        *viewers = count;
+}
+
 bool Player::tryClaimNearbyDrop(const item::ItemStack& want) {
     if (!spawned_.load(std::memory_order_relaxed) || !getWorld() || !inv_ || !srv_)
         return false;
@@ -1136,30 +1139,8 @@ bool Player::tryClaimNearbyDrop(const item::ItemStack& want) {
         // Same viewer notification the server-side pickup scan sends.
         int32_t cx = (int32_t)std::floor(di->x) >> 4;
         int32_t cz = (int32_t)std::floor(di->z) >> 4;
-        auto tk = std::make_shared<network::protocol::TakeItemEntityPacket>();
-        tk->target = di->eid;
-        tk->entityId = runtimeId();
-        auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
-        rm->eid = di->eid;
         int viewers = 0;
-        for (auto& other : srv_->playersSnapshotRef()) {
-            if (!other)
-                continue;
-            if (other.get() == this)
-                continue;
-            if (other->isPendingRemoval() || !other->spawned())
-                continue;
-            if (other->getWorld() != lvl)
-                continue; // Dropped items live in one world.
-            if (!other->canSeeBlock(cx, cz))
-                continue;
-            other->sendPacket(tk);
-            other->sendPacket(rm);
-            ++viewers;
-        }
-        tk->entityId = 0;
-        sendPacket(tk); // Pickup animation for the collector.
-        sendPacket(rm);
+        sendPickupSequence(lvl, di->eid, cx, cz, &viewers);
         lvl->removeDroppedItem(di->eid);
         if (srv_->debugMode()) {
             utils::MainLogger::get().info(
