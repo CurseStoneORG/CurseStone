@@ -62,6 +62,7 @@ enum class HungerChangeReason : uint8_t {
     RESPAWN = 5,            // Death respawn reset.
     PLUGIN = 6,             // Plugin or command code path.
     UNKNOWN = 7,            // Unidentified server-internal change.
+    HUNGER_EFFECT = 8,      // Hunger potion effect drain.
 };
 
 class PlayerHungerChangeEvent : public PlayerEvent, public Cancellable {

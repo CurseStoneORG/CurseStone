@@ -238,6 +238,11 @@ void Player::setFoodLevel(int f, event::player::HungerChangeReason reason) {
 }
 
 // Create a protocol 84 effect packet for the specified entity and event.
+// The vanilla integrated server (ServerPlayer::onEffectRemoved @
+// 0x00B2CA08) strips an effect removal down to the identifying fields:
+// amplifier, particles and duration all leave as zero. The 0.15.10
+// client ignores them for REMOVE, but sending the real values would
+// differ from the reference bytes.
 namespace {
 std::shared_ptr<network::protocol::MobEffectPacket> makeEffectPacket(uint64_t eid,
                                                                      const entity::Effect& e,
@@ -246,9 +251,15 @@ std::shared_ptr<network::protocol::MobEffectPacket> makeEffectPacket(uint64_t ei
     pk->eid = eid;
     pk->eventId = eventId;
     pk->effectId = (uint8_t)e.id();
-    pk->amplifier = (uint8_t)e.amplifier();
-    pk->particles = true;
-    pk->duration = e.duration();
+    if (eventId == network::protocol::MobEffectPacket::EVENT_REMOVE) {
+        pk->amplifier = 0;
+        pk->particles = false;
+        pk->duration = 0;
+    } else {
+        pk->amplifier = (uint8_t)e.amplifier();
+        pk->particles = true;
+        pk->duration = e.duration();
+    }
     return pk;
 }
 } // namespace
@@ -401,9 +412,13 @@ void Player::onEffectRemoved(const entity::Effect& e) {
     }
 }
 
-// Hunger drains 0.005 exhaustion per effect level each tick.
+// The hunger effect drains one food point per occurrence on the 40>>amp
+// interval (Effect::canTick), matching the era reference Effect::applyEffect
+// for HUNGER in Genisys 0.15.0 (setFood(getFood() - 1)).
 void Player::onHungerEffectTick(int amplifier) {
-    addExhaustion(0.1f * (amplifier + 1), event::player::PlayerExhaustEvent::CAUSE_POTION);
+    (void)amplifier;
+    if (foodLevel() > 0)
+        setFoodLevel(foodLevel() - 1, event::player::HungerChangeReason::HUNGER_EFFECT);
 }
 
 // Restore one food point and one saturation point per effect interval.
