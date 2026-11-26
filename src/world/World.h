@@ -589,6 +589,13 @@ class World {
     void tickSplashPotions(uint64_t current_tick);
     void addSplashPotion(SplashPotionEntity p);
 
+    // Per-mob active effects (splash potions, /effect). Sparse by design:
+    // a mob without effects costs nothing but one empty-map check per tick.
+    // Storage lives here instead of inside MobEntity so the hot mob struct
+    // keeps its layout and the effects stay behind their own mutex.
+    void addMobEffect(int64_t eid, std::shared_ptr<entity::Effect> e);
+    void tickMobEffects(uint64_t current_tick);
+
     // Atomically claims an arrow for pickup.
     bool tryClaimArrow(int64_t eid);
 
@@ -1015,6 +1022,31 @@ class World {
     // Thrown splash potions indexed by runtime entity ID.
     std::unordered_map<int64_t, std::unique_ptr<SplashPotionEntity>> splash_potions_;
     mutable std::mutex splash_potions_mtx_;
+
+    // Active effects per mob eid (see addMobEffect). Guarded by its own
+    // mutex; lock order is always mobs_mtx_ then mob_effects_mtx_.
+    std::unordered_map<int64_t, std::vector<std::shared_ptr<entity::Effect>>>
+        mob_effects_;
+    mutable std::mutex mob_effects_mtx_;
+
+    // --- Mob effect helpers (splash potions, /effect) ---
+    // Vanilla ThrownPotion::onHit candidate box: hit point grown by (4, 2, 4).
+    static bool withinSplashVolume(double px, double py, double pz, double ex,
+                                   double ey, double ez);
+    // Vanilla ThrownPotion::_dowseFire: water splash clears fire blocks at the
+    // hit cell, its four horizontal neighbours and the cell above.
+    void dowseFireAround(float x, float y, float z);
+    // MobEffectPacket (0x19) with vanilla REMOVE zeroing, to the mob's
+    // chunk viewers.
+    void sendMobEffectToViewers(int64_t eid, int32_t cx, int32_t cz,
+                                const entity::Effect& e, uint8_t event_id);
+    // DATA_POTION_COLOR / DATA_POTION_AMBIENT for a mob to its viewers.
+    void broadcastMobPotionColor(
+        int64_t eid, int32_t cx, int32_t cz,
+        const std::vector<std::shared_ptr<entity::Effect>>& vec);
+    float mobHealth(int64_t eid);
+    float mobMaxHealthOf(int64_t eid);
+    void healMob(int64_t eid, float amount);
 
     // Falling blocks indexed by runtime entity ID.
     std::unordered_map<int64_t, std::unique_ptr<FallingBlockEntity>> falling_blocks_;
