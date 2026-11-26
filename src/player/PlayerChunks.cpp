@@ -362,8 +362,13 @@ void Player::sendChunk(int cx, int cz) {
     // free for chunks whose mobs the client already holds. Runs with no
     // lock held — sendMobsInChunk takes the world's mob lock and then
     // chunks_mtx_ again in rememberMob.
-    if (getWorld())
+    // Dropped items of the chunk ride the same stream (no dedup needed —
+    // the client's putEntity replaces a repeated eid), so drops that
+    // existed before this viewer entered range are visible immediately.
+    if (getWorld()) {
         getWorld()->sendMobsInChunk(cx, cz, this);
+        getWorld()->sendDroppedItemsInChunk(cx, cz, this);
+    }
 }
 
 // ============================================================
@@ -511,8 +516,12 @@ void Player::flushChunkEncodes(int max_chunks, size_t max_bytes) {
         bytes += slot.wire_len;
         // Mobs of this chunk ride the stream (deduped per viewer by the
         // World). No lock held here — see sendChunk for the lock-order note.
-        if (getWorld())
+        // Dropped items ride it too: pre-existing drops render for viewers
+        // that just received the chunk terrain.
+        if (getWorld()) {
             getWorld()->sendMobsInChunk(slot.cx, slot.cz, this);
+            getWorld()->sendDroppedItemsInChunk(slot.cx, slot.cz, this);
+        }
     }
 }
 } // namespace cursestone
