@@ -267,6 +267,18 @@ class Player : public IPlayer,
     // inside the pickup volume so the write is accepted instead of wiped
     // (the real client picks up drops before the server pickup delay ends).
     bool tryClaimNearbyDrop(const item::ItemStack& want);
+    // Broadcasts the pickup of entity `taken_eid` by this player: every other
+    // chunk viewer gets TakeItemEntityPacket(item, this player) followed by
+    // RemoveEntityPacket(item), and the picker gets the same pair. Both
+    // entity ids travel as real values — the 0.15.10 client resolves them
+    // with Level::getEntity()/Level::getPlayer() and only plays the absorb
+    // animation (TakeAnimationParticle, 3 ticks) plus the random.pop sound
+    // when both lookups hit, so the historical eid=0 self-addressed form
+    // leaves the picker without animation. The particle snapshots the item
+    // entity into its own copy, making the immediate removal invisible.
+    // `viewers` optionally receives the count of other viewers notified.
+    void sendPickupSequence(world::World* lvl, int64_t taken_eid, int32_t cx, int32_t cz,
+                            int* viewers = nullptr);
     // Returns cursor items to inventory and drops any overflow.
     void returnFloatingItems();
 
