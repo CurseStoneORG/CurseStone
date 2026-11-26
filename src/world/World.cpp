@@ -1303,29 +1303,55 @@ void World::tickDroppedItems(uint64_t current_tick) {
             di->vy *= -0.5;
     }
 
-    for (DroppedItem* di : snapshot) {
-        double dx = di->x - di->lx, dy = di->y - di->ly, dz = di->z - di->lz;
-        if (std::fabs(dx) < 0.0005 && std::fabs(dy) < 0.0005 && std::fabs(dz) < 0.0005)
-            continue;
-        di->lx = di->x;
-        di->ly = di->y;
-        di->lz = di->z;
+    // Position/motion broadcast pass. The era reference lets item entities
+    // run their movement update only on ticks divisible by five
+    // (Item::onUpdate: "if($currentTick % 5 == 0) $this->updateMovement();"),
+    // and Entity::updateMovement() then broadcasts MoveEntityPacket once the
+    // entity moved more than 0.2 blocks (diffPosition > 0.04) and
+    // SetEntityMotionPacket once the motion changed more than 0.05
+    // (diffMotion > 0.0025) or settled back to rest after a nonzero drift
+    // (diffMotion > 0.0001 with a motion length squared <= 0.0001). Clients
+    // dead-reckon from the last SetEntityMotion between broadcasts, so a
+    // falling or bouncing item stays smooth without a packet per tick.
+    if (current_tick % 5 == 0) {
+        for (DroppedItem* di : snapshot) {
+            double dx = di->x - di->lx, dy = di->y - di->ly, dz = di->z - di->lz;
+            bool moved = dx * dx + dy * dy + dz * dz > 0.04; // 0.2^2.
 
-        auto pk = std::make_shared<network::protocol::MoveEntityPacket>();
-        pk->eid = di->eid;
-        pk->x = (float)di->x;
-        pk->y = (float)di->y;
-        pk->z = (float)di->z;
-        int32_t pk_cx = (int32_t)std::floor(di->x) >> 4;
-        int32_t pk_cz = (int32_t)std::floor(di->z) >> 4;
-        for (auto& p : Server::getInstance().playersSnapshotRef()) {
-            if (!p || !p->spawned())
+            double mdx = di->vx - di->lmx, mdy = di->vy - di->lmy, mdz = di->vz - di->lmz;
+            double diff_motion = mdx * mdx + mdy * mdy + mdz * mdz;
+            double motion_sq = di->vx * di->vx + di->vy * di->vy + di->vz * di->vz;
+            bool motion_changed =
+                diff_motion > 0.0025 || // 0.05^2.
+                (diff_motion > 0.0001 && motion_sq <= 0.0001);
+
+            if (!moved && !motion_changed)
                 continue;
-            if (p->getWorld() != this)
-                continue; // Same world.
-            if (!p->canSeeBlock(pk_cx, pk_cz))
-                continue;
-            p->sendPacket(pk);
+
+            di->lx = di->x;
+            di->ly = di->y;
+            di->lz = di->z;
+            di->lmx = di->vx;
+            di->lmy = di->vy;
+            di->lmz = di->vz;
+
+            int32_t pk_cx = (int32_t)std::floor(di->x) >> 4;
+            int32_t pk_cz = (int32_t)std::floor(di->z) >> 4;
+
+            if (moved) {
+                auto pk = std::make_shared<network::protocol::MoveEntityPacket>();
+                pk->eid = di->eid;
+                pk->x = (float)di->x;
+                pk->y = (float)di->y;
+                pk->z = (float)di->z;
+                sendToChunkViewers(this, pk_cx, pk_cz, pk);
+            }
+
+            if (motion_changed) {
+                auto mk = std::make_shared<network::protocol::SetEntityMotionPacket>();
+                mk->entities.push_back({di->eid, (float)di->vx, (float)di->vy, (float)di->vz});
+                sendToChunkViewers(this, pk_cx, pk_cz, mk);
+            }
         }
     }
 }
