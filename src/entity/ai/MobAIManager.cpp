@@ -251,6 +251,16 @@ MobContext MobAIManager::buildContext(const world::MobEntity& m,
     ctx.bodyHeight = profile.height;
     ctx.eyeHeight = profile.eye_height;
 
+    // Speed/Slowness change the real motion (the vanilla server stacks
+    // movementSpeed attribute modifiers, Mob::_addSpeedBonus): multiply
+    // the profile base once per tick so the factor never accumulates and
+    // decays back to 1.0 when the effects expire.
+    const float speed_factor = world_->mobSpeedMultiplier(m.eid);
+    if (speed_factor != 1.0f) {
+        ctx.walkSpeed *= speed_factor;
+        ctx.panicSpeed *= speed_factor;
+    }
+
     // Water snapshot for the swim model: the feet and chest cells make
     // the body buoyant, the head cell decides the surfacing paddle.
     ctx.inWater = isWaterCell(m.x, m.y, m.z) || isWaterCell(m.x, m.y + 0.5, m.z);

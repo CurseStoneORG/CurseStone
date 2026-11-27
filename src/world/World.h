@@ -637,6 +637,11 @@ class World {
     // keeps its layout and the effects stay behind their own mutex.
     void addMobEffect(int64_t eid, std::shared_ptr<entity::Effect> e);
     void tickMobEffects(uint64_t current_tick);
+    // Combined Speed/Slowness movement factor for a mob's real motion
+    // (the vanilla Mob::_addSpeedBonus attribute-modifier behaviour):
+    // x(1 + 0.2*(amp+1)) per Speed level and x max(0, 1 - 0.15*(amp+1))
+    // per Slowness level, 1.0 when the mob has neither.
+    float mobSpeedMultiplier(int64_t eid);
 
     // Atomically claims an arrow for pickup.
     bool tryClaimArrow(int64_t eid);
