@@ -125,6 +125,7 @@ struct ExperienceOrbEntity {
     int64_t eid = 0;
     double x = 0.0, y = 0.0, z = 0.0;
     double vx = 0.0, vy = 0.0, vz = 0.0;
+    float yaw = 0.0f;            // Spawn heading (vanilla draws it randomly).
     int value = 1;               // XP points (metadata index 11).
     uint64_t spawn_tick = 0;
     uint32_t age = 0;            // Ticks alive; kill at 6000.
@@ -636,6 +637,11 @@ class World {
     // keeps its layout and the effects stay behind their own mutex.
     void addMobEffect(int64_t eid, std::shared_ptr<entity::Effect> e);
     void tickMobEffects(uint64_t current_tick);
+    // Combined Speed/Slowness movement factor for a mob's real motion
+    // (the vanilla Mob::_addSpeedBonus attribute-modifier behaviour):
+    // x(1 + 0.2*(amp+1)) per Speed level and x max(0, 1 - 0.15*(amp+1))
+    // per Slowness level, 1.0 when the mob has neither.
+    float mobSpeedMultiplier(int64_t eid);
 
     // Atomically claims an arrow for pickup.
     bool tryClaimArrow(int64_t eid);
