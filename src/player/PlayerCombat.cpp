@@ -35,6 +35,7 @@
 #include "entity/EntityTypes.h"
 #include "event/EventManager.h"
 #include "event/player/PlayerInteractEvent.h"
+#include <algorithm>
 #include <cmath>
 #include <memory>
 
@@ -89,10 +90,12 @@ entity::DamageApply Player::damage(float amount, event::entity::DamageCause caus
         return entity::DamageApply::CANCELLED;
     }
     // Resistance reduces damage by 20% per level, except void and starvation.
+    // Clamped at zero: an amplifier high enough to invert the factor would
+    // turn the damage negative (Genisys clamped the same way).
     if (const entity::Effect* res = getEffect(entity::EFF_RESISTANCE)) {
         if (cause != event::entity::DamageCause::VOID &&
             cause != event::entity::DamageCause::STARVATION) {
-            amount *= 1.0f - 0.2f * (res->amplifier() + 1);
+            amount *= std::max(0.0f, 1.0f - 0.2f * (res->amplifier() + 1));
         }
     }
     stampLastDamage(cause, nullptr);
@@ -108,9 +111,9 @@ entity::DamageApply Player::damageByEntity(float amount, entity::Entity* damager
     // Creative players are immune to entity attacks and projectiles.
     if (isCreative())
         return entity::DamageApply::CANCELLED;
-    // Resistance reduces damage by 20% per level.
+    // Resistance reduces damage by 20% per level (clamped at zero).
     if (const entity::Effect* res = getEffect(entity::EFF_RESISTANCE))
-        amount *= 1.0f - 0.2f * (res->amplifier() + 1);
+        amount *= std::max(0.0f, 1.0f - 0.2f * (res->amplifier() + 1));
     stampLastDamage(cause, damager);
     auto applied = entity::Living::damageByEntity(amount, damager, cause);
     // Taking damage adds 0.3 exhaustion.
