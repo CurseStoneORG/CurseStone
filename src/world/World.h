@@ -93,7 +93,8 @@ struct ArrowEntity {
 };
 
 // Server-side record of a thrown splash potion (entity type 86).
-// Physics mirror the reference ThrownPotion: gravity 0.1, drag 0.05.
+// Physics mirror the vanilla 0.15.10 ThrownPotion binary: gravity 0.05,
+// drag 0.99 (0.8 in water), throw power 0.5, up-angle offset -20.
 struct SplashPotionEntity {
     int64_t eid = 0;
     int64_t shooter_eid = -1; // Thrower runtime ID; -1 means none.
@@ -102,6 +103,34 @@ struct SplashPotionEntity {
     uint8_t meta = 0;        // Potion data value.
     uint64_t spawn_tick = 0; // Server tick when thrown.
     bool taken = false;      // True after the splash consumed it.
+};
+
+// Server-side record of a thrown experience bottle (entity type 68).
+// Same Throwable physics as the splash potion (gravity 0.05, drag 0.99);
+// the break spawns 3..10 XP split into canonical orbs.
+struct ExperienceBottleEntity {
+    int64_t eid = 0;
+    int64_t shooter_eid = -1;
+    double x = 0.0, y = 0.0, z = 0.0;
+    double vx = 0.0, vy = 0.0, vz = 0.0;
+    uint64_t spawn_tick = 0;
+    bool taken = false;
+};
+
+// Server-side record of an experience orb (entity type 69). Physics and
+// behaviour mirror the vanilla ExperienceOrb binary: gravity -0.04, water
+// buoyancy +0.2, horizontal drag 0.98 x block friction (0.588 default),
+// lifetime 6000 ticks, value carried in metadata index 11 (TYPE_INT).
+struct ExperienceOrbEntity {
+    int64_t eid = 0;
+    double x = 0.0, y = 0.0, z = 0.0;
+    double vx = 0.0, vy = 0.0, vz = 0.0;
+    int value = 1;               // XP points (metadata index 11).
+    uint64_t spawn_tick = 0;
+    uint32_t age = 0;            // Ticks alive; kill at 6000.
+    int64_t follow_eid = 0;      // Player the orb is attracted to (unique id).
+    uint32_t follow_tick = 0;    // Age tick when the player was acquired.
+    bool taken = false;          // True after pickup / expiry.
 };
 
 // Tracks a dropped item, its position, motion, and pickup state.
@@ -589,6 +618,18 @@ class World {
     void tickSplashPotions(uint64_t current_tick);
     void addSplashPotion(SplashPotionEntity p);
 
+    // --- Vanilla experience entities (0.15.10 binary) ---
+    // Thrown XP bottle (entity type 68): Throwable physics, break spawns
+    // 3..10 XP split into canonical orbs.
+    void tickExperienceBottles(uint64_t current_tick);
+    void addExperienceBottle(ExperienceBottleEntity p);
+    // XP orbs (entity type 69): splits @p total into the canonical ladder
+    // {1,3,7,17,37,73,149,307,617,1237,2477} the binary uses and spawns one
+    // orb record + AddEntityPacket per piece. Values < 1 are ignored.
+    void spawnXPOrbs(double x, double y, double z, int total);
+    void tickExperienceOrbs(uint64_t current_tick);
+    void addExperienceOrb(ExperienceOrbEntity p);
+
     // Per-mob active effects (splash potions, /effect). Sparse by design:
     // a mob without effects costs nothing but one empty-map check per tick.
     // Storage lives here instead of inside MobEntity so the hot mob struct
@@ -1022,6 +1063,16 @@ class World {
     // Thrown splash potions indexed by runtime entity ID.
     std::unordered_map<int64_t, std::unique_ptr<SplashPotionEntity>> splash_potions_;
     mutable std::mutex splash_potions_mtx_;
+
+    // Thrown experience bottles indexed by runtime entity ID.
+    std::unordered_map<int64_t, std::unique_ptr<ExperienceBottleEntity>>
+        xp_bottles_;
+    mutable std::mutex xp_bottles_mtx_;
+
+    // Experience orbs indexed by runtime entity ID. The pickup takes the
+    // orb record while only holding xp_orbs_mtx_, never the player lock.
+    std::unordered_map<int64_t, std::unique_ptr<ExperienceOrbEntity>> xp_orbs_;
+    mutable std::mutex xp_orbs_mtx_;
 
     // Active effects per mob eid (see addMobEffect). Guarded by its own
     // mutex; lock order is always mobs_mtx_ then mob_effects_mtx_.

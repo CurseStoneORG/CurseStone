@@ -52,6 +52,9 @@ enum ItemId : uint16_t {
     ITEM_BOW = 261,
     ITEM_POTION = 373,
     ITEM_GLASS_BOTTLE = 374,
+    // Bottle o' Enchanting (ExperiencePotionItem in the 0.15.10 binary;
+    // Genisys ItemIds: BOTTLE_O_ENCHANTING = 384). Throwable item.
+    ITEM_EXP_BOTTLE = 384,
     ITEM_SPLASH_POTION = 438,
     ITEM_SHEARS = 359,
     ITEM_FLINT_STEEL = 259,
