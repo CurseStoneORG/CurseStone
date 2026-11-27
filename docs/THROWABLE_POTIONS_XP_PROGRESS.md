@@ -164,9 +164,13 @@ Todo lo siguiente fue medido en `libminecraftpe.so` 0.15.10 con desensamblado Th
 - Smoke: arranque + 15 s + SIGTERM + cierre limpio ("Shutdown complete", mundo guardado).
 - ASAN (d50161d): sin hallazgos.
 
+## CI y PR (resultado real)
+
+- **PR #16** abierto: `fix-throwable-potions-xp-vanilla` → `stable` — https://github.com/CurseStoneORG/CurseStone/pull/16
+- **CI sobre el commit exacto `fd8f085`**: run 45945084172 "Build CurseStone" = **completed success**; run 45945084171 "Docs" = success. (Nota: Build.yml no se dispara por push a esta rama, solo por el PR/push a stable; el run se verificó por API con la autenticación configurada.)
+
 ## Próximo paso exacto
 
-1. Verificar el run de CI (Build.yml) del último push en GitHub Actions y anotar el resultado en este checkpoint.
-2. Abrir el PR de `fix-throwable-potions-xp-vanilla` → `stable` (no fusionar sin revisión).
+1. Revisar y fusionar el PR #16 (no fusionar sin revisión).
 3. Validación con el cliente real 0.15.10 cuando haya un entorno Android (todo lo visual queda NO VERIFICADO): trayectoria medida, HUD, sonido de recogida, recogida con delay.
 4. Ajustar el color del splash XP si el global del binario se llega a leer (un punto en `tickExperienceBottles`).
