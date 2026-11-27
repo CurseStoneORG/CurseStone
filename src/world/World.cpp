@@ -1203,6 +1203,19 @@ void World::tickDroppedItems(uint64_t current_tick) {
 
         di->vy -= kItemGravity;
 
+        // Vanilla ItemEntity::normalTick water branch (BlockSource::getMaterial
+        // + Material::isType(6) @ 0x00be9ae2): a dropped item inside water gets
+        // its vertical motion overwritten with +0.2, so it floats up to the
+        // surface instead of sinking through the pool.
+        {
+            int wi = (int)std::floor(di->x);
+            int wj = (int)std::floor(di->y);
+            int wk = (int)std::floor(di->z);
+            uint8_t in = getBlockId(wi, wj, wk);
+            if (in == block::WATER || in == block::FLOWING_WATER)
+                di->vy = 0.2;
+        }
+
         {
             int i = (int)std::floor(di->x);
             int j = (int)std::floor(di->y);
@@ -3555,6 +3568,7 @@ void World::addExperienceOrb(ExperienceOrbEntity p) {
     add->speedX = (float)p.vx;
     add->speedY = (float)p.vy;
     add->speedZ = (float)p.vz;
+    add->yaw = p.yaw;
     network::protocol::SetEntityDataPacket::Entry val;
     val.index = network::protocol::SetEntityDataPacket::PROP_XP_ORB_VALUE;
     val.type = network::protocol::SetEntityDataPacket::TYPE_INT;
@@ -3582,7 +3596,18 @@ void World::addExperienceOrb(ExperienceOrbEntity p) {
 // position (ExperienceOrb::spawnOrbs @ 0x00be8864 server path: while the
 // remaining count drains, each piece takes the ladder value for the
 // remainder and a new ExperienceOrb joins the level).
+//
+// Initial motion comes from the vanilla constructor itself
+// (ExperienceOrb::ExperienceOrb(BlockSource&, Vec3 const&, int, Player*) @
+// 0x00be7c38): every orb draws its own numbers from Level::getRandom() —
+// X/Z = rand01 * 0.4 - 0.2 (literals 0x3ECCCCCD / 0xBE4CCCCD), Y =
+// rand01 * 0.4 (the upward hop) and yaw = rand01 * 360.0 (0x43B40000).
+// Without that per-orb draw every piece spawns frozen on the same spot.
 void World::spawnXPOrbs(double x, double y, double z, int total) {
+    // Same uniform [0, 1) source the other entity spawns use.
+    auto rand01 = []() {
+        return (double)std::rand() / ((double)RAND_MAX + 1.0);
+    };
     int remaining = total;
     int guard = 0;
     while (remaining > 0 && guard++ < 64) {
@@ -3594,6 +3619,10 @@ void World::spawnXPOrbs(double x, double y, double z, int total) {
         orb.x = x;
         orb.y = y;
         orb.z = z;
+        orb.vx = rand01() * 0.4 - 0.2;
+        orb.vy = rand01() * 0.4;
+        orb.vz = rand01() * 0.4 - 0.2;
+        orb.yaw = (float)(rand01() * 360.0);
         orb.value = piece;
         orb.spawn_tick = Server::getInstance().getCurrentTick();
         addExperienceOrb(orb);
