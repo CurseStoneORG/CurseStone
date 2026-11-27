@@ -137,15 +137,15 @@ Direcciones base .text ~0x00ba7xxx-0x00bf5xxx:
 | 2 | Extracción e inventario del binario .so | COMPLETADA |
 | 3 | Investigación mirada/orientación (binario + CurseStone) | COMPLETADA (implementada Etapa A) |
 | 4 | Investigación agua/natación | COMPLETADA (horizontal implementada Etapa B) |
-| 5 | Investigación navegación/pathfinding | PENDIENTE |
-| 6 | Investigación percepción y estados | PENDIENTE |
+| 5 | Investigación navegación/pathfinding | SÍMBOLOS INVENTARIADOS (A* pendiente de desensamblar; no reimprovisado) |
+| 6 | Investigación percepción y estados | PARCIAL (rangos mirada alineados; LOS/TargetGoal pendiente) |
 | 7 | Auditoría vanilla vs CurseStone (tabla) | EN CURSO (checkpoint §4) |
 | 8 | Implementación por etapas | ETAPAS A-D IMPLEMENTADAS |
-| 9 | Pruebas focalizadas + regresión | PENDIENTE |
-| 10 | Documentación REVERSE_ENGINEERING + IMPLEMENTATION | PENDIENTE |
-| 11 | Build limpio + smoke test + CI del último commit | PENDIENTE |
-| 12 | PR hacia `stable` (sin auto-merge) | PENDIENTE |
-| 13 | Validación en cliente MCPE 0.15.10 real | PENDIENTE (marcar NO VERIFICADO si no hay entorno) |
+| 9 | Pruebas focalizadas + regresión | COMPLETADA (water_check 67, goal_check, bench e2e, build, smoke) |
+| 10 | Documentación REVERSE_ENGINEERING + IMPLEMENTATION | COMPLETADA |
+| 11 | Build limpio + smoke test + CI del último commit | BUILD+SMOKE OK; CI tras push de docs |
+| 12 | PR hacia `stable` (sin auto-merge) | tras push de docs |
+| 13 | Validación en cliente MCPE 0.15.10 real | NO VERIFICADO EN CLIENTE MCPE 0.15.10 (sin emulador en el sandbox) |
 
 ## 6. Commits
 
@@ -153,7 +153,9 @@ Direcciones base .text ~0x00ba7xxx-0x00bf5xxx:
 | --- | --- | --- |
 | 80d4be0 | Checkpoint inicial (PR #17 fusionado, rama creada) | sí (ls-remote) |
 | b3ae82c | Inventario del binario + constantes RE + auditoría + diseño | sí |
-| (este) | Etapas A-D: rotación vanilla, inercia de agua, rangos de mirada, flags RMW | tras push |
+| ef6448b | Etapas A-D: rotación vanilla, inercia de agua, rangos de mirada, flags RMW | sí |
+| a3a309f | revive tools/mob_ai_check.cpp para stage 2 | sí |
+| (este) | docs RE + IMPLEMENTATION + checkpoint | tras push |
 
 ## 7. Resultado de las etapas implementadas
 
