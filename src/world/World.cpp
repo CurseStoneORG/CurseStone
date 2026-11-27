@@ -63,7 +63,9 @@
 #include "network/protocol/MoveEntityPacket.h"
 #include "network/protocol/SetEntityMotionPacket.h"
 #include "network/protocol/SetEntityDataPacket.h"
+#include "network/protocol/MobEffectPacket.h"
 #include "network/protocol/AddItemEntityPacket.h"
+#include <array>
 #include "world/particle/Particle.h"
 #include "world/particle/FloatingTextParticle.h"
 #include "world/particle/ParticleNames.h"
@@ -596,6 +598,7 @@ void World::tick(uint64_t current_tick) {
     // Death windows close before the AI pass reads the records (dying
     // mobs are skipped there); an empty window costs one counter read.
     tickMobDeaths(current_tick);
+    tickMobEffects(current_tick);
     // Mob AI last: goals and actuation read the blocks the passes above
     // may have just changed (liquid, falling blocks) and budget what is
     // left of the tick, not more.
@@ -2659,6 +2662,23 @@ void World::sendMobsInChunk(int32_t cx, int32_t cz, Player* viewer) {
         // state again (the chicken wing state, see sendMobGroundSettle).
         sendMobGroundSettle(this, m.eid, m.cx, m.cz, m.x, m.y, m.z, m.yaw,
                             m.head_yaw, m.pitch);
+        // A mob that already carries effects replays them to the new viewer:
+        // the client's MobEffectPacket handler resolves against Level::getEntity
+        // and this AddEntity just created the entry, so the ADD packets must
+        // follow immediately, with the tint metadata last.
+        std::vector<std::shared_ptr<entity::Effect>> effects;
+        {
+            std::lock_guard<std::mutex> lk(mob_effects_mtx_);
+            auto it = mob_effects_.find(m.eid);
+            if (it != mob_effects_.end())
+                effects = it->second;
+        }
+        for (const auto& e : effects) {
+            sendMobEffectToViewers(m.eid, m.cx, m.cz, *e,
+                                   network::protocol::MobEffectPacket::EVENT_ADD);
+        }
+        if (!effects.empty())
+            broadcastMobPotionColor(m.eid, m.cx, m.cz, effects);
     }
 }
 
@@ -3336,20 +3356,90 @@ void World::tickSplashPotions(uint64_t current_tick) {
                 world::particle::PARTICLE_MOB_SPELL,
                 world::Position{p->x + ox, p->y + oy, p->z + oz}, (int32_t)color));
         }
-        if (has_effect) {
+        if (p->meta == 0) {
+            // Vanilla water splash: ThrownPotion::onHit routes plain water to
+            // _dowseFire (0x00C20F38) — fire blocks around the hit point go
+            // out, and burning entities caught in the same volume are
+            // extinguished.
+            dowseFireAround((float)p->x, (float)p->y, (float)p->z);
             for (auto& pl : Server::getInstance().playersSnapshotRef()) {
                 if (!pl || !pl->spawned() || pl->isDead() || pl->isPendingRemoval())
                     continue;
                 if (pl->getWorld() != this)
                     continue;
-                const auto& pp = pl->getNextPosition();
-                double dx = pp.x - p->x;
-                double dy = (pp.y + 0.9) - p->y; // torso distance
-                double dz = pp.z - p->z;
-                if (dx * dx + dy * dy + dz * dz > 6.0 * 6.0)
+                if (!withinSplashVolume(p->x, p->y, p->z, pl->getNextPosition().x,
+                                        pl->getNextPosition().y + 0.9,
+                                        pl->getNextPosition().z))
                     continue;
-                pl->addEffect(std::make_shared<entity::Effect>(
-                    entity::Effect::create(effect_id, duration, amplifier)));
+                pl->extinguishFire();
+            }
+        } else if (has_effect) {
+            // Vanilla ThrownPotion::onHit @ 0x00C208B4: the candidate volume
+            // is the hit point grown by (4, 2, 4); every living entity inside
+            // with dist² < 16 takes the effect, with the splash base of ¾ of
+            // the drinkable duration (MobEffectInstance::getSplashDuration
+            // @ 0x00BA5C34) scaled per entity by (1 − dist/4) with +0.5
+            // rounding (the 16.0 / -0.25 / 0.5 constant set of the loop).
+            // Instant effects (healing/harming splash, the classic PvP tool)
+            // land at full strength: their one-tick duration would collapse
+            // to zero under the scaling, and the vanilla instant path applies
+            // through applyInstantaneousEffect regardless of duration.
+            bool instant = entity::Effect::isInstant(effect_id);
+            int base = instant ? 1 : (int)((float)duration * 0.75f);
+            if (base > 0) {
+                for (auto& pl : Server::getInstance().playersSnapshotRef()) {
+                    if (!pl || !pl->spawned() || pl->isDead() || pl->isPendingRemoval())
+                        continue;
+                    if (pl->getWorld() != this)
+                        continue;
+                    const auto& pp = pl->getNextPosition();
+                    double dx = pp.x - p->x;
+                    double dy = (pp.y + 0.9) - p->y; // torso distance
+                    double dz = pp.z - p->z;
+                    if (!withinSplashVolume(p->x, p->y, p->z, pp.x, pp.y + 0.9, pp.z))
+                        continue;
+                    double d2 = dx * dx + dy * dy + dz * dz;
+                    if (!instant && d2 >= 16.0)
+                        continue;
+                    int k = instant
+                                ? 1
+                                : (int)((1.0f - (float)std::sqrt(d2) * 0.25f) * base +
+                                        0.5f);
+                    if (k <= 0)
+                        continue;
+                    pl->addEffect(std::make_shared<entity::Effect>(
+                        entity::Effect::create(effect_id, k, amplifier)));
+                }
+                // Mobs stand in the same volume: every Mob in the candidate
+                // box takes the effect (Level::getEntities, not just players).
+                std::vector<std::pair<int64_t, std::array<double, 3>>> candidates;
+                {
+                    std::lock_guard<std::mutex> lk(mobs_mtx_);
+                    for (auto& [meid, m] : mobs_) {
+                        if (!m || m->death_tick != 0)
+                            continue;
+                        double dx = m->x - p->x;
+                        double dy = (m->y + 0.5) - p->y;
+                        double dz = m->z - p->z;
+                        if (!withinSplashVolume(p->x, p->y, p->z, m->x, m->y + 0.5, m->z))
+                            continue;
+                        double d2 = dx * dx + dy * dy + dz * dz;
+                        if (!instant && d2 >= 16.0)
+                            continue;
+                        candidates.push_back({meid, {dx, dy, dz}});
+                    }
+                }
+                for (auto& [meid, d] : candidates) {
+                    double d2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+                    int k = instant ? 1
+                                    : (int)((1.0f - (float)std::sqrt(d2) * 0.25f) *
+                                                base +
+                                            0.5f);
+                    if (k <= 0)
+                        continue;
+                    addMobEffect(meid, std::make_shared<entity::Effect>(
+                                           entity::Effect::create(effect_id, k, amplifier)));
+                }
             }
         }
         auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
@@ -3369,6 +3459,276 @@ void World::tickSplashPotions(uint64_t current_tick) {
             else
                 ++it;
         }
+    }
+}
+
+// Vanilla ThrownPotion::onHit candidate test: the hit point grown by
+// (4, 2, 4). The distance² < 16 cut happens per entity on top of this box.
+bool World::withinSplashVolume(double px, double py, double pz, double ex, double ey,
+                               double ez) {
+    return ex >= px - 4.0 && ex <= px + 4.0 && ey >= py - 2.0 && ey <= py + 2.0 &&
+           ez >= pz - 4.0 && ez <= pz + 4.0;
+}
+
+// Vanilla ThrownPotion::_dowseFire (0x00C20F38): a water splash clears the
+// burning blocks at the hit position, its four horizontal neighbours and the
+// cell above (the five setBlock calls of the disassembly).
+void World::dowseFireAround(float x, float y, float z) {
+    const int bx = (int)std::floor(x);
+    const int by = (int)std::floor(y);
+    const int bz = (int)std::floor(z);
+    static constexpr int kDx[4] = {1, -1, 0, 0};
+    static constexpr int kDz[4] = {0, 0, 1, -1};
+    for (int i = 0; i < 4; ++i) {
+        int px = bx + kDx[i], pz = bz + kDz[i];
+        if (getBlockId(px, by, pz) == block::FIRE)
+            setBlock(px, by, pz, block::AIR, 0);
+    }
+    if (getBlockId(bx, by, bz) == block::FIRE)
+        setBlock(bx, by, bz, block::AIR, 0);
+    if (getBlockId(bx, by + 1, bz) == block::FIRE)
+        setBlock(bx, by + 1, bz, block::AIR, 0);
+}
+
+namespace {
+// Blended potion tint for a mob's active effect list (the reference
+// Entity::recalculateEffectColor weighting: per-effect RGB × (amp+1)).
+uint32_t mobBlendedColor(const std::vector<std::shared_ptr<entity::Effect>>& vec) {
+    uint32_t r = 0, g = 0, b = 0, count = 0;
+    for (const auto& e : vec) {
+        uint32_t c = entity::Effect::colorOf((uint8_t)e->id());
+        uint32_t w = (uint32_t)(e->amplifier() + 1);
+        r += ((c >> 16) & 0xFF) * w;
+        g += ((c >> 8) & 0xFF) * w;
+        b += (c & 0xFF) * w;
+        count += w;
+    }
+    if (count == 0)
+        return 0;
+    return ((r / count) << 16) | ((g / count) << 8) | (b / count);
+}
+} // namespace
+
+// One MobEffectPacket for a mob, delivered to its chunk viewers with the
+// vanilla field discipline: REMOVE leaves amplifier/particles/duration at
+// zero (ServerPlayer::onEffectRemoved @ 0x00B2CA08).
+void World::sendMobEffectToViewers(int64_t eid, int32_t cx, int32_t cz,
+                                   const entity::Effect& e, uint8_t event_id) {
+    auto pk = std::make_shared<network::protocol::MobEffectPacket>();
+    pk->eid = (uint64_t)eid;
+    pk->eventId = event_id;
+    pk->effectId = (uint8_t)e.id();
+    if (event_id == network::protocol::MobEffectPacket::EVENT_REMOVE) {
+        pk->amplifier = 0;
+        pk->particles = false;
+        pk->duration = 0;
+    } else {
+        pk->amplifier = (uint8_t)e.amplifier();
+        pk->particles = true;
+        pk->duration = e.duration();
+    }
+    sendToChunkViewers(this, cx, cz, pk);
+}
+
+// Push the blended potion tint (DATA_POTION_COLOR 7 / DATA_POTION_AMBIENT 8)
+// so viewers draw the spell swirl around an affected mob.
+void World::broadcastMobPotionColor(int64_t eid, int32_t cx, int32_t cz,
+                                    const std::vector<std::shared_ptr<entity::Effect>>& vec) {
+    auto pk = std::make_shared<network::protocol::SetEntityDataPacket>();
+    pk->eid = (uint64_t)eid;
+    network::protocol::SetEntityDataPacket::Entry col;
+    col.index = network::protocol::SetEntityDataPacket::PROP_POTION_COLOR;
+    col.type = network::protocol::SetEntityDataPacket::TYPE_INT;
+    col.ival = (int32_t)mobBlendedColor(vec);
+    pk->entries.push_back(col);
+    network::protocol::SetEntityDataPacket::Entry amb;
+    amb.index = network::protocol::SetEntityDataPacket::PROP_POTION_AMBIENT;
+    amb.type = network::protocol::SetEntityDataPacket::TYPE_BYTE;
+    amb.ival = 0;
+    pk->entries.push_back(amb);
+    sendToChunkViewers(this, cx, cz, pk);
+}
+
+// Apply an effect to a mob with the vanilla replacement rule (the same
+// MobEffectInstance::update semantics as Living::addEffect). Instant
+// effects land immediately; everything else ticks through tickMobEffects.
+void World::addMobEffect(int64_t eid, std::shared_ptr<entity::Effect> e) {
+    if (!e || e->isExpired())
+        return;
+    int32_t cx = 0, cz = 0;
+    {
+        std::lock_guard<std::mutex> lk(mobs_mtx_);
+        auto it = mobs_.find(eid);
+        if (it == mobs_.end() || !it->second || it->second->death_tick != 0)
+            return;
+        cx = it->second->cx;
+        cz = it->second->cz;
+    }
+    uint8_t id = (uint8_t)e->id();
+    bool added = false;
+    {
+        std::lock_guard<std::mutex> lk(mob_effects_mtx_);
+        auto& vec = mob_effects_[eid];
+        for (auto& cur : vec) {
+            if ((uint8_t)cur->id() != id)
+                continue;
+            if (e->amplifier() < cur->amplifier())
+                return; // Weaker amplifier: vanilla keeps the running effect.
+            if (e->amplifier() == cur->amplifier() &&
+                e->duration() <= cur->duration()) {
+                sendMobEffectToViewers(eid, cx, cz, *cur,
+                                       network::protocol::MobEffectPacket::EVENT_MODIFY);
+                return;
+            }
+            cur = e;
+            added = true;
+            sendMobEffectToViewers(eid, cx, cz, *cur,
+                                   network::protocol::MobEffectPacket::EVENT_MODIFY);
+            broadcastMobPotionColor(eid, cx, cz, vec);
+            break;
+        }
+        if (!added) {
+            vec.push_back(e);
+            added = true;
+            sendMobEffectToViewers(eid, cx, cz, *vec.back(),
+                                   network::protocol::MobEffectPacket::EVENT_ADD);
+            broadcastMobPotionColor(eid, cx, cz, vec);
+        }
+    }
+    if (added && entity::Effect::isInstant(id)) {
+        int level = e->amplifier() + 1;
+        if (id == entity::EFF_INSTANT_HEALTH) {
+            healMob(eid, 4.0f * level);
+        } else if (id == entity::EFF_INSTANT_DAMAGE) {
+            damageMob(eid, 6.0f * level, nullptr, event::entity::DamageCause::MAGIC);
+        }
+    }
+}
+
+// Periodic + expiry pass for mob effects. Same shape as Living::tickEffects:
+// tick every instance, drop expired ones with a REMOVE broadcast, and apply
+// the poison/wither/regeneration behaviors on their interval ticks.
+void World::tickMobEffects(uint64_t current_tick) {
+    (void)current_tick;
+    if (mob_effects_.empty())
+        return;
+    struct Periodic {
+        int64_t eid;
+        uint8_t id;
+    };
+    std::vector<Periodic> periodic;
+    {
+        std::lock_guard<std::mutex> lk(mob_effects_mtx_);
+        for (auto it = mob_effects_.begin(); it != mob_effects_.end();) {
+            // A mob record that vanished (death window closed, despawn) takes
+            // its effects with it — nothing to broadcast to viewers.
+            {
+                std::lock_guard<std::mutex> lk2(mobs_mtx_);
+                if (mobs_.find(it->first) == mobs_.end()) {
+                    it = mob_effects_.erase(it);
+                    continue;
+                }
+            }
+            auto& vec = it->second;
+            if (vec.empty()) {
+                it = mob_effects_.erase(it);
+                continue;
+            }
+            bool changed = false;
+            std::vector<uint8_t> expired_here;
+            for (auto vit = vec.begin(); vit != vec.end();) {
+                (*vit)->tick();
+                if ((*vit)->isExpired()) {
+                    expired_here.push_back((uint8_t)(*vit)->id());
+                    vit = vec.erase(vit);
+                    changed = true;
+                } else {
+                    if ((*vit)->canTick())
+                        periodic.push_back({it->first, (uint8_t)(*vit)->id()});
+                    ++vit;
+                }
+            }
+            if (changed) {
+                // Expiration broadcasts ride the mob's current chunk; the
+                // position lookup happens outside the effects mutex.
+                int32_t cx = 0, cz = 0;
+                {
+                    std::lock_guard<std::mutex> lk2(mobs_mtx_);
+                    auto mit = mobs_.find(it->first);
+                    if (mit != mobs_.end() && mit->second) {
+                        cx = mit->second->cx;
+                        cz = mit->second->cz;
+                    }
+                }
+                for (uint8_t id : expired_here) {
+                    sendMobEffectToViewers(
+                        it->first, cx, cz, entity::Effect::create(id, 0, 0),
+                        network::protocol::MobEffectPacket::EVENT_REMOVE);
+                }
+                broadcastMobPotionColor(it->first, cx, cz, vec);
+            }
+            ++it;
+        }
+    }
+    // Behaviors run without the effects mutex held: damageMob/healMob take
+    // mobs_mtx_ themselves.
+    for (const auto& pr : periodic) {
+        switch (pr.id) {
+            case entity::EFF_POISON: {
+                // Poison stops at half a heart, exactly like the player path.
+                float h = mobHealth(pr.eid);
+                if (h > 1.0f)
+                    damageMob(pr.eid, 1.0f, nullptr, event::entity::DamageCause::MAGIC);
+                break;
+            }
+            case entity::EFF_WITHER:
+                damageMob(pr.eid, 1.0f, nullptr, event::entity::DamageCause::MAGIC);
+                break;
+            case entity::EFF_REGENERATION: {
+                float h = mobHealth(pr.eid);
+                float maxh = mobMaxHealthOf(pr.eid);
+                if (h > 0.0f && h < maxh)
+                    healMob(pr.eid, 1.0f);
+                break;
+            }
+            default:
+                break;
+        }
+    }
+}
+
+float World::mobHealth(int64_t eid) {
+    std::lock_guard<std::mutex> lk(mobs_mtx_);
+    auto it = mobs_.find(eid);
+    if (it == mobs_.end() || !it->second)
+        return 0.0f;
+    return it->second->health;
+}
+
+float World::mobMaxHealthOf(int64_t eid) {
+    std::lock_guard<std::mutex> lk(mobs_mtx_);
+    auto it = mobs_.find(eid);
+    if (it == mobs_.end() || !it->second)
+        return 0.0f;
+    return it->second->max_health;
+}
+
+void World::healMob(int64_t eid, float amount) {
+    if (amount <= 0.0f)
+        return;
+    std::lock_guard<std::mutex> lk(mobs_mtx_);
+    auto it = mobs_.find(eid);
+    if (it == mobs_.end() || !it->second || it->second->death_tick != 0)
+        return;
+    MobEntity& m = *it->second;
+    if (m.health <= 0.0f)
+        return;
+    float target = m.health + amount;
+    if (target > m.max_health)
+        target = m.max_health;
+    if (target != m.health) {
+        m.health = target;
+        markMobsDirtyLocked(m.cx, m.cz);
     }
 }
 

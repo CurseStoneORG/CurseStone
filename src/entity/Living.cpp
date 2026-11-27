@@ -33,6 +33,17 @@ namespace cursestone::entity {
 
 bool Living::applyDamage(float amount) {
     bool was_alive = health_ > 0.0f;
+    // Vanilla absorption (generic.absorption) eats the damage before it can
+    // touch health. A hit fully absorbed leaves the victim unharmed — no
+    // health drop and therefore no hurt flash.
+    if (absorption_ > 0.0f && amount > 0.0f) {
+        float absorbed = absorption_ < amount ? absorption_ : amount;
+        absorption_ -= absorbed;
+        amount -= absorbed;
+        onAbsorptionChanged();
+    }
+    if (amount <= 0.0f)
+        return false;
     health_ -= amount;
     if (health_ < 0)
         health_ = 0;
@@ -42,6 +53,14 @@ bool Living::applyDamage(float amount) {
     else
         onHealthChanged(); // Immediately synchronize health + hurt flash.
     return just_died;
+}
+
+void Living::setAbsorption(float v) {
+    float clamped = v < 0.0f ? 0.0f : v;
+    if (clamped == absorption_)
+        return;
+    absorption_ = clamped;
+    onAbsorptionChanged();
 }
 
 // Default health-changed reaction: push the red hurt flash to every client
@@ -133,9 +152,12 @@ void Living::tick(uint64_t t) {
     tickEffects();
 }
 
-// Manage potion effects using one slot per effect ID.
-// Weaker effects are ignored; stronger effects replace existing ones.
-// Instant effects apply immediately when added or replaced.
+// Manage potion effects using one slot per effect ID, with the vanilla
+// 0.15.10 replacement rule measured in MobEffectInstance::update
+// (libminecraftpe.so 0x00BA5BF0): a higher amplifier takes BOTH the
+// amplifier and the duration of the incoming effect, an equal amplifier
+// only takes a strictly longer duration, and a weaker amplifier keeps the
+// running effect untouched. Instant effects apply when they land.
 void Living::addEffect(std::shared_ptr<Effect> e) {
     if (!e || e->isExpired())
         return;
@@ -143,11 +165,15 @@ void Living::addEffect(std::shared_ptr<Effect> e) {
     for (auto& existing : effects_) {
         if ((uint8_t)existing->id() != id)
             continue;
-        bool weaker = e->amplifier() < existing->amplifier() ||
-                      (e->amplifier() == existing->amplifier() &&
-                       e->duration() <= existing->duration());
-        if (weaker)
+        if (e->amplifier() < existing->amplifier())
+            return; // Weaker amplifier: vanilla keeps the running effect.
+        if (e->amplifier() == existing->amplifier() &&
+            e->duration() <= existing->duration()) {
+            // Vanilla still fires the modify sync (particles refresh) even
+            // when nothing changes numerically.
+            onEffectModified(*existing);
             return;
+        }
         existing = std::move(e);
         onEffectModified(*existing);
         if (Effect::isInstant(id))
