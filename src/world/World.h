@@ -218,6 +218,15 @@ struct MobEntity {
     // the reflex expires when the vanilla panic window closes.
     float panic_dir_x = 0.0f, panic_dir_z = 0.0f;
     uint64_t panic_tick = 0;
+    // Last attacker stamp (same cross-thread contract): the runtime id
+    // of the entity that landed the most recent hit plus the tick it
+    // landed. The 0.8.1-era target goals read it — HurtByTargetGoal
+    // retaliates against the attacker and PanicGoal flees while the
+    // stamp is fresh. last_hurt_by_player disambiguates a player eid
+    // from a mob eid on lookup.
+    int64_t last_hurt_by_eid = 0;
+    bool last_hurt_by_player = false;
+    uint64_t last_hurt_tick = 0;
     // Death window: non-zero once the lethal blow landed, holding the
     // server tick the record must be removed at (death animation plays
     // for ~one second first). Zero means alive.
@@ -823,6 +832,10 @@ class World {
     std::mutex& mobMutex() {
         return mobs_mtx_;
     }
+
+    /// @brief Broadcasts one EntityEventPacket to the mob's chunk
+    /// viewers (the sheep eat-grass animation is the AI caller).
+    void mobEntityEvent(int64_t eid, int32_t cx, int32_t cz, uint8_t event);
 
     // Snapshot of ONE chunk's mob records (small vector under the mob
     // lock; pointers stable until removeMob). The AI pass visits the

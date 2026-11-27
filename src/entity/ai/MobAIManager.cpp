@@ -4,7 +4,7 @@
 | /  \/_   _ _ __ ___  ___\ `--.| |_ ___  _ __   ___
 | |   | | | | '__/ __|/ _ \`--. \ __/ _ \| '_ \ / _ \
 | \__/\ |_| | |  |  \__ \  __/\__/ / || (_) | | | |  __/
- \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___/ \__,_|
+ \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___/
 
  * CurseStone | Open Source Server Software
  *
@@ -26,12 +26,12 @@
 #include "Player.h"
 #include "block/BlockIds.h"
 #include "entity/EntityTypes.h"
-#include "entity/ai/Goals.h"
+#include "entity/ai/AiMath.h"
 #include "math/AxisAlignedBB.h"
 #include "math/Vector3.h"
 #include "physics/Physics.h"
 #include "utils/MainLogger.hpp"
-#include "world/Position.h"
+#include "world/Explosion.h"
 #include "world/World.h"
 #include "world/particle/WaterSplashParticle.h"
 #include "world/particle/WaterWakeParticle.h"
@@ -40,21 +40,19 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <unordered_set>
 namespace cursestone::entity::ai {
 namespace {
 
-// Budgets and cadences (docs/MOB_AI.md section 4). The budget mirrors
-// the light engine's contract: under load mobs slow down, the server
-// does not. The base budget grows with the population (bounded well
-// under the tick budget) so a herd near the players keeps its smooth
-// per-tick simulation instead of starving the moment a few thousand
-// mobs are loaded.
+// Budgets and cadences. The budget mirrors the light engine's contract:
+// under load mobs slow down, the server does not. The base budget grows
+// with the population (bounded well under the tick budget) so a herd
+// near the players keeps its smooth per-tick simulation instead of
+// starving the moment a few thousand mobs are loaded.
 constexpr double kMobBudgetMs = 2.0;      ///< Wall-clock cap, small worlds.
 constexpr double kMobBudgetMaxMs = 8.0;   ///< Absolute wall-clock cap.
 constexpr double kMobBudgetPerMob = 1.0 / 2000.0; ///< Extra ms per record.
-constexpr uint64_t kThinkInterval = 10; ///< Ticks between goal passes.
 constexpr uint64_t kBrainGCInterval = 200; ///< Brains drift sweep cadence.
-constexpr double kLookRange = 8.0;      ///< Player range the goals see.
 
 // Movement integration constants, matching the era entity model the
 // default Entity tick and the item integrator already use.
@@ -63,15 +61,17 @@ constexpr float kDrag = 0.98f;
 constexpr float kJumpVelocity = 0.42f;
 constexpr float kMaxFallSpeed = -3.92f;
 constexpr int kJumpCooldownTicks = 10;
-constexpr double kJumpProbe = 0.7;  ///< Horizontal probe distance for steps.
-constexpr double kSteerProbe = 0.6; ///< Horizontal probe distance for walls.
+constexpr double kJumpProbe = 0.7; ///< Horizontal probe distance for steps.
 
-// Steering candidates, degrees off the intended direction, nearest turn
-// first. A wall ahead reads as a turn of at most 135 degrees — never a
-// snap to a random bearing — so a strolling mob flows around obstacles
-// instead of grinding into them or zig-zagging.
-constexpr double kSteerAngles[] = {30.0, -30.0, 60.0, -60.0,
-                                   90.0, -90.0, 135.0, -135.0};
+// Water physics (the era travel model): gravity drops to a quarter, the
+// vertical motion shrinks to 80% per tick, and the FloatGoal paddle
+// (the jump channel) adds the era 0.04 per tick.
+constexpr float kWaterGravity = 0.02f;
+constexpr float kWaterDrag = 0.8f;
+constexpr float kSwimPaddle = 0.04f;
+/// @brief The shore-exit hop: a horizontal clip against a bank while
+///        swimming spends this as an upward jump.
+constexpr float kWaterJumpOut = 0.30f;
 
 // Knockback: the consumed shove decays with the era ground friction (the
 // same "motion shrinks every tick" shape the entity model uses; 0.6 keeps
@@ -81,10 +81,10 @@ constexpr float kKnockbackFriction = 0.6f;
 // Broadcast gating: a mob that moved less than this since its last
 // packet is not re-sent (the same threshold the item integrator uses).
 constexpr double kBroadcastEps = 0.0005;
-constexpr float kYawEps = 2.0f;     ///< Degrees of yaw change worth a packet.
-constexpr float kPitchEps = 2.0f;   ///< Degrees of pitch change worth a
-                                    ///< packet (the wire encodes pitch as
-                                    ///< a byte, ~1.4 degree resolution).
+constexpr float kYawEps = 2.0f;   ///< Degrees of yaw change worth a packet.
+constexpr float kPitchEps = 2.0f; ///< Degrees of pitch change worth a
+                                  ///< packet (the wire encodes pitch as
+                                  ///< a byte, ~1.4 degree resolution).
 
 // Water effects. The wake rides behind a mob that is actually moving
 // through water (never while it floats still), rate limited to one
@@ -92,11 +92,6 @@ constexpr float kPitchEps = 2.0f;   ///< Degrees of pitch change worth a
 // air->water transition when the mob fell in with real speed.
 constexpr int kWakeIntervalTicks = 4;
 constexpr float kEntrySplashMinFall = 0.15f;
-
-// How fresh a hit must be for the reflex to fire the same tick (the
-// panic goal starts on the next actuation pass, at most one tick after
-// the strike lands, instead of waiting for the think cadence).
-constexpr uint64_t kPanicFreshTicks = 2;
 
 // Water surface rendering: the era client draws the top of a water
 // column 2/16 of a block below the block top (the 14/16 water height).
@@ -216,9 +211,8 @@ bool MobAIManager::isWaterCell(double x, double y, double z) const {
 float MobAIManager::waterSurfaceY(double x, double y, double z) const {
     // Walk up from the feet cell while the column is water; the surface
     // sits 2/16 under the top of the last water block. The scan is
-    // bounded: bodies this stage floats never stand under more than a
-    // couple of stacked water blocks, and a deep column would only cost
-    // a few extra reads once before the buoyancy lifts the mob out.
+    // bounded: floating bodies never stand under more than a couple of
+    // stacked water blocks.
     int32_t cell = (int32_t)std::floor(y);
     for (int i = 0; i < 8; ++i) {
         if (!waterId(world_->getBlockId((int32_t)std::floor(x), cell + 1,
@@ -229,122 +223,8 @@ float MobAIManager::waterSurfaceY(double x, double y, double z) const {
     return (float)cell + kWaterSurfaceOffset;
 }
 
-MobContext MobAIManager::buildContext(const world::MobEntity& m,
-                                      const MobBrain& brain,
-                                      uint64_t current_tick) {
-    MobContext ctx;
-    ctx.eid = m.eid;
-    ctx.type = m.type;
-    ctx.kind = (uint8_t)entity::mobTypeKind(m.type);
-    ctx.x = m.x;
-    ctx.y = m.y;
-    ctx.z = m.z;
-    ctx.yaw = m.yaw;
-    ctx.onGround = brain.onGround();
-
-    // Species profile: speeds, body box and eye height ride the context,
-    // so goals never hardcode a species constant.
-    const entity::MobProfile profile = entity::mobProfile(m.type);
-    ctx.walkSpeed = profile.walk_speed;
-    ctx.panicSpeed = profile.panic_speed;
-    ctx.bodyWidth = profile.width;
-    ctx.bodyHeight = profile.height;
-    ctx.eyeHeight = profile.eye_height;
-
-    // Speed/Slowness change the real motion (the vanilla server stacks
-    // movementSpeed attribute modifiers, Mob::_addSpeedBonus): multiply
-    // the profile base once per tick so the factor never accumulates and
-    // decays back to 1.0 when the effects expire.
-    const float speed_factor = world_->mobSpeedMultiplier(m.eid);
-    if (speed_factor != 1.0f) {
-        ctx.walkSpeed *= speed_factor;
-        ctx.panicSpeed *= speed_factor;
-    }
-
-    // Water snapshot for the swim model: the feet and chest cells make
-    // the body buoyant, the head cell decides the surfacing paddle.
-    ctx.inWater = isWaterCell(m.x, m.y, m.z) || isWaterCell(m.x, m.y + 0.5, m.z);
-    ctx.headInWater = isWaterCell(m.x, m.y + 1.5, m.z);
-    if (ctx.inWater)
-        ctx.waterSurface = waterSurfaceY(m.x, m.y, m.z);
-
-    // Panic: the damage pipeline stamps the hit tick and the away-from-
-    // threat direction under the mob lock (hits can arrive from any
-    // thread); the reflex stays armed for the vanilla panic window and
-    // re-arms on every fresh hit.
-    if (m.panic_tick != 0 && current_tick >= m.panic_tick &&
-        current_tick - m.panic_tick <= kPanicTicks) {
-        ctx.panicActive = true;
-        ctx.panicDirX = m.panic_dir_x;
-        ctx.panicDirZ = m.panic_dir_z;
-    }
-
-    // Nearest spawned player within look range. Players are few, so the
-    // linear scan is cheaper than any spatial index would be.
-    double best2 = kLookRange * kLookRange;
-    ctx.playerNear = false;
-    for (const PlayerAnchor& p : players_) {
-        const double dx = p.x - m.x;
-        const double dz = p.z - m.z;
-        const double d2 = dx * dx + dz * dz;
-        if (d2 < best2) {
-            best2 = d2;
-            ctx.playerNear = true;
-            ctx.playerDist = std::sqrt(d2);
-            ctx.playerX = p.x;
-            ctx.playerY = p.y;
-            ctx.playerZ = p.z;
-        }
-    }
-    ctx.tick = current_tick;
-    return ctx;
-}
-
-void MobAIManager::thinkOne(MobBrain& brain, const MobContext& ctx) {
-    brain.stepThink(ctx);
-}
-
-void MobAIManager::steerAround(const world::MobEntity& m, const MobContext& ctx,
-                               const MobIntent&, double& dir_x,
-                               double& dir_z) {
-    const int feet_y = (int)std::floor(m.y);
-
-    // A probe cell blocks the stride when a wall (two or more body
-    // levels of solid) stands in it, or — for a mob on land — when deep
-    // water starts there. A single solid level is a step, which the
-    // jump logic climbs; a one-deep ford is walkable. Land mobs steer
-    // away from ponds deeper than their hold depth instead of diving.
-    const auto blocked = [&](double dx, double dz) {
-        const int bx = (int)std::floor(m.x + dx * kSteerProbe);
-        const int bz = (int)std::floor(m.z + dz * kSteerProbe);
-        const uint8_t feet = world_->getBlockId(bx, feet_y, bz);
-        if (World::entityCollidable(feet))
-            return World::entityCollidable(world_->getBlockId(bx, feet_y + 1, bz));
-        if (!ctx.inWater && waterId(feet))
-            return waterId(world_->getBlockId(bx, feet_y - 1, bz));
-        return false;
-    };
-
-    if (!blocked(dir_x, dir_z))
-        return;
-    const double base = std::atan2(dir_z, dir_x);
-    for (const double deg : kSteerAngles) {
-        const double rad = base + deg * (3.14159265358979323846 / 180.0);
-        const double cx = std::cos(rad);
-        const double cz = std::sin(rad);
-        if (!blocked(cx, cz)) {
-            dir_x = cx;
-            dir_z = cz;
-            return;
-        }
-    }
-    // Every candidate blocked: keep the course. The sweep stops the
-    // body, the jump logic spends its cooldown, and the next think
-    // picks a fresh target — a stuck tick, not a stuck mob.
-}
-
 void MobAIManager::waterEffects(world::MobEntity& m, MobBrain& brain,
-                                const MobContext& ctx, bool moved,
+                                const PlayerContext& ctx, bool moved,
                                 double move_dx, double move_dz) {
     if (!ctx.inWater) {
         brain.inWater() = false;
@@ -429,19 +309,16 @@ void MobAIManager::tick(uint64_t current_tick) {
         std::min(kMobBudgetMaxMs,
                  kMobBudgetMs + kMobBudgetPerMob * (double)world_->mobCount());
     // One diagnostics line per window: the real work counters of the
-    // pass (population, live brains, actuations, thinks, budget cuts).
-    // A pass that never hits the budget reports zero cuts; under heavy
-    // load the cuts show the far-chunk degradation instead of a stall.
+    // pass (population, live brains, actuations, budget cuts).
     const auto log_stats = [this, &pass_start](uint64_t now) {
         if (now % kBrainGCInterval != 0)
             return;
         char line[256];
         std::snprintf(line, sizeof(line),
-                      "[MOB AI] records=%zu brains=%zu actuated=%llu thinks=%llu "
-                      "moves=%llu mobmoved=%llu mobrefused=%llu budget_cuts=%llu chunks=%zu",
+                      "[MOB AI] records=%zu brains=%zu actuated=%llu moves=%llu "
+                      "mobmoved=%llu mobrefused=%llu budget_cuts=%llu chunks=%zu",
                       world_->mobCount(), brains_.size(),
                       (unsigned long long)stat_actuated_,
-                      (unsigned long long)stat_thinks_,
                       (unsigned long long)stat_moves_,
                       (unsigned long long)stat_mob_moved_,
                       (unsigned long long)stat_mob_refused_,
@@ -449,7 +326,6 @@ void MobAIManager::tick(uint64_t current_tick) {
                       active_keys_.size());
         utils::MainLogger::get().info(line);
         stat_actuated_ = 0;
-        stat_thinks_ = 0;
         stat_moves_ = 0;
         stat_mob_moved_ = 0;
         stat_mob_refused_ = 0;
@@ -459,13 +335,10 @@ void MobAIManager::tick(uint64_t current_tick) {
     const size_t chunk_count = active_keys_.size();
     // Budgeted distance-ordered pass: chunks nearest the players are
     // visited first every tick, the walk runs outward until the
-    // wall-clock budget is spent. Under light populations the whole
-    // active set completes each tick; under heavy ones the degradation
-    // lands on the outermost chunks (held pose, resumed when the
-    // budget allows), never on the mobs a player is watching. Mob
-    // records are snapshot per chunk (small vectors under the mob
-    // lock), so the pass never materializes the whole population and
-    // never holds the lock while physics or packets run.
+    // wall-clock budget is spent. Mob records are snapshot per chunk
+    // (small vectors under the mob lock), so the pass never
+    // materializes the whole population and never holds the lock while
+    // physics or packets run.
     for (size_t slot = 0; slot < chunk_count; ++slot) {
         const uint64_t key = active_keys_[slot];
         const std::vector<world::MobEntity*> mobs = world_->chunkMobs(
@@ -486,8 +359,7 @@ void MobAIManager::tick(uint64_t current_tick) {
                 // they move.
                 it = brains_
                          .emplace(m->eid,
-                                  makeMobBrain((uint8_t)entity::mobTypeKind(m->type),
-                                               m->type, (uint64_t)m->eid))
+                                  makeMobBrain(m->type, (uint64_t)m->eid))
                          .first;
                 it->second->broadcast().valid = false;
                 return *it->second;
@@ -499,14 +371,16 @@ void MobAIManager::tick(uint64_t current_tick) {
                 continue;
             }
 
-            MobContext ctx = buildContext(*m, brain, current_tick);
-
-            // Tier: full physics near players, reduced cadence at the
-            // edge of the view distance. A panicking mob always runs
-            // full: the flight must read smoothly at any distance.
+            // Tier: full pipeline near players every tick, reduced
+            // cadence at the edge of the view distance. The panic
+            // window always runs full: the flight must read smoothly.
+            const uint64_t now = Server::getInstance().getCurrentTick();
+            const bool panicActive =
+                m->panic_tick != 0 && now >= m->panic_tick &&
+                now - m->panic_tick <= 100;
             const int32_t player_dist = nearestPlayerChunkDist(m->cx, m->cz);
             const bool full_tier =
-                player_dist <= kFullTierRadius || ctx.panicActive;
+                player_dist <= kFullTierRadius || panicActive;
             if (!full_tier) {
                 const uint64_t phase =
                     (current_tick + (uint64_t)m->eid % kReducedInterval) %
@@ -515,25 +389,45 @@ void MobAIManager::tick(uint64_t current_tick) {
                     continue;
             }
 
-            // Think cadence, staggered by entity id so a herd never
-            // re-decides in lockstep. A fresh hit fires an extra think
-            // right now — the reflex must not wait half a second.
-            const uint64_t fresh =
-                m->panic_tick != 0 && current_tick >= m->panic_tick &&
-                current_tick - m->panic_tick <= kPanicFreshTicks
-                    ? 1
-                    : 0;
-            const uint64_t interval =
-                (full_tier ? kThinkInterval : kThinkInterval * kReducedInterval);
-            if (fresh ||
-                (current_tick + (uint64_t)m->eid % kThinkInterval) % interval == 0) {
-                thinkOne(brain, ctx);
-                ++stat_thinks_;
+            // The era pipeline: one newServerAiStep (targets, goals,
+            // navigation, mob step, controls) then one actuation.
+            PlayerContext ctx;
+            ctx.tick = current_tick;
+            ctx.inWater = isWaterCell(m->x, m->y, m->z) ||
+                          isWaterCell(m->x, m->y + 0.5, m->z);
+            ctx.headInWater = isWaterCell(m->x, m->y + 1.5, m->z);
+            if (ctx.inWater)
+                ctx.waterSurface = waterSurfaceY(m->x, m->y, m->z);
+            ctx.panicActive = panicActive;
+            brain.newServerAiStep(world_, *m, current_tick);
+
+            // The creeper fuse finished mid-step: detonate and remove.
+            if (brain.wantsExplode()) {
+                const int64_t eid = m->eid;
+                const double ex = m->x, ey = m->y + 0.5, ez = m->z;
+                const int32_t cx = m->cx, cz = m->cz;
+                world::Explosion explosion(world::Position{ex, ey, ez}, 3.0f);
+                explosion.explode();
+                world_->removeMob(eid);
+                (void)cx;
+                (void)cz;
+                ++stat_actuated_;
+                const double elapsed =
+                    std::chrono::duration<double, std::milli>(
+                        std::chrono::steady_clock::now() - pass_start)
+                        .count();
+                if (elapsed >= budget_ms) {
+                    ++stat_budget_stops_;
+                    log_stats(current_tick);
+                    return;
+                }
+                continue;
             }
-            if (brain.intent().move)
-                ++stat_moves_;
+
             actuateOne(*m, brain, ctx, current_tick);
             ++stat_actuated_;
+            if (brain.host().movingTick())
+                ++stat_moves_;
 
             const double elapsed = std::chrono::duration<double, std::milli>(
                                        std::chrono::steady_clock::now() - pass_start)
@@ -552,35 +446,28 @@ void MobAIManager::tick(uint64_t current_tick) {
     log_stats(current_tick);
 }
 
-void MobAIManager::actuateOne(world::MobEntity& m, MobBrain& brain,
-                              const MobContext& ctx, uint64_t) {
-    // Unloaded terrain would read as air and drop the mob through the
-    // world; the chunk-cursor pass only visits active chunks, but a mob
-    // can sit in a chunk a viewer already left — this guard keeps
-    // physics on resident chunks only (the same rule world.setBlock
-    // follows).
+bool MobAIManager::actuateOne(world::MobEntity& m, MobBrain& brain,
+                              const PlayerContext& ctx, uint64_t) {
     // Resident terrain only: a mob whose chunk a viewer already left
     // must not sweep against air and fall through the world (the same
     // rule world.setBlock follows). The record's (cx, cz) are CHUNK
-    // coordinates — the residency probe takes them directly; routing
-    // them through World::isChunkLoaded (a block-coordinate API) would
-    // shift them again and silently freeze every mob beyond 256 blocks
-    // of the world origin.
+    // coordinates — the residency probe takes them directly.
     if (world_->chunks().getChunkIfLoaded(m.cx, m.cz) == nullptr)
-        return;
+        return false;
     if (m.y < 0.0)
-        return; // Void: nothing below to integrate against.
+        return false; // Void: nothing below to integrate against.
 
     // Consume the record's pending knockback: a fresh shove becomes brain
     // carry-over (plus the grounded hop), a stale field just expires — the
     // record fields are cross-thread (damage can arrive from the plugin
     // APIs), so the clear runs under the world's mob lock.
     if (m.kb_tick != 0) {
-        const bool fresh = ctx.tick >= m.kb_tick && ctx.tick - m.kb_tick <= 5;
+        const uint64_t now = Server::getInstance().getCurrentTick();
+        const bool fresh = now >= m.kb_tick && now - m.kb_tick <= 5;
         if (fresh) {
             brain.motionX() = m.kbx;
             brain.motionZ() = m.kbz;
-            if (brain.onGround())
+            if (brain.host().onGround())
                 brain.wantsJump() = true; // The vertical pop of the hit.
         }
         {
@@ -591,117 +478,43 @@ void MobAIManager::actuateOne(world::MobEntity& m, MobBrain& brain,
         }
     }
 
-    const MobIntent& intent = brain.intent();
+    const Mob& host = brain.host();
 
-    // ---- Swim-vs-walk: the hold-band model owns the body only where
-    // water is deep enough to submerge the hold depth (or the feet are
-    // off the bottom); a ford shallower than that is walked, with the
-    // era water slowdown on the stride.
-    const float submersion =
-        ctx.inWater
-            ? (float)((ctx.waterSurface - m.y) / std::max(ctx.bodyHeight, 0.1f))
-            : 0.0f;
-    const bool swimming =
-        ctx.inWater &&
-        (submersion > ai::water::kSubmergeTarget - ai::water::kSubmergeBand ||
-         !brain.onGround());
+    // ---- Movement channel: the era MoveControl armed the speed toward
+    // its wanted position this tick; the direction rides the movement
+    // yaw it steered.
+    const bool moving = host.movingTick();
+    double dx = 0.0, dz = 0.0;
+    if (moving) {
+        double dir_x = 0.0, dir_z = 0.0;
+        math::yawDirection(host.yaw(), dir_x, dir_z);
+        // Water halves the stride: swimming is slower than walking, in
+        // the era entity model and in the reference.
+        const double stride =
+            ctx.inWater ? (double)host.speed() * 0.5 : (double)host.speed();
+        dx = dir_x * stride;
+        dz = dir_z * stride;
+    }
+    // A consumed shove rides on top of the goal's own step.
+    dx += (double)brain.motionX();
+    dz += (double)brain.motionZ();
 
-    // ---- Steering + facing: the body follows where the mob will
-    // actually walk this tick. A raw intent that grinds into a wall
-    // while the model faces it reads as a stuck replay; the steered
-    // direction owns the facing exactly like the raw one owns it when
-    // the path ahead is open.
-    double dir_x = intent.dirX;
-    double dir_z = intent.dirZ;
-    if (intent.move)
-        steerAround(m, ctx, intent, dir_x, dir_z);
-    MobIntent facing_intent = intent;
-    facing_intent.dirX = dir_x;
-    facing_intent.dirZ = dir_z;
-    ai::FacingStep facing = ai::resolveFacing(
-        m.yaw, m.head_yaw, m.pitch, facing_intent,
-        /*standing=*/brain.onGround());
-
-    // ---- Flotation bob: a floating body never freezes on the
-    // waterline — it rocks gently up and down around the hold depth
-    // (half the body in, half out), rising nose-up and falling
-    // nose-down. The phase advances one step per floating tick and
-    // freezes on land, so each mob keeps its own beat; the rocking
-    // rides the move packet's pitch channel and the zero-mean force
-    // feeds the hold band in the vertical step below. One sine per
-    // swimming mob per tick, nothing else.
-    float bob_force = 0.0f;
+    // ---- Vertical: the era aiStep shape — a ground jump spends 0.42,
+    // water integrates the reduced gravity with the paddle from the
+    // jump channel.
+    float vy = brain.motionY();
+    const bool swimming = ctx.inWater && !brain.host().onGround();
     if (swimming) {
-        brain.swimPhase() = ai::water::bobPhaseStep(brain.swimPhase());
-        const ai::water::SwimBob bob =
-            ai::water::swimBob(brain.swimPhase());
-        bob_force = bob.force;
-        facing.pitch = std::clamp(facing.pitch + bob.pitch, -90.0f, 90.0f);
-    }
-
-    // Sprint pose: a fleeing passive carries the FLAGS sprint bit, the
-    // pose and the faster leg cycle the 0.15.10 client already renders
-    // for sprinting entities. Toggle only on state change.
-    if (ctx.panicActive != brain.sprintFlag()) {
-        brain.sprintFlag() = ctx.panicActive;
-        world_->setMobSprinting(m.eid, m.cx, m.cz, ctx.panicActive);
-    }
-
-    const bool idle =
-        !intent.move && !brain.hasKnockback() && brain.onGround() &&
-        !brain.wantsJump() && !swimming;
-    if (idle) {
-        // Standing mob: physics is a no-op; only a rotation change is
-        // worth a packet.
-        MobBrain::BroadcastCache& bc = brain.broadcast();
-        if (!bc.valid) {
-            bc.valid = true;
-            bc.x = m.x;
-            bc.y = m.y;
-            bc.z = m.z;
-            bc.yaw = facing.bodyYaw;
-            bc.head_yaw = facing.headYaw;
-            bc.pitch = facing.pitch;
-            return;
-        }
-        const bool turned = yawDelta(facing.bodyYaw, bc.yaw) >= kYawEps ||
-                            yawDelta(facing.headYaw, bc.head_yaw) >= kYawEps ||
-                            std::fabs(facing.pitch - bc.pitch) >= kPitchEps;
-        if (turned) {
-            if (world_->moveMob(m.eid, m.x, m.y, m.z, facing.bodyYaw,
-                                facing.pitch, facing.headYaw)) {
-                ++stat_mob_moved_;
-                bc.x = m.x;
-                bc.y = m.y;
-                bc.z = m.z;
-                bc.yaw = facing.bodyYaw;
-                bc.head_yaw = facing.headYaw;
-                bc.pitch = facing.pitch;
-            } else {
-                ++stat_mob_refused_;
-                bc.valid = false;
-            }
-        }
-        waterEffects(m, brain, ctx, false, 0.0, 0.0);
-        return;
-    }
-
-    // ---- Physics integration (the item/falling-block sweep shape) ----
-    float& vy = brain.motionY();
-    if (swimming) {
-        // The hold-band swim model: gravity, the hold band, the paddle
-        // and the shore hop integrate to a mob resting half-submerged —
-        // the waterline mid-body, riding the flotation bob instead of
-        // freezing on the surface.
-        const ai::water::WaterVerticalStep water = ai::water::waterVerticalStep(
-            vy, submersion, ctx.headInWater, intent.move, brain.wantsJump(),
-            bob_force);
-        vy = water.vy;
-        if (water.jumpConsumed) {
-            brain.wantsJump() = false;
-            brain.jumpCooldown() = kJumpCooldownTicks;
-        }
-    } else if (brain.onGround()) {
+        vy -= kWaterGravity;
+        vy *= kWaterDrag;
+        if (host.isJumping())
+            vy += kSwimPaddle;
+        if (vy < -0.15f)
+            vy = -0.15f; // A swimming body never sinks away.
+        if (vy > 0.12f)
+            vy = 0.12f;
+        brain.wantsJump() = false;
+    } else if (brain.host().onGround()) {
         vy = brain.wantsJump() ? kJumpVelocity : 0.0f;
         brain.wantsJump() = false;
     } else {
@@ -710,23 +523,12 @@ void MobAIManager::actuateOne(world::MobEntity& m, MobBrain& brain,
         if (vy < kMaxFallSpeed)
             vy = kMaxFallSpeed;
     }
+    brain.motionY() = vy;
 
-    double dx = 0.0, dz = 0.0;
-    if (intent.move) {
-        // Water halves the stride: swimming is slower than walking, in
-        // the era entity model and in the reference.
-        const double stride = ctx.inWater ? (double)intent.speed * 0.5
-                                          : (double)intent.speed;
-        dx = dir_x * stride;
-        dz = dir_z * stride;
-    }
-    // A consumed shove rides on top of the goal's own step.
-    dx += (double)brain.motionX();
-    dz += (double)brain.motionZ();
-
-    const double half_w = ctx.bodyWidth * 0.5;
+    const entity::MobProfile profile = entity::mobProfile(m.type);
+    const double half_w = profile.width * 0.5;
     const mcp_aabb_t bb = mcp_aabb_make(m.x - half_w, m.y, m.z - half_w,
-                                        m.x + half_w, m.y + ctx.bodyHeight,
+                                        m.x + half_w, m.y + profile.height,
                                         m.z + half_w);
     const mcp_aabb_t lookup = mcp_aabb_clone_move(bb, dx, vy, dz);
     world_->collisionBoxes(lookup, sweep_boxes_);
@@ -735,22 +537,24 @@ void MobAIManager::actuateOne(world::MobEntity& m, MobBrain& brain,
     const double nx = m.x + res.motion.x;
     const double ny = m.y + res.motion.y;
     const double nz = m.z + res.motion.z;
-    brain.onGround() = res.on_ground;
+    brain.host().setOnGround(res.on_ground);
     brain.decayKnockback(kKnockbackFriction);
+    brain.host().setCollidedHorizontally(res.clipped_x || res.clipped_z);
+    brain.host().setPrevPos(nx, nz);
 
     // Step-up: a horizontal clip against a one-block step (headroom
     // above it) is worth a jump; a clipped column at chest or head
-    // height is a wall, and jumping would only grind against it — the
-    // steering already walked around walls, this catches the ledges.
-    // In water the same clip is a shore: the pending jump becomes the
-    // swim hop that climbs the bank (no onGround requirement — a
-    // swimming mob has none).
-    if ((res.clipped_x || res.clipped_z) && intent.move &&
+    // height is a wall. In water the same clip is a shore: the pending
+    // jump becomes the swim hop that climbs the bank (the era paddling
+    // hop; no onGround requirement — a swimming body has none).
+    if ((res.clipped_x || res.clipped_z) && moving &&
         brain.jumpCooldown() <= 0) {
         if (swimming) {
-            brain.wantsJump() = true;
+            brain.motionY() = kWaterJumpOut;
             brain.jumpCooldown() = kJumpCooldownTicks;
         } else if (res.on_ground) {
+            double dir_x = 0.0, dir_z = 0.0;
+            math::yawDirection(host.yaw(), dir_x, dir_z);
             const int bx = (int)std::floor(m.x + dir_x * kJumpProbe);
             const int bz = (int)std::floor(m.z + dir_z * kJumpProbe);
             const int feetY = (int)std::floor(m.y);
@@ -767,26 +571,35 @@ void MobAIManager::actuateOne(world::MobEntity& m, MobBrain& brain,
     if (brain.jumpCooldown() > 0)
         --brain.jumpCooldown();
 
-    // Broadcast only what changed since the last packet.
+    // Sprint pose: a fleeing passive carries the FLAGS sprint bit, the
+    // pose and the faster leg cycle the client already renders for
+    // sprinting entities. Toggle only on state change.
+    if (ctx.panicActive != brain.sprintFlag()) {
+        brain.sprintFlag() = ctx.panicActive;
+        world_->setMobSprinting(m.eid, m.cx, m.cz, ctx.panicActive);
+    }
+
+    // Broadcast only what changed since the last packet. Body yaw rides
+    // the record's yaw channel (BodyControl reconciled it), head yaw and
+    // pitch ride their own channels.
     MobBrain::BroadcastCache& bc = brain.broadcast();
-    const bool moved = !bc.valid ||
-                       std::fabs(nx - bc.x) > kBroadcastEps ||
-                       std::fabs(ny - bc.y) > kBroadcastEps ||
-                       std::fabs(nz - bc.z) > kBroadcastEps;
-    const bool turned = yawDelta(facing.bodyYaw, bc.yaw) >= kYawEps ||
-                        yawDelta(facing.headYaw, bc.head_yaw) >= kYawEps ||
-                        std::fabs(facing.pitch - bc.pitch) >= kPitchEps;
-    if (moved || turned) {
-        if (world_->moveMob(m.eid, nx, ny, nz, facing.bodyYaw,
-                            facing.pitch, facing.headYaw)) {
+    const bool movedFlag = !bc.valid ||
+                           std::fabs(nx - bc.x) > kBroadcastEps ||
+                           std::fabs(ny - bc.y) > kBroadcastEps ||
+                           std::fabs(nz - bc.z) > kBroadcastEps;
+    const bool turned = yawDelta(m.yaw, bc.yaw) >= kYawEps ||
+                        yawDelta(m.head_yaw, bc.head_yaw) >= kYawEps ||
+                        std::fabs(m.pitch - bc.pitch) >= kPitchEps;
+    if (movedFlag || turned) {
+        if (world_->moveMob(m.eid, nx, ny, nz, m.yaw, m.pitch, m.head_yaw)) {
             ++stat_mob_moved_;
             bc.valid = true;
             bc.x = nx;
             bc.y = ny;
             bc.z = nz;
-            bc.yaw = facing.bodyYaw;
-            bc.head_yaw = facing.headYaw;
-            bc.pitch = facing.pitch;
+            bc.yaw = m.yaw;
+            bc.head_yaw = m.head_yaw;
+            bc.pitch = m.pitch;
         } else {
             ++stat_mob_refused_;
             bc.valid = false; // Out-of-height move refused; re-sync next tick.
@@ -794,7 +607,8 @@ void MobAIManager::actuateOne(world::MobEntity& m, MobBrain& brain,
     }
     // Water surface effects ride the same pass: the entry splash on the
     // transition, the rate-limited wake while the mob actually moves.
-    waterEffects(m, brain, ctx, moved, dx, dz);
+    waterEffects(m, brain, ctx, movedFlag, dx, dz);
+    return true;
 }
 
 } // namespace cursestone::entity::ai

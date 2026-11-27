@@ -25,7 +25,6 @@
 #include "World.h"
 
 #include "entity/ai/MobAIManager.h"
-#include "entity/ai/Goals.h"
 #include <chrono>
 #include "world/format/Chunk.h"
 #include "world/format/WorldProvider.h"
@@ -2528,6 +2527,16 @@ entity::DamageApply World::damageMob(int64_t eid, float amount, entity::Entity* 
                 m.panic_dir_z = std::cos((double)m.yaw * 3.14159265358979323846 / 180.0);
             }
             m.panic_tick = Server::getInstance().getCurrentTick();
+            // Last-attacker stamp: the 0.8.1-era target goals read it.
+            // The damager carries the attacker's runtime id; a mob
+            // damager (the AI proxy) passes the attacking mob's eid, a
+            // player damager its runtime id.
+            if (damager) {
+                m.last_hurt_by_eid = damager->runtimeId();
+                m.last_hurt_by_player =
+                    dynamic_cast<Player*>(damager) != nullptr;
+                m.last_hurt_tick = m.panic_tick;
+            }
         }
     }
 
@@ -2553,6 +2562,10 @@ entity::DamageApply World::damageMob(int64_t eid, float amount, entity::Entity* 
             p->flushUnorderedNow();
     }
     return entity::DamageApply::HURT;
+}
+
+void World::mobEntityEvent(int64_t eid, int32_t cx, int32_t cz, uint8_t event) {
+    sendMobEntityEvent(this, eid, cx, cz, event);
 }
 
 bool World::setMobHealth(int64_t eid, float hp) {
