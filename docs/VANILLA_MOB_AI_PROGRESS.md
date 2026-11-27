@@ -143,8 +143,8 @@ Direcciones base .text ~0x00ba7xxx-0x00bf5xxx:
 | 8 | Implementación por etapas | ETAPAS A-D IMPLEMENTADAS |
 | 9 | Pruebas focalizadas + regresión | COMPLETADA (water_check 67, goal_check, bench e2e, build, smoke) |
 | 10 | Documentación REVERSE_ENGINEERING + IMPLEMENTATION | COMPLETADA |
-| 11 | Build limpio + smoke test + CI del último commit | BUILD+SMOKE OK; CI tras push de docs |
-| 12 | PR hacia `stable` (sin auto-merge) | tras push de docs |
+| 11 | Build limpio + smoke test + CI del último commit | COMPLETADA: CI run 46053566029 = success en a13fdf1 (Docs success; Build: Windows x86_64, Linux x86_64, Android ARM64, Linux ARM64 — todos success; Create Release skipped por no-tag) |
+| 12 | PR hacia `stable` (sin auto-merge) | COMPLETADA: PR #18 https://github.com/CurseStoneORG/CurseStone/pull/18 (open, sin fusionar) |
 | 13 | Validación en cliente MCPE 0.15.10 real | NO VERIFICADO EN CLIENTE MCPE 0.15.10 (sin emulador en el sandbox) |
 
 ## 6. Commits
@@ -155,7 +155,8 @@ Direcciones base .text ~0x00ba7xxx-0x00bf5xxx:
 | b3ae82c | Inventario del binario + constantes RE + auditoría + diseño | sí |
 | ef6448b | Etapas A-D: rotación vanilla, inercia de agua, rangos de mirada, flags RMW | sí |
 | a3a309f | revive tools/mob_ai_check.cpp para stage 2 | sí |
-| (este) | docs RE + IMPLEMENTATION + checkpoint | tras push |
+| a13fdf1 | docs RE + IMPLEMENTATION + checkpoint | sí |
+| (este) | checkpoint final: CI + PR | tras push |
 
 ## 7. Resultado de las etapas implementadas
 
@@ -172,3 +173,11 @@ Direcciones base .text ~0x00ba7xxx-0x00bf5xxx:
 2. Documentación: `docs/VANILLA_MOB_AI_REVERSE_ENGINEERING.md` (funciones/constantes/direcciones/evidencia) y `docs/VANILLA_MOB_AI_IMPLEMENTATION.md` (cambios/archivos/diseño/pruebas/limitaciones).
 3. Build limpio + CI del último commit + PR hacia `stable` (sin auto-merge).
 4. Pendiente NO VERIFICADO EN CLIENTE MCPE 0.15.10 (sin emulador/cliente real en el sandbox).
+
+
+## 9. Cierre de la pasada
+
+- **CI del último commit (a13fdf1)**: run 46053566029 (pull_request) → conclusion=success (4 jobs de build). El workflow solo corre en pull_request/push a stable — verificado en .github/workflows/Build.yml.
+- **PR**: #18 abierto hacia `stable`, sin fusionar.
+- **Validación real**: NO VERIFICADO EN CLIENTE MCPE 0.15.10 (sin emulador en el sandbox); toda la evidencia es estática (binario con direcciones citadas) + checks puros + harness protocolo-84 simulado.
+- Para retomar en otra sesión: seguir `docs/VANILLA_MOB_AI_PROGRESS.md` §8 — percepción con LOS/TargetGoal, pathfinding A* (inventario listo en RE §3.9), modelos de vuelo/salto/acuáticos, y validación con cliente real si se dispone de emulador.
