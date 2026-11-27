@@ -67,11 +67,14 @@ class MobAIManager {
     // ---- Tier contract ----
     // FULL    chunk within kFullTierRadius of a player: the full era
     //         pipeline (goals + controls + actuation) every tick.
-    // REDUCED within the view distance but beyond that radius: the same
-    //         pipeline every kReducedInterval ticks (the stride per
-    //         actuation is unchanged, so positions stay exact — packets
-    //         just arrive at 5 Hz, which is what vanilla does to far
-    //         entities anyway).
+    // REDUCED within the view distance but beyond that radius: the goal
+    //         pipeline runs every kReducedInterval ticks while the
+    //         actuation (physics + broadcasts) runs EVERY tick, so the
+    //         vanilla fall integration and the movement stream stay at
+    //         20 Hz — the expensive A*/sensing work is what the cadence
+    //         throttles, not the physics. The stride MoveControl armed
+    //         persists across the skipped passes through the brain's
+    //         move latch.
     // FROZEN  outside every player's view distance: the chunk is not
     //         visited at all; the record persists in the region files.
     static constexpr int32_t kFullTierRadius = 4;  ///< Chunks.
@@ -113,10 +116,15 @@ class MobAIManager {
     float waterSurfaceY(double x, double y, double z) const;
     /// @brief Intent -> physics -> record update + broadcast + water
     ///        effects. The only place AI state becomes a world mutation.
+    ///        @param goal_ran true when the era goal pipeline ran for
+    ///        this mob this tick; between reduced-tier goal passes the
+    ///        actuation still runs so the vanilla fall integration
+    ///        advances every tick, carrying the latched move intent.
     ///        @return false when the record must not receive physics
     ///        this tick (unresident chunk, void).
     bool actuateOne(world::MobEntity& m, MobBrain& brain,
-                    const PlayerContext& ctx, uint64_t current_tick);
+                    const PlayerContext& ctx, uint64_t current_tick,
+                    bool goal_ran);
     /// @brief Water effects of one actuation: the entry splash on the
     ///        air->water transition and the rate-limited swim wake while
     ///        the mob is actually moving through water.

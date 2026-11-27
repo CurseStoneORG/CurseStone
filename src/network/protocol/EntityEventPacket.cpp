@@ -22,9 +22,10 @@
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // EntityEventPacket.cpp — encode/decode.
-// The reference server: putLong(eid) + putByte(event). Clientbound only in CurseStone
-// (server never needs to parse this coming FROM the client), but
-// decode() is still implemented for symmetry/tests.
+// The reference server: putLong(eid) + putByte(event) + the 32-bit data
+// word the 0.15.10 client reads after the event byte. Clientbound only
+// in CurseStone (server never needs to parse this coming FROM the
+// client), but decode() is still implemented for symmetry/tests.
 #include "EntityEventPacket.h"
 
 namespace cursestone::network::protocol {
@@ -33,13 +34,16 @@ void EntityEventPacket::encode(std::vector<uint8_t>& out) const {
     PacketWriter w(out);
     w.writeI64BE(eid);
     w.writeU8(event);
+    w.writeI32BE(data);
 }
 
-bool EntityEventPacket::decode(const uint8_t* data, size_t len) {
-    PacketReader r(data, len);
+bool EntityEventPacket::decode(const uint8_t* data_, size_t len) {
+    PacketReader r(data_, len);
     if (!r.readI64BE(eid))
         return false;
-    return r.readU8(event);
+    if (!r.readU8(event))
+        return false;
+    return r.readI32BE(data);
 }
 
 } // namespace cursestone::network::protocol

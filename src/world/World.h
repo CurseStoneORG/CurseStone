@@ -31,7 +31,9 @@
 #include <unordered_set>
 #include <cstdint>
 #include <functional>
+#include <initializer_list>
 #include <mutex>
+#include <utility>
 #include "math/Vector3.h"
 #include "physics/Physics.h"
 #include "world/ChunkManager.h"
@@ -852,11 +854,14 @@ class World {
         return (ux << 32) | uz;
     }
 
-    // Toggles the FLAGS metadata sprint bit (bit 3) of one mob for its
-    // chunk viewers — the pose and faster leg cycle the 0.15.10 client
-    // renders for sprinting entities. The AI drives it for fleeing
-    // passives; false clears the bit. False for unknown mobs.
-    bool setMobSprinting(int64_t id, int32_t cx, int32_t cz, bool sprinting);
+    // Sends one or more BYTE entity-data entries for one mob to its chunk
+    // viewers in a single SetEntityDataPacket — the channel the 0.15.10
+    // client reads mob poses from (the skeleton bow-draw charging flag is
+    // key 5, the creeper swell keys are 16/17/18; see docs/MOB_AI.md for
+    // the binary mapping). No-op for unknown mobs.
+    bool setMobDataBytes(int64_t id, int32_t cx, int32_t cz,
+                         std::initializer_list<std::pair<uint8_t, int8_t>>
+                             entries);
 
     // Returns a non-owning pointer to a mob, or nullptr.
     MobEntity* mob(int64_t eid);

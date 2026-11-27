@@ -40,9 +40,12 @@ void TargetGoal::stop(Mob&) {
 }
 
 bool HurtByTargetGoal::canUse(Mob&) {
-    // Era contract: the last attacker becomes the attack target.
+    // Era contract: the last attacker becomes the attack target — but
+    // the era _canAttack chain refuses bodies it may not hunt, so a
+    // creative player's hits draw no retaliation (vanilla keeps mobs
+    // peaceful toward creative attackers).
     TargetRef attacker = holder_.getLastHurtByMob();
-    if (!attacker)
+    if (!attacker || !attacker.attackable)
         return false;
     target_ = attacker;
     holder_.setTarget(attacker.eid, attacker.player);
@@ -50,9 +53,12 @@ bool HurtByTargetGoal::canUse(Mob&) {
 }
 
 bool NearestAttackableTargetGoal::canUse(Mob&) {
-    // Era contract: the nearest player inside the follow range.
+    // Era contract (Monster::findAttackTarget): the nearest player
+    // inside the follow range whose creative byte is clear — a creative
+    // candidate returns an empty target, exactly like the binary's
+    // `byte 0x0d2c != 0 -> reject` branch.
     TargetRef nearest = holder_.nearestPlayer(follow_range_);
-    if (!nearest)
+    if (!nearest || !nearest.attackable)
         return false;
     target_ = nearest;
     holder_.setTarget(nearest.eid, true);

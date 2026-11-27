@@ -30,9 +30,9 @@
 // dynamic state the brain owns. One Mob object lives inside its
 // MobBrain; bind() attaches it to the record being simulated this tick.
 //
-// Yaw convention: all angles are the protocol-84 entity yaw the server
-// already broadcasts (0 = +Z, 90 = +X; direction = (sin, cos)). See
-// AiMath.h for the era conversion note.
+// Yaw convention: all angles are the protocol-84 entity yaw the client
+// renders (0 = +Z, 90 = -X/west; direction = (-sin, cos)). See AiMath.h
+// for the binary verification note.
 #pragma once
 #include "utils/Random.h"
 #include <cstdint>
@@ -70,6 +70,12 @@ struct TargetRef {
     float yaw = 0.0f;                 ///< Facing (the TemptGoal scare test).
     float pitch = 0.0f;
     bool alive = false;
+    /// @brief False for game modes the era mobs refuse to hunt: the
+    ///        0.15.10 Monster::findAttackTarget rejects a candidate
+    ///        player whose creative byte is set (0x0d2c != 0 in the
+    ///        binary), and the HurtByTargetGoal _canAttack chain agrees.
+    ///        Look goals still track them, only the attack targets skip.
+    bool attackable = true;
 
     void clear() { *this = TargetRef{}; }
     explicit operator bool() const { return eid != 0; }

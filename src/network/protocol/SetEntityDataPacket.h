@@ -132,6 +132,20 @@ class SetEntityDataPacket : public DataPacket {
     static constexpr uint8_t PROP_POTION_COLOR = 7;   // int
     static constexpr uint8_t PROP_POTION_AMBIENT = 8; // byte
 
+    // Mob pose properties (read back from the 0.15.10 client binary; the
+    // per-mob-class data keys the client models render from):
+    //   Skeleton/SkeletonModel::prepareMobModel reads getInt8(5) into the
+    //   bow-draw bool — the era Skeleton::normalTick writes it SERVER-side
+    //   (the Level::isClientSide == false half) as (getTarget() != null).
+    //   Creeper/Creeper::normalTick keeps swell direction (16), progress
+    //   (17) and the previous progress (18) as bytes: the client model
+    //   lerps(old, swell) to scale + flash the body while the fuse runs.
+    // Semantics are per entity type, like indices 16/17 above.
+    static constexpr uint8_t PROP_MOB_CHARGING = 5; // byte (skeleton)
+    static constexpr uint8_t PROP_SWELL_DIR = 16;   // byte (-1/0/1, creeper)
+    static constexpr uint8_t PROP_SWELL = 17;       // byte 0..30, creeper
+    static constexpr uint8_t PROP_SWELL_OLD = 18;   // byte 0..30, creeper
+
     struct Entry {
         uint8_t index = 0;
         uint8_t type = TYPE_BYTE;

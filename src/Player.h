@@ -927,6 +927,13 @@ class Player : public IPlayer,
     entity::DamageApply damageByEntity(
         float amount, entity::Entity* damager,
         event::entity::DamageCause cause = event::entity::DamageCause::ENTITY_ATTACK) override;
+    /// @brief The era Mob::knockback applied to this player as the
+    ///        victim: halves the current motion and shoves it away from
+    ///        the horizontal source point at the era 0.4 strength, then
+    ///        streams the SetEntityMotion to the victim's own client and
+    ///        the chunk viewers. The hit feedback a mob melee or a
+    ///        projectile owes its victim beyond the red flash.
+    void applyKnockbackFrom(double source_x, double source_z);
     // Updates the burn timer and broadcasts the fire metadata flag.
     void setOnFire(int seconds) override;
     // Clears the burn timer and drops the on-fire overlay flag from every

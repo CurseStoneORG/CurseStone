@@ -260,6 +260,11 @@ void Mob::resolve(TargetRef& ref) const {
                 ref.height = 1.8f;
                 ref.eyeHeight = 1.62f;
                 ref.alive = true;
+                // The era attack-target lookup rejected creative
+                // candidates (Monster::findAttackTarget, the 0x0d2c
+                // creative byte); a mid-chase mode switch drops the
+                // target on the next resolve.
+                ref.attackable = !p->isCreative();
                 return;
             }
         }
@@ -312,6 +317,9 @@ TargetRef Mob::nearestPlayer(double range) const {
             ref.height = 1.8f;
             ref.eyeHeight = 1.62f;
             ref.alive = true;
+            // Same era contract as resolve(): creative bodies are look
+            // candidates but never attack candidates.
+            ref.attackable = !p->isCreative();
         }
     }
     return ref;
@@ -330,7 +338,15 @@ bool Mob::doHurtTarget(const TargetRef& victim) {
             if (p && p->runtimeId() == victim.eid) {
                 const entity::DamageApply applied = p->damageByEntity(
                     kMobMeleeDamage, proxy_);
-                return applied != entity::DamageApply::CANCELLED;
+                if (applied == entity::DamageApply::CANCELLED)
+                    return false;
+                // The era hurt() chain applies the knockback to the
+                // victim right after the damage lands (Mob::hurt ->
+                // knockback, 0.8.1 Mob.cpp): the shove is the hit
+                // feedback the client body integrates, next to the red
+                // flash the damage pipeline already broadcast.
+                p->applyKnockbackFrom(rec_->x, rec_->z);
+                return true;
             }
         }
         return false;

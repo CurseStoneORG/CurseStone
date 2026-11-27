@@ -62,9 +62,8 @@ void MoveControl::tick() {
         return; // (0.0005)^2 — already there.
 
     // Era yaw steering: rotate toward the target by at most 30 degrees
-    // per tick. The era computes atan2(dz, dx) - 90 against the era yaw
-    // convention; the protocol conversion mirrors the sign, and the
-    // symmetric clamp reproduces the same rotation in this convention.
+    // per tick. The era computes atan2(dz, dx) - 90, which IS the client
+    // yaw convention — faceYaw reproduces it directly (see AiMath.h).
     const float wantedYaw = math::faceYaw(dx, dz);
     mob.setYaw(math::clampRotate(mob.yaw(), wantedYaw, MAX_YAW_STEP));
 

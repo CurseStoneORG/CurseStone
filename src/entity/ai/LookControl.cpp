@@ -70,8 +70,8 @@ void LookControl::tick() {
         const float pitchDeg =
             (float)(std::atan2(vertical, horiz) * (180.0 / 3.14159265358979323846));
         mob.setPitch(math::clampRotate(mob.pitch(), -pitchDeg, pitch_speed_));
-        // Era head yaw target: atan2(dz, dx) - 90 — the mirror of the
-        // protocol convention; the protocol conversion is faceYaw(dx, dz).
+        // Era head yaw target: atan2(dz, dx) - 90 — the client convention
+        // itself (the era formula and faceYaw agree; see AiMath.h).
         wantedYaw = math::faceYaw(dx, dz);
     } else {
         // No request: the head drifts back onto the body yaw at the

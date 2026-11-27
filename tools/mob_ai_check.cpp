@@ -27,6 +27,9 @@
 #include <cstdio>
 #include <memory>
 
+#include "entity/EntityTypes.h"
+#include "entity/ai/goals/TargetGoals.h"
+
 using namespace cursestone::entity::ai;
 
 static int failures = 0;
@@ -82,8 +85,9 @@ bool Mob::isAlive() const { return true; }
 bool Mob::isDay() const { return true; }
 bool Mob::canSeeSky(int32_t, int32_t, int32_t) const { return true; }
 TargetRef Mob::getTarget() const { return TargetRef{}; }
-TargetRef Mob::getLastHurtByMob() const { return TargetRef{}; }
 void Mob::resolve(TargetRef&) const {}
+static TargetRef g_test_last_hurt_by; // Scriptable retaliation stamp.
+TargetRef Mob::getLastHurtByMob() const { return g_test_last_hurt_by; }
 TargetRef Mob::nearestPlayer(double) const { return TargetRef{}; }
 bool Mob::doHurtTarget(const TargetRef&) { return false; }
 void Mob::fireArrowAt(const TargetRef&) {}
@@ -270,11 +274,11 @@ int main() {
         move.setJumpControl(&jump);
         g_test_base_speed = 0.1;
 
-        // A target due east (protocol yaw 90): two ticks rotate 30+30.
+        // A target due east (client yaw 270): two ticks rotate -30-30.
         move.setWantedPosition(mob.posX() + 100.0, mob.posY(),
                                mob.posZ(), 1.0f);
         move.tick();
-        check(mob.yaw() > 29.9f && mob.yaw() < 30.1f,
+        check(mob.yaw() > -30.1f && mob.yaw() < -29.9f,
               "movecontrol: yaw steps 30 degrees toward the target");
         check(std::fabs(mob.speed() - 0.1f) < 1e-5,
               "movecontrol: speed armed as multiplier * baseSpeed");
@@ -326,11 +330,11 @@ int main() {
         mob.setHeadYaw(0.0f);
         mob.setPitch(0.0f);
         LookControl look(&mob);
-        // Due east of the mob: protocol yaw 90.
+        // Due east of the mob: client yaw 270 (the head walks negative).
         look.setLookAt(mob.posX() + 10.0, mob.posY() + mob.getHeadHeight(),
                        mob.posZ(), 30.0f, 40.0f);
         look.tick();
-        check(mob.headYaw() > 29.9f && mob.headYaw() < 30.1f,
+        check(mob.headYaw() > -30.1f && mob.headYaw() < -29.9f,
               "lookcontrol: the head approaches the look target");
         check(mob.pitch() < 0.1f,
               "lookcontrol: a level target keeps the pitch at zero");
@@ -339,11 +343,11 @@ int main() {
         for (int i = 0; i < LookControl::kRequestHoldTicks; ++i)
             look.tick();
         const float afterHold = mob.headYaw();
-        check(afterHold > 60.0f,
+        check(afterHold < -60.0f,
               "lookcontrol: the request holds through the goal cadence");
         for (int i = 0; i < 5; ++i)
             look.tick();
-        check(mob.headYaw() < afterHold,
+        check(mob.headYaw() > afterHold,
               "lookcontrol: past the hold the head drifts back to the body");
     }
 
@@ -439,10 +443,95 @@ int main() {
               "math: clampRotate steps at most maxStep degrees");
         const float yaw = math::faceYaw(0.0, 5.0); // Due +Z.
         check(std::fabs(yaw) < 1e-4, "math: faceYaw(+Z) is 0");
+        // The client convention (0.15.10 Entity::moveRelative disassembly):
+        // a yaw's movement direction is (-sin, cos), so 90 faces WEST (-X)
+        // and moving +X needs yaw 270 — the mirror the first port shipped
+        // made every walking mob moonwalk or strafe.
         double dx = 0, dz = 0;
         math::yawDirection(90.0f, dx, dz);
+        check(dx < -0.99 && std::fabs(dz) < 0.01,
+              "math: yaw 90 faces -X (client convention, no moonwalk)");
+        math::yawDirection(270.0f, dx, dz);
         check(dx > 0.99 && std::fabs(dz) < 0.01,
-              "math: yaw 90 faces +X (protocol convention)");
+              "math: yaw 270 faces +X (client convention, no moonwalk)");
+        // Era-formula identity: the decompile's atan2(dz, dx) - 90 target
+        // yaw equals faceYaw in the client convention for every heading.
+        const double probes[][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1},
+                                    {0.7071, 0.7071}, {-0.6, -0.8}};
+        for (const auto& p : probes) {
+            const float era = (float)(std::atan2(p[1], p[0]) * (180.0 / 3.14159265358979323846)) - 90.0f;
+            const float port = math::faceYaw(p[0], p[1]);
+            check(std::fabs(math::wrapDegrees(era - port)) < 1e-3,
+                  "math: faceYaw matches the era atan2(dz, dx) - 90 formula");
+        }
+    }
+
+    // ---- 14. Target goals: creative bodies are never attack targets ----
+    // The 0.15.10 Monster::findAttackTarget rejects a candidate whose
+    // creative byte is set; the port carries the verdict on the
+    // TargetRef so both attack selectors share one rule.
+    {
+        Mob& mob = testMob();
+        // A creative candidate: nearestPlayer stamps attackable=false.
+        g_test_last_hurt_by = TargetRef{};
+        g_test_last_hurt_by.eid = 7;
+        g_test_last_hurt_by.player = true;
+        g_test_last_hurt_by.alive = true;
+        g_test_last_hurt_by.attackable = false;
+        HurtByTargetGoal hurtBy(mob, 16.0f);
+        NearestAttackableTargetGoal nearest(mob, 16.0f);
+        check(!hurtBy.canUse(mob),
+              "targets: a creative attacker draws no retaliation");
+        check(!nearest.canUse(mob),
+              "targets: a creative body is never acquired as a target");
+        // The same bodies attackable: both goals acquire and stamp.
+        g_test_last_hurt_by.attackable = true;
+        check(hurtBy.canUse(mob) && mob.targetEid() == 7,
+              "targets: an attackable last-hurt-by becomes the target");
+        mob.setTarget(0, false);
+        g_test_last_hurt_by = TargetRef{};
+    }
+
+    // ---- 15. BodyControl reconciles the body yaw (the pipeline tick) ----
+    // Regression: the era client tick reconciled the body rotation;
+    // NoAI copies never run it, so the server-side pipeline must tick
+    // BodyControl or the body never turns toward where it walks.
+    {
+        Mob& mob = testMob();
+        mob.setBodyYaw(0.0f);
+        mob.setHeadYaw(0.0f);
+        mob.setPitch(0.0f);
+        BodyControl body(&mob);
+        // A walking body: real displacement since the last actuation.
+        mob.setYaw(90.0f); // Movement yaw due west (client convention).
+        mob.setPrevPos(mob.posX() + 0.2, mob.posZ());
+        body.tick();
+        check(mob.bodyYaw() > 0.0f && mob.bodyYaw() < 10.5f,
+              "bodycontrol: a walking body chases the movement yaw");
+        // The head stays inside the walking cone (75 degrees).
+        float headOffset = math::wrapDegrees(mob.bodyYaw() - mob.headYaw());
+        check(headOffset <= 75.0f && headOffset >= -75.0f,
+              "bodycontrol: the head is pulled into the walking cone");
+    }
+
+    // ---- 16. Species speeds: the 0.15.10 registerAttributes values ----
+    // The walk column is the vanilla movement-speed attribute read out
+    // of the binary's per-class registerAttributes disassembly.
+    {
+        auto speedOf = [](int32_t type) {
+            return cursestone::entity::mobProfile(type).walk_speed;
+        };
+        check(std::fabs(speedOf(32) - 0.23f) < 1e-6,
+              "speeds: zombie attribute 0.23 (binary 0x3E6B851F)");
+        check(std::fabs(speedOf(34) - 0.25f) < 1e-6,
+              "speeds: skeleton attribute 0.25 (binary 0x3E800000)");
+        check(std::fabs(speedOf(33) - 0.20f) < 1e-6,
+              "speeds: creeper attribute 0.2 (binary 0x3E4CCCCD)");
+        check(std::fabs(speedOf(35) - 0.30f) < 1e-6,
+              "speeds: spider attribute 0.3 (binary 0x3E99999A)");
+        check(cursestone::entity::mobProfile(12).width > 0.0f &&
+                  cursestone::entity::mobProfile(12).height > 0.0f,
+              "speeds: profiles keep their era body boxes");
     }
 
     printf("\n%s (%d failures)\n", failures == 0 ? "ALL CHECKS PASSED" : "FAILURES", failures);
