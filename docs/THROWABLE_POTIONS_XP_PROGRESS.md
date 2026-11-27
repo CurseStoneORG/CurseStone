@@ -28,13 +28,13 @@ Autor obligatorio de todos los commits: `Dr1xyDev <240832661+Dr1xyDev@users.nore
 | 1.1 — Tabla de inventario funcional | COMPLETADA (sección más abajo) |
 | 2 — Investigación MCPE 0.15.x vanilla (binario real) | COMPLETADA (análisis estático; ver sección "Investigación") |
 | 3 — Referencia Genisys 0.15.0 | COMPLETADA |
-| 4 — Diseño + implementación pociones arrojadizas | PENDIENTE (diseño abajo) |
-| 5 — Botella de experiencia + orbes | PENDIENTE |
-| 6 — Sistema XP/niveles + HUD + persistencia | PENDIENTE |
-| 7 — Tests específicos | PENDIENTE |
-| 8 — Compilación + CI + validación con cliente real | PENDIENTE (compilación pendiente; emulador NO viable) |
-| 9 — Documentación docs/THROWABLE_POTIONS_XP_VANILLA.md | PENDIENTE |
-| 10 — Commit final, push, resumen | PENDIENTE |
+| 4 — Diseño + implementación pociones arrojadizas | COMPLETADA (trajectory vanilla: power 0.5, −20°, gaussiana, motion heredada; gravity 0.05, drag 0.99/0.8) |
+| 5 — Botella de experiencia + orbes | COMPLETADA (item 384, entidad 68, orbes 69, escalera canónica, metadata 11, recogida con delay y sonido 1051) |
+| 6 — Sistema XP/niveles + HUD + persistencia | COMPLETADA (curva antigua 2L+7/5L−38/9L−158, addExperience/addLevels, XpTotal en NBT) |
+| 7 — Tests específicos | COMPLETADA (tools/potion_xp_check.cpp: 47 checks en verde; potion_effect_check.cpp del PR #15 sigue en verde) |
+| 8 — Compilación + CI + validación con cliente real | COMPLETADA en lo local: build limpio OK, smoke boot/cierre limpio; CI = run de Build.yml por push (verificar en GitHub); cliente real NO VERIFICADO (sin emulador) |
+| 9 — Documentación docs/THROWABLE_POTIONS_XP_VANILLA.md | COMPLETADA |
+| 10 — Commit final, push, resumen | COMPLETADA en esta sesión |
 
 ## Entorno
 
@@ -145,12 +145,28 @@ Todo lo siguiente fue medido en `libminecraftpe.so` 0.15.10 con desensamblado Th
 - La caja de colisión del ExperiencePotion (setSize(1.0,1.0) visto en un ctor; Genisys dice 0.25).
 - La semántica del rand del spawnOrbs (umodsi3 → [0,n) asumido).
 
+## Commits de la sesión (todos con autor Dr1xyDev, push verificado)
+
+1. `cb2883b` docs: checkpoint inicial
+2. `697bf2f` docs: research vanilla (binario RE) en el checkpoint
+3. `0ac368f` feat(player): vanilla xp points, era level curve and orb pickup delay
+4. `d50161d` feat(world): vanilla experience bottle, xp orbs and corrected throwable physics
+5. `0ba6316` test: focused throwable potion and xp checks against the 0.15.10 binary
+6. (este commit) docs: THROWABLE_POTIONS_XP_VANILLA.md + checkpoint final
+
+## Problemas encontrados (adición)
+
+- El script de build incremental del sandbox NO reconstruye los TUs que incluyen headers modificados: tras cambiar World.h/Player.h hay que borrar el directorio de objetos. El crash «malloc(): invalid size (unsorted)» del smoke vino de esa mezcla de ABIs, NO del código: rebuild limpio de `871aa99`, de `0ac368f` y de HEAD arrancan y apagan limpios (HEAD también bajo ASAN sin hallazgos).
+
+## Estado de compilación / smoke
+
+- Build completo limpio de HEAD: OK (`/tmp/cs_xp/CurseStone`).
+- Smoke: arranque + 15 s + SIGTERM + cierre limpio ("Shutdown complete", mundo guardado).
+- ASAN (d50161d): sin hallazgos.
+
 ## Próximo paso exacto
 
-FASE 4-6: implementar según "Diseño de implementación" en commits pequeños:
-1. `feat(player): vanilla xp points, level curve and attribute sync` (curva + addExperience + persistencia XpTotal)
-2. `feat(world): vanilla experience orbs (type 69, metadata 11, canonical split, pickup)`
-3. `feat(item): experience bottle item 384 + vanilla throw (power 0.5, up-angle -20, gaussian spread)`
-4. `fix(projectile): vanilla thrown potion trajectory (gravity 0.05, drag 0.99, up-angle, inherited motion)`
-5. `test: focused xp/orb/potion tests`
-Actualizar este checkpoint tras cada grupo y push.
+1. Verificar el run de CI (Build.yml) del último push en GitHub Actions y anotar el resultado en este checkpoint.
+2. Abrir el PR de `fix-throwable-potions-xp-vanilla` → `stable` (no fusionar sin revisión).
+3. Validación con el cliente real 0.15.10 cuando haya un entorno Android (todo lo visual queda NO VERIFICADO): trayectoria medida, HUD, sonido de recogida, recogida con delay.
+4. Ajustar el color del splash XP si el global del binario se llega a leer (un punto en `tickExperienceBottles`).
