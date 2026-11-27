@@ -125,6 +125,7 @@ struct ExperienceOrbEntity {
     int64_t eid = 0;
     double x = 0.0, y = 0.0, z = 0.0;
     double vx = 0.0, vy = 0.0, vz = 0.0;
+    float yaw = 0.0f;            // Spawn heading (vanilla draws it randomly).
     int value = 1;               // XP points (metadata index 11).
     uint64_t spawn_tick = 0;
     uint32_t age = 0;            // Ticks alive; kill at 6000.
