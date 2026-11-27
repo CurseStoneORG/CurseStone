@@ -149,12 +149,11 @@ int main() {
               "Slowness factor x max(0, 1 - 0.15*(amp+1))");
         check(has(w, "std::lock_guard<std::mutex> lk(mob_effects_mtx_);"),
               "factor read guarded by mob_effects_mtx_ (inner lock only)");
-        std::string m = slurp("src/entity/ai/MobAIManager.cpp");
-        check(has(m, "const float speed_factor = world_->mobSpeedMultiplier(m.eid);"),
-              "AI context consults the mob effects");
-        check(has(m, "ctx.walkSpeed *= speed_factor;") &&
-                  has(m, "ctx.panicSpeed *= speed_factor;"),
-              "profile base multiplied once per tick (no accumulation)");
+        std::string m = slurp("src/entity/ai/Mob.cpp");
+        check(has(m, "base *= world_->mobSpeedMultiplier(rec_->eid);"),
+              "AI base speed consults the mob effects (getBaseSpeed)");
+        check(has(m, "// Speed/Slowness multiply the attribute once per read, the same"),
+              "profile base multiplied once per read (no accumulation)");
     }
 
     printf("5) MINING SPEED EFFECTS (PlayerBlocks.cpp)\n");
