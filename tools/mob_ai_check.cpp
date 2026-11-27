@@ -2,13 +2,19 @@
 // writing and the stage-1 brain factory — pure logic, no World, no
 // network. Links only the AI translation units plus the RNG.
 //
-//   g++ -std=c++20 -Isrc tools/mob_ai_check.cpp src/entity/ai/MobAI.cpp \
+//   g++ -std=c++20 -Isrc tools/mob_ai_check.cpp src/entity/ai/MobAI.cpp\
+//       src/entity/ai/Goals.cpp src/entity/EntityTypes.cpp
 //       src/entity/ai/Goals.cpp src/utils/Random.cpp -o /tmp/mob_ai_check
 //
 // Exit code 0 = every check passed.
 #include "entity/ai/Goals.h"
 #include "entity/ai/MobAI.h"
+#include "entity/mobs/Bat.h"
 #include "entity/mobs/MobKind.h"
+#include "entity/mobs/Pig.h"
+#include "entity/mobs/Squid.h"
+#include "entity/mobs/Wolf.h"
+#include "entity/mobs/Zombie.h"
 #include <cmath>
 #include <cstdio>
 #include <memory>
@@ -68,18 +74,25 @@ class ScriptGoal : public Goal {
 } // namespace
 
 int main() {
-    // ---- 1. Stage-1 brain factory ----
-    auto passive = makeMobBrain((uint8_t)mobs::MobKind::Passive, 12345);
+    // ---- 1. Stage-2 brain factory (species profiles select) ----
+    auto passive = makeMobBrain((uint8_t)mobs::MobKind::Passive,
+                                mobs::Pig::kId, 12345);
     check(passive && passive->dynamic(), "passive brain is dynamic");
-    // 3 goals: IdleLookGoal, LookAtPlayerGoal, WanderGoal.
-    auto neutral = makeMobBrain((uint8_t)mobs::MobKind::Neutral, 1);
-    auto hostile = makeMobBrain((uint8_t)mobs::MobKind::Hostile, 1);
-    auto water = makeMobBrain((uint8_t)mobs::MobKind::Water, 1);
-    auto ambient = makeMobBrain((uint8_t)mobs::MobKind::Ambient, 1);
-    check(neutral && !neutral->dynamic(), "neutral brain static in stage 1");
-    check(hostile && !hostile->dynamic(), "hostile brain static in stage 1");
-    check(water && !water->dynamic(), "water brain static in stage 1");
-    check(ambient && !ambient->dynamic(), "ambient brain static in stage 1");
+    // 4 goals: IdleLookGoal, LookAtPlayerGoal, WanderGoal, PanicGoal.
+    auto neutral = makeMobBrain((uint8_t)mobs::MobKind::Neutral,
+                                mobs::Wolf::kId, 1);
+    auto hostile = makeMobBrain((uint8_t)mobs::MobKind::Hostile,
+                                mobs::Zombie::kId, 1);
+    auto water = makeMobBrain((uint8_t)mobs::MobKind::Water,
+                              mobs::Squid::kId, 1);
+    auto ambient = makeMobBrain((uint8_t)mobs::MobKind::Ambient,
+                                mobs::Bat::kId, 1);
+    check(neutral && neutral->dynamic() && neutral->goals().size() == 3,
+          "neutral brain carries the stage-2 trio");
+    check(hostile && hostile->dynamic() && hostile->goals().size() == 3,
+          "hostile brain carries the stage-2 trio (no panic)");
+    check(water && !water->dynamic(), "water brain static (aquatic model)");
+    check(ambient && !ambient->dynamic(), "ambient brain static (flight)");
 
     // ---- 2. Priority wins the flag ----
     {
