@@ -40,15 +40,70 @@ Autor obligatorio de todos los commits: `Dr1xyDev <240832661+Dr1xyDev@users.nore
 |---|---|
 | 0 — Inspección Git, fetch, rama desde origin/stable, checkpoint | COMPLETADA (commit `1af4709`, push verificado) |
 | 0b — Verificación de PR #15/#16 | COMPLETADA (ambos merged, ver arriba) |
-| 1 — Inspección de CurseStone (efectos/movimiento, orbes, ítems) + tabla de inventario funcional | COMPLETADA (ver "Inventario funcional") |
+| 1 — Inspección de CurseStone (efectos/movimiento, orbes, ítems) + tabla de inventario funcional | COMPLETADA |
 | 2 — Investigación vanilla 0.15.x (binario + referencias) para Velocidad/Lentitud, orbes, altura ítems | COMPLETADA (RE del binario, volcado `android/potion_move_re.txt`) |
-| 3 — Referencia Genisys 0.15 | COMPLETADA (extraído en `android/Genisys-ec716b0ea4`) |
-| 4 — Diseño en checkpoint + corrección Velocidad/Lentitud (movimiento real, reversible, sin acumulación) | EN CURSO (diseño abajo) |
-| 5 — Auditoría del resto de efectos (tabla Efecto\|Aplicación\|Mecánica\|Estado) | EN CURSO (tabla abajo) |
-| 6 — Corrección dispersión/salto inicial de orbes + sincronización completa | PENDIENTE (causa raíz demostrada, diseño abajo) |
-| 7 — Corrección elevación de ítems tirados (bounding box / offset vanilla) | EN CURSO (divergencias demostradas, diseño abajo) |
-| 8 — Tests focalizados (movimiento, orbes, ítems, paquetes) | PENDIENTE |
-| 9 — Compilación + CI + docs finales + push + resumen | PENDIENTE |
+| 3 — Referencia Genisys 0.15 | COMPLETADA |
+| 4 — Velocidad/Lentitud: cadena del jugador verificada + multiplicadores reales de mobs | COMPLETADA (commit `85f834a`) |
+| 5 — Auditoría del resto de efectos: mining speed era, clamp de Resistencia, Health Boost | COMPLETADA (commit `542a6e1`) |
+| 6 — Corrección dispersión/salto inicial de orbes + sincronización | COMPLETADA (commit `b0ccc85`) |
+| 7 — Elevación de ítems: flotación en agua + motion del Q-drop de era; reposo exacto demostrado por test | COMPLETADA (commits `b0ccc85`, `0278159`) |
+| 8 — Tests focalizados | COMPLETADA (commit `a8829d5`): potion_move_orbs_height_check 34/34, potion_xp_check verde, potion_effect_check verde |
+| 9 — Compilación + CI + docs finales + push + resumen | COMPLETADA (build limpio + smoke OK + docs + PR) |
+
+## Commits de la tarea (autor Dr1xyDev, push verificado en remoto en cada paso)
+
+1. `1af4709` docs: checkpoint inicial
+2. `10afe96` docs: record vanilla movement effects, orb spawn and item height research
+3. `b0ccc85` fix(world): vanilla experience orb initial motion and dropped-item buoyancy
+4. `0278159` fix(items): era throw motion for player drops
+5. `85f834a` fix(ai): speed and slowness now change real mob movement
+6. `542a6e1` fix(effects): era mining speed, resistance clamp and health boost
+7. `a8829d5` test: focused movement, orb spawn, item and mining effect checks
+8. (este) docs: final reference and checkpoint
+
+## Estado de compilación / smoke
+
+- Build completo limpio tras cada cambio de headers (`build_local.sh`): OK (3 reconstrucciones).
+- Smoke del binario final: arranque, pregen, SIGTERM a 12 s, "Shutdown complete", mundo guardado — limpio.
+
+## Tests ejecutados y resultados reales
+
+- `tools/potion_move_orbs_height_check.cpp` (nuevo): **34/34 PASS** — constantes de era por source-scan,
+  byte-exact del UpdateAttributesPacket contra el orden de `AttributeData::read` del cliente
+  ([min][max][value][name], sin default en el cable), física real de reposo (ítem 0.25 sobre bloque
+  completo: y == 64.0 EXACTO; sobre losa: y == 63.5 EXACTO).
+- `tools/potion_xp_check.cpp` (PR #16): ALL CHECKS PASSED.
+- `tools/potion_effect_check.cpp` (PR #15): ALL PASS.
+- Harness completo de tools/ NO ejecutado (instrucción del usuario).
+
+## Estado de CI y commit exacto comprobado
+
+- Pushes verificados con `git ls-remote` tras cada commit (punta del remoto = commit local en cada paso).
+- `Build.yml` no se dispara por push a esta rama; corre sobre el PR hacia `stable`. PR abierto y el run
+  del head commit se verifica por API (ver la sección final del checkpoint tras la creación del PR).
+
+## Elementos NO VERIFICADOS
+
+- Todo lo visual/en vivo con cliente real (velocidad percibida, dispersión observada, elevación visual,
+  HUD de Health Boost) — sin emulador (sin KVM/binder).
+- El generador aleatorio exacto del binario (MT19937): se replican rangos e independencia por orbe, no
+  el bit-stream.
+- Fuerza/Debilidad aditivos (+3/−4, Java 1.8) frente a los multiplicativos de Genisys (×1.3/×0.8): sin
+  lectura directa del binario en esta tarea; se mantiene el aditivo.
+- Jump Boost server-side para mobs: sin factor de era medido; no se inventa.
+- Color global del splash de la botella XP (heredado de PR #16).
+
+## Próximo paso exacto
+
+1. Revisar y fusionar el PR (no fusionar sin revisión); verificar que CI quede verde sobre el head
+   commit exacto.
+2. Con un entorno Android real (emulador o dispositivo 0.15.10): medir la velocidad percibida con
+   /effect speed|slowness, lanzar una botella de experiencia y observar dispersión/salto, tirar ítems
+   sobre suelo plano/losa/escaleras/agua y comparar la elevación con vanilla; marcar cada medición como
+   VERIFICADO o corregir lo que difiera.
+3. Si se llega a simbolizar el color global del splash XP del binario, ajustar el punto en
+   `tickExperienceBottles`.
+
 
 ## Investigación (FASE 1-3, verificada contra el binario 0.15.10 y Genisys 0.15.0)
 
