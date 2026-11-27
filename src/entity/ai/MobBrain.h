@@ -99,8 +99,27 @@ class MobBrain {
     bool& inWater() { return in_water_; }
     bool inWater() const { return in_water_; }
     int& splashCooldown() { return splash_cd_; }
-    bool& sprintFlag() { return sprint_on_; }
-    bool sprintFlag() const { return sprint_on_; }
+
+    // ---- Pose-sync channel (what the actuation sends as entity data) ----
+    // The 0.15.10 client reads mob poses from SynchedEntityData keys. The
+    // binary ties each pose to a key (see docs/MOB_AI.md):
+    //   key 5  (byte)   skeleton "charging" — the bow-draw arm pose; the
+    //                   era Skeleton::normalTick writes it server-side as
+    //                   (getTarget() != null) every tick;
+    //   keys 16/17/18   creeper swell direction / progress / previous —
+    //                   the client model scales and flashes the body from
+    //                   the lerp(old, swell) pair while the fuse runs.
+    // The brain stamps the authoritative values from the AI pass; the
+    // actuation sends only on change.
+    struct PoseSync {
+        bool charging = false;    ///< Skeleton bow-draw flag (key 5).
+        bool chargingSent = false; ///< Last value handed to the wire.
+        int32_t swellDir = 0;     ///< Creeper swell direction (key 16).
+        int32_t swell = 0;        ///< Creeper swell progress (key 17).
+        int32_t swellOld = 0;     ///< Previous progress (key 18).
+        bool swellSent = false;   ///< Any swell key changed since the send.
+    };
+    PoseSync& poseSync() { return pose_sync_; }
 
     // ---- Move-intent latch (reduced-tier physics carrier) ----
     // The era pipeline ran every tick, so the stride MoveControl armed
@@ -150,6 +169,9 @@ class MobBrain {
     PathNavigation navigation_;
     bool has_goals_ = false;
     bool wants_explode_ = false;
+    /// @brief True for the kinds the era registers ArrowAttackGoal for
+    ///        (the only mobs whose clients read the charging key).
+    bool arrow_attacker_ = false;
 
     float motion_y_ = 0.0f;
     float motion_x_ = 0.0f, motion_z_ = 0.0f;
@@ -157,9 +179,9 @@ class MobBrain {
     int jump_cooldown_ = 0;
     bool in_water_ = false;
     int splash_cd_ = 0;
-    bool sprint_on_ = false;
     MoveLatch move_latch_;
     BroadcastCache broadcast_;
+    PoseSync pose_sync_;
 };
 
 /// @brief Builds the brain of a mob type: the era goal set for the mobs

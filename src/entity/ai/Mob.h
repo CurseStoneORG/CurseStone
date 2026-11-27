@@ -30,9 +30,9 @@
 // dynamic state the brain owns. One Mob object lives inside its
 // MobBrain; bind() attaches it to the record being simulated this tick.
 //
-// Yaw convention: all angles are the protocol-84 entity yaw the server
-// already broadcasts (0 = +Z, 90 = +X; direction = (sin, cos)). See
-// AiMath.h for the era conversion note.
+// Yaw convention: all angles are the protocol-84 entity yaw the client
+// renders (0 = +Z, 90 = -X/west; direction = (-sin, cos)). See AiMath.h
+// for the binary verification note.
 #pragma once
 #include "utils/Random.h"
 #include <cstdint>

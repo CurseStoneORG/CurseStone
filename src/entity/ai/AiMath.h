@@ -32,13 +32,16 @@
 //     at most @p maxStep degrees, wrapping the difference.
 //
 // Conventions: every angle in the AI layer is the protocol-84 entity yaw
-// the server already broadcasts (0 = +Z, 90 = +X), i.e. the movement
-// direction of a yaw is (sin(yaw), cos(yaw)). The era decompile computes
-// target yaws as atan2(dz, dx) - 90, which is the mirror image; the two
-// conventions differ only by a sign, and every rotation the controls
-// apply is a symmetric clamp, so porting the math in the protocol
-// convention reproduces the era motion exactly (see the control
-// comments for the per-site conversion).
+// the client renders (0 = +Z, 90 = -X/west), i.e. the movement direction
+// of a yaw is (-sin(yaw), cos(yaw)). Verified in the 0.15.10 client
+// binary: Entity::moveRelative (0x00bd58bd) integrates pure-forward
+// motion as motX += -sin(yaw), motZ += cos(yaw) (the sinf/cosf PLT order
+// pins the signs), the same convention Genisys/0.15 servers use, and the
+// era decompile's atan2(dz, dx) - 90 target-yaw formula produces exactly
+// this convention - yaw 0 faces +Z and yaw 270 faces +X. The first port
+// mirrored it ("90 = +X, (sin, cos)"), which made every walking mob
+// moonwalk or strafe depending on its heading; the two helpers below are
+// the single conversion point, so fixing them fixes every control.
 #pragma once
 #include <cmath>
 
@@ -65,15 +68,16 @@ inline float clampRotate(float current, float target, float maxStep) {
     return current + delta;
 }
 
-/// @brief Protocol-84 yaw of a horizontal direction (sin/cos convention).
+/// @brief Protocol-84 yaw of a horizontal direction (the client-facing
+///        convention: yaw = atan2(-dx, dz), so moving +X reads yaw 270).
 inline float faceYaw(double dx, double dz) {
-    return static_cast<float>(std::atan2(dx, dz) * (180.0 / 3.14159265358979323846));
+    return static_cast<float>(std::atan2(-dx, dz) * (180.0 / 3.14159265358979323846));
 }
 
-/// @brief Movement direction of a protocol-84 yaw: (sin(yaw), cos(yaw)).
+/// @brief Movement direction of a protocol-84 yaw: (-sin(yaw), cos(yaw)).
 inline void yawDirection(float yawDeg, double& dx, double& dz) {
     const double rad = static_cast<double>(yawDeg) * (3.14159265358979323846 / 180.0);
-    dx = std::sin(rad);
+    dx = -std::sin(rad);
     dz = std::cos(rad);
 }
 

@@ -1806,6 +1806,28 @@ std::shared_ptr<network::protocol::AddEntityPacket> buildMobAddPacket(
     no_ai.type = Meta::TYPE_BYTE;
     no_ai.ival = 1;
     add->metadata.push_back(no_ai);
+    // Define the pose keys the client models read, so every later
+    // SetEntityData update lands on an existing DataItem (the client's
+    // SynchedEntityData::getInt8 answers 0 for a missing key, so these
+    // also pin the resting pose). Skeleton key 5 = bow-draw charging,
+    // creeper keys 16/17/18 = the swell triple the fuse animates.
+    if (type == entity::EntityTypeId::SKELETON ||
+        type == entity::EntityTypeId::STRAY) {
+        Meta::Entry charging;
+        charging.index = Meta::PROP_MOB_CHARGING;
+        charging.type = Meta::TYPE_BYTE;
+        charging.ival = 0;
+        add->metadata.push_back(charging);
+    } else if (type == entity::EntityTypeId::CREEPER) {
+        for (const uint8_t index :
+             {Meta::PROP_SWELL_DIR, Meta::PROP_SWELL, Meta::PROP_SWELL_OLD}) {
+            Meta::Entry swell;
+            swell.index = index;
+            swell.type = Meta::TYPE_BYTE;
+            swell.ival = 0;
+            add->metadata.push_back(swell);
+        }
+    }
     return add;
 }
 
@@ -2045,9 +2067,12 @@ std::vector<MobEntity*> World::chunkMobs(int32_t cx, int32_t cz) {
     return out;
 }
 
-bool World::setMobSprinting(int64_t id, int32_t cx, int32_t cz,
-                            bool sprinting) {
-    // Only live records toggle the bit (a dying body keeps whatever
+bool World::setMobDataBytes(int64_t id, int32_t cx, int32_t cz,
+                            std::initializer_list<std::pair<uint8_t, int8_t>>
+                                entries) {
+    if (entries.size() == 0)
+        return true;
+    // Only live records receive the entries (a dying body keeps whatever
     // pose it had; the client wipes it with the RemoveEntity).
     {
         std::lock_guard<std::mutex> lk(mobs_mtx_);
@@ -2056,13 +2081,16 @@ bool World::setMobSprinting(int64_t id, int32_t cx, int32_t cz,
             return false;
     }
     using Meta = network::protocol::SetEntityDataPacket;
-    Meta::Entry flags;
-    flags.index = Meta::PROP_FLAGS;
-    flags.type = Meta::TYPE_BYTE;
-    flags.ival = sprinting ? (1 << Meta::FLAG_BIT_SPRINTING) : 0;
     auto pk = std::make_shared<Meta>();
     pk->eid = id;
-    pk->entries.push_back(flags);
+    pk->entries.reserve(entries.size());
+    for (const auto& [index, value] : entries) {
+        Meta::Entry entry;
+        entry.index = index;
+        entry.type = Meta::TYPE_BYTE;
+        entry.ival = value;
+        pk->entries.push_back(entry);
+    }
     sendToChunkViewers(this, cx, cz, pk);
     return true;
 }

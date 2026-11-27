@@ -126,11 +126,20 @@ mob constructors:
 
 ## 5. Conventions and deviations
 
-- **Yaw convention**: the AI layer uses the protocol-84 entity yaw the
-  server already broadcasts (0 = +Z, 90 = +X; direction = (sin, cos)).
-  The era math (`atan2(dz, dx) - 90`) is the mirror image; every era
-  rotation is a symmetric clamp, so the port reproduces the motion
-  exactly in the protocol convention (see AiMath.h).
+- **Yaw convention**: every angle in the AI layer is the protocol-84
+  entity yaw the client renders (0 = +Z, 90 = -X/west; a yaw's movement
+  direction is (-sin, cos)). Verified in the 0.15.10 binary:
+  `Entity::moveRelative` (0x00bd58bd) integrates pure-forward input as
+  motX += -sin(yaw), motZ += cos(yaw) (the sinf/cosf PLT call order pins
+  the signs), the same convention the Genisys 0.15 server uses, and the
+  era decompile's `atan2(dz, dx) - 90` target-yaw formula produces
+  exactly it (yaw 0 faces +Z, yaw 270 faces +X). The first port assumed
+  the mirror ("90 = +X, (sin, cos)"), which made every walking mob
+  moonwalk or strafe depending on its heading. The two helpers in
+  `AiMath.h` (`faceYaw`, `yawDirection`) are the single conversion
+  point; the arrow spawn yaw sites are deliberately NOT mirrored — the
+  client's own `Arrow::lerpMotion` derives rotation as atan2f(vx, vz),
+  which is what the server already sends.
 - **Look request hold**: the era LookControl consumed its request in one
   tick; the port holds it for 4 ticks so the goal cadence (FULL tier =
   every tick, REDUCED = every 4th) cannot snap the head back between
@@ -168,19 +177,39 @@ mob constructors:
 - **EntityEventPacket wire**: the 0.15.10 client's
   `EntityEventPacket::read` decodes [64-bit eid][8-bit event][32-bit
   data]; the server now writes all three fields.
-- **Mob swing/bow animations over the wire**: protocol 84 carries no
-  channel for remote-mob swing state. Verified in the 0.15.10 client
-  binary: `Mob::handleEntityEvent` handles only events {2 hurt, 3 death,
-  17 ambient, 18 respawn, 57 eating}; event 4 (the modern ARM_SWING id)
-  falls through to the empty `Entity::handleEntityEvent`, and
-  `AnimatePacket` action 1 calls `Mob::swing()` only for PLAYER
-  entities. The era swing/bow-draw poses are client-local fields
-  (`Mob::swing` → mSwingTime, `Skeleton::updateSkeletonParams`) fed by
-  shared-object state in the integrated game. The server therefore
-  delivers the era hit feedback the client CAN render (see the hurt
-  flash bullet) and keeps the era attack cadences: the zombie's 20-tick
-  attackTime and the skeleton's RangedAttackGoal shape (hold at ≤20
-  attack ticks, shoot, 60-tick delay).
+- **Mob swing/bow animations over the wire**: the remote-mob SWING is
+  genuinely out of reach: a full BL/BLX call-site scan of the 0.15.10
+  binary shows `Mob::swing()` (0x00bf6259) has exactly one caller,
+  `LocalPlayer::swing()` — even the integrated single-player zombies
+  never swing — and `AnimatePacket` action 1 reaches
+  `Player::vtable+0x2a0` only after `EntityClassTree::isPlayer` passes;
+  `Mob::handleEntityEvent` handles only {2 hurt, 3 death, 17 ambient,
+  18 respawn, 57 eating}. The era zombie attack feedback over the wire
+  is therefore the hurt flash + knockback on the victim (see the red
+  flash bullet) plus the head tracking the player.
+  The BOW-DRAW pose, by contrast, has a real channel that the earlier
+  revision missed: the skeleton model reads **entity data key 5** —
+  `SkeletonModel::prepareMobModel` calls
+  `SynchedEntityData::getInt8(5)` into the bow bool — and the era
+  `Skeleton::normalTick` writes that key SERVER-side (the
+  `Level::isClientSide == false` half of the gate) every tick as
+  `(getTarget() != null)`. The port stamps the same verdict from the
+  target selector and sends key 5 through `World::setMobDataBytes` on
+  change (spawn metadata defines the key as 0).
+- **The creeper fuse is data-key driven**: `Creeper::normalTick` keeps
+  swell direction (key 16, byte -1/0/1), progress (17, 0..30) and the
+  previous progress (18) in SynchedEntityData; the client model lerps
+  old -> swell to scale and white-flash the body. The server fuse
+  (`MobBrain::creeperServerStep`) now broadcasts the same triple on
+  change, so a remote creeper swells visibly like the integrated one.
+- **No invented sprint**: the 0.15.10 `Mob::setSprinting` (flags bit 3)
+  has ZERO call sites in the binary — vanilla mobs never sprint, and
+  the sprint flag is what drives the client's run particles
+  (`Mob::_updateSprintingState` gates `Mob::_doSprintParticleEffect`
+  on `isSprinting() && !isInWater()`). The earlier panic-sprint toggle
+  made fleeing passives shed run particles while merely walking fast;
+  it is gone. `World::setMobSprinting` became the generic
+  `World::setMobDataBytes` channel the pose keys ride.
 - **The local player's red flash**: the 0.15.10 client renders the
   local body's own hurt feedback from `SetHealthPacket`, not from the
   entity event — its `LegacyClientNetworkHandler::handle(SetHealthPacket*)`
@@ -214,7 +243,9 @@ same-pass restart), MoveControl (±30 step, speed arm, step jump),
 BodyControl (10 deg/tick chase, idle ramp onto the head), LookControl
 (approach, hold, drift), the A* (open walk, wall detour, best-effort
 unreachable), the path container, the target goals' creative rejection
-and retaliation stamp, the walking body-yaw regression, and the species
+and retaliation stamp, the walking body-yaw regression, the yaw
+convention regression (yaw 90 faces -X and the era
+`atan2(dz, dx) - 90` identity — the moonwalk guard), and the species
 speed table against the binary values.
 
 ```sh

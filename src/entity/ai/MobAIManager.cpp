@@ -33,6 +33,7 @@
 #include "utils/MainLogger.hpp"
 #include "world/Explosion.h"
 #include "world/World.h"
+#include "network/protocol/SetEntityDataPacket.h"
 #include "world/particle/WaterSplashParticle.h"
 #include "world/particle/WaterWakeParticle.h"
 #include <algorithm>
@@ -596,12 +597,32 @@ bool MobAIManager::actuateOne(world::MobEntity& m, MobBrain& brain,
     if (brain.jumpCooldown() > 0)
         --brain.jumpCooldown();
 
-    // Sprint pose: a fleeing passive carries the FLAGS sprint bit, the
-    // pose and the faster leg cycle the client already renders for
-    // sprinting entities. Toggle only on state change.
-    if (ctx.panicActive != brain.sprintFlag()) {
-        brain.sprintFlag() = ctx.panicActive;
-        world_->setMobSprinting(m.eid, m.cx, m.cz, ctx.panicActive);
+    // Pose keys: the 0.15.10 client models read per-mob-class entity data
+    // (the skeleton bow-draw flag and the creeper swell triple; the binary
+    // mapping lives in docs/MOB_AI.md). The brain stamps the authoritative
+    // values during the AI pass; only actual changes hit the wire — one
+    // SetEntityDataPacket per changed tick, the era dirty-sync shape.
+    MobBrain::PoseSync& pose = brain.poseSync();
+    if (pose.charging != pose.chargingSent) {
+        pose.chargingSent = pose.charging;
+        using Meta = network::protocol::SetEntityDataPacket;
+        world_->setMobDataBytes(
+            m.eid, m.cx, m.cz,
+            {{Meta::PROP_MOB_CHARGING, pose.charging ? 1 : 0}});
+    }
+    if (m.type == mobs::Creeper::kId &&
+        (pose.swellDir != host.getSwellDir() ||
+         pose.swell != host.swellTime ||
+         pose.swellOld != host.prevSwellTime)) {
+        pose.swellDir = host.getSwellDir();
+        pose.swell = host.swellTime;
+        pose.swellOld = host.prevSwellTime;
+        using Meta = network::protocol::SetEntityDataPacket;
+        world_->setMobDataBytes(
+            m.eid, m.cx, m.cz,
+            {{Meta::PROP_SWELL_DIR, (int8_t)pose.swellDir},
+             {Meta::PROP_SWELL, (int8_t)pose.swell},
+             {Meta::PROP_SWELL_OLD, (int8_t)pose.swellOld}});
     }
 
     // Broadcast only what changed since the last packet. Body yaw rides

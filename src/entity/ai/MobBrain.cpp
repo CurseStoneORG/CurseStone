@@ -75,6 +75,12 @@ void MobBrain::newServerAiStep(World* world, world::MobEntity& record,
 
     sensing_.clearCache();
     targets_.tick(host_);
+    // The era Skeleton::normalTick (the server-side half of the
+    // isClientSide gate) writes the charging key every tick as
+    // (getTarget() != null) — the client model draws the bow from it.
+    // Stamp it here so the actuation sends exactly that verdict.
+    if (arrow_attacker_)
+        pose_sync_.charging = host_.targetEid() != 0;
     goals_.tick(host_);
     navigation_.tick();
     if (type_ == mobs::Creeper::kId)
@@ -94,7 +100,9 @@ void MobBrain::newServerAiStep(World* world, world::MobEntity& record,
 void MobBrain::creeperServerStep() {
     // Era Creeper swell: the direction arms the fuse, 30 ticks
     // detonates. The actuation performs the explosion + removal when the
-    // flag lands.
+    // flag lands, and broadcasts the swell data keys the client model
+    // scales/flash-renders from (keys 16 dir / 17 swell / 18 previous).
+    host_.prevSwellTime = host_.swellTime;
     if (host_.getSwellDir() > 0) {
         if (host_.swellTime == 0) {
             // (the era played random.fuse here; the server has no mob
@@ -136,6 +144,7 @@ void MobBrain::setupGoals(int32_t type, uint8_t kind) {
              // 1.0) ArrowAttack(4, 1.0, arrow, 60) Stroll(5, 1.0)
              // LookAtPlayer(6, 8) RandomLook(6).
     case 46: // Stray.
+        arrow_attacker_ = true;
         goals_.addGoal(1, std::make_unique<FloatGoal>(host_));
         goals_.addGoal(2, std::make_unique<RestrictSunGoal>(host_));
         goals_.addGoal(3, std::make_unique<FleeSunGoal>(host_, 1.0f));
