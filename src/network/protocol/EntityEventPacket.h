@@ -23,9 +23,12 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // EntityEventPacket — clientbound. Dispara animaciones/eventos
 // cliente-side atados a una entidad (golpe recibido, muerte, etc).
-// Wire format (protocol 84, mirrors the reference server EntityEventPacket):
+// Wire format (protocol 84, mirrors the reference server EntityEventPacket;
+// the 0.15.10 client EntityEventPacket::read decodes exactly this shape:
+// a 64-bit eid, the 8-bit event and a trailing 32-bit data word):
 //   [Int64 BE] eid
 //   [Byte]     event
+//   [Int32 BE] data   (event payload; 0 for the animation events)
 #pragma once
 
 #include "DataPacket.h"
@@ -64,9 +67,10 @@ class EntityEventPacket : public DataPacket {
 
     int64_t eid = 0;
     uint8_t event = 0;
+    int32_t data = 0; ///< Event payload the client handler receives.
 
     void encode(std::vector<uint8_t>& out) const override;
-    bool decode(const uint8_t* data, size_t len) override;
+    bool decode(const uint8_t* data_, size_t len) override;
 };
 
 } // namespace cursestone::network::protocol

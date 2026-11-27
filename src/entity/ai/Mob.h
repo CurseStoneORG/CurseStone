@@ -70,6 +70,12 @@ struct TargetRef {
     float yaw = 0.0f;                 ///< Facing (the TemptGoal scare test).
     float pitch = 0.0f;
     bool alive = false;
+    /// @brief False for game modes the era mobs refuse to hunt: the
+    ///        0.15.10 Monster::findAttackTarget rejects a candidate
+    ///        player whose creative byte is set (0x0d2c != 0 in the
+    ///        binary), and the HurtByTargetGoal _canAttack chain agrees.
+    ///        Look goals still track them, only the attack targets skip.
+    bool attackable = true;
 
     void clear() { *this = TargetRef{}; }
     explicit operator bool() const { return eid != 0; }

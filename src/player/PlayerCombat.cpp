@@ -122,6 +122,42 @@ entity::DamageApply Player::damageByEntity(float amount, entity::Entity* damager
     return applied;
 }
 
+// The era Mob::knockback from the victim's side (0.8.1 Mob.cpp): halve
+// the current motion, then push it away from the attacker at the era
+// 0.4 strength with the 0.4 vertical pop clamped at 0.4. The shove goes
+// through SetEntityMotion because the player body is client-actuated —
+// the victim's own client integrates the motion, and every other viewer
+// of the chunk sees the same lurch on the victim's body.
+void Player::applyKnockbackFrom(double source_x, double source_z) {
+    const double dx = pos_.x - source_x;
+    const double dz = pos_.z - source_z;
+    double f = std::sqrt(dx * dx + dz * dz);
+    if (f <= 1e-6)
+        return; // Zero-length shove: the era random-yaw branch is mob-only.
+    f = 1.0 / f;
+    constexpr double kBase = 0.4; // The era Mob::knockback strength.
+    double mx = velocityEstX() * 0.5 + dx * f * kBase;
+    double my = velocityEstY() * 0.5 + kBase;
+    double mz = velocityEstZ() * 0.5 + dz * f * kBase;
+    if (my > kBase)
+        my = kBase; // Clamp vertical motion.
+    setMotion(math::Vector3{mx, my, mz});
+
+    auto motion = std::make_shared<network::protocol::SetEntityMotionPacket>();
+    motion->entities.push_back({runtimeId(), (float)mx, (float)my, (float)mz});
+    const int32_t tcx = (int32_t)std::floor(pos_.x) >> 4;
+    const int32_t tcz = (int32_t)std::floor(pos_.z) >> 4;
+    for (auto& other : srv_->playersSnapshotRef()) {
+        if (!other || other->isPendingRemoval() || !other->spawned())
+            continue;
+        if (other->getWorld() != getWorld())
+            continue; // The victim's world owns the motion packet.
+        if (!other->canSeeBlock(tcx, tcz))
+            continue;
+        other->sendPacket(motion);
+    }
+}
+
 namespace {
 constexpr double kPi = 3.14159265358979323846;
 // uses a maximum bow durability of 385.

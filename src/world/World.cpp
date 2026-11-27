@@ -2914,6 +2914,13 @@ void World::tickArrows(uint64_t current_tick) {
             for (world::MobEntity* m : mob_scan) {
                 if (!m || m->death_tick != 0 || m->health <= 0.0f)
                     continue;
+                // The shooter is immune to its own arrow — the projectile
+                // spawns at the shooter's eye line, INSIDE its own grown
+                // box, so without this skip a skeleton would take its
+                // first shot in the chest every time (the same rule the
+                // player scan applies to the human shooter above).
+                if (m->eid == a->shooter_eid)
+                    continue;
                 // Mob AABB [x-0.3, y, z-0.3]..[x+0.3, y+1.8, z+0.3], grown 0.3.
                 double minx = m->x - 0.6, maxx = m->x + 0.6;
                 double miny = m->y - 0.3, maxy = m->y + 2.1;
@@ -3022,6 +3029,10 @@ void World::tickArrows(uint64_t current_tick) {
                 auto sh = std::make_shared<network::protocol::SetHealthPacket>();
                 sh->health = std::max(0, (int32_t)hit->health());
                 hit->sendPacket(sh);
+                // The era arrow hit shoves the victim off the arrow's
+                // flight line (the hurt chain's knockback); without it a
+                // body only loses health and the hit feels like nothing.
+                hit->applyKnockbackFrom(a->x, a->z);
             }
 
             a->taken = true;

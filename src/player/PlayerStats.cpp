@@ -28,6 +28,7 @@
 #include "network/protocol/MobEffectPacket.h"
 #include "network/protocol/EntityEventPacket.h"
 #include "network/protocol/SetEntityDataPacket.h"
+#include "network/protocol/SetHealthPacket.h"
 #include "event/entity/EntityDamageEvent.h"
 #include "event/EventManager.h"
 #include "event/player/PlayerExhaustEvent.h"
@@ -149,6 +150,19 @@ void Player::onHealthChanged() {
         alias->eid = 0;
         alias->event = network::protocol::EntityEventPacket::HURT_ANIMATION;
         sendPacket(alias);
+
+        // The 0.15.10 client derives the LOCAL player's own red flash and
+        // hurt sound from SetHealthPacket, not from the entity event: its
+        // LegacyClientNetworkHandler::handle(SetHealthPacket*) funnels the
+        // packet straight into the local body's hurt-to path, which stamps
+        // the hurt-time fields the vignette renders (verified in
+        // libminecraftpe.so). The attribute update below keeps the hearts
+        // bar authoritative but alone it lands without the flash — the
+        // zombie melee and every other non-projectile damage path only
+        // sent that one, which is why hits "only took health".
+        auto sh = std::make_shared<network::protocol::SetHealthPacket>();
+        sh->health = std::max(0, (int32_t)health());
+        sendPacket(sh);
     }
 
     sendHealthAttribute();

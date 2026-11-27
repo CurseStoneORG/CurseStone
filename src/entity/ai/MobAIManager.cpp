@@ -371,9 +371,12 @@ void MobAIManager::tick(uint64_t current_tick) {
                 continue;
             }
 
-            // Tier: full pipeline near players every tick, reduced
-            // cadence at the edge of the view distance. The panic
-            // window always runs full: the flight must read smoothly.
+            // Tier: full pipeline near players every tick, goal pass at
+            // reduced cadence at the edge of the view distance. The
+            // panic window always runs full: the flight must read
+            // smoothly. The actuation runs every tick for both tiers:
+            // the vanilla fall integration and the move stream must
+            // advance per tick, only the A*/sensing work throttles.
             const uint64_t now = Server::getInstance().getCurrentTick();
             const bool panicActive =
                 m->panic_tick != 0 && now >= m->panic_tick &&
@@ -381,13 +384,11 @@ void MobAIManager::tick(uint64_t current_tick) {
             const int32_t player_dist = nearestPlayerChunkDist(m->cx, m->cz);
             const bool full_tier =
                 player_dist <= kFullTierRadius || panicActive;
-            if (!full_tier) {
-                const uint64_t phase =
-                    (current_tick + (uint64_t)m->eid % kReducedInterval) %
-                    kReducedInterval;
-                if (phase != 0)
-                    continue;
-            }
+            const bool goal_tick = full_tier ||
+                                   (current_tick +
+                                    (uint64_t)m->eid % kReducedInterval) %
+                                           kReducedInterval ==
+                                       0;
 
             // The era pipeline: one newServerAiStep (targets, goals,
             // navigation, mob step, controls) then one actuation.
@@ -399,10 +400,11 @@ void MobAIManager::tick(uint64_t current_tick) {
             if (ctx.inWater)
                 ctx.waterSurface = waterSurfaceY(m->x, m->y, m->z);
             ctx.panicActive = panicActive;
-            brain.newServerAiStep(world_, *m, current_tick);
+            if (goal_tick)
+                brain.newServerAiStep(world_, *m, current_tick);
 
             // The creeper fuse finished mid-step: detonate and remove.
-            if (brain.wantsExplode()) {
+            if (goal_tick && brain.wantsExplode()) {
                 const int64_t eid = m->eid;
                 const double ex = m->x, ey = m->y + 0.5, ez = m->z;
                 const int32_t cx = m->cx, cz = m->cz;
@@ -424,10 +426,8 @@ void MobAIManager::tick(uint64_t current_tick) {
                 continue;
             }
 
-            actuateOne(*m, brain, ctx, current_tick);
+            actuateOne(*m, brain, ctx, current_tick, goal_tick);
             ++stat_actuated_;
-            if (brain.host().movingTick())
-                ++stat_moves_;
 
             const double elapsed = std::chrono::duration<double, std::milli>(
                                        std::chrono::steady_clock::now() - pass_start)
@@ -447,7 +447,8 @@ void MobAIManager::tick(uint64_t current_tick) {
 }
 
 bool MobAIManager::actuateOne(world::MobEntity& m, MobBrain& brain,
-                              const PlayerContext& ctx, uint64_t) {
+                              const PlayerContext& ctx, uint64_t,
+                              bool goal_ran) {
     // Resident terrain only: a mob whose chunk a viewer already left
     // must not sweep against air and fall through the world (the same
     // rule world.setBlock follows). The record's (cx, cz) are CHUNK
@@ -480,20 +481,44 @@ bool MobAIManager::actuateOne(world::MobEntity& m, MobBrain& brain,
 
     const Mob& host = brain.host();
 
-    // ---- Movement channel: the era MoveControl armed the speed toward
-    // its wanted position this tick; the direction rides the movement
-    // yaw it steered.
-    const bool moving = host.movingTick();
+    // ---- Movement channel: on a goal tick the era MoveControl armed
+    // the speed toward its wanted position and the direction rides the
+    // movement yaw it steered. Between reduced-tier goal passes the
+    // last armed stride persists through the brain's latch so the
+    // physics still integrate every tick; the latch expires after
+    // kReducedInterval ticks without an armed pass, the era hard stop.
     double dx = 0.0, dz = 0.0;
+    float stride = 0.0f;
+    float move_yaw = 0.0f;
+    bool moving = false;
+    if (goal_ran) {
+        if (host.movingTick()) {
+            moving = true;
+            move_yaw = host.yaw();
+            stride = host.speed();
+            MobBrain::MoveLatch& latch = brain.moveLatch();
+            latch.yaw = move_yaw;
+            latch.stride = stride;
+            latch.ttl = (uint32_t)kReducedInterval;
+        } else {
+            brain.moveLatch().ttl = 0;
+        }
+    } else if (brain.moveLatch().ttl > 0) {
+        --brain.moveLatch().ttl;
+        moving = true;
+        move_yaw = brain.moveLatch().yaw;
+        stride = brain.moveLatch().stride;
+    }
     if (moving) {
         double dir_x = 0.0, dir_z = 0.0;
-        math::yawDirection(host.yaw(), dir_x, dir_z);
+        math::yawDirection(move_yaw, dir_x, dir_z);
         // Water halves the stride: swimming is slower than walking, in
         // the era entity model and in the reference.
-        const double stride =
-            ctx.inWater ? (double)host.speed() * 0.5 : (double)host.speed();
-        dx = dir_x * stride;
-        dz = dir_z * stride;
+        const double effective =
+            ctx.inWater ? (double)stride * 0.5 : (double)stride;
+        dx = dir_x * effective;
+        dz = dir_z * effective;
+        stat_moves_ += 1;
     }
     // A consumed shove rides on top of the goal's own step.
     dx += (double)brain.motionX();
@@ -554,7 +579,7 @@ bool MobAIManager::actuateOne(world::MobEntity& m, MobBrain& brain,
             brain.jumpCooldown() = kJumpCooldownTicks;
         } else if (res.on_ground) {
             double dir_x = 0.0, dir_z = 0.0;
-            math::yawDirection(host.yaw(), dir_x, dir_z);
+            math::yawDirection(move_yaw, dir_x, dir_z);
             const int bx = (int)std::floor(m.x + dir_x * kJumpProbe);
             const int bz = (int)std::floor(m.z + dir_z * kJumpProbe);
             const int feetY = (int)std::floor(m.y);

@@ -126,16 +126,15 @@ float mobMaxHealth(int32_t id);
 /// @brief Per-species movement and body profile — the "each species
 ///        moves and floats like itself" table of the mob AI pass.
 ///
-/// Speeds are blocks per tick and read as the era reference: a calm
-/// stroll (vanilla wandering uses the mob's own walk speed, cows cover
-/// roughly twice the old flat 0.055 pace, rabbits and ocelots dart)
-/// and a flee pace used by the panic goal. Body sizes are the era
-/// collision boxes, which the AI actuation sweeps against; the eye
-/// height is the look-pitch pivot the 0.15.10 client renders the head
-/// tilt around.
+/// walk_speed is the species' vanilla movement-speed attribute in
+/// blocks per tick, taken from the 0.15.10 binary's per-class
+/// registerAttributes disassembly; the goals multiply it by their own
+/// era speed modifier (the panic goal's 1.5x included). Body sizes are
+/// the era collision boxes, which the AI actuation sweeps against; the
+/// eye height is the look-pitch pivot the 0.15.10 client renders the
+/// head tilt around.
 struct MobProfile {
-    float walk_speed;   ///< Blocks per tick while strolling.
-    float panic_speed;  ///< Blocks per tick while fleeing (passives).
+    float walk_speed;   ///< Vanilla movement-speed attribute (blocks/tick).
     float width;        ///< Collision box width (blocks).
     float height;       ///< Collision box height above the feet.
     float eye_height;   ///< Eye line above the feet (look pitch pivot).

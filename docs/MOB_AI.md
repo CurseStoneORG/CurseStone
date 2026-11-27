@@ -44,7 +44,8 @@ for cow/sheep, seeds for the chicken).
 
 1. `++noActionTime`, then the era `checkDespawn` reset (a player within
    32 blocks zeroes the counter — without it the stroll goal would fall
-   silent after 100 ticks).
+   silent after 100 ticks), and the era `isJumping = 0` reset the goals
+   re-arm within the pass.
 2. `goalSelector2.tick()` — the target goals.
 3. `goalSelector.tick()` — the movement goals (they call
    `navigation->moveTo`, `lookControl->setLookAt`, `jumpControl->jump`).
@@ -52,7 +53,8 @@ for cow/sheep, seeds for the chicken).
    `MoveControl::setWantedPosition`.
 5. The mob-specific step: the creeper fuse (`swellTime` 0..30, then the
    actuation detonates a power-3 `Explosion` and removes the record).
-6. `moveControl.tick()`, `lookControl.tick()`, `jumpControl.tick()`.
+6. `moveControl.tick()`, `lookControl.tick()`, `jumpControl.tick()`,
+   then `bodyControl.tick()`.
 
 The actuation step (MobAIManager::actuateOne) then converts the control
 state into world movement: the era speed channel × the movement yaw
@@ -62,6 +64,12 @@ water gravity 0.02 / drag 0.8 / paddle 0.04 from the jump channel,
 broadcast gate (only changes past the packet thresholds reach the wire).
 Body yaw rides the record's `yaw` channel (BodyControl reconciled it),
 head yaw and pitch ride their own channels.
+
+The era ran `BodyControl` from the client tick
+(`bodyControl->clientTick()`, 0.8.1 Mob.cpp line 327); NoAI copies never
+run a client tick, so the server drives the same reconciler at the end
+of the pipeline — without it the body yaw never chases the movement yaw
+and every walking mob reads as moonwalking.
 
 ## 3. Goal wiring (era registrations)
 
@@ -93,10 +101,17 @@ mob constructors:
 
 ## 4. Performance (server adaptations, behavior-preserving)
 
-- **Tiering and budget unchanged**: FULL tier (≤4 chunks from a player)
-  runs the full era pipeline every tick; REDUCED tier runs it every 4th
-  tick; chunks with no player are never visited; a wall-clock budget
-  (2 ms base, 8 ms cap) degrades the farthest chunks first.
+- **Tiering**: FULL tier (≤4 chunks from a player) runs the goal
+  pipeline every tick; REDUCED tier runs the goal pipeline every 4th
+  tick while the actuation (physics + broadcasts) runs EVERY tick for
+  both tiers — the expensive A*/sensing work is what the cadence
+  throttles, never the fall integration (the vanilla −0.08/×0.98
+  recurrence must advance per tick or far mobs fall at a quarter
+  speed). The stride MoveControl armed persists across skipped passes
+  through the brain's move latch (MobBrain::MoveLatch), expiring after
+  the same window the era hard stop took. Chunks with no player are
+  never visited; a wall-clock budget (2 ms base, 8 ms cap) degrades the
+  farthest chunks first.
 - **Re-path rate limit**: the era re-ran A* on every `moveTo` request;
   the port re-paths only when the path is gone or finished, the goal
   moved more than 1.5 blocks, or the path aged past 40 ticks
@@ -120,11 +135,67 @@ mob constructors:
   tick; the port holds it for 4 ticks so the goal cadence (FULL tier =
   every tick, REDUCED = every 4th) cannot snap the head back between
   two goal ticks.
+- **Speeds**: the species walk column is the vanilla movement-speed
+  attribute lifted from the 0.15.10 binary's per-class
+  `registerAttributes` disassembly (libminecraftpe.so: Zombie
+  0x3E6B851F = 0.23, Skeleton/Witch/Chicken/Pig 0x3E800000 = 0.25,
+  Creeper/Cow/Mooshroom 0x3E4CCCCD = 0.2, Spider/EnderMan/Wolf/Rabbit/
+  Ocelot 0x3E99999A = 0.3, Sheep 0.23, health/attack-damage literals
+  along the same calls — zombie 20/3.0, skeleton 20, creeper 20,
+  enderman 40/7.0). The goals multiply it by their own era modifier
+  (Panic 1.5x included), so no separate flee column exists.
+- **Creative targets**: the era `Monster::findAttackTarget` (0x00bfe8e9)
+  rejects a candidate player whose creative byte is set (the
+  `cmp w1, #1; ldrb w0, [x0, #0xd2c]; cbnz` tail of the function). The
+  port carries the verdict on `TargetRef::attackable` (stamped from
+  `Player::isCreative()` in resolve/nearestPlayer) and both attack
+  selectors honor it: a creative player is never acquired as a target
+  and a mid-chase mode switch drops the target on the next resolve.
+  Look goals still track creative bodies, as in vanilla.
+- **Knockback**: the era `Mob::hurt` chain applies `Mob::knockback`
+  (0.8.1 Mob.cpp: motion ×0.5, then −0.4 along the attacker direction
+  with the +0.4 vertical pop clamped at 0.4). Mob melee hits now apply
+  it to player victims through `Player::applyKnockbackFrom` (the shove
+  rides SetEntityMotion because the player body is client-actuated) and
+  arrow hits carry the same shove; mob victims receive it through the
+  existing kbx/kbz stamp.
 - **Damage**: melee hits deal a single reconstructed value
-  (3.0, the era-normal-difficulty shape; the per-kind `attackDamage`
-  seeds are lost). Skeleton arrows launch with the era Arrow parameters
-  (velocity 1.6, inaccuracy 12.0, gaussian 0.0075 × inaccuracy) and the
-  era 2.0 arrow damage.
+  (3.0 — confirmed against the binary: `Monster::doHurtTarget` reads
+  the ATTACK_DAMAGE attribute and Zombie::registerAttributes seeds
+  3.0). Skeleton arrows launch with the era Arrow parameters (velocity
+  1.6, inaccuracy 12.0, gaussian 0.0075 × inaccuracy) and the era 2.0
+  arrow damage.
+- **EntityEventPacket wire**: the 0.15.10 client's
+  `EntityEventPacket::read` decodes [64-bit eid][8-bit event][32-bit
+  data]; the server now writes all three fields.
+- **Mob swing/bow animations over the wire**: protocol 84 carries no
+  channel for remote-mob swing state. Verified in the 0.15.10 client
+  binary: `Mob::handleEntityEvent` handles only events {2 hurt, 3 death,
+  17 ambient, 18 respawn, 57 eating}; event 4 (the modern ARM_SWING id)
+  falls through to the empty `Entity::handleEntityEvent`, and
+  `AnimatePacket` action 1 calls `Mob::swing()` only for PLAYER
+  entities. The era swing/bow-draw poses are client-local fields
+  (`Mob::swing` → mSwingTime, `Skeleton::updateSkeletonParams`) fed by
+  shared-object state in the integrated game. The server therefore
+  delivers the era hit feedback the client CAN render (see the hurt
+  flash bullet) and keeps the era attack cadences: the zombie's 20-tick
+  attackTime and the skeleton's RangedAttackGoal shape (hold at ≤20
+  attack ticks, shoot, 60-tick delay).
+- **The local player's red flash**: the 0.15.10 client renders the
+  local body's own hurt feedback from `SetHealthPacket`, not from the
+  entity event — its `LegacyClientNetworkHandler::handle(SetHealthPacket*)`
+  funnels the packet into `LocalPlayer::hurtTo`, which stamps the
+  hurt-time fields (10 ticks) the vignette and hurt sound read
+  (verified in libminecraftpe.so; the same fields the event-2 handler
+  sets for remote bodies). `Player::onHealthChanged` now sends
+  SetHealthPacket next to the attribute update, so EVERY damage path —
+  mob melee included — flashes the victim instead of only silently
+  lowering the health bar. The arrow and PvP paths already sent it
+  ad hoc; they now ride the shared path.
+- **Arrow shooter immunity**: `Monster::doHurtTarget` fires the Arrow
+  constructor at the shooter's eye line — the projectile spawns INSIDE
+  the shooter's grown box. The era arrow never hit its owner; the port's
+  mob scan now skips `shooter_eid` like the player scan always did.
 - **RNG**: the era goals drew from the shared level random; the port
   draws from each brain's own Mersenne Twister (seeded per eid), which
   keeps every decision main-thread-only and reproducible.
@@ -142,13 +213,16 @@ goal-selector arbitration (flag mutex, era registration order, era
 same-pass restart), MoveControl (±30 step, speed arm, step jump),
 BodyControl (10 deg/tick chase, idle ramp onto the head), LookControl
 (approach, hold, drift), the A* (open walk, wall detour, best-effort
-unreachable), and the path container.
+unreachable), the path container, the target goals' creative rejection
+and retaliation stamp, the walking body-yaw regression, and the species
+speed table against the binary values.
 
 ```sh
 g++ -std=c++20 -Isrc tools/mob_ai_check.cpp \
     src/entity/ai/GoalSelector.cpp src/entity/ai/LookControl.cpp \
     src/entity/ai/MoveControl.cpp src/entity/ai/BodyControl.cpp \
     src/entity/ai/path/Path.cpp src/entity/ai/path/PathFinder.cpp \
+    src/entity/ai/goals/TargetGoals.cpp src/entity/EntityTypes.cpp \
     src/utils/Random.cpp -o /tmp/mob_ai_check && /tmp/mob_ai_check
 ```
 

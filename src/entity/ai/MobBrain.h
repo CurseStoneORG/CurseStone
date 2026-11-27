@@ -59,7 +59,7 @@ class MobBrain {
 
     /// @brief One era newServerAiStep pass: idle counter, target
     ///        selector, movement selector, navigation, the mob-specific
-    ///        step (the creeper fuse), then move/look/jump controls.
+    ///        step (the creeper fuse), then move/look/jump/body controls.
     void newServerAiStep(World* world, world::MobEntity& record,
                          uint64_t tick);
 
@@ -102,6 +102,24 @@ class MobBrain {
     bool& sprintFlag() { return sprint_on_; }
     bool sprintFlag() const { return sprint_on_; }
 
+    // ---- Move-intent latch (reduced-tier physics carrier) ----
+    // The era pipeline ran every tick, so the stride MoveControl armed
+    // was consumed the same tick. The reduced tier runs the goal pass
+    // every kReducedInterval ticks, but the actuation (and with it the
+    // vanilla -0.08/0.98 fall integration) must run every tick, or far
+    // mobs fall at a quarter speed. The latch holds the last armed
+    // (yaw, stride) between goal passes; it refreshes on every armed
+    // goal tick and expires after kMoveLatchTicks without one, so a
+    // finished goal stops driving the body within the same window the
+    // era hard stop took.
+    struct MoveLatch {
+        float yaw = 0.0f;    ///< The era movement-yaw channel.
+        float stride = 0.0f; ///< Blocks per tick the goal armed.
+        uint32_t ttl = 0;    ///< Ticks left before the intent expires.
+    };
+    MoveLatch& moveLatch() { return move_latch_; }
+    const MoveLatch& moveLatch() const { return move_latch_; }
+
     // ---- Broadcast cache (actuation bookkeeping) ----
     // The last position/rotation handed to World::moveMob; a mob that
     // changed less than the packet thresholds sends nothing.
@@ -140,6 +158,7 @@ class MobBrain {
     bool in_water_ = false;
     int splash_cd_ = 0;
     bool sprint_on_ = false;
+    MoveLatch move_latch_;
     BroadcastCache broadcast_;
 };
 

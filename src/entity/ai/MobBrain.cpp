@@ -67,9 +67,11 @@ void MobBrain::newServerAiStep(World* world, world::MobEntity& record,
 
     // Era newServerAiStep: the idle counter, then the era checkDespawn
     // reset (a player within 32 blocks zeroes it — without the reset the
-    // stroll goal would fall silent after 100 ticks).
+    // stroll goal would fall silent after 100 ticks). The era pass also
+    // zeroes the jump flag before the goals re-arm it for this tick.
     host_.incNoActionTime();
     host_.resetNoActionTimeIfPlayerNear();
+    host_.setJumping(false);
 
     sensing_.clearCache();
     targets_.tick(host_);
@@ -81,6 +83,12 @@ void MobBrain::newServerAiStep(World* world, world::MobEntity& record,
     move_control_.tick();
     look_control_.tick();
     jump_control_.tick();
+    // The era reconciled the body rotation client-side (the decompile
+    // calls bodyControl->clientTick() from the client tick); NoAI copies
+    // never run that path, so the server drives the same reconciler
+    // here — the body yaw chases the movement yaw while walking and
+    // the head while idling, and the move packets broadcast it.
+    body_control_.tick();
 }
 
 void MobBrain::creeperServerStep() {
