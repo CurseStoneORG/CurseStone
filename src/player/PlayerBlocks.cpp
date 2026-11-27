@@ -278,7 +278,19 @@ void Player::handleBlockBreak(int x, int y, int z) {
     const bool announced =
         mining_tracked_ && mining_x_ == x && mining_y_ == y && mining_z_ == z;
     if (!creative) {
-        const float secs = block::breakSeconds((uint8_t)blockId, held);
+        // Era mining-speed effects, measured in the binary
+        // (Player::getDestroySpeed @ 0x00c11eb8): haste multiplies the
+        // tool speed by 1 + 0.2*(amp+1) and mining fatigue by
+        // pow(0.3, amp+1). The client computes its progress with those
+        // same factors, so the vanilla break seconds here must carry
+        // them too — without the haste factor a hasted client's valid
+        // removals arrive "too fast" and get refused.
+        float speed_factor = 1.0f;
+        if (const entity::Effect* haste = getEffect(entity::EFF_HASTE))
+            speed_factor *= 1.0f + 0.2f * (haste->amplifier() + 1);
+        if (const entity::Effect* fatigue = getEffect(entity::EFF_MINING_FATIGUE))
+            speed_factor *= std::pow(0.3f, fatigue->amplifier() + 1);
+        const float secs = block::breakSeconds((uint8_t)blockId, held) / speed_factor;
         if (secs >= 0.5f) {
             int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                                  std::chrono::steady_clock::now().time_since_epoch())

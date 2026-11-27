@@ -383,6 +383,9 @@ void Player::onEffectAdded(const entity::Effect& e) {
         case entity::EFF_SLOWNESS:
             sendMovementSpeedAttribute();
             break;
+        case entity::EFF_HEALTH_BOOST:
+            applyHealthBoost();
+            break;
         case entity::EFF_INVISIBILITY:
             if (!invisible_) {
                 invisible_ = true;
@@ -404,6 +407,8 @@ void Player::onEffectModified(const entity::Effect& e) {
     broadcastPotionColor();
     if (e.id() == entity::EFF_SPEED || e.id() == entity::EFF_SLOWNESS)
         sendMovementSpeedAttribute();
+    if (e.id() == entity::EFF_HEALTH_BOOST)
+        applyHealthBoost();
     if (e.id() == entity::EFF_ABSORPTION)
         setAbsorption(4.0f * (e.amplifier() + 1));
 }
@@ -413,6 +418,8 @@ void Player::onEffectRemoved(const entity::Effect& e) {
     broadcastPotionColor();
     if (e.id() == entity::EFF_SPEED || e.id() == entity::EFF_SLOWNESS)
         sendMovementSpeedAttribute();
+    if (e.id() == entity::EFF_HEALTH_BOOST)
+        applyHealthBoost();
     if (e.id() == entity::EFF_INVISIBILITY && invisible_) {
         invisible_ = false;
         broadcastPoseFlags();
@@ -487,6 +494,20 @@ void Player::sendMovementSpeedAttribute() {
     e.defaultValue = 0.1f;
     pk->entries.push_back(e);
     sendPacket(pk);
+}
+
+// Recompute the Health Boost capacity from the active effect: the era
+// value is 4 health points per amplifier level over the vanilla 20-point
+// base. Recomputed from the effect (never delta-stacked) so expiry
+// restores the plain pool; the current health clamps into the new limit.
+void Player::applyHealthBoost() {
+    float boost = 0.0f;
+    if (const entity::Effect* hb = getEffect(entity::EFF_HEALTH_BOOST))
+        boost = 4.0f * (hb->amplifier() + 1);
+    setMaxHealth(20.0f + boost);
+    if (health() > maxHealth())
+        setHealth(maxHealth());
+    sendHealthAttribute();
 }
 
 // Restore active effects after login and synchronize their client-side state.
