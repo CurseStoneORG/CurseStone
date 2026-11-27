@@ -797,6 +797,9 @@ class Player : public IPlayer,
     // Sends the movement-speed attribute derived from the walk speed
     // base and the active speed/slowness effects.
     void sendMovementSpeedAttribute();
+    // Sends the vanilla generic.absorption attribute so the local client
+    // draws the absorption heart row (0.15.10 reads it from UpdateAttributes).
+    void sendAbsorptionAttribute();
     // Re-sends every active effect as an ADD packet (used at first spawn
     // after a login that restored persisted effects).
     void sendActiveEffects();
@@ -843,10 +846,14 @@ class Player : public IPlayer,
     void onEffectAdded(const entity::Effect& e) override;
     void onEffectModified(const entity::Effect& e) override;
     void onEffectRemoved(const entity::Effect& e) override;
-    // Hunger effect interval: drains exhaustion like vanilla.
+    // Hunger effect interval: drains one food point per occurrence.
     void onHungerEffectTick(int amplifier) override;
     // Saturation effect interval: restores food and saturation.
     void onSaturationEffectTick(int amplifier) override;
+
+    // Absorption pool sync: pushes the generic.absorption attribute packet.
+    void setAbsorption(float v) override;
+    void onAbsorptionChanged() override;
 
   private:
     // Sends one MobEffectPacket (self eid=0 + same-world viewers).

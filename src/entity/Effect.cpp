@@ -98,7 +98,10 @@ bool Effect::canTick() const {
         case EFF_REGENERATION:
             return (40 >> amp) > 0 ? (duration_ % (40 >> amp)) == 0 : true;
         case EFF_HUNGER:
-            return (duration_ % 20) == 0;
+            // The era reference drains food on a 40-tick base interval that
+            // halves per amplifier level, matching Effect::canTick in
+            // Genisys 0.15.0 (25/50/40/20 family).
+            return (40 >> amp) > 0 ? (duration_ % (40 >> amp)) == 0 : true;
         case EFF_SATURATION:
             return (20 >> amp) > 0 ? (duration_ % (20 >> amp)) == 0 : true;
         default:

@@ -238,6 +238,11 @@ void Player::setFoodLevel(int f, event::player::HungerChangeReason reason) {
 }
 
 // Create a protocol 84 effect packet for the specified entity and event.
+// The vanilla integrated server (ServerPlayer::onEffectRemoved @
+// 0x00B2CA08) strips an effect removal down to the identifying fields:
+// amplifier, particles and duration all leave as zero. The 0.15.10
+// client ignores them for REMOVE, but sending the real values would
+// differ from the reference bytes.
 namespace {
 std::shared_ptr<network::protocol::MobEffectPacket> makeEffectPacket(uint64_t eid,
                                                                      const entity::Effect& e,
@@ -246,9 +251,15 @@ std::shared_ptr<network::protocol::MobEffectPacket> makeEffectPacket(uint64_t ei
     pk->eid = eid;
     pk->eventId = eventId;
     pk->effectId = (uint8_t)e.id();
-    pk->amplifier = (uint8_t)e.amplifier();
-    pk->particles = true;
-    pk->duration = e.duration();
+    if (eventId == network::protocol::MobEffectPacket::EVENT_REMOVE) {
+        pk->amplifier = 0;
+        pk->particles = false;
+        pk->duration = 0;
+    } else {
+        pk->amplifier = (uint8_t)e.amplifier();
+        pk->particles = true;
+        pk->duration = e.duration();
+    }
     return pk;
 }
 } // namespace
@@ -378,6 +389,11 @@ void Player::onEffectAdded(const entity::Effect& e) {
                 broadcastPoseFlags();
             }
             break;
+        case entity::EFF_ABSORPTION:
+            // Vanilla fills the generic.absorption pool with one extra
+            // heart (2 points) per level — 4 points at level I.
+            setAbsorption(4.0f * (e.amplifier() + 1));
+            break;
         default:
             break;
     }
@@ -388,6 +404,8 @@ void Player::onEffectModified(const entity::Effect& e) {
     broadcastPotionColor();
     if (e.id() == entity::EFF_SPEED || e.id() == entity::EFF_SLOWNESS)
         sendMovementSpeedAttribute();
+    if (e.id() == entity::EFF_ABSORPTION)
+        setAbsorption(4.0f * (e.amplifier() + 1));
 }
 
 void Player::onEffectRemoved(const entity::Effect& e) {
@@ -399,11 +417,45 @@ void Player::onEffectRemoved(const entity::Effect& e) {
         invisible_ = false;
         broadcastPoseFlags();
     }
+    if (e.id() == entity::EFF_ABSORPTION && absorption() > 0.0f)
+        setAbsorption(0.0f);
 }
 
-// Hunger drains 0.005 exhaustion per effect level each tick.
+// Push the vanilla generic.absorption attribute. The 0.15.10 client reads
+// this attribute from UpdateAttributesPacket to draw the absorption heart
+// row above the health bar; without it the extra hearts never appear even
+// though the server absorbs damage.
+void Player::sendAbsorptionAttribute() {
+    if (!spawned_.load(std::memory_order_relaxed))
+        return;
+    auto pk = std::make_shared<network::protocol::UpdateAttributesPacket>();
+    pk->eid = runtimeId();
+    network::protocol::UpdateAttributesPacket::Entry e;
+    e.name = "generic.absorption";
+    e.min = 0.0f;
+    e.max = 340282346638528859811704183484516925440.0f;
+    e.value = absorption();
+    e.defaultValue = 0.0f;
+    pk->entries.push_back(e);
+    sendPacket(pk);
+}
+
+void Player::setAbsorption(float v) {
+    entity::Living::setAbsorption(v);
+}
+
+// Attribute-side callback shared with the base damage pipeline.
+void Player::onAbsorptionChanged() {
+    sendAbsorptionAttribute();
+}
+
+// The hunger effect drains one food point per occurrence on the 40>>amp
+// interval (Effect::canTick), matching the era reference Effect::applyEffect
+// for HUNGER in Genisys 0.15.0 (setFood(getFood() - 1)).
 void Player::onHungerEffectTick(int amplifier) {
-    addExhaustion(0.1f * (amplifier + 1), event::player::PlayerExhaustEvent::CAUSE_POTION);
+    (void)amplifier;
+    if (foodLevel() > 0)
+        setFoodLevel(foodLevel() - 1, event::player::HungerChangeReason::HUNGER_EFFECT);
 }
 
 // Restore one food point and one saturation point per effect interval.

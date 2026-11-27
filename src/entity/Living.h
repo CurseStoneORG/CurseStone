@@ -120,7 +120,21 @@ class Living : public Entity {
 
     void tick(uint64_t current_tick) override;
 
+    // Current absorption pool (vanilla generic.absorption): damage is
+    // consumed from this pool before health.
+    float absorption() const {
+        return absorption_;
+    }
+
+    // Sets the absorption pool; subclasses synchronize the attribute with
+    // their clients. Negative values clamp to zero.
+    virtual void setAbsorption(float v);
+
   protected:
+    // Called whenever the absorption pool changes so subclasses can push
+    // the attribute update to their viewers.
+    virtual void onAbsorptionChanged() {
+    }
     // Called when health decreases without causing death.
     // The default reaction broadcasts the red hurt flash to every spawned
     // player in the entity's world: the flash is a viewer-side EntityEvent,
@@ -174,6 +188,9 @@ class Living : public Entity {
 
     float health_ = 20.0f;
     float max_health_ = 20.0f;
+    // Vanilla generic.absorption pool: golden apples and the Absorption
+    // effect fill it, damage drains it before touching health.
+    float absorption_ = 0.0f;
 
     // Stores at most one active effect per ID.
     std::vector<std::shared_ptr<Effect>> effects_;
