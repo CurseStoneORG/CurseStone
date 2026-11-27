@@ -484,8 +484,11 @@ void Player::handleDropItem(network::protocol::DropItemPacket& pk) {
         dropped.count = drop_count;
     }
 
-    // Throw the item forward with a short pickup delay.
-    const double kMUL = 0.15;
+    // Throw the item forward with a short pickup delay. The era reference
+    // (Genisys 0.15.0 Player.php:3235-3237) throws with the look direction
+    // times 0.4 and a 40-tick delay; the binary only pins the default
+    // (motionless) ItemEntity motion, so the reference value governs here.
+    const double kMUL = 0.4;
     math::Vector3 dir = getDirectionVector();
     dropItem(pos_.x, pos_.y + 1.3, pos_.z, dropped.id, (uint8_t)dropped.count, dropped.meta,
              dir.x * kMUL, dir.y * kMUL, dir.z * kMUL,

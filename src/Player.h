@@ -840,6 +840,11 @@ class Player : public IPlayer,
     // Sends the movement-speed attribute derived from the walk speed
     // base and the active speed/slowness effects.
     void sendMovementSpeedAttribute();
+    // Recomputes the health capacity from the active Health Boost
+    // effect (4 points per level over the vanilla 20) and clamps the
+    // current health into it. Recomputed — never delta-stacked — so
+    // expiry restores the plain 20-point pool.
+    void applyHealthBoost();
     // Sends the vanilla generic.absorption attribute so the local client
     // draws the absorption heart row (0.15.10 reads it from UpdateAttributes).
     void sendAbsorptionAttribute();
