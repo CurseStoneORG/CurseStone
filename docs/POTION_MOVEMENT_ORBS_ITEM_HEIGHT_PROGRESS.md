@@ -59,7 +59,8 @@ Autor obligatorio de todos los commits: `Dr1xyDev <240832661+Dr1xyDev@users.nore
 5. `85f834a` fix(ai): speed and slowness now change real mob movement
 6. `542a6e1` fix(effects): era mining speed, resistance clamp and health boost
 7. `a8829d5` test: focused movement, orb spawn, item and mining effect checks
-8. (este) docs: final reference and checkpoint
+8. `76a15fd` docs: final reference and checkpoint
+9. (este) docs: record PR #17 and the green CI run on the head commit
 
 ## Estado de compilación / smoke
 
@@ -79,8 +80,12 @@ Autor obligatorio de todos los commits: `Dr1xyDev <240832661+Dr1xyDev@users.nore
 ## Estado de CI y commit exacto comprobado
 
 - Pushes verificados con `git ls-remote` tras cada commit (punta del remoto = commit local en cada paso).
-- `Build.yml` no se dispara por push a esta rama; corre sobre el PR hacia `stable`. PR abierto y el run
-  del head commit se verifica por API (ver la sección final del checkpoint tras la creación del PR).
+- **PR #17** abierto: `fix-potion-movement-effects-xp-orbs-item-height` → `stable`
+  https://github.com/CurseStoneORG/CurseStone/pull/17 (creado vía API con la autenticación ya
+  configurada; el tool de PR del plugin fallaba de forma consistente).
+- **CI sobre el commit exacto `76a15fd`**: run 46038549793 "Build CurseStone" = **completed success**
+  (verificado por API, resolución final observada en vivo). Nota: Build.yml no se dispara por push a la
+  rama, solo por el PR/push a stable.
 
 ## Elementos NO VERIFICADOS
 
