@@ -4046,6 +4046,30 @@ void World::addMobEffect(int64_t eid, std::shared_ptr<entity::Effect> e) {
     }
 }
 
+// Combined Speed/Slowness movement factor for a mob's real motion. The
+// vanilla server stacks UUID-keyed attribute modifiers on the mob's
+// movementSpeed attribute (Mob::_addSpeedBonus @ 0x00bf7b88); the era
+// factors are x(1 + 0.2*(amp+1)) per Speed level and x max(0, 1 -
+// 0.15*(amp+1)) per Slowness level. Callers multiply their profile BASE
+// by this every tick, so nothing accumulates and the factor decays back
+// to 1.0 once the effects expire.
+float World::mobSpeedMultiplier(int64_t eid) {
+    std::lock_guard<std::mutex> lk(mob_effects_mtx_);
+    auto it = mob_effects_.find(eid);
+    if (it == mob_effects_.end())
+        return 1.0f;
+    float factor = 1.0f;
+    for (const auto& e : it->second) {
+        if (!e || e->isExpired())
+            continue;
+        if (e->id() == entity::EFF_SPEED)
+            factor *= 1.0f + 0.2f * (e->amplifier() + 1);
+        else if (e->id() == entity::EFF_SLOWNESS)
+            factor *= std::max(0.0f, 1.0f - 0.15f * (e->amplifier() + 1));
+    }
+    return factor;
+}
+
 // Periodic + expiry pass for mob effects. Same shape as Living::tickEffects:
 // tick every instance, drop expired ones with a REMOVE broadcast, and apply
 // the poison/wither/regeneration behaviors on their interval ticks.
