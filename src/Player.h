@@ -587,7 +587,14 @@ class Player : public IPlayer,
                           const std::string& prefix = "") override;
 
     // --- Experience ---
+    // Vanilla MCPE 0.15.10 model (Throwable/ExperienceOrb binary, see
+    // docs/THROWABLE_POTIONS_XP_VANILLA.md): the player carries a level, a
+    // 0..1 progress within that level and a total-points counter. Orb
+    // pickups route through addExperience, which applies the era level
+    // cost curve and rolls level-ups in a loop, then pushes both HUD
+    // attributes (player.experience, player.level).
     // exp: 0..100 progress percent within the level (attribute carries 0..1).
+    // Kept for the plugin ABI (CsPluginApi::setExperience documents percent).
     void setExperience(int exp, int level);
     void sendExperience(int exp);
     void sendExperienceLevel(int level);
@@ -597,6 +604,22 @@ class Player : public IPlayer,
     int experienceProgressPercent() const {
         return (int)(xp_progress_ * 100.0f + 0.5f);
     }
+    // Experience points inside the current level (progress × level cost).
+    int experiencePoints() const;
+    int experienceTotal() const {
+        return xp_total_;
+    }
+    // Points needed to go from @p level to level+1 — the era curve the
+    // 0.15.10 client binary uses (smmla bucket at Player::addExperience):
+    // level<16 → 2L+7, 16..30 → 5L-38, 31+ → 9L-158.
+    static int xpLevelCost(int level);
+    // Vanilla orb pickup entry point: adds @p amount points, rolls level
+    // ups, refreshes the total and syncs both attributes. Clamps negative
+    // amounts to zero.
+    void addExperience(int amount);
+    // Direct level grant (commands/plugins path): keeps the progress bar
+    // and recomputes the total, like the binary addLevels(int).
+    void addLevels(int levels);
 
     // --- Health and food ---
     void setHealth(int h);
@@ -975,6 +998,9 @@ class Player : public IPlayer,
     // --- Experience state ---
     int xp_level_ = 0;               // Displayed level (player.level).
     float xp_progress_ = 0.0f;       // 0..1 progress within the level.
+    int xp_total_ = 0;               // Lifetime points (NBT XpTotal).
+    int xp_take_delay_ = 0;          // Ticks before the next orb pickup
+                                     // (vanilla setXpTakeDelay(2)).
     bool moved_this_tick_ = false;   // Movement flag for hunger updates.
     bool sprinting_ = false;         // Client sprint state.
     int sprint_dust_cd_ = 0;         // Ticks until the next sprint dust burst.
