@@ -4,7 +4,7 @@
 | /  \/_   _ _ __ ___  ___\ `--.| |_ ___  _ __   ___
 | |   | | | | '__/ __|/ _ \`--. \ __/ _ \| '_ \ / _ \
 | \__/\ |_| | |  |  \__ \  __/\__/ / || (_) | | | |  __/
- \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___|
+ \____/\__,_|_|  |___/\___\____/ \__\___/|_| |_|\___/
 
  * CurseStone | Open Source Server Software
  *
@@ -21,101 +21,72 @@
  *
  */
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Goal — one composable behavior of a mob brain, plus the MobContext
-// snapshot a goal is allowed to read. Goals are pure decision logic:
-// they never touch the World, players or packets. They read the
-// immutable MobContext and write movement intent into their MobBrain;
-// the MobAIManager is the only component that turns intent into world
-// mutations (see docs/MOB_AI.md).
+// Goal — one composable behavior of a mob brain.
+//
+// Port of <minecraftpe/impl/entity/ai/Goal.cpp> (MCPE 0.8.1 decompile,
+// oldminecraftcommunity). The class shape is the era one: a goal carries
+// the control flags it claims (move / look / jump), the GoalSelector
+// decides when it runs, and the goal drives the mob through the controls
+// (LookControl::setLookAt, PathNavigation::moveTo, JumpControl::jump).
+//
+// Adaptation: the era methods take no arguments because every goal held
+// its holder pointer from the constructor. Here the Mob facade the brain
+// owns is passed through the selector instead, so goal objects never
+// store a pointer that can outlive the bound record.
 #pragma once
 #include <cstdint>
 
 namespace cursestone::entity::ai {
 
-/// @brief Mutex bits a goal claims while it runs. A goal cannot start
-///        while another active goal holds an overlapping bit, which
-///        keeps mutually exclusive behaviors (moving vs. looking around)
-///        from fighting over the same output.
-enum GoalFlags : uint8_t {
-    kNoFlag = 0,
-    kFlagMove = 1 << 0, ///< Controls horizontal movement intent.
-    kFlagLook = 1 << 1, ///< Controls the facing yaw intent.
+class Mob;
+
+/// @brief Control-flag bits a goal claims while it runs (the era
+///        setRequiredControlFlags values).
+///        1 = MOVE, 2 = LOOK, 4 = JUMP/swim. The GoalSelector refuses to
+///        start a goal whose flags overlap an already-running goal's
+///        flags, which is the era mutual-exclusion contract.
+enum GoalControlFlags : int32_t {
+    kControlNone = 0,
+    kControlMove = 1,
+    kControlLook = 2,
+    kControlJump = 4,
 };
 
-/// @brief The immutable input snapshot one goal evaluation may read.
-///
-/// Deliberately value-only: no pointers into mutable world state, so a
-/// future off-thread thinker can consume the same struct unchanged
-/// (docs/MOB_AI.md section 6).
-struct MobContext {
-    int64_t eid = 0;
-    int32_t type = 0; ///< Protocol-84 network id (entity::EntityTypes).
-    uint8_t kind = 0; ///< Behavior family as the raw MobKind value.
-    double x = 0.0, y = 0.0, z = 0.0; ///< Feet position.
-    float yaw = 0.0f;
-    bool onGround = false;
-    bool inWater = false;     ///< Feet or chest cell is water (swim model).
-    bool headInWater = false; ///< Head cell is water (surfacing paddle).
-    float waterSurface = 0.0f; ///< Y of the rendered waterline above the
-                               ///< mob's column (valid while inWater).
-    // ---- Species profile (entity::mobProfile(type)) ----
-    float walkSpeed = 0.0f;   ///< Blocks per tick, the species stroll.
-    float panicSpeed = 0.0f;  ///< Blocks per tick while fleeing.
-    float bodyWidth = 0.6f;   ///< Collision box width.
-    float bodyHeight = 1.8f;  ///< Collision box height above the feet.
-    float eyeHeight = 1.62f;  ///< Look-pitch pivot above the feet.
-    // ---- Panic (the damage pipeline's cross-thread reflex) ----
-    bool panicActive = false; ///< A hit landed within the panic window.
-    float panicDirX = 0.0f;   ///< Unit direction AWAY from the threat.
-    float panicDirZ = 0.0f;
-    bool playerNear = false;       ///< A spawned player is within look range.
-    double playerDist = 0.0;       ///< Horizontal distance to that player.
-    double playerX = 0.0, playerY = 0.0, playerZ = 0.0;
-    uint64_t tick = 0;             ///< Current server tick.
-};
-
-/// @brief One behavior of a mob brain.
-///
-/// A goal object is owned by exactly one MobBrain and may keep its own
-/// state between evaluations (wander targets, timers). Selection runs
-/// on the mob's think cadence: goals with a higher priority() win flag
-/// conflicts, canStart() gates activation, shouldContinue() decides
-/// when to release.
 class Goal {
   public:
+    Goal() = default;
     virtual ~Goal() = default;
 
-    /// @brief Mutex bits claimed while this goal runs.
-    virtual uint8_t flags() const {
-        return kNoFlag;
-    }
+    Goal(const Goal&) = delete;
+    Goal& operator=(const Goal&) = delete;
 
-    /// @brief Selection weight; higher wins an overlapping flag.
-    virtual int priority() const {
-        return 0;
-    }
+    /// @brief Whether the goal wants to start this evaluation.
+    virtual bool canUse(Mob& mob) = 0;
 
-    /// @brief Returns whether the goal may activate on this evaluation.
-    ///        May consume @p brain's randomness (per-mob, deterministic
-    ///        on the main thread).
-    virtual bool canStart(const MobContext& ctx, class MobBrain& brain) = 0;
+    /// @brief Whether a running goal keeps running. The era default
+    ///        delegates to canUse().
+    virtual bool canContinueToUse(Mob& mob) { return canUse(mob); }
 
-    /// @brief Returns whether an active goal keeps running.
-    virtual bool shouldContinue(const MobContext& ctx) const = 0;
+    /// @brief Whether an already-running goal can be interrupted by a
+    ///        higher-priority goal that wants the same flags. The era
+    ///        default allows interruption.
+    virtual bool canInterrupt() { return true; }
 
-    /// @brief Called once when the goal activates; may initialize its
-    ///        own state (and consume @p brain's randomness).
-    virtual void start(const MobContext& ctx, class MobBrain& brain) {
-        (void)ctx;
-        (void)brain;
-    }
+    virtual void start(Mob& mob) { (void)mob; }
+    virtual void stop(Mob& mob) { (void)mob; }
 
-    /// @brief Called once when the goal deactivates.
-    virtual void stop() {}
+    /// @brief Runs on every selector pass while the goal is running.
+    ///        The era default was an empty body (Goal.cpp), so goals
+    ///        without per-tick work (the stroll family) simply omit it.
+    virtual void tick(Mob& mob) { (void)mob; }
 
-    /// @brief Runs on every think tick while the goal is active. Writes
-    ///        intent into @p brain (see MobIntent).
-    virtual void tick(const MobContext& ctx, class MobBrain& brain) = 0;
+    /// @brief Replaces the era constructor-time setRequiredControlFlags.
+    void setRequiredControlFlags(int32_t flags) { control_flags_ = flags; }
+
+    int32_t getRequiredControlFlags() const { return control_flags_; }
+
+  protected:
+    int32_t control_flags_ = kControlNone;
 };
 
 } // namespace cursestone::entity::ai
