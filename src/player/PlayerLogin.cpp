@@ -258,6 +258,9 @@ void Player::handleLogin(network::protocol::LoginPacket& pk) {
             xp_progress_ = cursestone::nbt::get_float(named_tag_.get(), "XpP", 0.0f);
             if (xp_progress_ < 0.0f || xp_progress_ > 1.0f)
                 xp_progress_ = 0.0f;
+            xp_total_ = cursestone::nbt::get_int(named_tag_.get(), "XpTotal", 0);
+            if (xp_total_ < 0)
+                xp_total_ = 0;
             (void)0;
 
             // Restore persisted potion effects (no packets yet — the client

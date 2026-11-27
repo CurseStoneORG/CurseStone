@@ -526,6 +526,11 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
     if (isDead())
         return;
 
+    // Vanilla XpTakeDelay: after an orb pickup the next orb waits 2 ticks
+    // (ExperienceOrb::playerTouch gate + setXpTakeDelay(2)).
+    if (xp_take_delay_ > 0)
+        --xp_take_delay_;
+
     uint64_t now_ms = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
                           std::chrono::system_clock::now().time_since_epoch())
                           .count();
@@ -755,6 +760,75 @@ void Player::tickHungerAndDamage(uint64_t current_tick) {
     (void)last_pos_set_;
     (void)was_in_lava_;
 }
+// --- Vanilla XP model (MCPE 0.15.10 binary) ---
+// Player::addExperience @ 0x00c15e78: the progress attribute absorbs
+// amount/cost(level); whenever it reaches 1.0 the level increments and the
+// remainder is rescaled by the NEW level cost. The level cost curve is the
+// era one (2L+7 / 5L-38 / 9L-158), recovered from the smmla bucket select
+// (magic 0x88888889 → level/15 buckets) inside the function itself.
+int Player::xpLevelCost(int level) {
+    if (level < 16)
+        return 2 * level + 7;
+    if (level < 31)
+        return 5 * level - 38;
+    return 9 * level - 158;
+}
+
+// Points currently held inside the level = progress × cost (the inverse of
+// the pickup split, used for XpTotal bookkeeping).
+int Player::experiencePoints() const {
+    float cost = (float)xpLevelCost(xp_level_);
+    int points = (int)(xp_progress_ * cost);
+    return points < 0 ? 0 : points;
+}
+
+void Player::addExperience(int amount) {
+    if (amount <= 0)
+        return;
+    if (isDead())
+        return;
+    // Overflow guard: the totals ride a float progress + int counters; huge
+    // grants clamp rather than corrupt the bar (vanilla has no path that
+    // produces them, but orbs from plugins could).
+    constexpr int kMaxAmount = 1000000;
+    if (amount > kMaxAmount)
+        amount = kMaxAmount;
+
+    float cost = (float)xpLevelCost(xp_level_);
+    xp_progress_ += (float)amount / cost;
+    xp_total_ += amount;
+    int guard = 0;
+    while (xp_progress_ >= 1.0f && guard++ < 256) {
+        int oldCost = xpLevelCost(xp_level_);
+        float leftover = oldCost * (xp_progress_ - 1.0f);
+        xp_level_ += 1;
+        int newCost = xpLevelCost(xp_level_);
+        xp_progress_ = leftover / (float)newCost;
+        if (xp_progress_ < 0.0f)
+            xp_progress_ = 0.0f;
+    }
+    // The attributes are pushed straight to the owning client (the binary
+    // updates player.experience and player.level at the tail of
+    // addExperience; the client renders the bar and the level number).
+    sendExperienceLevel(xp_level_);
+    sendExperience((int)(xp_progress_ * 100.0f + 0.5f));
+}
+
+void Player::addLevels(int levels) {
+    if (levels <= 0)
+        return;
+    // Binary addLevels @ 0x00c1604d: bump the level, carry the remaining
+    // progress (the bar keeps its fill), refresh the total.
+    int guard = 0;
+    while (levels-- > 0 && guard++ < 256) {
+        int cost = xpLevelCost(xp_level_);
+        xp_total_ += cost;
+        xp_level_ += 1;
+    }
+    sendExperienceLevel(xp_level_);
+    sendExperience((int)(xp_progress_ * 100.0f + 0.5f));
+}
+
 // Sync the XP bar attributes (protocol 84: player.experience 0..1 and
 // player.level). Like health and hunger these ride UpdateAttributesPacket
 // with the real runtime id and only target the owning client.
