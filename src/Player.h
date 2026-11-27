@@ -587,7 +587,34 @@ class Player : public IPlayer,
                           const std::string& prefix = "") override;
 
     // --- Experience ---
+    // Vanilla orb pickup gate (ExperienceOrb::playerTouch): an orb can only
+    // be taken while the delay is 0; the pickup sets it back to 2 ticks.
+    bool canTakeXpOrb() const {
+        return xp_take_delay_ == 0;
+    }
+    void setXpTakeDelay(int ticks) {
+        xp_take_delay_ = ticks < 0 ? 0 : ticks;
+    }
+    // Per-tick velocity estimate from accepted MovePlayerPacket deltas
+    // (blocks per tick) — the motion throwables inherit at launch.
+    double velocityEstX() const {
+        return vel_est_x_;
+    }
+    double velocityEstY() const {
+        return vel_est_y_;
+    }
+    double velocityEstZ() const {
+        return vel_est_z_;
+    }
+    // --- Experience ---
+    // Vanilla MCPE 0.15.10 model (Throwable/ExperienceOrb binary, see
+    // docs/THROWABLE_POTIONS_XP_VANILLA.md): the player carries a level, a
+    // 0..1 progress within that level and a total-points counter. Orb
+    // pickups route through addExperience, which applies the era level
+    // cost curve and rolls level-ups in a loop, then pushes both HUD
+    // attributes (player.experience, player.level).
     // exp: 0..100 progress percent within the level (attribute carries 0..1).
+    // Kept for the plugin ABI (CsPluginApi::setExperience documents percent).
     void setExperience(int exp, int level);
     void sendExperience(int exp);
     void sendExperienceLevel(int level);
@@ -597,6 +624,22 @@ class Player : public IPlayer,
     int experienceProgressPercent() const {
         return (int)(xp_progress_ * 100.0f + 0.5f);
     }
+    // Experience points inside the current level (progress × level cost).
+    int experiencePoints() const;
+    int experienceTotal() const {
+        return xp_total_;
+    }
+    // Points needed to go from @p level to level+1 — the era curve the
+    // 0.15.10 client binary uses (smmla bucket at Player::addExperience):
+    // level<16 → 2L+7, 16..30 → 5L-38, 31+ → 9L-158.
+    static int xpLevelCost(int level);
+    // Vanilla orb pickup entry point: adds @p amount points, rolls level
+    // ups, refreshes the total and syncs both attributes. Clamps negative
+    // amounts to zero.
+    void addExperience(int amount);
+    // Direct level grant (commands/plugins path): keeps the progress bar
+    // and recomputes the total, like the binary addLevels(int).
+    void addLevels(int levels);
 
     // --- Health and food ---
     void setHealth(int h);
@@ -805,6 +848,9 @@ class Player : public IPlayer,
     void sendActiveEffects();
     // Throws the held splash potion as entity type 86 and consumes it.
     void throwSplashPotion();
+    // Bottle o' Enchanting throw (item 384): same vanilla Throwable::shoot
+    // pipeline as the splash potion, entity type 68, break → 3..10 XP orbs.
+    void throwExpBottle();
 
     // --- Killer ---
     Entity* getKiller() const {
@@ -975,6 +1021,12 @@ class Player : public IPlayer,
     // --- Experience state ---
     int xp_level_ = 0;               // Displayed level (player.level).
     float xp_progress_ = 0.0f;       // 0..1 progress within the level.
+    int xp_total_ = 0;               // Lifetime points (NBT XpTotal).
+    int xp_take_delay_ = 0;          // Ticks before the next orb pickup
+                                     // (vanilla setXpTakeDelay(2)).
+    double vel_est_x_ = 0.0;         // MovePlayer delta estimate (per tick).
+    double vel_est_y_ = 0.0;
+    double vel_est_z_ = 0.0;
     bool moved_this_tick_ = false;   // Movement flag for hunger updates.
     bool sprinting_ = false;         // Client sprint state.
     int sprint_dust_cd_ = 0;         // Ticks until the next sprint dust burst.

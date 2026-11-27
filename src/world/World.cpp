@@ -594,6 +594,8 @@ void World::tick(uint64_t current_tick) {
     tickDroppedItems(current_tick);
     tickArrows(current_tick);
     tickSplashPotions(current_tick);
+    tickExperienceBottles(current_tick);
+    tickExperienceOrbs(current_tick);
     tickFallingBlocks(current_tick);
     // Death windows close before the AI pass reads the records (dying
     // mobs are skipped there); an empty window costs one counter read.
@@ -3281,11 +3283,17 @@ void World::tickSplashPotions(uint64_t current_tick) {
         if (chunks_.getChunkIfLoaded(pcx, pcz) == nullptr)
             continue;
 
-        // ThrownPotion physics: gravity 0.1, drag 0.05 per tick.
-        p->vy -= 0.1;
-        p->vx *= 0.95;
-        p->vy *= 0.95;
-        p->vz *= 0.95;
+        // Vanilla ThrownPotion physics (0.15.10 binary overrides): gravity
+        // 0.05 per tick (getGravity = 0x3D4CCCCD), drag 0.99 on all
+        // components (0.8 while inside water — Throwable::normalTick
+        // branch literals 0x3F7D70A4 / 0x3F4CCCCD).
+        p->vy -= 0.05;
+        int wblk = getBlockId((int)std::floor(p->x), (int)std::floor(p->y),
+                              (int)std::floor(p->z));
+        double drag = (wblk == block::WATER || wblk == block::FLOWING_WATER) ? 0.8 : 0.99;
+        p->vx *= drag;
+        p->vy *= drag;
+        p->vz *= drag;
 
         double nx = p->x + p->vx;
         double ny = p->y + p->vy;
@@ -3488,6 +3496,410 @@ void World::dowseFireAround(float x, float y, float z) {
         setBlock(bx, by, bz, block::AIR, 0);
     if (getBlockId(bx, by + 1, bz) == block::FIRE)
         setBlock(bx, by + 1, bz, block::AIR, 0);
+}
+
+// ===== Vanilla experience entities (MCPE 0.15.10 binary) =====
+
+// Canonical orb value ladder from ExperienceOrb::spawnOrbs @ 0x00be8864:
+// remaining > 2476 → 2477, > 1236 → 1237, > 616 → 617, > 306 → 307,
+// > 148 → 149, > 72 → 73, > 36 → 37, > 16 → 17, > 6 → 7, > 2 → 3, else 1.
+// The caller loops value-=piece until the total drains (2 → 1+1, 5 → 3+1+1).
+static int xpOrbValueFor(int remaining) {
+    if (remaining > 2476)
+        return 2477;
+    if (remaining > 1236)
+        return 1237;
+    if (remaining > 616)
+        return 617;
+    if (remaining > 306)
+        return 307;
+    if (remaining > 148)
+        return 149;
+    if (remaining > 72)
+        return 73;
+    if (remaining > 36)
+        return 37;
+    if (remaining > 16)
+        return 17;
+    if (remaining > 6)
+        return 7;
+    if (remaining > 2)
+        return 3;
+    return 1;
+}
+
+// Broadcasts one RemoveEntityPacket to every viewer of this world.
+static void broadcastRemoveEntity(const std::vector<std::shared_ptr<Player>>& players,
+                                  int64_t eid, World* self) {
+    auto rm = std::make_shared<network::protocol::RemoveEntityPacket>();
+    rm->eid = eid;
+    for (auto& pl : players) {
+        if (!pl) continue;
+        if (!pl->spawned() || pl->isPendingRemoval() || pl->getWorld() != self)
+            continue;
+        pl->sendPacket(rm);
+    }
+}
+
+// Registers an already-built orb record and sends its spawn packets to all
+// viewers: AddEntityPacket (type 69) with the carried value in metadata
+// index 11 (TYPE_INT — SynchedEntityData::getInt(11) sizes the client icon)
+// plus the motion packet.
+void World::addExperienceOrb(ExperienceOrbEntity p) {
+    auto add = std::make_shared<network::protocol::AddEntityPacket>();
+    add->eid = p.eid;
+    add->type = network::protocol::AddEntityPacket::TYPE_XP_ORB;
+    add->x = (float)p.x;
+    add->y = (float)p.y;
+    add->z = (float)p.z;
+    add->speedX = (float)p.vx;
+    add->speedY = (float)p.vy;
+    add->speedZ = (float)p.vz;
+    network::protocol::SetEntityDataPacket::Entry val;
+    val.index = network::protocol::SetEntityDataPacket::PROP_XP_ORB_VALUE;
+    val.type = network::protocol::SetEntityDataPacket::TYPE_INT;
+    val.ival = p.value;
+    add->metadata.push_back(val);
+
+    auto motion = std::make_shared<network::protocol::SetEntityMotionPacket>();
+    motion->entities.push_back({p.eid, (float)p.vx, (float)p.vy, (float)p.vz});
+
+    auto players = Server::getInstance().playersSnapshotRef();
+    for (auto& pl : players) {
+        if (!pl || !pl->spawned() || pl->isPendingRemoval())
+            continue;
+        if (pl->getWorld() != this)
+            continue;
+        pl->sendPacket(add);
+        pl->sendPacket(motion);
+    }
+
+    std::lock_guard<std::mutex> lk(xp_orbs_mtx_);
+    xp_orbs_[p.eid] = std::make_unique<ExperienceOrbEntity>(p);
+}
+
+// Splits @p total points into canonical orb pieces and spawns them at the
+// position (ExperienceOrb::spawnOrbs @ 0x00be8864 server path: while the
+// remaining count drains, each piece takes the ladder value for the
+// remainder and a new ExperienceOrb joins the level).
+void World::spawnXPOrbs(double x, double y, double z, int total) {
+    int remaining = total;
+    int guard = 0;
+    while (remaining > 0 && guard++ < 64) {
+        int piece = xpOrbValueFor(remaining);
+        if (piece <= 0)
+            break;
+        ExperienceOrbEntity orb;
+        orb.eid = Server::getInstance().allocateEid();
+        orb.x = x;
+        orb.y = y;
+        orb.z = z;
+        orb.value = piece;
+        orb.spawn_tick = Server::getInstance().getCurrentTick();
+        addExperienceOrb(orb);
+        remaining -= piece;
+    }
+}
+
+// One orb tick, straight from ExperienceOrb::normalTick @ 0x00be7e70 +
+// playerTouch @ 0x00be8688: lifetime 6000, gravity -0.04, water buoyancy
+// +0.2, horizontal drag 0.98 x block friction (0.588 default), attraction
+// to the nearest player within 8 blocks (delta/8, (1-len)^2, no extra
+// factor), pickup with the 2-tick XpTakeDelay gate, event 1051 sound.
+void World::tickExperienceOrbs(uint64_t current_tick) {
+    std::vector<ExperienceOrbEntity*> snapshot;
+    {
+        std::lock_guard<std::mutex> lk(xp_orbs_mtx_);
+        for (auto& [_, o] : xp_orbs_) {
+            if (o && !o->taken)
+                snapshot.push_back(o.get());
+        }
+    }
+    if (snapshot.empty())
+        return;
+    auto players = Server::getInstance().playersSnapshotRef();
+
+    for (ExperienceOrbEntity* o : snapshot) {
+        // Lifetime: ExperienceOrb::LIFETIME = 6000 ticks (0x0154793c).
+        o->age += 1;
+        if (o->age >= 6000) {
+            o->taken = true;
+            broadcastRemoveEntity(players, o->eid, this);
+            continue;
+        }
+        int pcx = (int)std::floor(o->x) >> 4;
+        int pcz = (int)std::floor(o->z) >> 4;
+        if (chunks_.getChunkIfLoaded(pcx, pcz) == nullptr)
+            continue; // Frozen while its chunk is out of range.
+
+        // Gravity -0.04 per tick; water buoyancy lifts the orb to +0.2
+        // (Material::isType(6) branch).
+        o->vy -= 0.04;
+        int bx = (int)std::floor(o->x);
+        int by = (int)std::floor(o->y);
+        int bz = (int)std::floor(o->z);
+        uint8_t at = getBlockId(bx, by, bz);
+        if (at == block::WATER || at == block::FLOWING_WATER) {
+            o->vy = 0.2;
+        }
+        // Horizontal drag 0.98 x block friction — the binary's default
+        // (stone-like) product is the 0.588 literal; vertical damp 0.98.
+        o->vx *= 0.588;
+        o->vz *= 0.588;
+        o->vy *= 0.98;
+
+        // Attraction: re-acquire the followed player when the link is stale
+        // (every ~20+rand(100) ticks), gone, or beyond 64 (8^2) distance.
+        Player* target = nullptr;
+        {
+            uint32_t rerollAt = o->follow_tick + 20 + (uint32_t)(std::rand() % 100);
+            bool stale = (uint32_t)(current_tick & 0xFFFFFFFFu) >= rerollAt;
+            for (auto& pl : players) {
+                if (!pl || !pl->spawned() || pl->isDead() || pl->isPendingRemoval())
+                    continue;
+                if (pl->getWorld() != this)
+                    continue;
+                if (!stale && pl->runtimeId() == o->follow_eid) {
+                    const auto& pp = pl->getNextPosition();
+                    double dx = pp.x - o->x, dy = pp.y - o->y, dz = pp.z - o->z;
+                    if (dx * dx + dy * dy + dz * dz <= 64.0)
+                        target = pl.get();
+                    break;
+                }
+            }
+            if (!target) {
+                double best = 64.0;
+                for (auto& pl : players) {
+                    if (!pl || !pl->spawned() || pl->isDead() || pl->isPendingRemoval())
+                        continue;
+                    if (pl->getWorld() != this)
+                        continue;
+                    const auto& pp = pl->getNextPosition();
+                    double dx = pp.x - o->x, dy = pp.y - o->y, dz = pp.z - o->z;
+                    double d2 = dx * dx + dy * dy + dz * dz;
+                    if (d2 <= best) {
+                        best = d2;
+                        target = pl.get();
+                    }
+                }
+                if (target)
+                    o->follow_tick = o->age;
+            }
+            if (target)
+                o->follow_eid = target->runtimeId();
+            else
+                o->follow_eid = 0;
+        }
+
+        if (target) {
+            // Verified attraction formula (0x00be8194): delta toward the
+            // player's eye line scaled by 1/8; c = 1 - len; when positive,
+            // motion += delta/len * c^2 per axis.
+            const auto& pp = target->getNextPosition();
+            double dx = (pp.x - o->x) / 8.0;
+            double dy = (pp.y + 1.62 - o->y) / 8.0;
+            double dz = (pp.z - o->z) / 8.0;
+            double len = std::sqrt(dx * dx + dy * dy + dz * dz);
+            if (len > 1e-6) {
+                double c = 1.0 - len;
+                if (c > 0.0) {
+                    c *= c;
+                    o->vx += dx / len * c;
+                    o->vy += dy / len * c;
+                    o->vz += dz / len * c;
+                }
+            }
+        }
+
+        // Integrate with a simple solid-block stop (the orb never tunnels
+        // at these speeds; vanilla moves through Entity::move with
+        // sub-steps — the block contact freezes the velocity component).
+        double nx = o->x + o->vx;
+        double ny = o->y + o->vy;
+        double nz = o->z + o->vz;
+        if (dropBlockSolid(getBlockId((int)std::floor(nx), (int)std::floor(o->y),
+                                      (int)std::floor(o->z))))
+            o->vx = 0.0, nx = o->x;
+        if (dropBlockSolid(getBlockId((int)std::floor(o->x), (int)std::floor(ny),
+                                      (int)std::floor(o->z))))
+            o->vy = 0.0, ny = o->y;
+        if (dropBlockSolid(getBlockId((int)std::floor(o->x), (int)std::floor(o->y),
+                                      (int)std::floor(nz))))
+            o->vz = 0.0, nz = o->z;
+        o->x = nx;
+        o->y = ny;
+        o->z = nz;
+
+        // Pickup: AABB touch of the 0.25 orb box against the player box
+        // (half width 0.3 + 0.125, height 1.8 + 0.125), gated by the
+        // 2-tick XpTakeDelay the binary sets on every take.
+        if (o->value > 0) {
+            for (auto& pl : players) {
+                if (!pl || !pl->spawned() || pl->isDead() || pl->isPendingRemoval())
+                    continue;
+                if (pl->getWorld() != this)
+                    continue;
+                if (!pl->canTakeXpOrb())
+                    continue;
+                const auto& pp = pl->getNextPosition();
+                if (o->x < pp.x - 0.425 || o->x > pp.x + 0.425)
+                    continue;
+                if (o->y < pp.y - 0.125 || o->y > pp.y + 1.925)
+                    continue;
+                if (o->z < pp.z - 0.425 || o->z > pp.z + 0.425)
+                    continue;
+                // Authoritative grant: the server owns the XP (never the
+                // client). Metadata 11 value → Player::addExperience.
+                pl->setXpTakeDelay(2);
+                pl->addExperience(o->value);
+                // "random.orb" pickup sound: LevelEvent 1051 at
+                // player.pos + 0.5 (broadcastDimensionEvent @ playerTouch).
+                auto snd = std::make_shared<network::protocol::LevelEventPacket>();
+                snd->evid = network::protocol::LevelEventPacket::EVENT_SOUND_ORB;
+                snd->x = (float)(pp.x + 0.5);
+                snd->y = (float)(pp.y + 0.5);
+                snd->z = (float)(pp.z + 0.5);
+                snd->data = 0;
+                for (auto& other : players) {
+                    if (!other || !other->spawned() || other->isPendingRemoval())
+                        continue;
+                    if (other->getWorld() != this)
+                        continue;
+                    other->sendPacket(snd);
+                }
+                o->taken = true;
+                broadcastRemoveEntity(players, o->eid, this);
+                break;
+            }
+        }
+    }
+
+    // Drop consumed records.
+    {
+        std::lock_guard<std::mutex> lk(xp_orbs_mtx_);
+        for (auto it = xp_orbs_.begin(); it != xp_orbs_.end();) {
+            if (it->second && it->second->taken)
+                it = xp_orbs_.erase(it);
+            else
+                ++it;
+        }
+    }
+}
+
+void World::addExperienceBottle(ExperienceBottleEntity p) {
+    std::lock_guard<std::mutex> lk(xp_bottles_mtx_);
+    xp_bottles_[p.eid] = std::make_unique<ExperienceBottleEntity>(p);
+}
+
+// Thrown XP bottle tick: the same Throwable physics as the splash potion
+// but with the binary constants (gravity 0.05, drag 0.99 / 0.8 in water,
+// 1200 tick life). The break routes to Level::potionSplash (particles,
+// Genisys-era color) and spawns 3..10 XP split into canonical orbs
+// (ExperiencePotion::onHit @ 0x00c1c0d0).
+void World::tickExperienceBottles(uint64_t current_tick) {
+    std::vector<ExperienceBottleEntity*> snapshot;
+    {
+        std::lock_guard<std::mutex> lk(xp_bottles_mtx_);
+        for (auto& [_, p] : xp_bottles_) {
+            if (p && !p->taken)
+                snapshot.push_back(p.get());
+        }
+    }
+    if (snapshot.empty())
+        return;
+    auto players = Server::getInstance().playersSnapshotRef();
+
+    for (ExperienceBottleEntity* p : snapshot) {
+        //  > 1200 breaks the bottle wherever it is (Throwable::normalTick).
+        if (current_tick - p->spawn_tick > 1200) {
+            p->taken = true;
+            broadcastRemoveEntity(players, p->eid, this);
+            continue;
+        }
+        int pcx = (int)std::floor(p->x) >> 4;
+        int pcz = (int)std::floor(p->z) >> 4;
+        if (chunks_.getChunkIfLoaded(pcx, pcz) == nullptr)
+            continue;
+
+        // Vanilla Throwable physics: gravity 0.05, drag 0.99 on all
+        // components, 0.8 while inside water.
+        p->vy -= 0.05;
+        int wblk = getBlockId((int)std::floor(p->x), (int)std::floor(p->y),
+                              (int)std::floor(p->z));
+        double drag = (wblk == block::WATER || wblk == block::FLOWING_WATER) ? 0.8 : 0.99;
+        p->vx *= drag;
+        p->vy *= drag;
+        p->vz *= drag;
+
+        double nx = p->x + p->vx;
+        double ny = p->y + p->vy;
+        double nz = p->z + p->vz;
+
+        bool broke = false;
+        // Entity contact: same generous box the splash potion uses (the
+        // thrower cannot break its own bottle for 5 ticks).
+        for (auto& pl : players) {
+            if (!pl || !pl->spawned() || pl->isDead() || pl->isPendingRemoval())
+                continue;
+            if (pl->getWorld() != this)
+                continue;
+            if (pl->runtimeId() == p->shooter_eid && current_tick - p->spawn_tick < 5)
+                continue;
+            const auto& pp = pl->getNextPosition();
+            if (nx >= pp.x - 0.6 && nx <= pp.x + 0.6 && ny >= pp.y - 0.3 && ny <= pp.y + 2.1 &&
+                nz >= pp.z - 0.6 && nz <= pp.z + 0.6) {
+                broke = true;
+                break;
+            }
+        }
+        if (!broke) {
+            double maxStep = std::max(std::fabs(p->vx), std::max(std::fabs(p->vy), std::fabs(p->vz)));
+            int steps = (int)std::ceil(maxStep / 0.5);
+            if (steps < 1)
+                steps = 1;
+            if (steps > 8)
+                steps = 8;
+            for (int i = 1; i <= steps; ++i) {
+                double sx = p->x + p->vx * ((double)i / steps);
+                double sy = p->y + p->vy * ((double)i / steps);
+                double sz = p->z + p->vz * ((double)i / steps);
+                if (dropBlockSolid(getBlockId((int)std::floor(sx), (int)std::floor(sy),
+                                              (int)std::floor(sz)))) {
+                    broke = true;
+                    break;
+                }
+            }
+        }
+        if (ny < 0.0 || ny > 260.0)
+            broke = true;
+
+        if (!broke) {
+            p->x = nx;
+            p->y = ny;
+            p->z = nz;
+            continue;
+        }
+        p->taken = true;
+
+        // Break effects: Level::potionSplash with the XP green (the exact
+        // Color global is unsymbolized in the binary — Genisys-era value).
+        spawnSplashParticles((float)p->x, (float)p->y, (float)p->z, 0x2E5299u);
+        // ExperiencePotion::onHit: spawnOrbs(region, hitPos, 3, 11, null) —
+        // total = 3 + rand(8) → 3..10, split into canonical orbs.
+        int total = 3 + (std::rand() % 8);
+        spawnXPOrbs(p->x, p->y - 0.2, p->z, total);
+        broadcastRemoveEntity(players, p->eid, this);
+    }
+
+    {
+        std::lock_guard<std::mutex> lk(xp_bottles_mtx_);
+        for (auto it = xp_bottles_.begin(); it != xp_bottles_.end();) {
+            if (it->second && it->second->taken)
+                it = xp_bottles_.erase(it);
+            else
+                ++it;
+        }
+    }
 }
 
 namespace {
