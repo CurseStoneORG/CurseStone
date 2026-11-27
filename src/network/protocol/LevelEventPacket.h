@@ -66,6 +66,10 @@ class LevelEventPacket : public DataPacket {
     // ---- Sound event ids (the reference server LevelEventPacket::EVENT_SOUND_*) ----
     static constexpr int16_t EVENT_SOUND_BLOCK_PLACE = 1052;
     static constexpr int16_t EVENT_SOUND_SHOOT = 1002; // bow release (the reference server LaunchSound)
+    // XP orb pickup ("random.orb" string @ 0x152e885; the 0.15.10 binary
+    // broadcasts it via Level::broadcastDimensionEvent with event 1051 at
+    // player.pos + 0.5 and data 0 — ExperienceOrb::playerTouch).
+    static constexpr int16_t EVENT_SOUND_ORB = 1051;
     // Door open/close (the reference server level/sound/DoorSound: EVENT_SOUND_DOOR).
     // Sent as a LevelEventPacket at the door block position; data = pitch*1000
     // (the reference server always passes pitch 0 for doors). This is the sound the

@@ -75,6 +75,7 @@
 #include "ItemBow.h"
 #include "ItemPotion.h"
 #include "ItemSplashPotion.h"
+#include "ItemExpBottle.h"
 #include "ItemFlintSteel.h"
 #include "ItemShears.h"
 #include "ItemAxeWooden.h"
@@ -172,6 +173,7 @@ void Item::registerAll() {
     registerItem(std::make_unique<ItemBow>());
     registerItem(std::make_unique<ItemPotion>());
     registerItem(std::make_unique<ItemSplashPotion>());
+    registerItem(std::make_unique<ItemExpBottle>());
     registerItem(std::make_unique<ItemFlintSteel>());
     registerItem(std::make_unique<ItemShears>());
     // tools — pickaxes

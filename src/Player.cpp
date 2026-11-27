@@ -641,9 +641,11 @@ void Player::saveData() {
     if (cursestone::nbt::set(root, "ActiveEffects", fx_list.get()))
         fx_list.release();
     cursestone::nbt::set_short(root, "Air", (int16_t)air_ticks_);
-    // Experience (same keys as the reference Human::saveNBT).
+    // Experience (same keys as the reference Human::saveNBT; XpTotal adds
+    // the lifetime points counter the 0.15.10 server keeps at Player+0xd18).
     cursestone::nbt::set_int(root, "XpLevel", xp_level_);
     cursestone::nbt::set_float(root, "XpP", xp_progress_);
+    cursestone::nbt::set_int(root, "XpTotal", xp_total_);
     cursestone::nbt::set_long(root, "RuntimeId", runtimeId());
     cursestone::nbt::set_long(root, "lastPlayed", (int64_t)mcp_utils_time_ms());
 

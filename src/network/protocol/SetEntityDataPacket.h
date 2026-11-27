@@ -120,6 +120,10 @@ class SetEntityDataPacket : public DataPacket {
     // `const DATA_POTION_ID = 16` — short potion meta, the property the
     // 0.15.10 client reads to draw the thrown bottle).
     static constexpr uint8_t PROP_POTION_ID = 16; // short
+    // XP orb carried value: the 0.15.10 client reads
+    // SynchedEntityData::getInt(11) to size the orb sprite and
+    // ExperienceOrb::playerTouch hands it to Player::addExperience.
+    static constexpr uint8_t PROP_XP_ORB_VALUE = 11; // int
 
     // Effect particle tint (the reference server Entity:
     // DATA_POTION_COLOR = 7 int packed RGB, DATA_POTION_AMBIENT = 8

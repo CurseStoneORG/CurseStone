@@ -198,6 +198,19 @@ void Player::handleMovePlayer(double x, double y, double z, float yaw, float pit
     yaw_ = yaw;
     pitch_ = pitch;
 
+    // Per-packet velocity estimate (blocks per tick). MovePlayerPacket
+    // arrives at the 20 Hz tick rate, so the accepted delta IS the vanilla
+    // per-tick motion the throwables inherit (Throwable::shoot adds
+    // &thrower.motion to the projectile speed). Clamped to a sane envelope
+    // so teleports/lag spikes do not fling bottles.
+    vel_est_x_ = dx;
+    vel_est_y_ = dy;
+    vel_est_z_ = dz;
+    constexpr double kMaxVelComponent = 2.0;
+    vel_est_x_ = std::max(-kMaxVelComponent, std::min(kMaxVelComponent, vel_est_x_));
+    vel_est_y_ = std::max(-kMaxVelComponent, std::min(kMaxVelComponent, vel_est_y_));
+    vel_est_z_ = std::max(-kMaxVelComponent, std::min(kMaxVelComponent, vel_est_z_));
+
     // Track downward movement while airborne. Vanilla accumulates the
     // fall distance for every gamemode — creative only skips the damage,
     // the landing dust still fires from the same distance.
