@@ -56,6 +56,19 @@ struct MobIntent {
                               ///< head toward a player above or below.
 };
 
+/// @brief Per-mob rotation channels between actuation passes: the
+///        CurseStone stand-ins for the vanilla control state. The
+///        movement-yaw channel is what BodyControl reads (the yaw
+///        MoveControl steered), the idle counter drives the stance
+///        realign, and the head anchor feeds the idle reset compare.
+struct RotationState {
+    bool initialized = false; ///< First pass seeds the channels from the
+                              ///< record's persisted yaw.
+    float moveYaw = 0.0f;     ///< Movement-yaw channel (mob+0x3c).
+    int idleCounter = 0;      ///< BodyControl idle ticks (this+0x8).
+    float headAnchor = 0.0f;  ///< Last tick's head yaw (this+0xc).
+};
+
 /// @brief Per-mob AI state machine.
 class MobBrain {
   public:
@@ -165,6 +178,28 @@ class MobBrain {
         return swim_phase_;
     }
 
+    // ---- Vanilla rotation channels (MoveControl / BodyControl) ----
+    // The movement-yaw channel, the idle alignment counter and the head
+    // anchor that the vanilla-shaped rotation model integrates between
+    // actuation passes. Seed from the record's yaw on the first pass.
+    RotationState& rotation() {
+        return rot_;
+    }
+
+    // ---- Swim momentum (the vanilla water locomotion inertia) ----
+    // In water the stride is not applied directly: each moving tick
+    // accelerates the body toward its input direction by the vanilla
+    // 0.02 and the displacement rides the drag-decayed momentum
+    // (equilibrium 0.08 blocks/tick), so a swim coasts like vanilla.
+    // Separate from the knockback carry-over: the two momenta decay at
+    // different rates (0.8 water drag vs the era 0.6 shove friction).
+    float& swimMotionX() {
+        return swim_x_;
+    }
+    float& swimMotionZ() {
+        return swim_z_;
+    }
+
     // ---- Sprint flag mirror (the panic pose on the client) ----
     // The 0.15.10 client renders the sprint pose and the faster leg
     // cycle for entities whose FLAGS metadata byte carries bit 3. A
@@ -246,6 +281,13 @@ class MobBrain {
     // Flotation bob oscillator phase (radians); diversified per mob.
     float swim_phase_ = 0.0f;
 
+    // Vanilla rotation channels (see the accessor above).
+    RotationState rot_;
+
+    // Swim momentum carry-over (see the accessor above).
+    float swim_x_ = 0.0f;
+    float swim_z_ = 0.0f;
+
     // Sprint flag mirror (see the accessor above).
     bool sprint_on_ = false;
 
@@ -280,23 +322,65 @@ struct FacingStep {
     float pitch = 0.0f;
 };
 
-/// @brief Head-to-body angle above which a standing mob starts turning
-///        its body toward its head (the vanilla stance behavior: a mob
-///        that watches you long enough squares up).
-constexpr float kBodyFollowAngle = 45.0f;
+// ---- Vanilla rotation constants (MCPE 0.15.10, libminecraftpe.so
+// SHA-256 f1114861..., reconstructed from the control classes by
+// disassembly; addresses in docs/VANILLA_MOB_AI_REVERSE_ENGINEERING.md) ----
 
-/// @brief Body-yaw degrees one tick may close toward the head while
-///        standing; bounds the stance turn so it reads as a rotation,
-///        not a snap.
-constexpr float kBodyFollowStep = 5.0f;
+/// @brief MoveControl (0x00ba8278): the movement-yaw channel approaches
+///        the wanted travel yaw by at most this many degrees per tick
+///        (inline pool 30.0 / -30.0).
+constexpr float kMoveYawStep = 30.0f;
+
+/// @brief BodyControl::clientTick (0x00ba7c4c), moving path: the body
+///        yaw approaches the movement-yaw channel by at most this many
+///        degrees per tick (inline 25.0 / -25.0).
+constexpr float kBodyTravelStep = 25.0f;
+
+/// @brief LookControl::tick (0x00ba7f70), not-looking branch: with no
+///        look target the head yaw drifts back onto the body yaw by at
+///        most this many degrees per tick (inline +/-10 clamp).
+constexpr float kHeadDriftStep = 10.0f;
+
+/// @brief LookControl setLookAt yaw speed: RandomLookAroundGoal::tick
+///        (0x00bb1a20) passes 10.0f as the per-tick head turn cap
+///        toward its look target.
+constexpr float kHeadYawSpeed = 10.0f;
+
+/// @brief Mob::getMaxHeadXRot (0x00bf50dc) = 40.0f: the per-tick pitch
+///        cap setLookAt receives, i.e. the pitch clamp while looking.
+///        With no look target the pitch zeroes (LookControl entry
+///        store).
+constexpr float kMaxHeadPitch = 40.0f;
+
+/// @brief BodyControl::MAX_CLAMP_ANGLE (rodata 0x015478d8 = 75.0f): the
+///        head yaw may never lead or trail the body yaw by more than
+///        this; in either path the far channel is pulled back inside
+///        the cone every tick.
+constexpr float kMaxBodyHeadOffset = 75.0f;
+
+/// @brief BodyControl idle path: a head turn bigger than this between
+///        two ticks resets the idle alignment counter (inline 15.0).
+constexpr float kIdleResetAngle = 15.0f;
+
+/// @brief BodyControl idle path: the body only starts squaring up to
+///        the head after the head has kept still this many ticks
+///        (counter compared against 10).
+constexpr int kIdleAlignDelay = 10;
+
+/// @brief BodyControl idle path: once the counter passes the delay, the
+///        allowed head-to-body offset shrinks this many degrees per
+///        extra tick ((n-9)*-7.5 + 75 in the ramp), reaching zero (the
+///        body squares exactly onto the head) after about nine more
+///        ticks.
+constexpr float kIdleAlignShrink = 7.5f;
+
 
 /// @brief Resolves one facing step. @p body_yaw / @p head_yaw /
 ///        @p pitch are the record's current values; @p intent carries
-///        the goals' decision; @p standing marks a mob with no
-///        movement intent (the only state where the body may turn for
-///        anything but travel).
+///        the goals' decision (intent.move is the moving signal);
+///        @p rot carries the per-mob rotation channels between ticks.
 FacingStep resolveFacing(float body_yaw, float head_yaw, float pitch,
-                         const MobIntent& intent, bool standing);
+                         const MobIntent& intent, RotationState& rot);
 
 /// @brief Vanilla-era water buoyancy model, stage-2 shape.
 ///
@@ -311,6 +395,13 @@ FacingStep resolveFacing(float body_yaw, float head_yaw, float pitch,
 /// body up and down over the surface instead of freezing the
 /// waterline.
 namespace water {
+
+/// @brief Horizontal water acceleration (blocks/tick^2): the era
+///        locomotion applies the swim input as a fixed 0.02 per-tick
+///        acceleration toward the input direction (Mob::travel water
+///        path, moveRelative with friction 0.02), so the swim speed
+///        emerges from the drag equilibrium, not from the stride.
+constexpr float kWaterAccel = 0.02f;
 
 /// @brief Reduced gravity inside water (the era reference applies the
 ///        fall acceleration at roughly a quarter strength while wet).

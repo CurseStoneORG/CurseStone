@@ -222,6 +222,12 @@ struct MobEntity {
     // server tick the record must be removed at (death animation plays
     // for ~one second first). Zero means alive.
     uint64_t death_tick = 0;
+    // Mirror of the FLAGS metadata byte the server last broadcast for
+    // this mob. The sprint toggle must read-modify-write this byte —
+    // writing the whole field would clear the on-fire / sneaking bits a
+    // future stage sets, and the era client treats each bit
+    // independently.
+    uint8_t meta_flags = 0;
 };
 
 // Defines the vanilla dropped-item pickup volume for MCPE 0.15.10.

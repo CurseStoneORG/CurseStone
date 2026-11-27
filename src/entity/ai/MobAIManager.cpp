@@ -618,9 +618,12 @@ void MobAIManager::actuateOne(world::MobEntity& m, MobBrain& brain,
     MobIntent facing_intent = intent;
     facing_intent.dirX = dir_x;
     facing_intent.dirZ = dir_z;
-    ai::FacingStep facing = ai::resolveFacing(
-        m.yaw, m.head_yaw, m.pitch, facing_intent,
-        /*standing=*/brain.onGround());
+    // Vanilla rotation stack: MoveControl steers the movement-yaw
+    // channel, LookControl turns the head, BodyControl brings the body
+    // around — the state lives in the brain between passes.
+    ai::RotationState& rot = brain.rotation();
+    ai::FacingStep facing = ai::resolveFacing(m.yaw, m.head_yaw, m.pitch,
+                                              facing_intent, rot);
 
     // ---- Flotation bob: a floating body never freezes on the
     // waterline — it rocks gently up and down around the hold depth
@@ -712,13 +715,36 @@ void MobAIManager::actuateOne(world::MobEntity& m, MobBrain& brain,
     }
 
     double dx = 0.0, dz = 0.0;
-    if (intent.move) {
-        // Water halves the stride: swimming is slower than walking, in
-        // the era entity model and in the reference.
-        const double stride = ctx.inWater ? (double)intent.speed * 0.5
-                                          : (double)intent.speed;
-        dx = dir_x * stride;
-        dz = dir_z * stride;
+    float& swim_x = brain.swimMotionX();
+    float& swim_z = brain.swimMotionZ();
+    if (swimming) {
+        // Vanilla water locomotion (Mob::travel water path): the input
+        // accelerates the body by a fixed 0.02 per tick toward the
+        // steered direction, and the displacement rides the momentum.
+        // The 0.8 drag after the sweep sizes the equilibrium at
+        // 0.08 blocks/tick — every mob swims at the same top speed,
+        // with the coast a real inertia gives. A mob with no move
+        // intent keeps its momentum this tick and just coasts down.
+        if (intent.move) {
+            swim_x += (float)(dir_x * ai::water::kWaterAccel);
+            swim_z += (float)(dir_z * ai::water::kWaterAccel);
+        }
+        dx = (double)swim_x;
+        dz = (double)swim_z;
+    } else {
+        // Off the swim path the momentum does not apply: zero it so a
+        // mob that walked out of deep water does not carry its swim
+        // speed onto land. The ford stride keeps the era water slowdown.
+        swim_x = 0.0f;
+        swim_z = 0.0f;
+        if (intent.move) {
+            // Water halves the stride: swimming is slower than walking,
+            // in the era entity model and in the reference.
+            const double stride = ctx.inWater ? (double)intent.speed * 0.5
+                                              : (double)intent.speed;
+            dx = dir_x * stride;
+            dz = dir_z * stride;
+        }
     }
     // A consumed shove rides on top of the goal's own step.
     dx += (double)brain.motionX();
@@ -737,6 +763,14 @@ void MobAIManager::actuateOne(world::MobEntity& m, MobBrain& brain,
     const double nz = m.z + res.motion.z;
     brain.onGround() = res.on_ground;
     brain.decayKnockback(kKnockbackFriction);
+    if (swimming) {
+        // The water drag closes the vanilla swim tick: whatever momentum
+        // the body still carries shrinks to 80% for the next pass (the
+        // era travel applies the 0.8 after the movement, sizing the
+        // 0.02-accel equilibrium at 0.08 blocks/tick).
+        swim_x *= ai::water::kWaterDrag;
+        swim_z *= ai::water::kWaterDrag;
+    }
 
     // Step-up: a horizontal clip against a one-block step (headroom
     // above it) is worth a jump; a clipped column at chest or head

@@ -33,6 +33,15 @@ static bool near(float a, float b, float eps = 1e-4f) {
     return std::fabs(a - b) <= eps;
 }
 
+/// @brief Wraps an angle difference into [-180, 180) for the checks.
+static float wrap(float d) {
+    while (d >= 180.0f)
+        d -= 360.0f;
+    while (d < -180.0f)
+        d += 360.0f;
+    return d;
+}
+
 /// @brief Simulates the swim model over a fixed waterline: @p y is the
 ///        mob's feet height, the water surface sits at 0.0 (so the
 ///        submersion fraction is -y/height — feet below the surface are
@@ -199,33 +208,105 @@ int main() {
                                  false, 0.0f);
     check(s.vy > 0.0f, "wet head paddles up from rest");
 
-    // ---- 4. Facing: body tracks travel, head tracks the look target ----
+    // ---- 4. Facing: the vanilla rotation stack (MCPE 0.15.10) ----
+    // MoveControl steers the movement-yaw channel toward the travel yaw
+    // (max 30 deg/tick), BodyControl brings the body onto the channel
+    // (max 25 deg/tick), LookControl turns the head toward its target
+    // (max 10 deg/tick) and, with no look target, drifts the head back
+    // onto the body while the pitch zeroes. The head-body offset never
+    // leaves the 75 deg cone.
+    ai::RotationState rot;
     MobIntent intent;
     // Walking toward -X: protocol-84 yaw for (-1, 0) is +90.
     intent.move = true;
     intent.dirX = -1.0;
     intent.dirZ = 0.0;
     intent.speed = 0.09f;
-    FacingStep f = resolveFacing(0.0f, 0.0f, 0.0f, intent, /*standing=*/false);
-    check(near(f.bodyYaw, faceYaw(-1.0, 0.0)), "moving body yaw faces travel");
-    check(near(f.headYaw, f.bodyYaw), "head follows travel without a look goal");
+    const float travel = faceYaw(-1.0, 0.0);
+    FacingStep f = resolveFacing(0.0f, 0.0f, 0.0f, intent, rot);
+    check(near(f.bodyYaw, 25.0f),
+          "moving body turns the vanilla 25 deg on the first tick");
+    check(near(f.headYaw, 10.0f),
+          "head drifts toward the body at 10 deg/tick while moving");
     check(near(f.pitch, 0.0f), "pitch rests at level without a look goal");
+    for (int i = 0; i < 20; ++i)
+        f = resolveFacing(f.bodyYaw, f.headYaw, f.pitch, intent, rot);
+    check(near(f.bodyYaw, travel),
+          "body reaches the travel yaw in finite ticks (no snap)");
 
-    // Walking while looking at a player: the body STILL faces travel and
-    // the head carries the look target — the moonwalk fix.
-    intent.look = true;
-    intent.yaw = 200.0f;
-    intent.pitch = -15.0f;
-    f = resolveFacing(0.0f, 0.0f, 0.0f, intent, false);
-    check(near(f.bodyYaw, faceYaw(-1.0, 0.0)), "body faces travel while looking");
-    check(near(f.headYaw, 200.0f), "head carries the look target while moving");
+    // Walking while looking at a player: the body STILL turns toward
+    // travel and the head carries the look target at the vanilla 10
+    // deg/tick — the moonwalk fix, now with the era turn rate.
+    ai::RotationState rot_look;
+    MobIntent look_move = intent;
+    look_move.look = true;
+    look_move.yaw = 200.0f;
+    look_move.pitch = -15.0f;
+    f = resolveFacing(0.0f, 0.0f, 0.0f, look_move, rot_look);
+    check(near(f.bodyYaw, 25.0f), "body turns toward travel while looking");
+    // A 200 deg target wraps to -160: the era LookControl always turns
+    // the short way, so the first tick lands at -10.
+    check(near(f.headYaw, -10.0f),
+          "head turns the short way at 10 deg/tick (200 wraps to -160)");
     check(near(f.pitch, -15.0f), "look pitch rides the head while moving");
+    // A steep overhead stare clamps at the vanilla 40 deg max head pitch.
+    look_move.pitch = -80.0f;
+    f = resolveFacing(f.bodyYaw, f.headYaw, f.pitch, look_move, rot_look);
+    check(near(f.pitch, -40.0f),
+          "pitch clamps at the vanilla 40 deg max head pitch");
 
-    // Standing with no intents: nothing turns.
+    // Standing with no intents: the pitch zeroes (LookControl entry
+    // store), the head drifts back onto the body at 10 deg/tick and the
+    // 75 deg cone pulls a wider offset back inside in one tick. Starting
+    // at body 123 / head 20, the drifted head leaves a 93 deg offset, so
+    // the cone drags the body 18 deg toward the head this same tick.
+    ai::RotationState rot_idle;
     MobIntent none;
-    f = resolveFacing(123.0f, 45.0f, 7.0f, none, true);
-    check(near(f.bodyYaw, 123.0f) && near(f.headYaw, 45.0f) && near(f.pitch, 7.0f),
-          "no intents keep the current rotation");
+    f = resolveFacing(123.0f, 20.0f, 7.0f, none, rot_idle);
+    check(near(f.pitch, 0.0f), "idle pitch zeroes (LookControl entry store)");
+    check(near(f.headYaw, 30.0f),
+          "idle head drifts toward the body at 10 deg/tick");
+    check(near(f.bodyYaw, 105.0f),
+          "the 75 deg cone drags a 93 deg offset back to the edge");
+    check(std::fabs(wrap(f.headYaw - f.bodyYaw)) <= 75.0f + 1e-4f,
+          "head-body offset stays inside the 75 deg cone");
+
+    // Idle realign: a head that keeps still squares the body onto it.
+    // The counter needs 10 still ticks, then the allowed offset shrinks
+    // 7.5 deg per tick until the body sits exactly on the head.
+    ai::RotationState rot_align;
+    MobIntent stare;
+    stare.look = true;
+    stare.yaw = 90.0f;
+    stare.pitch = 0.0f;
+    f = resolveFacing(0.0f, 45.0f, 0.0f, stare, rot_align);
+    for (int i = 0; i < 40; ++i)
+        f = resolveFacing(f.bodyYaw, f.headYaw, f.pitch, stare, rot_align);
+    check(near(f.bodyYaw, 90.0f) && near(f.headYaw, 90.0f),
+          "a still head squares the body onto itself while idle");
+
+    // ---- 4b. Swim momentum: the vanilla water locomotion inertia ----
+    // Each moving tick accelerates the body 0.02 toward its input; the
+    // 0.8 drag after the sweep settles the displacement at the era
+    // equilibrium (~0.1 blocks/tick) and an idle swimmer coasts to a
+    // stop instead of freezing.
+    {
+        float m = 0.0f;
+        float disp = 0.0f;
+        for (int i = 0; i < 300; ++i) {
+            m += water::kWaterAccel;
+            disp = m;
+            m *= water::kWaterDrag;
+        }
+        check(near(disp, 0.1f, 1e-3f),
+              "swim displacement settles at the vanilla ~0.1 blocks/tick");
+        check(m < disp && disp < water::kWaterAccel / (1.0f - water::kWaterDrag) + 1e-3f,
+              "swim momentum stays under the drag equilibrium ceiling");
+        float coast = 0.08f;
+        for (int i = 0; i < 100; ++i)
+            coast *= water::kWaterDrag;
+        check(coast < 1e-4f, "an idle swimmer coasts to a stop under the drag");
+    }
 
     // ---- 5. Brain assembly: grounded kinds get the stage-2 goal set,
     // flight/hop/aquatic kinds stay static, passives carry the panic

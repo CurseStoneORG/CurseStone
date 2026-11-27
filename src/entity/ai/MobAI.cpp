@@ -92,48 +92,115 @@ float faceYaw(double dx, double dz) {
     return (float)(std::atan2(-dx, dz) * 180.0 / 3.14159265358979323846);
 }
 
+namespace {
+
+/// @brief Wraps an angle difference into [-180, 180) (the era
+///        normalizes every rotation delta through the +/-180 band).
+float wrapDegrees(float d) {
+    while (d >= 180.0f)
+        d -= 360.0f;
+    while (d < -180.0f)
+        d += 360.0f;
+    return d;
+}
+
+/// @brief Moves @p cur toward @p target by at most @p max_step degrees
+///        (the era controls cap every rotation change per tick).
+float approachAngle(float cur, float target, float max_step) {
+    const float d = wrapDegrees(target - cur);
+    if (std::fabs(d) <= max_step)
+        return cur + d;
+    return cur + std::copysign(max_step, d);
+}
+
+} // namespace
+
 FacingStep resolveFacing(float body_yaw, float head_yaw, float pitch,
-                         const MobIntent& intent, bool standing) {
+                         const MobIntent& intent, RotationState& rot) {
     FacingStep out;
     out.bodyYaw = body_yaw;
     out.headYaw = head_yaw;
     out.pitch = pitch;
 
-    if (intent.move) {
-        // Travel owns the body: the model must face where it walks, or
-        // every wander leg renders as a sideways/backward slide.
-        out.bodyYaw = faceYaw(intent.dirX, intent.dirZ);
-        // The head follows travel unless a look goal is active; the
-        // look goal's head (and its pitch) wins while it runs.
-        if (intent.look) {
-            out.headYaw = intent.yaw;
-            out.pitch = intent.pitch;
-        } else {
-            out.headYaw = out.bodyYaw;
-            out.pitch = 0.0f;
-        }
-        return out;
+    if (!rot.initialized) {
+        // First actuation pass after spawn/load: the channels start on
+        // the record's persisted yaw instead of snapping to zero.
+        rot.moveYaw = body_yaw;
+        rot.headAnchor = head_yaw;
+        rot.initialized = true;
     }
 
-    if (intent.look) {
-        // Standing: the head turns to the look target, the body squares
-        // up to the head only past the follow angle and only at the
-        // bounded per-tick step — a stance rotation, not a snap.
-        out.headYaw = intent.yaw;
-        out.pitch = intent.pitch;
-        if (standing) {
-            float d = intent.yaw - body_yaw;
-            while (d > 180.0f)
-                d -= 360.0f;
-            while (d < -180.0f)
-                d += 360.0f;
-            const float abs_d = std::fabs(d);
-            if (abs_d > kBodyFollowAngle) {
-                const float step = std::copysign(std::fmin(abs_d, kBodyFollowStep), d);
-                out.bodyYaw = body_yaw + step;
-            }
+    if (intent.move) {
+        // Travel owns the rotation pipeline, exactly as the era control
+        // stack does: MoveControl steers the movement-yaw channel
+        // toward the wanted direction (max 30 deg/tick), BodyControl
+        // then brings the body onto that channel (max 25 deg/tick).
+        rot.idleCounter = 0;
+        rot.moveYaw = approachAngle(rot.moveYaw,
+                                    faceYaw(intent.dirX, intent.dirZ),
+                                    kMoveYawStep);
+        out.bodyYaw = approachAngle(body_yaw, rot.moveYaw,
+                                    kBodyTravelStep);
+        // The head follows travel unless a look goal is active; the
+        // look goal's head wins while it runs (LookControl tick).
+        if (intent.look) {
+            out.headYaw = approachAngle(head_yaw, intent.yaw,
+                                        kHeadYawSpeed);
+            out.pitch = std::clamp(intent.pitch, -kMaxHeadPitch,
+                                   kMaxHeadPitch);
+        } else {
+            out.headYaw = approachAngle(head_yaw, out.bodyYaw,
+                                        kHeadDriftStep);
+            out.pitch = 0.0f;
         }
+    } else {
+        // Standing: the head obeys LookControl, the body obeys the
+        // BodyControl idle path.
+        if (intent.look) {
+            out.headYaw = approachAngle(head_yaw, intent.yaw,
+                                        kHeadYawSpeed);
+            out.pitch = std::clamp(intent.pitch, -kMaxHeadPitch,
+                                   kMaxHeadPitch);
+        } else {
+            // No look target: the head drifts back onto the body and
+            // the pitch zeroes (LookControl not-looking branch).
+            out.headYaw = approachAngle(head_yaw, body_yaw,
+                                        kHeadDriftStep);
+            out.pitch = 0.0f;
+        }
+        // BodyControl idle path: a head turn beyond the reset angle
+        // re-arms the alignment delay; a still head accumulates ticks
+        // until the body may square up.
+        if (std::fabs(wrapDegrees(head_yaw - rot.headAnchor)) >
+            kIdleResetAngle)
+            rot.idleCounter = 0;
+        else
+            ++rot.idleCounter;
+        // The allowed head-to-body offset starts at the clamp angle and
+        // shrinks once the head has kept still past the delay, so the
+        // body squares exactly onto the head a few ticks later.
+        float allowed = kMaxBodyHeadOffset;
+        if (rot.idleCounter > kIdleAlignDelay) {
+            allowed = kMaxBodyHeadOffset -
+                      kIdleAlignShrink * (float)(rot.idleCounter - 9);
+            if (allowed < 0.0f)
+                allowed = 0.0f;
+        }
+        const float offset = wrapDegrees(out.headYaw - body_yaw);
+        out.bodyYaw = out.headYaw -
+                      std::clamp(offset, -allowed, allowed);
+        // The movement channel syncs onto the body while standing (the
+        // era controller copies body into the movement yaw at idle).
+        rot.moveYaw = out.bodyYaw;
     }
+    rot.headAnchor = out.headYaw;
+
+    // MAX_CLAMP_ANGLE: whichever path ran, the head may never lead or
+    // trail the body by more than the clamp cone.
+    const float offset = wrapDegrees(out.headYaw - out.bodyYaw);
+    if (std::fabs(offset) > kMaxBodyHeadOffset)
+        out.headYaw = out.bodyYaw +
+                      std::copysign(kMaxBodyHeadOffset, offset);
     return out;
 }
 

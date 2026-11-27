@@ -2048,22 +2048,32 @@ std::vector<MobEntity*> World::chunkMobs(int32_t cx, int32_t cz) {
 
 bool World::setMobSprinting(int64_t id, int32_t cx, int32_t cz,
                             bool sprinting) {
+    using Meta = network::protocol::SetEntityDataPacket;
+    uint8_t flags = 0;
     // Only live records toggle the bit (a dying body keeps whatever
-    // pose it had; the client wipes it with the RemoveEntity).
+    // pose it had; the client wipes it with the RemoveEntity). The
+    // mirror lives on the record so the toggle is a read-modify-write:
+    // the era client renders each FLAGS bit independently and a whole
+    // byte write would clear the bits another stage already set.
     {
         std::lock_guard<std::mutex> lk(mobs_mtx_);
         auto it = mobs_.find(id);
         if (it == mobs_.end() || !it->second || it->second->death_tick != 0)
             return false;
+        if (sprinting)
+            it->second->meta_flags |= (uint8_t)(1 << Meta::FLAG_BIT_SPRINTING);
+        else
+            it->second->meta_flags &=
+                (uint8_t)~(1 << Meta::FLAG_BIT_SPRINTING);
+        flags = it->second->meta_flags;
     }
-    using Meta = network::protocol::SetEntityDataPacket;
-    Meta::Entry flags;
-    flags.index = Meta::PROP_FLAGS;
-    flags.type = Meta::TYPE_BYTE;
-    flags.ival = sprinting ? (1 << Meta::FLAG_BIT_SPRINTING) : 0;
+    Meta::Entry entry;
+    entry.index = Meta::PROP_FLAGS;
+    entry.type = Meta::TYPE_BYTE;
+    entry.ival = flags;
     auto pk = std::make_shared<Meta>();
     pk->eid = id;
-    pk->entries.push_back(flags);
+    pk->entries.push_back(entry);
     sendToChunkViewers(this, cx, cz, pk);
     return true;
 }

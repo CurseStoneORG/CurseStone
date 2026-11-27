@@ -69,15 +69,19 @@ class WanderGoal : public Goal {
 /// @brief Faces a nearby player while one is within look range.
 ///
 /// Claims the LOOK flag with a priority above IdleLookGoal, so a
-/// nearby player always wins the facing decision. Hostile kinds get a
-/// longer stare range (the vanilla mobs track players well before
-/// melee range); the ranges land in the instance, not in constants,
-/// because the goal object is per-brain anyway.
+/// nearby player always wins the facing decision. The vanilla
+/// LookAtPlayerGoal starts its stare at 8 blocks (the era reference
+/// compares the horizontal distance square against the range square);
+/// the 10-block stop keeps a small hysteresis so a player pacing the
+/// boundary does not flicker the stare on and off. The ranges land in
+/// the instance, not in constants, because the goal object is
+/// per-brain anyway.
 class LookAtPlayerGoal : public Goal {
   public:
-    /// @param hostile true gives the longer hostile stare range.
+    /// @param hostile kept for the per-brain goal registration shape;
+    ///        the stare range itself is the vanilla 8 for every kind.
     explicit LookAtPlayerGoal(bool hostile = false)
-        : start_range_(hostile ? 12.0 : 8.0), stop_range_(hostile ? 14.0 : 10.0) {
+        : start_range_(8.0), stop_range_(10.0) {
     }
     uint8_t flags() const override {
         return kFlagLook;

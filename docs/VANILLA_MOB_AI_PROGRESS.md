@@ -134,13 +134,13 @@ Direcciones base .text ~0x00ba7xxx-0x00bf5xxx:
 | # | Fase | Estado |
 | --- | --- | --- |
 | 1 | Verificación inicial + rama + checkpoint | COMPLETADA |
-| 2 | Extracción e inventario del binario .so | PENDIENTE |
-| 3 | Investigación mirada/orientación (binario + CurseStone) | PENDIENTE |
-| 4 | Investigación agua/natación | PENDIENTE |
+| 2 | Extracción e inventario del binario .so | COMPLETADA |
+| 3 | Investigación mirada/orientación (binario + CurseStone) | COMPLETADA (implementada Etapa A) |
+| 4 | Investigación agua/natación | COMPLETADA (horizontal implementada Etapa B) |
 | 5 | Investigación navegación/pathfinding | PENDIENTE |
 | 6 | Investigación percepción y estados | PENDIENTE |
-| 7 | Auditoría vanilla vs CurseStone (tabla) | PENDIENTE |
-| 8 | Implementación por etapas | PENDIENTE |
+| 7 | Auditoría vanilla vs CurseStone (tabla) | EN CURSO (checkpoint §4) |
+| 8 | Implementación por etapas | ETAPAS A-D IMPLEMENTADAS |
 | 9 | Pruebas focalizadas + regresión | PENDIENTE |
 | 10 | Documentación REVERSE_ENGINEERING + IMPLEMENTATION | PENDIENTE |
 | 11 | Build limpio + smoke test + CI del último commit | PENDIENTE |
@@ -151,10 +151,22 @@ Direcciones base .text ~0x00ba7xxx-0x00bf5xxx:
 
 | Commit | Contenido | Push verificado |
 | --- | --- | --- |
-| (este) | Checkpoint inicial | pendiente |
+| 80d4be0 | Checkpoint inicial (PR #17 fusionado, rama creada) | sí (ls-remote) |
+| b3ae82c | Inventario del binario + constantes RE + auditoría + diseño | sí |
+| (este) | Etapas A-D: rotación vanilla, inercia de agua, rangos de mirada, flags RMW | tras push |
 
-## 7. Próximos pasos exactos
+## 7. Resultado de las etapas implementadas
 
-1. Extraer `libminecraftpe.so` del APK, registrar SHA-256, arquitectura, secciones ELF y símbolos de IA.
-2. Inventario de funciones del binario (nombre provisional, dirección, evidencia, confianza).
-3. `rg` sobre `src/entity/ai/`, `src/world/`, `src/entity/`, `src/network/` para mapear el estado actual de mirada, natación, navegación y percepción en CurseStone.
+- **Etapa A (rotación vanilla)**: `resolveFacing` reescrita como la pila MoveControl/LookControl/BodyControl: canal de yaw de movimiento (≤30°/tick), body ≤25°/tick hacia el canal, head ≤10°/tick hacia objetivo de mirada o hacia el body sin objetivo, pitch clamp ±40° (getMaxHeadXRot) con objetivo y 0 sin él, cono de 75° (MAX_CLAMP_ANGLE) siempre, realineación idle tras 10 ticks con rampa −7.5°/tick. Estado en `MobBrain::rotation()` (canal+contador+ancla), semilla desde el yaw persistido.
+- **Etapa B (agua horizontal)**: nadando = inercia vanilla (accel 0.02/tick, drag 0.8 tras el sweep → equilibrio ~0.1 bloques/tick de desplazamiento, coast al parar); vado poco profundo conserva el stride ×0.5; momentum separado del knockback (decaimientos distintos).
+- **Etapa C (percepción)**: LookAtPlayerGoal 12/14 → 8/10 (vanilla 8, histeresis 10).
+- **Etapa D (metadata)**: setMobSprinting hace read-modify-write del byte FLAGS vía espejo `MobEntity::meta_flags`.
+- **Pruebas**: `tools/mob_ai_water_check.cpp` ampliado (rotación 25/10/75/40/30, realineación idle, equilibrio de nado 0.1, coast) — **TODAS LAS COMPROBACIONES PASAN (67 checks)**.
+- **Build**: completo exit 0 (/tmp/cs_mobai/CurseStone, flags de build_local_fast.sh). **Smoke test**: arranque 0.034s, mundos cargan, shutdown limpio.
+
+## 8. Próximos pasos exactos
+
+1. Regresión e2e ligera: `tools/mob_ai_bench.py` (cliente protocolo-84, verifica paquetes de movimiento/rotación reales con la nueva rotación) — si el harness arranca en el sandbox.
+2. Documentación: `docs/VANILLA_MOB_AI_REVERSE_ENGINEERING.md` (funciones/constantes/direcciones/evidencia) y `docs/VANILLA_MOB_AI_IMPLEMENTATION.md` (cambios/archivos/diseño/pruebas/limitaciones).
+3. Build limpio + CI del último commit + PR hacia `stable` (sin auto-merge).
+4. Pendiente NO VERIFICADO EN CLIENTE MCPE 0.15.10 (sin emulador/cliente real en el sandbox).
