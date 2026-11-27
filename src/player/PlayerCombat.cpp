@@ -123,6 +123,39 @@ namespace {
 constexpr double kPi = 3.14159265358979323846;
 // uses a maximum bow durability of 385.
 constexpr int kBowMaxDurability = 385;
+// Vanilla throwable constants (0.15.10 binary): both potions override
+// Throwable::getThrowPower (0x3F000000 = 0.5, base 1.5) and
+// getThrowUpAngleOffset (0xC1A00000 = -20, base 0); the gaussian aim
+// spread is 0.0075 per axis (Throwable::shoot(Vec3,float,float,Vec3)
+// literal 0x3BF5C28F, Box-Muller polar pairs cached on Level).
+constexpr double kThrowPower = 0.5;
+constexpr double kUpAngleOffsetDeg = -20.0;
+constexpr double kAimSpread = 0.0075;
+// Box-Muller polar rejection, the generator shape Throwable::shoot uses
+// (rand pair → 2u-1, retry while r2 >= 1, sqrt(-2 ln r2 / r2) scaling).
+double vanillaGaussian() {
+    double u1, u2, s;
+    do {
+        u1 = (double)std::rand() / ((double)RAND_MAX + 1.0);
+        u2 = (double)std::rand() / ((double)RAND_MAX + 1.0);
+        s = (2.0 * u1 - 1.0) * (2.0 * u1 - 1.0) + (2.0 * u2 - 1.0) * (2.0 * u2 - 1.0);
+    } while (s >= 1.0 || s == 0.0);
+    return std::sqrt(-2.0 * std::log(s) / s) * (2.0 * u1 - 1.0);
+}
+// Throwable::shoot(Mob&): direction from yaw/pitch with the potion
+// up-angle offset applied to the pitch, gaussian aim spread per axis,
+// scaled by the throw power, PLUS the thrower's per-tick motion (the 4th
+// Vec3 argument) so a moving player inherits its own velocity.
+void computeThrowableVelocity(const Player& p, double& vx, double& vy, double& vz) {
+    double yawRad = (double)p.yaw() * kPi / 180.0;
+    double pitchRad = ((double)p.pitch() + kUpAngleOffsetDeg) * kPi / 180.0;
+    double dx = -std::sin(yawRad) * std::cos(pitchRad);
+    double dy = -std::sin(pitchRad);
+    double dz = std::cos(yawRad) * std::cos(pitchRad);
+    vx = (dx + vanillaGaussian() * kAimSpread) * kThrowPower + p.velocityEstX();
+    vy = (dy + vanillaGaussian() * kAimSpread) * kThrowPower + p.velocityEstY();
+    vz = (dz + vanillaGaussian() * kAimSpread) * kThrowPower + p.velocityEstZ();
+}
 } // namespace
 
 void Player::handleUseItemAir(int16_t heldItemId) {
@@ -149,6 +182,10 @@ void Player::handleUseItemAir(int16_t heldItemId) {
 
     if (heldItemId == (int16_t)item::ITEM_SPLASH_POTION) {
         throwSplashPotion();
+        return;
+    }
+    if (heldItemId == (int16_t)item::ITEM_EXP_BOTTLE) {
+        throwExpBottle();
         return;
     }
 
@@ -273,13 +310,11 @@ void Player::throwSplashPotion() {
     if (held.id != item::ITEM_SPLASH_POTION || held.count <= 0)
         return;
 
-    // Calculate the throw direction and apply the projectile speed.
-    double yawRad = (double)yaw_ * kPi / 180.0;
-    double pitchRad = (double)pitch_ * kPi / 180.0;
-    double dx = -std::sin(yawRad) * std::cos(pitchRad);
-    double dy = -std::sin(pitchRad);
-    double dz = std::cos(yawRad) * std::cos(pitchRad);
-    constexpr double kThrowPower = 1.1;
+    // Vanilla Throwable::shoot(Mob&) pipeline (0.15.10 binary): throw power
+    // 0.5, pitch shifted by the -20 up-angle offset, gaussian aim spread
+    // 0.0075 per axis, and the thrower's per-tick motion added on top.
+    double vx, vy, vz;
+    computeThrowableVelocity(*this, vx, vy, vz);
 
     int64_t eid = srv_->allocateEid();
 
@@ -290,13 +325,13 @@ void Player::throwSplashPotion() {
     add->x = (float)(pos_.x);
     add->y = (float)(pos_.y + kEyeHeight);
     add->z = (float)(pos_.z);
-    add->speedX = (float)(dx * kThrowPower);
-    add->speedY = (float)(dy * kThrowPower);
-    add->speedZ = (float)(dz * kThrowPower);
+    add->speedX = (float)vx;
+    add->speedY = (float)vy;
+    add->speedZ = (float)vz;
     // Set the projectile orientation from its direction.
-    double flat = std::sqrt(dx * dx + dz * dz);
-    add->yaw = (float)(std::atan2(dx, dz) * 180.0 / kPi);
-    add->pitch = (float)(std::atan2(dy, flat) * 180.0 / kPi);
+    double flat = std::sqrt(vx * vx + vz * vz);
+    add->yaw = (float)(std::atan2(vx, vz) * 180.0 / kPi);
+    add->pitch = (float)(std::atan2(vy, flat) * 180.0 / kPi);
 
     // Set metadata index 16 to the potion's metadata value. The
     // reference ThrownPotion::spawnTo ships DATA_POTION_ID inside the
@@ -319,8 +354,7 @@ void Player::throwSplashPotion() {
 
     // Send motion separately so the client can animate the projectile.
     auto motion = std::make_shared<network::protocol::SetEntityMotionPacket>();
-    motion->entities.push_back(
-        {eid, (float)(dx * kThrowPower), (float)(dy * kThrowPower), (float)(dz * kThrowPower)});
+    motion->entities.push_back({eid, (float)vx, (float)vy, (float)vz});
     for (auto& other : srv_->playersSnapshotRef()) {
         if (!other || !other->spawned())
             continue;
@@ -330,16 +364,18 @@ void Player::throwSplashPotion() {
         other->sendPacket(motion);
     }
 
-    // Register the projectile for server-side physics.
+    // Register the projectile for server-side physics. Physics constants
+    // live in World::tickSplashPotions (gravity 0.05, drag 0.99 / 0.8 in
+    // water — the vanilla ThrownPotion overrides).
     world::SplashPotionEntity p;
     p.eid = eid;
     p.shooter_eid = runtimeId();
     p.x = pos_.x;
     p.y = pos_.y + kEyeHeight;
     p.z = pos_.z;
-    p.vx = dx * kThrowPower;
-    p.vy = dy * kThrowPower;
-    p.vz = dz * kThrowPower;
+    p.vx = vx;
+    p.vy = vy;
+    p.vz = vz;
     p.meta = held.meta;
     p.spawn_tick = srv_->getCurrentTick();
     p.taken = false;
@@ -347,6 +383,82 @@ void Player::throwSplashPotion() {
         getWorld()->addSplashPotion(p);
 
     // Survival consumes one potion; creative preserves the stack.
+    if (!isCreative()) {
+        if (held.count > 1) {
+            held.count -= 1;
+            inv_->setItemInHand(held);
+        } else {
+            inv_->setItemInHand(item::ItemStack::EMPTY());
+        }
+        sendInventory();
+    }
+}
+
+// Bottle o' Enchanting (item 384) → entity type 68. The launch rides the
+// exact same vanilla Throwable::shoot pipeline as the splash potion (power
+// 0.5, -20 up-angle, gaussian spread, inherited motion) — only the entity
+// type and the break behaviour differ (XP orbs instead of effects), so the
+// two throwables share computeThrowableVelocity.
+void Player::throwExpBottle() {
+    if (!srv_ || !inv_)
+        return;
+    if (isDead())
+        return;
+    item::ItemStack held = inv_->getHeldItem();
+    if (held.id != item::ITEM_EXP_BOTTLE || held.count <= 0)
+        return;
+
+    double vx, vy, vz;
+    computeThrowableVelocity(*this, vx, vy, vz);
+
+    int64_t eid = srv_->allocateEid();
+
+    auto add = std::make_shared<network::protocol::AddEntityPacket>();
+    add->eid = eid;
+    add->type = network::protocol::AddEntityPacket::TYPE_EXP_BOTTLE;
+    add->x = (float)(pos_.x);
+    add->y = (float)(pos_.y + kEyeHeight);
+    add->z = (float)(pos_.z);
+    add->speedX = (float)vx;
+    add->speedY = (float)vy;
+    add->speedZ = (float)vz;
+    double flat = std::sqrt(vx * vx + vz * vz);
+    add->yaw = (float)(std::atan2(vx, vz) * 180.0 / kPi);
+    add->pitch = (float)(std::atan2(vy, flat) * 180.0 / kPi);
+
+    // Projectile shooter link (same metadata the splash potion ships).
+    network::protocol::SetEntityDataPacket::Entry shooter;
+    shooter.index = network::protocol::SetEntityDataPacket::PROP_SHOOTER_ID;
+    shooter.type = network::protocol::SetEntityDataPacket::TYPE_LONG;
+    shooter.ival = runtimeId();
+    add->metadata.push_back(shooter);
+
+    auto motion = std::make_shared<network::protocol::SetEntityMotionPacket>();
+    motion->entities.push_back({eid, (float)vx, (float)vy, (float)vz});
+    for (auto& other : srv_->playersSnapshotRef()) {
+        if (!other || !other->spawned())
+            continue;
+        if (other->getWorld() != getWorld())
+            continue;
+        other->sendPacket(add);
+        other->sendPacket(motion);
+    }
+
+    world::ExperienceBottleEntity p;
+    p.eid = eid;
+    p.shooter_eid = runtimeId();
+    p.x = pos_.x;
+    p.y = pos_.y + kEyeHeight;
+    p.z = pos_.z;
+    p.vx = vx;
+    p.vy = vy;
+    p.vz = vz;
+    p.spawn_tick = srv_->getCurrentTick();
+    p.taken = false;
+    if (getWorld())
+        getWorld()->addExperienceBottle(p);
+
+    // Survival consumes one bottle; creative preserves the stack.
     if (!isCreative()) {
         if (held.count > 1) {
             held.count -= 1;

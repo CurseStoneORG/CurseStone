@@ -587,6 +587,26 @@ class Player : public IPlayer,
                           const std::string& prefix = "") override;
 
     // --- Experience ---
+    // Vanilla orb pickup gate (ExperienceOrb::playerTouch): an orb can only
+    // be taken while the delay is 0; the pickup sets it back to 2 ticks.
+    bool canTakeXpOrb() const {
+        return xp_take_delay_ == 0;
+    }
+    void setXpTakeDelay(int ticks) {
+        xp_take_delay_ = ticks < 0 ? 0 : ticks;
+    }
+    // Per-tick velocity estimate from accepted MovePlayerPacket deltas
+    // (blocks per tick) — the motion throwables inherit at launch.
+    double velocityEstX() const {
+        return vel_est_x_;
+    }
+    double velocityEstY() const {
+        return vel_est_y_;
+    }
+    double velocityEstZ() const {
+        return vel_est_z_;
+    }
+    // --- Experience ---
     // Vanilla MCPE 0.15.10 model (Throwable/ExperienceOrb binary, see
     // docs/THROWABLE_POTIONS_XP_VANILLA.md): the player carries a level, a
     // 0..1 progress within that level and a total-points counter. Orb
@@ -828,6 +848,9 @@ class Player : public IPlayer,
     void sendActiveEffects();
     // Throws the held splash potion as entity type 86 and consumes it.
     void throwSplashPotion();
+    // Bottle o' Enchanting throw (item 384): same vanilla Throwable::shoot
+    // pipeline as the splash potion, entity type 68, break → 3..10 XP orbs.
+    void throwExpBottle();
 
     // --- Killer ---
     Entity* getKiller() const {
@@ -1001,6 +1024,9 @@ class Player : public IPlayer,
     int xp_total_ = 0;               // Lifetime points (NBT XpTotal).
     int xp_take_delay_ = 0;          // Ticks before the next orb pickup
                                      // (vanilla setXpTakeDelay(2)).
+    double vel_est_x_ = 0.0;         // MovePlayer delta estimate (per tick).
+    double vel_est_y_ = 0.0;
+    double vel_est_z_ = 0.0;
     bool moved_this_tick_ = false;   // Movement flag for hunger updates.
     bool sprinting_ = false;         // Client sprint state.
     int sprint_dust_cd_ = 0;         // Ticks until the next sprint dust burst.
